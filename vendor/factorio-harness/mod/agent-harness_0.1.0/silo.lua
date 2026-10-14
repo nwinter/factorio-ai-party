@@ -229,6 +229,8 @@ return function(api)
     if row.trash then words[#words+1] = 'trash slots: ' .. row.trash end
     row.auto_requests = try(function() return e.use_transitional_requests end) and true or false
     words[#words+1] = 'automatic requests ' .. (row.auto_requests and 'on (the silo launches for platforms\' requests itself)' or 'off')
+    row.send_to_orbit_automatically = try(function() return e.send_to_orbit_automatically end) and true or false
+    if row.send_to_orbit_automatically then words[#words+1] = 'send to orbit automatically on' end
     row.platforms_above = platforms_above(force, try(function() return e.surface.planet and e.surface.planet.name end))
     if row.platforms_above then words[#words+1] = 'our platforms above: ' .. table.concat(row.platforms_above, ', ') end
     local last = records()[e.unit_number or -1]
@@ -241,6 +243,16 @@ return function(api)
     end
     row.line = table.concat(words, '; ')
     return row
+  end
+  -- The silo GUI's switches as they stand, with where the silo is (configure and launch read them back after a change).
+  function M.settings(e)
+    local target = try(function() local t = e.transitional_request_target; return t and t.valid and t.name or nil end)
+    local parts = try(function() return e.rocket_parts .. '/' .. e.prototype.rocket_parts_required end)
+    return {silo = string.format('%s at (%g,%g) on %s', e.name, e.position.x, e.position.y, e.surface.name),
+      auto_requests = try(function() return e.use_transitional_requests end) and true or false,
+      send_to_orbit_automatically = try(function() return e.send_to_orbit_automatically end) and true or false,
+      requesting_for = target, parts = parts,
+      rocket = try(function() silo_states = silo_states or invert(defines.rocket_silo_status); return silo_states[e.rocket_silo_status] end)}
   end
   function M.read(p, a)
     local surface = p.surface
@@ -270,7 +282,7 @@ return function(api)
     returns='silos [{name, position, surface, parts (X/required, the 2.0 rocket_parts_required), state (the silo\'s rocket state), status, rocket_ready, '
       .. 'crafting {part_progress, parts_left, part_s, productivity, rocket_eta_s (at this speed, while working)}, ingredients [{name, per_part, in_silo, in_hands '
       .. '(feeding inserters\' hands), at_sources (what their belts and chests hold), needed (for the parts left), short}], lacks (ingredients the silo holds too few '
-      .. 'of for the next part), feeders {inserters, idle, sources}, cargo {kg, lift_kg, stacks, slots, items, over_kg}, trash, auto_requests (the GUI checkbox), '
+      .. 'of for the next part), feeders {inserters, idle, sources}, cargo {kg, lift_kg, stacks, slots, items, over_kg}, trash, auto_requests and send_to_orbit_automatically (the GUI checkboxes; configure sets them), '
       .. 'platforms_above (ours in orbit of this planet), last_launch {ago, tick, to, cargo, by}, line}]; rockets_launched (the force\'s count). '
       .. 'Feeders: inserters within 8 tiles dropping into the silo. Launches are seen from when the harness was deployed. Read only'}}
   return M

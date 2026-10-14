@@ -486,7 +486,14 @@ fh sleep 900 --until researched                       # ...or until the research
 - `inspect` also shows what the entity GUI and cursor show: `status_name` (e.g. `marked_for_deconstruction`,
   `waiting_for_source_items`), `filters`, `filter_mode` and `use_filters` (inserters, loaders), `held` (an inserter's
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
-  on the footprint, such as a paste replacing it, with their filters). A ghost on a building yields to the building
+  on the footprint, such as a paste replacing it, with their filters). A built inserter whose engine targets are empty
+  says so in `io_warning` (`no pickup target`: it takes only items lying on the ground there; `no drop target`: it puts
+  items on the ground there, or over empty space throws them away), in its `io` line (`2.5,-0.5 (no pickup target) ->
+  2.5,1.7 transport-belt`), in observe rows, and in `build` and `rotate` replies right after (the engine sets an
+  inserter's targets a tick after it is built or turned, so those replies read what stands on its points; a `builds`
+  batch adds `inserters_without_target` once all its entries stand, so a chest built after its inserter counts). An inserter ghost shows `pickup_target` and `drop_target` from its points as the
+  dry run reads them, with `io_warning`; `place_ghosts`, `paste` and `blueprint_place` list the inserter ghosts they
+  placed that miss a target in `inserters_without_target` (first 16, `inserters_without_target_count` past them). A ghost on a building yields to the building
   unless you name it (`name: "entity-ghost"`). So does a flying robot, a biter, a projectile or any unselectable entity
   over it, in `inspect`, `transfer`, `collect` and every other call on a position: `name` or `unit_number` picks it,
   and alone at the position it is the target.
@@ -565,6 +572,19 @@ fh sleep 900 --until researched                       # ...or until the research
 - `launch {position, auto_requests: true}` on a silo whose rocket holds cargo loaded by hand: the game moves that cargo
   into the silo's trash slots, where it never launches. The reply has `cargo_to_trash` (what was aboard), `trash` and a
   `note` with the transfer that takes it back.
+- A silo on another planet, by remote view as the silo GUI works there (Astra 01:41: the silo at (14.5,140.5) on
+  Vulcanus, from Sunward above it): `launch`, `configure` and `silo` take `surface` (a planet or surface name; `planet`
+  runs as `surface`) with `position` (any tile of the silo), and act where our force sees the chunk now (radar
+  coverage). Elsewhere they fail with `target must be in a visible chunk (remote view): (x,y) on vulcanus is not visible
+  to our force now`. `launch {surface, position, platform}`: `platform` stays the destination (a platform in orbit of
+  that planet).
+  - `configure {position, auto_requests, send_to_orbit_automatically}` on a rocket silo sets the GUI's two checkboxes:
+    automatic requests (`use_transitional_requests`; switched on with cargo loaded by hand, as `launch` above:
+    `cargo_to_trash`, `note`) and send to orbit automatically (`auto_launch` runs as that name). A silo takes no
+    recipe or filters.
+  - `configure` on a silo and every `launch` reply read the silo back: `settings {silo ("rocket-silo at (14.5,140.5) on
+    vulcanus"), auto_requests, send_to_orbit_automatically, requesting_for (the platform its automatic requests serve),
+    rocket (its state), parts}`.
 - `cargo {items: {name: count}}` (or `[{name, count, quality}]`, or `position` of a chest, rocket silo (its loaded
   cargo), landing pad, platform hub, wagon or vehicle in sight; `platform` for one on a platform) weighs a rocket cargo
   list before it is staged (cargo.lua; Sol rebuilt three kits into two after working the weights out offline). A
@@ -589,7 +609,7 @@ fh sleep 900 --until researched                       # ...or until the research
     `at_sources` what their belts and chests hold; `lacks` names ingredients the silo holds too few of for the next
     part; `feeders {inserters, idle, sources}` (inserters within 8 tiles dropping into the silo);
   - `cargo {kg, lift_kg, stacks, slots, items, over_kg}` (the rocket inventory weighed as `cargo` weighs it),
-    `trash`, `auto_requests` (the GUI checkbox), `platforms_above` (ours in orbit of this planet, a platform waiting
+    `trash`, `auto_requests` and `send_to_orbit_automatically` (the GUI checkboxes), `platforms_above` (ours in orbit of this planet, a platform waiting
     for its starter pack marked);
   - `last_launch {ago, tick, to, cargo, by}`: launches the game orders (`on_rocket_launch_ordered`: the cargo pod's
     contents and destination; automatic launches have no `by`) and launches an agent's `launch` call made (`by`).
@@ -679,14 +699,18 @@ fh sleep 900 --until researched                       # ...or until the research
     name, position, direction, status, why, reach}` for every entry that is not plainly placeable (`details: true`:
     every entry, with `footprint` tiles `x0,y0..x1,y1`); `index` is `copy.index` under `repeat`; `asked` when the
     position snaps (odd sizes to tile centres, even ones to corners). `status`: `ok`, `after_tiles` (placeable once
-    the plan's own tiles under it are laid; a paste lays both together, while place_ghosts places entity ghosts
-    before tile ghosts and a build batch goes entry by entry, which the row says), `needs_tiles`, `exists` (built or
-    ghosted there already; a paste skips it, place_ghosts and build fail on it), `blocked`. `why` names what collides and where (an entity, a ghost,
+    the tiles under it are laid, the plan's own or tile ghosts already ordered; a paste lays both together, while
+    place_ghosts places entity ghosts before tile ghosts and a build batch goes entry by entry, which the row says),
+    `after_rails` (a rail signal, train stop or rolling stock the game refuses until the plan's rails stand; it
+    checks their rail rules then), `needs_tiles`, `exists` (built or ghosted there already; a paste skips it,
+    place_ghosts and build fail on it), `blocked`. `why` names what collides and where (an entity, a ghost,
     another character, a cliff, an earlier entry of the plan: `collides with planned #5 stone-furnace at (14,-88)`),
     tiles it cannot stand on (`(60.5,-0.5) is outside the map`, a tile no tile item makes buildable), a broken tile
     rule, uncharted chunks, or the engine's own refusal. The engine's check decides what stands there now, so a
-    ghost over a machine it upgrades reads `ok` with `replaces ...`; trees and rocks under a ghost read `ok` (marked
-    for removal), under a hand build `blocked`.
+    ghost over a machine it upgrades reads `ok` with `replaces ...`. What the call takes in its way follows the
+    call: place_ghosts and a `forced` paste mark trees and rocks (`ok`, `marks tree-01 (5.5,0.5) for removal`), a
+    `superforced` paste our own entities too, while a `normal` paste and a hand build take nothing (`blocked by
+    tree-01 ...`). Rails may cross rails.
   - `tiles`: `needed {item: n}` (the unlocked tile item that makes each tile buildable for that entity: landfill on
     water, foundation on lava, space-platform-foundation on empty space), `under_entities`, `positions` (up to 200
     tile centres, then `more`), and the plan's own tiles: `planned`, `already`, `refused` with `refused_rows`. On a
@@ -701,16 +725,31 @@ fh sleep 900 --until researched                       # ...or until the research
     (-40.5,22.5): no wire path to a built pole; nearest built pole medium-electric-pole at (-32.5,19.5) is 8.5 tiles
     from (-40.5,22.5) (wire reach 7.5)`) and `unpowered` rows (no pole's supply area over the machine, or only pole
     ghosts with no wire path). Two poles join when they are within the shorter of their two wire reaches; built poles
-    and pole ghosts within 40 tiles of the plan count.
+    and pole ghosts within 40 tiles of the plan count, the ghosts joining what lies in their reach as planned poles
+    do. At most 10 `islands` and 20 `unpowered` rows (`more_islands`, `unpowered_count`).
   - `standing` (off a platform): `reach` (your build distance), `from_here` (`5 of 7 in reach from (11.5,-90)`),
     and `spots [{at, reaches: "#4-6"}]`, at most 8, nearest first from where you stand: free tiles (off every planned
     footprint, not on a belt, where a character fits) from which each entry out of reach is within reach; `no_spot`
-    when none fits. For `build` each out-of-reach entry also carries `reach` (`12.3 tiles from you, reach 10`), and a
-    blocked batch says that a batch stops at its first failure (`skip_failed`).
+    when none fits, `more` for placements left past the spots (the search looks at most 16 placements). For `build`
+    each out-of-reach entry also carries `reach` (`12.3 tiles from you, reach 10`), the summary counts them, and
+    `build_note` names the entry the batch stops at and why (blocked, already there, out of reach, its tiles laid by
+    a later entry, a tile brush that lays nothing).
+  - A dry run checks at most 1024 entities and 8192 tiles (repeat copies included) and refuses a larger plan before
+    any check. Real engine, shift world: 7 entries on nauvis 9 ms, the platform case 14 ms.
   - `items` the placeable entries and needed tiles use, `missing` against your inventory (for `build` plus the
     hand-craft queue; on a platform the hub), `missing_from`. A paste adds `paste {slot, label, origin_at, center_at,
     anchor}` (where the blueprint lands, computed as the game places it: its center at `position`, shifted onto the
-    grid) and, for a normal paste with a blocked entry, `paste_note` (all or nothing: no ghost at all).
+    grid; flips are refused on a platform or for a bot, as the paste refuses them) and, for a normal paste with an
+    entry the game refuses now, `paste_note` (all or nothing: no ghost at all).
+  - `inserters` (targets.lua; Astra, three times in shift 9: a platform bypass inserter that looked right reached no
+    crusher): one row per planned inserter, `{index, name, position, direction, pickup, drop, missing}`. `pickup` and
+    `drop` name what stands on the inserter's pickup and drop point: a built entity it can use (`assembling-machine-2
+    (12.5,3.5)`, a belt), one planned in the same call (`planned crusher (0,4)`), a ghost (`ghost wooden-chest
+    (10.5,20.5)`), or `none: the ground at (5.5,21.5)`, `none: empty space at (4.5,0.5)` (a platform), `none:
+    stone-wall at (10.5,22.5) takes no items`. The points come from the prototype's vectors turned with the direction,
+    as the engine places them (a long-handed inserter facing north picks up 2 tiles north and drops 2.2 south).
+    `missing`: `no pickup target`, `no drop target`; `inserters_without_target` counts them. At most 64 rows (256 with
+    `details`).
 - `ports {name, position, direction?, recipe?, mirror?, platform?}` (read; ports.lua, Gemini's request: a recipe moves
   which fluid an electromagnetic plant's ports carry) lists the fluid connections of an entity that is not built:
   `ports [{at, joins, direction, flow, fluid, box, there}]` (`at` the entity's tile with the port, `joins` the tile
@@ -1084,16 +1123,24 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   - Per network (networks.lua), routed and limited the same way, with no hint: `power_high`, an electric network
     whose draw was at or above 85% of its capacity in every 5-second sample of the last 2 minutes (`electric #7 draw
     at or above 85% of capacity for 2 min: 20.0 MW of 22.1 MW now; 3 machines on low power`; worse is the next 5%
-    step: `(was 85%)`); `boiler_fuel`, boilers with under 20 minutes of fuel at the draw, told again when one drops
-    under 10 and under 5 or when more boilers drop under 20 (Haiku, shift09: 10 minutes left was too late to feed by
-    hand): `3 boilers under 20 min of fuel at this draw, 2 under 10, 2 under 5 near (43,18) (electric #7: 11 boilers,
-    lowest 4 min, 31 min for all); fuel within 64 tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50;
-    belts: coal 16 on 2 tiles, nearest (31,13), (31,12); fed by inserters: 1 from wooden-chest (41,13); no inserter
-    feeds 2: (66,16), (4,22)` and `(was 3 under 20 min, lowest 17 min)` when told again. The fuel is what the boilers
-    burn or hold (when they hold none, the line names the fuels it looked for: coal, solid-fuel, wood, rocket-fuel,
-    nuclear-fuel); chests are the 3 nearest holding it (and a count of the rest), belts the tiles holding it with the
-    2 nearest (each read is capped at 300 chests and 300 belt tiles found within 64 tiles); an inserter feeds a boiler
-    when its drop target is that boiler, named by its pickup target;
+    step: `(was 85%)`); `boiler_fuel`, boilers whose supply is under 20 minutes at the draw and running down, told
+    again when one drops under 10 and under 5 or when more boilers drop under 20 (Haiku, shift09: 10 minutes left was
+    too late to feed by hand; 01:53: it fired for hours on 13 working boilers fed from a belt and a chest with 150+
+    coal): `3 boilers under 20 min of fuel at this draw, 1 under 10, 1 under 5 and running down near (43,18) (electric
+    #7: 11 boilers, 32 min for all with their feeders' sources); boiler (66,16) 2 min: no inserter feeds it; boiler
+    (4,22) 12 min: no inserter feeds it; boiler (60,16) 17 min: burner-inserter (60,14) from wooden-chest (41,13)
+    holding 400 coal; fuel within 64 tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50; belts: coal 16
+    on 2 tiles, nearest (31,13), (31,12)` (the lowest 3, `+N more`) and `(was 3 under 20 min, lowest 17 min)` when
+    told again. A boiler's supply is its own fuel plus, for each source an inserter feeding it takes from (an
+    inserter within 4 tiles whose drop target is the boiler, by its pickup target), that source's stock shared among
+    the boilers it feeds: a chest or machine counts all it holds of the fuel, a boiler in a chain its fuel slot, a belt
+    its tile and up to 64 tiles upstream (boilers along one belt share it). Minutes are that supply at an even share
+    of the draw of the generators the boilers feed. Running down: less than 90% of the supply at the networks view's
+    last look (30 s before; a boiler's first look never counts), so a boiler kept supplied by a belt or a refilled
+    chest is not told, whatever its own fuel. The fuel is what the boilers burn or hold (when they hold none, the line
+    names the fuels it looked for: coal, solid-fuel, wood, rocket-fuel, nuclear-fuel); chests nearby are the 3 nearest
+    holding it (and a count of the rest), belts the tiles holding it with the 2 nearest (each read is capped at 300
+    chests and 300 belt tiles found within 64 tiles);
     `robots_busy`, a logistic network with no idle logistic robot in every 30-second look for 10 minutes (`logistic
     #3: no idle logistic robot for 11 min (147 robots; 1 requests unfilled 60+ s)`). A network with machines on low
     power (satisfaction under 100%) shows as the `low power` groups above.
@@ -1144,7 +1191,7 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   the agent's surface first, `+N more networks: fh call networks`), one line per network, numbers only:
   `nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 min (now 18.5 MW) of 22.1 MW capacity (84%);
   solar 10 panels, 500 kW now, 600 kW peak; accumulators 2 at 50%; machines 30: 3 low power, 1 no power; boilers 11:
-  fuel 31 min at this draw, 3 under 20 min (lowest 4 min)`, `nauvis logistic #3: 4 roboports (+1 personal), logistic area
+  fuel (theirs and their feeders' sources) 32 min at this draw, 3 under 20 min and running down (lowest 2 min)`, `nauvis logistic #3: 4 roboports (+1 personal), logistic area
   (0,25)-(125,75), construction area (-30,-5)-(155,105); logistic robots 147: 0 idle, 142 working, 3 charging, 2
   waiting to charge; construction robots 11: 4 idle, 6 working, 1 charging, 0 waiting to charge; no idle logistic
   robot for 4 min; requests unfilled 60+ s: 1 (iron-plate 300 missing); ghosts in its construction area: 5`, `nauvis

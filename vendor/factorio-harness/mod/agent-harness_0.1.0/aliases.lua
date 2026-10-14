@@ -28,7 +28,9 @@ return function(api)
     mine = {entity='name'},
     transfer = {from='position', target='position'},
     inspect = {target='position'},
-    configure = {target='position'},
+    configure = {target='position', auto_launch='send_to_orbit_automatically', planet='surface'},
+    launch = {planet='surface'},
+    silo = {planet='surface'},
     rotate = {target='position'},
   }
   -- A project's changes (board.lua board_update).

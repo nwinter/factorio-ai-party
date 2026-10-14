@@ -109,8 +109,9 @@ already targets your character.
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, and the
   game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
   (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, an electric network drawing 85%
-  or more of its capacity for 2 minutes, boilers under 20 minutes of fuel (again under 10 and 5; with the fuel in
-  chests and on belts within 64 tiles and the inserters feeding them, or that none does), a logistic network with no
+  or more of its capacity for 2 minutes, boilers whose fuel, with what their feeding inserters' sources hold, is under
+  20 minutes and running down (again under 10 and 5; each low boiler with its feeder and that source's count, or that
+  no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a logistic network with no
   idle logistic robot for 10 minutes, Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
   drawing power, full accumulators in an attractor network; at most one digest every 2.5 minutes, new or worse only;
   `./fh call game_alerts` lists them all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
@@ -163,9 +164,11 @@ already targets your character.
 - `"dry_run":true` on `place_ghosts`, `paste` or `build` places nothing and reports the plan: per entity whether it
   fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
   new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that
-  reach every placement. `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},
-  "direction":"north","recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid
-  the recipe puts there; `inspect` of a ghost shows the same.
+  reach every placement, and what each planned inserter picks up from and drops into (`missing: no drop target`);
+  `inspect` and build replies flag a built inserter with no pickup or drop target.
+  `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north",
+  "recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid the recipe puts there;
+  `inspect` of a ghost shows the same.
 - The team blueprint library, kept in the save across shifts: `blueprint_save {name, area | positions, description,
   anchor}` stores what the team built; `blueprint_list` lists entries (author, size, counts, last used);
   `blueprint_place {name, position, direction, dry_run}` pastes one; `blueprint_rename` and `blueprint_delete {name}`:
@@ -174,7 +177,8 @@ already targets your character.
   rocket cargo list: each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets,
   and one split into rockets that keeps each within both. `./fh call silo` (or a `position`) shows a silo's rocket
   parts X/50, what it lacks for the parts left (in the silo and at its feeders), the cargo's kg and slots, and the
-  last launch.
+  last launch. `launch`, `silo` and `configure` (`auto_requests`, `send_to_orbit_automatically` on a silo) take
+  `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
 - `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the
   patches on the charted map nearest first: amount left (oil: yield), distance from you and from our nearest building,
   enemy spawners and worms within 50 tiles, and how many of our drills are on it.

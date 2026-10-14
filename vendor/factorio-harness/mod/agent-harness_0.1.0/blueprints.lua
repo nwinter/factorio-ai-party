@@ -541,8 +541,10 @@ return function(api)
         -- Per-ghost rows are opt-in: large layouts otherwise flood agent context.
         local out={count=0,by_name={},slot=a.name==nil and slot_name(a) or nil,name=a.name,snapping_disabled=snapping_disabled,mode=mode~='normal' and mode or nil}
         if a.details then out.ghosts={} end
+        local inserters={}
         for _, e in pairs(ghosts()) do
           if e.valid and not before[ghost_key(e)] then
+            if e.type=='entity-ghost' and e.ghost_type=='inserter' then inserters[#inserters+1]=e end
             out.count=out.count+1
             out.by_name[e.ghost_name]=(out.by_name[e.ghost_name] or 0)+1
             local x,y=e.position.x,e.position.y
@@ -553,6 +555,9 @@ return function(api)
             if a.details then out.ghosts[#out.ghosts+1]={name=e.ghost_name,position=e.position,unit_number=e.unit_number,type=e.type} end
           end
         end
+        -- Inserter ghosts with nothing to take from or put into on their
+        -- points (Astra's bypass inserter that reached no crusher; targets.lua).
+        if api.targets then out.inserters_without_target,out.inserters_without_target_count=api.targets.check(inserters,16) end
         -- Explain a short paste: the engine silently skips positions that
         -- already hold a matching ghost or entity, that collide, or whose
         -- tiles break the entity's rules. Per blueprint entity: there now (new
@@ -608,6 +613,9 @@ return function(api)
     ['legacy-straight-rail']=true,['legacy-curved-rail']=true,['train-stop']=true,['rail-signal']=true,['rail-chain-signal']=true,['rail-ramp']=true}
   function H.plan(p,a)
     local on_platform=type(p)=='table' and rawget(p,'__platform')~=nil
+    -- As blueprint_place: a platform or a bot pastes without a cursor, unflipped.
+    assert(not (type(p)=='table' and (rawget(p,'__platform') or rawget(p,'__bot')) and (a.flip_horizontal or a.flip_vertical)),
+      'flips are not supported when pasting on a platform or as a bot')
     assert(a.anchor==nil or a.anchor=='hub' or a.anchor=='center' or a.anchor=='saved','anchor must be hub, center or saved')
     local pos=a.position~=nil and api.position(a.position) or nil
     local direction=directions[a.direction or 'north']; assert(direction, 'blueprint direction must be north, east, south, or west')
