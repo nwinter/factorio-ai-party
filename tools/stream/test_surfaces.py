@@ -77,7 +77,7 @@ def main():
     d.surface_seen["vulcanus"] = 0
     assert f["gemini"] > 2.4 and f["sol"] > 2.4 and f["astra"] == 0.85, f  # nothing aired yet: both well under
     # once a surface has its share, no bonus; Nauvis no penalty when nobody is under
-    d.surface_air = [(4 * 3600, "fulgora", 400.0), (4 * 3600, "vulcanus", 300.0), (4 * 3600, "nauvis", 300.0)]
+    d.surface_air = [(4 * 3600, "fulgora", 500.0), (4 * 3600, "vulcanus", 260.0), (4 * 3600, "nauvis", 240.0)]
     f = d.surface_factors(agents, {a["name"]: 1.0 for a in agents}, 4 * 3600)
     assert f == {}, f
     # urgent shots come first: a loss on Nauvis while the story is on Fulgora cuts at once
