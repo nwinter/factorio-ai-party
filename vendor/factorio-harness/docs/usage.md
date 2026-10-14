@@ -402,7 +402,7 @@ fh queue repeat --file plan.json
 - Calls that act on another surface or by remote view don't pause it either, nor stop a running standing order, and
   neither does their failure: any call with `platform`, or with `surface` naming another surface than the
   character's; `configure` on an entity out of the character's reach; the planners and blueprint tools wherever they
-  act (`place_ghosts`, `paste`, `blueprint_place`, `blueprint_capture`, `copy`, `cut`, `deconstruct`,
+  act (`place_ghosts`, `paste`, `blueprint_place`, `blueprint_capture`, `blueprint_save`, `blueprint_rename`, `copy`, `cut`, `deconstruct`,
   `cancel_deconstruction`, `belt_route`, `pipe_route`, `pole_route`); `circuit_set`, `wire`, `requests`, `flush`,
   `train`, `platform_create`, `platform_schedule`, `launch`, `drop`. `configure` in reach, building, mining,
   walking and inventory moves (`transfer`, `feed`, `collect`, ...) take over as before.
@@ -641,6 +641,30 @@ fh sleep 900 --until researched                       # ...or until the research
   center at `position`. The reply says `anchor {by, hub, paste_position, hub_landed, aligned}`, and whenever the
   paste is checked (short, wired or anchored) `origin_at` and `center_at`: where the blueprint's 0,0 and its center
   landed.
+- The team blueprint library: named entries of what the team built, one library for every agent, kept in the save
+  (`storage`), so it goes on with the world into later shifts. Entries come only from a capture on the map.
+  - `blueprint_save {name, area | positions, description, anchor, tiles}` captures our entities in `area` (up to
+    256x256 of charted map), or only the entities at `positions` (1..256, each may carry `name` or `unit_number`) with
+    the wires between them, into the entry `name` (1..40 letters, digits, `_ . -`). `description` is up to 300
+    characters; `anchor` `{x,y}` in the area is a point `blueprint_place` puts at `position`. The same name replaces
+    the entry. Reply: `name, author, entities, tiles, footprint` (tiles, `WxH`), `counts` (`assembling-machine-2*12
+    inserter*24 ...`), `saved`, `last_used`, `uses`, `surface`, `anchor`, and `replaced` (the previous author). The
+    library holds 64 entries.
+  - `blueprint_list` adds `library`: one row per entry (`name, author, entities, tiles, footprint, counts` (the largest
+    4), `saved` and `last_used` as time ago with who placed it last, or `never`, `uses, surface, anchor, description`
+    (60 characters)) and `library_limit`; `blueprint_list {name}` gives one entry in full (every count, the
+    description, the anchor in blueprint coordinates, the captured area, `changeable_by_anyone`).
+  - `blueprint_place {name, position, direction, mode, dry_run}` (and `paste`, `blueprint_export {name, layout}`) take
+    a library entry by `name` in place of `slot`. An entry saved with an anchor is placed by it (`anchor: "saved"`, the
+    default for it): `position` is where that point lands, and the reply has `anchor {by: saved, anchor,
+    paste_position, anchor_landed, aligned}` (a 1x1 entity's centre lands on a tile centre such as 10.5,10.5); `anchor:
+    "center"` places by the center as before; flips go with `center` only. A placement (not a dry run) records the
+    entry's last use and who placed it.
+  - `blueprint_rename {name, new_name}`, `blueprint_delete {name}` and replacing by `blueprint_save`: the entry's author
+    any time, anyone else once it has gone 24 game hours unused (since its last placement, or its save when never
+    placed); a refusal says whose it is and when it was last used.
+  - The operator keeps a copy in the run: `runs/RUN/blueprints/NAME.txt` (the entry's blueprint string) and
+    `index.json` (tools/bplibrary.py, a storage-only read once a minute and at the end of the shift).
 - After any paste of a blueprint with wires, each of its circuit and copper wires whose two ends stand where the
   layout puts them (a new ghost, or a matching entity or ghost from before) is checked and connected if missing, as
   the game's paste does: `wires {in_blueprint, connected (already), added, end_not_placed, failed, ends_not_placed

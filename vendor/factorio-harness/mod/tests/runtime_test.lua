@@ -2126,6 +2126,21 @@ for _,action in ipairs({'paste','blueprint_place'}) do
   eq(pcall(runtime.check_args,action,{position={x=0,y=0},mode='forced'}),true)
   eq(pcall(runtime.check_args,action,{anchor='hub',mode='forced'}),true)
   eq(pcall(runtime.check_args,action,{position={x=0,y=0},forced=true}),false)
+  -- A team library entry by name, placed by its saved anchor (blueprints.lua).
+  eq(pcall(runtime.check_args,action,{name='smelter-row',position={x=0,y=0},anchor='saved',dry_run=true}),true)
+end
+-- The team blueprint library (operator 00:50): its actions' arguments, and the operator read through dispatch.
+eq(pcall(runtime.check_args,'blueprint_save',{name='row',area={left_top={x=0,y=0},right_bottom={x=4,y=4}},description='d',anchor={x=1,y=1},tiles=true}),true)
+eq(pcall(runtime.check_args,'blueprint_save',{name='row',positions={{x=1,y=1}}}),true)
+eq(pcall(runtime.check_args,'blueprint_save',{name='row',blueprint='0eNq...'}),false)
+eq(pcall(runtime.check_args,'blueprint_rename',{name='row',new_name='row2'}),true)
+eq(pcall(runtime.check_args,'blueprint_list',{name='row'}),true)
+eq(pcall(runtime.check_args,'blueprint_delete',{name='row'}),true)
+eq(pcall(runtime.check_args,'blueprint_export',{name='row',layout=true}),true)
+do
+  local lib=runtime.dispatch{action='blueprint_library',args={},operator=true}
+  eq(type(lib.revision),'number'); eq(type(lib.entries),'table')
+  eq(call('describe').actions.blueprint_save.name~=nil,true)
 end
 -- cargo (cargo.lua): a list or what a chest holds, weighed against a rocket's lift and slots; a read.
 -- (A function of its own: this chunk is near Lua's 200 locals.)
