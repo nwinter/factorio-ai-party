@@ -549,6 +549,94 @@ local function watch(p,action)
     action.watch={key=key,anchor={x=pos.x,y=pos.y},since=game.tick}
   end
 end
+-- Hits on our characters and the vehicles they ride (on_entity_damaged from another force), and the kills a character
+-- or vehicle made lately, by unit number (viewer Joonazan, 13:36: the stream called a shoot auto guard with nothing in
+-- range "under attack"). Kept for HURT_KEEP ticks; a hit within HURT_EPISODE of the last adds to its damage.
+-- (one table: the main chunk is at Lua's 200 locals)
+M.HURT={keep=18000,episode=600,kills_window=600,types={character=true,car=true,['spider-vehicle']=true}}
+function M.note_hurt(event)
+  local e=event.entity
+  if not (e and e.valid and M.HURT.types[e.type]) then return end
+  local by=event.force
+  if not by or by==e.force or (e.force.get_friend and e.force.get_friend(by)) then return end
+  local unit=e.unit_number
+  if not unit then return end
+  local s=state()
+  s.hurt=s.hurt or {}
+  local h=s.hurt[unit]
+  if not h then
+    for k,v in pairs(s.hurt) do if event.tick-v.tick>M.HURT.keep then s.hurt[k]=nil end end
+    h={first=event.tick,damage=0}; s.hurt[unit]=h
+  elseif event.tick-h.tick>M.HURT.episode then h.first,h.damage=event.tick,0 end
+  local cause=event.cause
+  h.tick=event.tick
+  h.damage=h.damage+(event.final_damage_amount or 0)
+  h.by=cause and cause.valid and cause.name or event.damage_type and event.damage_type.name or by.name
+  h.at=cause and cause.valid and {x=math.floor(cause.position.x+0.5),y=math.floor(cause.position.y+0.5)} or nil
+  h.what=e.type~='character' and e.name or nil
+end
+function M.note_kill(cause,tick)
+  if not (cause and cause.valid and M.HURT.types[cause.type] and cause.unit_number) then return end
+  local s=state()
+  s.char_kills=s.char_kills or {}
+  local list=s.char_kills[cause.unit_number] or {}
+  s.char_kills[cause.unit_number]=list
+  list[#list+1]=tick
+  while #list>0 and (#list>20 or tick-list[1]>M.HURT.kills_window) do table.remove(list,1) end
+end
+-- The character's and its vehicle's units (the hits and kills above are keyed by them).
+function M.units_of(p)
+  local out={}
+  local c=p.character
+  if c and c.valid then
+    out[#out+1]=c.unit_number
+    local v=c.vehicle
+    if v and v.valid and v.unit_number then out[#out+1]=v.unit_number end
+  end
+  return out
+end
+-- Status hurt: the last hit on the character or the vehicle it rides in the last 5 minutes: tick, ago_s, by (the
+-- attacker's name, else the damage type), at (the attacker's position), damage (this episode's, hits under 10 s apart),
+-- what (the vehicle's name when the vehicle was hit), or nil.
+function M.hurt_row(p)
+  local s=state()
+  if not s.hurt then return nil end
+  local best
+  for _,unit in ipairs(M.units_of(p)) do
+    local h=s.hurt[unit]
+    if h and game.tick-h.tick<=M.HURT.keep and (not best or h.tick>best.tick) then best=h end
+  end
+  if not best then return nil end
+  return {tick=best.tick,ago_s=math.floor((game.tick-best.tick)/60),by=best.by,at=best.at,damage=math.floor(best.damage+0.5),what=best.what}
+end
+-- Status combat: the shoot channel's own record plus what it does now: target {name, position, distance} (the enemy
+-- it aims at, or the fixed spot of a shoot at a position), fired_tick (the last tick it fired at something: an enemy in
+-- range, or the fixed spot), kills_10s (kills by the character or its vehicle in the last 10 s) and hurt (hurt_row).
+-- A shoot auto with nothing in range has no target and no recent fired_tick.
+function M.combat_row(index,p)
+  local combat=state().combat and state().combat[index]
+  if not combat then return false end
+  local out={}
+  for k,v in pairs(combat) do out[k]=v end
+  local aim=combat_targets()[index]
+  local e=aim and (aim.fixed or aim.entity)
+  local alive=p and p.character and p.character.valid
+  -- the scan's last pick counts while it is in range (the scan runs every 6 ticks; an enemy that left is no target)
+  if e and e.valid and not aim.fixed and not (alive and distance(p.position,e.position)<=(combat.radius or 0)) then e=nil end
+  if e and e.valid then
+    out.target={name=e.name,position={x=math.floor(e.position.x+0.5),y=math.floor(e.position.y+0.5)},
+      distance=alive and math.floor(distance(p.position,e.position)*10+0.5)/10 or nil}
+  elseif not combat.auto and combat.position then
+    out.target={position=combat.position}
+  end
+  local n=0
+  for _,unit in ipairs(alive and M.units_of(p) or {}) do
+    for _,t in ipairs((state().char_kills or {})[unit] or {}) do if game.tick-t<=M.HURT.kills_window then n=n+1 end end
+  end
+  out.kills_10s=n
+  out.hurt=alive and M.hurt_row(p) or nil
+  return out
+end
 local function active(index)
   local action=state().active[index]
   if not action then
@@ -1012,7 +1100,7 @@ function handlers.describe()
       describe={}, inventory={full='true: the stacks as lists {name, quality, count}, as observe player has them',returns='the character\'s inventories as short lines (name*count, name@quality*count, or empty): inventory (main), free (slots), guns, ammo, armor, equipment (in the armor\'s grid), trash (trash slots, when any), cursor (the stack or ghost in hand, when any), crafting (hand queue), warnings (nearly full, hoarding); status {inventory=true} gives it in one line'},
       map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)',returns='player, entities, resource_patches, ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the radius by item (rows for them only with entity_types/entity_names)'},
       status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
-        reports='teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name; latest: one line per loss incident (a raid: losses within 32 tiles on one surface) with causes; incidents: the same as rows {id, surface, platform, box {x0,y0,x1,y1}, total, names, by, first_tick, last_tick, line}; attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
+        reports='combat (while a shoot runs: the shoot\'s own record plus target {name, position, distance}: the enemy it aims at now, or a shoot at a position\'s spot; none with nothing in range; fired_tick: the last tick it fired at something; kills_10s: kills by the character or its vehicle in the last 10 s; hurt); hurt (also in brief: the last hit by another force on the character or the vehicle it rides in the last 5 minutes: tick, ago_s, by (the attacker, else the damage type), at, damage (hits under 10 s apart add up), what (the vehicle hit)); teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name; latest: one line per loss incident (a raid: losses within 32 tiles on one surface) with causes; incidents: the same as rows {id, surface, platform, box {x0,y0,x1,y1}, total, names, by, first_tick, last_tick, line}; attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
       build_path={points='2..64 tile-centred axis-aligned waypoints; at most 512 belt tiles',item='transport-belt by default',ticks='1..36000',start_index='resume at this tile index; default 1',end_direction='optional final belt direction',note='walks to a far start (or resume tile) with the pathfinder, then steers along the line placing belts; trees, rocks and wild plants on a tile or across the walk are mined by hand first (walked to with the pathfinder when out of reach; hand-mining time; what they give goes to the inventory; last.cleared counts them, cleared_names by name); it stops for buildings, water and cliffs (the build\'s refusal), and blocked for one no path leads to'},
       kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',retreat='optional {x,y}: below min_health or out of ammunition, walk there (firing at units in reach while ammunition lasts) instead of stopping where you stand; ends retreated on arrival. Or {to: {x,y}, health_below, shield_below} (and the standing retreat_guard): the generic retreat, as move_to\'s (kite\'s own min_health stop then off unless given); false: none',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | retreated | timed_out; last reports why (in words), kills, ammo_used, ammo_left, enemies_left, retreated_from'},
       belt_route={from='{x,y} first belt tile, or an existing belt end to extend; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
@@ -1406,7 +1494,7 @@ function handlers.status(p,a)
   -- running and the last results, none of the factory, threat or alert scans.
   -- The stream's overlay adds alerts (stored incidents, no scan).
   if a.brief==true then
-    return {brief=true,inventory=inv_line,active=active(p.index),retreat_guard=M.retreat_guard_line(p.index),last=state().last and state().last[p.index] or false,combat=state().combat and state().combat[p.index] or false,
+    return {brief=true,inventory=inv_line,active=active(p.index),retreat_guard=M.retreat_guard_line(p.index),last=state().last and state().last[p.index] or false,combat=M.combat_row(p.index,p),hurt=alive and M.hurt_row(p) or nil,
       last_combat=state().last_combat and state().last_combat[p.index] or false,alive=alive or false,riding=p.driving or nil,connected=p.connected,
       drop_pending=M.drop_pending(p.index),last_drop=M.last_drop(p.index),
       surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,
@@ -1472,7 +1560,7 @@ function handlers.status(p,a)
     supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,active=now,order=M.orders.brief(p.index),
     spoiling=alive and spoil_text(main_inventory(p)) or nil,on_belt=alive and M.belt.note(p) or nil,teammates=M.where.team(p),
     trash=alive and M.trash.status(p) or nil,
-    surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,riding=p.driving or nil, last=state().last and state().last[p.index] or false, combat=state().combat and state().combat[p.index] or false, last_combat=state().last_combat and state().last_combat[p.index] or false, tick=game.tick, position=p.position}
+    surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,riding=p.driving or nil, last=state().last and state().last[p.index] or false, combat=M.combat_row(p.index,p), hurt=alive and M.hurt_row(p) or nil, last_combat=state().last_combat and state().last_combat[p.index] or false, tick=game.tick, position=p.position}
 end
 -- Connected visible resource tiles are summarized separately from structures so a
 -- large ore patch cannot consume the entity budget and hide machines or enemies.
@@ -2173,7 +2261,7 @@ function handlers.observe(p,a)
   out.research=r and {name=r.name, progress=p.force.research_progress} or false
   out.research_queue={}
   for _,technology in ipairs(p.force.research_queue or {}) do out.research_queue[#out.research_queue+1]=technology.name end
-  out.combat=state().combat and state().combat[p.index] or false
+  out.combat=M.combat_row(p.index,p)
   local q=state().queues and state().queues[p.index]
   out.queue=q and {revision=q.revision,paused=q.paused,pending=#q.pending,
     active=q.current and {id=q.current.id,action=q.current.action,started_tick=q.current.started_tick} or false} or false
@@ -8691,7 +8779,9 @@ function M.tick_body(event)
       local fixed=aim and aim.fixed
       if fixed and not fixed.valid then stop_combat(index,'target_destroyed')
       else
-        local outcome=M.vehicles.combat_tick(p,action,fixed or (action.auto and M.combat_scan(p,action,index,event.tick)) or nil)
+        local aimed=fixed or (action.auto and M.combat_scan(p,action,index,event.tick)) or nil
+        if aimed then action.fired_tick=event.tick end
+        local outcome=M.vehicles.combat_tick(p,action,aimed)
         if outcome then stop_combat(index,outcome) end
       end
     elseif action.ammo_start and kite.ammo_count(p)==0 and not kite.reload(p,action) then stop_combat(index,'out_of_ammo')
@@ -8700,7 +8790,8 @@ function M.tick_body(event)
       if action.auto then
         local e=M.combat_scan(p,action,index,event.tick)
         if e then target=e.position end
-      end
+        if e then action.fired_tick=event.tick end
+      elseif target then action.fired_tick=event.tick end
       p.shooting_state={state=target and defines.shooting.shooting_enemies or defines.shooting.not_shooting,position=target or p.position}
     end
   end
@@ -8816,8 +8907,13 @@ function M.on_event(event)
     local ok,platform=pcall(M.platalerts.on_damaged,event)
     if not ok then local s=state(); s.platform_alert_errors={count=((s.platform_alert_errors or {}).count or 0)+1,last=tostring(platform),tick=game.tick} end
     if not (ok and platform) then threat.on_damaged(event) end
+    -- A hit on a character of ours or its vehicle (status hurt; combat.hurt).
+    local okh,errh=pcall(M.note_hurt,event)
+    if not okh then local s=state(); s.hurt_errors={count=((s.hurt_errors or {}).count or 0)+1,last=tostring(errh),tick=game.tick} end
   elseif event.name==defines.events.on_entity_died then
     local cause=event.cause
+    -- An enemy a character or a vehicle of ours killed (status combat.kills_10s).
+    if cause and cause.valid and event.entity and event.entity.valid and event.entity.force ~= cause.force then pcall(M.note_kill,cause,event.tick) end
     if cause and cause.valid and cause.type=='character' then
       for index,action in pairs(state().active) do
         local p=action.kind=='kite' and M.lookup(index)

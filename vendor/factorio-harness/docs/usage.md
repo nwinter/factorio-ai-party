@@ -565,6 +565,11 @@ fh call status
     is `position`.
   - A queue step paused mid-walk (the agent's own action, a death) goes on from the first via point it had not
     reached. `waypoints` is read as `via`.
+- While a shoot runs (`shoot`, `move_to combat`, a vehicle's guns), status `combat` adds what it does now: `target
+  {name, position, distance}` (the enemy it aims at, or a shoot at a position's spot; none with nothing in range),
+  `fired_tick` (the last tick it fired at something), `kills_10s` and `hurt`. Status `hurt` (brief too): the last hit
+  by another force on the character or the vehicle it rides in the last 5 minutes, `{tick, ago_s, by, at, damage,
+  what}` (`by` the attacker, else the damage type; hits under 10 s apart add up; `what` the vehicle hit).
 - `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
   as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
   ammunition in the ammo slots. `shoot`, `move_to combat` and `kite` fill empty ammo slots from carried ammo first

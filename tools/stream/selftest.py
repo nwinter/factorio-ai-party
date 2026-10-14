@@ -82,6 +82,8 @@ class FakeHarness:
             self.status_args = args
             return {"position": {"x": 1, "y": 2}, "alive": bot != "luna", "active": {"kind": "mine"} if bot == "astra" else False,
                     "last": {"kind": "craft", "outcome": "done", "tick": 1}, "combat": bot == "astra" and {"until_tick": 5},
+                    # hit a second ago: under attack (model.combat_state; a shoot alone is no attack)
+                    "hurt": {"tick": self.tick - 60, "ago_s": 1, "by": "small-biter", "damage": 12} if bot == "astra" else None,
                     "dead_until_tick": self.tick + 300 if bot == "luna" else None}, self.tick
         if action == "describe":
             return {"actions": {a: {} for a in ["status", "profiles", "chat"] + (["board", "board_events"] if self.board else [])}}, self.tick
@@ -241,7 +243,7 @@ def main():
     names = [a["name"] for a in obs["agents"]]
     assert names == ["astra", "luna"], names  # the run's team only: no stray bot, no human player (shake8: Nick)
     astra = obs["agents"][0]
-    assert astra["active"] == "mine" and astra["combat"] is True and astra["display_name"] == "Astra"
+    assert astra["active"] == "mine" and astra["combat"] == {"until_tick": 5} and astra["display_name"] == "Astra"
     assert ("status", "astra", None) in fake.calls and ("profiles", "astra", None) in fake.calls
 
     m = Model(run)
