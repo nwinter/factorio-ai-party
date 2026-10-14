@@ -25,6 +25,32 @@ PENDING_MAX = 300    # an attack waits this long at most for its fight to matter
 QUIET_WINDOW = 300   # quiet hits this recent are mentioned in a word
 MEMO_EVERY = 180
 HEADLINES = 5
+# Moments from the agents' own minds (site/moments.py -> site/content/moments.json, from the agent-minds study): the
+# latest few marked for the memo, one line each, with whether viewers saw it.
+MOMENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "site", "content", "moments.json")
+MEMO_MOMENTS = 3
+SEEN = {"voiced": "said on stream", "chat": "in chat", "private": "private, viewers didn't see it"}
+
+
+def memo_moments(path=MOMENTS, k=MEMO_MOMENTS):
+    """['Gemini and Muse (shift 7, 17:45 to 17:50), the 2,187 circuits in Muse's pocket: "quote" (said on stream;
+    private, viewers didn't see it)'], the latest k moments marked for the memo, each with its last quote (the
+    resolution, when a moment has several); [] without the file."""
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    rows = [m for m in data if isinstance(m, dict) and "memo" in (m.get("fits") or []) and m.get("quotes")]
+    rows.sort(key=lambda m: (m.get("shift") or 0, str(m.get("time") or "")), reverse=True)
+    out = []
+    for m in rows[:k]:
+        who = " and ".join(a.capitalize() for a in m.get("agents") or []) or "an agent"
+        seen = "; ".join(SEEN[s] for s in m.get("seen") or [] if s in SEEN)
+        title = f', {m["title"]}' if m.get("title") else ""
+        out.append(f'{who} (shift {m.get("shift")}, {m.get("time")}){title}: "{short(m["quotes"][-1].get("text"), 140)}"'
+                   + (f" ({seen})" if seen else ""))
+    return out
 BIG_LOSS = 8         # caster --loss-big: a loss this big is a headline of the run too
 
 
@@ -131,8 +157,8 @@ class AttackGate:
 
 
 class StoryMemo:
-    def __init__(self, path=None):
-        self.path = path
+    def __init__(self, path=None, moments_path=MOMENTS):
+        self.path, self.moments_path = path, moments_path
         self.headlines = []   # {"t", "text"}, oldest first
         self.memo, self.built = None, 0.0
         if path and os.path.exists(path):
@@ -195,6 +221,7 @@ class StoryMemo:
             "research": research,
             "stuck_or_developing": stuck or None,
             "state_of_play": short(an.get("headline"), 200) or None,
+            "moments": memo_moments(self.moments_path) or None,
             "as_of": clock(now),
         }
         self.memo = {k: v for k, v in memo.items() if v}
