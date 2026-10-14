@@ -126,4 +126,61 @@ visits={}
 tour=stock.start_tour(p,'refuel',{t1,t2,t3},600,{item='coal',count=5,stop_at_two=true})
 eq(stock.tick(p,tour),'out_of_items'); eq(#visits,2)
 eq(stock.tick(p,stock.start_tour(p,'refuel',{},600,{item='coal'})),'nothing_to_do')
+-- Waiting at a machine (Muse, operator 09:31: a collect from a machine's output lost to its output inserters about
+-- four times): take each product the tick it is in the output, for up to wait ticks or count; the report weighs
+-- what was taken against what the machine made and its inserters took.
+do
+  prototypes.item['iron-gear-wheel']={}
+  local out={n=4}
+  local gears={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=6,y=0},force=p.force,products_finished=100}
+  out.get_item_count=function(f) return f.name=='iron-gear-wheel' and out.n or 0 end
+  out.get_contents=function() return out.n>0 and {{name='iron-gear-wheel',quality='normal',count=out.n}} or {} end
+  out.is_empty=function() return out.n==0 end
+  gears.get_output_inventory=function() return out end
+  gears.get_recipe=function() return {name='iron-gear-wheel',products={{type='item',name='iron-gear-wheel',amount=1}}} end
+  local took=0
+  local api2={}
+  for k,v in pairs(api) do api2[k]=v end
+  api2.take=function(_,e,item,_,count,inv)
+    assert(inv=='assembling_machine_output','the output only')
+    local n=math.min(out.n,count); out.n=out.n-n; took=took+n
+    return {transferred=n,items={{name='iron-gear-wheel',count=n}}}
+  end
+  local W=dofile('mod/agent-harness_0.1.0/stock.lua')(api2)
+  local fp={position={x=0,y=0},force=p.force,reach_distance=10,can_reach_entity=function() return true end}
+  game.tick=1000
+  local action,reply=W.start_wait(fp,{},gears,300)
+  eq(reply.machine,'assembling-machine-2 (6,0)'); eq(reply.recipe,'iron-gear-wheel'); eq(reply.wait_ticks,300); eq(reply.in_reach,true)
+  eq(action.kind,'gather'); eq(action.until_tick,1000+3600+300)
+  -- First tick in reach: the 4 in the output are taken.
+  eq(W.tick(fp,action),nil); eq(action.got,4); eq(took,4)
+  -- The machine finishes 10 gears over the wait; the inserters grab 3 of them before the character's next tick.
+  local function craft(k,stolen) gears.products_finished=gears.products_finished+k; out.n=out.n+k-stolen end
+  for i=1,7 do game.tick=game.tick+1; craft(1,0); eq(W.tick(fp,action),nil) end
+  for i=1,3 do game.tick=game.tick+1; craft(1,1); eq(W.tick(fp,action),nil) end
+  eq(action.got,11)
+  game.tick=1000+300
+  eq(W.tick(fp,action),'collected')
+  local r=W.wait_report(action)
+  eq(r.took,'iron-gear-wheel*11'); eq(r.crafts,10); eq(r.made,'iron-gear-wheel*10'); eq(r.inserters_took,'iron-gear-wheel*3'); eq(r.waited_s,5)
+  -- count ends it early; an empty output costs no take.
+  out.n=2; gears.products_finished=200; took=0
+  action=W.start_wait(fp,{count=2},gears,300)
+  eq(W.tick(fp,action),'collected'); eq(took,2)
+  out.n=0
+  action=W.start_wait(fp,{item='iron-gear-wheel'},gears,5)
+  local calls=0; api2.take=function() calls=calls+1; return {transferred=0} end
+  for i=1,5 do game.tick=game.tick+1; W.tick(fp,action) end
+  game.tick=game.tick+1
+  eq(calls,0); eq(W.tick(fp,action),'nothing_collected')
+  -- Out of reach: it walks there first; not an assembler or furnace, not ours: refused.
+  fp.can_reach_entity=function() return false end
+  action=W.start_wait(fp,{},gears,300)
+  local paths0=paths
+  eq(W.tick(fp,action),nil); eq(paths,paths0+1); eq(action.waiting,nil)
+  local ok,err=pcall(W.start_wait,fp,{},{valid=true,name='wooden-chest',type='container',position={x=1,y=1},force=p.force},10)
+  assert(not ok and tostring(err):find('wooden-chest is no assembler or furnace',1,true),err)
+  ok,err=pcall(W.start_wait,fp,{},{valid=true,name='assembling-machine-1',type='assembling-machine',position={x=1,y=1},force={}},10)
+  assert(not ok and tostring(err):find('is not ours',1,true),err)
+end
 print('stock: ok')
