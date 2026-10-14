@@ -138,11 +138,20 @@ return function(api)
       while #samples>ETA_SAMPLES do table.remove(samples,1) end
     end
     all[force.name]=samples
-    local first,eta=samples[1],nil
-    if first and game.tick>first.tick and progress>first.progress then
+    local first,eta,basis=samples[1],nil,nil
+    if api.research_rate then
+      -- The lab throughput research.lua measures every 10 s: the last minute's, longer when it had no progress (Grok
+      -- 03:20: an ETA from old samples said 2 hours when the finish was under 40 minutes).
+      local rate,ticks,fell_back=api.research_rate(force.name)
+      local work=(tech.research_unit_count or 0)*(tech.research_unit_energy or 0)
+      if rate and rate>0 and work>0 then
+        eta=(1-progress)*work/rate
+        basis=' (rate of the last '..duration(ticks)..(fell_back and ': none in the last 1m' or '')..')'
+      end
+    elseif first and game.tick>first.tick and progress>first.progress then
       eta=(1-progress)*(game.tick-first.tick)/(progress-first.progress)
     end
-    local line=string.format('%s %d%%',tech.name,math.floor(progress*100))..(eta and ' eta '..duration(eta) or '')
+    local line=string.format('%s %d%%',tech.name,math.floor(progress*100))..(eta and ' eta '..duration(eta)..(basis or '') or '')
     local next_name=queue[2] and queue[2].name
     line=line..(next_name and ' next '..next_name or ' (queue ends)')
     if eta and eta<3600 and not next_name then

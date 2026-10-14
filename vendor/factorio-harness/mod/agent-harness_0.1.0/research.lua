@@ -3,7 +3,7 @@
 -- `team` block, and to the board events; who queued each technology is kept
 -- (the harness's research actions, and the game's on_research_queued for
 -- players); the queue view gives each entry's progress and time to finish at
--- the lab throughput measured over the last few minutes.
+-- the lab throughput measured over the last minute (longer when it had no progress).
 return function(api)
   local M = {}
   local MAX_DONE, FIRST_LOOK, MAX_LINES, MAX_UNLOCKS = 50, 36000, 4, 8
@@ -344,20 +344,32 @@ return function(api)
     out.shift = string.format('shift %d, started %s ago', shift.number or shift.seq, ago(game.tick - shift.tick))
     return out
   end
-  -- Work per tick over the samples kept (about 5 minutes), or nil.
+  -- Work per tick over the last minute of samples (Grok 03:20: a 5-minute window over starved labs said 2 hours when
+  -- the finish was under 40 minutes); a minute with no progress falls back to 2 minutes, then every sample kept (about
+  -- 5 minutes). Returns the rate, the ticks measured, and true when it fell back; nil before 30 s of samples.
+  local WINDOWS = {3600, 7200}
   function M.rate(force_name)
     local list = api.state().research_rate and api.state().research_rate[force_name]
-    if not list then return nil end
-    local work, ticks = 0, 0
-    for k = 2, #list do
-      local a, b = list[k - 1], list[k]
-      if a.name and a.name == b.name and b.progress >= a.progress then
-        work = work + (b.progress - a.progress) * b.work
-        ticks = ticks + (b.tick - a.tick)
+    if not list or #list == 0 then return nil end
+    local now = list[#list].tick
+    local function over(since)
+      local work, ticks = 0, 0
+      for k = 2, #list do
+        local a, b = list[k - 1], list[k]
+        if a.tick >= since and a.name and a.name == b.name and b.progress >= a.progress then
+          work = work + (b.progress - a.progress) * b.work
+          ticks = ticks + (b.tick - a.tick)
+        end
       end
+      return work, ticks
     end
+    for i, window in ipairs(WINDOWS) do
+      local work, ticks = over(now - window)
+      if ticks >= SAMPLE_TICKS * 3 and work > 0 then return work / ticks, ticks, i > 1 or nil end
+    end
+    local work, ticks = over(-math.huge)
     if ticks < SAMPLE_TICKS * 3 then return nil end
-    return work / ticks, ticks
+    return work / ticks, ticks, true
   end
 
   local function minutes(ticks)
@@ -386,7 +398,7 @@ return function(api)
   -- An entry that needs a pack the current research does not use and nobody
   -- made in the last 10 minutes stops the clock (labs may still hold some).
   function M.queue(force, pending)
-    local rate, window = M.rate(force.name)
+    local rate, window, fell_back = M.rate(force.name)
     local entries, at, stalled = {}, 0, nil
     local queue = force.research_queue or {}
     local current = force.current_research
@@ -426,7 +438,9 @@ return function(api)
       entries[#entries+1] = entry
     end
     local out = {entries=entries}
-    if rate then out.throughput = string.format('measured over the last %s', minutes(window))
+    if rate and fell_back then
+      out.throughput = string.format('measured over the last %s (no research progress in the last minute)', minutes(window))
+    elseif rate then out.throughput = string.format('the last minute\'s rate: measured over the last %s', minutes(window))
     else out.throughput = 'not measured yet (needs 30 s of research progress)' end
     if stalled then out.clock_stops_at = stalled end
     for _, name in ipairs(pending or {}) do

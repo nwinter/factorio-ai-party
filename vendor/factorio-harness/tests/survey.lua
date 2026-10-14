@@ -135,4 +135,19 @@ eq(scans,2)
 eq(S.summary(q).machines['assembling-machine-1'],'1/1 working'); eq(S.summary(p).machines['assembling-machine-1'],'2/3 working, 1 low_power')
 eq(S.summary(q).as_of,200000)
 game.tick=200600; S.summary(q); eq(scans,3)
+-- With the runtime's research rate (research.lua, sampled every 10 s), the ETA is the last minute's rate and says so;
+-- a fallback to a longer window says the last minute had none (Grok 03:20: a starved window said 2 hours, the
+-- finish came in under 40 minutes). 300 units x 30 = 9000 work; half done, 4500 left at 2.5 per tick = 1800 ticks.
+local rate={2.5,3600,nil}
+local S2=dofile('mod/agent-harness_0.1.0/survey.lua'){state=function() return {} end,status_name=function(e) return status_names[e.status] end,
+  research_rate=function(name) eq(name,'player'); return rate[1],rate[2],rate[3] end}
+tech.research_unit_count=300; tech.research_unit_energy=30
+force.research_progress=0.5; force.research_queue={tech}
+game.tick=300000
+eq(S2.summary(p).factory.research,'automation 50% eta 30s (rate of the last 1m) (queue ends)')
+rate={1,7200,true}; game.tick=300600
+eq(S2.summary(p).factory.research,'automation 50% eta 1m15s (rate of the last 2m: none in the last 1m) (queue ends)')
+-- No rate measured yet (under 30 s of samples): no ETA.
+rate={nil}; game.tick=301200
+eq(S2.summary(p).factory.research,'automation 50% (queue ends)')
 print('survey: ok')
