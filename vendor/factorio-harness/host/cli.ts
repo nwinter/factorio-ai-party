@@ -69,7 +69,8 @@ const help = `fh — Factorio agent CLI
   fh operator "text"                        A request to the operator (harness bugs, tools, viewer asks); input as for say
   fh tell NAME[,NAME]|team "text"           A line to teammates outside chat: their next reply's team block, wakes them; input as for say
                                             --fyi: no answer needed; it waits for their next reply and wakes nobody
-  fh tells [--since SEQ]                    Tells you sent or received
+  fh tells [--since SEQ] [--limit N]        The last 30 tells you received (time, sender, fyi), shown before or not;
+                                            --since SEQ: the ones you sent or received after SEQ
   fh players [NAME] [--args '{"minutes":10}'] Human players on the map: where, group, what each built, removed, ordered, moved
   fh vote [no] mute|unmute|kick|ban|trust NAME "reason"
                                             Vote on a stream viewer (mute, unmute) or a human player (kick, ban, trust);

@@ -611,7 +611,9 @@ fh sleep 900 --until researched                       # ...or until the research
   outcomes `out_of_items`, `nothing_collected`, `inventory_full`, a give with none held, or a reply's `short`) puts one
   grouped line in the team block under `queue`: `queue loop3 round 4: 3 of 9 steps short: transfer iron-plate
   inventory_full x2, collect coal nothing_collected`. It comes only when a round's list differs from the round
-  before, so a steady loop says it once.
+  before, so a steady loop says it once. A step with `up_to: true` or `on_short: "skip"` is left out of the line (its
+  short was allowed for); `queue_status` history still marks it `short: true`. `on_fail: "skip"` does not count as
+  allowing a short.
 - `inspect` also shows what the entity GUI and cursor show: `status_name` (e.g. `marked_for_deconstruction`,
   `waiting_for_source_items`), `filters`, `filter_mode` and `use_filters` (inserters, loaders), `held` (an inserter's
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
@@ -1495,11 +1497,14 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   gets it in the next reply's `team.tells` and, if asleep, wakes with `woke: told` (and `tell: "from: text"`); it is
   never in the game chat, `chat` reads, the `chat:` trailer or `chat_remaining`, and draws no bubble. Unknown names
   fail with the roster; yourself is left out. The reply: `seq`, `to` (names, or `team`), and `away` for recipients on
-  another planet, a platform or in a cargo pod (`sol is on Vulcanus`). `tells {since?, limit?}`
-  returns the tells you sent or received `{seq,tick,from,away?,to,team?,text}`, by default those since your last
-  `tells` read (the last 10 on a first read; `since: 0` lists them all); the operator path returns every tell, which
+  another planet, a platform or in a cargo pod (`sol is on Vulcanus`). `tells {since?, limit?}` (limit 1..100,
+  default 30, newest kept) lists tells oldest first as `{seq,tick,ago_s,from,away?,to?,team?,fyi?,text}`. Without
+  `since`: the last 30 you received (team tells included), at every read, whether or not a team block showed them
+  (Muse, shift10: two tells shown once and missed were lost). With `since`: the ones you sent or received after that
+  seq, each with `to` (`since: 0` lists them all). `cursor` is the newest seq. The team block still shows each tell
+  once. The operator path returns every tell, which
   the stream shows on its logistics ticker (`-> Sol: text`, never voiced). CLI: `fh tell luna "text"`,
-  `fh tell luna,sol - <<'EOF'`, `fh tell team "text"`, `fh tells --since N`.
+  `fh tell luna,sol - <<'EOF'`, `fh tell team "text"`, `fh tells`, `fh tells --since N`, `fh tells --limit 10`.
 - `operator {text}` (1..500 characters, one line; longer is cut and the reply carries `cut {length, kept}`) files a
   request to the operator: harness bugs, tool requests, things viewers asked for that the agents cannot do. The reply:
   `seq`. At most one a minute and 10 an hour per agent; a refusal names the wait. No teammate sees it. The operator

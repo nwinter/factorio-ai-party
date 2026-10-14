@@ -112,10 +112,16 @@ eq(#c.messages,1); eq(c.messages[1].text,'@astra hi')
 -- The read's own reply carries the tell (it is in no message list).
 eq(c.team.tells[1],'grok, 0s ago: gears ready'); eq(c.team.mentions,nil)
 
--- Reads: your own sent and received; the operator reads all (the stream ticker).
+-- Reads: by default the ones you received, though a team block showed them
+-- (Muse, shift10), at every read; since: sent and received; the operator reads
+-- all (the stream ticker).
 local mine=sol('tells',{})
-for _,x in ipairs(mine.tells) do assert(x.from=='sol' or x.to=='team' or x.to[1]=='sol' or x.to[2]=='sol',x.text) end
-eq(mine.tells[1].text,'29 iron plates in the chest at (-18.5,-34.5) for red science')
+eq(#mine.tells,2); eq(mine.tells[1].text,'29 iron plates in the chest at (-18.5,-34.5) for red science')
+eq(mine.tells[1].from,'astra'); eq(mine.tells[1].to,nil); eq(mine.tells[1].ago_s,0); eq(mine.tells[2].from,'grok')
+eq(#sol('tells',{}).tells,2,'read again')
+local both=sol('tells',{since=0})
+eq(#both.tells,3); eq(both.tells[3].from,'sol'); eq(both.tells[3].to,'team'); eq(both.tells[1].to[1],'sol')
+for _,x in ipairs(both.tells) do assert(x.from=='sol' or x.to=='team' or x.to[1]=='sol' or x.to[2]=='sol',x.text) end
 local all=op('tells',{})
 eq(#all.tells,5); eq(all.cursor,5); eq(all.tells[4].to,'team'); eq(all.tells[4].team,true)
 eq(#op('tells',{since=4}).tells,1)
@@ -219,4 +225,28 @@ eq((grok('status').team or {}).mentions,nil)
 grok('sleep',{seconds=60}); eq(grok('sleep_check',{peek=true}).woke,nil)
 runtime.on_event{name=defines.events.on_console_chat,tick=tick,message='@grok thanks, filed'}
 eq(grok('sleep_check',{peek=true}).woke,'mentioned')
+
+-- History (Muse, shift10: "a tell shown once in the team block is lost if I
+-- miss it"): fh tells lists the last 30 received, oldest first, with time,
+-- sender and fyi, whether the team block showed them or not.
+grok('status'); grok('tells',{})
+for i=1,35 do
+  if i%10==0 then jump(600) end
+  astra('tell',{to='grok',text='load '..i,fyi=i%2==0 or nil})
+end
+sol('tell',{to='team',text='team line'})
+local shown=grok('tell',{to='sol',text='sent by grok'}).team.tells
+eq(#shown,36); eq(grok('status').team,nil) -- the team block showed each once
+local h=grok('tells',{}).tells
+eq(#h,30); eq(h[1].text,'load 7'); eq(h[29].text,'load 35'); eq(h[30].text,'team line'); eq(h[30].team,true)
+eq(h[2].fyi,true); eq(h[1].fyi,nil); eq(h[1].from,'astra'); eq(h[1].ago_s,30); eq(h[30].ago_s,0); eq(h[30].tick,game.tick)
+for _,x in ipairs(h) do assert(x.text~='sent by grok' and x.to==nil,x.text) end
+eq(#grok('tells',{}).tells,30,'the same list on the next read')
+eq(#grok('tells',{limit=5}).tells,5); eq(grok('tells',{limit=5}).tells[1].text,'load 32')
+eq(grok('tells',{since=0,limit=100}).tells[#grok('tells',{since=0,limit=100}).tells].text,'sent by grok')
+-- A new tell is in the list and, as in any reply, once in the read's team block.
+astra('tell',{to='grok',text='after'})
+local rd=grok('tells',{})
+eq(rd.tells[30].text,'after'); eq(rd.tells[29].text,'team line'); eq(rd.team.tells[1],'astra, 0s ago: after')
+eq(grok('tells',{}).team,nil); eq(grok('tells',{}).tells[30].text,'after')
 print('tells: ok')
