@@ -154,10 +154,7 @@ already targets your character.
   `./fh call boilers` lists each boiler by network, the stopped ones first: state, fuel, water, its feeder and what
   the feeder takes from with the fuel there; the networks line names the lowest boiler (position, minutes, fuel,
   feeder) and accumulators' stored MJ of their maximum; `./fh platform NAME` shows one space platform (hub free
-  slots, cargo, speed, next stop, ETA; `freight`: per stop what was expected down and up, what left the hub, came
-  aboard and spoiled, the rockets sent to it, and per leg what spoiled on the way; `spoiling`: when its spoilable
-  items spoil, against the arrival); a `requests` edit echoes what is stored per item (`stored`) and keeps the
-  import planet when `from` is not given;
+  slots, cargo, speed, next stop, ETA);
   `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
   open board items). `projects` lists the open projects, one line each with progress, next step and handoff.
@@ -295,6 +292,10 @@ already targets your character.
   on a silo) take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
   `launch` refuses a rocket with no cargo (a launch spends its parts) unless `allow_empty: true`, naming science in
   chests near the silo.
+- `./fh platform NAME` also shows `freight` (per stop what was expected down and up, what left the hub, came aboard
+  and spoiled, the rockets sent to it; per leg what spoiled on the way) and `spoiling` (when its spoilable items spoil,
+  against the arrival). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when
+  `from` is not given.
 - `./fh sleep 600 --until "rocket_ready 65.5,14.5"` (or `wait_until {"until":"rocket_ready","position":...}`) waits for
   that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
 - `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the
