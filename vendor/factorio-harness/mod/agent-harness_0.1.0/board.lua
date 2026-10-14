@@ -276,6 +276,16 @@ return function(api)
     return {item=view(item, true, where_for(by)), changed=#changes > 0 and changes or nil}
   end
 
+  -- About how many bytes a value takes as JSON (brief listings stay near 3 KB).
+  local BRIEF_BYTES = 3000
+  local function size(v)
+    local t = type(v)
+    if t == 'string' then return #v + 3 end
+    if t ~= 'table' then return 6 end
+    local n = 2
+    for k, x in pairs(v) do n = n + size(k) + size(x) + 1 end
+    return n
+  end
   local function read(by, a)
     local b = store()
     if a.id ~= nil then
@@ -306,9 +316,36 @@ return function(api)
     end
     table.sort(list, function(x, y) return x.updated_tick > y.updated_tick or (x.updated_tick == y.updated_tick and x.id > y.id) end)
     local out, where = {}, where_for(by)
-    for n = 1, math.min(limit, #list) do out[n] = view(list[n], false, where) end
     local unowned = open_unowned()
     local plan = (a.kind == nil or a.kind == 'plan') and a.mine ~= true and M.plan_view() or nil
+    -- An agent's plain listing (no filter, no limit): about 3 KB, newest
+    -- first, each item with its last note; the plan's goals and the reader's
+    -- own line (agent-minds study: the median board read was 18 KB, and Codex
+    -- drops the middle of long output). full=true, a limit or a filter list
+    -- them as before.
+    local brief = by ~= OPERATOR and a.full ~= true and a.limit == nil and a.kind == nil and a.mine == nil and a.status == nil and a.since_tick == nil
+    if brief then
+      local used = 0
+      if plan then
+        local doing = {}
+        for i, l in ipairs(plan.doing or {}) do doing[i] = clip(l, 100) end
+        plan = {id=plan.id, goals=plan.goals, doing=#doing > 0 and doing or nil, edited=plan.edited,
+          more='board_plan shows the plan in full'}
+        used = size(plan)
+      end
+      for n = 1, math.min(limit, #list) do
+        local row = view(list[n], false, where)
+        if row.notes and #row.notes > 1 then row.note_count = row.note_count or #list[n].notes; row.notes = {row.notes[#row.notes]} end
+        row.created_tick = nil
+        local s = size(row)
+        if n > 1 and used + s > BRIEF_BYTES then break end
+        out[n] = row; used = used + s
+      end
+      local more = #list - #out
+      return {plan=plan, items=out, matched=#list, open_unowned=unowned, tick=game.tick,
+        more=more > 0 and string.format('%d more: board {full=true}, or narrow with kind, mine, status, since_tick; {id} shows one item in full', more) or nil}
+    end
+    for n = 1, math.min(limit, #list) do out[n] = view(list[n], false, where) end
     return {plan=plan, items=out, matched=#list, open_unowned=unowned, tick=game.tick}
   end
 
@@ -480,7 +517,8 @@ return function(api)
   end
 
   M.schema = {
-    board = {mine='boolean: items I own or requested', status='active|open|claimed|doing|done|blocked|dropped or an array of them',
+    board = {full='boolean: the plain listing in full (by default it is about 3 KB: the newest items with their last note, the plan\'s goals and your line, and more: how many were left out)',
+      mine='boolean: items I own or requested', status='active|open|claimed|doing|done|blocked|dropped or an array of them',
       kind='task|request|claim|note|harness|plan', since_tick='items updated after this tick', limit='1..100 (default 30), newest first',
       id='one item in full (all notes)', returns='plan (the team plan: goals, doing lines, last edit), items, matched, open_unowned (open task/request items nobody owns); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus")'},
     board_plan = {goals='the team goals, 1..600 characters, replace the current ones ("" clears them)',

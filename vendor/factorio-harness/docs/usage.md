@@ -53,7 +53,18 @@ fh call walk --args '{"direction":"east","ticks":60}' --wait
 fh call status
 ```
 
-- Arguments go in `--args JSON` or `--args-file F`. `fh describe` lists every action's arguments.
+- Arguments go in `--args JSON` or `--args-file F`. `fh describe` lists every action's arguments; `fh help ACTION`
+  (or `fh call ACTION --help`) prints one action's in about 1 KB.
+- Common wrong argument names run as meant, and the reply's `corrected` (also on the final `warning:` line) shows the
+  call as it ran: `craft` `item` is `recipe`, `move_to` `target` is `position`, `scan` `names`/`types`/`range` are
+  `name`/`type`/`radius`, `chat`/`tells` `count` is `limit`, `build` `placements` is `builds`, `board_post` `text` is
+  `title`, `recipes`/`technologies` `search`/`name` are `prefix`, `transfer` `to_player: true` is `direction`, and a
+  `board` call with an `id` and a `note`, `owner` or `status` is `board_update`. A valid argument is never renamed; a
+  corrected call that still fails says `[ran as ...]`; any other unknown argument fails with the valid list. `scan`
+  `fields` also takes one string (`"status|hp"` or `"status,hp"`).
+- A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
+  `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
+  `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
 - Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
 - With `--wait`, the command exits nonzero unless the action ended successfully, or when the wait times out. `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
 - A timed-out wait is not a finished action. The reply has `error.code` `wait_timeout`, `timed_out: true` and `still_running` (the action's kind and end tick) and no `completion`. The action keeps running in game; a new character action would interrupt it. `fh wait` blocks until the character is idle again and reports the last outcome.
@@ -311,6 +322,16 @@ fh sleep 900 --until researched                       # ...or until the research
 ## Messages and reads
 
 - `inspect` is a read: any entity in sight (32 tiles, visible chunk) works without reach, like `scan`; `in_reach` says whether acting on it would reach.
+- An electric machine no pole reaches reads `status_name: unpowered` (whatever the engine's status, often
+  `low_power`) with `power: "unpowered: no pole reaches it; nearest pole medium-electric-pole at (17,10), 7 tiles"`,
+  in `inspect` and in build replies (`power`).
+- A `transfer`, `collect` or `feed` that moved nothing says why in `nothing_moved` (also on the final `warning:`
+  line): what the target holds (`wooden-chest at (3.5,3.5) holds no iron-plate in chest; it holds copper-plate*15`),
+  `already holds N (up_to M)`, what you keep, or for `feed` per wanted item what you carry and the machines hold
+  (`you carry 0 coal; 2 machines hold 5-6`). The third identical empty move in 7 minutes adds `repeated`.
+- Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
+  `revision`, `paused`, `active`, `pending` (the next 5 as `id action [label]`), `pending_count`, `recent` (the last 2
+  results), `last_failure`; `queue_status` shows every step in full.
 - `inspect` also shows what the entity GUI and cursor show: `status_name` (e.g. `marked_for_deconstruction`,
   `waiting_for_source_items`), `filters`, `filter_mode` and `use_filters` (inserters, loaders), `held` (an inserter's
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
@@ -586,7 +607,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   roster. Anyone may take an open unowned item or add a note; only the owner or requester changes status, reassigns or
   releases (`owner: ""`). Titles are cut at 120 bytes and notes at 200 instead of failing; the last 10 notes are kept.
 - `board` returns `plan` (below), `items` (list rows carry the last 2 notes and `note_count`; `id` gives one item in
-  full), `matched` and `open_unowned`. `status:"active"` means open, claimed, doing or blocked.
+  full), `matched` and `open_unowned`. `status:"active"` means open, claimed, doing or blocked. An agent's plain
+  `board` read (no filter, no limit) is about 3 KB: the newest items with their last note (`note_count`), the plan's
+  goals and lines cut to 100 characters, and `more` with how many were left out; `full: true` lists as before.
 - The team plan: one item of kind `plan`, edited with `board_plan {goals?, doing?, agent?}`: `goals` (up to 600
   characters) replaces the goals, `doing` (up to 160) sets one agent's line, yours unless `agent` names another; `""`
   clears either. Anyone edits any part. With no arguments it reads. Replies and `board` reads give `plan {id, goals,
@@ -704,7 +727,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   never in the game chat, `chat` reads, the `chat:` trailer or `chat_remaining`, and draws no bubble. Unknown names
   fail with the roster; yourself is left out. The reply: `seq`, `to` (names, or `team`), and `away` for recipients on
   another planet, a platform or in a cargo pod (`sol is on Vulcanus`). `tells {since?, limit?}`
-  returns the tells you sent or received `{seq,tick,from,away?,to,team?,text}`; the operator path returns every tell, which
+  returns the tells you sent or received `{seq,tick,from,away?,to,team?,text}`, by default those since your last
+  `tells` read (the last 10 on a first read; `since: 0` lists them all); the operator path returns every tell, which
   the stream shows on its logistics ticker (`-> Sol: text`, never voiced). CLI: `fh tell luna "text"`,
   `fh tell luna,sol - <<'EOF'`, `fh tell team "text"`, `fh tells --since N`.
 - `operator {text}` (1..500 characters, one line; longer is cut and the reply carries `cut {length, kept}`) files a

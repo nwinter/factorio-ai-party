@@ -466,6 +466,12 @@ local function summary(e)
     direction=e.direction~=0 and e.direction or nil, health=e.health and max_health and e.health<max_health and e.health or nil,
     force=e.force.name~='player' and e.force.name or nil, status_name=entity_status_names[e.status], amount=e.type == 'resource' and e.amount or nil,
     ghost_name=(e.type=='entity-ghost' or e.type=='tile-ghost') and e.ghost_name or nil,ghost_type=e.type=='entity-ghost' and e.ghost_type or nil}
+  -- An electric machine no pole reaches is unpowered, whatever its status
+  -- reads (Gemini's roboports read low_power for 2 h 45 min).
+  if e.type~='entity-ghost' and e.type~='tile-ghost' and M.unpowered then
+    local ok,why=pcall(M.unpowered,e)
+    if ok and why then out.status_name='unpowered'; out.power=why end
+  end
   -- An underground end shows what the belt GUI arrows show: which end it is
   -- (flow direction by name) and where its partner is.
   if e.type=='underground-belt' then
@@ -1261,7 +1267,12 @@ function handlers.scan(p,a)
     local v=a[key]
     assert(v==nil or type(v)=='string' or (type(v)=='table' and #v<=32),key..' must be a string or up to 32 strings')
   end
-  local fields=type(a.fields)=='string' and {a.fields} or a.fields or {}
+  -- "hp|fuel" or "hp,fuel" as one string, as describe's example reads (61% of
+  -- unknown-field errors copied it whole): each name a field.
+  local fields={}
+  for _,v in ipairs(type(a.fields)=='string' and {a.fields} or a.fields or {}) do
+    for f in tostring(v):gmatch('[^|,%s]+') do fields[#fields+1]=f end
+  end
   for _,f in ipairs(fields) do assert(scan_fields[f],'unknown field '..tostring(f)..'; use hp|fuel|inventory|output|spoil|status|recipe|direction|amount|range|ammo|target|lanes|io|fluids') end
   local limit=integer(a.limit,256,1,1024,'limit')
   local filtered=a.name~=nil or a.type~=nil
@@ -2371,7 +2382,8 @@ function handlers.inspect(p,a)
   out.in_reach=p.can_reach_entity(e)
   out.health=e.health; out.max_health=e.max_health; out.direction=e.direction
   out.status=e.status
-  out.status_name=entity_status_names[out.status]
+  -- summary's "unpowered" (no pole reaches it) stands over the engine's name.
+  out.status_name=out.power and 'unpowered' or entity_status_names[out.status]
   out.energy=e.energy
   out.fluids=e.get_fluid_contents()
   out.electric_network_id=e.electric_network_id
@@ -2720,6 +2732,26 @@ local function transfer_one(p,a,pos,e)
     at_up_to=a.item and a.up_to~=nil and a.direction=='to_entity' and count(target)>=a.up_to or nil}
   if a.direction=='to_player' then out.inventory_full=full else out.entity_full=full end
   if rocket then out.rocket_weight=space.rocket_weight(e); out.weight_limited=rocket.limited end
+  -- Nothing moved and nothing was full: say why (agent-minds study: about 125
+  -- empty takes a shift read as a success; Muse 38 of 43 circuit takes).
+  if moved==0 and not full and not short then
+    pcall(function()
+      local where=string.format('%s at (%g,%g)',e.name,e.position.x,e.position.y)
+      local label=a.item and (a.item..(quality~='normal' and '@'..quality or '')) or 'items'
+      if a.direction=='to_player' then
+        local list={}
+        for i,s in ipairs(sources[1].get_contents()) do if i<=3 then list[#list+1]=s.name..'*'..s.count end end
+        out.nothing_moved=string.format('%s holds no %s in %s; %s',where,label,a.inventory or inferred or 'its inventories',
+          #list>0 and 'it holds '..table.concat(list,' ') or 'it is empty')
+      elseif out.at_up_to then
+        out.nothing_moved=string.format('%s already holds %d %s (up_to %d)',where,count(target),label,a.up_to)
+      elseif a.keep~=nil and wanted==0 then
+        out.nothing_moved=string.format('you hold %d %s and keep %d',available(),label,a.keep)
+      else
+        out.nothing_moved=string.format('%s took no %s into %s',where,label,a.inventory or inferred or 'its inventory')
+      end
+    end)
+  end
   -- An emptied corpse goes, as when a player takes everything from it.
   if a.direction=='to_player' and e.type=='character-corpse' and sources[1].is_empty() then e.destroy(); out.corpse_removed=true end
   return out
@@ -2728,7 +2760,7 @@ end
 -- must not undo the others. Quiet batches list only entities that changed or failed.
 local function transfer_batch(p,a,targets,quiet)
   local total,totals,items,rows,untouched=0,{},{},{},0
-  local blocked,short
+  local blocked,short,empty
   for _,t in ipairs(targets) do
     local pos=t.entity and t.entity.position or t.position
     local ok,result
@@ -2738,6 +2770,7 @@ local function transfer_batch(p,a,targets,quiet)
     if result==nil then untouched=untouched+1
     elseif ok then
       total=total+result.transferred
+      empty=empty or result.nothing_moved
       blocked=result.inventory_full and result.inventory_full.blocked_item
       if result.none_held then
         short=short or {}
@@ -2756,7 +2789,8 @@ local function transfer_batch(p,a,targets,quiet)
     error(string.format('no %s in inventory or ammo slots; %d target(s) want more: %s',a.item,#short,table.concat(short,', ',1,math.min(#short,6))),0)
   end
   return {transferred=total,items=not a.item and items or nil,entities=rows,unchanged=(quiet or untouched>0) and untouched or nil,
-    none_held=short and #short or nil,total=a.budget and a.budget.cap,inventory_full=blocked and {got=total,blocked_item=blocked} or nil}
+    none_held=short and #short or nil,total=a.budget and a.budget.cap,inventory_full=blocked and {got=total,blocked_item=blocked} or nil,
+    nothing_moved=total==0 and not blocked and empty and (#targets>1 and string.format('none of %d targets: first, %s',#targets,empty) or empty) or nil}
 end
 -- Items a feed still needs across its targets (up_to tops up; else count each).
 local function shortfall(p,a,targets)
@@ -2972,6 +3006,35 @@ function feeding.hungry(p,e,a)
   end
   return false
 end
+-- Why a feed gave nothing, per wanted item: what the character carries and
+-- what the machines hold (Haiku's 35 empty feeds read "nothing_to_do, given
+-- 0" while it carried no coal).
+function feeding.why(p,es,a)
+  local keep=integer(a.keep,0,0,100000,'keep')
+  local by,order={},{}
+  for _,e in ipairs(es) do
+    for _,w in ipairs(feeding.wants(p,e,a)) do
+      local ok,inv=pcall(inventory,e,w.inventory)
+      local c=ok and inv.get_item_count{name=w.item,quality=a.quality or 'normal'} or 0
+      local b=by[w.item]
+      if not b then b={n=0,lo=math.huge,hi=0,count=w.count}; by[w.item]=b; order[#order+1]=w.item end
+      b.n=b.n+1; b.lo=math.min(b.lo,c); b.hi=math.max(b.hi,c)
+    end
+  end
+  if #order==0 then return string.format('none of the %d machines wants an item (no recipe set, or not a machine feed fills)',#es) end
+  local parts={}
+  for i,item in ipairs(order) do
+    if i>4 then parts[#parts+1]='+'..(#order-4)..' more'; break end
+    local b,have=by[item],held(p,item,a.quality)
+    local hold=b.lo==b.hi and tostring(b.lo) or (b.lo..'-'..b.hi)
+    if have<=keep then
+      parts[#parts+1]=string.format('you carry %d %s%s; %d machine%s hold %s',have,item,keep>0 and ' (keep '..keep..')' or '',b.n,b.n==1 and '' or 's',hold)
+    else
+      parts[#parts+1]=string.format('%d machine%s hold %s %s, at count %d already',b.n,b.n==1 and '' or 's',hold,item,b.count)
+    end
+  end
+  return table.concat(parts,'; ')
+end
 -- Hand-feeds machines from inventory: recipe ingredients, science packs and
 -- fuel, up to count each, keeping a reserve. In reach by default, at given
 -- positions, or as a walking tour with radius. Nothing is taken out.
@@ -2984,23 +3047,28 @@ function handlers.feed(p,a)
   local types=a.types or feeding.TYPES
   if a.radius~=nil then
     assert(a.positions==nil,'give radius or positions, not both')
-    local targets={}
+    local targets,found={},{}
     for _,e in pairs(p.surface.find_entities_filtered{position=p.position,radius=integer(a.radius,32,1,256,'radius'),force=p.force,type=types}) do
-      if e.valid and feeding.hungry(p,e,a) then targets[#targets+1]=e end
+      if e.valid then found[#found+1]=e; if feeding.hungry(p,e,a) then targets[#targets+1]=e end end
     end
     local action,out=stock.start_tour(p,'feed',targets,integer(a.ticks,3600,1,36000,'ticks'),{feed=a})
     if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
     state().active[p.index]=action
     out.until_tick=action.until_tick
+    if #targets==0 then
+      local ok,why=pcall(feeding.why,p,found,a)
+      out.nothing_moved=ok and ('nothing to feed: '..why) or nil
+    end
     return out
   end
   assert(a.ticks==nil,'ticks applies with radius')
   local targets=reachable(p,{positions=a.positions,types=types},function() return true end)
-  local rows,items,total,unchanged={},{},0,0
+  local rows,items,total,unchanged,seen={},{},0,0,{}
   for _,t in ipairs(targets) do
     local ok,e=pcall(function() return t.entity or entity(p,{position=t.position,name=t.position.name,unit_number=t.position.unit_number}) end)
     if not ok then rows[#rows+1]={position=t.position,error=reason(e)}
     else
+      seen[#seen+1]=e
       local okf,gave,n=pcall(feeding.one,p,e,a)
       if not okf then rows[#rows+1]={position=e.position,name=e.name,error=reason(gave)}
       elseif n>0 then
@@ -3012,8 +3080,13 @@ function handlers.feed(p,a)
   end
   local left={}
   for item in pairs(items) do left[item]=held(p,item,a.quality) end
+  local why
+  if total==0 then
+    local ok,w=pcall(feeding.why,p,seen,a)
+    why=ok and w or 'no machine in reach wants an item you hold above keep (or they are at count already)'
+  end
   return {transferred=total,items=next(items) and items or nil,entities=rows,unchanged=unchanged>0 and unchanged or nil,held=next(left) and left or nil,
-    note=total==0 and 'nothing given: no machine in reach wants an item you hold above keep (or they are at count already)' or nil}
+    nothing_moved=why and ('nothing given: '..why) or nil}
 end
 -- Items of this name in an entity's transferable inventories (fuel included).
 local function entity_holds(e,item,quality)
@@ -3971,6 +4044,31 @@ scheduler=scheduler_module{
   end
 }
 for name,handler in pairs(scheduler.handlers) do handlers[name]=handler end
+-- Queue writes answer briefly: the revision, state, the next steps by id and
+-- the last results; queue_status has the whole queue (agent-minds study: each
+-- edit echoed 10-14 KB, and Sonnet sent its replies to /dev/null to cut them).
+function M.queue_brief(q)
+  local function step(s) return s and ((s.id or '?')..' '..tostring(s.action)..(s.label and ' ['..s.label..']' or '')) or nil end
+  local pending={}
+  for i,s in ipairs(q.pending or {}) do if i<=5 then pending[i]=step(s) end end
+  local recent={}
+  local h=q.history or {}
+  for i=math.max(1,#h-1),#h do
+    local r=h[i]
+    local why=type(r.result)=='table' and (r.result.reason or r.result.outcome) or nil
+    recent[#recent+1]=step(r)..(r.ok and ' ok' or ' failed')..(why and ': '..tostring(why) or '')
+  end
+  local f=q.last_failure
+  return {revision=q.revision,paused=q.paused,active=q.active and step(q.active) or false,pending=pending,
+    pending_count=#(q.pending or {}),recent=#recent>0 and recent or nil,
+    last_failure=f and (step(f)..(type(f.result)=='table' and f.result.reason and ': '..tostring(f.result.reason) or '')) or nil,
+    repeating=q.repeating or nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,guards=q.guards and #q.guards or nil,
+    waiting=q.waiting,after_direct=q.after_direct,note='queue_status shows every step in full'}
+end
+for _,name in ipairs{'queue_submit','queue_repeat','queue_edit','queue_cancel','queue_resume'} do
+  local handler=handlers[name]
+  if handler then handlers[name]=function(p,a) return M.queue_brief(handler(p,a)) end end
+end
 clock=clock_module{state=state,lookup=function(index) return M.lookup(index) end}
 for name,handler in pairs(clock.handlers) do handlers[name]=handler end
 -- Direct wait_ticks and sleep/sleep_check (waits.lua).
@@ -4163,6 +4261,48 @@ function check_args(action,args)
   end
 end
 M.check_args=check_args
+-- Whether an action takes an argument (describe's schema, as check_args reads it).
+function M.takes(action,key)
+  if not allowed_args then pcall(check_args,'describe',{}) end
+  local set=allowed_args and allowed_args[action]
+  return set~=nil and set[key]==true
+end
+-- An electric machine no pole reaches (no electric network): the nearest pole
+-- and how far, else nil. Generators, poles and storage are not machines here.
+function M.unpowered(e)
+  if e.electric_network_id~=nil then return nil end
+  local ok,src=pcall(function() return e.prototype.electric_energy_source_prototype end)
+  if not (ok and src) then return nil end
+  local own={['electric-pole']=true,['solar-panel']=true,accumulator=true,generator=true,['burner-generator']=true,
+    ['electric-energy-interface']=true,['power-switch']=true,['fusion-generator']=true,['lightning-attractor']=true}
+  if own[e.type] then return nil end
+  local best,bd
+  for _,pole in pairs(e.surface.find_entities_filtered{type='electric-pole',force=e.force,position=e.position,radius=64,limit=256}) do
+    local d=distance(pole.position,e.position)
+    if not bd or d<bd then best,bd=pole,d end
+  end
+  if not best then return 'unpowered: no pole reaches it, none within 64 tiles' end
+  return string.format('unpowered: no pole reaches it; nearest pole %s at (%g,%g), %d tiles',best.name,best.position.x,best.position.y,math.floor(bd+0.5))
+end
+-- Common wrong argument names renamed to the real ones (aliases.lua).
+M.aliases=require('aliases'){}
+-- An empty item move an agent repeats (agent-minds study: Haiku's 35 identical
+-- feeds that gave nothing): the third identical one in 7 minutes says so.
+M.MOVES={transfer=true,feed=true,collect=true,rearm=true,refuel=true}
+function M.repeats(index,action,args)
+  local s=state(); s.empty_moves=s.empty_moves or {}
+  local parts={action}
+  for _,k in ipairs{'position','positions','item','items','direction','radius','fuel','ammo'} do parts[#parts+1]=M.aliases.encode(args[k]) end
+  local key=table.concat(parts,' ')
+  local keep,n={},1
+  for _,m in ipairs(s.empty_moves[index] or {}) do
+    if game.tick-m.tick<=25200 then keep[#keep+1]=m; if m.key==key then n=n+1 end end
+  end
+  keep[#keep+1]={key=key,tick=game.tick}
+  while #keep>20 do table.remove(keep,1) end
+  s.empty_moves[index]=keep
+  if n>=3 then return string.format('%s %d times in 7 min with nothing moved (same target and item)',action,n) end
+end
 -- Game-time feedback on every reply: how long since this player's previous
 -- request, and how much of it the character had nothing to do (no active
 -- action and no running plan) or stood waiting for hand-crafted items.
@@ -4225,18 +4365,40 @@ function M.dispatch(request)
     assert(request.player==nil,'a request may name a player or a bot, not both')
     request.player=M.bots.index_of(request.bot)
   end
+  -- Wrong argument names the harness knows (craft item, move_to target, ...)
+  -- run as the call meant; the reply says the call as it ran (corrected).
+  local corrected
+  do
+    local ok,action,args,fix=pcall(M.aliases.fix,request.action,request.args,M.takes)
+    if ok and fix then request.action,request.args,corrected=action,args,fix end
+  end
   -- A failed request of an action that does not drive the character, from the
   -- argument check on, stops nothing (shift04: a failed placements read and a
   -- board_update with an unknown argument each paused Sol's queue; control.lua's
   -- own list of reads lacks those).
   passive_failed=false
   local result
+  -- A corrected call that still fails says how it ran.
+  local function ran(r) return corrected and tostring(r)..' [ran as '..corrected.call..': '..table.concat(corrected.notes,'; ')..']' or r end
   if M.keeps(request.action) then
     local ok,r=pcall(dispatch_request,request)
-    if not ok then M.seated_ok=nil; passive_failed=game.tick; error(r,0) end
+    if not ok then M.seated_ok=nil; passive_failed=game.tick; error(ran(r),0) end
+    result=r
+  elseif corrected then
+    local ok,r=pcall(dispatch_request,request)
+    if not ok then M.seated_ok=nil; error(ran(r),0) end
     result=r
   else result=dispatch_request(request) end
   M.seated_ok=nil
+  if corrected and type(result)=='table' then
+    result.corrected=corrected.call..' ('..table.concat(corrected.notes,'; ')..')'
+  end
+  -- The same empty move again (M.repeats).
+  if type(result)=='table' and M.MOVES[request.action] and type(request.args)=='table'
+    and (result.nothing_moved or (result.transferred==0 and not result.inventory_full and not result.entity_full)) then
+    local ok,r=pcall(M.repeats,request.player,request.action,request.args)
+    if ok and r then result.repeated=r end
+  end
   if clock then clock.after_dispatch() end
   if request.action=='status' then M.bots.status(request.player,result) end
   if type(result)=='table' and request.action~='describe' and request.action~='profiles' and request.action~='cameras' then
