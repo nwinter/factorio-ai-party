@@ -133,8 +133,14 @@ TOOLS = {
                   lambda a: G.chat_text(game().chat(int(a.get("limit") or 25)))),
     "game_board": (S("The team board: requests, claims and their owners (if the runtime has a board)."),
                    lambda a: json.dumps(game().board(), ensure_ascii=False)[:6000]),
-    "game_status": (S("Harness status (peek): evolution breakdown, pollution, nearest enemy bases, attack alerts, power warning."),
-                    lambda a: json.dumps(trim_status(game().status()), ensure_ascii=False)[:6000]),
+    "game_status": (S("Harness status (peek): evolution breakdown, pollution, nearest enemy bases, attack alerts, power "
+                      "warning, for ONE planet: the one the agent read stands on (`surface`; agent: read it as that "
+                      "agent, e.g. one on Gleba for Gleba's spores and pentapod nests; game_agents says who is where).",
+                      agent=STR("an agent's name (folder name)", optional=True)),
+                    lambda a: json.dumps(trim_status(game().status(a.get("agent")) if a.get("agent") else game().status()),
+                                         ensure_ascii=False)[:6000]),
+    "game_agents": (S("Which planet or platform each agent is on now."),
+                    lambda a: json.dumps(game().agents(), ensure_ascii=False)[:3000]),
     "game_power": (S("Electric networks: production, demand, satisfaction, machines without power."),
                    lambda a: json.dumps(game().power(), ensure_ascii=False)[:5000]),
     "history_at": (S("Every past team run at a game minute: techs, SPM, iron plates per minute, labs, assemblers. "
@@ -186,8 +192,13 @@ def tech(name):
 def trim_status(s):
     if not isinstance(s, dict):
         return s
-    keep = ("evolution", "pollution", "enemies", "alerts", "power", "threats_as_of", "combat", "tick", "factory")
-    return {k: v for k, v in s.items() if k in keep}
+    keep = ("evolution", "pollution", "enemies", "alerts", "power", "threats_as_of", "combat", "tick", "factory", "surface")
+    out = {k: v for k, v in s.items() if k in keep}
+    # which planet this is: threats, pollution and enemies are the read agent's planet only (13:11: "The team is on
+    # Nauvis, where there are no stomper nests" with Sol and Luna on Gleba)
+    out["covers"] = (f"{str(s.get('surface') or 'nauvis').capitalize()} only (the planet the agent read stands on); other "
+                     "planets need a status read as an agent there")
+    return out
 
 
 def handle(msg):
