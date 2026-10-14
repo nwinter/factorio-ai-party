@@ -8,8 +8,12 @@
 // [[x, y, 's'|'w']], turrets [[x, y, range]], terrain [{src, x0, y0, x1, y1, tick}] (georeferenced map-camera
 // frames: the image's edges in tiles), tick (draw terrain frames up to it), agents [{name, display_name, color,
 // position, alive, action, location, attention, surface, where, on_platform, travel}], fights, pins, cams, box
-// [x0, y0, w, h] (a fixed frame instead of the framing on the base's core). The map is Nauvis: an agent on another
-// planet, aboard a platform or in a cargo pod is listed in the map's corner ("Sol · Vulcanus"), never drawn.
+// [x0, y0, w, h] (a fixed frame instead of the framing on the base's core), clouds [{surface, label, pollutant, color
+// {r, g, b, a}, cells [[cx, cy, amount]], max, reached [{x, y}]}] (the stream's pollution and spore layer per surface,
+// tools/stream/clouds.py: 32-tile chunks, drawn in the game's map colour, the amount on hover), surface (the surface
+// shown, default nauvis). The map is Nauvis, with its base; a switch shows another surface with a cloud (Gleba's
+// spores) and only what is known there: the cloud, the nests it reached, the agents on it. An agent elsewhere (another
+// planet, aboard a platform or in a cargo pod) is listed in the map's corner ("Sol · Vulcanus"), never drawn.
 (function (root) {
   'use strict';
   // the live map's colours (style.css .b-X and .o-X: the legends use those)
@@ -20,9 +24,9 @@
     ['o', '#b04fb5', 'Crude oil'], ['u', '#6fe05a', 'Uranium ore'], ['x', '#9a9a9a', 'Other resource']];
   var GROUND = [['w', '#20384a', 'Water'], ['c', '#5b4a36', 'Cliffs'], ['u', '#0d0f0c', 'Uncharted']];
   var LINE_CATS = { P: 1, B: 1, I: 1, T: 1 };
-  var LAYERS = [['terrain', 'Terrain'], ['ore', 'Ore'], ['buildings', 'Buildings'], ['coverage', 'Turret range'], ['nests', 'Nests'],
-    ['agents', 'Agents'], ['attention', 'Attention'], ['alerts', 'Fights']];
-  var DEFAULT_ON = { terrain: true, ore: true, buildings: true, coverage: false, nests: true, agents: true, attention: true, alerts: true };
+  var LAYERS = [['terrain', 'Terrain'], ['ore', 'Ore'], ['cloud', 'Pollution'], ['buildings', 'Buildings'], ['coverage', 'Turret range'],
+    ['nests', 'Nests'], ['agents', 'Agents'], ['attention', 'Attention'], ['alerts', 'Fights']];
+  var DEFAULT_ON = { terrain: true, ore: true, cloud: true, buildings: true, coverage: false, nests: true, agents: true, attention: true, alerts: true };
   var C = { bg: '#1b1f1a', grid: '#2b302a', text: '#e8e6e1', orange: '#ff9b2e', red: '#e04e3a', nest: '#ff3b30', worm: '#ff8a7a',
     range: 'rgba(120, 200, 255, ', inset: 'rgba(16, 18, 15, .88)' };
   var CAM_SHORT = { main: 'MAIN', cam2: 'CAM 2', cam3: 'CAM 3' };
@@ -32,12 +36,13 @@
     return !!(g && Array.isArray(g.rows) && g.rows.length && isFinite(g.x0) && isFinite(g.y0) && g.cell > 0);
   }
   function ok(p) { return !!(p && isFinite(p.x) && isFinite(p.y)); }
-  // Not on Nauvis: another planet, aboard a platform, or riding a cargo pod (travel: ascending, aboard, descending).
-  function elsewhere(a) { return !!(a.on_platform || a.travel || (a.surface && a.surface !== 'nauvis')); }
+  // Not on the surface shown (Nauvis): another planet, aboard a platform, or riding a cargo pod (travel: ascending,
+  // aboard, descending).
+  function elsewhere(a, surface) { return !!(a.on_platform || a.travel || (a.surface || 'nauvis') !== (surface || 'nauvis')); }
   function whereText(a) {
     if (a.travel) return a.location || a.where || 'cargo pod';
     if (a.on_platform) return (a.where || 'a platform') + ' (platform)';
-    var s = a.where || String(a.surface || '').replace(/[-_]/g, ' ');
+    var s = a.where || String(a.surface || 'nauvis').replace(/[-_]/g, ' ');
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
   // A grid's runs of equal letters: {letter: [[col, row, n], ...]}, cached on the grid's content.
@@ -127,16 +132,25 @@
   // the base's core and the agents, alerts and fights near it (far ones are pinned to the edge), or data.box.
   function prepare(data) {
     data = data || {};
-    var base = validGrid(data.base) && data.base.rows.length ? data.base : null;
-    var core = validGrid(data.core) && data.core.w > 0 ? data.core : null;
-    var d = { base: base, fine: core, ore: validGrid(data.ore) ? data.ore : null, ground: validGrid(data.ground) ? data.ground : null };
-    d.away = (data.agents || []).filter(function (a) { return a && elsewhere(a); });
-    d.agents = (data.agents || []).filter(function (a) { return a && ok(a.position) && !elsewhere(a); });
-    d.fights = (data.fights || []).filter(function (f) { return f && ok(f.position); });
-    d.pins = (data.pins || []).filter(function (p) { return p && ok(p.position); });
-    d.nests = (Array.isArray(data.nests) ? data.nests : []).filter(function (n) { return n && isFinite(n[0]) && isFinite(n[1]); });
-    d.turrets = (Array.isArray(data.turrets) ? data.turrets : []).filter(function (t) { return t && isFinite(t[0]) && isFinite(t[1]) && t[2] > 0 && t[2] < 80; });
-    d.terrain = (Array.isArray(data.terrain) ? data.terrain : []).filter(function (t) {
+    var surface = data.surface || 'nauvis', home = surface === 'nauvis';
+    var base = home && validGrid(data.base) && data.base.rows.length ? data.base : null;
+    var core = home && validGrid(data.core) && data.core.w > 0 ? data.core : null;
+    var d = { surface: surface, base: base, fine: core, ore: home && validGrid(data.ore) ? data.ore : null,
+      ground: home && validGrid(data.ground) ? data.ground : null };
+    // the clouds: the one of the surface shown, and the surfaces that have one (the switch)
+    d.clouds = (Array.isArray(data.clouds) ? data.clouds : []).filter(function (c) {
+      return c && c.surface && Array.isArray(c.cells) && c.cells.length && c.cells.every(function (x) { return x && isFinite(x[0]) && isFinite(x[1]) && x[2] > 0; });
+    });
+    d.cloud = d.clouds.filter(function (c) { return c.surface === surface; })[0] || null;
+    d.cloudAt = {};
+    if (d.cloud) d.cloud.cells.forEach(function (x) { d.cloudAt[x[0] + ',' + x[1]] = x[2]; });
+    d.away = (data.agents || []).filter(function (a) { return a && elsewhere(a, surface); });
+    d.agents = (data.agents || []).filter(function (a) { return a && ok(a.position) && !elsewhere(a, surface); });
+    d.fights = home ? (data.fights || []).filter(function (f) { return f && ok(f.position); }) : [];
+    d.pins = home ? (data.pins || []).filter(function (p) { return p && ok(p.position); }) : [];
+    d.nests = (home && Array.isArray(data.nests) ? data.nests : []).filter(function (n) { return n && isFinite(n[0]) && isFinite(n[1]); });
+    d.turrets = (home && Array.isArray(data.turrets) ? data.turrets : []).filter(function (t) { return t && isFinite(t[0]) && isFinite(t[1]) && t[2] > 0 && t[2] < 80; });
+    d.terrain = (home && Array.isArray(data.terrain) ? data.terrain : []).filter(function (t) {
       return t && typeof t.src === 'string' && /^(\/[\w\/.-]+|https:\/\/[^"'<>\s]+)$/.test(t.src) &&
         [t.x0, t.y0, t.x1, t.y1].every(isFinite) && t.x1 > t.x0 && t.y1 > t.y0 && (data.tick == null || !(t.tick > data.tick));
     }).sort(function (a, b) { return (a.tick || 0) - (b.tick || 0); });
@@ -158,6 +172,7 @@
       d.agents.map(function (a) { return a.position; }).concat(d.pins.map(function (p) { return p.position; }), d.fights.map(function (f) { return f.position; }))
         .filter(near).forEach(function (p) { xs.push(p.x); ys.push(p.y); });
       if (d.box) { xs.push(d.box.x0, d.box.x1); ys.push(d.box.y0, d.box.y1); }
+      else if (d.cloud) d.cloud.cells.forEach(function (x) { xs.push(x[0] * 32, x[0] * 32 + 32); ys.push(x[1] * 32, x[1] * 32 + 32); });
       if (!xs.length) return d;
       var minX = Math.min.apply(0, xs), maxX = Math.max.apply(0, xs), minY = Math.min.apply(0, ys), maxY = Math.max.apply(0, ys);
       d.auto = { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, span: Math.max(48, maxX - minX, maxY - minY) * 1.1 };
@@ -186,6 +201,15 @@
   }
   function cap(s) { s = String(s || '').replace(/[-_]/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1); }
 
+  // The cloud's chunk under a tile position: its amount, as the game's map shows it on hover.
+  function cloudHit(d, x, y) {
+    if (!d.cloud) return null;
+    var cx = Math.floor(x / 32), cy = Math.floor(y / 32), amt = d.cloudAt[cx + ',' + cy];
+    if (amt == null) return null;
+    return { text: (d.cloud.pollutant === 'spores' ? 'Spores' : 'Pollution') + ' ' + amt + ' in chunk (' + cx + ', ' + cy + '), tiles ' +
+      cx * 32 + '..' + (cx * 32 + 31) + ', ' + cy * 32 + '..' + (cy * 32 + 31) };
+  }
+
   // Every mark for view {cx, cy, span} (span: tiles across the shorter side) on a W x H canvas, with layers `on`.
   function scene(d, view, W, H, on) {
     on = on || DEFAULT_ON;
@@ -210,6 +234,23 @@
     }).map(function (t) { return { src: t.src, x: px(t.x0), y: py(t.y0), w: (t.x1 - t.x0) * k, h: (t.y1 - t.y0) * k, tick: t.tick }; }) : [];
     sc.ground = on.terrain && d.ground ? place(d.ground) : null;
     sc.ore = on.ore && d.ore ? place(d.ore) : null;
+    // the cloud: each chunk in view in the pollutant's map colour, stronger where there is more (as the overlay draws it)
+    sc.cloud = null;
+    if (on.cloud && d.cloud) {
+      var cc = d.cloud.color || {}, rgb = [cc.r, cc.g, cc.b].map(function (x) { return Math.round(255 * (x || 0)); }).join(', ');
+      var ca = cc.a || 0.58, lmax = Math.log(1 + (d.cloud.max || 1));
+      sc.cloud = { rgb: rgb, cells: [], reached: [] };
+      d.cloud.cells.forEach(function (x) {
+        if (x[0] * 32 + 32 < v.cx - hw || x[0] * 32 > v.cx + hw || x[1] * 32 + 32 < v.cy - hh || x[1] * 32 > v.cy + hh) return;
+        sc.cloud.cells.push({ x: px(x[0] * 32), y: py(x[1] * 32), s: 32 * k, a: +(ca * (0.3 + 0.7 * Math.log(1 + x[2]) / lmax)).toFixed(3) });
+      });
+      (d.cloud.reached || []).forEach(function (n) {
+        if (!ok(n) || !inView(n)) return;
+        var m = { x: px(n.x), y: py(n.y) };
+        sc.cloud.reached.push(m);
+        sc.hits.push({ x: m.x, y: m.y, r: 8, text: 'Enemy nest the ' + (d.cloud.pollutant === 'spores' ? 'spores' : 'pollution') + ' reached' });
+      });
+    }
     if (on.buildings && d.base) {
       sc.base = place(d.base);
       if (d.fine) { sc.core = place(d.fine); sc.clip = { x0: px(d.box.x0), y0: py(d.box.y0), x1: px(d.box.x1), y1: py(d.box.y1) }; }
@@ -278,7 +319,7 @@
       });
       if (on.attention) dots.forEach(function (m) {
         var t = m.a.attention;
-        if (!t || !ok(t.position) || t.platform || (t.surface && t.surface !== 'nauvis') || (t.dist != null && t.dist < 3)) return;
+        if (!t || !ok(t.position) || t.platform || (t.surface || 'nauvis') !== d.surface || (t.dist != null && t.dist < 3)) return;
         var at = spot(t.position), x = px(at.x), y = py(at.y);
         sc.attention.push({ x0: m.x, y0: m.y, x1: x, y1: y, far: !!t.far, color: m.a.color });
         sc.hits.push({ x: x, y: y, r: 7, text: (m.a.display_name || m.a.name) + ' · ' + t.text + (t.age_s != null ? ' · ' + ago(t.age_s) : '') });
@@ -349,6 +390,13 @@
     sc.grid.ys.forEach(function (y) { ctx.moveTo(0, Math.round(y) + 0.5); ctx.lineTo(W, Math.round(y) + 0.5); });
     ctx.globalAlpha = sc.terrain.length ? 0.45 : 1; ctx.stroke(); ctx.globalAlpha = 1;
     if (sc.ore) fillRuns(ctx, sc.ore, ORE, 0.38);
+    if (sc.cloud) {
+      sc.cloud.cells.forEach(function (c) { ctx.fillStyle = 'rgba(' + sc.cloud.rgb + ', ' + c.a + ')'; ctx.fillRect(c.x, c.y, c.s + 0.5, c.s + 0.5); });
+      sc.cloud.reached.forEach(function (n) {
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 3; circle(ctx, n.x, n.y, 6); ctx.stroke();
+        ctx.strokeStyle = '#ff5a44'; ctx.lineWidth = 1.8; circle(ctx, n.x, n.y, 6); ctx.stroke();
+      });
+    }
     if (sc.base) {
       if (sc.core) {
         // the coarse grid only outside the fine core, so the two never draw over each other
@@ -439,6 +487,7 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
   function has(d, layer) {
     return layer === 'terrain' ? d.terrain.length > 0 || !!d.ground : layer === 'ore' ? !!d.ore : layer === 'buildings' ? !!d.base :
+      layer === 'cloud' ? !!d.cloud :
       layer === 'coverage' ? d.turrets.length > 0 : layer === 'nests' ? d.nests.length > 0 : layer === 'agents' ? d.agents.length + d.away.length > 0 :
       layer === 'attention' ? d.agents.some(function (a) { return a.attention && ok(a.attention.position); }) :
       layer === 'alerts' ? d.fights.length + d.pins.length > 0 : false;
@@ -453,7 +502,8 @@
     var saved = {};
     try { saved = JSON.parse(store(this.key + '-layers') || '{}') || {}; } catch (e) { saved = {}; }
     LAYERS.forEach(function (l) { self.on[l[0]] = l[0] in saved ? !!saved[l[0]] : DEFAULT_ON[l[0]]; });
-    this.view = null; this.follow = null; this.d = prepare({}); this.sc = null;
+    this.view = null; this.follow = null; this.d = prepare({}); this.sc = null; this.data = {};
+    this.surface = 'nauvis';  // the surface shown: Nauvis, or another with a cloud (the switch)
     this.images = {}; this.frame = 0; this.ptrs = {};
     var el = this.root = document.createElement('div');
     el.className = 'mapview';
@@ -487,7 +537,10 @@
     else window.addEventListener('resize', function () { self.draw(); });
   }
   Viewer.prototype.set = function (data) {
-    this.d = prepare(data);
+    this.data = data || {};
+    var self = this, has = (this.data.clouds || []).some(function (c) { return c && c.surface === self.surface; });
+    if (this.surface !== 'nauvis' && !has) this.surface = 'nauvis';  // its cloud is gone: back to the base
+    this.d = prepare(this.surface === 'nauvis' ? data : Object.assign({}, data, { surface: this.surface }));
     this.renderLayers();
     this.renderLegend();
     this.draw();
@@ -544,11 +597,18 @@
   };
   Viewer.prototype.renderLayers = function () {
     var self = this, box = this.root.querySelector('.mapview-layers');
-    var sig = LAYERS.map(function (l) { return has(self.d, l[0]) ? l[0] + (self.on[l[0]] ? 1 : 0) : ''; }).join(',');
+    // other surfaces with a cloud: a switch between them and Nauvis
+    var others = this.d.clouds.filter(function (c) { return c.surface !== 'nauvis'; });
+    var surfaces = others.length ? [{ surface: 'nauvis', text: 'Nauvis' }].concat(others.map(function (c) { return { surface: c.surface, text: c.label || cap(c.surface) }; })) : [];
+    var sig = LAYERS.map(function (l) { return has(self.d, l[0]) ? l[0] + (self.on[l[0]] ? 1 : 0) : ''; }).join(',') + '|' +
+      surfaces.map(function (x) { return x.surface + x.text; }).join(',') + '|' + this.surface;
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
-    box.innerHTML = LAYERS.filter(function (l) { return has(self.d, l[0]); }).map(function (l) {
-      return '<button type="button" class="fx-btn small mapview-layer" data-layer="' + l[0] + '" aria-pressed="' + (self.on[l[0]] ? 'true' : 'false') + '">' + esc(l[1]) + '</button>';
+    box.innerHTML = surfaces.map(function (x) {
+      return '<button type="button" class="fx-btn small mapview-surface" data-surface="' + esc(x.surface) + '" aria-pressed="' + (self.surface === x.surface ? 'true' : 'false') + '">' + esc(x.text) + '</button>';
+    }).join('') + LAYERS.filter(function (l) { return has(self.d, l[0]); }).map(function (l) {
+      var text = l[0] === 'cloud' && self.d.cloud && self.d.cloud.pollutant === 'spores' ? 'Spores' : l[1];
+      return '<button type="button" class="fx-btn small mapview-layer" data-layer="' + l[0] + '" aria-pressed="' + (self.on[l[0]] ? 'true' : 'false') + '">' + esc(text) + '</button>';
     }).join('');
   };
   Viewer.prototype.renderLegend = function () {
@@ -561,6 +621,12 @@
     if (d.ore && on.ore) {
       var ores = runs(d.ore);
       h += ORE.filter(function (c) { return ores[c[0]]; }).map(function (c) { return '<li class="ore"><i class="o-' + c[0] + '"></i>' + esc(c[2]) + '</li>'; }).join('');
+    }
+    if (d.cloud && on.cloud) {
+      var cc = d.cloud.color || {}, rgb = [cc.r, cc.g, cc.b].map(function (x) { return Math.round(255 * (x || 0)); }).join(', ');
+      h += '<li><i class="mv-cloud" style="background: linear-gradient(90deg, rgba(' + rgb + ', .2), rgba(' + rgb + ', .6))"></i>' +
+        esc((d.cloud.pollutant === 'spores' ? 'Spores' : 'Pollution') + ' per chunk, up to ' + d.cloud.max) + '</li>';
+      if ((d.cloud.reached || []).length) h += '<li><i class="mv-reached"></i>Nests it reached</li>';
     }
     if (d.turrets.length && on.coverage) h += '<li><i class="mv-range"></i>Turret range</li>';
     if (d.nests.length && on.nests) h += '<li><i class="nest"></i>Enemy nests</li>';
@@ -594,6 +660,7 @@
     if (a) this.followEl.querySelector('span').textContent = 'Following ' + (a.display_name || a.name);
     this.draw();
   };
+  Viewer.prototype.cloudHit = function (q) { return q && this.on.cloud ? cloudHit(this.d, q.x, q.y) : null; };
   Viewer.prototype.showTip = function (hit, x, y) {
     if (!hit) { this.tip.hidden = true; return; }
     this.tip.textContent = hit.text;
@@ -611,7 +678,7 @@
     if (!p) {
       if (ev.pointerType === 'mouse' && ev.target === this.canvas && this.sc) {
         var q = this.point(ev);
-        this.showTip(hitAt(this.sc, q.cx, q.cy), q.cx, q.cy);
+        this.showTip(hitAt(this.sc, q.cx, q.cy) || this.cloudHit(q), q.cx, q.cy);
       }
       return;
     }
@@ -633,13 +700,18 @@
     delete this.ptrs[ev.pointerId];
     if (!p || p.moved > 4 || ev.type === 'pointercancel' || !this.sc || ev.target !== this.canvas) return;
     // a click or tap: an agent is followed; anything else shows its tip (a tap on nothing hides it)
-    var q = this.point(ev), hit = hitAt(this.sc, q.cx, q.cy);
+    var q = this.point(ev), hit = hitAt(this.sc, q.cx, q.cy) || this.cloudHit(q);
     if (hit && hit.agent) this.setFollow(hit.agent);
     this.showTip(hit, q.cx, q.cy);
   };
   Viewer.prototype.onClick = function (ev) {
-    var b = ev.target.closest && ev.target.closest('[data-mv],[data-layer]');
+    var b = ev.target.closest && ev.target.closest('[data-mv],[data-layer],[data-surface]');
     if (!b) return;
+    if (b.dataset.surface) {  // another surface's cloud, or back to Nauvis: a fresh view framed on it
+      this.surface = b.dataset.surface; this.view = null; this.follow = null; this.followEl.hidden = true; this.showTip(null);
+      this.set(this.data);
+      return;
+    }
     if (b.dataset.layer) {
       var l = b.dataset.layer, saved = {};
       this.on[l] = !this.on[l];
@@ -676,7 +748,7 @@
   root.PogMap = {
     viewers: [],  // the page's viewers (tools/site_shots.js finds an agent's dot through them)
     create: function (host, opts) { var v = new Viewer(host, opts); root.PogMap.viewers.push(v); return v; },
-    prepare: prepare, scene: scene, hitAt: hitAt, paint: paint, runs: runs,
+    prepare: prepare, scene: scene, hitAt: hitAt, cloudHit: cloudHit, paint: paint, runs: runs,
     LAYERS: LAYERS, DEFAULT_ON: DEFAULT_ON, BASE: BASE, ORE: ORE
   };
 })(typeof window !== 'undefined' ? window : this);

@@ -95,7 +95,9 @@ test('wait_ticks, a build awaiting a hand craft, and a transfer or collect that 
     ['build','feed','{"item":"lab","position":{"x":1,"y":1}}',{awaiting_craft:{item:'lab',held:0,need:1,crafting:1},until_tick:900}],
     // Luna 07:57: a courier step runs as a tour (kind gather); --wait returned at once before.
     ['transfer','gather','{"positions":[{"x":1,"y":1}],"item":"yumako-seed","pick":"first_with_stock","to":{"x":9,"y":9}}',{op:'transfer',places:2,until_tick:900}],
-    ['collect','gather','{"positions":[{"x":1,"y":1}],"item":"yumako-seed","pick":"most_stock"}',{op:'transfer',places:1,until_tick:900}]] as const) {
+    ['collect','gather','{"positions":[{"x":1,"y":1}],"item":"yumako-seed","pick":"most_stock"}',{op:'transfer',places:1,until_tick:900}],
+    // Muse 12:20: collect with walk runs as the same tour.
+    ['collect','gather','{"positions":[{"x":1,"y":1}],"item":"iron-plate","walk":true}',{op:'transfer',places:1,until_tick:900}]] as const) {
     let polls=0;
     await engine(request=>{
       if(request.action===action)return {ok:true,result:accepted};
@@ -209,7 +211,10 @@ test('fh sleep --until sends a wait_until condition: words or JSON',async()=>{
     for (const until of ['researched','researched automation-2','crafting_done','item_count iron-plate>=200',
       'item_count iron-plate >= 200 at -18.5,-34.5 (3,4)','items coal<10','ammo_below count=5 radius=20','rocket_ready 65.5,14.5',
       '{"until":"item_count","item":"gear","at_least":5}','platform_arrived Sunward','platform_arrived Sunward gleba',
-      'platform_arrived platform=Sunward location=nauvis']) {
+      'platform_arrived platform=Sunward location=nauvis',
+      // Haiku, 12:20: a level fallen under at a chest, and the other operators.
+      'item_count coal below 20 at 10,39','item_count coal under 20 at 10,39','item_count coal <= 19 at 10,39',
+      'item_count coal > 9','item_count coal above 9']) {
       assert.equal(JSON.parse((await cli(port,['sleep','30','--until',until])).stdout).result.woke,'condition');
     }
     await assert.rejects(cli(port,['sleep','30','--until','item_count iron-plate']),(error:any)=>/--until takes/.test(error.stdout));
@@ -222,7 +227,10 @@ test('fh sleep --until sends a wait_until condition: words or JSON',async()=>{
     {until:'item_count',item:'iron-plate',at_least:200,positions:[{x:-18.5,y:-34.5},{x:3,y:4}]},
     {until:'item_count',item:'coal',below:10},{until:'ammo_below',count:5,radius:20},{until:'rocket_ready',position:{x:65.5,y:14.5}},
     {until:'item_count',item:'gear',at_least:5},{until:'platform_arrived',platform:'Sunward'},
-    {until:'platform_arrived',platform:'Sunward',location:'gleba'},{until:'platform_arrived',platform:'Sunward',location:'nauvis'}]);
+    {until:'platform_arrived',platform:'Sunward',location:'gleba'},{until:'platform_arrived',platform:'Sunward',location:'nauvis'},
+    {until:'item_count',item:'coal',below:20,positions:[{x:10,y:39}]},{until:'item_count',item:'coal',below:20,positions:[{x:10,y:39}]},
+    {until:'item_count',item:'coal',below:20,positions:[{x:10,y:39}]},
+    {until:'item_count',item:'coal',at_least:10},{until:'item_count',item:'coal',at_least:10}]);
   assert.equal(seen.filter(r=>r.action==='sleep')[0].args.seconds,30);
 });
 test('fh sleep keeps the team hints the sleep request carried, and prints what keeps going first (compact)',async()=>{

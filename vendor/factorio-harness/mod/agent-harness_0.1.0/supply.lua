@@ -370,10 +370,29 @@ return function(api)
         end
       end
       local out, carrying = 0, 0
+      -- Who reserved the providers' stock (Grok, 10:50: "all held are reserved" said nothing about by whom): a robot's
+      -- order queue holds its pickup (from a provider) and then its delivery (to a requester); each such pair is that
+      -- requester's reservation of the item. net.reserved_for[item] = {key: {e, n}}.
+      local orders_type = defines.robot_order_type or {}
+      net.reserved_for = {}
       for _, r in ipairs(try(function() return n.logistic_robots end) or {}) do
         out = out + 1
         local inv = inventory(r, 'robot_cargo')
         if inv and not try(function() return inv.is_empty() end) then carrying = carrying + 1 end
+        local pick
+        for _, o in ipairs(orders_type.pickup and try(function() return r.robot_order_queue end) or {}) do
+          local item = o.target_item
+          if type(item) == 'table' then item = type(item.name) == 'table' and item.name.name or item.name end
+          if o.type == orders_type.pickup and item and T[item] then pick = {item=item, n=o.target_count or 0}
+          elseif o.type == orders_type.deliver and pick and o.target and o.target.valid then
+            local by = net.reserved_for[pick.item] or {}
+            net.reserved_for[pick.item] = by
+            local key = tostring(try(function() return o.target.unit_number end) or at(o.target.position))
+            by[key] = by[key] or {e=o.target, n=0}
+            by[key].n = by[key].n + pick.n
+            pick = nil
+          end
+        end
       end
       net.robots = {all=n.all_logistic_robots or 0, idle=n.available_logistic_robots or 0, out=out, carrying=carrying,
         charging=charging, waiting=waiting, payload=payload}
@@ -555,6 +574,17 @@ return function(api)
       local text = string.format('network %d (%s): %s, %s, %s', net.id, place, part('providers', st.held.providers, st.reserved.providers),
         part('storage', st.held.storage, st.reserved.storage), part('buffers', st.held.buffer, st.reserved.buffer))
       if st.in_requesters > 0 then text = text .. ', in its requester chests ' .. st.in_requesters end
+      -- The requesters robots will pick the reserved stock up for (their order queues), most first.
+      local res = {}
+      for _, v in pairs((net.reserved_for or {})[t.item] or {}) do
+        if v.e.valid then res[#res+1] = {text=string.format('%s %s %d', at(v.e.position), v.e.name, v.n), n=v.n, x=v.e.position.x} end
+      end
+      table.sort(res, function(a, b) if a.n ~= b.n then return a.n > b.n end return a.x < b.x end)
+      if #res > 0 then
+        local shown = {}
+        for i = 1, math.min(4, #res) do shown[i] = res[i].text end
+        text = text .. '; reserved for ' .. table.concat(shown, ', ') .. (#res > 4 and string.format(' (+%d more)', #res - 4) or '')
+      end
       text = text .. string.format('; robots carry %d, %d due at requesters', st.flight, st.due)
       text = text .. string.format('; logistic robots %d: %d idle, %d out (%d carrying), %d charging, %d waiting to charge, %d items each',
         r.all, r.idle, r.out, r.carrying, r.charging, r.waiting, r.payload)

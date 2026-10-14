@@ -27,6 +27,10 @@ function span(ms: number): string {
   if (minutes >= 60) return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}m`;
   return minutes < 1 ? `${Math.max(0, Math.floor(ms / 1000))}s` : `${minutes}m`;
 }
+/** The look-ahead block's line: `time left in the shift: 1h20m` (or that the deadline passed). */
+export function timeLeftText(at: number, now = Date.now()): string {
+  return at >= now ? `time left in the shift: ${span(at - now)}` : `time left in the shift: none (the deadline passed ${span(now - at)} ago)`;
+}
 export function deadlineText(at: number, now = Date.now()): string {
   return at >= now ? `deadline in ${span(at - now)}` : `deadline passed ${span(now - at)} ago`;
 }

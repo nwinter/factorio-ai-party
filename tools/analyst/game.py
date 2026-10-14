@@ -178,13 +178,13 @@ class LiveGame:
         except json.JSONDecodeError:
             raise RuntimeError(out[:300])
 
-    def dispatch(self, action, args=None):
+    def dispatch(self, action, args=None, bot=None):
         if action not in READ_ACTIONS:
             raise ValueError(f"{action} is not a read action")
         args = dict(args or {}, peek=True)
         req = {"id": "analyst-" + uuid.uuid4().hex[:10], "action": action, "args": args}
-        if self.bot:
-            req["bot"] = self.bot
+        if bot or self.bot:
+            req["bot"] = bot or self.bot
         else:
             req["player"] = self.player or 1
         raw = self.rc.command(f'/silent-command rcon.print(remote.call("agent_harness", "dispatch", {lua_string(json.dumps(req))}))')
@@ -219,8 +219,17 @@ class LiveGame:
             return {"available": False}
         return self.dispatch("board", {"limit": 40})
 
-    def status(self):
-        return self.dispatch("status")
+    def status(self, agent=None):
+        """A status read as the analyst's bot, or as `agent` (a bot name): its threats, pollution and enemies are the
+        planet that agent stands on (status `surface`)."""
+        return self.dispatch("status", bot=agent)
+
+    def agents(self):
+        """Each agent's planet or platform: [{name, display_name, surface, where}] from profiles."""
+        r = self.dispatch("profiles")
+        rows = r.get("profiles", r) if isinstance(r, dict) else r
+        return [{k: p.get(k) for k in ("name", "display_name", "surface", "where") if p.get(k) is not None}
+                for p in rows or [] if isinstance(p, dict)]
 
     def power(self):
         return self.dispatch("power")
@@ -275,7 +284,7 @@ class ReplayGame:
     def board(self):
         return {"available": False}
 
-    def status(self):
+    def status(self, agent=None):
         return {}
 
     def power(self):

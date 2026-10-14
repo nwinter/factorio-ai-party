@@ -86,6 +86,13 @@ body.preview .cam::after {
   position: absolute; inset: 0; display: grid; place-items: center;
   color: rgba(255, 255, 255, 0.18); font-size: 28px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.2em;
 }
+/* a pollution or spore cloud over a map shot (overlay.js renderCloud): translucent chunks and a small key */
+.cam-cloud { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; transition: opacity 600ms ease; }
+.cam-cloud.on { opacity: 1; }
+/* the cloud's key in the camera's label (overlay.js renderCams): a swatch in the cloud's colours and the amounts */
+.cam-label .cloud-key { display: inline-flex; align-items: center; gap: 8px; margin-left: 16px; font-size: 0.7em;
+  font-weight: 600; color: var(--ink, #e8e6e1); white-space: nowrap; }
+.cam-label .cloud-key .sw { display: inline-block; width: 40px; height: 13px; border: 2px solid; box-shadow: 0 0 0 1px #000; }
 /* an unused side camera: an opaque desk card over the hole (overlay.js renderFill) */
 .cam-fill { position: absolute; inset: 0; box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-start;
   gap: 10px; padding: 22px 26px 16px; overflow: hidden; background: rgba(var(--fx-frame-rgb), 0.98); box-shadow: var(--fx-bevel);
@@ -228,6 +235,7 @@ body.portrait .cam-fill .tag, body.portrait .cam-fill .pace { font-size: 17px; l
   margin-left: auto; flex: none; font-size: 12px; font-weight: 600; color: var(--faint);
   white-space: nowrap; max-width: 92px; overflow: hidden; text-overflow: ellipsis;
 }
+.card.squeezed .harness { display: none; }
 .card .tok {
   flex: none; font-size: 12px; font-weight: 600; color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums;
 }

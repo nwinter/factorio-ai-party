@@ -97,5 +97,28 @@ return function(api)
     return #parts > 0 and table.concat(parts, '; ') or nil
   end
   function M.team(p) return try(function() return line(p) end) end
+  -- The shift start's teammates line (Nick 12:20: do agents know each other's pronouns? operator 13:05): each other
+  -- agent's display name, its pronouns when it set any, and where it is when the team is on more than one planet,
+  -- platform or pod: 'teammates: Astra; Gemini (she/her); Grok (they) on Vulcanus'. nil with no teammate.
+  function M.shift_line(p)
+    local rows, places, n = {}, {}, 0
+    for _, a in ipairs(api.agents()) do
+      if not api.human(a.index) then
+        local w = try(function() return place(a.index) end)
+        if w and not places[w.key] then places[w.key] = true; n = n + 1 end
+        if a.index ~= p.index then
+          local pronouns = api.pronouns and try(function() return api.pronouns(a.index) end)
+          rows[#rows+1] = {name=a.display_name or a.name, pronouns=pronouns, where=w and w.text}
+        end
+      end
+    end
+    if #rows == 0 then return nil end
+    table.sort(rows, function(x, y) return x.name:lower() < y.name:lower() end)
+    local parts = {}
+    for _, r in ipairs(rows) do
+      parts[#parts+1] = r.name .. (r.pronouns and ' (' .. r.pronouns .. ')' or '') .. (n > 1 and r.where and ' ' .. r.where or '')
+    end
+    return 'teammates: ' .. table.concat(parts, '; ')
+  end
   return M
 end

@@ -17,6 +17,7 @@ import json, math, os, re, time
 from collections import deque
 
 import attention
+import clouds as clouds_mod
 import loadout as loadouts_mod
 import tokens
 
@@ -28,6 +29,7 @@ ACTION_WEIGHT = {
     "build": 3.0, "place": 3.0, "construct": 3.5, "blueprint": 4.0, "build_blueprint": 4.0, "rotate": 1.0,
     "mine": 1.2, "craft": 1.0, "insert": 1.2, "take": 1.0, "feed": 1.2, "walk": 0.6, "path": 0.6,
     "attack": 6.0, "shoot": 6.0, "kite": 6.0, "research": 2.0, "wait_until": 0.2, "wait": 0.2,
+    "guard": 0.3,  # a shoot with nothing in range (combat_state)
 }
 SCIENCE = ["automation-science-pack", "logistic-science-pack", "military-science-pack", "chemical-science-pack",
            "production-science-pack", "utility-science-pack", "space-science-pack",
@@ -132,6 +134,46 @@ def chat_lane(entry):
     if heuristic_kind is None:
         return "talk"
     return "talk" if heuristic_kind(clean_text(entry.get("text")))[0] == "voice" else "log"
+
+
+# What an agent's shoot is doing (viewer Joonazan, 13:36: "I'm pretty sure biters are not hitting anyone on Gleba";
+# the stream called Sol's shoot auto guard by the egg breeders, nothing in range, "under attack"). From status combat
+# (target, fired_tick, kills_10s) and hurt (the last hit by another force on the character or its vehicle):
+HURT_S = 15.0   # a hit this many game seconds ago or less: "X is under attack"
+FIRED_S = 10.0  # fired at something this recently (or a target in range now, or a kill): "X is fighting <enemy>"
+DAMAGE_TYPES = {"physical", "acid", "fire", "explosion", "poison", "laser", "electric", "impact", "enemy"}
+
+
+def combat_state(combat, hurt, tick):
+    """-> (state, info). state: "hurt" (hit in the last HURT_S), "fighting" (a target, a shot or a kill lately),
+    "guard" (a shoot running with nothing to shoot at) or None. info: {by, what} for hurt, {target, position} for a
+    fight. `combat` True (the mock, a row with no detail) is the old meaning: hit. A runtime from before these
+    fields: a shoot at a position fights, an auto shoot guards."""
+    h = hurt if isinstance(hurt, dict) else (combat.get("hurt") if isinstance(combat, dict) else None)
+    if isinstance(h, dict) and isinstance(h.get("tick"), (int, float)) and isinstance(tick, (int, float)) \
+            and tick - h["tick"] <= HURT_S * 60:
+        by = h.get("by") if h.get("by") not in DAMAGE_TYPES else None
+        return "hurt", {"by": by, "what": h.get("what")}
+    if combat is True:
+        return "hurt", {}
+    if not isinstance(combat, dict) or not combat:
+        return None, {}
+    t = combat.get("target") if isinstance(combat.get("target"), dict) else {}
+    fired = combat.get("fired_tick")
+    recent = isinstance(fired, (int, float)) and isinstance(tick, (int, float)) and tick - fired <= FIRED_S * 60
+    if t.get("name") or recent or (combat.get("kills_10s") or 0) > 0:
+        return "fighting", {"target": t.get("name"), "position": t.get("position")}
+    if "kills_10s" not in combat:
+        return ("guard" if combat.get("auto") else "fighting"), {}
+    return "guard", {}
+
+
+def enemy_label(name):
+    """"small-biter" -> "a small biter", "gleba-spawner" -> "a gleba spawner"; None -> None."""
+    if not name:
+        return None
+    n = str(name).replace("-", " ")
+    return ("an " if n[:1].lower() in "aeiou" else "a ") + n
 
 
 def clamp(v, lo, hi):
@@ -357,7 +399,9 @@ class Agent:
         self.action_since = None
         self.last = None
         self.last_activity_t = None  # wall time of the last observed action or speech
-        self.combat = False
+        self.combat = False  # in a fight now: hit lately or fighting (combat_state)
+        self.combat_state = None  # "hurt" | "fighting" | "guard" | None
+        self.combat_info = {}
         self.plan = None  # the action running now with its bounds (live.py `plan`; onecam.py looks ahead with it)
         self.auto = None  # a standing order running for it (live.py `auto`, orders.lua): {name, reason, step, steps}
         self.last_said = None
@@ -411,6 +455,8 @@ class Model:
         self.power = None
         self.darkness = None  # LuaSurface.darkness: 0 day .. ~0.85 midnight (nightlift.py)
         self.basemap = None  # the base as a coarse grid (harness.BASEMAP_LUA), for the site's live map only
+        self.clouds = {}  # surface -> pollution or spores per charted chunk (clouds.normalise; live.py observe_clouds)
+        self.clouds_t = None
         self.board = {"events": deque(maxlen=40), "seen": set(), "items": {}, "open_unowned": None,
                       "changelog": deque(maxlen=5), "available": False}
         # Space Age: score's rockets/planets/platforms plus platform detail (live.py); moments fire once each
@@ -481,6 +527,8 @@ class Model:
         if obs.get("basemap"):
             ore = obs["basemap"].get("ore") or (self.basemap or {}).get("ore")  # ore is read less often: keep the last
             self.basemap = dict(obs["basemap"], ore=ore) if ore else obs["basemap"]
+        if obs.get("clouds") is not None:  # a read happened: a surface missing from it has no cloud now
+            self.clouds, self.clouds_t = clouds_mod.normalise(obs["clouds"]), now
         if obs.get("power"):
             self._ingest_power(obs["power"], now)
         for e in obs.get("board_events") or []:
@@ -600,6 +648,7 @@ class Model:
         owner = self.agents.get(ch.get("player")) if ch.get("player") else None
         if not owner and ch:
             owner = next((ag for ag in self.agents.values() if ag.position and
+                          (ag.surface or "nauvis") == (e.get("surface") or "nauvis") and
                           math.hypot(ag.position["x"] - ch["x"], ag.position["y"] - ch["y"]) <= 3), None)
         b = e.get("nearest")
         near_owner = owner and b and math.hypot(ch["x"] - b["x"], ch["y"] - b["y"]) <= 80
@@ -697,13 +746,22 @@ class Model:
             ag.died_at = now
             ag.bump(5, now)
             where = where_label(ag.surface, ag.platform) if ag.surface else None
+            # (the casters' facts name no planet while Nauvis is the only one in play: Nick 12:35, item 4)
             self.alert("death", f"{ag.display_name} died" + (f" on {where}" if where and where != "Nauvis" else ""),
+                       surface=ag.surface or "nauvis",
                        key=f"death:{ag.name}:{int(now // 30)}", agent=ag.name,
-                       facts={"headline": "agent_death", "agent": ag.display_name, "where": where})
+                       facts={"headline": "agent_death", "agent": ag.display_name,
+                              "where": where if where != "Nauvis" or self.space_in_play() else None})
         ag.alive = alive
         ag.connected = connected
         ag.dead_until_tick = a.get("dead_until_tick")
         active = a.get("active") or False
+        # Under attack only when hit lately; fighting while it shoots at something; a guard with nothing in range is
+        # neither, and its action is "guard", not "shoot" (the director's fight kinds and the hosts' "fighting" are for
+        # fights; viewer Joonazan, 13:36)
+        state, info = combat_state(a.get("combat"), a.get("hurt"), self.tick)
+        if state == "guard" and str(active).split(":")[0] == "shoot":
+            active = "guard"
         if active and active != ag.active:
             ag.action_since = now
             ag.bump(ACTION_WEIGHT.get(str(active).split(":")[0], 1.0), now)
@@ -716,16 +774,30 @@ class Model:
         ag.active = active
         if a.get("last"):
             ag.last = a["last"]
-        combat = bool(a.get("combat"))
-        if combat and ag.position:  # an agent's own fight, seen on every poll while it lasts (replays.py)
-            self._fight(f"attack:{ag.name}", "attack", ag.position, now, f"{ag.display_name} is under attack", agent=ag.name)
-        if combat and not ag.combat:
-            ag.bump(6, now)
-            self.alert("attack", f"{ag.display_name} is under attack", key=f"attack:{ag.name}", agent=ag.name, ttl=60,
-                       position=ag.position)
-        ag.combat = combat
+        was = ag.combat_state
+        if state == "hurt":
+            by = enemy_label(info.get("by"))
+            text = f"{ag.display_name} is under attack" + (f" by {by}" if by else "") + \
+                (f" in the {info['what'].replace('-', ' ')}" if info.get("what") else "")
+            if ag.position:  # an agent's own fight, seen on every poll while it lasts (replays.py)
+                self._fight(f"attack:{ag.name}", "attack", ag.position, now, text, agent=ag.name)
+            if was != "hurt":
+                ag.bump(6, now)
+                self.alert("attack", text, key=f"attack:{ag.name}", agent=ag.name, ttl=60, position=ag.position,
+                           surface=ag.surface or "nauvis")
+        elif state == "fighting":
+            foe = enemy_label(info.get("target"))
+            text = f"{ag.display_name} is fighting {foe}" if foe else f"{ag.display_name} is firing"
+            if ag.position:  # a fight of its own, lower weight: no urgent cut (the hosts and the toasts have it)
+                self._fight(f"fight:{ag.name}", "fight", ag.position, now, text, agent=ag.name)
+            if was not in ("hurt", "fighting"):
+                ag.bump(3, now)
+                self.alert("fight", text, key=f"fight:{ag.name}", agent=ag.name, ttl=60, position=ag.position,
+                           surface=ag.surface or "nauvis")
+        ag.combat_state, ag.combat_info = state, info
+        ag.combat = state in ("hurt", "fighting")
         if "plan" in a:
-            ag.plan = a["plan"] if active else None
+            ag.plan = a["plan"] if active and active != "guard" else None
         if "auto" in a:
             ag.auto = a["auto"] or None
         said = a.get("last_said")
@@ -1069,9 +1141,13 @@ class Model:
                 if other.position and math.hypot(other.position["x"] - p["x"], other.position["y"] - p["y"]) <= 60:
                     other.bump(4, now)
         self.alert(e["kind"], e["text"], key=e.get("key") or f"{e['kind']}:{e['text']}", agent=e.get("agent"),
-                   ttl=e.get("ttl", 60), position=p)
+                   ttl=e.get("ttl", 60), position=p, surface=(p or {}).get("surface") or (
+                       ag.surface if ag and ag.surface else "nauvis" if e["kind"] in ("attack", "loss") else None),
+                   platform=e.get("platform"))
 
-    def alert(self, kind, text, key=None, agent=None, ttl=45, position=None, facts=None):
+    def alert(self, kind, text, key=None, agent=None, ttl=45, position=None, facts=None, surface=None, platform=None):
+        """surface: where it happened (a planet or a platform's surface; None for research, power, space news), for the
+        hosts (caster.py: each battle fact says its planet; viewer Joonazan, 13:38: lines that mix planets)."""
         now = time.time()
         key = key or f"{kind}:{text}"
         if key in self.alert_keys and now - self.alert_keys[key] < ttl:
@@ -1081,6 +1157,10 @@ class Model:
                "t": now, "until": now + min(ttl, 40), "position": position}
         if facts:  # a headline's facts for the hosts (caster.py facts_for): names, place, cause
             row["facts"] = facts
+        if surface:
+            row["surface"] = surface
+        if platform:
+            row["platform"] = platform
         self.alerts.append(row)
 
     # ---- which platform a fight is on -------------------------------------------------------------------------
@@ -1131,6 +1211,10 @@ class Model:
             if ag.dead_until_tick and ag.dead_until_tick > self.tick:
                 return f"respawning in {math.ceil((ag.dead_until_tick - self.tick) / 60)} s"
             return "dead"
+        if ag.combat_state == "guard":  # a shoot running with nothing in range (combat_state)
+            return "on guard"
+        if ag.combat_state == "fighting":  # shooting at something (a standing order's name would hide it)
+            return "fighting"
         if ag.auto and ag.auto.get("name"):  # a standing order runs the character: "auto: restock ammo"
             return "auto: " + str(ag.auto["name"]).replace("-", " ").replace("_", " ")
         if ag.active:
@@ -1374,6 +1458,13 @@ class Model:
 
     LOST_SHOW_S = 120  # a lost platform stays in the widget this long, marked lost, with its cause
 
+    def space_in_play(self):
+        """Space beyond Nauvis (the space widget's active, without the science packs): a rocket, a platform, another
+        planet with our entities, or an agent away from Nauvis."""
+        sp = self.space
+        return bool(sp.get("rockets") or sp.get("platforms") or len(sp.get("planets") or []) > 1
+                    or any(a.surface and a.surface != "nauvis" for a in self.agents.values()))
+
     def space_snapshot(self, sci, now=None):
         now = now or time.time()
         sp = self.space
@@ -1515,6 +1606,8 @@ class Model:
                 "interest": round(ag.interest, 2),
                 "last_said": ag.last_said, "camera": cams_by_agent.get(ag.name), "seen": ag.seen, "voice": ag.voice,
                 "voice_description": ag.voice_description, "pronouns": ag.pronouns, "avatar": ag.avatar, "combat": ag.combat, "died_at": ag.died_at, "plan": ag.plan,
+                # hurt | fighting | guard | None, and who hit it or what it shoots at (combat_state)
+                "combat_state": ag.combat_state, "combat_info": ag.combat_info or None,
                 "surface": ag.surface, "where": where_label(ag.surface, ag.platform) if ag.surface else None,
                 "on_platform": bool(ag.platform), "attention": self.attention_row(ag, now), "auto": ag.auto,
                 "tokens": (tok.get(ag.name) or {}).get("total") or None,  # this shift's, for the card's small figure
@@ -1541,6 +1634,8 @@ class Model:
             "research_news": self.research_news_snapshot(now),
             "darkness": self.darkness,
             "basemap": self.basemap,
+            # the map's pollution and spore layer, one row per surface (clouds.py; the overlay's map shots, the site)
+            "clouds": [dict(c, age_s=round(now - self.clouds_t)) for c in self.clouds.values()] if self.clouds_t else [],
             "production": self.production(now),
             "science": science,
             "space": self.space_snapshot(science, now),

@@ -1125,8 +1125,21 @@ def catalog_markdown(providers=None):
     for vid, (prov, _, desc, _) in sorted(CATALOG.items(), key=lambda kv: (kv[1][0] == "aura2", kv[0])):
         if vid in reserved or (prov != "aura2" and FAMILY.get(prov) not in fams):
             continue
-        lines.append(f"- `{vid}`: {desc}")
+        lines.append(f"- `{vid}`: {voice_gender(vid)} voice, {desc}")
     return "\n".join(lines) + "\n"
+
+
+NEUTRAL = {"el-river", "oa-alloy"}  # presented as gender-neutral by their makers
+
+
+def voice_gender(vid):
+    """'female', 'male' or 'gender-neutral', as the voice sounds: an Aura-2 voice's own entry, else that of the Aura-2
+    voice it falls back to (Nick, 12:20: do agents' pronouns match their voice genders? The list showed no gender)."""
+    if vid in NEUTRAL:
+        return "gender-neutral"
+    entry = CATALOG.get(vid)
+    g = (VOICES.get(vid) or VOICES.get(entry[3] if entry else "") or ("?",))[0]
+    return {"f": "female", "m": "male"}.get(g, "gender-neutral")
 
 
 if __name__ == "__main__":

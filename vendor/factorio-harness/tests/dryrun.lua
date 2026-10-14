@@ -328,6 +328,18 @@ for x = 7, 9 do for y = -1, 1 do hole_ghosts[#hole_ghosts+1] = {name='tile-ghost
 local ps2 = world(deck, hole_ghosts, {platform={hub=hub}})
 local pl2 = dryrun.check({surface=ps2, force=force, position={x=0, y=0}}, {kind='ghosts', entities={}, tiles=ring})
 eq(pl2.tiles.holes, nil, 'the hole is ordered already')
+-- A tile ghost past the box the dry run reads (Astra, shift12 12:41: a hole named where a tile ghost stood): a channel
+-- of empty space 60 tiles long that the plan closes at its mouth, with a tile ghost 55 tiles in. The flood stops at
+-- it: 54 tiles, not 60.
+local function channel(x, y)
+  if x >= -5 and x <= 60 and y >= -3 and y <= 3 and not (y == 0 and x <= 55) then return 'space-platform-foundation' end
+  return 'empty-space'
+end
+local ps3 = world(channel, {{name='tile-ghost', type='tile-ghost', ghost_name='space-platform-foundation', position={x=50.5, y=0.5}}},
+  {platform={hub=hub}})
+local pl3 = dryrun.check({surface=ps3, force=force, position={x=0, y=0}}, {kind='ghosts', entities={},
+  tiles={{name='space-platform-foundation', position={x=-4.5, y=0.5}}}})
+eq(pl3.tiles.holes, 54, 'the ghost 55 tiles in fills its tile')
 
 -- A build batch names the entry it stops at (review: exists, out of reach and late tiles never counted).
 local _, _, bc = dryrun.check(p, {kind='build', entities={
@@ -651,5 +663,32 @@ do
   pw = run({{name='small-electric-pole', type='electric-pole', position={x=67.5, y=9.5}, electric_network_id=2},
     {name='small-electric-pole', type='electric-pole', position={x=69.5, y=5.5}, electric_network_id=2}})
   eq(pw.islands, nil); eq(pw.unpowered, nil); eq(pw.connected[1]:match('^planned pole #2 reaches the built network of small%-electric%-pole') ~= nil, true)
+end
+-- Cliffs under placeable entries (Sol 12:20: a belt_route dry run said 55 placeable, 6 of them over cliffs, with no
+-- cliff explosives held): a ghost over a cliff marks it, one explosive each, counted against what is held.
+do
+  prototypes.entity.cliff = {name='cliff', type='cliff', collision_box={left_top={x=-2, y=-0.5}, right_bottom={x=2, y=0.5}},
+    collision_mask=mask('object', 'player', 'cliff'), cliff_explosive_prototype='cliff-explosives'}
+  local c1 = {name='cliff', type='cliff', position={x=20, y=20.5}}
+  local me2 = {name='character', type='character', position={x=10.5, y=10.5}, prototype=prototypes.entity.character}
+  local cw2 = world(function() return 'grass-1' end, {me2, c1})
+  local base = cw2.can_place_entity
+  -- As the engine: a forced ghost goes over a cliff (it marks it); nothing else does.
+  cw2.can_place_entity = function(a) if a.forced then return true end return base(a) end
+  local held = {['transport-belt']=100}
+  local cp2 = {surface=cw2, force=force, position=me2.position, character=me2, build_distance=30,
+    get_main_inventory=function() return {get_item_count=function(n) return held[n] or 0 end} end}
+  local belts = {}
+  for i, x in ipairs({17.5, 18.5, 19.5, 20.5, 21.5, 22.5}) do belts[i] = {index=i, name='transport-belt', position={x=x, y=20.5}, direction=4} end
+  local r = dryrun.check(cp2, {kind='ghosts', entities=belts})
+  eq(r.summary, '6 placeable (of 6); 4 over cliffs')
+  eq(r.items['cliff-explosives'], 1); eq(r.missing['cliff-explosives'], 1)
+  eq(r.cliffs, '4 placeable entries stand over 1 cliff: placing marks it, and a marked cliff goes only with one explosive (construction robots bring it): cliff-explosives 1, you hold 0')
+  held['cliff-explosives'] = 3
+  r = dryrun.check(cp2, {kind='ghosts', entities=belts})
+  eq(r.missing, nil); has(r.cliffs, 'cliff-explosives 1, you hold 3')
+  -- A hand build is refused there (no forced placement): no cliff count.
+  r = dryrun.check(cp2, {kind='build', entities={{index=1, name='transport-belt', position={x=20.5, y=20.5}, direction=4, item='transport-belt'}}})
+  eq(r.cliffs, nil); eq(r.entities[1].status, 'blocked')
 end
 print('dryrun: ok')

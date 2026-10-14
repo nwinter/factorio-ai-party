@@ -61,9 +61,11 @@ test('an operator tell prints an OPERATOR: line on stderr and first on stdout, a
     }
     const filed=(await readFile(join(dir,'.operator-tells.jsonl'),'utf8')).trim().split('\n').map(l=>JSON.parse(l));
     assert.equal(filed.length,1,'filed once across calls'); assert.equal(filed[0].seq,7); assert.equal(filed[0].text,OPERATOR.text);
-    // JSON keeps the field (programs read it); stderr still has the line.
+    // JSON keeps the field (programs read it) and nothing else is printed, so `--format json 2>&1` parses whole
+    // (Muse, shift12, read every data call that way and cut the OPERATOR line off by hand).
     const {stdout,stderr}=await cli(port,['call','status']);
-    assert.deepEqual(JSON.parse(stdout).result.operator,[OPERATOR]); assert.match(stderr,/OPERATOR:/);
+    assert.deepEqual(JSON.parse(stdout).result.operator,[OPERATOR]); assert.equal(stderr,'');
+    assert.deepEqual(JSON.parse(stderr+stdout).result.operator,[OPERATOR]);
   });
 });
 test('open projects from the shift block, board reads and project items are filed for the post-compaction brief',async()=>{
@@ -387,5 +389,67 @@ test('--wait and fh wait judge the poll after the deadline: an action that ended
     began=Date.now();
     const stillIdle:any=await cli(port,['wait','--wait-timeout','1500']).then(()=>assert.fail('exit 3 expected'),(error:any)=>error);
     assert.equal(stillIdle.code,3); assert.equal(JSON.parse(stillIdle.stdout).result.still_running.kind,'gather');
+  });
+});
+// Viewers' @mentions (Sonnet and Opus, shift12 13:50: they ended a sleep, a wait and a move_to --wait every minute or
+// so): the poll carries them apart (inbox_viewer); they end a wait only with --wake-on-viewers.
+test('a viewer\'s @mention does not end --wait; with --wake-on-viewers it does',async()=>{
+  let polls=0;
+  await engine(request=>{
+    if(request.action==='move_to')return {ok:true,result:{until_tick:600}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:50,y:5},inventory:[]}}};
+    polls++;
+    const active={kind:'move_to',until_tick:600};
+    if(polls<2)return {ok:true,result:{active}};
+    if(polls<4)return {ok:true,result:{active,inbox_viewer:{tick:5,woke:'mentioned',from:'viewer mo'}}};
+    return {ok:true,result:{active:false,inbox_viewer:{tick:5,woke:'mentioned',from:'viewer mo'},last:{kind:'move_to',outcome:'arrived',tick:300}}};
+  },async port=>{
+    const reply=JSON.parse((await cli(port,['call','move_to','--args','{"position":{"x":50,"y":5}}','--wait'])).stdout);
+    assert.equal(reply.ok,true); assert.equal(reply.result.completion.last.outcome,'arrived');
+    polls=0;
+    const failed:any=await cli(port,['call','move_to','--args','{"position":{"x":50,"y":5}}','--wait','--wake-on-viewers']).then(()=>assert.fail('exit 3 expected'),(error:any)=>error);
+    assert.equal(failed.code,3);
+    const woke=JSON.parse(failed.stdout);
+    assert.equal(woke.result.completion.outcome,'mentioned'); assert.equal(woke.result.completion.from,'viewer mo');
+    assert.match(woke.result.completion.note,/a mention from viewer mo ended this wait/);
+  });
+});
+test('--wake-on-viewers asks a sleep and a direct wait for it; a runtime without it is asked again without',async()=>{
+  const seen:any[]=[];let checks=0;let old=true;
+  await engine(request=>{
+    seen.push(request);
+    if(request.action==='sleep'){
+      if(old&&request.args.wake_on_viewers)return {ok:false,error:{code:'action_failed',message:'unknown argument wake_on_viewers for sleep; valid: condition, peek, seconds'}};
+      checks=0;return {ok:true,result:{while_asleep:'no queue and no action',sleeping_s:request.args.seconds}};
+    }
+    if(request.action==='wait_ticks'){
+      if(old&&request.args.wake_on_viewers)return {ok:false,error:{code:'action_failed',message:'unknown argument wake_on_viewers for wait_ticks; valid: pause_queue, ticks'}};
+      return {ok:true,result:{until_tick:60}};
+    }
+    if(request.action==='observe'&&!isCheck(request))return {ok:true,result:{player:{position:{x:0,y:0},inventory:[]}}};
+    if(request.action==='status')return {ok:true,result:{active:false,last:{kind:'wait_ticks',outcome:'duration_elapsed',tick:61}}};
+    checks++;
+    return {ok:true,result:checks<2?{slept_s:1}:{slept_s:2,woke:'mentioned',mention:'viewer mo: @sol hi'}};
+  },async port=>{
+    old=false;
+    await cli(port,['sleep','5','--wake-on-viewers']);
+    let sleeps=seen.filter(r=>r.action==='sleep');
+    assert.equal(sleeps.length,1); assert.equal(sleeps[0].args.wake_on_viewers,true);
+    await cli(port,['sleep','5']);
+    sleeps=seen.filter(r=>r.action==='sleep');
+    assert.equal(sleeps[1].args.wake_on_viewers,undefined,'not asked without the flag');
+    await cli(port,['call','wait_ticks','--args','{"ticks":60}','--wait','--wake-on-viewers']);
+    assert.equal(seen.filter(r=>r.action==='wait_ticks')[0].args.wake_on_viewers,true);
+    // A runtime from before it: asked again without (it wakes on viewers anyway).
+    old=true;seen.length=0;
+    const reply=JSON.parse((await cli(port,['sleep','5','--wake-on-viewers'])).stdout);
+    assert.equal(reply.ok,true); assert.equal(reply.result.woke,'mentioned');
+    sleeps=seen.filter(r=>r.action==='sleep');
+    assert.equal(sleeps.length,2); assert.equal(sleeps[1].args.wake_on_viewers,undefined);
+    seen.length=0;
+    const waited=JSON.parse((await cli(port,['call','wait_ticks','--args','{"ticks":60}','--wait','--wake-on-viewers'])).stdout);
+    assert.equal(waited.ok,true);
+    const waits=seen.filter(r=>r.action==='wait_ticks');
+    assert.equal(waits.length,2); assert.equal(waits[1].args.wake_on_viewers,undefined); assert.notEqual(waits[0].id,waits[1].id);
   });
 });
