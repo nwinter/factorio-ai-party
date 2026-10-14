@@ -5,12 +5,13 @@ python3 tools/stream/test_replay_footage.py
 
 1. "Shown" is geometry: the spot inside the frame of the camera on air (the client's view at the zoom
    sent to the game, after the on-air crop). Sol followed at zoom 1.42 with the landscape crop shows ~28 x 24 tiles.
-2. Off frame all along: no clip. A cut to the fight after the loss: a clip from the cut on (where the footage starts).
-   Only the main view counts (in a trio the big tile): an inset or a small tile on it does not, since the replay is
-   the whole program. Ticks while a replay is on air count for nothing (the program is the replay).
+2. Off frame all along: no clip. A cut to the fight after the loss: no clip either (task-replaycheck: that footage is
+   the aftermath; shift09 00:43 aired one). A cut to it 10 s before the loss: the clip from 8 s before the loss to 3 s
+   after. Only the main view counts (in a trio the big tile): an inset or a small tile on it does not, since the
+   replay is the whole program. Ticks while a replay is on air count for nothing (the program is the replay).
 3. Losses of one fight inside one clip's stretch: one clip.
-4. The seek offset: the clip ends at saved_t (the Mac's clock when SaveReplayBuffer was sent); playback starts
-   saved_t - show_from before the file's end. The file name (box local time, an hour behind) is never read.
+4. The seek offset: the clip ends at saved_t (the Mac's clock when SaveReplayBuffer was sent, 1 s after the clip's
+   end); playback starts saved_t - show_from before the file's end. The file name (box local time, an hour behind) is never read.
 5. The director (onecam): an alert outside the on-air frame is not "already on air" (shift01 used 60 tiles), so a
    minor loss gets an inset and a real one a cut.
 """
@@ -87,20 +88,24 @@ def off_frame():
     t = 10_000
     run(rpl, seg, t, t + 40, on_sol, losses=[t + 10])
     assert rpl.pending is None and rpl.clip is None and rpl.status["replays"] == 0, rpl.public()
-    assert any("skipped loss: the program showed its spot never" in x for x in logs), logs[-3:]
+    assert any("skipped loss: not on air at the time (0 s of the 15 s before it)" in x for x in logs), logs[-3:]
 
 
 def cut_to_it():
-    """The director cuts to the fight 4 s after the alert: the clip starts at the cut."""
-    seg, rpl = world()
+    """The director cuts to the fight 4 s after the alert: aftermath only, no clip. A cut 10 s before the loss
+    (alert at t+10, the loss at t+8): a clip of the loss, 8 s before it to 3 s after."""
     t = 20_000
-    cut = t + 14
     fight = {"position": {"x": 79, "y": -42}, "surface": "nauvis", "zoom": 0.66, "frac": FRAC}
-    cams = lambda now: on_sol(now) if now < cut else {"main": {"agents": [], "frame": fight}}  # noqa: E731
-    run(rpl, seg, t, t + 24, cams, losses=[t + 10])  # judged at t + 23, not aired yet
-    c = rpl.clip
-    # from the cut to the end of the window (loss_watch after the loss, 2 s before its alert): 9 s
-    assert c and (c["show_from"], c["show_to"]) == (cut, t + 8 + rpl.cfg["loss_watch"]), (c, logs[-3:])
+    for cut, clipped in ((t + 14, False), (t - 2, True)):
+        seg, rpl = world()
+        cams = lambda now: on_sol(now) if now < cut else {"main": {"agents": [], "frame": fight}}  # noqa: E731
+        run(rpl, seg, t - 10, t + 13, cams, losses=[t + 10])  # judged and saved at t + 12 (3 s after the loss, + 1)
+        c = rpl.clip
+        if clipped:
+            assert c and (c["show_from"], c["show_to"]) == (t + 8 - 8, t + 8 + 3), (c, logs[-3:])
+        else:
+            assert c is None and rpl.pending is None, c
+            assert "not on air at the time (0 s of the 15 s before it)" in logs[-1], logs[-3:]
 
 
 def inset():
@@ -111,15 +116,16 @@ def inset():
     box = {"position": {"x": 75, "y": -55}, "surface": "nauvis", "zoom": 0.99, "frac": 1.0}
     for extra in ({"inset": {"agents": [], "frame": box}}, {"cam2": {"agents": [], "frame": box}}):
         seg, rpl = world()
-        cams = lambda now: dict(on_sol(now), **extra) if now >= t + 9 else on_sol(now)  # noqa: E731
+        cams = lambda now: dict(on_sol(now), **extra) if now >= t + 2 else on_sol(now)  # noqa: E731
         run(rpl, seg, t, t + 40, cams, losses=[t + 10])
         assert rpl.clip is None and rpl.pending is None and rpl.status["replays"] == 0, (extra, rpl.public())
-        assert any("showed its spot never" in x for x in logs[-3:]), logs[-3:]
+        assert any("not on air at the time (0 s of the 15 s before it; " in x and "only in the inset or a small tile" in x
+                   for x in logs[-3:]), logs[-3:]
     # in a trio, the big tile is the main row: it counts
     seg, rpl = world()
     big = {"main": {"agents": [], "frame": dict(box, frac=1.0)}, "cam2": {"agents": ["sol"]}}
-    run(rpl, seg, t, t + 24, lambda now: big, losses=[t + 10])
-    assert rpl.clip and rpl.clip["show_from"] == t + 2, rpl.clip
+    run(rpl, seg, t, t + 13, lambda now: big, losses=[t + 10])
+    assert rpl.clip and rpl.clip["show_from"] == t + 8 - 8, rpl.clip
 
 
 def during_replay():
@@ -145,12 +151,12 @@ def seek():
     seg, rpl = world()
     t = 50_000
     box = {"position": {"x": 75, "y": -55}, "surface": "nauvis", "zoom": 0.8, "frac": FRAC}
-    run(rpl, seg, t, t + 24, lambda now: {"main": {"agents": [], "frame": box}}, losses=[t + 10])
+    run(rpl, seg, t, t + 13, lambda now: {"main": {"agents": [], "frame": box}}, losses=[t + 10])
     c = rpl.clip
-    assert c["saved_t"] == t + 8 + rpl.cfg["loss_watch"], c  # judged and saved once loss_watch is over
+    assert c["saved_t"] == t + 8 + 4, c  # judged and saved 1 s after the clip's end (3 s after the loss)
     rpl.play(c)
-    # FakeOBS: a 45 s file that ends at saved_t; show_from 6 s before the loss, 21 s before saved_t
-    assert rpl.obs.cursor == 45000 - (c["saved_t"] - c["show_from"]) * 1000 == 24000, rpl.obs.cursor
+    # FakeOBS: a 45 s file that ends at saved_t; show_from 8 s before the loss, 12 s before saved_t
+    assert rpl.obs.cursor == 45000 - (c["saved_t"] - c["show_from"]) * 1000 == 33000, rpl.obs.cursor
     assert "Replay_" not in open(rp.__file__).read()  # no box-local file-name times
 
 
@@ -177,7 +183,7 @@ def main():
     one_clip_per_fight()
     seek()
     director_frame()
-    print("replay footage: ok (shown = inside the program's frame; off frame no clip; from the cut on; insets; "
+    print("replay footage: ok (shown = inside the program's frame; off frame no clip; a cut after the loss no clip; insets; "
           "one clip per fight; seek offset from the Mac clock; the director cuts or insets what is off frame)")
 
 
