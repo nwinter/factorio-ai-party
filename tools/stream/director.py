@@ -462,6 +462,8 @@ class Director:
         entry = {"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)), "slot": name,
                  "reason": reason, "target": target and {k: target[k] for k in ("agents", "zoom") if k in target},
                  "cmd": body, "result": result, "scores": dict(top)}
+        if getattr(self, "surface_log", None):  # onecam's surface balance: shares, targets and the factors applied
+            entry["surface"] = dict(self.surface_log, terms={n: f for n, f in self.surface_terms.items() if f != 1.0})
         if self.log_path:
             with open(self.log_path, "a") as f:
                 f.write(json.dumps(entry) + "\n")

@@ -692,6 +692,18 @@ run config brings back the director below).
   The map shot turns the camera player's alerts off (`disable_alert` per alert type: their markers, big yellow
   triangles, covered the base on stream and in the site's terrain frames) and the next camera call or release turns
   back on the ones it turned off. tools/stream/mapframes.py saves a georeferenced frame of it for the site's maps.
+- Surface balance (viewer awoo3391, 2026-10-13 19:34: "the camera feed needs a real priority system"; 8 of 9
+  agents on Nauvis, so rotation by agent showed Nauvis): onecam counts on-air seconds per surface over the last 30
+  min (`surface_window`). A surface other than Nauvis with an agent on it is due `surface_share` (25%) of the air,
+  plus up to `surface_new_share` (10%) while the planet is new to the run, fading over `surface_new_hours` (3 h) from
+  the first time an agent was seen there; the other surfaces together at most `surface_total` (60%). An agent on a
+  surface under its share scores up to x(1 + `surface_bonus`) (1.5), by how far under; Nauvis agents x(1 -
+  `nauvis_penalty`) (0.85) while another surface is under. Shares count over at least `surface_floor` (300 s), and
+  nothing applies before `surface_warmup` (180 s) of air history. Only the story choice uses scores: urgent shots,
+  battles, follows, incoming groups, segments and the dwell rules come first. A cut the balance helped says so
+  (`gemini 2.1 beats astra 1.0 (surface fulgora 4% of 30%: x2.3)`), and the director log's entries carry `surface`
+  (shares, targets, factors). Off: `"surface_bonus": 0` in the run config's `director`. Test (tools/stream/
+  test_surfaces.py, 7 on Nauvis, 1 on Fulgora, 1 on Vulcanus, 30 min): Nauvis 39%, Fulgora 30%, Vulcanus 31%.
 - Trio (Nick, 2026-10-12: he liked the old one-big-two-small layout because each tile said who was doing what):
   sometimes the program shows all three clients in layout-3cam.json's holes, the one on air in the big tile (no cut:
   the same client stays on air) and the two standbys in small tiles, each labelled "Luna · fixing the north wall"
