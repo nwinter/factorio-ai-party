@@ -2352,4 +2352,77 @@ end)()
   p.surface.can_place_entity,p.surface.create_entity,p.surface.find_entities_filtered,prototypes.entity,p.surface.get_tile=can,create,find,entities,tile
   p.force.is_chunk_charted,p.position=charted,at
 end)()
+-- area on feed, collect and transfer (Muse 02:03: "I hand-feed the same 5 ADV + 2 cable machines every few minutes all
+-- shift"): the machines with their centre in the area become the positions; inspect shows how full each output is.
+;(function()
+  local find,getmain,reach,at=p.surface.find_entities_filtered,p.get_main_inventory,p.can_reach_entity,p.position
+  local recipes,items,status=prototypes.recipe,prototypes.item,defines.entity_status
+  prototypes.recipe={['advanced-circuit']={name='advanced-circuit',ingredients={{type='item',name='copper-cable',amount=4}}},
+    ['copper-cable']={name='copper-cable',ingredients={{type='item',name='copper-plate',amount=1}}}}
+  prototypes.item={['copper-cable']={name='copper-cable',stack_size=200},['copper-plate']={name='copper-plate',stack_size=100},
+    ['advanced-circuit']={name='advanced-circuit',stack_size=200},['iron-plate']={name='iron-plate',stack_size=100}}
+  defines.entity_status={working=1,full_output=29}
+  local IN,OUT=defines.inventory.assembling_machine_input,defines.inventory.assembling_machine_output
+  local machines={}
+  local function machine(x,y,recipe,product,count)
+    local input,output=inv(stack(nil,0),stack(nil,0)),inv(stack(product,count or 0))
+    output[1].prototype={stack_size=prototypes.item[product].stack_size}
+    input.can_insert=function() return true end
+    for _,t in ipairs({input,output}) do
+      t.get_contents=function() local list={}; for _,s in ipairs(t) do if s.valid_for_read then list[#list+1]={name=s.name,count=s.count,quality='normal'} end end; return list end
+    end
+    local m={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=x,y=y},force=p.force,unit_number=900+#machines,
+      status=1,crafting_progress=0.5,get_fluid_contents=function() return {} end,input=input,output=output}
+    m.get_inventory=function(i) if i==IN then return input end if i==OUT then return output end end
+    m.get_output_inventory=function() return output end
+    m.get_recipe=function() return {name=recipe} end
+    machines[#machines+1]=m
+    return m
+  end
+  for i=1,5 do machine(2*i+0.5,0.5,'advanced-circuit','advanced-circuit',3) end
+  local cable1,cable2=machine(2.5,4.5,'copper-cable','copper-cable',180),machine(4.5,4.5,'copper-cable','copper-cable',200)
+  cable2.status=29
+  local outside=machine(40.5,0.5,'advanced-circuit','advanced-circuit',3)
+  p.surface.find_entities_filtered=function(f)
+    local out={}
+    for _,m in ipairs(machines) do
+      local inside
+      if f.area then
+        inside=m.position.x+1.5>=f.area.left_top.x and m.position.x-1.5<=f.area.right_bottom.x and m.position.y+1.5>=f.area.left_top.y and m.position.y-1.5<=f.area.right_bottom.y
+      elseif f.position then inside=math.abs(m.position.x-f.position.x)<0.3 and math.abs(m.position.y-f.position.y)<0.3 end
+      if inside and (not f.unit_number or f.unit_number==m.unit_number) then out[#out+1]=m end
+    end
+    return out
+  end
+  local bag=inv(stack('copper-cable',100),stack('iron-plate',50))
+  for i=3,12 do bag[i]=stack(nil,0) end
+  p.get_main_inventory=function() return bag end
+  p.can_reach_entity=function(e) return e.position.x<20 end
+  p.position={x=0,y=0}
+  local area={left_top={x=0,y=-1},right_bottom={x=12,y=6}}
+  -- feed with a recipe: the 5 ADV machines get 8 cable each; the 2 cable machines are counted apart; the one outside
+  -- the area is untouched.
+  local fed=call('feed',{area=area,recipe='advanced-circuit',crafts=2})
+  eq(fed.area_targets,7); eq(fed.transferred,40); eq(fed.other_recipe,2); eq(#fed.entities,5); eq(fed.items['copper-cable'],40)
+  eq(machines[1].input[1].count,8); eq(outside.input[1].valid_for_read,false); eq(bag[1].count,60)
+  -- collect: every output in the area; the tally closes it.
+  local took=call('collect',{area=area})
+  eq(took.area_targets,7); eq(took.transferred,15+180+200)
+  assert(took.tally:find('7 of 7 targets touched',1,true),took.tally)
+  eq(outside.output[1].count,3)
+  -- transfer by area with types: iron plate into each.
+  machines[1].input[2]=stack(nil,0)
+  local put=call('transfer',{area={left_top={x=0,y=3},right_bottom={x=6,y=6}},types={'assembling-machine'},item='iron-plate',count=5,direction='to_entity',inventory='assembling_machine_input'})
+  eq(put.area_targets,2); eq(put.transferred,10)
+  -- Refusals: area with positions, an empty area, too big, more than 64.
+  fails(function() call('feed',{area=area,positions={{x=2.5,y=0.5}}}) end,'give area, positions, position or radius: one of them')
+  fails(function() call('collect',{area={left_top={x=100,y=100},right_bottom={x=110,y=110}}}) end,'no furnace, assembling-machine of ours with its centre in (100,100)-(110,110)')
+  fails(function() call('collect',{area={left_top={x=0,y=0},right_bottom={x=200,y=10}}}) end,'at most 128x128')
+  -- inspect: output fullness per product, full when the machine stopped for it.
+  cable1.output[1].count,cable1.output[1].valid_for_read=180,true; cable2.output[1].count,cable2.output[1].valid_for_read=200,true
+  local rows=call('inspect',{positions={cable1.position,cable2.position,machines[1].position}}).entities
+  eq(rows[1].output_fill,'copper-cable 180/200 (90%)'); eq(rows[2].output_fill,'copper-cable 200/200 (100%), full'); eq(rows[3].output_fill,'empty')
+  p.surface.find_entities_filtered,p.get_main_inventory,p.can_reach_entity,p.position=find,getmain,reach,at
+  prototypes.recipe,prototypes.item,defines.entity_status=recipes,items,status
+end)()
 print('runtime: '..assertions..' assertions passed')
