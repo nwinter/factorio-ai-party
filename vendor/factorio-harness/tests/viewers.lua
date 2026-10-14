@@ -81,14 +81,31 @@ astra('status'); sol('status'); grok('status')
 local function lines(who) local out={} for _,m in ipairs(who('chat',{limit=100,peek=true}).messages) do out[#out+1]=m end return out end
 local function last(who) local l=lines(who); return l[#l] end
 
--- A viewer's @name reaches that agent as a mention and wakes it; nobody else.
-sol('sleep',{seconds=60}); grok('sleep',{seconds=60})
+-- A viewer's @name reaches that agent as a mention in its next reply, nobody else's; it wakes nothing (Sonnet and
+-- Opus, shift12 13:50: viewers' @mentions ended a sleep, a wait and a move_to --wait every minute or so) unless the
+-- sleep or wait asked for it (wake_on_viewers, fh --wake-on-viewers).
+local r=sol('sleep',{seconds=60}); eq(r.wakes_on:find("a teammate's message mentioning you",1,true)~=nil,true,r.wakes_on)
+grok('sleep',{seconds=60,wake_on_viewers=true})
 eq(op('viewer_say',{name='factoryfan',text='@sol are the labs fed?'}).posted,true)
-local r=sol('sleep_check',{peek=true}); eq(r.woke,'mentioned'); eq(r.mention,'viewer factoryfan: @sol are the labs fed?')
-eq(grok('sleep_check',{peek=true}).woke,nil)
-eq(op('viewer_say',{name='cy',text='grok and everyone, nice base'}).posted,true) -- no @: no wake
-eq(grok('sleep_check',{peek=true}).woke,nil)
-sol('sleep_check',{}); jump(601)
+eq(sol('sleep_check',{peek=true}).woke,nil)
+-- The --wait poll (status peek): no inbox for it, inbox_viewer names it (cli.ts ends a wait on it with --wake-on-viewers).
+r=sol('status',{peek=true,brief=true}); eq(r.inbox,nil); eq(r.inbox_viewer.from,'viewer factoryfan'); eq(r.inbox_viewer.woke,'mentioned')
+eq(op('viewer_say',{name='mo',text='@grok how much copper?'}).posted,true)
+r=grok('sleep_check',{peek=true}); eq(r.woke,'mentioned'); eq(r.mention,'viewer mo: @grok how much copper?')
+eq(op('viewer_say',{name='cy',text='grok and everyone, nice base'}).posted,true) -- no @: no mention at all
+-- A teammate's mention still wakes sol; the viewer's is in the same reply's team block.
+astra('say',{text='@sol the labs are fed'})
+r=sol('sleep_check',{peek=true}); eq(r.woke,'mentioned'); eq(r.mention,'astra: @sol the labs are fed')
+r=sol('sleep_check',{}); assert(has(r.team and r.team.mentions,'@sol are the labs fed?'),'viewer mention delivered in the reply')
+grok('sleep_check',{}); jump(601)
+-- A direct wait: a viewer's @mention ends it only with wake_on_viewers.
+sol('wait_ticks',{ticks=600}); grok('wait_ticks',{ticks=600,wake_on_viewers=true})
+advance(1)
+eq(op('viewer_say',{name='newfan',text='@sol @grok still there?'}).posted,true)
+advance(30)
+eq(sol('status',{peek=true,brief=true}).active.kind,'wait_ticks')
+r=grok('status',{peek=true,brief=true}); eq(r.active,false); eq(r.last.outcome,'mentioned'); eq(r.last.why,'mentioned by viewer newfan')
+sol('wait_ticks',{ticks=1}); advance(2); sol('status',{}); grok('status',{})
 
 -- Voting: a majority of the agents active in the last 10 minutes (3 here: 2).
 r=astra('vote',{kind='mute',viewer='viewer Troll42',reason='slurs in chat'})

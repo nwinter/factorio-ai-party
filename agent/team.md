@@ -35,7 +35,8 @@ already targets your character.
   refused craft) ends with a `warning:` line. `--wait` replies are brief (outcome, position, inventory change; add
   `--full` for the whole status). With `--format json` stdout is one JSON document and no `OPERATOR:` line is printed
   (operator messages are in `result.operator`). The `clock:` line ends with the time left until your deadline. A `--wait` that a tell
-  or mention ends while the action still runs exits 3 (`still_running`); `--wait-through-tells` keeps waiting.
+  or mention ends while the action still runs exits 3 (`still_running`); `--wait-through-tells` keeps waiting. A viewer's
+  @mention ends no sleep or wait (it comes in your next reply); `--wake-on-viewers` makes it end them.
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Post a claim for the area you
   build in (`board post` with kind `claim` and the area; it is on your surface, or `"surface":"gleba"`): it shows teammates who works where, sends that area's
   alerts to you, and keeps teammates' `stock` sweeps out of its chests. Put shared infrastructure (power poles, main
@@ -298,6 +299,8 @@ already targets your character.
   `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north",
   "recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid the recipe puts there;
   `inspect` of a ghost shows the same.
+- An inserter's `direction` is the side it picks up from (`direction: east` takes from the east, drops west; a belt's
+  is where items go); `build` replies say it in words. `build` and `place_ghosts` entries take `recipe` for assemblers.
 - A `build` over a chest of the same fast-replace group keeps its contents in the new chest; what it cannot hold
   comes to you (`replaced.contents`), and with no room for that nothing moves; any fast replace keeps filters, wires,
   circuit settings, a chest's limit and requests (`replaced.kept`, `not_kept`). Inserter and loader filters show in

@@ -361,19 +361,38 @@ return function(api)
   -- view: task-statuscost, 01:15 on world n: networks.alert_groups 55 ms when
   -- one call rebuilt the view): the generators, the machines, the boilers,
   -- the rows. Between steps ctx holds plain data and entities, linked by id.
+  local function new_net(id, poles, cx, cy)
+    return {id=id, poles=poles, center={x=cx, y=cy}, cap_kw=0, solar_peak_kw=0, solar=0,
+      acc=0, acc_j=0, acc_buf=0, machines=0, low=0, none=0, boilers={}, gens=0}
+  end
   local function e_ctx(n, f, surface)
+    -- A platform (Astra, 14:05: Starling's network 475, 5 solar panels and assemblers on low power, was not found): its
+    -- poles are found at once each view (a platform is small), so the pole map has them and their statistics are
+    -- sampled; and a network seen on a generator or machine with no pole mapped gets a row of its own (on_entity).
+    local plat = try(function() return surface.platform end)
+    if plat then
+      local pm = {}
+      for _, e in ipairs(try(function() return surface.find_entities_filtered{type='electric-pole', force=f, limit=MAX_SCAN} end) or {}) do pole_into(pm, e, surface, f) end
+      for id, m in pairs(n.map) do if m.surface == surface.name and m.force == f.name and not pm[id] then n.map[id] = nil end end
+      for id, m in pairs(pm) do n.map[id] = m end
+    end
     local nets = {}
     for id, m in pairs(n.map) do
-      if m.surface == surface.name and m.force == f.name then
-        nets[id] = {id=id, poles=m.poles, center={x=m.sx / m.poles, y=m.sy / m.poles}, cap_kw=0, solar_peak_kw=0, solar=0,
-          acc=0, acc_j=0, acc_buf=0, machines=0, low=0, none=0, boilers={}, gens=0}
-      end
+      if m.surface == surface.name and m.force == f.name then nets[id] = new_net(id, m.poles, m.sx / m.poles, m.sy / m.poles) end
     end
-    return {nets=nets, seg_net={}, steam={}}
+    return {nets=nets, seg_net={}, steam={}, platform=plat and true or nil}
+  end
+  -- The network of an entity; on a platform one with no pole mapped is made from the entity.
+  local function on_entity(ctx, e)
+    local id = e.valid and try(function() return e.electric_network_id end)
+    if not id then return nil end
+    local net = ctx.nets[id]
+    if not net and ctx.platform then net = new_net(id, 0, e.position.x, e.position.y); ctx.nets[id] = net end
+    return net
   end
   -- One generator, solar panel or accumulator into its network.
   local function e_gen(ctx, e)
-    local net = e.valid and ctx.nets[try(function() return e.electric_network_id end) or -1]
+    local net = on_entity(ctx, e)
     if net then
       net.gens = net.gens + 1
       if e.type == 'solar-panel' then net.solar = net.solar + 1; net.solar_peak_kw = net.solar_peak_kw + solar_peak(e) * 60 / 1000
@@ -398,7 +417,7 @@ return function(api)
   end
   -- One machine into its network.
   local function e_machine(ctx, e)
-    local net = e.valid and ctx.nets[try(function() return e.electric_network_id end) or -1]
+    local net = on_entity(ctx, e)
     if net then
       local st = defines.entity_status or {}
       net.machines = net.machines + 1
@@ -448,7 +467,8 @@ return function(api)
     local nets = ctx.nets
     local rows = {}
     for _, net in pairs(nets) do
-      if net.poles > 2 or net.gens > 0 then
+      -- (on a platform every network with a machine or a pole: a platform is small and Astra's Starling had 1)
+      if net.poles > 2 or net.gens > 0 or (ctx.platform and (net.machines > 0 or net.poles > 0)) then
         local d = draw(n, net.id)
         net.draw = d
         local solar_now = d and d.by['solar-panel'] or 0
@@ -513,10 +533,13 @@ return function(api)
           table.sort(low, function(a, b) return a.min < b.min end)
           net.fuel_low = low
         end
-        local parts = {string.format('%s electric #%d (%d poles near %s)', plat and plat.name .. ' (platform)' or surface.name, net.id, net.poles, at(net.center.x, net.center.y))}
+        local parts = {string.format('%s electric #%d (%s near %s)', plat and plat.name .. ' (platform)' or surface.name, net.id,
+          net.poles > 0 and net.poles .. ' poles' or 'no pole of ours found', at(net.center.x, net.center.y))}
         if d then
           parts[#parts+1] = string.format('draw %s avg over %s (now %s) of %s capacity%s', mw(d.avg), d.span_s >= 300 and '5 min' or d.span_s .. ' s',
             mw(d.now), mw(net.capacity_kw), net.capacity_kw > 0 and string.format(' (%d%%)', math.floor(100 * d.avg / net.capacity_kw + 0.5)) or '')
+        elseif net.poles == 0 then
+          parts[#parts+1] = string.format('capacity %s; no draw figures (the game gives a network\'s statistics through its poles)', mw(net.capacity_kw))
         else parts[#parts+1] = string.format('capacity %s; no draw sample yet', mw(net.capacity_kw)) end
         if plat then
           parts[#parts+1] = net.solar > 0 and string.format('solar %d panels, %s now, %s at this solar power (%s)', net.solar, mw(solar_now), mw(net.solar_peak_kw), sun.text)
@@ -1837,13 +1860,21 @@ return function(api)
     if not id then out.now = 'no electric network: no pole reaches it'; return out end
     local m = store().map[id]
     local pole = e.type == 'electric-pole' and e or (m and m.pole and m.pole.valid and m.pole)
+    -- Not in the pole map (Astra, 14:05: an assembler on Starling): a pole of that network within 64 tiles.
+    if not pole then
+      for _, x in ipairs(try(function() return e.surface.find_entities_filtered{type='electric-pole', position=e.position, radius=64, force=e.force, limit=200} end) or {}) do
+        if x.valid and try(function() return x.electric_network_id end) == id then pole = x; break end
+      end
+    end
     local stats = pole and try(function() return pole.electric_network_statistics end)
     local v = stats and try(function() return stats.get_flow_count{name=e.name, category=category, precision_index=defines.flow_precision_index.five_seconds} end)
     if v then
       out.now_kw_all_of_name = kw(v)
       out.now = string.format('all %s on electric network #%d %s %s now (5 s average); the game counts power by prototype, not per entity',
         e.name, id, category == 'output' and 'make' or 'draw', mw(v * 60 / 1000))
-    else out.now = string.format('electric network #%d: not mapped yet (the pole map is redone every minute)', id) end
+    elseif not pole then
+      out.now = string.format('electric network #%d: no pole of ours in it within 64 tiles, and the game gives a network\'s statistics through its poles', id)
+    else out.now = string.format('electric network #%d: its pole gave no statistics', id) end
     return out
   end
   M.schema = {

@@ -10,11 +10,12 @@ return function(api)
   -- has stalled (shake4: Muse's move job stuck pathfinding through a sleep).
   local STILL_TICKS = 1800
   local MOVING = {walk=true, move_to=true, build_path=true, kite=true, collect=true, feed=true, rearm=true, refuel=true}
+  local WAKE_VIEWERS = 'optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too; without it a viewer\'s @mention waits for your next reply (team block) and wakes nothing'
   M.schema = {
-    wait_ticks = {ticks='1..54000 simulation ticks: the character stands idle that long (a direct timed action, outcome duration_elapsed, or told|mentioned when a tell or mention ends it early; use --wait), or a queue step', pause_queue='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'},
+    wait_ticks = {ticks='1..54000 simulation ticks: the character stands idle that long (a direct timed action, outcome duration_elapsed, or told|mentioned when a tell or a teammate\'s mention ends it early; use --wait), or a queue step', wake_on_viewers=WAKE_VIEWERS, pause_queue='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'},
     sleep = {seconds='1..900', condition='optional wait_until condition {until=researched|item_count|rocket_ready|crafting_done|..., ...}: the sleep also ends when it holds (woke=condition, saw); researched without technology means the research running now; item_count may take positions (chests); {until=alert}: a new attack, enemy group or enemy base alert (woke=alert)',
-      peek='boolean: the reply leaves the team block for your next reply (fh wait --until)',
-      note='fh sleep SECONDS [--until ...]: waits while the game runs (in turns mode it advances the game); your current action and queue keep going, and the reply says first which (while_asleep). Returns early when your character takes damage or dies, a message mentions you, a teammate tells you something (tell), a board item of yours is assigned or changed by someone else, eggs of ours on your surface or built by you will hatch within 5 minutes (eggs), your running queue finishes or stalls (a step fails, or a walking step has not moved you for 30 s), or the condition holds; a dead bot sleeps until it respawns. sleep_check reports woke=damaged|died|respawned|mentioned|told|board|eggs|alert|queue_done|queue_stalled|condition|elapsed'},
+      peek='boolean: the reply leaves the team block for your next reply (fh wait --until)', wake_on_viewers=WAKE_VIEWERS,
+      note='fh sleep SECONDS [--until ...]: waits while the game runs (in turns mode it advances the game); your current action and queue keep going, and the reply says first which (while_asleep). Returns early when your character takes damage or dies, a teammate\'s message mentions you (a viewer\'s @mention waits for your next reply unless wake_on_viewers), a teammate tells you something (tell), a board item of yours is assigned or changed by someone else, eggs of ours on your surface or built by you will hatch within 5 minutes (eggs), your running queue finishes or stalls (a step fails, or a walking step has not moved you for 30 s), or the condition holds; a dead bot sleeps until it respawns. sleep_check reports woke=damaged|died|respawned|mentioned|told|board|eggs|alert|queue_done|queue_stalled|condition|elapsed'},
     sleep_check = {peek='boolean: leave mentions unread (the CLI polls with peek, then reads once)', returns='woke (nil while sleeping), slept_s, health/lost when damaged, mention, tell, board, eggs, queue (what finished or stalled), saw (the condition), queue_steps (steps your queue finished during the sleep)'},
   }
   local function sleeps()
@@ -31,10 +32,11 @@ return function(api)
   end
   function M.handlers.wait_ticks(p, a)
     local ticks = api.integer(a.ticks, nil, 1, MAX_TICKS, 'ticks (1..54000)')
+    assert(a.wake_on_viewers == nil or type(a.wake_on_viewers) == 'boolean', 'wake_on_viewers must be true or false')
     api.replace(p)
     local until_tick = game.tick + ticks
-    -- A tell or mention ends it early (runtime.lua tick: outcome told|mentioned).
-    api.state().active[p.index] = {kind='wait_ticks', until_tick=until_tick, start_tick=game.tick}
+    -- A tell or mention ends it early (runtime.lua tick: outcome told|mentioned); a viewer's @mention only with wake_on_viewers.
+    api.state().active[p.index] = {kind='wait_ticks', until_tick=until_tick, start_tick=game.tick, wake_viewers=a.wake_on_viewers == true or nil}
     return {until_tick=until_tick}
   end
   -- What keeps going while the agent sleeps, in one line (the reply's first).
@@ -109,8 +111,10 @@ return function(api)
       end
       api.validate_condition(condition)
     end
+    assert(a.wake_on_viewers == nil or type(a.wake_on_viewers) == 'boolean', 'wake_on_viewers must be true or false')
     local c = p.character
-    local record = {start_tick=game.tick, until_tick=game.tick + seconds * 60, health=c and c.valid and c.health or nil, condition=condition}
+    local record = {start_tick=game.tick, until_tick=game.tick + seconds * 60, health=c and c.valid and c.health or nil, condition=condition,
+      wake_viewers=a.wake_on_viewers == true or nil}
     -- A dead bot sleeps until it respawns (or a mention, or time up).
     record.dead_until = api.dead_until and api.dead_until(p.index) or nil
     record.board_seq = api.board_seq and api.board_seq() or nil
@@ -137,11 +141,13 @@ return function(api)
     sleeps()[p.index] = record
     -- In turns mode time only runs when asked to.
     if api.clock_mode() == 'turns' and not record.woke then api.advance(p, math.min(seconds * 60, 36000)) end
+    -- Viewers' @mentions come in the next reply either way.
+    local mentions = record.wake_viewers and 'a message mentioning you (a viewer\'s too)' or 'a teammate\'s message mentioning you'
     if record.dead_until then
       out.dead = true; out.respawns_at_tick = record.dead_until
-      out.wakes_on = 'respawn, a message mentioning you, a tell, a board item of yours'
+      out.wakes_on = 'respawn, ' .. mentions .. ', a tell, a board item of yours'
     else
-      out.wakes_on = 'damage, death, a message mentioning you, a tell, a board item of yours' ..
+      out.wakes_on = 'damage, death, ' .. mentions .. ', a tell, a board item of yours' ..
         (record.queue and ', your queue finishing or stalling' or '') .. (condition and ', the condition' or '') .. (alert and ', a new alert' or '')
       if alert then out.condition = 'alert' end
     end
@@ -202,7 +208,8 @@ return function(api)
     local box = api.state().mentions and api.state().mentions[p.index]
     for i = #(box and box.list or {}), 1, -1 do
       local m = box.list[i]
-      if m.tick >= record.start_tick and not m.fyi then
+      -- A viewer's @mention waits for the next reply, waking only a sleep that asked (wake_on_viewers).
+      if m.tick >= record.start_tick and not m.fyi and (record.wake_viewers or not m.viewer) then
         if m.tell then
           out.tell = string.format('%s: %s', m.from, m.text)
           return 'told'

@@ -1109,7 +1109,8 @@ return function(api)
     return nil
   end
   -- A viewer's line (chat.lua, relayed by the stream service) files a
-  -- mention, which wakes a sleeper, only for an agent it names with @.
+  -- mention only for an agent it names with @; it wakes a sleeper only one
+  -- that asked (inbox_tick viewers).
   function M.on_viewer(m)
     local text = m.text:lower()
     for _, a in ipairs(agents()) do
@@ -1145,11 +1146,23 @@ return function(api)
   -- The tick of the newest undelivered mention or tell (nil when none), for
   -- waits that end when one arrives; then told|mentioned and who sent it. An
   -- fyi tell (eng/minds-claims, tell --fyi) wakes nobody, so it ends no wait.
-  function M.inbox_tick(index)
+  -- A viewer's @mention (on_viewer) waits for the next reply too and wakes nobody unless asked (viewers: the call's
+  -- wake_on_viewers, fh --wake-on-viewers; Sonnet and Opus, shift12 13:50: viewers' @mentions ended a sleep, a wait
+  -- and a move_to --wait every minute or so).
+  function M.inbox_tick(index, viewers)
     local box = api.state().mentions and api.state().mentions[index]
     for i = #(box and box.list or {}), 1, -1 do
       local m = box.list[i]
-      if not m.fyi then return m.tick, m.tell and 'told' or 'mentioned', m.from end
+      if not m.fyi and (viewers or not m.viewer) then return m.tick, m.tell and 'told' or 'mentioned', m.from end
+    end
+    return nil
+  end
+  -- The newest viewer's @mention waiting for the next reply (an fh --wait with --wake-on-viewers ends on it).
+  function M.viewer_tick(index)
+    local box = api.state().mentions and api.state().mentions[index]
+    for i = #(box and box.list or {}), 1, -1 do
+      local m = box.list[i]
+      if m.viewer then return m.tick, 'mentioned', m.from end
     end
     return nil
   end

@@ -39,13 +39,13 @@ const help = `fh — Factorio agent CLI
   fh observe [--args '{"radius":24}']        Bounded local world state
   fh call ACTION [--args JSON] [--id ID]      Execute an action; keep ID on uncertain outcomes
   fh call walk --args '{"direction":"east","ticks":60}' --wait
-  fh wait                                   Block until the character's current action (and combat) ends; a tell or mention ends the wait early
+  fh wait                                   Block until the character's current action (and combat) ends; a tell or a teammate's mention ends the wait early
                                             (exit 3: it still runs; --wait-through-tells keeps waiting)
-  fh wait --until tell|alert|COND [--max S] One blocking wait, one line out: ends on a tell or mention, a new alert (alert),
+  fh wait --until tell|alert|COND [--max S] One blocking wait, one line out: ends on a tell or a teammate's mention, a new alert (alert),
                                             a sleep condition (researched [TECH], item_count ITEM>=N, rocket_ready X,Y, ...), or after S s (default 600, up to 900);
                                             your action and queue keep going; the team block waits for your next reply
   fh sleep SECONDS [--until COND]           Wait up to 900 s (never past the deadline) while your action and queue keep going;
-                                            wakes on damage, death, a mention, a tell, board news, your queue finishing or
+                                            wakes on damage, death, a teammate's mention, a tell, board news, your queue finishing or
                                             stalling, or COND: researched [TECH] | crafting_done | item_count ITEM>=N [at X,Y X,Y] | rocket_ready X,Y (a silo)
   fh view --out artifacts/map.png            Render a local schematic PNG, also works headless
   fh deploy [--file runtime.lua]             Validate and replace live Lua runtime
@@ -89,6 +89,7 @@ Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT),
          --socket PATH (an RCON broker's socket instead of RCON: harness requests only, no password; FH_SOCKET),
          --wait, --wait-timeout MS (default: until the action's own end tick, at least 30000), --journal PATH, --args-file PATH
          --wait-through-tells (a tell or mention does not end the wait; told_during_wait lists them at the end)
+         --wake-on-viewers (fh sleep, fh wait, --wait: a viewer's @mention ends it too; by default it waits for your next reply)
          Exit codes: 0 done, 1 failed, 3 the wait ended while the action still runs (a tell or mention, or the wait timeout)
          --full (after --wait: the whole status instead of outcome, position and inventory change)
          --since SEQ (chat, board events), --limit N, --deadline-file PATH (FH_DEADLINE_FILE: time left on the clock line)
@@ -410,7 +411,7 @@ async function main() {
     format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
     host:{type:'string'}, port:{type:'string'}, timeout:{type:'string'}, id:{type:'string'},
     file:{type:'string'}, out:{type:'string'}, mods:{type:'string'}, journal:{type:'string'},
-    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'},
+    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'},
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
@@ -940,8 +941,8 @@ async function main() {
         : action === 'vehicle' ? ['drive'] : [action];
       const stillRunning = active && (action === 'shoot' || action === 'drop' || kinds.includes(active.kind));
       if (status.ok && stillRunning && told(status, acceptedTick) && action !== 'wait_ticks' && action !== 'wait_until') {
-        if (!throughTells) return {...status, result:{...status.result, interrupted:{inbox:status.result!.inbox, active}}};
-        noteTell(status);
+        if (!throughTells) return {...status, result:{...status.result, interrupted:{inbox:wakeInbox(status, acceptedTick), active}}};
+        noteTell(wakeInbox(status, acceptedTick));
       }
       if (!status.ok || !stillRunning) {
         const last = action === 'shoot' ? status.result?.last_combat : action === 'drop' ? status.result?.last_drop : status.result?.last;
@@ -967,16 +968,26 @@ async function main() {
   // A tell or mention that arrived after `since` (a tick) ends any wait (agent-minds study, fix 5: agents moved to
   // waits nobody could interrupt; the operator's typed message to Sonnet waited 33 minutes behind its waits). The
   // action keeps going; direct waits end themselves (told|mentioned). Polls carry the newest one (status peek: inbox).
+  // A viewer's @mention ends it only with --wake-on-viewers (Sonnet and Opus, shift12 13:50: viewers' @mentions ended a
+  // sleep, a wait and a move_to --wait every minute or so); either way the next reply's team block has it. The poll's
+  // inbox is the newest tell or teammate's mention, inbox_viewer the newest viewer's @mention (a runtime from before
+  // that puts viewers' mentions in inbox too).
+  const wakeViewers = values['wake-on-viewers'] === true;
+  function wakeInbox(status: Reply, since?: number): {tick:number, woke?:string, from?:string} | undefined {
+    if (since === undefined) return undefined;
+    for (const inbox of [status.result?.inbox, wakeViewers ? status.result?.inbox_viewer : undefined]) {
+      if (typeof inbox?.tick === 'number' && inbox.tick >= since) return inbox;
+    }
+    return undefined;
+  }
   function told(status: Reply, since?: number): boolean {
-    const inbox = status.result?.inbox;
-    return since !== undefined && typeof inbox?.tick === 'number' && inbox.tick >= since;
+    return wakeInbox(status, since) !== undefined;
   }
   // --wait-through-tells: the wait goes on; each tell or mention seen is listed when it ends
   // (Sol, shift09: `fh ... --wait && next` ran the next step while the action still ran).
   const throughTells = values['wait-through-tells'] === true;
   const toldDuring: string[] = [];
-  function noteTell(status: Reply) {
-    const inbox = status.result?.inbox;
+  function noteTell(inbox?: {tick:number, woke?:string, from?:string}) {
     const line = `${inbox?.woke === 'mentioned' ? 'mention' : 'tell'} from ${inbox?.from ?? '?'} at tick ${inbox?.tick}`;
     if (!toldDuring.includes(line)) toldDuring.push(line);
   }
@@ -1028,12 +1039,19 @@ async function main() {
     const capped = left !== undefined && left < seconds*1000;
     if (capped) seconds = Math.max(1, Math.floor(left/1000));
     // quiet (fh wait --until): peek requests leave the team block for the agent's next reply; one line out.
-    let started = await harness.request('sleep',{seconds, ...(condition ? {condition} : {}), ...(quiet ? {peek:true} : {})});
+    // --wake-on-viewers: a viewer's @mention ends the sleep too (a runtime from before it ends a sleep on one anyway).
+    let viewers = wakeViewers;
+    const sleepArgs = (peek: boolean) => ({seconds, ...(condition ? {condition} : {}), ...(peek ? {peek:true} : {}), ...(viewers ? {wake_on_viewers:true} : {})});
+    let started = await harness.request('sleep',sleepArgs(quiet));
+    if (!started.ok && viewers && /unknown argument wake_on_viewers/.test(String(started.error?.message ?? ''))) {
+      viewers = false;
+      started = await harness.request('sleep',sleepArgs(quiet));
+    }
     // A runtime from before eng/minds-waits takes no peek on sleep: the sleep runs as fh sleep's, shown whole (full).
     let full = false;
     if (!started.ok && quiet && /unknown argument peek/.test(String(started.error?.message ?? ''))) {
       quiet = false; full = true;
-      started = await harness.request('sleep',{seconds, ...(condition ? {condition} : {})});
+      started = await harness.request('sleep',sleepArgs(false));
     }
     if (!started.ok) {
       if (condition?.until === 'alert') return {...started, error:{...started.error, message:`${started.error?.message ?? 'sleep failed'}; the alert wake comes with the next harness deploy`}};
@@ -1050,7 +1068,7 @@ async function main() {
       const wait = Math.min(11, Math.max(1, 11-ago));
       await delay(wait*1000);
       if (stopping) break;
-      const again = await harness.request('sleep',{seconds, ...(condition ? {condition} : {}), ...(quiet ? {peek:true} : {})});
+      const again = await harness.request('sleep',sleepArgs(quiet));
       if (!again.ok) return mergeTeam(started, again);
       const first = waitedOut === undefined;
       if (first) waitedOut = `your previous sleep woke (${match?.[1] ?? started.result?.woke ?? 'event'}) ${ago} s before this one, and a sleep `+
@@ -1143,8 +1161,8 @@ async function main() {
       if (!status.ok) return status;
       const active = status.result?.active;
       if (active && told(status, since) && active.kind !== 'wait_ticks' && active.kind !== 'wait_until') {
-        if (!throughTells) return interruptedReply({...status, result:{...status.result, interrupted:{inbox:status.result!.inbox, active}}}, started, undefined, active.kind);
-        noteTell(status);
+        if (!throughTells) return interruptedReply({...status, result:{...status.result, interrupted:{inbox:wakeInbox(status, since), active}}}, started, undefined, active.kind);
+        noteTell(wakeInbox(status, since));
       }
     }
     if (stopping) throw new Error('Stopped waiting; inspect status.');
@@ -1171,8 +1189,19 @@ async function main() {
       const self = await harness.request('observe',{...OBSERVE_SELF,peek:true}).catch(() => undefined);
       if (self?.ok) before = carried(self.result?.player);
     }
+    // --wake-on-viewers: a direct wait ends on a viewer's @mention too (the runtime ends it told|mentioned).
+    const viewersArg = wakeViewers && (action === 'wait_ticks' || action === 'wait_until') && args.wake_on_viewers === undefined;
+    if (viewersArg) args = {...args, wake_on_viewers:true};
     let reply: Reply;
-    try { reply = await harness.request(action,args,requestId); }
+    try {
+      reply = await harness.request(action,args,requestId);
+      // A runtime from before it ends a direct wait on a viewer's @mention anyway.
+      if (viewersArg && !reply.ok && /unknown argument wake_on_viewers/.test(String(reply.error?.message ?? ''))) {
+        const {wake_on_viewers: _ignored, ...rest} = args;
+        args = rest;
+        reply = await harness.request(action,args,randomUUID());
+      }
+    }
     catch (error) {
       const failed = transportError(error);
       if (failed) return {id:requestId, ok:false, error:failed};
