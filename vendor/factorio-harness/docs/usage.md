@@ -394,6 +394,29 @@ fh call status
     passes medium-worm-turret (60,0) (range 30 + 4) at 0.0 tiles`. `--wait` exits 1 with it.
   - The worms and spawners are read per chunk while the walk waits for its path (at most 8 chunks a tick) and kept a
     minute, so a nest built or killed in the last minute may not count yet.
+- `move_to {target: {position: {x,y}} | {unit_number: N}, reach: "transfer" | "build" | tiles}` walks until the
+  character is within reach of that entity, and arrives there (Astra, operator 07:55: a walk to (-72,-88) ended
+  `unreachable` 3.5 tiles from its target, within transfer reach, and broke an `&&` chain).
+  - The entity: any tile of its footprint, on a chunk the map draws; `name` or `unit_number` picks one of several
+    there.
+  - `unit_number` alone works only for what the game finds by number: prototypes flagged `get-by-unit-number`
+    (vehicles and the like; on a copy of world n an iron chest's own number found nothing). For others the refusal
+    asks for `{position, unit_number}`.
+  - Reach is measured to the entity's box, as the engine measures it, with a quarter tile to spare:
+    - `transfer` (default): the engine's own test too, 10 tiles; for ore, trees and rocks 2.7.
+    - `build`: `build_distance`, 10.
+    - a number: tiles to the box, 0.5..64.
+  - The walk heads for the entity's centre and stops as soon as it is within reach: the nearest spot on its way. A
+    character already within reach arrives on the first tick, and the reply says `in_reach: true`.
+  - An end within reach that would have been `unreachable`, `blocked`, `arrived_near`, `timed_out` or `no_safe_route`
+    counts as `arrived`, with `last.reach_note: within its reach already when the walk ended unreachable`.
+  - When no path leads within reach, the give-up's spot within it (the build spot, else the nearest reachable point)
+    is walked to once, with `squeeze` when it lies in a gap: `last.reach_walk: no path led within reach of it (...);
+    walked toward (12,0.5), a spot within reach`.
+  - `last.reach` says how near it ended: `iron-chest (20.5,0.5): 9.6 tiles to its box (transfer reach 10)`; `fh
+    --wait` prints it.
+  - `within` does not apply with `target`. A plain `target: {x,y}` without `reach` is still `position`
+    (`corrected`).
 - `move_to {position, via: [{x,y}, ...]}` walks 1..16 points in order before `position`, in one call (Opus, operator
   06:26: worm detours took 5-6 chained move_tos each trip).
   - Each leg is a walk of its own: pathfound, checked for enemies and gone around as a single `move_to`.

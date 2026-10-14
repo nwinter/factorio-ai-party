@@ -3110,4 +3110,100 @@ end)()
   call('queue_cancel',{}); call('stop',{})
   p.position={x=0,y=0}
 end)()
+;(function()
+  -- move_to target (Astra, operator 07:55: a walk that ended unreachable while already within transfer reach of its
+  -- target broke an && chain): walk until within reach of the entity's box, arriving there.
+  call('queue_cancel',{}); call('stop',{})
+  local chest={valid=true,name='iron-chest',type='container',position={x=20.5,y=0.5},unit_number=777,force=p.force,surface=p.surface,
+    bounding_box={left_top={x=20.15,y=0.15},right_bottom={x=20.85,y=0.85}}}
+  local find,reach,get,bd,rd=p.surface.find_entities_filtered,p.can_reach_entity,game.get_entity_by_unit_number,p.build_distance,p.reach_distance
+  p.surface.find_entities_filtered=function(f)
+    if f.position and not f.radius and f.position.x>=20 and f.position.x<21 and f.position.y>=0 and f.position.y<1 then return {chest} end
+    if f.position and f.radius and math.abs(f.position.x-20.5)<=f.radius and math.abs(f.position.y-0.5)<=f.radius then return {chest} end
+    return {}
+  end
+  -- the engine's reach: 10 tiles to the box
+  p.reach_distance=10; p.build_distance=10
+  local engine_reach=true
+  p.can_reach_entity=function(e) return engine_reach and runtime.box_distance(p.position,e)<=10 end
+  game.get_entity_by_unit_number=function(n) return n==777 and chest or nil end
+  p.position={x=0,y=0}
+  local r=call('move_to',{target={position={x=20.2,y=0.8}},pathfind=false})
+  eq(r.target.name,'iron-chest'); eq(r.target.unit_number,777); eq(r.reach,'transfer reach 10'); eq(r.in_reach,false); eq(r.position.x,20.5)
+  advance(1); eq(call('status').active.kind,'move_to')
+  p.position={x=10.5,y=0.5}; advance(1) -- 9.65 tiles to its box: within reach, arrived
+  local last=call('status').last
+  eq(last.outcome,'arrived'); eq(last.target.x,20.5); eq(last.reach,'iron-chest (20.5,0.5): 9.6 tiles to its box (transfer reach 10)')
+  -- Stopped in reach on a belt: the nearest free tile without one that is still within reach (before: one within the
+  -- arrival radius of the target's centre, 4 tiles further in on a copy of world n).
+  local plain=p.surface.find_entities_filtered
+  p.surface.find_entities_filtered=function(f)
+    if f.type and f.area then
+      local x,y=math.floor(f.area[1][1]+0.01),math.floor(f.area[1][2]+0.01)
+      return (x==10 and y==0) and {{valid=true,name='transport-belt',type='transport-belt'}} or {}
+    end
+    return plain(f)
+  end
+  p.position={x=0,y=0}
+  call('move_to',{target={unit_number=777},pathfind=false})
+  advance(1)
+  p.position={x=10.5,y=0.5}; advance(1)
+  eq(call('status').active.kind,'move_to')
+  local nav0=storage.agent_harness.active[1]
+  local so=nav0.step_off
+  eq(((so.x-10.5)^2+(so.y-0.5)^2)^0.5,1,'the next tile')
+  assert(runtime.box_distance(so,chest)<=9.75,'still within reach')
+  p.position={x=so.x,y=so.y}; advance(1)
+  last=call('status').last
+  eq(last.outcome,'arrived'); eq(last.off_belt,string.format('arrived on a transport-belt; stepped to (%g,%g), the nearest free tile without a belt within reach of the target',so.x,so.y))
+  p.surface.find_entities_filtered=plain
+  p.position={x=10.5,y=0.5}
+  -- Already within reach: arrives on the first tick, without walking.
+  r=call('move_to',{target={unit_number=777},pathfind=false}); eq(r.in_reach,true)
+  advance(1); eq(call('status').last.outcome,'arrived'); eq(call('status').last.reach_note,nil)
+  -- reach in tiles, to the box: 2 means within 1.75.
+  call('move_to',{target={position={x=20.5,y=0.5}},reach=2,pathfind=false})
+  advance(1); eq(call('status').active.kind,'move_to')
+  p.position={x=18.3,y=0.5}; advance(1); eq(call('status').active.kind,'move_to') -- 1.85 to its box
+  p.position={x=18.5,y=0.5}; advance(1); eq(call('status').last.outcome,'arrived'); eq(call('status').last.reach,'iron-chest (20.5,0.5): 1.6 tiles to its box (reach 2)')
+  r=call('move_to',{target={position={x=20.5,y=0.5}},reach='build',pathfind=false}); eq(r.reach,'build reach 10'); call('stop',{})
+  -- A walk that ends another way while within reach counts as arrived (the engine refusing reach on the walk's own ticks).
+  p.position={x=10.5,y=0.5}; engine_reach=false
+  call('move_to',{target={unit_number=777},pathfind=false,ticks=2})
+  advance(2); eq(call('status').active.kind,'move_to')
+  engine_reach=true; advance(1)
+  last=call('status').last
+  eq(last.outcome,'arrived'); eq(last.reach_note,'within its reach already when the walk ended timed_out')
+  -- Refused: both position and target, reach alone, within with target, a bad reach, nothing there, no such unit.
+  fails(function() call('move_to',{position={x=1,y=1},target={unit_number=777}}) end,'give position or target, not both')
+  fails(function() call('move_to',{position={x=1,y=1},reach=3}) end,'reach goes with target')
+  fails(function() call('move_to',{target={unit_number=777},within=2}) end,'with target, reach says how near')
+  fails(function() call('move_to',{target={unit_number=777},reach='hand'}) end,'reach is build, transfer or a number of tiles')
+  fails(function() call('move_to',{target={position={x=40.5,y=0.5}}}) end,'entity not found at (40.5,0.5)')
+  fails(function() call('move_to',{target={unit_number=5}}) end,'the game finds no entity by unit_number 5 alone (only vehicles and the like); give its position too: target={position={x,y},unit_number=5}')
+  -- position and unit_number: that entity on the tile.
+  r=call('move_to',{target={position={x=20.5,y=0.5},unit_number=777},pathfind=false}); eq(r.target.unit_number,777); call('stop',{})
+  fails(function() call('move_to',{target={position={x=20.5,y=0.5},unit_number=778}}) end,'entity not found at (20.5,0.5)')
+  -- A plain {x,y} target without reach is the position it always was.
+  r=call('move_to',{target={x=3,y=0},pathfind=false}); eq(r.target,nil); eq(r.position.x,3); call('stop',{})
+  -- No path within reach (every request fails): the give-up's spot within reach is walked to, and arrived at.
+  p.position={x=0,y=0}
+  local n0=#path_requests
+  call('move_to',{target={unit_number=777}})
+  for _=1,4 do
+    runtime.on_event{name=10,id=#path_requests-1,path=nil}; runtime.on_event{name=10,id=#path_requests,path=nil}
+  end
+  -- the near probe: its end (12,0.5) is 8.15 tiles from the box, within reach and in the open
+  runtime.on_event{name=10,id=#path_requests,path={{position={x=0,y=0}},{position={x=12,y=0.5}}}}
+  advance(1)
+  local nav=storage.agent_harness.active[1]
+  eq(nav.kind,'move_to'); eq(nav.reach_walk.to.x,12); eq(nav.position.x,12)
+  runtime.on_event{name=10,id=#path_requests-1,path={{position={x=0,y=0}},{position={x=12,y=0.5}}}}; runtime.on_event{name=10,id=#path_requests,path=nil}
+  p.position={x=11.5,y=0.5}; advance(1)
+  last=call('status').last
+  eq(last.outcome,'arrived'); assert(last.reach_walk:find('walked toward (12,0.5), a spot within reach',1,true),last.reach_walk)
+  assert(#path_requests>=n0+8,'the ladder, the near probe and the walk to the spot were asked')
+  p.surface.find_entities_filtered,p.can_reach_entity,game.get_entity_by_unit_number,p.build_distance,p.reach_distance=find,reach,get,bd,rd
+  p.position={x=0,y=0}
+end)()
 print('runtime: '..assertions..' assertions passed')
