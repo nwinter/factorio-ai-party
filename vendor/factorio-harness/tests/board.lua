@@ -115,7 +115,7 @@ fails(function() grok('board_update',{id=1,status='finished'}) end,'status must 
 -- A bad argument changes nothing, even with a valid owner beside it.
 fails(function() sol('board_update',{id=1,owner='astra',note=''}) end,'note is required')
 eq(grok('board',{id=1}).item.owner,'grok')
-fails(function() grok('board_update',{id=1}) end,'give status, owner or note')
+fails(function() grok('board_update',{id=1}) end,'give status, owner, note or allow')
 fails(function() grok('board_update',{id=4,owner='sol'}) end,'stays with its poster')
 -- The requester may reassign; the owner may release.
 r=sol('board_update',{id=1,owner='astra'}); eq(r.item.owner,'astra'); eq(r.changed[1],'assigned')
@@ -552,4 +552,151 @@ eq(n.total,1); eq(n.box.x0,-223); assert(n.line:find('^#%d+ in %(%-223,74%) 1 de
 eq(rows['platform-3/Starling'].platform,'Starling')
 -- The same lines in latest, the row's line; an operator read (no character's surface) names any surface but nauvis.
 assert(has(st.alerts.latest,'on vulcanus in (-223,74)'))
+
+-- Claims live on their owner's activity (agent-minds study: 67 claims open at the end of shift07, 60 untouched all
+-- shift): stale after 30 min (no permission needed), closed by the harness after 2 h; allow lists.
+local function body(name) return runtime.bots.lookup(runtime.bots.index_of(name)).character end
+-- A claim from before this runtime (no activity kept, updated 5 h ago) counts from the deploy: nothing closes at once.
+local legacy=sol('board_post',{kind='claim',title='old mall',area={left_top={x=30000,y=0},right_bottom={x=30010,y=10}}}).item
+local stored=storage.agent_harness.board.items[legacy.id]
+stored.active_tick=nil; stored.updated_tick=tick-5*216000; stored.created_tick=stored.updated_tick
+jump(60)
+-- whatever reads it first (here collect's claim check, before any board read) starts its timers
+assert(runtime.claims.other({name='grok'},{x=30005,y=5}),'fresh from the deploy: it binds')
+eq(stored.active_tick,tick)
+local item=astra('board',{id=legacy.id}).item
+eq(item.status,'claimed'); eq(item.owner_active,'0s ago'); eq(item.stale,nil)
+local home=body('sol').position
+local c=sol('board_post',{kind='claim',title='north smelting',area={left_top={x=10000,y=10000},right_bottom={x=10020,y=10020}}}).item
+eq(c.owner_active,'0s ago'); eq(c.stale,nil)
+local w=astra('board_post',{kind='claim',title='overlap',area={left_top={x=10010,y=10010},right_bottom={x=10030,y=10030}}})
+local warn=has(w.warnings,'overlaps claim #'..c.id..' by sol: north smelting (')
+assert(warn and warn:find('owner active on it 0s ago, sol last request 0s ago',1,true),table.concat(w.warnings,' | '))
+astra('board_update',{id=w.item.id,status='dropped'})
+jump(31*3600)
+item=astra('board',{id=c.id}).item
+eq(item.stale,true); eq(item.owner_active,'31m00s ago')
+assert(runtime.claims.find({name='grok'},{x=10001,y=10001}),'a stale claim is still found')
+eq(runtime.claims.other({name='grok'},{x=10001,y=10001}),nil) -- but binds nobody
+assert(runtime.claims.label(c and storage.agent_harness.board.items[c.id],{name='grok'}):find('stale: no permission needed; closes 1h29m from now',1,true))
+-- Sol hears it in one batched line; its requests elsewhere keep nothing fresh; standing in the claim does, and so
+-- does acting on a position in it.
+local digest=has(sol('status').team.board,'your claims: stale after 30 min without your activity')
+assert(digest and digest:find('#'..c.id..' north smelting',1,true),digest)
+eq(astra('board',{id=c.id}).item.stale,true)
+body('sol').position={x=10005,y=10005}
+sol('status')
+eq(astra('board',{id=c.id}).item.owner_active,'0s ago')
+body('sol').position=home
+jump(31*3600)
+sol('labs',{position={x=10002,y=10002},radius=4})
+eq(astra('board',{id=c.id}).item.owner_active,'0s ago')
+-- and so does the owner's board update; someone else's note does not
+jump(31*3600)
+astra('board_update',{id=c.id,note='taking 50 plates from here'})
+eq(astra('board',{id=c.id}).item.stale,true)
+sol('board_update',{id=c.id,note='still mine'})
+eq(astra('board',{id=c.id}).item.stale,nil)
+assert(runtime.claims.other({name='grok'},{x=10001,y=10001}),'fresh again: it binds')
+-- allow: the owner names who may work there without asking
+fails(function() astra('board_update',{id=c.id,allow='astra'}) end,'only the owner (sol) can change who claim #'..c.id..' allows')
+fails(function() astra('board_post',{kind='task',title='x',allow='sol'}) end,'allow is for a claim')
+local r=sol('board_update',{id=c.id,allow='Astra'})
+eq(r.item.allow[1],'astra'); eq(r.changed[1],'allow')
+eq(runtime.claims.other({name='astra'},{x=10001,y=10001}),nil)
+assert(runtime.claims.other({name='grok'},{x=10001,y=10001}))
+assert(runtime.claims.label(storage.agent_harness.board.items[c.id],{name='astra'}):find('allows astra, you are allowed',1,true))
+r=sol('board_update',{id=c.id,allow='everyone'}); eq(r.item.allow[1],'everyone')
+eq(runtime.claims.other({name='grok'},{x=10001,y=10001}),nil)
+r=sol('board_update',{id=c.id,allow={}}); eq(r.item.allow,nil)
+local c2=grok('board_post',{kind='claim',title='oil',allow={'sol','nick','Sol'},area={left_top={x=20000,y=0},right_bottom={x=20010,y=10}}}).item
+eq(table.concat(c2.allow,','),'nick,sol')
+fails(function() grok('board_post',{kind='claim',title='oil',allow={'sol','nobody'},area={left_top={x=20000,y=0},right_bottom={x=20010,y=10}}}) end,'unknown agent nobody')
+-- 2 h with no activity by its owner: the harness closes it, and its owner hears so.
+local seq0=op('board_events',{since_seq=0,limit=1}).latest
+jump(120*3600)
+local lines=sol('status').team.board
+digest=has(lines,'your claims: closed after 2h without your activity: ')
+assert(digest and digest:find('#'..c.id..' north smelting',1,true),table.concat(lines or {},' | '))
+eq(has(lines,'expired'),nil)
+eq(astra('board',{id=c.id}).item.status,'dropped')
+local expired
+for _,e in ipairs(op('board_events',{since_seq=seq0,limit=200}).events) do if e.id==c.id and e.change=='expired' then expired=e end end
+assert(expired and expired.by=='harness' and expired.text:find('^closed by the harness: no activity by its owner for 2h'),expired and expired.text)
+eq(runtime.claims.find({name='grok'},{x=10001,y=10001}),nil)
+-- Many claims closing at once: one line for their owner, never one per claim.
+astra('status'); jump(3*3600)
+local mine={}
+for k=1,8 do
+  mine[k]=astra('board_post',{kind='claim',title='lot '..k,area={left_top={x=40000+20*k,y=0},right_bottom={x=40010+20*k,y=10}}}).item.id
+end
+jump(120*3600)
+lines=astra('status').team.board or {}
+local claim_lines=0
+for _,l in ipairs(lines) do if l:find('claim',1,true) then claim_lines=claim_lines+1 end end
+eq(claim_lines,1)
+digest=has(lines,'your claims: closed after 2h without your activity: #'..mine[1]..' lot 1, #'..mine[2]..' lot 2')
+assert(digest and digest:find(', +2 more',1,true),table.concat(lines,' | '))
+-- Stale marks a minute apart: the second waits for the next line, at most one every 3 min.
+local a1=astra('board_post',{kind='claim',title='east',area={left_top={x=50000,y=0},right_bottom={x=50010,y=10}}}).item.id
+jump(60)
+local a2=astra('board_post',{kind='claim',title='west',area={left_top={x=50100,y=0},right_bottom={x=50110,y=10}}}).item.id
+jump(30*3600-60)
+digest=has(astra('status').team.board,'your claims: stale')
+assert(digest and digest:find('#'..a1..' east',1,true) and not digest:find('west',1,true),digest)
+jump(61)
+eq(has((astra('status').team or {}).board,'your claims'),nil)
+jump(2*3600)
+eq(has((astra('status').team or {}).board,'your claims'),nil)
+jump(3600)
+digest=has(astra('status').team.board,'your claims: stale')
+assert(digest and digest:find('#'..a2..' west',1,true) and not digest:find('east',1,true),digest)
+-- told once per stretch: no more lines while they stay stale
+jump(10*3600)
+eq(has((astra('status').team or {}).board,'your claims'),nil)
+
+-- A task whose owner has made no request for 20 min can be taken by anyone (shift07: #284 power held two shifts).
+local t=grok('board_post',{kind='task',title='power line',owner='grok'}).item
+grok('board_update',{id=t.id,status='doing'})
+fails(function() astra('board_update',{id=t.id,owner='astra'}) end,'#'..t.id..' is owned by grok (last request 0s ago); only its owner or requester can reassign it')
+jump(20*3600-1)
+astra('status'); sol('status') -- others' requests don't count
+fails(function() astra('board_update',{id=t.id,owner='astra'}) end,'(last request 19m59s ago)')
+jump(1)
+r=astra('board_update',{id=t.id,owner='astra'})
+eq(r.item.owner,'astra'); eq(r.item.status,'doing'); eq(r.changed[1],'taken')
+eq(r.item.notes[#r.item.notes].text,'taken from grok (last request 20m00s ago)')
+local heard=grok('status').team.board
+assert(has(heard,'#'..t.id..' (your task) taken by astra: power line - taken from grok (last request 20m00s ago)'),table.concat(heard or {},' | '))
+-- only for yourself: a quiet owner's item is not reassigned to a third agent
+jump(20*3600)
+fails(function() sol('board_update',{id=t.id,owner='grok'}) end,'only its owner or requester can reassign it')
+-- an asleep owner reads as such
+grok('sleep',{seconds=600})
+eq(runtime.board.owner_state('grok'),'asleep 0s')
+eq(runtime.board.owner_state('operator'),nil)
+
+-- An fyi tell waits for the next reply and wakes nobody; supervisors count it apart.
+sol('status'); grok('sleep_check',{}); grok('status')
+r=grok('tell',{to='sol',text='belts done',fyi=true})
+assert(r.note:find('^fyi: '),r.note)
+fails(function() grok('tell',{to='sol',text='x',fyi='yes'}) end,'fyi must be true or false')
+local row
+for _,a in ipairs(op('mention_counts',{}).agents) do if a.name=='sol' then row=a end end
+eq(row.fyi,1); eq(row.tells,nil); eq(row.unread_mentions,0); eq(row.oldest_tick,nil)
+assert(has(sol('status').team.tells,'grok (fyi), 0s ago: belts done'))
+sol('sleep',{seconds=30})
+grok('tell',{to='sol',text='routine: belts still fine',fyi=true})
+advance(5)
+eq(sol('sleep_check',{peek=true}).woke,nil)
+grok('tell',{to='sol',text='need you at the furnaces'})
+advance(5)
+eq(sol('sleep_check',{peek=true}).woke,'told')
+eq(op('tells',{since=0,limit=100}).tells[#op('tells',{since=0,limit=100}).tells-1].fyi,true)
+-- science (labs.lua) is reached as an action and as an observe scope, with its arguments checked
+prototypes=prototypes or {item={}}
+fails(function() astra('science',{pack='nope-pack'}) end,'pack must be an item name')
+fails(function() astra('observe',{scope='science',pack='nope-pack'}) end,'pack must be an item name')
+fails(function() astra('science',{packs='x'}) end,'unknown argument packs for science')
+assert(astra('describe').actions.science.pack)
 print('board: ok')
