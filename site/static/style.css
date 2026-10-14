@@ -445,6 +445,12 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .vchat-form { display: grid; grid-template-columns: 6.5em 1fr auto; gap: 6px; margin-top: 8px; }
 .vchat-form[hidden] { display: none; }
 .chat-panel .small { margin: 6px 0 0; }
+.vchat-tips { display: grid; grid-template-columns: auto 1fr; gap: 1px 8px; line-height: 1.35; }
+.vchat-tips > div { display: contents; }
+.vchat-tips dt { color: var(--fx-heading); font-family: var(--mono, ui-monospace, monospace); font-size: .95em; white-space: nowrap; }
+.vchat-tips dd { margin: 0; }
+#watching { color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+#watching[hidden] { display: none; }
 .yt-chat { flex: 1; width: 100%; min-height: 420px; border: 0; border-radius: var(--fx-r-1); background: #0d0c0d; }
 
 /* run heading, offline notice, status strip, alerts */
