@@ -1116,16 +1116,24 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   - Per network (networks.lua), routed and limited the same way, with no hint: `power_high`, an electric network
     whose draw was at or above 85% of its capacity in every 5-second sample of the last 2 minutes (`electric #7 draw
     at or above 85% of capacity for 2 min: 20.0 MW of 22.1 MW now; 3 machines on low power`; worse is the next 5%
-    step: `(was 85%)`); `boiler_fuel`, boilers with under 20 minutes of fuel at the draw, told again when one drops
-    under 10 and under 5 or when more boilers drop under 20 (Haiku, shift09: 10 minutes left was too late to feed by
-    hand): `3 boilers under 20 min of fuel at this draw, 2 under 10, 2 under 5 near (43,18) (electric #7: 11 boilers,
-    lowest 4 min, 31 min for all); fuel within 64 tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50;
-    belts: coal 16 on 2 tiles, nearest (31,13), (31,12); fed by inserters: 1 from wooden-chest (41,13); no inserter
-    feeds 2: (66,16), (4,22)` and `(was 3 under 20 min, lowest 17 min)` when told again. The fuel is what the boilers
-    burn or hold (when they hold none, the line names the fuels it looked for: coal, solid-fuel, wood, rocket-fuel,
-    nuclear-fuel); chests are the 3 nearest holding it (and a count of the rest), belts the tiles holding it with the
-    2 nearest (each read is capped at 300 chests and 300 belt tiles found within 64 tiles); an inserter feeds a boiler
-    when its drop target is that boiler, named by its pickup target;
+    step: `(was 85%)`); `boiler_fuel`, boilers whose supply is under 20 minutes at the draw and running down, told
+    again when one drops under 10 and under 5 or when more boilers drop under 20 (Haiku, shift09: 10 minutes left was
+    too late to feed by hand; 01:53: it fired for hours on 13 working boilers fed from a belt and a chest with 150+
+    coal): `3 boilers under 20 min of fuel at this draw, 1 under 10, 1 under 5 and running down near (43,18) (electric
+    #7: 11 boilers, 32 min for all with their feeders' sources); boiler (66,16) 2 min: no inserter feeds it; boiler
+    (4,22) 12 min: no inserter feeds it; boiler (60,16) 17 min: burner-inserter (60,14) from wooden-chest (41,13)
+    holding 400 coal; fuel within 64 tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50; belts: coal 16
+    on 2 tiles, nearest (31,13), (31,12)` (the lowest 3, `+N more`) and `(was 3 under 20 min, lowest 17 min)` when
+    told again. A boiler's supply is its own fuel plus, for each source an inserter feeding it takes from (an
+    inserter within 4 tiles whose drop target is the boiler, by its pickup target), that source's stock shared among
+    the boilers it feeds: a chest or machine counts all it holds of the fuel, a boiler in a chain its fuel slot, a belt
+    its tile and up to 64 tiles upstream (boilers along one belt share it). Minutes are that supply at an even share
+    of the draw of the generators the boilers feed. Running down: less than 90% of the supply at the networks view's
+    last look (30 s before; a boiler's first look never counts), so a boiler kept supplied by a belt or a refilled
+    chest is not told, whatever its own fuel. The fuel is what the boilers burn or hold (when they hold none, the line
+    names the fuels it looked for: coal, solid-fuel, wood, rocket-fuel, nuclear-fuel); chests nearby are the 3 nearest
+    holding it (and a count of the rest), belts the tiles holding it with the 2 nearest (each read is capped at 300
+    chests and 300 belt tiles found within 64 tiles);
     `robots_busy`, a logistic network with no idle logistic robot in every 30-second look for 10 minutes (`logistic
     #3: no idle logistic robot for 11 min (147 robots; 1 requests unfilled 60+ s)`). A network with machines on low
     power (satisfaction under 100%) shows as the `low power` groups above.
@@ -1176,7 +1184,7 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   the agent's surface first, `+N more networks: fh call networks`), one line per network, numbers only:
   `nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 min (now 18.5 MW) of 22.1 MW capacity (84%);
   solar 10 panels, 500 kW now, 600 kW peak; accumulators 2 at 50%; machines 30: 3 low power, 1 no power; boilers 11:
-  fuel 31 min at this draw, 3 under 20 min (lowest 4 min)`, `nauvis logistic #3: 4 roboports (+1 personal), logistic area
+  fuel (theirs and their feeders' sources) 32 min at this draw, 3 under 20 min and running down (lowest 2 min)`, `nauvis logistic #3: 4 roboports (+1 personal), logistic area
   (0,25)-(125,75), construction area (-30,-5)-(155,105); logistic robots 147: 0 idle, 142 working, 3 charging, 2
   waiting to charge; construction robots 11: 4 idle, 6 working, 1 charging, 0 waiting to charge; no idle logistic
   robot for 4 min; requests unfilled 60+ s: 1 (iron-plate 300 missing); ghosts in its construction area: 5`, `nauvis
