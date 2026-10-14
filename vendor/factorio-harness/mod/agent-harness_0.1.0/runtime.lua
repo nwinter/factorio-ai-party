@@ -703,6 +703,7 @@ function handlers.describe()
   for name,schema in pairs(M.pushalerts and M.pushalerts.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.selfview and M.selfview.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.networks and M.networks.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.silo and M.silo.schema or {}) do description.actions[name]=schema end
   description.actions.status.brief='boolean: only active, last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older)'
   description.actions.status.alerts='boolean, with brief: add the alerts block (losses, attacked areas, groups, enemy news; read from what the game reported, no scan)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
@@ -1570,6 +1571,17 @@ function handlers.stock(p,a) return stock.view(p,a) end
 function handlers.platforms(p,a) return space.platforms(p,a) end
 for _,name in ipairs({'requests','platform_create','platform_schedule','launch','land','drop'}) do
   handlers[name]=function(p,a) return space[name](p,a) end
+end
+-- A launch an agent ordered is the silo read's last launch (silo.lua), with who ordered it.
+handlers.launch=function(p,a)
+  local out=space.launch(p,a)
+  if out.launched then
+    pcall(function()
+      local silo=remote_entity(p,{position=a.position,name=a.name,unit_number=a.unit_number})
+      M.silo.record(silo,{by=M.board.who(p),to=out.to,cargo=type(out.cargo)=='string' and out.cargo or nil})
+    end)
+  end
+  return out
 end
 local views={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
 function handlers.observe(p,a)
@@ -3778,6 +3790,10 @@ handlers.cargo=function(p,a)
   out.from=from
   return out
 end
+-- A rocket silo at a glance (silo.lua, Gemini's request): parts, crafting and
+-- what it lacks, cargo against the lift, automatic requests, the last launch.
+M.silo=require('silo'){state=state,cargo=M.cargo,position=position,status_name=function(e) return entity_status_names[e.status] end}
+function handlers.silo(p,a) return M.silo.read(p,a) end
 -- Circuit wires and settings (circuits.lua), train stops and schedules (trains.lua).
 M.circuits=require('circuits'){entity=entity,remote_entity=remote_entity,friendly=friendly,own_platform=own_platform,position=position}
 handlers.circuit_set=M.circuits.handlers.circuit_set
@@ -4696,7 +4712,7 @@ passive.circuit_set=true; passive.wire=true
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
 for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route'}) do passive[name]=true end
-local reads={cargo=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,networks=true}
+local reads={cargo=true,silo=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,networks=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
@@ -5139,9 +5155,17 @@ rates=rates_module{position=position,status_name=function(e) return entity_statu
 M.networks=require('networks'){state=state}
 function handlers.networks(p,a) return M.networks.read(p,a) end
 -- The game's alerts and key warnings, pushed to the agents they concern (pushalerts.lua).
+-- Lightning attractors on Fulgora whose catches have nowhere to go, and full accumulators beside them (lightning.lua).
+M.lightning=require('lightning'){}
 M.pushalerts=require('pushalerts'){state=state,agents=function() return M.board.agents() end,who=M.board.who,
   place=function(index) return M.where.place(index) end,
-  network_groups=function(force) return M.networks.alert_groups(force) end,
+  network_groups=function(force)
+    local out=M.networks.alert_groups(force)
+    local ok,more=pcall(M.lightning.alert_groups,force)
+    if ok then for _,g in ipairs(more) do out[#out+1]=g end
+    else local s=state(); s.lightning_errors={count=((s.lightning_errors or {}).count or 0)+1,last=tostring(more),tick=game.tick} end
+    return out
+  end,
   -- an agent player's alert panel (camera players have theirs switched off: cameras.lua)
   alert_reader=function(force)
     for _,pl in pairs(force.players) do if pl.valid and pl.connected and not M.is_director(pl.index) then return pl end end
@@ -5519,6 +5543,12 @@ function M.on_event(event)
   if event.name==defines.events.on_research_finished or event.name==defines.events.on_research_queued then
     local ok,err=pcall(event.name==defines.events.on_research_finished and M.research.on_finished or M.research.on_queued,event)
     if not ok then local s=state(); s.research_errors={count=((s.research_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
+    return
+  end
+  -- Rocket launches for the silo read (silo.lua): like research news, faults are counted.
+  if event.name==defines.events.on_rocket_launch_ordered then
+    local ok,err=pcall(M.silo.on_launch_ordered,event)
+    if not ok then local s=state(); s.silo_errors={count=((s.silo_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
     return
   end
   if event.name==defines.events.on_script_path_request_finished then
