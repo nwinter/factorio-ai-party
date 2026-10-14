@@ -847,7 +847,11 @@ async function main() {
   async function waitForActionEnd(action: string, untilTick: number | undefined, nowTick: number | undefined, started: number, acceptedTick?: number): Promise<Reply> {
     const deadline = started+waitBudget(untilTick,nowTick,action === 'wait_until');
     let staleLooks = 0;
-    while (!stopping && Date.now()<deadline) {
+    // The poll after the deadline is judged like the others: an action that ended since the previous poll ends the
+    // wait by its outcome (Sol 12:20: collect --wait --wait-timeout 60000 read STILL RUNNING at 62 s over a gather
+    // collected 10 of 10 at 54.2 s game time; the timeout's own status read already showed it ended).
+    while (!stopping) {
+      const lastLook = Date.now()>=deadline;
       const status = await poll();
       const active = action === 'shoot' ? status.result?.combat : action === 'drop' ? status.result?.drop_pending : status.result?.active;
       // active may report shooting when movement has already finished. A
@@ -867,7 +871,7 @@ async function main() {
         // A result that ended before this action was accepted belongs to an
         // earlier action: look again briefly, then report none rather than it.
         if (status.ok && action !== 'shoot' && acceptedTick !== undefined && typeof last?.tick === 'number' && last.tick < acceptedTick) {
-          if (++staleLooks <= 3) { await delay(250); continue; }
+          if (++staleLooks <= 3 && !lastLook) { await delay(250); continue; }
           return {...status, result:{...status.result, last:undefined,
             note:`${action} is not running and recorded no result of its own (the last result, ${last.kind} ${last.outcome} at tick ${last.tick}, predates it)`}};
         }
@@ -877,6 +881,7 @@ async function main() {
         }
         return status;
       }
+      if (lastLook) break;
       await delay(pollDelay(status, started));
     }
     if (stopping) throw new Error('Stopped waiting for action; inspect status. Game actions have a bounded tick duration.');
@@ -1034,7 +1039,8 @@ async function main() {
     const untilTick = first.result?.active?.until_tick ?? first.result?.combat?.until_tick;
     const deadline = started+waitBudget(untilTick,first.tick ?? first.result?.tick);
     let status = first;
-    while (!stopping && Date.now()<deadline) {
+    // The poll after the deadline still counts: idle there ends the wait as idle (as in waitForActionEnd).
+    while (!stopping) {
       if (!status.result?.active && !status.result?.combat) {
         const last = status.result?.last;
         const ok = !last?.outcome || successfulOutcomes.includes(last.outcome);
@@ -1044,6 +1050,7 @@ async function main() {
         return withTells({...full, result:{idle:true, last, last_combat:status.result?.last_combat, waited_ms:Date.now()-started,
           team:full.result?.team, clock:full.result?.clock, orders:full.result?.orders, chat:full.result?.chat}});
       }
+      if (Date.now()>=deadline) break;
       await delay(pollDelay(status, started));
       status = await poll();
       if (!status.ok) return status;

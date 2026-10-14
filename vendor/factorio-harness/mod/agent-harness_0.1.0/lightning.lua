@@ -135,5 +135,56 @@ return function(api)
     end
     return out
   end
+
+  -- Fulgora's sky (Gemini 12:20: the lightning storm's state and the time to the next storm). The API has no storm
+  -- or lightning property (LuaSurface, LuaPlanet and LuaSpaceLocationPrototype on world n, 2.0.77, 2026-10-14).
+  -- Lightning strikes in the dark: one Fulgora day of samples on world n (256x256 tiles, every 4 s) saw bolts at
+  -- darkness 0.06 to 0.85, in all but one sample at 0.48 and over, and none in daylight (darkness 0). So the sky is
+  -- the surface's day cycle: day (no darkness) from dawn to dusk, then darkening to full dark (evening to morning)
+  -- and brightening to dawn. {state (storm while dark, else clear), phase, darkness, dusk_in_s, evening_in_s,
+  -- morning_in_s, dawn_in_s, day_s, bolts_near (lightning within 64 tiles of pos, when pos is given), line}.
+  local NEAR = 64
+  local function span(s)
+    s = math.floor(s + 0.5)
+    return s >= 60 and string.format('%dm%02ds', math.floor(s / 60), s % 60) or s .. 's'
+  end
+  function M.sky(surface, pos)
+    local planet = try(function() return surface.planet and surface.planet.name end)
+    if not (planet and PLANETS[planet]) then return nil end
+    local d, dark, ticks = surface.daytime, surface.darkness or 0, surface.ticks_per_day
+    local dusk, evening, morning, dawn = surface.dusk, surface.evening, surface.morning, surface.dawn
+    local out = {state=dark > 0 and 'storm' or 'clear', darkness=math.floor(dark * 100 + 0.5) / 100, day_s=math.floor(ticks / 60 + 0.5)}
+    if d >= dusk and d < evening then out.phase = 'darkening'
+    elseif d >= evening and d < morning then out.phase = 'full dark'
+    elseif d >= morning and d < dawn then out.phase = 'brightening'
+    else out.phase = 'day' end
+    if pos then
+      out.bolts_near = try(function() return surface.count_entities_filtered{position=pos, radius=NEAR, type='lightning'} end)
+    end
+    local parts = {}
+    local near = out.bolts_near and string.format('; %d lightning bolts within %d tiles of you now', out.bolts_near, NEAR) or ''
+    if surface.freeze_daytime then
+      parts[1] = string.format('%s sky: %s, darkness %.2f, daytime frozen%s', planet, out.phase, out.darkness, near)
+    else
+      local function left(t) return ((t - d) % 1) * ticks / 60 end
+      out.dusk_in_s, out.evening_in_s = math.floor(left(dusk) + 0.5), math.floor(left(evening) + 0.5)
+      out.morning_in_s, out.dawn_in_s = math.floor(left(morning) + 0.5), math.floor(left(dawn) + 0.5)
+      if out.phase == 'day' then
+        parts[1] = string.format('%s sky: day, clear (no lightning in daylight); dusk in %s, full dark in %s', planet, span(left(dusk)), span(left(evening)))
+      elseif out.phase == 'darkening' then
+        parts[1] = string.format('%s sky: storm, darkening (darkness %.2f; lightning in the dark, most at full dark); full dark in %s, dawn (clear) in %s',
+          planet, out.darkness, span(left(evening)), span(left(dawn)))
+      elseif out.phase == 'full dark' then
+        parts[1] = string.format('%s sky: storm, full dark (darkness %.2f; lightning); brightening in %s, dawn (clear) in %s',
+          planet, out.darkness, span(left(morning)), span(left(dawn)))
+      else
+        parts[1] = string.format('%s sky: storm, brightening (darkness %.2f; lightning in the dark); dawn (clear) in %s, next dusk in %s',
+          planet, out.darkness, span(left(dawn)), span(left(dusk)))
+      end
+      parts[1] = parts[1] .. near .. string.format('; a %s day: dark from dusk to dawn, %s', span(ticks / 60), span(((dawn - dusk) % 1) * ticks / 60))
+    end
+    out.line = parts[1]
+    return out
+  end
   return M
 end
