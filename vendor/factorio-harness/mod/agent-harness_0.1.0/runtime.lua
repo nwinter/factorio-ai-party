@@ -48,7 +48,29 @@ local function state() return storage.agent_harness end
 -- Bots (script-driven characters), profiles/speech bubbles and director
 -- cameras. Bot indices sit above every player index (bots.BASE).
 M.crafting=require('crafting'){state=state}
-M.claims=require('claims'){state=state,where_from=function(me) return M.where.from(me) end,owner_state=function(name) return M.board.owner_state(name) end}
+M.claims=require('claims'){state=state,where_from=function(me) return M.where.from(me) end,owner_state=function(name) return M.board.owner_state(name) end,
+  -- the surface an agent is on now (a claim from before claims had one; claims.lua), nil in a pod or unknown
+  owner_surface=function(name)
+    for _,a in ipairs(M.board.agents()) do
+      if a.name==name then
+        local ok,w=pcall(M.where.place,a.index)
+        local key=ok and w and w.key
+        return type(key)=='string' and not key:find('^pod:') and key or nil
+      end
+    end
+  end,
+  -- whether any of our buildings stand in an area of a surface (one count, limit 1), and the planet surfaces
+  built_on=function(name,area)
+    local sf=game.get_surface(name)
+    local ok,n=pcall(function() return sf and sf.count_entities_filtered{area={area.left_top,area.right_bottom},force='player',limit=1} or 0 end)
+    return ok and n>0
+  end,
+  planets=function()
+    local out={}
+    for _,sf in pairs(game.surfaces or {}) do if not (pcall(function() return sf.platform end) and sf.platform) then out[#out+1]=sf.name end end
+    table.sort(out)
+    return out
+  end}
 M.belt=require('belt')()
 -- Waits, queues and actions carried over a hot install (carry.lua: notes them while this loads).
 M.carry=require('carry'){state=state,restart=function(index,call) return M.restart_call(index,call) end}
@@ -6207,7 +6229,9 @@ M.selfview=require('selfview'){state=state,is_read=function(action) return M.is_
   claims=function(name)
     local out={}
     for _,i in pairs((state().board or {}).items or {}) do
-      if i.kind=='claim' and i.owner==name and i.area and ({open=true,claimed=true,doing=true,blocked=true})[i.status] then out[#out+1]=i.area end
+      if i.kind=='claim' and i.owner==name and i.area and ({open=true,claimed=true,doing=true,blocked=true})[i.status] then
+        out[#out+1]={left_top=i.area.left_top,right_bottom=i.area.right_bottom,surface=M.claims.surface_of(i)}
+      end
     end
     return out
   end,
@@ -6885,6 +6909,7 @@ M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.netw
 -- Lightning attractors on Fulgora whose catches have nowhere to go, and full accumulators beside them (lightning.lua).
 M.lightning=require('lightning'){}
 M.pushalerts=require('pushalerts'){state=state,agents=function() return M.board.agents() end,who=M.board.who,
+  claim_surface=function(i) return M.claims.surface_of(i) end,
   place=function(index) return M.where.place(index) end,targets=M.targets,
   network_groups=function(force)
     local out=M.networks.alert_groups(force)

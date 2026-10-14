@@ -34,7 +34,7 @@ already targets your character.
   `--full` for the whole status). The `clock:` line ends with the time left until your deadline. A `--wait` that a tell
   or mention ends while the action still runs exits 3 (`still_running`); `--wait-through-tells` keeps waiting.
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Post a claim for the area you
-  build in (`board post` with kind `claim` and the area): it shows teammates who works where, sends that area's
+  build in (`board post` with kind `claim` and the area; it is on your surface, or `"surface":"gleba"`): it shows teammates who works where, sends that area's
   alerts to you, and keeps teammates' `stock` sweeps out of its chests. Put shared infrastructure (power poles, main
   belts) on the board too. Keep one job you own; when you hand it over, take a new one in the same message.
 - Anywhere, a teammate's claim included, you may build, extend, connect power, belts and inserters, and take from
