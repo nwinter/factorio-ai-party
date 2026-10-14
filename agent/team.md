@@ -145,7 +145,8 @@ already targets your character.
   line in the team block when a round's short steps differ from the round before. `transfer` takes `to_entity` or
   `from_entity` as the target (`{"to_entity": {x,y}}`) on any container; out of reach, it says the distance, your
   reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
-  `collect` over several targets ends with a `tally` line.
+  `collect` over several targets ends with a `tally` line. `feed`, `collect` and `transfer` take `area {left_top,
+  right_bottom}` for every machine (or chest) inside it; `inspect` of a machine shows `output_fill` (and `full`).
 - Reach is measured to an entity's edge: 10 tiles for buildings, 2.7 for ore, trees and rocks. `rotate` is one
   90-degree turn clockwise (`reverse` counter-clockwise, `direction` a facing to turn to) and replies `before`/`after`.
 - Gleba: `inspect` on an agricultural tower shows its `tower` state, seeds, output, which cells have soil for which
