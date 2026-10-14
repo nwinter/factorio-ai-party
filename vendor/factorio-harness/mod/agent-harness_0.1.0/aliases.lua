@@ -49,7 +49,9 @@ return function(api)
   -- transfer direction names for the same two moves.
   local DIRECTION = {from_entity='to_player', from_player='to_entity', to_chest='to_entity', from_chest='to_player',
     to_container='to_entity', from_container='to_player', to_character='to_player', from_character='to_entity',
-    give='to_entity', put='to_entity', insert='to_entity', take='to_player'}
+    give='to_entity', put='to_entity', insert='to_entity', take='to_player',
+    -- (Muse, 13:31: to_machine worked on a walking tour and was refused on one target; one name for every entity kind)
+    to_machine='to_entity', from_machine='to_player', to_building='to_entity', from_building='to_player'}
   local function encode(v)
     local t = type(v)
     if t == 'string' then return '"' .. v:gsub('[%c"\\]', function(c) return string.format('\\u%04x', c:byte()) end) .. '"' end

@@ -1900,6 +1900,10 @@ Some actions work at a distance, the way a player can through remote view:
 
 Items on the ground:
 
+- `scan` lists its rows in reading order (by y, then x). With more than `limit` rows it keeps the `limit` nearest its
+  centre (the position given, the character, or an area's middle), as `observe` does, and says so in `kept_nearest
+  {centre, within, note}`; `total` counts them all. `transfer` takes `to_machine` and `to_building` as `to_entity`,
+  `from_machine` and `from_building` as `to_player`, for every entity kind.
 - `scan` and `observe` list items on the ground as `ground_items` (`{stacks, items: [{name, count, stacks, box}],
   more_items}`), by item, instead of one row per stack; rows for them come only when the call filters for them
   (`type: "item-entity"` or `name: "item-on-ground"`; observe `entity_types`/`entity_names`).
