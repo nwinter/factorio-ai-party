@@ -81,7 +81,7 @@ fh call status
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
-- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `kite`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
+- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `kite`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, with `transfer` or `collect` when they walk (`walk`, `pick`), and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
 - With `--wait`, the command exits 0 when the action ended successfully, 1 when it failed, and 3 when the wait ended
   while the action still runs: a tell or mention ended it (the reply's `still_running` and `note` say so), or the wait
   timed out (`wait_timeout`). So `fh call ACTION --wait && next` runs `next` only after the action is done.
@@ -693,12 +693,32 @@ fh sleep 900 --until researched                       # ...or until the research
     a target (`position` or `positions`) is out of reach, the call walks a nearest-first route to each, as feed and
     collect tours do, and makes the same transfer there; one timed call (`ticks` 1..36000, default 3600). The reply:
     `op: "transfer"`, `places`, `out_of_reach`, `direction` (inferred as without walk when omitted), `until_tick`; then
-    `last {op, transferred, items, direction, entities [{position, name, transferred, full?}], left, unreached}` and the
+    `last {op, transferred, items, direction, entities [{position, name, moved, full?}], left, unreached}` and the
     outcome `transferred`, `nothing_to_do` (the targets wanted none), `out_of_items` (nothing left to give),
     `nothing_collected` (nothing to take), `inventory_full`, `unreached` (no place reached) or `timed_out`. All targets
     in reach: the plain transfer at once. Giving with none held (and none in the hand-craft queue) is refused before
     walking; with `up_to: true` it is a short (`none_held`). Not with `total`. As a queue step it runs until the tour
     ends; `transferred` counts as done.
+  - `transfer` or `collect {positions, item | items, pick, to}` (Luna 07:57: a repeating seed courier walked 300+ tile
+    laps from empty seed chests):
+    - `pick: "first_with_stock"` reads every listed place as `inspect` does (in sight, or by remote view where our
+      force sees the chunk) and takes at the first in list order that holds a listed item now (its first listed item
+      it holds); `pick: "most_stock"` takes at the place holding the most. `items` lists up to 16 items to look for
+      (`item` too); the item picked is the one taken (`count`, `up_to`, `keep` as in a plain take). The take walks
+      there when out of reach (as `walk`).
+    - Empty places are skipped: `skipped` counts them and `skipped_places` lists up to 8 (`holds: 0`, or the
+      `error` reading one); they are never short. When none holds any, the reply is `moved: 0`, `picked: "none"` and a
+      `note` (`none of the 2 listed places holds yumako-seed now: nothing taken, nothing walked`); nothing starts, and
+      as a queue step it succeeds and the plan goes on.
+    - `picked {position, name, item, holds, rule, line}`: `wooden-chest at (52.5,29.5) holds 30 jellynut-seed
+      (first_with_stock; 2 listed places skipped)`.
+    - `to`: `{x,y}`, or a map item -> `{x,y}` (`{"yumako-seed": {x,y}, "jellynut-seed": {x,y}}`, every listed item in
+      it): the same timed call (`ticks` default 18000) takes at the picked place, then walks to the destination of the
+      item picked and gives what it took there (the inventory inferred as a give). A destination out of sight now is
+      found on arrival (`to_line` says so). A take that gets nothing ends the call there (`nothing_collected`), with no
+      walk on. `last`: `picked`, `taken`, `delivered`, `moved` (delivered), `entities` (one row per leg, with
+      `direction` and `moved`); outcome `transferred`, `nothing_collected`, `unreached` or `timed_out`. `--wait` waits
+      for it and shows `picked`, `taken`, `delivered`.
   - Personal logistics (trash.lua; Astra, 01:53: two cargo hauls lost to auto-trash). The game moves what you hold over
     a personal request's max (and, with "trash unrequested" on, any item you do not request) from your inventory to
     your trash slots within a few ticks, logistic network or not. A `transfer` to you, `collect`, `pickup` and

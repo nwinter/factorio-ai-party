@@ -152,7 +152,10 @@ already targets your character.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
-  true}` walks into reach of targets out of reach first, then transfers (one call); `./fh call inventory` shows main,
+  true}` walks into reach of targets out of reach first, then transfers (one call); `transfer`/`collect {positions,
+  item | items, pick: "first_with_stock" | "most_stock"}` takes at one listed place that holds the item now (empty
+  ones are `skipped`, not short; none: nothing walked), and `to` (`{x,y}` or `{item: {x,y}}`) carries it on to that
+  item's destination in the same call; `./fh call inventory` shows main,
   ammo, armor and equipment, trash and cursor in one small reply (`status {"inventory": true}`: one line); `feed {"recipe": NAME,
   "crafts": N, "positions": [...]}` loads each machine set to that recipe for N crafts; `feed` takes `item` or `items`;
   `inspect {"positions": [...]}` inspects up to 32 entities in one call; `collect {"radius": N}` without `item` takes

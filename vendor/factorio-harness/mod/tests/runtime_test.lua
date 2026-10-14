@@ -1079,7 +1079,7 @@ do
   advance(1)
   local wl=call('status').last
   eq(wl.outcome,'transferred'); eq(wl.op,'transfer'); eq(wl.transferred,12); eq(wl.items.coal,12); eq(wl.direction,'to_entity')
-  eq(wl.entities[1].transferred,12); eq(b3.fuel[1].count,17); eq(main[1].count,18)
+  eq(wl.entities[1].moved,12); eq(b3.fuel[1].count,17); eq(main[1].count,18)
   -- all in reach: the plain transfer, at once
   local now=call('transfer',{position={x=1,y=3},item='coal',count=2,inventory='fuel',direction='to_entity',walk=true})
   eq(now.transferred,2); eq(now.op,nil); eq(b1.fuel[1].count,12)

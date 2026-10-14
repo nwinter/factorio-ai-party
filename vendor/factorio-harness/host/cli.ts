@@ -762,6 +762,8 @@ async function main() {
       tally: last?.tally,
       // An item move that ran over time: what it moved and the inventory line after (Muse 06:27).
       moved: last?.moved, inv: last?.inv,
+      // A courier (transfer or collect with pick and to): where it took from, what it took and what arrived.
+      picked: last?.picked, taken: last?.taken, delivered: last?.delivered,
       team: carrier.result?.team, clock: carrier.result?.clock, orders: carrier.result?.orders, chat: carrier.result?.chat,
     };
     for (const key of Object.keys(result)) if (result[key] === undefined) delete result[key];
@@ -785,8 +787,9 @@ async function main() {
       // active may report shooting when movement has already finished. A
       // transfer/refuel/rearm short of items waits for the hand-craft queue as
       // an active 'feed'; the radius tours run as 'gather'; vehicle drive runs
-      // as 'drive' (request #5: the wait returned the previous action's result).
-      const kinds = action === 'collect' || action === 'feed' ? ['gather'] : ['rearm','refuel'].includes(action) ? ['gather','feed'] : ['transfer','build'].includes(action) ? ['feed']
+      // as 'drive' (request #5: the wait returned the previous action's result). A transfer that walks (walk, pick)
+      // runs as 'gather' too.
+      const kinds = action === 'collect' || action === 'feed' ? ['gather'] : ['rearm','refuel','transfer'].includes(action) ? ['gather','feed'] : action === 'build' ? ['feed']
         : action === 'vehicle' ? ['drive'] : [action];
       const stillRunning = active && (action === 'shoot' || action === 'drop' || kinds.includes(active.kind));
       if (status.ok && stillRunning && told(status, acceptedTick) && action !== 'wait_ticks' && action !== 'wait_until') {
@@ -1004,6 +1007,8 @@ async function main() {
     const waits = bridged ? ['walk','mine','build'].includes(action)
       : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until','wait_ticks','kite'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
         || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined)
+        // A transfer or collect that walks (walk, pick, pick with to) runs as a timed tour.
+        || (['transfer','collect'].includes(action) && reply.result?.op === 'transfer' && reply.result?.until_tick !== undefined)
         || (action === 'vehicle' && args.drive !== undefined)
         // drop full: pods past the free hatches go as each hatch frees up (space.lua).
         || (action === 'drop' && reply.result?.until_tick !== undefined);

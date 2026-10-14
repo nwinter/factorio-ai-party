@@ -219,6 +219,13 @@ return function(api)
     for k,v in pairs(fields or {}) do action[k]=v end
     return action,{op=op,item=action.item,places=#action.targets,skipped=#entities>MAX_TOUR and #entities-MAX_TOUR or nil}
   end
+  -- A courier's legs (runtime.lua M.pick_source): its places in the given order, never re-routed; a place without
+  -- an entity (find) is resolved on arrival, when the character comes within reach of its position.
+  function M.start_legs(p,places,ticks,fields)
+    local action={kind='gather',op='transfer',got=0,visited=0,want=math.huge,targets=places,index=1,until_tick=game.tick+ticks}
+    for k,v in pairs(fields or {}) do action[k]=v end
+    return action
+  end
   local function done(action)
     -- transfer {walk=true}: what moved, or nothing to take, or nothing the targets wanted
     if action.op=='transfer' then
@@ -235,7 +242,19 @@ return function(api)
       if action.got>=action.want then return 'collected' end
       local t=action.targets[action.index]
       if not t then return done(action) end
-      if not (t.entity and t.entity.valid) then
+      if t.find and not t.entity and api.near(p,t.position) then
+        local ok,e=pcall(api.find,p,t.position)
+        t.find=nil
+        if ok then t.entity=e
+        else
+          action.rows=action.rows or {}
+          action.rows[#action.rows+1]={position=t.position,error=tostring(e):gsub('^[^:]*:%d+: ','')}
+          action.errors=(action.errors or 0)+1
+        end
+      end
+      if t.find and not t.entity then
+        break
+      elseif not (t.entity and t.entity.valid) then
         action.index=action.index+1; action.nav=nil
       elseif p.can_reach_entity(t.entity) then
         local ok,out
