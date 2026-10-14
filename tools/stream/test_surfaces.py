@@ -70,10 +70,10 @@ def main():
     d.cfg["surface_warmup"] = 0
     d.surface_seen = {"nauvis": 0, "vulcanus": 0, "fulgora": 4 * 3600}  # Vulcanus known 4 h, Fulgora just landed
     f = d.surface_factors(agents, {a["name"]: 1.0 for a in agents}, 4 * 3600)
-    assert d.surface_log["target"] == {"fulgora": 35, "vulcanus": 25}, d.surface_log
-    d.surface_seen["vulcanus"] = 4 * 3600  # both new: 35% each, scaled to 60% together
+    assert d.surface_log["target"] == {"fulgora": 50, "vulcanus": 25}, d.surface_log
+    d.surface_seen["vulcanus"] = 4 * 3600  # both new: 50% each, scaled to 75% together
     d.surface_factors(agents, {a["name"]: 1.0 for a in agents}, 4 * 3600)
-    assert d.surface_log["target"] == {"fulgora": 30, "vulcanus": 30}, d.surface_log
+    assert d.surface_log["target"] == {"fulgora": 38, "vulcanus": 38}, d.surface_log
     d.surface_seen["vulcanus"] = 0
     assert f["gemini"] > 2.4 and f["sol"] > 2.4 and f["astra"] == 0.85, f  # nothing aired yet: both well under
     # once a surface has its share, no bonus; Nauvis no penalty when nobody is under
