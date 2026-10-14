@@ -193,9 +193,82 @@ def site():
     print("site: ok")
 
 
+OVERLAY_JS = r"""
+// overlay.js renderCloud on a recording canvas: the calls it makes and the key it returns
+const fs = require('fs');
+const code = fs.readFileSync(process.argv[2], 'utf8');
+function grab(name) {
+  const i = code.indexOf('  function ' + name + '(');
+  let depth = 0;
+  for (let k = code.indexOf('{', i); k < code.length; k++) {
+    if (code[k] === '{') depth++;
+    else if (code[k] === '}' && --depth === 0) return code.slice(i, k + 1);
+  }
+}
+const ops = [];
+function node(tag) {
+  const n = { tag, children: [], dataset: {}, style: {}, className: '',
+    classList: { set: new Set(), add(c) { this.set.add(c); }, remove(c) { this.set.delete(c); } },
+    insertBefore(c) { this.children.unshift(c); },
+    querySelector(sel) { return this.children.find((c) => sel === 'canvas.' + c.className) || null; } };
+  if (tag === 'canvas') n.getContext = () => new Proxy({}, {
+    get: (t, k) => (k in t ? t[k] : (...a) => ops.push([k, ...a])),
+    set: (t, k, v) => { t[k] = v; ops.push(['set', k, v]); return true; } });
+  return n;
+}
+global.document = { createElement: node };
+eval(grab('fmtAmount') + grab('renderCloud') + '; global.renderCloud = renderCloud;');
+const s = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+const frame = node('div'); frame.clientWidth = 1208; frame.clientHeight = 1032;
+const key = renderCloud(frame, s.cameras.main, s);
+const none = renderCloud(frame, { map: 'Base map' }, s);
+process.stdout.write(JSON.stringify({ ops, key, none, on: [...frame.children[0].classList.set] }));
+"""
+
+
+def overlay():
+    """The overlay's layer (the first on-air shot, 13:59: the olive cells were lost on Gleba's yellow-green ground, and
+    the key overlapped the bar): fills from 0.45 alpha, a hatch clipped to the cells, the cloud's edge only (dark,
+    then the hue at full strength), and the key returned for the camera's label."""
+    import json, shutil, subprocess, tempfile
+    if not shutil.which("node"):
+        print("overlay: skipped (no node)")
+        return
+    cloud = dict(clouds.normalise(ROWS)["gleba"], cells=[[0, 0, 15.6], [1, 0, 2.0]], chunks=2, max=15.6)
+    state = {"clouds": [cloud], "cameras": {"main": {"map": "Spores on Gleba", "map_view": {
+        "position": {"x": 32, "y": 16}, "surface": "gleba", "zoom": 0.25, "size": [64, 32]}}}}
+    with tempfile.TemporaryDirectory() as d:
+        js, sp = os.path.join(d, "r.js"), os.path.join(d, "s.json")
+        open(js, "w").write(OVERLAY_JS)
+        json.dump(state, open(sp, "w"))
+        r = subprocess.run(["node", js, os.path.join(HERE, "static", "overlay.js"), sp], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    o = json.loads(r.stdout)
+    ops = o["ops"]
+    fills = [op for op in ops if op[0] == "fillRect"]
+    alphas = [float(op[2][:-1].split(",")[-1]) for op in ops if op[0] == "set" and op[1] == "fillStyle"]
+    k = 1032 / 1080 * 32 * 0.25  # px a tile
+    assert [(round(f[1]), round(f[2]), round(f[3] - 0.5)) for f in fills] == [(round(604 - 32 * k), round(516 - 16 * k), round(32 * k)),
+                                                                               (604, round(516 - 16 * k), round(32 * k))], fills
+    assert alphas == [0.85, round(0.45 + 0.4 * __import__("math").log1p(2) / __import__("math").log1p(15.6), 3)], alphas
+    assert ["clip"] == [op[0] for op in ops if op[0] == "clip"], "the hatch is clipped to the cells"
+    strokes = [i for i, op in enumerate(ops) if op[0] == "stroke"]
+    assert len(strokes) == 5, strokes  # the hatch, the dark edge, the bright edge, the reached nest's two rings
+    sets = [op for op in ops if op[0] == "set" and op[1] == "strokeStyle"]
+    assert [s_[2] for s_ in sets][:3] == ["rgba(0, 0, 0, 0.35)", "rgba(0, 0, 0, 0.85)", "rgb(255, 255, 0)"], sets
+    # 2 cells side by side: 6 outer sides, the one they share left out
+    edge_moves = [op for op in ops[strokes[0] + 1:strokes[1]] if op[0] == "moveTo"]
+    assert len(edge_moves) == 6, edge_moves
+    assert o["key"] == {"rgb": "140, 140, 0", "bright": "255, 255, 0",
+                        "text": "up to 15.6 spores per chunk · 2 chunks · 1 nest reached"}, o["key"]
+    assert o["none"] is None and o["on"] == [], o  # a map shot of a surface without a cloud: the layer goes
+    print("overlay: ok")
+
+
 if __name__ == "__main__":
     normalise()
     site()
+    overlay()
     framing()
     live_and_model()
     director()

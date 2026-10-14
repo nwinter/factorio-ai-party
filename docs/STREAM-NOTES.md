@@ -637,8 +637,11 @@ Viewer Joonazan, 13:00: "can you show a shot of Gleba's spore cloud?"
   get `on_screen_cloud` (label, chunks, max per chunk, nests reached).
 - Overlay: every map shot's camera row carries `map_view {position, surface, zoom (the one sent), size}`;
   overlay.js `renderCloud` draws that surface's cells on a canvas in the hole (1 tile = hole height / 1080 x 32 x zoom
-  px, the client's centre crop), alpha from 0.3 to 1 of the colour's own by log(amount) against the cloud's max, the
-  reached nests ringed, and a key at the bottom left ("Spores per chunk, up to 24.8 · 26 chunks · nests reached: 1").
+  px, the client's centre crop) in the game's hue, alpha 0.45 to 0.85 by log(amount) against the cloud's max, under a
+  dark diagonal hatch, with the cloud's outer edge drawn dark (5 px) and in the hue at full strength (2 px: olive to
+  yellow, dark red to red), the reached nests ringed. The first on-air shot (13:59) had the plain olive cells, lost on
+  Gleba's yellow-green ground. The key is in the camera's label (in onecam the bar along the bottom: "Spores on Gleba
+  [swatch] up to 29.2 spores per chunk · 32 chunks · 1 nest reached"; a key of its own overlapped the bar).
   The base map gets Nauvis's pollution the same way. Factorio's own map pollution layer (the camera player's map view
   settings) stays as it was; not checked on the camera clients whether it is on.
 - Site: push_live.py publishes `clouds` (the 6000 most polluted cells over all surfaces); mapview.js has a
