@@ -82,9 +82,10 @@ return function(api)
     return r
   end
   local function centre(x, y) return {x=x+0.5, y=y+0.5} end
-  -- One row per connection: at (the entity's tile with the port), pipe_at (the
-  -- tile outside it, where a pipe or another port joins), facing, flow, fluid.
-  -- A port the recipe closes is left out and counted in closed.
+  -- One row per connection, in inspect's fluid_connections form: at (the
+  -- entity's tile with the port), joins (the tile outside it, where a pipe or
+  -- another port joins), direction, flow, fluid, box. A port the recipe
+  -- closes is left out and listed in closed.
   -- e: {prototype, position, direction, mirroring} (a ghost or a plan).
   function M.rows(e, recipe)
     local proto = e.prototype
@@ -102,9 +103,9 @@ return function(api)
         local fluid = c.fluid
         if a and a.fluid then fluid = a.fluid
         elseif a and a.unsure then fluid = 'one of '..table.concat(a.unsure, ', ')..' (not seen built: inspect once built)' end
-        rows[#rows+1] = {at=centre(c.x, c.y), pipe_at=centre(c.tx, c.ty), facing=NAME[c.dir], flow=flow,
-          fluid=fluid or (assigned and 'none' or nil), box=c.box, underground=c.kind == 'underground' or nil,
-          reach=c.kind == 'underground' and c.reach or nil}
+        rows[#rows+1] = {at=centre(c.x, c.y), joins=centre(c.tx, c.ty), direction=NAME[c.dir], flow=flow,
+          fluid=fluid or (assigned and 'none' or nil), box=c.box, kind=c.kind ~= 'normal' and c.kind or nil,
+          underground_reach=c.kind == 'underground' and c.reach or nil}
       end
     end
     return rows, closed

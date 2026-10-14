@@ -576,7 +576,7 @@ function handlers.describe()
         dry_run='plan only, place nothing',details='list every entity',
         returns='route (runs like E12 N3, uE10 = pipe-to-ground pair east spanning 10), tiles, items, missing (vs inventory), joins {from,to: name, position, fluid} for ends joined to an entity, placed/failed/bounds (construct defaults to them), segment_extent (tiles, with joined pipes) and, past the limit, extent_warning + pumps [{position,direction}]',
         note='plain pipe connects on every side, so it never goes where another pipe, machine connection or ghost would connect to it (only at a joined end); pipe-to-ground pairs pass beside or under those, belts and obstacles, never along another underground pipe axis or beneath lava/space; free ends stay plain pipe; refuses an end two entities connect to, a machine with several connections (give the tile), and joining two different known fluids; searches charted ground within 16 tiles around from and to'},
-      ports={name='entity (or the item that places it), e.g. electromagnetic-plant',position='{x,y} where it would stand (snapped like a build)',direction='north|east|south|west (default north)',recipe='optional recipe: which ports open and the fluid each carries',mirror='optional boolean: the H/V flip of fluid machines',platform='optional platform name (platform coordinates)',returns='ports [{at (the entity tile with the connection), pipe_at (the tile outside it where a pipe joins), facing, flow input|output, fluid, box, there (what stands on pipe_at now)}], closed (ports this recipe closes); a read, nothing is built; inspect of a ghost shows the same as fluid_ports'},
+      ports={name='entity (or the item that places it), e.g. electromagnetic-plant',position='{x,y} where it would stand (snapped like a build)',direction='north|east|south|west (default north)',recipe='optional recipe: which ports open and the fluid each carries',mirror='optional boolean: the H/V flip of fluid machines',platform='optional platform name (platform coordinates)',returns='ports [{at (the entity tile with the connection), joins (the tile outside it where a pipe joins), direction, flow input|output, fluid, box, there (what stands on joins now)}], closed (ports this recipe closes); a read, nothing is built; inspect of a ghost with a recipe shows the same in fluid_connections (fluid_connections_closed)'},
       dry_run={action='place_ghosts|paste|blueprint_place|build',args='that call\'s arguments (details=true: every entry with its footprint); the same as the call with dry_run=true'},
       place_ghosts={dry_run='boolean: place nothing; check the plan instead (a read: the running action and queue go on): per entity ok or why not (what collides and where, water/lava/out of map/platform empty space), tiles it needs first (landfill, foundation; on a platform also the empty tiles new foundation would enclose), power (wire reach, groups of planned poles with no wire path to a built pole, machines no supply area covers), standing spots that reach every placement, items vs held',entities='1..256 {name,position,direction?,type? input|output for undergrounds} at absolute positions in charted chunks; no items needed; a tile or tile item name (landfill, stone-brick, concrete, space-platform-foundation) makes a tile ghost',
         tiles='optional {name, area={left_top,right_bottom}}: fill up to 4096 tile ghosts (landfill over water, foundation beside a platform); returns tiles_placed, tiles_existing (same ghost already there), tiles_refused (not placeable there)',
@@ -2415,16 +2415,18 @@ function handlers.inspect(p,a)
     local okf,text=pcall(pipes.fluids,e)
     if okf and text then out.fluids_summary=text end
   end
-  -- A ghost: the ports its recipe opens, with the fluid of each (ports.lua);
-  -- they take the place of the prototype's whole list.
+  -- A ghost with a recipe: the ports that recipe opens, each with its fluid
+  -- (ports.lua), in place of every port the prototype has.
   if e.type=='entity-ghost' then
-    local okp,rows,closed=pcall(function()
-      local okr,recipe=pcall(function() return e.get_recipe() end)
-      return M.ports.rows({prototype=e.ghost_prototype,position=e.position,direction=e.direction,mirroring=e.mirroring},okr and recipe or nil)
+    local okp,rows,closed,recipe=pcall(function()
+      local okr,r=pcall(function() return e.get_recipe() end)
+      r=okr and r or nil
+      local list,shut=M.ports.rows({prototype=e.ghost_prototype,position=e.position,direction=e.direction,mirroring=e.mirroring},r)
+      return list,shut,r
     end)
-    if okp and (#rows>0 or #closed>0) then
-      out.fluid_connections=nil; out.fluids_summary=nil
-      out.fluid_ports=rows; out.fluid_ports_closed=#closed>0 and closed or nil
+    if okp and recipe and (#rows>0 or #closed>0) then
+      out.fluid_connections=#rows>0 and rows or nil; out.fluids_summary=nil
+      out.fluid_connections_closed=#closed>0 and closed or nil; out.fluid_recipe=recipe.name
     end
   end
   if e.type=='transport-belt' or e.type=='underground-belt' or e.type=='splitter' then
@@ -4023,8 +4025,8 @@ function handlers.ports(p,a)
   assert(#rows>0 or #closed>0,proto.name..' has no fluid connections')
   if charted(p,pos) then
     for _,r in ipairs(rows) do
-      if not r.underground then
-        for _,o in pairs(p.surface.find_entities_filtered{position=r.pipe_at,radius=0.3,force=p.force,limit=4}) do
+      if not r.kind then
+        for _,o in pairs(p.surface.find_entities_filtered{position=r.joins,radius=0.3,force=p.force,limit=4}) do
           if o.valid and o.type~='character' then r.there=o.type=='entity-ghost' and o.ghost_name..' (ghost)' or o.name; break end
         end
       end

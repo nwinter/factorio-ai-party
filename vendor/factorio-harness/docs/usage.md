@@ -491,9 +491,10 @@ fh sleep 900 --until researched                       # ...or until the research
     grid) and, for a normal paste with a blocked entry, `paste_note` (all or nothing: no ghost at all).
 - `ports {name, position, direction?, recipe?, mirror?, platform?}` (read; ports.lua, Gemini's request: a recipe moves
   which fluid an electromagnetic plant's ports carry) lists the fluid connections of an entity that is not built:
-  `ports [{at, pipe_at, facing, flow, fluid, box, there}]` (`at` the entity's tile with the port, `pipe_at` the tile
-  outside it where a pipe joins, `there` what stands on `pipe_at` now), `closed` (ports the recipe closes), and the
-  snapped `position`. `inspect` of a ghost shows the same as `fluid_ports` / `fluid_ports_closed` for its recipe. A
+  `ports [{at, joins, direction, flow, fluid, box, there}]` (`at` the entity's tile with the port, `joins` the tile
+  outside it where a pipe joins, as in inspect's `fluid_connections`; `there` what stands on `joins` now), `closed`
+  (ports the recipe closes), and the snapped `position`. `inspect` of a ghost with a recipe lists only the ports that
+  recipe opens, each with its fluid, in `fluid_connections` (`fluid_connections_closed`, `fluid_recipe`). A
   crafting machine joins its fluid boxes by recipe, as 280 machines on the shift world's engine showed: a fluid with a
   `fluidbox_index` takes that box only (basic oil processing: crude oil at one input, petroleum gas at one output);
   the others take the free boxes of their side in order; a side's single fluid without an index takes every leftover

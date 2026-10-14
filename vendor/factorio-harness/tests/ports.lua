@@ -56,7 +56,7 @@ local function view(name, pos, dir, recipe, mirror)
   local rows, closed = ports.rows({prototype=prototypes.entity[name], position=pos, direction=dir, mirroring=mirror},
     recipe and ports.recipe(prototypes.entity[name], recipe))
   local by = {}
-  for _, r in ipairs(rows) do by[#by+1] = string.format('%g,%g>%g,%g %s %s %s', r.at.x, r.at.y, r.pipe_at.x, r.pipe_at.y, r.facing, r.flow, r.fluid) end
+  for _, r in ipairs(rows) do by[#by+1] = string.format('%g,%g>%g,%g %s %s %s', r.at.x, r.at.y, r.joins.x, r.joins.y, r.direction, r.flow, r.fluid) end
   table.sort(by)
   return table.concat(by, ' | '), closed
 end

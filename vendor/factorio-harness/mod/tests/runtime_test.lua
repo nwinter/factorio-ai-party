@@ -1645,7 +1645,7 @@ do
   prototypes.recipe=prototypes.recipe or {}
   prototypes.recipe.sulfur={name='sulfur',category='chemistry',ingredients={{type='fluid',name='water'},{type='fluid',name='petroleum-gas'}},products={{type='item',name='sulfur'}}}
   local pr=call('ports',{name='chemical-plant',position={x=10,y=0},recipe='sulfur'})
-  eq(pr.position.x,10.5); eq(#pr.ports,2); eq(pr.ports[1].fluid,'water'); eq(pr.ports[1].pipe_at.x,9.5); eq(pr.ports[1].pipe_at.y,-1.5)
+  eq(pr.position.x,10.5); eq(#pr.ports,2); eq(pr.ports[1].fluid,'water'); eq(pr.ports[1].joins.x,9.5); eq(pr.ports[1].joins.y,-1.5); eq(pr.ports[1].direction,'north')
   eq(pr.ports[2].fluid,'petroleum-gas'); eq(#pr.closed,2); eq(pr.recipe,'sulfur')
   eq(call('ports',{name='chemical-plant',position={x=10,y=0}}).note,'the recipe decides which ports open and the fluid of each: pass recipe')
   fails(function() call('ports',{name='chemical-plant',position={x=10,y=0},recipe='no-such'}) end,'unknown recipe no-such')
