@@ -380,7 +380,7 @@ return function(api)
   local ABOARD = {status=true, describe=true, platforms=true, platform_create=true, platform_schedule=true, land=true, drop=true, drops=true, game_alerts=true,
     research=true, research_next=true, technologies=true, recipes=true, say=true, chat=true, confess=true, confessions=true,
     profile=true, clock=true, advance=true, sleep=true, sleep_check=true, wait_ticks=true, queue_status=true, queue_cancel=true,
-    blueprint_import=true, blueprint_list=true, blueprint_export=true, blueprint_delete=true, cameras=true, profiles=true}
+    blueprint_import=true, blueprint_list=true, blueprint_export=true, blueprint_delete=true, cameras=true, profiles=true, ports=true, cargo=true}
   local ON_PLATFORM = {place_ghosts=true, deconstruct=true, cancel_deconstruction=true, paste=true, blueprint_place=true, grid=true, scan=true}
   -- Remote view of a platform or a planet by name (platform= or surface=).
   local REMOTE = {inspect=true, circuit_set=true, circuit=true, wire=true}
@@ -394,6 +394,8 @@ return function(api)
     end
     args = type(args) == 'table' and args or {}
     if ABOARD[action] then return end
+    -- A dry run is checked as the call it tries (dryrun.lua).
+    if action == 'dry_run' and type(args.args) == 'table' then return M.check_action(index, args.action, args.args) end
     if ON_PLATFORM[action] and args.platform ~= nil then return end
     if REMOTE[action] and (args.platform ~= nil or args.surface ~= nil) then return end
     if action == 'requests' and (args.platform ~= nil or args.position ~= nil) then return end

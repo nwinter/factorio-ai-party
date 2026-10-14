@@ -11,6 +11,9 @@ tools/full_tools.py workspace DIR KIND | claude DIR | grok-args DIR | paragraph 
 
   grok-args: Grok Build's --allow/--deny words for the same two things, and its kernel sandbox profile.
   sync:      tools/full_tools.py sync RUN_DIR [SECONDS]: mirror Muse's own team-tools folder with the shared one.
+  carry:     tools/full_tools.py carry [--dry-run] RUN_DIR PREV_DIR NAME...: a later shift (tools/start-team.sh,
+             POG_RESUME) starts with each agent's tools/ and the run's team-tools/ from the previous shift that had
+             them, up the resumed-from chain; files over 5 MB, caches, dotfiles and symlinks stay behind.
 
 Codex and Grok switches live where their clean profiles are written (tools/clean-profile.py, tools/grok-home.py,
 tools/profile-flags.sh); agy and Muse Code already have their subagent and web tools.
@@ -73,6 +76,106 @@ def sync(run):
         if os.path.isdir(ws) and not os.path.islink(ws):
             out += [f"{os.path.basename(os.path.dirname(ws))}: {r}" for r in sync_pair(shared, ws)]
     return out
+
+
+# carry: agents' own folders go forward from shift to shift (Opus, 2026-10-13 22:59: "copied by hand every shift").
+CARRY_MAX_BYTES = 5 * 1024 * 1024
+CARRY_HOPS = 5   # as tools/start-team.sh's notes walk
+CACHE_DIRS = {"__pycache__", "node_modules", "venv"}   # and every dot folder (.venv, .pytest_cache, .cache, ...)
+CACHE_EXT = (".pyc", ".pyo")
+
+
+def chain(prev):
+    """PREV and the runs before it, by each run's resumed-from (siblings in the same runs folder)."""
+    out = [prev]
+    while len(out) <= CARRY_HOPS:
+        f = os.path.join(out[-1], "resumed-from")
+        if not os.path.isfile(f):
+            break
+        up = open(f).readline().strip()
+        d = os.path.join(os.path.dirname(out[-1]), up)
+        if not up or not os.path.isdir(d) or d in out:
+            break
+        out.append(d)
+    return out
+
+
+def copy_tree(src, dst, dry=False):
+    """Copy src into dst without replacing files dst has. Returns (copied paths, bytes, skipped {reason: [paths]})."""
+    copied, size, skipped = [], 0, {}
+    for base, dirs, files in os.walk(src):
+        keep = []
+        for x in sorted(dirs):
+            rel = os.path.relpath(os.path.join(base, x), src)
+            if os.path.islink(os.path.join(base, x)):
+                skipped.setdefault("symlink", []).append(rel + "/")
+            elif x.startswith(".") or x in CACHE_DIRS:
+                skipped.setdefault("cache", []).append(rel + "/")
+            else:
+                keep.append(x)
+        dirs[:] = keep
+        for f in sorted(files):
+            p = os.path.join(base, f)
+            rel = os.path.relpath(p, src)
+            if os.path.islink(p):
+                skipped.setdefault("symlink", []).append(rel)
+            elif f.startswith(".") or f.endswith(CACHE_EXT):
+                skipped.setdefault("cache", []).append(rel)
+            elif not os.path.isfile(p):
+                skipped.setdefault("not a file", []).append(rel)
+            elif os.path.getsize(p) > CARRY_MAX_BYTES:
+                skipped.setdefault("over 5 MB", []).append(f"{rel} ({os.path.getsize(p) / 1048576:.1f} MB)")
+            elif os.path.lexists(os.path.join(dst, rel)):
+                skipped.setdefault("already there", []).append(rel)
+            else:
+                if not dry:
+                    os.makedirs(os.path.dirname(os.path.join(dst, rel)), exist_ok=True)
+                    shutil.copy2(p, os.path.join(dst, rel))   # keeps the mode (executable scripts) and mtime
+                copied.append(rel)
+                size += os.path.getsize(p)
+    return copied, size, skipped
+
+
+def carry(run, prev, names, dry=False):
+    """Copy each agent's tools/ and the shared team-tools/ from the newest run up PREV's resumed-from chain that has the
+    folder (a shift whose agents never launched has none). Returns (start.log lines, copied paths)."""
+    runs = chain(prev)
+    lines, listing = [], []
+
+    def one(label, rel_src, dst, extra=()):
+        for r in runs:
+            if os.path.isdir(os.path.join(r, rel_src)):
+                break
+        else:
+            lines.append(f"carry {label}: none in {', '.join(os.path.basename(r) for r in runs)}")
+            return
+        copied, size, skipped = copy_tree(os.path.join(r, rel_src), dst, dry)
+        listing.extend(f"{label}\t{os.path.basename(r)}\t{p}" for p in copied)
+        for e in extra:   # Muse's own mirrored team-tools folder in that run: what the 5 s mirror had not yet shared
+            c, s, k = copy_tree(os.path.join(r, e), dst, dry)
+            copied += c
+            size += s
+            listing.extend(f"{label}\t{os.path.basename(r)}/{os.path.dirname(e)}\t{p}" for p in c)
+            for why, ps in k.items():
+                if why != "already there":
+                    skipped.setdefault(why, []).extend(ps)
+        skip = "; ".join(f"skipped {len(ps)} {why}: {', '.join(ps[:6])}{' ...' if len(ps) > 6 else ''}"
+                         for why, ps in sorted(skipped.items()))
+        n = len(copied)
+        lines.append(f"carry {label}: {n} file{'' if n == 1 else 's'} ({size / 1048576:.1f} MB) from {os.path.basename(r)}"
+                     + (f"; {skip}" if skip else ""))
+
+    for name in names:
+        one(f"{name} tools/", os.path.join(name, "tools"), os.path.join(run, name, "tools"))
+    for r in runs:   # the run that has team-tools/ also holds any mirrored copies
+        if os.path.isdir(os.path.join(r, "team-tools")):
+            mirrors = [os.path.relpath(m, r) for m in sorted(glob.glob(os.path.join(r, "*", "team-tools")))
+                       if os.path.isdir(m) and not os.path.islink(m)]
+            break
+    else:
+        mirrors = []
+    one("team-tools/", "team-tools", os.path.join(run, "team-tools"), mirrors)
+    return lines, listing
 
 
 def on():
@@ -237,6 +340,15 @@ if __name__ == "__main__":
             if len(sys.argv) < 4:
                 break
             time.sleep(float(sys.argv[3]))
+    elif cmd == "carry":   # carry [--dry-run] RUN_DIR PREV_DIR NAME...: lines for start.log; the file list beside them
+        args = sys.argv[2:]
+        dry = args[:1] == ["--dry-run"]
+        run_dir, prev_dir, *who = args[1:] if dry else args
+        out, files = carry(run_dir, prev_dir, who, dry)
+        if files and not dry:
+            with open(os.path.join(run_dir, "carried-tools.txt"), "a") as f:
+                f.write("".join(l + "\n" for l in files))
+        print("\n".join(out))
     elif cmd == "paragraph":
         print(paragraph(sys.argv[2]), end="")
     else:

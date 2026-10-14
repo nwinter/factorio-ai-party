@@ -48,11 +48,12 @@ def main():
     on, share_on = run()
     print("air share, balance off:", share_off)
     print("air share, balance on: ", share_on)
-    # the two newer planets get their share (target 25% plus up to 10% while new; together at most 60%), Nauvis keeps
-    # the rest (without the balance, equal scores broke ties in list order and Nauvis had all of it)
+    # the two newer planets get their share (target 25% plus up to 25% while new; together at most 75%), Nauvis keeps
+    # the rest, about 25% while both are new (without the balance, equal scores broke ties in list order and Nauvis
+    # had all of it)
     assert share_on.get("fulgora", 0) >= 0.2 and share_on.get("vulcanus", 0) >= 0.2, share_on
     assert share_on.get("fulgora", 0) + share_on.get("vulcanus", 0) > share_off.get("fulgora", 0) + share_off.get("vulcanus", 0) + 0.15
-    assert 0.35 <= share_on.get("nauvis", 0) <= 0.6, share_on
+    assert 0.2 <= share_on.get("nauvis", 0) <= 0.6, share_on
     # the score line says why: the cut reason and the director's log entry
     helped = [r for _, _, r in on.cuts if "(surface " in r]
     assert helped and any("fulgora" in r or "vulcanus" in r for r in helped), on.cuts[-8:]
@@ -69,14 +70,14 @@ def main():
     d.cfg["surface_warmup"] = 0
     d.surface_seen = {"nauvis": 0, "vulcanus": 0, "fulgora": 4 * 3600}  # Vulcanus known 4 h, Fulgora just landed
     f = d.surface_factors(agents, {a["name"]: 1.0 for a in agents}, 4 * 3600)
-    assert d.surface_log["target"] == {"fulgora": 35, "vulcanus": 25}, d.surface_log
-    d.surface_seen["vulcanus"] = 4 * 3600  # both new: 35% each, scaled to 60% together
+    assert d.surface_log["target"] == {"fulgora": 50, "vulcanus": 25}, d.surface_log
+    d.surface_seen["vulcanus"] = 4 * 3600  # both new: 50% each, scaled to 75% together
     d.surface_factors(agents, {a["name"]: 1.0 for a in agents}, 4 * 3600)
-    assert d.surface_log["target"] == {"fulgora": 30, "vulcanus": 30}, d.surface_log
+    assert d.surface_log["target"] == {"fulgora": 38, "vulcanus": 38}, d.surface_log
     d.surface_seen["vulcanus"] = 0
     assert f["gemini"] > 2.4 and f["sol"] > 2.4 and f["astra"] == 0.85, f  # nothing aired yet: both well under
     # once a surface has its share, no bonus; Nauvis no penalty when nobody is under
-    d.surface_air = [(4 * 3600, "fulgora", 400.0), (4 * 3600, "vulcanus", 300.0), (4 * 3600, "nauvis", 300.0)]
+    d.surface_air = [(4 * 3600, "fulgora", 500.0), (4 * 3600, "vulcanus", 260.0), (4 * 3600, "nauvis", 240.0)]
     f = d.surface_factors(agents, {a["name"]: 1.0 for a in agents}, 4 * 3600)
     assert f == {}, f
     # urgent shots come first: a loss on Nauvis while the story is on Fulgora cuts at once

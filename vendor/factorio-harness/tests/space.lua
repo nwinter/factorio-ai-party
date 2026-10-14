@@ -90,7 +90,7 @@ local tank=function(fuel,ox) return setmetatable({get_capacity=function() return
 platform.surface.find_entities_filtered=function(f) if f.type=='thruster' then return {{fluidbox=tank(800,500)},{fluidbox=tank(1000,900)}} end return {} end
 platform.surface.count_entities_filtered=function() return 7 end
 local one=space.platforms(p,{platform='alpha'}).platforms[1]
-eq(one.speed,0.012); eq(one.damaged_tiles,1); eq(one.asteroid_chunks,'metallic-asteroid-chunk*2 oxide-asteroid-chunk*1')
+eq(one.speed_kms,0.7); eq(one.speed,0.012); eq(one.damaged_tiles,1); eq(one.asteroid_chunks,'metallic-asteroid-chunk*2 oxide-asteroid-chunk*1')
 eq(one.thrusters,'2, lowest tank 50%'); eq(one.unbuilt_ghosts,7)
 platform.find_asteroid_chunks_filtered=function() error('no chunks API') end
 eq(space.platforms(p,{platform='alpha'}).platforms[1].asteroid_chunks,nil,'a failing read is skipped')
@@ -338,4 +338,39 @@ local made=space.platform_create(p,{name='beta'})
 eq(made.state,'waiting_for_starter_pack'); eq(made.planet,'nauvis')
 p.force.recipes['space-platform-starter-pack']={enabled=false}
 fails(function() space.platform_create(p,{}) end,'not unlocked yet')
+-- Flight on every row: speed in km/s (the game's is km per tick), the leg flown, km left on it, minutes at this
+-- speed, the schedule's next stop. At nauvis with the schedule heading for vulcanus: no leg yet.
+platform.speed=0; platform.space_location={name='nauvis'}; platform.space_connection=nil
+platform.schedule={current=1,records={{station='vulcanus'},{station='nauvis'}}}
+local row=space.platforms(p,{}).platforms[1]
+eq(row.speed_kms,0); eq(row.next_stop,'vulcanus'); eq(row.leg,nil); eq(row.eta_min,nil)
+-- On the way: a connection is measured from its `from` end (nauvis->vulcanus, a quarter of the way).
+platform.space_location=nil; platform.distance=0.25; platform.speed=1.5; platform.last_visited_space_location={name='nauvis'}
+platform.space_connection={name='nauvis-vulcanus',from={name='nauvis'},to={name='vulcanus'},length=15000}
+row=space.platforms(p,{}).platforms[1]
+eq(row.speed_kms,90); eq(row.leg,'nauvis->vulcanus'); eq(row.heading_to,'vulcanus'); eq(row.leg_km,15000); eq(row.leg_left_km,11250)
+eq(row.eta_min,2.1); eq(row.next_stop,'vulcanus'); eq(row.at,'nauvis->vulcanus 25%')
+-- Flown the other way (the schedule's stop is the connection's from end): the km left are the quarter behind.
+platform.schedule.current=2; platform.last_visited_space_location={name='vulcanus'}
+row=space.platforms(p,{}).platforms[1]
+eq(row.leg,'vulcanus->nauvis'); eq(row.heading_to,'nauvis'); eq(row.leg_left_km,3750); eq(row.eta_min,0.7); eq(row.next_stop,'nauvis')
+-- A stop past this leg (a longer trip): the end it did not come from.
+platform.schedule={current=1,records={{station='aquilo'}}}; platform.last_visited_space_location={name='vulcanus'}
+row=space.platforms(p,{}).platforms[1]
+eq(row.heading_to,'nauvis'); eq(row.leg_left_km,3750); eq(row.next_stop,'aquilo')
+-- The unit, from shift08's recorded reads on world n: Sunward flew nauvis->vulcanus back from 80% to 55% in 6631 ticks
+-- at speed 0.556 (game units). km per tick puts it 8313 km from nauvis after those ticks; the read said 55% (8250 km).
+platform.schedule={current=1,records={{station='nauvis'}}}; platform.speed=0.556; platform.distance=0.80
+row=space.platforms(p,{}).platforms[1]
+eq(row.speed_kms,33.4); eq(row.leg_left_km,12000); eq(row.eta_min,6)
+assert(math.abs((row.leg_left_km-0.556*6631)-0.55*15000)<0.02*15000,'km per tick matches the recorded flight')
+-- No speed: no minutes.
+platform.speed=0
+eq(space.platforms(p,{}).platforms[1].eta_min,nil)
+-- Waiting at its current stop: the next stop is the one after it.
+platform.space_connection=nil; platform.space_location={name='vulcanus'}
+platform.schedule={current=1,records={{station='vulcanus'},{station='nauvis'}}}
+row=space.platforms(p,{}).platforms[1]
+eq(row.next_stop,'nauvis'); eq(row.leg,nil); eq(row.at,'vulcanus')
+eq(space.flight(platform).next_stop,'nauvis')
 print('space: ok')

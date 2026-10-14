@@ -668,6 +668,7 @@ do
   fails(function() call('feed',{recipe='nope',positions={{x=1,y=5}}}) end,'unknown recipe nope')
   fails(function() call('feed',{crafts=2,positions={{x=1,y=5}}}) end,'crafts goes with recipe')
   fails(function() call('feed',{recipe='logistic-science-pack',items={'inserter'},positions={{x=1,y=5}}}) end,'recipe or items')
+  fails(function() call('feed',{recipe='logistic-science-pack',item='inserter',positions={{x=1,y=5}}}) end,'recipe or items (or item)')
 
   -- inspect over positions: one call, results in order; a miss is its position and error.
   a1.get_fluid_contents=function() return {} end; a2.get_fluid_contents=a1.get_fluid_contents
@@ -675,7 +676,9 @@ do
   local batch=call('inspect',{positions={{x=1,y=5},{x=2,y=5},{x=40,y=5}}})
   eq(batch.count,3); eq(batch.entities[1].name,'assembling-machine-2'); eq(batch.entities[2].position.x,2)
   eq(batch.entities[3].position.x,40); assert(batch.entities[3].error,'a miss carries its error')
-  fails(function() call('inspect',{position={x=1,y=5},positions={{x=2,y=5}}}) end,'not both')
+  -- Both at once run as one list, position first (Muse, shift08).
+  local both=call('inspect',{position={x=1,y=5},positions={{x=2,y=5}}})
+  eq(both.count,2); eq(both.entities[1].position.x,1); assert(both.corrected:find('position and positions are one list',1,true),both.corrected)
   main,p.surface.find_entities_filtered,prototypes=saved_main,saved_find,saved_prototypes
   for _,f in ipairs({f1,f2}) do f.slots[3][1].count,f.slots[3][1].valid_for_read=0,false end
 end
@@ -904,6 +907,10 @@ eq(fed.held['iron-ore'],10); eq(fed.held.coal,2); eq(#fed.entities,2); eq(fed.en
 eq(fed.unchanged,1)
 local nothing=call('feed',{items={'copper-plate'}})
 eq(nothing.transferred,0); assert(nothing.nothing_moved:find('nothing given: none of the 3 machines wants an item',1,true),nothing.nothing_moved)
+-- item: one name, as transfer takes it (Grok); count is the target each machine holds.
+local one=call('feed',{item='iron-ore',count=25})
+eq(one.transferred,5); eq(one.items['iron-ore'],5); eq(one.items.coal,nil); eq(f1.slots[3][1].count,25); eq(one.held['iron-ore'],5)
+fails(function() call('feed',{item='nope'}) end,'unknown item nope')
 -- No coal carried: the reply says so and what the furnaces hold (agent-minds
 -- study: Haiku's 35 empty feeds); the third identical one in 7 min says so too.
 main=inv(stack('iron-ore',10),stack(nil,0),stack(nil,0))
@@ -1202,6 +1209,52 @@ advance(1)
 local gathered=call('status').last
 eq(gathered.outcome,'collected'); eq(gathered.got,25); eq(gathered.item,'iron-gear-wheel'); eq(main[1].count,25)
 fails(function() call('collect',{item='iron-gear-wheel',ticks=60}) end,'ticks applies to collect with radius')
+-- Without an item (Gemini): every assembler and furnace output in the radius, all items; inputs and fuel stay.
+do
+  local function listing(t)
+    t.get_contents=function() local out={}; for _,s in ipairs(t) do if s.valid_for_read then out[#out+1]={name=s.name,count=s.count,quality='normal'} end end; return out end
+    return t
+  end
+  listing(gear_slots)
+  local gear_output=gear_machine.get_output_inventory
+  gear_machine.get_output_inventory=function() return gear_slots end
+  local result,source,fuel=listing(inv(stack('iron-plate',7))),listing(inv(stack('iron-ore',9))),listing(inv(stack('coal',3)))
+  local by={[defines.inventory.furnace_result]=result,[defines.inventory.furnace_source]=source,[defines.inventory.fuel]=fuel}
+  local smelter={valid=true,name='stone-furnace',type='furnace',position={x=3,y=2},force=p.force,
+    get_output_inventory=function() return result end,get_inventory=function(i) return by[i] end,get_fuel_inventory=function() return fuel end}
+  local idle_out=listing(inv(stack(nil,0)))
+  local idle={valid=true,name='assembling-machine-1',type='assembling-machine',position={x=6,y=2},force=p.force,
+    get_output_inventory=function() return idle_out end,get_inventory=function() return idle_out end}
+  local asked
+  p.surface.find_entities_filtered=function(f) asked=f.type; return f.radius and {gear_machine,smelter,idle} or {} end
+  main=inv(stack(nil,0),stack(nil,0),stack(nil,0))
+  local all=call('collect',{radius=20})
+  eq(all.items,'all'); eq(all.stock,12); eq(all.places,2); eq(asked[1],'assembling-machine'); eq(asked[2],'furnace'); eq(#asked,2)
+  advance(1)
+  local took=call('status').last
+  eq(took.outcome,'collected'); eq(took.got,12); eq(took.items['iron-gear-wheel'],5); eq(took.items['iron-plate'],7)
+  eq(gear_slots[1].valid_for_read,false); eq(result[1].valid_for_read,false); eq(source[1].count,9); eq(fuel[1].count,3)
+  -- Nothing left: nothing_collected, and the reply says so.
+  local none=call('collect',{radius=20,up_to=true})
+  eq(none.places,0); eq(none.note,'no assembler or furnace output in radius holds anything')
+  advance(1); eq(call('status').last.outcome,'nothing_collected')
+  -- count caps the total.
+  result[1].name,result[1].count,result[1].valid_for_read='iron-plate',7,true
+  call('collect',{radius=20,count=4}); advance(1)
+  eq(call('status').last.got,4); eq(result[1].count,3)
+  fails(function() call('collect',{radius=20,chests=true}) end,'takes machine outputs only; name an item to take from chests')
+  fails(function() call('collect',{radius=20,types={'container'}}) end,'types may be assembling-machine and furnace')
+  fails(function() call('collect',{radius=20,quality='rare'}) end,'quality goes with item')
+  -- A repeating sweep: round 1 takes the 3 plates left, round 2 finds nothing; its line reaches the team block once.
+  call('queue_repeat',{name='sweep',interval_ticks=60,steps={{action='collect',args={radius=20,up_to=true}}}})
+  advance(5); eq(result[1].valid_for_read,false)
+  advance(70)
+  local team=call('status').team
+  eq(team and team.queue and team.queue[1],'queue sweep round 2: 1 of 1 steps short: collect nothing_collected')
+  advance(70); eq((call('status').team or {}).queue,nil)
+  call('queue_cancel',{})
+  gear_machine.get_output_inventory=gear_output
+end
 main=main_before_collect
 p.surface.find_entities_filtered=find_before_stock; have['iron-gear-wheel']=4
 -- A craft that starts short says which raw ingredient ran out, through intermediates.
@@ -1717,6 +1770,63 @@ local row=call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}}
 eq(row.placed,3); eq(#row.copies,4); eq(row.failed[1].copy,4); eq(row.failed[1].error,'placement blocked')
 eq(row.copies[2].position.x,20); eq(row.bounds.right,31); eq(storage.agent_harness.last_paste[1].right,31)
 fails(function() call('place_ghosts',{entities={{name='gun-turret',position={x=0,y=0}}},['repeat']={count=2}}) end,'nonzero dx')
+-- dry_run=true (dryrun.lua) places nothing and is a read: the running walk
+-- goes on; a queue step with dry_run=true gets the same check.
+do
+  local get_tile=p.surface.get_tile
+  p.surface.get_tile=function() return {name='grass-1',prototype={collision_mask={layers={ground_tile=true}}}} end
+  local turret=prototypes.entity['gun-turret']
+  local plain_turret={}
+  for k,v in pairs(turret) do plain_turret[k]=v end
+  turret.tile_width=2; turret.tile_height=2; turret.collision_mask={layers={object=true}}
+  turret.collision_box={left_top={x=-0.7,y=-0.7},right_bottom={x=0.7,y=0.7}}
+  ghosts={}
+  call('walk',{direction='east',ticks=100})
+  local dry=call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}},{name='gun-turret',position={x=40,y=0}}},dry_run=true})
+  eq(dry.dry_run,true); eq(dry.action,'place_ghosts'); eq(#ghosts,0,'a dry run places nothing')
+  eq(dry.entities[1].index,2); eq(dry.entities[1].status,'blocked'); eq(dry.summary,'1 placeable, 1 blocked (of 2)')
+  eq(call('status').active.kind,'walk','a dry run leaves the walk going')
+  local shifted=call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}}},['repeat']={count=4,dx=10},dry_run=true})
+  eq(shifted.checked,4); eq(shifted.entities[1].index,'4.1'); eq(#ghosts,0)
+  fails(function() call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}}},facing='east',dry_run=true}) end,'unknown argument facing for place_ghosts')
+  fails(function() call('build',{item='gun-turret',position={x=3,y=0},dry_run='true'}) end,'dry_run must be true or false')
+  eq(call('status').active.kind,'walk','a failed dry run stops nothing')
+  -- A paste dry run checks where the blueprint lands (blueprints.lua plan, stubbed here); with an entry
+  -- the game refuses now, a normal paste places nothing at all.
+  local real_plan=runtime.paste_plan
+  runtime.paste_plan=function(_,a)
+    return {entities={{index=1,name='gun-turret',position={x=a.position.x,y=0},direction=0},{index=2,name='gun-turret',position={x=40,y=0},direction=0}},
+      tiles={},slot='bp',mode='normal',origin_at={x=a.position.x,y=0},center_at={x=a.position.x,y=0}}
+  end
+  local pd=call('paste',{position={x=10,y=0},dry_run=true})
+  eq(pd.action,'paste'); eq(pd.paste.slot,'bp'); eq(#ghosts,0); eq(pd.summary,'1 placeable, 1 blocked (of 2)')
+  assert(pd.paste_note:find('all or nothing: with 1 entry the game refuses there now',1,true),pd.paste_note)
+  local rp=call('paste',{position={x=10,y=0},['repeat']={count=2,dx=4},dry_run=true})
+  eq(rp.checked,4); eq(rp.entities[#rp.entities].index,'2.2'); assert(rp.entities[#rp.entities].why:find('collides with planned #1.2',1,true))
+  eq(call('paste',{position={x=10,y=0},dryrun=true}).action,'paste','dryrun is dry_run')
+  runtime.paste_plan=real_plan
+  call('stop',{})
+  call('queue_submit',{steps={{action='place_ghosts',args={entities={{name='gun-turret',position={x=10,y=0}}},dry_run=true}}}})
+  advance(3)
+  eq(#ghosts,0,'a queued dry run places nothing')
+  call('queue_cancel',{})
+  -- Fluid ports before building: a chemical plant on sulfur opens one input per fluid, closes its outputs.
+  local function c(dir,pos) return {flow_direction='input',direction=dir,connection_type='normal',positions=pos} end
+  prototypes.entity['chemical-plant']={name='chemical-plant',type='assembling-machine',tile_width=3,tile_height=3,crafting_categories={chemistry=true},
+    fluidbox_prototypes={{production_type='input',pipe_connections={c(0,{{x=-1,y=-1},{x=1,y=-1},{x=1,y=1},{x=-1,y=1}})}},
+      {production_type='input',pipe_connections={c(0,{{x=1,y=-1},{x=1,y=1},{x=-1,y=1},{x=-1,y=-1}})}},
+      {production_type='output',pipe_connections={c(8,{{x=-1,y=1},{x=-1,y=-1},{x=1,y=-1},{x=1,y=1}})}},
+      {production_type='output',pipe_connections={c(8,{{x=1,y=1},{x=-1,y=1},{x=-1,y=-1},{x=1,y=-1}})}}}}
+  prototypes.recipe=prototypes.recipe or {}
+  prototypes.recipe.sulfur={name='sulfur',category='chemistry',ingredients={{type='fluid',name='water'},{type='fluid',name='petroleum-gas'}},products={{type='item',name='sulfur'}}}
+  local pr=call('ports',{name='chemical-plant',position={x=10,y=0},recipe='sulfur'})
+  eq(pr.position.x,10.5); eq(#pr.ports,2); eq(pr.ports[1].fluid,'water'); eq(pr.ports[1].joins.x,9.5); eq(pr.ports[1].joins.y,-1.5); eq(pr.ports[1].direction,'north')
+  eq(pr.ports[2].fluid,'petroleum-gas'); eq(#pr.closed,2); eq(pr.recipe,'sulfur')
+  eq(call('ports',{name='chemical-plant',position={x=10,y=0}}).note,'the recipe decides which ports open and the fluid of each: pass recipe')
+  fails(function() call('ports',{name='chemical-plant',position={x=10,y=0},recipe='no-such'}) end,'unknown recipe no-such')
+  p.surface.get_tile=get_tile
+  prototypes.entity['gun-turret']=plain_turret
+end
 -- pole_route lays pole ghosts from A to B within wire reach, shifting a
 -- blocked spot sideways, reusing a pole already on the line, and counting
 -- what is held; dry_run only plans.
@@ -1837,7 +1947,7 @@ eq(call('inspect',{position=ins.position}).fluid_connections,nil)
     local out={}
     for _,e in ipairs(world) do
       local dx,dy=math.abs(e.position.x-f.position.x),math.abs(e.position.y-f.position.y)
-      if (f.radius and (dx*dx+dy*dy)^0.5<=f.radius) or (not f.radius and dx<e.half and dy<e.half) then out[#out+1]=e end
+      if ((f.radius and (dx*dx+dy*dy)^0.5<=f.radius) or (not f.radius and dx<e.half and dy<e.half)) and (not f.name or f.name==e.name) then out[#out+1]=e end
     end
     return out
   end
@@ -1856,6 +1966,17 @@ eq(call('inspect',{position=ins.position}).fluid_connections,nil)
   eq(call('inspect',{position={x=24.5,y=0.5}}).name,'wooden-chest')
   world={item}
   eq(call('inspect',{position={x=24.5,y=0.5}}).name,'item-on-ground')
+  -- A flying robot or anything unselectable over a chest yields to the chest (Sol, shift08); name or unit_number
+  -- still picks it, and alone it is the target.
+  local robot={valid=true,name='logistic-robot',type='logistic-robot',position={x=24.55,y=0.45},half=0.3,force=p.force,unit_number=77,
+    get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
+  local flash={valid=true,name='flash',type='simple-entity',position={x=24.5,y=0.5},half=0.2,force=p.force,prototype={selectable_in_game=false}}
+  world={robot,chest,flash}
+  eq(call('inspect',{position={x=24.5,y=0.5}}).name,'wooden-chest')
+  eq(call('inspect',{position={x=24.5,y=0.5},unit_number=77}).name,'logistic-robot')
+  eq(call('inspect',{position={x=24.5,y=0.5},name='logistic-robot'}).name,'logistic-robot')
+  world={robot}
+  eq(call('inspect',{position={x=24.5,y=0.5}}).name,'logistic-robot')
   -- A drill's drop tile and what it drops into (sapilot board #4).
   local drill={valid=true,name='burner-mining-drill',type='mining-drill',position={x=30,y=0},half=1,force=p.force,direction=0,
     drop_position={x=29.7,y=-1.3},drop_target=chest,get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
@@ -1966,4 +2087,33 @@ for _,action in ipairs({'paste','blueprint_place'}) do
   eq(pcall(runtime.check_args,action,{anchor='hub',mode='forced'}),true)
   eq(pcall(runtime.check_args,action,{position={x=0,y=0},forced=true}),false)
 end
+-- cargo (cargo.lua): a list or what a chest holds, weighed against a rocket's lift and slots; a read.
+-- (A function of its own: this chunk is near Lua's 200 locals.)
+;(function()
+  local find,items,uc,quality,silo=p.surface.find_entities_filtered,prototypes.item,prototypes.utility_constants,prototypes.quality,prototypes.entity['rocket-silo']
+  defines.inventory.chest=defines.inventory.chest or 1
+  defines.inventory.rocket_silo_rocket=defines.inventory.rocket_silo_rocket or 21
+  prototypes.item={thruster={weight=200000,stack_size=10},['cargo-bay']={weight=100000,stack_size=10},['iron-plate']={weight=1000,stack_size=100}}
+  prototypes.utility_constants={rocket_lift_weight=1000000}
+  prototypes.quality={normal={},rare={}}
+  prototypes.entity['rocket-silo']={get_inventory_size=function() return 20 end}
+  local w=call('cargo',{items={thruster=3,['cargo-bay']=5}})
+  eq(w.total_kg,1100); eq(w.fewest,2); eq(w.rockets,2); eq(w.items[1].name,'thruster'); eq(w.lift,'1000 kg and 20 cargo slots a rocket')
+  local q=call('cargo',{items={{name='iron-plate',count=50,quality='rare'}}})
+  eq(q.items[1].quality,'rare'); eq(q.total_kg,50)
+  local chest={valid=true,name='steel-chest',type='container',position={x=1.5,y=0.5},force=p.force}
+  chest.get_inventory=function(i) eq(i,defines.inventory.chest)
+    return {valid=true,get_contents=function() return {{name='iron-plate',count=1200,quality='normal'}} end} end
+  p.surface.find_entities_filtered=function(f) if f.position then return {chest} end return {} end
+  local c=call('cargo',{position={x=1.5,y=0.5}})
+  eq(c.total_kg,1200); eq(c.rockets,2); eq(c.from.inventory,'chest'); eq(c.split[1].items,'iron-plate*1000')
+  fails(function() call('cargo',{items={nope=1}}) end,'unknown item nope')
+  fails(function() call('cargo',{items={thruster=0}}) end,'count of thruster out of range')
+  fails(function() call('cargo',{}) end,'cargo takes items')
+  fails(function() call('cargo',{items={thruster=1},position={x=1.5,y=0.5}}) end,'one of them')
+  chest.get_inventory=function() return {valid=true,get_contents=function() return {} end} end
+  fails(function() call('cargo',{position={x=1.5,y=0.5}}) end,'holds nothing in chest')
+  p.surface.find_entities_filtered=find
+  prototypes.item,prototypes.utility_constants,prototypes.quality,prototypes.entity['rocket-silo']=items,uc,quality,silo
+end)()
 print('runtime: '..assertions..' assertions passed')

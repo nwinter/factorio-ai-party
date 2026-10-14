@@ -106,8 +106,11 @@ already targets your character.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `feed {"recipe": NAME,
-  "crafts": N, "positions": [...]}` loads each machine set to that recipe for N crafts; `inspect {"positions": [...]}`
-  inspects up to 32 entities in one call.
+  "crafts": N, "positions": [...]}` loads each machine set to that recipe for N crafts; `feed` takes `item` or `items`;
+  `inspect {"positions": [...]}` inspects up to 32 entities in one call; `collect {"radius": N}` without `item` takes
+  every assembler and furnace output in the radius (output slots only). `position` and `positions` are interchangeable
+  in these calls (`corrected` says how it ran). A repeating queue (`queue_repeat`, optional `name`) puts a `queue:`
+  line in the team block when a round's short steps differ from the round before.
 - `move_to` never ends on a belt (it steps to the nearest free tile without one, `last.off_belt`). With no route for
   your character it ends at once as `unreachable`, with `last.why` (closed in: the area and what closes it in) and
   `last.nearest_reachable`.
@@ -123,6 +126,19 @@ already targets your character.
   sets an entity's circuit condition, read switches, settings or combinator, in reach or by remote view (our entities
   in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`
   reads back the conditions, settings, each wire's far end and the signals on each network now.
+- `"dry_run":true` on `place_ghosts`, `paste` or `build` places nothing and reports the plan: per entity whether it
+  fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
+  new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that
+  reach every placement. `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},
+  "direction":"north","recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid
+  the recipe puts there; `inspect` of a ghost shows the same.
+- `./fh call cargo --args '{"items":{"thruster":2,"cargo-bay":4}}'` (or a chest, silo or pad `position`) weighs a
+  rocket cargo list: each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets,
+  and one split into rockets that keeps each within both.
+- Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,
+  blueprints, deconstruction, `circuit_set`, `wire`, `requests`, schedules) leave your character's action, queue and
+  standing orders running. `platforms` and `inspect` of a hub show each platform's `speed_kms`, `leg_left_km`,
+  `eta_min` (at the current speed) and `next_stop`.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
 

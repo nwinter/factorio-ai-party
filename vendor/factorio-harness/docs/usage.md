@@ -62,6 +62,12 @@ fh call status
   `board` call with an `id` and a `note`, `owner` or `status` is `board_update`. A valid argument is never renamed; a
   corrected call that still fails says `[ran as ...]`; any other unknown argument fails with the valid list. `scan`
   `fields` also takes one string (`"status|hp"` or `"status,hp"`).
+- `transfer`, `collect`, `feed`, `inspect`, `rearm` and `refuel` run `position` and `positions` as one list and say so
+  in `corrected`: one `{x,y}` given as `positions`, a list given as `position`, a `position` where only `positions` is
+  taken (`collect`, `feed`, `rearm`, `refuel`), or both at once (`position` first). A plain `position` where it is
+  taken stays as it is; with `radius` neither is touched. Queue steps (`queue_submit`, `queue_repeat`, `queue_edit`)
+  are corrected the same way, and the reply lists each in `corrected` (`step 1: collect {...} (position is positions
+  (a list))`).
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
@@ -360,6 +366,13 @@ fh queue repeat --file plan.json
   (out of reach, an unknown entity, a timed-out tour) still follow `on_fail`.
 - `queue edit` needs the current revision, so you can't accidentally edit a plan that has already moved on.
 - A direct call that moves or acts as the character pauses the queue. Reads, the board, chat, `say`, `tell`, `confess`, `operator`, `craft`/`cancel_craft`, research, votes, `sleep` and the queue calls don't, and when one of them fails (a `placements` out of sight, a `board_update` with an unknown argument) the running action and the queue go on as well. `sleep` leaves the queue running, and so does its end.
+- Calls that act on another surface or by remote view don't pause it either, nor stop a running standing order, and
+  neither does their failure: any call with `platform`, or with `surface` naming another surface than the
+  character's; `configure` on an entity out of the character's reach; the planners and blueprint tools wherever they
+  act (`place_ghosts`, `paste`, `blueprint_place`, `blueprint_capture`, `copy`, `cut`, `deconstruct`,
+  `cancel_deconstruction`, `belt_route`, `pipe_route`, `pole_route`); `circuit_set`, `wire`, `requests`, `flush`,
+  `train`, `platform_create`, `platform_schedule`, `launch`, `drop`. `configure` in reach, building, mining,
+  walking and inventory moves (`transfer`, `feed`, `collect`, ...) take over as before.
 - A harness update (a hot runtime install, or a restart with a changed mod) keeps a running queue going: a `wait_until` or `wait_ticks` step keeps its own clock, and a step toward a goal (`move_to`, `construct`, `build_path`, `mine`, `repair`, `kite`, `rearm`, `refuel`, `collect`) starts again. Any other step that was running is interrupted and leaves the queue paused (`fh queue resume` continues with the next step). A direct action is interrupted. Each agent whose work was cut gets `team.harness_updated` lines in its next reply.
 
 ## Waiting
@@ -406,17 +419,30 @@ fh sleep 900 --until researched                       # ...or until the research
     walking tour) tops every machine set to that recipe up to each item ingredient's amount x crafts, from your
     inventory, in one call: `entities` rows with `loaded {item=count}` and `short {item=still missing}`; a named machine
     set to another recipe is a row with `recipe` (what it runs, or `none`), and in reach they are counted in
-    `other_recipe`. `crafts` 1..1000 (default 1); not with `items`.
+    `other_recipe`. `crafts` 1..1000 (default 1); not with `items` or `item`.
+  - `feed {"item": "iron-plate", "count": 50}` gives only that item, as `items: ["iron-plate"]` does (with `items`, it is
+    added to them); `count` is what each machine is topped up to.
+  - `collect {"radius": 20}` without `item` walks to every assembler and furnace output in the radius that holds
+    anything (chemical plants, refineries and the like are assemblers) and takes all of it: output slots only, never
+    inputs or fuel. `count` caps the total; chests need `item`. The reply has `items: "all"`, `stock` and `places`;
+    `last` reports `got` and `items {name=count}`.
   - `inspect {"positions": [...]}` (1..32 entries, each may carry `name` or `unit_number`): one inspect per entry in one
     call, `entities` in order and `count`; an entry that fails is `{position, error}`.
 - Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
   `revision`, `paused`, `active`, `pending` (the next 5 as `id action [label]`), `pending_count`, `recent` (the last 2
   results), `last_failure`; `queue_status` shows every step in full.
+- A repeating plan (`queue_repeat`, optional `name` up to 32 characters) whose round had steps that ran short (the
+  outcomes `out_of_items`, `nothing_collected`, `inventory_full`, a give with none held, or a reply's `short`) puts one
+  grouped line in the team block under `queue`: `queue loop3 round 4: 3 of 9 steps short: transfer iron-plate
+  inventory_full x2, collect coal nothing_collected`. It comes only when a round's list differs from the round
+  before, so a steady loop says it once.
 - `inspect` also shows what the entity GUI and cursor show: `status_name` (e.g. `marked_for_deconstruction`,
   `waiting_for_source_items`), `filters`, `filter_mode` and `use_filters` (inserters, loaders), `held` (an inserter's
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
   on the footprint, such as a paste replacing it, with their filters). A ghost on a building yields to the building
-  unless you name it (`name: "entity-ghost"`).
+  unless you name it (`name: "entity-ghost"`). So does a flying robot, a biter, a projectile or any unselectable entity
+  over it, in `inspect`, `transfer`, `collect` and every other call on a position: `name` or `unit_number` picks it,
+  and alone at the position it is the target.
 - An asteroid collector: `inspect` shows `filters` (asteroid chunk names), `filter_slots` (the game's count, which
   reads 0 until a filter is set), `arm` (chunks its arms hold) and its output in
   `inventories.asteroid_collector_output`. `configure {position, filters}` sets the chunk filters as its GUI does,
@@ -443,6 +469,12 @@ fh sleep 900 --until researched                       # ...or until the research
   entity there adds the `repair` note.
 - `platforms` shows each platform's `defense`: `hub_health` (`637/1000`), `turrets` (`5 gun-turrets: 4 empty, 0 low
   (under 10 rounds)`) and `ammo`, the ammo flow (`turrets hold 6 rounds, the hub firearm-magazine 920`).
+- Flight, on every `platforms` row and in `inspect` of a hub under `flight`: `speed_kms` (the hub GUI's km/s; the game's
+  own value, `speed` with `platform` set, is km per tick), `next_stop` (the schedule's stop it flies to, or while it waits at its current stop, the
+  one after it), and on a route `leg` in the way it is flown (`vulcanus->nauvis`), `heading_to`, `leg_km`,
+  `leg_left_km` and `eta_min` (minutes to the end of the leg at the current speed; none at speed 0 or below, as when
+  paused and drifting back). `at` keeps the connection's own order and its percent from the first end
+  (`nauvis->vulcanus 25%`).
 - `platform_schedule {platform, paused: true}` says what pausing does: on a route (`note: paused on the route: the
   platform stays among the route's asteroids and drifts back the way it came ...; it reaches no orbit until
   unpaused`), in orbit (`paused in orbit: the platform stays where it is, among that orbit's asteroids`).
@@ -480,6 +512,18 @@ fh sleep 900 --until researched                       # ...or until the research
 - `launch {position, auto_requests: true}` on a silo whose rocket holds cargo loaded by hand: the game moves that cargo
   into the silo's trash slots, where it never launches. The reply has `cargo_to_trash` (what was aboard), `trash` and a
   `note` with the transfer that takes it back.
+- `cargo {items: {name: count}}` (or `[{name, count, quality}]`, or `position` of a chest, rocket silo (its loaded
+  cargo), landing pad, platform hub, wagon or vehicle in sight; `platform` for one on a platform) weighs a rocket cargo
+  list before it is staged (cargo.lua; Sol rebuilt three kits into two after working the weights out offline). A
+  read: `lift` (`1000 kg and 20 cargo slots a rocket`: the utility constant `rocket_lift_weight` and the silo's rocket
+  inventory), `items [{name, quality, count, each_kg, kg, stacks, per_rocket, share}]` heaviest first (`per_rocket`:
+  as many as one rocket takes alone, by weight and by its slots; `share`: of a rocket's lift), `total_kg`, `stacks`,
+  `fewest` (rockets by total weight and by stacks), `rockets` and `split [{rocket, kg, slots, items}]`: one split in
+  which every rocket stays within both, heaviest items first, each into the first rocket with room (a part stack's
+  room counted before a new slot); `note` when it takes more rockets than `fewest`; `too_heavy` for an item heavier
+  than a rocket lifts. Item weights are the 2.0 prototypes' (grams in the game, kg here; the API gives one weight
+  per item, used for every quality); stacks of different qualities take their own slots. Shift world, 2026-10-13: 2 thrusters, 4 cargo bays, 30
+  foundation, 150 processing units and 40 rocket fuel are 2300 kg, 3 rockets.
 - `launch {position, platform}` sends the cargo to the platform's hub (a platform waiting for its starter pack gets it
   as its starter pack). A rocket lifts 1000 kg (item prototype weights; the game takes more by script, then refuses
   the launch): `transfer` into `rocket_silo_rocket` gives only what fits (`weight_limited {requested, fits, note}`)
@@ -525,6 +569,60 @@ fh sleep 900 --until researched                       # ...or until the research
   the game's paste does: `wires {in_blueprint, connected (already), added, end_not_placed, failed, ends_not_placed
   ["chest #3"]}` (Astra 18:51: Sunward's module-audit paste made 0 ghosts over one collision, and its entities placed
   one by one with `place_ghosts` lost their wires).
+- `dry_run: true` on `place_ghosts`, `paste` / `blueprint_place` (with `repeat`, `platform`, `anchor`, flips) and
+  `build` (one entry or `builds`) places nothing and returns the check of what the call would place (dryrun.lua). It is
+  a read: the running action and queue go on, and a failed dry run stops nothing; a queue step with `dry_run` gets the
+  same check. Astra (ship refits: a gun route needed 20 more foundation tiles, found by a flood fill after staging),
+  Sol (a batch failed on its last, far entry after the first ones were built) and Gemini asked for it. The reply:
+  - `summary` (`9 placeable, 2 need tiles first, 1 blocked (of 12)`), `checked`, and `entities` rows `{index,
+    name, position, direction, status, why, reach}` for every entry that is not plainly placeable (`details: true`:
+    every entry, with `footprint` tiles `x0,y0..x1,y1`); `index` is `copy.index` under `repeat`; `asked` when the
+    position snaps (odd sizes to tile centres, even ones to corners). `status`: `ok`, `after_tiles` (placeable once
+    the plan's own tiles under it are laid; a paste lays both together, while place_ghosts places entity ghosts
+    before tile ghosts and a build batch goes entry by entry, which the row says), `needs_tiles`, `exists` (built or
+    ghosted there already; a paste skips it, place_ghosts and build fail on it), `blocked`. `why` names what collides and where (an entity, a ghost,
+    another character, a cliff, an earlier entry of the plan: `collides with planned #5 stone-furnace at (14,-88)`),
+    tiles it cannot stand on (`(60.5,-0.5) is outside the map`, a tile no tile item makes buildable), a broken tile
+    rule, uncharted chunks, or the engine's own refusal. The engine's check decides what stands there now, so a
+    ghost over a machine it upgrades reads `ok` with `replaces ...`; trees and rocks under a ghost read `ok` (marked
+    for removal), under a hand build `blocked`.
+  - `tiles`: `needed {item: n}` (the unlocked tile item that makes each tile buildable for that entity: landfill on
+    water, foundation on lava, space-platform-foundation on empty space), `under_entities`, `positions` (up to 200
+    tile centres, then `more`), and the plan's own tiles: `planned`, `already`, `refused` with `refused_rows`. On a
+    platform the engine takes an entity ghost over empty space, which nothing builds until foundation is there: such
+    entries read `needs_tiles` all the same. New foundation (planned or needed) is flood-filled: empty tiles it would
+    enclose (regions up to 1024 tiles; larger ones count as open space) are added as `holes`, since the game builds no
+    foundation that leaves a hole; `not_connected` names new tiles that touch no existing foundation even through the
+    other new tiles, and `too_far_north` those more than 200 tiles north of the hub.
+  - `power` (when the plan has poles or electric machines): `reach` per planned pole kind (`small-electric-pole wire
+    7.5 supply 2.5`, at its quality), `poles`, `connected` (`planned poles #1-3 reach the built network of
+    medium-electric-pole (40,5)`, or `join 2 separate built networks into one: ...`), `islands` (`planned pole #4 at
+    (-40.5,22.5): no wire path to a built pole; nearest built pole medium-electric-pole at (-32.5,19.5) is 8.5 tiles
+    from (-40.5,22.5) (wire reach 7.5)`) and `unpowered` rows (no pole's supply area over the machine, or only pole
+    ghosts with no wire path). Two poles join when they are within the shorter of their two wire reaches; built poles
+    and pole ghosts within 40 tiles of the plan count.
+  - `standing` (off a platform): `reach` (your build distance), `from_here` (`5 of 7 in reach from (11.5,-90)`),
+    and `spots [{at, reaches: "#4-6"}]`, at most 8, nearest first from where you stand: free tiles (off every planned
+    footprint, not on a belt, where a character fits) from which each entry out of reach is within reach; `no_spot`
+    when none fits. For `build` each out-of-reach entry also carries `reach` (`12.3 tiles from you, reach 10`), and a
+    blocked batch says that a batch stops at its first failure (`skip_failed`).
+  - `items` the placeable entries and needed tiles use, `missing` against your inventory (for `build` plus the
+    hand-craft queue; on a platform the hub), `missing_from`. A paste adds `paste {slot, label, origin_at, center_at,
+    anchor}` (where the blueprint lands, computed as the game places it: its center at `position`, shifted onto the
+    grid) and, for a normal paste with a blocked entry, `paste_note` (all or nothing: no ghost at all).
+- `ports {name, position, direction?, recipe?, mirror?, platform?}` (read; ports.lua, Gemini's request: a recipe moves
+  which fluid an electromagnetic plant's ports carry) lists the fluid connections of an entity that is not built:
+  `ports [{at, joins, direction, flow, fluid, box, there}]` (`at` the entity's tile with the port, `joins` the tile
+  outside it where a pipe joins, as in inspect's `fluid_connections`; `there` what stands on `joins` now), `closed`
+  (ports the recipe closes), and the snapped `position`. `inspect` of a ghost with a recipe lists only the ports that
+  recipe opens, each with its fluid, in `fluid_connections` (`fluid_connections_closed`, `fluid_recipe`). A
+  crafting machine joins its fluid boxes by recipe, as 280 machines on the shift world's engine showed: a fluid with a
+  `fluidbox_index` takes that box only (basic oil processing: crude oil at one input, petroleum gas at one output);
+  the others take the free boxes of their side in order; a side's single fluid without an index takes every leftover
+  box of that side (a chemical plant on lubricant takes heavy oil at both inputs; an electromagnetic plant on
+  supercapacitor takes electrolyte at both); a side with no fluid has no open port. With two or more fluids a side and
+  boxes left over (a cryogenic plant on a 2-fluid recipe) the extra port reads `one of A, B (not seen built: inspect
+  once built)`.
 - A refused `build` of an offshore pump (any reason) lists up to 3 valid placements within 12 tiles, nearest first, with
   their directions, from the game's own manual build check (`nearest valid offshore-pump placements (game build check,
   within 12 tiles): (10,-0.5) east, ...`). A build refused by water under the footprint (a boiler, a steam engine) lists

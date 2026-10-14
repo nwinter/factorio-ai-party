@@ -122,32 +122,63 @@ return function(api)
     end
     return out
   end
-  function M.start(p,a,ticks)
-    assert(type(a.item)=='string' and prototypes.item[a.item],'collect with radius requires a known item')
-    local radius=api.integer(a.radius,32,1,256,'radius')
-    local want=api.integer(a.count,10000,1,100000,'count')
-    local chests=a.chests==true
-    local s=M.scan(p,a.item,{radius=radius,quality=a.quality,types=a.types or (chests and TYPES or NO_CHESTS)})
-    -- Another agent's claimed stock stays put; the result says whose it is.
+  -- Another agent's claimed places stay put; returns the places kept and the skipped_claims lines.
+  local function unclaimed(p,places,what)
     local skipped,kept={},{}
-    for _,place in ipairs(api.claims and s.places or {}) do
-      local c=api.claims.other(p,place.position)
+    for _,place in ipairs(places) do
+      local c=api.claims and api.claims.other(p,place.position)
       if c then
         local key=api.claims.label(c,p)
         if not skipped[key] then skipped[key]={places=0,count=0}; skipped[#skipped+1]=key end
         skipped[key].places=skipped[key].places+1; skipped[key].count=skipped[key].count+place.count
       else kept[#kept+1]=place end
     end
-    if #skipped>0 then s.places=kept end
-    local action={kind='gather',item=a.item,quality=a.quality,want=want,got=0,visited=0,
-      targets=route(p.position,s.places),index=1,until_tick=game.tick+ticks}
-    local out={item=a.item,want=want,stock=s.total,places=#action.targets}
-    if #skipped>0 then
-      out.skipped_claims={}
-      for i,key in ipairs(skipped) do
-        if i<=4 then out.skipped_claims[i]=string.format('%d %s in %d places of %s; ask the owner',skipped[key].count,a.item,skipped[key].places,key) end
+    if #skipped==0 then return places,nil end
+    local lines={}
+    for i,key in ipairs(skipped) do
+      if i<=4 then lines[i]=string.format('%d %s in %d places of %s; ask the owner',skipped[key].count,what,skipped[key].places,key) end
+    end
+    return kept,lines
+  end
+  -- Without an item (Gemini, after the courier tools): every assembler and furnace output in the radius, all items,
+  -- output slots only (never inputs or fuel); count caps the total.
+  local OUTPUT={['assembling-machine']='assembling_machine_output',furnace='furnace_result'}
+  function M.start_all(p,a,ticks)
+    assert(a.chests==nil or a.chests==false,'collect with radius and no item takes machine outputs only; name an item to take from chests')
+    assert(a.quality==nil,'quality goes with item')
+    for _,t in ipairs(a.types or {}) do assert(OUTPUT[t],'collect with radius and no item takes machine outputs: types may be assembling-machine and furnace') end
+    local radius=api.integer(a.radius,32,1,256,'radius')
+    local want=api.integer(a.count,1000000,1,1000000,'count')
+    local places,total={},0
+    for _,e in pairs(p.surface.find_entities_filtered{position=p.position,radius=radius,force=p.force,type=a.types or {'assembling-machine','furnace'}}) do
+      local inv=e.valid and output_of(e)
+      local n=0
+      for _,s in ipairs(inv and inv.get_contents() or {}) do n=n+s.count end
+      if n>0 then
+        total=total+n
+        places[#places+1]={entity=e,name=e.name,position=e.position,count=n}
       end
     end
+    local skipped
+    places,skipped=unclaimed(p,places,'items')
+    local action={kind='gather',all=true,want=want,got=0,visited=0,items={},targets=route(p.position,places),index=1,until_tick=game.tick+ticks}
+    local out={items='all',want=want<1000000 and want or nil,stock=total,places=#action.targets,skipped_claims=skipped}
+    if total==0 then out.note='no assembler or furnace output in radius holds anything' end
+    return action,out
+  end
+  function M.start(p,a,ticks)
+    if a.item==nil then return M.start_all(p,a,ticks) end
+    assert(type(a.item)=='string' and prototypes.item[a.item],'collect with radius requires a known item')
+    local radius=api.integer(a.radius,32,1,256,'radius')
+    local want=api.integer(a.count,10000,1,100000,'count')
+    local chests=a.chests==true
+    local s=M.scan(p,a.item,{radius=radius,quality=a.quality,types=a.types or (chests and TYPES or NO_CHESTS)})
+    -- Another agent's claimed stock stays put; the result says whose it is.
+    local skipped
+    s.places,skipped=unclaimed(p,s.places,a.item)
+    local action={kind='gather',item=a.item,quality=a.quality,want=want,got=0,visited=0,
+      targets=route(p.position,s.places),index=1,until_tick=game.tick+ticks}
+    local out={item=a.item,want=want,stock=s.total,places=#action.targets,skipped_claims=skipped}
     if not chests and not a.types then
       -- Say how much sits in chests that this trip leaves alone.
       local all=M.scan(p,a.item,{radius=radius,quality=a.quality})
@@ -180,10 +211,14 @@ return function(api)
       elseif p.can_reach_entity(t.entity) then
         local ok,out
         if action.op then ok,out=pcall(api.visit,p,action,t.entity)
-        else ok,out=pcall(api.take,p,t.entity,action.item,action.quality,math.min(10000,action.want-action.got)) end
+        else ok,out=pcall(api.take,p,t.entity,action.item,action.quality,math.min(10000,action.want-action.got),action.all and OUTPUT[t.entity.type] or nil) end
         action.index=action.index+1; action.nav=nil; action.visited=action.visited+1
         if ok then
           action.got=action.got+out.transferred
+          for _,st in ipairs(action.all and out.items or {}) do
+            local key=st.name..(st.quality and '@'..st.quality or '')
+            action.items[key]=(action.items[key] or 0)+st.count
+          end
           if out.inventory_full then return 'inventory_full' end
           if out.stop then return out.stop end
         else action.errors=(action.errors or 0)+1 end

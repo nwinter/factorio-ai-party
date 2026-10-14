@@ -145,8 +145,9 @@ check(not pcall(h.queue_submit,p,{guards={{when={['until']='hurt'},['goto']='a',
 -- goes on; without either, the same step pauses the plan as before.
 do
   local cstate,busy_until,outcomes,ran={},{},{},{}
+  local give_held
   local ch={
-    give=function(_,a) ran[#ran+1]='give'; if a.held==0 then error('no iron-plate in inventory; the target has 0',0) end; return {transferred=a.held} end,
+    give=function(_,a) ran[#ran+1]='give'; local n=give_held or a.held; if n==0 then error('no iron-plate in inventory; the target has 0',0) end; return {transferred=n} end,
     tour=function(pp,a) ran[#ran+1]='tour'; busy_until[pp.index]=game.tick+2; outcomes.tour=a.outcome; return {accepted=true} end,
     craft=function() ran[#ran+1]='craft'; return {started=1} end,
     other=function() error('entity is out of reach',0) end,
@@ -174,5 +175,23 @@ do
   s=run({{action='tour',args={outcome='timed_out',up_to=true}},{action='craft'}})
   check(s.paused)
   check(not pcall(cs.handlers.queue_submit,p,{steps={{action='craft',on_short='retry'}}}))
+  -- A repeating plan's round with short steps is one grouped line for the team block (Opus), only when it changed.
+  cstate.queues=nil; ran={}
+  cs.handlers.queue_repeat(p,{name='loop3',interval_ticks=60,steps={
+    {action='give',args={held=0,item='iron-plate'},on_short='skip'},{action='give',args={held=0,item='iron-plate'},on_short='skip'},
+    {action='tour',args={outcome='nothing_collected',item='coal',up_to=true}},{action='craft'}}})
+  for _=1,10 do ctick() end
+  local lines=cs.round_news(1)
+  check(lines and #lines==1); check(lines[1]=='queue loop3 round 1: 3 of 4 steps short: give iron-plate none_held x2, tour coal nothing_collected')
+  check(cs.round_news(1)==nil)
+  for _=1,70 do ctick() end
+  check(cs.handlers.queue_status(p).cycle==2); check(cs.round_news(1)==nil) -- the same round again says nothing
+  give_held=5
+  for _=1,70 do ctick() end
+  check(cs.handlers.queue_status(p).cycle==3)
+  lines=cs.round_news(1)
+  check(lines and lines[1]=='queue loop3 round 3: 1 of 4 steps short: tour coal nothing_collected')
+  give_held=nil
+  check(not pcall(cs.handlers.queue_repeat,p,{name=string.rep('x',40),steps={{action='craft'}}}))
 end
 print('scheduler: '..assertions..' assertions passed')
