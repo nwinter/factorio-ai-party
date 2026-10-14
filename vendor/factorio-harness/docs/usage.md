@@ -750,8 +750,11 @@ fh sleep 900 --until researched                       # ...or until the research
   dry run reads them, with `io_warning`; `place_ghosts`, `paste` and `blueprint_place` list the inserter ghosts they
   placed that miss a target in `inserters_without_target` (first 16, `inserters_without_target_count` past them). A ghost on a building yields to the building
   unless you name it (`name: "entity-ghost"`). So does a flying robot, a biter, a projectile or any unselectable entity
-  over it, in `inspect`, `transfer`, `collect` and every other call on a position: `name` or `unit_number` picks it,
-  and alone at the position it is the target.
+  over it, in `inspect`, `transfer`, `collect` and every other call on a position, in reach and by remote view
+  (`requests`, `configure`, `circuit_set`, `wire`, `rotate`, `mine`, `repair`, `launch`, `silo`, train stops): one rule
+  for all (Astra 07:05: `requests` by remote view took a logistic robot over a requester chest). `name` or
+  `unit_number` picks it, and alone at the position it is the target. `wait_until item_count` over positions counts
+  the buildings there, never a robot's cargo.
 - Inserter and loader item filters (Sonnet 06:20: three inserters with stale filters blocked a line):
   - Read: `scan` rows, observe entity rows and `build` replies of our inserters and loaders with filters in use carry
     `filters` as one line: `whitelist: iron-plate, coal`, `blacklist: coal`, `whitelist: no items set`, `off (filters:

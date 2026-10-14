@@ -101,8 +101,10 @@ return function(api)
         local seen,silos=0,{}
         for _,raw in ipairs(c.positions) do
           for _,e in pairs(p.surface.find_entities_filtered{position=api.position(raw),radius=0.3,force=p.force}) do
-            -- A silo's rocket stands on its centre and holds nothing of its own (the silo counts the cargo).
-            if e.valid and e~=p.character and e.type~='rocket-silo-rocket' and e.type~='rocket-silo-rocket-shadow' then
+            -- A silo's rocket stands on its centre and holds nothing of its own (the silo counts the cargo); a robot
+            -- flying over a chest is not the chest (runtime.lua M.target_rank, Astra 07:05).
+            if e.valid and e~=p.character and e.type~='rocket-silo-rocket' and e.type~='rocket-silo-rocket-shadow'
+              and not (api.passing and api.passing(e)) then
               local ok,k=pcall(e.get_item_count,c.item)
               if ok and k then n=n+k end
               seen=seen+1
