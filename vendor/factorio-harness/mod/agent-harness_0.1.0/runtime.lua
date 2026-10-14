@@ -50,8 +50,8 @@ local function state() return storage.agent_harness end
 M.crafting=require('crafting'){state=state}
 M.claims=require('claims'){state=state,where_from=function(me) return M.where.from(me) end,owner_state=function(name) return M.board.owner_state(name) end}
 M.belt=require('belt')()
--- Queues carried over a hot install (carry.lua: notes them while this loads).
-M.carry=require('carry'){state=state}
+-- Waits, queues and actions carried over a hot install (carry.lua: notes them while this loads).
+M.carry=require('carry'){state=state,restart=function(index,call) return M.restart_call(index,call) end}
 M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,crafting=M.crafting,
   profile=function(index) return M.profiles.get(index) end,on_spawn=function(b) M.profiles.apply(M.bots.proxy(b)); M.nametags.refresh(b) end}
 M.cameras=require('cameras'){state=state,bot=function(name) return M.bots.named(name) end,
@@ -5068,6 +5068,16 @@ scheduler=scheduler_module{
   end
 }
 for name,handler in pairs(scheduler.handlers) do handlers[name]=handler end
+-- A direct action a harness update stopped, started again from the call that started it (carry.lua).
+function M.restart_call(index,call)
+  local ok,err=pcall(function()
+    local p=player(index,call.seated)
+    handlers[call.action](p,call.args)
+    local now=state().active[index]
+    if now then now.call=call end
+  end)
+  return ok,(not ok) and reason(err) or nil
+end
 -- Standing orders (orders.lua): the agent's routines, run in its own queue
 -- while its character is free.
 M.orders=require('orders'){state=state,player=player,scheduler=scheduler,agents=function() return M.board.agents() end,
@@ -5711,7 +5721,12 @@ dispatch_request=function(request)
     if not ok then passive_failed=game.tick; error(result,0) end
     return result
   end
-  return handler(p,request.args or {})
+  local before=state().active[p.index]
+  local result=handler(p,request.args or {})
+  -- The call that started a direct action that moves or builds, so a harness update can start it again (carry.lua).
+  local now=state().active[p.index]
+  if now and now~=before and not now.queued and not M.carry.CONTINUE[now.kind] then now.call={action=request.action,args=request.args or {},seated=M.seated_ok} end
+  return result
 end
 -- Choose the 8-way direction closest to the heading, but keep the previous
 -- one while it stays within 30 degrees. Re-choosing every tick flips between
