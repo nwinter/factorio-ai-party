@@ -7089,6 +7089,7 @@ function handlers.lookahead(p,a) return M.lookahead.read(p,a) end
 -- sender or claim owner on another planet in tells, chat and the board.
 M.where=require('where'){state=state,bot=function(index) return M.bots.record(index) end,lookup=function(index) return M.lookup(index) end,
   agents=function() return M.board.agents() end,
+  pronouns=function(index) local pr=M.profiles.get(index); return pr and pr.pronouns or nil end,
   human=function(index) return not M.bots.is_index(index) and not (state().controlled and state().controlled[index]) end}
 -- Why an underground belt or pipe-to-ground is unpaired (underpass.lua).
 M.underpass=require('underpass'){}
@@ -7725,6 +7726,9 @@ function M.dispatch_inner(request)
         -- The previous shift for the team (selfview.lua retro).
         local okr,retro=pcall(M.selfview.retro,p)
         if okr and retro then shift.retro=retro end
+        -- Each teammate's name, pronouns when set, and where when the team is spread out (where.lua; Nick 12:20).
+        local okt,mates=pcall(M.where.shift_line,p)
+        if okt and mates then shift.teammates=mates end
         result.team=result.team or {}; result.team.shift=shift
       end
       -- The agent's own review, every 2 game hours (selfview.lua).

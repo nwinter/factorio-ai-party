@@ -158,7 +158,8 @@ already targets your character.
   with the fewest minutes left at its fuel use over the last 10 minutes).
   Each is shown once, so a command that sends replies to a file you don't read loses them. A change to your board
   item, a plan line set for you, or a tell also ends your `sleep`.
-- Your first reply of a shift carries `team: shift` once: the team plan's goals and your line, the research finished
+- Your first reply of a shift carries `team: shift` once: `teammates` (each teammate's name, pronouns when they set
+  them, and where while the team is on more than one planet), the team plan's goals and your line, the research finished
   since your last request before the shift, `researched_none_built`: researched technologies whose buildings the
   team has none of, and `networks`: one line per electric network (draw over 5 minutes against capacity, machines on
   low power, boilers and their fuel in minutes), per logistic network (its id, roboports and the areas they cover,

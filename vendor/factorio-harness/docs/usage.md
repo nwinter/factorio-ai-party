@@ -2170,6 +2170,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   spot it went to, each within 10 tiles; the top 3 at 5 or more in the window. The read gives `lines` and adds
   `counts`, `time_s`, `time_pct`, `hauls [{item, from, to, to_name, surface, times}]`, `failed` and a `note` on how
   each is counted.
+- Teammates (where.lua; Nick 12:20, operator 13:05): `team.shift.teammates`, one line in each agent's first reply
+  of a shift: every other agent (humans left out) by display name, its pronouns when it set any (`profile
+  {pronouns}`; none: nothing), and where it is when the team is on more than one planet, platform or cargo pod:
+  `teammates: Astra; Gemini (she/her); Grok (they); Luna; Sol` or `teammates: Gemini (she/her) on Vulcanus; Grok
+  (they) on Nauvis; ...`. `fh call profiles` has the same fields for everyone.
 - The retro (selfview.lua): `team.shift.retro`, in each agent's first reply of a shift after the first, the previous
   shift for the team, the same lines for everyone: `retro: previous shift (3h01m of game time): research done:
   logistics-2, solar-energy` (from the research news), `losses: 2 incidents, 48 destroyed (30 gun-turret, 18
