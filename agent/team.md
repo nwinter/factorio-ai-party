@@ -32,19 +32,20 @@ already targets your character.
 - Output: a failure ends with an `error:` line (on stderr with `--format json`) and exits nonzero; a partial result (`short`, `awaiting_craft`, a
   refused craft) ends with a `warning:` line. `--wait` replies are brief (outcome, position, inventory change; add
   `--full` for the whole status). The `clock:` line ends with the time left until your deadline.
-- Organize yourselves: agree on who does what (there is no assigned leader or roles), claim areas on the board before
-  building (`board post` with kind `claim` and the area), don't build inside someone else's claim without asking, and
-  put shared infrastructure (power poles, main belts) on the board too. Inside your own claim, act without asking. Renegotiate as the base
-  grows. Keep one job you own; when you hand it over, take a new one in the same message.
-- A claim whose owner is on another planet (`owner_away` on the board; full `status` shows where everyone is under
-  `teammates`): tell them once. If they have not answered in 10 minutes, go ahead, keep their production running, and
-  note what you did on the claim.
+- Organize yourselves: agree on who does what (there is no assigned leader or roles). Post a claim for the area you
+  build in (`board post` with kind `claim` and the area): it shows teammates who works where, sends that area's
+  alerts to you, and keeps teammates' `stock` sweeps out of its chests. Put shared infrastructure (power poles, main
+  belts) on the board too. Keep one job you own; when you hand it over, take a new one in the same message.
+- Anywhere, a teammate's claim included, you may build, extend, connect power, belts and inserters, and take from
+  output chests without asking; tell the owner what you did (`tell --fyi`). To remove, move or reconfigure a
+  teammate's working machines, or change a platform's schedule or filters, tell its owner first and go ahead if they
+  have not objected within 10 minutes.
 - A claim stays fresh while its owner works on it: posting or updating it, or the owner's own requests made standing
   in it or acting on a position in it. After 30 minutes without that it is `stale` on the board and in `claimed`
-  warnings: anyone may work there without asking. After 2 hours the harness closes it. Its owner gets one
-  `your claims:` line for those that went stale or closed, at most every 3 minutes. An
-  `"allow":["muse"]` (or `"everyone"`) on your claim, in `board post` or `board update`, lets those teammates work
-  there without asking; `claimed` warnings show it.
+  labels: anyone may also remove or rebuild there without telling the owner first, and `stock` sweeps include it.
+  After 2 hours the harness closes it. Its owner gets one `your claims:` line for those that went stale or closed, at
+  most every 3 minutes. An `"allow":["muse"]` (or `"everyone"`) on your claim, in `board post` or `board update`,
+  lets those teammates remove or rebuild there without telling you first; `claimed` labels show it.
 - Hand items over through a chest: put them in, then post or update the board item with what and where.
 - Teammates' notes are readable at `../<name>/notes.md`; keep yours useful to them (claims, layout, plans).
 - When you're waiting on someone, say so, then do something else useful.
@@ -72,7 +73,12 @@ already targets your character.
   finish at the current lab throughput (or which pack it waits for). `./fh research done` lists what finished lately
   and what each unlocked. `./fh call science` (or `--args '{"pack":"logistic-science-pack"}'`) counts each pack the
   research needs over your whole surface, the same for everyone wherever they stand: made and used in 10 minutes,
-  the assemblers set to it and their states, packs in chests, on belts, in labs and carried, and the largest chests.
+  the assemblers set to it and their states, packs in chests, on belts, in labs and carried, and the largest chests;
+  its `reach` line says where else each pack sits (inserter hands, robots) and why it does not reach the labs.
+- `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
+  `"surface"`) reads one item: where it sits (chests by kind, belts, machine outputs, inserter hands, robots,
+  characters), each logistic network's stock of it (free and reserved), its robots, every unmet requester with the
+  reason, the machines that make and use it by status (the worst 3 with positions), and the inserters feeding them.
 - Address teammates with `@name` (or `@everyone`) in `say`. `./fh say "..." --aloud` speaks the line on stream in your
   own voice: use it whenever there is something viewers would want to hear (a plan, a win, a complaint, a joke);
   viewers like hearing from each of you every few minutes.
@@ -109,6 +115,10 @@ already targets your character.
   any time), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
   open board items).
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
+- Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
+  instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `feed {"recipe": NAME,
+  "crafts": N, "positions": [...]}` loads each machine set to that recipe for N crafts; `inspect {"positions": [...]}`
+  inspects up to 32 entities in one call.
 - Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, repairs,
   ghosts. `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":
   "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[...]}'` runs its queue steps whenever
@@ -117,6 +127,10 @@ already targets your character.
   run only while your character is free (no action, your queue empty), 20 s after your own last action; your own
   action or queue call stops a running order at once and it resumes after. Every reply's `orders:` line says which
   runs and why. `./fh call orders` lists them; `order_remove`, `orders_pause`, `orders_resume`.
+- Circuits: `./fh call circuit_set --args '{"platform":"NAME","position":{"x":-2.5,"y":-4.5},"enable":"ice < 300"}'`
+  sets an entity's circuit condition, read switches, settings or combinator, in reach or by remote view (our entities
+  in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`
+  reads back the conditions, settings, each wire's far end and the signals on each network now.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
 

@@ -570,6 +570,88 @@ eq(call('transfer',{position={x=3,y=0}}).direction,'to_player')
 fails(function() call('transfer',{position={x=3,y=0},item='iron-plate'}) end,'holds 0 iron-plate and the target holds 0')
 fails(function() call('transfer',{position={x=3,y=0},item='coal',direction='sideways'}) end,'direction must be to_entity or to_player')
 main=kept_main; main[1].count=12; f1.slots[2][1].count,f1.slots[2][1].valid_for_read=0,false
+-- Courier tools (shift08: Grok, Luna, Sonnet, Muse). up_to=true moves what there is and says how short it fell; a
+-- short or empty source is never an error.
+do
+  local saved_main,saved_find,saved_prototypes=main,p.surface.find_entities_filtered,prototypes
+  main=inv(stack('iron-ore',3),stack(nil,0),stack(nil,0))
+  f1.slots[3][1].count,f1.slots[3][1].valid_for_read=0,false
+  p.surface.find_entities_filtered=function(f) return {f.position.x==3 and f1 or f2} end
+  local r=call('transfer',{position={x=3,y=0},item='iron-ore',count=5,direction='to_entity',up_to=true})
+  eq(r.moved,3); eq(r.short.asked,5); eq(r.short.moved,3); eq(r.short.reason,'source_short'); eq(f1.slots[3][1].count,3)
+  r=call('transfer',{position={x=3,y=0},item='iron-ore',count=5,direction='to_entity',up_to=true})
+  eq(r.moved,0); eq(r.short.reason,'none_held')
+  fails(function() call('transfer',{position={x=3,y=0},item='iron-ore',count=5,direction='to_entity'}) end,'no iron-ore in inventory')
+  -- Enough held: no short.
+  main=inv(stack('iron-ore',10),stack(nil,0))
+  r=call('transfer',{position={x=3,y=0},item='iron-ore',count=2,direction='to_entity',up_to=true})
+  eq(r.moved,2); eq(r.short,nil)
+  -- Taking: fewer in the source than asked, then none at all; the direction inferred works too.
+  main=inv(stack(nil,0),stack(nil,0))
+  r=call('transfer',{position={x=3,y=0},item='iron-ore',count=50,direction='to_player',up_to=true})
+  eq(r.moved,5); eq(r.short.asked,50); eq(r.short.reason,'source_short')
+  r=call('transfer',{position={x=3,y=0},item='iron-ore',count=50,direction='to_player',up_to=true})
+  eq(r.moved,0); eq(r.short.reason,'source_empty')
+  -- A batch: asked per entity, summed.
+  main=inv(stack('iron-ore',3),stack(nil,0))
+  r=call('transfer',{positions={{x=3,y=0},{x=4,y=0}},item='iron-ore',count=2,direction='to_entity',up_to=true})
+  eq(r.moved,3); eq(r.short.asked,4); eq(r.short.reason,'source_short')
+  -- No direction and the item on neither side: a short too (without up_to it stays an error).
+  main=inv(stack(nil,0),stack(nil,0))
+  r=call('transfer',{position={x=3,y=0},item='copper-plate',count=4,up_to=true})
+  eq(r.moved,0); eq(r.short.asked,4); eq(r.short.reason,'none_held')
+  fails(function() call('transfer',{position={x=3,y=0},item='copper-plate',count=4}) end,'direction is required')
+  -- A number keeps its meaning (the target cap); anything else is refused.
+  fails(function() call('transfer',{position={x=3,y=0},item='iron-ore',up_to='yes',direction='to_entity'}) end,'up_to must be a number')
+  -- collect up_to: an empty source is a short, not a failure.
+  f2.slots[4][1].count,f2.slots[4][1].valid_for_read=0,false
+  f1.slots[4][1].count,f1.slots[4][1].valid_for_read=0,false
+  main=inv(stack(nil,0),stack(nil,0))
+  r=call('collect',{positions={{x=4,y=0}},up_to=true})
+  eq(r.moved,0); eq(r.short.asked,'all'); eq(r.short.reason,'source_empty')
+  fails(function() call('collect',{up_to=5}) end,'up_to must be true')
+
+  -- feed with a recipe over a machine list: each ingredient for N crafts per machine, one call; loaded and short per
+  -- machine; a machine set to another recipe is listed as such.
+  defines.inventory.assembling_machine_input=defines.inventory.assembling_machine_input or 5
+  prototypes={item={inserter={},['transport-belt']={}},recipe={['logistic-science-pack']={name='logistic-science-pack',
+    ingredients={{type='item',name='inserter',amount=1},{type='item',name='transport-belt',amount=1}}},
+    ['iron-gear-wheel']={name='iron-gear-wheel',ingredients={{type='item',name='iron-plate',amount=2}}}}}
+  local function assembler(x,recipe)
+    local slots=inv(stack(nil,0),stack(nil,0))
+    local m={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=x,y=5},force=p.force,slots=slots}
+    m.get_inventory=function(id) if id==defines.inventory.assembling_machine_input then return slots end end
+    m.get_recipe=function() return recipe and {name=recipe} or nil end
+    return m
+  end
+  local a1,a2,a3=assembler(1,'logistic-science-pack'),assembler(2,'logistic-science-pack'),assembler(3,'iron-gear-wheel')
+  local machines={[1]=a1,[2]=a2,[3]=a3}
+  p.surface.find_entities_filtered=function(f) return {machines[f.position and f.position.x]} end
+  main=inv(stack('inserter',15),stack('transport-belt',30))
+  r=call('feed',{recipe='logistic-science-pack',crafts=10,positions={{x=1,y=5},{x=2,y=5},{x=3,y=5}}})
+  eq(r.entities[1].loaded.inserter,10); eq(r.entities[1].loaded['transport-belt'],10); eq(r.entities[1].short,nil)
+  eq(r.entities[2].loaded.inserter,5); eq(r.entities[2].short.inserter,5); eq(r.entities[2].short['transport-belt'],nil)
+  eq(r.entities[3].recipe,'iron-gear-wheel'); eq(r.entities[3].loaded,nil)
+  eq(r.transferred,35); eq(r.held.inserter,0); eq(r.held['transport-belt'],10)
+  -- Again: topped up to the crafts asked, so the first takes nothing more; the second still lacks inserters.
+  main=inv(stack('inserter',2),stack('transport-belt',2))
+  r=call('feed',{recipe='logistic-science-pack',crafts=10,positions={{x=1,y=5},{x=2,y=5}}})
+  eq(r.entities[1].loaded,nil); eq(r.entities[1].short,nil)
+  eq(r.entities[2].loaded.inserter,2); eq(r.entities[2].short.inserter,3)
+  fails(function() call('feed',{recipe='nope',positions={{x=1,y=5}}}) end,'unknown recipe nope')
+  fails(function() call('feed',{crafts=2,positions={{x=1,y=5}}}) end,'crafts goes with recipe')
+  fails(function() call('feed',{recipe='logistic-science-pack',items={'inserter'},positions={{x=1,y=5}}}) end,'recipe or items')
+
+  -- inspect over positions: one call, results in order; a miss is its position and error.
+  a1.get_fluid_contents=function() return {} end; a2.get_fluid_contents=a1.get_fluid_contents
+  for _,m in ipairs({a1,a2}) do m.slots.get_contents=function() return {} end end
+  local batch=call('inspect',{positions={{x=1,y=5},{x=2,y=5},{x=40,y=5}}})
+  eq(batch.count,3); eq(batch.entities[1].name,'assembling-machine-2'); eq(batch.entities[2].position.x,2)
+  eq(batch.entities[3].position.x,40); assert(batch.entities[3].error,'a miss carries its error')
+  fails(function() call('inspect',{position={x=1,y=5},positions={{x=2,y=5}}}) end,'not both')
+  main,p.surface.find_entities_filtered,prototypes=saved_main,saved_find,saved_prototypes
+  for _,f in ipairs({f1,f2}) do f.slots[3][1].count,f.slots[3][1].valid_for_read=0,false end
+end
 -- A silo takes rocket parts' ingredients as input and anything else as rocket cargo.
 defines.inventory.assembling_machine_input,defines.inventory.rocket_silo_rocket=5,7
 local silo_input,silo_cargo=inv(stack(nil,0)),inv(stack(nil,0))
@@ -1113,6 +1195,14 @@ eq(call('observe',{scope='craftable',recipes={'iron-plate'}}).craftable['iron-pl
 fails(function() call('observe',{scope='craftable',recipes={'nope'}}) end,'unknown recipe')
 fails(function() call('observe',{scope='bogus'}) end,'unknown observe scope')
 fails(function() call('observe',{scope='craftable',names={'pipe'}}) end,'unknown argument names for craftable; valid: recipes')
+-- supply is a read-only observe scope with its own arguments (supply.lua has its own tests).
+do
+  local sup=call('observe',{scope='supply',item='transport-belt'})
+  eq(sup.item,'transport-belt'); assert(sup.where and sup.counted and sup.flow,'supply reply')
+end
+fails(function() call('observe',{scope='supply',item='transport-belt',radius=5}) end,'radius needs near')
+fails(function() call('observe',{scope='supply',item='transport-belt',pack='x'}) end,'unknown argument pack for supply; valid: item, near, radius, surface')
+fails(function() call('observe',{scope='supply',item='nope'}) end,'item must be an item name')
 -- nearest sorts by distance, skips fogged chunks and the character itself.
 p.position={x=0,y=0}
 p.force.is_chunk_visible=function(_,chunk) return chunk.x<1 end
@@ -1410,7 +1500,7 @@ p.build_from_cursor=function(args)
 end
 local pb=call('build',{item='small-electric-pole',position={x=4.5,y=0.5}})
 eq(pb.consumed,1); eq(pb.networks_joined,1); eq(c2.electric_network_id,1); eq(d.electric_network_id,3)
--- wire: connect needs reach for both poles and a wire long enough.
+-- wire: both poles in reach or, by remote view (2.0), ours in a visible chunk; a wire long enough.
 eq(call('wire',{from={x=10.5,y=0.5},to={x=6.5,y=0.5}}).already,nil)
 eq(call('wire',{from={x=10.5,y=0.5},to={x=6.5,y=0.5}}).already,true)
 fails(function() call('wire',{from={x=10.5,y=0.5},to={x=20.5,y=0.5}}) end,'does not reach')
@@ -1418,7 +1508,7 @@ fails(function() call('wire',{from={x=10.5,y=0.5},to={x=10.5,y=0.5}}) end,'same 
 local cut=call('wire',{from={x=6.5,y=0.5},to={x=10.5,y=0.5},disconnect=true})
 eq(cut.disconnected,true); eq(cut.split,true)
 p.can_reach_entity=function(e) return e~=d end
-fails(function() call('wire',{from={x=10.5,y=0.5},to={x=20.5,y=0.5}}) end,'out of reach')
+fails(function() call('wire',{from={x=10.5,y=0.5},to={x=20.5,y=0.5}}) end,'does not reach')
 p.can_reach_entity=function() return true end
 -- power: per-network poles and kW, unpowered and unconnected machines.
 local function machine(x,id,status)

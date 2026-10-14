@@ -80,5 +80,21 @@ st, body, _ = call("POST", "/v1/chat", {"name": "tester", "text": "back again"},
 check("banned client can't post", st == 403, body)
 call("POST", "/v1/mod", {"action": "unban", "seq": seq}, auth=True)
 
+# Site viewers: one id per open page, at most 4 per address, other origins refused, bad ids refused
+st, body, _ = call("GET", "/v1/state?w=0")
+base = body.get("site_watching")
+check("state GET has site_watching", isinstance(base, int), body)
+for i in range(6):
+    st, body, _ = call("POST", "/v1/here", {"id": f"{i:02x}" * 12}, ip="198.51.100.20")
+check("here POST", st == 200 and body == {"ok": True}, body)
+call("POST", "/v1/here", {"id": "ab" * 12}, ip="198.51.100.21")
+call("POST", "/v1/here", {"id": "ab" * 12}, ip="198.51.100.21")  # the same page again
+st, body, _ = call("GET", "/v1/state?w=1")
+check("site_watching counts pages, 4 per address", body.get("site_watching") == base + 5, body.get("site_watching"))
+st, body, _ = call("POST", "/v1/here", {"id": "not-hex"})
+check("here POST bad id", st == 400, body)
+st, body, _ = call("POST", "/v1/here", {"id": "cd" * 12}, origin="https://evil.example")
+check("here POST blocked from other origins", st == 403, body)
+
 print("all passed" if not fails else f"{len(fails)} failed")
 sys.exit(1 if fails else 0)

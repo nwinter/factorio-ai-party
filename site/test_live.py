@@ -55,6 +55,13 @@ def payload_tests():
     s2.pop("fights")
     out2 = push_live.public_state(s2)
     assert "space" not in out2 and "fights" not in out2
+    # YouTube's "watching now" (viewers.py): passed on while fresh; unknown (None), stale or odd values left out
+    yt = {"state": "live", "video": "liI0JzKylGc", "watching": 40, "watching_t": now - 39, "watching_error": None}
+    w = push_live.public_state(dict(s, viewers_status={"youtube": yt}))
+    assert w["watching"] == {"youtube": 40, "t": round(now - 39)} and w["stream"]["youtube_video_id"] == "liI0JzKylGc", w
+    for bad in ({"watching": None}, {"watching_t": now - 400}, {"watching": True}, {"watching": "40"}, {"watching": -1}):
+        assert "watching" not in push_live.public_state(dict(s, viewers_status={"youtube": dict(yt, **bad)})), bad
+    assert "watching" not in push_live.public_state(s)
 
 
 def build_tests():
@@ -76,9 +83,11 @@ def build_tests():
 
 
 LIVE_JS = r"""
-// static/live.js in a stub DOM with a stub map viewer, sample mode, on the state in argv[3]; prints what it drew
+// static/live.js in a stub DOM with a stub map viewer, on the state in argv[3]; prints what it drew. argv[4]: sample
+// mode (default), "live" (an API whose state is 4 s old, 3 pages on the site) or "stale" (10 min old)
 const fs = require('fs');
 const state = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+const mode = process.argv[4] || 'demo';
 function cls() { const s = new Set(); return { add: (c) => s.add(c), remove: (c) => s.delete(c), toggle: (c, on) => (on ? s.add(c) : s.delete(c)), contains: (c) => s.has(c) }; }
 const kids = {};
 // the cards' parts exist once made; any other selector gets an element
@@ -91,25 +100,33 @@ function el(name) {
   Object.defineProperty(e, 'innerHTML', { get() { return this._html; }, set(v) { this._html = v; for (const m of String(v).matchAll(/id="([\w-]+)"/g)) kids['#' + m[1]] = kids['#' + m[1]] || el(m[1]); } });
   return e;
 }
-for (const id of ['dash', 'strip', 'alerts', 'run-title', 'run-sub', 'updated', 'next-shift', 'offline', 'live-badge']) kids['#' + id] = el(id);
+for (const id of ['dash', 'strip', 'alerts', 'run-title', 'run-sub', 'updated', 'next-shift', 'offline', 'live-badge', 'watching']) kids['#' + id] = el(id);
+kids['#watching'].hidden = true;
 const app = el('app');
 app.querySelector = find;
-app.dataset = { api: '', status: '/live/status.json', poll: '10', video: '', channel: '' };
+app.dataset = { api: mode === 'demo' ? '' : 'https://api.test', status: '/live/status.json', poll: '10', video: '', channel: '' };
 global.window = global;
 global.addEventListener = () => {};
 global.requestAnimationFrame = (f) => setImmediate(f);
 global.document = { getElementById: (id) => (id === 'live-app' ? app : kids['#' + id] || null), hidden: false, documentElement: { dataset: {} },
   addEventListener() {}, querySelector: () => null };
 global.matchMedia = () => ({ matches: true });
-global.location = { search: '?demo=1', hostname: 'localhost' };
+global.location = { search: mode === 'demo' ? '?demo=1' : '', hostname: 'localhost' };
 global.localStorage = { getItem: () => null, setItem: () => {} };
 global.PogAvatar = { svg: () => '<svg/>' };
 const made = [], sets = [];
 global.PogMap = { create: (host, opts) => { made.push({ host: host.name, opts }); return { set: (d) => sets.push(d) }; } };
-global.fetch = (url) => Promise.resolve({ ok: true, json: () => Promise.resolve(url.indexOf('state') >= 0 ? state : { schema: 1 }) });
+const posts = [];
+const reply = (body) => Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
+global.fetch = (url, opts) => {
+  if (opts && opts.method === 'POST') { posts.push({ url, type: opts.headers['Content-Type'], body: JSON.parse(opts.body) }); return reply({ ok: true }); }
+  if (mode !== 'demo' && url.indexOf('/v1/state') >= 0) return reply({ schema: 1, received: Date.now() / 1000, age_s: mode === 'stale' ? 600 : 4, state, site_watching: 3 });
+  return reply(url.indexOf('state') >= 0 ? state : { schema: 1 });
+};
 require(process.argv[2]);
 setTimeout(() => process.stdout.write(JSON.stringify({ dash: kids['#dash'].innerHTML, made, sets,
-  agents: (kids['#cb-agents'] || {}).innerHTML, cams: (kids['#map-cams'] || {}).innerHTML })), 300);
+  agents: (kids['#cb-agents'] || {}).innerHTML, cams: (kids['#map-cams'] || {}).innerHTML,
+  watching: { text: kids['#watching'].textContent, hidden: kids['#watching'].hidden }, posts }), () => process.exit(0)), 300);
 """
 
 SCENE_JS = r"""
@@ -251,6 +268,24 @@ def map_tests():
         assert got["base"]["rows"] and got["core"]["cell"] == 1 and len(got["turrets"]) == 3 and got["nests"] == [[90, 10, "s"]]
         assert [a["name"] for a in got["agents"]] == [a["name"] for a in map_state(True)["agents"]] and "cams" in got
         assert "agent-live" in lv["agents"]
+        # watchers: the sample shows its YouTube reading; no heartbeat without an API
+        assert lv["watching"] == {"text": "Watching: 41 YouTube", "hidden": False} and lv["posts"] == [], (lv["watching"], lv["posts"])
+
+        def live(mode, st):
+            json.dump(st, open(spath, "w"))
+            r = subprocess.run(["node", js, os.path.join(SITE, "static", "live.js"), spath, mode], capture_output=True,
+                               text=True, timeout=30)
+            assert r.returncode == 0, r.stderr
+            return json.loads(r.stdout)
+        st = map_state(True)
+        st["watching"] = {"youtube": 40, "t": 1}
+        lv = live("live", st)
+        assert lv["watching"] == {"text": "Watching: 40 YouTube · 3 site", "hidden": False}, lv["watching"]
+        assert [(p["url"], p["type"]) for p in lv["posts"]] == [("https://api.test/v1/here", "text/plain")], lv["posts"]
+        assert re.fullmatch(r"[0-9a-f]{24}", lv["posts"][0]["body"]["id"]), lv["posts"]  # the worker's id rule
+        st.pop("watching")
+        assert live("live", st)["watching"] == {"text": "Watching: 3 site", "hidden": False}  # YouTube unknown
+        assert live("stale", st)["watching"] == {"text": "", "hidden": True}  # offline: no count
 
 
 def main():

@@ -1663,7 +1663,7 @@ def live_app(heading, sample_href):
 <div id="live-app" class="live-app" data-api="{esc(api)}" data-status="{esc(status)}" data-poll="{poll}" data-video="{esc(vid)}" data-channel="{esc(chan)}">
 <div class="live-head-row">
   <h1>{esc(heading)}</h1>
-  <p class="live-head-meta"><span id="live-badge" class="fx-chip fx-chip--grey">Offline</span> <span id="updated" class="muted small"></span></p>
+  <p class="live-head-meta"><span id="live-badge" class="fx-chip fx-chip--grey">Offline</span> <span id="watching" class="small" hidden></span> <span id="updated" class="muted small"></span></p>
 </div>
 <div class="live-top">
   <div class="player-wrap" id="player">
@@ -1687,7 +1687,13 @@ def live_app(heading, sample_href):
           <button class="fx-btn" type="submit">Send</button>
         </form>
         <p id="vchat-note" class="fx-muted small" aria-live="polite"></p>
-        <p class="fx-muted small">No accounts: pick any name. No links; one message every few seconds. Be kind, the agents may read it.</p>
+        <dl class="vchat-tips fx-muted small">
+          <div><dt>@astra</dt><dd>that agent answers (any agent's name)</dd></div>
+          <div><dt>No name</dt><dd>the next agent in turn</dd></div>
+          <div><dt>@operator</dt><dd>harness suggestions: read, maybe built</dd></div>
+          <div><dt>Several</dt><dd>one per person into the game at a time, up to 3 wait their turn</dd></div>
+          <div><dt>Rules</dt><dd>no account, no links, be kind</dd></div>
+        </dl>
       </div>
       <div data-pane="yt" class="yt-pane" hidden>
         <p class="fx-muted">YouTube chat appears here once the stream is set up.</p>

@@ -70,6 +70,11 @@ return function(api)
         if out[d] == true then out[d] = nil; out.direction = d; notes[#notes+1] = d .. '=true is direction="' .. d .. '"' end
       end
     end
+    -- circuit is circuit_set's old name.
+    if action == 'circuit' then
+      action = 'circuit_set'
+      notes[#notes+1] = 'circuit is circuit_set'
+    end
     -- feed {position}: positions.
     if action == 'feed' and out.position ~= nil and out.positions == nil and not takes('feed', 'position') then
       out.positions, out.position = {out.position}, nil

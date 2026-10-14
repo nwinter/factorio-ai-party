@@ -554,7 +554,7 @@ eq(rows['platform-3/Starling'].platform,'Starling')
 assert(has(st.alerts.latest,'on vulcanus in (-223,74)'))
 
 -- Claims live on their owner's activity (agent-minds study: 67 claims open at the end of shift07, 60 untouched all
--- shift): stale after 30 min (no permission needed), closed by the harness after 2 h; allow lists.
+-- shift): stale after 30 min (no notice needed), closed by the harness after 2 h; allow lists.
 local function body(name) return runtime.bots.lookup(runtime.bots.index_of(name)).character end
 -- A claim from before this runtime (no activity kept, updated 5 h ago) counts from the deploy: nothing closes at once.
 local legacy=sol('board_post',{kind='claim',title='old mall',area={left_top={x=30000,y=0},right_bottom={x=30010,y=10}}}).item
@@ -578,7 +578,7 @@ item=astra('board',{id=c.id}).item
 eq(item.stale,true); eq(item.owner_active,'31m00s ago')
 assert(runtime.claims.find({name='grok'},{x=10001,y=10001}),'a stale claim is still found')
 eq(runtime.claims.other({name='grok'},{x=10001,y=10001}),nil) -- but binds nobody
-assert(runtime.claims.label(c and storage.agent_harness.board.items[c.id],{name='grok'}):find('stale: no permission needed; closes 1h29m from now',1,true))
+assert(runtime.claims.label(c and storage.agent_harness.board.items[c.id],{name='grok'}):find('stale: no notice needed to remove or rebuild; closes 1h29m from now',1,true))
 -- Sol hears it in one batched line; its requests elsewhere keep nothing fresh; standing in the claim does, and so
 -- does acting on a position in it.
 local digest=has(sol('status').team.board,'your claims: stale after 30 min without your activity')
@@ -598,7 +598,7 @@ eq(astra('board',{id=c.id}).item.stale,true)
 sol('board_update',{id=c.id,note='still mine'})
 eq(astra('board',{id=c.id}).item.stale,nil)
 assert(runtime.claims.other({name='grok'},{x=10001,y=10001}),'fresh again: it binds')
--- allow: the owner names who may work there without asking
+-- allow: the owner names who may remove or rebuild there without notice
 fails(function() astra('board_update',{id=c.id,allow='astra'}) end,'only the owner (sol) can change who claim #'..c.id..' allows')
 fails(function() astra('board_post',{kind='task',title='x',allow='sol'}) end,'allow is for a claim')
 local r=sol('board_update',{id=c.id,allow='Astra'})

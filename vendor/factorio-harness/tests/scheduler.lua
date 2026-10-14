@@ -141,4 +141,38 @@ local fired=false
 for _,entry in ipairs(q.history) do if entry.action=='guard' then fired=true end end
 check(fired)
 check(not pcall(h.queue_submit,p,{guards={{when={['until']='hurt'},['goto']='a',steps={}}},steps={}}))
+-- Couriers (shift08): a step that runs short with on_short=skip, or with up_to=true in its args, is done and the plan
+-- goes on; without either, the same step pauses the plan as before.
+do
+  local cstate,busy_until,outcomes,ran={},{},{},{}
+  local ch={
+    give=function(_,a) ran[#ran+1]='give'; if a.held==0 then error('no iron-plate in inventory; the target has 0',0) end; return {transferred=a.held} end,
+    tour=function(pp,a) ran[#ran+1]='tour'; busy_until[pp.index]=game.tick+2; outcomes.tour=a.outcome; return {accepted=true} end,
+    craft=function() ran[#ran+1]='craft'; return {started=1} end,
+    other=function() error('entity is out of reach',0) end,
+  }
+  local cs=factory{state=function() return cstate end,player=function(i) return players[i] end,handlers=ch,
+    busy=function(pp,action) return action=='tour' and busy_until[pp.index] and game.tick<busy_until[pp.index] end,
+    outcome=function(_,action) return outcomes[action] end,stop=function() end,stop_index=function() end,
+    condition=function() return false end,validate_condition=function() end}
+  local function ctick() game.tick=game.tick+1; cs.tick() end
+  local function run(steps) cstate.queues=nil; ran={}; cs.handlers.queue_submit(p,{steps=steps}); for _=1,8 do ctick() end return cs.handlers.queue_status(p) end
+  local s=run({{action='give',args={held=0},on_short='skip'},{action='craft'}})
+  check(not s.paused and ran[2]=='craft'); check(s.history[1].ok and s.history[1].result.short==true)
+  s=run({{action='give',args={held=0}},{action='craft'}})
+  check(s.paused and #ran==1 and not s.history[1].ok)
+  -- a timed tour's out_of_items with up_to=true, and nothing_collected with on_short=skip, count as done
+  s=run({{action='tour',args={outcome='out_of_items',up_to=true}},{action='craft'}})
+  check(not s.paused and ran[2]=='craft' and s.history[1].result.short==true and s.history[1].result.outcome=='out_of_items')
+  s=run({{action='tour',args={outcome='nothing_collected'},on_short='skip'},{action='craft'}})
+  check(not s.paused and ran[2]=='craft')
+  s=run({{action='tour',args={outcome='out_of_items'}},{action='craft'}})
+  check(s.paused and #ran==1)
+  -- other failures still pause; a timed_out tour is not short
+  s=run({{action='other',on_short='skip'},{action='craft'}})
+  check(s.paused and #ran==0)
+  s=run({{action='tour',args={outcome='timed_out',up_to=true}},{action='craft'}})
+  check(s.paused)
+  check(not pcall(cs.handlers.queue_submit,p,{steps={{action='craft',on_short='retry'}}}))
+end
 print('scheduler: '..assertions..' assertions passed')

@@ -492,7 +492,7 @@ async function main() {
     if (values.peek) args.peek = true;
     values.args = JSON.stringify(args);
   }
-  const known = new Set(['doctor','describe','observe','call','view','deploy','watch','stream','run','wait','sleep']);
+  const known = new Set(['doctor','describe','observe','call','view','deploy','watch','stream','run','wait','sleep','help']);
   if (!known.has(command)) throw new Error(`Unknown command ${command}; use fh help`);
   // A bot is a script-driven character addressed by name (FH_BOT for wrappers).
   const bot = values.bot ?? (values.player ? undefined : process.env.FH_BOT || undefined);

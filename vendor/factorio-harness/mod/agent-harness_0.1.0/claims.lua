@@ -3,10 +3,11 @@
 -- A claim lives on its owner's activity (shift07: 67 claims open at the end,
 -- 60 untouched all shift): posting it, the owner's board updates on it, and
 -- the owner's requests made inside its area or acting on a position in it.
--- After STALE without any, it is stale: anyone may work there without asking
--- (stock no longer skips it, the label says so). After EXPIRE the board
--- closes it (board.lua). An `allow` list names agents (or everyone) who may
--- work there while it is fresh.
+-- Anyone may build in a claim (team.md); removing or rebuilding a teammate's
+-- machines takes a notice first. After STALE without any activity it is
+-- stale: no notice needed (stock no longer skips it, the label says so).
+-- After EXPIRE the board closes it (board.lua). An `allow` list names agents
+-- (or everyone) who need no notice while it is fresh.
 return function(api)
   local M = {}
   local ACTIVE = {open=true, claimed=true, doing=true, blocked=true}
@@ -52,7 +53,7 @@ return function(api)
     for i in claims_at(p, pos) do if M.binding(i, p.name) then return i end end
   end
   -- Any open claim by someone else at pos, a binding one first (collect's
-  -- `claimed`: its label says when no permission is needed).
+  -- `claimed`: its label says when no notice is needed).
   function M.find(p, pos)
     local any
     for i in claims_at(p, pos) do
@@ -85,7 +86,7 @@ return function(api)
     local st = api.owner_state and api.owner_state(i.owner)
     if st then parts[#parts+1] = i.owner .. ' ' .. st end
     if #(i.allow or {}) > 0 then parts[#parts+1] = 'allows ' .. table.concat(i.allow, ', ') end
-    if M.stale(i) then parts[#parts+1] = 'stale: no permission needed; closes ' .. ago(M.EXPIRE - (game.tick - M.activity(i))) .. ' from now unless its owner works on it'
+    if M.stale(i) then parts[#parts+1] = 'stale: no notice needed to remove or rebuild; closes ' .. ago(M.EXPIRE - (game.tick - M.activity(i))) .. ' from now unless its owner works on it'
     elseif p and M.allows(i, p.name) then parts[#parts+1] = 'you are allowed' end
     return table.concat(parts, ', ')
   end

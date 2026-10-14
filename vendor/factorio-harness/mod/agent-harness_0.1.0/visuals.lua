@@ -18,7 +18,7 @@ return function(api)
   local M = {}
   local BEAT, SLOW, BUDGET, MAX_SEGMENTS = 10, 30, 30, 24
   local WORK = {build=true, deconstruct=true, cancel_deconstruction=true, configure=true, rotate=true, repair=true,
-    flush=true, revive_ghost=true, place_ghosts=true, paste=true, blueprint_place=true, construct=true}
+    flush=true, revive_ghost=true, place_ghosts=true, paste=true, blueprint_place=true, construct=true, circuit_set=true, circuit=true}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function store()
     local s = api.state()
@@ -189,7 +189,7 @@ return function(api)
 
   -- A request that builds, removes, configures or repairs: a brief ring on its target.
   function M.worked(p, action, args)
-    if not WORK[action] or type(args) ~= 'table' or args.platform ~= nil then return end
+    if not WORK[action] or type(args) ~= 'table' or args.platform ~= nil or args.surface ~= nil then return end
     local pos = args.position
     if type(args.area) == 'table' and type(args.area.left_top) == 'table' and type(args.area.right_bottom) == 'table' then
       local lt, rb = args.area.left_top, args.area.right_bottom
