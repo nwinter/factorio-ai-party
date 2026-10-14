@@ -7601,12 +7601,12 @@ function M.dispatch_inner(request)
         -- The networks, one line each, next to researched_none_built (networks.lua).
         local okn,lines=pcall(M.networks.lines,p.force,p.surface and p.surface.name,8)
         if okn and #lines>0 then shift.networks=lines end
-        -- Each teammate's name, pronouns when set, and where when the team is spread out (where.lua; Nick 12:20).
-        local okt,mates=pcall(M.where.shift_line,p)
-        if okt and mates then shift.teammates=mates end
         -- The previous shift for the team (selfview.lua retro).
         local okr,retro=pcall(M.selfview.retro,p)
         if okr and retro then shift.retro=retro end
+        -- Each teammate's name, pronouns when set, and where when the team is spread out (where.lua; Nick 12:20).
+        local okt,mates=pcall(M.where.shift_line,p)
+        if okt and mates then shift.teammates=mates end
         result.team=result.team or {}; result.team.shift=shift
       end
       -- The agent's own review, every 2 game hours (selfview.lua).
