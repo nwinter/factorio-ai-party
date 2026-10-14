@@ -139,21 +139,55 @@ return function(api)
     return v
   end
 
-  -- The check. plan: {kind = ghosts | paste | build, entities = {{index, copy?,
-  -- name, position, direction (number), quality?, item?}}, tiles = {{index?,
-  -- name (tile), position, item?}}, details?}. p: the player, bot or platform
-  -- proxy the real call would run as.
+  -- Entities that stand on or beside a rail: the game places them only where
+  -- a rail is, so a plan that lays its rails too is checked by the game later.
+  local RAIL_BOUND = {['rail-signal']=true, ['rail-chain-signal']=true, ['train-stop']=true, locomotive=true,
+    ['cargo-wagon']=true, ['fluid-wagon']=true, ['artillery-wagon']=true}
+  -- Items in square cells, for nearness queries (poles, standing targets).
+  local function grid(cell)
+    local g, cells = {}, {}
+    function g.add(item, pos)
+      local k = key(math.floor(pos.x/cell), math.floor(pos.y/cell))
+      local c = cells[k]
+      if not c then c = {}; cells[k] = c end
+      c[#c+1] = item
+    end
+    -- fn(item) for every item in the cells within r of pos (a superset).
+    function g.near(pos, r, fn)
+      for cx = math.floor((pos.x-r)/cell), math.floor((pos.x+r)/cell) do
+        for cy = math.floor((pos.y-r)/cell), math.floor((pos.y+r)/cell) do
+          for _, it in ipairs(cells[key(cx, cy)] or {}) do fn(it) end
+        end
+      end
+    end
+    return g
+  end
+  local function dist(a, b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end
+  M.MAX_ENTITIES, M.MAX_TILES = 1024, 8192
+
+  -- The check. plan: {kind = ghosts | paste | build, mode? (a paste's),
+  -- entities = {{index, copy?, name, position, direction (number), quality?,
+  -- item?}}, tiles = {{index?, name (tile), position, item?}}, details?,
+  -- standing?}. p: the player, bot or platform proxy the real call would run
+  -- as. Returns the reply, the per-entity records and the counts.
   function M.check(p, plan)
     remedy_cache = {}
     local s, force = p.surface, p.force
     local on_platform = api.own_platform(p)
-    local kind = plan.kind
+    local kind, mode = plan.kind, plan.mode or 'normal'
     local manual = kind == 'build'
+    -- What the real call takes in its way: place_ghosts marks trees and rocks,
+    -- as a paste does in forced mode, and in superforced mode our own entities
+    -- too; a normal paste and a hand build take nothing (harness docs, paste).
+    local marks_obstacles = kind == 'ghosts' or (kind == 'paste' and mode ~= 'normal')
+    local marks_own = kind == 'paste' and mode == 'superforced'
     local check_type = manual and defines.build_check_type.manual or defines.build_check_type.manual_ghost
+    local forced = marks_obstacles or nil
     local character = try(function() return p.character end)
-    -- Tiles as they will be: planned tiles over the surface's.
-    -- One engine read per tile; a tile kind's collision layers are read once.
-    local planned, cache, kinds = {}, {}, {}
+    -- Tiles as they will be: planned tiles, then tile ghosts already ordered,
+    -- over the surface's. One engine read per tile; a tile kind's collision
+    -- layers are read once.
+    local planned, pending, cache, kinds = {}, {}, {}, {}
     local function surface_tile(x, y)
       local k = key(x, y)
       local c = cache[k]
@@ -170,19 +204,40 @@ return function(api)
       return c
     end
     local function tile_at(x, y)
-      return planned[key(x, y)] or surface_tile(x, y)
+      local k = key(x, y)
+      return planned[k] or pending[k] or surface_tile(x, y)
     end
     local out = {dry_run=true, note='nothing was placed'}
-    -- Planned tiles: each must go on what is there now.
+    local lo, hi
+    local function grow(pos)
+      lo = lo and {x=math.min(lo.x, pos.x), y=math.min(lo.y, pos.y)} or {x=pos.x, y=pos.y}
+      hi = hi and {x=math.max(hi.x, pos.x), y=math.max(hi.y, pos.y)} or {x=pos.x, y=pos.y}
+    end
+    for _, e in ipairs(plan.entities or {}) do grow(e.position) end
+    for _, t in ipairs(plan.tiles or {}) do grow(t.position) end
+    if lo then
+      local m = 40
+      for _, g in pairs(s.find_entities_filtered{area={left_top={x=lo.x-m, y=lo.y-m}, right_bottom={x=hi.x+m, y=hi.y+m}}, type='tile-ghost', force=force, limit=4096}) do
+        local proto = g.valid and prototypes.tile[g.ghost_name]
+        if proto then
+          local x, y = math.floor(g.position.x), math.floor(g.position.y)
+          pending[key(x, y)] = {name=g.ghost_name, layers=layers(proto.collision_mask), x=x, y=y}
+        end
+      end
+    end
+    -- Planned tiles: each must go on what is there now. A build entry whose
+    -- brush lays no tile at all fails (build_tile).
     local tile_rows, tiles_planned, tiles_already, tiles_refused = {}, 0, 0, 0
+    local brush = {} -- build entry index -> {laid, total}
     for _, t in ipairs(plan.tiles or {}) do
       local x, y = math.floor(t.position.x), math.floor(t.position.y)
       local proto = prototypes.tile[t.name]
       local here = surface_tile(x, y)
-      local why
+      local k = key(x, y)
+      local why, laid
       if not proto then why = 'unknown tile '..tostring(t.name)
       elseif not on_platform and not api.charted(p, {x=x+0.5, y=y+0.5}) then why = 'outside the charted area'
-      elseif here.name == t.name then tiles_already = tiles_already + 1
+      elseif here.name == t.name or (pending[k] and pending[k].name == t.name) then tiles_already = tiles_already + 1
       else
         local item = t.item or try(function() return proto.items_to_place_this[1].name end)
         if item and not M.placeable_on(item, here.name) then why = string.format('%s cannot go on %s', item, here.name) end
@@ -190,16 +245,27 @@ return function(api)
       if why then
         tiles_refused = tiles_refused + 1
         if #tile_rows < 10 then tile_rows[#tile_rows+1] = tile_text(x, y)..' '..t.name..': '..why end
-      elseif proto and here.name ~= t.name and not planned[key(x, y)] then
-        tiles_planned = tiles_planned + 1
-        planned[key(x, y)] = {name=t.name, layers=layers(proto.collision_mask), planned=true, index=t.index, x=x, y=y}
+      elseif proto and here.name ~= t.name and not planned[k] and not (pending[k] and pending[k].name == t.name) then
+        tiles_planned = tiles_planned + 1; laid = true
+        planned[k] = {name=t.name, layers=layers(proto.collision_mask), index=t.index, x=x, y=y}
+      end
+      if manual and t.index then
+        local b = brush[t.index] or {laid=0, total=0}
+        brush[t.index] = b
+        b.total = b.total + 1
+        if laid then b.laid = b.laid + 1 end
       end
     end
 
-    local recs, problems, nproblems = {}, {}, 0
+    local has_rails = false
+    for _, e in ipairs(plan.entities or {}) do
+      local proto = prototypes.entity[e.name or '']
+      if proto and RAILS[proto.type] then has_rails = true; break end
+    end
+    local recs, nproblems = {}, 0
     local occupied = {} -- tile key -> planned recs whose footprint covers it
     local needed, need_list = {}, {} -- tile key -> {x, y, item, why}
-    local counts = {ok=0, after_tiles=0, needs_tiles=0, blocked=0, exists=0}
+    local counts = {ok=0, after_tiles=0, after_rails=0, needs_tiles=0, blocked=0, exists=0}
     local function need(x, y, item, why)
       local k = key(x, y)
       if needed[k] then return end
@@ -215,21 +281,23 @@ return function(api)
         rec.status = 'blocked'; reasons[1] = 'not an entity: '..tostring(e.name)
       else
         rec.proto = proto
+        rec.mask = layers(proto.collision_mask)
         rec.pos = M.snap(proto, e.position, rec.dir)
         if math.abs(rec.pos.x-e.position.x) > 0.01 or math.abs(rec.pos.y-e.position.y) > 0.01 then rec.asked = e.position end
         rec.box = M.footprint(proto, rec.pos, rec.dir)
-        local mask = layers(proto.collision_mask)
+        local mask = rec.mask
+        local rail = RAILS[proto.type]
         local chunk = {x=math.floor(rec.pos.x/32), y=math.floor(rec.pos.y/32)}
         if not on_platform and not api.charted(p, rec.pos) then
           rec.status = 'blocked'; reasons[1] = string.format('outside the charted area (chunk %d,%d)', chunk.x, chunk.y)
         else
           local x0, y0, x1, y1 = span(rec.box)
-          -- Planned entities before it in the plan.
+          -- Planned entities before it in the plan (rails may cross rails).
           local hit
           for x = x0, x1 do
             for y = y0, y1 do
               for _, o in ipairs(occupied[key(x, y)] or {}) do
-                if not hit and o ~= rec and collide(mask, layers(o.proto.collision_mask)) and overlap(o.box, rec.box) then hit = o end
+                if not hit and o ~= rec and not (rail and RAILS[o.proto.type]) and collide(mask, o.mask) and overlap(o.box, rec.box) then hit = o end
               end
             end
           end
@@ -237,7 +305,7 @@ return function(api)
             reasons[#reasons+1] = string.format('collides with planned #%s %s at %s', hit.copy and (hit.copy..'.'..hit.index) or tostring(hit.index), hit.name, at(hit.pos))
           end
           -- What stands in the footprint now.
-          local blockers, obstacles, ghosts, same, mine = {}, 0, {}, nil, false
+          local blockers, marked, ghosts, same, mine = {}, {}, {}, nil, false
           for _, o in pairs(s.find_entities_filtered{area=rec.box}) do
             if o.valid then
               local t = o.type
@@ -250,16 +318,22 @@ return function(api)
                   local who = api.character_owner and api.character_owner(o)
                   blockers[#blockers+1] = string.format('%s at (%.1f,%.1f)', who and who.."'s character" or 'a character', o.position.x, o.position.y)
                 end
-              elseif not IGNORED[t] then
+              elseif not IGNORED[t] and not (rail and RAILS[t]) then
                 local om = try(function() return o.prototype.collision_mask end)
                 if collide(mask, layers(om)) then
                   if o.name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 then same = o
-                  elseif not manual and OBSTACLE[t] and o.minable and (o.force == nil or o.force.name == 'neutral') then obstacles = obstacles + 1
-                  elseif #blockers < 4 then
-                    local name = o.name
-                    if t == 'cliff' then name = name..' (cliff explosives clear it)' end
-                    if o.force and o.force ~= force and o.force.name ~= 'neutral' then name = name..' of force '..o.force.name end
-                    blockers[#blockers+1] = name..' '..at(o.position)
+                  else
+                    local neutral = o.force == nil or o.force.name == 'neutral'
+                    local obstacle = OBSTACLE[t] and o.minable and neutral
+                    local own = o.force == force and o.minable
+                    if (obstacle and marks_obstacles) or (own and marks_own) then
+                      if #marked < 4 then marked[#marked+1] = o.name..' '..at(o.position) end
+                    elseif #blockers < 4 then
+                      local name = o.name
+                      if t == 'cliff' then name = name..' (cliff explosives clear it)' end
+                      if o.force and o.force ~= force and not neutral then name = name..' of force '..o.force.name end
+                      blockers[#blockers+1] = name..' '..at(o.position)
+                    end
                   end
                 end
               end
@@ -292,15 +366,18 @@ return function(api)
           -- whatever stands there now (an upgrade over a machine of the same
           -- kind, rail and pumpjack rules); the reasons above say why not.
           local engine = try(function()
-            return s.can_place_entity{name=e.name, position=rec.pos, direction=rec.dir, force=force, build_check_type=check_type, forced=not manual or nil}
+            return s.can_place_entity{name=e.name, position=rec.pos, direction=rec.dir, force=force, build_check_type=check_type, forced=forced}
           end)
           rec.engine = engine
-          -- Planned tiles under it, and (a build batch) the last entry laying one.
+          -- Tiles laid by the plan or already ordered under it, and (a build
+          -- batch) the last entry laying one.
           local covered, last_tile = false, nil
           for x = x0, x1 do
             for y = y0, y1 do
-              local t = planned[key(x, y)]
-              if t then covered = true; if t.index and (not last_tile or t.index > last_tile) then last_tile = t.index end end
+              local k = key(x, y)
+              local t = planned[k] or pending[k]
+              if t then covered = true end
+              if planned[k] and planned[k].index and (not last_tile or planned[k].index > last_tile) then last_tile = planned[k].index end
             end
           end
           if manual and same and same.type == 'entity-ghost' then same = nil; rec.note = 'builds the ghost there' end
@@ -331,23 +408,27 @@ return function(api)
               engine == true and not manual and ' (its ghost goes there now; nothing builds it before that)' or '')
           elseif engine == true then rec.status = 'ok'
           elseif covered then
-            rec.status = 'after_tiles'; rec.note = 'placeable once the planned tiles under it are laid'
+            rec.status = 'after_tiles'; rec.note = 'placeable once the tiles under it are laid'
             -- What the real call does first: place_ghosts places entity ghosts
             -- before tile ghosts; a build batch goes entry by entry.
             if kind == 'ghosts' then
               rec.note = rec.note..'; the game refuses its ghost on the tiles there now, and place_ghosts places entity ghosts before tile ghosts'
             elseif manual and last_tile and e.index and last_tile > e.index then
+              rec.late = last_tile
               rec.note = rec.note..string.format('; entry #%d of this batch lays one of them, after this one', last_tile)
             end
-          elseif obstacles > 0 then rec.status = 'ok'
+          elseif #marked > 0 then rec.status = 'ok'
           elseif mine and manual then rec.status = 'ok'
+          elseif RAIL_BOUND[proto.type] and has_rails then
+            rec.status = 'after_rails'; rec.note = 'goes with the plan\'s rails: the game checks its rail rules once they stand'
           else
             rec.status = 'blocked'
             local text = api.placement_error and try(function() return api.placement_error(p, proto, rec.pos, rec.dir) end)
             reasons[#reasons+1] = text and (text:gsub('^placement blocked', 'the game refuses it here')) or 'the game refuses it here'
           end
-          if obstacles > 0 and rec.status ~= 'blocked' then
-            rec.note = (rec.note and rec.note..'; ' or '')..obstacles..' tree/rock'..(obstacles == 1 and '' or 's')..' there get marked for removal (construct mines them)'
+          if #marked > 0 and rec.status ~= 'blocked' then
+            rec.note = (rec.note and rec.note..'; ' or '')..string.format('%s marks %s for removal%s', kind == 'ghosts' and 'place_ghosts' or 'the paste',
+              table.concat(marked, ', '), kind == 'ghosts' and ' (construct mines trees and rocks)' or '')
           end
           if #ghosts > 0 and rec.status ~= 'blocked' then
             rec.note = (rec.note and rec.note..'; ' or '')..'over '..table.concat(ghosts, ', ', 1, math.min(3, #ghosts))
@@ -372,12 +453,13 @@ return function(api)
 
     -- On a platform: the empty tiles new foundation would enclose. The game
     -- builds no foundation that leaves a hole of empty space (tilecheck.lua);
-    -- a region followed past HOLE_LIMIT tiles counts as open space.
+    -- a region followed past HOLE_LIMIT tiles counts as open space. Tile
+    -- ghosts already ordered count as foundation.
     local holes, unchecked = 0, false
     if on_platform then
-      local filled = {}
-      local seeds = {}
+      local filled, seeds = {}, {}
       for k, t in pairs(planned) do filled[k] = true; seeds[#seeds+1] = {t.x, t.y} end
+      for k in pairs(pending) do filled[k] = true end
       for _, n in ipairs(need_list) do filled[key(n.x, n.y)] = true; seeds[#seeds+1] = {n.x, n.y} end
       local function empty(x, y)
         local t = surface_tile(x, y)
@@ -429,7 +511,8 @@ return function(api)
     end
 
     -- Tiles needed, by item; on a platform, new foundation that touches none
-    -- of the old (the foundation must stay one connected area).
+    -- of the old or of the tile ghosts already ordered (the foundation must
+    -- stay one connected area).
     if #need_list > 0 or tiles_planned > 0 or tiles_refused > 0 or tiles_already > 0 then
       local by = {}
       for _, n in ipairs(need_list) do by[n.item] = (by[n.item] or 0) + 1 end
@@ -449,7 +532,8 @@ return function(api)
       if unchecked then t.unchecked = 'the hole check stopped at its budget; some enclosed tiles may be missing' end
       if on_platform then
         local new, reached, queue = {}, {}, {}
-        for k, t in pairs(planned) do new[k] = {t.x, t.y} end
+        for k, c in pairs(planned) do new[k] = {c.x, c.y} end
+        for k, c in pairs(pending) do new[k] = new[k] or {c.x, c.y, pending=true} end
         for _, n in ipairs(need_list) do new[key(n.x, n.y)] = {n.x, n.y} end
         for k, c0 in pairs(new) do
           local x, y = c0[1], c0[2]
@@ -470,7 +554,7 @@ return function(api)
           end
         end
         local loose = {}
-        for k, c0 in pairs(new) do if not reached[k] then loose[#loose+1] = c0 end end
+        for k, c0 in pairs(new) do if not reached[k] and not c0.pending then loose[#loose+1] = c0 end end
         if #loose > 0 then
           table.sort(loose, function(a, b) if a[2] ~= b[2] then return a[2] < b[2] end return a[1] < b[1] end)
           local shown = {}
@@ -482,7 +566,7 @@ return function(api)
         if hub and hub.valid then
           local north = 0
           for _, c0 in pairs(new) do
-            if c0[2]+0.5 < hub.position.y-200 then north = north + 1 end
+            if not c0.pending and c0[2]+0.5 < hub.position.y-200 then north = north + 1 end
           end
           if north > 0 then t.too_far_north = north..' new foundation tiles are more than 200 tiles north of the hub (none is built there)' end
         end
@@ -490,19 +574,17 @@ return function(api)
       out.tiles = t
     end
 
-    -- Power: planned poles join what lies within wire reach (the shorter of
-    -- the two poles' reach); machines need a pole's supply area over them.
+    -- Power: a pole joins another within the shorter of their two wire
+    -- reaches; machines need a pole's supply area over them. Planned poles,
+    -- pole ghosts already ordered and built poles within 40 tiles count.
     local planned_poles, consumers = {}, {}
-    local lo, hi
     for _, r in ipairs(recs) do
       if r.proto and r.status ~= 'blocked' and r.status ~= 'exists' then
         if r.proto.type == 'electric-pole' then planned_poles[#planned_poles+1] = r
         elseif try(function() return r.proto.electric_energy_source_prototype end) then consumers[#consumers+1] = r end
-        lo = lo and {x=math.min(lo.x, r.pos.x), y=math.min(lo.y, r.pos.y)} or {x=r.pos.x, y=r.pos.y}
-        hi = hi and {x=math.max(hi.x, r.pos.x), y=math.max(hi.y, r.pos.y)} or {x=r.pos.x, y=r.pos.y}
       end
     end
-    if #planned_poles > 0 or #consumers > 0 then
+    if (#planned_poles > 0 or #consumers > 0) and lo then
       local function reach_of(proto, quality)
         return try(function() return proto.get_max_wire_distance(quality or 'normal') end) or try(function() return proto.max_wire_distance end) or 0
       end
@@ -515,8 +597,7 @@ return function(api)
       end
       local margin = 40
       local area = {left_top={x=lo.x-margin, y=lo.y-margin}, right_bottom={x=hi.x+margin, y=hi.y+margin}}
-      local existing = s.find_entities_filtered{area=area, type='electric-pole', force=force, limit=1024}
-      for _, o in ipairs(existing) do
+      for _, o in ipairs(s.find_entities_filtered{area=area, type='electric-pole', force=force, limit=1024}) do
         if o.valid then
           local q = try(function() return o.quality.name end)
           nodes[#nodes+1] = {entity=o, pos=o.position, reach=reach_of(o.prototype, q), supply=supply_of(o.prototype, q), name=o.name,
@@ -529,23 +610,27 @@ return function(api)
           nodes[#nodes+1] = {ghost=g, pos=g.position, reach=reach_of(g.ghost_prototype, q), supply=supply_of(g.ghost_prototype, q), name=g.ghost_name}
         end
       end
-      -- Union-find over poles; built poles of one network start joined.
+      -- Union-find over poles; built poles of one network start joined;
+      -- planned poles and pole ghosts join what lies within reach.
       local parent = {}
       local function find(i) while parent[i] ~= i do parent[i] = parent[parent[i]]; i = parent[i] end return i end
       local function union(a, b) a, b = find(a), find(b); if a ~= b then parent[a] = b end end
-      local by_network = {}
+      local by_network, maxreach, maxsupply = {}, 1, 0
+      local poles = grid(16)
       for i, n in ipairs(nodes) do
         parent[i] = i
         if n.network then
           if by_network[n.network] then union(i, by_network[n.network]) else by_network[n.network] = i end
         end
+        maxreach = math.max(maxreach, n.reach); maxsupply = math.max(maxsupply, n.supply)
+        poles.add(i, n.pos)
       end
-      local function dist(a, b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end
       for i, a in ipairs(nodes) do
-        if a.planned then
-          for j, b in ipairs(nodes) do
+        if a.planned or a.ghost then
+          poles.near(a.pos, a.reach, function(j)
+            local b = nodes[j]
             if j ~= i and dist(a.pos, b.pos) <= math.min(a.reach, b.reach)+1e-6 then union(i, j) end
-          end
+          end)
         end
       end
       local live = {} -- root -> true when a built pole is in the group
@@ -564,7 +649,7 @@ return function(api)
         end
       end
       if #reach_text > 0 then pw.reach = table.concat(reach_text, '; ') end
-      -- Groups of planned poles with no built pole: islands.
+      -- Groups with planned poles and no built pole: islands.
       local groups, order = {}, {}
       for i, n in ipairs(nodes) do
         if n.planned or n.ghost then
@@ -575,30 +660,36 @@ return function(api)
           end
         end
       end
-      local unpowered = {}
+      local unpowered, unpowered_count = {}, 0
       for _, r in ipairs(consumers) do
         local by_live, by_island
-        for i, n in ipairs(nodes) do
+        local b = r.box
+        local half = math.max(b.right_bottom.x-b.left_top.x, b.right_bottom.y-b.left_top.y)/2
+        poles.near(r.pos, maxsupply+half+1, function(i)
+          local n = nodes[i]
           if covers(n, r) then
             if live[find(i)] then by_live = true else by_island = by_island or find(i) end
           end
-        end
+        end)
         if not by_live and by_island and groups[by_island] and #groups[by_island].poles > 0 then
           table.insert(groups[by_island].machines, r)
         elseif not by_live then
-          local why
-          if by_island then why = 'only pole ghosts with no wire path to a built pole cover it'
-          else
-            local best, bd
-            for _, n in ipairs(nodes) do
-              local d = dist(n.pos, r.pos)
-              if not bd or d < bd then best, bd = n, d end
+          unpowered_count = unpowered_count + 1
+          if #unpowered < 20 then
+            local why
+            if by_island then why = 'only pole ghosts with no wire path to a built pole cover it'
+            else
+              local best, bd
+              poles.near(r.pos, 48, function(i)
+                local d = dist(nodes[i].pos, r.pos)
+                if not bd or d < bd then best, bd = nodes[i], d end
+              end)
+              why = best and string.format('no pole\'s supply area reaches it; nearest pole %s%s at %s, %.1f tiles (supply %g)',
+                best.name, best.planned and ' (planned)' or best.ghost and ' (ghost)' or '', at(best.pos), bd, best.supply)
+                or 'no pole within 40 tiles of the layout'
             end
-            why = best and string.format('no pole\'s supply area reaches it; nearest pole %s%s at %s, %.1f tiles (supply %g)',
-              best.name, best.planned and ' (planned)' or best.ghost and ' (ghost)' or '', at(best.pos), bd, best.supply)
-              or 'no pole within 40 tiles of the layout'
+            unpowered[#unpowered+1] = {index=r.copy and (r.copy..'.'..r.index) or r.index, name=r.name, position=r.pos, why=why}
           end
-          unpowered[#unpowered+1] = {index=r.copy and (r.copy..'.'..r.index) or r.index, name=r.name, position=r.pos, why=why}
         end
       end
       -- "planned pole #4", "planned poles #1-3", or a count across repeat copies.
@@ -611,21 +702,24 @@ return function(api)
         if not plain then return #list..' planned pole'..(#list == 1 and '' or 's') end
         return 'planned pole'..(#list == 1 and '' or 's')..' #'..runs(idx)
       end
-      local islands = {}
+      local islands, more_islands = {}, 0
       for _, root in ipairs(order) do
         local g = groups[root]
-        if #g.poles > 0 then
+        if #g.poles > 0 and #islands >= 10 then more_islands = more_islands + 1
+        elseif #g.poles > 0 then
           local shown = {}
           for j = 1, math.min(4, #g.poles) do shown[j] = at(g.poles[j].pos) end
-          -- The nearest built pole to any pole of the group, and the gap.
+          -- The nearest built pole to the group's first poles, and the gap.
           local best, bd, from
-          for _, gp in ipairs(g.poles) do
-            for _, n in ipairs(nodes) do
+          for j = 1, math.min(16, #g.poles) do
+            local gp = g.poles[j]
+            poles.near(gp.pos, 48, function(i)
+              local n = nodes[i]
               if n.entity then
                 local d = dist(gp.pos, n.pos)
                 if not bd or d < bd then best, bd, from = n, d, gp end
               end
-            end
+            end)
           end
           islands[#islands+1] = string.format('%s at %s%s%s%s: no wire path to a built pole; %s',
             label(g.poles), table.concat(shown, ' '), #g.poles > 4 and ' ...' or '',
@@ -646,27 +740,31 @@ return function(api)
       for root, list in pairs(reached) do
         -- Per built network in the group, its pole nearest the planned ones.
         local best, order2 = {}, {}
-        for i, n in ipairs(nodes) do
-          if n.entity and n.network and find(i) == root then
-            local dmin
-            for _, pl in ipairs(list) do local dd = dist(pl.pos, n.pos); if not dmin or dd < dmin then dmin = dd end end
-            local b = best[n.network]
-            if not b then order2[#order2+1] = n.network end
-            if not b or dmin < b.d then best[n.network] = {d=dmin, text=string.format('%s %s', n.name, at(n.pos))} end
-          end
+        for _, pl in ipairs(list) do
+          poles.near(pl.pos, maxreach, function(i)
+            local n = nodes[i]
+            if n.entity and n.network and find(i) == root then
+              local dd = dist(pl.pos, n.pos)
+              local b = best[n.network]
+              if not b then order2[#order2+1] = n.network end
+              if not b or dd < b.d then best[n.network] = {d=dd, text=string.format('%s %s', n.name, at(n.pos))} end
+            end
+          end)
         end
         local r = {}
         for _, id in ipairs(order2) do r[#r+1] = best[id].text end
         local one = #list == 1
         connected[#connected+1] = #r > 1
           and string.format('%s join%s %d separate built networks into one: %s', label(list), one and 's' or '', #r, table.concat(r, ', ', 1, math.min(4, #r)))
-          or string.format('%s reach%s the built network of %s', label(list), one and 'es' or '', r[1] or 'a built pole')
+          or string.format('%s reach%s the built network of %s', label(list), one and 'es' or '', r[1] or 'a built pole (through pole ghosts)')
       end
       table.sort(connected)
       if #planned_poles > 0 then pw.poles = #planned_poles end
       pw.connected = #connected > 0 and connected or nil
       pw.islands = #islands > 0 and islands or nil
+      pw.more_islands = more_islands > 0 and more_islands or nil
       pw.unpowered = #unpowered > 0 and unpowered or nil
+      pw.unpowered_count = unpowered_count > #unpowered and unpowered_count or nil
       if next(pw) then out.power = pw end
     end
 
@@ -681,10 +779,9 @@ return function(api)
         if manual then targets[#targets+1] = {tile=t, pos={x=math.floor(t.position.x)+0.5, y=math.floor(t.position.y)+0.5}} end
       end
       local here = p.position
-      local function d(a, b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end
       local far = {}
       for _, t in ipairs(targets) do
-        local dd = d(here, t.pos)
+        local dd = dist(here, t.pos)
         if dd > reach then
           far[#far+1] = t
           if t.rec and manual then t.rec.reach = string.format('%.1f tiles from you, reach %g', dd, reach) end
@@ -694,33 +791,43 @@ return function(api)
       if #far > 0 then
         -- Greedy cover: around the first unreached placement, the free spot
         -- (off every planned footprint, not on a belt, where a character fits)
-        -- that reaches the most unreached placements.
+        -- that reaches the most unreached placements. Bounded: at most
+        -- MAX_SPOTS spots and MAX_SPOTS + 8 placements looked at.
         local r = reach-0.5
-        local left, spots = {}, {}
-        for i, t in ipairs(far) do left[i] = t end
         local cname = character.name or 'character'
+        local cells = grid(8)
+        for _, t in ipairs(far) do cells.add(t, t.pos) end
+        local done = {}
         local function free(c)
-          for _, rec in ipairs(recs) do
-            local b = rec.box
-            if b and c.x > b.left_top.x-0.3 and c.x < b.right_bottom.x+0.3 and c.y > b.left_top.y-0.3 and c.y < b.right_bottom.y+0.3 then return false end
+          for x = math.floor(c.x-0.3), math.floor(c.x+0.3) do
+            for y = math.floor(c.y-0.3), math.floor(c.y+0.3) do
+              for _, rec in ipairs(occupied[key(x, y)] or {}) do
+                local b = rec.box
+                if c.x > b.left_top.x-0.3 and c.x < b.right_bottom.x+0.3 and c.y > b.left_top.y-0.3 and c.y < b.right_bottom.y+0.3 then return false end
+              end
+            end
           end
           local belts = try(function() return s.count_entities_filtered{area={{c.x-0.4, c.y-0.4}, {c.x+0.4, c.y+0.4}}, type={'transport-belt', 'underground-belt', 'splitter'}, limit=1} end)
           if belts and belts > 0 then return false end
           return try(function() return s.can_place_entity{name=cname, position=c, force=force} end) == true
         end
-        local stuck = {}
-        while #left > 0 and #spots < MAX_SPOTS do
-          local u = left[1]
+        local function count(c)
+          local n = 0
+          cells.near(c, r, function(t) if not done[t] and dist(c, t.pos) <= r then n = n + 1 end end)
+          return n
+        end
+        local spots, stuck, looked, nextu = {}, {}, 0, 1
+        while #spots < MAX_SPOTS and looked < MAX_SPOTS+8 do
+          while far[nextu] and done[far[nextu]] do nextu = nextu + 1 end
+          local u = far[nextu]
+          if not u then break end
+          looked = looked + 1
           local cands = {}
           for _, rad in ipairs({r-0.5, r/2, 0}) do
             for k = 0, (rad > 0 and 15 or 0) do
               local a = k*math.pi/8
               local c = {x=math.floor(u.pos.x+math.cos(a)*rad)+0.5, y=math.floor(u.pos.y+math.sin(a)*rad)+0.5}
-              if d(c, u.pos) <= r then
-                local n = 0
-                for _, t in ipairs(left) do if d(c, t.pos) <= r then n = n + 1 end end
-                cands[#cands+1] = {c=c, n=n, w=d(c, here)}
-              end
+              if dist(c, u.pos) <= r then cands[#cands+1] = {c=c, n=count(c), w=dist(c, here)} end
             end
           end
           table.sort(cands, function(a, b) if a.n ~= b.n then return a.n > b.n end return a.w < b.w end)
@@ -728,31 +835,33 @@ return function(api)
           for j = 1, math.min(#cands, 24) do
             if free(cands[j].c) then chosen = cands[j].c; break end
           end
-          if not chosen then stuck[#stuck+1] = u; table.remove(left, 1)
+          if not chosen then stuck[#stuck+1] = u; done[u] = true
           else
-            local cover, rest = {}, {}
-            for _, t in ipairs(left) do if d(chosen, t.pos) <= r then cover[#cover+1] = t else rest[#rest+1] = t end end
+            local cover = {}
+            cells.near(chosen, r, function(t) if not done[t] and dist(chosen, t.pos) <= r then done[t] = true; cover[#cover+1] = t end end)
             spots[#spots+1] = {at=chosen, cover=cover}
-            left = rest
           end
         end
+        local left = 0
+        for _, t in ipairs(far) do if not done[t] then left = left + 1 end end
         -- Visit order: nearest first from where the character stands.
         local ordered, pos = {}, here
         while #spots > 0 do
           local bi, bd2
-          for i, sp in ipairs(spots) do local dd = d(pos, sp.at); if not bd2 or dd < bd2 then bi, bd2 = i, dd end end
+          for i, sp in ipairs(spots) do local dd = dist(pos, sp.at); if not bd2 or dd < bd2 then bi, bd2 = i, dd end end
           local sp = table.remove(spots, bi)
           ordered[#ordered+1] = sp; pos = sp.at
         end
         st.spots = {}
         for _, sp in ipairs(ordered) do
-          local idx, tiles = {}, 0
+          local idx, tiles, copies = {}, 0, false
           for _, t in ipairs(sp.cover) do
-            if t.rec then idx[#idx+1] = t.rec.index else tiles = tiles + 1 end
+            if t.rec then idx[#idx+1] = t.rec.index; copies = copies or t.rec.copy ~= nil else tiles = tiles + 1 end
           end
-          st.spots[#st.spots+1] = {at=sp.at, reaches=(#idx > 0 and ('#'..runs(idx)) or '')..(tiles > 0 and string.format('%s%d tiles', #idx > 0 and ' + ' or '', tiles) or '')}
+          local what = #idx > 0 and (copies and #idx..' entries' or '#'..runs(idx)) or ''
+          st.spots[#st.spots+1] = {at=sp.at, reaches=what..(tiles > 0 and string.format('%s%d tiles', #idx > 0 and ' + ' or '', tiles) or '')}
         end
-        if #left > 0 then st.more = #left..' placements past the first '..MAX_SPOTS..' spots' end
+        if left > 0 then st.more = string.format('%d placements out of reach past these spots', left) end
         if #stuck > 0 then
           local idx = {}
           for _, t in ipairs(stuck) do if t.rec then idx[#idx+1] = t.rec.index end end
@@ -760,6 +869,22 @@ return function(api)
         end
       end
       if #targets > 0 then out.standing = st end
+    end
+
+    -- A build batch stops at its first failing entry: which one, and why.
+    if manual then
+      local first, why
+      local function fail(index, text) if index and (not first or index < first) then first, why = index, text end end
+      for _, r in ipairs(recs) do
+        if r.status == 'blocked' then fail(r.index, r.why or 'blocked')
+        elseif r.status == 'exists' then fail(r.index, 'target already contains this entity')
+        elseif r.reach then fail(r.index, 'out of reach: '..r.reach)
+        elseif r.late then fail(r.index, string.format('its tiles come from entry #%d', r.late)) end
+      end
+      for index, b in pairs(brush) do
+        if b.laid == 0 then fail(index, 'no tile of its brush can be laid there') end
+      end
+      if first then counts.fail_first, counts.fail_why = first, why end
     end
 
     -- Items the plan uses and what the character (on a platform: the hub) holds.
@@ -776,7 +901,7 @@ return function(api)
       end
     end
     for _, n in ipairs(need_list) do add(n.item:match('^(%S+)'), 1) end
-    for k, t in pairs(planned) do
+    for _, t in pairs(planned) do
       local proto = prototypes.tile[t.name]
       add(t.item or try(function() return proto.items_to_place_this[1].name end), 1)
     end
@@ -824,9 +949,14 @@ return function(api)
     if nproblems > #rows and not plan.details then out.more_problems = nproblems-#rows end
     local n = #recs
     local parts = {}
-    for _, k in ipairs({'ok', 'after_tiles', 'needs_tiles', 'exists', 'blocked'}) do
-      if (counts[k] or 0) > 0 then parts[#parts+1] = counts[k]..' '..({ok='placeable', after_tiles='placeable once the planned tiles are laid',
-        needs_tiles='need tiles first', exists='already there', blocked='blocked'})[k] end
+    for _, k in ipairs({'ok', 'after_tiles', 'after_rails', 'needs_tiles', 'exists', 'blocked'}) do
+      if (counts[k] or 0) > 0 then parts[#parts+1] = counts[k]..' '..({ok='placeable', after_tiles='placeable once the tiles under them are laid',
+        after_rails='with the plan\'s rails', needs_tiles='need tiles first', exists='already there', blocked='blocked'})[k] end
+    end
+    if manual then
+      local farn = 0
+      for _, r in ipairs(recs) do if r.reach then farn = farn + 1 end end
+      if farn > 0 then parts[#parts+1] = farn..' out of reach from here' end
     end
     out.checked = n
     out.summary = n > 0 and (table.concat(parts, ', ')..' (of '..n..')') or nil

@@ -518,14 +518,18 @@ fh sleep 900 --until researched                       # ...or until the research
     name, position, direction, status, why, reach}` for every entry that is not plainly placeable (`details: true`:
     every entry, with `footprint` tiles `x0,y0..x1,y1`); `index` is `copy.index` under `repeat`; `asked` when the
     position snaps (odd sizes to tile centres, even ones to corners). `status`: `ok`, `after_tiles` (placeable once
-    the plan's own tiles under it are laid; a paste lays both together, while place_ghosts places entity ghosts
-    before tile ghosts and a build batch goes entry by entry, which the row says), `needs_tiles`, `exists` (built or
-    ghosted there already; a paste skips it, place_ghosts and build fail on it), `blocked`. `why` names what collides and where (an entity, a ghost,
+    the tiles under it are laid, the plan's own or tile ghosts already ordered; a paste lays both together, while
+    place_ghosts places entity ghosts before tile ghosts and a build batch goes entry by entry, which the row says),
+    `after_rails` (a rail signal, train stop or rolling stock the game refuses until the plan's rails stand; it
+    checks their rail rules then), `needs_tiles`, `exists` (built or ghosted there already; a paste skips it,
+    place_ghosts and build fail on it), `blocked`. `why` names what collides and where (an entity, a ghost,
     another character, a cliff, an earlier entry of the plan: `collides with planned #5 stone-furnace at (14,-88)`),
     tiles it cannot stand on (`(60.5,-0.5) is outside the map`, a tile no tile item makes buildable), a broken tile
     rule, uncharted chunks, or the engine's own refusal. The engine's check decides what stands there now, so a
-    ghost over a machine it upgrades reads `ok` with `replaces ...`; trees and rocks under a ghost read `ok` (marked
-    for removal), under a hand build `blocked`.
+    ghost over a machine it upgrades reads `ok` with `replaces ...`. What the call takes in its way follows the
+    call: place_ghosts and a `forced` paste mark trees and rocks (`ok`, `marks tree-01 (5.5,0.5) for removal`), a
+    `superforced` paste our own entities too, while a `normal` paste and a hand build take nothing (`blocked by
+    tree-01 ...`). Rails may cross rails.
   - `tiles`: `needed {item: n}` (the unlocked tile item that makes each tile buildable for that entity: landfill on
     water, foundation on lava, space-platform-foundation on empty space), `under_entities`, `positions` (up to 200
     tile centres, then `more`), and the plan's own tiles: `planned`, `already`, `refused` with `refused_rows`. On a
@@ -540,16 +544,22 @@ fh sleep 900 --until researched                       # ...or until the research
     (-40.5,22.5): no wire path to a built pole; nearest built pole medium-electric-pole at (-32.5,19.5) is 8.5 tiles
     from (-40.5,22.5) (wire reach 7.5)`) and `unpowered` rows (no pole's supply area over the machine, or only pole
     ghosts with no wire path). Two poles join when they are within the shorter of their two wire reaches; built poles
-    and pole ghosts within 40 tiles of the plan count.
+    and pole ghosts within 40 tiles of the plan count, the ghosts joining what lies in their reach as planned poles
+    do. At most 10 `islands` and 20 `unpowered` rows (`more_islands`, `unpowered_count`).
   - `standing` (off a platform): `reach` (your build distance), `from_here` (`5 of 7 in reach from (11.5,-90)`),
     and `spots [{at, reaches: "#4-6"}]`, at most 8, nearest first from where you stand: free tiles (off every planned
     footprint, not on a belt, where a character fits) from which each entry out of reach is within reach; `no_spot`
-    when none fits. For `build` each out-of-reach entry also carries `reach` (`12.3 tiles from you, reach 10`), and a
-    blocked batch says that a batch stops at its first failure (`skip_failed`).
+    when none fits, `more` for placements left past the spots (the search looks at most 16 placements). For `build`
+    each out-of-reach entry also carries `reach` (`12.3 tiles from you, reach 10`), the summary counts them, and
+    `build_note` names the entry the batch stops at and why (blocked, already there, out of reach, its tiles laid by
+    a later entry, a tile brush that lays nothing).
+  - A dry run checks at most 1024 entities and 8192 tiles (repeat copies included) and refuses a larger plan before
+    any check. Real engine, shift world: 7 entries on nauvis 9 ms, the platform case 14 ms.
   - `items` the placeable entries and needed tiles use, `missing` against your inventory (for `build` plus the
     hand-craft queue; on a platform the hub), `missing_from`. A paste adds `paste {slot, label, origin_at, center_at,
     anchor}` (where the blueprint lands, computed as the game places it: its center at `position`, shifted onto the
-    grid) and, for a normal paste with a blocked entry, `paste_note` (all or nothing: no ghost at all).
+    grid; flips are refused on a platform or for a bot, as the paste refuses them) and, for a normal paste with an
+    entry the game refuses now, `paste_note` (all or nothing: no ghost at all).
 - `ports {name, position, direction?, recipe?, mirror?, platform?}` (read; ports.lua, Gemini's request: a recipe moves
   which fluid an electromagnetic plant's ports carry) lists the fluid connections of an entity that is not built:
   `ports [{at, joins, direction, flow, fluid, box, there}]` (`at` the entity's tile with the port, `joins` the tile

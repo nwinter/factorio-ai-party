@@ -1693,8 +1693,10 @@ do
   local turret=prototypes.entity['gun-turret']
   local plain_turret={}
   for k,v in pairs(turret) do plain_turret[k]=v end
-  turret.tile_width=2; turret.tile_height=2; turret.collision_mask={layers={object=true}}
+  turret.name='gun-turret'; turret.tile_width=2; turret.tile_height=2; turret.collision_mask={layers={object=true}}
   turret.collision_box={left_top={x=-0.7,y=-0.7},right_bottom={x=0.7,y=0.7}}
+  local turret_item=prototypes.item['gun-turret']
+  prototypes.item['gun-turret']={name='gun-turret',place_result=turret}
   ghosts={}
   call('walk',{direction='east',ticks=100})
   local dry=call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}},{name='gun-turret',position={x=40,y=0}}},dry_run=true})
@@ -1705,6 +1707,18 @@ do
   eq(shifted.checked,4); eq(shifted.entities[1].index,'4.1'); eq(#ghosts,0)
   fails(function() call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}}},facing='east',dry_run=true}) end,'unknown argument facing for place_ghosts')
   fails(function() call('build',{item='gun-turret',position={x=3,y=0},dry_run='true'}) end,'dry_run must be true or false')
+  -- A build dry run names the entry the batch stops at.
+  local ghost_engine=p.surface.can_place_entity
+  defines.build_check_type.manual=0
+  p.surface.can_place_entity=function(a) eq(a.build_check_type,0); eq(a.forced,nil); return true end
+  local px,py=math.floor(p.position.x),math.floor(p.position.y)
+  local far=call('build',{builds={{item='gun-turret',position={x=px+2,y=py}},{item='gun-turret',position={x=px+30,y=py}}},dry_run=true})
+  eq(far.action,'build'); assert(far.build_note:find('entry #2 (out of reach: ',1,true),far.build_note)
+  p.surface.can_place_entity=ghost_engine
+  -- A plan past the bounds is refused before any check.
+  local twenty={}
+  for i=1,20 do twenty[i]={name='gun-turret',position={x=10+2*i,y=0}} end
+  fails(function() call('place_ghosts',{entities=twenty,['repeat']={count=64,dx=0,dy=2},dry_run=true}) end,'a dry run checks at most 1024 entities')
   eq(call('status').active.kind,'walk','a failed dry run stops nothing')
   -- A paste dry run checks where the blueprint lands (blueprints.lua plan, stubbed here); with an entry
   -- the game refuses now, a normal paste places nothing at all.
@@ -1713,12 +1727,18 @@ do
     return {entities={{index=1,name='gun-turret',position={x=a.position.x,y=0},direction=0},{index=2,name='gun-turret',position={x=40,y=0},direction=0}},
       tiles={},slot='bp',mode='normal',origin_at={x=a.position.x,y=0},center_at={x=a.position.x,y=0}}
   end
+  local ghost_check=p.surface.can_place_entity
+  -- A normal paste asks the engine without forced (it marks nothing).
+  p.surface.can_place_entity=function(a) eq(a.build_check_type,2); eq(a.forced,nil); return a.position.x~=40 end
   local pd=call('paste',{position={x=10,y=0},dry_run=true})
   eq(pd.action,'paste'); eq(pd.paste.slot,'bp'); eq(#ghosts,0); eq(pd.summary,'1 placeable, 1 blocked (of 2)')
   assert(pd.paste_note:find('all or nothing: with 1 entry the game refuses there now',1,true),pd.paste_note)
   local rp=call('paste',{position={x=10,y=0},['repeat']={count=2,dx=4},dry_run=true})
   eq(rp.checked,4); eq(rp.entities[#rp.entities].index,'2.2'); assert(rp.entities[#rp.entities].why:find('collides with planned #1.2',1,true))
   eq(call('paste',{position={x=10,y=0},dryrun=true}).action,'paste','dryrun is dry_run')
+  p.surface.can_place_entity=function(a) eq(a.build_check_type,2); eq(a.forced,true); return a.position.x~=40 end
+  eq(call('paste',{position={x=10,y=0},mode='forced',dry_run=true}).summary,'1 placeable, 1 blocked (of 2)','forced asks with forced')
+  p.surface.can_place_entity=ghost_check
   runtime.paste_plan=real_plan
   call('stop',{})
   call('queue_submit',{steps={{action='place_ghosts',args={entities={{name='gun-turret',position={x=10,y=0}}},dry_run=true}}}})
@@ -1741,6 +1761,7 @@ do
   fails(function() call('ports',{name='chemical-plant',position={x=10,y=0},recipe='no-such'}) end,'unknown recipe no-such')
   p.surface.get_tile=get_tile
   prototypes.entity['gun-turret']=plain_turret
+  prototypes.item['gun-turret']=turret_item
 end
 -- pole_route lays pole ghosts from A to B within wire reach, shifting a
 -- blocked spot sideways, reusing a pole already on the line, and counting
