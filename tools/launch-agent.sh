@@ -35,7 +35,7 @@ turn() {
   touch .agy-stamp
   t0=\$(date +%s)
   # The wait cap goes on agy only: this loop's own sleep until a quota reset stays a plain sleep.
-  '$sleepcap_run' agy "\$@" --model $model --dangerously-skip-permissions
+  '$sleepcap_run' agy "\$@" --model $model --dangerously-skip-permissions --print-timeout ${POG_AGY_TURN_S:-300}s
   # ran into the timeout: it ends at turn_s (a turn that ends by itself much later was not cut)
   took=\$((\$(date +%s) - t0)); timed_out=0
   [ "\$took" -ge "\$((turn_s - 2))" ] && [ "\$took" -le "\$((turn_s + 30))" ] && timed_out=1
