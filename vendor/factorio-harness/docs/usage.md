@@ -758,6 +758,16 @@ fh sleep 900 --until researched                       # ...or until the research
     starts a move over time (a `pickup`, a tour with `radius`, a give that waits for crafts) has `moved: 0` and
     `timed: moves until tick N: last.moved and last.inv say what it moved`; when it ends, `last.moved` and `last.inv`
     hold the count and the line, and the `--wait` reply shows both.
+  - The same on every other path that moves items into or out of your inventory (operator 08:01): `mine` (timed:
+    `last.moved` is how many more of its products you hold when it ends), `craft` (`moved: 0`, `timed: crafts land in
+    your inventory as each finishes (hand queue Ns); wait_until crafting_done waits for them`, and the line with the
+    products), `cancel_craft` (`moved` and `returned`: the recipe's ingredients that came back), and `configure` when
+    a recipe change returns a machine's items (`moved` is what `returned` sums). Queue steps and standing orders (they
+    run in the queue) carry `moved` and `inv` in their history entries: a step done at once as its direct reply, a
+    timed one from its `last` when it ends, a step that failed at once the line only.
+  - Not on: `build`, `construct` and the ghost tools (they place or take entities; the replies count `consumed`,
+    `built`, `mined`, `missing`), `drop` and `launch` (items leave a hub or silo, not your inventory), and a craft as
+    it finishes (no reply then; the `craft` reply has the line).
   - `feed`, `collect` and `transfer` take `area {left_top, right_bottom}` (up to 128x128) in place of `positions`: our
     entities whose centre lies inside it, of the call's types, run as its positions (nearest first, each by its
     unit_number; at most 64), and the reply says how many in `area_targets`. Types: `feed` as in reach (with `recipe`,

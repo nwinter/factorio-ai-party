@@ -372,7 +372,7 @@ local function finish(index, outcome)
       left>0 and string.format(', %d left (%s)',left,outcome) or '')
   end
   -- Item moves that ran over time: moved and the inventory line after (Muse 06:27).
-  if action and (action.kind=='pickup' or action.kind=='gather' or action.kind=='feed') then pcall(M.moved_last,index,action,s.last[index]) end
+  if action and (action.kind=='pickup' or action.kind=='gather' or action.kind=='feed' or action.kind=='mine') then pcall(M.moved_last,index,action,s.last[index]) end
   -- A walk that ends on a belt: the game carries the character on (shift03).
   if action and action.kind~='drive' then s.last[index].on_belt=M.belt.note(body(M.lookup(index))) end
   stop(body(M.lookup(index)))
@@ -866,10 +866,10 @@ function handlers.describe()
         positions='or 1..64 {x,y} (each may carry name or unit_number): every damaged one, nearest first, walking to each (a timed action; outcomes repair_completed | timed_out | repair_tool_exhausted; last: repaired, already_full, unreached, lost, left, tally)',
         area='or {left_top, right_bottom} up to 128x128: every entity of ours with health in it, as positions (at most 64 damaged)',
         returns='an undamaged target (or none damaged among positions/area): ok with unchanged "not damaged", nothing started, no repair tool needed, last outcome nothing_to_do (a queue step goes on); with positions/area: targets, damaged, already_full, failed and first_error (positions that name no entity), until_tick; a damaged target with no repair tool held fails (no repair tool in inventory)',platform='refused: the game repairs platform entities itself, one at a time, with repair packs from the hub; platforms {platform} and inspect of the hub list damaged and repair_packs'},
-      mine={position='{x,y}', ticks='1..600', name='optional', radius='1..32 (default 8): a resource tile at position that is mined out (the resource named, or the one an earlier mine at that position took): the tile of the same resource within radius of it, one in reach first, is mined instead; the reply\'s instead (and last.instead) names it', outcomes='target_mined | duration_elapsed (ore: last reports mined) | inventory_full (blocked_item) | not_minable (a stump, remnant or corpse; last.error) | target_lost | out_of_reach'},
+      mine={position='{x,y}', ticks='1..600', name='optional', radius='1..32 (default 8): a resource tile at position that is mined out (the resource named, or the one an earlier mine at that position took): the tile of the same resource within radius of it, one in reach first, is mined instead; the reply\'s instead (and last.instead) names it', outcomes='moved 0 and timed now; last.moved (how many more of its products you hold) and last.inv when it ends; target_mined | duration_elapsed (ore: last reports mined) | inventory_full (blocked_item) | not_minable (a stump, remnant or corpse; last.error) | target_lost | out_of_reach'},
       stock={item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',quality='default normal',
         returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance; a spoilable item: first_spoils_in (its first stack there), spoiled_percent, within_5_min}; made_by (crafters set to a recipe making it); held (your inventory); summary line (with the first to spoil, or for pentapod-egg and other items that hatch into enemies the first to hatch); hatches_into. Without item each line adds the first to spoil or hatch'},
-      craft={force='boolean: hand-craft even when nearby stock covers it',short='when fewer started than asked: the raw ingredients missing for the rest (e.g. "wood short 18 (held 2)"), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item; a craft of >=3 s of hand time that stock covers is refused (errors) unless force=true',returns='started; hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
+      craft={force='boolean: hand-craft even when nearby stock covers it',short='when fewer started than asked: the raw ingredients missing for the rest (e.g. "wood short 18 (held 2)"), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item; a craft of >=3 s of hand time that stock covers is refused (errors) unless force=true',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
       rates={area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',
         returns='rows per item: produced, consumed, net at full speed, by/into machines x count; power produced/consumed; errors (no_recipe, no_fuel, no_power, no_resources, ...)',
         note='Rate Calculator formulas: recipe, crafting speed, modules, beacons, productivity, quality, fuel, drill resources; our machines only'},
@@ -879,7 +879,7 @@ function handlers.describe()
       grid={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',returns='one character per tile: rows [{y,row}] from origin, ruler, legend {char: names}. Upper case buildings by type, belts ^>v<, U/J underground in/out, S splitter, ? ghost, @ character, # other; lower case ore; ~ water'},
       power={area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',limit='unpowered rows 1..256 (default 32)',note='networks with a pole in the area: poles, production/consumption kW (5 s average) by prototype, unpowered machines (no_power|low_power|unconnected)'},
       scan={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',positions='or 1..64 {x,y}: just the entities on those tiles (e.g. a few belts\' lanes)',name='optional name or array',type='optional type or array (resources only listed when filtered)',fields='hp|fuel|inventory|output|spoil (spoilable items: count and stalest freshness %)|status|recipe|direction|amount|range (attack range)|ammo|target (turret shooting target)|lanes (belt contents L|R)|io (inserter pickup -> drop, with entities)|fluids (per fluidbox "fluid amount/capacity" then each connection "in|out|io x,y" = the tile it connects to, "=entity" when joined there; underground ends "io uS" with the partner; boxes split by |; ghosts too, from the prototype)|filters (inserters, loaders: "whitelist: items", "blacklist: items", "off (filters: items)", "set by circuit", none; our inserters and loaders with filters in use carry it unasked); other forces under fog show only static fields',limit='1..1024 rows (default 256)',ore='runs (per-row x ranges) or grid (letters, # blocked, ~ water)',returns='entities, total, truncated, ore; ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the area by item (rows for them only when name or type asks: item-on-ground, item-entity)'},
-      nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..128 (default 32); map-known (charted) entities only: after landing on a new planet about 48 tiles around you, so explore or build a radar',limit='1..64 (default 5)',returns='entities [{name?, position, distance}], total; note when nothing was found'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={dry_run='boolean: build nothing; check every entry from where you stand (a read): placeable or why not, out of reach (distance vs build reach), items short (held + hand-craft queue), tiles needing landfill, poles\'s wire reach, and standing spots that reach every entry; inserters: each planned inserter\'s pickup and drop target, as place_ghosts dry_run gives them',item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',entity='rail item (a rail planner): which rail it places: straight-rail (default), half-diagonal-rail, curved-rail-a, curved-rail-b; with directions including the in-between ones (northnortheast, eastnortheast, ...); place_ghosts takes the rail names too and construct builds them',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',skip_failed='boolean, with builds: a failing entry is listed in failed {index,position,error} and the rest still build',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired, and unpaired_why (lava or empty space under its reach, its partner a ghost or out of reach, or none in reach)',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait). Your own character the only thing on the footprint: it walks off first and then builds (stepping_aside {from,to}; the same timed action and outcomes; last.result holds the build result)'},
+      nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..128 (default 32); map-known (charted) entities only: after landing on a new planet about 48 tiles around you, so explore or build a radar',limit='1..64 (default 5)',returns='entities [{name?, position, distance}], total; note when nothing was found'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules',returns='cancelled, moved (the recipe\'s ingredients that came back), returned {item=count}, inv (the inventory line after)'}, build={dry_run='boolean: build nothing; check every entry from where you stand (a read): placeable or why not, out of reach (distance vs build reach), items short (held + hand-craft queue), tiles needing landfill, poles\'s wire reach, and standing spots that reach every entry; inserters: each planned inserter\'s pickup and drop target, as place_ghosts dry_run gives them',item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',entity='rail item (a rail planner): which rail it places: straight-rail (default), half-diagonal-rail, curved-rail-a, curved-rail-b; with directions including the in-between ones (northnortheast, eastnortheast, ...); place_ghosts takes the rail names too and construct builds them',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',skip_failed='boolean, with builds: a failing entry is listed in failed {index,position,error} and the rest still build',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired, and unpaired_why (lava or empty space under its reach, its partner a ghost or out of reach, or none in reach)',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait). Your own character the only thing on the footprint: it walks off first and then builds (stepping_aside {from,to}; the same timed action and outcomes; last.result holds the build result)'},
       inspect={position='{x,y}',positions='optional 1..32 positions: one inspect each in one call, results in order (an entry that fails has position and error)',area='or {left_top, right_bottom} up to 128x128: our chests and machines (entities with an inventory; types to choose) with their centre inside that inspect can read (in sight, or by remote view in a chunk our force sees now), at most 64, one row each in reading order: entities [{name, position, holds (a chest: its items largest first, slots used of the total; a machine: in, out, fuel, ...), requests (requester, buffer: held/asked), recipe, status_name}], count, not_in_sight (how many more the area holds in chunks our force does not see)',types='with area: entity types (1..16; default every type with an inventory: chests, machines, labs, silos, boilers, drills, turrets, wagons, vehicles, landing pads, hubs, roboports, towers)',platform='optional platform name: inspect on that space platform (platform coordinates, hub at 0,0; the whole platform is in sight)',note='read-only, without reach: any entity in sight (32 tiles of the character), or by remote view any entity on your surface in a chunk our force sees now (radar coverage or a character\'s sight), as the map shows it (by: remote view; surface= another surface reads the same way); out of both, the refusal names the nearest radar coverage; in_reach says whether acting on it would reach; holds (a chest, logistic chest, wagon, car or spider trunk, landing pad, hub): one line, the largest stacks first as name*count, then slots used of the total and the red-X limit; requests (requester, buffer): item held/asked per request, summed over active sections; output_fill (assembler, furnace): each product in the output held of its stack size and %, and full when the machine stopped for it (status full_output), e.g. copper-cable 200/200 (100%), full; inserters and mining drills show their drop tile and what stands there (io); build replies and observe entity rows show a drill\'s drop and drop_into too; trash: what the game put in a silo\'s, landing pad\'s or hub\'s trash slots; rocket_weight (a silo): cargo held/lift kg; modules {inventory_index (the inventory a blueprint module request names), slots, contents}; filters, filter_mode, use_filters (inserters, loaders); an asteroid collector: filters (chunk names), filter_slots (the game\'s count; 0 until a filter is set), arm (chunks its arms hold), its output under inventories.asteroid_collector_output; held (an inserter\'s hand), pickup_target, drop_target, io_warning (\'no pickup target\', \'no drop target\': the engine\'s targets; also in io and observe rows; build and rotate replies read what stands on the points (on the engine\'s 1/256-tile grid), as the engine sets targets a tick later; a builds batch lists inserters_without_target after all its entries (first 16; inserters_without_target_count past them); an inserter ghost: what stands on its points); marked_for_deconstruction, marked_for_upgrade; ghosts_here (ghosts on the footprint, with their filters); on a platform: hub_slots, repair_packs and damaged (most damaged first, up to 10; damaged_count past that) on the hub, repair (how a damaged entity there gets repaired), and construction_blocked (hub full, ghosts whose items the hub lacks); spoiling: per inventory (and a belt\'s lanes, an inserter\'s hand, an item on the ground) each spoilable item, the time until its first stack spoils and how spoiled that stack is, and how many spoil within 5 min, earliest first; an item that hatches into enemies when it spoils (pentapod-egg, biter-egg) says hatches, and what into; hatch_warning sums those up (count, into what, the first, how many within 5 min); output_spoil (an assembler, furnace or biochamber whose products spoil): what the next products start at, the count-weighted spoilage of the spoilable ingredients in its input (bioflux from 15 yumako-mash at 80% and 12 jelly at 20%: about 53%), or fresh when the recipe resets freshness (pentapod-egg); an agricultural tower: tower {state, seeds, output, area, cells (growing, grown, free with soil for which seeds, blocked by what, no soil), plantable_now, planted_10min, plants (time until grown), harvest_made_10min}'}, rotate={direction='optional compass name (north, east, south, west; 2.0 numbers 0, 4, 8, 12 too): turn until it faces this way, one 90-degree turn at a time as the R key does',returns='rotated, before, after (compass names; 2.0 directions: north 0, east 4, south 8, west 12), turns (how many 90-degree turns it took), entity; one call without direction is one 90-degree turn clockwise, reverse=true counter-clockwise',position='{x,y}',reverse='boolean'},
       configure={surface='optional planet name: act there by remote view, where our force sees the chunk',auto_requests='rocket silo: boolean, the GUI\'s automatic requests (fill and launch for platforms\' requests in orbit; switched on with cargo loaded by hand, that cargo goes to the trash slots: cargo_to_trash, note)',send_to_orbit_automatically='rocket silo: boolean, the GUI\'s send to orbit automatically; a silo reply reads back settings {silo, auto_requests, send_to_orbit_automatically, requesting_for, rocket, parts}',position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine)',platform='optional platform name: configure on that space platform through remote view (platform coordinates, hub at 0,0)',recipe='enabled recipe',quality='optional recipe quality (normal, uncommon, rare, epic, legendary; the machine needs the quality unlocked)',filters='or: item names (one name alone too) for a filtering inserter/loader, or asteroid chunk names (metallic-asteroid-chunk, ...) for an asteroid collector ([] clears and, on an inserter, turns filtering off; up to the entity\'s filter slot count; a collector\'s count reads 0 until a filter is set, so there each slot is tried and only the game\'s refusal fails it; the reply reads the filters back, not_set for a name that did not stick)',filter_mode='whitelist|blacklist (inserters; alias mode; alone it keeps the items; asteroid collectors have no filter mode in the game)',use_filters='inserters: true|false, the GUI\'s use filters (false keeps the items, unused)',force='boolean: allow destroying held fluids',returns='returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change; filters: filters, filter_mode, use_filters read back, line (whitelist: items | blacklist: items | off (filters: items) | set by circuit), before (the line before)'},
       transfer={position='{x,y}',positions='optional array of 1..64 {x,y}: same transfer per entity; per-entity rows plus total',
@@ -2197,6 +2197,15 @@ function handlers.mine(p,a)
   local ticks=integer(a.ticks,60,1,MAX_TICKS,'ticks')
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   local action={kind='mine',entity=e,until_tick=game.tick+ticks,products={},started=game.tick}
+  -- What the character holds of the products now: last.moved is what it holds more of when the mining ends.
+  action.held_before={}
+  local okp,prods=pcall(function() return e.prototype.mineable_properties.products end)
+  for _,pr in ipairs(okp and type(prods)=='table' and prods or {}) do
+    if pr.type==nil or pr.type=='item' then
+      local okc,n=pcall(function() return p.get_item_count(pr.name) end)
+      action.held_before[pr.name]=okc and n or 0
+    end
+  end
   for _,product in ipairs(e.prototype.mineable_properties.products or {}) do
     if product.type=='item' then action.products[#action.products+1]=product.name end
   end
@@ -2551,6 +2560,25 @@ function handlers.cancel_craft(p,a)
   local count=integer(a.count,entry.count,1,entry.count,'count')
   p.cancel_crafting{index=index,count=count}
   return {cancelled=count,recipe=entry.recipe,crafting_queue=p.crafting_queue or {}}
+end
+-- The ingredients a cancel puts back in the inventory, counted as moved (operator 08:01): the recipe's item
+-- ingredients held before and after.
+do
+  local cancel=handlers.cancel_craft
+  handlers.cancel_craft=function(p,a)
+    local name=a.recipe or (type(a.index)=='number' and ((p.crafting_queue or {})[a.index] or {}).recipe) or nil
+    local recipe=type(name)=='string' and p.force.recipes[name]
+    local before={}
+    for _,ing in ipairs(recipe and recipe.ingredients or {}) do if ing.type=='item' then before[ing.name]=p.get_item_count(ing.name) end end
+    local out=cancel(p,a)
+    local n,returned=0,{}
+    for item,b in pairs(before) do
+      local d=p.get_item_count(item)-b
+      if d>0 then n=n+d; returned[item]=d end
+    end
+    out.moved=n; out.returned=next(returned) and returned or nil
+    return out
+  end
 end
 -- A player's pole auto-connects only to a few neighbours, and a pole revived
 -- from a ghost keeps only the ghost's wires (none for a lone ghost). Join the
@@ -6089,6 +6117,7 @@ scheduler=scheduler_module{
     local last=action=='shoot' and state().last_combat or action=='drop' and state().last_drop or timed[action] and state().last
     return last and last[p.index]
   end,
+  moved_step=function(p,step,result) return M.moved_step(p,step,result) end,
   outcome=function(p,action)
     local last=action=='shoot' and state().last_combat or action=='drop' and state().last_drop or timed[action] and state().last
     return last and last[p.index] and last[p.index].outcome
@@ -6474,26 +6503,54 @@ M.aliases=require('aliases'){}
 M.MOVES={transfer=true,feed=true,collect=true,rearm=true,refuel=true}
 -- Item moves say moved and end with the inventory line after the move (Muse 06:27, dozens a shift: transfer and
 -- collect printed moved or transferred, and a tour's reply was a tick alone, which read as a failure).
-M.ITEM_MOVES={transfer=true,feed=true,collect=true,rearm=true,refuel=true,pickup=true}
+M.ITEM_MOVES={transfer=true,feed=true,collect=true,rearm=true,refuel=true,pickup=true,
+  -- Operator 08:01 (Muse: the line was only partly there): crafts into the inventory, crafts cancelled (ingredients
+  -- back), mining into the inventory, a recipe change that returns a machine's items.
+  craft=true,cancel_craft=true,mine=true,configure=true}
 -- "free 12/80; held: copper-plate 400, iron-plate 20": free main inventory slots, then what the character holds of
 -- the items named (up to 6).
 function M.inv_line(p,names)
-  local inv=p and p.valid and p.get_main_inventory()
-  if not inv then return nil end
+  if not (p and p.valid) then return nil end
+  local okm,inv=pcall(function() return p.get_main_inventory() end)
+  inv=okm and inv or nil
   local parts,seen={},{}
   for _,raw in ipairs(names or {}) do
     local name=tostring(raw):match('^[^@]+')
     if name and not seen[name] and #parts<6 then
       seen[name]=true
       local ok,n=pcall(function() return p.get_item_count(name) end)
-      parts[#parts+1]=name..' '..((ok and n) or inv.get_item_count(name))
+      if not (ok and n) and inv then ok,n=pcall(function() return inv.get_item_count(name) end) end
+      if ok and n then parts[#parts+1]=name..' '..n end
     end
   end
-  local line=string.format('free %d/%d',inv.count_empty_stacks(),#inv)
-  return #parts>0 and line..'; held: '..table.concat(parts,', ') or line
+  local ok,free=pcall(function() return inv.count_empty_stacks() end)
+  local line=inv and ok and string.format('free %d/%d',free,#inv) or nil
+  if #parts==0 then return line end
+  return (line and line..'; ' or '')..'held: '..table.concat(parts,', ')
 end
 -- moved (transferred stays as its alias for a shift), timed for a reply that only starts the move, inv after it.
 function M.moved_line(request,result)
+  -- configure moves items only when a recipe change returns them; craft starts crafts that land as each finishes.
+  if request.action=='configure' and result.returned==nil then return end
+  local craft_names
+  if request.action=='craft' and result.moved==nil then
+    result.moved=0
+    result.timed=string.format('crafts land in your inventory as each finishes (hand queue %ss); wait_until crafting_done waits for them',
+      tostring(result.queue_s or 0))
+    craft_names={}
+    local a=type(request.args)=='table' and request.args or {}
+    local list=a.recipes or {{recipe=a.recipe}}
+    local p=body(M.lookup(request.player or 1))
+    for _,entry in ipairs(type(list)=='table' and list or {}) do
+      local r=type(entry)=='table' and type(entry.recipe)=='string' and p and p.force.recipes[entry.recipe]
+      for _,pr in ipairs(r and r.products or {}) do if pr.type=='item' then craft_names[#craft_names+1]=pr.name end end
+    end
+  end
+  if request.action=='configure' and result.moved==nil then
+    local n=0
+    for _,c in pairs(result.returned) do n=n+c end
+    result.moved=n
+  end
   if result.moved==nil then
     if type(result.transferred)=='number' then result.moved=result.transferred
     elseif result.until_tick then
@@ -6501,9 +6558,10 @@ function M.moved_line(request,result)
       result.timed=string.format('moves until tick %d: last.moved and last.inv say what it moved (status, fh --wait)',result.until_tick)
     end
   end
-  local a,names=type(request.args)=='table' and request.args or {},{}
+  local a,names=type(request.args)=='table' and request.args or {},craft_names or {}
   local function add(v) if type(v)=='string' then names[#names+1]=v end end
   add(a.item); add(a.fuel); add(a.ammo)
+  for k in pairs(type(result.returned)=='table' and result.returned or {}) do add((tostring(k):gsub('@.*$',''))) end
   if type(a.items)=='table' then for k,v in pairs(a.items) do add(type(k)=='string' and k or v) end end
   if type(result.items)=='table' then for k,v in pairs(result.items) do add(type(v)=='table' and v.name or k) end end
   for _,row in ipairs(type(result.entities)=='table' and result.entities or {}) do
@@ -6511,11 +6569,36 @@ function M.moved_line(request,result)
   end
   result.inv=M.inv_line(body(M.lookup(request.player or 1)),names)
 end
+-- A queue step's or standing order's history entry (scheduler.lua): a step that ran at once as a direct reply; a
+-- timed one, when it ended, from its last (moved, inv), else the line now.
+function M.moved_step(p,step,result)
+  if not M.ITEM_MOVES[step.action] then return end
+  if result.accepted~=nil or result.completion~=nil then
+    local c=type(result.completion)=='table' and result.completion or {}
+    local r=type(c.result)=='table' and c.result or {}
+    result.moved=c.moved or r.moved or r.transferred or 0
+    local a=type(step.args)=='table' and step.args or {}
+    result.inv=c.inv or M.inv_line(body(p),{a.item,a.fuel,a.ammo})
+  elseif result.reason~=nil then
+    -- A step that failed at once moved nothing: the line only.
+    local a=type(step.args)=='table' and step.args or {}
+    result.inv=M.inv_line(body(p),{a.item,a.fuel,a.ammo})
+  else
+    M.moved_line({action=step.action,args=step.args,player=p.index},result)
+  end
+end
 -- The same on last when a pickup, a tour (collect, feed, refuel, rearm over a radius) or a wait for crafts ends.
 function M.moved_last(index,action,last)
   local n,names=0,{}
   if action.kind=='pickup' then
     for name,c in pairs(action.picked or {}) do n=n+c; names[#names+1]=name end
+  elseif action.kind=='mine' then
+    local p=body(M.lookup(index))
+    for name,b in pairs(action.held_before or {}) do
+      local ok,now=pcall(function() return p.get_item_count(name) end)
+      if ok and now>b then n=n+now-b end
+      names[#names+1]=name
+    end
   elseif action.kind=='gather' then
     n=action.got or 0
     names[#names+1]=action.item

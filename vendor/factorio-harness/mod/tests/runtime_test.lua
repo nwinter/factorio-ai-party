@@ -300,13 +300,25 @@ p.can_insert=function(item) return room or item.name~='iron-ore' end
 p.surface.find_entities_filtered=function() return {ore} end
 -- Resources yield one unit per hand-mining cycle (mining_time 1 at speed 0.5 is 120 ticks) through
 -- mine_entity, which returns false while ore remains, so success is judged by the amount.
-p.mine_entity=function(e) e.amount=e.amount-1; if e.amount==0 then e.valid=false end; return false end
-call('mine',{position=ore.position,ticks=600})
-eq(call('status').active.target.name,'iron-ore')
-advance(119); eq(ore.amount,3); advance(1); eq(ore.amount,2)
-advance(120); eq(ore.amount,1)
-advance(120); eq(ore.valid,false)
-local last=call('status').last; eq(last.outcome,'target_mined'); eq(last.mined,3)
+local last
+do
+  -- (The ore lands in the inventory: counted here for last.moved.)
+  local ores_held=0
+  local item_count=p.get_item_count
+  p.get_item_count=function(n) if n=='iron-ore' then return ores_held end return item_count(n) end
+  p.mine_entity=function(e) e.amount=e.amount-1; ores_held=ores_held+1; if e.amount==0 then e.valid=false end; return false end
+  local mined=call('mine',{position=ore.position,ticks=600})
+  -- A move over time (operator 08:01): moved 0 so far, timed, the line now.
+  eq(mined.moved,0); assert(mined.timed,'timed')
+  eq(call('status').active.target.name,'iron-ore')
+  advance(119); eq(ore.amount,3); advance(1); eq(ore.amount,2)
+  advance(120); eq(ore.amount,1)
+  advance(120); eq(ore.valid,false)
+  last=call('status').last; eq(last.outcome,'target_mined'); eq(last.mined,3)
+  eq(last.moved,3); assert(last.inv:find('held: iron-ore 3',1,true),last.inv)
+  p.get_item_count=item_count
+  p.mine_entity=function(e) e.amount=e.amount-1; if e.amount==0 then e.valid=false end; return false end
+end
 -- Resource mining idles silently when the product has no room; say so.
 ore.valid=true; ore.amount=5; call('mine',{position=ore.position,ticks=10}); advance(1); room=false; advance(1)
 last=call('status').last; eq(last.outcome,'inventory_full'); eq(last.blocked_item,'iron-ore'); room=true
@@ -1384,6 +1396,8 @@ prototypes.entity=prototypes.entity or {}
 prototypes.entity['assembling-machine-2']={name='assembling-machine-2',crafting_categories={crafting=true},get_crafting_speed=function() return 0.75 end}
 local crafted=call('craft',{recipes={{recipe='iron-gear-wheel',count=3},{recipe='rocket'},{recipe='iron-gear-wheel',count=2},{recipe='pipe',count=1}}})
 eq(crafted.started['iron-gear-wheel'],5); eq(crafted.started.pipe,0); eq(crafted.errors.rocket,'recipe is unavailable')
+-- Crafts land in the inventory as each finishes (operator 08:01): moved 0 now, timed says when, the line now.
+eq(crafted.moved,0); assert(crafted.timed:find('^crafts land in your inventory as each finishes'),crafted.timed)
 eq(crafted.no_assembler,nil); eq(crafted.blocks,nil) -- no assembler unlocked, short queue
 -- A machine-only recipe says so (shake3: Grok's engine-unit read "not hand-craftable now").
 p.force.recipes['engine-unit']={enabled=true,category='advanced-crafting'}

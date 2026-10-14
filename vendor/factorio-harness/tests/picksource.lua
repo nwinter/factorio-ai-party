@@ -243,4 +243,44 @@ fails(function() luna('transfer',{positions={yumako.position},item='yumako-seed'
 fails(function() luna('transfer',{positions={yumako.position},items={'yumako-seed','iron-plate'},pick='most_stock',to=to}) end,'to has no destination {x,y} for iron-plate')
 fails(function() luna('transfer',{positions={yumako.position},item='yumako-seed',to=to}) end,'items and to go with pick')
 fails(function() luna('transfer',{positions={yumako.position},item='yumako-seed',direction='to_entity',pick='most_stock'}) end,'direction to_player')
+-- 9. Operator 08:01 (Muse: the moved/inventory line only partly there): queue steps and standing orders (both run
+-- in the queue) carry moved and inv in their history entries, a step done at once and a timed one when it ends.
+yumako.inv.insert{name='yumako-seed',count=40}
+luna('queue_submit',{steps={{action='transfer',args={position=yumako.position,item='yumako-seed',count=5,direction='to_player'}}}})
+advance(2)
+h=luna('queue_status').history
+local entry=h[#h]
+eq(entry.action,'transfer'); eq(entry.result.moved,5); eq(entry.result.inv,'free 19/20; held: yumako-seed 5')
+luna('queue_submit',{steps={{action='transfer',args={positions={yumako.position},item='yumako-seed',pick='first_with_stock',to=to}}}})
+advance(6)
+h=luna('queue_status').history
+entry=h[#h]
+eq(entry.ok,true); eq(entry.result.outcome,'transferred'); eq(entry.result.moved,35,'what arrived'); eq(entry.result.inv,'free 19/20; held: yumako-seed 5')
+eq(yfarm.inv.get_item_count('yumako-seed'),75)
+-- A step that failed at once moved nothing: the line only.
+luna('queue_submit',{steps={{action='transfer',args={position=empty.position,item='iron-plate',count=1,direction='to_entity'}}}})
+advance(2)
+h=luna('queue_status').history
+entry=h[#h]
+eq(entry.ok,false); eq(entry.result.moved,nil); eq(entry.result.inv,'free 19/20; held: iron-plate 0')
+luna('queue_cancel',{})
+-- Crafts: moved 0 now, timed says they land as each finishes, the line with the product; a cancel counts the
+-- ingredients that came back.
+force.recipes['wooden-chest']={name='wooden-chest',enabled=true,category='crafting',energy=0.5,
+  products={{type='item',name='wooden-chest',amount=1}},ingredients={{type='item',name='wood',amount=2}}}
+prototypes.item.wood={name='wood',type='item',stack_size=100}
+main.insert{name='wood',count=10}
+body.prototype.crafting_categories={crafting=true}
+local queued={}
+body.begin_crafting=function(r) queued[#queued+1]={index=#queued+1,recipe=r.recipe,count=r.count}; main.remove{name='wood',count=2*r.count}; return r.count end
+body.get_craftable_count=function() return main.get_item_count('wood')//2 end
+body.crafting_queue_size=0
+body.cancel_crafting=function(c) main.insert{name='wood',count=2*c.count}; queued[c.index].count=queued[c.index].count-c.count end
+local c=luna('craft',{recipe='wooden-chest',count=3,force=true})
+eq(c.started,3); eq(c.moved,0); assert(c.timed:find('^crafts land in your inventory as each finishes'),c.timed)
+assert(c.inv:find('held: wooden-chest 0',1,true),c.inv)
+body.crafting_queue=queued
+local cc=luna('cancel_craft',{recipe='wooden-chest',count=2})
+eq(cc.cancelled,2); eq(cc.moved,4); eq(cc.returned.wood,4); assert(cc.inv:find('held: wood 8',1,true),cc.inv)
+
 print('picksource: ok')

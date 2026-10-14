@@ -192,7 +192,13 @@ return function(api)
     return type(result.reason)=='string' and result.reason:match('^no %S+ in inventory')~=nil
   end
   -- A failed step follows its on_fail policy; the default stops the plan.
+  -- An item-moving step's entry says moved and carries the inventory line after it, as a direct reply does
+  -- (runtime.lua M.moved_step; operator 08:01).
+  local function moved(p,step,result)
+    if api.moved_step and type(result)=='table' then pcall(api.moved_step,p,step,result) end
+  end
   local function fail(q,p,step,result)
+    moved(p,step,result)
     if short(step,result) then result.short=true; record(q,step,true,result); return end
     record(q,step,false,result)
     -- Counted for the agent's review (selfview.lua).
@@ -422,7 +428,7 @@ return function(api)
               local success=not outcome or SUCCESS[outcome]==true
               local result={accepted=step.result,outcome=outcome or 'completed',completion=api.completion and api.completion(p,step.action)}
               q.current=nil
-              if success then record(q,step,true,result) else fail(q,p,step,result) end
+              if success then moved(p,step,result); record(q,step,true,result) else fail(q,p,step,result) end
             end
           end
           if not q.paused and not q.current and #q.pending==0 and q.loop then
@@ -462,7 +468,7 @@ return function(api)
                 fail(q,p,step,{reason=api.reason and api.reason(result) or tostring(result)})
               elseif step.wait and api.busy(p,step.action) then
                 step.result=result; q.current=step
-              else record(q,step,true,result) end
+              else moved(p,step,result); record(q,step,true,result) end
             end
           end
           if q.order and not q.paused and not q.current and #q.pending==0 then
