@@ -144,6 +144,12 @@ pumpjacks), `A` assembly (assemblers, the silo), `S` smelting, `M` mining (drill
 under the buildings. With a base, the page frames the base and pins an agent more than a base-width away to the
 map's edge (dashed, its distance in the tooltip).
 
+`youtube_chat` (eng/sitechat2; Luna 13:54, a viewer's suggestion) is the YouTube lines of the stream service's viewer
+lane (tools/stream/viewers.py: only lines that passed its moderation, YouTube deletions it saw taken out), oldest
+first, the newest 60: `[{id, name, text, t, staff?}]`; push_live.py also leaves out lines site/moderation.py hides
+(earlier runs' deletions, site/hidden-viewers.json). The live page's Chat pane joins them with the site's own comments
+(`/v1/chat`) in one time-ordered list, each line badged YT or SITE; the YouTube tab keeps YouTube's own chat.
+
 `clouds` (viewer Joonazan, 2026-10-14: Gleba's spore cloud) is the pollution, or spores on Gleba, per 32-tile chunk on
 each surface an agent is on, read about once a minute: `[{surface, label ("Spores on Gleba"), pollutant (pollution or
 spores), color {r, g, b, a} (the game's map colour, 0..1), cells [[cx, cy, amount]], chunks, max, total, age_s,
