@@ -553,6 +553,29 @@ fh call status
   on), and reports `outcome`, `why`, `kills`, `enemies_left`, `ammo_used`, `ammo_left` and `retreated_from`. `clear`
   and the end of its `ticks` exit 0; `low_health`, `out_of_ammo` and `retreated` exit 1 with `Control ended:
   low_health: health 38% fell below min_health 40%`.
+- Retreat (operator 12:27; Astra lost a tank and died in shift12): `move_to`, `shoot`, `kite` and `vehicle {drive}` take
+  `retreat: {to: {x,y}, health_below: 0.4, shield_below: 0.2}`.
+  - Thresholds are fractions, and any one triggers (`health_below` 0.4 when neither is given).
+  - The harness reads the health every 5 ticks: the character's, or the vehicle's when you drive one (seated or by
+    remote view) or sit in one. The shield is the armor's, or the vehicle grid's.
+  - It triggers when the health is under the threshold and lower than when the action began. So an agent already hurt
+    still walks where it likes until it is hit again.
+  - Then the action ends `retreated` and you go back to `to` at once:
+    - on foot, walking with the enemy check (`avoid_enemies`) and the guns on auto while ammunition lasts, sidestepping
+      units in the way until there;
+    - driving, the vehicle is driven back (guns on when seated).
+  - A running queue or standing order pauses.
+  - `last.retreated` gives `why` (`health 82% (205/250) under 85%`), `from`, `health`, `to`, `health_now` and `going`.
+    `fh --wait` shows it.
+  - The walk or drive back ends `retreated` on arrival: exit 1 with `Control ended: retreated: health 82% (205/250)
+    under 85%; back at (260,-60)`. Status shows `active.retreating` on the way.
+  - `retreat: false` turns it off for that call.
+  - `kite {retreat: {x,y}}` keeps kite's own retreat above. With the object form, kite's own `min_health` stop is off
+    unless given.
+- `retreat_guard {to, health_below, shield_below}` (also `retreat_to`) sets a standing retreat for every `move_to`,
+  `shoot`, `kite` and `vehicle {drive}` until `retreat_guard {clear: true}`. A call's own `retreat` wins.
+  `retreat_guard {}` and `status` show it (`retreat_guard: to (260,-60) at health under 85% (standing
+  retreat_guard)`). A retreat point inside an enemy weapon's reach is refused, naming the nearest safe spot.
 - Output is compact tables meant for reading. Use `--format json` for programs.
 
 ### Output shape, chat and time left
