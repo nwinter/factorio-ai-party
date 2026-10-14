@@ -842,6 +842,12 @@ fh sleep 900 --until researched                       # ...or until the research
     retries): when any listed machine is out of reach, one timed tour (`ticks` default 3600) walks a nearest-first
     route through them and feeds each as a `radius` tour does; the reply has `places`, `out_of_reach`, `legs` and
     `until_tick`, `last.entities` a row per stop, `--wait` follows it. All in reach: the feed at once.
+  - `collect {positions, walk: true}` likewise (Muse 12:20): the places out of reach are walked to, nearest first,
+    and each is collected from as in reach (the same take: machine outputs, named chests; `item`, `count`, `up_to`,
+    `keep_max` as without walk). One timed call (`ticks` default 3600) with `places`, `out_of_reach`, `legs`,
+    `until_tick`; `last` has `got`, `moved`, `items` and `entities` (a row per place); outcomes `collected`,
+    `nothing_collected`, `inventory_full`, `unreached`, `failed`, `timed_out`; `--wait` follows it. All in reach:
+    the collect at once.
   - `transfer {item, from: "nearest"}` (Haiku 10:50: an ammo chest held pipes and no magazines, which cost a walk)
     takes from the nearest of our chests (container, logistic and linked chests) in reach that holds the item now,
     as the map shows them; `radius` (1..64) looks that far and walks there (a timed call, as `walk`). `from_nearest`
@@ -1669,20 +1675,43 @@ Some actions work at a distance, the way a player can through remote view:
   true}` gets out; `vehicle {drive: {x,y}}` drives the car or tank you drive there, a timed action steering as a
   player's keys do (Opus, shift09 03:20: a tank driven straight at its target got stuck on cliffs and was killed;
   Astra, shift10 04:10: a drive into an attack group ended blocked and left the tank surrounded):
-  - It follows the engine's path for the vehicle's box (a square as wide as its diagonal plus a tile, else as wide as
-    it is long, else as wide as it is wide), around cliffs, water, trees and buildings, aiming a few tiles ahead on the
-    path. `last.path_length`.
+  - It follows the engine's path for the vehicle's box, around cliffs, water, trees and buildings, aiming a few tiles
+    ahead on the path; `last.path_length`, `last.plan`. Our own buildings are kept clear (Astra, operator 12:06: a tank
+    drive to (-265,-386) among our oil pipes ran a V past a pumpjack and crushed 7 of our entities):
+    - The plan is the vehicle's turning room first: a square as wide as its diagonal plus a tile (4.2 tiles for a
+      tank), to the target. Parked beside something, the plan starts at the nearest spot within 5 tiles where that box
+      fits; the vehicle drives there first.
+    - No such path to the target: the same box to open ground near it (within 8, then 13 tiles), and the drive stops
+      at the end of that path (`last.stopped_short: 7.5 tiles from (-265,-386): the tank's turning room fits no
+      closer ...`).
+    - Then a path as wide as the vehicle is long, then as wide as it is wide, each only when none of our entities lies
+      within its turning room (half its diagonal plus 0.5) of that path, apart from what it is parked beside. Else
+      `unreachable`, `last.why` naming the entities of ours that path passes.
+    - It brakes in time for the path's end and for turns over 36 degrees (a tank needs about 7 tiles to stop from 0.15
+      tiles a tick, 17 from full speed), and steers at most 2 tiles past a turn.
+    - It brakes to stop 0.5 tiles before any of our entities (and our characters) in its way, ahead or behind when
+      backing, and turns at a crawl only with none of ours within its corners' sweep. `last.spared` names the ones it
+      braked or held for. Held by one of ours and backed off once, it ends `blocked` with `last.why: stopped at
+      (148.4,0.5) to spare our pipe (150.5,-0.5) (a drive pushes only through enemy units)`.
+  - `dry_run: true` previews the drive without moving: a timed action of a few ticks (`--wait`), outcome
+    `previewed` (or `unreachable`, as the drive would end). `last.preview` has:
+    - `path`: its corners;
+    - `path_length`, `plan`, `ends`, `short_of`;
+    - `touches`: our entities within the vehicle's half-diagonal of the path, which it would touch turning there, or
+      `none`;
+    - `nearest_ours`: the nearest of ours to the path, and the vehicle's reach to each side.
   - Neither moving nor turning for 1.5 s against something solid, it backs off 1 s with the wheel turned toward the
     path and asks for a path again, once (`last.backed_up: stuck at (30.0,123.7) (in front: cliff (30,126.5)):
     backed off and asked for a new path`); stuck again it ends `blocked`, `last.why` naming what is in front.
   - Units in the way (biters, pentapods) are no block: it keeps the throttle and pushes through, as a player holding
-    the key does; `last.rammed` counts the units it pressed against or hit. Buildings, cliffs, rocks and water stop it.
+    the key does; `last.rammed` counts the units it pressed against or hit. Buildings, cliffs, rocks and water stop it,
+    and it never presses on into ours.
   - `reverse: true` backs there, rear first (out of a crowd, off an obstacle), the same way.
   - `avoid_enemies` works as for `move_to`. `pathfind: false` steers straight at the target (`blocked` after 3 s
     without progress).
-  - Outcomes `arrived`, `blocked`, `unreachable` (no path for any of the three boxes, `last.why`),
-    `no_safe_route`, `timed_out`; `--wait` waits for it and shows `path_length`, `backed_up`, `rammed` and the enemy
-    fields.
+  - Outcomes `arrived`, `blocked`, `unreachable` (no path for any plan, `last.why`), `no_safe_route`, `timed_out`,
+    and `previewed` for a dry run. `--wait` waits for it and shows `path_length`, `plan`, `stopped_short`, `spared`,
+    `preview`, `backed_up`, `rammed` and the enemy fields.
   `vehicle {position, go_to: {x,y}}` sends a spidertron walking by itself (from outside, or the one you ride; one
   with an empty fuel slot does not walk, and the reply says so: fuel goes in with `transfer`);
   `vehicle {}` says where you sit and, for a vehicle with guns, `guns`: each slot's gun, its ammo and count, range,

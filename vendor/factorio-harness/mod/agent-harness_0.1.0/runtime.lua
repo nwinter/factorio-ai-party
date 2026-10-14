@@ -364,12 +364,20 @@ local function finish(index, outcome)
     local nav=action.nav
     if nav then
       last.path_length=nav.path_length
+      -- Which box the path was planned for, and a stop short of a target with no turning room around it (drivesafe).
+      last.plan=nav.plan
+      if nav.short_of and nav.finish then
+        last.stopped_short=string.format('%.1f tiles from (%g,%g): the %s\'s turning room fits no closer (our entities or obstacles around it)',
+          nav.short_of,action.target.x,action.target.y,action.vehicle and action.vehicle.valid and action.vehicle.name or 'vehicle')
+      end
       if action.backed then last.backed_up=string.format('stuck at (%.1f,%.1f) (%s: %s): backed off and asked for a new path',action.backed.at.x,action.backed.at.y,action.backed.side or 'in front',action.backed.front) end
       M.avoid.report(last,nav)
     end
     last.why=last.why or action.why
-    -- Units it pushed through or hit (vehicles.lua: units are no block).
+    -- Units it pushed through or hit (vehicles.lua: units are no block); ours it braked or stopped for; a dry run's path.
     last.rammed=action.rammed_n
+    last.spared=action.spared_list and table.concat(action.spared_list,', ') or nil
+    last.preview=action.preview
     last.reverse=action.reverse
     if outcome=='timed_out' and last.position then last.why=string.format('time ran out at (%.1f,%.1f), %.1f tiles from the target',last.position.x,last.position.y,distance(last.position,action.target)) end
   end
@@ -1040,6 +1048,7 @@ function handlers.describe()
       collect={wait_ticks='1..36000 with position: stand at that assembler or furnace (walking into reach first) and take each product from its output the tick it is there, as a player standing there does, until the ticks run out or count is taken (item: only that one); a timed action: outcomes collected | nothing_collected | inventory_full | unreached; last.took, last.made (crafts x products per craft), last.inserters_took (what the machine made less what you took and what is left), last.crafts, last.waited_s',
         keep_taking='true (3600 ticks) or ticks: the same as wait_ticks',
         up_to='true: an empty source or a full inventory never fails the call or, as a queue step, pauses the plan (nothing_collected and inventory_full count as done); moved, short {asked, moved, reason}; it also stops at your personal request max for an item (left_at_max says what stayed in the source)',keep_max='true: refuse a take that would put you over your personal request max (the game moves what is over it to your trash slots); nothing is taken. Without it, a take over that max (or of an unrequested item while unrequested items go to trash) says so in the reply\'s trash lines: how many the game moves to your trash slots',types='entity types (default furnace, assembling-machine: machine outputs only)',chests='boolean: also empty plain chests (container, logistic-container) in reach or radius; off by default because chests are usually feed stock you placed (result notes chests_skipped / left_in_chests)',item='optional: only this item',positions='optional 1..64 positions instead of everything in reach (named chests are always taken from)',area='or {left_top, right_bottom} up to 128x128: our entities of types (default machines; chests=true adds chests) with their centre inside, as positions (at most 64; area_targets counts them)',
+        walk='true with positions (or position): those out of reach are walked to, nearest first, and each is collected from as in reach (one timed call, ticks 1..36000 default 3600; returns places, out_of_reach, legs, until_tick; last {op, got, items, entities a row per place}; outcomes collected | nothing_collected | inventory_full | unreached | failed | timed_out); all in reach: the collect at once',
         pick='first_with_stock|most_stock with positions and item or items: as transfer\'s pick (one listed place that holds it now; empty ones skipped, never short)',items='with pick: 1..16 item names',to='with pick: {x,y} or {item: {x,y}}: carry what was taken there and give it (as transfer\'s to)',
         radius='1..256: with item, walk to our machine outputs/chests holding it (as stock lists), nearest-neighbour route, taking it until count; without item, to every assembler and furnace output in it holding anything, taking all of it (output slots only, never inputs or fuel; chests need item; last reports items); a timed action',count='with radius: stop after this many (default all)',want='optional, with item: hold this many; takes only the difference (nothing when you already have it); not with count',ticks='with radius: 1..36000 (default 3600)',
         outcomes='with radius: collected | nothing_collected | inventory_full | timed_out; status reports got, visited, and tally with 2+ places: moved per item, places touched of the total, short (not reached, failed, not visited); in reach or with positions, 2+ targets: tally as transfer\'s'},
@@ -4414,7 +4423,34 @@ function handlers.collect(p,a)
     out.until_tick=action.until_tick
     return out
   end
-  assert(a.ticks==nil,'ticks applies to collect with radius or wait_ticks')
+  -- walk=true (Muse 12:20: like transfer's): positions out of reach are walked to, nearest first, and each is
+  -- collected from as in reach (the same take: machine outputs, named chests); one timed call with legs. All in reach:
+  -- the collect at once.
+  assert(a.walk==nil or type(a.walk)=='boolean','walk must be true or false')
+  if a.walk==true then
+    local list=a.positions or (a.position~=nil and {a.position}) or nil
+    assert(type(list)=='table' and #list>=1 and #list<=64,'walk goes with positions (1..64 places to collect from)')
+    local entities,far={},0
+    for i,pos in ipairs(list) do
+      local e=entity(p,{position=pos,name=type(pos)=='table' and pos.name or a.name,unit_number=type(pos)=='table' and pos.unit_number or nil},true)
+      friendly(p,e)
+      entities[i]=e
+      if not p.can_reach_entity(e) then far=far+1 end
+    end
+    if far>0 then
+      assert(a.keep_max==nil or type(a.keep_max)=='boolean','keep_max must be true or false')
+      local take={direction='to_player',item=a.item,quality=a.quality,partial=a.up_to==true or nil,keep_max=a.keep_max,
+        count=a.item and integer(a.count,10000,1,10000,'count') or nil}
+      local action,out=stock.start_tour(p,'transfer',entities,integer(a.ticks,3600,1,36000,'ticks'),
+        {transfer=take,item=a.item,quality=a.quality,rows={},items={},collect=true})
+      if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
+      state().active[p.index]=action
+      out.until_tick=action.until_tick; out.out_of_reach=far
+      out.legs,out.legs_more=M.legs(p,action.targets)
+      return out
+    end
+  end
+  assert(a.ticks==nil or a.walk==true,'ticks applies to collect with radius, wait_ticks or walk')
   assert(a.keep_max==nil or type(a.keep_max)=='boolean','keep_max must be true or false')
   -- up_to=true stops at the request max (partial); keep_max refuses a take over it (trash.lua).
   local args={direction='to_player',item=a.item,types=a.types or (a.chests and collect_types.chests or collect_types.plain),positions=a.positions,quality=a.quality,

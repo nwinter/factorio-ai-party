@@ -163,7 +163,7 @@ already targets your character.
   '{"history":"all","pending":10}'` shows more.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
-  true}` (and `feed {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one
+  true}` (and `feed` or `collect {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one
   call; `legs` lists the route); `transfer {item, "from": "nearest"}` (`radius` to walk) takes from the nearest chest
   holding the item and says which; `transfer`/`collect {positions,
   item | items, pick: "first_with_stock" | "most_stock"}` takes at one listed place that holds the item now (empty
@@ -215,6 +215,9 @@ already targets your character.
   (10x6) equipment grid in reach or seated; `"operation":"list"` shows it, also by remote view; `inspect` on it too.
 - `vehicle {drive}` follows the engine's path for the vehicle around cliffs and water, backs off once when stuck, pushes
   through units (`last.rammed`), backs there rear first with `"reverse":true`, and takes `avoid_enemies` as `move_to` does.
+  It keeps its turning room clear of our buildings and brakes before any of ours (`last.spared`). With no room near the
+  target it stops on open ground short of it (`last.stopped_short`). `"dry_run":true` previews the path and names ours
+  it would touch (`last.preview`).
 - `move_to` never ends on a belt (it steps to the nearest free tile without one, `last.off_belt`). With no route for
   your character it ends at once as `unreachable`, with `last.why` (closed in: the area and what closes it in) and
   `last.nearest_reachable`, plus `last.build_spot`: a spot you can reach within build reach of the target

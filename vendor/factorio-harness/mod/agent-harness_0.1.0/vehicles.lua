@@ -13,7 +13,8 @@ return function(api)
     vehicle = {position='{x,y} of a car, tank, spidertron, locomotive or wagon (enter within 10 tiles; go_to: a spidertron in sight)',
       enter='true: get in (driver seat if free, else a car or spidertron passenger seat); a train you ride runs its schedule as usual',
       exit='true: get out of the vehicle you are in',
-      drive='{x,y}: drive the car or tank you are driving to there (a timed action: outcomes arrived | blocked | unreachable | no_safe_route | timed_out; ticks 1..36000, default 3600). It follows the engine\'s path for the vehicle\'s box (a square as wide as its diagonal plus a tile, then as its length, then as its width): around cliffs, water, trees and buildings, steering at a point a few tiles ahead on the path. Neither moving nor turning for 1.5 s against something solid: it backs off 1 s with the wheel turned and asks for a path again, once (last.backed_up); stuck again it ends blocked (last.why names what is in front)',
+      drive='{x,y}: drive the car or tank you are driving to there (a timed action: outcomes arrived | blocked | unreachable | no_safe_route | timed_out; ticks 1..36000, default 3600). It follows the engine\'s path for the vehicle\'s turning room (a square as wide as its diagonal plus a tile): to the target, else to open ground within 8 then 13 tiles of it (last.stopped_short), else for its length or width only when none of our entities lies within its turning room of that path (else unreachable, naming them). It slows to stop before the path\'s end and before sharp turns, steers no more than 2 tiles past a turn, and brakes to stop 0.5 tiles before any of our entities in its way, turning on the spot only with none within its corners\' sweep (last.spared names them; units it pushes through, ours never). Neither moving nor turning for 1.5 s: it backs off 1 s (not into ours) and asks for a path again, once (last.backed_up); stuck again it ends blocked (last.why names what is in front, or the entity of ours it stopped for)',
+      dry_run='with drive: true: the path the drive would take, without moving (a timed action of a few ticks: fh --wait): last.preview {path (its corners), path_length, plan, ends, short_of, touches (our entities within the vehicle\'s half-diagonal of the path: what it would touch turning there; none), nearest_ours}; outcome previewed, or unreachable as the drive would end',
       pathfind='with drive: default true; false steers straight at the target',
       reverse='with drive: optional true: back there, rear first (to back out of a crowd or off an obstacle). Units in the way (biters, pentapods) are no block: it keeps the throttle and pushes through, as a player holding the key does; last.rammed counts the units it pressed against or hit. Buildings, cliffs, rocks and water stop it',
       avoid_enemies='with drive: as move_to (default: worms\' range + 4; true: worms and spawners + 8; a margin 0..32; false: no check)',
@@ -211,19 +212,23 @@ return function(api)
       local ticks = api.integer(a.ticks, 3600, 1, 36000, 'ticks')
       assert(a.pathfind == nil or type(a.pathfind) == 'boolean', 'pathfind must be true or false')
       assert(a.reverse == nil or type(a.reverse) == 'boolean', 'reverse must be true or false')
+      refuse(a.dry_run == nil or type(a.dry_run) == 'boolean', 'dry_run must be true or false')
+      local dry = a.dry_run == true
       local mode = api.avoid_mode(a.avoid_enemies)
       -- combat (Astra, operator 08:34: shoot runs at most 600 ticks while a drive runs a minute or more): the guns on
       -- auto for the whole drive, as shoot auto; the checks first, so a refused combat starts no drive.
       local caction, cout
-      if a.combat ~= nil and a.combat ~= false then
+      if a.combat ~= nil and a.combat ~= false and not dry then
         assert(a.combat == true or type(a.combat) == 'number', 'combat is true or a radius 1..36')
         caction, cout = M.shoot(p, {auto=true, radius=a.combat ~= true and a.combat or nil}, ticks)
       end
-      local action = {kind='drive', target=target, until_tick=game.tick + ticks, last=v.position, still=0, vehicle=v, reverse=a.reverse or nil,
-        remote=a.remote or nil}
+      local action = {kind='drive', target=target, until_tick=game.tick + (dry and math.min(ticks, 1800) or ticks), last=v.position, still=0, vehicle=v,
+        reverse=a.reverse or nil, remote=a.remote or nil, dry=dry or nil}
       api.start(p, action)
       local out = {until_tick=action.until_tick, target=target, vehicle=v.name, distance=math.floor(api.distance(v.position, target)), pathfinding=a.pathfind ~= false,
-        reverse=a.reverse or nil}
+        reverse=a.reverse or nil, dry_run=dry or nil,
+        note=dry and (a.pathfind ~= false and 'the path is asked for: the preview comes when it ends (last.preview; fh --wait waits for it); the vehicle does not move'
+          or 'the straight line to the target: last.preview next tick (fh --wait); the vehicle does not move') or nil}
       if a.remote then
         out.remote = string.format('by remote view: %s (%g,%g), unit_number %d; your character stays at (%g,%g)', v.name,
           math.floor(v.position.x * 10 + 0.5) / 10, math.floor(v.position.y * 10 + 0.5) / 10, v.unit_number, math.floor(c.position.x * 10 + 0.5) / 10,
@@ -275,44 +280,258 @@ return function(api)
     return math.max(w, l), math.min(w, l)
   end
   M.halves = halves
-  function M.box_halves(v)
+  -- Astra (operator 12:06, shift12): a tank drive to (-265,-386), a pocket among our oil pipes, found no path for
+  -- the turning box nor the length box; the width box's path ran a V past a pumpjack, the tank swung wide at the V
+  -- and crushed 7 of our entities. Plans, in order: the turning box (as wide as the diagonal plus half a tile) to
+  -- the target; the same box to open ground near it (within 8, then 13 tiles: the drive stops short there); the
+  -- length box, then the width box, each taken only when none of our entities lies within the turning room
+  -- (the half-diagonal plus MARGIN) of its path.
+  local MARGIN = 0.5
+  function M.plans(v)
     local long, short = halves(v)
-    return {(long * long + short * short) ^ 0.5 + 0.5, long, short}
+    local turn = (long * long + short * short) ^ 0.5 + MARGIN
+    return {{h=turn, r=0, what='turning room'}, {h=turn, r=4, near=true, what='turning room, near the target'},
+      {h=turn, r=9, near=true, what='turning room, near the target'}, {h=long, r=0, narrow=true, what='its length'},
+      {h=short, r=0, narrow=true, what='its width'}}
+  end
+  function M.box_halves(v)
+    local out = {}
+    for i, plan in ipairs(M.plans(v)) do out[i] = plan.h end
+    return out
   end
   function M.request(p, nav)
     local v = nav.vehicle_entity or (p.character and p.character.vehicle)
     if not (v and v.valid) then nav.path_state = 'failed'; return end
-    local levels = M.box_halves(v)
-    local h = levels[math.min(#levels, (nav.path_level or 0) + 1)]
-    nav.path_id = v.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=v.prototype.collision_mask, start=v.position,
-      goal=nav.position, force=p.force, radius=nav.tolerance + 1, entity_to_ignore=v, can_open_gates=false,
+    local plans = M.plans(v)
+    local plan = plans[math.min(#plans, (nav.path_level or 0) + 1)]
+    local h = plan.h
+    -- A box that collides where the vehicle stands gets no path at all (2.0.77: a tank parked 1.7 tiles from our
+    -- pipe-to-ground); the plan starts at the nearest spot within 5 tiles where it fits, the vehicle driving there first.
+    nav.lead = M.free_start(v, h, nav.position)
+    nav.path_id = v.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=v.prototype.collision_mask, start=nav.lead or v.position,
+      goal=nav.position, force=p.force, radius=nav.tolerance + 1 + plan.r, entity_to_ignore=v, can_open_gates=false,
       pathfind_flags={prefer_straight_paths=true, no_break=false, cache=false}}
     api.paths()[nav.path_id] = p.index
     nav.path_state = 'pending'; nav.waypoints = nil; nav.waypoint = nil; nav.asked_tick = game.tick
   end
-  -- A found path, unless the enemy check holds it or goes around a nest (avoid.lua).
+  -- Geometry: distances from a point or a segment to a box (l, t, r, b).
+  local function pt_box(px, py, l, t, r, b)
+    local dx = px < l and l - px or (px > r and px - r or 0)
+    local dy = py < t and t - py or (py > b and py - b or 0)
+    return (dx * dx + dy * dy) ^ 0.5
+  end
+  local function pt_seg(px, py, ax, ay, bx, by)
+    local dx, dy = bx - ax, by - ay
+    local L = dx * dx + dy * dy
+    local u = L > 0 and math.max(0, math.min(1, ((px - ax) * dx + (py - ay) * dy) / L)) or 0
+    local qx, qy = ax + u * dx - px, ay + u * dy - py
+    return (qx * qx + qy * qy) ^ 0.5
+  end
+  local function seg_box(ax, ay, bx, by, l, t, r, b)
+    -- The segment crosses the box (Liang-Barsky clip): 0.
+    local t0, t1, dx, dy = 0, 1, bx - ax, by - ay
+    local ps, qs, inside = {-dx, dx, -dy, dy}, {ax - l, r - ax, ay - t, b - ay}, true
+    for i = 1, 4 do
+      local pp, qq = ps[i], qs[i]
+      if pp == 0 then
+        if qq < 0 then inside = false; break end
+      else
+        local u = qq / pp
+        if pp < 0 then if u > t1 then inside = false; break elseif u > t0 then t0 = u end
+        else if u < t0 then inside = false; break elseif u < t1 then t1 = u end end
+      end
+    end
+    if inside then return 0 end
+    return math.min(pt_box(ax, ay, l, t, r, b), pt_box(bx, by, l, t, r, b), pt_seg(l, t, ax, ay, bx, by), pt_seg(r, t, ax, ay, bx, by),
+      pt_seg(l, b, ax, ay, bx, by), pt_seg(r, b, ax, ay, bx, by))
+  end
+  M.seg_box = seg_box
+  -- Our entities a vehicle collides with (its collision layers meet theirs), by name; ghosts, remnants and items on
+  -- the ground do not stop it. Characters count only where asked (they move, so a plan ignores them).
+  local PASS = {['entity-ghost']=true, ['tile-ghost']=true, corpse=true, ['character-corpse']=true, ['item-request-proxy']=true,
+    ['item-entity']=true, ['logistic-robot']=true, ['construction-robot']=true, ['combat-robot']=true}
+  local function collider(v)
+    local mine, cache = {}, {}
+    pcall(function() for layer in pairs(v.prototype.collision_mask.layers) do mine[layer] = true end end)
+    return function(e)
+      local name = e.name
+      local hit = cache[name]
+      if hit == nil then
+        hit = false
+        local ok = pcall(function() for layer in pairs(e.prototype.collision_mask.layers) do if mine[layer] then hit = true; break end end end)
+        if not ok then hit = false end
+        cache[name] = hit
+      end
+      return hit
+    end
+  end
+  local function at(e) return string.format('%s (%g,%g)', e.name, math.floor(e.position.x * 2 + 0.5) / 2, math.floor(e.position.y * 2 + 0.5) / 2) end
+  M.at = at
+  -- Whether a square box of half-size h at pos is free of what blocks the vehicle (entities whose layers meet its
+  -- own, not units or characters, and tiles).
+  local function box_free(v, layers, pos, h)
+    local area = {{pos.x - h, pos.y - h}, {pos.x + h, pos.y + h}}
+    local ok, found = pcall(function() return v.surface.find_entities_filtered{area=area, collision_mask=layers} end)
+    if not ok then return true end
+    for _, e in ipairs(found) do
+      if e.valid and e ~= v and e.type ~= 'character' and e.type ~= 'unit' and not PASS[e.type] then return false end
+    end
+    local okt, n = pcall(function() return v.surface.count_tiles_filtered{area=area, collision_mask=layers} end)
+    return not (okt and n > 0)
+  end
+  -- Nil when the box fits where the vehicle stands; else the nearest spot within 5 tiles where it fits (toward the
+  -- goal on a tie), or nil.
+  function M.free_start(v, h, toward)
+    local layers = {}
+    pcall(function() for layer in pairs(v.prototype.collision_mask.layers) do layers[#layers + 1] = layer end end)
+    if #layers == 0 or box_free(v, layers, v.position, h) then return nil end
+    local px, py = v.position.x, v.position.y
+    for r = 0.5, 5, 0.5 do
+      local best, bd
+      for k = 0, 15 do
+        local a = k * math.pi / 8
+        local q = {x=px + math.cos(a) * r, y=py + math.sin(a) * r}
+        if box_free(v, layers, q, h) then
+          local d = toward and api.distance(q, toward) or 0
+          if not bd or d < bd then best, bd = q, d end
+        end
+      end
+      if best then return best end
+    end
+    return nil
+  end
+  -- Our entities within clear of a path (a list of points), nearest first: {entity, d} with d the distance from the
+  -- path's centre line to the entity's box.
+  function M.path_touches(v, surface, force, points, clear, skip)
+    local hits, out, best = collider(v), {}, {}
+    local along = 0
+    for i = 1, #points - 1 do
+      local a, b = points[i], points[i + 1]
+      if i > 1 then along = along + api.distance(points[i - 1], a) end
+      local area = {{math.min(a.x, b.x) - clear, math.min(a.y, b.y) - clear}, {math.max(a.x, b.x) + clear, math.max(a.y, b.y) + clear}}
+      local ok, found = pcall(function() return surface.find_entities_filtered{area=area, force=force} end)
+      for _, e in ipairs(ok and found or {}) do
+        local bb = e.valid and e ~= v and e.type ~= 'character' and not PASS[e.type] and e.force == force and hits(e) and e.bounding_box
+        if bb and skip and skip(e, bb, along) then bb = nil end
+        if bb then
+          local d = seg_box(a.x, a.y, b.x, b.y, bb.left_top.x, bb.left_top.y, bb.right_bottom.x, bb.right_bottom.y)
+          if d < clear then
+            local key = e.unit_number or (e.position.x * 1048576 + e.position.y)
+            local rec = best[key]
+            if not rec then rec = {entity=e, d=d}; best[key] = rec; out[#out + 1] = rec elseif d < rec.d then rec.d = d end
+          end
+        end
+      end
+    end
+    table.sort(out, function(x, y) return x.d < y.d end)
+    return out
+  end
+  -- "pumpjack (-261.5,-398.5) 0.3 tiles, pipe (-262.5,-394.5) 1.1 tiles" (the first n).
+  function M.touch_line(list, n)
+    local parts = {}
+    for i, t in ipairs(list) do
+      if i > (n or 4) then parts[#parts + 1] = string.format('+%d more', #list - (n or 4)); break end
+      parts[#parts + 1] = string.format('%s %.1f tiles', at(t.entity), t.d)
+    end
+    return table.concat(parts, ', ')
+  end
+  local function points_of(path, from)
+    local pts = {from}
+    for _, w in ipairs(path) do
+      local q, last = w.position, pts[#pts]
+      if math.abs(q.x - last.x) > 0.05 or math.abs(q.y - last.y) > 0.05 then pts[#pts + 1] = q end
+    end
+    return pts
+  end
+  -- A found path, unless it is a narrow one passing our entities (the next plan is asked for), the enemy check holds
+  -- it, or it goes around a nest (avoid.lua).
   function M.use(p, nav, path)
-    if api.accept and not api.accept(nav.vehicle_entity and nav.vehicle_entity.valid and M.at_vehicle(p, nav.vehicle_entity) or p, nav, path) then return end
+    local v = nav.vehicle_entity and nav.vehicle_entity.valid and nav.vehicle_entity or (p.character and p.character.vehicle)
+    local plans = v and v.valid and M.plans(v) or {}
+    local plan = plans[math.min(#plans, (nav.path_level or 0) + 1)] or {}
+    if nav.lead and v and v.valid then
+      local whole = {{position={x=v.position.x, y=v.position.y}}}
+      for _, w in ipairs(path) do whole[#whole + 1] = w end
+      path = whole
+    end
+    if plan.narrow and v and v.valid then
+      local long, short = halves(v)
+      local clear = (long * long + short * short) ^ 0.5 + MARGIN
+      -- What the vehicle already stands beside does not count while it drives off (its first clear + length tiles).
+      local px, py = v.position.x, v.position.y
+      local function beside(e, bb, along)
+        return along < clear + long and pt_box(px, py, bb.left_top.x, bb.left_top.y, bb.right_bottom.x, bb.right_bottom.y) < clear + 0.01
+      end
+      local touches = M.path_touches(v, v.surface, p.force, points_of(path, v.position), clear, beside)
+      if #touches > 0 then
+        nav.narrow_touches = nav.narrow_touches or {}
+        nav.narrow_touches[#nav.narrow_touches + 1] = {what=plan.what, list=touches}
+        return M.next_plan(p, nav)
+      end
+    end
+    if api.accept and not api.accept(v and v.valid and M.at_vehicle(p, v) or p, nav, path) then return end
     nav.waypoints = path; nav.waypoint = 1; nav.path_state = 'found'
     local n = 0
     for i = 2, #path do n = n + api.distance(path[i-1].position, path[i].position) end
     nav.path_length = math.floor(n + 0.5)
+    nav.finish = path[#path].position
+    nav.plan = plan.what
+    nav.short_of = plan.near and api.distance(nav.finish, nav.position) or nil
   end
-  -- A path result for a drive: the narrower box next, then unreachable.
+  -- The next plan, or unreachable: no path, or every narrow one passes our entities.
+  function M.next_plan(p, nav)
+    local v = nav.vehicle_entity or (p.character and p.character.vehicle)
+    local count = v and v.valid and #M.plans(v) or 1
+    if (nav.path_level or 0) < count - 1 then nav.path_level = (nav.path_level or 0) + 1; return M.request(p, nav) end
+    local long, short = 0, 0
+    if v and v.valid then long, short = halves(v) end
+    nav.path_state = 'unreachable'
+    local name = v and v.valid and v.name or 'vehicle'
+    if nav.narrow_touches then
+      local t = nav.narrow_touches[#nav.narrow_touches]
+      nav.why = string.format('no path keeps the %s\'s turning room (%.1f tiles) to (%g,%g) or open ground within 13 tiles of it; the path for %s passes our %s',
+        name, ((long * long + short * short) ^ 0.5) * 2, nav.position.x, nav.position.y, t.what, M.touch_line(t.list, 3))
+    else
+      nav.why = string.format('no path for the %s (%.1f by %.1f tiles) to (%g,%g)', name, short * 2, long * 2, nav.position.x, nav.position.y)
+    end
+  end
+  -- A path result for a drive: the next plan when none, then unreachable.
   function M.on_path(p, action, event)
     local nav = action.nav
     if not nav or event.id ~= nav.path_id then return end
     if event.path then return M.use(p, nav, event.path) end
     if event.try_again_later then nav.path_state = 'busy'; return end
-    if (nav.path_level or 0) < 2 then nav.path_level = (nav.path_level or 0) + 1; return M.request(p, nav) end
-    local v = nav.vehicle_entity or (p.character and p.character.vehicle)
-    local long, short = 0, 0
-    if v and v.valid then long, short = halves(v) end
-    nav.path_state = 'unreachable'
-    nav.why = string.format('no path for the %s (%.1f by %.1f tiles) to (%g,%g)', v and v.valid and v.name or 'vehicle', short * 2, long * 2, nav.position.x, nav.position.y)
+    return M.next_plan(p, nav)
+  end
+  -- The heading of a from-to step as an orientation (0 north, 0.25 east).
+  local function heading(a, b)
+    local o = (math.atan2 or math.atan)(b.x - a.x, -(b.y - a.y)) / (2 * math.pi)
+    return o < 0 and o + 1 or o
+  end
+  local function turn_of(h1, h2) return math.abs((h2 - h1 + 0.5) % 1 - 0.5) end
+  -- The sharpest turn of the path within `ahead` tiles past the vehicle's place on it (nav.waypoint, nav.along):
+  -- the turn (orientation units, 0..0.5) and how far along the path it comes.
+  function M.turn_ahead(nav, from, ahead)
+    local wps = nav.waypoints
+    local i = nav.waypoint or 1
+    if not (wps and wps[i + 1]) then return 0, nil end
+    local h0 = heading(wps[i].position, wps[i + 1].position)
+    local dist, prev, best, at_d = 0, from, 0, nil
+    for j = i + 1, #wps - 1 do
+      local a, b = wps[j].position, wps[j + 1].position
+      dist = dist + api.distance(prev, a)
+      prev = a
+      if dist > ahead then break end
+      local t = turn_of(h0, heading(a, b))
+      if t > best + 0.01 then best, at_d = t, dist end
+    end
+    return best, at_d
   end
   -- The point to steer at: where the vehicle is along the path (the nearest
-  -- point of the next few segments), then lookahead tiles further along it.
+  -- point of the next few segments), then lookahead tiles further along it,
+  -- never past the path's end; around a turn of more than 15 degrees no
+  -- further than 2 tiles past it, so the line to it cuts no corner into what
+  -- the path went round.
   local function aim(v, nav, lookahead)
     local wps, pos = nav.waypoints, v.position
     local best, bi, bt = nil, nav.waypoint, 0
@@ -326,14 +545,17 @@ return function(api)
     end
     nav.waypoint = bi
     local a, b = wps[bi].position, (wps[bi + 1] or wps[bi]).position
-    local cur, left = {x=a.x + (b.x - a.x) * bt, y=a.y + (b.y - a.y) * bt}, lookahead
+    local cur = {x=a.x + (b.x - a.x) * bt, y=a.y + (b.y - a.y) * bt}
+    local turn, at_d = M.turn_ahead(nav, cur, lookahead)
+    if turn > 0.04 and at_d then lookahead = math.min(lookahead, at_d + 2) end
+    local left = lookahead
     for i = bi + 1, #wps do
       local q = wps[i].position
       local seg = api.distance(cur, q)
-      if seg >= left then local t = left / seg; return {x=cur.x + (q.x - cur.x) * t, y=cur.y + (q.y - cur.y) * t} end
+      if seg >= left then local t = left / seg; return {x=cur.x + (q.x - cur.x) * t, y=cur.y + (q.y - cur.y) * t}, cur end
       left = left - seg; cur = q
     end
-    return nav.position
+    return wps[#wps].position, cur
   end
   -- What stands right in front of the vehicle (a cliff, trees, water, a building).
   function M.in_front(v, surface, back)
@@ -404,6 +626,100 @@ return function(api)
     action.rammed = action.rammed or {}
     if k and not action.rammed[k] then action.rammed[k] = true; action.rammed_n = (action.rammed_n or 0) + 1 end
   end
+  -- Braking, tiles per tick per tick, read on a private copy (2.0.77): a tank 0.0016 (17 tiles from 0.236 a tick),
+  -- a car 0.0055 (18 tiles from 0.45); anything else as a tank.
+  local function decel(v) return v.name == 'car' and 0.0055 or 0.0016 end
+  M.decel = decel
+  -- The nearest of our entities in the vehicle's way over its next `reach` tiles (ahead, or behind with back), and
+  -- the gap from its end to that entity's box. Our characters count (not the vehicle's own seats); ghosts, remnants
+  -- and what the vehicle passes over (belts) do not.
+  function M.ours_ahead(v, force, back, reach)
+    local o = (v.orientation or 0) * 2 * math.pi
+    local s = back and -1 or 1
+    local fx, fy = math.sin(o) * s, -math.cos(o) * s
+    local rx, ry = -fy, fx
+    local long, short = halves(v)
+    local w, far = short + 0.3, long + reach
+    local px, py = v.position.x, v.position.y
+    local ex, ey = px + fx * far, py + fy * far
+    local area = {{math.min(px, ex) - w - 0.5, math.min(py, ey) - w - 0.5}, {math.max(px, ex) + w + 0.5, math.max(py, ey) + w + 0.5}}
+    local ok, found = pcall(function() return v.surface.find_entities_filtered{area=area, force=force} end)
+    local hits = collider(v)
+    local best, gap
+    for _, e in ipairs(ok and found or {}) do
+      local t = e.valid and e ~= v and e.type
+      local mine = t and not PASS[t] and e.force == force and (t == 'character' and (pcall(function() return e.vehicle ~= v end) and e.vehicle ~= v) or t ~= 'character' and hits(e))
+      local bb = mine and e.bounding_box
+      if bb then
+        local amin, amax, bmin, bmax = math.huge, -math.huge, math.huge, -math.huge
+        for _, cx in ipairs{bb.left_top.x, bb.right_bottom.x} do
+          for _, cy in ipairs{bb.left_top.y, bb.right_bottom.y} do
+            local dx, dy = cx - px, cy - py
+            local a, b = dx * fx + dy * fy, dx * rx + dy * ry
+            if a < amin then amin = a end
+            if a > amax then amax = a end
+            if b < bmin then bmin = b end
+            if b > bmax then bmax = b end
+          end
+        end
+        if amax > long - 0.3 and amin < far and bmin < w and bmax > -w then
+          local g = math.max(0, amin - long)
+          if not gap or g < gap then best, gap = e, g end
+        end
+      end
+    end
+    return best, gap
+  end
+  -- One of ours within the circle the vehicle's corners sweep turning on the spot (plus 0.2).
+  function M.ours_around(v, force)
+    local long, short = halves(v)
+    local r = (long * long + short * short) ^ 0.5 + 0.2
+    local px, py = v.position.x, v.position.y
+    local ok, found = pcall(function() return v.surface.find_entities_filtered{area={{px - r - 1, py - r - 1}, {px + r + 1, py + r + 1}}, force=force} end)
+    local hits = collider(v)
+    for _, e in ipairs(ok and found or {}) do
+      local bb = e.valid and e ~= v and not PASS[e.type] and e.type ~= 'character' and e.force == force and hits(e) and e.bounding_box
+      if bb and pt_box(px, py, bb.left_top.x, bb.left_top.y, bb.right_bottom.x, bb.right_bottom.y) < r then return e end
+    end
+  end
+  -- One of ours the drive braked or held for, once each: last.spared.
+  local function spare(action, e)
+    local key = e.unit_number or (e.position.x * 1048576 + e.position.y)
+    action.spared = action.spared or {}
+    if action.spared[key] then return end
+    action.spared[key] = true
+    action.spared_list = action.spared_list or {}
+    if #action.spared_list < 6 then action.spared_list[#action.spared_list + 1] = at(e) end
+  end
+  -- dry_run: the path the drive would take (its corners), the plan, where it ends, and our entities near it, with
+  -- those within the vehicle's half-diagonal of the path's centre line (what it would touch turning there).
+  function M.preview(p, action, v)
+    local nav = action.nav
+    local pts = nav and nav.waypoints and points_of(nav.waypoints, v.position) or {v.position, action.target}
+    local corners = {pts[1]}
+    for i = 2, #pts - 1 do
+      if turn_of(heading(pts[i - 1], pts[i]), heading(pts[i], pts[i + 1])) > 0.02 then corners[#corners + 1] = pts[i] end
+    end
+    corners[#corners + 1] = pts[#pts]
+    local parts = {}
+    for i, q in ipairs(corners) do
+      if i > 14 then parts[#parts + 1] = string.format('+%d more', #corners - 14); break end
+      parts[#parts + 1] = string.format('(%g,%g)', math.floor(q.x * 10 + 0.5) / 10, math.floor(q.y * 10 + 0.5) / 10)
+    end
+    local long, short = halves(v)
+    local diag = (long * long + short * short) ^ 0.5
+    local near = M.path_touches(v, v.surface, p.force, pts, diag + MARGIN + 1)
+    local touches = {}
+    for _, t in ipairs(near) do if t.d < diag then touches[#touches + 1] = t end end
+    local length = nav and nav.path_length
+    if not length then length = math.floor(api.distance(v.position, action.target) + 0.5) end
+    action.preview = {path=table.concat(parts, ' '), path_length=length, plan=nav and nav.plan or 'straight at the target (pathfind false)',
+      ends=pts[#pts], touches=#touches > 0 and M.touch_line(touches, 6) or 'none',
+      nearest_ours=near[1] and string.format('%s, %.1f tiles from the path\'s centre line (the %s reaches %.1f to each side, %.1f turning)',
+        at(near[1].entity), near[1].d, v.name, short, diag) or nil,
+      short_of=nav and nav.short_of and string.format('ends %.1f tiles from (%g,%g): the %s\'s turning room fits no closer',
+        nav.short_of, nav.position.x, nav.position.y, v.name) or nil}
+  end
   function M.tick(p, action)
     local c = p.character
     local v
@@ -452,9 +768,27 @@ return function(api)
       if st == 'unreachable' or st == 'failed' then action.why = nav.why; ride(R.acceleration.nothing, R.direction.straight); return 'unreachable' end
       if st == 'unsafe' then ride(R.acceleration.nothing, R.direction.straight); return 'no_safe_route' end
     end
+    -- dry_run: it does not move; the path once found, and what lies near it.
+    if action.dry then
+      ride(math.abs(v.speed or 0) > 0.01 and R.acceleration.braking or R.acceleration.nothing, R.direction.straight)
+      M.preview(p, action, v)
+      return 'previewed'
+    end
+    local dec = decel(v)
     -- Backing up off whatever stopped it, then a fresh path from there.
     if action.backing then
-      if game.tick < action.backing.until_tick then ride(OFF, action.backing.turn); return nil end
+      if game.tick < action.backing.until_tick then
+        -- Not into ours behind it, nor swinging into ours beside it.
+        local sp = math.abs(v.speed or 0)
+        local ours = M.ours_ahead(v, p.force, not back, sp * sp / (2 * dec) + 1)
+        if ours then
+          spare(action, ours); action.held_by = ours; action.held_tick = game.tick
+          action.backing.until_tick = game.tick
+        else
+          ride(OFF, M.ours_around(v, p.force) and R.direction.straight or action.backing.turn)
+          return nil
+        end
+      end
       action.backing = nil
       ride(R.acceleration.braking, R.direction.straight)
       action.still, action.last = 0, v.position
@@ -464,7 +798,10 @@ return function(api)
     end
     local goal = nav and nav.position or action.target
     local d = api.distance(v.position, goal)
-    if d <= 3 then
+    -- The path's end: where a stop-short plan ends, and where any path ends (never steered past it at the target).
+    local finish = nav and nav.waypoints and nav.finish
+    local df = finish and api.distance(v.position, finish) or d
+    if d <= 3 or (finish and df <= 1.5) then
       -- A corner of the way around a nest: on to the next leg without stopping.
       if nav and nav.leg and api.leg(view_p, nav) then return nil end
       ride(R.acceleration.braking, R.direction.straight)
@@ -475,8 +812,8 @@ return function(api)
       return nil
     end
     local speed = math.abs(v.speed or 0)
-    local point = goal
-    if nav and nav.waypoints then point = aim(v, nav, math.max(4, math.min(10, speed * 30))) end
+    local point, here = goal, nil
+    if nav and nav.waypoints then point, here = aim(v, nav, math.max(4, math.min(10, speed * 30))) end
     -- Rear first when reversing: the rear is the heading (the wheel turns the vehicle the same way in either gear).
     local diff = angle_to(v.position, point) - ((v.orientation or 0) + (back and 0.5 or 0)) % 1
     if diff > 0.5 then diff = diff - 1 elseif diff < -0.5 then diff = diff + 1 end
@@ -492,8 +829,41 @@ return function(api)
       local fast = math.abs(diff) < 0.15 and d > 12
       accel = (fast or speed < 0.08) and GAS or R.acceleration.nothing
     end
-    -- Pressing against units: the throttle stays down (ram through).
-    if action.ramming and game.tick - action.ramming < 30 then accel = GAS end
+    -- Speed it can still stop from (dec): before the path's end, before a turn of more than 36 degrees (at 0.05 a
+    -- tick, 0.02 past 90), and 0.5 tiles before one of ours in its way (Astra 12:06: a tank at 0.15 a tick needs 7
+    -- tiles to stop; it took a V-turn at speed and ran into a pumpjack).
+    local stop_d = speed * speed / (2 * dec)
+    local limit
+    if nav and nav.waypoints then
+      limit = (2 * dec * math.max(0, df - 1)) ^ 0.5 + 0.02
+      local amount, at_d = M.turn_ahead(nav, here or v.position, stop_d + 4)
+      if amount > 0.1 and at_d then
+        local vt = amount > 0.25 and 0.02 or 0.05
+        limit = math.min(limit, (vt * vt + 2 * dec * math.max(0, at_d - 0.5)) ^ 0.5)
+      end
+    end
+    local held = false
+    local sv = v.speed or 0
+    if speed > 0.005 or accel == GAS then
+      local going_back = sv < -0.001 or (sv <= 0.001 and back)
+      local ours, gap = M.ours_ahead(v, p.force, going_back, stop_d + 1.5)
+      if ours then
+        local lim = (2 * dec * math.max(0, gap - 0.5)) ^ 0.5
+        if not limit or lim < limit then limit = lim end
+        if gap < 0.6 or speed > lim then spare(action, ours); action.held_by = ours; action.held_tick = game.tick; held = gap < 1 end
+      end
+    end
+    if limit then
+      if speed > limit + 0.005 then accel = R.acceleration.braking
+      elseif accel == GAS and limit < 0.015 then accel = R.acceleration.nothing end
+    end
+    -- Turning at a crawl or on the spot with ours within its corners' sweep: the wheel stays straight.
+    if speed < 0.05 and turn ~= R.direction.straight then
+      local ours = M.ours_around(v, p.force)
+      if ours then turn = R.direction.straight; spare(action, ours); action.held_by = ours; action.held_tick = game.tick end
+    end
+    -- Pressing against units: the throttle stays down (ram through), never into ours.
+    if action.ramming and game.tick - action.ramming < 30 and not held then accel = GAS end
     ride(accel, turn)
     local o = v.orientation or 0
     local turned = nav and math.abs((o - (action.last_o or o) + 0.5) % 1 - 0.5) > 0.003
@@ -513,7 +883,14 @@ return function(api)
     end
     if not nav then
       -- Steering straight at the target: no progress for 3 s is blocked (a tree, a building, water).
-      if action.still >= 180 then ride(R.acceleration.nothing, R.direction.straight); return 'blocked' end
+      if action.still >= 180 then
+        ride(R.acceleration.nothing, R.direction.straight)
+        local h = action.held_by
+        if h and h.valid and game.tick - (action.held_tick or 0) <= 100 then
+          action.why = string.format('stopped at (%.1f,%.1f) to spare our %s (a drive pushes only through enemy units)', v.position.x, v.position.y, at(h))
+        end
+        return 'blocked'
+      end
       return nil
     end
     -- On a path: neither moving nor turning for 1.5 s, it backs up 1 s with the
@@ -527,6 +904,12 @@ return function(api)
       return nil
     end
     ride(R.acceleration.nothing, R.direction.straight)
+    local h = action.held_by
+    if h and h.valid and game.tick - (action.held_tick or 0) <= 100 then
+      action.why = string.format('stopped at (%.1f,%.1f) to spare our %s (a drive pushes only through enemy units), again after backing off once from (%.1f,%.1f)',
+        v.position.x, v.position.y, at(h), action.backed.at.x, action.backed.at.y)
+      return 'blocked'
+    end
     action.why = string.format('stuck at (%.1f,%.1f) again after backing off once from (%.1f,%.1f); %s: %s', v.position.x, v.position.y,
       action.backed.at.x, action.backed.at.y, side, M.in_front(v, v.surface, back))
     return 'blocked'
