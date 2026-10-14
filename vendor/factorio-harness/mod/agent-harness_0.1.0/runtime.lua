@@ -906,7 +906,7 @@ local request_path,navigate,check_args
 function handlers.describe()
   local description = {protocol=1, version='0.1.0', max_action_ticks=MAX_TICKS, deduplication_window=256, deduplication_bytes=8*1024*1024,
     -- operator-only reads this runtime answers (dispatch with operator=true; callers check here before asking)
-    operator_reads={'attack_groups_live','big_enemies_live','hauling'},
+    operator_reads={'attack_groups_live','big_enemies_live','hauling','loadout'},
     target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (inspect and cargo weigh: sight, or by remote view anywhere on your surface in a chunk our force sees now, by: remote view); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, reach and visibility come from its position',
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
@@ -6386,6 +6386,10 @@ M.idle=require('idle'){state=state,agents=function() return M.board.agents() end
 -- The agent's own play (selfview.lua): team.review every 2 game hours and the
 -- review read (actions and time by kind, repeated hand hauls, failures, open
 -- alerts in its claims, losses near its work); team.shift.retro at shift start.
+-- What each agent carries, wears and builds, for the stream and the site (loadout.lua; Nick, 08:55).
+M.loadout=require('loadout'){agents=function() return M.board.agents() end,
+  lookup=function(index) local ok,p=pcall(M.lookup,index); return ok and body(p) or nil end,
+  active=function(index) return M.active(index) end}
 -- Hand hauling per agent, for the stream and the site (hauling.lua; viewer Joonazan, 05:00).
 M.hauling=require('hauling'){state=state,
   name=function(index) local ok,p=pcall(M.lookup,index); return ok and p and p.valid and M.board.who(p) or tostring(index) end,
@@ -6775,7 +6779,7 @@ function M.dispatch_inner(request)
   if request.operator==true then
     local ok,result=pcall(function()
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
-      local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.hauling.operator[request.action]
+      local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.bplibrary_operator[request.action]
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)

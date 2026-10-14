@@ -1463,6 +1463,18 @@ function H.read()
   return t
 end
 H[0]=H.read()
+-- loadout (loadout.lua; Nick, 08:55): an operator read listed in describe, a row per agent.
+do
+  local agents=runtime.board.agents
+  runtime.board.agents=function() return {{index=1,name='nick'}} end  -- (this fake game has no game.players)
+  local lo=runtime.dispatch{action='loadout',args={},operator=true}
+  runtime.board.agents=agents
+  eq(#lo.agents,1); eq(lo.agents[1].name,'nick'); eq(lo.agents[1].alive,true); assert(lo.tick and lo.agents[1].items,'loadout rows')
+  local reads=runtime.dispatch{action='describe',args={},player=1}.operator_reads
+  local listed=false
+  for _,r in ipairs(reads) do listed=listed or r=='loadout' end
+  assert(listed,'describe lists loadout')
+end
 -- A hauling hook that throws fails no request (every hook runs under pcall).
 do
   local begin,done=runtime.hauling.begin,runtime.hauling.done

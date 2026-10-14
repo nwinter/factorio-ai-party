@@ -1775,7 +1775,7 @@ def main():
                     shutil.copy(card, out / "static" / "og" / f"shift-{s['n']}.png")
         team =[k for k in AGENTS if not AGENTS[k].get("earlier")]
         stats = agent_pages.collect(LONG, args.runs_dir, team, args.stats_cache, [agent(k)["name"] for k in AGENTS])
-        body, head = agent_pages.build_agents(stats, agent, avatar, esc)
+        body, head = agent_pages.build_agents(stats, agent, avatar, esc, CONFIG.get("live_api_url"))
         write("agents/index.html", page("Agents", body, "/agents/", "Each agent's numbers across the run's shifts.",
                                         extra_head=head, path="/agents/"))
         events = agent_pages.timeline_events(LONG, args.runs_dir, team,

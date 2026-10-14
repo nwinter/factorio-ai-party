@@ -67,6 +67,63 @@
     }).catch(function () {});
   });
 
+  // The agents page: each card's "Now" from the live state (push_live.py agents[].loadout), every 30 s; hidden when no
+  // shift is on or the agent has no live loadout.
+  var grid = document.querySelector('.agent-grid[data-api]');
+  if (grid && window.fetch) {
+    var api2 = grid.dataset.api.replace(/\/$/, '');
+    var words = function (s) { return String(s || '').replace(/[-_]+/g, ' '); };
+    var num = function (n) { return Number(n || 0).toLocaleString('en-US'); };
+    var row = function (dl, k, v) {
+      if (!v) return;
+      var d = document.createElement('div'), dt = document.createElement('dt'), dd = document.createElement('dd');
+      dt.textContent = k; dd.textContent = v; d.appendChild(dt); d.appendChild(dd); dl.appendChild(d);
+    };
+    var fill = function (sec, lo, age) {
+      var dl = sec.querySelector('.now-kv');
+      dl.textContent = '';
+      var guns = [];
+      (lo.guns || []).forEach(function (g, i) {
+        if (!g) return;
+        var a = (lo.ammo || [])[i];
+        guns.push(words(g.name) + (a ? ': ' + num(a.count) + ' ' + words(a.name) : ': no ammo'));
+      });
+      row(dl, 'Guns', guns.join('; '));
+      var ar = lo.armor;
+      if (ar) {
+        row(dl, 'Armor', words(ar.name));
+        row(dl, 'Equipment', (ar.equipment || []).map(function (e) { return (e.count > 1 ? e.count + '× ' : '') + words(e.name.replace(/-equipment$/, '')); }).join(', '));
+        if (ar.shield) row(dl, 'Shield', Math.round(ar.shield.now) + ' / ' + Math.round(ar.shield.max));
+      }
+      if (lo.health) row(dl, 'Health', Math.round(lo.health.now) + ' / ' + Math.round(lo.health.max));
+      row(dl, 'Vehicle', lo.vehicle ? words(lo.vehicle) : '');
+      row(dl, 'Carrying', (lo.items || []).map(function (it) { return words(it.name) + ' ' + num(it.count); }).join(', '));
+      if (lo.slots) row(dl, 'Free slots', lo.slots.free + ' / ' + lo.slots.total);
+      var c = lo.crafting;
+      if (c && c.queue && c.queue.length) row(dl, 'Crafting', c.queue.map(function (q, i) {
+        return words(q.recipe) + ' ×' + q.count + (i === 0 && c.progress ? ' (' + Math.round(c.progress * 100) + '%)' : '');
+      }).join(', '));
+      var b = lo.building;
+      if (b) row(dl, 'Building', words(b.kind) + (b.total != null ? ' ' + b.done + ' of ' + b.total : ''));
+      row(dl, 'As of', Math.round(age) + ' s ago');
+      sec.hidden = !dl.children.length;
+    };
+    var poll = function () {
+      fetch(api2 + '/v1/state', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+        var fresh = d && d.state && d.age_s != null && d.age_s < 120;
+        var by = {};
+        ((fresh && d.state.agents) || []).forEach(function (a) { if (a.loadout) by[a.name] = a.loadout; });
+        grid.querySelectorAll('.agent-now').forEach(function (sec) {
+          var lo = by[sec.dataset.agent];
+          if (!lo) { sec.hidden = true; return; }
+          fill(sec, lo, (d.age_s || 0) + (lo.age_s || 0));
+        });
+      }).catch(function () {});
+    };
+    poll();
+    setInterval(poll, 30000);
+  }
+
   // a page's charts can share one list of [game minute, Pacific time] (#chart-clock) for the hover's real time
   var pageClock = null;
   try { var pc = document.getElementById('chart-clock'); if (pc) pageClock = JSON.parse(pc.textContent); } catch (e) {}
