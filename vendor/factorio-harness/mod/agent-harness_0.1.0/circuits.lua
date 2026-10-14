@@ -505,6 +505,36 @@ return function(api)
     if kind == 'arithmetic_combinator' or kind == 'decider_combinator' or kind == 'selector_combinator' then list[#list+1] = kind:gsub('_combinator', '') end
     return #list > 0 and table.concat(list, ', ') or 'none'
   end
+  -- A fast replace keeps the old entity's circuit settings, as the game's does (Sol 10:50: ~12 feeders rebuilt by
+  -- hand after inserter -> fast inserter): the control behavior's kind and every setting it holds, read before the
+  -- old one goes (snapshot) and set on the new one of the same kind (restore: names kept and names refused).
+  function M.snapshot(e)
+    local cb = try(function() return e.get_control_behavior() end)
+    if not cb then return nil end
+    local kind = kind_of(cb)
+    local props = props_of(cb, kind)
+    local values = {}
+    local function keep(name) local v = try(function() return cb[name] end); if v ~= nil then values[name] = v end end
+    if props.on_off then
+      for _, n in ipairs({'circuit_enable_disable', 'circuit_condition', 'connect_to_logistic_network', 'logistic_condition'}) do keep(n) end
+    end
+    for _, n in ipairs(names(props)) do keep(n) end
+    return {kind=kind, values=values}
+  end
+  function M.restore(e, snap)
+    if not snap or not next(snap.values) then return {}, {} end
+    local cb = try(function() return e.get_or_create_control_behavior() end)
+    if not cb or kind_of(cb) ~= snap.kind then return {}, {'circuit settings (another kind of control)'} end
+    local kept, refused = {}, {}
+    local keys = {}
+    for n in pairs(snap.values) do keys[#keys+1] = n end
+    table.sort(keys)
+    for _, n in ipairs(keys) do
+      local ok = pcall(function() cb[n] = snap.values[n] end)
+      if ok then kept[#kept+1] = n else refused[#refused+1] = n end
+    end
+    return kept, refused
+  end
   -- circuit_set's arguments for this entity (an unknown argument's reply names them).
   function M.takes(e)
     local cb = try(function() return e.get_control_behavior() or e.get_or_create_control_behavior() end)

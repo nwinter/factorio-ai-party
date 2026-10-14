@@ -236,5 +236,113 @@ return function(api)
     return line, kept, moved, spilled
   end
   M.list_text = list_text
+
+  -- Settings a fast replace keeps, as the game's does (Sol 10:50: inserter -> fast inserter lost filters, wires and
+  -- circuit settings; ~12 feeders set again by hand): read from the old entity before it is mined (settings), set
+  -- on the new one (apply). apply returns the lines kept and the ones the new entity refused.
+  local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  function M.settings(o)
+    local s = {}
+    -- Item filters (inserters, loaders): what details.lua reads.
+    s.filters = api.filters and try(function() return api.filters(o) end)
+    s.stack = try(function() return o.inserter_stack_size_override end)
+    if o.type == 'splitter' then
+      s.splitter = {filter=try(function() return o.splitter_filter end), input=try(function() return o.splitter_input_priority end),
+        output=try(function() return o.splitter_output_priority end)}
+    end
+    -- Every wire on every connector: the far end's entity and connector.
+    s.wires = {}
+    for id, c in pairs(try(function() return o.get_wire_connectors(false) end) or {}) do
+      for _, w in ipairs(try(function() return c.connections end) or {}) do
+        local t = w.target
+        local owner = t and try(function() return t.owner end)
+        if owner and owner ~= o then
+          s.wires[#s.wires+1] = {id=id, owner=owner, target=try(function() return t.wire_connector_id end), origin=w.origin}
+        end
+      end
+    end
+    s.circuit = api.circuit_snapshot and try(function() return api.circuit_snapshot(o) end)
+    -- A chest's red-X limit.
+    local inv = try(function() return o.get_inventory(defines.inventory.chest) end)
+    local bar = inv and try(function() return inv.get_bar() end)
+    if bar and bar <= #inv then s.bar = bar end
+    -- Logistic request sections (requester, buffer).
+    local secs = try(function() return o.get_logistic_sections() end)
+    if secs then
+      s.sections = {}
+      for _, sec in ipairs(try(function() return secs.sections end) or {}) do
+        local manual = try(function() return sec.is_manual end)
+        if manual ~= false then
+          s.sections[#s.sections+1] = {group=try(function() return sec.group end), active=try(function() return sec.active end),
+            filters=try(function() return sec.filters end)}
+        end
+      end
+      s.from_buffers = try(function() return o.request_from_buffers end)
+    end
+    return s
+  end
+  function M.apply(e, s)
+    local kept, refused = {}, {}
+    local function did(ok, line) if ok then kept[#kept+1] = line else refused[#refused+1] = line end end
+    local f = s.filters
+    if f and #(f.filters or {}) > 0 or (f and f.use_filters) then
+      local ok = pcall(function()
+        local slots = e.filter_slot_count or 0
+        for i = 1, slots do e.set_filter(i, f.filters[i]) end
+        if f.filter_mode and e.type == 'inserter' then e.inserter_filter_mode = f.filter_mode end
+        if f.use_filters ~= nil and e.type == 'inserter' then e.use_filters = f.use_filters end
+        assert(#f.filters <= slots, 'fewer filter slots')
+      end)
+      did(ok, string.format('filters %s%s', f.filter_mode and f.filter_mode .. ': ' or '', #f.filters > 0 and table.concat(f.filters, ', ') or 'none set'))
+    end
+    if s.stack and s.stack > 0 then did(pcall(function() e.inserter_stack_size_override = s.stack end), 'stack size ' .. s.stack) end
+    if s.splitter then
+      local ok = pcall(function()
+        if s.splitter.filter then e.splitter_filter = s.splitter.filter end
+        if s.splitter.input then e.splitter_input_priority = s.splitter.input end
+        if s.splitter.output then e.splitter_output_priority = s.splitter.output end
+      end)
+      if s.splitter.filter or (s.splitter.input and s.splitter.input ~= 'none') or (s.splitter.output and s.splitter.output ~= 'none') then
+        did(ok, 'splitter filter and priorities')
+      end
+    end
+    if #s.wires > 0 then
+      local n, colours = 0, {}
+      for _, w in ipairs(s.wires) do
+        local ok = w.owner.valid and pcall(function()
+          local mine = e.get_wire_connector(w.id, true)
+          local theirs = w.owner.get_wire_connector(w.target, true)
+          assert(mine.connect_to(theirs, false, w.origin) ~= false)
+        end)
+        if ok then n = n + 1 end
+      end
+      did(n == #s.wires, string.format('%d of %d wires', n, #s.wires))
+    end
+    if s.circuit and api.circuit_restore then
+      local ok_names, bad = api.circuit_restore(e, s.circuit)
+      if #ok_names > 0 then kept[#kept+1] = 'circuit settings (' .. table.concat(ok_names, ', ') .. ')' end
+      for _, n in ipairs(bad or {}) do refused[#refused+1] = 'circuit setting ' .. n end
+    end
+    if s.bar then
+      local ok = pcall(function()
+        local inv = e.get_inventory(defines.inventory.chest)
+        inv.set_bar(math.min(s.bar, #inv + 1))
+      end)
+      did(ok, 'limit ' .. (s.bar - 1) .. ' slots')
+    end
+    if s.sections and #s.sections > 0 then
+      local ok = pcall(function()
+        local secs = e.get_logistic_sections()
+        for _, sec in ipairs(s.sections) do
+          local new = secs.add_section(sec.group ~= '' and sec.group or nil)
+          if sec.filters and (sec.group == nil or sec.group == '') then new.filters = sec.filters end
+          if sec.active ~= nil then new.active = sec.active end
+        end
+        if s.from_buffers ~= nil then e.request_from_buffers = s.from_buffers end
+      end)
+      did(ok, #s.sections .. ' request section' .. (#s.sections == 1 and '' or 's'))
+    end
+    return kept, refused
+  end
   return M
 end

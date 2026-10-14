@@ -160,7 +160,9 @@ already targets your character.
   '{"history":"all","pending":10}'` shows more.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
-  true}` walks into reach of targets out of reach first, then transfers (one call); `transfer`/`collect {positions,
+  true}` (and `feed {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one
+  call; `legs` lists the route); `transfer {item, "from": "nearest"}` (`radius` to walk) takes from the nearest chest
+  holding the item and says which; `transfer`/`collect {positions,
   item | items, pick: "first_with_stock" | "most_stock"}` takes at one listed place that holds the item now (empty
   ones are `skipped`, not short; none: nothing walked), and `to` (`{x,y}` or `{item: {x,y}}`) carries it on to that
   item's destination in the same call; `./fh call inventory` shows main,
@@ -263,7 +265,8 @@ already targets your character.
   "recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid the recipe puts there;
   `inspect` of a ghost shows the same.
 - A `build` over a chest of the same fast-replace group keeps its contents in the new chest; what it cannot hold
-  comes to you (`replaced.contents`), and with no room for that nothing moves. Inserter and loader filters show in
+  comes to you (`replaced.contents`), and with no room for that nothing moves; any fast replace keeps filters, wires,
+  circuit settings, a chest's limit and requests (`replaced.kept`, `not_kept`). Inserter and loader filters show in
   `scan` rows (`filters: whitelist: iron-plate`, `off`, `set by circuit`); `configure {position, filters, filter_mode
   | mode, use_filters}` and `circuit_set {settings: {filters, filter_mode}}` set them. An unknown argument's refusal
   names the closest valid name, and on `configure` and `circuit_set` what that entity takes.

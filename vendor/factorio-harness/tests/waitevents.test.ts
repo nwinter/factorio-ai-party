@@ -322,3 +322,37 @@ test('transfer --wait with walk follows the tour and ends ok on transferred',asy
     assert.equal(reply.ok,true); assert.equal(reply.result.transferred,5); assert.equal(statusPolls,0);
   });
 });
+// Sol 11:18: build --wait over the character's own footprint stepped aside and returned at once ("built 1 of 5",
+// until_tick), so the next chained call interrupted the rest. The step-aside runs as a timed 'feed' action that builds
+// the rest: the wait follows it and exits by its outcome (fed: 0; failed: 1).
+test('build --wait follows a step-aside through the rest of the batch and exits by its outcome',async()=>{
+  let polls=0, outcome='fed';
+  const builds='{"builds":[{"item":"stone-furnace","position":{"x":1,"y":1}},{"item":"stone-furnace","position":{"x":3,"y":1}},{"item":"stone-furnace","position":{"x":5,"y":1}},{"item":"stone-furnace","position":{"x":7,"y":1}},{"item":"stone-furnace","position":{"x":9,"y":1}}]}';
+  await engine(request=>{
+    if(request.action==='build')return {ok:true,result:{stepping_aside:{from:{x:3,y:1},to:{x:3,y:4}},until_tick:8891438,built:1,placed:[{x:1,y:1}]}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:3,y:4},inventory:[]}}};
+    polls++;
+    if(polls<3)return {ok:true,tick:8891300+polls,result:{active:{kind:'feed',until_tick:8891438}}};
+    return {ok:true,tick:8891400,result:{active:false,last:{kind:'feed',outcome,tick:8891400,
+      result:outcome==='fed'?{built:4,placed:[{x:3,y:1},{x:5,y:1},{x:7,y:1},{x:9,y:1}]}:undefined,
+      error:outcome==='failed'?'build 2/4 failed after 1 built: trees in the way':undefined}}};
+  },async port=>{
+    const reply=JSON.parse((await cli(port,['call','build','--args',builds,'--wait'])).stdout);
+    assert.equal(reply.ok,true); assert.equal(reply.result.accepted.built,1);
+    assert.equal(reply.result.completion.last.outcome,'fed'); assert.equal(reply.result.completion.last.result.built,4);
+    assert(polls>=3,'it waited while the character stepped aside and built the rest');
+    polls=0; outcome='failed';
+    const failed:any=await cli(port,['call','build','--args',builds,'--wait']).then(()=>assert.fail('exit 1 expected'),(error:any)=>error);
+    assert.equal(failed.code,1); assert.match(failed.stdout,/Control ended: failed: build 2\/4 failed after 1 built: trees in the way/);
+  });
+  // a build placed at once (no step-aside): nothing to wait for
+  let statusPolls=0;
+  await engine(request=>{
+    if(request.action==='build')return {ok:true,result:{built:1,entity:{name:'stone-furnace',position:{x:1,y:1}}}};
+    statusPolls++;
+    return {ok:true,result:{active:false}};
+  },async port=>{
+    const reply=JSON.parse((await cli(port,['call','build','--args','{"item":"stone-furnace","position":{"x":1,"y":1}}','--wait'])).stdout);
+    assert.equal(reply.ok,true); assert.equal(reply.result.built,1); assert.equal(statusPolls,0);
+  });
+});
