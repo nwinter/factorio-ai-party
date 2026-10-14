@@ -443,6 +443,12 @@ fh sleep 900 --until researched                       # ...or until the research
   unless you name it (`name: "entity-ghost"`). So does a flying robot, a biter, a projectile or any unselectable entity
   over it, in `inspect`, `transfer`, `collect` and every other call on a position: `name` or `unit_number` picks it,
   and alone at the position it is the target.
+- `inspect` on a roboport or a logistic chest shows `logistic_network`: its `id`, `roboports`, `logistic_area` and
+  `construction_area`, `logistic_robots` and `construction_robots` `{total, idle, working, charging, waiting}` and a
+  `line` (the networks read's words), or `none: in no logistic network: no roboport's logistic area covers it`. On a
+  roboport, `port` adds its own cell: `logistic_area`, `construction_area`, `stationed {logistic, construction}`,
+  `charging`, `waiting` (by kind when the game lists them) and a `line` (`this roboport: logistic area (-5,-25)-(45,25),
+  ...; stationed: 2 logistic, 1 construction robots; 0 charging, 0 waiting to charge`).
 - An asteroid collector: `inspect` shows `filters` (asteroid chunk names), `filter_slots` (the game's count, which
   reads 0 until a filter is set), `arm` (chunks its arms hold) and its output in
   `inventories.asteroid_collector_output`. `configure {position, filters}` sets the chunk filters as its GUI does,
@@ -877,6 +883,64 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   again. The scan is shared and at most 30 s old. `game_alerts {surface?, kind?}` (read) lists every group now,
   worst first: `{kind, surface, count, center, names, at, line, to}`, where `to` says who hears it and why
   (claim, built, nearest).
+  - Per network (networks.lua), routed and limited the same way, with no hint: `power_high`, an electric network
+    whose draw was at or above 85% of its capacity in every 5-second sample of the last 2 minutes (`electric #7 draw
+    at or above 85% of capacity for 2 min: 20.0 MW of 22.1 MW now; 3 machines on low power`; worse is the next 5%
+    step: `(was 85%)`); `boiler_fuel`, boilers with under 10 minutes of fuel at the draw (`2 boilers under 10 min of
+    fuel at this draw near (63,16) (electric #7, 11 boilers, 14 min for all)`; worse is more boilers);
+    `robots_busy`, a logistic network with no idle logistic robot in every 30-second look for 10 minutes (`logistic
+    #3: no idle logistic robot for 11 min (147 robots; 1 requests unfilled 60+ s)`). A network with machines on low
+    power (satisfaction under 100%) shows as the `low power` groups above.
+- The agent's own review (selfview.lua): `team.review` every 2 game hours per agent (the first 2 hours into the
+  shift, or 2 hours after its first request), on a reply that is not a peek, and `review` (read, `fh call review`):
+  one block of lines,
+  `review (last 2h): 412 actions (62 of them queue steps): item moves 196, walking 81, reads 80, talk 24, building 22,
+  waits 9; time: 48% walking, 21% item moves, 9% building, 22% waits`, `repeated hauls: iron-plate (13,40) ->
+  wooden-chest (89,-3) x38, coal -> boiler (5,63) x21` (when any), `failed: 31 (transfer: no iron-plate in
+  inventory; the target has N x12; move_to: no_path x6; build: placement blocked by tree at (N,N) x4)`, `open alerts
+  in your claims: 1: 12 gun-turret out of ammo near (120,130)` (`none`, or `no claims`), `losses near your work: 2
+  incidents, 25 destroyed: #7 ...; #8 ...` (`review (last N min)` while the agent has less than 2 hours). Failed:
+  requests that failed (not peeks), queue steps that failed, and direct timed actions that ended other than done
+  (`no_path`, `timed_out`, ...), by action and reason with numbers shown as `N`, the top 3. Alerts: the push alert
+  groups whose centre is in one of the agent's active board claims, without hints. Losses: incidents in the window
+  within 64 tiles of where the character was (sampled once a minute) or overlapping its claims, the largest 2 shown.
+  Counts are requests (not peeks) and the queue steps started, by kind: item moves (transfer, feed, refuel, rearm, collect,
+  pickup), walking, building (build, paste, routes, construct, configure, repair, deconstruct, ...), mining, crafting,
+  research, waits (wait_ticks, wait_until, sleep), talk (say, tell, board, votes, ...), reads, other. Time is game
+  seconds while the character has a body: a running action or queue step counts as its kind, a wait, wait step or
+  `fh sleep` as waits, and a stretch with none of these counts toward the kind of the next request (the time it took
+  to issue it), or as `no request` when it lasted 10 minutes or more; the stretch still open shows as `since your last
+  request`. Hauls are items put into an entity by hand (every transfer, feed, refuel, rearm goes through one place),
+  grouped by item, the spot the agent last took that item from in the window (none: `coal -> boiler ...`) and the
+  spot it went to, each within 10 tiles; the top 3 at 5 or more in the window. The read gives `lines` and adds
+  `counts`, `time_s`, `time_pct`, `hauls [{item, from, to, to_name, surface, times}]`, `failed` and a `note` on how
+  each is counted.
+- The retro (selfview.lua): `team.shift.retro`, in each agent's first reply of a shift after the first, the previous
+  shift for the team, the same lines for everyone: `retro: previous shift (3h01m of game time): research done:
+  logistics-2, solar-energy` (from the research news), `losses: 2 incidents, 48 destroyed (30 gun-turret, 18
+  stone-wall); largest: #11 ...`, `failed (team): 6 (transfer: no coal in inventory x5 (astra 4, sol 1); ...)` (the
+  top 3, with who; failures are kept 12 hours), `open board items: 3 (1 harness, 1 request, 1 task); oldest: #21 task
+  "rail to the north ore" (sol, doing, 3h00m old); ...` (tasks, requests and harness requests open now, not claims).
+- Networks (networks.lua): `networks {surface?}` (read, `fh call networks`) and `team.shift.networks` (up to 8 lines,
+  the agent's surface first, `+N more networks: fh call networks`), one line per network, numbers only:
+  `nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 min (now 18.5 MW) of 22.1 MW capacity (84%);
+  solar 10 panels, 500 kW now, 600 kW peak; accumulators 2 at 50%; machines 30: 3 low power, 1 no power; boilers 11:
+  fuel 14 min at this draw, 2 under 10 min`, `nauvis logistic #3: 4 roboports (+1 personal), logistic area
+  (0,25)-(125,75), construction area (-30,-5)-(155,105); logistic robots 147: 0 idle, 142 working, 3 charging, 2
+  waiting to charge; construction robots 11: 4 idle, 6 working, 1 charging, 0 waiting to charge; no idle logistic
+  robot for 4 min; requests unfilled 60+ s: 1 (iron-plate 300 missing); ghosts in its construction area: 5`, `nauvis
+  turrets: gun-turret 6; ammo used in the last hour: firearm-magazine 1200`. Electric networks over 2 poles or with a
+  generator. Logistic areas: the bounding boxes of the roboports' logistic and construction squares (a gap inside
+  one is not shown; personal roboports are counted apart and not in the areas). Robots per kind: idle (stationed in a
+  roboport), charging and waiting to charge (at a roboport; when the game does not list them by kind, one total for
+  both kinds), working (the rest: out on a job or flying). Per item, `supply` says why a request is unmet. Draw: the network's production statistics (5-second
+  average, as `power` reads it) sampled every 5 s, over the last 5 minutes (shorter after a runtime start: `avg over
+  45 s`). Capacity: generators at their maximum output plus solar at its output now. Boilers: those sharing a fluid
+  segment with the network's steam generators (else within 12 tiles of one); fuel in minutes at the draw of the
+  generators they feed, shared evenly. Requests: requester points (chests, characters) whose held plus incoming count
+  stayed under the request for 60 s or more (30-second looks). Ghosts: entity ghosts in the network's construction
+  area (the first 4000 on the surface). Ammo: the surface's item statistics, consumed in the last hour. The read gives
+  the same numbers as fields; everything is kept 30 s.
 - Platform alerts in `team.alerts`, for the agent who created a platform (`platform_create`), the 3 agents whose
   requests named it with `platform=` most recently (within 2 hours; the `platforms` read does not count) and anyone
   aboard; a platform with none of them known goes to every agent. Each line names the platform and its surface:
@@ -903,7 +967,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   at the runtime's first sample), so no research event is needed; nothing before the first snapshot is known) and
   `researched_none_built` (`roboports (logistic-robotics,
   construction-robotics); ...`: researched technologies with none of their buildings on any surface, from the
-  harness's `unlocks.lua`, the table the stream hosts use).
+  harness's `unlocks.lua`, the table the stream hosts use), `networks` (the networks lines, above) and `retro` (the
+  previous shift, above).
 - Research news needs no restart: a technology that leaves the head of the queue researched (or a level up) and was
   not announced by `on_research_finished` (which control.lua forwards from the next server start) is announced by the
   runtime's 10 s research sample.

@@ -96,13 +96,26 @@ already targets your character.
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, and the
   game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
-  (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials; at most one digest every
-  2.5 minutes, new or worse only; `./fh call game_alerts` lists them all). Each is shown
-  once, so a command that sends replies to a file you don't read loses them. A change to your board item, a plan line
-  set for you, or a tell also ends your `sleep`.
+  (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, an electric network drawing 85%
+  or more of its capacity for 2 minutes, boilers under 10 minutes of fuel, a logistic network with no idle logistic
+  robot for 10 minutes; at most one digest every 2.5 minutes, new or worse only; `./fh call game_alerts` lists them
+  all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
+  your character's time by kind (the time before a request counts toward that request's kind), the hand hauls you
+  repeated 5 or more times, what failed (by reason, top 3), alerts still open in your claims, and losses near where
+  your character was (`review (last 2h): 412 actions: ...; time: 48% walking, 21% item moves, 9% building, 22%
+  waits`, `repeated hauls: iron-plate (13,40) -> wooden-chest (89,-3) x38, ...`, `failed: 31 (...)`, ...);
+  `./fh call review` shows it any time.
+  Each is shown once, so a command that sends replies to a file you don't read loses them. A change to your board
+  item, a plan line set for you, or a tell also ends your `sleep`.
 - Your first reply of a shift carries `team: shift` once: the team plan's goals and your line, the research finished
-  since your last request before the shift, and `researched_none_built`: researched technologies whose buildings the
-  team has none of.
+  since your last request before the shift, `researched_none_built`: researched technologies whose buildings the
+  team has none of, and `networks`: one line per electric network (draw over 5 minutes against capacity, machines on
+  low power, boilers and their fuel in minutes), per logistic network (its id, roboports and the areas they cover,
+  logistic and construction robots total, idle, working, charging and waiting to charge, requests unfilled for 60 s or
+  more, ghosts in its area) and the turrets with ammo used in the last hour (`./fh call networks` shows them any time;
+  `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
+  or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
+  open board items).
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `feed {"recipe": NAME,

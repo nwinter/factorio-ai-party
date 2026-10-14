@@ -161,6 +161,8 @@ local function finish(index, outcome)
   local action=s.active[index]
   -- The goal lets a caller tell its own completion from one that replaced it.
   if action then s.last[index]={kind=action.kind, outcome=outcome, tick=game.tick, target=action.kind=='move_to' and action.position or nil} end
+  -- A direct timed action that ended other than done counts for the review (selfview.lua; queue steps: scheduler fail).
+  if action and not action.queued and M.selfview then pcall(M.selfview.ended,index,action.kind,outcome,action.error) end
   if action and action.blocked_item then s.last[index].blocked_item=action.blocked_item end
   if action and action.kind=='mine' and action.mined then s.last[index].mined=action.mined end
   if action and action.kind=='pickup' then
@@ -693,6 +695,8 @@ function handlers.describe()
   for name,schema in pairs(M.stores and M.stores.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.drops and M.drops.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.pushalerts and M.pushalerts.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.selfview and M.selfview.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.networks and M.networks.schema or {}) do description.actions[name]=schema end
   description.actions.status.brief='boolean: only active, last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older)'
   description.actions.status.alerts='boolean, with brief: add the alerts block (losses, attacked areas, groups, enemy news; read from what the game reported, no scan)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
@@ -2469,6 +2473,10 @@ function handlers.inspect(p,a)
   if M.details then M.details.inspect(e,out) end
   -- Circuit network: settings, each wire's far end, the signals now (circuits.lua).
   if M.circuits then local okc,c=pcall(M.circuits.read,e); if okc and c then out.circuit=c end end
+  -- A roboport or logistic chest: its logistic network's id, areas and robots, or that it has none; a roboport's own cell (networks.lua).
+  if M.networks and (e.type=='roboport' or e.type=='logistic-container') then
+    local okn,ln=pcall(M.networks.of_entity,e); if okn and ln then out.logistic_network=ln end
+  end
   local okp,pl=pcall(function() return e.surface.platform end)
   if okp and pl and space then
     if e.type=='space-platform-hub' then
@@ -2788,6 +2796,8 @@ local function transfer_one(p,a,pos,e)
     p.create_local_flying_text{text=table.concat(parts,' '),position=e.position}
     -- The same for the camera clients, in the agent's colour (visuals.lua).
     pcall(M.visuals.moved,p,e.position,e.surface,table.concat(parts,' '))
+    -- Takes and puts by hand, for the agent's repeated hauls (selfview.lua).
+    pcall(M.selfview.moved,p,a.direction,e,stacks)
   end
   local out={transferred=moved,items=not a.item and stacks or nil,inventory=inferred,none_held=short and a.item or nil,target_has=short and count(target) or nil,
     at_up_to=a.item and a.up_to~=nil and a.direction=='to_entity' and count(target)>=a.up_to or nil}
@@ -4419,6 +4429,8 @@ scheduler=scheduler_module{
   claim=function(p) local action=state().active[p.index]; if action then action.queued=true end end,
   direct_action=function(p) local action=state().active[p.index]; return action and not action.queued and action.kind or nil end,
   reason=reason,
+  on_step=function(index,action) M.selfview.request(index,action,true) end,
+  on_fail=function(index,action,reason) M.selfview.failed(index,action,reason) end,
   completion=function(p,action)
     local last=action=='shoot' and state().last_combat or timed[action] and state().last
     return last and last[p.index]
@@ -4535,6 +4547,39 @@ M.idle=require('idle'){state=state,agents=function() return M.board.agents() end
   end,
   is_read=function(action) return M.is_read(action) end,
   is_talk=function(action) return M.board.handlers[action]~=nil or M.players.handlers[action]~=nil or M.votes.handlers[action]~=nil end}
+-- The agent's own play (selfview.lua): team.review every 2 game hours and the
+-- review read (actions and time by kind, repeated hand hauls, failures, open
+-- alerts in its claims, losses near its work); team.shift.retro at shift start.
+M.selfview=require('selfview'){state=state,is_read=function(action) return M.is_read(action) end,
+  talk=function(action) return M.idle.TALK[action]~=nil or M.board.handlers[action]~=nil or M.players.handlers[action]~=nil or M.votes.handlers[action]~=nil end,
+  waiting=function(s,index) return M.idle.waiting(s,index) end,
+  has_body=function(index)
+    local ok,p=pcall(M.lookup,index)
+    return ok and p~=nil and p.valid and p.character~=nil and p.character.valid or false
+  end,
+  where=function(index)
+    local ok,at=pcall(function()
+      local p=M.lookup(index)
+      local c=p and p.valid and p.character
+      if c and c.valid then return {x=math.floor(c.position.x+0.5),y=math.floor(c.position.y+0.5),s=c.surface and c.surface.name} end
+    end)
+    return ok and at or nil
+  end,
+  name=function(index) local ok,p=pcall(M.lookup,index); return ok and p and p.valid and M.board.who(p) or tostring(index) end,
+  is_director=function(index) return M.is_director(index) end,
+  claims=function(name)
+    local out={}
+    for _,i in pairs((state().board or {}).items or {}) do
+      if i.kind=='claim' and i.owner==name and i.area and ({open=true,claimed=true,doing=true,blocked=true})[i.status] then out[#out+1]=i.area end
+    end
+    return out
+  end,
+  claim_alerts=function(p) return M.pushalerts.claim_lines(p) end,
+  losses=function() return state().losses or {} end,
+  loss_line=function(i,reader) return describe_incident(i,reader) end,
+  research_between=function(force,from,to) return M.research.finished_between(force,from,to) end,
+  board_items=function() return (state().board or {}).items or {} end}
+function handlers.review(p,a) return M.selfview.read(p,a) end
 -- Where teammates are (where.lua): status teammates, and the place of a
 -- sender or claim owner on another planet in tells, chat and the board.
 M.where=require('where'){state=state,bot=function(index) return M.bots.record(index) end,lookup=function(index) return M.lookup(index) end,
@@ -4636,7 +4681,7 @@ passive.circuit_set=true; passive.wire=true
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
 for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route'}) do passive[name]=true end
-local reads={cargo=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true}
+local reads={cargo=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,networks=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
@@ -4768,10 +4813,17 @@ local function idle_tick()
   -- When each character started standing (no action, no running queue, a body
   -- on the map), once a second, unlike the per-request idle count above
   -- (idle.lua idle_report: the operator's idle nudge).
-  if game.tick%60==0 then M.idle.stand_tick() end
+  if game.tick%60==0 then M.idle.stand_tick(); pcall(M.selfview.tick) end
 end
 local dispatch_request
+-- A failed request is counted for the agent's review (selfview.lua) and
+-- raised again unchanged (control.lua reads it as before).
 function M.dispatch(request)
+  local ok,result=pcall(M.dispatch_inner,request)
+  if not ok then pcall(M.selfview.dispatch_failed,request,result); error(result,0) end
+  return result
+end
+function M.dispatch_inner(request)
   M.carry.carry()
   -- Operator tools (RCON, never fh) read and answer the board as `operator`
   -- without a player. A failure must stop nobody (the bootstrap stops player 1).
@@ -4847,7 +4899,10 @@ function M.dispatch(request)
         and not ({chat=true,tells=true,board=true,board_events=true,queue_status=true,research_done=true,players=true,votes=true,requests=true})[request.action]
       result.operator=M.tells.operator_lines(p.index,consume)
       -- What the agent did, for the nudge's counts and the end of standing (idle.lua).
-      if not peek or request.action=='sleep' then pcall(M.idle.request,p.index,request.action,request.args,result) end
+      if not peek or request.action=='sleep' then
+        pcall(M.idle.request,p.index,request.action,request.args,result)
+        pcall(M.selfview.request,p.index,request.action)
+      end
       -- An fh --wait poll learns that a tell or mention arrived: it ends the wait (cli.ts).
       if peek and request.action=='status' then
         local t,woke,from=M.board.inbox_tick(p.index)
@@ -4883,7 +4938,18 @@ function M.dispatch(request)
       -- The first reply of a shift: plan goals, research since the agent's last shift, researched and none built.
       local ok,shift=pcall(M.research.shift_block,p,last_call,M.board.plan_for(M.board.who(p)))
       if not ok then local s=state(); s.research_errors={count=((s.research_errors or {}).count or 0)+1,last=tostring(shift),tick=game.tick}
-      elseif shift then result.team=result.team or {}; result.team.shift=shift end
+      elseif shift then
+        -- The networks, one line each, next to researched_none_built (networks.lua).
+        local okn,lines=pcall(M.networks.lines,p.force,p.surface and p.surface.name,8)
+        if okn and #lines>0 then shift.networks=lines end
+        -- The previous shift for the team (selfview.lua retro).
+        local okr,retro=pcall(M.selfview.retro,p)
+        if okr and retro then shift.retro=retro end
+        result.team=result.team or {}; result.team.shift=shift
+      end
+      -- The agent's own review, every 2 game hours (selfview.lua).
+      local okv,review=pcall(M.selfview.review_due,p)
+      if okv and review then result.team=result.team or {}; result.team.review=review end
     end
     if clock and request.action=='status' then result.time_mode=clock.report() end
     -- The unread trailer repeats only when a newer message arrived (status always shows it).
@@ -5053,9 +5119,14 @@ M.labs=require('labs'){integer=integer,center=center,status_name=function(e) ret
 function handlers.labs(p,a) return M.labs.view(p,a) end
 function handlers.science(p,a) return M.labs.science(p,a) end
 rates=rates_module{position=position,status_name=function(e) return entity_status_names[e.status] end}
+-- Electric and logistic networks and turrets, one line each (networks.lua):
+-- the shift block, the networks read, and the network push alerts.
+M.networks=require('networks'){state=state}
+function handlers.networks(p,a) return M.networks.read(p,a) end
 -- The game's alerts and key warnings, pushed to the agents they concern (pushalerts.lua).
 M.pushalerts=require('pushalerts'){state=state,agents=function() return M.board.agents() end,who=M.board.who,
   place=function(index) return M.where.place(index) end,
+  network_groups=function(force) return M.networks.alert_groups(force) end,
   -- an agent player's alert panel (camera players have theirs switched off: cameras.lua)
   alert_reader=function(force)
     for _,pl in pairs(force.players) do if pl.valid and pl.connected and not M.is_director(pl.index) then return pl end end
@@ -5204,6 +5275,7 @@ function M.tick_body(event)
   M.bots.tick(event.tick)
   M.drops.tick(event.tick)
   M.nametags.tick(event.tick)
+  pcall(M.networks.tick,event.tick)  -- the networks' samples never stop the harness tick
   M.seated_ok=nil
   for index,action in pairs(state().active) do
     local ok,p=pcall(player,index,action.kind=='drive')
@@ -5467,7 +5539,7 @@ end
 M.profile=require('profile')()
 M.profile.wrap(M,{{M.board,'team','board.team'},{M.ground,'unseen','ground.unseen'},{M.research,'shift_block','research.shift_block'},
   {M.chat,'unread','chat.unread'},{M.chat,'left','chat.left'},{M.bots,'status','bots.status'},{M.bots,'tick','bots.tick'},
-  {M.research,'tick','research.tick'},{M.nametags,'tick','nametags.tick'},{M.cameras,'tick','cameras.tick'},{scheduler,'tick','scheduler.tick'},{M.orders,'tick','orders.tick'},
+  {M.research,'tick','research.tick'},{M.nametags,'tick','nametags.tick'},{M.networks,'tick','networks.tick'},{M.cameras,'tick','cameras.tick'},{scheduler,'tick','scheduler.tick'},{M.orders,'tick','orders.tick'},
   {clock,'tick','clock.tick'},{clock,'after_dispatch','clock.after_dispatch'},{threat,'on_damaged','threat.on_damaged'},{threat,'on_group','threat.on_group'},
   {M.players,'on_event','players.on_event'},{M.vehicles,'tick','vehicles.tick'},{M.ground,'tick','ground.tick'},{survey,'sample','survey.sample'},
   -- a full status's scans (each cached; these show when one ran and what it cost)

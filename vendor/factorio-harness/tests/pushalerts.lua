@@ -98,4 +98,36 @@ ents.nauvis={}; ents.vulcanus={}; reader.get_alerts=function() return {} end
 eq(#A.read(astra,{}).groups,6,'kept')
 game.tick=game.tick+1800
 local none=A.read(astra,{}); eq(#none.groups,0); eq(none.note,'no alerts or warnings')
+
+-- 4. Network groups (networks.lua): their own line and level, the same routing, digest and new-or-worse rule.
+local net={}
+local B=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){
+  state=function() return storage end,
+  agents=function() return {{index=1,name='astra'},{index=2,name='sol'},{index=3,name='luna'}} end,
+  who=function(p) return p.name end,
+  place=function(index) return places[index] end,
+  network_groups=function(f) eq(f,force); return net end}
+local power={key='power_high|nauvis|7',kind='power_high',surface='nauvis',n=85,unit='%',names={},by={},at={},center={x=70,y=-160},
+  line='electric #7 draw at or above 85% of capacity for 2 min: 18.9 MW of 22.1 MW now; 0 machines on low power'}
+net[1]=power
+game.tick=game.tick+1800
+local hb={}
+l=B.lines(sol,hb)
+eq(#l,1); eq(l[1],'electric #7 draw at or above 85% of capacity for 2 min: 18.9 MW of 22.1 MW now; 0 machines on low power','in sol\'s claim')
+game.tick=game.tick+151*60
+eq(#B.lines(sol,hb),0,'the same level: not told again')
+power.n=95; power.line='electric #7 draw at or above 85% of capacity for 2 min: 21.0 MW of 22.1 MW now; 4 machines on low power'
+game.tick=game.tick+151*60
+l=B.lines(sol,hb); eq(l[1],'electric #7 draw at or above 85% of capacity for 2 min: 21.0 MW of 22.1 MW now; 4 machines on low power (was 85%)')
+-- Another surface's group says where; the read filters by kind.
+net[2]={key='robots_busy|vulcanus|3',kind='robots_busy',surface='vulcanus',n=1,names={},by={},at={},center={x=0,y=0},
+  line='logistic #3: no idle logistic robot for 10 min (40 robots; 2 requests unfilled 60+ s)'}
+game.tick=game.tick+1800
+local rows=B.read(sol,{kind='robots_busy'}).groups
+eq(#rows,1); eq(rows[1].line,'logistic #3: no idle logistic robot for 10 min (40 robots; 2 requests unfilled 60+ s) on vulcanus'); eq(rows[1].to[1],'luna (nearest)')
+-- What is open in an agent's own claims, for its review (selfview.lua): claim groups only, no hints.
+local mine=B.claim_lines(sol)
+eq(#mine,1); eq(mine[1],power.line)
+eq(#B.claim_lines(luna),0,'the nearest agent has no claim there')
+eq(A.text({kind='no_ammo',n=3,names={['gun-turret']=3},center={x=1,y=2},surface='nauvis'},'nauvis',nil,true),'3 gun-turret out of ammo near (1,2)')
 print('pushalerts: ok')

@@ -189,6 +189,8 @@ return function(api)
   local function fail(q,p,step,result)
     if short(step,result) then result.short=true; record(q,step,true,result); return end
     record(q,step,false,result)
+    -- Counted for the agent's review (selfview.lua).
+    if api.on_fail then pcall(api.on_fail,p.index,step.action,type(result)=='table' and (result.reason or result.outcome) or result) end
     local policy=step.on_fail or 'abort'
     if policy=='skip' then return end
     local label=policy:match('^goto:(.+)$')
@@ -424,6 +426,8 @@ return function(api)
             local step=table.remove(q.pending,1)
             step.started_tick=game.tick
             q.revision=q.revision+1
+            -- Every step started counts as the agent's (selfview.lua my_hour).
+            if api.on_step then pcall(api.on_step,index,step.action) end
             if step.action=='wait_ticks' then
               step.until_tick=game.tick+step.args.ticks
               q.current=step
