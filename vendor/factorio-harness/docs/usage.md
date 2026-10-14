@@ -2002,6 +2002,23 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     `robots_busy`, a logistic network with no idle logistic robot in every 30-second look for 10 minutes (`logistic
     #3: no idle logistic robot for 11 min (147 robots; 1 requests unfilled 60+ s)`). A network with machines on low
     power (satisfaction under 100%) shows as the `low power` groups above.
+    Robot delays (Nick 12:35; worse is more waiting): `construction_wait`, ghosts in a network's construction area
+    waiting 5+ min since a view first saw them while their items are in the network and they lie inside a
+    roboport's construction area (`ghosts waiting on robots: 75 in network 3 near (25,50), oldest 22 min, 1
+    construction robot (busy); the items are in the network`); `deliveries_wait`, requests unfilled 5+ min while
+    providers or storage hold the item free (the engine's supply counts, net of pickups robots have reserved), with
+    what the logistic robots are doing (`deliveries waiting on robots: 4 requests unfilled 5+ min in network 3 near
+    (25,50) while providers or storage hold the item free (copper-cable 500): no idle logistic robots; 40 robots
+    waiting to charge at 3 roboports; 273 carrying for other requests`).
+  - Drills out of ore (Nick 12:35), routed the same way: mining drills whose status is no minable resources (the patch
+    under them is used up), grouped by place and ore, kind `out_of_ore.<ore>`: `6 electric-mining-drill out of ore near
+    (51,-60): iron-ore; 4 still mining there; nearest untapped iron-ore (180,-20) 135 tiles, about 1.2M ore`. The ore:
+    each scan remembers what every drill mines; a drill never seen mining takes the ore the drills still mining around
+    it mine (else `ore not seen`). Still mining: our drills on that ore in the area's 64-tile cells and the cells
+    around them. The untapped patch: the nearest patch of that ore none of our drills are on, from the `ores` read's
+    last survey of that surface (no map read here; none surveyed: not said). `game_alerts {kind: "out_of_ore"}` lists
+    them with `ore`, `still_mining` and `untapped`; the shift start's networks block counts them per surface (`drills
+    out of ore: 25 (nauvis 16, vulcanus 9)`).
   - A science colour stopped (scienceline.lua, Opus 07:55), routed and limited the same way: `science_idle`, a pack the
     current research needs whose makers on the science surface (the one with the most labs; it has some) all stood
     still at a `team.science` build and still at a later one 5 minutes or more on, while labs there hold none of it
@@ -2055,6 +2072,16 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   stone-wall); largest: #11 ...`, `failed (team): 6 (transfer: no coal in inventory x5 (astra 4, sol 1); ...)` (the
   top 3, with who; failures are kept 12 hours), `open board items: 3 (1 harness, 1 request, 1 task); oldest: #21 task
   "rail to the north ore" (sol, doing, 3h00m old); ...` (tasks, requests and harness requests open now, not claims).
+- The look-ahead (lookahead.lua, Nick 12:35): `lookahead` (read, `fh call lookahead`) and, about every 45 real
+  minutes per agent, once in a reply as `lookahead` (fh: the real clock, which holds when the game runs slow; never in
+  the first 20 minutes after the workspace's first call; offset by the agent's name so agents do not all get it at
+  once; state in `.lookahead.json` next to the journal). Lines: `your plan line: "iron smelting column east" (set
+  1h20m ago)`, `your open board items: #12 ...`, `team plan goals: ...`, `research: automation-2 52% running; queued
+  next: steel-processing, logistics-2`, `stock falling to zero within 2 h at the last 30 min rate: iron-plate in network
+  #8 (nauvis) in 30m (3000 left)` (each network's contents sampled every 5 game minutes, the last 35 min kept; at most
+  5; `none`, or `under 30 min of network samples yet`), `time left in the shift: 1h20m` (fh, from the deadline file),
+  then `look ahead: a moment to think past the current task: what you and the team will need in the next hour or
+  two, and whether your plan line still says it. What you do with this is up to you.`
 - Networks (networks.lua): `networks {surface?}` (read, `fh call networks`) and `team.shift.networks` (up to 8 lines,
   the agent's surface first, `+N more networks: fh call networks`), one line per network, numbers only:
   `nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 min (now 18.5 MW) of 22.1 MW capacity (84%);
@@ -2062,7 +2089,10 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   their own fuel 31 min at this draw, 1 with fuel at their feeders, 2 under 20 min not refilled (lowest 4 min)`, `nauvis logistic #3: 4 roboports (+1 personal), logistic area
   (0,25)-(125,75), construction area (-30,-5)-(155,105); logistic robots 147: 0 idle, 142 working, 3 charging, 2
   waiting to charge; construction robots 11: 4 idle, 6 working, 1 charging, 0 waiting to charge; no idle logistic
-  robot for 4 min; requests unfilled 60+ s: 1 (iron-plate 300 missing); ghosts in its construction area: 5`, `nauvis
+  robot for 4 min; requests unfilled 60+ s: 1 (iron-plate 300 missing); construction backlog: 75 ghosts, 0 to
+  deconstruct, 0 to upgrade; 75 waited 5+ min, oldest 6 min; cause: all 1 construction robot busy (75 jobs per robot);
+  deliveries waiting 5+ min with the item free in the network: 1 (copper-cable 500 free); no idle logistic robots; 40
+  robots waiting to charge at 3 roboports; 273 carrying for other requests`, `nauvis
   turrets: gun-turret 6; ammo used in the last hour: firearm-magazine 1200`. Electric networks over 2 poles or with a
   generator. Logistic areas: the bounding boxes of the roboports' logistic and construction squares (a gap inside
   one is not shown; personal roboports are counted apart and not in the areas). Robots per kind: idle (stationed in a
@@ -2072,8 +2102,16 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   45 s`). Capacity: generators at their maximum output plus solar at its output now. Boilers: those sharing a fluid
   segment with the network's steam generators (else within 12 tiles of one); fuel in minutes at the draw of the
   generators they feed, shared evenly. Requests: requester points (chests, characters) whose held plus incoming count
-  stayed under the request for 60 s or more (30-second looks). Ghosts: entity ghosts in the bounding box of the
-  network's construction area, one count per network, up to 4000. Ammo: the surface's item statistics, consumed in the last hour. The read gives
+  stayed under the request for 60 s or more (30-second looks). Construction backlog (Nick 12:35): the ghosts,
+  deconstruction and upgrade orders in the bounding box of the network's construction area (up to 4000), each
+  remembered from the view that first saw it (views every 60 s), so a wait counts from then; how many waited 5+ min
+  and the oldest; the cause of the oldest waits (up to 16 looked at): outside every roboport construction area, no
+  construction robots, items missing in this network (each with the network holding it, `held in network #8 near
+  (400,0)`, or `in no other network`), all robots busy (jobs per robot), else `not seen` with the idle robots. The
+  background view makes the three finds one a step. Deliveries: requests unfilled 5+ min while providers or storage
+  hold the item free, with what the robots are doing; the read adds `backlog` and `deliveries {stuck, free, cause}`.
+  While Nauvis is the only planet in play (no rocket launched, no platform, no planet but Nauvis with our entities)
+  the lines name no planet (`electric #7 ...`); the read's `surface` keeps it. Ammo: the surface's item statistics, consumed in the last hour. The read gives
   the same numbers as fields; everything is kept 60 s (`as_of`), and the network alerts read the same view; the pole
   map is redone every 5 min in the background and by the view when older than 60 s; requests are looked at every 30 s.
   Accumulators show their stored energy against their maximum (`accumulators 2 at 50% (5.0 MJ of 10.0 MJ)`; read:

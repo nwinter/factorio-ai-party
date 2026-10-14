@@ -133,13 +133,18 @@ already targets your character.
   source, or that no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a logistic network with no
   idle logistic robot for 10 minutes, a science colour whose makers here have all stood still for 5+ minutes (with
   its chain's first short step), Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
-  drawing power, full accumulators in an attractor network; at most one digest every 2.5 minutes, new or worse only;
+  drawing power, full accumulators in an attractor network, mining drills out of ore (the ore, drills still mining
+  there, the nearest untapped patch), ghosts waiting 5+ min on robots with their items in the network, requests unfilled
+  5+ min with the item free in the network (and what the robots are doing); at most one digest every 2.5 minutes, new or worse only;
   `./fh call game_alerts` lists them all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
   your character's time by kind (the time before a request counts toward that request's kind), the hand hauls you
   repeated 5 or more times, what failed (by reason, top 3), alerts still open in your claims, and losses near where
   your character was (`review (last 2h): 412 actions: ...; time: 48% walking, 21% item moves, 9% building, 22%
   waits`, `repeated hauls: iron-plate (13,40) -> wooden-chest (89,-3) x38, ...`, `failed: 31 (...)`, ...);
-  `./fh call review` shows it any time. `science` is one line, at most every 5 minutes and only when it changed:
+  `./fh call review` shows it any time. About every 45 minutes a reply carries `lookahead` once: your plan line and
+  how long since it changed, your open board items, the team goals, the research running and next, network stock
+  falling to zero within 2 hours, and the time left in the shift (`./fh call lookahead` shows it any time).
+  `science` is one line, at most every 5 minutes and only when it changed:
   the research, labs working N of M, the pack the most labs hold none of with made and used per minute and the
   first short step of its chain, the largest electric network's draw, capacity and headroom, and its boilers (how
   many have fuel at their feeders; how many are under 20 minutes and not refilled, and the lowest).
@@ -150,7 +155,9 @@ already targets your character.
   team has none of, and `networks`: one line per electric network (draw over 5 minutes against capacity, machines on
   low power, boilers and their fuel in minutes), per logistic network (its id, roboports and the areas they cover,
   logistic and construction robots total, idle, working, charging and waiting to charge, requests unfilled for 60 s or
-  more, ghosts in its area) and the turrets with ammo used in the last hour (`./fh call networks` shows them any time;
+  more, its construction backlog: ghosts, deconstruction and upgrade orders, those waiting 5+ min and the oldest, and
+  the cause; deliveries stuck with the item free) and the turrets with ammo used in the last hour, and `drills out of
+  ore` per surface (`./fh call networks` shows them any time;
   `./fh call boilers` lists each boiler by network, the stopped ones first: state, fuel, water, its feeder and what
   the feeder takes from with the fuel there; the networks line names the lowest boiler (position, minutes, fuel,
   feeder) and accumulators' stored MJ of their maximum; `./fh platform NAME` shows one space platform (hub free
