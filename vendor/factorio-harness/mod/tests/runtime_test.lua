@@ -1312,12 +1312,21 @@ do
   fails(function() call('collect',{radius=20,types={'container'}}) end,'types may be assembling-machine and furnace')
   fails(function() call('collect',{radius=20,quality='rare'}) end,'quality goes with item')
   -- A repeating sweep: round 1 takes the 3 plates left, round 2 finds nothing; its line reaches the team block once.
-  call('queue_repeat',{name='sweep',interval_ticks=60,steps={{action='collect',args={radius=20,up_to=true}}}})
+  call('queue_repeat',{name='sweep',interval_ticks=60,steps={{action='collect',args={radius=20},on_fail='skip'}}})
   advance(5); eq(result[1].valid_for_read,false)
   advance(70)
   local team=call('status').team
   eq(team and team.queue and team.queue[1],'queue sweep round 2: 1 of 1 steps short: collect nothing_collected')
   advance(70); eq((call('status').team or {}).queue,nil)
+  call('queue_cancel',{})
+  -- With up_to=true the plan allowed for the short (Grok, shift10): no line, while its history says short.
+  result[1].name,result[1].count,result[1].valid_for_read='iron-plate',3,true
+  call('queue_repeat',{name='sweep2',interval_ticks=60,steps={{action='collect',args={radius=20,up_to=true}}}})
+  advance(5); eq(result[1].valid_for_read,false)
+  advance(140)
+  eq((call('status').team or {}).queue,nil)
+  local h=call('queue_status',{}).history
+  eq(h[#h].ok,true); eq(h[#h].result.short,true)
   call('queue_cancel',{})
   gear_machine.get_output_inventory=gear_output
 end

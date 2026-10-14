@@ -170,14 +170,16 @@ assert(r.more and r.more:find('more: board {full=true}',1,true),tostring(r.more)
 eq(r.matched,31); eq(#r.items[1].notes,1); eq(r.items[1].note_count,3)
 local full=sol('board',{full=true})
 eq(#full.items,30); eq(#full.items[1].notes,2); eq(full.more,nil)
--- tells: by default, the ones since your last read.
+-- tells: by default the last 30 received, at every read (Muse, shift10: the
+-- read since the last one lost tells missed in the team block).
 luna('tell',{to='sol',text='one'}); luna('tell',{to='sol',text='two'})
 r=sol('tells')
 eq(#r.tells,2)
-eq(#sol('tells').tells,0,'nothing new')
+eq(#sol('tells').tells,2,'listed again')
 luna('tell',{to='sol',text='three'})
-r=sol('tells'); eq(#r.tells,1); eq(r.tells[1].text,'three')
+r=sol('tells'); eq(#r.tells,3); eq(r.tells[3].text,'three')
 eq(#sol('tells',{since=0}).tells,3,'since=0: all of them')
+eq(#sol('tells',{since=r.tells[2].seq}).tells,1,'since: after that seq')
 -- Queue writes answer briefly: the next steps by id, the count, the note.
 local steps={}
 for i=1,7 do steps[i]={action='wait_ticks',args={ticks=600},label='w'..i} end

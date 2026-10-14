@@ -136,8 +136,11 @@ return function(api)
       .. 'following the ingredient most of a step\'s makers lack while most of them lack one and ending at the first step whose makers mostly do '
       .. 'not, each step with its makers and made and used per minute (10 min statistics) ("chemical-science-pack: 9 of 14 makers lack '
       .. 'advanced-circuit, made 12/min, used 30/min; advanced-circuit: ...; plastic-bar: 4 of 4 working, made 30/min, used 52/min"); '
-      .. 'chain_tree: every step down to what no assembler, furnace or silo makes {item, depth, made_per_min, used_per_min, makers, '
-      .. 'working, states, lacking {ingredient: makers}} (40 steps at most, chain_cut); counted (what the scan read)'}
+      .. 'a step mined or pumped names its miners (mining drills, pumpjacks, offshore pumps), their states (working, output full, no resource left) '
+      .. 'and what they put into ("stone: 7 electric-mining-drill (5 working, 2 output full) into 6 transport-belt, 1 wooden-chest"), a resource\'s '
+      .. 'required fluid the step below it; '
+      .. 'chain_tree: every step down to what nothing makes {item, depth, made_per_min, used_per_min, makers, '
+      .. 'working, states, lacking {ingredient: makers}, miners, miner_states, outputs} (40 steps at most, chain_cut); counted (what the scan read)'}
   function M.science(p, a)
     local surface = p.surface
     if a.surface ~= nil then

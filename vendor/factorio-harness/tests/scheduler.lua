@@ -176,22 +176,35 @@ do
   check(s.paused)
   check(not pcall(cs.handlers.queue_submit,p,{steps={{action='craft',on_short='retry'}}}))
   -- A repeating plan's round with short steps is one grouped line for the team block (Opus), only when it changed.
+  -- Shorts the plan allowed for (up_to=true, on_short=skip) stay out of it (Grok, shift10); on_fail=skip does not allow one.
   cstate.queues=nil; ran={}
   cs.handlers.queue_repeat(p,{name='loop3',interval_ticks=60,steps={
-    {action='give',args={held=0,item='iron-plate'},on_short='skip'},{action='give',args={held=0,item='iron-plate'},on_short='skip'},
-    {action='tour',args={outcome='nothing_collected',item='coal',up_to=true}},{action='craft'}}})
-  for _=1,10 do ctick() end
+    {action='give',args={held=0,item='iron-plate'},on_fail='skip'},{action='give',args={held=0,item='iron-plate'},on_fail='skip'},
+    {action='tour',args={outcome='nothing_collected',item='coal'},on_fail='skip'},
+    {action='give',args={held=0,item='copper-plate'},on_short='skip'},
+    {action='tour',args={outcome='nothing_collected',item='stone',up_to=true}},{action='craft'}}})
+  for _=1,12 do ctick() end
   local lines=cs.round_news(1)
-  check(lines and #lines==1); check(lines[1]=='queue loop3 round 1: 3 of 4 steps short: give iron-plate none_held x2, tour coal nothing_collected')
+  check(lines and #lines==1); check(lines[1]=='queue loop3 round 1: 3 of 6 steps short: give iron-plate none_held x2, tour coal nothing_collected')
   check(cs.round_news(1)==nil)
+  local h=cs.handlers.queue_status(p).history
+  check(h[4].action=='give' and h[4].ok and h[4].result.short==true) -- the allowed short is still in the history
+  check(h[5].action=='tour' and h[5].ok and h[5].result.short==true)
   for _=1,70 do ctick() end
   check(cs.handlers.queue_status(p).cycle==2); check(cs.round_news(1)==nil) -- the same round again says nothing
   give_held=5
   for _=1,70 do ctick() end
   check(cs.handlers.queue_status(p).cycle==3)
   lines=cs.round_news(1)
-  check(lines and lines[1]=='queue loop3 round 3: 1 of 4 steps short: tour coal nothing_collected')
+  check(lines and lines[1]=='queue loop3 round 3: 1 of 6 steps short: tour coal nothing_collected')
   give_held=nil
+  -- A loop whose only shorts are allowed puts no line in the team block, round after round.
+  cstate.queues=nil; ran={}
+  cs.handlers.queue_repeat(p,{name='bricks',interval_ticks=60,steps={
+    {action='give',args={held=0,item='stone-brick'},on_short='skip'},
+    {action='tour',args={outcome='out_of_items',item='stone-brick',up_to=true}},{action='craft'}}})
+  for _=1,300 do ctick() end
+  check(cs.handlers.queue_status(p).cycle>=4); check(cs.round_news(1)==nil)
   check(not pcall(cs.handlers.queue_repeat,p,{name=string.rep('x',40),steps={{action='craft'}}}))
 end
 print('scheduler: '..assertions..' assertions passed')
