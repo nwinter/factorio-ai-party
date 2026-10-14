@@ -166,34 +166,44 @@ return function(api)
 
   -- Chart coverage and the charted extent of the pollution cloud; polluted
   -- chunks beyond the chart only reveal in which directions the cloud leaves it.
-  local function chart(p)
-    local s,force=p.surface,p.force
-    local charted,visible,polluted=0,0,0
-    local box,cloud,beyond={},{},{}
-    local centre=force.get_spawn_position(s)
-    local function grow(b,x,y)
-      b.left=math.min(b.left or x,x); b.right=math.max(b.right or x,x)
-      b.top=math.min(b.top or y,y); b.bottom=math.max(b.bottom or y,y)
+  -- In pieces: a tally, one generated chunk into it, the result (chart() all
+  -- at once over get_chunks; the background sweep, M.tick, over the box of
+  -- generated chunks the last chart saw plus a margin, SWEEP a tick).
+  local function grow(b,x,y)
+    b.left=math.min(b.left or x,x); b.right=math.max(b.right or x,x)
+    b.top=math.min(b.top or y,y); b.bottom=math.max(b.bottom or y,y)
+  end
+  local function chart_new(s,force)
+    local c=force.get_spawn_position(s)
+    return {charted=0,visible=0,polluted=0,box={},cloud={},beyond={},gen={},centre={x=c.x,y=c.y}}
+  end
+  local function chart_chunk(t,s,force,c)
+    grow(t.gen,c.x,c.y)
+    local is_charted=force.is_chunk_charted(s,c)
+    if is_charted then
+      t.charted=t.charted+1; grow(t.box,c.x,c.y)
+      if force.is_chunk_visible(s,c) then t.visible=t.visible+1 end
     end
-    for c in s.get_chunks() do
-      local is_charted=force.is_chunk_charted(s,c)
-      if is_charted then
-        charted=charted+1; grow(box,c.x,c.y)
-        if force.is_chunk_visible(s,c) then visible=visible+1 end
-      end
-      if s.get_pollution(chunk_centre(c.x,c.y))>0 then
-        if is_charted then polluted=polluted+1; grow(cloud,c.x,c.y)
-        else beyond[compass(centre,chunk_centre(c.x,c.y))]=true end
-      end
+    if s.get_pollution(chunk_centre(c.x,c.y))>0 then
+      if is_charted then t.polluted=t.polluted+1; grow(t.cloud,c.x,c.y)
+      else t.beyond[compass(t.centre,chunk_centre(c.x,c.y))]=true end
     end
+  end
+  local function chart_done(t,s,force,tick)
     local function extent(b)
       return b.left and string.format('x %d..%d y %d..%d',b.left*32,b.right*32+31,b.top*32,b.bottom*32+31) or nil
     end
     local dirs={}
-    for _,name in ipairs(names) do if beyond[name] then dirs[#dirs+1]=name end end
-    return {tick=game.tick,charted_chunks=charted,visible_chunks=visible,extent=extent(box),
-      radars=#s.find_entities_filtered{type='radar',force=force},
-      cloud={chunks=polluted,extent=extent(cloud),beyond_chart=#dirs>0 and table.concat(dirs,',') or nil}}
+    for _,name in ipairs(names) do if t.beyond[name] then dirs[#dirs+1]=name end end
+    return {tick=tick or game.tick,charted_chunks=t.charted,visible_chunks=t.visible,extent=extent(t.box),
+      radars=#s.find_entities_filtered{type='radar',force=force},gen=t.gen,
+      cloud={chunks=t.polluted,extent=extent(t.cloud),beyond_chart=#dirs>0 and table.concat(dirs,',') or nil}}
+  end
+  local function chart(p)
+    local s,force=p.surface,p.force
+    local t=chart_new(s,force)
+    for c in s.get_chunks() do chart_chunk(t,s,force,c) end
+    return chart_done(t,s,force)
   end
 
   -- Remembers each nest chunk: when it was last visible and whether the cloud
@@ -251,7 +261,10 @@ return function(api)
     local e=st.threat_shared[key]
     if not e then e={}; st.threat_shared[key]=e end
     if fresh or not e.pollution or game.tick-e.pollution_tick>=CACHE_TICKS then e.pollution,e.pollution_tick=pollution(p),game.tick end
-    if fresh or not e.chart or game.tick-e.chart.tick>=CHART_TICKS then e.chart=chart(p) end
+    e.force,e.surface=p.force.name,p.surface.index
+    -- With the background sweep running (M.tick) the chart is redone there; here only when asked (threats=true),
+    -- when there is none, or when it lacks the box the sweep starts from.
+    if fresh or not e.chart or not e.chart.gen or (not st.chart_bg and game.tick-e.chart.tick>=CHART_TICKS) then e.chart=chart(p) end
     return e
   end
   local function refresh(p,fresh)
@@ -267,6 +280,46 @@ return function(api)
     local s=shared(p,fresh)
     entry.pollution,entry.chart=s.pollution,s.chart
     return entry
+  end
+  -- The background chart (task-statuscost: the chart walk went over every
+  -- generated chunk in one status call once a minute per surface): started
+  -- when a surface's chart is CHART_TICKS old, it sweeps the box of generated
+  -- chunks the last chart saw, grown by SWEEP_MARGIN and to every player on
+  -- the surface, SWEEP chunk positions a tick; its state is in storage.
+  local SWEEP,SWEEP_MARGIN=2000,4
+  function M.tick(tick)
+    local st=api.state()
+    st.chart_bg=true
+    st.chart_jobs=st.chart_jobs or {}
+    for key,e in pairs(st.threat_shared or {}) do
+      local job=st.chart_jobs[key]
+      local force=e.force and game.forces[e.force]
+      local s=e.surface and game.get_surface(e.surface)
+      if not job then
+        local g=e.chart and e.chart.gen
+        if g and force and s and tick-e.chart.tick>=CHART_TICKS then
+          local b={}
+          if g.left then b={left=g.left-SWEEP_MARGIN,right=g.right+SWEEP_MARGIN,top=g.top-SWEEP_MARGIN,bottom=g.bottom+SWEEP_MARGIN} end
+          for _,pl in pairs(game.players or {}) do
+            local ok,here=pcall(function() return pl.surface.index==s.index and pl.position end)
+            if ok and here then grow(b,math.floor(here.x/32)-SWEEP_MARGIN,math.floor(here.y/32)-SWEEP_MARGIN); grow(b,math.floor(here.x/32)+SWEEP_MARGIN,math.floor(here.y/32)+SWEEP_MARGIN) end
+          end
+          if b.left then st.chart_jobs[key]={start=tick,left=b.left,right=b.right,top=b.top,bottom=b.bottom,x=b.left,y=b.top}
+          else e.chart.tick=tick end  -- no generated chunk and nobody there: nothing to sweep
+        end
+      elseif not (force and s) then st.chart_jobs[key]=nil
+      else
+        job.t=job.t or chart_new(s,force)
+        local n=0
+        while n<SWEEP and job.y<=job.bottom do
+          local c={x=job.x,y=job.y}
+          if s.is_chunk_generated(c) then chart_chunk(job.t,s,force,c) end
+          n=n+1; job.x=job.x+1
+          if job.x>job.right then job.x=job.left; job.y=job.y+1 end
+        end
+        if job.y>job.bottom then e.chart=chart_done(job.t,s,force,job.start); st.chart_jobs[key]=nil end
+      end
+    end
   end
   -- Replies keep nest news flowing without a status call: the nests around an
   -- agent are rechecked when neither status nor a reply did so in the last

@@ -283,4 +283,33 @@ do
   eq(known_distances(T2.summary(a2,true)),5,'5 min later: the kept ones still shown')
   assert(rings>before and rings-before<=8,'and two searched again (up to 4 rings each)')
 end
+-- The chart sweep (task-statuscost): after the first chart, the chart is redone in the background over the box of
+-- generated chunks plus a margin, a slice a tick; the same numbers as the walk over every chunk; a status walks none.
+do
+  local st3,walked={},0
+  local surf={index=9,name='nauvis',get_total_pollution=function() return 0 end,get_pollution=function(pos) return polluted(pos) end,
+    get_chunks=function() walked=walked+1; return chunks() end,
+    is_chunk_generated=function(c) return c.x>=-2 and c.x<=8 and c.y>=-1 and c.y<=1 end,
+    find_entities_filtered=function(f) if f.type=='radar' then return {{},{}} end return {} end}
+  local T3=dofile('mod/agent-harness_0.1.0/threat.lua'){state=function() return st3 end,distance=distance,known=function() return true end}
+  local a={index=1,surface=surf,position={x=0,y=0},force=mine}
+  game.tick=500000
+  local first_s=T3.summary(a)
+  local first=first_s.chart
+  eq(walked,1)
+  game.forces={enemy=enemy,player=mine}
+  game.get_surface=function(i) return i==9 and surf or nil end
+  game.players={}
+  game.tick=game.tick+3600
+  for _=1,5 do game.tick=game.tick+1; T3.tick(game.tick) end
+  eq(st3.chart_jobs and next(st3.chart_jobs),nil,'the sweep is done')
+  local swept=T3.summary(a).chart
+  eq(walked,1,'no walk over every chunk in a status')
+  eq(swept.charted_chunks,first.charted_chunks); eq(swept.visible_chunks,first.visible_chunks); eq(swept.extent,first.extent)
+  eq(swept.radars,first.radars)
+  local s3=T3.summary(a)
+  eq(s3.pollution.cloud_chunks,first_s.pollution.cloud_chunks); eq(s3.pollution.cloud_extent,first_s.pollution.cloud_extent)
+  eq(s3.pollution.cloud_beyond_chart,first_s.pollution.cloud_beyond_chart)
+  game.forces={enemy=enemy,player=mine}; game.get_surface=nil; game.players=nil
+end
 print('threat tests passed')
