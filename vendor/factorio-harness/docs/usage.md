@@ -727,9 +727,26 @@ Some actions work at a distance, the way a player can through remote view:
   player's keys do: outcomes `arrived`, `blocked` after 3 s without progress, `timed_out`; `--wait` waits for it);
   `vehicle {position, go_to: {x,y}}` sends a spidertron walking by itself (from outside, or the one you ride; one
   with an empty fuel slot does not walk, and the reply says so: fuel goes in with `transfer`);
-  `vehicle {}` says where you sit. Seated, reads, chat, crafting, research, ghosts and other remote-view actions
+  `vehicle {}` says where you sit and, for a vehicle with guns, `guns`: each slot's gun, its ammo and count, range,
+  and which is selected. Seated, reads, chat, crafting, research, ghosts and other remote-view actions
   work; anything that moves or uses the body (walking, mining, building by hand, transfers) is refused with a pointer
   to `vehicle {exit: true}`.
+- Vehicle guns: `shoot` while seated in a car, tank or spidertron fires the vehicle's gun from the vehicle's ammo slots,
+  when you are its gunner (the driver, unless `driver_is_gunner` is off in the vehicle's GUI and a passenger sits in;
+  then the passenger). Pick the gun by `gun_slot` (1..the vehicle's guns), `gun` (`tank-cannon`, `tank-machine-gun`,
+  `tank-flamethrower`, `vehicle-machine-gun`, `spidertron-rocket-launcher-1..4`) or `ammo` (`cannon-shell`,
+  `explosive-cannon-shell`, `firearm-magazine`, `flamethrower-ammo`, `rocket`, ...: the gun that takes it); without
+  one, the selected gun, else the first holding ammunition. An empty slot, or one holding another kind than `ammo`
+  asks for, is loaded from your inventory, else from your own ammo slots, as the vehicle GUI lets the one sitting in
+  it (`equipped: loaded 10 cannon-shell back to your inventory; 10 explosive-cannon-shell from your inventory to gun
+  slot 1`); it refills the same way mid-fight. `position` aims at the entity there (not our own; enemies first) and
+  the shot ends `target_destroyed` when it is gone; `auto: true` aims at the nearest visible enemy within `radius`
+  (default the gun's range), rescanned every 6 ticks. The turret turns toward the target as a player's cursor turns
+  it, and the gun fires once it bears. `vehicle {drive}` goes on while it fires (start both). The reply gives
+  `vehicle`, `seat`, `gun`, `gun_slot`, `range`, `guns`, `target` (with its distance) and `out_of_range` when the
+  gun does not reach it; `last_combat` adds `gun`, `ammo_used` (shells or magazines from that slot) and `guns` after.
+  It also ends `left_vehicle` (out of the seat) or `out_of_ammo`. (shift09: Opus and Astra could not fire a tank,
+  and a tank was lost attacking a nest at (294,-135).)
 
 Items on the ground:
 
