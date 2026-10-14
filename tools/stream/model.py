@@ -143,34 +143,6 @@ def planet_label(name):
     return PLANET_LABELS.get(name) or (name or "?").replace("-", " ").capitalize()
 
 
-_LETTERS_DIGIT = re.compile(r"([a-z]{3,})(?=\d)")
-_DIGIT_LETTERS = re.compile(r"(\d)(?=[a-z]{3,})")
-_THOUSANDS = re.compile(r"(\d)k(?=[a-z]{3,})")   # 28kgreens is 28k greens, not 28 kgreens
-_TICKED = re.compile(r"(`[^`]*`)")
-
-
-def spaced(text):
-    """A tell as the ticker and chat panel show it (operator 13:05: Codex agents run words and numbers together in
-    tells: needs200AP, hold500, despite9landfillheld; their say lines are fine). A space where a run of 3+ lowercase
-    letters meets a digit, and where a number meets a run of 3+ lowercase letters. Left alone: hyphenated names
-    (assembling-machine-2, iron-plate*50), anything in backticks, units of 1-2 letters (10k, 5m, 2nd), decimals and
-    coordinates (no 3-letter run in them), links."""
-    if not text or not any(c.isdigit() for c in text):
-        return text
-    out = []
-    for part in _TICKED.split(text):
-        if part.startswith("`") and part.endswith("`") and len(part) > 1:
-            out.append(part)
-            continue
-        tokens = re.split(r"(\s+)", part)
-        for i, tok in enumerate(tokens):
-            if tok and not tok.isspace() and "-" not in tok and "://" not in tok and "_" not in tok:
-                tok = _DIGIT_LETTERS.sub(r"\1 ", _THOUSANDS.sub(r"\1k ", _LETTERS_DIGIT.sub(r"\1 ", tok)))
-            tokens[i] = tok
-        out.append("".join(tokens))
-    return "".join(out)
-
-
 def where_label(surface, platform=None):
     """An agent's surface for viewers: the platform's name on a platform, else the planet."""
     return platform or planet_label(surface)
@@ -836,11 +808,9 @@ class Model:
         names = ["team"] if to == "team" else [n for n in (to or []) if isinstance(n, str)]
         shown = ", ".join("team" if n == "team" else (self.agents[m].display_name or n) if (m := self._match_sender(n))
                           else n for n in names)
-        # (spaced: words and numbers apart for the ticker and the chat panel; operator 13:05)
-        body = spaced(t.get("text", ""))
         entry = {"seq": f"t{t.get('seq')}", "tick": t.get("tick"), "from": t.get("from"), "agent": sender,
-                 "text": f"\u2192 {shown}: {body}", "t": t.get("t", now), "tell": True, "lane": "tell",
-                 "to_shown": shown, "to": names, "body": body}
+                 "text": f"\u2192 {shown}: {t.get('text', '')}", "t": t.get("t", now), "tell": True, "lane": "tell",
+                 "to_shown": shown, "to": names, "body": t.get("text", "")}
         self.chat.append(entry)
         if sender:
             self.agents[sender].bump(1, now)
@@ -853,7 +823,7 @@ class Model:
             return
         self.chat_seen.add(key)
         sender = self._match_sender(r.get("agent", ""))
-        text = spaced(r.get("text", ""))
+        text = r.get("text", "")
         entry = {"seq": f"o{r.get('seq')}", "tick": r.get("tick"), "from": r.get("agent"), "agent": sender,
                  "text": f"→ operator: {text}", "t": r.get("t", now), "tell": True, "operator": True, "lane": "tell",
                  "to_shown": "operator", "to": ["operator"], "body": text}
