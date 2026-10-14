@@ -32,7 +32,7 @@ return function(api)
   local function dist(a, b) return ((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) ^ 0.5 end
   local function at(pos) return string.format('(%g,%g)', math.floor(pos.x * 10 + 0.5) / 10, math.floor(pos.y * 10 + 0.5) / 10) end
   M.at = at
-  local found_spot
+  local found_spot, search_spot
   -- Half the character's box (0.2 for the vanilla character).
   function M.half(c)
     local b = try(function() return c.prototype.collision_box end)
@@ -246,6 +246,10 @@ return function(api)
   end
   local function build_reach(p) return try(function() return p.build_distance end) or 10 end
   M.build_reach = build_reach
+  -- A build spot's distance to the goal at most: build reach less the arrival
+  -- radius and a quarter tile (on a copy of world n a walk to a spot 9.8 tiles
+  -- off stopped 10.2 from the goal, out of reach).
+  local function spot_reach(R) return R - 0.75 end
   -- A spot the character reaches (a probe's end, or the nearest step of a
   -- closed area) within build reach of the goal (Grok, shift10 06:20: four
   -- walks failed toward a standing tile; the only tile in build reach of the
@@ -260,7 +264,7 @@ return function(api)
     if room or M.clear_at(p.surface, pos, half + PAD, c) then s.room = true
     else
       local r = M.region(p.surface, pos, half, {ignore=c, force=p.force, open_pad=PAD, window=12})
-      if r and r.open and dist(r.open, nav.position) <= R - 0.25 then s.pos = {x=r.open.x, y=r.open.y}; s.room = true
+      if r and r.open and dist(r.open, nav.position) <= spot_reach(R) then s.pos = {x=r.open.x, y=r.open.y}; s.room = true
       else
         local g = M.in_gap(p.surface, pos, half, 0.25, c)
         s.by = g and g.by or {}
@@ -275,15 +279,71 @@ return function(api)
     nav.spot = s
     nav.path_state = 'unreachable'
   end
+  -- No path request found one: the character's own steps (a search, a
+  -- slice a tick: path_state searching), from where it stands, else from
+  -- the near probe's end (walked to first: via). A spot found so is walked
+  -- to with squeeze=true (its trail).
+  search_spot = function(p, nav)
+    local c, R = p.character, build_reach(p)
+    local half = M.half(c)
+    local goal = {x=nav.position.x, y=nav.position.y}
+    local opts = {ignore=c, force=p.force}
+    local S = M.search_begin(p.surface, p.position, half, goal, spot_reach(R), opts)
+    local via
+    if not S and nav.reachable then
+      S = M.search_begin(p.surface, nav.reachable, half, goal, spot_reach(R), opts)
+      via = S and {x=nav.reachable.x, y=nav.reachable.y} or nil
+    end
+    if not S then
+      nav.spot = {none=true, goal=goal, reach=R}
+      nav.path_state = 'unreachable'
+      return
+    end
+    nav.search = {S=S, mode='spot', via=via}
+    nav.path_state = 'searching'
+  end
+  -- The search's result for the walk's build spot.
+  local function searched_spot(p, nav, r, via)
+    local c, R = p.character, build_reach(p)
+    local half = M.half(c)
+    local goal = {x=nav.position.x, y=nav.position.y}
+    if not r then
+      nav.spot = {none=true, goal=goal, reach=R}
+    else
+      local s = {pos=r.spot, goal=goal, reach=R, room=r.room or nil, searched=true, via=via, width=(half + PAD) * 2}
+      if not r.room then local g = M.in_gap(p.surface, r.spot, half, 0.25, c); s.by = g and g.by or {} end
+      nav.spot = s
+      if not nav.reachable or dist(s.pos, goal) < dist(nav.reachable, goal) then nav.reachable = s.pos end
+    end
+    nav.path_state = 'unreachable'
+  end
+  -- A slice of the walk's search each tick (navigate, path_state searching).
+  function M.search_tick(p, nav)
+    local job = nav.search
+    if not job then nav.path_state = 'unreachable'; return end
+    local r = M.search_run(job.S, M.SEARCH_SLICE)
+    if r == nil then return end
+    nav.search = nil
+    if job.mode == 'squeeze' then
+      if r then return M.walk_trail(p, nav, r, job.from) end
+      return M.give_up_rest(p, nav)
+    end
+    -- Nothing from where it stands: once more from the near probe's end.
+    if not r and not job.via and nav.reachable and dist(nav.reachable, p.position) > 1 then
+      local S = M.search_begin(p.surface, nav.reachable, M.half(p.character), nav.position, spot_reach(build_reach(p)), {ignore=p.character, force=p.force})
+      if S then nav.search = {S=S, mode='spot', via={x=nav.reachable.x, y=nav.reachable.y}}; return end
+    end
+    return searched_spot(p, nav, r or nil, job.via)
+  end
   -- After the near probe: its end when it has room within build reach, else
   -- a probe for a box with room to turn within build reach, then the
   -- character's own box on the quarter-tile grid.
   function M.spot(p, nav)
     local R, r = build_reach(p), nav.reachable
-    if r and dist(r, nav.position) <= R - 0.25 and M.clear_at(p.surface, r, M.half(p.character) + PAD, p.character) then
+    if r and dist(r, nav.position) <= spot_reach(R) and M.clear_at(p.surface, r, M.half(p.character) + PAD, p.character) then
       return found_spot(p, nav, r, true)
     end
-    return probe(p, nav, 'room', R - 0.5, PAD, nil)
+    return probe(p, nav, 'room', spot_reach(R) - 0.25, PAD, nil)
   end
   -- No level found a route. Ungenerated ground: steer blind as before.
   -- Else: closed in (mapped now), or ask once with a wide radius where the
@@ -296,6 +356,13 @@ return function(api)
     end
     -- Squeezed into a gap the pathfinder does not route through: walk out first.
     if M.escape(p, nav) then return end
+    -- squeeze=true: where no path request leads, the character's own steps do (a search, then its trail walked).
+    if nav.squeeze and not nav.squeeze_tried and M.squeeze_begin(p, nav) then return end
+    return M.give_up_rest(p, nav)
+  end
+  -- The rest of a give-up: closed in (mapped now), or a probe where it can get to.
+  function M.give_up_rest(p, nav)
+    local pos = nav.position
     local here = p.position
     local region = M.region(p.surface, here, M.half(p.character), {ignore=p.character, goal=pos})
     nav.region = region
@@ -331,14 +398,13 @@ return function(api)
       if got then
         nav.why = string.format('no path for the character to %s on the tile, half- or quarter-tile grid', at(nav.position))
       else
-        nav.why = string.format('no path for the character to %s, nor to anywhere within %d tiles of it', at(nav.position), math.floor(nav.probe_radius or 0))
+        nav.why = string.format('no path request found a way for the character to %s, nor to anywhere within %d tiles of it', at(nav.position), math.floor(nav.probe_radius or 0))
       end
       return M.spot(p, nav)
     end
     if got then return found_spot(p, nav, got, kind == 'room') end
-    if kind == 'room' then return probe(p, nav, 'gap', build_reach(p) - 0.5, 0, 2) end
-    nav.spot = {none=true, goal={x=nav.position.x, y=nav.position.y}, reach=build_reach(p)}
-    nav.path_state = 'unreachable'
+    if kind == 'room' then return probe(p, nav, 'gap', spot_reach(build_reach(p)) - 0.25, 0, 2) end
+    return search_spot(p, nav)
   end
 
   -- Where the character can get to from start (a flood over quarter-tile
@@ -367,11 +433,13 @@ return function(api)
     end
     return out
   end
-  function M.region(surface, start, half, opts)
-    opts = opts or {}
-    local WINDOW = opts.window or WINDOW
-    local pad = opts.open_pad
-    local area = {{start.x - WINDOW, start.y - WINDOW}, {start.x + WINDOW, start.y + WINDOW}}
+  -- What the character's box runs into in an area: our entities and others'
+  -- (not characters, nor our gates with opts.force), tiles it cannot walk
+  -- on, and opts.extra boxes; opts.skip (unit numbers) and opts.open (tile
+  -- keys) leave some out. Returns hit(x, y, h): the first box a box of half
+  -- size h (default half, at most reach) at (x, y) overlaps, as {x0, y0, x1,
+  -- y1, name, id}.
+  local function bucket_of(surface, area, reach, opts)
     local boxes = {}
     local skip, open = opts.skip, opts.open
     for _, e in ipairs(try(function() return surface.find_entities_filtered{area=area, collision_mask='player'} end) or {}) do
@@ -389,9 +457,7 @@ return function(api)
     for _, b in ipairs(opts.extra or {}) do boxes[#boxes+1] = b end
     -- Boxes by 2-tile bucket, each in every bucket its reach touches (the
     -- padded box's reach when looking for room to turn).
-    local reach = half + (pad or 0)
     local bucket = {}
-    local function key(x, y) return math.floor(x / 2) * 65536 + math.floor(y / 2) end
     for _, b in ipairs(boxes) do
       for bx = math.floor((b[1] - reach) / 2), math.floor((b[3] + reach) / 2) do
         for by = math.floor((b[2] - reach) / 2), math.floor((b[4] + reach) / 2) do
@@ -402,14 +468,24 @@ return function(api)
         end
       end
     end
-    local blockers = {}
-    -- The first box a box of half size h (the character's when not given) at (x, y) overlaps.
-    local function hit(x, y, h)
+    return bucket
+  end
+  local function hitter(bucket, half)
+    return function(x, y, h)
       h = h or half
-      for _, b in ipairs(bucket[key(x, y)] or {}) do
+      for _, b in ipairs(bucket[math.floor(x / 2) * 65536 + math.floor(y / 2)] or {}) do
         if x + h > b[1] and x - h < b[3] and y + h > b[2] and y - h < b[4] then return b end
       end
     end
+  end
+  local function obstacles(surface, area, reach, half, opts) return hitter(bucket_of(surface, area, reach, opts), half) end
+  function M.region(surface, start, half, opts)
+    opts = opts or {}
+    local WINDOW = opts.window or WINDOW
+    local pad = opts.open_pad
+    local area = {{start.x - WINDOW, start.y - WINDOW}, {start.x + WINDOW, start.y + WINDOW}}
+    local hit = obstacles(surface, area, half + (pad or 0), half, opts)
+    local blockers = {}
     local si, sj = math.floor(start.x / STEP + 0.5), math.floor(start.y / STEP + 0.5)
     local found
     -- The nearest free step: rings around start, nearest first.
@@ -512,6 +588,107 @@ return function(api)
     for i = 1, math.min(6, #by) do names[i] = by[i].name end
     return {closed=closed, tiles=math.floor(found * STEP * STEP + 0.5), x0=x0 * STEP, y0=y0 * STEP, x1=x1 * STEP, y1=y1 * STEP,
       by=names, nearest=best and {x=best[1] * STEP, y=best[2] * STEP} or nil, planned=planned}
+  end
+  -- Where the character's own box gets to within reach of goal (Grok,
+  -- shift10 06:20: the only tile in build reach of his new engine lay in a
+  -- 0.7-tile gap; on a copy of world n no path request, on any grid, ended
+  -- in a 0.6-tile gap between two assembling machines, nor led into one).
+  -- A search over quarter-tile steps from start, nearest the goal first,
+  -- inside the box around start and goal (at most 64 tiles a side) and up to
+  -- SEARCH_CAP steps. Returns the first step within reach with room to turn
+  -- (a box padded by PAD fits), else the first within reach, as {spot, room,
+  -- trail (corners from start), steps}; nil when none is within reach.
+  local SEARCH_CAP, SEARCH_MORE, SEARCH_SIDE, SEARCH_SLICE = 6000, 600, 64, 300
+  M.SEARCH_SLICE = SEARCH_SLICE
+  -- Step keys and their steps (quarter tiles, |j| under 2^19).
+  local function skey(i, j) return i * 1048576 + j end
+  local function sdecode(k) local i = math.floor((k + 524288) / 1048576); return i, k - i * 1048576 end
+  -- The search's state: plain tables, kept with a walk in storage between slices.
+  function M.search_begin(surface, start, half, goal, reach, opts)
+    opts = opts or {}
+    local x0, y0 = math.min(start.x, goal.x) - reach - 4, math.min(start.y, goal.y) - reach - 4
+    local x1, y1 = math.max(start.x, goal.x) + reach + 4, math.max(start.y, goal.y) + reach + 4
+    if x1 - x0 > SEARCH_SIDE or y1 - y0 > SEARCH_SIDE then return nil end
+    local bucket = bucket_of(surface, {{x0, y0}, {x1, y1}}, half + PAD, opts)
+    local hit = hitter(bucket, half)
+    local si, sj = math.floor(start.x / STEP + 0.5), math.floor(start.y / STEP + 0.5)
+    local found
+    for r = 0, 2 do
+      for di = -r, r do
+        for dj = -r, r do
+          if not found and math.max(math.abs(di), math.abs(dj)) == r and not hit((si + di) * STEP, (sj + dj) * STEP) then found = {si + di, sj + dj} end
+        end
+      end
+      if found then break end
+    end
+    if not found then return nil end
+    local d = (found[1] * STEP - goal.x) ^ 2 + (found[2] * STEP - goal.y) ^ 2
+    return {x0=x0, y0=y0, x1=x1, y1=y1, goal={x=goal.x, y=goal.y}, R2=reach * reach, half=half, bucket=bucket,
+      heap={{found[1], found[2], d}}, hn=1, seen={[skey(found[1], found[2])]=true}, from={}, pops=0, after=0}
+  end
+  -- Up to budget steps of S: nil while it goes on, then the result or false.
+  function M.search_run(S, budget)
+    local hit = hitter(S.bucket, S.half)
+    local heap, goal, half = S.heap, S.goal, S.half
+    local function push(i, j)
+      local d = (i * STEP - goal.x) ^ 2 + (j * STEP - goal.y) ^ 2
+      S.hn = S.hn + 1; heap[S.hn] = {i, j, d}
+      local k = S.hn
+      while k > 1 do
+        local up = math.floor(k / 2)
+        if heap[up][3] <= d then break end
+        heap[up], heap[k] = heap[k], heap[up]; k = up
+      end
+    end
+    local function pop()
+      local top, hn = heap[1], S.hn
+      heap[1] = heap[hn]; heap[hn] = nil; hn = hn - 1; S.hn = hn
+      local k = 1
+      while true do
+        local l, r, m = 2 * k, 2 * k + 1, k
+        if l <= hn and heap[l][3] < heap[m][3] then m = l end
+        if r <= hn and heap[r][3] < heap[m][3] then m = r end
+        if m == k then break end
+        heap[m], heap[k] = heap[k], heap[m]; k = m
+      end
+      return top
+    end
+    local n = 0
+    while S.hn > 0 do
+      if n >= budget then return nil end
+      n = n + 1
+      local c = pop()
+      S.pops = S.pops + 1
+      local x, y = c[1] * STEP, c[2] * STEP
+      if c[3] <= S.R2 then
+        if not hit(x, y, half + PAD) then S.room = skey(c[1], c[2]); break end
+        S.first = S.first or skey(c[1], c[2])
+      end
+      if S.first then S.after = S.after + 1; if S.after > SEARCH_MORE then break end end
+      if S.pops > SEARCH_CAP then break end
+      for _, o in ipairs(NEIGHBOURS) do
+        local ni, nj = c[1] + o[1], c[2] + o[2]
+        local k = skey(ni, nj)
+        local nx, ny = ni * STEP, nj * STEP
+        if not S.seen[k] and nx > S.x0 and nx < S.x1 and ny > S.y0 and ny < S.y1 then
+          S.seen[k] = true
+          if not hit(nx, ny) then S.from[k] = skey(c[1], c[2]); push(ni, nj) end
+        end
+      end
+    end
+    local best = S.room or S.first
+    if not best then return false end
+    local trail, k = {}, best
+    while k do local i, j = sdecode(k); trail[#trail+1] = {x=i * STEP, y=j * STEP}; k = S.from[k] end
+    local ordered = {}
+    for i = #trail, 1, -1 do ordered[#ordered+1] = trail[i] end
+    local bi, bj = sdecode(best)
+    return {spot={x=bi * STEP, y=bj * STEP}, room=S.room ~= nil, trail=smooth(ordered, hit, half + 0.01), steps=S.pops}
+  end
+  -- The whole search at once (tests, reads): the result or nil.
+  function M.reach_search(surface, start, half, goal, reach, opts)
+    local S = M.search_begin(surface, start, half, goal, reach, opts)
+    return S and M.search_run(S, math.huge) or nil
   end
   local function area_text(r, half)
     return string.format('the area %s-%s (about %d tiles) has no gap the character (%.1f tiles wide) fits through%s',
@@ -678,7 +855,7 @@ return function(api)
     nav.dig_from, nav.dig_area = nil, nil
     -- Closed in: the nearest step of the area, when within build reach.
     local r = nav.reachable
-    if r and dist(r, nav.position) <= build_reach(p) - 0.25 then return found_spot(p, nav, r, nil) end
+    if r and dist(r, nav.position) <= spot_reach(build_reach(p)) then return found_spot(p, nav, r, nil) end
     nav.spot = {none=true, goal={x=nav.position.x, y=nav.position.y}, reach=build_reach(p), closed=true}
     nav.path_state = 'unreachable'
   end
@@ -709,6 +886,26 @@ return function(api)
     nav.waypoints = wps; nav.waypoint = 1; nav.reach = 0.12
     nav.path_state = 'escape'; nav.found = nil; nav.sidestep = nil; nav.stalled = 0; nav.progress_tick = nil
     return true
+  end
+  -- squeeze=true and no path request found a route: a search to within the
+  -- arrival radius (path_state searching), then its trail walked waypoint by
+  -- waypoint (path_state trail). Returns true when the search starts.
+  function M.squeeze_begin(p, nav)
+    nav.squeeze_tried = true
+    local c = p.character
+    local here = p.position
+    local S = M.search_begin(p.surface, here, M.half(c), nav.position, math.max(nav.tolerance, STEP), {ignore=c, force=p.force})
+    if not S then return false end
+    nav.search = {S=S, mode='squeeze', from={x=here.x, y=here.y}}
+    nav.path_state = 'searching'
+    return true
+  end
+  function M.walk_trail(p, nav, r, from)
+    local wps = {}
+    for i, q in ipairs(r.trail) do wps[i] = {position=q} end
+    nav.waypoints = wps; nav.waypoint = 1; nav.reach = 0.12
+    nav.path_state = 'trail'; nav.found = nil; nav.sidestep = nil; nav.stalled = 0; nav.progress_tick = nil
+    nav.squeezed = {from=from or {x=p.position.x, y=p.position.y}, to=r.spot}
   end
   -- The escape trail walked: ask for the route again from here.
   function M.escaped(p, nav)

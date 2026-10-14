@@ -55,7 +55,8 @@ return function(api)
   local function silo_at(p,c)
     assert(c.position,'rocket_ready requires position (a rocket silo\'s, any tile of it)')
     local pos=api.position(c.position)
-    for _,e in pairs(p.surface.find_entities_filtered{position=pos,radius=0.3,type='rocket-silo',force=p.force}) do
+    -- An area search meets the footprint (a position and radius only the silo's centre, read on a copy of world n).
+    for _,e in pairs(p.surface.find_entities_filtered{area={{pos.x-0.01,pos.y-0.01},{pos.x+0.01,pos.y+0.01}},type='rocket-silo',force=p.force}) do
       if e.valid then return e end
     end
     error(string.format('no rocket silo of ours at (%g,%g) on %s',pos.x,pos.y,p.surface.name),0)
@@ -100,7 +101,8 @@ return function(api)
         local seen,silos=0,{}
         for _,raw in ipairs(c.positions) do
           for _,e in pairs(p.surface.find_entities_filtered{position=api.position(raw),radius=0.3,force=p.force}) do
-            if e.valid and e~=p.character then
+            -- A silo's rocket stands on its centre and holds nothing of its own (the silo counts the cargo).
+            if e.valid and e~=p.character and e.type~='rocket-silo-rocket' and e.type~='rocket-silo-rocket-shadow' then
               local ok,k=pcall(e.get_item_count,c.item)
               if ok and k then n=n+k end
               seen=seen+1

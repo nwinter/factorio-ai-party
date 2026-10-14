@@ -304,15 +304,26 @@ fh call status
 - An `unreachable` walk also names a spot it can reach within build reach of the target (Grok, shift10 06:20: four
   walks failed toward a standing tile by a new steam engine; the only tile in its build reach lay in a 0.7-tile gap).
   - `last.build_spot` is the spot and `last.build_spot_note` the line: `(-22.5,40.5) is reachable and within build
-    reach of (-26,42): 3.8 tiles (build reach 10)`.
+    reach of (-26,42): 3.8 tiles (build reach 10)`. A spot is at most 9.25 tiles from the target, so a walk that stops
+    within 0.5 of it stays in reach.
   - Spots with room to turn come first: the nearest reachable point when it has room, else a path request for a 0.7
-    box within 9.5 tiles of the target, then one for the character's own box on the quarter-tile grid.
-  - A spot in a gap with no room to turn: a spot with room joined to it within build reach takes its place.
-    Otherwise `last.build_spot_squeeze: true` and the note adds `it lies in a gap narrower than 0.7 tiles (pipe
-    (-25.5,44.5), ...), and no reachable spot with room to turn was found within build reach: move_to
-    {position=(-25.3,43.5), squeeze=true} walks into it`.
+    box within 9 tiles of the target, then one for the character's own box on the quarter-tile grid.
+  - No path request leads into a gap narrower than 0.7 tiles, on any grid (read on a copy of world n: a 0.6-tile slit
+    between two assembling machines). When the requests find nothing, the character's own steps are searched instead:
+    quarter-tile steps with its own box, nearest the target first, in the box around the character and the target (at
+    most 64 tiles a side), 300 steps a tick (0.5-3 ms a slice on the copy).
+    - It starts from the character; when that box is too large, from the nearest reachable point, and the note's
+      call then walks there first (`via`).
+    - A spot it finds comes with `build_spot_squeeze: true` and the `move_to {position=..., squeeze=true}` call.
+    - In a gap, the note says what hems it in: `(60,149.5) is reachable and within build reach of (60.5,140.5): 9.0
+      tiles (build reach 10); it lies in a gap narrower than 0.7 tiles (assembling-machine-1 (58.5,150.5), ...), and no
+      reachable spot with room to turn was found within build reach: move_to {position=(60,149.5), squeeze=true}
+      walks into it`. A spot with room joined to a gap spot within reach takes its place.
   - With none: `no spot the character can reach is within build reach (10 tiles) of (x,y)`. Closed in, the area's
-    nearest step counts when it is within build reach.
+    nearest step counts when it is within reach.
+- `squeeze: true` where no path request finds a route: the walk searches the character's own steps to within the
+  arrival radius (as above) and walks that trail, waypoint by waypoint (`last.squeezed: no path request led into the
+  gaps: walked them from (60.5,160.5) to (60,150.5)`). On the copy it walked 10 tiles from the pier into the slit.
   `blocked` (stalls on the way) and `timed_out` also say why, with where it stopped. A walk never ends on a belt: arriving
   on one it steps to the nearest free tile without a belt within the arrival radius, else within 3 tiles
   (`last.off_belt: arrived on a transport-belt; stepped to (25.5,-28.5), the nearest free tile without a belt (none

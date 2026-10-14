@@ -78,8 +78,9 @@ local silo={valid=true,type='rocket-silo',name='rocket-silo',position={x=65.5,y=
   get_inventory=function(id) if id==9 then return {get_contents=function() return cargo end} end end}
 local find=surface.find_entities_filtered
 surface.find_entities_filtered=function(f)
-  if f.type=='rocket-silo' then return (math.abs(f.position.x-65.5)<=4.5 and math.abs(f.position.y-14.5)<=4.5) and {silo} or {} end
-  if f.radius==0.3 and f.type==nil then return (math.abs(f.position.x-65.5)<=4.5 and math.abs(f.position.y-14.5)<=4.5) and {silo} or {} end
+  -- the footprint by area (61..70, 10..19); by position and radius the centre's entities only: the silo and its rocket
+  if f.type=='rocket-silo' then assert(f.area,'by area'); return (f.area[1][1]>=61 and f.area[2][1]<=70 and f.area[1][2]>=10 and f.area[2][2]<=19) and {silo} or {} end
+  if f.radius==0.3 and f.type==nil then return (math.abs(f.position.x-65.5)<0.3 and math.abs(f.position.y-14.5)<0.3) and {silo,{valid=true,type='rocket-silo-rocket',get_item_count=function() return 0 end}} or {} end
   return find(f)
 end
 met,saw=check({['until']='rocket_ready',position={x=68,y=12}})

@@ -97,6 +97,16 @@ Plan input: [{"action":"walk","args":{"direction":"east","ticks":60}}, ...]
 Bridge sessions (start --bridge, connect) act only through normal player input; deploy/watch/view need the harness mod.
 No automatic replay of mutations. stdout uses compact labelled tables; --format json is for programs. Diagnostics go to stderr.
 `;
+/** A via walk's legs, one line each: `(10,100) arrived 1.9s`, `(20,112) unreachable 0.2s: why`, `(32,104) not walked`. */
+function legLines(legs: unknown): string[] | undefined {
+  if (!Array.isArray(legs)) return undefined;
+  return legs.map((leg: any) => {
+    let line = `${leg?.to ? `(${leg.to.x},${leg.to.y})` : '?'} ${leg?.outcome ?? '?'}${typeof leg?.s === 'number' ? ` ${leg.s}s` : ''}`;
+    if (leg?.why) line += `: ${leg.why}`;
+    if (Array.isArray(leg?.avoided_enemies) && leg.avoided_enemies.length > 0) line += `; around ${leg.avoided_enemies.join(', ')}`;
+    return line;
+  });
+}
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be a JSON object`);
   return value as Record<string, unknown>;
@@ -735,7 +745,10 @@ async function main() {
       // move_to: where it can get to when it gave up, and how it ended off a belt (pathing.lua); a gap it
       // stopped before, a squeeze it walked out of, what to mine when closed in; enemies gone around (avoid.lua).
       ...(last?.kind === 'move_to' ? {nearest_reachable: last.nearest_reachable, reachable_gap: last.reachable_gap, off_belt: last.off_belt,
-        path: last.path, steered: last.steered, pocket: last.pocket, escaped: last.escaped, mine_to_get_out: last.mine_to_get_out} : {}),
+        path: last.path, steered: last.steered, pocket: last.pocket, escaped: last.escaped, mine_to_get_out: last.mine_to_get_out,
+        // a spot it reaches within build reach when it gave up, a squeeze walked along gaps, each leg of a via walk (round0620c)
+        build_spot: last.build_spot, build_spot_note: last.build_spot_note, build_spot_squeeze: last.build_spot_squeeze, squeezed: last.squeezed,
+        legs: legLines(last.legs)} : {}),
       // vehicle drive: the path it followed and a back-up (vehicles.lua).
       ...(last?.kind === 'drive' ? {path_length: last.path_length, backed_up: last.backed_up} : {}),
       ...(last?.kind === 'move_to' || last?.kind === 'drive' ? {avoided_enemies: last.avoided_enemies,
