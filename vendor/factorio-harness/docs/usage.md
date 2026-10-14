@@ -54,7 +54,12 @@ fh call status
 ```
 
 - Arguments go in `--args JSON` or `--args-file F`. `fh describe` lists every action's arguments; `fh help ACTION`
-  (or `fh call ACTION --help`) prints one action's in about 1 KB.
+  (or `fh call ACTION --help`) prints one action's in about 1 KB, led by calls that work as written (`example: fh call
+  launch --args '{"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`; transfer has a give, a take and a pick;
+  describe's `examples`). An argument refusal ends with one: for transfer built from the call itself (`; for this
+  call:` and the call), else the action's own (`; e.g. fh call technologies --args '{"prefix":"automation"}'`); a number out of range says its range and the value (`radius out of range: a whole
+  number 1..128, got 500`). Refusals no longer start with the runtime's line (`agent-harness/runtime:31061: `). Every example, in describe, this file and agent/team.md, is checked against the argument
+  check by the runtime test.
 - Common wrong argument names run as meant, and the reply's `corrected` (also on the final `warning:` line) shows the
   call as it ran: `craft` `item` is `recipe`, `move_to` `target` is `position`, `scan` `names`/`types`/`range` are
   `name`/`type`/`radius`, `chat`/`tells` `count` is `limit`, `build` `placements` is `builds`, `board_post` `text` is
@@ -72,12 +77,21 @@ fh call status
   taken stays as it is; with `radius` neither is touched. Queue steps (`queue_submit`, `queue_repeat`, `queue_edit`)
   are corrected the same way, and the reply lists each in `corrected` (`step 1: collect {...} (position is positions
   (a list))`).
-- `transfer` takes its direction under other names, noted in `corrected`: `from_player`, `give`, `put`, `insert`,
-  `to_chest`, `to_container` are `to_entity`; `from_entity`, `take`, `from_chest`, `from_container` are `to_player`;
-  `to_entity: true` / `from_entity: true` (also beside the same `direction`); and the target given as one of them,
-  `{"to_entity": {"x": 8.5, "y": 37.5}, "item": "coal"}` or `{"from_entity": [{x,y}, ...]}`, is the direction and
-  `position` / `positions`. Queue steps too. A flag against the given direction still fails. Both directions work on
-  any container: chests, logistic chests, car and spider trunks, cargo wagons, landing pads and hubs.
+- `transfer` is `{position, direction: "to_entity"|"to_player", item, count, inventory?}` at one entity
+  (`fh call transfer --args '{"count":50,"direction":"to_entity","inventory":"rocket_silo_rocket","item":"rocket-fuel",
+  "position":{"x":15.5,"y":59.5}}'`), or `{pick, positions, item or items, to}` to take at the first listed place that
+  holds it and give it at `to`. Other names run as meant, noted in `corrected` (Luna, Muse, shift11: 8 refusals in one
+  rocket load): `from_player`, `give`, `put`, `insert`, `to_chest`, `to_container` are `to_entity`; `from_entity`,
+  `take`, `from_chest`, `from_container` are `to_player`; `to_entity: true` / `from_entity: true` (also beside the same
+  `direction`); the target given as one of them (`{"to_entity": {"x": 8.5, "y": 37.5}, "item": "coal"}`,
+  `{"from_entity": [{x,y}, ...]}`), or as `to` / `from` without `pick`, is the direction and `position` / `positions`;
+  `to_entity`, `from_entity`, `to` or `from` at the same place as `position` is that direction; `amount` is `count`.
+  Queue steps too. A flag against the given direction still fails. `to` on another tile of the entity at `position` (a
+  silo is 9x9) gives there, noted in `corrected`. A place to take from and one to give to (`from_entity` and
+  `to_entity`, or `position` with `to` on another entity) is a move between two entities: refused, with the pick form
+  for it, the count kept (`fh call transfer --args '{"count":1000,"item":"agricultural-science-pack","pick":"first_with_stock","positions":[{"x":52.5,"y":45.5}],"to":{"x":65.5,"y":14.5}}'`); `items` without `pick` is
+  refused with one item's call (transfer moves one item a call). Both directions work on any container: chests,
+  logistic chests, car and spider trunks, cargo wagons, landing pads and hubs.
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
@@ -91,6 +105,15 @@ fh call status
 - `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success; `unreachable` and `blocked` fail with `last.why` on the error line. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
 - A timed-out wait is not a finished action. The reply has `error.code` `wait_timeout`, `timed_out: true` and `still_running` (the action's kind and end tick) and no `completion`. The action keeps running in game; a new character action would interrupt it. `fh wait` blocks until the character is idle again and reports the last outcome.
 - Ctrl-C does not stop an action the game already accepted. `fh call stop` does.
+- `build_path {points, item, ticks, start_index, end_direction}` lays a belt line along axis-aligned tile-centred
+  points, walking as it goes. Trees, rocks and wild plants on a tile, or across the walk to the next tile, are mined by
+  hand first (Sonnet 10:50: it stopped at every rock of a Vulcanus line), one at a time, standing still for the
+  hand-mining time; what they give goes to the inventory. One out of hand reach is walked to with the pathfinder; one
+  no path leads to (a rock in a pocket of cliffs) stops it `blocked`, naming the rock and the tile. `last.cleared`
+  counts them and `cleared_names` lists them (`big-volcanic-rock*2 tree-08*1`; `--wait` prints both,
+  `status.active.cleared` and `mining` while it runs). It stops for buildings, water and cliffs (`build_failed` with
+  the game's refusal and `next_index` to resume from), and when the inventory has no room for what a rock gives
+  (`inventory_full`).
 - An action that ends with the character on a belt, underground belt or splitter says so in `last.on_belt`
   (`standing on a transport-belt facing east: it carries you; step off to stay put`); the game moves a character
   standing on a belt. `status.on_belt` shows the same for as long as it stands on one.
@@ -101,6 +124,15 @@ fh call status
   collision mask), a partner that is still a ghost, one in reach the game did not pair, the nearest end on its axis
   when it does not match, or none in reach. `place_ghosts` adds `underground_warnings` for a span that crosses such
   tiles (once per span).
+- A belt, underground belt or splitter says where it moves items in `belt` (Grok, shift11: a belt facing south was read
+  as feeding the tile at lower y; south is +y), in `inspect`, observe entity rows, and `build` and `rotate` replies:
+  `moves items south to (-22.5,-28.5); fed from (-22.5,-30.5)`. It is read from the game's belt connections: a curve's
+  input is its side (`moves items east to (1001.5,1022.5); fed from (1000.5,1021.5)`), a straight belt fed from a side
+  too says `side-loaded from (x,y)`, `no belt feeds it`, `(no belt takes them there: they stop at its end)`, `(onto the
+  side of transport-belt facing east)`; an underground entrance `moves items south underground to (x,y)` (its exit),
+  an exit `fed underground from (x,y)`; a splitter names both lanes. A ghost reads the belts and belt ghosts around it.
+  A `builds` batch, `place_ghosts` and `belt_route` reply with `last_belt`, the same for the last belt they placed:
+  `transport-belt (1001.5,1010.5): moves items east to (1002.5,1010.5) ...`.
 - `inventory` (read, `fh call inventory`; Gemini, 06:20: held items without a full observe) is one small reply of
   short item lines (`name*count`, `name@quality*count`, or `empty`): `inventory` (main), `free` (`free=62/100`),
   `guns`, `ammo`, `armor`, `equipment` (in the armor's grid), `trash` (trash slots, when any), `cursor` (the stack in
@@ -675,7 +707,10 @@ fh queue repeat --file plan.json
 - A direct call that moves or acts as the character pauses the queue. Reads, the board, chat, `say`, `tell`, `confess`, `operator`, `craft`/`cancel_craft`, research, votes, `sleep` and the queue calls don't, and when one of them fails (a `placements` out of sight, a `board_update` with an unknown argument) the running action and the queue go on as well. `sleep` leaves the queue running, and so does its end.
 - Calls that act on another surface or by remote view don't pause it either, nor stop a running standing order, and
   neither does their failure: any call with `platform`, or with `surface` naming another surface than the
-  character's; `configure` on an entity out of the character's reach; the planners and blueprint tools wherever they
+  character's (`surface` naming the character's own surface is the same as none); `configure` on an entity out of the
+  character's reach. A `configure` in reach that its checks refuse (no such entity, recipe unavailable or not taken by
+  the machine, fluid inside without `force`) changes nothing either (Astra 11:01: two refused calls paused her queue);
+  the planners and blueprint tools wherever they
   act (`place_ghosts`, `paste`, `blueprint_place`, `blueprint_capture`, `blueprint_save`, `blueprint_rename`, `copy`, `cut`, `deconstruct`,
   `cancel_deconstruction`, `belt_route`, `pipe_route`, `pole_route`, `rail_route`, `train_stop`); `circuit_set`, `wire`,
   `requests`, `flush`, `train`, `platform_create`, `platform_schedule`, `launch`, `drop`. `configure` in reach, building, mining,
@@ -866,7 +901,10 @@ fh sleep 900 --until researched                       # ...or until the research
   - The same on every other path that moves items into or out of your inventory (operator 08:01): `mine` (timed:
     `last.moved` is how many more of its products you hold when it ends), `craft` (`moved: 0`, `timed: crafts land in
     your inventory as each finishes (hand queue Ns); wait_until crafting_done waits for them`, and the line with the
-    products), `cancel_craft` (`moved` and `returned`: the recipe's ingredients that came back), and `configure` when
+    products; `from_queue` when an ingredient is still in the hand-craft queue: the game counts only what you hold and
+    would craft it again from raw, so up to the shortfall its queued crafts are cancelled first and the game crafts them
+    again as this craft's own, none extra: `electronic-circuit: 20 of the 75 queued go into laser-turret (...)`; ones the
+    game does not use go back in the queue (Astra 11:01: 75 circuits queued, then laser turrets made 20 more)), `cancel_craft` (`moved` and `returned`: the recipe's ingredients that came back), and `configure` when
     a recipe change returns a machine's items (`moved` is what `returned` sums). Queue steps and standing orders (they
     run in the queue) carry `moved` and `inv` in their history entries: a step done at once as its direct reply, a
     timed one from its `last` when it ends, a step that failed at once the line only.
@@ -904,7 +942,11 @@ fh sleep 900 --until researched                       # ...or until the research
     holds in chunks our force does not see now; more than 64 fails (a smaller area, or `types`).
 - Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
   `revision`, `paused`, `active`, `pending` (the next 5 as `id action [label]`), `pending_count`, `recent` (the last 2
-  results), `last_failure`; `queue_status` shows every step in full.
+  results), `last_failure`.
+- `queue_status` (Sol 10:50: a repeating courier plan's long done history hid its stalled step) shows `active` (the
+  running step in full, with `running_s`: how long it has run), `pending` (the next step), `history` (the newest 3),
+  `pending_count`, `history_total`, `last_failure`, `waiting`, `guards`, `repeating`, `cycle`. `history` and `pending`
+  take a count or `"all"`: `fh queue status --args '{"history":"all","pending":10}'`.
 - A repeating plan (`queue_repeat`, optional `name` up to 32 characters) whose round had steps that ran short (the
   outcomes `out_of_items`, `nothing_collected`, `inventory_full`, a give with none held, or a reply's `short`) puts one
   grouped line in the team block under `queue`: `queue loop3 round 4: 3 of 9 steps short: transfer iron-plate
@@ -912,6 +954,13 @@ fh sleep 900 --until researched                       # ...or until the research
   before, so a steady loop says it once. A step with `up_to: true` or `on_short: "skip"` is left out of the line (its
   short was allowed for); `queue_status` history still marks it `short: true`. `on_fail: "skip"` does not count as
   allowing a short.
+- `inspect` of an assembler or furnace whose recipe lacks an ingredient for one craft while another is stacked (5 crafts
+  or more; Grok, shift11: an electromagnetic plant on electronic-circuit held 135 iron plates and no copper cable)
+  says so in `input_imbalance` (`iron-plate 135 in input, copper-cable 0: item_ingredient_shortage on copper-cable`)
+  and lists its `feeders`, the inserters dropping into it, those whose source holds the missing ingredient first:
+  `fast-inserter (20.5,73.5) from iron-chest (19.5,73.5): copper-cable 40 there`, `...: its filter keeps
+  copper-cable out`, led by `no copper-cable for its 3 feeders: none at their sources, or a filter keeps it out` when
+  none can bring it (a fluid ingredient: `comes through its pipes`; `feeders_count` past 8).
 - `inspect` also shows what the entity GUI and cursor show: `status_name` (e.g. `marked_for_deconstruction`,
   `waiting_for_source_items`), `filters`, `filter_mode` and `use_filters` (inserters, loaders), `held` (an inserter's
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
@@ -995,6 +1044,14 @@ fh sleep 900 --until researched                       # ...or until the research
   `leg_left_km` and `eta_min` (minutes to the end of the leg at the current speed; none at speed 0 or below, as when
   paused and drifting back). `at` keeps the connection's own order and its percent from the first end
   (`nauvis->vulcanus 25%`).
+- `stops` on every `platforms` row (operator 10:53, Gemini): each stop of the schedule with its wait conditions in
+  order (`and`/`or` as the GUI joins them), the stop it waits at (`waiting here`) or flies to (`flying to it`) and the
+  one after (`next`); at the stop where it waits, how far each condition is: `time 30s: 18s left`, `inactivity 10s: 2s
+  without activity, 8s left`, `item_count calcite >= 500: the hub holds 120, 380 to go` (or `(met)`), and for request
+  conditions `1 of 2 requests unmet (iron-plate 40/100)`. Arrivals are watched once a second; a stop under way before
+  the harness first looked says `waited at least Ns`. The maximum time reads `the maximum (about 414 days)`.
+- With `platform` set, `thrust_inputs`: a line per thruster input under half full, with the chain behind it, as the
+  slow-flight alert gives it (below).
 - `platform_schedule {platform, paused: true}` says what pausing does: on a route (`note: paused on the route: the
   platform stays among the route's asteroids and drifts back the way it came ...; it reaches no orbit until
   unpaused`), in orbit (`paused in orbit: the platform stays where it is, among that orbit's asteroids`).
@@ -1120,6 +1177,11 @@ fh sleep 900 --until researched                       # ...or until the research
     inserters (1 idle: ...); no cargo loaded; automatic requests off; no launch seen`.
 
   `rockets_launched` is the force's count.
+- `launch` without `position` (or `unit_number`) names the silos there, a ready rocket first, and the call (Luna,
+  shift11: `launch {platform}` failed twice as `position requires x and y`): `launch takes the silo: position (or
+  unit_number); e.g. fh call launch --args '{"platform":"Sunward","position":{"x":65.5,"y":14.5}}'; silos on gleba:
+  rocket-silo (65.5,14.5) rocket ready; rocket-silo (14.5,140.5) building_rocket, parts 12/50`. `requests` `set`
+  entries are `{item, min, max?, quality?, from?}`; one written `{name, count}` is refused with it rewritten.
 - `launch {position, platform}` sends the cargo to the platform's hub (a platform waiting for its starter pack gets it
   as its starter pack). A rocket lifts 1000 kg (item prototype weights; the game takes more by script, then refuses
   the launch): `transfer` into `rocket_silo_rocket` gives only what fits (`weight_limited {requested, fits, note}`)
@@ -1394,8 +1456,20 @@ fh sleep 900 --until researched                       # ...or until the research
 - A refused `build` of an offshore pump (any reason) lists up to 3 valid placements within 12 tiles, nearest first, with
   their directions, from the game's own manual build check (`nearest valid offshore-pump placements (game build check,
   within 12 tiles): (10,-0.5) east, ...`). A build refused by water under the footprint (a boiler, a steam engine) lists
-  up to 3 positions within 6 tiles where it fits facing the asked direction. `placements {name, position, radius,
-  direction}` (read) returns the same list without building: `placements [{position, direction}]`, `checked`.
+  up to 3 positions within 6 tiles where it fits facing the asked direction.
+- `placements {name, near, radius, direction, limit}` (read; `position` is `near`; Gemini 10:50) lists where an entity
+  (or the entity an item places) fits now, nearest `near` (default you) first: `placements [{position, direction}]`
+  (up to `limit`, default 10, at most 50; one per position, with the first direction that fits; none for a building
+  that does not turn), `count`, `checked`, `blocked`, `unseen`, `more`.
+  - The judge is the game's manual build check, as `build` and `dry_run` use it: water, cliffs, entities, tiles, an
+    offshore pump's shore; no reach or item check. Before it, a scan of the entities and tiles around rules out the
+    positions something stands in (`blocked` counts them), so `checked` (at most 200 game checks) goes to positions
+    that may fit.
+  - `radius` 1..24 (default 12 for an offshore pump, else 10). `near` in sight, or by remote view in a chunk our force
+    sees now (`by: remote view`); positions in chunks it does not see now are left out (`unseen`). `more: true`: the
+    list stopped at `limit` (or at 200 checks) with positions left.
+  - Cost on a copy of world n: 3 to 8 ms a call up to radius 24 (a dense base, a Fulgora island); the old 3-spot search
+    took 7 to 32 ms at radius 10 to 16.
 - A refused turret build (gun, laser, flamethrower or artillery turret) lists up to 3 spots within your build reach
   where the game's manual build check accepts it: when blocked, the nearest to the asked position within 6 tiles of
   it (`; nearest spots where gun-turret fits within your build reach (game build check): (5,-2), (5,2), (4,-2)`); when
@@ -1482,9 +1556,17 @@ fh sleep 900 --until researched                       # ...or until the research
   over the wells, each well's as the game shows it), `distance` and `direction` from you to the nearest tile (on
   another surface only with `position`), `from_building` and `building` (our nearest building, one kept per 8x8 cell,
   and its distance to the patch's nearest tile), `spawners`, `worms` and `nearest_nest` within 50 tiles (on charted
-  chunks, as the map draws them), `miners` (our mining drills on it: the patch their mining target is on, else one
-  under their mining area) and `chart_edge` (ore reaches the edge of the charted map, so the patch may go on past
-  it). Also `count`, `more`, `resources` (patches and the total per resource on the surface) and `survey`. Cost: what
+  chunks, as the map draws them), `chart_edge` (ore reaches the edge of the charted map, so the patch may go on past
+  it), and, read live in the call (Sonnet, shift11: 26 Vulcanus coal drills said `no_minable_resources`, the patch
+  was taken for depleted while it held 659k coal around them, and a call 13 minutes later still showed the 26 drills
+  he had removed): `miners` (our mining drills on it now: their mining area overlaps the patch and they mine it or
+  nothing), `drills` (them by status: `12 working, 10 no_minable_resources`), `depleted_drills` (the ones with
+  `no_minable_resources` checked against the ore under their mining area: `no coal left under 26 of the 26 drills
+  with no_minable_resources (mined out there); the patch holds 659,125 coal in 1,724 tiles (read now)`, or `coal
+  still under (69.5,-89.5) 4 tiles 1,240`), and `read`: `now` when the chunks under the row were read again in this
+  call (the rows nearest first, within 6000 entity reads; up to 64 drills checked), else how long ago they were read.
+  Also `count`, `more`, `resources` (patches and the total per resource on the surface) and `survey`. `nearest` rows of
+  ore tiles carry `amount`, what is left in each now. Cost: what
   each chunk holds is kept with the tick it was read. The first call on a surface reads the chunks around you (about
   2 ms) and the harness tick reads the rest outward, a few chunks a tick (median 1.5 ms a tick; world n's nauvis takes
   about 60 ticks), so later calls show every patch; a call 5 min after a pass began starts the next. A dense ore chunk
@@ -2029,7 +2111,16 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   the 5 before` (10 or more and at least twice the earlier rate plus 5), `...: 1 of 2 gun-turrets empty, 1 low (under
   10 rounds); turrets hold 4 rounds, the hub firearm-magazine 920` (the ammo flow: rounds loaded in the turrets
   against the ammo waiting in the hub), `...: no repair packs in the hub (...)` (while it was hit in the last 10
-  minutes or the hub is damaged), `... hub health 900/1000, down 100 in 40s`. A condition that lasts comes again after
+  minutes or the hub is damaged), `... hub health 900/1000, down 100 in 40s`, and when it flies under 5 km/s on a route
+  on two reads 10 s apart (operator 10:53, Astra), which thrusters lack which input and the chain behind it: `platform
+  Sunward (surface platform-1) flies at -10 km/s (under 5; backwards along its leg) on nauvis->gleba: thruster-fuel:
+  thruster (0,11.5) 30%; pump (-3,9.5): off by its circuit condition signal-B = 1 (signal-B 9 on its wires);
+  chemical-plant (-6.5,1.5) thruster-fuel: short of an item ingredient (holds carbon 0, water 20); hub carbon 169;
+  crusher (-11,1.5) carbonic-asteroid-crushing: short of an item ingredient (holds carbonic-asteroid-chunk 0); hub
+  carbonic-asteroid-chunk 0; 4 asteroid collectors` (each input under half full: the thrusters, the pumps and tanks on
+  the pipes up from them, the machines making the fluid and why they stop, quoting a circuit or logistic condition with
+  its signal now, and for an ingredient one lacks, the machines making it, to the hub's asteroid chunks; with no tank
+  under half, the lowest tanks). With no thrust a platform drifts back at 10 km/s. A condition that lasts comes again after
   5 game minutes, sooner when it gets worse. Hits on a platform are no longer `attack #` incidents; `status` alerts
   carry them as `platform_hits` rows `{platform, surface, hits, damage, entities, by, last_tick}`. Turrets and the hub
   are read at most every 10 s per platform.

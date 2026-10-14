@@ -95,6 +95,38 @@ do
   local _,plain,noted=A.fix('collect',{position={x=18.5,y=-31.5}},takes)
   eq(noted.notes[1],'position is positions (a list)'); eq(plain.positions[1].y,-31.5)
 end
+-- Transfer's target named twice, alone, or as two places (Muse, Luna, shift11; operator 10:50 item 6).
+do
+  local A=dofile('mod/agent-harness_0.1.0/aliases.lua')({})
+  local takes=function(action,k)
+    local t={transfer={position=true,positions=true,direction=true,item=true,count=true,inventory=true,pick=true,items=true,to=true},
+      recipes={prefix=true,limit=true},craftable={recipes=true}}
+    return (t[action] or {})[k]==true
+  end
+  local P={x=15.5,y=59.5}
+  -- the same place as position, as to_entity (17:18:52) or to (17:18:55): the one position
+  local _,f,n=A.fix('transfer',{position=P,item='rocket-fuel',count=50,direction='to_entity',to_entity={x=15.5,y=59.5},inventory='rocket_silo_rocket'},takes)
+  eq(f.to_entity,nil); eq(f.direction,'to_entity'); eq(n.notes[1],'to_entity at the same place as position is direction="to_entity"')
+  _,f,n=A.fix('transfer',{position=P,item='rocket-fuel',count=50,direction='to_entity',to={x=15.5,y=59.5}},takes)
+  eq(f.to,nil); eq(n.notes[1],'to at the same place as position is direction="to_entity"')
+  -- to or from alone, without pick: the position and the side
+  _,f,n=A.fix('transfer',{item='spoilage',count=200,to={x=34.5,y=34.5}},takes)
+  eq(f.position.x,34.5); eq(f.direction,'to_entity'); eq(f.to,nil); eq(n.notes[1],'to={x,y} without pick is position=... direction="to_entity"')
+  _,f=A.fix('transfer',{item='iron-plate',from={x=3.5,y=3.5}},takes)
+  eq(f.position.y,3.5); eq(f.direction,'to_player')
+  -- amount is count
+  _,f,n=A.fix('transfer',{position=P,direction='to_entity',item='firearm-magazine',amount=40},takes)
+  eq(f.count,40); eq(f.amount,nil)
+  -- two places: neither taken as the target (the refusal shows pick)
+  _,f,n=A.fix('transfer',{from_entity={x=52.5,y=45.5},to_entity={x=65.5,y=14.5},item='coal'},takes)
+  eq(n,nil); eq(f.from_entity.x,52.5)
+  -- with pick, to stays pick's
+  _,f,n=A.fix('transfer',{pick='first_with_stock',positions={P},item='coal',to={x=30.5,y=4.5}},takes)
+  eq(n,nil)
+  -- recipes {item} is prefix; craftable {item} is the recipes list
+  _,f=A.fix('recipes',{item='pentapod-egg'},takes); eq(f.prefix,'pentapod-egg')
+  _,f=A.fix('observe',{scope='craftable',item='roboport'},takes); eq(f.recipes[1],'roboport'); eq(#f.recipes,1)
+end
 sol('stop')
 -- A scoped read (fh sends scan as observe {scope}): the view's own names.
 r=sol('observe',{scope='scan',names='wooden-chest',radius=5})
@@ -194,7 +226,7 @@ local steps={}
 for i=1,7 do steps[i]={action='wait_ticks',args={ticks=600},label='w'..i} end
 r=sol('queue_submit',{steps=steps,start=false})
 eq(#r.pending,5); eq(r.pending_count,7); assert(r.pending[1]:find('wait_ticks [w1]',1,true),r.pending[1])
-eq(r.note,'queue_status shows every step in full')
-eq(#sol('queue_status').pending,7)
+eq(r.note,'queue_status: the active step, the next one and the last 3 in full (history, pending: a count or "all")')
+eq(#sol('queue_status').pending,1); eq(sol('queue_status').pending_count,7); eq(#sol('queue_status',{pending='all'}).pending,7)
 eq(sol('queue_cancel').pending_count,0)
 print('minds: ok')

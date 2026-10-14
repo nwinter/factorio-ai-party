@@ -14,6 +14,12 @@ test('fh help ACTION: one action in about 1 KB; an unknown name lists the action
   assert.ok(ticks.endsWith('...') && ticks.length <= 160, ticks);
   assert.equal(actionHelp(describe, 'craftt'), 'unknown action craftt; did you mean: craft (3 actions: fh help ACTION)\n');
   assert.ok(Buffer.byteLength(actionHelp(describe, 'craft', 200)) <= 260);
+  // The runtime's examples (Luna, shift11: fh help launch / transfer): first, whole, keys sorted as the runtime writes calls.
+  const launch = {actions:{launch:{position:'{x,y} of the silo', platform:'platform name', note:'n'.repeat(300),
+    examples:[{position:{y:14.5, x:65.5}, platform:'Sunward'}]}}};
+  const help = actionHelp(launch, 'launch', 300);
+  assert.match(help, /^launch: fh call launch --args '\{\.\.\.\}'\nexample: fh call launch --args '\{"platform":"Sunward","position":\{"x":65\.5,"y":14\.5\}\}'\n/);
+  assert.ok(!help.includes('[object Object]'));
 });
 test('long compact replies come in pages; the final error:/warning: line stays last', () => {
   assert.deepEqual(paginate('short\n'), {shown:'short\n'});

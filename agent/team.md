@@ -103,7 +103,8 @@ already targets your character.
   transport-belt (12,5) carrying iron-plate on the left lane: your iron-ore mixes in`); `{"item":"chemical-science-pack"}` follows every route from its makers to the labs.
 - `./fh call belt_route --args '{"from":{"x":0,"y":0},"to":{"x":600,"y":40},"return":true}'` lays a belt line as ghosts (via points, legs up to
   1000 tiles, over trees and wild plants it marks, water only with `"landfill":true`; `return` adds the line back beside it,
-  crossing under it where its side is blocked).
+  crossing under it where its side is blocked). Belts, undergrounds and splitters say where items go in `belt` (inspect,
+  observe rows, build replies; `last_belt` for a batch): `moves items south to (-22.5,-28.5); fed from (-22.5,-30.5)`.
 - `./fh call rail_route --args '{"from":{"x":0,"y":0},"to":{"x":0,"y":-200}}'` lays 2.0 rails (16 headings; straight,
   half-diagonal and two curve pieces, a curve 3 rails) around water, cliffs and buildings as ghosts and builds those in
   reach (`"signals":30` adds one-way signals); `train_stop {position, name}` puts a stop on the side of a straight rail
@@ -161,6 +162,8 @@ already targets your character.
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
   open board items). `projects` lists the open projects, one line each with progress, next step and handoff.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
+  `./fh queue status` shows the active step (`running_s`), the next one and the last 3 results; `--args
+  '{"history":"all","pending":10}'` shows more.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` (and `feed {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one
@@ -176,8 +179,9 @@ already targets your character.
   every assembler and furnace output in the radius (output slots only). `position` and `positions` are interchangeable
   in these calls (`corrected` says how it ran). A repeating queue (`queue_repeat`, optional `name`) puts a `queue:`
   line in the team block when a round's short steps differ from the round before; steps with `up_to: true` or
-  `"on_short": "skip"` are left out of it. `transfer` takes `to_entity` or
-  `from_entity` as the target (`{"to_entity": {x,y}}`) on any container; out of reach, it says the distance, your
+  `"on_short": "skip"` are left out of it. `transfer` is `{position, direction: "to_entity"|"to_player", item, count,
+  inventory?}` on any container (`./fh help transfer` shows calls that work; an argument refusal ends with one built
+  from your call, `launch`'s with the silos there); out of reach, it says the distance, your
   reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
   `collect` over several targets ends with a `tally` line; one where every target failed fails with the first reason
   (a tour: outcome `failed`, `last.first_error`). Item moves (`transfer`, `collect`, `feed`, `pickup`,
@@ -235,7 +239,8 @@ already targets your character.
   (`tile_ghosts_removed`), and marks built landfill.
 - Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, repairs,
   ghosts. `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":
-  "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[...]}'` runs its queue steps whenever
+  "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[{"action":"rearm","args":{"radius":20}}]}'`
+  runs its queue steps whenever
   its `when` holds (any `wait_until` condition, plus `ghosts_waiting`, `damaged`, `fuel_below` and `platform_arrived`); one order without
   `when` is your default routine, run every `interval_ticks` while no trigger holds. Up to 6 orders of 32 steps. They
   run only while your character is free (no action, your queue empty), 20 s after your own last action; your own
@@ -251,6 +256,9 @@ already targets your character.
 - Landfill on Gleba wetland goes in only where no slipstack, cuttlepop, hairyclubnub, water-cane or stromatolite stands:
   a dry run names them (`blocked by slipstack tree at (x,y): mine it first`); `place_ghosts` marks them for removal
   first (`tile_obstacles_marked`) and `construct` mines them before it lays the landfill.
+- `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'` lists up to 10 (`limit`
+  up to 50) positions where it fits now, nearest first, by the game's build check (`blocked`: positions something
+  stands in). `build_path` mines the trees and rocks in its way by hand as it goes (`last.cleared`, `cleared_names`).
 - `"dry_run":true` on `place_ghosts`, `paste` or `build` places nothing and reports the plan: per entity whether it
   fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
   new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that
@@ -289,8 +297,11 @@ already targets your character.
   enemy spawners and worms within 50 tiles, and how many of our drills are on it.
 - Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,
   blueprints, deconstruction, `circuit_set`, `wire`, `requests`, schedules) leave your character's action, queue and
-  standing orders running. `platforms` and `inspect` of a hub show each platform's `speed_kms`, `leg_left_km`,
-  `eta_min` (at the current speed) and `next_stop`.
+  standing orders running; so does a `configure` its checks refuse. `platforms` and `inspect` of a hub show each
+  platform's `speed_kms`, `leg_left_km`, `eta_min` (at the current speed) and `next_stop`; `stops` lists each stop's wait
+  conditions with time left and items to go where it waits. A platform flying under 5 km/s is an alert naming the
+  thruster input it lacks and the pumps, plants, crushers and chunks behind it (`platforms {platform}`:
+  `thrust_inputs`).
 - `./fh call requests --args '{"platform":"NAME"}'` shows each hub section; `off: true` means it requests nothing
   (`"section":N,"active":true` switches it on), and each request shows the planet it imports from.
 - `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without

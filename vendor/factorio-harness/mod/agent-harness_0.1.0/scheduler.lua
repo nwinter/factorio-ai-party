@@ -97,7 +97,7 @@ return function(api)
     return out
   end
   -- recent: keep only the newest entries of the history (the changing calls;
-  -- shake3: Opus's queue cancel printed 60+ entries); queue_status shows it all.
+  -- shake3: Opus's queue cancel printed 60+ entries); queue_status takes a count.
   local RECENT=3
   local function snapshot(q,recent)
     local failure
@@ -317,7 +317,35 @@ return function(api)
       if not resting then M.pause(index) end
     end
   end
-  function M.handlers.queue_status(p) return snapshot(queue(p.index)) end
+  -- queue_status is compact (Sol 10:50: a repeating courier plan's long done history hid its stalled step): the
+  -- active step with how long it has run, the next pending step and the newest 3 history entries, with
+  -- pending_count and history_total; pending and history take a count or 'all'.
+  local function count_arg(v,default,max,what)
+    if v==nil then return default end
+    if v=='all' then return max end
+    if type(v)~='number' or v~=math.floor(v) or v<0 or v>max then error(what..' is a count 0..'..max..' or "all"',0) end
+    return v
+  end
+  function M.handlers.queue_status(p,a)
+    a=a or {}
+    local q=queue(p.index)
+    local s=snapshot(q,count_arg(a.history,RECENT,MAX_HISTORY,'history'))
+    local np=count_arg(a.pending,1,MAX_PENDING,'pending')
+    if #q.pending>np then
+      local some={}
+      for i=1,np do some[i]=q.pending[i] end
+      s.pending=some
+    end
+    s.pending_count=#q.pending
+    s.history_total=#q.history
+    if q.current then
+      local active={}
+      for k,v in pairs(q.current) do active[k]=v end
+      if q.current.started_tick then active.running_s=math.floor((game.tick-q.current.started_tick)/60) end
+      s.active=active
+    end
+    return s
+  end
   -- Checks a plan as queue_submit would (saved plans, standing orders);
   -- returns its byte size and the checked steps.
   function M.validate(a)
@@ -482,7 +510,8 @@ return function(api)
   -- A direct wait while the queue runs would pause it (runtime.lua dispatch_request refuses it).
   local PAUSE_QUEUE='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'
   M.schema={
-    queue_status={returns='the whole history (up to 64 entries); the other queue calls return only the newest 3 and history_total'},
+    queue_status={history='optional count 0..64 or "all": newest history entries (default 3)',pending='optional count 0..128 or "all": next pending steps (default 1)',
+      returns='active (the running step in full, running_s: how long it has run), pending (the next step), history (the newest 3), pending_count, history_total, last_failure, waiting, guards, repeating, cycle'},
     queue_repeat={steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional',
       name='optional 1..32 characters: names the loop in its round lines',note='a round whose steps ran short (out_of_items, nothing_collected, inventory_full, none held, or a short reply) puts one line in the team block (queue: "queue NAME round N: K of M steps short: transfer iron-plate inventory_full x2, ..."), only when it differs from the last round\'s; a step with up_to=true or on_short=skip is left out of it (its history entry says short=true)'},
     queue_submit={steps='array of {action,args,wait?,label?,on_fail?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace pending only',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them'},

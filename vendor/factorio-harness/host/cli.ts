@@ -777,6 +777,9 @@ async function main() {
       why: last?.why, note: status.result?.note,
       // collect over a radius: moved per item, places touched, what fell short.
       tally: last?.tally,
+      // build_path: belts placed, where it stopped, and the trees and rocks it mined in its way (round1050f).
+      ...(last?.kind === 'build_path' ? {placed: last.placed, skipped: last.skipped || undefined, next_index: last.next_index, total: last.total,
+        next_position: last.outcome === 'path_built' ? undefined : last.next_position, cleared: last.cleared, cleared_names: last.cleared_names} : {}),
       // collect waiting at a machine (collectwait): what it took against what the machine made and its inserters took.
       ...(last?.kind === 'gather' && last?.took !== undefined ? {took: last.took, made: last.made, inserters_took: last.inserters_took,
         crafts: last.crafts, waited_s: last.waited_s} : {}),
@@ -1027,6 +1030,8 @@ async function main() {
     const waits = bridged ? ['walk','mine','build'].includes(action)
       : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until','wait_ticks','kite'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
         || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined)
+        // build stepping off its own footprint, then placing the rest (Sol 11:18: --wait returned at "built 1 of 5")
+        || (action === 'build' && reply.result?.stepping_aside !== undefined)
         // A transfer or collect that walks (walk, pick, pick with to) runs as a timed tour.
         || (['transfer','collect'].includes(action) && reply.result?.op === 'transfer' && reply.result?.until_tick !== undefined)
         // feed over positions with walk: a tour when any was out of reach (Opus 10:50).

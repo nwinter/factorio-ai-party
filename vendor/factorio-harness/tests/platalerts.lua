@@ -186,4 +186,34 @@ local saved=runtime.platalerts.lines
 runtime.platalerts.lines=function() error('boom') end
 assert(opus('status',{brief=true}).tick)
 runtime.platalerts.lines=saved
+-- Flying under 5 km/s on two scans (operator 10:53, Astra): which thrusters lack which input and the chain behind it
+-- (thrust.lua; tests/thrust.lua walks a whole chain); told again after 5 minutes or when what lacks changes.
+do
+  defines.space_platform_state.on_the_path=2
+  local fb={{name='thruster-fuel',amount=900},{name='thruster-oxidizer',amount=100}}
+  setmetatable(fb,{__len=function() return 2 end})
+  fb.get_pipe_connections=function() return {} end
+  fb.get_capacity=function() return 1000 end
+  local thruster={valid=true,name='thruster',type='thruster',position={x=0,y=8},force=force,surface=psurf,fluidbox=fb,
+    prototype={fluidbox_prototypes={{volume=1000},{volume=1000}}}}
+  local find=psurf.find_entities_filtered
+  psurf.find_entities_filtered=function(f) if f.type=='thruster' then return {thruster} end return find(f) end
+  platform.state=2; platform.space_location=nil; platform.speed=0.05
+  platform.space_connection={name='nauvis-gleba',from={name='nauvis'},to={name='gleba'},length=15000}
+  jump(601); eq(has(alerts(astra),'flies at'),nil,'one slow scan is not enough')
+  jump(601)
+  eq(has(alerts(astra),'flies at'),S..' flies at 3 km/s (under 5) on nauvis->gleba: thruster-oxidizer: thruster (0,8) 10%; no machine making thruster-oxidizer is connected to it')
+  jump(601); eq(has(alerts(astra),'flies at'),nil,'told once')
+  -- Drifting back with no thrust: a negative speed.
+  platform.speed=-1/6; jump(5*3600)
+  eq(has(alerts(astra),'flies at'),S..' flies at -10 km/s (under 5; backwards along its leg) on nauvis->gleba: thruster-oxidizer: thruster (0,8) 10%; no machine making thruster-oxidizer is connected to it')
+  -- Its tanks at half or more: the lowest tanks said instead.
+  fb[2].amount=600; jump(5*3600)
+  eq(has(alerts(astra),'flies at'),S..' flies at -10 km/s (under 5; backwards along its leg) on nauvis->gleba: no thruster tank is under half (lowest: thruster-fuel 90%, thruster-oxidizer 60%); 1 thruster')
+  -- Up to speed: nothing.
+  platform.speed=1; jump(601); alerts(astra); jump(601)
+  eq(has(alerts(astra),'flies at'),nil)
+  platform.state=6; platform.space_location={name='nauvis'}; platform.space_connection=nil; platform.speed=0
+  psurf.find_entities_filtered=find
+end
 print('platalerts: ok')
