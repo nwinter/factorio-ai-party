@@ -205,8 +205,10 @@ def main():
     # The runtime must have the new actions.
     ok, desc = c.fh("describe")
     actions = (desc.get("result") or {}).get("actions") or {}
-    if not c.record("runtime has circuit, train and wire color", ok and "circuit" in actions and "train" in actions
-                    and "color" in (actions.get("wire") or {}), sorted(k for k in ("circuit", "train") if k in actions)):
+    # circuit_set (describe's name since eng/circuits; circuit before it, still run as circuit_set).
+    circuit = "circuit_set" if "circuit_set" in actions else "circuit"
+    if not c.record("runtime has circuit_set, train and wire color", ok and circuit in actions and "train" in actions
+                    and "color" in (actions.get("wire") or {}), sorted(k for k in ("circuit_set", "circuit", "train") if k in actions)):
         sys.exit("deploy the current runtime first: POG_WORLD=%s bin/fh deploy" % world)
     if not c.game_running():
         sys.exit(PAUSED_HINT)
@@ -229,7 +231,7 @@ def main():
     if chest and ins:
         c.near(ins["position"]["x"], ins["position"]["y"])
         w = c.step("wire red chest-inserter", "wire", {"from": chest["position"], "to": ins["position"], "color": "red"})
-        cond = c.step("circuit enable on inserter", "circuit",
+        cond = c.step("circuit enable on inserter", circuit,
                       {"position": ins["position"], "enable": {"signal": "iron-plate", "comparator": "<", "value": 10}})
         got = c.lua(f"""
           local s = game.surfaces.nauvis
@@ -252,10 +254,10 @@ def main():
     lamp = c.build("small-lamp", "small-lamp", ox + 8.5, oy + 0.5)
     if comb and lamp:
         c.near(lamp["position"]["x"], lamp["position"]["y"])
-        sig = c.step("circuit signals on combinator", "circuit",
+        sig = c.step("circuit signals on combinator", circuit,
                      {"position": comb["position"], "signals": [{"signal": "signal-A", "count": 1}]})
         w = c.step("wire red combinator-lamp", "wire", {"from": comb["position"], "to": lamp["position"], "color": "red"})
-        cond = c.step("circuit enable on lamp", "circuit",
+        cond = c.step("circuit enable on lamp", circuit,
                       {"position": lamp["position"], "enable": {"signal": "signal-A", "comparator": ">", "value": 0}})
         got = c.lua(f"""
           local s = game.surfaces.nauvis

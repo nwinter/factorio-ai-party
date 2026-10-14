@@ -30,7 +30,9 @@ Record each milestone you reach in `notes.md` with the game time printed in fh's
     schedule, automatic}.
   - Logistics: roboports with build, robots into them with transfer; requester and buffer chests' requests with
     requests {position, set}; your own requests with requests (needs logistic robotics).
-  - Circuits: wire {from, to, color: red|green}; circuit {position, enable | logistic | signals | arithmetic | decider}.
+  - Circuits: circuit_set {position, platform?, enable | logistic | read | settings | signals | arithmetic | decider |
+    selector}; wire {from, to, color: red|green, or none for copper}; inspect reads both back (in reach or by remote
+    view, all of a platform).
   - Modules and beacons: transfer {position, item: <module>} puts it in the machine's or beacon's module slots.
   - Nuclear: build the reactor and heat pipes; transfer or refuel with uranium-fuel-cell.
   - Quality: configure {recipe, quality}; quality on build, transfer and requests.

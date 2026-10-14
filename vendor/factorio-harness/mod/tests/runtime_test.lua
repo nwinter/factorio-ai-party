@@ -1495,7 +1495,7 @@ p.build_from_cursor=function(args)
 end
 local pb=call('build',{item='small-electric-pole',position={x=4.5,y=0.5}})
 eq(pb.consumed,1); eq(pb.networks_joined,1); eq(c2.electric_network_id,1); eq(d.electric_network_id,3)
--- wire: connect needs reach for both poles and a wire long enough.
+-- wire: both poles in reach or, by remote view (2.0), ours in a visible chunk; a wire long enough.
 eq(call('wire',{from={x=10.5,y=0.5},to={x=6.5,y=0.5}}).already,nil)
 eq(call('wire',{from={x=10.5,y=0.5},to={x=6.5,y=0.5}}).already,true)
 fails(function() call('wire',{from={x=10.5,y=0.5},to={x=20.5,y=0.5}}) end,'does not reach')
@@ -1503,7 +1503,7 @@ fails(function() call('wire',{from={x=10.5,y=0.5},to={x=10.5,y=0.5}}) end,'same 
 local cut=call('wire',{from={x=6.5,y=0.5},to={x=10.5,y=0.5},disconnect=true})
 eq(cut.disconnected,true); eq(cut.split,true)
 p.can_reach_entity=function(e) return e~=d end
-fails(function() call('wire',{from={x=10.5,y=0.5},to={x=20.5,y=0.5}}) end,'out of reach')
+fails(function() call('wire',{from={x=10.5,y=0.5},to={x=20.5,y=0.5}}) end,'does not reach')
 p.can_reach_entity=function() return true end
 -- power: per-network poles and kW, unpowered and unconnected machines.
 local function machine(x,id,status)

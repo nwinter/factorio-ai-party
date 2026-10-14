@@ -41,6 +41,17 @@ test('CLI help works without a server or credentials',async()=>{
   const {stdout}=await exec(process.execPath,['dist/host/cli.js','--help']);
   assert.match(stdout,/queue submit/);assert.match(stdout,/blueprint import/);
 });
+test('fh help ACTION and fh call ACTION --help print that action from describe (help was an unknown command)',async()=>{
+  await engine(request=>{
+    assert.equal(request.action,'describe');
+    return {ok:true,result:{actions:{circuit_set:{position:'{x,y} of the entity',enable:'a condition',returns:'the readback'}}}};
+  },async port=>{
+    for (const args of [['help','circuit_set'],['call','circuit_set','--help']]) {
+      const {stdout}=await cli(port,args);
+      assert.equal(stdout,"circuit_set: fh call circuit_set --args '{...}'\n  position: {x,y} of the entity\n  enable: a condition\nreturns: the readback\n");
+    }
+  });
+});
 test('queue command maps to runtime protocol with JSON-only stdout',async()=>{
   await engine(request=>{
     assert.equal(request.action,'queue_status');assert.equal(request.player,2);
