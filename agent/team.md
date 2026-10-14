@@ -118,7 +118,7 @@ already targets your character.
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, and the
   game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
-  (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, inserters that lost their pickup or drop target (by
+  (125,40)`, `12 gun-turret out of ammo near (67,-170)`, turrets rebuilt empty (built with no ammo, still empty 60 s later, named), ghosts waiting for materials, inserters that lost their pickup or drop target (by
   what they feed, with what each read and puts into), an electric network drawing 85%
   or more of its capacity for 2 minutes, boilers under 20 minutes of their own fuel that nothing refills (their feeding
   inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel fell about
@@ -183,14 +183,22 @@ already targets your character.
   through units (`last.rammed`), backs there rear first with `"reverse":true`, and takes `avoid_enemies` as `move_to` does.
 - `move_to` never ends on a belt (it steps to the nearest free tile without one, `last.off_belt`). With no route for
   your character it ends at once as `unreachable`, with `last.why` (closed in: the area and what closes it in) and
-  `last.nearest_reachable`. `kite --wait` waits until the kite ends and reports its outcome, kills and ammo the same way.
+  `last.nearest_reachable`, plus `last.build_spot`: a spot you can reach within build reach of the target
+  (`build_spot_note`; in a gap, `build_spot_squeeze` and the `"squeeze":true` call). `kite --wait` waits until the kite
+  ends and reports its outcome, kills and ammo the same way.
+- `move_to --args '{"position":{"x":40,"y":5},"via":[{"x":10,"y":30},{"x":30,"y":30}]}'` walks the via points in order
+  in one call, each leg pathfound and checked for enemies like a single `move_to`; `last.legs` gives each leg's outcome.
 - `move_to` keeps out of the range of the worms the map shows, plus 4 tiles; `"avoid_enemies":true` also keeps out of
   spawners' units' sight, 8 tiles more, walking legs around a nest (`last.avoided_enemies`); no way round: `no_safe_route`.
 - A target in a narrow gap no path leads into ends the walk `arrived_near` before it (`last.pocket`; `"squeeze":true`
   walks in). Squeezed in, the walk gets out along the gaps first (`last.escaped`); closed in, `last.mine_to_get_out`.
+- Turret ghosts from `place_ghosts` and `paste` request ammo, so the robots that build them bring it (`ammo`: a name,
+  `{name, count}` or false; default 10 of what the logistic network there holds most of); so do the ghosts of turrets that died.
 - Water and Gleba wetland: `pole_route` shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost under
   it (`tiles_under`, `tiles_note`); `place_ghosts` lays the landfill ghost under an entity ghost there; `construct`
   builds the landfill first, and a build refused there names the tile.
+- `deconstruct --args '{"area":...,"tiles":["landfill"]}'` also removes our landfill tile ghosts there
+  (`tile_ghosts_removed`), and marks built landfill.
 - Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, repairs,
   ghosts. `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":
   "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[...]}'` runs its queue steps whenever
@@ -236,6 +244,8 @@ already targets your character.
   parts X/50, what it lacks for the parts left (in the silo and at its feeders), the cargo's kg and slots, and the
   last launch. `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically`
   on a silo) take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
+- `./fh sleep 600 --until "rocket_ready 65.5,14.5"` (or `wait_until {"until":"rocket_ready","position":...}`) waits for
+  that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
 - `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the
   patches on the charted map nearest first: amount left (oil: yield), distance from you and from our nearest building,
   enemy spawners and worms within 50 tiles, and how many of our drills are on it.

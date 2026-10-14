@@ -448,6 +448,7 @@ return function(api)
     assert(MODES[mode],'paste mode must be normal, forced or superforced')
     local build_mode=defines.build_mode[mode]
     assert(build_mode~=nil,'this game has no '..mode..' build mode')
+    if api.turretammo then api.turretammo.check(a.ammo) end
     return load(p,a,function(root)
       -- Moving a nested book entry can invalidate its LuaItemStack slot. Copy
       -- the selected leaf into an independent inventory before cursor swaps.
@@ -555,10 +556,16 @@ return function(api)
         local out={count=0,by_name={},slot=a.name==nil and slot_name(a) or nil,name=a.name,snapping_disabled=snapping_disabled,mode=mode~='normal' and mode or nil}
         if a.details then out.ghosts={} end
         local inserters,chests={},{}
+        local ammo_rows
         for _, e in pairs(ghosts()) do
           if e.valid and not before[ghost_key(e)] then
             if e.type=='entity-ghost' and e.ghost_type=='inserter' then inserters[#inserters+1]=e end
             if e.type=='entity-ghost' and e.ghost_type=='logistic-container' then chests[#chests+1]=e end
+            -- A turret ghost requests ammo unless the blueprint's own request is there (turretammo.lua).
+            if api.turretammo and e.type=='entity-ghost' then
+              local got=api.turretammo.request(e,a.ammo)
+              if got then ammo_rows=ammo_rows or {}; api.turretammo.add(ammo_rows,got) end
+            end
             out.count=out.count+1
             out.by_name[e.ghost_name]=(out.by_name[e.ghost_name] or 0)+1
             local x,y=e.position.x,e.position.y
@@ -570,6 +577,7 @@ return function(api)
           end
         end
         if kept and #kept>0 then out.requests_kept=api.keep.after(kept) end
+        out.ammo_requests=ammo_rows
         -- Inserter ghosts with nothing to take from or put into on their
         -- points (Astra's bypass inserter that reached no crusher; targets.lua).
         if api.targets then out.inserters_without_target,out.inserters_without_target_count=api.targets.check(inserters,16) end
@@ -729,6 +737,24 @@ return function(api)
   local function deconstruct_tiles(p,a,box,cancel,out)
     local names,mine=tile_names(a.tiles)
     if #names==0 then return end
+    -- Our tile ghosts of those tiles go, as a planner in tile mode removes
+    -- them (Grok, shift10 06:20: tiles ["landfill"] over water planned with
+    -- landfill marked 0; only an unfiltered deconstruct removed its 41 ghosts).
+    -- find_entities_filtered's ghost_name takes entity names only: the tile
+    -- names are matched here.
+    if not cancel then
+      local wanted,removed={},0
+      for _,name in ipairs(names) do wanted[name]=true end
+      local ghosts=p.surface.find_entities_filtered{area=box,type='tile-ghost',force=p.force,limit=MAX_TILES+1}
+      assert(#ghosts<=MAX_TILES,'area tile ghost limit exceeded ('..MAX_TILES..'); select a smaller area')
+      for _,g in ipairs(ghosts) do
+        if g.valid and wanted[g.ghost_name] then
+          local ok,res=pcall(g.order_deconstruction,p.force,real(p))
+          if ok and (res or not g.valid) then removed=removed+1 end
+        end
+      end
+      out.tile_ghosts_removed=removed
+    end
     local list=p.surface.find_tiles_filtered{area=box,name=names,limit=MAX_TILES+1}
     assert(#list<=MAX_TILES,'area tile limit exceeded ('..MAX_TILES..' tiles); select a smaller area')
     local standing={}

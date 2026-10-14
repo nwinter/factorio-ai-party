@@ -241,7 +241,16 @@ return function(api)
       local step=q.current
       local again=RESTARTABLE[step.action]==true
       record(q,step,false,{reason='interrupted',requeued=again or nil}); q.current=nil
-      if again then table.insert(q.pending,1,{id=step.id,action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short}) end
+      local args=step.args
+      -- A walk through via points goes on from the first one it had not reached (runtime: via_done).
+      if again and step.via_done and type(args)=='table' and type(args.via)=='table' then
+        local rest,left={},{}
+        for k,v in pairs(args) do rest[k]=v end
+        for i=step.via_done+1,#args.via do left[#left+1]=args.via[i] end
+        rest.via=#left>0 and left or nil
+        args=rest
+      end
+      if again then table.insert(q.pending,1,{id=step.id,action=step.action,args=args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short}) end
     end
     q.paused=true; q.revision=q.revision+1
     -- A standing order stopped by anything else (the agent's own request, a
@@ -475,9 +484,9 @@ return function(api)
     queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses',expected_revision='optional'},
     queue_resume={expected_revision='optional'},
     wait_ticks={ticks='1..54000 simulation ticks: a queue step, or a direct timed action (fh call wait_ticks --wait)',pause_queue=PAUSE_QUEUE},
-    wait_until={['until']='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived; a queue step, a standing order\'s when, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw',
-      position='area predicates: centre (default character)',radius='1..128 (default 32)',count='ammo_below: per-turret ammo items; fuel_below: fuel items per burner machine (furnaces, drills, boilers, burner inserters, ...)',fraction='health_*: 0..1; damaged: our buildings under this health fraction (default 1: any damage)',
-      item='item_count',at_least='item_count; ghosts_waiting: ghosts (entity and tile) in the area (default 1)',below='item_count',positions='item_count: 1..64 {x,y} of our entities (chests, machines) to count in, summed over all their inventories; default the character\'s inventory',technology='researched',platform='platform_arrived: a platform of ours by name; met while it is stopped at a space location (the platform list shows it there, not on a route)',location='platform_arrived: optional planet name; default any stop',timeout='ticks 1..54000 (default 3600; fh call wait_until --wait takes it from --wait-timeout); timing out fails the step (timed_out)',
+    wait_until={['until']='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived; a queue step, a standing order\'s when, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw',
+      position='area predicates: centre (default character); rocket_ready: the rocket silo (any tile of it), met when its rocket is built and ready to launch (saw: rocket state, parts, cargo)',radius='1..128 (default 32)',count='ammo_below: per-turret ammo items; fuel_below: fuel items per burner machine (furnaces, drills, boilers, burner inserters, ...)',fraction='health_*: 0..1; damaged: our buildings under this health fraction (default 1: any damage)',
+      item='item_count',at_least='item_count; ghosts_waiting: ghosts (entity and tile) in the area (default 1)',below='item_count',positions='item_count: 1..64 {x,y} of our entities (chests, machines) to count in, summed over all their inventories (a rocket silo\'s rocket cargo too; saw adds each silo\'s rocket state and cargo: the rocket is no item, the item rocket is ammunition); default the character\'s inventory',technology='researched',platform='platform_arrived: a platform of ours by name; met while it is stopped at a space location (the platform list shows it there, not on a route)',location='platform_arrived: optional planet name; default any stop',timeout='ticks 1..54000 (default 3600; fh call wait_until --wait takes it from --wait-timeout); timing out fails the step (timed_out)',
       checked='every 10 ticks; enemies count only if known from the chart (units only in visible chunks)',pause_queue=PAUSE_QUEUE},
     step_options={label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it)',on_short='skip: a step that runs short (out_of_items, nothing_collected, inventory_full, or no item held to give) counts as done (history: short=true) and the plan goes on; up_to=true in a transfer, collect or feed step does the same'},
     guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the plan runs; each fires once, stops the running step',max=MAX_GUARDS}
