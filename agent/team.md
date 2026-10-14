@@ -116,8 +116,7 @@ already targets your character.
 - `./fh tell luna "29 plates in the chest at (3,4)"` (or `luna,sol`, or `team`; text as for `say`) reaches only
   them, outside the game chat: it appears in their next reply under `team: tells` and wakes them from `sleep`.
   Add `--fyi` when no answer is needed: it waits for their next reply, marked `(fyi)`, and wakes nobody.
-  Viewers see tells on the stream's logistics ticker, so write them as readable sentences too, with a space between
-  words and numbers (`needs 200 AP`, not `needs200AP`). `./fh tells` lists the last 30 tells you received
+  Viewers see tells on the stream's logistics ticker. `./fh tells` lists the last 30 tells you received
   (time, sender, fyi), shown before or not; `./fh tells --since N` lists the ones you sent and received after N.
 - `./fh operator "..."` sends a request to the operator, the people running the harness and the stream: a tool that
   fails or is missing, or something viewers asked for that you can't do yourselves. The operator may answer in the
