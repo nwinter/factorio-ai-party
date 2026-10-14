@@ -779,10 +779,12 @@ fh queue repeat --file plan.json
   walking and inventory moves (`transfer`, `feed`, `collect`, ...) take over as before.
 - A hot runtime install (a harness update) carries running work over; the runtime that is installed puts back what the one it replaces stopped, on its first tick or request:
   - Waits keep running: `wait_until` and `wait_ticks`, direct or queued, keep their `until_tick` and condition, and so do `walk` and a `transfer`, `build` or `feed` waiting for a hand craft (`feed`). `status` shows them active with no interrupted `last`, so a pending `--wait` ends with the result as if there had been no update. `sleep` is not stopped at all.
-  - Queues, repeating plans and standing orders run on with their pending steps, cycle and order run. A step that moves or builds (`move_to`, `construct`, `build_path`, `mine`, `collect`, `pickup`, `shoot`, ...) starts again once by itself from the head of the queue; if it then fails, its `on_fail` applies as usual.
-  - A direct action that moves or builds starts again from the call that started it. An action started before this runtime was installed has no call kept, and is interrupted.
-  - Each agent that had something running gets one line in its next reply, `team.harness_updated`: `harness updated at tick T (your wait/queue carried over)`, or `harness updated at tick T: your queue step move_to (job-4) was interrupted by a harness update; resumed` (direct: `your move_to was interrupted by a harness update; resumed`, or `...; start it again if it is still needed`).
-  - A restart of the server with a changed mod, and a stop after a runtime fault, carry nothing: queues are paused (`fh queue resume`) and actions interrupted.
+  - So do timed `collect` (radius, `wait_ticks` or `keep_taking` at a machine), every walking tour (`collect`, `transfer` and `feed` with `walk`, `pick` with `to`, `feed`, `refuel` and `rearm` over a radius), `mine`, `pickup`, `build_path`, `construct`, `kite`, `repair` and `shoot` on foot, direct or queued: the same `until_tick`, what was got, placed, built or killed so far, the target count and the next place. A repair holds its repair tool again.
+  - Queues, repeating plans and standing orders run on with their pending steps, cycle and order run, and a full `drop` step goes on while its pods wait for a hatch. A step that walks to a goal (`move_to`) or shoots from a vehicle starts again once by itself from the head of the queue (a walk through `via` points from the first one it had not reached); if it then fails, its `on_fail` applies as usual.
+  - A direct `move_to` or `vehicle` drive starts again from the call that started it, by the same `until_tick` and from the first `via` point it had not reached. One started by a runtime that kept no call is interrupted (start it again).
+  - A carried action that the new runtime cannot run ends `failed` with `last.error` `carried over a harness update; this runtime could not run it: ...` (one it cannot report the end of keeps its outcome, with `could not report how it ended`); the harness goes on.
+  - Each agent that had something running gets one line in its next reply, `team.harness_updated`: `harness updated at tick T (your collect carried over)` (what carried, as it was called: `queue`, `wait_until`, `collect`, `transfer`, `mine`, ...), or `harness updated at tick T: your queue step move_to (job-4) was interrupted by a harness update; resumed` (direct: `your move_to was interrupted by a harness update; resumed`, or `...; start it again if it is still needed`).
+  - A restart of the server with a changed mod carries the same way (the runtime boots while the game is there, then stops and puts back). A stop after a runtime fault carries nothing: queues are paused (`fh queue resume`) and actions interrupted.
 
 ## Waiting
 
@@ -2314,6 +2316,27 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   over 10 min, 3 min left`; the rate needs the networks view to have looked at that chest). At most 64 rows: the
   not-working ones, then up to 4 working ones in a network with a stopped boiler (all in a network where every boiler
   works); `more` counts the rows left out (all working). Feeders are read only for the rows shown.
+- Space platforms' power (Astra, 13:10: `networks {surface: "Starling"}` matched nothing, a platform's surface being
+  `platform-3`; `power` took no platform; inspect showed no maximum). `networks {platform}` (a name or index) and
+  `networks {surface}` with a platform's name or its surface's name read that platform's surface; an unknown name is
+  refused with the platforms and planets, and a surface named with nothing on it says so in `none`. A platform's
+  electric network gets the planet line, named by the platform: `Starling (platform) electric #280 (6 poles near
+  (4,0)): draw 2.4 MW avg over 5 min (now 2.4 MW) of 3.6 MW capacity (67%); solar 20 panels, 2.4 MW now, 3.6 MW at
+  this solar power (solar power 300% at nauvis); accumulators 1 at 50% (2.5 MJ of 5.0 MJ); machines 8: 2 low power, 0
+  no power`. Solar power: a planet's `solar-power` property against its default (100%); a platform's, the solar power
+  in space of the location it stops at, or, flying, of both ends of its connection weighted by how far along it is
+  (`solar power 260% between nauvis (300%) and gleba (200%), 40% of the way from nauvis`); both times the surface's
+  `solar_power_multiplier` (1 unless a script set it). With no night in space a platform's capacity counts its panels
+  at that solar power (a planet's counts them at their output now). Read fields `platform` (per surface),
+  `solar_power` (percent) and `solar_power_text` (per electric network). `power {platform}` (`fh call observe --args
+  '{"scope":"power","platform":"Starling"}'`) reads that platform, 64 tiles round its hub unless an area, position
+  or radius is given; every `power` reply adds `solar_power` and `lines`, those networks' lines as above.
+- `inspect` on a producer or consumer of electricity adds `electricity`: `max_kw` at its quality (a machine's times
+  its modules' consumption bonus, `consumption_bonus: "-60%"`, with `drain_kw`; a solar panel's at 100% and
+  `at_solar_power_kw` where it is, with `solar_power`; a generator's maximum output; an accumulator's `stored_mj`,
+  `capacity_mj`, `charge_kw`, `discharge_kw`), and `now`: what all of its name on its electric network make or draw
+  (`all solar-panel on electric network #280 make 2.4 MW now (5 s average)`; the game counts power by prototype, not
+  per entity), or `no electric network: no pole reaches it`. (`power` stays the "unpowered: ..." line.)
 - Platform alerts in `team.alerts`, for the agent who created a platform (`platform_create`), the 3 agents whose
   requests named it with `platform=` most recently (within 2 hours; the `platforms` read does not count) and anyone
   aboard; a platform with none of them known goes to every agent. Each line names the platform and its surface:

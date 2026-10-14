@@ -2042,6 +2042,17 @@ eq(#pw.networks,3); eq(pw.networks[1].id,1); eq(pw.networks[1].poles,3); eq(pw.n
 eq(pw.networks[1].production_kw,300); eq(pw.networks[1].consumption_kw,75); eq(pw.networks[1].producers[1].name,'steam-engine')
 eq(#pw.unpowered,2); eq(pw.unpowered[2].status,'unconnected'); eq(pw.unpowered_total,nil)
 eq(#call('observe',{scope='power',area={left_top={x=-1,y=-5},right_bottom={x=40,y=5}},limit=1}).unpowered,1)
+-- On a platform by name or index (Astra, 13:10): its surface, 64 tiles round its hub unless an area is given.
+do
+  local kept=p.force.platforms
+  p.force.platforms={{valid=true,name='Starling',index=3,surface=p.surface,hub={valid=true,position={x=0,y=0}}}}
+  for _,which in ipairs({'Starling',3}) do
+    local pp=call('observe',{scope='power',platform=which})
+    eq(pp.platform,'Starling'); eq(#pp.networks,3); eq(#pp.unpowered,2)
+  end
+  fails(function() call('observe',{scope='power',platform='Nope'}) end,'no platform named Nope')
+  p.force.platforms=kept
+end
 -- A pole the engine left unconnected (its own network) joins every network in reach: no orphans.
 p.build_from_cursor=function(args)
   p.cursor_stack.count=p.cursor_stack.count-1; p.cursor_stack.valid_for_read=p.cursor_stack.count>0

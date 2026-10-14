@@ -824,7 +824,7 @@ async function main() {
         next_position: last.outcome === 'path_built' ? undefined : last.next_position, cleared: last.cleared, cleared_names: last.cleared_names} : {}),
       // collect waiting at a machine (collectwait): what it took against what the machine made and its inserters took.
       ...(last?.kind === 'gather' && last?.took !== undefined ? {took: last.took, made: last.made, inserters_took: last.inserters_took,
-        crafts: last.crafts, waited_s: last.waited_s} : {}),
+        crafts: last.crafts, waited_s: last.waited_s, counted_from: last.counted_from} : {}),
       // An item move that ran over time: what it moved and the inventory line after (Muse 06:27).
       moved: last?.moved, inv: last?.inv,
       // A courier (transfer or collect with pick and to): where it took from, what it took and what arrived.

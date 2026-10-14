@@ -121,8 +121,7 @@ already targets your character.
 - `./fh tell luna "29 plates in the chest at (3,4)"` (or `luna,sol`, or `team`; text as for `say`) reaches only
   them, outside the game chat: it appears in their next reply under `team: tells` and wakes them from `sleep`.
   Add `--fyi` when no answer is needed: it waits for their next reply, marked `(fyi)`, and wakes nobody.
-  Viewers see tells on the stream's logistics ticker, so write them as readable sentences too, with a space between
-  words and numbers (`needs 200 AP`, not `needs200AP`). `./fh tells` lists the last 30 tells you received
+  Viewers see tells on the stream's logistics ticker. `./fh tells` lists the last 30 tells you received
   (time, sender, fyi), shown before or not; `./fh tells --since N` lists the ones you sent and received after N.
 - `./fh operator "..."` sends a request to the operator, the people running the harness and the stream: a tool that
   fails or is missing, or something viewers asked for that you can't do yourselves. The operator may answer in the
@@ -273,8 +272,8 @@ already targets your character.
   run only while your character is free (no action, your queue empty), 20 s after your own last action; your own
   action or queue call stops a running order at once and it resumes after. Every reply's `orders:` line says which
   runs and why. `./fh call orders` lists them; `order_remove`, `orders_pause`, `orders_resume`.
-- A harness update keeps your waits, queue, repeating plan and standing orders running (`team: harness_updated`: `harness
-  updated at tick T (your wait/queue carried over)`); a step or action that moves or builds starts again by itself (`resumed`).
+- A harness update keeps waits, timed collects, tours, mining, building, repairs, queues and orders running with their end
+  tick and progress (`team: harness_updated`: `... (your collect carried over)`); a move_to or drive restarts (`resumed`).
 - Circuits: `./fh call circuit_set --args '{"platform":"NAME","position":{"x":-2.5,"y":-4.5},"enable":"ice < 300"}'`
   sets an entity's circuit condition, read switches, settings or combinator, in reach or by remote view (our entities
   in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`
@@ -339,6 +338,9 @@ already targets your character.
   (`"section":N,"active":true` switches it on), and each request shows the planet it imports from.
 - `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without
   a planet); it is also a `wait_until` condition, a queue guard and an order's `when`.
+- `./fh call networks --args '{"platform":"Starling"}'` gives a platform's electric network line (capacity, draw, solar
+  power where it is and its panels' output, accumulators, machines on low power); `power` takes `platform` too, and
+  `inspect` on a machine, solar panel or accumulator shows its maximum under `electricity`.
 - `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list
   takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first.
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods, to
