@@ -52,6 +52,78 @@ def find(d, since):
     return hit
 
 
+BRIEF = os.path.expanduser(os.environ.get("POG_AGY_BRIEF", "~/.cache/ai-usage/agent-brief.json"))
+PACE = os.path.expanduser(os.environ.get("POG_AGY_PACE", "~/.cache/pog/agy-pace.json"))
+PACE_CAP = float(os.environ.get("POG_AGY_PACE_CAP", 97))        # % of the weekly window to reach at its reset
+FULL_RATE = float(os.environ.get("POG_AGY_FULL_RATE", 1.75))    # %/h of the weekly window at full play (shift10-12)
+MAX_SLEEP = int(os.environ.get("POG_AGY_PACE_MAX", 3 * 3600))
+
+
+def weekly():
+    """(percent used, reset epoch) of agy's Gemini weekly window from the ai-usage brief (refreshed when 20+ min old)."""
+    def read():
+        d = json.load(open(BRIEF))
+        for a in d.get("profiles", []):
+            if a.get("command") == "agy":
+                for w in a.get("windows", []):
+                    if w.get("key") == "agy:gemini:10080":
+                        return float(w.get("percent") or 0), float(w.get("resets_at") or 0), a.get("observed_at") or 0
+        return None
+    try:
+        got = read()
+        if got and time.time() - got[2] > 1200:
+            import subprocess
+            subprocess.run(["/Users/owner/.local/bin/ai-usage", "agent", "--json"], capture_output=True, timeout=90)
+            got = read() or got
+        return got[:2] if got else None
+    except Exception:
+        return None
+
+
+def pace(d, since, deadline):
+    """Nick 15:50/16:50: pace Gemini so its weekly window lasts until its reset. After each turn, sleep so play keeps
+    the duty cycle the budget allows (allowed %/h over FULL_RATE), lengthened while usage is above a straight line from
+    where pacing began to PACE_CAP at the reset, shortened while below it. POG_AGY_PACE=off turns it off."""
+    if os.environ.get("POG_AGY_PACE", "").lower() == "off":
+        return None
+    w = weekly()
+    if not w or not w[1]:
+        return None
+    used, reset = w
+    now = time.time()
+    if reset <= now:
+        return None
+    try:
+        st = json.load(open(PACE))
+    except Exception:
+        st = {}
+    if st.get("reset") != reset:  # a new window (or first use): anchor the line here
+        st = {"reset": reset, "t0": now, "u0": used}
+        os.makedirs(os.path.dirname(PACE), exist_ok=True)
+        json.dump(st, open(PACE, "w"))
+    t0, u0 = st["t0"], st["u0"]
+    line = u0 + (PACE_CAP - u0) * (now - t0) / max(reset - t0, 1)
+    allowed = max(PACE_CAP - used, 0) / max((reset - now) / 3600, 0.1)   # %/h left to spend
+    duty = min(max(allowed / FULL_RATE, 0.03), 1.0)
+    took = max(now - since - 1, 30)
+    wait = took * (1 / duty - 1)
+    ahead = used - line
+    if ahead > 0:
+        wait += ahead / max(allowed, 0.01) * 3600 * 0.5   # catch half the excess back this sleep
+    elif ahead < -1:
+        wait *= 0.5
+    wait = int(min(wait, MAX_SLEEP))
+    if wait < 60:
+        return None
+    stop = now + wait >= deadline - 20
+    event = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "event": "agy-pace", "used": used, "line": round(line, 2),
+             "allowed_per_h": round(allowed, 3), "duty": round(duty, 3), "turn_s": int(took),
+             "sleep": 0 if stop else wait, "resets": time.strftime("%a %H:%M", time.localtime(reset))}
+    with open(os.path.join(d, "context.log"), "a") as f:
+        f.write(json.dumps(event) + "\n")
+    return "stop" if stop else wait
+
+
 def main():
     d, stamp, deadline = sys.argv[1], sys.argv[2], int(sys.argv[3])
     try:
@@ -60,6 +132,9 @@ def main():
         since = time.time() - 3600
     hit = find(d, since)
     if not hit:
+        wait = pace(d, since, deadline)
+        if wait:
+            print("stop" if wait == "stop" else wait)
         return
     at, reset, msg = hit
     now = time.time()
