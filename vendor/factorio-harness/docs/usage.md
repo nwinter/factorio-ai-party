@@ -489,8 +489,9 @@ fh call status
     construction robots swapped two modules in about 8 s; on Starling and Sunward the platform hub did it (`by: hub`),
     the removed ones going into the hub. The reply's `note` names who brings them: the logistic network whose
     construction area covers the machine, what it holds of each (`none comes for quality-module until it holds it`),
-    its idle construction robots and free storage slots (a removed module waits in its robot for one), or that no
-    construction area covers it.
+    its idle construction robots, and a storage chest's room for the removed ones: a swap went ahead with no room
+    (the old modules rode in a robot), while a removal alone waited until a storage chest had room (`no storage chest
+    has room for speed-module: no robot takes them out until one has`); or that no construction area covers it.
   - A ghost: its module requests (`by: ghost`), which the robots that build it bring; its other requests stay.
   - A module the machine or its recipe does not take is refused: `productivity-module does not go in
     assembling-machine-2 (79.5,0.5) making electric-furnace: its recipe electric-furnace allows no productivity`. The

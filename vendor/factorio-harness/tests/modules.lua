@@ -124,13 +124,13 @@ eq(q.requested,'efficiency-module*2'); eq(q.removing,'speed-module*2')
 -- A roboport's construction area covers it: its network, what it holds, its robots and free storage.
 local net={network_id=8,available_construction_robots=49,all_construction_robots=50,
   get_item_count=function(x) return x.name=='efficiency-module' and 2 or 0 end,
-  storages={{get_inventory=function() return {count_empty_stacks=function() return 3 end} end}}}
+  storages={{can_insert=function(x) return x.name~='speed-module' end}}}
 roboports={{valid=true,position={x=40,y=0},logistic_cell={construction_radius=55,logistic_network=net}}}
 r=M.set(p,far,M.parse({'efficiency-module','speed-module-2'}),true)
 eq(r.requested,'efficiency-module*1 speed-module-2*1'); eq(r.removing,'speed-module*2')
 eq(r.note,'construction robots of logistic network 8 bring them and take the old ones out (it holds efficiency-module 2 (1 wanted), '
   ..'speed-module-2 0 (1 wanted)); none comes for speed-module-2 until it holds it; 49 of 50 construction robots idle; '
-  ..'storage chests: 3 free slots (a removed module waits in its robot for one)')
+  ..'no storage chest has room for speed-module: the old ones ride in a robot until one has')
 eq(far.item_request_proxy,px,'the same request, its plans replaced')
 -- Other requests on the machine stay (fuel for another inventory); setting what it holds clears the module rows.
 px.insert_plan[#px.insert_plan+1]={id={name='coal'},items={in_inventory={{inventory=1,stack=0,count=5}}}}
@@ -141,6 +141,11 @@ eq(M.requests(far),nil)
 px.insert_plan={}
 r=M.set(p,far,M.parse({'efficiency-module'}),true,'robots')
 eq(r.requested,'efficiency-module*1'); eq(r.removing,'speed-module*2')
+-- A removal alone waits for a storage chest with room (2.0.77: nothing moved for 30 s, then 8 s once one had room).
+r=M.set(p,far,M.parse({}),true)
+has(r.note,'construction robots of logistic network 8 take them out; 49 of 50 construction robots idle; no storage chest has room for speed-module: no robot takes them out until one has')
+net.storages={{can_insert=function() return true end}}
+eq(M.set(p,far,M.parse({}),true).note,'construction robots of logistic network 8 take them out; 49 of 50 construction robots idle')
 r=M.set(p,far,M.parse({'speed-module','speed-module'}),true)
 eq(px.valid,false,'nothing left in it: the request goes')
 

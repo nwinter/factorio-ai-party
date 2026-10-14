@@ -162,11 +162,13 @@ return function(api)
   end
 
   -- Who brings requested modules and takes the old ones: on a platform its hub; else the construction robots of a
-  -- network whose construction area covers the machine. wanted: the requested modules counted; removing: whether old
-  -- ones come out. Says what the hub or network holds of each against what is wanted, its idle construction robots,
-  -- and its free storage slots for the removed ones.
+  -- network whose construction area covers the machine. wanted: the requested modules counted; removed: the ones
+  -- coming out, counted (nil: none). Says what the hub or network holds of each against what is wanted, its idle
+  -- construction robots, and whether a storage chest takes the removed ones: on 2.0.77 a swap went ahead with no room
+  -- (the old modules rode in a robot), while a removal alone waited until a storage chest had room.
   local COVER_SEARCH = 120
-  function M.carrier(e, wanted, removing)
+  function M.carrier(e, wanted, removed)
+    local removing = removed ~= nil and #removed > 0
     local surface, force, pos = e.surface, e.force, e.position
     local function holdings(count_of)
       local held, short = {}, {}
@@ -201,11 +203,19 @@ return function(api)
       holdings(function(w) return try(function() return net.get_item_count{name=w.name, quality=w.quality} end) end),
       try(function() return net.available_construction_robots end) or 0, try(function() return net.all_construction_robots end) or 0)
     if removing then
-      local free = 0
-      for _, st in ipairs(try(function() return net.storages end) or {}) do
-        free = free + (try(function() return st.get_inventory(defines.inventory.chest).count_empty_stacks() end) or 0)
+      local stores = try(function() return net.storages end) or {}
+      local no_room = {}
+      for _, m in ipairs(removed) do
+        local room = false
+        for _, st in ipairs(stores) do
+          if try(function() return st.can_insert{name=m.name, quality=m.quality} end) then room = true; break end
+        end
+        if not room then no_room[#no_room+1] = label(m.name, m.quality) end
       end
-      text = text .. string.format('; storage chests: %d free slots (a removed module waits in its robot for one)', free)
+      if #no_room > 0 then
+        text = text .. string.format('; no storage chest has room for %s: %s', table.concat(no_room, ', '),
+          #wanted > 0 and 'the old ones ride in a robot until one has' or 'no robot takes them out until one has')
+      end
     end
     return text
   end
@@ -339,7 +349,7 @@ return function(api)
     end
     row.requested = next(ins) and M.text(list_of(ins)) or nil
     row.removing = next(rem) and M.text(list_of(rem)) or nil
-    row.note = M.carrier(e, list_of(ins), next(rem) ~= nil)
+    row.note = M.carrier(e, list_of(ins), next(rem) and list_of(rem) or nil)
     return row
   end
 
