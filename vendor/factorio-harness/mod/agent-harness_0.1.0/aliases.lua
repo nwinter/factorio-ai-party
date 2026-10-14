@@ -28,7 +28,7 @@ return function(api)
     mine = {entity='name'},
     transfer = {from='position', target='position'},
     inspect = {target='position'},
-    configure = {target='position', auto_launch='send_to_orbit_automatically', planet='surface'},
+    configure = {target='position', auto_launch='send_to_orbit_automatically', planet='surface', mode='filter_mode', filter='filters'},
     launch = {planet='surface'},
     silo = {planet='surface'},
     requests = {planet='surface'},

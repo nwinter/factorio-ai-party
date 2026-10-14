@@ -302,13 +302,16 @@ eq(rc.refused_now, nil, 'no all-or-nothing note for a signalled rail paste'); ha
 local alone = select(2, dryrun.check(rp, {kind='ghosts', entities={{index=1, name='rail-signal', position={x=5.5, y=-1.5}}}}))
 eq(alone[1].status, 'blocked', 'without planned rails the game refuses it')
 
--- Pole ghosts already ordered join too (review: a planned pole 7 tiles from a pole ghost 7 tiles from a built pole).
+-- Pole ghosts already ordered join too (review: a planned pole 7 tiles from a pole ghost 7 tiles from a built pole),
+-- said as a path that waits for them (Astra, shift10: power only once the ghosts stand).
 local chain_world = world(planet, {{name='small-electric-pole', type='electric-pole', position={x=-4.5, y=0.5}, electric_network_id=3},
   {name='entity-ghost', type='entity-ghost', ghost_name='small-electric-pole', position={x=2.5, y=0.5}}, me})
 local cp = {surface=chain_world, force=force, position={x=0, y=0}, build_distance=10, character=me,
   get_main_inventory=function() return {get_item_count=function() return 0 end} end}
 local co = dryrun.check(cp, {kind='ghosts', entities={{index=1, name='small-electric-pole', position={x=9.5, y=0.5}}}})
-eq(co.power.islands, nil); has(co.power.connected[1], 'planned pole #1 reaches the built network of')
+eq(co.power.islands, nil)
+eq(co.power.connected[1], 'planned pole #1 reaches a built network only through pole ghosts not built yet (small-electric-pole (2.5,0.5)): '
+  ..'no wire path to a built pole until they stand; nearest built pole small-electric-pole at (-4.5,0.5) is 14.0 tiles from (9.5,0.5) (wire reach 7.5)')
 
 -- Tile ghosts already ordered count as tiles to come: a furnace on the pond over landfill ghosts is placeable after
 -- them, and a platform ring closed by foundation ghosts encloses no hole they already fill.
@@ -540,6 +543,46 @@ rme.surface = world(function() return 'grass-1' end, built_ring)
 for _, e in ipairs(built_ring) do if e.type == 'pipe' then e.bounding_box = {left_top={x=e.position.x-0.488, y=e.position.y-0.488}, right_bottom={x=e.position.x+0.488, y=e.position.y+0.488}} end end
 local shut = rdr.check(rme, {kind='build', entities={{index=1, name='pipe', position={x=60.5, y=50.5}, direction=0, item='pipe'}}})
 eq(shut.closes_in, nil); has(shut.closed_in, 'the character is closed in already where it stands (50.5,50.5): the area')
+-- Logistic chests no roboport covers (Sonnet, shift10) and entrances fed from the side (Sol, shift10).
+prototypes.entity['requester-chest'] = {name='requester-chest', type='logistic-container', tile_width=1, tile_height=1, collision_box=box(0.35),
+  collision_mask=BUILDING, items_to_place_this={{name='requester-chest', count=1}}}
+prototypes.entity.roboport = {name='roboport', type='roboport', tile_width=4, tile_height=4, collision_box=box(1.7), collision_mask=BUILDING,
+  logistic_radius=25, items_to_place_this={{name='roboport', count=1}}}
+prototypes.entity['underground-belt'] = {name='underground-belt', type='underground-belt', tile_width=1, tile_height=1, collision_box=box(0.4),
+  collision_mask=mask('object', 'transport_belt', 'water_tile'), max_underground_distance=5, items_to_place_this={{name='underground-belt', count=1}}}
+local capi = {}
+for k, v in pairs(api) do capi[k] = v end
+capi.targets = dofile('mod/agent-harness_0.1.0/targets.lua'){}
+capi.sidefeed = dofile('mod/agent-harness_0.1.0/sidefeed.lua'){try=function(fn) local ok, v = pcall(fn); if ok then return v end end}
+capi.coverage = function(_, _, pos, planned)
+  for _, r in ipairs(planned or {}) do if math.abs(pos.x-r.x) <= r.r and math.abs(pos.y-r.y) <= r.r then return nil end end
+  return 'outside logistic coverage: no roboport of ours within 200 tiles'
+end
+local cdr = dofile('mod/agent-harness_0.1.0/dryrun.lua')(capi)
+local cme = {name='character', type='character', position={x=0.5, y=80.5}, prototype=prototypes.entity.character}
+local built_ins = {name='inserter', type='inserter', position={x=1.5, y=90.5}, direction=4, drop_position={x=0.3, y=90.5}}
+local cw = world(function() return 'grass-1' end, {cme, built_ins})
+local cp = {surface=cw, force=force, position=cme.position, character=cme, build_distance=30,
+  get_main_inventory=function() return {get_item_count=function() return 100 end} end}
+local function entry(i, name, x, y, dir, t) return {index=i, name=name, position={x=x, y=y}, direction=dir or 0, item=name, ug_type=t} end
+local cov = cdr.check(cp, {kind='build', entities={entry(1, 'requester-chest', 5.5, 85.5)}})
+eq(cov.outside_logistic_coverage[1], '#1 requester-chest (5.5,85.5): outside logistic coverage: no roboport of ours within 200 tiles')
+eq(cdr.check(cp, {kind='build', entities={entry(1, 'roboport', 10, 90), entry(2, 'requester-chest', 5.5, 85.5)}}).outside_logistic_coverage, nil,
+  'the roboport planned with it covers it')
+-- An entrance flowing north at (6.5,84.5); an inserter east of it dropping west; a belt from the west.
+local side = cdr.check(cp, {kind='build', entities={entry(1, 'underground-belt', 6.5, 84.5, 0, 'input'), entry(2, 'inserter', 7.5, 84.5, 4),
+  entry(3, 'transport-belt', 5.5, 84.5, 4)}})
+eq(side.underground_side_feed[1], '#2 inserter (7.5,84.5) drops onto underground-belt (6.5,84.5), an entrance flowing north, from its east side: only its west (left) lane gets these items; its east (right) lane gets none from it')
+eq(side.underground_side_feed[2], '#3 transport-belt (5.5,84.5) side-loads underground-belt (6.5,84.5), an entrance flowing north, from its west side: only the belt\'s north (left) lane goes in; its south (right) lane stops at the entrance')
+-- An exit there: nothing. A build's undergrounds without type: the downstream one of a pair is the exit.
+eq(cdr.check(cp, {kind='build', entities={entry(1, 'underground-belt', 6.5, 84.5, 0, 'output'), entry(2, 'inserter', 7.5, 84.5, 4)}}).underground_side_feed, nil)
+local pair = cdr.check(cp, {kind='build', entities={entry(1, 'underground-belt', 6.5, 84.5, 0), entry(2, 'underground-belt', 6.5, 81.5, 0),
+  entry(3, 'inserter', 7.5, 81.5, 4), entry(4, 'inserter', 7.5, 84.5, 4)}})
+eq(#pair.underground_side_feed, 1); eq(pair.underground_side_feed[1]:match('^#4 inserter') ~= nil, true, 'only the entrance')
+-- A planned entrance beside a built inserter dropping onto its tile.
+local beside = cdr.check(cp, {kind='ghosts', entities={entry(1, 'underground-belt', 0.5, 90.5, 0)}})
+eq(beside.underground_side_feed[1], 'inserter (1.5,90.5) drops onto underground-belt (0.5,90.5), an entrance flowing north, from its east side: only its west (left) lane gets these items; its east (right) lane gets none from it',
+  'a ghost underground without type is an entrance')
 -- Tiles blocked by what stands on them (Sol, shift10: a slipstack on Gleba wetland kept landfill from three belt
 -- tiles; mined, they went in). A slipstack on water here: its mask has ground_tile, as landfill's does.
 prototypes.entity.slipstack = {name='slipstack', type='tree', collision_box={left_top={x=-1.2, y=-1.2}, right_bottom={x=1.2, y=1.2}},
@@ -569,4 +612,44 @@ eq(marks.tiles.refused, nil); eq(marks.tiles.marks, 'place_ghosts marks slipstac
 tree.marked = true
 eq(dryrun.tile_blockers(ww, force, 'landfill', 50, 50), nil)
 tree.marked = nil
+-- Astra, shift10 13:23: a roboport at (70,8) and a small pole at (69.5,10.5); the nearest built poles of network 2,
+-- (73.5,2.5) and (77.5,14.5), are 8.94 tiles away, past a small pole's wire reach of 7.5. Pole ghosts at (69.5,14.5)
+-- and (73.5,14.5) (on world n at 06:31, 4 tiles from the new pole and from (77.5,14.5)) bridged the gap in the dry run,
+-- which said "planned pole #2 reaches the built network of small-electric-pole (73.5,2.5)"; built, the roboport's
+-- network went no_power after its starting charge until Astra added poles at (67.5,9.5) and (69.5,5.5).
+do
+  prototypes.entity.roboport.electric_energy_source_prototype = {}
+  local function layout(extra)
+    local list = {{name='character', type='character', position={x=66.5, y=4.5}},
+      {name='small-electric-pole', type='electric-pole', position={x=73.5, y=2.5}, electric_network_id=2},
+      {name='small-electric-pole', type='electric-pole', position={x=77.5, y=14.5}, electric_network_id=2}}
+    for _, e in ipairs(extra or {}) do list[#list+1] = e end
+    return world(function() return 'grass-1' end, list)
+  end
+  local plan = {kind='build', entities={{index=1, name='roboport', position={x=70, y=8}, direction=0, item='roboport'},
+    {index=2, name='small-electric-pole', position={x=69.5, y=10.5}, direction=0, item='small-electric-pole'}}}
+  local function run(extra)
+    local w = layout(extra)
+    local me2 = {name='character', type='character', position={x=66.5, y=4.5}, prototype=prototypes.entity.character}
+    return dryrun.check({surface=w, force=force, position=me2.position, character=me2, build_distance=10,
+      get_main_inventory=function() return {get_item_count=function() return 10 end} end}, plan).power
+  end
+  local ghosts = {{name='entity-ghost', type='entity-ghost', ghost_name='small-electric-pole', position={x=69.5, y=14.5}},
+    {name='entity-ghost', type='entity-ghost', ghost_name='small-electric-pole', position={x=73.5, y=14.5}}}
+  -- With the ghosts: the path waits for them, and the roboport has no power until they stand.
+  local pw = run(ghosts)
+  eq(#pw.connected, 1); eq(pw.islands, nil)
+  eq(pw.connected[1], 'planned pole #2 reaches a built network only through pole ghosts not built yet (small-electric-pole (69.5,14.5), '
+    ..'small-electric-pole (73.5,14.5)): no wire path to a built pole until they stand; nearest built pole small-electric-pole at (73.5,2.5) '
+    ..'is 8.9 tiles from (69.5,10.5) (wire reach 7.5)')
+  eq(pw.unpowered[1].name, 'roboport'); eq(pw.unpowered[1].why, 'the poles over it reach a built network only through pole ghosts not built yet: no power until they stand')
+  -- Without them: an island, 8.9 tiles from the nearest built pole.
+  pw = run()
+  eq(pw.connected, nil)
+  eq(pw.islands[1], 'planned pole #2 at (69.5,10.5), powering 1 planned machine: no wire path to a built pole; nearest built pole small-electric-pole at (73.5,2.5) is 8.9 tiles from (69.5,10.5) (wire reach 7.5)')
+  -- Astra's fix, poles at (67.5,9.5) and (69.5,5.5): (69.5,5.5) is 5 tiles from (73.5,2.5), so it reaches network 2 now.
+  pw = run({{name='small-electric-pole', type='electric-pole', position={x=67.5, y=9.5}, electric_network_id=2},
+    {name='small-electric-pole', type='electric-pole', position={x=69.5, y=5.5}, electric_network_id=2}})
+  eq(pw.islands, nil); eq(pw.unpowered, nil); eq(pw.connected[1]:match('^planned pole #2 reaches the built network of small%-electric%-pole') ~= nil, true)
+end
 print('dryrun: ok')

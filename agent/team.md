@@ -118,7 +118,7 @@ already targets your character.
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, and the
   game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
-  (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, inserters that lost their pickup or drop target (by
+  (125,40)`, `12 gun-turret out of ammo near (67,-170)`, turrets rebuilt empty (built with no ammo, still empty 60 s later, named), ghosts waiting for materials, inserters that lost their pickup or drop target (by
   what they feed, with what each read and puts into), an electric network drawing 85%
   or more of its capacity for 2 minutes, boilers under 20 minutes of their own fuel that nothing refills (their feeding
   inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel fell about
@@ -157,7 +157,9 @@ already targets your character.
   `"on_short": "skip"` are left out of it. `transfer` takes `to_entity` or
   `from_entity` as the target (`{"to_entity": {x,y}}`) on any container; out of reach, it says the distance, your
   reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
-  `collect` over several targets ends with a `tally` line. `feed`, `collect` and `transfer` take `area {left_top,
+  `collect` over several targets ends with a `tally` line. Item moves (`transfer`, `collect`, `feed`, `pickup`,
+  `rearm`, `refuel`) say `moved` and end with `inv` (free slots, what you hold of the items moved); a move over time
+  says `timed`, and `last.moved`/`last.inv` when it ends. `feed`, `collect` and `transfer` take `area {left_top,
   right_bottom}` for every machine (or chest) inside it; `inspect` of a machine shows `output_fill` (and `full`).
   `feed` gives a burner fuel when its fuel slots are empty, or with `fuel` (`true` or a fuel name); a furnace with no
   recipe yet takes the `item`/`items` it smelts; each named machine gets a row (`gave` or `got`, and its `fuel`).
@@ -190,6 +192,8 @@ already targets your character.
   spawners' units' sight, 8 tiles more, walking legs around a nest (`last.avoided_enemies`); no way round: `no_safe_route`.
 - A target in a narrow gap no path leads into ends the walk `arrived_near` before it (`last.pocket`; `"squeeze":true`
   walks in). Squeezed in, the walk gets out along the gaps first (`last.escaped`); closed in, `last.mine_to_get_out`.
+- Turret ghosts from `place_ghosts` and `paste` request ammo, so the robots that build them bring it (`ammo`: a name,
+  `{name, count}` or false; default 10 of what the logistic network there holds most of); so do the ghosts of turrets that died.
 - Water and Gleba wetland: `pole_route` shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost under
   it (`tiles_under`, `tiles_note`); `place_ghosts` lays the landfill ghost under an entity ghost there; `construct`
   builds the landfill first, and a build refused there names the tile.
@@ -198,7 +202,7 @@ already targets your character.
 - Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, repairs,
   ghosts. `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":
   "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[...]}'` runs its queue steps whenever
-  its `when` holds (any `wait_until` condition, plus `ghosts_waiting`, `damaged` and `fuel_below`); one order without
+  its `when` holds (any `wait_until` condition, plus `ghosts_waiting`, `damaged`, `fuel_below` and `platform_arrived`); one order without
   `when` is your default routine, run every `interval_ticks` while no trigger holds. Up to 6 orders of 32 steps. They
   run only while your character is free (no action, your queue empty), 20 s after your own last action; your own
   action or queue call stops a running order at once and it resumes after. Every reply's `orders:` line says which
@@ -218,9 +222,18 @@ already targets your character.
   reach every placement, and what each planned inserter picks up from and drops into (`missing: no drop target`);
   `inspect` and build replies flag a built inserter with no pickup or drop target. `closes_in` names the entry that
   fills the last gap out when the plan would close you in where you stand; a build reply says `closed_in` after it.
+  Dry runs and build replies also name logistic chests no roboport covers (`outside_logistic_coverage`) and inserters
+  or belts feeding an underground entrance from the side, with the lane that gets nothing (`underground_side_feed`).
+- `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}}}'` lists every chest's
+  and machine's contents in the area (where inspect reads, up to 64) as one table: `holds`, `requests`, `recipe`, `status_name`.
   `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north",
   "recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid the recipe puts there;
   `inspect` of a ghost shows the same.
+- A `build` over a chest of the same fast-replace group keeps its contents in the new chest; what it cannot hold
+  comes to you (`replaced.contents`), and with no room for that nothing moves. Inserter and loader filters show in
+  `scan` rows (`filters: whitelist: iron-plate`, `off`, `set by circuit`); `configure {position, filters, filter_mode
+  | mode, use_filters}` and `circuit_set {settings: {filters, filter_mode}}` set them. An unknown argument's refusal
+  names the closest valid name, and on `configure` and `circuit_set` what that entity takes.
 - The team blueprint library, kept in the save across shifts: `blueprint_save {name, area | positions, description,
   anchor}` stores what the team built; `blueprint_list` lists entries (author, size, counts, last used);
   `blueprint_place {name, position, direction, dry_run}` pastes one; `blueprint_rename` and `blueprint_delete {name}`:
@@ -242,6 +255,8 @@ already targets your character.
   `eta_min` (at the current speed) and `next_stop`.
 - `./fh call requests --args '{"platform":"NAME"}'` shows each hub section; `off: true` means it requests nothing
   (`"section":N,"active":true` switches it on), and each request shows the planet it imports from.
+- `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without
+  a planet); it is also a `wait_until` condition, a queue guard and an order's `when`.
 - `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list
   takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.

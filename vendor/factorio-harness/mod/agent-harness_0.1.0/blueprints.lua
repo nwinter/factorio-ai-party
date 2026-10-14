@@ -448,6 +448,7 @@ return function(api)
     assert(MODES[mode],'paste mode must be normal, forced or superforced')
     local build_mode=defines.build_mode[mode]
     assert(build_mode~=nil,'this game has no '..mode..' build mode')
+    if api.turretammo then api.turretammo.check(a.ammo) end
     return load(p,a,function(root)
       -- Moving a nested book entry can invalidate its LuaItemStack slot. Copy
       -- the selected leaf into an independent inventory before cursor swaps.
@@ -554,10 +555,17 @@ return function(api)
         -- Per-ghost rows are opt-in: large layouts otherwise flood agent context.
         local out={count=0,by_name={},slot=a.name==nil and slot_name(a) or nil,name=a.name,snapping_disabled=snapping_disabled,mode=mode~='normal' and mode or nil}
         if a.details then out.ghosts={} end
-        local inserters={}
+        local inserters,chests={},{}
+        local ammo_rows
         for _, e in pairs(ghosts()) do
           if e.valid and not before[ghost_key(e)] then
             if e.type=='entity-ghost' and e.ghost_type=='inserter' then inserters[#inserters+1]=e end
+            if e.type=='entity-ghost' and e.ghost_type=='logistic-container' then chests[#chests+1]=e end
+            -- A turret ghost requests ammo unless the blueprint's own request is there (turretammo.lua).
+            if api.turretammo and e.type=='entity-ghost' then
+              local got=api.turretammo.request(e,a.ammo)
+              if got then ammo_rows=ammo_rows or {}; api.turretammo.add(ammo_rows,got) end
+            end
             out.count=out.count+1
             out.by_name[e.ghost_name]=(out.by_name[e.ghost_name] or 0)+1
             local x,y=e.position.x,e.position.y
@@ -569,9 +577,12 @@ return function(api)
           end
         end
         if kept and #kept>0 then out.requests_kept=api.keep.after(kept) end
+        out.ammo_requests=ammo_rows
         -- Inserter ghosts with nothing to take from or put into on their
         -- points (Astra's bypass inserter that reached no crusher; targets.lua).
         if api.targets then out.inserters_without_target,out.inserters_without_target_count=api.targets.check(inserters,16) end
+        -- Logistic chest ghosts no roboport's logistic area covers (the blueprint's own roboports count: ghosts now).
+        if api.build_notes and #chests>0 then out.outside_logistic_coverage=api.build_notes(p,chests) end
         -- Explain a short paste: the engine silently skips positions that
         -- already hold a matching ghost or entity, that collide, or whose
         -- tiles break the entity's rules. Per blueprint entity: there now (new
@@ -678,7 +689,8 @@ return function(api)
         if a.flip_horizontal then d=(16-d)%16 end
         if a.flip_vertical then d=(24-d)%16 end
         list[i]={index=i,name=e.name,position={x=shift.x+x,y=shift.y+y},direction=(d+direction)%16,
-          quality=type(e.quality)=='string' and e.quality or nil,requests=api.keep and api.keep.bp_sections(e) or nil}
+          quality=type(e.quality)=='string' and e.quality or nil,requests=api.keep and api.keep.bp_sections(e) or nil,
+          ug_type=type(e.type)=='string' and e.type or nil}
       end
       local tlist={}
       for i,t in ipairs(tiles or {}) do

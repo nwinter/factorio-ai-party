@@ -115,6 +115,8 @@ class Hauls:
             list(items) if isinstance(items, dict) else []
         item = args.get("item") if isinstance(args.get("item"), str) else None
         moved = 0
+        # moved since round 06:20; transferred before it (and as moved's alias for a shift).
+        total = res.get("transferred") if isinstance(res.get("transferred"), (int, float)) else res.get("moved")
         rows = res.get("entities") if isinstance(res.get("entities"), list) else []
         if rows:
             for row in rows:
@@ -123,24 +125,24 @@ class Hauls:
                 if isinstance(row.get("gave"), dict):
                     stacks = list(row["gave"].items())
                 elif item:
-                    stacks = [(item, row.get("transferred") or 0)]
+                    stacks = [(item, row.get("moved", row.get("transferred")) or 0)]
                 elif isinstance(items, list) and len(rows) == 1:
                     stacks = [(i.get("name"), i.get("count")) for i in items if isinstance(i, dict)]
                 else:  # several targets of several items: the reply has no split; counted, not placed
-                    stacks = [(names[0] if names else "?", row.get("transferred") or 0)]
+                    stacks = [(names[0] if names else "?", row.get("moved", row.get("transferred")) or 0)]
                     moved += self.moved(None, None, surface, stacks)
                     continue
                 moved += self.moved(direction, row.get("position"), surface, stacks)
-        elif isinstance(res.get("transferred"), (int, float)) and res["transferred"] > 0:
+        elif isinstance(total, (int, float)) and total > 0:
             pos = args.get("position") or args.get("target")
             if item:
-                stacks = [(item, res["transferred"])]
+                stacks = [(item, total)]
             elif isinstance(items, list):
                 stacks = [(i.get("name"), i.get("count")) for i in items if isinstance(i, dict)]
             elif isinstance(items, dict):
                 stacks = list(items.items())
             else:
-                stacks = [("?", res["transferred"])]
+                stacks = [("?", total)]
             moved += self.moved(direction, pos, surface, stacks)
         if moved:
             self.calls += 1

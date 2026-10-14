@@ -334,7 +334,7 @@ return function(api)
   M.schema={
     order_set={name='1..32 letters, digits, - or _; the same name replaces that order (and switches one that went off back on)',
       steps='1..32 plan steps, as queue_submit (action, args, wait, label, on_fail)',
-      when='optional condition, as wait_until: until=ammo_below|item_count|ghosts_waiting|damaged|fuel_below|health_below|no_enemies|...; radius at most 64, positions at most 16. The order runs when it holds. Without when: your default routine (one), run every interval_ticks while no trigger holds',
+      when='optional condition, as wait_until: until=ammo_below|item_count|ghosts_waiting|damaged|fuel_below|health_below|no_enemies|platform_arrived|...; radius at most 64, positions at most 16. The order runs when it holds. Without when: your default routine (one), run every interval_ticks while no trigger holds',
       priority='with when: 1..9 (default 5). The highest holding trigger runs first; a holding trigger stops a running order of lower priority (the default routine counts 0), which resumes after',
       cooldown_ticks='with when: 300..216000 (default 600) after a run before the trigger can fire again',
       interval_ticks='default routine: 60..36000 (default 1800) from the end of a run to the next',

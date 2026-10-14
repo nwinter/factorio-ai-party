@@ -48,8 +48,10 @@ p.build_from_cursor=function(args)built=built+1; p.last_build=args end
 -- The inserter-target check (targets.lua, tested in tests/targets.lua): a stub
 -- here, so a paste's wiring to it can be seen.
 local targets_stub={check=function() return nil end}
+-- The turret ammo requests (turretammo.lua, tested in tests/turretammo.lua): a stub here too.
+local ammo_stub={check=function() end,request=function() return nil,'not a turret' end,add=function(rows,c) rows[#rows+1]=c end}
 local H=dofile('mod/agent-harness_0.1.0/blueprints.lua'){
-  targets=targets_stub,
+  targets=targets_stub,turretammo=ammo_stub,
   position=function(v)assert(type(v)=='table' and type(v.x)=='number' and type(v.y)=='number');return v end,
   visible=function(player,v)return (v.x-player.position.x)^2+(v.y-player.position.y)^2<=32*32 end,
   own_platform=function(player) local pl=player.surface.platform; return pl~=nil and pl.force==player.force end,
@@ -333,6 +335,30 @@ do
   game.create_inventory=make
   eq(#seen,1,'the inserter ghost only'); eq(seen[1].ghost_type,'inserter'); eq(r.inserters_without_target[1].missing,'no drop target')
   targets_stub.check=function() return nil end
+  eq(r.ammo_requests,nil,'no turret ghost')
+end
+-- A paste asks for ammo on each new turret ghost, with the call's ammo (Astra, shift10: turrets rebuilt empty);
+-- a bad ammo argument fails the paste before anything is placed.
+do
+  local asked={}
+  ammo_stub.request=function(e,what) asked[#asked+1]={e=e,what=what}
+    if e.ghost_type=='ammo-turret' then return {name='firearm-magazine',count=what and what.count or 10,network_holds=40} end
+    return nil,'not a turret' end
+  sources.guns={kind='blueprint',entities={{name='chest',position={x=0.5,y=0.5}}}}
+  H.blueprint_import(p,{blueprint='guns',slot='guns'})
+  local build=function()
+    ghost('gun-turret',30,0).ghost_type='ammo-turret'; ghost('gun-turret',31,1).ghost_type='ammo-turret'; ghost('chest',29.5,0.5).ghost_type='container'
+  end
+  game.create_inventory=function() local inv=make(); rawset(inv[1],'build_blueprint',build); return inv end
+  local r=H.paste(pp2,{slot='guns',position={x=30,y=0},ammo={count=20}})
+  eq(#asked,3,'every new ghost is offered'); eq(asked[1].what.count,20)
+  eq(#r.ammo_requests,2); eq(r.ammo_requests[1].count,20)
+  ammo_stub.check=function(what) assert(what==nil or what=='firearm-magazine','ammo: not an ammo item: '..tostring(what)) end
+  local placed=#asked
+  local ok,err=pcall(H.paste,pp2,{slot='guns',position={x=40,y=0},ammo='iron-plate'})
+  assert(not ok and tostring(err):find('not an ammo item: iron-plate',1,true),tostring(err)); eq(#asked,placed,'nothing placed')
+  game.create_inventory=make
+  ammo_stub.check=function() end; ammo_stub.request=function() return nil,'not a turret' end
 end
 local np={}
 for _,row in ipairs(r2.not_placed) do np[row.position.x..','..row.position.y]=row end

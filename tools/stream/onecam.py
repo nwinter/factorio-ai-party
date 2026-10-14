@@ -231,12 +231,12 @@ ONECAM = {
     # Only the story choice uses scores: urgent shots, battles, follows, incoming groups, segments and the dwell rules
     # come first as before. surface_bonus 0 turns it off.
     "surface_window": 1800.0,
-    "surface_share": 0.25,
+    "surface_share": 0.3,     # 0.25 until 2026-10-14 06:45 (viewers twice: less Nauvis)
     "surface_new_share": 0.25,  # 0.10 until 2026-10-13 23:20 (viewers asked for more of a new planet, Gleba)
     "surface_new_hours": 6.0,   # 3.0 until 2026-10-14 00:02: Gleba (reached 23:28) stays new past the 03:30 change
     "surface_bonus": 1.5,
-    "nauvis_penalty": 0.15,
-    "surface_total": 0.75,   # the other surfaces' targets together at most this (scaled down): Nauvis keeps 25%
+    "nauvis_penalty": 0.35,   # 0.15 until 2026-10-14 06:45
+    "surface_total": 0.85,   # the other surfaces' targets together at most this (scaled down): Nauvis keeps 15% (0.75 until 2026-10-14 06:45)
     "surface_floor": 300.0,  # seconds: shares over at least this much time (a fresh start does not swing at once)
     "surface_warmup": 180.0,  # seconds of air history before the balance applies (no swing right after a restart)
     # A planet new to the run (novelty > 0) under surface_new_floor of its target share: the story pick goes to its

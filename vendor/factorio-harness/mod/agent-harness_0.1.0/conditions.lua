@@ -151,6 +151,19 @@ return function(api)
       end
       return n>0,n..' damaged'..(near and string.format(' (nearest %s at %d,%d)',near.name,math.floor(near.position.x),math.floor(near.position.y)) or '')
     end,
+    -- A platform of ours stopped at a space location (Gemini, shift10: rocket launches wait on a platform's
+    -- arrival): at `location` when given (a planet), else at any stop. As the platform list shows it: a platform is
+    -- at a location while it is stopped there and on a route between two while it flies (2.0.77: space_location
+    -- clears within 4 ticks of leaving).
+    platform_arrived=function(p,c)
+      local pl
+      for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each end end
+      if not pl then error('no platform of ours named '..tostring(c.platform),0) end
+      local loc=pl.space_location and pl.space_location.name
+      local conn=pl.space_connection
+      local where=loc and ('at '..loc) or conn and string.format('flying %s->%s %d%%',conn.from.name,conn.to.name,math.floor((pl.distance or 0)*100+0.5)) or 'nowhere'
+      return loc~=nil and (c.location==nil or loc==c.location),c.platform..' '..where
+    end,
     -- Our burner machines (furnaces, drills, boilers, burner inserters...) holding under count fuel items.
     fuel_below=function(p,c)
       local centre,radius=area(p,c)
@@ -166,7 +179,7 @@ return function(api)
       return n>0,n..' burners below '..c.count..' fuel'..(near and string.format(' (nearest %s at %d,%d)',near.name,math.floor(near.position.x),math.floor(near.position.y)) or '')
     end,
   }
-  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|crafting_done|researched|ghosts_waiting|damaged|fuel_below'
+  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived'
   -- Argument checks run when a plan is submitted, not when it first fires.
   function M.validate(c)
     assert(type(c)=='table' and checks[c['until']],'until must be one of '..NAMES)
@@ -190,6 +203,10 @@ return function(api)
     if kind=='ghosts_waiting' and c.at_least~=nil then number(c.at_least,1,100000,'at_least') end
     if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
     if kind=='fuel_below' then number(c.count,1,1000,'count') end
+    if kind=='platform_arrived' then
+      assert(type(c.platform)=='string' and #c.platform>0,'platform_arrived requires platform (a platform name)')
+      assert(c.location==nil or (type(c.location)=='string' and prototypes.space_location[c.location]),'location must be a space location (a planet name)')
+    end
     return c
   end
   function M.check(p,c)

@@ -60,8 +60,12 @@ fh call status
   `name`/`type`/`radius`, `chat`/`tells` `count` is `limit`, `build` `placements` is `builds`, `board_post` `text` is
   `title`, `recipes`/`technologies` `search`/`name` are `prefix`, `transfer` `to_player: true` is `direction`, and a
   `board` call with an `id` and a `note`, `owner` or `status` is `board_update`. A valid argument is never renamed; a
-  corrected call that still fails says `[ran as ...]`; any other unknown argument fails with the valid list. `scan`
-  `fields` also takes one string (`"status|hp"` or `"status,hp"`).
+  corrected call that still fails says `[ran as ...]`; any other unknown argument fails with the valid list and the
+  valid name nearest it (`closest name: filters`: a plural or singular, a name it starts, or up to 2 letters apart).
+  On `configure` and `circuit_set` the refusal also names what the entity at the position takes (Luna 06:20):
+  `long-handed-inserter at (10.5,0.5) takes: filters, filter_mode (alias mode), use_filters; and position, name,
+  unit_number, platform, surface`; for `circuit_set`, its arguments and settings. `configure` `mode` is
+  `filter_mode` and `filter` is `filters`. `scan` `fields` also takes one string (`"status|hp"` or `"status,hp"`).
 - `transfer`, `collect`, `feed`, `inspect`, `rearm` and `refuel` run `position` and `positions` as one list and say so
   in `corrected`: one `{x,y}` given as `positions`, a list given as `position`, a `position` where only `positions` is
   taken (`collect`, `feed`, `rearm`, `refuel`), or both at once (`position` first). A plain `position` where it is
@@ -596,7 +600,8 @@ fh sleep 900 --until researched                       # ...or until the research
 - A tell or mention that arrives during a direct `wait_ticks` or `wait_until` ends it (outcome `told` or `mentioned`, `last.why` `told by astra`; within 30 ticks); one pending from before the wait does not, nor an fyi tell. `--wait` on any other action, and `fh wait`, end early the same way while the action keeps going: outcome `told` or `mentioned`, `from`, `still_running` and a note. The peek `status` polls carry the newest undelivered one as `inbox {tick, woke, from}`.
 - `fh wait --until tell|alert|COND [--max S]` is one blocking wait with one line out: `woke: told after 42 s (astra: coal please); your next reply's team block has the rest`. It is a sleep (S seconds, default 600, up to 900) whose requests peek, so the team block stays for the agent's next reply: it ends on what ends a sleep (a tell or mention, damage, death, board news, the queue finishing or stalling), on `alert` (a new attack area, enemy group or enemy base: `woke: alert`) or on a sleep `--until` condition. `--format json` adds the line as `result.line`.
 - `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), a chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), eggs of ours on your surface or in a holder you built will hatch within 5 minutes (`eggs`, with the line; delivered in `team.alerts`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`.
-  - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64), `rocket_ready X,Y` (the silo at X,Y has its rocket built and ready to launch), any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
+  - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64), `rocket_ready X,Y` (the silo at X,Y has its rocket built and ready to launch), `platform_arrived PLATFORM [PLANET]`, any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
+  - `platform_arrived {platform, location?}` (a `wait_until` condition, so also `fh wait --until`, queue steps, guards and a standing order's `when`; Gemini, shift10: rocket launches wait on a platform's arrival): met while the platform is stopped at a space location, at `location` (a planet) when given, else at any stop; `saw` is `Sunward at gleba` or `Sunward flying nauvis->gleba 25%`. On a private 2.0.77 server a platform leaving a stop is on its route within 4 ticks, and one arriving reads at the planet from that tick (the game's speed value still falls for a few seconds); `fh wait --until "platform_arrived Sunward gleba"` woke when Sunward reached Gleba. An unknown platform fails the wait.
   - With a deadline file (`--deadline-file`, `FH_DEADLINE_FILE`) a sleep never runs past it: it is cut to the time left and reports `woke: deadline` when it ends there; after the deadline it does not start (`woke: deadline`, `slept_s: 0`).
   - A sleep started within 10 game seconds of reading a wake on an event (anything but `elapsed`, `died`, `respawned`, `deadline`, `told`, `mentioned`) does not start: it returns at once with that wake, `repeat: true` and `while_asleep: this sleep did not start: you woke (damaged) 4 s ago; ...`, so a shell loop of sleeps ends on the first wake. At most 3 repeats per wake; none for a sleep given `--until`, none in `turns` mode. A tell or mention wakes once: the reply that woke the agent delivered it (shift07: Luna's 32 repeats of tells already read). `fh sleep` and `fh wait --until` wait out such a repeat (Muse, shift08: "woke 4s ago" refusals burned turns): on a `repeat: true` reply the CLI waits the rest of the 10 s and starts the sleep again (at most 3 tries), and the final reply carries `waited_out: your previous sleep woke (board) 4 s before this one, and a sleep within 10 s of a wake repeats that wake; this sleep started after 7 s more`, with the team block the earlier replies carried. The runtime's own `sleep` reply is unchanged.
   - `{until: "alert"}` as the condition (`fh wait --until alert`) wakes on a new attack area, enemy group or enemy base for the team (`woke: alert`).
@@ -646,9 +651,12 @@ fh sleep 900 --until researched                       # ...or until the research
 - `inspect` of an assembler or furnace shows `output_fill`: each product in its output slots held of its stack size
   with the %, and `full` when the machine has stopped for it (status `full_output`): `copper-cable 200/200 (100%),
   full`, or `empty`. A column in the `inspect {positions}` table too.
-- An electric machine no pole reaches reads `status_name: unpowered` (whatever the engine's status, often
-  `low_power`) with `power: "unpowered: no pole reaches it; nearest pole medium-electric-pole at (17,10), 7 tiles"`,
-  in `inspect` and in build replies (`power`).
+- An electric machine no pole reaches reads `status_name: unpowered` in `observe` and `scan` rows (whatever the
+  engine's status, often `low_power`), with `power: "unpowered: no pole reaches it; nearest pole medium-electric-pole
+  at (17,10), 7 tiles"` in `inspect` and in build replies.
+- `inspect` gives the engine's status as a number (`status`) with its `defines.entity_status` name beside it
+  (`status_name`), always the pair (Muse, shift10: `--format json` gave 14, 26, 27 to look up); an unpowered machine
+  says so in `power`.
 - A `transfer`, `collect` or `feed` that moved nothing says why in `nothing_moved` (also on the final `warning:`
   line): what the target holds (`wooden-chest at (3.5,3.5) holds no iron-plate in chest; it holds copper-plate*15`),
   `already holds N (up_to M)`, what you keep, or for `feed` per wanted item what you carry and the machines hold
@@ -691,6 +699,14 @@ fh sleep 900 --until researched                       # ...or until the research
     inventory full of ITEM`, `N full`, `N wanting more you hold none of`, `N failed (the first reason)`. `collect` with
     `radius` puts it in `last` (and the `--wait` reply) over places: `N not reached`, `N failed`, `N places not visited
     (OUTCOME)`. Compact output prints it after the action's own fields, before the team and clock lines.
+  - One word for item moves (Muse 06:27): `transfer`, `collect`, `feed`, `pickup`, `rearm` and `refuel` replies say
+    `moved` (the count moved; `transferred` stays beside it as an alias for one shift), and rows over several targets
+    say `moved` per target. Every one of these replies ends with `inv`, the inventory line after the move: `free
+    18/20; held: iron-plate 100` (free main inventory slots, then what you hold of the items moved, up to 6); compact
+    output prints it last, after the team and clock lines (the `warning:` line still follows). A call that only
+    starts a move over time (a `pickup`, a tour with `radius`, a give that waits for crafts) has `moved: 0` and
+    `timed: moves until tick N: last.moved and last.inv say what it moved`; when it ends, `last.moved` and `last.inv`
+    hold the count and the line, and the `--wait` reply shows both.
   - `feed`, `collect` and `transfer` take `area {left_top, right_bottom}` (up to 128x128) in place of `positions`: our
     entities whose centre lies inside it, of the call's types, run as its positions (nearest first, each by its
     unit_number; at most 64), and the reply says how many in `area_targets`. Types: `feed` as in reach (with `recipe`,
@@ -701,6 +717,14 @@ fh sleep 900 --until researched                       # ...or until the research
     `feed {"area": {...}, "recipe": "advanced-circuit", "crafts": 5}` loads every advanced circuit assembler in it.
   - `inspect {"positions": [...]}` (1..32 entries, each may carry `name` or `unit_number`): one inspect per entry in one
     call, `entities` in order and `count`; an entry that fails is `{position, error}`.
+  - `inspect {"area": {...}, "types"?: [...]}` (Gemini, shift10: dozens of single inspects to check buffer chests): our
+    chests and machines (every type with an inventory by default: chests, machines, labs, silos, boilers, drills,
+    turrets, wagons, vehicles, landing pads, hubs, roboports, towers) with their centre in the area (up to 128x128)
+    that `inspect` can read (in sight, or by remote view in a chunk our force sees now), at most 64, one compact row each in
+    reading order (top row first, left to right): `entities [{name, position, holds, requests, recipe, status_name}]`.
+    `holds` is a chest's line as above (`iron-plate*150 coal*20; 2 of 32 slots`) or a machine's inventories by part
+    (`in: copper-cable*8; out: electronic-circuit*12; fuel: coal*5`, or `empty`). `not_in_sight` counts what the area
+    holds in chunks our force does not see now; more than 64 fails (a smaller area, or `types`).
 - Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
   `revision`, `paused`, `active`, `pending` (the next 5 as `id action [label]`), `pending_count`, `recent` (the last 2
   results), `last_failure`; `queue_status` shows every step in full.
@@ -725,6 +749,16 @@ fh sleep 900 --until researched                       # ...or until the research
   unless you name it (`name: "entity-ghost"`). So does a flying robot, a biter, a projectile or any unselectable entity
   over it, in `inspect`, `transfer`, `collect` and every other call on a position: `name` or `unit_number` picks it,
   and alone at the position it is the target.
+- Inserter and loader item filters (Sonnet 06:20: three inserters with stale filters blocked a line):
+  - Read: `scan` rows, observe entity rows and `build` replies of our inserters and loaders with filters in use carry
+    `filters` as one line: `whitelist: iron-plate, coal`, `blacklist: coal`, `whitelist: no items set`, `off (filters:
+    copper-plate)` (items set, use filters off), `set by circuit (now: ...)` (the inserter's circuit setting
+    `circuit_set_filters`). `scan fields=filters` adds it to every row that has filter slots (`none` without filters).
+  - Set: `configure {position, filters, filter_mode, use_filters}`: `filters` takes item names or one name (`[]`
+    clears and turns filtering off); `filter_mode` (alias `mode`) alone changes the mode and keeps the items;
+    `use_filters: false` keeps the items, unused. `filter` runs as `filters`. The reply reads back `filters`,
+    `filter_mode`, `use_filters`, `line` and `before` (the line before the change). `circuit_set {position, settings:
+    {filters, filter_mode, use_filters}}` sets them the same way and returns the line in `filters`.
 - `inspect` on a roboport or a logistic chest shows `logistic_network`: its `id`, `roboports`, `logistic_area` and
   `construction_area`, `logistic_robots` and `construction_robots` `{total, idle, working, charging, waiting}` and a
   `line` (the networks read's words), or `none: in no logistic network: no roboport's logistic area covers it`. On a
@@ -903,6 +937,31 @@ fh sleep 900 --until researched                       # ...or until the research
   tiles ahead of it empty space) names the rule its spot breaks: `placement blocked: breaks its tile rule 2 facing
   north: tiles x 59..61, y -4..-1 need empty_space and must not be ground_tile; 6 of 12 do not
   (space-platform-foundation at (59,-2))`. `place_ghosts` failures carry `{index, name, position, error}`.
+- A `build` over an entity of the same fast-replace group on the same centre (a chest over a chest, an assembler over
+  an assembler) replaces it as the game's fast replace does (Sonnet, Astra 06:20: six chests drained into
+  inventories). A chest's contents go into the new chest as far as it holds them (item data such as spoilage moves
+  with them); the rest and the old entity's item go to your inventory. The reply's `replaced` names the old entity
+  and says where its contents went in `contents`: `kept 3200 copper-plate in the new iron-chest; 400 copper-plate moved
+  to you`, `it was empty`. Where every stack goes is worked out first: when your inventory cannot take the old item
+  and what the new entity does not hold, the build is refused and nothing moves (`cannot replace steel-chest (7.5,0.5):
+  your inventory has no room for 400 copper-plate, 1 steel-chest (2 free slots, 5 needed); nothing moved`). The slot
+  the placed item frees counts. A machine's contents and modules come to your inventory; its recipe goes on the new
+  one (`recipe_kept`).
+- Turret ghosts request ammo (Astra, shift10: 15+ gun turrets rebuilt empty and destroyed again; turretammo.lua). A
+  turret ghost from `place_ghosts`, `paste` or `blueprint_place` gets a 2.0 item request (insert plan) for ammo in its
+  ammo slots, so the construction robots that build it bring the ammo from the logistic network too.
+  - `ammo`: an ammo item name, `{name?, count?}`, or `false` for none; a `place_ghosts` entry's own `ammo` comes first.
+  - Default item: of the ammo the turret takes, the one the logistic network at the ghost holds most of; with none
+    there (or no network), the first in prototype order (`firearm-magazine` for a gun turret). A name the turret does
+    not take (rockets for a gun turret) gives its default.
+  - Default count: the turret's automated ammo count (what inserters keep in it: 10 for a gun turret), at most what
+    its ammo slots hold.
+  - A pasted ghost whose blueprint requests ammo keeps that request.
+  - The reply lists `ammo_requests`: `[{item, count (each), ghosts, network_holds}]`, where `network_holds` is what the
+    logistic network at the first such ghost holds (absent: no network covers it, so no robot comes). A dry run lists
+    the same rows for the ghosts it would place.
+  - Where one of our turrets dies, the game leaves its ghost for the robots to rebuild; on the next tick that ghost
+    requests the ammo the turret held (none: the default above), unless it requests ammo already.
 - A `paste` (`blueprint_place`) that creates fewer ghosts than the blueprint holds explains each blueprint entity
   that is not there. It finds the shift the game used from what stands where the layout puts things. It returns:
   - `not_placed` (the first 20, plus `not_placed_count`), each `{name, position, direction, reason}`, where the reason
@@ -1033,7 +1092,14 @@ fh sleep 900 --until researched                       # ...or until the research
     from (-40.5,22.5) (wire reach 7.5)`) and `unpowered` rows (no pole's supply area over the machine, or only pole
     ghosts with no wire path). Two poles join when they are within the shorter of their two wire reaches; built poles
     and pole ghosts within 40 tiles of the plan count, the ghosts joining what lies in their reach as planned poles
-    do. At most 10 `islands` and 20 `unpowered` rows (`more_islands`, `unpowered_count`).
+    do. A path to a built network that runs through pole ghosts waits for them, and says so (Astra, shift10: a small
+    pole 8.94 tiles from the nearest built pole, wire reach 7.5, read connected through two pole ghosts nobody had
+    built, and its roboport went no_power after the starting charge): `planned pole #2 reaches a built network only
+    through pole ghosts not built yet (small-electric-pole (69.5,14.5), small-electric-pole (73.5,14.5)): no wire path to
+    a built pole until they stand; nearest built pole small-electric-pole at (73.5,2.5) is 8.9 tiles from (69.5,10.5)
+    (wire reach 7.5)`, and a machine those poles cover is an `unpowered` row (`... only through pole ghosts not built
+    yet: no power until they stand`). At most 10 `islands` and 20 `unpowered` rows (`more_islands`,
+    `unpowered_count`).
   - `standing` (off a platform): `reach` (your build distance), `from_here` (`5 of 7 in reach from (11.5,-90)`),
     and `spots [{at, reaches: "#4-6"}]`, at most 8, nearest first from where you stand: free tiles (off every planned
     footprint, not on a belt, where a character fits) from which each entry out of reach is within reach; `no_spot`
@@ -1057,6 +1123,23 @@ fh sleep 900 --until researched                       # ...or until the research
     plan). A build reply says the same after the fact: `closed_in: the character is closed in now where it stands
     (0.5,78.5): the last gap out was where pipe (-1.5,78.5) now stands; ...`. About 1 ms a check on a private 2.0.77
     server (no way out within 16 tiles counts as closed in).
+  - `outside_logistic_coverage` (Sonnet, shift10: 8 chests with 31k copper sat outside roboport range for hours): each
+    planned provider, requester, buffer or storage chest that no roboport's logistic area covers, a roboport planned in
+    the same call or a roboport ghost counting: `#2 requester-chest (146.5,160.5): outside logistic coverage: nearest
+    roboport (120,160), 1.5 tiles from its area` (or `no roboport of ours within 200 tiles`). The area is a square
+    around the roboport, its edges in (2.0.77: 25.00 tiles from a roboport in, 25.01 out; an unpowered roboport has
+    one too). `build`, `place_ghosts` and `paste` replies list the chests they placed the same way.
+  - `underground_side_feed` (Sol, shift10: an inserter side-feeding an underground entrance, long nutrient
+    starvation): a planned inserter dropping onto an underground belt entrance from one of its sides, a planned belt
+    running into an entrance's side, or a planned entrance beside built ones. Read on a private 2.0.77 server
+    (burner inserters and belts into underground pairs): an inserter beside an entrance puts its items on the far lane
+    only, as on a belt, so `#2 inserter (7.5,84.5) drops onto underground-belt (6.5,84.5), an entrance flowing north,
+    from its east side: only its west (left) lane gets these items; its east (right) lane gets none from it`; a belt
+    side-loading an entrance passes only its lane on the entrance's downstream side: `... side-loads underground-belt
+    (6.5,84.5), an entrance flowing north, from its west side: only the belt's north (left) lane goes in; its south
+    (right) lane stops at the entrance`. An underground without a `type` is an entrance for `place_ghosts`, and for
+    `build` an exit when the nearest one of its kind upstream within reach is an entrance. A `build` reply says the
+    same for what it built (an inserter, a belt, or an entrance beside standing ones).
   - `requests_kept` (a paste): for each entity with requests the blueprint lands on (a platform hub, requester and
     buffer chests, landing pads, spidertrons), `space-platform-hub (0,0): its requests stay (14 sections, 1 off)`, and
     when the blueprint carries requests of its own for it, `the blueprint's own requests (1 section) are not applied by
@@ -1487,6 +1570,13 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     same pickup and drop targets inspect's `io_warning` reads); one stays in its group, with what it read and fed then,
     until it has a target again or is removed. An inserter that never had a pickup target (it takes from the ground)
     is never in one. `game_alerts {kind:"lost_source"}` lists every fed kind.
+  - Turrets rebuilt empty (Astra, shift10: 15+ gun turrets rebuilt by robots with no ammo and destroyed again): a
+    turret built since an earlier read (one the read had not seen before) that has had no ammo since it was first
+    seen, for 60 s or more, is in a `rebuilt_empty` group instead of `out of ammo`, with up to 4 turrets and each
+    one's ammo request (what an item request proxy on it asks the robots for): `2 gun-turret rebuilt empty near
+    (212,10): no ammo since built, 60+ s: gun-turret (210,10) requests 10 firearm-magazine; gun-turret (214,10) no
+    ammo request; rearm`. Once it has held ammo it is like any other turret. The first read after a deploy only
+    remembers the turrets there.
   - The game's alerts, read from an agent player's alert panel: `no_material_for_construction`,
     `not_enough_construction_robots`, `not_enough_repair_packs`, `no_storage`, `train_out_of_fuel`,
     `unclaimed_cargo`, `collector_path_blocked`, ... Attacks, losses and the game's own turret alert are told

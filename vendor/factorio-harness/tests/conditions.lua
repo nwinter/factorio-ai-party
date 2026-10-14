@@ -104,4 +104,23 @@ assert(not pcall(C.validate,{['until']='health_below'}))
 assert(not pcall(C.validate,{['until']='item_count',item='firearm-magazine'}))
 assert(not pcall(C.validate,{['until']='ammo_below',count=0}))
 assert(not pcall(C.validate,{['until']='no_enemies',radius=500}))
+-- platform_arrived (Gemini, shift10): a platform of ours stopped at a space location, or at the one named. 2.0.77:
+-- a platform leaving a stop has no space_location within 4 ticks and flies a space_connection.
+prototypes.space_location={nauvis={},gleba={},vulcanus={}}
+local sunward={valid=true,name='Sunward',space_location={name='nauvis'}}
+mine.platforms={sunward}
+local met,saw=C.check(p,C.validate({['until']='platform_arrived',platform='Sunward'}))
+eq(met,true); eq(saw,'Sunward at nauvis')
+eq(C.check(p,{['until']='platform_arrived',platform='Sunward',location='nauvis'}),true)
+met,saw=C.check(p,{['until']='platform_arrived',platform='Sunward',location='gleba'})
+eq(met,false); eq(saw,'Sunward at nauvis')
+sunward.space_location=nil; sunward.space_connection={from={name='nauvis'},to={name='gleba'}}; sunward.distance=0.25
+met,saw=C.check(p,{['until']='platform_arrived',platform='Sunward'})
+eq(met,false); eq(saw,'Sunward flying nauvis->gleba 25%')
+sunward.space_connection=nil; sunward.space_location={name='gleba'}
+eq(C.check(p,{['until']='platform_arrived',platform='Sunward',location='gleba'}),true)
+local ok,err=pcall(C.check,p,{['until']='platform_arrived',platform='Nope'})
+eq(ok,false); eq(err,'no platform of ours named Nope')
+assert(not pcall(C.validate,{['until']='platform_arrived'}),'needs platform')
+assert(not pcall(C.validate,{['until']='platform_arrived',platform='Sunward',location='mars'}),'a known location')
 print('conditions: ok')
