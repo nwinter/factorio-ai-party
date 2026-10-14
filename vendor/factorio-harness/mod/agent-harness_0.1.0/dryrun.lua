@@ -572,7 +572,7 @@ return function(api)
     end
     for _, e in ipairs(plan.entities or {}) do
       local proto = prototypes.entity[e.name or '']
-      local rec = {index=e.index, copy=e.copy, name=e.name, dir=e.direction or 0, quality=e.quality, item=e.item, requests=e.requests}
+      local rec = {index=e.index, copy=e.copy, name=e.name, dir=e.direction or 0, quality=e.quality, item=e.item, requests=e.requests, ug_type=e.ug_type}
       recs[#recs+1] = rec
       local reasons = {}
       if not proto then
@@ -971,16 +971,23 @@ return function(api)
         end
       end
       -- Union-find over poles; built poles of one network start joined;
-      -- planned poles and pole ghosts join what lies within reach.
-      local parent = {}
+      -- planned poles and pole ghosts join what lies within reach. Twice:
+      -- with the pole ghosts (what the plan joins once they are built) and
+      -- without (what it joins now). Astra, shift10: a small pole 8.94 tiles
+      -- from the nearest built pole (wire reach 7.5) read "reaches the built
+      -- network" through two pole ghosts nobody had built, and the roboport it
+      -- fed went no_power after its starting charge.
+      local parent, parent0 = {}, {}
       local function find(i) while parent[i] ~= i do parent[i] = parent[parent[i]]; i = parent[i] end return i end
+      local function find0(i) while parent0[i] ~= i do parent0[i] = parent0[parent0[i]]; i = parent0[i] end return i end
       local function union(a, b) a, b = find(a), find(b); if a ~= b then parent[a] = b end end
+      local function union0(a, b) a, b = find0(a), find0(b); if a ~= b then parent0[a] = b end end
       local by_network, maxreach, maxsupply = {}, 1, 0
       local poles = grid(16)
       for i, n in ipairs(nodes) do
-        parent[i] = i
+        parent[i] = i; parent0[i] = i
         if n.network then
-          if by_network[n.network] then union(i, by_network[n.network]) else by_network[n.network] = i end
+          if by_network[n.network] then union(i, by_network[n.network]); union0(i, by_network[n.network]) else by_network[n.network] = i end
         end
         maxreach = math.max(maxreach, n.reach); maxsupply = math.max(maxsupply, n.supply)
         poles.add(i, n.pos)
@@ -989,12 +996,15 @@ return function(api)
         if a.planned or a.ghost then
           poles.near(a.pos, a.reach, function(j)
             local b = nodes[j]
-            if j ~= i and dist(a.pos, b.pos) <= math.min(a.reach, b.reach)+1e-6 then union(i, j) end
+            if j ~= i and dist(a.pos, b.pos) <= math.min(a.reach, b.reach)+1e-6 then
+              union(i, j)
+              if not a.ghost and not b.ghost then union0(i, j) end
+            end
           end)
         end
       end
-      local live = {} -- root -> true when a built pole is in the group
-      for i, n in ipairs(nodes) do if n.entity then live[find(i)] = true end end
+      local live, live0 = {}, {} -- root -> true when a built pole is in the group (with ghosts; now)
+      for i, n in ipairs(nodes) do if n.entity then live[find(i)] = true; live0[find0(i)] = true end end
       local function covers(n, r)
         local b = r.box
         return b.left_top.x < n.pos.x+n.supply and b.right_bottom.x > n.pos.x-n.supply
@@ -1022,22 +1032,27 @@ return function(api)
       end
       local unpowered, unpowered_count = {}, 0
       for _, r in ipairs(consumers) do
-        local by_live, by_island
+        local by_now, by_live, by_island
         local b = r.box
         local half = math.max(b.right_bottom.x-b.left_top.x, b.right_bottom.y-b.left_top.y)/2
         poles.near(r.pos, maxsupply+half+1, function(i)
           local n = nodes[i]
           if covers(n, r) then
-            if live[find(i)] then by_live = true else by_island = by_island or find(i) end
+            if not n.ghost and live0[find0(i)] then by_now = true
+            elseif live[find(i)] then by_live = true
+            else by_island = by_island or find(i) end
           end
         end)
-        if not by_live and by_island and groups[by_island] and #groups[by_island].poles > 0 then
+        if by_now then
+          -- powered as the plan stands
+        elseif not by_live and by_island and groups[by_island] and #groups[by_island].poles > 0 then
           table.insert(groups[by_island].machines, r)
-        elseif not by_live then
+        else
           unpowered_count = unpowered_count + 1
           if #unpowered < 20 then
             local why
-            if by_island then why = 'only pole ghosts with no wire path to a built pole cover it'
+            if by_live then why = 'the poles over it reach a built network only through pole ghosts not built yet: no power until they stand'
+            elseif by_island then why = 'only pole ghosts with no wire path to a built pole cover it'
             else
               local best, bd
               poles.near(r.pos, 48, function(i)
@@ -1091,10 +1106,10 @@ return function(api)
       end
       -- Planned poles that reach built ones: which built network, and
       -- separate networks the plan joins into one.
-      local reached = {}
+      local reached, via = {}, {}
       for i, n in ipairs(nodes) do
-        local root = find(i)
-        if n.planned and live[root] then reached[root] = reached[root] or {}; table.insert(reached[root], n) end
+        if n.planned and live0[find0(i)] then local root = find0(i); reached[root] = reached[root] or {}; table.insert(reached[root], n)
+        elseif n.planned and live[find(i)] then local root = find(i); via[root] = via[root] or {}; table.insert(via[root], n) end
       end
       local connected = {}
       for root, list in pairs(reached) do
@@ -1103,7 +1118,7 @@ return function(api)
         for _, pl in ipairs(list) do
           poles.near(pl.pos, maxreach, function(i)
             local n = nodes[i]
-            if n.entity and n.network and find(i) == root then
+            if n.entity and n.network and find0(i) == root then
               local dd = dist(pl.pos, n.pos)
               local b = best[n.network]
               if not b then order2[#order2+1] = n.network end
@@ -1116,7 +1131,32 @@ return function(api)
         local one = #list == 1
         connected[#connected+1] = #r > 1
           and string.format('%s join%s %d separate built networks into one: %s', label(list), one and 's' or '', #r, table.concat(r, ', ', 1, math.min(4, #r)))
-          or string.format('%s reach%s the built network of %s', label(list), one and 'es' or '', r[1] or 'a built pole (through pole ghosts)')
+          or string.format('%s reach%s the built network of %s', label(list), one and 'es' or '', r[1] or 'a built pole')
+      end
+      -- Planned poles that reach a built network only through pole ghosts:
+      -- the ghosts on the way (nearest first) and the gap to built poles now.
+      for root, list in pairs(via) do
+        local gh, near_b, bd, from = {}, nil, nil, nil
+        for _, pl in ipairs(list) do
+          poles.near(pl.pos, 48, function(i)
+            local n = nodes[i]
+            if n.ghost and find(i) == root then gh[#gh+1] = {n=n, d=dist(pl.pos, n.pos)} end
+            if n.entity then
+              local d = dist(pl.pos, n.pos)
+              if not bd or d < bd then near_b, bd, from = n, d, pl end
+            end
+          end)
+        end
+        table.sort(gh, function(a, b) return a.d < b.d end)
+        local shown, seen = {}, {}
+        for _, g in ipairs(gh) do
+          if not seen[g.n] and #shown < 3 then seen[g.n] = true; shown[#shown+1] = g.n.name..' '..at(g.n.pos) end
+        end
+        local one = #list == 1
+        connected[#connected+1] = string.format('%s reach%s a built network only through pole ghosts not built yet (%s): no wire path to a built pole until they stand%s',
+          label(list), one and 'es' or '', table.concat(shown, ', '),
+          near_b and string.format('; nearest built pole %s at %s is %.1f tiles from %s (wire reach %g)', near_b.name, at(near_b.pos), bd, at(from.pos),
+            math.min(near_b.reach, from.reach)) or '')
       end
       table.sort(connected)
       if #planned_poles > 0 then pw.poles = #planned_poles end
@@ -1401,6 +1441,94 @@ return function(api)
       end
       out.inserters = #list > 0 and list or nil
       out.inserters_without_target = without > 0 and without or nil
+    end
+    local function idx(r) return r.copy and (r.copy..'.'..r.index) or r.index end
+    -- Logistic chests no roboport's logistic area covers, roboports planned in
+    -- this call counting (networks.lua; Sonnet, shift10).
+    if api.coverage and not on_platform then
+      local ports = {}
+      for _, r in ipairs(recs) do
+        if r.proto and r.pos and r.proto.type == 'roboport' and r.status ~= 'blocked' then
+          ports[#ports+1] = {x=r.pos.x, y=r.pos.y, r=try(function() return r.proto.logistic_radius end) or 0}
+        end
+      end
+      local lines = {}
+      for _, r in ipairs(recs) do
+        if r.proto and r.pos and r.proto.type == 'logistic-container' and r.status ~= 'blocked' and r.status ~= 'exists' and #lines < 16 then
+          local line = try(function() return api.coverage(s, force, r.pos, ports) end)
+          if line then lines[#lines+1] = string.format('#%s %s %s: %s', idx(r), r.name, at(r.pos), line) end
+        end
+      end
+      out.outside_logistic_coverage = #lines > 0 and lines or nil
+    end
+    -- Underground entrances fed from the side (sidefeed.lua; Sol, shift10): a
+    -- planned inserter dropping onto one, a planned belt running into one's
+    -- side, a planned entrance beside built inserters and belts. A planned
+    -- underground's end: its type, else as the call places it (a build: an
+    -- output when the nearest one of its kind upstream within reach is an
+    -- entrance; a ghost: an entrance).
+    if api.sidefeed and api.targets then
+      local STEP4 = {[0]={0, -1}, [4]={1, 0}, [8]={0, 1}, [12]={-1, 0}}
+      local lines, seen = {}, {}
+      local function add(l) if l and not seen[l] and #lines < 8 then seen[l] = true; lines[#lines+1] = l end end
+      local ugs = {}
+      for _, r in ipairs(recs) do
+        if r.proto and r.pos and r.proto.type == 'underground-belt' and r.status ~= 'blocked' then ugs[key(math.floor(r.pos.x), math.floor(r.pos.y))] = r end
+      end
+      local kinds = {}
+      local function kind_of(r, depth)
+        if r.ug_type == 'input' or r.ug_type == 'output' then return r.ug_type end
+        if kind ~= 'build' then return 'input' end
+        if kinds[r] then return kinds[r] end
+        local back = STEP4[(r.dir+8)%16]
+        local reach = try(function() return r.proto.max_underground_distance end) or 0
+        local found = 'input'
+        for k = 1, back and reach or 0 do
+          local x, y = math.floor(r.pos.x)+back[1]*k, math.floor(r.pos.y)+back[2]*k
+          local o = ugs[key(x, y)]
+          local up
+          if o and o.name == r.name and o.dir == r.dir then up = (depth or 0) < 8 and kind_of(o, (depth or 0)+1) or 'input'
+          elseif not o then
+            local e = try(function() return s.find_entities_filtered{position={x=x+0.5, y=y+0.5}, name=r.name, limit=1}[1] end)
+            if e and e.direction == r.dir then up = try(function() return e.belt_to_ground_type end) end
+          end
+          if up then found = up == 'input' and 'output' or 'input'; break end
+        end
+        kinds[r] = found
+        return found
+      end
+      local function ug_at(pos)
+        local r = ugs[key(math.floor(pos.x), math.floor(pos.y))]
+        if r then return {name=r.name, position=r.pos, direction=r.dir, kind=kind_of(r)} end
+        local e = try(function() return s.find_entities_filtered{position=pos, type='underground-belt', limit=1}[1] end)
+        if e then return {name=e.name, position=e.position, direction=e.direction, kind=try(function() return e.belt_to_ground_type end)} end
+      end
+      for _, r in ipairs(recs) do
+        local t = r.proto and r.pos and r.status ~= 'blocked' and r.proto.type
+        if t == 'inserter' then
+          local _, drop = api.targets.points(r.proto, r.pos, r.dir)
+          local ug = drop and ug_at(drop)
+          local line = ug and api.sidefeed.inserter(r.name, r.pos, drop, ug)
+          if line then add('#'..idx(r)..' '..line) end
+        elseif t == 'transport-belt' then
+          local st = STEP4[r.dir%16]
+          local ug = st and ug_at({x=math.floor(r.pos.x)+st[1]+0.5, y=math.floor(r.pos.y)+st[2]+0.5})
+          local line = ug and api.sidefeed.belt(r.name, r.pos, r.dir, ug)
+          if line then add('#'..idx(r)..' '..line) end
+        elseif t == 'underground-belt' and kind_of(r) == 'input' then
+          local ug = {name=r.name, position=r.pos, direction=r.dir, kind='input'}
+          local x, y = r.pos.x, r.pos.y
+          for _, i in ipairs(try(function() return s.find_entities_filtered{area={{x-3.5, y-3.5}, {x+3.5, y+3.5}}, type='inserter', force=force} end) or {}) do
+            local drop = try(function() return i.drop_position end)
+            if drop then add(api.sidefeed.inserter(i.name, i.position, drop, ug)) end
+          end
+          for _, d in pairs(STEP4) do
+            local b = try(function() return s.find_entities_filtered{position={x=x+d[1], y=y+d[2]}, type='transport-belt', limit=1}[1] end)
+            if b then add(api.sidefeed.belt(b.name, b.position, b.direction, ug)) end
+          end
+        end
+      end
+      out.underground_side_feed = #lines > 0 and lines or nil
     end
     local n = #recs
     local parts = {}

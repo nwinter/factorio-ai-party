@@ -527,6 +527,9 @@ test('move_to and drive --wait show gaps, escapes, enemies gone around; no_safe_
     {action:'move_to',last:{kind:'move_to',outcome:'arrived',escaped:'no path led out of the gap at (54.2,21): walked out to (55,24.3) first',avoided_enemies:['2 big-worm-turret around (88,165)'],passed_within_margin:['medium-worm-turret (60,170): 33.7 tiles (range 30)']},code:0,shown:['escaped','avoided_enemies','passed_within_margin']},
     {action:'move_to',last:{kind:'move_to',outcome:'unreachable',why:'closed in: ...; mining pipe (-27.5,69.5) opens a way out to (-26.7,69.5)',mine_to_get_out:['pipe (-27.5,69.5)']},code:1,shown:['mine_to_get_out']},
     {action:'move_to',last:{kind:'move_to',outcome:'no_safe_route',why:'no way to (100,0) around 4 medium-worm-turret around (100,0): the path passes medium-worm-turret (60,0) (range 30 + 4) at 0.0 tiles'},code:1,shown:[]},
+    // round0620c: a via walk's legs, a build spot, a squeeze walked along gaps.
+    {action:'move_to',last:{kind:'move_to',outcome:'arrived',legs:[{to:{x:10,y:100},outcome:'arrived',s:1.9,avoided_enemies:['1 medium-worm-turret around (14,104)']},{to:{x:32,y:104},outcome:'arrived',s:2.4}],squeezed:'no path request led into the gaps: walked them from (60.5,160.5) to (60,150.5)'},code:0,shown:['legs','squeezed'],lines:['(10,100) arrived 1.9s; around 1 medium-worm-turret around (14,104)','(32,104) arrived 2.4s']},
+    {action:'move_to',last:{kind:'move_to',outcome:'unreachable',why:'no path request found a way for the character to (60.5,140.5), nor to anywhere within 15 tiles of it',build_spot:{x:60,y:150},build_spot_note:'(60,150) is reachable and within build reach of (60.5,140.5): 9.5 tiles (build reach 10); it lies in a gap narrower than 0.7 tiles',build_spot_squeeze:true,legs:[{to:{x:10,y:100},outcome:'unreachable',s:0.2,why:'no path'},{to:{x:32,y:104},outcome:'not walked'}]},code:1,shown:['build_spot','build_spot_note','build_spot_squeeze','legs'],lines:['(10,100) unreachable 0.2s: no path','(32,104) not walked']},
     {action:'vehicle',last:{kind:'drive',outcome:'arrived',path_length:69,backed_up:'stuck at (30.0,123.7) (in front: cliff (30,126.5)): backed up and asked for a new path',avoided_enemies:['1 medium-worm-turret around (60,170)']},code:0,shown:['path_length','backed_up','avoided_enemies']},
   ];
   for (const end of ends) {
@@ -542,6 +545,7 @@ test('move_to and drive --wait show gaps, escapes, enemies gone around; no_safe_
       assert.equal(code,end.code,stdout);
       // A wait that ended in success lists fields one per line; a failed one on the error_result line (key=value).
       for (const key of end.shown) assert.match(stdout,new RegExp(`(\\n\\s*|\\s)${key}[:=]`),key);
+      for (const line of (end as any).lines ?? []) assert.ok(stdout.includes(line),`${line} in ${stdout}`);
       if (end.last.outcome==='no_safe_route') assert.match(stdout,/\nerror: action_interrupted: Control ended: no_safe_route: no way to \(100,0\) around/);
     });
   }

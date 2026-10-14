@@ -388,6 +388,28 @@ has(fg.line,'1 boiler under 20 min of their own fuel at this draw, 1 under 10, 1
   ..'boiler (200,200) 0 min: no inserter feeds it; '
   ..'fuel within 64 tiles (the boilers hold none; looked for coal, solid-fuel, wood, rocket-fuel, nuclear-fuel): iron-chest (81,13) coal 50, wooden-chest (41,13) coal 400; belts: coal 16')
 has(fg.line,'boiler (200,200) 0 min: no inserter feeds it')
+-- Logistic coverage (Sonnet, shift10): a chest outside every roboport's logistic area; 2.0.77: a square, edges in.
+do
+  local ports={}
+  local cs={find_entities_filtered=function(f)
+    local out={}
+    for _,e in ipairs(ports) do
+      local d=((e.position.x-f.position.x)^2+(e.position.y-f.position.y)^2)^0.5
+      local is=f.type=='roboport' and e.type=='roboport' or f.ghost_type=='roboport' and e.type=='entity-ghost'
+      if is and d<=f.radius then out[#out+1]=e end
+    end
+    return out
+  end}
+  eq(N.coverage(cs,force,{x=0,y=0}),'outside logistic coverage: no roboport of ours within 200 tiles')
+  ports[1]={valid=true,type='roboport',name='roboport',position={x=120,y=160},logistic_cell={logistic_radius=25}}
+  eq(N.coverage(cs,force,{x=145,y=160.5}),nil,'25 tiles off: in')
+  eq(N.coverage(cs,force,{x=146.5,y=160.5}),'outside logistic coverage: nearest roboport (120,160), 1.5 tiles from its area')
+  eq(N.coverage(cs,force,{x=148,y=188}),'outside logistic coverage: nearest roboport (120,160), 4.2 tiles from its area','the corner: 3 and 3')
+  -- A roboport planned in the same call, or a roboport ghost, covers it.
+  eq(N.coverage(cs,force,{x=146.5,y=160.5},{{x=150,y=166,r=25}}),nil)
+  ports[2]={valid=true,type='entity-ghost',name='entity-ghost',position={x=160,y=160},ghost_prototype={logistic_radius=25}}
+  eq(N.coverage(cs,force,{x=146.5,y=160.5}),nil)
+end
 
 -- 5. boilers (Haiku, 06:20: "lists each boiler's position, state and fuel (and its feeder), so the no_fuel one is
 -- named"): every boiler, grouped by the electric network its steam feeds, the not-working first; each with its state,

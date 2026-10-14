@@ -172,6 +172,8 @@ do
   local gave=call('status').last
   eq(gave.outcome,'unreachable'); eq(gave.nearest_reachable.x,6); eq(gave.reachable_gap,5.7); eq(gave.paths_failed,4)
   eq(gave.why,'no path for the character to (10,10) on the tile, half- or quarter-tile grid')
+  -- Its end is within build reach and has room to turn: named as a build spot (Grok, shift10 06:20).
+  eq(gave.build_spot.x,6); eq(gave.build_spot_note,'(6,6) is reachable and within build reach of (10,10): 5.7 tiles (build reach 10)'); eq(gave.build_spot_squeeze,nil)
 end
 -- A target on ungenerated ground: the pathfinder knows none of it, so steer directly as before.
 p.surface.is_chunk_generated=function() return false end
@@ -637,7 +639,7 @@ p.surface.find_entities_filtered=function(f) return {f.position.x==3 and f1 or f
 main=inv(stack(nil,0),stack(nil,0),stack(nil,0))
 local batch=call('transfer',{positions={{x=3,y=0},{x=4,y=0},{x=40,y=0}},direction='to_player'})
 eq(batch.transferred,8); eq(batch.items[1].name,'iron-plate'); eq(batch.items[2].count,3)
-eq(batch.entities[2].transferred,3); assert(batch.entities[3].error:find('outside local visible area'))
+eq(batch.entities[2].moved,3); assert(batch.entities[3].error:find('outside local visible area'))
 eq(f1.slots[2][1].count,2); eq(main[1].count,5); eq(flying[#flying],'+3 [item=copper-plate]')
 prototypes={item={coal={fuel_value=4000000},['iron-ore']={fuel_value=0}}}
 main=inv(stack('coal',10),stack('iron-ore',10))
@@ -823,8 +825,8 @@ eq(main[2].count,8); eq(main[1].valid_for_read,false)
 -- total caps a batch, filled in order, and is echoed back.
 main=inv(stack('coal',50))
 local capped=call('transfer',{positions={{x=3,y=0},{x=4,y=0}},item='coal',count=5,total=7,inventory='fuel',direction='to_entity'})
-eq(capped.transferred,7); eq(capped.total,7); eq(capped.entities[1].transferred,5); eq(capped.entities[2].transferred,2)
-eq(call('transfer',{positions={{x=3,y=0},{x=4,y=0}},item='coal',total=3,inventory='fuel',direction='to_entity'}).entities[1].transferred,3)
+eq(capped.transferred,7); eq(capped.total,7); eq(capped.entities[1].moved,5); eq(capped.entities[2].moved,2)
+eq(call('transfer',{positions={{x=3,y=0},{x=4,y=0}},item='coal',total=3,inventory='fuel',direction='to_entity'}).entities[1].moved,3)
 fails(function() call('transfer',{positions={{x=3,y=0}},total=3,direction='to_player'}) end,'total requires item')
 -- A full character inventory is named, not reported as a quiet partial move.
 main=inv(stack('iron-plate',100))
@@ -879,6 +881,7 @@ local set_filters={}
 prototypes.item['stone-brick']={type='item'}
 local fi={valid=true,name='fast-inserter',type='inserter',position={x=3,y=0},force=p.force,filter_slot_count=5,inserter_filter_mode='whitelist'}
 fi.set_filter=function(i,f) set_filters[i]=f or false end
+fi.get_filter=function(i) return set_filters[i] and {name=set_filters[i]} or nil end
 p.surface.find_entities_filtered=function() return {fi} end
 local filtered=call('configure',{position=fi.position,filters={'stone-brick'},filter_mode='whitelist'})
 eq(filtered.filters[1],'stone-brick'); eq(set_filters[1],'stone-brick'); eq(set_filters[2],false); eq(fi.use_filters,true)
@@ -1971,6 +1974,36 @@ local placed=call('place_ghosts',{entities={{name='gun-turret',position={x=100,y
 eq(placed.placed,2); eq(#placed.failed,3); eq(placed.failed[1].index,2); eq(placed.failed[1].error,'placement blocked')
 assert(placed.failed[2].error:find('not a placeable')); eq(placed.failed[3].error,'position is not charted')
 eq(placed.bounds.left,11); eq(placed.bounds.bottom,101); eq(storage.agent_harness.last_paste[1].right,101)
+-- A turret ghost requests ammo (turretammo.lua; Astra, shift10: turrets rebuilt empty and destroyed again): the
+-- call's ammo, an entry's own (false: none); the reply counts the requests; a bad ammo argument fails the call, or
+-- just its entry.
+do
+  local entity_protos,item_protos,filtered=prototypes.entity,prototypes.item,prototypes.get_item_filtered
+  local can,create,net=p.surface.can_place_entity,p.surface.create_entity,p.surface.find_logistic_network_by_position
+  local gun={name='gun-turret',type='ammo-turret',items_to_place_this={{name='gun-turret',count=1}},attack_parameters={ammo_categories={'bullet'}},
+    automated_ammo_count=10,get_inventory_size=function() return 1 end}
+  prototypes.entity={['gun-turret']=gun}
+  prototypes.item={['firearm-magazine']={type='ammo',order='a',stack_size=200,ammo_category={name='bullet'}},['iron-plate']={type='item'}}
+  prototypes.get_item_filtered=function() return {['firearm-magazine']=prototypes.item['firearm-magazine']} end
+  local made={}
+  p.surface.can_place_entity=function() return true end
+  p.surface.find_logistic_network_by_position=function() return nil end
+  p.surface.create_entity=function(a)
+    local g={valid=true,type='entity-ghost',ghost_type='ammo-turret',ghost_name=a.inner_name,ghost_prototype=gun,position=a.position,
+      surface=p.surface,force=p.force,insert_plan={}}
+    made[#made+1]=g; return g
+  end
+  local r=call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=4}},{name='gun-turret',position={x=12,y=4},ammo=false}},ammo={count=30}})
+  eq(r.placed,2); eq(#r.ammo_requests,1); eq(r.ammo_requests[1].item,'firearm-magazine'); eq(r.ammo_requests[1].count,30)
+  eq(r.ammo_requests[1].ghosts,1); eq(r.ammo_requests[1].network_holds,nil)
+  eq(made[1].insert_plan[1].items.in_inventory[1].count,30); eq(#made[2].insert_plan,0)
+  eq(call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=4}}}}).ammo_requests[1].count,10,'the default count')
+  fails(function() call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=4}}},ammo='iron-plate'}) end,'not an ammo item: iron-plate')
+  local bad=call('place_ghosts',{entities={{name='gun-turret',position={x=14,y=4},ammo='iron-plate'},{name='gun-turret',position={x=16,y=4}}}})
+  eq(bad.placed,1); assert(bad.failed[1].error:find('not an ammo item',1,true),bad.failed[1].error)
+  prototypes.entity,prototypes.item,prototypes.get_item_filtered=entity_protos,item_protos,filtered
+  p.surface.can_place_entity,p.surface.create_entity,p.surface.find_logistic_network_by_position=can,create,net
+end
 -- A ghost goes over trees and rocks and marks them, though the engine's check
 -- refuses them (shake3: "placement blocked by tree-08" from place_ghosts),
 -- and over a stump, which stays until the build (out of reach here); anything
@@ -2321,6 +2354,33 @@ eq(call('inspect',{position=ins.position}).fluid_connections,nil)
   eq(call('inspect',{position={x=24.5,y=0.5},name='logistic-robot'}).name,'logistic-robot')
   world={robot}
   eq(call('inspect',{position={x=24.5,y=0.5}}).name,'logistic-robot')
+  -- Every call that resolves a position takes the building under a robot, by remote view too (Astra 07:05: requests
+  -- at (12.5,12.5) took a logistic robot, "has no logistic requests"). The robot sits on the point itself, first in
+  -- the list: the nearest-first remote pick took it.
+  local requester={valid=true,name='requester-chest',type='logistic-container',position={x=24.5,y=0.5},half=0.5,force=p.force,unit_number=78,
+    get_inventory=function() return nil end,get_fluid_contents=function() return {} end,
+    get_logistic_sections=function() return {sections={},sections_count=0} end}
+  robot.position={x=24.5,y=0.5}
+  robot.get_item_count=function() return 40 end
+  requester.get_item_count=function() return 3 end
+  world={robot,requester}
+  local req=call('requests',{position={x=24.5,y=0.5}})
+  assert(tostring(req.target):find('^requester%-chest at %(24.5,0.5%)'),tostring(req.target))
+  -- Out of reach, by remote view: the same.
+  p.can_reach_entity=function() return false end
+  req=call('requests',{position={x=24.5,y=0.5}})
+  assert(tostring(req.target):find('^requester%-chest'),tostring(req.target))
+  -- circuit_set and configure resolve the chest, in reach and by remote view (their refusals name it).
+  fails(function() call('circuit_set',{position={x=24.5,y=0.5},read={contents=true}}) end,'requester-chest')
+  p.can_reach_entity=function() return true end
+  fails(function() call('circuit_set',{position={x=24.5,y=0.5},read={contents=true}}) end,'requester-chest')
+  -- wait_until item_count over the tile counts the chest, not the robot's cargo.
+  prototypes.item=prototypes.item or {}; prototypes.item.coal=prototypes.item.coal or {fuel_value=4000000}
+  local w=call('wait_until',{['until']='item_count',item='coal',positions={{x=24.5,y=0.5}},at_least=3,timeout=60})
+  eq(w.saw,'coal 3 in 1 entities')
+  -- Named, the robot is still the target.
+  eq(call('inspect',{position={x=24.5,y=0.5},name='logistic-robot'}).name,'logistic-robot')
+  robot.position={x=24.55,y=0.45}
   -- A drill's drop tile and what it drops into (sapilot board #4).
   local drill={valid=true,name='burner-mining-drill',type='mining-drill',position={x=30,y=0},half=1,force=p.force,direction=0,
     drop_position={x=29.7,y=-1.3},drop_target=chest,get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
@@ -2651,6 +2711,71 @@ end)()
   p.force.is_chunk_charted,p.position=charted,at
 end)()
 ;(function()
+  -- A just-built inserter (Astra, shift10 13:44: the reply said "no drop target" where inspect a moment later showed
+  -- the furnace). The engine sets its targets a tick later, so the build reply reads what stands on its points, on
+  -- the engine's 1/256 grid (targets.lua): a long-handed inserter at (31.5,130.5) facing east drops at x 29.30078125,
+  -- the left edge of the stone furnace's box at (30,130), where the engine targets the furnace.
+  local find,getmain,cursor,can,build,charted,at,tile=p.surface.find_entities_filtered,p.get_main_inventory,p.cursor_stack,
+    p.can_build_from_cursor,p.build_from_cursor,p.force.is_chunk_charted,p.position,p.surface.get_tile
+  local proto={name='long-handed-inserter',type='inserter',inserter_pickup_position={0,-2},inserter_drop_position={0,2.2},
+    collision_box={left_top={x=-0.15,y=-0.15},right_bottom={x=0.15,y=0.15}}}
+  -- Boxes as the engine holds them: the furnace's 0.7 is 0.69921875 (179/256).
+  local furnace={valid=true,name='stone-furnace',type='furnace',position={x=30,y=130},force=p.force,half=179/256}
+  local chest={valid=true,name='iron-chest',type='container',position={x=33.5,y=130.5},force=p.force,half=0.4}
+  local made={}
+  local held=stack('long-handed-inserter',2); held.prototype={place_result=proto}
+  local inv={held}; inv.find_item_stack=function() return held end
+  inv.get_item_count=function(f) return f.name==held.name and held.valid_for_read and held.count or 0 end
+  p.get_main_inventory=function() return inv end
+  p.cursor_stack=stack(nil,0)
+  p.force.is_chunk_charted=function() return true end
+  p.position={x=31,y=127}
+  p.can_build_from_cursor=function() return true end
+  p.build_from_cursor=function(a)
+    p.cursor_stack.count=p.cursor_stack.count-1; p.cursor_stack.valid_for_read=p.cursor_stack.count>0
+    -- No pickup_target or drop_target: the engine has none in the tick the inserter is built.
+    made[#made+1]={valid=true,name=proto.name,type='inserter',prototype=proto,position={x=a.position.x,y=a.position.y},
+      direction=a.direction,force=p.force,surface=p.surface,half=0.15,
+      pickup_position={x=a.position.x+2,y=a.position.y},drop_position={x=a.position.x-563/256,y=a.position.y},
+      get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
+  end
+  p.surface.find_entities_filtered=function(f)
+    local out={}
+    if not f.position then return out end
+    local all={furnace,chest}
+    for _,e in ipairs(made) do all[#all+1]=e end
+    for _,e in ipairs(all) do
+      local dx,dy=math.abs(e.position.x-f.position.x),math.abs(e.position.y-f.position.y)
+      local hit=f.radius and dx*dx+dy*dy<=f.radius*f.radius or not f.radius and dx<=e.half and dy<=e.half
+      if hit and (not f.name or f.name==e.name) and (not f.type or f.type==e.type) then out[#out+1]=e end
+    end
+    return out
+  end
+  p.surface.get_tile=function() return {name='grass-1',valid=true} end
+  -- The unrounded drop point, 31.5-2.2, lies just outside the furnace's box.
+  eq(#p.surface.find_entities_filtered{position={x=31.5-2.2,y=130.5}},0)
+  local r=call('build',{item='long-handed-inserter',position={x=31.5,y=130.5},direction='east'})
+  eq(r.consumed,1); eq(r.entity.name,'long-handed-inserter'); eq(made[1].drop_target,nil)
+  eq(r.entity.io_warning,nil,'the furnace on its drop point and the chest on its pickup point are its targets')
+  -- One a tile south: nothing on either point, and the reply says so.
+  local south=call('build',{item='long-handed-inserter',position={x=31.5,y=131.5},direction='east'})
+  eq(south.entity.position.y,131.5); eq(south.entity.io_warning,'no pickup target, no drop target')
+  -- A batch of 18 with nothing around them: the first 16 listed, and the count of all, as place_ghosts gives them.
+  held.name,held.count,held.valid_for_read=proto.name,20,true; p.cursor_stack=stack(nil,0)
+  p.position={x=43.5,y=109}
+  local column={}
+  for i=0,17 do column[#column+1]={position={x=i<9 and 40.5 or 46.5,y=105.5+i%9}} end
+  local batch=call('build',{item='long-handed-inserter',direction='east',builds=column})
+  eq(batch.built,18); eq(#batch.inserters_without_target,16); eq(batch.inserters_without_target_count,18)
+  eq(batch.inserters_without_target[1].missing,'no pickup target, no drop target')
+  -- 16 or fewer: no count.
+  held.count=2; p.cursor_stack=stack(nil,0)
+  local pair=call('build',{item='long-handed-inserter',direction='east',builds={{position={x=43.5,y=105.5}},{position={x=43.5,y=112.5}}}})
+  eq(#pair.inserters_without_target,2); eq(pair.inserters_without_target_count,nil)
+  p.surface.find_entities_filtered,p.get_main_inventory,p.cursor_stack,p.can_build_from_cursor,p.build_from_cursor=find,getmain,cursor,can,build
+  p.force.is_chunk_charted,p.position,p.surface.get_tile=charted,at,tile
+end)()
+;(function()
   -- Personal logistics (trash.lua; Astra 01:53: two hauls lost to auto-trash): a take over the request max says how
   -- many go to trash; up_to=true stops at the max; keep_max refuses the take.
   local find,getmain,reach,at=p.surface.find_entities_filtered,p.get_main_inventory,p.can_reach_entity,p.position
@@ -2777,6 +2902,69 @@ end)()
   st.drop_jobs=nil; st.last_drop=nil
 end)()
 ;(function()
+  -- inspect over an area (Gemini, shift10): one compact row per chest or machine of ours in sight, reading order.
+  local find,at,vis=p.surface.find_entities_filtered,p.position,p.force.is_chunk_visible
+  -- inspect reads in sight or by remote view in a chunk our force sees (read_sight): chunk x 1 (the far chest) is dark.
+  p.force.is_chunk_visible=function(_,ch) return ch.x<1 end
+  local inv_defs={chest=defines.inventory.chest,assembling_machine_input=defines.inventory.assembling_machine_input,
+    assembling_machine_output=defines.inventory.assembling_machine_output}
+  defines.inventory.chest=defines.inventory.chest or 1; defines.inventory.assembling_machine_input=902; defines.inventory.assembling_machine_output=903
+  local function inv(list,size)
+    local t={valid=true}
+    t.get_contents=function() return list end
+    t.is_empty=function() return #list==0 end
+    t.count_empty_stacks=function() return size-#list end
+    t.get_bar=function() return size+1 end
+    setmetatable(t,{__len=function() return size end})
+    return t
+  end
+  local function chest(x,y,list) return {valid=true,name='iron-chest',type='container',position={x=x,y=y},force=p.force,
+    get_inventory=function(i) if i==defines.inventory.chest then return inv(list,32) end end} end
+  local a=chest(2.5,1.5,{{name='iron-plate',count=150,quality='normal'},{name='coal',count=20,quality='normal'}})
+  local b=chest(1.5,1.5,{})
+  local c={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=1.5,y=4.5},force=p.force,status=1,
+    get_recipe=function() return {name='electronic-circuit'} end,
+    get_inventory=function(i) if i==902 then return inv({{name='copper-cable',count=8,quality='normal'}},4) elseif i==903 then return inv({},1) end end}
+  local far=chest(60.5,1.5,{})
+  local list={a,b,c,far}
+  p.position={x=0,y=0}
+  p.surface.find_entities_filtered=function(f) if f.area and f.force then return list end return {} end
+  local r=call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}})
+  eq(r.count,3); eq(r.entities[1].position.x,1.5); eq(r.entities[2].position.x,2.5); eq(r.entities[3].name,'assembling-machine-2')
+  eq(r.entities[1].holds,'empty; 0 of 32 slots'); eq(r.entities[2].holds,'iron-plate*150 coal*20; 2 of 32 slots')
+  eq(r.entities[3].holds,'in: copper-cable*8'); eq(r.entities[3].recipe,'electronic-circuit'); eq(r.entities[1].status_name,nil,'a chest has none')
+  eq(r.not_in_sight,'1 more in the area in chunks our force does not see now (radar coverage or a character\'s sight lights a chunk)')
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=200,y=10}}}) end,'at most 128x128')
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=9,y=9}},position={x=1,y=1}}) end,'give area, positions or position: one of them')
+  fails(function() call('inspect',{position={x=1.5,y=1.5},types={'container'}}) end,'types goes with area')
+  list={far}
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}}) end,'no chest or machine of ours with its centre in (0,0)-(64,10) in a chunk our force sees now (1 in chunks it does not')
+  list={}
+  for i=1,65 do list[i]=chest(i%30+0.5,math.floor(i/30)+0.5,{}) end
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=31,y=3}}}) end,'65 entities in the area; at most 64')
+  p.surface.find_entities_filtered,p.position,p.force.is_chunk_visible=find,at,vis
+  for k,v in pairs(inv_defs) do defines.inventory[k]=v end
+end)()
+;(function()
+  -- Build and ghost replies: logistic chests outside every roboport's area (networks.lua), entrances fed from the side.
+  local coverage=runtime.networks.coverage
+  runtime.networks.coverage=function(_,_,pos) return pos.x>100 and 'outside logistic coverage: nearest roboport (0,0), 75 tiles from its area' or nil end
+  local s={find_entities_filtered=function(f)
+    if f.type=='underground-belt' then return {{valid=true,name='underground-belt',type='underground-belt',position={x=6.5,y=84.5},direction=0,belt_to_ground_type='input'}} end
+    return {}
+  end}
+  local far={valid=true,type='logistic-container',name='requester-chest',position={x=120.5,y=0.5},surface=s,force=p.force}
+  local near={valid=true,type='logistic-container',name='requester-chest',position={x=10.5,y=0.5},surface=s,force=p.force}
+  local ghost={valid=true,type='entity-ghost',ghost_type='logistic-container',ghost_name='buffer-chest',position={x=130.5,y=0.5},surface=s,force=p.force}
+  local ins={valid=true,type='inserter',name='inserter',position={x=7.5,y=84.5},drop_position={x=6.3,y=84.5},direction=4,surface=s,force=p.force}
+  local cover,side=runtime.build_notes(p,{far,near,ghost,ins})
+  eq(#cover,2); eq(cover[1],'requester-chest (120.5,0.5): outside logistic coverage: nearest roboport (0,0), 75 tiles from its area')
+  eq(cover[2]:match('^buffer%-chest %(130.5,0.5%): outside') ~= nil,true,'a ghost by its ghost name')
+  eq(#side,1); eq(side[1]:match('^inserter %(7.5,84.5%) drops onto underground%-belt %(6.5,84.5%), an entrance flowing north, from its east side') ~= nil,true)
+  eq(select(1,runtime.build_notes(p,{near})),nil); eq(select(2,runtime.build_notes(p,{near})),nil)
+  runtime.networks.coverage=coverage
+end)()
+;(function()
   -- inspect by remote view (Astra, operator 04:57): on our own surface the map shows every entity in a chunk our
   -- force sees, as the game's remote view does; an action still needs the character's sight.
   local chest={valid=true,name='iron-chest',type='container',position={x=3.5,y=0.5},force=p.force,health=200,max_health=200,status=nil,
@@ -2829,5 +3017,42 @@ end)()
   p.surface.find_entities_filtered,p.surface.can_place_entity,p.surface.create_entity=find,can,create
   prototypes.tile.landfill,prototypes.item.landfill=saved_tile,saved_item
   prototypes.tile,prototypes.item=tiles,items
+end)()
+;(function()
+  -- via (Opus, operator 06:26: worm detours took 5-6 chained move_tos a trip): points walked in order in one call,
+  -- each leg its own walk; a via point counts as reached within 1 tile.
+  call('queue_cancel',{}); call('stop',{})
+  p.position={x=0,y=0}
+  local r=call('move_to',{position={x=10,y=0},via={{x=3,y=0},{3,3}},pathfind=false})
+  eq(r.via,2); eq(r.legs,3); eq(r.position.x,10)
+  advance(1); eq(call('status').active.leg,'1 of 3'); eq(call('status').active.to.x,3)
+  p.position={x=2.2,y=0}; advance(1)
+  eq(call('status').active.leg,'2 of 3'); eq(call('status').active.to.y,3)
+  p.position={x=3,y=2.5}; advance(1)
+  eq(call('status').active.leg,'3 of 3'); eq(call('status').active.to.x,10)
+  p.position={x=9.8,y=0}; advance(1)
+  local last=call('status').last
+  eq(last.outcome,'arrived'); eq(last.target.x,10); eq(#last.legs,3)
+  eq(last.legs[1].outcome,'arrived'); eq(last.legs[1].to.x,3); eq(last.legs[2].to.y,3); eq(last.legs[3].outcome,'arrived'); eq(last.legs[3].to.x,10)
+  -- A leg that does not arrive ends the walk with its outcome; the rest are not walked.
+  call('move_to',{position={x=10,y=0},via={{x=3,y=0},{x=3,y=3}},pathfind=false,ticks=5})
+  advance(7)
+  last=call('status').last
+  eq(last.outcome,'timed_out'); eq(last.target.x,10); eq(last.legs[1].outcome,'timed_out'); eq(last.legs[1].to.x,3)
+  eq(last.legs[2].outcome,'not walked'); eq(last.legs[3].outcome,'not walked'); eq(last.legs[3].to.x,10)
+  fails(function() call('move_to',{position={x=10,y=0},via={}}) end,'via takes 1..16 points')
+  fails(function() call('move_to',{position={x=10,y=0},via={{x=600,y=0}}}) end,'via point 1 (600,0) must be within 512 tiles of the point before it')
+  -- waypoints is read as via.
+  r=call('move_to',{position={x=10,y=0},waypoints={{x=3,y=0}},pathfind=false}); eq(r.via,1); call('stop',{})
+  -- A queue step paused after its first via point goes on from the second.
+  p.position={x=0,y=0}
+  call('queue_submit',{steps={{action='move_to',args={position={x=10,y=0},via={{x=3,y=0},{x=3,y=3}},pathfind=false}}}})
+  advance(1); eq(call('status').active.leg,'1 of 3')
+  p.position={x=2.5,y=0}; advance(1); eq(call('status').active.leg,'2 of 3')
+  call('walk',{direction='north',ticks=2})
+  local q=call('queue_status')
+  eq(q.paused,true); eq(q.pending[1].action,'move_to'); eq(#q.pending[1].args.via,1); eq(q.pending[1].args.via[1].y,3)
+  call('queue_cancel',{}); call('stop',{})
+  p.position={x=0,y=0}
 end)()
 print('runtime: '..assertions..' assertions passed')
