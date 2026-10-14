@@ -328,6 +328,18 @@ for x = 7, 9 do for y = -1, 1 do hole_ghosts[#hole_ghosts+1] = {name='tile-ghost
 local ps2 = world(deck, hole_ghosts, {platform={hub=hub}})
 local pl2 = dryrun.check({surface=ps2, force=force, position={x=0, y=0}}, {kind='ghosts', entities={}, tiles=ring})
 eq(pl2.tiles.holes, nil, 'the hole is ordered already')
+-- A tile ghost past the box the dry run reads (Astra, shift12 12:41: a hole named where a tile ghost stood): a channel
+-- of empty space 60 tiles long that the plan closes at its mouth, with a tile ghost 55 tiles in. The flood stops at
+-- it: 54 tiles, not 60.
+local function channel(x, y)
+  if x >= -5 and x <= 60 and y >= -3 and y <= 3 and not (y == 0 and x <= 55) then return 'space-platform-foundation' end
+  return 'empty-space'
+end
+local ps3 = world(channel, {{name='tile-ghost', type='tile-ghost', ghost_name='space-platform-foundation', position={x=50.5, y=0.5}}},
+  {platform={hub=hub}})
+local pl3 = dryrun.check({surface=ps3, force=force, position={x=0, y=0}}, {kind='ghosts', entities={},
+  tiles={{name='space-platform-foundation', position={x=-4.5, y=0.5}}}})
+eq(pl3.tiles.holes, 54, 'the ghost 55 tiles in fills its tile')
 
 -- A build batch names the entry it stops at (review: exists, out of reach and late tiles never counted).
 local _, _, bc = dryrun.check(p, {kind='build', entities={

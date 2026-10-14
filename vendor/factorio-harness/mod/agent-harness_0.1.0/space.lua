@@ -25,10 +25,14 @@ return function(api)
     for _,pl in pairs(p.force.platforms) do if pl.valid then names[#names+1]=pl.name end end
     error('no platform named '..tostring(name)..(#names>0 and '; platforms: '..table.concat(names,', ') or '; create one with platform_create'),0)
   end
+  -- Where a platform is, by freight.lua's rule (the platform_arrived wait reads the same): a stop, a location while
+  -- still on its path, or the leg in the way it is flown with the share flown (Luna, shift12: `nauvis->gleba 27%`
+  -- was the connection's own order while Sunward flew gleba->nauvis, 73% of the way).
+  local freight=api.freight or require('freight')(api)
   local function location(pl)
-    if pl.space_location then return pl.space_location.name end
-    local c=pl.space_connection
-    if c then return string.format('%s->%s %d%%',c.from.name,c.to.name,math.floor((pl.distance or 0)*100+0.5)) end
+    local w=freight.where(pl)
+    if w.at then return w.stopped and w.at or w.at..' (on its path, not stopped)' end
+    if w.leg then return string.format('%s->%s %d%%',w.leg.from,w.leg.to,math.floor(w.leg.flown*100+0.5)) end
   end
   local top_items,try
   -- Hub trash (operator 09:04, Astra: Sunward's 50 processing units and 50 low
@@ -137,7 +141,7 @@ return function(api)
     end
     assert(a.active==nil or type(a.active)=='boolean','active must be true or false: switch the section on or off')
     local changing=a.set~=nil or a.clear~=nil or a.clear_all~=nil or a.active~=nil
-    local touched
+    local touched,stored
     if changing then
       local sec
       if a.section~=nil then
@@ -152,9 +156,17 @@ return function(api)
       touched=sec
       if a.active~=nil then sec.active=a.active end
       if a.clear_all then sec.filters={} end
+      -- What is stored for each item touched, read back from its slot (Luna, shift12 12:47): `processing-unit 0..400
+      -- from vulcanus (was 0..200 from vulcanus)`, `coal: cleared (was coal=500 from vulcanus)`.
+      local is_hub=hub~=nil
+      stored={}
       for _,name in ipairs(a.clear or {}) do
         local i,found=slot_of(sec,item_name(name),'normal')
-        if found then sec.clear_slot(i) end
+        if found then
+          local was=filter_text(sec.get_slot(i),is_hub)
+          sec.clear_slot(i)
+          stored[#stored+1]=name..': cleared'..(was and ' (was '..was..')' or '')
+        else stored[#stored+1]=name..': no request to clear in section '..sec.index end
       end
       assert(a.set==nil or (type(a.set)=='table' and #a.set<=100),'set requires an array of {item,min,max?,quality?,from?}')
       for _,r in ipairs(a.set or {}) do
@@ -167,8 +179,25 @@ return function(api)
         local name,quality=item_name(r.item),r.quality or 'normal'
         local min=api.integer(r.min,0,0,1000000000,'min')
         assert(r.max==nil or (type(r.max)=='number' and r.max>=min),'max must be at least min')
-        local i=slot_of(sec,name,quality)
-        sec.set_slot(i,{value={type='item',name=name,quality=quality,comparator='='},min=min,max=r.max,import_from=r.from})
+        local i,found=slot_of(sec,name,quality)
+        local old=found and sec.get_slot(i) or nil
+        -- The import planet: the one named, else the one the slot already has (Luna, shift12 19:30: an edit of min
+        -- and max without from turned three requests from vulcanus into from nauvis).
+        local from,kept=r.from,false
+        if from~=nil then
+          local names={}
+          for n in pairs(prototypes.space_location or {}) do names[#names+1]=n end
+          table.sort(names)
+          assert(type(from)=='string' and prototypes.space_location[from],
+            'from is the planet a platform hub imports the item from, a space location ('..table.concat(names,', ')..'): '..tostring(from)..' is not one')
+        elseif old and old.import_from then
+          from=type(old.import_from)=='string' and old.import_from or try(function() return old.import_from.name end)
+          kept=from~=nil
+        end
+        local was=old and filter_text(old,is_hub)
+        sec.set_slot(i,{value={type='item',name=name,quality=quality,comparator='='},min=min,max=r.max,import_from=from})
+        local now=filter_text(sec.get_slot(i),is_hub) or name
+        stored[#stored+1]=now..(kept and is_hub and ' (import planet kept: not named in this edit)' or '')..(was and was~=now and ' (was '..was..')' or '')
       end
     end
     local out={target=label,sections=list_sections(secs,a.platform~=nil or (chest and chest.type=='space-platform-hub')),from_buffers=buffers}
@@ -180,6 +209,7 @@ return function(api)
         #off>1 and 's' or '',table.concat(off,', '),#off>1 and 'are' or 'is',#off>1 and 'their' or 'its')
     end
     out.changed_section=touched and touched.index or nil
+    out.stored=stored and #stored>0 and stored or nil
     if hub and hub.valid and keep then
       local c=keep.construction(hub)
       out.construction_requests=c and (switched and 'on (switched on now: the game fills its section from the platform\'s ghosts within a second)' or 'on')
@@ -264,20 +294,14 @@ return function(api)
     local here=try(function() return pl.space_location.name end)
     -- Waiting at the current stop: the next one is the stop after it.
     if here and stop==here and #records>0 then out.next_stop=records[cur%#records+1].station else out.next_stop=stop end
-    local c=try(function() return pl.space_connection end)
-    if c then
-      local from,to=c.from.name,c.to.name
-      local d=try(function() return pl.distance end) or 0
-      local last=try(function() return pl.last_visited_space_location.name end)
-      local back
-      if stop==from or stop==to then back=stop==from else back=last==to end
-      local left=(back and d or 1-d)*c.length
-      -- The leg in the way it is flown (at keeps the connection's own order).
-      out.leg=back and to..'->'..from or from..'->'..to
-      out.heading_to=back and from or to
-      out.leg_km=c.length
-      out.leg_left_km=math.floor(left+0.5)
-      if type(speed)=='number' and speed>0 then out.eta_min=math.floor(left/(speed*60)/6+0.5)/10 end
+    local l=freight.leg(pl)
+    if l then
+      -- The leg in the way it is flown (at says the same, with the share flown).
+      out.leg=l.from..'->'..l.to
+      out.heading_to=l.to
+      out.leg_km=l.length
+      out.leg_left_km=math.floor(l.left_km+0.5)
+      if l.eta_ticks then out.eta_min=math.floor(l.eta_ticks/60/6+0.5)/10 end
     end
     return next(out) and out or nil
   end
@@ -588,7 +612,14 @@ return function(api)
           row.repair_packs,row.damaged=repair.repair_packs,#list>0 and list or nil
           row.damaged_count=count>#list and count or nil
         end
-        if a.platform then detail(pl,row); row.construction_blocked=try(function() return M.blockers(pl) end) end
+        if a.platform then
+          detail(pl,row); row.construction_blocked=try(function() return M.blockers(pl) end)
+          -- Its last stops and legs (expected, left, came aboard, spoiled, rockets) and its spoilable items now
+          -- against the arrival (Luna, shift12 12:47).
+          local fr=try(function() return freight.read(pl) end)
+          if fr then row.freight={}; for i,s in ipairs(fr) do row.freight[i]=s.line end end
+          row.spoiling=try(function() return freight.freshness(pl) end)
+        end
         out.platforms[#out.platforms+1]=row
       end
     end
@@ -1072,11 +1103,11 @@ return function(api)
   end
   M.schema={
     requests={surface='optional planet name, with position: a requester or buffer chest or landing pad there by remote view, where our force sees the chunk (the reply\'s target says on which surface)',target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
-      set='array of {item,min,max?,quality?,from? (planet to import from, platform hubs)}; replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
+      set='array of {item,min,max?,quality?,from? (planet to import from, platform hubs; omitted: the planet the slot already has is kept)}; replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       active='boolean: switch the section on or off (the GUI\'s checkbox; a section that is off requests nothing)',
       construction_requests='platform hub: boolean, the hub\'s Request missing construction materials (on: the game keeps a section requesting what the platform\'s ghosts need; a paste of a hub blueprint that has it off switches it off, and paste switches it back on)',
-      returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"]}], changed_section, note (sections that are off but hold requests); on a platform hub: construction_requests (on: its controlled section lists what the ghosts need), construction_overlap (items a manual section requests too: the hub requests the sum), over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); call with no set/clear/active to just read'},
-    platforms={platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), thrust_inputs (a line per thruster input under half full: the pumps, tanks and machines behind it and why they stop, down to the hub\'s asteroid chunks), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface)',returns='platforms [{name, state, at (location or from->to %), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to, leg_km, leg_left_km, eta_min (at the current speed), schedule, stops (each stop with its wait conditions: waiting here with how far each is (time left, inactivity, the hub\'s count for item_count, unmet requests), flying to it, next), hub, hub_items, hub_slots (free of all), hub_trash, hub_trash_note (where the game sends the trash: kept in flight; at a planet stop down in cargo pods to its landing pad, or with none as cargo-pod containers near (0,0)), requests, requests_off (in hub sections switched off: not requested), leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
+      returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"]}], changed_section, stored (each item this call set or cleared, as read back from its slot: "processing-unit 0..400 from vulcanus (import planet kept: not named in this edit) (was 0..200 from vulcanus)", "coal: cleared (was coal=500 from vulcanus)"), note (sections that are off but hold requests); on a platform hub: construction_requests (on: its controlled section lists what the ghosts need), construction_overlap (items a manual section requests too: the hub requests the sum), over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); call with no set/clear/active to just read'},
+    platforms={platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), thrust_inputs (a line per thruster input under half full: the pumps, tanks and machines behind it and why they stop, down to the hub\'s asteroid chunks), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface), freight (its last 6 stops and legs, newest first: per stop what the planet\'s landing pads asked of the hub on arrival (expected down), what the hub asks from that planet (expected up), what left the hub and came aboard (net over the stop), what spoiled aboard, rockets launched to it with their cargo; per leg the spoilable items aboard at departure, spoiled on the way and at arrival), spoiling (the hub\'s spoilable items: the first stack to spoil and its share; in flight how many spoil before the arrival and when the next spoils after it)',returns='platforms [{name, state, at (the location where it is stopped; a location it is still on its path at says so; in flight the leg as flown, from->to with the share flown), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to, leg_km, leg_left_km, eta_min (at the current speed), schedule, stops (each stop with its wait conditions: waiting here with how far each is (time left, inactivity, the hub\'s count for item_count, unmet requests), flying to it, next), hub, hub_items, hub_slots (free of all), hub_trash, hub_trash_note (where the game sends the trash: kept in flight; at a planet stop down in cargo pods to its landing pad, or with none as cargo-pod containers near (0,0)), requests, requests_off (in hub sections switched off: not requested), leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_zero|time|inactivity|..., ticks?, compare=and|or}]}; [] clears',current='1-based stop to head for (default 1)',paused='boolean: pause/unpause thrust and the schedule (paused on a route, the platform stays among its asteroids and drifts back; the reply\'s note says so)'},
     drop={platform='platform name (default: the one you are aboard)',items='array of 1..20 {item,count,quality?} from the hub inventory',position='optional {x,y} to land near when the planet has no landing pad of ours (default: a bot\'s last spot there, else the spawn point)',to='optional teammate name or list: told where it landed too, in their team block',

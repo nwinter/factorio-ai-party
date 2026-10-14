@@ -250,7 +250,8 @@ surface.find_entities_filtered=function(f) return f.type=='electric-pole' and po
 advance(3*3700)  -- past the 60 s the networks view is kept; the pole map, then the view, each spread over a minute (walk.lua)
 runtime.operator.shift_start()
 local sh=sol('status').team.shift
-assert(sh and sh.networks and sh.networks[1]:find('^nauvis electric #4 %(3 poles near %(10,0%)%): draw 9%.0 MW avg over'),sh and sh.networks and sh.networks[1])
+-- (Nauvis the only planet in play: the line names no planet; Nick 12:35, item 4)
+assert(sh and sh.networks and sh.networks[1]:find('^electric #4 %(3 poles near %(10,0%)%): draw 9%.0 MW avg over'),sh and sh.networks and sh.networks[1])
 eq(sh.retro,nil,'no previous shift on record')
 -- The next shift's first reply carries the retro of this one.
 advance(600); runtime.operator.shift_start()

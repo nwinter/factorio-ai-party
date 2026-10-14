@@ -182,6 +182,10 @@ def planet_facts(s):
     reached = [p for p in sp.get("planets") or [] if p] or ["Nauvis"]
     if "Nauvis" not in reached:
         reached = ["Nauvis"] + reached
+    if sp.get("active") is False and reached == ["Nauvis"]:
+        # Nick 12:35 (item 4): while Nauvis is the only planet in play the facts name no planet, as the stream cards and
+        # the agents' replies don't; wrong_place still cuts a line that puts the team on another planet.
+        return {"space_in_play": False}
     ahead = [p for p in PLANETS if p not in reached]
     f = {"planets_reached": reached}
     if ahead:
@@ -1345,6 +1349,8 @@ def wrong_place(low, facts):
         if f"shake{num}" not in json.dumps(facts).lower():
             return f"run name not in facts: {m.group(0)}"
     reached = facts.get("planets_reached")
+    if not reached and facts.get("space_in_play") is False:
+        reached = ["Nauvis"]   # (the facts name no planet while Nauvis is the only one in play)
     if reached:
         # shake11: "Fulgora discovery sits at eighteen percent" is the research Planet discovery Fulgora, which the
         # facts name; the reached/not-reached lists themselves do not count

@@ -350,6 +350,8 @@ b=brief('miner'); eq(b.last.kind,'mine'); eq(b.last.outcome,'duration_elapsed');
 assert(mine.mined>2,'mined on after the update')
 advance(due.waiter-tick)
 b=brief('waiter'); eq(b.last.kind,'gather'); eq(b.last.outcome,'collected'); eq(b.last.tick,due.waiter); eq(b.last.took,'iron-gear-wheel*3')
+-- Set up as a runtime before 13:45 left it (no counts in its waiting): counted from the update on (stock.lua carried).
+eq(b.last.made,'none'); eq(b.last.counted_from,'made, inserters_took and left_otherwise are counted from tick '..(at+1)..' (a harness update); the wait began at tick '..waiting.waiting.since)
 advance(due.shooter-tick+1)
 local lc=storage.agent_harness.last_combat[index('shooter')]
 eq(lc.outcome,'duration_elapsed'); eq(lc.tick,due.shooter+1)

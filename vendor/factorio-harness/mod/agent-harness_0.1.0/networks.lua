@@ -40,6 +40,7 @@ return function(api)
   local FUEL_SCAN = 300   -- chests and belt tiles read per alert (00:26 rule: bounded reads on the live world)
   local FUELS = {'coal', 'solid-fuel', 'wood', 'rocket-fuel', 'nuclear-fuel'}
   local MAX_SCAN, MAX_GHOSTS, VIEW_TICKS, NEAR_BOILER = 20000, 4000, 3600, 12   -- the view: kept 60 s (task-statuscost)
+  local ITEMS_TOP = 6   -- items named on a logistic network's line, held and asked (Gemini, 12:20)
   -- Entities read a step by the background view and pole map, and boilers whose feeders are read a step (operator
   -- 04:00: 1500 a tick, and every boiler's feeders and belts in one tick, burst in single game seconds).
   local SLICE, BOILER_SLICE = 150, 2
@@ -190,6 +191,62 @@ return function(api)
     end
     n.busy, n.unfilled = busy, unfilled
   end
+  -- Stock per logistic network every 5 min, the last 8 kept (35 min), for the look-ahead (lookahead.lua, Nick 12:35):
+  -- items whose stock falls at the last 30 min's rate to zero within 2 hours (all game time).
+  local STOCK_EVERY, STOCK_KEEP, STOCK_LOOK, STOCK_HORIZON = 18000, 8, 108000, 432000
+  local function sample_stock(n)
+    n.stock = n.stock or {}
+    local seen = {}
+    for _, f in ipairs(forces()) do
+      for _, surface in ipairs(surfaces()) do
+        for _, ln in ipairs(logistic_networks(f, surface)) do
+          local id = try(function() return ln.network_id end)
+          if id then
+            local key = f.name .. '|' .. id
+            seen[key] = true
+            local counts = {}
+            for _, x in ipairs(try(function() return ln.get_contents() end) or {}) do
+              local name = type(x.name) == 'table' and x.name.name or x.name
+              if name then counts[name] = (counts[name] or 0) + (x.count or 0) end
+            end
+            local h = n.stock[key] or {force=f.name, id=id, samples={}}
+            h.surface = surface.name
+            h.samples[#h.samples+1] = {tick=game.tick, counts=counts}
+            while #h.samples > STOCK_KEEP do table.remove(h.samples, 1) end
+            n.stock[key] = h
+          end
+        end
+      end
+    end
+    for key in pairs(n.stock) do if not seen[key] then n.stock[key] = nil end end
+  end
+  -- Rows {name, id, surface, ticks (to zero), left}, soonest first, at most max; and whether any network has 30 min
+  -- of samples yet.
+  function M.running_out(f, max)
+    local n = store()
+    local rows, enough = {}, false
+    for _, h in pairs(n.stock or {}) do
+      local now = h.force == f.name and h.samples[#h.samples]
+      local old
+      for i = #h.samples - 1, 1, -1 do
+        if now and now.tick - h.samples[i].tick >= STOCK_LOOK then old = h.samples[i]; break end
+      end
+      if old then
+        enough = true
+        local dt = now.tick - old.tick
+        for name, before in pairs(old.counts) do
+          local left = now.counts[name] or 0
+          if left > 0 and left < before then
+            local ticks = left / ((before - left) / dt)
+            if ticks <= STOCK_HORIZON then rows[#rows+1] = {name=name, id=h.id, surface=h.surface, ticks=ticks, left=left} end
+          end
+        end
+      end
+    end
+    table.sort(rows, function(a, b) return a.ticks < b.ticks or (a.ticks == b.ticks and a.name < b.name) end)
+    while max and #rows > max do table.remove(rows) end
+    return rows, enough
+  end
   -- task-statuscost: the requests are looked at every 30 s (unfilled for 60 s,
   -- no idle robot for 10 min); the poles are mapped again by map_step, a walk
   -- spread over each VIEW_TICKS (at once only when there is no map yet).
@@ -205,6 +262,7 @@ return function(api)
     if tick % SAMPLE ~= 0 then return end
     if not n.map_tick then map_poles(n) end
     if not n.watch_tick or tick - n.watch_tick >= WATCH_TICKS then watch_logistics(n); n.watch_tick = tick end
+    if not n.stock_tick or tick - n.stock_tick >= STOCK_EVERY then pcall(sample_stock, n); n.stock_tick = tick end
     sample(n)
   end
 
@@ -403,6 +461,7 @@ return function(api)
               if not last or game.tick - last.tick > OWN_TICKS then st.boiler_own[unit] = nil end
             end
             net.fuel_min = own / (fed_kw * 1000) / 60
+            net.feed_low = M.feed_chests(net.boilers, surface, f)
           end
           net.fuel_under = under
           table.sort(low, function(a, b) return a.min < b.min end)
@@ -432,6 +491,33 @@ return function(api)
             net.lowest_text = string.format('lowest boiler %s: %d min of %s; %s', at(lb.e.position.x, lb.e.position.y), math.floor(lb.min),
               burner_fuel(lb.e) or 'no fuel', lb.feeder or 'no inserter feeds it')
             parts[#parts+1] = net.lowest_text
+          end
+          -- Feed chests (Haiku, 12:20): each chest the boilers' feeders take from, its fuel and rate over the last 10 min;
+          -- the 2 with the fewest minutes left at that rate (falling ones first) on the line, all in net.feed_rates.
+          local seen, rates = {}, {}
+          for _, b in ipairs(net.boilers) do
+            local c = b.chest
+            local unit = c and c.e.valid and try(function() return c.e.unit_number end)
+            if unit and not seen[unit] then
+              seen[unit] = true
+              local r = M.feed_rate(c.e, c.count)
+              rates[#rates+1] = {chest=c.e.name, position={x=c.e.position.x, y=c.e.position.y}, count=c.count, held=c.held or 'no fuel',
+                per_min=r and r.per_min, minutes_left=r and r.minutes_left, rate=r and r.text or 'rate not measured yet'}
+            end
+          end
+          table.sort(rates, function(x, y)
+            local lx, ly = x.minutes_left or math.huge, y.minutes_left or math.huge
+            if lx ~= ly then return lx < ly end
+            return x.count < y.count
+          end)
+          net.feed_rates = #rates > 0 and rates or nil
+          if #rates > 0 then
+            local shown = {}
+            for i = 1, math.min(2, #rates) do
+              local x = rates[i]
+              shown[i] = string.format('%s %s %s, %s', x.chest, at(x.position.x, x.position.y), x.held, x.rate)
+            end
+            parts[#parts+1] = 'feed chests: ' .. table.concat(shown, '; ') .. (#rates > 2 and string.format(' (+%d more)', #rates - 2) or '')
           end
         end
         net.line = table.remove(parts, 1) .. ': ' .. table.concat(parts, '; ')
@@ -582,8 +668,202 @@ return function(api)
     end
     return out
   end
-  local function logistic(n, f, surface)
+  -- Robot delays (Nick 12:35: world n had 1 construction robot against 325 logistic robots while Astra's 75-entity
+  -- layout waited as ghosts). Construction backlog: the ghosts, deconstruction and upgrade orders in a network's
+  -- construction area (its bounding box; at most MAX_GHOSTS), each remembered with the tick a view first saw it
+  -- (n.orders per force, kept while seen), so the wait is from then; the cause of the oldest waits (up to CAUSE_LOOK):
+  -- outside every roboport's construction area, no construction robots, items missing in this network (and where
+  -- another network holds them), all robots busy (jobs per robot), else not seen. Deliveries: requests unfilled for
+  -- 5+ min while providers or storage hold the item free (the engine's supply counts, net of pickups robots have
+  -- reserved), with what the robots are doing.
+  local ORDER_WAIT, CAUSE_LOOK = 18000, 16
+  local function order_key(e)
+    local u = try(function() return e.unit_number end)
+    return u and tostring(u) or (e.name .. '@' .. e.position.x .. ',' .. e.position.y)
+  end
+  local function order_item(e, kind)
+    local proto = kind == 'ghost' and try(function() return e.ghost_prototype end)
+      or kind == 'upgrade' and try(function() return e.get_upgrade_target() end) or nil
+    local items = proto and try(function() return proto.items_to_place_this end)
+    local first = items and items[1]
+    return first and (type(first) == 'string' and first or first.name) or nil
+  end
+  local function plural(n, word) return n .. ' ' .. word .. (n == 1 and '' or 's') end
+  -- The finds of one network's orders: {kind, filter}; the background view makes one a step.
+  local function order_finds(f, b)
+    local area = {{b.x0, b.y0}, {b.x1, b.y1}}
+    return {{kind='ghost', q={area=area, type='entity-ghost', force=f, limit=MAX_GHOSTS}},
+      {kind='deconstruct', q={area=area, to_be_deconstructed=true, limit=MAX_GHOSTS}},
+      {kind='upgrade', q={area=area, to_be_upgraded=true, force=f, limit=MAX_GHOSTS}}}
+  end
+  -- found: {ghost=list, deconstruct=list, upgrade=list} from those finds (nil: made here).
+  local function backlog(n, ln, f, surface, b, v, others, found)
+    if not found then
+      found = {}
+      for _, x in ipairs(order_finds(f, b)) do found[x.kind] = try(function() return surface.find_entities_filtered(x.q) end) or {} end
+    end
+    local seen, next_seen = n.orders[f.name] or {}, n.orders_next[f.name]
+    local list, counts = {}, {ghost=0, deconstruct=0, upgrade=0}
+    local function take(kind, found)
+      for _, e in ipairs(found or {}) do
+        if e.valid and #list < MAX_GHOSTS then
+          local k = order_key(e)
+          local first = seen[k] or game.tick
+          next_seen[k] = first
+          counts[kind] = counts[kind] + 1
+          list[#list+1] = {e=e, kind=kind, first=first}
+        end
+      end
+    end
+    take('ghost', found.ghost); take('deconstruct', found.deconstruct); take('upgrade', found.upgrade)
+    table.sort(list, function(x, y) return x.first < y.first end)
+    local waited, waited_ghosts = 0, 0
+    for _, o in ipairs(list) do
+      if game.tick - o.first >= ORDER_WAIT then waited = waited + 1; if o.kind == 'ghost' then waited_ghosts = waited_ghosts + 1 end end
+    end
+    local R = v.construction
+    local out = {ghosts=counts.ghost, deconstruct=counts.deconstruct, upgrade=counts.upgrade, total=#list, waited=waited,
+      waited_ghosts=waited_ghosts, oldest_min=#list > 0 and math.floor((game.tick - list[1].first) / 3600) or nil,
+      robots=R.total, idle=R.idle, capped=#list >= MAX_GHOSTS or nil}
+    if waited == 0 then return out end
+    local look = {}
+    for i = 1, math.min(CAUSE_LOOK, waited) do look[i] = list[i] end
+    local cells = try(function() return ln.cells end) or {}
+    local inside = 0
+    for _, o in ipairs(look) do
+      for _, c in ipairs(cells) do
+        if try(function() return c.is_in_construction_range(o.e.position) end) then inside = inside + 1; break end
+      end
+    end
+    local missing, missing_set, present = {}, {}, 0
+    for _, o in ipairs(look) do
+      local item = o.kind ~= 'deconstruct' and o.e.valid and order_item(o.e, o.kind)
+      if item then
+        if (try(function() return ln.get_item_count(item) end) or 0) > 0 then present = present + 1
+        elseif not missing_set[item] then missing_set[item] = true; missing[#missing+1] = item end
+      end
+    end
+    -- (the items present: every item the oldest orders need is in the network, and they lie in its construction area)
+    out.items_present = #missing == 0 and present > 0 and inside > 0
+    if inside == 0 then out.cause = 'outside every roboport construction area'
+    elseif R.total == 0 then out.cause = 'no construction robots'
+    elseif #missing > 0 then
+      local parts = {}
+      for i = 1, math.min(4, #missing) do
+        local item, where = missing[i], 'in no other network'
+        for _, o in ipairs(others) do
+          if o.id ~= v.id and (try(function() return o.ln.get_item_count(item) end) or 0) > 0 then
+            where = string.format('held in network #%d near (%d,%d)%s', o.id, o.x, o.y, o.surface ~= surface.name and ' on ' .. o.surface or '')
+            break
+          end
+        end
+        parts[#parts+1] = item .. ' (' .. where .. ')'
+      end
+      out.cause = 'items missing in this network: ' .. table.concat(parts, ', ')
+    elseif R.idle == 0 then
+      out.cause = string.format('all %s busy (%d jobs per robot)', plural(R.total, 'construction robot'), math.ceil(#list / math.max(1, R.total)))
+    else
+      out.cause = string.format('not seen: %d idle construction robots and the items in the network', R.idle)
+    end
+    return out
+  end
+  local function backlog_text(k)
+    if not k or k.total == 0 then return 'construction backlog: none' end
+    return string.format('construction backlog: %s, %d to deconstruct, %d to upgrade%s; %d waited 5+ min, oldest %d min%s',
+      plural(k.ghosts, 'ghost'), k.deconstruct, k.upgrade, k.capped and ' (counted up to ' .. MAX_GHOSTS .. ')' or '', k.waited,
+      k.oldest_min or 0, k.cause and '; cause: ' .. k.cause or '')
+  end
+  local DELIVERY_WAIT = 18000
+  local function deliveries(n, ln, v, short)
+    local stuck, items = 0, {}
+    for _, x in ipairs(short) do
+      local since = n.unfilled[x.key]
+      if since and game.tick - since >= DELIVERY_WAIT then
+        local s = try(function() return ln.get_supply_counts(x.name) end) or {}
+        local free = math.max(0, (s['active-provider'] or 0) + (s['passive-provider'] or 0)) + math.max(0, s.storage or 0)
+        if free > 0 then stuck = stuck + 1; items[x.name] = free end
+      end
+    end
+    if stuck == 0 then return nil end
+    local L, causes = v.logistic, {}
+    local waiting, ports, charging = 0, 0, 0
+    for _, c in ipairs(try(function() return ln.cells end) or {}) do
+      local w = try(function() return c.to_charge_robot_count end) or 0
+      charging = charging + (try(function() return c.charging_robot_count end) or 0)
+      if w > 0 then waiting, ports = waiting + w, ports + 1 end
+    end
+    -- (charging and waiting robots by kind where the cells list them, else every robot at the roboports)
+    if L.charging then charging, waiting = L.charging, L.waiting end
+    local carrying = math.max(0, L.total - L.idle - charging - waiting)
+    if L.total == 0 then causes[#causes+1] = 'no logistic robots'
+    elseif L.idle == 0 then causes[#causes+1] = 'no idle logistic robots' end
+    if waiting > 0 then causes[#causes+1] = string.format('%s waiting to charge at %s', plural(waiting, 'robot'), plural(ports, 'roboport')) end
+    if L.total > 0 and L.idle == 0 and carrying > 0 then causes[#causes+1] = string.format('%d carrying for other requests', carrying) end
+    if L.total > 0 and L.idle > 0 then causes[#causes+1] = string.format('%d idle logistic robots', L.idle) end
+    local list, kinds = top_items(items, 3)
+    return {stuck=stuck, items=items, cause=table.concat(causes, '; '),
+      text=string.format('deliveries waiting 5+ min with the item free in the network: %d (%s free%s); %s', stuck, list, kinds > 3 and ', ...' or '',
+        table.concat(causes, '; '))}
+  end
+  -- Every network of the force, for where a missing item is held.
+  local function other_networks(f)
+    local others = {}
+    for _, s in ipairs(surfaces()) do
+      for _, ln in ipairs(logistic_networks(f, s)) do
+        local id = try(function() return ln.network_id end)
+        local c = try(function() local cell = ln.cells[1]; return cell and cell.owner and cell.owner.position end)
+        if id then others[#others+1] = {id=id, ln=ln, surface=s.name, x=c and math.floor(c.x + 0.5) or 0, y=c and math.floor(c.y + 0.5) or 0} end
+      end
+    end
+    return others
+  end
+  local function logistic_line(surface, r)
+    local items, kinds = top_items(r.items, 3)
+    r.line = string.format('%s logistic #%d: %s%s; requests unfilled 60+ s: %d%s; %s%s',
+      surface.name, r.id, r.view.text,
+      r.busy_since and game.tick - r.busy_since >= 600 and string.format('; no idle logistic robot for %d min', math.floor((game.tick - r.busy_since) / 3600)) or '',
+      r.unfilled, kinds > 0 and ' (' .. items .. (kinds > 3 and ', ...' or '') .. ' missing)' or '',
+      backlog_text(r.backlog), r.deliveries and '; ' .. r.deliveries.text or '')
+    local held, kinds_held = top_items(r.stock or {}, ITEMS_TOP)
+    if kinds_held > 0 then r.line = r.line .. string.format('; holds %s%s', held, kinds_held > ITEMS_TOP and string.format(' (+%d kinds)', kinds_held - ITEMS_TOP) or '') end
+    local asks, kinds_asked = top_items(r.asked or {}, ITEMS_TOP)
+    if kinds_asked > 0 then
+      local parts = {}
+      for each in asks:gmatch('[^,]+') do
+        local part = each:gsub('^%s+', '')
+        local name = part:match('^(.-) %d+$')
+        parts[#parts+1] = part .. (name and ((r.short_now or {})[name] or 0) > 0 and string.format(' (%d short)', r.short_now[name]) or '')
+      end
+      r.line = r.line .. string.format('; requesters ask %s%s', table.concat(parts, ', '), kinds_asked > ITEMS_TOP and string.format(' (+%d kinds)', kinds_asked - ITEMS_TOP) or '')
+    end
+  end
+  local function orders_store(n, f)
+    n.orders = n.orders or {}
+    n.orders_next = n.orders_next or {}
+    n.orders_next[f.name] = n.orders_next[f.name] or {}
+  end
+  -- The backlog of rows the background view deferred (their finds made one a step): found_by[id][kind] = list.
+  local function finish_orders(n, f, surface, rows, found_by)
+    orders_store(n, f)
+    local others = other_networks(f)
+    for _, r in ipairs(rows) do
+      if r.orders_area then
+        local ln
+        for _, o in ipairs(others) do if o.id == r.id then ln = o.ln end end
+        if ln then
+          r.backlog = backlog(n, ln, f, surface, r.orders_area, r.view, others, found_by[r.id] or {})
+          r.ghosts = r.backlog.ghosts
+        end
+        r.orders_area = nil
+        logistic_line(surface, r)
+      end
+    end
+  end
+  M.order_finds = order_finds
+  local function logistic(n, f, surface, defer)
     local rows, by_id = {}, {}
+    orders_store(n, f)
+    local others = not defer and other_networks(f) or nil
     for _, ln in ipairs(logistic_networks(f, surface)) do
       local id = try(function() return ln.network_id end)
       if id then
@@ -591,35 +871,51 @@ return function(api)
         local r = {id=id, roboports=v.roboports, personal=v.personal, center=v.center, view=v,
           logistic=v.logistic.total, logistic_idle=v.logistic.idle, construction=v.construction.total, construction_idle=v.construction.idle,
           ghosts=0, unfilled=0, items={}}
-        for _, x in ipairs(shortfalls(ln)) do
+        local short, short_now = shortfalls(ln), {}
+        for _, x in ipairs(short) do
           local since = n.unfilled[x.key]
           if since and game.tick - since >= UNFILLED_TICKS then r.unfilled = r.unfilled + 1; r.items[x.name] = (r.items[x.name] or 0) + x.missing end
+          short_now[x.name] = (short_now[x.name] or 0) + x.missing
         end
+        -- The items it holds and what its requesters ask (Gemini, 12:20): the network's contents (provider, storage and
+        -- buffer chests, as its GUI lists them) and the requests summed over its requester points, with what is short now.
+        local stock = {}
+        for k, v in pairs(try(function() return ln.get_contents() end) or {}) do
+          local name, c = type(v) == 'table' and v.name or k, type(v) == 'table' and v.count or v
+          if type(name) == 'table' then name = name.name end
+          if type(name) == 'string' and type(c) == 'number' and c > 0 then stock[name] = (stock[name] or 0) + c end
+        end
+        local asked = {}
+        for _, pt in ipairs(try(function() return ln.requester_points end) or {}) do
+          for _, flt in ipairs(try(function() return pt.filters end) or {}) do
+            local name = type(flt.name) == 'table' and flt.name.name or flt.name
+            if name and (flt.count or 0) > 0 then asked[name] = (asked[name] or 0) + flt.count end
+          end
+        end
+        r.stock, r.asked, r.short_now = stock, asked, short_now
         r.busy_since = n.busy[id]
+        local b = v.construction_area
+        if b and defer then r.orders_area = b
+        elseif b then
+          r.backlog = backlog(n, ln, f, surface, b, v, others)
+          r.ghosts = r.backlog.ghosts
+        end
+        r.deliveries = deliveries(n, ln, v, short)
         rows[#rows+1] = r; by_id[id] = r
       end
     end
     if #rows == 0 then return rows end
-    -- Ghosts: one bounded count per network over its construction area's bounding box (00:26 rule: a lookup per
-    -- ghost, up to 4000, was the costliest part of this view).
-    for _, r in ipairs(rows) do
-      local b = r.view.construction_area
-      if b then
-        r.ghosts = try(function()
-          return surface.count_entities_filtered{area={{b.x0, b.y0}, {b.x1, b.y1}}, type='entity-ghost', force=f, limit=MAX_GHOSTS}
-        end) or 0
-      end
-    end
-    for _, r in ipairs(rows) do
-      local items, kinds = top_items(r.items, 3)
-      r.line = string.format('%s logistic #%d: %s%s; requests unfilled 60+ s: %d%s; ghosts in its construction area: %d%s',
-        surface.name, r.id, r.view.text,
-        r.busy_since and game.tick - r.busy_since >= 600 and string.format('; no idle logistic robot for %d min', math.floor((game.tick - r.busy_since) / 3600)) or '',
-        r.unfilled, kinds > 0 and ' (' .. items .. (kinds > 3 and ', ...' or '') .. ' missing)' or '',
-        r.ghosts, r.ghosts >= MAX_GHOSTS and ' (counted up to ' .. MAX_GHOSTS .. ')' or '')
-    end
+    for _, r in ipairs(rows) do logistic_line(surface, r) end
     table.sort(rows, function(a, b) return a.roboports > b.roboports or (a.roboports == b.roboports and a.id < b.id) end)
     return rows
+  end
+  -- A view that has read every network: the orders it saw are the ones remembered (gone ones are dropped).
+  local function orders_seen(n, f)
+    if n.orders_next and n.orders_next[f.name] then
+      n.orders = n.orders or {}
+      n.orders[f.name] = n.orders_next[f.name]
+      n.orders_next[f.name] = nil
+    end
   end
 
   -- The turrets by name (by: counted already by the background view) and ammo used in the last hour.
@@ -663,6 +959,7 @@ return function(api)
       local e, l, t = electric(n, f, surface), logistic(n, f, surface), turrets(f, surface)
       if #e > 0 or #l > 0 or t then v.surfaces[#v.surfaces+1] = {name=surface.name, electric=e, logistic=l, turrets=t} end
     end
+    orders_seen(n, f)
     n.views[f.name] = v
     return v
   end
@@ -712,7 +1009,7 @@ return function(api)
       if not n.map_tick then fresh_map(n) end
       local steps = {}
       for _, s in ipairs(surfaces()) do
-        for _, step in ipairs({'walk', 'boilers', 'supply', 'rows', 'logistic', 'turrets'}) do steps[#steps+1] = {step=step, surface=s.name} end
+        for _, step in ipairs({'walk', 'boilers', 'supply', 'rows', 'logistic', 'orders', 'turrets'}) do steps[#steps+1] = {step=step, surface=s.name} end
       end
       steps[#steps+1] = {step='done'}
       n.view_steps = n.view_steps or {}
@@ -731,6 +1028,7 @@ return function(api)
           v2.surfaces[#v2.surfaces+1] = r
         end
       end
+      orders_seen(n, f)
       n.views[f.name] = v2
       n.view_steps[f.name] = job.n
       n.view_jobs[f.name] = nil
@@ -757,9 +1055,30 @@ return function(api)
       return
     end
     job.i = job.i + 1
+    -- The construction backlog's finds, one a step (ghosts, deconstruction, upgrades of each network), then each
+    -- network's backlog from them.
+    if step.step == 'orders' then
+      local q = job.orders
+      if not q then
+        q = {list={}, i=1, found={}}
+        for _, r in ipairs(row.logistic or {}) do
+          if r.orders_area then for _, x in ipairs(order_finds(f, r.orders_area)) do q.list[#q.list+1] = {id=r.id, kind=x.kind, q=x.q} end end
+        end
+        job.orders = q
+      end
+      local x = q.list[q.i]
+      if x then
+        q.found[x.id] = q.found[x.id] or {}
+        q.found[x.id][x.kind] = try(function() return surface.find_entities_filtered(x.q) end) or {}
+        q.i = q.i + 1
+      end
+      if q.i <= #q.list then job.i = job.i - 1   -- (the step repeats until every find is made)
+      else finish_orders(n, f, surface, row.logistic or {}, q.found); job.orders = nil end
+      return
+    end
     if not ctx then
       if step.step == 'turrets' then row.turrets = turrets(f, surface, {}) end
-      if step.step == 'logistic' then row.logistic = logistic(n, f, surface) end
+      if step.step == 'logistic' then row.logistic = logistic(n, f, surface, true) end
     elseif step.step == 'boilers' then
       for _, e in ipairs(ctx.boiler_list) do e_boiler(ctx, e) end
       ctx.boiler_list = nil
@@ -775,7 +1094,7 @@ return function(api)
       if ctx.supply_at <= #ctx.supply then job.i = job.i - 1   -- (the step repeats until every boiler is read)
       else ctx.supplied, ctx.supply, ctx.walked = true, nil, nil end
     elseif step.step == 'rows' then row.electric = e_rows(ctx, n, surface, f)
-    elseif step.step == 'logistic' then row.logistic = logistic(n, f, surface)
+    elseif step.step == 'logistic' then row.logistic = logistic(n, f, surface, true)
     elseif step.step == 'turrets' then row.turrets = turrets(f, surface, ctx.turrets); job.ctx[step.surface] = nil end
   end
   -- Plain rows (no entities) for the read.
@@ -795,17 +1114,26 @@ return function(api)
       end
     end
     if not best then return nil end
+    -- The falling feed chest with the fewest minutes left (Haiku, 12:20), for status's science line.
+    local x = best.feed_rates and best.feed_rates[1]
+    local feed = x and x.minutes_left and {min=x.minutes_left, line=string.format('%s %s %s, %s', x.chest, at(x.position.x, x.position.y), x.held, x.rate)} or nil
     return {id=best.id, capacity_kw=best.capacity_kw, draw_kw=best.draw and best.draw.avg or nil, boilers=#best.boilers,
-      fed=best.fed, low=best.fuel_low and #best.fuel_low or 0, low_min=best.fuel_low and best.fuel_low[1] and best.fuel_low[1].min or nil}
+      fed=best.fed, low=best.fuel_low and #best.fuel_low or 0, low_min=best.fuel_low and best.fuel_low[1] and best.fuel_low[1].min or nil,
+      feed=feed}
   end
   -- The lines, the agent's surface first; at most `max` (the rest counted).
+  -- While Nauvis is the only planet in play (runtime one_planet; Nick 12:35, item 4) a line names no planet.
+  local function plain_line(f, line)
+    if api.one_planet and try(function() return api.one_planet(f) end) then return (line:gsub('^nauvis ', '')) end
+    return line
+  end
   function M.lines(f, here, max)
     local v = view(f)
     local list = {}
     local function add(s)
-      for _, r in ipairs(s.electric) do list[#list+1] = r.line end
-      for _, r in ipairs(s.logistic) do list[#list+1] = r.line end
-      if s.turrets then list[#list+1] = s.turrets.line end
+      for _, r in ipairs(s.electric) do list[#list+1] = plain_line(f, r.line) end
+      for _, r in ipairs(s.logistic) do list[#list+1] = plain_line(f, r.line) end
+      if s.turrets then list[#list+1] = plain_line(f, s.turrets.line) end
     end
     for _, s in ipairs(v.surfaces) do if s.name == here then add(s) end end
     for _, s in ipairs(v.surfaces) do if s.name ~= here then add(s) end end
@@ -821,9 +1149,10 @@ return function(api)
     local out = {}
     for _, s in ipairs(v.surfaces) do
       if a.surface == nil or a.surface == s.name then
-        local row = {surface=s.name, electric={}, logistic={}, turrets=s.turrets and {by_name=s.turrets.by, ammo_used_1h=s.turrets.used, line=s.turrets.line} or nil}
+        local row = {surface=s.name, electric={}, logistic={}, turrets=s.turrets and {by_name=s.turrets.by, ammo_used_1h=s.turrets.used, line=plain_line(p.force, s.turrets.line)} or nil}
         for _, r in ipairs(s.electric) do
           local x = plain(r, {'id', 'poles', 'machines', 'low', 'none', 'acc', 'solar', 'line'})
+          x.line = plain_line(p.force, x.line)
           x.center = {x=math.floor(r.center.x + 0.5), y=math.floor(r.center.y + 0.5)}
           x.capacity_kw = math.floor(r.capacity_kw + 0.5)
           x.generators_kw, x.solar_peak_kw = math.floor(r.cap_kw + 0.5), math.floor(r.solar_peak_kw + 0.5)
@@ -831,6 +1160,7 @@ return function(api)
           x.boilers = #r.boilers > 0 and #r.boilers or nil
           x.fuel_min = r.fuel_min and math.floor(r.fuel_min) or nil
           x.boilers_fed = r.fed
+          x.feed_chests = r.feed_rates
           x.boilers_under_10_min = r.fuel_under and #r.fuel_under or nil
           x.boilers_under_20_min = r.fuel_low and #r.fuel_low or nil
           x.lowest_boiler_min = r.lowest_min and math.floor(r.lowest_min) or nil
@@ -844,12 +1174,26 @@ return function(api)
         end
         for _, r in ipairs(s.logistic) do
           local x = plain(r, {'id', 'roboports', 'center', 'logistic', 'logistic_idle', 'construction', 'construction_idle', 'unfilled', 'ghosts', 'line'})
+          x.line = plain_line(p.force, x.line)
           x.unfilled_items = next(r.items) and r.items or nil
           x.none_idle_s = r.busy_since and math.floor((game.tick - r.busy_since) / 60) or nil
           x.personal = r.personal > 0 and r.personal or nil
           x.logistic_area, x.construction_area = r.view.logistic_area, r.view.construction_area
+          -- Its items (Gemini, 12:20): the 20 most held, and every item its requesters ask for with what is short now.
+          local held = {}
+          for name, c in pairs(r.stock or {}) do held[#held+1] = {name=name, count=c} end
+          table.sort(held, function(p, q) return p.count > q.count or (p.count == q.count and p.name < q.name) end)
+          while #held > 20 do table.remove(held) end
+          x.holds = #held > 0 and held or nil
+          local asks = {}
+          for name, c in pairs(r.asked or {}) do asks[#asks+1] = {name=name, asked=c, short=(r.short_now or {})[name] or 0} end
+          table.sort(asks, function(p, q) return p.asked > q.asked or (p.asked == q.asked and p.name < q.name) end)
+          x.requests = #asks > 0 and asks or nil
           x.logistic_robots, x.construction_robots = r.view.logistic, r.view.construction
           x.charging, x.waiting = r.view.charging, r.view.waiting
+          -- Robot delays (Nick 12:35): the construction backlog and deliveries stuck with the item free.
+          x.backlog = r.backlog
+          x.deliveries = r.deliveries and {stuck=r.deliveries.stuck, free=r.deliveries.items, cause=r.deliveries.cause} or nil
           row.logistic[#row.logistic+1] = x
         end
         out[#out+1] = row
@@ -904,13 +1248,14 @@ return function(api)
   -- A boiler in a chain: its fuel slot; a chest or machine: all it holds.
   local function held_of(src, names)
     local inv = src.type == 'boiler' and try(function() return src.burner.inventory end)
-    local parts = {}
+    local parts, total = {}, 0
     for _, name in ipairs(names) do
       local n = inv and (try(function() return inv.get_item_count(name) end) or 0) or (try(function() return src.get_item_count(name) end) or 0)
-      if n > 0 then parts[#parts+1] = n .. ' ' .. name end
+      if n > 0 then parts[#parts+1] = n .. ' ' .. name; total = total + n end
     end
-    return #parts > 0 and table.concat(parts, ', ') or nil
+    return #parts > 0 and table.concat(parts, ', ') or nil, total
   end
+  local CHESTS = {container=true, ['logistic-container']=true}
   -- Whether a feeder's source can bring fuel, {has, text}. A belt: its tile
   -- and up to BELT_WALK tiles upstream (an underground's entrance followed);
   -- when those hold none, the inserters within 3 tiles of the run that drop
@@ -918,8 +1263,9 @@ return function(api)
   local function source_fuel(src, names, surface, f)
     local pos = at(src.position.x, src.position.y)
     if not BELTS[src.type] then
-      local held = held_of(src, names)
-      return {has=held ~= nil, text=string.format('%s %s holding %s', src.name, pos, held or 'no fuel')}
+      local held, total = held_of(src, names)
+      return {has=held ~= nil, text=string.format('%s %s holding %s', src.name, pos, held or 'no fuel'), count=total, held=held,
+        chest=CHESTS[src.type] and src or nil}
     end
     local by, tiles, queue, seen, run, want = {}, 0, {src}, {}, {}, {}
     for _, name in ipairs(names) do want[name] = true end
@@ -987,7 +1333,7 @@ return function(api)
     walked = walked or {}
     for i = from or 1, to or #boilers do
       local b = boilers[i]
-      b.fed, b.feeder = false, nil
+      b.fed, b.feeder, b.chest = false, nil, nil
       local e = b.e
       local names = fuel_names(b)
       local key = table.concat(names, ',')
@@ -1004,6 +1350,8 @@ return function(api)
             if memo then walked[memo] = s end
             local text = s and string.format('%s %s from %s', ins.name, where, s.text) or string.format('%s %s with no pickup target', ins.name, where)
             if in_hand then text = string.format('%s %s holding %s in hand', ins.name, where, hand) end
+            -- The chest it takes from, for the feed chest check (M.feed_chests).
+            if s and s.chest and not b.chest then b.chest = {e=s.chest, count=s.count, held=s.held, feeder=ins.name .. ' ' .. where, names=names, tick=game.tick} end
             if in_hand or (s and s.has) then b.fed, b.feeder = true, text
             else b.feeder = b.feeder or text end
           end
@@ -1011,6 +1359,87 @@ return function(api)
       end
       b.feeder = b.feeder or 'no inserter feeds it'
     end
+  end
+  -- Feed chests running out (Haiku, 10:50: the north row's chests ran low about every 20 min): a boiler whose feeder
+  -- takes from a chest holding under FEED_LOW of its fuels, with nothing put into that chest for FEED_TICKS: its count
+  -- never rose between the looks of that time (storage feed_hist, one count per look, kept FEED_TICKS and a minute),
+  -- no robot is on the way to it with a fuel, and no inserter dropping into it holds a fuel. Returns the boilers so,
+  -- each {e, chest, count, held, feeder}.
+  local FEED_LOW, FEED_TICKS, RATE_TICKS = 20, 18000, 36000
+  -- A feed chest's fuel rate (Haiku, 12:20): its net change per minute from its look RATE_TICKS ago or the oldest
+  -- since (one at least a minute old), and the minutes left at that rate while it falls. {per_min (negative: falling),
+  -- minutes_left, over_min, text} or nil before two looks a minute apart.
+  function M.feed_rate(chest, count)
+    local unit = chest and chest.valid and try(function() return chest.unit_number end)
+    local hist = unit and (store().feed_hist or {})[unit]
+    local old
+    for _, x in ipairs(hist or {}) do
+      if game.tick - x.tick <= RATE_TICKS and game.tick - x.tick >= 3600 and not old then old = x end
+    end
+    if not old then return nil end
+    local mins = (game.tick - old.tick) / 3600
+    local per_min = (count - old.n) / mins
+    local left = per_min < 0 and count / -per_min or nil
+    local text = per_min < 0 and string.format('uses %.1f/min over %d min, %d min left', -per_min, math.floor(mins + 0.5), math.floor(left))
+      or per_min > 0 and string.format('gains %.1f/min over %d min', per_min, math.floor(mins + 0.5))
+      or string.format('unchanged over %d min', math.floor(mins + 0.5))
+    return {per_min=math.floor(per_min * 10 + 0.5) / 10, minutes_left=left and math.floor(left) or nil, over_min=math.floor(mins + 0.5), text=text}
+  end
+  function M.feed_chests(boilers, surface, f)
+    local st = store()
+    st.feed_hist = st.feed_hist or {}
+    local out, judged = {}, {}
+    for _, b in ipairs(boilers) do
+      local c = b.chest
+      local chest = c and c.e
+      local unit = chest and chest.valid and try(function() return chest.unit_number end)
+      if unit then
+        local hist = st.feed_hist[unit] or {}
+        st.feed_hist[unit] = hist
+        -- Each count at the tick it was read (the background view reads feeders some steps before its rows), in order.
+        local at_tick, known = c.tick or game.tick, false
+        for _, x in ipairs(hist) do if x.tick == at_tick then known = true end end
+        if not known then
+          local i = #hist + 1
+          while i > 1 and hist[i - 1].tick > at_tick do i = i - 1 end
+          table.insert(hist, i, {tick=at_tick, n=c.count})
+        end
+        while hist[1] and game.tick - hist[1].tick > RATE_TICKS + 3600 do table.remove(hist, 1) end
+        if judged[unit] == nil then
+          local quiet = c.count < FEED_LOW
+          -- Looks covering FEED_TICKS: the oldest kept is that old.
+          local first
+          for _, x in ipairs(hist) do if game.tick - x.tick >= FEED_TICKS then first = x end end
+          if quiet and not first then quiet = false end
+          for i = 2, #hist do
+            if quiet and hist[i].n > hist[i - 1].n and game.tick - hist[i].tick <= FEED_TICKS then quiet = false end
+          end
+          if quiet then
+            local pt = try(function() return chest.get_logistic_point(defines.logistic_member_index.logistic_container) end)
+            local coming = pt and try(function() return pt.targeted_items_deliver end) or {}
+            for k, v in pairs(coming) do
+              local name, n = type(v) == 'table' and v.name or k, type(v) == 'table' and v.count or v
+              if type(name) == 'table' then name = name.name end
+              for _, fuel in ipairs(c.names) do if name == fuel and (n or 0) > 0 then quiet = false end end
+            end
+          end
+          if quiet then
+            for _, ins in ipairs(try(function() return surface.find_entities_filtered{type='inserter', force=f, position=chest.position, radius=3, limit=32} end) or {}) do
+              if ins.valid and same(try(function() return ins.drop_target end), chest) then
+                local hand = try(function() local h = ins.held_stack; return h.valid_for_read and h.name end)
+                for _, fuel in ipairs(c.names) do if hand == fuel then quiet = false end end
+              end
+            end
+          end
+          judged[unit] = quiet
+        end
+        if judged[unit] then out[#out+1] = {e=b.e, chest=chest, count=c.count, held=c.held, feeder=c.feeder} end
+      end
+    end
+    for unit, hist in pairs(st.feed_hist) do
+      if not hist[#hist] or game.tick - hist[#hist].tick > RATE_TICKS + 3600 then st.feed_hist[unit] = nil end
+    end
+    return out
   end
   function M.fuel_sources(surface, f, center, names)
     local chests, belts = {}, {tiles=0, by={}, near={}}
@@ -1115,8 +1544,41 @@ return function(api)
         end
         local g = r.fuel_low and #r.fuel_low > 0 and M.fuel_group(s, r, f)
         if g then out[#out+1] = g end
+        -- A boiler's feed chest low with nothing put into it (M.feed_chests): one group per boiler; worse under 10, then empty.
+        for _, x in ipairs(r.feed_low or {}) do
+          if x.e.valid and x.chest.valid then
+            local unit = try(function() return x.e.unit_number end) or 0
+            local u = try(function() return x.e.last_user and x.e.last_user.name end)
+            out[#out+1] = {key='feed_chest_low|' .. s.name .. '|' .. unit, kind='feed_chest_low', surface=s.name, n=1,
+              rank=x.count == 0 and 3 or x.count < 10 and 2 or 1, names={boiler=1}, by=u and {[u]=1} or {},
+              at={{x=x.e.position.x, y=x.e.position.y}}, center={x=math.floor(x.e.position.x + 0.5), y=math.floor(x.e.position.y + 0.5)},
+              now_text=string.format('%s holding %s', x.chest.name, x.held or 'no fuel'),
+              line=string.format('boiler %s: its feed chest %s %s holds %s, nothing put into it for %d+ min (feeder %s)',
+                at(x.e.position.x, x.e.position.y), x.chest.name, at(x.chest.position.x, x.chest.position.y), x.held or 'no fuel',
+                math.floor(FEED_TICKS / 3600), x.feeder)}
+          end
+        end
       end
       for _, r in ipairs(s.logistic) do
+        local center = r.center and {x=math.floor(r.center.x + 0.5), y=math.floor(r.center.y + 0.5)}
+        -- Ghosts waiting 5+ min on robots with their items in the network (Nick 12:35).
+        local k = r.backlog
+        if k and center and (k.waited_ghosts or 0) > 0 and k.items_present then
+          local state = k.robots == 0 and 'none' or k.idle == 0 and 'busy' or k.idle .. ' idle'
+          out[#out+1] = {key='construction_wait|' .. s.name .. '|' .. r.id, kind='construction_wait', surface=s.name, n=k.waited_ghosts,
+            names={}, by={}, at={}, center=center,
+            line=string.format('ghosts waiting on robots: %d in network %d near (%d,%d), oldest %d min, %s (%s); the items are in the network',
+              k.waited_ghosts, r.id, center.x, center.y, k.oldest_min or 0, plural(k.robots, 'construction robot'), state)}
+        end
+        -- Requests unfilled 5+ min while the item is free in the network, and what the robots are doing.
+        local d = r.deliveries
+        if d and center then
+          local list, kinds = top_items(d.items, 3)
+          out[#out+1] = {key='deliveries_wait|' .. s.name .. '|' .. r.id, kind='deliveries_wait', surface=s.name, n=d.stuck,
+            names={}, by={}, at={}, center=center,
+            line=string.format('deliveries waiting on robots: %s unfilled 5+ min in network %d near (%d,%d) while providers or storage hold the item free (%s%s): %s',
+              plural(d.stuck, 'request'), r.id, center.x, center.y, list, kinds > 3 and ', ...' or '', d.cause)}
+        end
         if r.busy_since and game.tick - r.busy_since >= BUSY_TICKS and r.center then
           out[#out+1] = {key='robots_busy|' .. s.name .. '|' .. r.id, kind='robots_busy', surface=s.name, n=1, names={}, by={}, at={},
             center={x=math.floor(r.center.x + 0.5), y=math.floor(r.center.y + 0.5)},
@@ -1234,6 +1696,14 @@ return function(api)
           local b = {e=r._e}
           M.boiler_supply({b}, surface, f, walked)
           r.feeder, r.feeder_has_fuel = b.feeder, b.fed
+          -- Its feed chest: fuel, and the rate over the last 10 min from the networks view's looks (Haiku, 12:20).
+          local c = b.chest
+          if c and c.e.valid then
+            local rate = M.feed_rate(c.e, c.count)
+            r.feed_chest = {name=c.e.name, position={x=c.e.position.x, y=c.e.position.y}, holds=c.held or 'no fuel', count=c.count,
+              per_min=rate and rate.per_min, minutes_left=rate and rate.minutes_left,
+              line=string.format('%s %s %s, %s', c.e.name, at(c.e.position.x, c.e.position.y), c.held or 'no fuel', rate and rate.text or 'rate not measured yet')}
+          end
         end
         r._e = nil
       end
