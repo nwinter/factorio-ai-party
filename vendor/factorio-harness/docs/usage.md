@@ -1903,6 +1903,15 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   from {x,y}?, to {x,y}, to_name, times, items}` (100 kept per agent, the fewest dropped). The stream service reads it
   every 5 minutes into `runs/RUN/hauling.jsonl` (tools/stream/hauling.py); a shift's numbers are its last read less
   its first. Agents never see it.
+- Operator loadout (loadout.lua; Nick, 08:55): `loadout {names?, top?}` (read; top 1..32, default 8) gives per agent
+  `name, display_name, alive, surface, health {now, max}, vehicle, guns [{name, count, quality?} | false] and ammo
+  (by slot), selected_gun, armor {name, quality, equipment [{name, type, count}], shield {now, max}, battery_mj {now,
+  max}, grid {width, height}}, items` (the main inventory's largest stacks, `top` of them), `item_kinds, slots {free,
+  total}, crafting {queue [{recipe, count}] (up to 6, prerequisites left out), items, progress (the head's, 0..1)},
+  building {kind, done, total, missing}` (a build action running: build_path's cells, construct's built of built +
+  remaining), `shooting` (shoot or kite running), and `tick`. The agent's own inventories only, no surface scans; an
+  agent whose read fails is a row with `error`. The stream service reads it every 4 s (tools/stream/loadout.py picks
+  what the camera strips show) and the site's agents page shows it through the live API.
 - Operator idle nudge (idle.lua; `tools/idle_nudge.py` in the pog repo): `idle_report` (read) gives per agent
   `standing_s` (how long its character has had a body on the map and nothing that moves or works it; kept once a
   second for agents that made a request). A wait is not work: `wait_ticks`, `wait_until`, `sleep`, a queue held behind

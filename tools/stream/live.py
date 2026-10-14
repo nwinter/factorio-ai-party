@@ -87,6 +87,10 @@ class LiveSource:
         self.next_hauling = 0
         self.hauling_path = hauling.path_for(journals)
         self.hauling_first = (hauling.read_rows(self.hauling_path) or [None])[0] if self.hauling_path else None
+        # what each agent carries, wears and builds (loadout.lua `loadout`; Nick, 08:55): every few seconds
+        self.has_loadout = False
+        self.next_loadout = 0
+        self.loadout_every = 4.0
         self.notes_cache = {}  # agent -> (mtime, job line): notes.md is read again only when it changed
         # after the file's last request, or the earlier shifts' for a new one (the save holds them all)
         self.operator_seq = operator_inbox.start_seq(self.inbox_path) if self.inbox_path else 0
@@ -402,6 +406,7 @@ class LiveSource:
             self.has_groups = "attack_groups_live" in (res.get("operator_reads") or [])
             self.has_big = "big_enemies_live" in (res.get("operator_reads") or [])
             self.has_hauling = "hauling" in (res.get("operator_reads") or [])
+            self.has_loadout = "loadout" in (res.get("operator_reads") or [])
         except Exception as e:
             self.has_board = False
             print(f"[live] board probe failed: {e}", flush=True)
@@ -453,14 +458,32 @@ class LiveSource:
         obs["hauling"] = {"rows": hauling.shift_rows(self.hauling_first, row, team), "since": self.hauling_first["t"],
                           "t": row["t"]}
 
+    def observe_loadout(self, obs, errors):
+        """Each agent's guns and ammo, armor and equipment, largest stacks, craft queue and build progress (operator
+        read `loadout`), every loadout_every seconds: obs["loadout"] is the read's rows."""
+        now = time.time()
+        if not getattr(self, "has_loadout", False) or now < self.next_loadout:
+            return
+        try:
+            res, _ = self.h.operator_read("loadout", {"top": 8})
+        except Exception as e:
+            errors["loadout"] = str(e)
+            self.next_loadout = now + 30.0
+            return
+        self.next_loadout = now + self.loadout_every
+        if isinstance(res.get("agents"), list):
+            obs["loadout"] = res["agents"]
+
     def observe_board(self, obs, errors):
         if self.caps is None or not self.caps.get("harness"):
             return
-        if not self.has_board or not getattr(self, "has_groups", True) or not getattr(self, "has_hauling", True):
+        if not self.has_board or not getattr(self, "has_groups", True) or not getattr(self, "has_hauling", True) \
+                or not getattr(self, "has_loadout", True):
             if time.time() >= self.next_board_probe:
                 self.board_probe()
         self.observe_groups(obs, errors)
         self.observe_hauling(obs, errors)
+        self.observe_loadout(obs, errors)
         if self.has_confess:  # confessionals (agent -> viewers only), read as the operator
             try:
                 res, _ = self.h.operator_read("confessions", {"since": self.confess_seq, "limit": 30})

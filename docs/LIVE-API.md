@@ -70,7 +70,15 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
                 "alive": true, "activity": "acting|thinking|idle|dead|offline", "action": "...",
                 "active": "construct", "position": {"x": -64.8, "y": -23.6}, "location": "iron smelting",
                 "last_said": {"text": "...", "tick": 144700}, "camera": "main|cam2|cam3|null", "combat": false,
-                "died_at": null, "kind": "bot", "profile_set": true}],
+                "died_at": null, "kind": "bot", "profile_set": true,
+                // what it carries, wears and builds (the harness's loadout read; absent while dead or before the read)
+                "loadout": {"health": {"now": 250, "max": 350}, "vehicle": null, "selected_gun": 1,
+                            "guns": [{"name": "submachine-gun", "count": 1}, false], "ammo": [{"name": "piercing-rounds-magazine", "count": 187}, false],
+                            "armor": {"name": "power-armor-mk2", "equipment": [{"name": "energy-shield-equipment", "count": 2}],
+                                      "shield": {"now": 37, "max": 150}},
+                            "items": [{"name": "copper-cable", "count": 1200}], "item_kinds": 14, "slots": {"free": 12, "total": 90},
+                            "crafting": {"queue": [{"recipe": "inserter", "count": 5}], "items": 5, "progress": 0.46},
+                            "building": {"kind": "construct", "done": 7, "total": 20}, "age_s": 3.2}}],
     "chat": [{"seq": 1, "tick": 144720, "from": "Muse", "agent": "muse", "text": "...", "t": 1791695551.8}],  // last 40
     "research": {"current": "engine", "label": "Engine", "progress": 0.54, "done_count": 8,
                  "recent": [{"name": "steel-processing", "label": "Steel processing", "t": null}]},
