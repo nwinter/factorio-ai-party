@@ -1455,18 +1455,33 @@ fh sleep 900 --until researched                       # ...or until the research
     build fulfils a tile ghost of that tile as a player's does (it aborted on the ghost before).
   - Trees and rocks a tile collides with (Sol, shift10: a slipstack on Gleba wetland kept landfill from three belt
     tiles; mined, landfill and belts went in). On a private 2.0.77 server Gleba's slipstack, cuttlepop, hairyclubnub,
-    water-cane and the iron and copper stromatolites have `ground_tile` in their collision mask, as landfill has, so
-    the game refuses a landfill tile (or its ghost) where one of them stands, plain or forced; marked for
-    deconstruction, the tile ghost goes in. Nauvis trees and rocks lack `ground_tile`. So:
+    the iron and copper stromatolites and egg rafts have `ground_tile` in their collision mask, as landfill has, and
+    are `protected_from_tile_building`, so the game refuses a landfill tile (or its ghost) where one of them stands,
+    plain or forced; marked for deconstruction, the tile ghost goes in. Nauvis trees and rocks lack `ground_tile`.
+    Water-cane and fish have `ground_tile` but are not protected: the game's tile ghost check takes landfill over
+    them, and robots laid landfill over an unmarked water-cane, which was gone (Sol, shift12 12:55: a bot's landfill
+    on a water-cane kept failing with `no tile was placed (blocked or already there)`; the harness's `set_tiles`
+    counted the cane). So:
     - `place_ghosts` marks those trees and rocks for deconstruction before it lays a tile ghost there (a tile entry,
       a `tiles` area, or the landfill under an entity ghost), as the game's ghost placement does, and says so:
       `obstacles_marked` and `tile_obstacles_marked: "marked for deconstruction where tile ghosts go: cuttlepop
       (-170.6,-223.2); construct mines them before it lays the tiles"`. Anything else there refuses the ghost,
-      named: `tile placement blocked by ...`.
+      named: `tile placement blocked by ...`. A water-cane is left standing: the tile takes it.
     - `construct` mines the trees and rocks a tile ghost's tile collides with before it lays the tile, then builds
-      what stands on it (on the private copy: a cuttlepop mined, 2 landfill and 2 belts built in one run).
-    - A hand-laid tile (`build` with landfill) names what stops it: `no tile was placed: blocked by cuttlepop tree at
-      (-256.5,-199.7): mine it first` (`not_placed` when only some of a brush went down).
+      what stands on it (on the private copy: a cuttlepop mined, 2 landfill and 2 belts built in one run). It leaves
+      water-cane to the tile (on the copy: a landfill ghost over a cane built with `mined 0`).
+    - A hand-laid tile (`build` with landfill, or any tile item) follows the game's rules tile by tile:
+      - The item's tile list and condition. Landfill goes on water and wetland only:
+        `no tile was placed: (-79.5,70.5): landfill cannot go on oil-ocean-deep (foundation can; not researched)`.
+        Before, a bot's landfill went down on Fulgora's oil ocean (on the private copy).
+      - A protected entity on the tile stops it, marked for deconstruction or not (on the copy `set_tiles` refused
+        landfill under a marked hairyclubnub), named: `no tile was placed: (78.5,50.5): blocked by hairyclubnub
+        tree at (78.2,51.1), marked for deconstruction: mine it first`.
+      - Water-cane and fish on the tile go with it: `removed: "water-cane (86.6,49.7)"` and `removed_note`. A
+        batch's tile entries give `tiles_removed` (`#1: water-cane (84.1,48.1)`) and `tiles_not_placed`.
+      - A brush that goes down in part says which tiles did not and why, grouped by reason: `not_placed: "2 of 4
+        tiles: (79.5,50.5) (79.5,51.5): blocked by hairyclubnub ..."`, `landfill is there already`, `3 with no
+        landfill left`.
   - A refused build or revive names the tile (`placement blocked by tiles: wetland-blue-slime (needs landfill, ...)`),
     never the ghost of the same entity on the same centre that it revives, nor a tile ghost under it. Another
     entity's ghost there is still named. A build over its own ghost with the character on the footprint steps aside
@@ -1502,7 +1517,12 @@ fh sleep 900 --until researched                       # ...or until the research
     needed or planned tile gets the game's own tile ghost check, and what stands there is named, by kind of call: a
     hand build reads `blocked by slipstack tree at (-180.9,-84.9): mine it first (where its landfill goes)` (a rock:
     `rock`, a cliff: `cliff explosives clear it`), while `place_ghosts` marks trees and rocks first, so its dry run
-    reads `place_ghosts marks slipstack (-180.94,-84.94) for removal` on the entry and `marks` under `tiles`. On a
+    reads `place_ghosts marks slipstack (-180.94,-84.94) for removal` on the entry and `marks` under `tiles`. A hand
+    build's tiles get the hand-laid rules above: a marked tree still blocks (`..., marked for deconstruction: mine it
+    first`), a tile item that does not go on the tile is named (`landfill cannot go on lava (foundation can)`), and
+    water-cane and fish there go with the tile: the entry reads `needs 16 landfill first; the landfill removes
+    water-cane (99.5,63), ...` (a cane inside the entity's own box counts as taken by that landfill, not as a
+    blocker), and `tiles.removes` lists them all. On a
     platform the engine takes an entity ghost over empty space, which nothing builds until foundation is there: such
     entries read `needs_tiles` all the same. New foundation (planned or needed) is flood-filled: empty tiles it would
     enclose (regions up to 1024 tiles; larger ones count as open space) are added as `holes`, since the game builds no

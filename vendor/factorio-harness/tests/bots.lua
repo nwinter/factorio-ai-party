@@ -654,10 +654,51 @@ do
   s.set_tiles=function() end
   fails(function() B.place_tiles(bot,{item='landfill'},stack,{x=7.5,y=5.5},1) end,'no tile was placed')
   eq(#made,1); eq(made[1].name,'tile-ghost'); eq(made[1].inner_name,'landfill'); eq(made[1].position.x,7.5)
-  -- A tree on the tile (Sol, shift10: a slipstack on Gleba wetland): the refusal names it (dryrun.lua tile_blockers).
-  local B2=dofile('mod/agent-harness_0.1.0/bots.lua'){tile_blockers=function(_,_,tile,x,y)
-    eq(tile,'landfill'); return x==9 and {{text='slipstack tree at (9.4,5.6): mine it first',obstacle=true}} or nil end}
+  -- A tree on the tile (Sol, shift10: a slipstack on Gleba wetland): the refusal names it (dryrun.lua hand_tile).
+  -- Sol, shift12 12:55: landfill at (68.5,45.5) on Gleba kept failing with "no tile was placed (blocked or already
+  -- there)"; a water-cane stood there, which the game's tile building takes away (2.0.77: not
+  -- protected_from_tile_building; robots laid landfill over an unmarked one and it was gone).
+  local cane={valid=true,name='water-cane',position={x=11.8,y=5.9}}
+  cane.destroy=function(o) eq(o.raise_destroy,true); cane.valid=false end
+  local B2=dofile('mod/agent-harness_0.1.0/bots.lua'){hand_tile=function(_,_,item,x,y)
+    eq(item,'landfill')
+    if x==9 then return {why='blocked by slipstack tree at (9.4,5.6): mine it first',blockers={{}}} end
+    if x==11 and cane.valid then return {removes={cane}} end
+    if x==13 then return {why='landfill cannot go on lava (foundation can)'} end
+    if tiles[at(x,y)] and tiles[at(x,y)].name=='landfill' then return {already=true} end
+    return {removes={}}
+  end,removes_text=function(list) eq(#list,1); return 'water-cane (11.8,5.9)' end}
   bot.force=force
-  fails(function() B2.place_tiles(bot,{item='landfill'},stack,{x=9.5,y=5.5},1) end,'no tile was placed: blocked by slipstack tree at (9.4,5.6): mine it first')
+  local laid=s.set_tiles
+  s.set_tiles=function(list)
+    for _,t in ipairs(list) do
+      if t.position[1]==11 then assert(not cane.valid,'the cane goes before the tile') end
+      tiles[at(t.position[1],t.position[2])]={name=t.name,prototype={collision_mask={layers={ground_tile=true}}}}
+    end
+  end
+  fails(function() B2.place_tiles(bot,{item='landfill'},stack,{x=9.5,y=5.5},1) end,
+    'no tile was placed: (9.5,5.5): blocked by slipstack tree at (9.4,5.6): mine it first')
+  fails(function() B2.place_tiles(bot,{item='landfill'},stack,{x=13.5,y=5.5},1) end,'no tile was placed: (13.5,5.5): landfill cannot go on lava (foundation can)')
+  local rc=B2.place_tiles(bot,{item='landfill'},stack,{x=11.5,y=5.5},1)
+  eq(rc.consumed,1); eq(tiles[at(11,5)].name,'landfill'); eq(rc.removed,'water-cane (11.8,5.9)')
+  eq(rc.removed_note,'water-cane and fish do not block a tile; a new tile takes them away'); eq(rc.not_placed,nil)
+  fails(function() B2.place_tiles(bot,{item='landfill'},stack,{x=11.5,y=5.5},1) end,'no tile was placed: (11.5,5.5): landfill is there already')
+  -- A 2x2 brush over (8..9, 4..5): (9,4) and (9,5) blocked by the slipstack, two laid; refusals grouped by reason.
+  local rb=B2.place_tiles(bot,{item='landfill'},stack,{x=9,y=5},2)
+  eq(rb.consumed,2); eq(rb.not_placed,'2 of 4 tiles: (9.5,4.5) (9.5,5.5): blocked by slipstack tree at (9.4,5.6): mine it first')
+  -- Fewer items than tiles: the rest is said.
+  local few={get_item_count=function() return 1 end,remove=function(a) removed=removed+a.count end}
+  bot.get_main_inventory=function() return few end
+  local rf=B2.place_tiles(bot,{item='landfill'},stack,{x=21,y=5},2)
+  eq(rf.consumed,1); eq(rf.not_placed,'3 with no landfill left')
+  bot.get_main_inventory=function() return inv end
+  s.set_tiles=laid
+  -- Without the dry run module, the item's own rules: tile_condition (landfill never on lava).
+  local lava={name='lava',prototype={collision_mask={layers={water_tile=true,lava_tile=true}}}}
+  local s3={get_tile=function() return lava end,find_entities_filtered=function() return {} end,set_tiles=function() error('no set_tiles on lava') end}
+  local stack3={prototype={place_as_tile_result={result={name='landfill'},condition={layers={ground_tile=true}},
+    tile_condition={{name='water'},{name='wetland-light-dead-skin'}}}}}
+  fails(function() B.place_tiles({surface=s3,force=force,get_main_inventory=function() return inv end},{item='landfill'},stack3,{x=0.5,y=0.5},1) end,
+    'no tile was placed: (0.5,0.5): landfill cannot go on lava')
 end
 print('bots: ok')

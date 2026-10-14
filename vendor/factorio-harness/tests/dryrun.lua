@@ -107,12 +107,17 @@ local function world(tiles, entities, opts)
   s.can_place_entity = function(a)
     -- A tile ghost: refused where an entity not marked for deconstruction
     -- meets the tile and its mask meets the tile's (2.0.77: Gleba's slipstack
-    -- has ground_tile; landfill is one).
+    -- has ground_tile; landfill is one), unless its prototype is not
+    -- protected_from_tile_building (water-cane, fish); refused where a tile
+    -- ghost stands already (one a tile).
     if a.name == 'tile-ghost' then
       local tl = prototypes.tile[a.inner_name].collision_mask.layers
       local x, y = math.floor(a.position.x), math.floor(a.position.y)
       for _, e in ipairs(entities) do
-        if e.type ~= 'entity-ghost' and not (e.marked) and meets(e.bounding_box, {left_top={x=x, y=y}, right_bottom={x=x+1, y=y+1}}) then
+        if e.type == 'tile-ghost' then
+          if math.floor(e.position.x) == x and math.floor(e.position.y) == y then return false end
+        elseif e.type ~= 'entity-ghost' and not (e.marked) and e.prototype and e.prototype.protected_from_tile_building ~= false
+          and meets(e.bounding_box, {left_top={x=x, y=y}, right_bottom={x=x+1, y=y+1}}) then
           for k in pairs(e.prototype.collision_mask.layers) do if tl[k] then return false end end
         end
       end
@@ -624,6 +629,82 @@ eq(marks.tiles.refused, nil); eq(marks.tiles.marks, 'place_ghosts marks slipstac
 tree.marked = true
 eq(dryrun.tile_blockers(ww, force, 'landfill', 50, 50), nil)
 tree.marked = nil
+-- Sol, shift12 12:55: on Gleba a roboport dry run at (67,44) said the wetland tile at (68.5,45.5) needs landfill, and
+-- landfill there kept failing with "no tile was placed (blocked or already there)": a water-cane stood on the tile.
+-- 2.0.77 on a private copy of world n: water-cane has ground_tile in its mask, as landfill has, but is not
+-- protected_from_tile_building; the tile ghost check takes landfill over it and robots laid it, the cane gone.
+-- Slipstack, cuttlepop, hairyclubnub and the stromatolites are protected: they block, marked or not (set_tiles refused
+-- landfill under a marked hairyclubnub). Landfill goes on water and wetland only (its tile_condition), not on lava.
+;(function()
+  local saved = prototypes.item.landfill.place_as_tile_result.tile_condition
+  prototypes.item.landfill.place_as_tile_result.tile_condition = {'water', 'wetland-light-dead-skin'}
+  prototypes.tile.lava = {name='lava', collision_mask=mask('water_tile', 'lava_tile', 'player', 'item')}
+  prototypes.tile['wetland-light-dead-skin'] = {name='wetland-light-dead-skin', collision_mask=mask('water_tile', 'resource', 'floor')}
+  prototypes.tile.foundation = {name='foundation', collision_mask=mask('ground_tile'), items_to_place_this={{name='foundation', count=1}}}
+  prototypes.item.foundation = {name='foundation', place_as_tile_result={result=prototypes.tile.foundation, condition=mask(),
+    tile_condition={'water', 'lava', 'wetland-light-dead-skin'}}}
+  prototypes.entity['water-cane'] = {name='water-cane', type='tree', collision_box=box(0.1),
+    collision_mask=mask('ground_tile', 'is_object', 'is_lower_object', 'train'), protected_from_tile_building=false}
+  prototypes.entity['iron-stromatolite'] = {name='iron-stromatolite', type='simple-entity', collision_box=box(0.5),
+    collision_mask=mask('ground_tile', 'is_object', 'is_lower_object', 'player', 'train')}
+  local dr = dofile('mod/agent-harness_0.1.0/dryrun.lua')(api)
+  local function gleba(x, y)
+    if x >= 64 and x <= 65 and y >= 60 and y <= 61 then return 'lava' end
+    if x >= 58 and x <= 63 and y >= 58 and y <= 64 then return 'wetland-light-dead-skin' end
+    return 'grass-1'
+  end
+  local cane = {name='water-cane', type='tree', position={x=61.75, y=61.75}, minable=true, force={name='neutral'}}
+  local cane2 = {name='water-cane', type='tree', position={x=63.25, y=58.25}, minable=true, force={name='neutral'}}
+  local rock = {name='iron-stromatolite', type='simple-entity', position={x=62.5, y=63.5}, minable=true, force={name='neutral'}}
+  rock.to_be_deconstructed = function() return rock.marked == true end
+  local ghost = {name='tile-ghost', type='tile-ghost', ghost_name='landfill', position={x=63.5, y=58.5}}
+  local gme = {name='character', type='character', position={x=57.5, y=57.5}, prototype=prototypes.entity.character}
+  local gs = world(gleba, {gme, cane, cane2, rock, ghost})
+  local gp = {surface=gs, force=force, position=gme.position, character=gme, build_distance=30,
+    get_main_inventory=function() return {get_item_count=function() return 100 end} end}
+  -- The cane goes with the tile; the stromatolite blocks it; lava takes no landfill.
+  local v = dr.hand_tile(gs, force, 'landfill', 61, 61)
+  eq(v.why, nil); eq(#v.removes, 1); eq(v.removes[1], cane)
+  eq(dr.tile_blockers(gs, force, 'landfill', 61, 61), nil, 'the ghost check takes it too')
+  v = dr.hand_tile(gs, force, 'landfill', 62, 63)
+  eq(v.why, 'blocked by iron-stromatolite rock at (62.5,63.5): mine it first'); eq(#v.blockers, 1)
+  eq(dr.hand_tile(gs, force, 'landfill', 64, 60).why, 'landfill cannot go on lava (foundation can)')
+  eq(dr.hand_tile(gs, force, 'landfill', 58, 58).removes[1], nil, 'a free wetland tile')
+  eq(dr.hand_tile(gs, force, 'landfill', 50, 58).why, 'landfill cannot go on grass-1', 'land: no alternatives named')
+  -- Marked, the rock still blocks a hand-laid tile; a tile ghost goes over it (construct mines it first).
+  rock.marked = true
+  eq(dr.hand_tile(gs, force, 'landfill', 62, 63).why, 'blocked by iron-stromatolite rock at (62.5,63.5), marked for deconstruction: mine it first')
+  eq(dr.tile_blockers(gs, force, 'landfill', 62, 63), nil)
+  -- A tile ghost on the tile fails the engine's check (one ghost a tile): the boxes decide, and the cane goes.
+  v = dr.hand_tile(gs, force, 'landfill', 63, 58)
+  eq(v.why, nil); eq(v.removes[1], cane2)
+  -- Sol's dry run: a 2x2 machine on four wetland tiles, one with the cane, needs 4 landfill, which takes the cane.
+  local need = dr.check(gp, {kind='build', entities={{index=1, name='stone-furnace', position={x=61, y=61}, item='stone-furnace'}}})
+  eq(need.entities[1].status, 'needs_tiles')
+  eq(need.entities[1].why, 'stands on 4 wetland-light-dead-skin tiles: needs 4 landfill first; the landfill removes water-cane (61.8,61.8)')
+  eq(need.tiles.removes, 'laid by hand, the tiles remove water-cane (61.8,61.8) (water-cane and fish do not block a tile; a new tile takes them away)')
+  -- Its landfill laid by hand, entry by entry: the cane's tile is planned; the rock's (marked) and the lava refused.
+  local laid = dr.check(gp, {kind='build', entities={}, tiles={{index=1, name='landfill', item='landfill', position={x=61.5, y=61.5}},
+    {index=2, name='landfill', item='landfill', position={x=62.5, y=63.5}}, {index=3, name='landfill', item='landfill', position={x=64.5, y=60.5}}}})
+  eq(laid.tiles.planned, 1); eq(laid.tiles.refused, 2)
+  eq(laid.tiles.refused_rows[1], '(62.5,63.5) landfill: blocked by iron-stromatolite rock at (62.5,63.5), marked for deconstruction: mine it first')
+  eq(laid.tiles.refused_rows[2], '(64.5,60.5) landfill: landfill cannot go on lava (foundation can)')
+  has(laid.tiles.removes, 'water-cane (61.8,61.8)')
+  -- place_ghosts over the cane: placeable, nothing marked (robots' tiles take the cane).
+  local gh = dr.check(gp, {kind='ghosts', entities={}, tiles={{index=1, name='landfill', position={x=61.5, y=61.5}}}})
+  eq(gh.tiles.planned, 1); eq(gh.tiles.marks, nil); eq(gh.tiles.refused, nil); eq(gh.tiles.removes, nil)
+  -- A roboport whose box holds the cane (their masks meet: is_object): built by hand, the landfill it needs there goes
+  -- first and takes the cane, so it needs tiles and is not blocked (on the copy: 15 landfill, then the roboport).
+  prototypes.entity['test-port'] = {name='test-port', type='roboport', tile_width=4, tile_height=4, collision_box=box(1.7),
+    collision_mask=mask('object', 'water_tile', 'player', 'item', 'is_object'), items_to_place_this={{name='test-port', count=1}}}
+  local port = dr.check(gp, {kind='build', entities={{index=1, name='test-port', position={x=61, y=61}, item='test-port'}}})
+  eq(port.entities[1].status, 'needs_tiles')
+  eq(port.entities[1].why, 'stands on 16 wetland-light-dead-skin tiles: needs 16 landfill first; the landfill removes water-cane (61.8,61.8)')
+  -- place_ghosts marks it, as a forced ghost marks trees.
+  local gport = dr.check(gp, {kind='ghosts', entities={{index=1, name='test-port', position={x=61, y=61}}}})
+  has(gport.entities[1].why, 'place_ghosts marks water-cane (61.75,61.75) for removal')
+  prototypes.item.landfill.place_as_tile_result.tile_condition = saved
+end)()
 -- Astra, shift10 13:23: a roboport at (70,8) and a small pole at (69.5,10.5); the nearest built poles of network 2,
 -- (73.5,2.5) and (77.5,14.5), are 8.94 tiles away, past a small pole's wire reach of 7.5. Pole ghosts at (69.5,14.5)
 -- and (73.5,14.5) (on world n at 06:31, 4 tiles from the new pole and from (77.5,14.5)) bridged the gap in the dry run,
