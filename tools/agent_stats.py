@@ -12,6 +12,10 @@ Sources, all read-only, in runs/RUN/:
   caster.log                "[voice:NAME/VOICE] (why) text": lines spoken on stream, and each agent's voice
   operator-inbox.jsonl      requests filed to the operator
   scores.jsonl              wall clock to game tick, for death times
+  hauling.jsonl             the stream's reads of the harness's hand hauling counters (tools/stream/hauling.py): the
+                            shift's items and calls moved by hand (direct, queue, standing order), carry distance and
+                            top repeated haul, the last read less the first. A shift without it counts the journal's
+                            direct hand moves whose reply says what moved (queue steps are not in the journals)
 
 The result is cached as agent-stats.json (in runs/RUN/, or --cache-dir) with the sources' sizes and times: a finished
 shift is counted once, a live one again when a journal grows. Text kept: only the lines spoken on stream and the
@@ -27,7 +31,10 @@ import re
 import sys
 from pathlib import Path
 
-VERSION = 5
+sys.path.append(str(Path(__file__).resolve().parent / "stream"))
+import hauling as haul_file  # noqa: E402  (tools/stream/hauling.py: the stream's hauling.jsonl rows)
+
+VERSION = 6
 # Requests that only read (no change in the game) and talk; every other action counts as a game action. The
 # clock line's "+Ns since your last request" is no measure of busy time: an agent's tools send requests too.
 READS = {"observe", "inspect", "sleep", "chat", "inventory", "inv", "tells", "board", "recipes", "placements",
@@ -40,6 +47,132 @@ VOICE = re.compile(r"^(\d\d:\d\d:\d\d) \[voice:([^/\]]+)/([^\]]+)\] \((\w+)\) ?(
 TEXT_MAX = 600  # characters of a spoken line or confession kept for the site's chat page
 MENTION = re.compile(r"^\s*@([\w.-]+)")
 LEG_MAX = 400  # tiles: a longer hop between move targets is a respawn, a trip to another surface or a teleport
+# Hand moves (the harness's hauling.lua counts the same): transfer either way, collect, feed, refuel, rearm, pickup
+HAUL_TO_PLAYER = {"collect", "pickup"}
+HAUL_TO_ENTITY = {"feed", "refuel", "rearm"}
+HAUL = HAUL_TO_PLAYER | HAUL_TO_ENTITY | {"transfer"}
+HAUL_CELL = 10  # tiles: puts of one item from one cell to another are one repeated haul
+
+
+class Hauls:
+    """Hand moves in one journal, direct requests only (a queue's steps are not in it), as hauling.lua counts them:
+    items, the calls that moved some, the carry distance (per item, the straight line from the spot it was last taken
+    or put to the spot it is put; a put of several items adds its longest leg) and the puts by item and cells."""
+
+    def __init__(self):
+        self.items = self.calls = 0
+        self.carry = 0.0
+        self.at, self.take, self.groups = {}, {}, {}
+
+    def moved(self, direction, pos, surface, stacks):
+        stacks = [(n, c) for n, c in stacks if isinstance(n, str) and isinstance(c, (int, float)) and c > 0]
+        if not stacks:
+            return 0
+        if isinstance(pos, (list, tuple)) and len(pos) == 2:  # [x, y], as the harness also takes
+            pos = {"x": pos[0], "y": pos[1]}
+        ok = isinstance(pos, dict) and all(isinstance(pos.get(c), (int, float)) for c in ("x", "y"))
+        here = (math.floor(pos["x"] + 0.5), math.floor(pos["y"] + 0.5), surface) if ok else None
+        leg = 0.0
+        for name, count in stacks:
+            if here is None or direction not in ("to_player", "to_entity") or name == "?":
+                continue
+            prev = self.at.get(name)
+            if direction == "to_entity" and prev and prev[2] == here[2]:
+                d = math.dist(prev[:2], here[:2])
+                if d <= LEG_MAX:
+                    leg = max(leg, d)
+            self.at[name] = here
+            if direction == "to_player":
+                self.take[name] = here
+                continue
+            src = self.take.get(name)
+            src = src if src and src[2] == here[2] else None
+            cell = lambda p: (p[0] // HAUL_CELL, p[1] // HAUL_CELL)  # noqa: E731
+            key = (name, here[2], cell(src) if src else None, cell(here))
+            g = self.groups.setdefault(key, {"item": name, "surface": here[2], "times": 0, "items": 0,
+                                             "from": {"x": src[0], "y": src[1]} if src else None,
+                                             "to": {"x": here[0], "y": here[1]}})
+            g["times"] += 1
+            g["items"] += count
+        self.carry += leg
+        n = sum(c for _, c in stacks)
+        self.items += n
+        return n
+
+    def call(self, action, args, res, surface):
+        """One direct hand move's reply: what it moved, where (each target's row when it lists them)."""
+        direction = args.get("direction") or res.get("direction")
+        if action in HAUL_TO_PLAYER:
+            direction = "to_player"
+        elif action in HAUL_TO_ENTITY:
+            direction = "to_entity"
+        elif direction in ("from_player", "give", "put", "insert", "to_chest", "to_container"):
+            direction = "to_entity"
+        elif direction in ("from_entity", "take", "from_chest", "from_container"):
+            direction = "to_player"
+        items = res.get("items")
+        names = [i.get("name") for i in items if isinstance(i, dict)] if isinstance(items, list) else \
+            list(items) if isinstance(items, dict) else []
+        item = args.get("item") if isinstance(args.get("item"), str) else None
+        moved = 0
+        rows = res.get("entities") if isinstance(res.get("entities"), list) else []
+        if rows:
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                if isinstance(row.get("gave"), dict):
+                    stacks = list(row["gave"].items())
+                elif item:
+                    stacks = [(item, row.get("transferred") or 0)]
+                elif isinstance(items, list) and len(rows) == 1:
+                    stacks = [(i.get("name"), i.get("count")) for i in items if isinstance(i, dict)]
+                else:  # several targets of several items: the reply has no split; counted, not placed
+                    stacks = [(names[0] if names else "?", row.get("transferred") or 0)]
+                    moved += self.moved(None, None, surface, stacks)
+                    continue
+                moved += self.moved(direction, row.get("position"), surface, stacks)
+        elif isinstance(res.get("transferred"), (int, float)) and res["transferred"] > 0:
+            pos = args.get("position") or args.get("target")
+            if item:
+                stacks = [(item, res["transferred"])]
+            elif isinstance(items, list):
+                stacks = [(i.get("name"), i.get("count")) for i in items if isinstance(i, dict)]
+            elif isinstance(items, dict):
+                stacks = list(items.items())
+            else:
+                stacks = [("?", res["transferred"])]
+            moved += self.moved(direction, pos, surface, stacks)
+        if moved:
+            self.calls += 1
+
+    def stats(self):
+        top = max(self.groups.values(), key=lambda g: (g["times"], g["items"]), default=None)
+        return {"haul_items": round(self.items), "haul_calls": self.calls, "haul_direct_items": round(self.items),
+                "haul_direct_calls": self.calls, "haul_queue_items": None, "haul_queue_calls": None,
+                "haul_order_items": None, "haul_order_calls": None, "haul_carry": round(self.carry),
+                "haul_top": top if top and top["times"] > 1 else None, "haul_from": "journal"}
+
+
+def game_hauls(run_dir, keys):
+    """{key: haul stats} from the stream's hauling.jsonl (the harness's own counts: queue and standing order steps
+    too), the shift's last read less its first; {} without the file or with one read."""
+    rows = haul_file.read_rows(str(Path(run_dir) / haul_file.FILE))
+    if len(rows) < 2:
+        return {}
+    out = {}
+    for r in haul_file.shift_rows(rows[0], rows[-1], set(keys)):
+        top = r.get("top")
+        out[r["name"]] = {"haul_items": r["items"], "haul_calls": r["calls"], "haul_direct_items": r["direct_items"],
+                          "haul_direct_calls": r["direct_calls"], "haul_queue_items": r["queue_items"],
+                          "haul_queue_calls": r["queue_calls"], "haul_order_items": r["order_items"],
+                          "haul_order_calls": r["order_calls"], "haul_carry": r["carry_tiles"],
+                          "haul_top": {k: top.get(k) for k in ("item", "surface", "from", "to", "times", "items")}
+                          if top and top.get("times", 0) > 1 else None, "haul_from": "game"}
+    for k in keys:
+        out.setdefault(k, {"haul_items": 0, "haul_calls": 0, "haul_direct_items": 0, "haul_direct_calls": 0,
+                           "haul_queue_items": 0, "haul_queue_calls": 0, "haul_order_items": 0, "haul_order_calls": 0,
+                           "haul_carry": 0, "haul_top": None, "haul_from": "game"})
+    return out
 
 
 def journal_path(d):
@@ -62,7 +195,7 @@ def blank():
     return {"requests": 0, "actions": 0, "talk": 0, "reads": 0, "failed": 0, "built": 0, "mined": 0, "walked": 0.0,
             "moves": 0, "research": 0, "research_done": 0, "rockets": 0, "say": 0, "aloud_marked": 0, "tells": 0,
             "confessions": 0, "viewer_answers": 0, "deaths": 0, "voiced": 0, "operator": 0, "active_min": 0,
-            "minutes": 0, "first": None, "last": None, "confession_lines": [], "spoken_lines": []}
+            "minutes": 0, "first": None, "last": None, "confession_lines": [], "spoken_lines": []} | Hauls().stats()
 
 
 def built_count(action, res):
@@ -84,6 +217,7 @@ def read_journal(path, names):
     @mention of one is not a viewer)."""
     s = blank()
     acts, jobs, last_pos, minutes, queued = {}, set(), None, set(), {}
+    hauls, surface = Hauls(), None
     op = gzip.open if path.suffix == ".gz" else open
     with op(path, "rt", errors="replace") as f:
         for line in f:
@@ -120,6 +254,11 @@ def read_journal(path, names):
                 continue
             if not isinstance(res, dict):
                 continue
+            pl = res.get("player")
+            if isinstance(pl, dict) and isinstance(pl.get("surface"), str):
+                surface = pl["surface"]  # where the character is, for hand moves' carry legs
+            if a in HAUL:
+                hauls.call(a, args, res, surface)
             for e in res.get("entries") or []:  # the research queue, with who queued each technology
                 if isinstance(e, dict) and e.get("name") and e.get("queued_by"):
                     queued[e["name"]] = e["queued_by"]
@@ -171,6 +310,7 @@ def read_journal(path, names):
                 elif ha == "launch" and hr.get("launched"):
                     s["rockets"] += 1
     s["walked"] = round(s["walked"])
+    s.update(hauls.stats())
     s["active_min"] = len(minutes)
     if s["first"] and s["last"]:
         span = datetime.datetime.fromisoformat(s["last"].replace("Z", "+00:00")) - \
@@ -303,7 +443,7 @@ def operator_requests(run_dir, keys):
 
 def sources(run_dir, keys):
     files = [journal_path(run_dir / k) for k in keys] + [run_dir / f for f in (
-        "stream-service.log", "caster.log", "operator-inbox.jsonl", "scores.jsonl", "team.txt")]
+        "stream-service.log", "caster.log", "operator-inbox.jsonl", "scores.jsonl", "team.txt", haul_file.FILE)]
     out = {}
     for f in files:
         if f and f.exists():
@@ -327,6 +467,10 @@ def compute(run_dir, display_names=()):
         for tech, who in q.items():
             queued.setdefault(tech, who)  # the queue's own queued_by wins over a request seen elsewhere
         agents[k] = s
+    # the harness's own hand hauling counts, where the stream kept them, over the journals' direct moves
+    for k, h in game_hauls(run_dir, keys).items():
+        if k in agents:
+            agents[k].update(h)
     done = research_done(run_dir)
     for tech, who in queued.items():
         k = key_of(str(who), keys)
@@ -378,7 +522,7 @@ def main():
     if a.print:
         cols = ["requests", "actions", "talk", "failed", "built", "mined", "walked", "research", "research_done",
                 "rockets", "say", "voiced", "tells", "confessions", "viewer_answers", "operator", "deaths",
-                "active_min", "minutes"]
+                "active_min", "minutes", "haul_items", "haul_calls", "haul_carry"]
         print("agent".ljust(8) + "".join(c_[:7].rjust(8) for c_ in cols))
         for k, s in c["agents"].items():
             print(k.ljust(8) + "".join(str(s[c_]).rjust(8) for c_ in cols))

@@ -796,6 +796,8 @@ CARD_CALLS = {
     "research": "the card shows the research queue: what is being researched now, and what it opens up",
     "overview": "the camera shows the whole base: describe what viewers can see of the factory and how it has grown",
     "space": "the card shows the team's progress toward space: say where they are on the way",
+    "hauling": "the card ranks the agents by items moved by hand this shift: read the top names and their numbers as "
+               "they are, with no verdict on anyone",
 }
 
 

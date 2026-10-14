@@ -1338,11 +1338,33 @@ local main_before_collect=main
 main=inv(stack(nil,0),stack(nil,0))
 p.can_reach_entity=function() return true end
 prototypes.item['iron-gear-wheel']={fuel_value=0}
+-- Hand hauling (hauling.lua), read as the operator: totals over every agent, as differences from here.
+local H={}
+function H.read()
+  local t={items=0,calls=0,direct_items=0,direct_calls=0,queue_items=0,queue_calls=0,order_items=0,order_calls=0}
+  for _,row in ipairs(runtime.dispatch{action='hauling',args={},operator=true}.agents) do
+    for k in pairs(t) do t[k]=t[k]+row[k] end
+  end
+  return t
+end
+H[0]=H.read()
+-- A hauling hook that throws fails no request (every hook runs under pcall).
+do
+  local begin,done=runtime.hauling.begin,runtime.hauling.done
+  runtime.hauling.begin=function() error('hauling broke') end
+  runtime.hauling.done=function() error('hauling broke') end
+  eq(type(call('status')),'table')
+  runtime.hauling.begin,runtime.hauling.done=begin,done
+end
 local trip=call('collect',{item='iron-gear-wheel',radius=20,count=25})
 eq(trip.stock,30); eq(trip.places,1); eq(call('status').active.kind,'gather')
 advance(1)
 local gathered=call('status').last
 eq(gathered.outcome,'collected'); eq(gathered.got,25); eq(gathered.item,'iron-gear-wheel'); eq(main[1].count,25)
+-- A direct walking collect: one direct call, its 25 items, though they moved on a tick after the request.
+H[1]=H.read()
+eq(H[1].items-H[0].items,25); eq(H[1].direct_items-H[0].direct_items,25); eq(H[1].direct_calls-H[0].direct_calls,1)
+eq(H[1].calls-H[0].calls,1); eq(H[1].queue_items-H[0].queue_items,0)
 fails(function() call('collect',{item='iron-gear-wheel',ticks=60}) end,'ticks applies to collect with radius')
 -- Without an item (Gemini): every assembler and furnace output in the radius, all items; inputs and fuel stay.
 do
@@ -1370,6 +1392,9 @@ do
   eq(took.outcome,'collected'); eq(took.got,12); eq(took.items['iron-gear-wheel'],5); eq(took.items['iron-plate'],7)
   -- The total line (Muse): moved per item, places touched of the total.
   eq(took.tally,'moved 7 iron-plate, 5 iron-gear-wheel; 2 of 2 places touched')
+  -- Two places, one call.
+  local haul2=H.read()
+  eq(haul2.items-H[1].items,12); eq(haul2.direct_calls-H[1].direct_calls,1)
   eq(gear_slots[1].valid_for_read,false); eq(result[1].valid_for_read,false); eq(source[1].count,9); eq(fuel[1].count,3)
   -- Nothing left: nothing_collected, and the reply says so.
   local none=call('collect',{radius=20,up_to=true})
@@ -1390,6 +1415,11 @@ do
   eq(team and team.queue and team.queue[1],'queue sweep round 2: 1 of 1 steps short: collect nothing_collected')
   advance(70); eq((call('status').team or {}).queue,nil)
   call('queue_cancel',{})
+  -- The sweep's 3 plates were a queue step's: one queue call; rounds that took nothing count no call. The 4 of
+  -- collect {count=4} before it were direct.
+  local haul3=H.read()
+  eq(haul3.queue_items-haul2.queue_items,3); eq(haul3.queue_calls-haul2.queue_calls,1)
+  eq(haul3.direct_items-haul2.direct_items,4); eq(haul3.items-haul2.items,7); eq(haul3.order_items-haul2.order_items,0)
   -- With up_to=true the plan allowed for the short (Grok, shift10): no line, while its history says short.
   result[1].name,result[1].count,result[1].valid_for_read='iron-plate',3,true
   call('queue_repeat',{name='sweep2',interval_ticks=60,steps={{action='collect',args={radius=20,up_to=true}}}})
