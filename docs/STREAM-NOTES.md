@@ -558,15 +558,50 @@ It fades out as soon as the director uses the slot again.
 and segments as long as it always returns to "stream"; the replay buffer (45 s, recording encoder) stays enabled.
 
 - When: the director's attack cuts drive it. After a cut to a fight or base attack, the buffer is saved 17 s later
-  (just before the 20 s attack hold ends) and the last 15 s are replayed: the fight as main followed it. A death
-  replays only if main showed that agent in the 10 s before (else the buffer holds nothing of it): saved 5 s after,
-  shown from 11 s before to 4 s after. At most one replay per 120 s; a clip not on air within 120 s is dropped.
+  (just before the 20 s attack hold ends) and the last 15 s are replayed: the fight as main followed it. Deaths and
+  losses: see "On air at the moment" below. At most one replay per 120 s; a clip not on air within 120 s is dropped.
   Deaths close together each get a clip (up to two waiting behind the first) and air one after the other: both
   replays play, rather than keeping only the first, because each death is its own story and two 15 s clips fit well
   inside the 120 s age limit. In shake4 Haiku's clip was queued, Opus died 43 s later, that attack cut emptied the
   segment queue and Opus's clip replaced Haiku's, so Haiku's death never aired. Now the cut still empties the queue
   (the live death comes first), the first clip is offered again 20 s later, and the second follows it.
   `/replays.json` lists the waiting ones under `waiting`.
+- On air at the moment (task-replaycheck, after shift09 00:40-00:44). Sol died fighting pentapods on Gleba with the
+  main camera on him from 00:38:56. Three clips were saved for that one death: the death, the loss of his character,
+  and the same loss re-reported 90 s later. Two of them aired. The loss clip started at the urgent cut to the spot
+  4 s after he died (the longest stretch of footage of the spot: all aftermath). Viewer awoo3391: "the one we just
+  saw didnt actually capture the death at all". The rules now (`replays.py` module doc, `test_replay_check.py`):
+  - The moment: a loss's game tick (the incident's `last_tick`, carried by live.py and model.py's `loss_ticks`),
+    mapped to wall time through the snapshots' `(tick_t, tick)` samples. Without a tick, the alert less 2 s. A
+    death takes the tick of the loss of its character where the agent last stood, else the alert less 1 s.
+  - On air: the dead agent (followed, or its character inside the frame) or the loss's spot inside the main view's
+    frame for at least 3 s of the 15 s before the moment. The timeline is the camera rows sampled every tick
+    (`frames`: main, the inset while up, trio tiles, each with its frame). The first 2 s after a cut do not count.
+    Otherwise there is no replay, logged `skipped death: not on air at the time (0 s of the 15 s before it)`, with
+    the seconds only an inset or a small tile showed it. The urgent cut is unchanged.
+  - Only the main view counts, as before (shift01 15:44: inset-only footage aired as the agent on air doing
+    something else). The replay is the whole program, so an inset-only moment would air as a 408x230 corner.
+  - The clip: 8 s before the moment to 3 s after, saved 1 s after its end, aired after the fight is quiet. It is
+    seeked from the save time (`saved_t`); the file name's box time is never read.
+  - One replay per moment:
+    - a loss key (the incident) gets one clip, and a re-report with the same tick is no new moment;
+    - a later moment of the same incident replaces the waiting clip only if it was on air longer, and never after
+      one aired;
+    - a death and the loss of that agent's character (only characters lost, within 40 tiles and 20 s) are one
+      moment, and the death's clip airs whichever is judged first.
+  - Sol's fight did have the camera. From the director log:
+    - 00:38:08: "Sol is under attack" went to the inset.
+    - 00:38:56: main cut to Sol through ordinary rotation ("astra still 30 s; sol moving").
+    - 00:39:23: zoom for shooting.
+    - Main stayed on him until 00:40:39, when the director saw him dead ("sol unavailable"); his character's loss
+      was first seen at 00:40:38.
+    - The battle scorer never promoted the fight: score 1.5 = agent 1.0 + duration 0.5 against a bar of 2.74. The
+      alert text "Sol is under attack" names no enemy (no tier), and nothing was lost before the death.
+    - The stream gets no character health (status gives the `combat` flag only), so "health falling" cannot weigh
+      in without a harness status field.
+
+    So the death was on air, the first clip (00:40:29-00:40:45) held it, and the clip that failed was the second
+    one. No director change was made for this.
 - Which clip airs (`Segments.replay_gate`, after shake12 aired three replays within 41 s at 04:04, often of one
   pipe or one belt, and two research completions got no card because the replay scene was on air):
   - at least 90 s between replays going on air (`replay_spacing`), whatever they show;
