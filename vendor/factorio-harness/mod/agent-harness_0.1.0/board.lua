@@ -1301,6 +1301,11 @@ return function(api)
       lines[#lines+1] = string.format('you were hit %d times (%d damage) by %s, %s ago; %s', hit.hits, round(hit.damage), hit.by or 'enemies',
         ago(game.tick - hit.last), alive and 'health ' .. round(c.health or 0) or 'your character died')
     end
+    -- Eggs of ours on this agent's surface or built by it that hatch within 5 minutes (spoil.lua).
+    if api.hatch_lines then
+      local ok, list = pcall(api.hatch_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     -- One line per incident (threat.attack_line). An incident this agent was
     -- told about comes again, as "continues" with its totals, only after
     -- REPEAT_ATTACK; h.attacks holds what each agent was shown (id -> tick).
