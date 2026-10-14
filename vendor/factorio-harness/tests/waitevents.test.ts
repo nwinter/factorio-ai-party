@@ -10,6 +10,8 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const exec = promisify(execFile);
+// sleep_check goes over the wire as observe {scope: sleep_check} (host/harness.ts).
+const isCheck=(r:any)=>r.action==='sleep_check'||(r.action==='observe'&&r.args?.scope==='sleep_check');
 // A fake RCON server answering dispatch requests (as in cli.test.ts).
 async function engine(reply: (request:any)=>any, run:(port:number)=>Promise<void>) {
   const sockets = new Set<Socket>();
@@ -147,5 +149,40 @@ test('fh wait --until EVENT --max S: one sleep, peek reads only, one line out',a
   const sleeps=seen.filter(r=>r.action==='sleep');
   assert.deepEqual(sleeps.map(r=>[r.args.seconds,r.args.condition,r.args.peek]),[
     [30,undefined,true],[600,{until:'alert'},true],[120,{until:'item_count',item:'coal',at_least:5},true],[60,undefined,true]]);
-  assert(seen.filter(r=>r.action==='sleep_check').every(r=>r.args.peek===true),'the team block waits for the next reply');
+  const reads=seen.filter(isCheck); assert(reads.length>0 && reads.every(r=>r.args.peek===true),'the team block waits for the next reply');
+});
+test('a sleep replaced by a newer one ends (woke replaced) without reading the other sleep\'s wake',async()=>{
+  // shift08 20:07: Sol's Codex shell returned at 30 s, it slept again; the first call polled the new sleep and
+  // ended timed_out ("advanced 16 game seconds in 48 real seconds").
+  const seen:any[]=[];let checks=0;
+  await engine(request=>{
+    seen.push(request);
+    if(request.action==='sleep')return {ok:true,result:{while_asleep:'no queue and no action',sleeping_s:30,until_tick:1801}};
+    checks++;
+    return {ok:true,result:checks<2?{slept_s:1,until_tick:1801}:{slept_s:0,until_tick:5400}};
+  },async port=>{
+    const reply=JSON.parse((await cli(port,['sleep','30'])).stdout);
+    assert.equal(reply.ok,true); assert.equal(reply.result.woke,'replaced'); assert.match(reply.result.note,/another sleep \(until tick 5400\)/);
+  });
+  const reads=seen.filter(isCheck); assert(reads.length>0 && reads.every(r=>r.args.peek===true),'no read of the other sleep');
+});
+test('fh wait --until on a runtime without sleep peek: the sleep as fh sleep, shown whole; alert says when it comes',async()=>{
+  const seen:any[]=[];let checks=0;
+  await engine(request=>{
+    seen.push(request);
+    if(request.action==='sleep'){
+      if(request.args.peek)return {ok:false,error:{code:'invalid_request',message:'unknown argument peek for sleep; valid: condition, seconds'}};
+      if(request.args.condition?.until==='alert')return {ok:false,error:{code:'invalid_request',message:'unknown condition alert'}};
+      checks=0;return {ok:true,result:{while_asleep:'no queue and no action',sleeping_s:30,until_tick:1801,team:{tells:['astra, 1s ago: coal please']}}};
+    }
+    checks++;
+    return {ok:true,result:checks<2?{slept_s:1,until_tick:1801}:{slept_s:4,until_tick:1801,woke:'told',tell:'astra: coal please'}};
+  },async port=>{
+    const {stdout}=await cli(port,['wait','--until','tell','--max','30'],'compact');
+    assert.match(stdout,/coal please/); assert.match(stdout,/woke: told after 4 s \(astra: coal please\)/);
+    await assert.rejects(cli(port,['wait','--until','alert']),(error:any)=>/alert wake comes with the next harness deploy/.test(error.stdout));
+  });
+  const sleeps=seen.filter(r=>r.action==='sleep');
+  assert.deepEqual(sleeps.slice(0,2).map(r=>r.args.peek),[true,undefined],'tried with peek, then without');
+  assert(seen.some(r=>isCheck(r)&&!r.args.peek),'the final read delivers the team block, shown');
 });

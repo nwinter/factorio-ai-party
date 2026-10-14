@@ -150,7 +150,7 @@ function wakeLine(reply: Reply): string {
   const detail = r.tell ?? r.mention ?? r.board ?? r.alert ?? r.queue
     ?? (r.woke === 'condition' && r.saw !== undefined ? `saw ${typeof r.saw === 'string' ? r.saw : JSON.stringify(r.saw)}` : undefined)
     ?? (r.woke === 'damaged' ? `health ${r.health}${r.by ? `, hit by ${r.by}` : ''}` : undefined) ?? r.note;
-  const more = ['told','mentioned','board','alert','damaged'].includes(r.woke) ? '; your next reply\'s team block has the rest' : '';
+  const more = r.full ? '' : ['told','mentioned','board','alert','damaged'].includes(r.woke) ? '; your next reply\'s team block has the rest' : '';
   return `woke: ${r.woke ?? 'nothing'} after ${r.slept_s ?? 0} s${detail !== undefined ? ` (${said(detail)})` : ''}${more}`;
 }
 function deployingCommand(command: string): boolean { return command === 'deploy' || command === 'watch'; }
@@ -760,14 +760,33 @@ async function main() {
     const capped = left !== undefined && left < seconds*1000;
     if (capped) seconds = Math.max(1, Math.floor(left/1000));
     // quiet (fh wait --until): peek requests leave the team block for the agent's next reply; one line out.
-    const started = await harness.request('sleep',{seconds, ...(condition ? {condition} : {}), ...(quiet ? {peek:true} : {})});
-    if (!started.ok) return started;
+    let started = await harness.request('sleep',{seconds, ...(condition ? {condition} : {}), ...(quiet ? {peek:true} : {})});
+    // A runtime from before eng/minds-waits takes no peek on sleep: the sleep runs as fh sleep's, shown whole (full).
+    let full = false;
+    if (!started.ok && quiet && /unknown argument peek/.test(String(started.error?.message ?? ''))) {
+      quiet = false; full = true;
+      started = await harness.request('sleep',{seconds, ...(condition ? {condition} : {})});
+    }
+    if (!started.ok) {
+      if (condition?.until === 'alert') return {...started, error:{...started.error, message:`${started.error?.message ?? 'sleep failed'}; the alert wake comes with the next harness deploy`}};
+      return started;
+    }
     // What keeps going, at once (a shell that returns early, as Codex's, shows it before the wake).
     if (!quiet && outputFormat === 'compact' && typeof started.result?.while_asleep === 'string') process.stdout.write(`${operatorHead()}while_asleep: ${started.result.while_asleep}\n`);
     let until = Date.now()+seconds*1250+10000;
     if (capped) until = Math.min(until, deadline!+1000);
+    // One sleep per agent: a newer sleep (another fh sleep while this one ran: shift08 20:07, Sol's Codex shell
+    // returned at 30 s and it slept again, so this call polled the new sleep and gave up as timed_out) replaces this
+    // one's record. Its end tick tells them apart; this call then ends without reading the other's wake.
+    const mine = started.result?.until_tick;
+    const begun = Date.now();
     while (!stopping && Date.now()<until) {
       const check = await harness.request('sleep_check',{peek:true});
+      const theirs = check.result?.until_tick;
+      if (check.ok && typeof mine === 'number' && typeof theirs === 'number' && theirs !== mine) {
+        return {...check, ok:true, result:{woke:'replaced', waited_s:Math.round((Date.now()-begun)/1000), until_tick:mine,
+          note:`another sleep (until tick ${theirs}) started while this one ran and replaced it (one sleep per agent); that call reports its own wake`}};
+      }
       if (!check.ok || check.result?.woke) break;
       await delay(1000);
     }
@@ -779,7 +798,7 @@ async function main() {
     }
     if (final.ok && !woke) return {...final, ok:false, error:{code:'timed_out',message:`sleep timed_out: the game advanced less than ${seconds} s in ${Math.round(seconds*1.25+10)} s of real time (paused or slow server)`}};
     if (final.ok && woke === 'died') return {...final, ok:false, error:{code:'died',message:'your character died while sleeping'}};
-    return final;
+    return full ? {...final, result:{...final.result, full:true}} : final;
   }
   // fh wait: block until whatever the character is doing (and any combat) ends.
   async function waitForIdle(): Promise<Reply> {
@@ -929,7 +948,8 @@ async function main() {
       const max = integer(values.max, 600);
       if (max > 900) throw new Error('wait --max takes 1..900 seconds');
       const reply = await sleep(max, untilEvent(values.until), true);
-      if (reply.ok && outputFormat === 'compact') process.stdout.write(operatorHead() + wakeLine(reply) + '\n');
+      // An older runtime delivered the team block with the sleep (full): the line, then the whole reply.
+      if (reply.ok && outputFormat === 'compact' && !reply.result?.full) process.stdout.write(operatorHead() + wakeLine(reply) + '\n');
       else output(reply.ok ? {...reply, result:{...reply.result, line:wakeLine(reply)}} : reply);
       if (!reply.ok) process.exitCode=1;
     } else if (command === 'wait') {
