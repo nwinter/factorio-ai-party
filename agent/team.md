@@ -90,8 +90,12 @@ already targets your character.
   (working, output full, no resource left) and what they put into.
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
   `"surface"`) reads one item: where it sits (chests by kind, belts, machine outputs, inserter hands, robots,
-  characters), each logistic network's stock of it (free and reserved), its robots, every unmet requester with the
-  reason, the machines that make and use it by status (the worst 3 with positions), and the inserters feeding them.
+  characters), each logistic network's stock of it (free and reserved, and which requesters the reserved stock is for),
+  its robots, every unmet requester with the reason, the machines that make and use it by status (the worst 3 with
+  positions), and the inserters feeding them.
+- `./fh call turrets` (optional `"surface"` or `"area"`) lists every turret by front: its ammo (a flamer's oil with
+  its buffer), health, and what feeds it (an inserter and its belt or chest, robots, a pipe, power, or nothing:
+  hand-fed); the hand-fed and low ones first.
 - `./fh call trace --args '{"position":{"x":0,"y":0}}'` (a machine or lab; `"platform"` on a platform) lists per
   ingredient it lacks each feeding inserter, what that inserter reads and how much is there, and a container within 10
   tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
@@ -127,7 +131,8 @@ already targets your character.
   or more of its capacity for 2 minutes, boilers under 20 minutes of their own fuel that nothing refills (their feeding
   inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel fell about
   as fast as they burn over 2+ minutes, or by a quarter of their burn over 4+ minutes) (again under 10 and 5; each low boiler with its feeder and that
-  source, or that no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a logistic network with no
+  source, or that no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a boiler's feed chest under
+  20 of its fuel with nothing put into it for 5 minutes (boiler, chest, count, feeder), a logistic network with no
   idle logistic robot for 10 minutes, a science colour whose makers here have all stood still for 5+ minutes (with
   its chain's first short step), Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
   drawing power, full accumulators in an attractor network; at most one digest every 2.5 minutes, new or worse only;

@@ -381,6 +381,40 @@ do
   g=boiler_groups()
   eq(#g,1); eq(g[1].n,1)
   has(g[1].line,'boiler (-16,41) 3 min, down from 4 min 240 s before: inserter (-16,39) from transport-belt (-9,36) (with 8 belt tiles up to it holding 48 coal)')
+  -- Feed chests running out (Haiku, 10:50): the requester chest feeding boilers 8-13 holds 12 coal and nothing is put
+  -- into it for 5 min: a group per boiler naming the boiler, the chest, its count and the feeder. Not before 5 min of
+  -- looks; not while robots bring coal to it; not when its count rose; worse under 10, then empty.
+  local function feed_groups()
+    st4.networks.views={}
+    local out={}
+    for _,x in ipairs(N4.alert_groups(force)) do if x.kind=='feed_chest_low' then out[#out+1]=x end end
+    table.sort(out,function(a,b) return a.center.x<b.center.x end)
+    return out
+  end
+  st4.networks.feed_hist={}
+  for _,b in ipairs(boilers) do b.burner.inventory[1].count=60 end
+  in_chest=12
+  eq(#feed_groups(),0,'the first look')
+  for _=1,4 do run4(60); eq(#feed_groups(),0,'under 5 min of looks') end
+  run4(60)
+  local fg6=feed_groups()
+  eq(#fg6,6,'boilers 8-13')
+  eq(fg6[1].line,'boiler (-1,41): its feed chest requester-chest (10,39) holds 12 coal, nothing put into it for 5+ min (feeder inserter (-1,39))')
+  eq(fg6[1].rank,1)
+  -- Robots on the way with coal: being refilled.
+  requester.get_logistic_point=function() return {targeted_items_deliver={{name='coal',quality='normal',count=50}}} end
+  eq(#feed_groups(),0,'robots bring coal')
+  requester.get_logistic_point=nil
+  run4(60); eq(#feed_groups(),6)
+  -- The count rose a look ago: refilled within 5 min.
+  in_chest=15; run4(60); in_chest=8; run4(60)
+  eq(#feed_groups(),0,'it rose within 5 min')
+  for _=1,5 do run4(60); feed_groups() end
+  fg6=feed_groups()
+  eq(#fg6,6); eq(fg6[1].rank,2,'under 10')
+  in_chest=0; run4(60)
+  fg6=feed_groups(); eq(fg6[1].rank,3,'empty'); has(fg6[1].line,'holds no fuel')
+  in_chest=150
   game.surfaces=saved
 end
 -- Boilers that hold no fuel at all: the usual fuels are looked for, and the line says so.

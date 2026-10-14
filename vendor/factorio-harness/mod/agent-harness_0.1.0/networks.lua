@@ -403,6 +403,7 @@ return function(api)
               if not last or game.tick - last.tick > OWN_TICKS then st.boiler_own[unit] = nil end
             end
             net.fuel_min = own / (fed_kw * 1000) / 60
+            net.feed_low = M.feed_chests(net.boilers, surface, f)
           end
           net.fuel_under = under
           table.sort(low, function(a, b) return a.min < b.min end)
@@ -904,13 +905,14 @@ return function(api)
   -- A boiler in a chain: its fuel slot; a chest or machine: all it holds.
   local function held_of(src, names)
     local inv = src.type == 'boiler' and try(function() return src.burner.inventory end)
-    local parts = {}
+    local parts, total = {}, 0
     for _, name in ipairs(names) do
       local n = inv and (try(function() return inv.get_item_count(name) end) or 0) or (try(function() return src.get_item_count(name) end) or 0)
-      if n > 0 then parts[#parts+1] = n .. ' ' .. name end
+      if n > 0 then parts[#parts+1] = n .. ' ' .. name; total = total + n end
     end
-    return #parts > 0 and table.concat(parts, ', ') or nil
+    return #parts > 0 and table.concat(parts, ', ') or nil, total
   end
+  local CHESTS = {container=true, ['logistic-container']=true}
   -- Whether a feeder's source can bring fuel, {has, text}. A belt: its tile
   -- and up to BELT_WALK tiles upstream (an underground's entrance followed);
   -- when those hold none, the inserters within 3 tiles of the run that drop
@@ -918,8 +920,9 @@ return function(api)
   local function source_fuel(src, names, surface, f)
     local pos = at(src.position.x, src.position.y)
     if not BELTS[src.type] then
-      local held = held_of(src, names)
-      return {has=held ~= nil, text=string.format('%s %s holding %s', src.name, pos, held or 'no fuel')}
+      local held, total = held_of(src, names)
+      return {has=held ~= nil, text=string.format('%s %s holding %s', src.name, pos, held or 'no fuel'), count=total, held=held,
+        chest=CHESTS[src.type] and src or nil}
     end
     local by, tiles, queue, seen, run, want = {}, 0, {src}, {}, {}, {}
     for _, name in ipairs(names) do want[name] = true end
@@ -987,7 +990,7 @@ return function(api)
     walked = walked or {}
     for i = from or 1, to or #boilers do
       local b = boilers[i]
-      b.fed, b.feeder = false, nil
+      b.fed, b.feeder, b.chest = false, nil, nil
       local e = b.e
       local names = fuel_names(b)
       local key = table.concat(names, ',')
@@ -1004,6 +1007,8 @@ return function(api)
             if memo then walked[memo] = s end
             local text = s and string.format('%s %s from %s', ins.name, where, s.text) or string.format('%s %s with no pickup target', ins.name, where)
             if in_hand then text = string.format('%s %s holding %s in hand', ins.name, where, hand) end
+            -- The chest it takes from, for the feed chest check (M.feed_chests).
+            if s and s.chest and not b.chest then b.chest = {e=s.chest, count=s.count, held=s.held, feeder=ins.name .. ' ' .. where, names=names, tick=game.tick} end
             if in_hand or (s and s.has) then b.fed, b.feeder = true, text
             else b.feeder = b.feeder or text end
           end
@@ -1011,6 +1016,68 @@ return function(api)
       end
       b.feeder = b.feeder or 'no inserter feeds it'
     end
+  end
+  -- Feed chests running out (Haiku, 10:50: the north row's chests ran low about every 20 min): a boiler whose feeder
+  -- takes from a chest holding under FEED_LOW of its fuels, with nothing put into that chest for FEED_TICKS: its count
+  -- never rose between the looks of that time (storage feed_hist, one count per look, kept FEED_TICKS and a minute),
+  -- no robot is on the way to it with a fuel, and no inserter dropping into it holds a fuel. Returns the boilers so,
+  -- each {e, chest, count, held, feeder}.
+  local FEED_LOW, FEED_TICKS = 20, 18000
+  function M.feed_chests(boilers, surface, f)
+    local st = store()
+    st.feed_hist = st.feed_hist or {}
+    local out, judged = {}, {}
+    for _, b in ipairs(boilers) do
+      local c = b.chest
+      local chest = c and c.e
+      local unit = chest and chest.valid and try(function() return chest.unit_number end)
+      if unit then
+        local hist = st.feed_hist[unit] or {}
+        st.feed_hist[unit] = hist
+        -- Each count at the tick it was read (the background view reads feeders some steps before its rows), in order.
+        local at_tick, known = c.tick or game.tick, false
+        for _, x in ipairs(hist) do if x.tick == at_tick then known = true end end
+        if not known then
+          local i = #hist + 1
+          while i > 1 and hist[i - 1].tick > at_tick do i = i - 1 end
+          table.insert(hist, i, {tick=at_tick, n=c.count})
+        end
+        while hist[1] and game.tick - hist[1].tick > FEED_TICKS + 3600 do table.remove(hist, 1) end
+        if judged[unit] == nil then
+          local quiet = c.count < FEED_LOW
+          -- Looks covering FEED_TICKS: the oldest kept is that old.
+          local first
+          for _, x in ipairs(hist) do if game.tick - x.tick >= FEED_TICKS then first = x end end
+          if quiet and not first then quiet = false end
+          for i = 2, #hist do
+            if quiet and hist[i].n > hist[i - 1].n and game.tick - hist[i].tick <= FEED_TICKS then quiet = false end
+          end
+          if quiet then
+            local pt = try(function() return chest.get_logistic_point(defines.logistic_member_index.logistic_container) end)
+            local coming = pt and try(function() return pt.targeted_items_deliver end) or {}
+            for k, v in pairs(coming) do
+              local name, n = type(v) == 'table' and v.name or k, type(v) == 'table' and v.count or v
+              if type(name) == 'table' then name = name.name end
+              for _, fuel in ipairs(c.names) do if name == fuel and (n or 0) > 0 then quiet = false end end
+            end
+          end
+          if quiet then
+            for _, ins in ipairs(try(function() return surface.find_entities_filtered{type='inserter', force=f, position=chest.position, radius=3, limit=32} end) or {}) do
+              if ins.valid and same(try(function() return ins.drop_target end), chest) then
+                local hand = try(function() local h = ins.held_stack; return h.valid_for_read and h.name end)
+                for _, fuel in ipairs(c.names) do if hand == fuel then quiet = false end end
+              end
+            end
+          end
+          judged[unit] = quiet
+        end
+        if judged[unit] then out[#out+1] = {e=b.e, chest=chest, count=c.count, held=c.held, feeder=c.feeder} end
+      end
+    end
+    for unit, hist in pairs(st.feed_hist) do
+      if not hist[#hist] or game.tick - hist[#hist].tick > FEED_TICKS + 3600 then st.feed_hist[unit] = nil end
+    end
+    return out
   end
   function M.fuel_sources(surface, f, center, names)
     local chests, belts = {}, {tiles=0, by={}, near={}}
@@ -1115,6 +1182,20 @@ return function(api)
         end
         local g = r.fuel_low and #r.fuel_low > 0 and M.fuel_group(s, r, f)
         if g then out[#out+1] = g end
+        -- A boiler's feed chest low with nothing put into it (M.feed_chests): one group per boiler; worse under 10, then empty.
+        for _, x in ipairs(r.feed_low or {}) do
+          if x.e.valid and x.chest.valid then
+            local unit = try(function() return x.e.unit_number end) or 0
+            local u = try(function() return x.e.last_user and x.e.last_user.name end)
+            out[#out+1] = {key='feed_chest_low|' .. s.name .. '|' .. unit, kind='feed_chest_low', surface=s.name, n=1,
+              rank=x.count == 0 and 3 or x.count < 10 and 2 or 1, names={boiler=1}, by=u and {[u]=1} or {},
+              at={{x=x.e.position.x, y=x.e.position.y}}, center={x=math.floor(x.e.position.x + 0.5), y=math.floor(x.e.position.y + 0.5)},
+              now_text=string.format('%s holding %s', x.chest.name, x.held or 'no fuel'),
+              line=string.format('boiler %s: its feed chest %s %s holds %s, nothing put into it for %d+ min (feeder %s)',
+                at(x.e.position.x, x.e.position.y), x.chest.name, at(x.chest.position.x, x.chest.position.y), x.held or 'no fuel',
+                math.floor(FEED_TICKS / 3600), x.feeder)}
+          end
+        end
       end
       for _, r in ipairs(s.logistic) do
         if r.busy_since and game.tick - r.busy_since >= BUSY_TICKS and r.center then
