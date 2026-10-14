@@ -154,23 +154,143 @@ assert(not ok and err:find('out of build reach',1,true) and not err:find('spots'
 eq(bot('build',{item='gun-turret',position={x=3,y=9}}).consumed,1)
 surface.can_place_entity=can_place
 
--- placements: the same list without building.
+-- placements: the same list without building, as long as asked (default 10), nearest first.
 local p=bot('placements',{name='offshore-pump'})
-eq(p.name,'offshore-pump'); eq(p.radius,12); eq(#p.placements,3)
+eq(p.name,'offshore-pump'); eq(p.radius,12); eq(#p.placements,10); eq(p.count,10); eq(p.more,true)
 eq(p.placements[1].position.x,10); eq(p.placements[1].position.y,-0.5); eq(p.placements[1].direction,'east')
-assert(p.checked>=3 and p.checked<=400,p.checked)
+assert(p.checked>=10 and p.checked<=200,p.checked)
+p=bot('placements',{name='offshore-pump',limit=3})
+eq(#p.placements,3); eq(p.placements[3].position.y,-1.5)
 eq(c.items['offshore-pump'],1)
+-- near is the centre (position too, as before).
+p=bot('placements',{name='boiler',near={x=12,y=0},radius=4})
+eq(p.radius,4); eq(p.near.x,12); eq(p.placements[1].position.x,8.5); eq(p.placements[1].direction,'north')
 p=bot('placements',{name='boiler',position={x=12,y=0},radius=4})
-eq(p.radius,4); eq(p.placements[1].position.x,8.5); eq(p.placements[1].direction,'north')
+eq(p.placements[1].position.x,8.5)
+fails(function() bot('placements',{name='boiler',near={x=12,y=0},position={x=12,y=0}}) end,'near and position both name the centre')
 -- Only the asked direction.
 eq(#bot('placements',{name='offshore-pump',direction='north'}).placements,0)
 -- No water around: no pump candidate, nothing checked.
-p=bot('placements',{name='offshore-pump',position={x=-20,y=0}})
+p=bot('placements',{name='offshore-pump',near={x=-20,y=0}})
 eq(#p.placements,0); eq(p.checked,0)
-fails(function() bot('placements',{name='offshore-pump',radius=17}) end,'radius out of range')
+fails(function() bot('placements',{name='offshore-pump',radius=25}) end,'radius out of range')
+fails(function() bot('placements',{name='offshore-pump',limit=51}) end,'limit out of range')
 fails(function() bot('placements',{name='offshore-pump',direction='northeast'}) end,'direction is north, east, south or west')
 fails(function() bot('placements',{name='nothing'}) end,'no entity or item named nothing')
 fails(function() bot('placements',{}) end,'name is required')
 fails(function() bot('placements',{name='boiler',size=3}) end,'size')
-assert(runtime.dispatch{action='describe',args={},bot='astra'}.actions.placements.returns:find('at most 3',1,true))
+assert(runtime.dispatch{action='describe',args={},bot='astra'}.actions.placements.returns:find('nearest first',1,true))
+
+-- The scan before the game check (Gemini 10:50: an accumulator at radius 16 found nothing in 400 checks): with
+-- collision layers known, a position an entity or a water tile is in the way of never reaches the game, and a
+-- building that does not turn is checked once per position, without a direction.
+local building={layers={item=true,object=true,player=true,water_tile=true,is_object=true,is_lower_object=true}}
+prototypes.entity.accumulator={name='accumulator',type='accumulator',tile_width=2,tile_height=2,supports_direction=false,
+  collision_box={left_top={x=-0.9,y=-0.9},right_bottom={x=0.9,y=0.9}},collision_mask=building}
+prototypes.entity['stone-furnace'].collision_mask=building
+prototypes.entity['tree-01']={name='tree-01',type='tree',collision_mask={layers={item=true,object=true,player=true,water_tile=true,is_object=true,is_lower_object=true}}}
+prototypes.entity['iron-ore']={name='iron-ore',type='resource',collision_mask={layers={resource=true}}}
+water.prototype.collision_mask={layers={water_tile=true,item=true,player=true,resource=true,doodad=true,floor=true}}
+local tq=surface.find_tiles_filtered
+surface.find_tiles_filtered=function(f)
+  if type(f.collision_mask)=='table' then
+    local wants=false
+    for _,l in ipairs(f.collision_mask) do if l=='water_tile' then wants=true end end
+    return wants and tq{area=f.area,collision_mask='water_tile',limit=f.limit} or {}
+  end
+  return tq(f)
+end
+-- A furnace (2x2) at (2,2) and a tree at (-1.5,0.5) on land; ore under (0.5,-2.5) blocks nothing.
+local scene={{valid=true,type='furnace',name='stone-furnace',bounding_box={left_top={x=1.1,y=1.1},right_bottom={x=2.9,y=2.9}}},
+  {valid=true,type='tree',name='tree-01',bounding_box={left_top={x=-1.9,y=0.1},right_bottom={x=-1.1,y=0.9}}},
+  {valid=true,type='resource',name='iron-ore',bounding_box={left_top={x=0.1,y=-2.9},right_bottom={x=0.9,y=-2.1}}},
+  {valid=true,type='entity-ghost',name='entity-ghost',bounding_box={left_top={x=-0.9,y=-0.9},right_bottom={x=0.9,y=0.9}}}}
+surface.find_entities_filtered=function(f) if f.area then return scene end return {} end
+local asked={}
+surface.can_place_entity=function(a)
+  if a.name=='character' then return true end
+  if a.name=='accumulator' then
+    asked[#asked+1]=a
+    local x,y=a.position.x,a.position.y
+    -- the game: no water under it, clear of the furnace and the tree
+    if x+1>10 then return false end
+    if math.abs(x-2)<2 and math.abs(y-2)<2 then return false end
+    if x>-3 and x<0 and y>-1 and y<2 then return false end
+    return true
+  end
+  return can_place(a)
+end
+p=bot('placements',{name='accumulator',near={x=1,y=1},radius=3,limit=50})
+assert(#p.placements>0)
+eq(p.placements[1].direction,nil)
+for _,s in ipairs(p.placements) do
+  assert(not (math.abs(s.position.x-2)<2 and math.abs(s.position.y-2)<2),'on the furnace')
+end
+-- every position the game was asked passed (the scan ruled out the rest), each once
+for _,a in ipairs(asked) do eq(a.direction,0) end
+eq(#asked,#p.placements); eq(p.checked,#asked)
+assert(p.blocked and p.blocked>0,tostring(p.blocked))
+eq(p.more,nil)
+-- the furnace and tree positions are in blocked, the ghost and ore are not: (0,0) (under the ghost) and (1,-2)
+-- (over the ore) fit
+local at={}
+for _,s in ipairs(p.placements) do at[s.position.x..','..s.position.y]=true end
+assert(at['0,0'] and at['1,-2'] and not at['2,2'] and not at['-1,1'])
+-- Water: a boiler beside the lake; positions with water under them are blocked, not checked.
+checks={}
+p=bot('placements',{name='boiler',near={x=9,y=-5},radius=3,direction='north',limit=50})
+for _,a in ipairs(checks) do assert(a.position.x+1.5<=10,'checked over water: '..a.position.x) end
+prototypes.entity.boiler.collision_mask=building
+checks={}
+p=bot('placements',{name='boiler',near={x=9,y=-5},radius=3,direction='north',limit=50})
+for _,a in ipairs(checks) do assert(a.position.x+1.5<=10,'checked over water: '..a.position.x) end
+assert(p.blocked and p.blocked>0)
+-- Chunks our force does not see now are left out (unseen); the centre's chunk is seen.
+force.is_chunk_visible=function(_,chunk) return chunk.x>=0 end
+asked={}
+p=bot('placements',{name='accumulator',near={x=1,y=1},radius=3,limit=50})
+for _,s in ipairs(p.placements) do assert(s.position.x>=0,'unseen chunk: '..s.position.x) end
+assert(p.unseen and p.unseen>0)
+force.is_chunk_visible=function() return true end
+-- By remote view: a centre out of sight in a chunk our force sees.
+p=bot('placements',{name='accumulator',near={x=60,y=1},radius=2})
+eq(p.by,'remote view')
+-- A pump as 2.0.77 has it: 1x1, its own tile on land, water in the 2x3 tiles in front (tile_buildability_rules).
+-- Only positions those rules allow reach the game: land tiles at x=9 facing east.
+prototypes.entity['offshore-pump']={name='offshore-pump',type='offshore-pump',tile_width=1,tile_height=1,
+  collision_box={left_top={x=-0.6,y=-1.05},right_bottom={x=0.6,y=0.3}},
+  collision_mask={layers={is_lower_object=true,is_object=true,object=true,train=true}},
+  tile_buildability_rules={
+    {area={left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}},required_tiles={layers={ground_tile=true}},colliding_tiles={layers={water_tile=true}}},
+    {area={left_top={x=-1,y=-2},right_bottom={x=1,y=-1}},required_tiles={layers={water_tile=true}},colliding_tiles={layers={}}}}}
+asked={}
+surface.can_place_entity=function(a)
+  if a.name=='character' then return true end
+  if a.name=='offshore-pump' then asked[#asked+1]=a; return a.direction==4 and a.position.x==9.5 and a.position.y~=0.5 end
+  return can_place(a)
+end
+scene={}
+p=bot('placements',{name='offshore-pump',near={x=5,y=0},limit=5})
+eq(#p.placements,5); eq(p.placements[1].position.x,9.5); eq(p.placements[1].position.y,-0.5); eq(p.placements[1].direction,'east')
+for _,a in ipairs(asked) do eq(a.position.x,9.5); eq(a.direction,4) end
+eq(p.checked,6)
+-- A block all of colliding tiles (the lake, x>=16) is counted, never read tile by tile.
+local reads=0
+surface.count_tiles_filtered=function(f)
+  local n=0
+  local lt,rb=f.area.left_top,f.area.right_bottom
+  for x=math.floor(lt.x),math.ceil(rb.x)-1 do for y=math.floor(lt.y),math.ceil(rb.y)-1 do if x>=10 then n=n+1 end end end
+  return n
+end
+local find_tiles=surface.find_tiles_filtered
+surface.find_tiles_filtered=function(f)
+  if f.area and f.area.left_top.x>=10 then reads=reads+1 end
+  return find_tiles(f)
+end
+asked={}
+p=bot('placements',{name='accumulator',near={x=14,y=0},radius=6,limit=50})
+eq(reads,0)
+assert(p.blocked and p.blocked>0)
+for _,a in ipairs(asked) do assert(a.position.x+1<=10,'over the lake: '..a.position.x) end
+surface.count_tiles_filtered=nil; surface.find_tiles_filtered=find_tiles
 print('shore: ok')

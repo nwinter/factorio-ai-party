@@ -91,6 +91,15 @@ fh call status
 - `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success; `unreachable` and `blocked` fail with `last.why` on the error line. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
 - A timed-out wait is not a finished action. The reply has `error.code` `wait_timeout`, `timed_out: true` and `still_running` (the action's kind and end tick) and no `completion`. The action keeps running in game; a new character action would interrupt it. `fh wait` blocks until the character is idle again and reports the last outcome.
 - Ctrl-C does not stop an action the game already accepted. `fh call stop` does.
+- `build_path {points, item, ticks, start_index, end_direction}` lays a belt line along axis-aligned tile-centred
+  points, walking as it goes. Trees, rocks and wild plants on a tile, or across the walk to the next tile, are mined by
+  hand first (Sonnet 10:50: it stopped at every rock of a Vulcanus line), one at a time, standing still for the
+  hand-mining time; what they give goes to the inventory. One out of hand reach is walked to with the pathfinder; one
+  no path leads to (a rock in a pocket of cliffs) stops it `blocked`, naming the rock and the tile. `last.cleared`
+  counts them and `cleared_names` lists them (`big-volcanic-rock*2 tree-08*1`; `--wait` prints both,
+  `status.active.cleared` and `mining` while it runs). It stops for buildings, water and cliffs (`build_failed` with
+  the game's refusal and `next_index` to resume from), and when the inventory has no room for what a rock gives
+  (`inventory_full`).
 - An action that ends with the character on a belt, underground belt or splitter says so in `last.on_belt`
   (`standing on a transport-belt facing east: it carries you; step off to stay put`); the game moves a character
   standing on a belt. `status.on_belt` shows the same for as long as it stands on one.
@@ -910,7 +919,11 @@ fh sleep 900 --until researched                       # ...or until the research
     holds in chunks our force does not see now; more than 64 fails (a smaller area, or `types`).
 - Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
   `revision`, `paused`, `active`, `pending` (the next 5 as `id action [label]`), `pending_count`, `recent` (the last 2
-  results), `last_failure`; `queue_status` shows every step in full.
+  results), `last_failure`.
+- `queue_status` (Sol 10:50: a repeating courier plan's long done history hid its stalled step) shows `active` (the
+  running step in full, with `running_s`: how long it has run), `pending` (the next step), `history` (the newest 3),
+  `pending_count`, `history_total`, `last_failure`, `waiting`, `guards`, `repeating`, `cycle`. `history` and `pending`
+  take a count or `"all"`: `fh queue status --args '{"history":"all","pending":10}'`.
 - A repeating plan (`queue_repeat`, optional `name` up to 32 characters) whose round had steps that ran short (the
   outcomes `out_of_items`, `nothing_collected`, `inventory_full`, a give with none held, or a reply's `short`) puts one
   grouped line in the team block under `queue`: `queue loop3 round 4: 3 of 9 steps short: transfer iron-plate
@@ -1408,8 +1421,20 @@ fh sleep 900 --until researched                       # ...or until the research
 - A refused `build` of an offshore pump (any reason) lists up to 3 valid placements within 12 tiles, nearest first, with
   their directions, from the game's own manual build check (`nearest valid offshore-pump placements (game build check,
   within 12 tiles): (10,-0.5) east, ...`). A build refused by water under the footprint (a boiler, a steam engine) lists
-  up to 3 positions within 6 tiles where it fits facing the asked direction. `placements {name, position, radius,
-  direction}` (read) returns the same list without building: `placements [{position, direction}]`, `checked`.
+  up to 3 positions within 6 tiles where it fits facing the asked direction.
+- `placements {name, near, radius, direction, limit}` (read; `position` is `near`; Gemini 10:50) lists where an entity
+  (or the entity an item places) fits now, nearest `near` (default you) first: `placements [{position, direction}]`
+  (up to `limit`, default 10, at most 50; one per position, with the first direction that fits; none for a building
+  that does not turn), `count`, `checked`, `blocked`, `unseen`, `more`.
+  - The judge is the game's manual build check, as `build` and `dry_run` use it: water, cliffs, entities, tiles, an
+    offshore pump's shore; no reach or item check. Before it, a scan of the entities and tiles around rules out the
+    positions something stands in (`blocked` counts them), so `checked` (at most 200 game checks) goes to positions
+    that may fit.
+  - `radius` 1..24 (default 12 for an offshore pump, else 10). `near` in sight, or by remote view in a chunk our force
+    sees now (`by: remote view`); positions in chunks it does not see now are left out (`unseen`). `more: true`: the
+    list stopped at `limit` (or at 200 checks) with positions left.
+  - Cost on a copy of world n: 3 to 8 ms a call up to radius 24 (a dense base, a Fulgora island); the old 3-spot search
+    took 7 to 32 ms at radius 10 to 16.
 - A refused turret build (gun, laser, flamethrower or artillery turret) lists up to 3 spots within your build reach
   where the game's manual build check accepts it: when blocked, the nearest to the asked position within 6 tiles of
   it (`; nearest spots where gun-turret fits within your build reach (game build check): (5,-2), (5,2), (4,-2)`); when
