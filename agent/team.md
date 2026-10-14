@@ -107,6 +107,10 @@ already targets your character.
   run only while your character is free (no action, your queue empty), 20 s after your own last action; your own
   action or queue call stops a running order at once and it resumes after. Every reply's `orders:` line says which
   runs and why. `./fh call orders` lists them; `order_remove`, `orders_pause`, `orders_resume`.
+- Circuits: `./fh call circuit_set --args '{"platform":"NAME","position":{"x":-2.5,"y":-4.5},"enable":"ice < 300"}'`
+  sets an entity's circuit condition, read switches, settings or combinator, in reach or by remote view (our entities
+  in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`
+  reads back the conditions, settings, each wire's far end and the signals on each network now.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
 

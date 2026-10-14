@@ -104,7 +104,7 @@ local function real(p)
   if rawget(p,'__bot') then return nil end
   -- A bot's platform proxy has no __player: never hand the engine the proxy
   -- table ("Invalid PlayerIdentification" for every bot's ghosts in shake7).
-  if rawget(p,'__platform') then return rawget(p,'__player') end
+  if rawget(p,'__platform') or rawget(p,'__remote') then return rawget(p,'__player') end
   return rawget(p,'__player') or p
 end
 local function in_map_view(p) local r=real(p); return r~=nil and r.controller_type==defines.controllers.remote end
@@ -337,6 +337,8 @@ end
 local function visible(p,pos)
   -- Acting on a platform by name (platform=): remote view shows all of it.
   if type(p)=='table' and rawget(p,'__platform') and own_platform(p) then return true end
+  -- Another surface by name (surface=): remote view shows its visible chunks.
+  if type(p)=='table' and rawget(p,'__remote') then return own_platform(p) or p.force.is_chunk_visible(p.surface,{x=math.floor(pos.x/32),y=math.floor(pos.y/32)}) end
   return distance(p.position,pos) <= 32 and (own_platform(p) or p.force.is_chunk_visible(p.surface, {x=math.floor(pos.x/32), y=math.floor(pos.y/32)}))
 end
 local function chunk_of(pos) return {x=math.floor(pos.x/32),y=math.floor(pos.y/32)} end
@@ -347,6 +349,9 @@ local function from_character(p,pos)
 end
 local function assert_visible(p,pos,what)
   if visible(p,pos) then return end
+  if type(p)=='table' and rawget(p,'__remote') then
+    error(string.format('%s at (%g,%g) on %s is not in a visible chunk (remote view needs radar coverage there)',what,pos.x,pos.y,p.surface.name),2)
+  end
   error(string.format('%s is outside local visible area: %s (limit 32 tiles, in a visible chunk; move_to within 30 tiles first)',what,from_character(p,pos)),2)
 end
 local function charted(p,pos) return own_platform(p) or p.force.is_chunk_charted(p.surface,chunk_of(pos)) end
@@ -596,8 +601,6 @@ function handlers.describe()
       power={area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',limit='unpowered rows 1..256 (default 32)',note='networks with a pole in the area: poles, production/consumption kW (5 s average) by prototype, unpowered machines (no_power|low_power|unconnected)'},
       scan={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',positions='or 1..64 {x,y}: just the entities on those tiles (e.g. a few belts\' lanes)',name='optional name or array',type='optional type or array (resources only listed when filtered)',fields='hp|fuel|inventory|output|spoil (spoilable items: count and stalest freshness %)|status|recipe|direction|amount|range (attack range)|ammo|target (turret shooting target)|lanes (belt contents L|R)|io (inserter pickup -> drop, with entities)|fluids (per fluidbox "fluid amount/capacity" then each connection "in|out|io x,y" = the tile it connects to, "=entity" when joined there; underground ends "io uS" with the partner; boxes split by |; ghosts too, from the prototype); other forces under fog show only static fields',limit='1..1024 rows (default 256)',ore='runs (per-row x ranges) or grid (letters, # blocked, ~ water)',returns='entities, total, truncated, ore; ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the area by item (rows for them only when name or type asks: item-on-ground, item-entity)'},
       nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..128 (default 32); map-known (charted) entities only: after landing on a new planet about 48 tiles around you, so explore or build a radar',limit='1..64 (default 5)',returns='entities [{name?, position, distance}], total; note when nothing was found'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',entity='rail item (a rail planner): which rail it places: straight-rail (default), half-diagonal-rail, curved-rail-a, curved-rail-b; with directions including the in-between ones (northnortheast, eastnortheast, ...); place_ghosts takes the rail names too and construct builds them',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',skip_failed='boolean, with builds: a failing entry is listed in failed {index,position,error} and the rest still build',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired, and unpaired_why (lava or empty space under its reach, its partner a ghost or out of reach, or none in reach)',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait). Your own character the only thing on the footprint: it walks off first and then builds (stepping_aside {from,to}; the same timed action and outcomes; last.result holds the build result)'},
-      wire={from='pole {x,y} (optional name/unit_number) in reach; with color: any entity with a circuit connection',to='pole {x,y} in reach (with color: an entity)',disconnect='boolean: remove the wire instead',
-        color='optional red|green: a circuit wire between two entities in reach (without it: the copper wire between poles)',from_side='with color, on a combinator: input|output (default output)',to_side='with color, on a combinator: input|output (default input)'},
       inspect={position='{x,y}',platform='optional platform name: inspect on that space platform (platform coordinates, hub at 0,0; the whole platform is in sight)',note='read-only: any entity in sight (32 tiles, visible chunk) without reach; in_reach says whether acting on it would reach; inserters and mining drills show their drop tile and what stands there (io); build replies and observe entity rows show a drill\'s drop and drop_into too; trash: what the game put in a silo\'s, landing pad\'s or hub\'s trash slots; rocket_weight (a silo): cargo held/lift kg; modules {inventory_index (the inventory a blueprint module request names), slots, contents}; filters, filter_mode, use_filters (inserters, loaders); an asteroid collector: filters (chunk names), filter_slots (the game\'s count; 0 until a filter is set), arm (chunks its arms hold), its output under inventories.asteroid_collector_output; held (an inserter\'s hand), pickup_target, drop_target; marked_for_deconstruction, marked_for_upgrade; ghosts_here (ghosts on the footprint, with their filters); on a platform: hub_slots, repair_packs and damaged (most damaged first, up to 10; damaged_count past that) on the hub, repair (how a damaged entity there gets repaired), and construction_blocked (hub full, ghosts whose items the hub lacks)'}, rotate={position='{x,y}',reverse='boolean'},
       configure={position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine)',platform='optional platform name: configure on that space platform through remote view (platform coordinates, hub at 0,0)',recipe='enabled recipe',quality='optional recipe quality (normal, uncommon, rare, epic, legendary; the machine needs the quality unlocked)',filters='or: item names for a filtering inserter/loader, or asteroid chunk names (metallic-asteroid-chunk, ...) for an asteroid collector ([] clears; up to the entity\'s filter slot count; a collector\'s count reads 0 until a filter is set, so there each slot is tried and only the game\'s refusal fails it; the reply reads the filters back, not_set for a name that did not stick)',filter_mode='whitelist|blacklist (inserters; asteroid collectors have no filter mode in the game)',force='boolean: allow destroying held fluids',returns='returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change'},
       transfer={position='{x,y}',positions='optional array of 1..64 {x,y}: same transfer per entity; per-entity rows plus total',inventory='chest|fuel|furnace_source|furnace_result|assembling_machine_input|assembling_machine_output|lab_input|rocket_silo_rocket (silo cargo)|rocket_silo_trash|cargo_landing_pad_main|hub_main|asteroid_collector_output|... (*_trash: take-only, what the game moved out); inferred when omitted (to_player takes from non-empty trash slots first; fuel items->burner fuel, else the first inventory accepting the item, e.g. silo ingredients then rocket cargo; to_player->output or inventory holding item)',item='name; omit with to_player to take everything',quality='default normal',count='1..10000 per entity (default: to_entity 1, or total; to_player all of the item; unlimited when item omitted)',total='optional cap across positions, filled in order; echoed',returns='transferred; inventory_full|entity_full {requested,got,blocked_item} when space ran out; to_entity gives from the main inventory, then (ammo) the gun ammo slots; holding none fails; short of items the hand-craft queue will deliver, it waits for them (awaiting_craft, outcome fed | failed | timed_out); into rocket_silo_rocket only what fits under the rocket\'s 1000 kg lift (rocket_weight held/lift kg; weight_limited {requested,fits,note} when fewer fit; fails when none fits)',direction='to_entity|to_player; inferred when omitted (echoed as direction): no item -> to_player; an item only the character holds or is hand-crafting -> to_entity; one only the targets hold -> to_player; both or neither -> error',keep='optional source reserve count',up_to='optional target total cap'},
@@ -621,7 +624,7 @@ function handlers.describe()
     limitations={'No teleport, resource creation, free crafting, direct mining, remote building, or map reveal',
       'Runtime source installation is trusted operator code, not a security sandbox',
       'Screenshots require a graphical client controlling the requested player; headless hosts do not render',
-      'Vehicles, rail placement, circuit wiring, and fluid transfers are unsupported',
+      'Vehicles, rail placement, and fluid transfers are unsupported',
       'Walk/mine completion is bounded by ticks; inspect status and observe to verify outcomes'}}
   for name,schema in pairs(scheduler and scheduler.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.orders and M.orders.schema or {}) do description.actions[name]=schema end
@@ -650,6 +653,11 @@ function handlers.describe()
   description.actions.status.brief='boolean: only active, last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older)'
   description.actions.status.alerts='boolean, with brief: add the alerts block (losses, attacked areas, groups, enemy news; read from what the game reported, no scan)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
+  -- inspect's circuit readback and another surface by remote view (circuits.lua).
+  description.actions.inspect.surface='optional planet or surface name: inspect there by remote view (a visible chunk)'
+  description.actions.inspect.note=description.actions.inspect.note..'; circuit (an entity with circuit settings or wires): enable/logistic conditions as text with _met, disabled, '..
+    'settings and off (switches, modes, signals by the names circuit_set takes), a combinator\'s settings and output, wires per color (red, green, copper; '..
+    'a combinator\'s red_input ... green_output, a power switch\'s copper_left/right) with each far end {entity, position, side}, networks {id, signals} (the signals on each now)'
   description.runtime_fault=state().runtime_fault or false
   return description
 end
@@ -2321,27 +2329,8 @@ function handlers.build(p,a)
   end
   return {built=#placed,placed=placed,built_before=a.built_before,failed=#failed>0 and failed or nil}
 end
--- Copper wire between two poles, both in the character's reach like a player
--- dragging a wire; the wire itself must span the distance.
-function handlers.wire(p,a)
-  if a.color~=nil then return M.circuits.wire(p,a) end
-  local function pole(t,key)
-    assert(type(t)=='table',key..' requires a pole position {x,y}')
-    local e=entity(p,{position=t.position or t,name=t.name,unit_number=t.unit_number})
-    friendly(p,e); assert(e.type=='electric-pole',key..' is not an electric pole')
-    return e.get_wire_connector(defines.wire_connector_id.pole_copper,true),e
-  end
-  local from,fe=pole(a.from,'from')
-  local to,te=pole(a.to,'to')
-  assert(fe~=te,'from and to are the same pole')
-  if a.disconnect then
-    return {disconnected=from.disconnect_from(to),split=fe.electric_network_id~=te.electric_network_id}
-  end
-  if from.is_connected_to(to) then return {connected=true,already=true} end
-  assert(from.can_wire_reach(to),'wire does not reach between these poles')
-  assert(from.connect_to(to,false),'engine refused the connection (pole wire limit?)')
-  return {connected=true,network=fe.electric_network_id}
-end
+-- Red, green and copper wires, as a player drags them (circuits.lua).
+function handlers.wire(p,a) return M.circuits.wire(p,a) end
 function handlers.build_path(p,a)
   assert(not p.permission_group or p.permission_group.allows_action(defines.input_action.start_walking),'permission denied: start_walking')
   local action=construction.plan(p,a)
@@ -2382,7 +2371,9 @@ end
 function handlers.inspect(p,a)
   local e=entity(p,a,true)
   local out=summary(e); out.inventories={}
-  out.in_reach=p.can_reach_entity(e)
+  -- A bot aboard a platform has no body to reach with (remote view only).
+  local okr,inr=pcall(function() return p.can_reach_entity(e) end)
+  out.in_reach=okr and inr==true
   out.health=e.health; out.max_health=e.max_health; out.direction=e.direction
   out.status=e.status
   -- summary's "unpowered" (no pole reaches it) stands over the engine's name.
@@ -2434,6 +2425,8 @@ function handlers.inspect(p,a)
   -- Filters, held stack, pickup/drop targets, marks, ghosts on the footprint
   -- (details.lua); on a platform, the hub's slots and what holds up its building.
   if M.details then M.details.inspect(e,out) end
+  -- Circuit network: settings, each wire's far end, the signals now (circuits.lua).
+  if M.circuits then local okc,c=pcall(M.circuits.read,e); if okc and c then out.circuit=c end end
   local okp,pl=pcall(function() return e.surface.platform end)
   if okp and pl and space then
     if e.type=='space-platform-hub' then
@@ -3557,8 +3550,10 @@ M.flush=require('flush'){integer=integer,friendly=friendly,target=function(p,a)
 end}
 handlers.flush=M.flush.handlers.flush
 -- Circuit wires and settings (circuits.lua), train stops and schedules (trains.lua).
-M.circuits=require('circuits'){entity=entity,friendly=friendly}
-handlers.circuit=M.circuits.handlers.circuit
+M.circuits=require('circuits'){entity=entity,remote_entity=remote_entity,friendly=friendly,own_platform=own_platform,position=position}
+handlers.circuit_set=M.circuits.handlers.circuit_set
+-- The old name: queued plans and orders call handlers by name (direct calls run as circuit_set, aliases.lua).
+handlers.circuit=handlers.circuit_set
 M.trains=require('trains'){entity=entity,friendly=friendly,integer=integer}
 handlers.train=M.trains.handlers.train
 -- Vehicles (vehicles.lua): get in and out, drive a car, send a spidertron.
@@ -3994,13 +3989,43 @@ local function on_platform(p,name)
     __index=function(_,k) if k=='surface' then return pl.surface elseif k=='position' then return hub end return p[k] end,
     __newindex=function(_,k,v) p[k]=v end})
 end
-for _,name in ipairs({'place_ghosts','deconstruct','cancel_deconstruction','paste','blueprint_place','grid','scan','inspect','configure','flush'}) do
+for _,name in ipairs({'place_ghosts','deconstruct','cancel_deconstruction','paste','blueprint_place','grid','scan','inspect','configure','flush','circuit_set','circuit','wire'}) do
   local handler=handlers[name]
   handlers[name]=function(p,a)
     if a.platform==nil then return handler(p,a) end
     local args={}
     for k,v in pairs(a) do if k~='platform' then args[k]=v end end
     return handler(on_platform(p,a.platform),args)
+  end
+end
+-- Another surface by remote view (inspect, circuit_set, wire surface=): one
+-- of our platforms (by its name or its surface's), or a planet by name, where
+-- the game's remote view shows visible chunks (radar coverage).
+local function on_surface(p,name)
+  assert(type(name)=='string','surface is a planet, surface or platform name')
+  for _,pl in pairs(p.force.platforms) do
+    if pl.valid and (pl.name==name or (pl.surface and pl.surface.valid and pl.surface.name==name)) then return on_platform(p,pl.name) end
+  end
+  local s=game.get_surface(name)
+  if not s then
+    local known={}
+    for _,each in pairs(game.surfaces) do if not each.platform then known[#known+1]=each.name end end
+    table.sort(known)
+    error('no surface named '..name..'; planets and surfaces: '..table.concat(known,', '),0)
+  end
+  if s==p.surface then return p end
+  return setmetatable({__player=real(p),__remote=s.name},{
+    __index=function(_,k) if k=='surface' then return s end return p[k] end,
+    __newindex=function(_,k,v) p[k]=v end})
+end
+for _,name in ipairs({'inspect','circuit_set','circuit','wire'}) do
+  local handler=handlers[name]
+  handlers[name]=function(p,a)
+    if a.surface==nil then return handler(p,a) end
+    assert(a.platform==nil,'give platform or surface, not both')
+    local args={}
+    for k,v in pairs(a) do if k~='surface' then args[k]=v end end
+    return handler(on_surface(p,a.surface),args)
   end
 end
 local permissions={walk='start_walking',move_to='start_walking',mine='begin_mining',pickup='change_picking_state',repair='start_repair',craft='craft',cancel_craft='cancel_craft',build='build',build_path='build',construct='build',place_ghosts='build',belt_route='build',pipe_route='build',pole_route='build',wire='wire_dragging',kite='change_shooting_state',revive_ghost='build',rotate='rotate_entity',configure='setup_assembling_machine',flush='flush_opened_entity_fluid',transfer='inventory_transfer',refuel='inventory_transfer',rearm='inventory_transfer',collect='inventory_transfer',feed='inventory_transfer',research='start_research',research_next='start_research',shoot='change_shooting_state',equip='inventory_transfer'}
@@ -4248,6 +4273,8 @@ end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
 local passive={order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
+-- circuit_set and wire (circuits.lua) leave the character and its queue alone, as circuit did.
+passive.circuit_set=true; passive.wire=true
 local reads={placements=true,defense=true,flamers=true,labs=true,science=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
@@ -4259,6 +4286,7 @@ local EXTRA_ARGS={attach={'offline'},build={'quality','entity'},collect={'count'
   move_to={'within'},shoot={'auto'},transfer=TARGET,mine={'unit_number'},repair=TARGET,inspect=TARGET,rotate=TARGET,
   configure={'name','unit_number','quality'},revive_ghost={'unit_number'},observe={'scope'},requests=TARGET,launch=TARGET,
   board={'status'},board_post={'note'},board_update={'status','note'},plan_save={'note'}}
+EXTRA_ARGS.circuit_set=TARGET
 -- observe forwards to the scoped views; a scoped call is checked as that view.
 local VIEW_SCOPES={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,sleep_check=true}
 local allowed_args
