@@ -9,14 +9,18 @@
 --   against capacity and the headroom; its boilers, how many have fuel at
 --   their feeders, and those under 20 min not refilled with the lowest
 --   (networks.lua, boiler_fuel's rule).
--- Built by a background job in storage, one bounded step a tick (00:26 rule;
--- task-statuscost: whole-surface finds one type a tick): labs one surface a
--- tick, crafters one type a tick, recipes INDEX_SLICE a tick, then the chain
--- and the line. Every peer runs the same job, so every peer has the same line.
+-- Built by a background job in storage, one bounded step every few ticks
+-- (operator 04:00: walk.lua, spread over the 5 minutes): each surface's labs
+-- a band of chunks a step, read SLICE a step; the crafters a band a step;
+-- recipes INDEX_SLICE a step; then the chain and the line. Every peer runs
+-- the same job, so every peer has the same line.
 return function(api)
   local M = {}
-  local PUSH_TICKS, INDEX_SLICE, MAX_LABS, MAX_CRAFTERS = 18000, 500, 1024, 2048
-  local CRAFTERS = {'assembling-machine', 'furnace', 'rocket-silo'}
+  local PUSH_TICKS, INDEX_SLICE, SLICE, MAX_LABS, MAX_CRAFTERS = 18000, 150, 100, 1024, 2048
+  -- The crafters and the miners (mining drills and pumpjacks, offshore pumps: the chain's makers of ores and fluids,
+  -- Grok 04:55), walked together.
+  local CRAFTERS, IS_MINER = {'assembling-machine', 'furnace', 'rocket-silo', 'mining-drill', 'offshore-pump'}, {['mining-drill']=true, ['offshore-pump']=true}
+  local walk = api.walk or require('walk'){state=api.state}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function store()
     local s = api.state()
@@ -34,8 +38,10 @@ return function(api)
     local packs = {}
     local tech = f.current_research
     for _, ing in ipairs(tech and tech.research_unit_ingredients or {}) do packs[#packs+1] = ing.name end
+    local steps = api.state().science_steps
     return {step='labs', force=f.name, tech=tech and tech.name or nil, progress=f.research_progress or 0, packs=packs,
-      surfaces=surfaces, si=1, labs={}, crafters={}, ti=1, idx=1, by_product={}}
+      surfaces=surfaces, si=1, labs={}, crafters={}, idx=1, by_product={}, start=game.tick, n=0,
+      every=walk.every(steps and steps[f.name], PUSH_TICKS)}
   end
 
   -- What the line says, from the finished job.
@@ -61,7 +67,7 @@ return function(api)
         end
         by_product[item] = out
       end
-      chain = surface and api.supply.chain({crafters=job.crafters, by_product=by_product}, f, surface, pack)
+      chain = surface and api.supply.chain({crafters=job.crafters, by_product=by_product, miners=job.miners}, f, surface, pack)
       local root = chain and chain.tree and chain.tree[1]
       local text = string.format('limiting %s: %d of %d labs have none', pack, lab.lack[pack], lab.n)
       if root then text = text .. string.format(', made %d/min, used %d/min', root.made_per_min, root.used_per_min) end
@@ -108,12 +114,16 @@ return function(api)
     local f = game.forces[job.force]
     if not f then return true end
     if job.step == 'labs' then
+      -- Each surface's labs: a band a step (walk.lua), then SLICE of them a step.
       local name = job.surfaces[job.si]
       local surface = name and game.get_surface(name)
-      if surface then
-        local row = {n=0, working=0, lack={}}
-        for _, e in ipairs(surface.find_entities_filtered{type='lab', force=f, limit=MAX_LABS}) do
-          if e.valid then
+      local row = name and job.labs[name]
+      if surface and not row then row = {n=0, working=0, lack={}}; job.labs[name] = row end
+      if surface and job.list then
+        local last = math.min(#job.list, job.at + SLICE - 1)
+        for i = job.at, last do
+          local e = job.list[i]
+          if e.valid and row.n < MAX_LABS then
             row.n = row.n + 1
             if api.status_name(e) == 'working' then row.working = row.working + 1 end
             local inv = try(function() return e.get_inventory(defines.inventory.lab_input) end)
@@ -122,9 +132,14 @@ return function(api)
             end
           end
         end
-        job.labs[name] = row
+        job.at = last + 1
+        if job.at > #job.list then job.list = nil end
+        return
       end
-      job.si = job.si + 1
+      if surface then job.walk = job.walk or walk.start(surface) end
+      local list = surface and walk.band(job.walk, surface, {type='lab', force=f})
+      if list then job.list, job.at = list, 1; return end
+      job.si, job.walk = job.si + 1, nil
       if job.si > #job.surfaces then
         for _, s in ipairs(job.surfaces) do
           local row = job.labs[s]
@@ -137,13 +152,19 @@ return function(api)
         job.step = short and 'crafters' or 'finish'
       end
     elseif job.step == 'crafters' then
+      -- The crafters and miners, every type in one find, a band a step.
       local surface = game.get_surface(job.surface)
-      local kind = CRAFTERS[job.ti]
-      if surface and kind and #job.crafters < MAX_CRAFTERS then
-        for _, e in ipairs(surface.find_entities_filtered{type=kind, force=f, limit=MAX_CRAFTERS - #job.crafters}) do job.crafters[#job.crafters+1] = e end
+      job.miners = job.miners or {}
+      local list
+      if surface and (#job.crafters < MAX_CRAFTERS or #job.miners < MAX_CRAFTERS) then
+        job.walk = job.walk or walk.start(surface)
+        list = walk.band(job.walk, surface, {type=CRAFTERS, force=f})
       end
-      job.ti = job.ti + 1
-      if job.ti > #CRAFTERS then job.step = 'index' end
+      for _, e in ipairs(list or {}) do
+        local into = IS_MINER[e.type] and job.miners or job.crafters
+        if #into < MAX_CRAFTERS then into[#into+1] = e end
+      end
+      if not list then job.walk, job.step = nil, 'index' end
     elseif job.step == 'index' then
       local recipe_of = api.supply.helpers.recipe_of
       local last = math.min(job.idx + INDEX_SLICE - 1, #job.crafters)
@@ -172,7 +193,14 @@ return function(api)
     local jobs = s.science_jobs
     if not jobs then return end
     for name, job in pairs(jobs) do
-      local ok, done = pcall(step, job)
+      -- A job an older runtime left (no start, every or n: deployed over it mid-job) fails here and is dropped like a
+      -- failing step; outside the pcall it raised every tick and the job, and the line, never ended.
+      local ok, done = pcall(walk.due, job, tick, PUSH_TICKS)
+      if ok and done then
+        job.n = job.n + 1
+        ok, done = pcall(step, job)
+        if ok and done then s.science_steps = s.science_steps or {}; s.science_steps[name] = job.n end
+      end
       if not ok then
         s.science_line_errors = {count=((s.science_line_errors or {}).count or 0) + 1, last=tostring(done), tick=tick, step=job.step}
         store()[name] = store()[name] or {}

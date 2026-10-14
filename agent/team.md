@@ -82,7 +82,8 @@ already targets your character.
   its `reach` line says where else each pack sits (inserter hands, robots) and why it does not reach the labs; its
   `chain` line walks the pack's recipe tree down, each step with its makers and made and used per minute, following
   the ingredient most makers lack (`chemical-science-pack: 9 of 14 makers lack advanced-circuit, ...; plastic-bar:
-  4 of 4 working, made 30/min, used 52/min`), and `chain_tree` lists every step down to ores and fluids.
+  4 of 4 working, made 30/min, used 52/min`), and `chain_tree` lists every step down to ores and fluids; a mined or pumped step names its drills or pumps, their states
+  (working, output full, no resource left) and what they put into.
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
   `"surface"`) reads one item: where it sits (chests by kind, belts, machine outputs, inserter hands, robots,
   characters), each logistic network's stock of it (free and reserved), its robots, every unmet requester with the
@@ -113,7 +114,8 @@ already targets your character.
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, and the
   game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
-  (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, an electric network drawing 85%
+  (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, inserters that lost their pickup or drop target (by
+  what they feed, with what each read and puts into), an electric network drawing 85%
   or more of its capacity for 2 minutes, boilers under 20 minutes of their own fuel that nothing refills (their feeding
   inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel fell about
   as fast as they burn over 2+ minutes, or by a quarter of their burn over 4+ minutes) (again under 10 and 5; each low boiler with its feeder and that

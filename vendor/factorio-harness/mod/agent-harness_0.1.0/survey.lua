@@ -362,10 +362,13 @@ return function(api)
   -- finds one type (the survey's types, undergrounds, belts) and then reads
   -- SLICE of them a tick; the last step makes the summary. Its state is in
   -- storage, so every peer runs the same.
-  local SLICE,KEEP_TICKS=1500,18000
-  local STEPS={}
-  for _,t in ipairs(SURVEY_TYPES) do STEPS[#STEPS+1]=t end
-  STEPS[#STEPS+1]='underground-belt'; STEPS[#STEPS+1]='transport-belt'
+  -- Operator 04:00 (survey.tick 50-57 ms in a game second every 10 s): one walk of every type at once, a band a step
+  -- (walk.lua), SLICE entities read a step, one step every few ticks so a survey spreads over BG_TICKS, now 30 s.
+  local SLICE,KEEP_TICKS,BG_TICKS=150,18000,1800
+  local WALK_TYPES={}
+  for _,t in ipairs(SURVEY_TYPES) do WALK_TYPES[#WALK_TYPES+1]=t end
+  WALK_TYPES[#WALK_TYPES+1]='underground-belt'; WALK_TYPES[#WALK_TYPES+1]='transport-belt'
+  local walk=api.walk or require('walk'){state=api.state}
   function M.tick(tick)
     local st=api.state()
     st.survey_bg=true
@@ -393,30 +396,36 @@ return function(api)
       local read=st.survey_read[key]
       if not job and (not read or tick-read>=KEEP_TICKS) then
         if tick-entry.tick>=KEEP_TICKS then cache[key]=nil; st.survey_read[key]=nil end
-      elseif not job and tick-entry.tick>=CACHE_TICKS then
+      elseif not job and tick-entry.tick>=BG_TICKS then
         local force_name,index=key:match('^(.*)/(%d+)$')
-        st.survey_jobs[key]={start=tick,force=force_name,surface=tonumber(index),step=1,a=acc_new(),b={unpaired={},stuck={},ends={}}}
-      elseif job then
+        st.survey_steps=st.survey_steps or {}
+        st.survey_jobs[key]={start=tick,force=force_name,surface=tonumber(index),a=acc_new(),b={unpaired={},stuck={},ends={}},
+          steps=0,every=walk.every(st.survey_steps[key],BG_TICKS)}
+      elseif job and walk.due(job,tick,BG_TICKS) then
+        job.steps=job.steps+1
         local force=game.forces[job.force]
         local surface=force and game.get_surface(job.surface)
         if not (force and surface) then st.survey_jobs[key]=nil
-        elseif job.step>#STEPS then
+        elseif job.done then
           local entry2=acc_done(job.a,job.b,force,surface)
           entry2.tick=job.start
           cache[key]=entry2
+          st.survey_steps[key]=job.steps
           st.survey_jobs[key]=nil
+        elseif not job.list then
+          job.walk=job.walk or walk.start(surface)
+          job.tech=job.tech or force.current_research
+          local list=walk.band(job.walk,surface,{force=force,type=WALK_TYPES})
+          if list then job.list,job.i=list,1 else job.done=true end
         else
-          local t=STEPS[job.step]
-          if not job.list then job.list=surface.find_entities_filtered{force=force,type=t}; job.i=1; job.tech=force.current_research
-          else
-            local last=math.min(#job.list,job.i+SLICE-1)
-            for i=job.i,last do
-              local e=job.list[i]
-              if t=='underground-belt' or t=='transport-belt' then belt_one(job.b,surface,force,e,t) else acc_entity(job.a,e,job.tech) end
-            end
-            job.i=last+1
-            if job.i>#job.list then job.list,job.i,job.tech=nil,nil,nil; job.step=job.step+1 end
+          local last=math.min(#job.list,job.i+SLICE-1)
+          for i=job.i,last do
+            local e=job.list[i]
+            local t=e.valid and e.type
+            if t=='underground-belt' or t=='transport-belt' then belt_one(job.b,surface,force,e,t) elseif t then acc_entity(job.a,e,job.tech) end
           end
+          job.i=last+1
+          if job.i>#job.list then job.list,job.i=nil,nil end
         end
       end
     end

@@ -81,13 +81,22 @@ return function(api)
   -- A built inserter: the engine's targets. 'no pickup target' (it takes
   -- only what lies on the ground there), 'no drop target' (it puts its items
   -- on the ground there, or over empty space throws them away), or nil.
+  -- A built inserter's targets, as entities (nil: none).
+  function M.read(e)
+    local pick = try(function() local t = e.pickup_target; return t and t.valid ~= false and t or nil end)
+    local drop = try(function() local t = e.drop_target; return t and t.valid ~= false and t or nil end)
+    return pick, drop
+  end
   function M.missing(e)
     if not (e and e.valid and e.type == 'inserter') then return nil end
+    local pick, drop = M.read(e)
     local missing = {}
-    if not try(function() return e.pickup_target end) then missing[#missing+1] = 'no pickup target' end
-    if not try(function() return e.drop_target end) then missing[#missing+1] = 'no drop target' end
+    if not pick then missing[#missing+1] = 'no pickup target' end
+    if not drop then missing[#missing+1] = 'no drop target' end
     return #missing > 0 and table.concat(missing, ', ') or nil
   end
+  -- name (x,y), as the lines write a target.
+  function M.name_at(t) return string.format('%s %s', t.name, at(t.position)) end
   -- An inserter ghost: the same reading from its prototype and points.
   function M.ghost(e)
     if not (e and e.valid and e.type == 'entity-ghost' and e.ghost_type == 'inserter') then return nil end

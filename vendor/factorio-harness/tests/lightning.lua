@@ -1,4 +1,5 @@
 -- Run with lua tests/lightning.lua: lightning attractors on Fulgora whose
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path  -- (walk.lua)
 -- catches have nowhere to go, and full accumulators in their networks
 -- (lightning.lua), through the push alert digest (pushalerts.lua). Gemini,
 -- shift09 00:20. The shift world's Fulgora at 00:20 had a rod no pole reached

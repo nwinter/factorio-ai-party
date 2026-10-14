@@ -5861,7 +5861,7 @@ threat=threat_module{state=state,known=known,distance=distance,on_character_hit=
 survey=survey_module{state=state,status_name=function(e) return entity_status_names[e.status] end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
 M.supply=require('supply'){integer=integer,position=position,status_name=function(e) return entity_status_names[e.status] end,
-  agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end}
+  agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 function handlers.supply(p,a) return M.supply.supply(p,a) end
 -- trace: a machine's feeders and their sources, its output followed to where it ends, an item's routes (trace.lua).
 M.trace=require('trace'){supply=M.supply,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return entity_status_names[e.status] end}
@@ -5881,7 +5881,7 @@ M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.netw
 -- Lightning attractors on Fulgora whose catches have nowhere to go, and full accumulators beside them (lightning.lua).
 M.lightning=require('lightning'){}
 M.pushalerts=require('pushalerts'){state=state,agents=function() return M.board.agents() end,who=M.board.who,
-  place=function(index) return M.where.place(index) end,
+  place=function(index) return M.where.place(index) end,targets=M.targets,
   network_groups=function(force)
     local out=M.networks.alert_groups(force)
     local ok,more=pcall(M.lightning.alert_groups,force)
@@ -6428,7 +6428,7 @@ M.profile=require('profile')()
   for _,part in ipairs{{M.pushalerts,'claim_lines','pushalerts.claim_lines'},{M.networks,'alert_groups','networks.alert_groups'},{M.networks,'lines','networks.lines'},{M.platalerts,'lines','platalerts.lines'},{M.drops,'lines','drops.lines'},{M.research,'lines','research.lines'},{threat,'watch','threat.watch'},{M.selfview,'review_due','selfview.review_due'},{M.selfview,'retro','selfview.retro'},{M.selfview,'request','selfview.request'}} do parts[#parts+1]=part end
   for _,part in ipairs{{M.idle,'request','idle.request'},{M.tells,'operator_lines','tells.operator_lines'},{M.orders,'line','orders.line'},{M.platalerts,'note','platalerts.note'},{M.visuals,'worked','visuals.worked'},{M.claims,'worked','claims.worked'},{M.carry,'carry','carry.carry'},{M.supply,'scan','supply.scan'},{M.supply,'chain','supply.chain'},{M.networks,'read','networks.read'}} do parts[#parts+1]=part end
   for _,part in ipairs{{M.pushalerts,'tick','pushalerts.tick'},{survey,'tick','survey.tick'},{threat,'tick','threat.tick'}} do parts[#parts+1]=part end
-  for _,part in ipairs{{M.scienceline,'tick','scienceline.tick'},{M.scienceline,'lines','scienceline.lines'}} do parts[#parts+1]=part end
+  for _,part in ipairs{{M.scienceline,'tick','scienceline.tick'},{M.scienceline,'lines','scienceline.lines'},{M.networks,'view_tick','networks.view_tick'}} do parts[#parts+1]=part end
   M.profile.wrap(M,parts)
 end)()
 return M
