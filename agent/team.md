@@ -248,8 +248,8 @@ already targets your character.
   run only while your character is free (no action, your queue empty), 20 s after your own last action; your own
   action or queue call stops a running order at once and it resumes after. Every reply's `orders:` line says which
   runs and why. `./fh call orders` lists them; `order_remove`, `orders_pause`, `orders_resume`.
-- A harness update keeps your waits, queue, repeating plan and standing orders running (`team: harness_updated`: `harness
-  updated at tick T (your wait/queue carried over)`); a step or action that moves or builds starts again by itself (`resumed`).
+- A harness update keeps waits, timed collects, tours, mining, building, repairs, queues and orders running with their end
+  tick and progress (`team: harness_updated`: `... (your collect carried over)`); a move_to or drive restarts (`resumed`).
 - Circuits: `./fh call circuit_set --args '{"platform":"NAME","position":{"x":-2.5,"y":-4.5},"enable":"ice < 300"}'`
   sets an entity's circuit condition, read switches, settings or combinator, in reach or by remote view (our entities
   in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`

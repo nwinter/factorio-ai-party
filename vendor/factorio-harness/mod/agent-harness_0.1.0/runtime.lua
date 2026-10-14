@@ -75,7 +75,8 @@ M.claims=require('claims'){state=state,where_from=function(me) return M.where.fr
   end}
 M.belt=require('belt')()
 -- Waits, queues and actions carried over a hot install (carry.lua: notes them while this loads).
-M.carry=require('carry'){state=state,restart=function(index,call) return M.restart_call(index,call) end}
+M.carry=require('carry'){state=state,restart=function(index,call,until_tick) return M.restart_call(index,call,until_tick) end,
+  resume=function(index,action) return M.resume_carried(index,action) end}
 M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,crafting=M.crafting,
   -- What stands where a tile does not go (dryrun.lua tile_blockers): a hand-laid tile's refusal names it.
   tile_blockers=function(surface,force,tile,x,y) return M.dryrun and M.dryrun.tile_blockers(surface,force,tile,x,y) end,
@@ -185,6 +186,14 @@ local function finish(index, outcome)
   local s=state()
   s.last=s.last or {}
   local action=s.active[index]
+  -- One carried over a harness update ends guarded (carry.lua): a shape this runtime does not expect still ends it.
+  if action and action.carried and not action.finishing then
+    action.finishing=true
+    local ok,err=pcall(finish,index,outcome)
+    action.finishing=nil
+    if not ok then M.carry_failed(index,action,err,outcome) end
+    return
+  end
   -- A walk to a target's reach that ends another way while within it counts as arrived (Astra, operator 07:55:
   -- an unreachable end within transfer reach broke an && chain).
   if action and action.kind=='move_to' and action.reach_target and M.REACH_ENDS[outcome] then
@@ -205,7 +214,11 @@ local function finish(index, outcome)
     -- Hand hauling (hauling.lua): what the pickup took, at the character, as its own call.
     if action.picked and M.hauling then
       local stacks={}
-      for name,n in pairs(action.picked) do stacks[#stacks+1]={name=name,count=n} end
+      -- Carried over a harness update: what it took before, the outgoing runtime counted (carry.lua hauled).
+      local counted=action.hauled or {}
+      for name,n in pairs(action.picked) do
+        if n>(counted[name] or 0) then stacks[#stacks+1]={name=name,count=n-(counted[name] or 0)} end
+      end
       table.sort(stacks,function(x,y) return x.name<y.name end)
       local pl=M.lookup(index)
       if pl and pl.valid then pcall(M.hauling.moved,index,'to_player',pl.position,pl.surface.name,stacks,nil,action) end
@@ -2585,7 +2598,7 @@ local function repair_list(p,a)
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   local borrowed=hold_tool(p,a)
   state().active[p.index]={kind='repair',entity=todo[1],targets=todo,index=1,repaired=0,already_full=full,lost=0,unreached=0,
-    borrowed_cursor=borrowed or M.bots.is(p),until_tick=game.tick+ticks}
+    borrowed_cursor=borrowed or M.bots.is(p),tool=a.item,until_tick=game.tick+ticks}
   out.until_tick=game.tick+ticks
   return out
 end
@@ -2601,8 +2614,15 @@ function handlers.repair(p,a)
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   local borrowed=hold_tool(p,a)
   -- A bot's cursor is invisible to it: always put the tool back afterwards.
-  state().active[p.index]={kind='repair',entity=e,borrowed_cursor=borrowed or M.bots.is(p),until_tick=game.tick+ticks}
+  state().active[p.index]={kind='repair',entity=e,borrowed_cursor=borrowed or M.bots.is(p),tool=a.item,until_tick=game.tick+ticks}
   return {until_tick=game.tick+ticks}
+end
+-- A repair carried over a harness update (carry.lua): the outgoing runtime put the tool it borrowed back; it holds
+-- one again (one started by an older runtime names its tool in the call it kept).
+function M.rehold_tool(p,action)
+  if p.cursor_stack.valid_for_read then return end
+  local tool=action.tool or (type(action.call)=='table' and type(action.call.args)=='table' and action.call.args.item) or nil
+  if hold_tool(p,{item=tool}) then action.borrowed_cursor=true end
 end
 end
 -- Hand-crafting what our machines already made wastes the character's time:
@@ -6804,15 +6824,26 @@ scheduler=scheduler_module{
   end
 }
 for name,handler in pairs(scheduler.handlers) do handlers[name]=handler end
--- A direct action a harness update stopped, started again from the call that started it (carry.lua).
-function M.restart_call(index,call)
+-- A direct action a harness update stopped, started again from the call that started it (carry.lua), ending by
+-- the tick it would have (until_tick: a pending fh --wait budgets for that).
+function M.restart_call(index,call,until_tick)
   local ok,err=pcall(function()
     local p=player(index,call.seated)
     handlers[call.action](p,call.args)
     local now=state().active[index]
-    if now then now.call=call end
+    if now then
+      now.call=call
+      if until_tick and now.until_tick and now.until_tick>until_tick then now.until_tick=until_tick end
+    end
   end)
   return ok,(not ok) and reason(err) or nil
+end
+-- An action carried over a harness update as it was (carry.lua): what the outgoing stop undid on the character.
+function M.resume_carried(index,action)
+  if action.kind=='repair' then
+    local ok,p=pcall(player,index)
+    if ok then M.rehold_tool(p,action) end
+  end
 end
 -- Standing orders (orders.lua): the agent's routines, run in its own queue
 -- while its character is free.
@@ -8132,6 +8163,182 @@ function M.tick(event)
     profiling=nil
   end
 end
+-- One running action's tick (M.tick_body).
+function M.tick_action(index,action,event)
+  local ok,p=pcall(player,index,action.kind=='drive')
+  if not ok then
+    finish(index,'player_unavailable')
+  elseif (action.kind=='wait_ticks' or action.kind=='wait_until') and not action.queued and action.start_tick
+    and event.tick%30==0 and (M.board.inbox_tick(index) or -1)>=action.start_tick then
+    -- A tell or mention ends a direct wait (agent-minds study, fix 5: agents
+    -- moved to waits nobody could interrupt; Grok chose wait_until for that).
+    local _,kind,from=M.board.inbox_tick(index)
+    action.told=from and kind..' by '..from or kind
+    finish(index,kind)
+  elseif event.tick>action.until_tick then
+    finish(index,(action.kind=='move_to' or action.kind=='build_path' or action.kind=='construct' or action.kind=='kite' or action.kind=='feed' or action.kind=='gather' or action.kind=='wait_until' or action.kind=='drive' or action.area~=nil or (action.kind=='repair' and action.targets~=nil)) and 'timed_out' or 'duration_elapsed')
+  elseif action.kind=='wait_until' then
+    if event.tick>=action.next_check then
+      action.next_check=event.tick+FEED_CHECK
+      local ok,met,saw=pcall(conditions.check,p,action.condition)
+      action.saw=ok and saw or nil
+      if not ok then action.error=reason(met); finish(index,'failed')
+      elseif met then finish(index,'met') end
+    end
+  elseif action.kind=='walk' then
+    p.walking_state={walking=true,direction=action.direction}
+  elseif action.kind=='move_to' then
+    local outcome=navigate(p,action)
+    -- Legs around enemies (avoid.lua): the next one starts where one ends.
+    if outcome and action.foes and M.avoid.leg_done(p,action,outcome) then outcome=nil end
+    -- Legs through via points: the next one starts where one arrives.
+    if outcome and action.via and M.via_next(p,action,outcome,index) then outcome=nil end
+    if outcome then finish(index,outcome) end
+  elseif action.kind=='build_path' then
+    local outcome=construction.tick(p,action)
+    if outcome then finish(index,outcome) end
+  elseif action.kind=='kite' then
+    local outcome=kite.tick(p,action,event.tick)
+    if outcome then finish(index,outcome) end
+  elseif action.kind=='drive' then
+    local outcome=M.vehicles.tick(p,action)
+    if outcome then finish(index,outcome) end
+  elseif action.kind=='construct' then
+    local outcome=construction.tick_ghosts(p,action)
+    if outcome then finish(index,outcome) end
+  elseif action.kind=='gather' then
+    local outcome=stock.tick(p,action)
+    if outcome then finish(index,outcome) end
+  elseif action.kind=='feed' then
+    -- A build stepping aside walks until the character is off the footprint.
+    if action.aside and construction.in_box(p.position,action.aside.box) then steer(p,action.aside.to,action)
+    elseif event.tick>=action.next_check then
+      if action.aside then stop(p); action.aside=nil end
+      action.next_check=event.tick+FEED_CHECK
+      if not action.item or held(p,action.item,action.args.quality)>=action.need or crafting_count(p,action.item)==0 then
+        action.awaiting_craft=nil
+        action.running=true
+        local ok,result=pcall(handlers[action.handler],p,action.args)
+        action.running=nil
+        if ok then action.result=result else action.error=reason(result) end
+        -- A later batch entry stepping aside installed a new action: keep it.
+        if state().active[index]==action then finish(index,ok and 'fed' or 'failed') end
+      end
+    end
+  elseif action.kind=='pickup' and action.area then
+    local outcome=M.ground.tick(p,action,event.tick)
+    if outcome then finish(index,outcome) end
+  elseif action.kind=='pickup' then
+    -- One item stack every 6 ticks; done when none is left in reach. No
+    -- picking_state: the engine's own pickup would go uncounted in picked.
+    if event.tick>=(action.next_pick or 0) then
+      action.next_pick=event.tick+6
+      local item=p.surface.find_entities_filtered{position=p.position,radius=action.reach or 1,type='item-entity',limit=1}[1]
+      if not (item and item.valid and item.stack and item.stack.valid_for_read) then finish(index,action.picked and 'picked_up' or 'nothing_in_reach')
+      else
+        local name,count=item.stack.name,item.stack.count
+        local q=item.stack.quality and item.stack.quality.name or nil
+        local n=p.insert{name=name,count=count,quality=q}
+        if n==0 then finish(index,'inventory_full')
+        else
+          action.picked=action.picked or {}; action.picked[name]=(action.picked[name] or 0)+n
+          action.trashed=M.trash.count(p,action.trashed,name,q,n)
+          if n>=count then item.destroy() else item.stack.count=count-n end
+        end
+      end
+    end
+  elseif action.kind=='repair' and action.targets then
+    -- positions or area: the next damaged target once this one is full or gone; walk to one out of reach.
+    while action.entity and M.repair_done(action.entity) do M.repair_next(p,action) end
+    local e=action.entity
+    if not e then finish(index,'repair_completed')
+    elseif not p.can_reach_entity(e) then
+      if not action.nav then
+        action.nav={position=e.position,tolerance=math.max(1,(p.reach_distance or 10)-3),max_stalls=6,replans=0,stalled=0,last_position=p.position}
+        request_path(p,action.nav)
+      end
+      if navigate(p,action.nav) then
+        action.unreached=action.unreached+1; action.entity=nil
+        p.walking_state={walking=false,direction=defines.direction.north}
+        M.repair_next(p,action)
+      end
+    elseif not p.cursor_stack.valid_for_read or p.cursor_stack.prototype.type~='repair-tool' then finish(index,'repair_tool_exhausted')
+    else
+      if action.nav then action.nav=nil; p.walking_state={walking=false,direction=defines.direction.north} end
+      action.working=true
+      if M.bots.is(p) then M.bots.repair(p,e)
+      else
+        if p.selected~=e then p.selected=e end
+        if not p.repair_state.repairing then p.repair_state={repairing=true,position=e.position} end
+      end
+    end
+  elseif action.kind=='repair' then
+    local e=action.entity
+    if not e or not e.valid then finish(index,'target_lost')
+    elseif not p.can_reach_entity(e) then finish(index,'out_of_reach')
+    elseif e.health>=e.max_health then finish(index,'repair_completed')
+    elseif not p.cursor_stack.valid_for_read or p.cursor_stack.prototype.type~='repair-tool' then finish(index,'repair_tool_exhausted')
+    else
+      -- Reassigning selection/state every tick fights the client's cursor
+      -- hover and makes the selection box flash; only correct drift.
+      if M.bots.is(p) then M.bots.repair(p,e)
+      else
+        if p.selected~=e then p.selected=e end
+        if not p.repair_state.repairing then p.repair_state={repairing=true,position=e.position} end
+      end
+    end
+  elseif action.kind=='mine' then
+    local e=action.entity
+    -- Timed mining only finishes through mine_entity; a vanished target was
+    -- taken by something else (a bot, a biter, another player).
+    if not e or not e.valid then finish(index,action.done_tick and 'target_lost' or 'target_mined')
+    elseif not p.can_reach_entity(e) then
+      -- Walked or pushed off mid-mine: the same words as a refused mine.
+      local ok,why=pcall(M.out_of_reach,p,e); action.error=ok and why or nil
+      finish(index,'out_of_reach')
+    elseif action.done_tick then
+      if event.tick>=action.done_tick then
+        if M.bots.mine(p,e) then finish(index,'target_mined')
+        else
+          -- The engine refuses for two reasons: no room for the products,
+          -- or an entity that cannot be mined by hand (a stump or remnant).
+          action.blocked_item=blocked_product(p,action)
+          if action.blocked_item or e.valid and e.type=='character-corpse' then finish(index,'inventory_full')
+          else action.error='the engine refused to mine '..e.name..' (not hand-minable: a stump, remnant or corpse; it does not block building, or deconstruct it)'; finish(index,'not_minable') end
+        end
+      end
+    elseif blocked_product(p,action) then
+      -- The engine silently idles a character whose output has no room.
+      action.blocked_item=blocked_product(p,action); finish(index,'inventory_full')
+    elseif action.next_mine and event.tick>=action.next_mine then
+      -- mine_entity on a resource takes one unit and returns false while
+      -- the tile has ore left, so judge success by the amount.
+      local before=e.amount
+      p.mine_entity(e,false)
+      if not e.valid then action.mined=action.mined+1; finish(index,'target_mined')
+      elseif e.amount<before then action.mined=action.mined+1; action.next_mine=event.tick+action.cycle
+      else action.blocked_item=blocked_product(p,action); finish(index,'inventory_full') end
+    end
+  end
+  if ok and state().active[index]==action then watch(p,action) end
+end
+-- A carried action this runtime could not run or end (carry.lua): it ends (failed when its tick raised, else with the
+-- outcome it ended with), saying why, and the tick goes on.
+function M.carry_failed(index,action,err,outcome)
+  local s=state()
+  local why=reason(err)
+  if log then log('agent-harness: '..tostring(action.kind)..' carried over a harness update failed for player '..tostring(index)..': '..tostring(err)) end
+  if s.active[index]~=action then return end
+  s.active[index]=nil
+  s.last=s.last or {}
+  s.last[index]={kind=action.kind,outcome=outcome or 'failed',tick=game.tick,
+    error=outcome and 'carried over a harness update; this runtime could not report how it ended: '..why
+      or 'carried over a harness update; this runtime could not run it: '..why}
+  pcall(stop,body(M.lookup(index)))
+  local head=string.format('harness updated at tick %s: your %s carried over',tostring(action.carried),M.carry.called(action))
+  M.carry.note(index,outcome and string.format('%s and ended %s at tick %d; this runtime could not report the rest (%s)',head,outcome,game.tick,why)
+    or string.format('%s, then stopped at tick %d: this runtime could not run it (%s); start it again if it is still needed',head,game.tick,why))
+end
 function M.tick_body(event)
   M.carry.carry()
   idle_tick()
@@ -8156,162 +8363,11 @@ function M.tick_body(event)
   end
   M.seated_ok=nil
   for index,action in pairs(state().active) do
-    local ok,p=pcall(player,index,action.kind=='drive')
-    if not ok then
-      finish(index,'player_unavailable')
-    elseif (action.kind=='wait_ticks' or action.kind=='wait_until') and not action.queued and action.start_tick
-      and event.tick%30==0 and (M.board.inbox_tick(index) or -1)>=action.start_tick then
-      -- A tell or mention ends a direct wait (agent-minds study, fix 5: agents
-      -- moved to waits nobody could interrupt; Grok chose wait_until for that).
-      local _,kind,from=M.board.inbox_tick(index)
-      action.told=from and kind..' by '..from or kind
-      finish(index,kind)
-    elseif event.tick>action.until_tick then
-      finish(index,(action.kind=='move_to' or action.kind=='build_path' or action.kind=='construct' or action.kind=='kite' or action.kind=='feed' or action.kind=='gather' or action.kind=='wait_until' or action.kind=='drive' or action.area~=nil or (action.kind=='repair' and action.targets~=nil)) and 'timed_out' or 'duration_elapsed')
-    elseif action.kind=='wait_until' then
-      if event.tick>=action.next_check then
-        action.next_check=event.tick+FEED_CHECK
-        local ok,met,saw=pcall(conditions.check,p,action.condition)
-        action.saw=ok and saw or nil
-        if not ok then action.error=reason(met); finish(index,'failed')
-        elseif met then finish(index,'met') end
-      end
-    elseif action.kind=='walk' then
-      p.walking_state={walking=true,direction=action.direction}
-    elseif action.kind=='move_to' then
-      local outcome=navigate(p,action)
-      -- Legs around enemies (avoid.lua): the next one starts where one ends.
-      if outcome and action.foes and M.avoid.leg_done(p,action,outcome) then outcome=nil end
-      -- Legs through via points: the next one starts where one arrives.
-      if outcome and action.via and M.via_next(p,action,outcome,index) then outcome=nil end
-      if outcome then finish(index,outcome) end
-    elseif action.kind=='build_path' then
-      local outcome=construction.tick(p,action)
-      if outcome then finish(index,outcome) end
-    elseif action.kind=='kite' then
-      local outcome=kite.tick(p,action,event.tick)
-      if outcome then finish(index,outcome) end
-    elseif action.kind=='drive' then
-      local outcome=M.vehicles.tick(p,action)
-      if outcome then finish(index,outcome) end
-    elseif action.kind=='construct' then
-      local outcome=construction.tick_ghosts(p,action)
-      if outcome then finish(index,outcome) end
-    elseif action.kind=='gather' then
-      local outcome=stock.tick(p,action)
-      if outcome then finish(index,outcome) end
-    elseif action.kind=='feed' then
-      -- A build stepping aside walks until the character is off the footprint.
-      if action.aside and construction.in_box(p.position,action.aside.box) then steer(p,action.aside.to,action)
-      elseif event.tick>=action.next_check then
-        if action.aside then stop(p); action.aside=nil end
-        action.next_check=event.tick+FEED_CHECK
-        if not action.item or held(p,action.item,action.args.quality)>=action.need or crafting_count(p,action.item)==0 then
-          action.awaiting_craft=nil
-          action.running=true
-          local ok,result=pcall(handlers[action.handler],p,action.args)
-          action.running=nil
-          if ok then action.result=result else action.error=reason(result) end
-          -- A later batch entry stepping aside installed a new action: keep it.
-          if state().active[index]==action then finish(index,ok and 'fed' or 'failed') end
-        end
-      end
-    elseif action.kind=='pickup' and action.area then
-      local outcome=M.ground.tick(p,action,event.tick)
-      if outcome then finish(index,outcome) end
-    elseif action.kind=='pickup' then
-      -- One item stack every 6 ticks; done when none is left in reach. No
-      -- picking_state: the engine's own pickup would go uncounted in picked.
-      if event.tick>=(action.next_pick or 0) then
-        action.next_pick=event.tick+6
-        local item=p.surface.find_entities_filtered{position=p.position,radius=action.reach or 1,type='item-entity',limit=1}[1]
-        if not (item and item.valid and item.stack and item.stack.valid_for_read) then finish(index,action.picked and 'picked_up' or 'nothing_in_reach')
-        else
-          local name,count=item.stack.name,item.stack.count
-          local q=item.stack.quality and item.stack.quality.name or nil
-          local n=p.insert{name=name,count=count,quality=q}
-          if n==0 then finish(index,'inventory_full')
-          else
-            action.picked=action.picked or {}; action.picked[name]=(action.picked[name] or 0)+n
-            action.trashed=M.trash.count(p,action.trashed,name,q,n)
-            if n>=count then item.destroy() else item.stack.count=count-n end
-          end
-        end
-      end
-    elseif action.kind=='repair' and action.targets then
-      -- positions or area: the next damaged target once this one is full or gone; walk to one out of reach.
-      while action.entity and M.repair_done(action.entity) do M.repair_next(p,action) end
-      local e=action.entity
-      if not e then finish(index,'repair_completed')
-      elseif not p.can_reach_entity(e) then
-        if not action.nav then
-          action.nav={position=e.position,tolerance=math.max(1,(p.reach_distance or 10)-3),max_stalls=6,replans=0,stalled=0,last_position=p.position}
-          request_path(p,action.nav)
-        end
-        if navigate(p,action.nav) then
-          action.unreached=action.unreached+1; action.entity=nil
-          p.walking_state={walking=false,direction=defines.direction.north}
-          M.repair_next(p,action)
-        end
-      elseif not p.cursor_stack.valid_for_read or p.cursor_stack.prototype.type~='repair-tool' then finish(index,'repair_tool_exhausted')
-      else
-        if action.nav then action.nav=nil; p.walking_state={walking=false,direction=defines.direction.north} end
-        action.working=true
-        if M.bots.is(p) then M.bots.repair(p,e)
-        else
-          if p.selected~=e then p.selected=e end
-          if not p.repair_state.repairing then p.repair_state={repairing=true,position=e.position} end
-        end
-      end
-    elseif action.kind=='repair' then
-      local e=action.entity
-      if not e or not e.valid then finish(index,'target_lost')
-      elseif not p.can_reach_entity(e) then finish(index,'out_of_reach')
-      elseif e.health>=e.max_health then finish(index,'repair_completed')
-      elseif not p.cursor_stack.valid_for_read or p.cursor_stack.prototype.type~='repair-tool' then finish(index,'repair_tool_exhausted')
-      else
-        -- Reassigning selection/state every tick fights the client's cursor
-        -- hover and makes the selection box flash; only correct drift.
-        if M.bots.is(p) then M.bots.repair(p,e)
-        else
-          if p.selected~=e then p.selected=e end
-          if not p.repair_state.repairing then p.repair_state={repairing=true,position=e.position} end
-        end
-      end
-    elseif action.kind=='mine' then
-      local e=action.entity
-      -- Timed mining only finishes through mine_entity; a vanished target was
-      -- taken by something else (a bot, a biter, another player).
-      if not e or not e.valid then finish(index,action.done_tick and 'target_lost' or 'target_mined')
-      elseif not p.can_reach_entity(e) then
-        -- Walked or pushed off mid-mine: the same words as a refused mine.
-        local ok,why=pcall(M.out_of_reach,p,e); action.error=ok and why or nil
-        finish(index,'out_of_reach')
-      elseif action.done_tick then
-        if event.tick>=action.done_tick then
-          if M.bots.mine(p,e) then finish(index,'target_mined')
-          else
-            -- The engine refuses for two reasons: no room for the products,
-            -- or an entity that cannot be mined by hand (a stump or remnant).
-            action.blocked_item=blocked_product(p,action)
-            if action.blocked_item or e.valid and e.type=='character-corpse' then finish(index,'inventory_full')
-            else action.error='the engine refused to mine '..e.name..' (not hand-minable: a stump, remnant or corpse; it does not block building, or deconstruct it)'; finish(index,'not_minable') end
-          end
-        end
-      elseif blocked_product(p,action) then
-        -- The engine silently idles a character whose output has no room.
-        action.blocked_item=blocked_product(p,action); finish(index,'inventory_full')
-      elseif action.next_mine and event.tick>=action.next_mine then
-        -- mine_entity on a resource takes one unit and returns false while
-        -- the tile has ore left, so judge success by the amount.
-        local before=e.amount
-        p.mine_entity(e,false)
-        if not e.valid then action.mined=action.mined+1; finish(index,'target_mined')
-        elseif e.amount<before then action.mined=action.mined+1; action.next_mine=event.tick+action.cycle
-        else action.blocked_item=blocked_product(p,action); finish(index,'inventory_full') end
-      end
-    end
-    if ok and state().active[index]==action then watch(p,action) end
+    -- One carried over a harness update runs guarded: a shape this runtime does not expect ends it, never the tick (carry.lua).
+    if action.carried then
+      local ok,err=pcall(M.tick_action,index,action,event)
+      if not ok then M.carry_failed(index,action,err) end
+    else M.tick_action(index,action,event) end
   end
   for index,action in pairs(state().combat or {}) do
     -- Vehicle fire runs seated (vehicles.lua); the rest needs the character on foot.
@@ -8416,7 +8472,11 @@ function M.on_event(event)
     end
     -- The walk's own request, its belt-free twin, or the probe after a give-up (pathing.lua).
     local ok,p=pcall(player,index)
-    if ok then M.pathing.on_finished(p,nav,event) elseif nav.path_id==event.id then nav.path_state='failed' end
+    if ok and action.carried then
+      -- Carried over a harness update: guarded as its tick is (carry.lua).
+      local fine,err=pcall(M.pathing.on_finished,p,nav,event)
+      if not fine then M.carry_failed(index,action,err) end
+    elseif ok then M.pathing.on_finished(p,nav,event) elseif nav.path_id==event.id then nav.path_state='failed' end
   elseif event.name==defines.events.on_console_chat then
     if M.chat then M.chat.on_console_chat(event) end
   elseif event.name==defines.events.on_unit_group_finished_gathering then
