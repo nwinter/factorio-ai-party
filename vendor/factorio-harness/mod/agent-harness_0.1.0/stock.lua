@@ -247,6 +247,55 @@ return function(api)
     return out
   end
   local function finished(e) local ok,n=pcall(function() return e.products_finished end); return ok and n or nil end
+  -- What the wait saw, counted each tick (Sol, shift12 12:41: a wait at an assembler on iron-bacteria reported "made
+  -- iron-bacteria*2, inserters_took iron-bacteria*2" from 16 crafts times the product's 10% chance, while its only
+  -- output inserter takes spoilage and iron ore; nothing was taken because none was made). Per tick, before the take:
+  -- what arrived in the output since the tick before, what the inserters picking from it took into their hands, and
+  -- what left it otherwise (spoiled, or another player took it). On 2.0.77 the take reaches a product the tick it is
+  -- there before an inserter waiting at the output does (a burner inserter at a stone furnace took none of 6 plates).
+  local function takers(e)
+    local ok,list=pcall(function()
+      local b=e.bounding_box
+      return e.surface.find_entities_filtered{area={{b.left_top.x-3,b.left_top.y-3},{b.right_bottom.x+3,b.right_bottom.y+3}},type='inserter',force=e.force}
+    end)
+    local out={}
+    for _,ins in ipairs(ok and list or {}) do
+      local okt,t=pcall(function() return ins.pickup_target end)
+      if ins.valid and okt and t==e then out[#out+1]=ins end
+    end
+    return out
+  end
+  local function hand(ins)
+    local ok,name,count=pcall(function()
+      local st=ins.held_stack
+      if st and st.valid_for_read then return st.name,st.count end
+    end)
+    if ok then return name,count end
+  end
+  local function watch(w,e)
+    if not w.takers or game.tick>=w.takers_tick then w.takers=takers(e); w.takers_tick=game.tick+300 end
+    local grabbed={}
+    for _,ins in ipairs(w.takers) do
+      if ins.valid then
+        local name,count=hand(ins)
+        local prev=w.hands[ins.unit_number]
+        if name and (not prev or prev.name~=name) then grabbed[name]=(grabbed[name] or 0)+count
+        elseif name and count>prev.count then grabbed[name]=(grabbed[name] or 0)+count-prev.count end
+        w.hands[ins.unit_number]=name and {name=name,count=count} or nil
+      end
+    end
+    local now=counts(output_of(e))
+    local names={}
+    for k in pairs(now) do names[k]=true end
+    for k in pairs(w.last) do names[k]=true end
+    for k in pairs(grabbed) do names[k]=true end
+    for name in pairs(names) do
+      local d=(now[name] or 0)-(w.last[name] or 0)+(grabbed[name] or 0)
+      if d>0 then w.arrived[name]=(w.arrived[name] or 0)+d elseif d<0 then w.gone[name]=(w.gone[name] or 0)-d end
+      if grabbed[name] then w.grabbed[name]=(w.grabbed[name] or 0)+grabbed[name] end
+    end
+    w.last=now
+  end
   function M.wait_tick(p,action)
     local t=action.targets[1]
     local e=t.entity
@@ -262,9 +311,12 @@ return function(api)
     end
     if not action.waiting then
       api.stop_walking(p); action.nav=nil; action.visited=1
-      action.waiting={since=game.tick,finished=finished(e),output=counts(output_of(e)),per_craft=per_craft(e)}
+      local now=counts(output_of(e))
+      action.waiting={since=game.tick,finished=finished(e),output=now,per_craft=per_craft(e),last=now,arrived={},grabbed={},gone={},hands={}}
       action.wait_end=game.tick+action.wait
     end
+    local w=action.waiting
+    pcall(watch,w,e)
     local inv=output_of(e)
     local here=inv and (action.item and inv.get_item_count{name=action.item,quality=action.quality or 'normal'} or (not inv.is_empty() and 1 or 0)) or 0
     if here>0 then
@@ -273,10 +325,14 @@ return function(api)
       if ok then
         action.got=action.got+out.transferred
         for _,st in ipairs(out.items or {{name=action.item,count=out.transferred}}) do
-          if st.name and st.count and st.count>0 then action.items[st.name]=(action.items[st.name] or 0)+st.count end
+          if st.name and st.count and st.count>0 then
+            action.items[st.name]=(action.items[st.name] or 0)+st.count
+            -- (taken out of the output now: not gone otherwise at the next tick)
+            if w.last then w.last[st.name]=math.max(0,(w.last[st.name] or 0)-st.count) end
+          end
         end
         if out.inventory_full then return 'inventory_full' end
-      end
+      else action.take_error=tostring(out) end
     end
     if action.got>=action.want then return 'collected' end
     if game.tick>=action.wait_end then return action.got>0 and 'collected' or 'nothing_collected' end
@@ -295,15 +351,47 @@ return function(api)
     end
     local out={took=line(action.items),waited_s=math.floor((game.tick-w.since)/6+0.5)/10}
     local now=e and e.valid and finished(e)
-    if now and w.finished then
-      local crafts=now-w.finished
-      local made,others={},{}
-      local left=e.valid and counts(output_of(e)) or {}
-      for name,k in pairs(w.per_craft) do
-        made[name]=crafts*k
-        others[name]=math.max(0,(w.output[name] or 0)+made[name]-(action.items[name] or 0)-(left[name] or 0))
+    local crafts=now and w.finished and now-w.finished or nil
+    out.crafts=crafts
+    -- Counted in the output each tick (watch), not estimated from crafts.
+    if w.arrived then
+      out.made=line(w.arrived); out.inserters_took=line(w.grabbed)
+      out.left_otherwise=next(w.gone) and line(w.gone)..' (spoiled, or another player took it)' or nil
+    end
+    -- Products a craft makes only by chance: how often.
+    local chance,odds={},{}
+    local ok,recipe=pcall(function() return e.get_recipe() or (e.type=='furnace' and e.previous_recipe) end)
+    for _,pr in ipairs(ok and recipe and recipe.products or {}) do
+      if pr.type=='item' and pr.probability and pr.probability<1 then
+        odds[pr.name]=pr.probability
+        chance[#chance+1]=string.format('%s comes from %g%% of crafts',pr.name,pr.probability*100)
       end
-      out.crafts=crafts; out.made=line(made); out.inserters_took=line(others)
+    end
+    out.chance=#chance>0 and table.concat(chance,'; ') or nil
+    -- Nothing taken: why.
+    if action.got==0 and w.arrived then
+      local function sum(t) local n=0; for _,v in pairs(t) do n=n+v end; return n end
+      local item=action.item
+      local made=item and (w.arrived[item] or 0) or sum(w.arrived)
+      local by=item and (w.grabbed[item] or 0) or sum(w.grabbed)
+      local gone=item and (w.gone[item] or 0) or sum(w.gone)
+      local what=item or 'products'
+      if action.take_error then out.why='taking from its output failed: '..action.take_error
+      elseif made==0 then
+        local why=string.format('the machine made no %s in %g s (%d craft%s)',what,out.waited_s,crafts or 0,crafts==1 and '' or 's')
+        local p=item and odds[item]
+        if p and crafts and crafts>0 then why=why..string.format('; %s comes from %g%% of crafts: about %.1f expected',item,p*100,crafts*p) end
+        if crafts==0 then
+          local okst,status=pcall(function() return e.status end)
+          for k,v in pairs(okst and defines.entity_status or {}) do if v==status then why=why..'; its status: '..k end end
+        end
+        out.why=why
+      else
+        local parts={}
+        if by>0 then parts[#parts+1]=string.format('its output inserters took %d',by) end
+        if gone>0 then parts[#parts+1]=string.format('%d left the output otherwise (spoiled, or another player took it)',gone) end
+        out.why=string.format('the machine made %d %s%s',made,what,#parts>0 and '; '..table.concat(parts,'; ') or '')
+      end
     end
     return out
   end

@@ -152,17 +152,67 @@ do
   local action,reply=W.start_wait(fp,{},gears,300)
   eq(reply.machine,'assembling-machine-2 (6,0)'); eq(reply.recipe,'iron-gear-wheel'); eq(reply.wait_ticks,300); eq(reply.in_reach,true)
   eq(action.kind,'gather'); eq(action.until_tick,1000+3600+300)
+  -- An inserter picking from the output: what it grabs shows in its hand (counted each tick, stock.lua watch).
+  local hand={valid_for_read=false}
+  local grabber={valid=true,name='inserter',unit_number=77,pickup_target=gears,held_stack=hand}
+  gears.surface={find_entities_filtered=function(f) eq(f.type,'inserter'); return {grabber} end}
+  gears.bounding_box={left_top={x=4.5,y=-1.5},right_bottom={x=7.5,y=1.5}}
   -- First tick in reach: the 4 in the output are taken.
   eq(W.tick(fp,action),nil); eq(action.got,4); eq(took,4)
-  -- The machine finishes 10 gears over the wait; the inserters grab 3 of them before the character's next tick.
-  local function craft(k,stolen) gears.products_finished=gears.products_finished+k; out.n=out.n+k-stolen end
+  -- The machine finishes 10 gears over the wait; the inserter grabs 3 of them before the character's next tick, each
+  -- time swinging away with it (its hand empty again a tick later).
+  local function craft(k,stolen)
+    gears.products_finished=gears.products_finished+k; out.n=out.n+k-stolen
+    hand.valid_for_read=stolen>0; hand.name=stolen>0 and 'iron-gear-wheel' or nil; hand.count=stolen
+  end
   for i=1,7 do game.tick=game.tick+1; craft(1,0); eq(W.tick(fp,action),nil) end
-  for i=1,3 do game.tick=game.tick+1; craft(1,1); eq(W.tick(fp,action),nil) end
+  for i=1,3 do
+    game.tick=game.tick+1; craft(1,1); eq(W.tick(fp,action),nil)
+    game.tick=game.tick+1; craft(0,0); eq(W.tick(fp,action),nil)
+  end
   eq(action.got,11)
   game.tick=1000+300
   eq(W.tick(fp,action),'collected')
   local r=W.wait_report(action)
   eq(r.took,'iron-gear-wheel*11'); eq(r.crafts,10); eq(r.made,'iron-gear-wheel*10'); eq(r.inserters_took,'iron-gear-wheel*3'); eq(r.waited_s,5)
+  eq(r.why,nil,'it took some'); eq(r.left_otherwise,nil); eq(r.chance,nil)
+  -- Sol's iron-bacteria (shift12 12:41): 16 crafts in 50 s, each 4 spoilage and iron-bacteria by a 10% chance; the
+  -- output inserter takes spoilage only, and none of the 16 made iron-bacteria. Counted, not estimated.
+  prototypes.item['iron-bacteria']={}; prototypes.item.spoilage={}
+  gears.products_finished=500; out.n=0; hand.valid_for_read=false
+  gears.get_recipe=function() return {name='iron-bacteria',products={{type='item',name='iron-bacteria',amount=1,probability=0.1},
+    {type='item',name='spoilage',amount=4}}} end
+  local spoil=0
+  out.get_item_count=function(f) return f.name=='spoilage' and spoil or 0 end
+  out.get_contents=function() return spoil>0 and {{name='spoilage',quality='normal',count=spoil}} or {} end
+  out.is_empty=function() return spoil==0 end
+  game.tick=5000
+  action=W.start_wait(fp,{item='iron-bacteria',count=1},gears,3000)
+  W.tick(fp,action)
+  for i=1,16 do
+    game.tick=game.tick+1; gears.products_finished=gears.products_finished+1; spoil=spoil+4; W.tick(fp,action)
+    game.tick=game.tick+1; spoil=spoil-4; hand.valid_for_read=true; hand.name='spoilage'; hand.count=4; W.tick(fp,action)
+    game.tick=game.tick+1; hand.valid_for_read=false; W.tick(fp,action)
+  end
+  game.tick=5000+3000
+  eq(W.tick(fp,action),'nothing_collected')
+  r=W.wait_report(action)
+  eq(r.took,'none'); eq(r.crafts,16); eq(r.made,'spoilage*64'); eq(r.inserters_took,'spoilage*64')
+  eq(r.chance,'iron-bacteria comes from 10% of crafts')
+  eq(r.why,'the machine made no iron-bacteria in 50 s (16 crafts); iron-bacteria comes from 10% of crafts: about 1.6 expected')
+  -- One made and taken by the inserter's hand: said so.
+  game.tick=9000
+  action=W.start_wait(fp,{item='iron-bacteria',count=1},gears,600)
+  W.tick(fp,action)
+  game.tick=game.tick+1; gears.products_finished=gears.products_finished+1; hand.valid_for_read=true; hand.name='iron-bacteria'; hand.count=1
+  W.tick(fp,action)
+  game.tick=9000+600; W.tick(fp,action)
+  eq(W.wait_report(action).why,'the machine made 1 iron-bacteria; its output inserters took 1')
+  hand.valid_for_read=false
+  gears.get_recipe=function() return {name='iron-gear-wheel',products={{type='item',name='iron-gear-wheel',amount=1}}} end
+  out.get_item_count=function(f) return f.name=='iron-gear-wheel' and out.n or 0 end
+  out.get_contents=function() return out.n>0 and {{name='iron-gear-wheel',quality='normal',count=out.n}} or {} end
+  out.is_empty=function() return out.n==0 end
   -- count ends it early; an empty output costs no take.
   out.n=2; gears.products_finished=200; took=0
   action=W.start_wait(fp,{count=2},gears,300)

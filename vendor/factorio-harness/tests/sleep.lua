@@ -244,4 +244,72 @@ local q=sol('queue_status'); eq(q.paused,true)
 eq(q.history[#q.history].action,'wait_until'); eq(q.history[#q.history].result.reason,'interrupted')
 sol('queue_cancel',{})
 fails(function() astra('sleep',{seconds=60,condition={['until']='bogus'}}) end,'until must be one of')
+
+-- Wakes a loop of sleeps throws away (missed.lua; Opus, shift12 12:20: tools/idle.py ran fh sleep 300 in a loop and
+-- dropped every reply; the operator's tell woke a sleep and the next one began 0.27 s later). Each round as fh sleep
+-- runs it: the sleep, peek checks once a second, the last read; the next sleep 16 ticks after that read.
+;(function()
+  astra('stop'); astra('queue_cancel',{})
+  local function round(gap)
+    jump(gap)
+    local start=astra('sleep',{seconds=300})
+    for _=1,10 do
+      advance(60)
+      if astra('observe',{scope='sleep_check',peek=true}).woke then break end
+    end
+    return start,astra('observe',{scope='sleep_check'})
+  end
+  local start,last=round(700)
+  sol('tell',{to='astra',text='coal at the mall'})
+  start,last=round(0)
+  -- (the tell came while no sleep ran: this sleep's own reply showed it, and it woke at the first check)
+  local shown=(start.team and start.team.tells or {})[1] or (last.team and last.team.tells or {})[1]
+  assert(shown and shown:find('coal at the mall',1,true),'the reply showed the tell')
+  -- The next sleep 16 ticks later: no repeat, nothing shown again in it, no wake on the old tell.
+  jump(16)
+  local again=astra('sleep',{seconds=300})
+  eq(again['repeat'],nil); eq(again.team and again.team.missed_while_asleep,nil,'not in a sleep 16 ticks after')
+  advance(60); eq(astra('observe',{scope='sleep_check',peek=true}).woke,nil,'the loop does not spin on the old tell')
+  -- A board item assigned to astra wakes the next round (board wakes no longer repeat); dropped the same way.
+  sol('board_post',{kind='request',title='belts done',owner='astra',note='at the mall'})
+  for _=1,3 do advance(60); if astra('observe',{scope='sleep_check',peek=true}).woke then break end end
+  last=astra('observe',{scope='sleep_check'}); eq(last.woke,'board')
+  jump(16)
+  local next_sleep=astra('sleep',{seconds=300})
+  eq(next_sleep['repeat'],nil,'a board wake is not repeated'); advance(60)
+  eq(astra('observe',{scope='sleep_check',peek=true}).woke,nil)
+  -- The loop ends; the agent's next request shows both rounds once.
+  local st=astra('status')
+  local lines=st.team and st.team.missed_while_asleep
+  assert(lines,'missed lines shown')
+  eq(lines[1],'1 tell shown in a sleep reply that the next sleep followed 0.3 s later:')
+  assert(lines[2]:find('^tell from .-, %d+s ago: coal at the mall$'),lines[2])
+  eq(lines[3],'1 board line shown in a sleep reply that the next sleep followed 0.3 s later:')
+  assert(lines[4]:find('^board: #%d+ assigned to you by .-: belts done'),lines[4])
+  eq((astra('status').team or {}).missed_while_asleep,nil,'shown once')
+  -- A sleep begun 5 s or more after the agent's previous request shows them in its own reply.
+  sol('tell',{to='astra',text='iron low'})
+  start,last=round(400)
+  jump(16); astra('sleep',{seconds=300}); advance(60)
+  jump(400)
+  local late=astra('sleep',{seconds=60})
+  assert(late.team and late.team.missed_while_asleep and late.team.missed_while_asleep[2]:find('iron low',1,true),'a late sleep shows them')
+  -- ... and when that sleep's own reply is dropped too (the next sleep 16 ticks after its last read), they come again.
+  for _=1,2 do advance(60) end
+  astra('observe',{scope='sleep_check'}); jump(16); astra('sleep',{seconds=60}); advance(60)
+  lines=astra('status').team.missed_while_asleep
+  eq(lines[1],'1 tell shown in a sleep reply that the next sleep followed 0.3 s later:')
+  assert(lines[2]:find('iron low',1,true),lines[2])
+  -- fh wait: its polls (status peek brief), a tell ends it, its last read; the next wait's first poll 16 ticks later.
+  astra('walk',{direction='east',ticks=600}); advance(2)
+  astra('status',{peek=true,brief=true})
+  sol('tell',{to='astra',text='wagon here'})
+  advance(30); astra('status',{peek=true,brief=true})
+  local final=astra('status'); assert(final.team and final.team.tells and final.team.tells[1]:find('wagon here',1,true))
+  jump(16); astra('status',{peek=true,brief=true}); advance(200)
+  jump(200)
+  lines=astra('status').team.missed_while_asleep
+  eq(lines[1],'1 tell shown in an fh wait reply that the next wait followed 0.3 s later:')
+  astra('stop')
+end)()
 print('sleep: ok')

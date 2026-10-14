@@ -488,15 +488,33 @@ return function(api)
     end
     for _, e in ipairs(plan.entities or {}) do grow(e.position) end
     for _, t in ipairs(plan.tiles or {}) do grow(t.position) end
+    -- (the box read, and whether the read stopped at its limit: past either, a tile is looked up on its own)
+    local read_lo, read_hi, read_all
     if lo then
       local m = 40
-      for _, g in pairs(s.find_entities_filtered{area={left_top={x=lo.x-m, y=lo.y-m}, right_bottom={x=hi.x+m, y=hi.y+m}}, type='tile-ghost', force=force, limit=4096}) do
+      read_lo, read_hi = {x=lo.x-m, y=lo.y-m}, {x=hi.x+m, y=hi.y+m}
+      local list = s.find_entities_filtered{area={left_top=read_lo, right_bottom=read_hi}, type='tile-ghost', force=force, limit=4096}
+      read_all = #list < 4096
+      for _, g in pairs(list) do
         local proto = g.valid and prototypes.tile[g.ghost_name]
         if proto then
           local x, y = math.floor(g.position.x), math.floor(g.position.y)
           pending[key(x, y)] = {name=g.ghost_name, layers=layers(proto.collision_mask), x=x, y=y}
         end
       end
+    end
+    -- A tile ghost the read above did not cover (Astra, shift12 12:41: a hole named where a tile ghost stood), looked
+    -- up once.
+    local looked = {}
+    local function ghost_unread(x, y)
+      if read_all and x >= read_lo.x and x < read_hi.x and y >= read_lo.y and y < read_hi.y then return false end
+      local k = key(x, y)
+      if looked[k] == nil then
+        looked[k] = (try(function()
+          return s.count_entities_filtered{area={{x+0.1, y+0.1}, {x+0.9, y+0.9}}, type='tile-ghost', force=force, limit=1}
+        end) or 0) > 0
+      end
+      return looked[k]
     end
     -- Entities on the planned tiles whose collision mask meets the tile's
     -- (one query over the tiles' box): those tiles get the engine's check.
@@ -849,7 +867,7 @@ return function(api)
         for _, d in ipairs(DIRS) do
           local sx, sy = seed[1]+d[1], seed[2]+d[2]
           local sk = key(sx, sy)
-          if not seen[sk] and not filled[sk] and empty(sx, sy) then
+          if not seen[sk] and not filled[sk] and empty(sx, sy) and not ghost_unread(sx, sy) then
             fid = fid + 1
             seen[sk] = fid
             local q, i, open = {{sx, sy}}, 1, false
@@ -868,7 +886,7 @@ return function(api)
                   else
                     local t = surface_tile(nx, ny)
                     if t.layers.out_of_map then open = true
-                    elseif t.layers.empty_space then seen[nk] = fid; q[#q+1] = {nx, ny} end
+                    elseif t.layers.empty_space and not ghost_unread(nx, ny) then seen[nk] = fid; q[#q+1] = {nx, ny} end
                   end
                 end
               end
