@@ -162,7 +162,9 @@ local two=N.lines(force,'nauvis',2); eq(#two,2); eq(two[2],'+2 more networks: fh
 -- kept their coal. Low: under 20 min of their own fuel with no fuel at their feeders. lb1 (20 coal, 0 min) is fed from
 -- the chest with 400 coal: not low. The line names each low boiler and its feeder (or that none feeds it), and the
 -- coal in chests and on belts nearby; draw under 85%: no power_high; robots not 10 min yet.
+-- (No earlier look kept: here the feeders alone decide; the own-fuel drain is section 4's.)
 lb1.burner.inventory[1].count=20; lb2.burner.inventory[1].count=60; nearb.burner.inventory[1].count=300
+storage.networks.boiler_own={}
 run(5)  -- (whole 5 s draw samples keep the 2-minute checks below aligned)
 storage.networks.views={}
 local g=N.alert_groups(force)
