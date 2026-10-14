@@ -12,7 +12,9 @@ local T = dofile('mod/agent-harness_0.1.0/targets.lua'){}
 local long = {inserter_pickup_position={0, -2}, inserter_drop_position={0, 2.2}}
 local function near(a, b, m) assert(math.abs(a-b) < 1e-9, (m or 'mismatch')..': '..a..' ~= '..b) end
 local pos = {x=1010.5, y=1000.5}
-for dir, want in pairs({[0]={0, -2, 0, 2.2}, [4]={2, 0, -2.2, 0}, [8]={0, 2, 0, -2.2}, [12]={-2, 0, 2.2, 0}}) do
+-- On the engine's 1/256 grid: 2.2 is 2.19921875 (the engine's drop_position read 1002.69921875).
+local D = 563/256
+for dir, want in pairs({[0]={0, -2, 0, D}, [4]={2, 0, -D, 0}, [8]={0, 2, 0, -D}, [12]={-2, 0, D, 0}}) do
   local pick, drop = T.points(long, pos, dir)
   near(pick.x, pos.x+want[1], 'pickup x '..dir); near(pick.y, pos.y+want[2], 'pickup y '..dir)
   near(drop.x, pos.x+want[3], 'drop x '..dir); near(drop.y, pos.y+want[4], 'drop y '..dir)
@@ -77,4 +79,20 @@ local function ghost(x, dir) return {valid=true, type='entity-ghost', ghost_type
 local rows, more = T.check({ghost(15.5), ghost(10.5), ghost(12.5), ghost(0.5, 8)}, 1)
 eq(#rows, 1); eq(more, 3, 'three of four lack a target'); eq(rows[1].position.x, 10.5); eq(rows[1].missing, 'no pickup target, no drop target')
 eq(T.check({}, 4), nil)
+-- A just-built long-handed inserter beside a stone furnace (Astra, shift10 13:44: the reply said "the ground" at its
+-- drop; inspect a moment later showed the furnace). The furnace at (30,130): its box on the engine's grid runs from
+-- x 29.30078125; the inserter at (31.5,130.5) facing east drops at x 29.30078125, on that edge, where the engine
+-- targets the furnace. The unrounded point, 29.3, lies outside it.
+do
+  local furnace = {name='stone-furnace', type='furnace', position={x=30, y=130}, valid=true,
+    box={29.30078125, 129.30078125, 30.69921875, 130.69921875}}
+  local fs = {find_entities_filtered=function(f)
+    local b = furnace.box
+    if f.position.x >= b[1] and f.position.x <= b[3] and f.position.y >= b[2] and f.position.y <= b[4] then return {furnace} end
+    return {}
+  end, get_tile=function() return {name='grass-1'} end}
+  local t = T.plan(fs, long, {x=31.5, y=130.5}, 4)
+  eq(t.drop, 'stone-furnace (30,130)'); eq(t.missing, 'no pickup target', 'the furnace takes its items; nothing at its pickup')
+  eq(fs.find_entities_filtered{position={x=31.5-2.2, y=130.5}}[1], nil, 'the unrounded point misses the box')
+end
 print('targets: ok')

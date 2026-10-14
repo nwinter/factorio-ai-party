@@ -9,7 +9,7 @@ return function(api)
   -- action -> {wrong name = real name}; counts are shift05-07 journal errors.
   local RENAME = {
     craft = {item='recipe', name='recipe'},
-    move_to = {target='position', to='position', pos='position', destination='position'},
+    move_to = {target='position', to='position', pos='position', destination='position', waypoints='via', through='via'},
     map = {center='position', centre='position'},
     scan = {names='name', entity_names='name', entity='name', types='type', range='radius', field='fields', center='position'},
     nearest = {entity='name', names='name', types='type', center='position'},
@@ -28,7 +28,7 @@ return function(api)
     mine = {entity='name'},
     transfer = {from='position', target='position'},
     inspect = {target='position'},
-    configure = {target='position', auto_launch='send_to_orbit_automatically', planet='surface'},
+    configure = {target='position', auto_launch='send_to_orbit_automatically', planet='surface', mode='filter_mode', filter='filters'},
     launch = {planet='surface'},
     silo = {planet='surface'},
     requests = {planet='surface'},

@@ -11,6 +11,8 @@ import onecam  # noqa: E402
 
 # The cases below are written for a planet that stays new 3 game hours (the default is 6 since 2026-10-14).
 onecam.ONECAM["surface_new_hours"] = 3.0
+# and for the balance as it was (the defaults hold Nauvis back more since 2026-10-14 06:45)
+onecam.ONECAM.update({"surface_share": 0.25, "nauvis_penalty": 0.15, "surface_total": 0.75})
 
 SLOTS = [{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}, {"slot": "cam3", "player": 5}]
 NAUVIS = ["astra", "luna", "opus", "sonnet", "haiku", "grok", "muse"]

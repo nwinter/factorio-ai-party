@@ -150,15 +150,45 @@ advance(2)
 local last=astra('status').last
 eq(last.outcome,'arrived'); eq(last.target.x,100)
 eq(last.avoided_enemies[1],'1 medium-worm-turret around (50,5)')
--- A worm whose reach holds the goal is not avoided (the walk goes there): named.
+-- A goal inside a worm's range is refused (Astra, operator 07:26: died at (-25,335) on the way to (-10,350), a goal in
+-- a nest's reach), naming the worm and the nearest safe spot toward the goal: on the line back to the character,
+-- just outside range + 4.
 asked={}
-r=astra('move_to',{position={x=60,y=0}})
+local ok,err=pcall(astra,'move_to',{position={x=60,y=0}})
+eq(ok,false)
+eq(tostring(err):match('goal .*'),"goal (60,0) is inside medium-worm-turret (50,5) range 30 (11.2 tiles from it): unsafe_goal: true to go anyway; the nearest safe spot toward it: (84,0), 24 tiles from it, outside every worm's range + 4 the map shows")
+eq(#asked,0,'no path asked')
+-- unsafe_goal: true goes anyway (the worm's nest is not avoided); the reply and last name it.
+r=astra('move_to',{position={x=60,y=0},unsafe_goal=true})
+eq(r.unsafe_goal,'goal (60,0) is inside medium-worm-turret (50,5) range 30 (11.2 tiles from it) (unsafe_goal)')
 advance(3)
 answer({{100,0},{60,0}})
 me.position={x=60,y=0}
 advance(2)
 last=astra('status').last
 eq(last.outcome,'arrived'); eq(last.avoided_enemies,nil); eq(last.enemies_at_start_or_goal[1],'1 medium-worm-turret around (50,5)')
+-- A via point inside the range is refused the same way.
+ok,err=pcall(astra,'move_to',{position={x=100,y=0},via={{x=55,y=10}}})
+eq(ok,false); assert(tostring(err):find('via point 1 (55,10) is inside medium-worm-turret (50,5) range 30',1,true),err)
+-- A goal in the margin only (32 tiles off: range 30 + 4): not refused, and the way there keeps out of the range
+-- (the disc ends just short of the goal; before, the whole nest went unchecked).
+me.position={x=50,y=-45}; asked={}
+r=astra('move_to',{position={x=50,y=37}})
+eq(r.unsafe_goal,nil)
+advance(3)
+answer({{50,-45},{50,37}})
+advance(2)
+nav=storage.agent_harness.active[runtime.bots.index_of('astra')]
+eq(nav.foes.detours,1,'the straight way crosses the range: round it')
+assert(nav.position.x~=50 or nav.position.y~=37,'the first leg goes to a corner')
+assert(((nav.position.x-50)^2+(nav.position.y-5)^2)^0.5>=30,'corner outside the range')
+eq(nav.foes.at_ends[1],'1 medium-worm-turret around (50,5)')
+astra('stop')
+-- Standing in the range itself, the spot comes from round the goal: the nearest point outside every disc.
+me.position={x=45,y=5}
+ok,err=pcall(astra,'move_to',{position={x=50,y=15}})
+eq(ok,false); assert(tostring(err):find('the nearest safe spot toward it: (50,40), 25 tiles from it',1,true),err)
+me.position={x=100,y=0}
 -- Worms all round the goal (none reaching it): no safe route, the walk ends where it stands.
 me.position={x=0,y=0}; asked={}
 structures={}
@@ -190,6 +220,12 @@ answer({{0,0},{100,0}})
 advance(2)
 nav=storage.agent_harness.active[runtime.bots.index_of('astra')]
 eq(nav.foes.detours,1); eq(nav.foes.avoided[1],'1 biter-spawner around (50,20)')
+-- A goal in a spawner's units' sight (30) is refused with avoid_enemies=true; worms only by default.
+astra('stop'); asked={}
+ok,err=pcall(astra,'move_to',{position={x=50,y=35},avoid_enemies=true})
+eq(ok,false); assert(tostring(err):find("goal (50,35) is inside biter-spawner (50,20) sight 30 (15.0 tiles from it): unsafe_goal: true to go anyway; the nearest safe spot toward it:",1,true),err)
+assert(tostring(err):find("outside every worm's range and spawner's units' sight + 8 the map shows",1,true),err)
+r=astra('move_to',{position={x=50,y=35}}); eq(r.unsafe_goal,nil); astra('stop')
 -- Without avoid_enemies the spawner is no matter: worms only.
 astra('stop'); asked={}
 storage.agent_harness.enemy_chunks=nil

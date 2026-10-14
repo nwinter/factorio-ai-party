@@ -103,6 +103,24 @@ return function(api)
   end
   M.collector = collector
   M.filters = filters  -- placewhy.lua: a pasted entity's filters against its blueprint's
+  -- An inserter's or loader's filters as one line (Sonnet 06:20: three inserters with stale filters blocked a line,
+  -- and scan showed none): "whitelist: iron-plate, copper-plate", "blacklist: coal", "off (filters: coal)" when the
+  -- filter is not in use, "set by circuit" when the circuit network sets them; nil without filter slots or filters.
+  function M.filters_line(e)
+    if collector(e) then return nil end
+    local f = filters(e)
+    if not f then return nil end
+    local by_circuit = try(function()
+      local cb = e.get_control_behavior()
+      return cb and cb.circuit_set_filters
+    end) == true
+    local list = #f.filters > 0 and table.concat(f.filters, ', ') or nil
+    if by_circuit then return 'set by circuit' .. (list and ' (now: ' .. list .. ')' or '') end
+    local inserter = e.type == 'inserter' or (e.type == 'entity-ghost' and e.ghost_type == 'inserter')
+    if inserter and f.use_filters == false then return list and 'off (filters: ' .. list .. ')' or nil end
+    if not list and not (inserter and f.use_filters) then return nil end
+    return (f.filter_mode or 'whitelist') .. ': ' .. (list or 'no items set')
+  end
   local function where(t)
     return t and t.valid and string.format('%s (%g,%g)', t.name, t.position.x, t.position.y) or nil
   end

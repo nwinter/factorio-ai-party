@@ -202,19 +202,22 @@ test('fh sleep --until sends a wait_until condition: words or JSON',async()=>{
   const seen:any[]=[];
   await engine(sleepEngine(seen),async port=>{
     for (const until of ['researched','researched automation-2','crafting_done','item_count iron-plate>=200',
-      'item_count iron-plate >= 200 at -18.5,-34.5 (3,4)','items coal<10','ammo_below count=5 radius=20',
-      '{"until":"item_count","item":"gear","at_least":5}']) {
+      'item_count iron-plate >= 200 at -18.5,-34.5 (3,4)','items coal<10','ammo_below count=5 radius=20','rocket_ready 65.5,14.5',
+      '{"until":"item_count","item":"gear","at_least":5}','platform_arrived Sunward','platform_arrived Sunward gleba',
+      'platform_arrived platform=Sunward location=nauvis']) {
       assert.equal(JSON.parse((await cli(port,['sleep','30','--until',until])).stdout).result.woke,'condition');
     }
     await assert.rejects(cli(port,['sleep','30','--until','item_count iron-plate']),(error:any)=>/--until takes/.test(error.stdout));
     await assert.rejects(cli(port,['sleep','30','--until','item_count iron-plate>=5 at north']),(error:any)=>/X,Y pairs/.test(error.stdout));
+    await assert.rejects(cli(port,['sleep','30','--until','rocket_ready']),(error:any)=>/rocket_ready X,Y/.test(error.stdout));
   });
   assert.deepEqual(seen.filter(r=>r.action==='sleep').map(r=>r.args.condition),[
     {until:'researched'},{until:'researched',technology:'automation-2'},{until:'crafting_done'},
     {until:'item_count',item:'iron-plate',at_least:200},
     {until:'item_count',item:'iron-plate',at_least:200,positions:[{x:-18.5,y:-34.5},{x:3,y:4}]},
-    {until:'item_count',item:'coal',below:10},{until:'ammo_below',count:5,radius:20},
-    {until:'item_count',item:'gear',at_least:5}]);
+    {until:'item_count',item:'coal',below:10},{until:'ammo_below',count:5,radius:20},{until:'rocket_ready',position:{x:65.5,y:14.5}},
+    {until:'item_count',item:'gear',at_least:5},{until:'platform_arrived',platform:'Sunward'},
+    {until:'platform_arrived',platform:'Sunward',location:'gleba'},{until:'platform_arrived',platform:'Sunward',location:'nauvis'}]);
   assert.equal(seen.filter(r=>r.action==='sleep')[0].args.seconds,30);
 });
 test('fh sleep keeps the team hints the sleep request carried, and prints what keeps going first (compact)',async()=>{

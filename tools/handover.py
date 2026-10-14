@@ -93,7 +93,8 @@ def journal_stats(path, since=None, max_bytes=60_000_000):
                     out["idle_s"] += min(int(m.group(1)), gap)
                 if not p.get("ok"):
                     out["errors"][f"{a}: {norm_error((p.get('error') or {}).get('message'))}"] += 1
-                elif a in ("transfer", "feed", "collect") and res.get("transferred") == 0:
+                elif a in ("transfer", "feed", "collect") and (res.get("transferred") == 0
+                                                                or ("transferred" not in res and res.get("moved") == 0 and not res.get("timed"))):
                     out["noop"][a] += 1
                 if a in ("queue_status", "queue_submit", "queue_repeat", "queue_edit"):
                     ids = [int(x) for x in JOB_RE.findall(json.dumps(res.get("pending") or []))]

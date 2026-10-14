@@ -67,6 +67,35 @@ met,saw=check({['until']='fuel_below',count=5}); eq(met,true); eq(saw,'2 burners
 eq(check({['until']='fuel_below',count=1}),true)
 eq(select(2,check({['until']='fuel_below',count=1})),'1 burners below 1 fuel (nearest burner-mining-drill at -4,0)')
 burners[2]=burner('burner-mining-drill',-4,3); eq(check({['until']='fuel_below',count=1}),false)
+-- A rocket silo (Luna, shift10 06:20: an item_count wait for the item rocket stayed 0 at a ready silo):
+-- rocket_ready at its position; item_count counts its rocket cargo (the game's own count) and saw names the rocket state.
+defines.rocket_silo_status={building_rocket=0,rocket_rising=5,rocket_ready=7}
+defines.inventory.rocket_silo_rocket=9
+prototypes.item['agricultural-science-pack']={}; prototypes.item.rocket={}
+local cargo={{name='agricultural-science-pack',count=45,quality='normal'}}
+local silo={valid=true,type='rocket-silo',name='rocket-silo',position={x=65.5,y=14.5},rocket_silo_status=7,rocket_parts=0,prototype={rocket_parts_required=50},
+  get_item_count=function(name) return name=='agricultural-science-pack' and 45 or 0 end,
+  get_inventory=function(id) if id==9 then return {get_contents=function() return cargo end} end end}
+local find=surface.find_entities_filtered
+surface.find_entities_filtered=function(f)
+  -- the footprint by area (61..70, 10..19); by position and radius the centre's entities only: the silo and its rocket
+  if f.type=='rocket-silo' then assert(f.area,'by area'); return (f.area[1][1]>=61 and f.area[2][1]<=70 and f.area[1][2]>=10 and f.area[2][2]<=19) and {silo} or {} end
+  if f.radius==0.3 and f.type==nil then return (math.abs(f.position.x-65.5)<0.3 and math.abs(f.position.y-14.5)<0.3) and {silo,{valid=true,type='rocket-silo-rocket',get_item_count=function() return 0 end}} or {} end
+  return find(f)
+end
+met,saw=check({['until']='rocket_ready',position={x=68,y=12}})
+eq(met,true); eq(saw,'rocket-silo (65.5,14.5): rocket_ready, parts 0/50, cargo agricultural-science-pack*45')
+silo.rocket_silo_status=5; silo.rocket_parts=12; cargo={}
+met,saw=check({['until']='rocket_ready',position={x=65.5,y=14.5}})
+eq(met,false); eq(saw,'rocket-silo (65.5,14.5): rocket_rising, parts 12/50, cargo none')
+local ok,err=pcall(check,{['until']='rocket_ready',position={x=0,y=0}}); eq(ok,false); assert(tostring(err):find('no rocket silo of ours at (0,0)',1,true),err)
+assert(not pcall(C.validate,{['until']='rocket_ready'}))
+silo.rocket_silo_status=7; silo.rocket_parts=0; cargo={{name='agricultural-science-pack',count=45,quality='normal'}}
+met,saw=check({['until']='item_count',item='agricultural-science-pack',at_least=45,positions={{x=65.5,y=14.5}}})
+eq(met,true); eq(saw,'agricultural-science-pack 45 in 1 entities; rocket-silo (65.5,14.5): rocket_ready, parts 0/50, cargo agricultural-science-pack*45')
+met,saw=check({['until']='item_count',item='rocket',at_least=1,positions={{x=65.5,y=14.5}}})
+eq(met,false); eq(saw,'rocket 0 in 1 entities; rocket-silo (65.5,14.5): rocket_ready, parts 0/50, cargo agricultural-science-pack*45')
+surface.find_entities_filtered=find
 assert(not pcall(C.validate,{['until']='fuel_below'}))
 assert(not pcall(C.validate,{['until']='damaged',fraction=0}))
 assert(not pcall(C.validate,{['until']='ghosts_waiting',at_least=0}))
@@ -75,4 +104,23 @@ assert(not pcall(C.validate,{['until']='health_below'}))
 assert(not pcall(C.validate,{['until']='item_count',item='firearm-magazine'}))
 assert(not pcall(C.validate,{['until']='ammo_below',count=0}))
 assert(not pcall(C.validate,{['until']='no_enemies',radius=500}))
+-- platform_arrived (Gemini, shift10): a platform of ours stopped at a space location, or at the one named. 2.0.77:
+-- a platform leaving a stop has no space_location within 4 ticks and flies a space_connection.
+prototypes.space_location={nauvis={},gleba={},vulcanus={}}
+local sunward={valid=true,name='Sunward',space_location={name='nauvis'}}
+mine.platforms={sunward}
+local met,saw=C.check(p,C.validate({['until']='platform_arrived',platform='Sunward'}))
+eq(met,true); eq(saw,'Sunward at nauvis')
+eq(C.check(p,{['until']='platform_arrived',platform='Sunward',location='nauvis'}),true)
+met,saw=C.check(p,{['until']='platform_arrived',platform='Sunward',location='gleba'})
+eq(met,false); eq(saw,'Sunward at nauvis')
+sunward.space_location=nil; sunward.space_connection={from={name='nauvis'},to={name='gleba'}}; sunward.distance=0.25
+met,saw=C.check(p,{['until']='platform_arrived',platform='Sunward'})
+eq(met,false); eq(saw,'Sunward flying nauvis->gleba 25%')
+sunward.space_connection=nil; sunward.space_location={name='gleba'}
+eq(C.check(p,{['until']='platform_arrived',platform='Sunward',location='gleba'}),true)
+local ok,err=pcall(C.check,p,{['until']='platform_arrived',platform='Nope'})
+eq(ok,false); eq(err,'no platform of ours named Nope')
+assert(not pcall(C.validate,{['until']='platform_arrived'}),'needs platform')
+assert(not pcall(C.validate,{['until']='platform_arrived',platform='Sunward',location='mars'}),'a known location')
 print('conditions: ok')
