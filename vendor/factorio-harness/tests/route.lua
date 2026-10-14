@@ -93,8 +93,93 @@ reset()
 uncharted=1
 fails(function() R.plan(p,{from={x=0,y=0},to={x=40,y=0}}) end,'not charted')
 uncharted=nil
-fails(function() R.plan(p,{from={x=0,y=0},to={x=300,y=0}}) end,'within 200')
+fails(function() R.plan(p,{from={x=0,y=0},to={x=1300,y=0}}) end,'each leg (from, via points, to) is at most 1000 tiles')
 fails(function() R.plan(p,{from={x=0,y=0},to={x=0,y=0}}) end,'same tile')
 fails(function() R.plan(p,{from={x=0,y=0},to={x=5,y=0},lane='left'}) end,'needs an existing belt')
 fails(function() R.plan(p,{from={x=0,y=0},to={x=5,y=0},belt='underground-belt'}) end,'transport belt')
+-- Long routes (Sol, operator 07:52: a 600-tile Gleba seed return): trees, rocks and wild plants are passed over at a
+-- cost (marked when placed), water only with landfill, via points in order, a return line beside, lava under no hop.
+do
+  local trees,water,lava={},{},{}
+  local surface2={
+    can_place_entity=function(a)
+      local k=key(a.position.x,a.position.y)
+      if blocked[k] then return false end
+      if a.forced then return not lava[k] end
+      return not trees[k] and not water[k] and not lava[k]
+    end,
+    find_entities_filtered=function(f) return {} end,
+    get_tile=function(x,y)
+      local k=key(x,y)
+      local name=lava[k] and 'lava' or water[k] and 'water' or 'grass-1'
+      return {name=name,prototype={collision_mask={layers=lava[k] and {lava_tile=true} or water[k] and {water_tile=true} or {}}}}
+    end}
+  local q={surface=surface2,force=mine}
+  local R2=dofile('mod/agent-harness_0.1.0/route.lua'){
+    position=function(v) return {x=v.x,y=v.y} end,
+    directions={north=0,east=4,south=8,west=12},
+    chunk_of=function(pos) return {x=math.floor(pos.x/32),y=math.floor(pos.y/32)} end,
+    tile_fixes=function(_,_,_,pos) return water[key(pos.x,pos.y)] and {{x=pos.x,y=pos.y,tile='water',item='landfill'}} or {} end,
+    only_obstacles=function(_,_,pos) return trees[key(pos.x,pos.y)] or false end}
+  -- 600 tiles of open ground: one straight run, within the budget.
+  local r=R2.plan(q,{from={x=0,y=0},to={x=600,y=0}})
+  eq(r.route,'E601'); eq(r.tiles,601); assert(r.cost.placement_checks<40000 and r.cost.expansions<5000,r.cost.expansions)
+  -- A row of trees across the way: crossed (cheaper than going round or under), counted, nothing else changes.
+  for y=-40,40 do trees[key(10,y)]=true end
+  r=R2.plan(q,{from={x=0,y=0},to={x=20,y=0}})
+  eq(r.route,'E21'); eq(r.over_trees_or_plants,1)
+  trees={}
+  -- A lake: round it (or under it) without landfill; straight across with it, counting the tiles.
+  for x=5,7 do for y=-40,40 do water[key(x,y)]=true end end
+  r=R2.plan(q,{from={x=0,y=0},to={x=20,y=0}})
+  eq(r.landfill,nil); assert(r.undergrounds>=1,r.route)
+  water={}
+  for x=5,9 do for y=-40,40 do water[key(x,y)]=true end end
+  fails(function() R2.plan(q,{from={x=0,y=0},to={x=20,y=0}}) end,'tiles there: grass-1, water')
+  r=R2.plan(q,{from={x=0,y=0},to={x=20,y=0},landfill=true,undergrounds=false})
+  eq(r.route,'E21'); eq(r.landfill.landfill,5); eq(r.items.landfill,5)
+  water={}
+  -- Lava: no underground hops it.
+  for x=5,7 do for y=-40,40 do lava[key(x,y)]=true end end
+  fails(function() R2.plan(q,{from={x=0,y=0},to={x=20,y=0}}) end,'no route: no way through on the leg to (20.5,0.5)')
+  lava={}
+  -- Via points in order: the line passes each; legs are listed.
+  r=R2.plan(q,{from={x=0,y=0},to={x=20,y=0},via={{x=5,y=10},{x=15,y=10}}})
+  local seen={}
+  for _,e in ipairs(r.entities) do seen[key(e.position.x,e.position.y)]=true end
+  assert(seen[key(5,10)] and seen[key(15,10)],'passes both via points'); eq(#r.legs,3)
+  fails(function() R2.plan(q,{from={x=0,y=0},to={x=20,y=0},via={{x=5,y=1200}}}) end,'each leg (from, via points, to) is at most 1000 tiles')
+  blocked[key(5,10)]=true
+  fails(function() R2.plan(q,{from={x=0,y=0},to={x=20,y=0},via={{x=5,y=10}}}) end,'via point 1 (5.5,10.5) is blocked')
+  blocked={}
+  -- The return line: back beside it the other way, on the right by default; both lines' belts in the items.
+  r=R2.plan(q,{from={x=0,y=0},to={x=20,y=0},['return']=true})
+  eq(r.route,'E21'); eq(r['return'].side,'right'); eq(r['return'].route,'W21'); eq(r['return'].from.y,1.5); eq(r['return'].to.x,0.5)
+  eq(r.items['transport-belt'],42); eq(#r.entities,42)
+  for _,e in ipairs(r.entities) do if e.line=='return' then eq(e.position.y,1.5); eq(e.direction,'west') end end
+  -- The right side blocked at the start: the left side.
+  blocked[key(20,1)]=true
+  r=R2.plan(q,{from={x=0,y=0},to={x=20,y=0},['return']=true}); eq(r['return'].side,'left'); eq(r['return'].from.y,-0.5)
+  fails(function() R2.plan(q,{from={x=0,y=0},to={x=20,y=0},['return']=true,return_side='right'}) end,'no return line: right: its first tile (20.5,1.5) is blocked or taken')
+  blocked={}
+  -- A turning line: the return line follows it round (it stays beside it).
+  r=R2.plan(q,{from={x=0,y=0},to={x=10,y=10},to_direction='south',['return']=true})
+  local main={}
+  for _,e in ipairs(r.entities) do if not e.line then main[key(e.position.x,e.position.y)]=true end end
+  local off=0
+  for _,e in ipairs(r.entities) do
+    if e.line=='return' then
+      local x,y=math.floor(e.position.x),math.floor(e.position.y)
+      local by=false
+      for dx=-1,1 do for dy=-1,1 do if main[key(x+dx,y+dy)] then by=true end end end
+      if not by then off=off+1 end
+    end
+  end
+  eq(off,0,'every return belt beside the line')
+  -- A wall with no way through: the nearest tile reached and the search's reach are named.
+  for y=-40,40 do blocked[key(10,y)]=true end
+  local ok,err=pcall(R2.plan,q,{from={x=0,y=0},to={x=20,y=0},undergrounds=false})
+  assert(not ok and err:find('the nearest tile reached is (9.5,',1,true) and err:find('within 24 tiles of each leg',1,true),err)
+  blocked={}
+end
 print('route: ok')

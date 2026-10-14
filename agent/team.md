@@ -97,6 +97,8 @@ already targets your character.
   tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
   they end and what blocks them (on a belt tile: that belt from there), naming where other items join a lane (`joins
   transport-belt (12,5) carrying iron-plate on the left lane: your iron-ore mixes in`); `{"item":"chemical-science-pack"}` follows every route from its makers to the labs.
+- `./fh call belt_route --args '{"from":{"x":0,"y":0},"to":{"x":600,"y":40},"return":true}'` lays a belt line as ghosts (via points, legs up to
+  1000 tiles, over trees and wild plants it marks, water only with `"landfill":true`; `return` adds the line back beside it).
 - `./fh call rail_route --args '{"from":{"x":0,"y":0},"to":{"x":0,"y":-200}}'` lays 2.0 rails (16 headings; straight,
   half-diagonal and two curve pieces, a curve 3 rails) around water, cliffs and buildings as ghosts and builds those in
   reach (`"signals":30` adds one-way signals); `train_stop {position, name}` puts a stop on the side of a straight rail

@@ -198,6 +198,33 @@ fh call status
     no limit, no rail beside it)`, with `its locomotives all face its front, so it drives forward only` for such a
     train; `every stop named Base is at its train limit (...)`; `no train stop is named X`; `stands still: no fuel in
     its locomotives`. A stop's readback adds `rail` (the rail it is beside, or none).
+- Belts: `belt_route {from, to, via?, belt?, undergrounds?, lane?, to_direction?, landfill?, return?, return_side?,
+  dry_run?, details?}` lays a belt line as ghosts (`construct` builds it).
+  - `from`: a free tile, or the end of one of our belts to extend. `to`: a free tile for the last belt, or one of our
+    belts (or an underground entrance) to feed: straight, as a curve, or side-loaded onto `lane` (left or right).
+  - The search (Sol, 07:52: a 600-tile Gleba seed return planned by hand) is a weighted A* over tiles. It keeps to
+    charted ground within 24 tiles of each leg's ends, and each leg (from, `via` points in order, to) is at most 1000
+    tiles. It has a budget of 40000 placement checks.
+  - It never uses a tile one of our belts holds or outputs into. Turns cost a little; an underground pair costs more
+    and hops anything but lava and empty space, never over one of the same kind on its axis.
+  - Trees, rocks and wild plants are passed over at a small cost: the ghosts mark them for removal and `construct`
+    mines them (`over_trees_or_plants` counts the tiles). A force's own plants (Gleba farms), cliffs and buildings
+    never.
+  - Water and Gleba wetland are used only with `landfill: true`, where a tile item makes them buildable; the tile
+    ghosts are laid under the belts and counted in `landfill` and `items`. Without it they are gone round or hopped.
+  - `return: true` lays a second line back beside it, from beside its last belt to beside its first, the other way:
+    on `return_side` (left or right of the line), else whichever side starts and ends free, right first. It keeps
+    beside the first line where it can, and its last belt turns away rather than feed a belt.
+  - Reply: `route` (`E12 uE5 S3`: belt runs by facing, `uE5` an underground pair east spanning 5), `tiles`, `items`,
+    `missing` (against your inventory), `arrival` (`straight`, `curve`, `side_load` with `lane`, or `end`), `legs`
+    (tiles per leg), `over_trees_or_plants`, `landfill`, `return {route, tiles, side, from, to}`, `cost
+    {placement_checks, expansions}`, `placed`, `failed`, `obstacles_marked`, `tiles_laid`; `details: true` lists every
+    entity (a return belt has `line: "return"`).
+  - With no route the error names the nearest tile reached, what stands and which tiles lie around it, what the
+    straight line crosses that a belt cannot stand on, and the search's reach and cost. A blocked or uncharted end or
+    via point fails at once.
+  - `dry_run: true` checks every belt as a `place_ghosts` dry run does (what blocks, tiles needing landfill, standing
+    spots, items against what you hold); `belt_route` holds the plan.
 - Rails (2.0): `rail_route {from, to, via?, signals?, from_direction?, ghosts?, dry_run?, details?}` lays a line of the
   rail planner's own pieces. 2.0 rails take 16 headings (north, northnortheast, northeast, ...); the pieces are
   `straight-rail` (2 tiles, 1 rail; 2.8 tiles on a diagonal), `half-diagonal-rail` (4.5 tiles, 2 rails) and

@@ -2270,7 +2270,7 @@ p.get_main_inventory=function() return {get_item_count=function(n) return n=='tr
 local plan=call('belt_route',{from={x=0,y=0},to={x=6,y=0},dry_run=true})
 eq(plan.dry_run,true); eq(#made,0); eq(plan.missing['underground-belt'],2); eq(plan.entities,nil)
 local routed=call('belt_route',{from={x=0,y=0},to={x=6,y=0}})
-eq(routed.placed,routed.tiles); eq(routed.route,plan.route); eq(storage.agent_harness.last_paste[1].right,6.5)
+eq(routed.placed,routed.tiles); eq(routed.route,plan.belt_route.route); eq(plan.summary,'3 placeable (of 3)'); eq(storage.agent_harness.last_paste[1].right,6.5)
 local kinds={}
 for _,a in ipairs(made) do if a.type then kinds[#kinds+1]=a.type..'@'..a.position.x end end
 eq(table.concat(kinds,','),'input@0.5,output@5.5')

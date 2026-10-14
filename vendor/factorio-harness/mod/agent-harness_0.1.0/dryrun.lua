@@ -13,7 +13,7 @@
 -- The factory is pure so the same module can be bundled into a hot reload.
 return function(api)
   local M = {}
-  M.ACTIONS = {place_ghosts=true, paste=true, blueprint_place=true, build=true, rail_route=true}
+  M.ACTIONS = {place_ghosts=true, paste=true, blueprint_place=true, build=true, rail_route=true, belt_route=true}
   local MAX_ROWS, MAX_LISTED, HOLE_LIMIT, FLOOD_BUDGET, MAX_SPOTS = 30, 200, 1024, 20000, 8
   local MAX_INSERTERS = 64
   local DIRS = {{1,0},{-1,0},{0,1},{0,-1}}
