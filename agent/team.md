@@ -31,7 +31,8 @@ already targets your character.
   `team: chat_remaining=K` repeats on every reply: run `./fh chat` again. Answer teammates promptly.
 - Output: a failure ends with an `error:` line (on stderr with `--format json`) and exits nonzero; a partial result (`short`, `awaiting_craft`, a
   refused craft) ends with a `warning:` line. `--wait` replies are brief (outcome, position, inventory change; add
-  `--full` for the whole status). The `clock:` line ends with the time left until your deadline.
+  `--full` for the whole status). The `clock:` line ends with the time left until your deadline. A `--wait` that a tell
+  or mention ends while the action still runs exits 3 (`still_running`); `--wait-through-tells` keeps waiting.
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Post a claim for the area you
   build in (`board post` with kind `claim` and the area): it shows teammates who works where, sends that area's
   alerts to you, and keeps teammates' `stock` sweeps out of its chests. Put shared infrastructure (power poles, main

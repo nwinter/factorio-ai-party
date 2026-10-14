@@ -72,7 +72,13 @@ fh call status
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
 - Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
-- With `--wait`, the command exits nonzero unless the action ended successfully, or when the wait times out. `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success; `unreachable` and `blocked` fail with `last.why` on the error line. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
+- With `--wait`, the command exits 0 when the action ended successfully, 1 when it failed, and 3 when the wait ended
+  while the action still runs: a tell or mention ended it (the reply's `still_running` and `note` say so), or the wait
+  timed out (`wait_timeout`). So `fh call ACTION --wait && next` runs `next` only after the action is done.
+  `--wait-through-tells` keeps waiting through tells and mentions; the reply that ends the wait lists them in
+  `told_during_wait` (`tell from astra at tick 5`) and carries the team block. `fh wait` takes it too. (Sol, shift09:
+  a tell ended a wait with exit 0 and the next step ran while the action still ran.)
+- `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success; `unreachable` and `blocked` fail with `last.why` on the error line. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
 - A timed-out wait is not a finished action. The reply has `error.code` `wait_timeout`, `timed_out: true` and `still_running` (the action's kind and end tick) and no `completion`. The action keeps running in game; a new character action would interrupt it. `fh wait` blocks until the character is idle again and reports the last outcome.
 - Ctrl-C does not stop an action the game already accepted. `fh call stop` does.
 - An action that ends with the character on a belt, underground belt or splitter says so in `last.on_belt`
