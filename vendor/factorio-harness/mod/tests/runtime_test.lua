@@ -2315,12 +2315,12 @@ end)()
   -- Out of reach: how far, the reach, and a free spot that reaches it; nothing walks.
   p.surface.find_non_colliding_position=function(_,pos) return {x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5} end
   fails(function() call('transfer',{position=far.position,item='iron-plate',count=1,direction='to_entity'}) end,
-    'entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away, reach 10; in reach from (11.5,0.5)')
+    'entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away (to its edge), reach 10; in reach from (10.5,0.5)')
   eq(call('status').active,false)
   -- Several targets, one failing: the tally names the moved total, the targets touched and the failure.
   local spread=call('transfer',{positions={req.position,big.position,far.position},item='iron-plate',count=5,direction='to_entity'})
   eq(spread.transferred,10)
-  eq(spread.tally,'moved 10 iron-plate; 2 of 3 targets touched; short: 1 failed (entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away, reach 10; in reach from (11.5,0.5))')
+  eq(spread.tally,'moved 10 iron-plate; 2 of 3 targets touched; short: 1 failed (entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away (to its edge), reach 10; in reach from (10.5,0.5))')
   -- One target: no tally.
   eq(call('transfer',{position=req.position,item='iron-plate',count=1,direction='to_entity'}).tally,nil)
   -- The tally's other shorts.

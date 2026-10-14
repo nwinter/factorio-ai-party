@@ -484,9 +484,19 @@ fh sleep 900 --until researched                       # ...or until the research
 ## Messages and reads
 
 - `inspect` is a read: any entity in sight (32 tiles, visible chunk) works without reach, like `scan`; `in_reach` says whether acting on it would reach.
-- An action on a target out of reach fails at once, without walking, with the distance, your reach and a free spot
-  within reach of it: `entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away, reach 10; in reach from
-  (11.5,0.5)` (the spot is left out when none is free within 3 tiles of the line toward it).
+- Reach is the game's: the distance from the character to the entity's collision box (its edge, not its centre),
+  within 10 tiles (`reach_distance`) for buildings and within 2.7 (`resource_reach_distance`) for ore, trees and rocks
+  (read on the shift world: a tree 4.3 tiles from its edge was out of reach; a belt 10.25 from its centre, 9.7 from its
+  edge, in reach). An action on a target out of reach fails at once, without walking, with the distance to its edge,
+  the reach for it and a free spot on the line toward you from which it is in reach by that rule: `entity is out of
+  reach: tree-04 at (-69.5625,-115.063) is 3.4 tiles away (to its edge), reach 2.7 (ore, trees and rocks); in reach
+  from (-67.5,-115.5)` (the spot is left out when none is free). A mine that loses reach mid-way ends `out_of_reach`
+  with the same line in `last.error`.
+- `rotate {position}` is one 90-degree turn clockwise, as the R key (`reverse: true`: counter-clockwise); `rotate
+  {position, direction: "south"}` (or 0, 4, 8, 12) turns it until it faces that way, the shorter way round. The reply
+  has `before` and `after` (compass names; 2.0 directions are north 0, east 4, south 8, west 12, and replies leave out
+  a north facing), `turns`, and `note: it faces west already` when no turn was needed. An entity that cannot face that
+  way by rotating (an underground belt flips end and direction each turn) fails with where it ended.
 - `inspect` of a chest, logistic chest, cargo wagon, car or spider trunk, landing pad or hub shows `holds`, one line:
   the largest stacks first (`iron-plate*400 coal*120 ... +3 more`), slots used of the total, and the red-X limit
   (`; 7 of 48 slots (limited to 20)`). A requester or buffer chest adds `requests`: held/asked per item over its active
