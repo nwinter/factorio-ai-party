@@ -37,7 +37,9 @@ return function(api)
   -- The first of the prototype's tile buildability rules the tiles at this
   -- spot break, as text; nil when they all hold. Second value: whether the
   -- prototype has rules at all (then its tiles are judged by them).
-  function M.tile_rules(surface, proto, pos, dir)
+  -- get(x, y), when given, reads the tiles instead of the surface (a dry run
+  -- with planned foundation, dryrun.lua).
+  function M.tile_rules(surface, proto, pos, dir, get)
     local rules = try(function() return proto.tile_buildability_rules end)
     if type(rules) ~= 'table' or #rules == 0 then return nil, false end
     for i, rule in ipairs(rules) do
@@ -48,7 +50,7 @@ return function(api)
       for x = x0, x1 do
         for y = y0, y1 do
           n = n + 1
-          local tile = surface.get_tile(x, y)
+          local tile = get and get(x, y) or surface.get_tile(x, y)
           local tl = try(function() return tile.prototype.collision_mask.layers end) or {}
           if (rule.required_tiles and not touches(tl, rule.required_tiles))
             or (rule.colliding_tiles and touches(tl, rule.colliding_tiles)) then
