@@ -4162,6 +4162,7 @@ function handlers.dry_run(p,a)
     else
       local pa={}
       for kk,v in pairs(inner) do if kk~='repeat' then pa[kk]=v end end
+      assert(copies==1 or inner.position~=nil,'repeat needs position')
       if inner.position~=nil then local p0=position(inner.position); pa.position={x=p0.x+k*dx,y=p0.y+k*dy} end
       local pl=M.paste_plan(q,pa)
       for _,e in ipairs(pl.entities) do e.copy=copy; plan.entities[#plan.entities+1]=e end
