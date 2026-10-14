@@ -75,7 +75,10 @@ already targets your character.
   and what each unlocked. `./fh call science` (or `--args '{"pack":"logistic-science-pack"}'`) counts each pack the
   research needs over your whole surface, the same for everyone wherever they stand: made and used in 10 minutes,
   the assemblers set to it and their states, packs in chests, on belts, in labs and carried, and the largest chests;
-  its `reach` line says where else each pack sits (inserter hands, robots) and why it does not reach the labs.
+  its `reach` line says where else each pack sits (inserter hands, robots) and why it does not reach the labs; its
+  `chain` line walks the pack's recipe tree down, each step with its makers and made and used per minute, following
+  the ingredient most makers lack (`chemical-science-pack: 9 of 14 makers lack advanced-circuit, ...; plastic-bar:
+  4 of 4 working, made 30/min, used 52/min`), and `chain_tree` lists every step down to ores and fluids.
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
   `"surface"`) reads one item: where it sits (chests by kind, belts, machine outputs, inserter hands, robots,
   characters), each logistic network's stock of it (free and reserved), its robots, every unmet requester with the
