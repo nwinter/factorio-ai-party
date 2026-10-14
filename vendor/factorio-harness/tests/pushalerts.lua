@@ -8,10 +8,14 @@ defines={entity_status={working=0,no_power=1,low_power=2,no_fuel=3},inventory={t
 storage={board={items={}}}
 local force={name='player',players={}}
 local ents={nauvis={},vulcanus={},['platform-1']={}}
+local finds={}
 local function surface(name,platform)
   return {name=name,platform=platform,find_entities_filtered=function(f)
     eq(f.force,force); assert(f.type and f.limit,'by type, bounded')
-    local out={}; for _,e in ipairs(ents[name]) do if e.valid then out[#out+1]=e end end; return out end}
+    local types={}
+    for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do types[t]=true end
+    finds[#finds+1]=f.type
+    local out={}; for _,e in ipairs(ents[name]) do if e.valid and types[e.type] then out[#out+1]=e end end; return out end}
 end
 local nauvis,vulcanus=surface('nauvis'),surface('vulcanus')
 game={tick=100000,surfaces={nauvis,vulcanus,surface('platform-1',{name='Sunward'})}}
@@ -153,4 +157,37 @@ local mine=B.claim_lines(sol)
 eq(#mine,1); eq(mine[1],power.line)
 eq(#B.claim_lines(luna),0,'the nearest agent has no claim there')
 eq(A.text({kind='no_ammo',n=3,names={['gun-turret']=3},center={x=1,y=2},surface='nauvis'},'nauvis',nil,true),'3 gun-turret out of ammo near (1,2)')
+
+-- 5. The background read (task-statuscost, 01:15 on world n: pushalerts.lines up to 150 ms when a reply ran the whole
+-- read): one stage a tick (one entity type on one planet, the game's alerts, the network groups, the merge), its state
+-- in storage; replies read the last finished one and never read the world themselves.
+local st5={board={items={}}}
+local netcalls=0
+local C=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){
+  state=function() return st5 end,
+  agents=function() return {{index=1,name='astra'},{index=2,name='sol'},{index=3,name='luna'}} end,
+  who=function(p) return p.name end,
+  place=function(index) return places[index] end,
+  network_groups=function() netcalls=netcalls+1; return {} end}
+ents.nauvis={}; ents.vulcanus={}
+for i=1,3 do ent('nauvis','stone-furnace','furnace',i*2,2,{status=3}) end
+for i=1,2 do ent('vulcanus','gun-turret','ammo-turret',i,1) end
+force.players={{}}; game.forces={player=force}
+local function run(n) for _=1,n do game.tick=game.tick+1; finds={}; C.tick(game.tick); assert(#finds<=1,'at most one find a tick') end end
+run(1); eq(#finds,0,'the job starts'); assert(st5.push_jobs.player)
+local stages=#st5.push_jobs.player.stages
+eq(stages,2*22+3,'22 types on each of 2 planets, then alerts, networks, merge')
+for _=1,stages do
+  game.tick=game.tick+1; finds={}; C.tick(game.tick)
+  for _,t in ipairs(finds) do eq(type(t),'string','one type per find') end
+end
+eq(st5.push_jobs.player,nil,'done'); eq(netcalls,1)
+local done=C.read(astra,{}).groups
+eq(#done,2); local kinds={}; for _,g in ipairs(done) do kinds[g.kind]=g.count end
+eq(kinds.no_fuel,3); eq(kinds.no_ammo,2)
+-- A reply later than 30 s reads the last finished read and nothing else; the job reads anew in the background.
+game.tick=game.tick+5000; finds={}
+eq(#C.read(astra,{}).groups,2); eq(#finds,0,'no read in the reply')
+run(1); assert(st5.push_jobs.player,'a new job')
+force.players={}; game.forces=nil
 print('pushalerts: ok')

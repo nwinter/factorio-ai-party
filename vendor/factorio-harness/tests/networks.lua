@@ -105,8 +105,12 @@ add{type='electric-pole',name='small-electric-pole',position={x=900,y=900},elect
 local N=dofile('mod/agent-harness_0.1.0/networks.lua'){state=function() return storage end}
 local function run(sec) for _=1,sec*60 do game.tick=game.tick+1; N.tick(game.tick) end end
 
--- 1. Five minutes of samples; the lines, numbers only.
+-- 1. Five minutes of samples; the lines, numbers only. The background job keeps a view up to 60 s old (section 3);
+-- here the view is built at once from the 5 minutes of samples.
 run(300)
+local bg_view=storage.networks.views.player
+assert(bg_view and bg_view.tick<game.tick,'the background job made a view')
+storage.networks.views={}
 local lines=N.lines(force,'nauvis',8)
 eq(#lines,3,table.concat(lines,' | '))
 eq(lines[1],'nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 min (now 18.5 MW) of 22.1 MW capacity (84%); '
@@ -171,6 +175,27 @@ for _,x in ipairs(N.alert_groups(force)) do assert(x.kind~='power_high','below 8
 -- A robot idle again: robots_busy starts over.
 ln.available_logistic_robots=5; run(30); storage.networks.views={}
 for _,x in ipairs(N.alert_groups(force)) do assert(x.kind~='robots_busy') end
+-- 3. The background view (task-statuscost, 01:15 on world n: networks.alert_groups 55 ms when one call rebuilt the
+-- view): one step a tick, each step at most one entity find; a reply with a view reads that and finds nothing.
+do
+  local find=nauvis.find_entities_filtered
+  local per_tick=0
+  nauvis.find_entities_filtered=function(f) per_tick=per_tick+1; return find(f) end
+  storage.networks.views={}; storage.networks.view_jobs={}
+  local worst=0
+  for _=1,40 do
+    game.tick=game.tick+1; per_tick=0; N.tick(game.tick)
+    if game.tick%300~=0 then worst=math.max(worst,per_tick) end
+  end
+  assert(worst<=2,'at most the step and the ghost count a tick: '..worst)
+  local v=storage.networks.views.player
+  assert(v and #v.surfaces==1 and #v.surfaces[1].electric==1,'the job made the view')
+  game.tick=game.tick+5000; per_tick=0
+  N.lines(force,'nauvis',8); N.read({force=force},{})
+  eq(per_tick,0,'a reply reads the last view')
+  -- (alert_groups runs in pushalerts' background job; only its low boilers' fuel look-ups read the world, bounded)
+  nauvis.find_entities_filtered=find
+end
 -- Boilers that hold no fuel at all: the usual fuels are looked for, and the line says so.
 local empty={valid=true,type='boiler',name='boiler',unit_number=990,position={x=200,y=200},
   burner={remaining_burning_fuel=0,inventory={{valid_for_read=false}}}}

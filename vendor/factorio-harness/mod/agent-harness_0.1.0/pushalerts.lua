@@ -71,30 +71,39 @@ return function(api)
   local function builder(e)
     return try(function() local u = e.last_user; return u and u.name end)
   end
-  -- One read of everything: {tick, groups (array, worst first)}.
-  local function scan(force)
-    local groups, budget = {}, MAX_SCAN
+  -- One read is these stages: each entity type on each planet surface, the
+  -- game's alert list, the network groups, then the merge. scan() runs them
+  -- all at once; the background job (M.tick) runs one stage per tick
+  -- (task-statuscost, 01:15 on world n: pushalerts.lines up to 150 ms when a
+  -- reply ran the whole read).
+  local function entities(groups, s, force, t, budget)
     local st = statuses()
-    for _, s in pairs(game.surfaces) do
-      if not try(function() return s.platform end) then  -- platforms: platalerts.lua
-        local list = try(function() return s.find_entities_filtered{force=force, type=TYPES, limit=budget} end) or {}
-        budget = budget - #list
-        for _, e in ipairs(list) do
-          if e.valid then
-            local kind = st[e.status]
-            if kind == 'no_power' and not try(function() return e.electric_network_id end) then kind = 'unconnected' end
-            if e.type == 'ammo-turret' then
-              local inv = try(function() return e.get_inventory(defines.inventory.turret_ammo) end)
-              if inv and inv.get_item_count() == 0 then kind = 'no_ammo' end
-            elseif e.type == 'fluid-turret' then
-              local amount = try(function() local f = e.fluidbox[1]; return f and f.amount or 0 end)
-              if amount and amount < 1 then kind = 'flamer_dry' end
-            end
-            if kind then add(groups, kind, s.name, e, e.position, e.name, builder(e)) end
-          end
+    local list = try(function() return s.find_entities_filtered{force=force, type=t, limit=budget} end) or {}
+    for _, e in ipairs(list) do
+      if e.valid then
+        local kind = st[e.status]
+        if kind == 'no_power' and not try(function() return e.electric_network_id end) then kind = 'unconnected' end
+        if e.type == 'ammo-turret' then
+          local inv = try(function() return e.get_inventory(defines.inventory.turret_ammo) end)
+          if inv and inv.get_item_count() == 0 then kind = 'no_ammo' end
+        elseif e.type == 'fluid-turret' then
+          local amount = try(function() local f = e.fluidbox[1]; return f and f.amount or 0 end)
+          if amount and amount < 1 then kind = 'flamer_dry' end
         end
+        if kind then add(groups, kind, s.name, e, e.position, e.name, builder(e)) end
       end
     end
+    return #list
+  end
+  local function planets()
+    local out = {}
+    for _, s in pairs(game.surfaces) do
+      if not try(function() return s.platform end) then out[#out+1] = s end  -- platforms: platalerts.lua
+    end
+    table.sort(out, function(a, b) return (a.index or 0) < (b.index or 0) end)
+    return out
+  end
+  local function game_alerts(groups, force)
     -- The game's alert list, as an agent player's alert panel shows it.
     local reader = api.alert_reader and api.alert_reader(force)
     local raw = reader and try(function() return reader.get_alerts{} end)
@@ -118,6 +127,8 @@ return function(api)
         end
       end
     end
+  end
+  local function merge(groups, extra)
     -- Cells of one kind on one surface that touch (8 neighbours) are one area:
     -- a turret line across a cell edge is one group. Its key is its first cell.
     local out, done = {}, {}
@@ -151,18 +162,71 @@ return function(api)
     end
     -- Network groups (networks.lua): power_high, boiler_fuel, robots_busy,
     -- one per network, with their own line and level (n).
-    for _, g in ipairs(api.network_groups and try(function() return api.network_groups(force) end) or {}) do out[#out+1] = g end
+    for _, g in ipairs(extra or {}) do out[#out+1] = g end
     table.sort(out, function(a, b) return a.n > b.n or (a.n == b.n and a.key < b.key) end)
     return out
   end
+  local function network_groups(force)
+    return api.network_groups and try(function() return api.network_groups(force) end) or {}
+  end
+  -- One read of everything at once: groups (array, worst first).
+  local function scan(force)
+    local groups, budget = {}, MAX_SCAN
+    for _, s in ipairs(planets()) do budget = budget - entities(groups, s, force, TYPES, budget) end
+    game_alerts(groups, force)
+    return merge(groups, network_groups(force))
+  end
+  -- The background read, one stage per tick, its state in storage so every
+  -- peer runs the same: started when the last read is SCAN_TICKS old.
+  local function forces()
+    local out = {}
+    for _, f in pairs(game.forces or {}) do if f.players and #f.players > 0 then out[#out+1] = f end end
+    table.sort(out, function(a, b) return a.name < b.name end)
+    return out
+  end
+  function M.tick(tick)
+    local s = api.state()
+    s.push_alerts = s.push_alerts or {}
+    s.push_jobs = s.push_jobs or {}
+    s.push_bg = true
+    for _, force in ipairs(forces()) do
+      local job = s.push_jobs[force.name]
+      local c = s.push_alerts[force.name]
+      if not job and (not c or tick - c.tick >= SCAN_TICKS) then
+        local stages = {}
+        for _, surface in ipairs(planets()) do
+          for _, t in ipairs(TYPES) do stages[#stages+1] = {surface=surface.name, type=t} end
+        end
+        stages[#stages+1] = {step='alerts'}
+        stages[#stages+1] = {step='networks'}
+        stages[#stages+1] = {step='merge'}
+        job = {start=tick, stages=stages, i=1, groups={}, budget=MAX_SCAN}
+        s.push_jobs[force.name] = job
+      elseif job then
+        local stage = job.stages[job.i]
+        job.i = job.i + 1
+        if stage.type then
+          local surface
+          for _, x in ipairs(planets()) do if x.name == stage.surface then surface = x end end
+          if surface and job.budget > 0 then job.budget = job.budget - entities(job.groups, surface, force, stage.type, job.budget) end
+        elseif stage.step == 'alerts' then game_alerts(job.groups, force)
+        elseif stage.step == 'networks' then job.extra = network_groups(force)
+        else
+          s.push_alerts[force.name] = {tick=job.start, groups=merge(job.groups, job.extra)}
+          s.push_jobs[force.name] = nil
+        end
+      end
+    end
+  end
+  -- The last finished read; with the background job running it never reads
+  -- in a reply, except a force's very first (and tests without the job).
   local function current(force)
     local s = api.state()
     s.push_alerts = s.push_alerts or {}
     local c = s.push_alerts[force.name]
-    if not c or game.tick - c.tick >= SCAN_TICKS then
-      c = {tick=game.tick, groups=scan(force)}
-      s.push_alerts[force.name] = c
-    end
+    if c and (s.push_bg or game.tick - c.tick < SCAN_TICKS) then return c end
+    c = {tick=game.tick, groups=scan(force)}
+    s.push_alerts[force.name] = c
     return c
   end
 
