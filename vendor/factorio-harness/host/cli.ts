@@ -1027,6 +1027,8 @@ async function main() {
     const waits = bridged ? ['walk','mine','build'].includes(action)
       : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until','wait_ticks','kite'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
         || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined)
+        // build stepping off its own footprint, then placing the rest (Sol 11:18: --wait returned at "built 1 of 5")
+        || (action === 'build' && reply.result?.stepping_aside !== undefined)
         // A transfer or collect that walks (walk, pick, pick with to) runs as a timed tour.
         || (['transfer','collect'].includes(action) && reply.result?.op === 'transfer' && reply.result?.until_tick !== undefined)
         // feed over positions with walk: a tour when any was out of reach (Opus 10:50).
