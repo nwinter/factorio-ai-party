@@ -283,4 +283,28 @@ body.crafting_queue=queued
 local cc=luna('cancel_craft',{recipe='wooden-chest',count=2})
 eq(cc.cancelled,2); eq(cc.moved,4); eq(cc.returned.wood,4); assert(cc.inv:find('held: wood 8',1,true),cc.inv)
 
+-- 10. Operator 08:47 (Astra: rearm on 6 guns returned ok, moved 0, every one refused): a call over several targets
+-- where every target failed fails, naming the first reason; a partial success stays ok with the tally.
+fails(function() luna('transfer',{positions={{x=60.5,y=20.5},{x=61.5,y=20.5}},item='yumako-seed',count=1,direction='to_entity'}) end,
+  'all 2 targets failed, nothing moved; the first (60.5,20.5): entity not found at (60.5,20.5)')
+r=luna('transfer',{positions={yfarm.position,{x=60.5,y=20.5}},item='yumako-seed',count=1,direction='to_entity'})
+eq(r.moved,1); assert(r.tally:find('1 of 2 targets touched; short: 1 failed (entity not found',1,true),r.tally)
+fails(function() luna('feed',{positions={{x=60.5,y=20.5},{x=61.5,y=20.5}},item='yumako-seed'}) end,'all 2 targets failed, nothing moved; the first (60.5,20.5)')
+-- As a queue step: the step fails.
+luna('queue_submit',{steps={{action='transfer',args={positions={{x=60.5,y=20.5},{x=61.5,y=20.5}},item='yumako-seed',count=1,direction='to_entity'}}}})
+advance(2)
+h=luna('queue_status').history
+eq(h[#h].ok,false); assert(tostring(h[#h].result.reason):find('all 2 targets failed',1,true),tostring(h[#h].result.reason))
+luna('queue_cancel',{})
+-- A walking tour whose every stop fails ends failed (a nonzero --wait exit), with the first reason.
+body.position={x=-150,y=-100}
+r=luna('transfer',{position=jfarm.position,item='yumako-seed',count=1,direction='to_entity',inventory='fuel',walk=true})
+assert(r.until_tick,'a tour')
+body.position={x=-186,y=-100}
+advance(3)
+last=luna('status').last
+eq(last.outcome,'failed'); assert(tostring(last.first_error):find('^%(%-188.5,%-101.5%): inventory is not applicable'),tostring(last.first_error))
+eq(last.error,last.first_error)
+body.position={x=50,y=32}
+
 print('picksource: ok')

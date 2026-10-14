@@ -168,7 +168,8 @@ already targets your character.
   `"on_short": "skip"` are left out of it. `transfer` takes `to_entity` or
   `from_entity` as the target (`{"to_entity": {x,y}}`) on any container; out of reach, it says the distance, your
   reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
-  `collect` over several targets ends with a `tally` line. Item moves (`transfer`, `collect`, `feed`, `pickup`,
+  `collect` over several targets ends with a `tally` line; one where every target failed fails with the first reason
+  (a tour: outcome `failed`, `last.first_error`). Item moves (`transfer`, `collect`, `feed`, `pickup`,
   `rearm`, `refuel`, `mine`, `craft`, `cancel_craft`, a `configure` recipe change) say `moved` and end with `inv` (free
   slots, what you hold of the items moved); a move over time says `timed`, and `last.moved`/`last.inv` when it ends;
   queue and standing-order history entries carry both. `feed`, `collect` and `transfer` take `area {left_top,

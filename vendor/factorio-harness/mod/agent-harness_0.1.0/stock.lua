@@ -227,6 +227,12 @@ return function(api)
     return action
   end
   local function done(action)
+    -- Nothing moved and every place failed or was not reached (Astra 08:47: every target failed read as a success):
+    -- failed (the first reason in first_error), or unreached when none was reached.
+    local errors,unreached=action.errors or 0,action.unreached or 0
+    if action.got==0 and errors+unreached>0 and errors>=action.visited then
+      return errors>0 and 'failed' or 'unreached'
+    end
     -- transfer {walk=true}: what moved, or nothing to take, or nothing the targets wanted
     if action.op=='transfer' then
       if action.got>0 then return 'transferred' end
@@ -247,9 +253,11 @@ return function(api)
         t.find=nil
         if ok then t.entity=e
         else
+          local why=tostring(e):gsub('^[^:]*:%d+: ','')
           action.rows=action.rows or {}
-          action.rows[#action.rows+1]={position=t.position,error=tostring(e):gsub('^[^:]*:%d+: ','')}
+          action.rows[#action.rows+1]={position=t.position,error=why}
           action.errors=(action.errors or 0)+1
+          action.first_error=action.first_error or string.format('(%g,%g): %s',t.position.x,t.position.y,why)
         end
       end
       if t.find and not t.entity then
@@ -274,7 +282,10 @@ return function(api)
           end
           if out.inventory_full then return 'inventory_full' end
           if out.stop then return out.stop end
-        else action.errors=(action.errors or 0)+1 end
+        else
+          action.errors=(action.errors or 0)+1
+          action.first_error=action.first_error or string.format('(%g,%g): %s',t.position.x,t.position.y,(tostring(out):gsub('^[^:]*:%d+: ','')))
+        end
       else
         break
       end

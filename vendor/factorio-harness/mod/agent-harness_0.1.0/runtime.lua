@@ -340,6 +340,8 @@ local function finish(index, outcome)
   if action and action.kind=='gather' then
     local last=s.last[index]
     last.item=action.item; last.got=action.got; last.want=action.want<10000 and action.want or nil; last.visited=action.visited
+    -- The first place that failed and why (a tour where every place failed ends failed: Astra 08:47).
+    last.first_error=action.first_error; last.error=last.error or (outcome=='failed' and action.first_error) or nil
     if action.all then last.items=next(action.items) and action.items or nil end
     -- collect over a radius: the same total line as a transfer over several targets.
     if not action.op and #action.targets>1 then
@@ -3846,6 +3848,7 @@ local function transfer_batch(p,a,targets,quiet)
   if a.fail_short and total==0 and short then
     error(string.format('no %s in inventory or ammo slots; %d target(s) want more: %s',a.item,#short,table.concat(short,', ',1,math.min(#short,6))),0)
   end
+  M.all_failed(rows,#targets)
   -- Over all targets: what the game will move to the trash slots (trash.lua).
   local trash=a.direction=='to_player' and total>0 and M.trash.lines(p,a.item and {{name=a.item,quality=a.quality,count=total}} or items) or nil
   return {transferred=total,items=not a.item and items or nil,entities=rows,unchanged=(quiet or untouched>0) and untouched or nil,trash=trash,
@@ -3854,6 +3857,17 @@ local function transfer_batch(p,a,targets,quiet)
     nothing_moved=total==0 and not blocked and empty and (#targets>1 and string.format('none of %d targets: first, %s',#targets,empty) or empty) or nil,
     tally=#targets>1 and M.tally{moved=a.item and {{name=a.item,count=total,quality=a.quality~='normal' and a.quality or nil}} or items,
       targets=#targets,rows=rows,none_held=short and #short or 0,full_item=blocked} or nil}
+end
+-- A call over several targets where every one failed is a failure, naming the first reason (Astra 08:47: rearm on 6
+-- guns returned ok with moved 0 while each was refused). Some moved, or were already full or wanted nothing: ok, with
+-- the tally.
+function M.all_failed(rows,n)
+  if n<1 then return end
+  local failed,first=0,nil
+  for _,r in ipairs(rows) do if r.error then failed=failed+1; first=first or r end end
+  if failed<n then return end
+  local at=first.position and string.format(' (%g,%g)',first.position.x or first.position[1] or 0,first.position.y or first.position[2] or 0) or ''
+  error(string.format('%s target%s failed, nothing moved; the first%s: %s',n==1 and 'the' or 'all '..n,n==1 and '' or 's',at,first.error),0)
 end
 -- One line closing a transfer or collect over several targets (Muse): moved per item, targets touched of the total,
 -- and what fell short (full, holding none, failed with the first reason, never reached).
@@ -4429,6 +4443,8 @@ function handlers.feed(p,a)
       end
     end
   end
+  -- Every target failed: the call fails, naming the first reason (Astra 08:47).
+  M.all_failed(rows,#targets)
   local left={}
   for item in pairs(items) do left[item]=held(p,item,a.quality) end
   local why

@@ -755,6 +755,12 @@ fh sleep 900 --until researched                       # ...or until the research
     inventory full of ITEM`, `N full`, `N wanting more you hold none of`, `N failed (the first reason)`. `collect` with
     `radius` puts it in `last` (and the `--wait` reply) over places: `N not reached`, `N failed`, `N places not visited
     (OUTCOME)`. Compact output prints it after the action's own fields, before the team and clock lines.
+  - A call over several targets (`positions`, `area`, in reach) where every target failed is a failure (Astra 08:47:
+    `rearm` on 6 guns returned ok with moved 0 while each was refused): `transfer`, `collect`, `feed`, `rearm`,
+    `refuel` fail with `all 6 targets failed, nothing moved; the first (x,y): REASON`, and a queue step fails. Any
+    target that moved something, was already full or wanted nothing keeps the call ok, with the tally. A walking tour
+    (`radius`, `walk`, `pick`) that moved nothing because every place it reached failed ends `failed` (`unreached`
+    when it reached none), with `last.first_error` (`(x,y): REASON`); `--wait` exits nonzero.
   - One word for item moves (Muse 06:27): `transfer`, `collect`, `feed`, `pickup`, `rearm` and `refuel` replies say
     `moved` (the count moved; `transferred` stays beside it as an alias for one shift), and rows over several targets
     say `moved` per target. Every one of these replies ends with `inv`, the inventory line after the move: `free
