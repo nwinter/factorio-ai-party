@@ -118,6 +118,7 @@ return function(api)
   -- Requests that are neither game actions nor waits.
   local TALK = {say=true, chat=true, tell=true, tells=true, operator=true, confess=true, confessions=true, vote=true, votes=true,
     clock=true, advance=true, requests=true, profile=true, flush=true, harness_request=true}
+  M.TALK = TALK
   -- Requests that only start or stop the agent's own control: not counted.
   local CONTROL = {stop=true, attach=true, detach=true}
   -- A game action's reply that says it did nothing (shift07: Haiku's 35 feeds, "nothing_to_do, given 0").

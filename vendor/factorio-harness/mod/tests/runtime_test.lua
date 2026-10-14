@@ -439,6 +439,11 @@ p.surface.find_entities_filtered=function() return {chest} end
 local result=call('transfer',{position=chest.position,inventory='chest',item='iron-plate',count=7,direction='to_entity'})
 eq(result.transferred,7); eq(input.count,13); eq(output.count,7)
 eq(flying[#flying],'-7 [item=iron-plate]')
+-- A put by hand is a haul for the agent's own hour (selfview.lua my_hour).
+do
+  local h=storage.agent_harness.selfview[p.index].hauls
+  eq(h[#h].item,'iron-plate'); eq(h[#h].name,'wooden-chest'); eq(h[#h].to.x,1); eq(h[#h].items,7)
+end
 -- Request #69: a slot that takes more than asked (the engine merging a
 -- stack) must not drive the next call's amount below 1, which the engine
 -- refuses ("Given amount value(-1) too small"); up_to already met moves 0.

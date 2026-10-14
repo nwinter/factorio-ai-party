@@ -212,4 +212,33 @@ local c=row.counted
 eq(c.minutes,10); eq(c.actions,1); eq(c.no_effect,2); assert(c.reads>=1 and c.messages>=1,c.text)
 assert(c.text:find('^last 10 min: 1 game action %(and 2 with no effect%), %d+ reads?, %d+ messages?; working %d+%%, asleep %d+%% %(sleep 600 x1, sleep 5 x1%), waiting %d+%% %(wait_ticks x%d, wait_until x%d%), standing %d+%%$'),c.text)
 assert(c.busy_s>=24 and c.standing_s>0,c.text)
+
+-- The agent's own hour (selfview.lua, task-selfview): my_hour and networks are reads (a running action goes on);
+-- queue steps count; team.your_hour comes once per game hour, on a reply that is not a peek.
+S.active[si]={kind='walk',direction=0,until_tick=tick+600}
+local mh=sol('my_hour')
+eq(S.active[si].kind,'walk','a read leaves the walk running')
+assert(mh.text:find('^your last %d+ min: %d+ actions'),mh.text); assert(mh.counts.reads>=1); assert(mh.note)
+eq(type(sol('networks').surfaces),'table')
+sol('stop')
+local before=sol('my_hour').queue_steps
+sol('queue_submit',{steps={{action='wait_ticks',args={ticks=60}},{action='wait_ticks',args={ticks=60}}}}); advance(200)
+eq(sol('my_hour').queue_steps,before+2,'each queue step started counts')
+S.selfview[si].shown=nil; S.selfview[si].since=tick
+advance(60*60*60-10); eq((sol('status').team or {}).your_hour,nil,'not before an hour')
+advance(10)
+eq((sol('status',{peek=true}).team or {}).your_hour,nil,'a peek gets none')
+local yh=sol('status').team.your_hour
+assert(yh and yh:find('^your hour: %d+ actions?'),yh)
+eq((sol('status').team or {}).your_hour,nil,'once per hour')
+-- The first reply of a shift carries the networks, one line each (networks.lua), next to researched_none_built.
+local pstats={output_counts={['steam-engine']=1},get_flow_count=function() return 9e6/60 end}
+local poles={}
+for i=1,3 do poles[i]={valid=true,name='small-electric-pole',type='electric-pole',position={x=i*5,y=0},electric_network_id=4,electric_network_statistics=pstats} end
+force.players={nick}; game.surfaces={surface}
+surface.find_entities_filtered=function(f) return f.type=='electric-pole' and poles or {} end
+advance(1900)  -- past the 30 s the networks view is kept
+runtime.operator.shift_start()
+local sh=sol('status').team.shift
+assert(sh and sh.networks and sh.networks[1]:find('^nauvis electric #4 %(3 poles near %(10,0%)%): draw 9%.0 MW avg over'),sh and sh.networks and sh.networks[1])
 print('idle: ok')

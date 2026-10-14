@@ -8,7 +8,10 @@
 -- - entity statuses: no power (and no pole reaching it), low power, no fuel,
 --   gun turrets out of ammo, flamethrower turrets dry;
 -- - the game's alerts (LuaPlayer.get_alerts, read from an agent player whose
---   alerts are on; attacks, losses and empty turrets are told elsewhere).
+--   alerts are on; attacks, losses and empty turrets are told elsewhere);
+-- - per network (networks.lua, task-selfview): draw at 85% of capacity or
+--   more for 2 minutes, boilers under 10 minutes of fuel, no idle logistic
+--   robot for 10 minutes.
 -- Grouped by kind and 64-tile area on each surface; each group goes to the
 -- agents whose board claim covers it, else who built it (last_user), else
 -- the nearest agent on that surface. In the team block (team.alerts) at most
@@ -146,6 +149,9 @@ return function(api)
         out[#out+1] = area
       end
     end
+    -- Network groups (networks.lua): power_high, boiler_fuel, robots_busy,
+    -- one per network, with their own line and level (n).
+    for _, g in ipairs(api.network_groups and try(function() return api.network_groups(force) end) or {}) do out[#out+1] = g end
     table.sort(out, function(a, b) return a.n > b.n or (a.n == b.n and a.key < b.key) end)
     return out
   end
@@ -200,6 +206,9 @@ return function(api)
     return string.format('%d (%s%s)', g.n, table.concat(parts, ', '), #names > 3 and ', ...' or '')
   end
   function M.text(g, here, was)
+    if g.line then
+      return g.line .. (g.surface ~= here and ' on ' .. g.surface or '') .. (was and string.format(' (was %d%s)', was, g.unit or '') or '')
+    end
     local hint = HINT[g.kind]
     return string.format('%s %s near (%d,%d)%s%s%s', what(g), LABEL[g.kind] or g.kind:gsub('_', ' '), g.center.x, g.center.y,
       g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '', hint and '; ' .. hint or '')
@@ -253,7 +262,7 @@ return function(api)
       note=#rows == 0 and 'no alerts or warnings' or nil}
   end
   M.schema = {
-    game_alerts = {surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel, no_ammo, flamer_dry, or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
+    game_alerts = {surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel, no_ammo, flamer_dry; per network: power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 10 min of fuel at the draw), robots_busy (no idle logistic robot for 10 min); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
       returns='groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest)}; scanned (the scan is at most 30 s old). What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
   }
   return M
