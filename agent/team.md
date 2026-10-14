@@ -66,6 +66,10 @@ already targets your character.
   `./fh board update --args '{"id":N,"owner":"<your name>"}'`. Keep your items current
   (`"status":"doing"|"done"|"blocked"`, `"note":"..."`). A task or request whose owner has made no request for
   20 minutes can be taken the same way; the owner hears it.
+- `./fh board update --args '{"id":N,"title":"...","needs":{"iron-plate":300}}'` corrects an item's title and what it
+  asks for (its poster or owner; anyone after the same 20 quiet minutes); `board {id}` keeps the change in `history`.
+- `inspect` reads any entity on your surface in a chunk our radars see, by remote view (`by: remote view`); out of
+  sight and coverage, the refusal names the nearest radar coverage.
 - The team plan is one board item everyone edits: goals, and one line per agent of what they are on. `./fh board plan`
   shows it (`./fh board` shows it at the top); `./fh board plan goals "..."` replaces the goals; `./fh board plan
   doing "..."` sets your line; `./fh board plan for luna "..."` sets a teammate's line (shown as set by you); `""`
@@ -162,6 +166,9 @@ already targets your character.
   or requester chest it lands on (`requests_kept`).
 - Gleba: `inspect` on an agricultural tower shows its `tower` state, seeds, output, which cells have soil for which
   seeds, and its plants with time to harvest; `transfer`, `feed` and `collect` work on its seeds and harvest.
+- Spoilage: `inspect`, `supply` and `stock` give the first stack to spoil and when; pentapod eggs say when they hatch
+  into enemies (`hatch_warning`, `hatch`); `output_spoil` is what a machine's next products start at. Eggs of ours
+  hatching within 5 minutes on your surface top `team.alerts` (`eggs hatching: ...`) and wake `fh sleep` (`woke: eggs`).
 - In a tank, car or spidertron you drive, `shoot` fires its gun: `--args '{"position":{"x":294,"y":-135},"gun":"tank-cannon"}'`
   (or `"ammo":"explosive-cannon-shell"`, `"auto":true`), loading the slot from your inventory; `vehicle {drive}` goes on meanwhile.
 - `vehicle {drive}` follows the engine's path for the vehicle around cliffs and water, backs off once when stuck, pushes
@@ -199,7 +206,7 @@ already targets your character.
   Dry runs and build replies also name logistic chests no roboport covers (`outside_logistic_coverage`) and inserters
   or belts feeding an underground entrance from the side, with the lane that gets nothing (`underground_side_feed`).
 - `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}}}'` lists every chest's
-  and machine's contents in the area (in sight, up to 64) as one table: `holds`, `requests`, `recipe`, `status_name`.
+  and machine's contents in the area (where inspect reads, up to 64) as one table: `holds`, `requests`, `recipe`, `status_name`.
   `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north",
   "recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid the recipe puts there;
   `inspect` of a ghost shows the same.

@@ -14,8 +14,8 @@ return function(api)
     wait_ticks = {ticks='1..54000 simulation ticks: the character stands idle that long (a direct timed action, outcome duration_elapsed, or told|mentioned when a tell or mention ends it early; use --wait), or a queue step', pause_queue='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'},
     sleep = {seconds='1..900', condition='optional wait_until condition {until=researched|item_count|crafting_done|..., ...}: the sleep also ends when it holds (woke=condition, saw); researched without technology means the research running now; item_count may take positions (chests); {until=alert}: a new attack, enemy group or enemy base alert (woke=alert)',
       peek='boolean: the reply leaves the team block for your next reply (fh wait --until)',
-      note='fh sleep SECONDS [--until ...]: waits while the game runs (in turns mode it advances the game); your current action and queue keep going, and the reply says first which (while_asleep). Returns early when your character takes damage or dies, a message mentions you, a teammate tells you something (tell), a board item of yours is assigned or changed by someone else, your running queue finishes or stalls (a step fails, or a walking step has not moved you for 30 s), or the condition holds; a dead bot sleeps until it respawns. sleep_check reports woke=damaged|died|respawned|mentioned|told|board|alert|queue_done|queue_stalled|condition|elapsed'},
-    sleep_check = {peek='boolean: leave mentions unread (the CLI polls with peek, then reads once)', returns='woke (nil while sleeping), slept_s, health/lost when damaged, mention, tell, board, queue (what finished or stalled), saw (the condition), queue_steps (steps your queue finished during the sleep)'},
+      note='fh sleep SECONDS [--until ...]: waits while the game runs (in turns mode it advances the game); your current action and queue keep going, and the reply says first which (while_asleep). Returns early when your character takes damage or dies, a message mentions you, a teammate tells you something (tell), a board item of yours is assigned or changed by someone else, eggs of ours on your surface or built by you will hatch within 5 minutes (eggs), your running queue finishes or stalls (a step fails, or a walking step has not moved you for 30 s), or the condition holds; a dead bot sleeps until it respawns. sleep_check reports woke=damaged|died|respawned|mentioned|told|board|eggs|alert|queue_done|queue_stalled|condition|elapsed'},
+    sleep_check = {peek='boolean: leave mentions unread (the CLI polls with peek, then reads once)', returns='woke (nil while sleeping), slept_s, health/lost when damaged, mention, tell, board, eggs, queue (what finished or stalled), saw (the condition), queue_steps (steps your queue finished during the sleep)'},
   }
   local function sleeps()
     local s = api.state()
@@ -111,6 +111,7 @@ return function(api)
     -- A dead bot sleeps until it respawns (or a mention, or time up).
     record.dead_until = api.dead_until and api.dead_until(p.index) or nil
     record.board_seq = api.board_seq and api.board_seq() or nil
+    record.egg_seq = api.egg_seq and api.egg_seq() or nil
     local q = queue_of(p.index)
     if running(q) then record.queue = true end
     if alert then record.alert_seq = api.state().alert_seq or 0 end
@@ -210,6 +211,9 @@ return function(api)
     -- A board item assigned to the sleeper or changed by someone else.
     local news = record.board_seq and api.board_news(p, record.board_seq)
     if news then out.board = news; return 'board' end
+    -- Eggs on this surface or built by the sleeper hatch within 5 minutes (spoil.lua).
+    local eggs = record.egg_seq and api.egg_news and api.egg_news(p, record.egg_seq)
+    if eggs then out.eggs = eggs; return 'eggs' end
     if record.alert_seq and (api.state().alert_seq or 0) > record.alert_seq then
       out.alert = 'a new attack, enemy group or enemy base alert (your next reply\'s team alerts)'
       return 'alert'

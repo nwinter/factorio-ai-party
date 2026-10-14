@@ -2596,7 +2596,9 @@ end)()
 end)()
 ;(function()
   -- inspect over an area (Gemini, shift10): one compact row per chest or machine of ours in sight, reading order.
-  local find,at=p.surface.find_entities_filtered,p.position
+  local find,at,vis=p.surface.find_entities_filtered,p.position,p.force.is_chunk_visible
+  -- inspect reads in sight or by remote view in a chunk our force sees (read_sight): chunk x 1 (the far chest) is dark.
+  p.force.is_chunk_visible=function(_,ch) return ch.x<1 end
   local inv_defs={chest=defines.inventory.chest,assembling_machine_input=defines.inventory.assembling_machine_input,
     assembling_machine_output=defines.inventory.assembling_machine_output}
   defines.inventory.chest=defines.inventory.chest or 1; defines.inventory.assembling_machine_input=902; defines.inventory.assembling_machine_output=903
@@ -2624,16 +2626,16 @@ end)()
   eq(r.count,3); eq(r.entities[1].position.x,1.5); eq(r.entities[2].position.x,2.5); eq(r.entities[3].name,'assembling-machine-2')
   eq(r.entities[1].holds,'empty; 0 of 32 slots'); eq(r.entities[2].holds,'iron-plate*150 coal*20; 2 of 32 slots')
   eq(r.entities[3].holds,'in: copper-cable*8'); eq(r.entities[3].recipe,'electronic-circuit'); eq(r.entities[1].status_name,nil,'a chest has none')
-  eq(r.not_in_sight,'1 more in the area out of sight (inspect sees 32 tiles from you, in visible chunks)')
+  eq(r.not_in_sight,'1 more in the area in chunks our force does not see now (radar coverage or a character\'s sight lights a chunk)')
   fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=200,y=10}}}) end,'at most 128x128')
   fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=9,y=9}},position={x=1,y=1}}) end,'give area, positions or position: one of them')
   fails(function() call('inspect',{position={x=1.5,y=1.5},types={'container'}}) end,'types goes with area')
   list={far}
-  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}}) end,'no chest or machine of ours in sight with its centre in (0,0)-(64,10) (1 out of sight')
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}}) end,'no chest or machine of ours with its centre in (0,0)-(64,10) in a chunk our force sees now (1 in chunks it does not')
   list={}
   for i=1,65 do list[i]=chest(i%30+0.5,math.floor(i/30)+0.5,{}) end
   fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=31,y=3}}}) end,'65 entities in the area; at most 64')
-  p.surface.find_entities_filtered,p.position=find,at
+  p.surface.find_entities_filtered,p.position,p.force.is_chunk_visible=find,at,vis
   for k,v in pairs(inv_defs) do defines.inventory[k]=v end
 end)()
 ;(function()
@@ -2654,5 +2656,30 @@ end)()
   eq(#side,1); eq(side[1]:match('^inserter %(7.5,84.5%) drops onto underground%-belt %(6.5,84.5%), an entrance flowing north, from its east side') ~= nil,true)
   eq(select(1,runtime.build_notes(p,{near})),nil); eq(select(2,runtime.build_notes(p,{near})),nil)
   runtime.networks.coverage=coverage
+end)()
+;(function()
+  -- inspect by remote view (Astra, operator 04:57): on our own surface the map shows every entity in a chunk our
+  -- force sees, as the game's remote view does; an action still needs the character's sight.
+  local chest={valid=true,name='iron-chest',type='container',position={x=3.5,y=0.5},force=p.force,health=200,max_health=200,status=nil,
+    get_fluid_contents=function() return {} end,get_inventory=function() return nil end,get_output_inventory=function() return nil end,
+    electric_network_id=nil,energy=0}
+  local find,at,vis=p.surface.find_entities_filtered,p.position,p.force.is_chunk_visible
+  p.surface.find_entities_filtered=function(f) if f.position and math.abs(f.position.x-3.5)<1 and math.abs(f.position.y-0.5)<1 then return {chest} end return {} end
+  p.position={x=3,y=0}
+  eq(call('inspect',{position={x=3.5,y=0.5}}).by,nil) -- in sight
+  p.position={x=200,y=0}
+  local seen=call('inspect',{position={x=3.5,y=0.5}})
+  eq(seen.by,'remote view'); eq(seen.name,'iron-chest')
+  fails(function() call('build',{item='wooden-chest',position={x=4.5,y=0.5}}) end,'outside local visible area')
+  -- The action's target is in coverage: its refusal names none.
+  local ok,err=pcall(call,'build',{item='wooden-chest',position={x=4.5,y=0.5}})
+  eq(ok,false); eq(tostring(err):find('nearest radar coverage',1,true),nil)
+  -- Not in any chunk our force sees: refused, naming the nearest radar coverage.
+  p.force.is_chunk_visible=function(_,c) return c.x==3 and c.y==0 end
+  fails(function() call('inspect',{position={x=3.5,y=0.5}}) end,'target at (3.5,0.5) ((3.5,0.5) is 196.5 tiles from the character at (200.0,0.0)) is in no chunk our force sees now (radar coverage or a character\'s sight); the nearest radar coverage (or a character\'s sight) is chunk (96,0)-(127,31), 93 tiles away')
+  fails(function() call('build',{item='wooden-chest',position={x=4.5,y=0.5}}) end,'move_to within 30 tiles first); the nearest radar coverage (or a character\'s sight) is chunk (96,0)-(127,31), 92 tiles away')
+  p.force.is_chunk_visible=function() return false end
+  fails(function() call('inspect',{position={x=3.5,y=0.5}}) end,'no chunk within 256 tiles of it is in radar coverage or a character\'s sight')
+  p.surface.find_entities_filtered,p.position,p.force.is_chunk_visible=find,at,vis
 end)()
 print('runtime: '..assertions..' assertions passed')

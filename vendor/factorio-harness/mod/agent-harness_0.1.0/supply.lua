@@ -170,6 +170,23 @@ return function(api)
     local function spot(t, e, n, kind)
       if #t.spots < MAX_SPOTS then t.spots[#t.spots+1] = {position=e.position, name=e.name, n=n, kind=kind, unit=e.unit_number} end
     end
+    -- A spoilable item (Space Age): its first stack to spoil or hatch, where,
+    -- and how many spoil within 5 minutes (spoil.lua), read where it was found.
+    local sp, spoils = api.spoil, {}
+    for name in pairs(names) do spoils[name] = sp and sp.spoils(name) or nil end
+    local function spoil_at(t, e, kind, read)
+      if not spoils[t.item] then return end
+      local acc = {}
+      pcall(read, acc)
+      for _, r in ipairs(acc) do
+        if r.name == t.item then
+          t.spoil_soon = (t.spoil_soon or 0) + r.soon
+          t.spoil_count = (t.spoil_count or 0) + r.count
+          local f = t.spoil_first
+          if not f or r.tick < f.tick then t.spoil_first = {tick=r.tick, percent=r.percent, name=e.name, position=e.position, kind=kind} end
+        end
+      end
+    end
     local any_pack = false
     for name in pairs(names) do if packs[name] or (prototypes.item[name] and try(function() return prototypes.item[name].type end) == 'tool') then any_pack = true end end
     local types = {}
@@ -203,6 +220,7 @@ return function(api)
           if t and not t.user_of[e.unit_number] then
             local u = {e=e, recipe=recipe, has=count(input_of(e), ing.name), feeders={}}
             t.user_of[e.unit_number] = u; t.users[#t.users+1] = u; t.inputs = t.inputs + u.has
+            if u.has > 0 then spoil_at(t, e, 'input', function(acc) sp.inventory(input_of(e), acc) end) end
           end
         end
       end
@@ -211,7 +229,7 @@ return function(api)
       local rocket = e.type == 'rocket-silo' and inventory(e, 'rocket_silo_rocket') or nil
       for name, t in pairs(T) do
         local n = count(out, name)
-        if n > 0 then t.outputs = t.outputs + n; spot(t, e, n, 'output') end
+        if n > 0 then t.outputs = t.outputs + n; spot(t, e, n, 'output'); spoil_at(t, e, 'output', function(acc) sp.inventory(out, acc) end) end
         local r = count(rocket, name)
         if r > 0 then t.rockets = t.rockets + r end
       end
@@ -378,6 +396,7 @@ return function(api)
           bump(t.kinds, kind, n)
           t.chests[#t.chests+1] = {n=n, e=e, kind=kind}
           spot(t, e, n, kind)
+          spoil_at(t, e, kind, function(acc) sp.inventory(main, acc); if trash then sp.inventory(trash, acc) end end)
         end
         for _, f in ipairs(filters or {}) do
           if wanted(f, name) then
@@ -395,7 +414,7 @@ return function(api)
     for _, e in ipairs(belts) do
       local held = {}
       belt_counts(e, names, single, held)
-      for name, n in pairs(held) do local t = T[name]; t.belts = t.belts + n; spot(t, e, n, 'belt') end
+      for name, n in pairs(held) do local t = T[name]; t.belts = t.belts + n; spot(t, e, n, 'belt'); spoil_at(t, e, 'belt', function(acc) sp.belt(e, acc) end) end
     end
     -- Inserters: what their hands hold, the ones feeding users and taking
     -- from makers.
@@ -405,7 +424,10 @@ return function(api)
     counted.inserters = #inserters
     local function visit(e)
       local s = e.held_stack
-      if s.valid_for_read and T[s.name] then local t = T[s.name]; t.hands = t.hands + s.count; spot(t, e, s.count, 'hand') end
+      if s.valid_for_read and T[s.name] then
+        local t = T[s.name]; t.hands = t.hands + s.count; spot(t, e, s.count, 'hand')
+        spoil_at(t, e, 'inserter hand', function(acc) sp.add(acc, s) end)
+      end
       if not want_targets then return end
       local drop, pick = e.drop_target, e.pickup_target
       local drop_unit, pick_unit = drop and drop.unit_number, pick and pick.unit_number
@@ -459,7 +481,10 @@ return function(api)
       if inside(ch.c.position) then
         for name, t in pairs(T) do
           local n = try(function() return ch.c.get_item_count(name) end) or 0
-          if n > 0 then t.carried = t.carried + n; t.characters[#t.characters+1] = ch.name .. ' ' .. n end
+          if n > 0 then
+            t.carried = t.carried + n; t.characters[#t.characters+1] = ch.name .. ' ' .. n
+            spoil_at(t, ch.c, 'carried by ' .. ch.name, function(acc) sp.inventory(ch.c.get_main_inventory(), acc) end)
+          end
         end
       end
     end
@@ -981,7 +1006,7 @@ return function(api)
 
   M.schema = {supply = {item='item name', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole',
     radius='with near: 1..512 tiles (default 64)',
-    returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); chests (largest 5; what a requester or buffer chest asks for); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); counted. Read only'}}
+    returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); chests (largest 5; what a requester or buffer chest asks for); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
 
   function M.supply(p, a)
     local item = a.item
@@ -1023,6 +1048,14 @@ return function(api)
     out.feeders = M.feeders(t)
     out.takers = M.takers(t)
     out.counted = M.counted(scan)
+    -- Spoilage: the first to spoil, or for an item that hatches into enemies (pentapod-egg) the first to hatch.
+    local f = t.spoil_first
+    if f and api.spoil then
+      local h = api.spoil.hatch(item)
+      local text = string.format('the first %s in %s at %s (%s) in %s (%d%% spoiled); %d of %d within 5 min', h and 'hatches' or 'spoils',
+        f.name, at(f.position), f.kind, api.spoil.secs(f.tick - game.tick), math.floor(f.percent * 100 + 0.5), t.spoil_soon or 0, t.spoil_count or 0)
+      if h then out.hatch = string.format('%s hatch into enemies (%s, %s): %s', item, h.entity, api.spoil.per_text(h), text) else out.spoil = text end
+    end
     return out
   end
   return M
