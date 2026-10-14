@@ -163,7 +163,7 @@ already targets your character.
   '{"history":"all","pending":10}'` shows more.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
-  true}` (and `feed {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one
+  true}` (and `feed` or `collect {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one
   call; `legs` lists the route); `transfer {item, "from": "nearest"}` (`radius` to walk) takes from the nearest chest
   holding the item and says which; `transfer`/`collect {positions,
   item | items, pick: "first_with_stock" | "most_stock"}` takes at one listed place that holds the item now (empty
