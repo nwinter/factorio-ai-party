@@ -31,6 +31,7 @@ return function(api)
   -- character to a new spot, or BRIEF of work summed over WINDOW (shift07:
   -- 0 of 227 short walks by Grok and Muse counted under the old rule of 20 s
   -- of work in one go, nor Gemini's 108 transfers).
+  -- A standing order running is work at once, its waits included (orders.lua).
   local WAITS = {wait_ticks=true, wait_until=true, sleep=true}
   local BRIEF, WINDOW = 20 * 60, 2 * 3600
   local MOVES = {walk=true, move_to=true, build_path=true, kite=true, drive=true}
@@ -43,6 +44,7 @@ return function(api)
     if act and not waiting then return true end
     local q = s.queues and s.queues[index]
     if not q or q.paused or waiting then return false end
+    if q.order then return true, true end  -- a standing order running (orders.lua), its waits included
     local step = q.current
     if step then return not WAITS[step.action] or q.loop ~= nil end  -- a repeating plan's own wait is the plan
     return q.loop ~= nil or #q.pending > 0
@@ -100,10 +102,11 @@ return function(api)
           s.move_from[index] = nil
           if here and math.abs(here.x - from.x) + math.abs(here.y - from.y) >= NEW_SPOT then ended(index, 'moved') end
         end
-        if busy(s, index) then
+        local working, order = busy(s, index)
+        if working then
           b.busy = b.busy + 1
           work[#work+1] = game.tick
-          if #work * 60 >= BRIEF then ended(index, 'worked') end
+          if order then ended(index, 'order') elseif #work * 60 >= BRIEF then ended(index, 'worked') end
         else
           local w = waiting(s, index)
           if w == 'sleep' then b.asleep = b.asleep + 1 elseif w then b.waiting = b.waiting + 1 else b.stand = b.stand + 1 end
@@ -216,6 +219,8 @@ return function(api)
         unread_chat=unread.unread or 0, unread_mentions=c.unread_mentions or 0, unread_tells=c.tells or 0,
         unread_board=c.unread_board or 0,
         last_request_s=clock_ and math.floor((game.tick - math.max(clock_.call_tick, clock_.seen_tick or 0)) / 60) or nil,
+        -- Standing orders (orders.lua): {set, running, reason, paused}; a running order is a running queue, so not standing.
+        orders=api.orders and api.orders(ag.index) or nil,
         counted=M.counted(ag.index, (a or {}).minutes),
         stand_ended=last_end and {s_ago=math.floor((game.tick - last_end.tick) / 60), why=last_end.why} or nil}
     end

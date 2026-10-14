@@ -71,7 +71,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   else
     echo "1. fresh: stop world $world, new instance save $run (seed $seed, $enemies enemies, space_age=$POG_SPACE_AGE), start server, deploy"
   fi
-  echo "2. directors cam1..3 join"
+  echo "2. directors cam1..3 join one at a time (tools/start-cams.sh: each in the game before the next, up to ${POG_CAM_WAIT:-180} s, a stuck one restarted once; then OBS's camera captures rehooked)"
   for name in $members; do
     if [ -n "$resume" ]; then
       if [ -f "$prev_dir/$name/notes.md" ]; then notes="notes.md from $prev_dir/$name ($(wc -l < "$prev_dir/$name/notes.md" | tr -d ' ') lines)"; else notes="fresh notes.md (none in $resume)"; fi
@@ -166,12 +166,11 @@ if [ -n "$resume" ]; then
 fi
 
 # 2. Director clients (players 1-3, spectators once a camera is set). They keep the server from auto-pausing.
-for cam in cam1 cam2 cam3; do
-  log "director $cam joining"
-  sound=(); [ $cam = cam1 ] && sound=(-Sound)  # stream audio: only the main director is audible
-  tools/winps.sh tools/win/start-client.ps1 -Name "$world" -GamePort $game -PlayerName "pog-$cam" -Slot "-$cam" \
-    ${sound[@]+"${sound[@]}"} ${factorio[@]+"${factorio[@]}"} >/dev/null
-done
+# One at a time, each in the game before the next starts (19:15: three loading at once stalled for 10 minutes and the
+# stream was black); a stuck one is restarted once; then OBS's camera captures are rehooked (tools/start-cams.sh).
+tools/start-cams.sh "$world" "$game" -- ${factorio[@]+"${factorio[@]}"} 2>&1 |
+  while read -r line; do log "director ${line#* start-cams: }"; done ||
+  log "director: a camera did not join (the shift goes on; tools/start-cams.sh $world $game starts a missing one)"
 
 # 3. Bots, one per team member; a resumed save keeps its bots (only members it lacks are created).
 python3 tools/team_bots.py "$team" "$world" | while read -r line; do log "bot $line"; done

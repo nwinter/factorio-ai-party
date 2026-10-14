@@ -144,7 +144,7 @@ def main():
         assert "context_compaction.soft_threshold=0.391" in opts and "context_compaction.hard_threshold=0.441" in opts, opts
         hooks = json.load(open(os.path.join(d, ".muse", "hooks.json")))["hooks"]
         assert hooks["SessionStart"][0]["matcher"] == "compact"
-    assert run("limit", "agy", "gemini-3.8-flash-high").strip() == "200000"
+    assert run("limit", "agy", "gemini-3.8-flash-high").strip() == "120000"  # 6397d59: 120k, turns capped at 300 s
     assert run("limit", "codex", "gpt-7-unknown").strip() == "140000", "kind fallback row"
     assert run("agy-tokens", "/nonexistent").strip() == "0"
     print("ok")

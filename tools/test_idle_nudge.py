@@ -100,6 +100,21 @@ def main():
     assert n.due(row("astra", 30, queue={"state": "running", "steps": 2}), T0 + 900) == "in an action"
     assert n.due(row("astra", 30, action="wait_ticks", queue={"state": "running", "steps": 7}), T0 + 900) is None
     assert n.due(row("astra", 30), T0 + 3600) == "after the deadline"
+    # a standing order running for the agent is work (orders.lua; the report's orders.running), never a nudge
+    assert n.due(row("astra", 30, orders={"set": 2, "running": "restock-ammo"}), T0 + 900) == "running a standing order"
+    assert n.due(row("astra", 30, orders={"set": 2}), T0 + 900) is None
+    t = N.nudge_text(row("astra", 12, orders={"set": 2}))
+    assert "Queue: none. Standing orders: 2 set, none running. Unread for you:" in t, t
+    assert "Standing orders: 1 set, paused." in N.nudge_text(row("astra", 12, orders={"set": 1, "paused": True}))
+    t = N.nudge_text(row("astra", 12, orders={"set": 1, "paused": True, "operator_paused": True}))
+    assert "Standing orders: 1 set, paused by the operator." in t, t
+    assert "Standing orders" not in N.nudge_text(row("astra", 12))
+    # an order that ran a while does not leave this process's own count standing when it ends
+    o = N.Nudger([], start=T0)
+    o.observe(row("astra", 0, orders={"set": 1, "running": "restock-ammo"}), T0 + 600)
+    o.observe(row("astra", 0, orders={"set": 1, "running": "restock-ammo"}), T0 + 610)
+    o.observe(row("astra", 0, orders={"set": 1}), T0 + 1800)
+    assert o.standing(row("astra", 0), T0 + 1800) == 0, o.idle_since
     sonnet_shift07()
     # One definition of idle (agent-minds study, fix 2): a harness that reports what it counted is the only count (its
     # standing ended on Grok's short walks: this process, polling once a minute, never sees them); the text says what
@@ -139,8 +154,8 @@ def main():
     dl = N.run_deadline(d)
     assert dl and N.time.strftime("%Y-%m-%d %H:%M", N.time.localtime(dl)) == "2026-10-13 10:56", dl
     json.dumps(rows)  # the log rows are JSON
-    print("idle nudge: ok (grace, 10 min, 20 min cooldown, deadline, team only, actions and the dead skipped, facts "
-          "text, failures retried, log rows)")
+    print("idle nudge: ok (grace, 10 min, 20 min cooldown, deadline, team only, actions, standing orders and the dead "
+          "skipped, facts text, failures retried, log rows)")
 
 
 if __name__ == "__main__":

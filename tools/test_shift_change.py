@@ -313,6 +313,86 @@ def unhealthy():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# tools/start-cams.sh's stubs: a client joins JOIN_S seconds after it is started, except STUCK (only on its second
+# start), NEVER (never) and ALREADY (in the game from the first look)
+CAM_WINPS = """#!/usr/bin/env bash
+echo "winps $*" >> "$STUB_LOG"
+s=$CAM_STATE
+case $1 in
+  tools/win/start-client.ps1)
+    cam=$(echo "$*" | sed -E 's/.*-PlayerName (pog-cam[0-9]).*/\\1/')
+    n=$(( $(cat "$s/$cam.starts" 2>/dev/null || echo 0) + 1 )); echo $n > "$s/$cam.starts"
+    if [ "$cam" = "pog-${NEVER:-x}" ] || { [ "$cam" = "pog-${STUCK:-x}" ] && [ $n = 1 ]; }; then exit 0; fi
+    python3 -c "import time; print(time.time() + ${JOIN_S:-0.3})" > "$s/$cam.joinat" ;;
+  tools/win/stop-client.ps1) echo "stopping factorio-cam.exe (4242)" ;;
+esac
+"""
+CAM_RCON = """#!/usr/bin/env bash
+cam=$(echo "$*" | sed -E "s/.*get_player\\('(pog-cam[0-9])'\\).*/\\1/")
+if [ "$cam" = "pog-${ALREADY:-x}" ] || { [ -f "$CAM_STATE/$cam.joinat" ] && python3 -c "import sys, time; sys.exit(0 if time.time() >= float(open('$CAM_STATE/$cam.joinat').read()) else 1)"; }; then
+  echo "rcon $cam joined" >> "$STUB_LOG"; echo joined
+else
+  echo "rcon $cam not yet" >> "$STUB_LOG"; echo "not yet"
+fi
+"""
+CAM_OBS = """#!/usr/bin/env bash
+echo "obs $*" >> "$STUB_LOG"
+echo "stream cam1: re-enabled; stream cam2: re-enabled; stream cam3: re-enabled"
+"""
+
+
+def start_cams():
+    """19:15: the three camera clients started at once and stalled 10 minutes (a black stream); now one at a time."""
+    tmp = tempfile.mkdtemp(prefix="startcams")
+    try:
+        bin_ = os.path.join(tmp, "bin")
+        os.makedirs(bin_)
+        for name, body in (("winps", CAM_WINPS), ("rcon", CAM_RCON), ("obs", CAM_OBS)):
+            open(os.path.join(bin_, name), "w").write(body)
+            os.chmod(os.path.join(bin_, name), 0o755)
+
+        def go(**env):
+            state = tempfile.mkdtemp(dir=tmp)
+            log = os.path.join(tmp, "calls.log")
+            open(log, "w").close()
+            e = {k: v for k, v in os.environ.items() if not k.startswith("POG_")}
+            e.update(STUB_LOG=log, CAM_STATE=state, POG_CAM_WINPS=f"{bin_}/winps", POG_CAM_RCON=f"{bin_}/rcon",
+                     POG_CAM_OBS=f"{bin_}/obs", POG_CAM_WAIT="2", POG_CAM_POLL="0.2", **env)
+            r = subprocess.run([os.path.join(ROOT, "tools", "start-cams.sh"), "n", "34205", "--", "-Factorio", "D:\\f"],
+                               cwd=ROOT, env=e, capture_output=True, text=True, timeout=60)
+            return r, open(log).read().splitlines()
+
+        r, calls = go()
+        assert r.returncode == 0, r.stdout + r.stderr
+        starts = [i for i, l in enumerate(calls) if "start-client.ps1" in l]
+        assert len(starts) == 3, calls
+        for k, cam in ((1, "pog-cam1"), (2, "pog-cam2")):  # each camera starts after the one before it joined
+            joined = calls.index(f"rcon {cam} joined")
+            assert joined < starts[k], (cam, calls)
+        assert "-Sound" in calls[starts[0]] and "-Sound" not in calls[starts[1]] and "-Factorio D:\\f" in calls[starts[2]], calls
+        assert calls[-1] == "obs rehook-cams" and "OBS captures: stream cam1: re-enabled" in r.stdout, r.stdout
+        assert r.stdout.count("joined after") == 3, r.stdout
+        # stuck on its first start: stopped and started once more
+        r, calls = go(STUCK="cam2")
+        assert r.returncode == 0 and "cam2: not in the game after 2 s: stopping it and starting it once more" in r.stdout, r.stdout
+        assert sum("stop-client.ps1 -Name n -Slot -cam2" in l for l in calls) == 1 and \
+            sum("start-client.ps1" in l and "pog-cam2" in l for l in calls) == 2, calls
+        # never in: FAILED, the next camera starts anyway, the captures are still rehooked
+        r, calls = go(NEVER="cam2")
+        assert r.returncode == 1 and "cam2: FAILED: still not in the game after a restart" in r.stdout, r.stdout
+        assert any("pog-cam3" in l and "start-client.ps1" in l for l in calls) and calls[-1] == "obs rehook-cams", calls
+        # already in the game (a rerun): not started again; POG_OBS=0: no rehook
+        r, calls = go(ALREADY="cam1", POG_OBS="0")
+        assert r.returncode == 0 and "cam1: already in the game" in r.stdout, r.stdout
+        assert not any("pog-cam1" in l and "start-client.ps1" in l for l in calls) and "obs rehook-cams" not in calls, calls
+        # start-team uses it in step 2
+        src = open(os.path.join(ROOT, "tools", "start-team.sh")).read()
+        assert 'tools/start-cams.sh "$world" "$game"' in src and "for cam in cam1 cam2 cam3" not in src
+        print("start cams: ok (one at a time, a stuck one restarted once, a lost one reported, captures rehooked)")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def start_team_writes_switches():
     src = open(os.path.join(ROOT, "tools", "start-team.sh")).read()
     block = src.split('> "$rundir/switches.env"', 1)[0].rsplit("printf '%s\\n'", 1)[1]
@@ -359,3 +439,4 @@ if __name__ == "__main__":
     change()
     unhealthy()
     start_team_writes_switches()
+    start_cams()

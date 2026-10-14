@@ -170,6 +170,8 @@ S.queues[si]=sq
 fails(function() sol('wait_ticks',{ticks=600}) end,'wait_ticks would pause your queue (1 step): a direct wait stops the character')
 fails(function() sol('wait_until',{['until']='crafting_done'}) end,'Use fh sleep SECONDS')
 eq(sq.paused,false,'the refused wait left the queue running')
+sq.order={name='refuel'}; sol('wait_ticks',{ticks=60}); eq(sq.paused,true,'a standing order is preempted, as by any own request')
+sol('stop'); sq.order=nil; sq.paused=false
 sol('wait_ticks',{ticks=60,pause_queue=true}); eq(sq.paused,true); eq(S.active[si].kind,'wait_ticks')
 sol('stop'); sol('wait_until',{['until']='item_count',item='coal',at_least=0,pause_queue=true})  -- met at once; the condition takes no pause_queue
 sol('wait_ticks',{ticks=60}); sol('stop'); S.queues[si]=nil
