@@ -2624,4 +2624,29 @@ end)()
   eq(brief.last_drop.result.not_sent,'coal*50'); eq(brief.last_drop.result.dropped[1],'iron-plate*1000')
   st.drop_jobs=nil; st.last_drop=nil
 end)()
+;(function()
+  -- inspect by remote view (Astra, operator 04:57): on our own surface the map shows every entity in a chunk our
+  -- force sees, as the game's remote view does; an action still needs the character's sight.
+  local chest={valid=true,name='iron-chest',type='container',position={x=3.5,y=0.5},force=p.force,health=200,max_health=200,status=nil,
+    get_fluid_contents=function() return {} end,get_inventory=function() return nil end,get_output_inventory=function() return nil end,
+    electric_network_id=nil,energy=0}
+  local find,at,vis=p.surface.find_entities_filtered,p.position,p.force.is_chunk_visible
+  p.surface.find_entities_filtered=function(f) if f.position and math.abs(f.position.x-3.5)<1 and math.abs(f.position.y-0.5)<1 then return {chest} end return {} end
+  p.position={x=3,y=0}
+  eq(call('inspect',{position={x=3.5,y=0.5}}).by,nil) -- in sight
+  p.position={x=200,y=0}
+  local seen=call('inspect',{position={x=3.5,y=0.5}})
+  eq(seen.by,'remote view'); eq(seen.name,'iron-chest')
+  fails(function() call('build',{item='wooden-chest',position={x=4.5,y=0.5}}) end,'outside local visible area')
+  -- The action's target is in coverage: its refusal names none.
+  local ok,err=pcall(call,'build',{item='wooden-chest',position={x=4.5,y=0.5}})
+  eq(ok,false); eq(tostring(err):find('nearest radar coverage',1,true),nil)
+  -- Not in any chunk our force sees: refused, naming the nearest radar coverage.
+  p.force.is_chunk_visible=function(_,c) return c.x==3 and c.y==0 end
+  fails(function() call('inspect',{position={x=3.5,y=0.5}}) end,'target at (3.5,0.5) ((3.5,0.5) is 196.5 tiles from the character at (200.0,0.0)) is in no chunk our force sees now (radar coverage or a character\'s sight); the nearest radar coverage (or a character\'s sight) is chunk (96,0)-(127,31), 93 tiles away')
+  fails(function() call('build',{item='wooden-chest',position={x=4.5,y=0.5}}) end,'move_to within 30 tiles first); the nearest radar coverage (or a character\'s sight) is chunk (96,0)-(127,31), 92 tiles away')
+  p.force.is_chunk_visible=function() return false end
+  fails(function() call('inspect',{position={x=3.5,y=0.5}}) end,'no chunk within 256 tiles of it is in radar coverage or a character\'s sight')
+  p.surface.find_entities_filtered,p.position,p.force.is_chunk_visible=find,at,vis
+end)()
 print('runtime: '..assertions..' assertions passed')

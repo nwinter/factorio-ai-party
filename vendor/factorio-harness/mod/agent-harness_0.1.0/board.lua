@@ -300,6 +300,14 @@ return function(api)
     end
     return out
   end
+  -- What an item asks for, as one line: 'iron-plate*200, steel-plate'; 'none'.
+  local function needs_text(v)
+    if v == nil then return 'none' end
+    if type(v) == 'string' then return "'" .. v .. "'" end
+    local parts = {}
+    for _, n in ipairs(v) do parts[#parts+1] = type(n) == 'table' and (n.name .. (n.count and '*' .. n.count or '')) or tostring(n) end
+    return #parts > 0 and table.concat(parts, ', ') or 'none'
+  end
   local function tags_arg(v)
     if v == nil then return nil end
     assert(type(v) == 'table' and #v <= 8, 'tags must be an array of up to 8 short strings')
@@ -361,6 +369,13 @@ return function(api)
     return by ~= OPERATOR and api.where_from and api.where_from(by) or nil
   end
   local function edited(by, tick) return by and string.format('by %s, %s ago', by, ago(game.tick - tick)) or nil end
+  -- Title and needs changes, oldest first, with how long ago (board_update).
+  local function history(i)
+    if not i.edits or #i.edits == 0 then return nil end
+    local out = {}
+    for k, e in ipairs(i.edits) do out[k] = string.format('%s (%s ago)', e.text, ago(game.tick - e.tick)) end
+    return out
+  end
   -- A project as read: progress, the goal, its steps ([x] done, by whom and
   -- when; [ ] not yet), areas and the handoff. A list row has the first 3
   -- steps not done (next_steps) and the goal and handoff cut to 160.
@@ -380,7 +395,7 @@ return function(api)
       areas=#i.areas > 0 and i.areas or nil,
       handoff=cut(i.handoff), handoff_edited=i.handoff and edited(i.handoff_by, i.handoff_tick) or nil,
       needs=i.needs, tags=i.tags, notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil,
-      created_tick=i.created_tick, updated_tick=i.updated_tick}
+      history=full and history(i) or nil, created_tick=i.created_tick, updated_tick=i.updated_tick}
   end
   -- One line per open project (the shift block, board reads): progress, its
   -- owner and that agent's last request, the first step not done, and the
@@ -428,7 +443,7 @@ return function(api)
       requested_by=i.requested_by, status=i.status, area=i.area,
       needs=i.needs, tags=i.tags, problem=i.problem, proposal=i.proposal,
       notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil,
-      created_tick=i.created_tick, updated_tick=i.updated_tick}
+      history=full and history(i) or nil, created_tick=i.created_tick, updated_tick=i.updated_tick}
   end
   local function open_unowned()
     local n, oldest = 0, nil
@@ -510,13 +525,13 @@ return function(api)
     local item = store().items[a.id]
     assert(item, 'no board item #' .. tostring(a.id) .. ' (pruned or never posted)')
     local project = item.kind == 'project'
-    local given = a.status ~= nil or a.owner ~= nil or a.note ~= nil or a.allow ~= nil
+    local given = a.status ~= nil or a.owner ~= nil or a.note ~= nil or a.allow ~= nil or a.title ~= nil or a.needs ~= nil
     for _, k in ipairs(PROJECT_ARGS) do
       assert(project or a[k] == nil, k .. ' is for a project (#' .. item.id .. ' is a ' .. item.kind .. ')'
         .. (k == 'done' and '; status "done" finishes an item' or ''))
       given = given or a[k] ~= nil
     end
-    assert(given, 'give status, owner, note or allow' .. (project and '; for a project also step, done, undone, remove_step, goal, handoff or areas' or ''))
+    assert(given, 'give status, owner, note, allow, title or needs' .. (project and '; for a project also step, done, undone, remove_step, goal, handoff or areas' or ''))
     expire()
     -- Check every argument before changing anything.
     assert(a.status == nil or (type(a.status) == 'string' and STATUSES[a.status]), 'status must be open, claimed, doing, done, blocked or dropped')
@@ -524,6 +539,27 @@ return function(api)
     local boss = by == OPERATOR or by == item.owner or by == item.requested_by
     local changes, was = {}, item.owner
     assert(item.kind ~= 'plan' or (a.status == nil and a.owner == nil), 'the team plan changes with board_plan {goals} or {doing}; notes are fine')
+    -- Title and needs (Astra, shift10: a request's ask could not be corrected
+    -- after posting): its poster, owner or the operator; anyone once the one
+    -- responsible (the owner, else the poster) has made no request for 20 min
+    -- (a project's for 30; a project with no owner: anyone, as its goal).
+    local edit = {}
+    if a.title ~= nil or a.needs ~= nil then
+      assert(item.kind ~= 'plan', 'the team plan changes with board_plan {goals} or {doing}')
+      local ticks = project and PROJECT_QUIET or QUIET
+      local lead = item.owner or item.requested_by
+      local ok = by == OPERATOR or by == item.owner or by == item.requested_by or (project and not item.owner) or quiet(lead, ticks)
+      if not ok then
+        local st = M.owner_state(lead)
+        error(string.format('only its poster (%s), its owner (%s) or the operator changes the title and needs of #%d, or anyone once %s has made no request for %d min (%s)',
+          tostring(item.requested_by), tostring(item.owner or 'none'), item.id, lead, ticks / 3600, st or 'quiet'), 0)
+      end
+      if a.title ~= nil then edit.title = required_text(a.title, 'title', TITLE) end
+      if a.needs ~= nil then
+        if a.needs == '' or a.needs == false or (type(a.needs) == 'table' and next(a.needs) == nil) then edit.needs = false
+        else edit.needs = needs_arg(a.needs) end
+      end
+    end
     local allow
     if a.allow ~= nil then
       assert(item.kind == 'claim', 'allow is for a claim: who may remove or rebuild in its area without telling its owner first')
@@ -637,6 +673,26 @@ return function(api)
     if pj.areas then
       item.areas = pj.areas
       changed('areas', #pj.areas > 0 and #pj.areas .. ' area' .. (#pj.areas == 1 and '' or 's') or 'areas cleared')
+    end
+    -- Title and needs: the change in the item's history and an event each.
+    local function remember(line)
+      item.edits = item.edits or {}
+      item.edits[#item.edits+1] = {tick=game.tick, by=by, text=clip(line, LONG)}
+      while #item.edits > MAX_NOTES do table.remove(item.edits, 1) end
+    end
+    if edit.title and edit.title ~= item.title then
+      local old = item.title
+      item.title = edit.title
+      remember(string.format("title changed by %s: '%s' -> '%s'", by, old, edit.title))
+      changed('title_changed', 'was: ' .. old)
+    end
+    if edit.needs ~= nil then
+      local old, new = needs_text(item.needs), needs_text(edit.needs or nil)
+      if old ~= new then
+        item.needs = edit.needs or nil
+        remember(string.format('needs changed by %s: %s -> %s', by, old, new))
+        changed('needs_changed', new .. ' (was ' .. old .. ')')
+      end
     end
     if text then
       item.notes[#item.notes+1] = {tick=game.tick, by=by, text=text}
@@ -920,7 +976,9 @@ return function(api)
       undone='project: mark steps not done (anyone)', remove_step='project: remove steps by number (the agent who added one, or the owner)',
       goal='project: replace the goal ("" clears it)', handoff='project: replace the handoff text, 1..1000 characters ("" clears it)',
       areas='project: replace its areas (array; [] clears them)',
-      returns='the item in full and changed; on a project the goal, handoff and areas are its owner\'s to edit, and anyone\'s when it has no owner or its owner has made no request for 30 min (who may then also take it with owner)'},
+      title='replace the title, 1..120 characters (its poster, owner or the operator; anyone once the owner, or the poster of an unowned item, has made no request for 20 min, 30 on a project; a project with no owner: anyone)',
+      needs='replace what it asks for: text, an array of item names or {name,count}, or {item: count} ("" or [] clears it); who may: as title',
+      returns='the item in full and changed; on a project the goal, handoff and areas are its owner\'s to edit, and anyone\'s when it has no owner or its owner has made no request for 30 min (who may then also take it with owner); a title or needs change is kept in the item\'s history ("title changed by astra: \'old\' -> \'new\'", last 10) and told to its owner and poster'},
     board_events = {since_seq='return events after this sequence number (default 0)', limit='1..200 (default 100), oldest first',
       returns='events {seq,tick,by,id,change,title,kind,owner,requested_by,status,text; a project\'s also progress, steps_done, steps_total} and cursor (pass it back as since_seq)'},
     harness_request = {title='1..120 characters', problem='what you tried and what went wrong (1..1000)', proposal='optional: the tool or change you want',
@@ -1242,6 +1300,11 @@ return function(api)
     if hit and fresh(hit, hit.last) then
       lines[#lines+1] = string.format('you were hit %d times (%d damage) by %s, %s ago; %s', hit.hits, round(hit.damage), hit.by or 'enemies',
         ago(game.tick - hit.last), alive and 'health ' .. round(c.health or 0) or 'your character died')
+    end
+    -- Eggs of ours on this agent's surface or built by it that hatch within 5 minutes (spoil.lua).
+    if api.hatch_lines then
+      local ok, list = pcall(api.hatch_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
     -- One line per incident (threat.attack_line). An incident this agent was
     -- told about comes again, as "continues" with its totals, only after

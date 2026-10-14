@@ -240,8 +240,34 @@ fh call status
 - Burner fuel by category: `feed` without `fuel` gives a burner the fuel it burns (coal for chemical burners; a
   biochamber burns nutrients, so it gets nutrients); `refuel` skips burners of another category in a radius and refuses
   one named by position (`biochamber at (-20.5,-20.5) burns nutrients fuel, not coal (chemical)`).
-- Spoiling: `inspect` lists spoilable stacks in any of the entity's inventories as `spoiling` (stalest first:
-  `agricultural_tower_output: jellynut*50 spoils in 56m21s (6% spoiled)`).
+- Spoiling (Sol, shift10 04:59: stored pentapod eggs hatched, destroyed 114 entities of his camp and killed him 4
+  times). Read on a private 2.0.77 copy of world n:
+  - An item hatches when it spoils if its spoil trigger creates an entity as an enemy: `pentapod-egg` (spoils in
+    15 min) into big-wriggler-pentapod-premature, one each; `biter-egg` (30 min) into a big-biter per 25;
+    `captive-biter-spawner` (30 min) into a behemoth-biter.
+  - A recipe's products start at the count-weighted spoilage of its spoilable item ingredients: bioflux from 15
+    yumako-mash at 80% and 12 jelly at 20% came out 53.5% spoiled. A recipe that resets freshness makes them fresh:
+    pentapod-egg bred from nutrients at 80% came out fresh.
+  - `inspect` lists, per inventory (and a belt's lanes, an inserter's hand, an item on the ground), each spoilable
+    item as `spoiling`, earliest first, with when its first stack spoils, how spoiled that stack is, and how many
+    spoil within 5 min: `chest: yumako*20: the first spoils in 29m53s (50% spoiled)`. An item that hatches says so:
+    `chest: pentapod-egg*15: the first hatches in 4m23s into big-wriggler-pentapod-premature (71% spoiled); all within
+    5 min`, and `hatch_warning` sums those up.
+  - `inspect` on an assembler, furnace or biochamber whose products spoil adds `output_spoil`, what its next products
+    start at: `bioflux start about 53% spoiled (recipe bioflux: the count-weighted spoilage of yumako-mash*15 at 80%,
+    jelly*12 at 20%)`, or `pentapod-egg start fresh (recipe pentapod-egg resets freshness)`.
+  - `supply {item}` on a spoilable item adds `spoil`: the first stack to spoil, where and when, and how many of those
+    read spoil within 5 min. An item that hatches gets `hatch` instead: `pentapod-egg hatch into enemies
+    (big-wriggler-pentapod-premature, one each): the first hatches in wooden-chest at (46.5,48.5) (chest) in 3m52s (74%
+    spoiled); 15 of 18 within 5 min`.
+  - `stock {item}`: each place has `first_spoils_in`, `spoiled_percent` and `within_5_min`; the summary names the
+    first to spoil or hatch; `hatches_into` says into what. Without an item, each line adds the first to spoil or hatch.
+  - The egg watch: eggs (any item that hatches) of ours are looked for every 30 s, near the machines that make or use
+    them (found every 5 min on surfaces where one was made or used), near where they were found before, in every
+    character and every platform hub. When the first stack of a place hatches within 5 minutes, the agents on that
+    surface and whoever built that holder get `eggs hatching: 15 pentapod-egg in wooden-chest at (46.5,48.5): the first
+    hatch into big-wriggler-pentapod-premature in 37s (96% spoiled), ...` at the top of `team.alerts`, once, and again
+    under 1 minute; `fh sleep` wakes with `woke: eggs`.
 - Space Age enemy units count as units everywhere the harness looks for enemies: Gleba's strafer and stomper pentapods
   (`spider-unit`, wrigglers are `unit`) and Vulcanus' demolishers (`segmented-unit`), in auto `shoot`, `kite`, the
   move safety check and `wait_until no_enemies`. Gleba's spawners (`gleba-spawner`, `gleba-spawner-small`) are
@@ -521,7 +547,7 @@ fh sleep 900 --until researched                       # ...or until the research
 - A direct `wait_ticks` or `wait_until` while the queue runs is refused (it would pause the queue: "wait_ticks would pause your queue (8 steps, repeating): ..."); `pause_queue: true` pauses it for the wait as before. A paused or empty queue is no reason to refuse. Queue steps are unchanged.
 - A tell or mention that arrives during a direct `wait_ticks` or `wait_until` ends it (outcome `told` or `mentioned`, `last.why` `told by astra`; within 30 ticks); one pending from before the wait does not, nor an fyi tell. `--wait` on any other action, and `fh wait`, end early the same way while the action keeps going: outcome `told` or `mentioned`, `from`, `still_running` and a note. The peek `status` polls carry the newest undelivered one as `inbox {tick, woke, from}`.
 - `fh wait --until tell|alert|COND [--max S]` is one blocking wait with one line out: `woke: told after 42 s (astra: coal please); your next reply's team block has the rest`. It is a sleep (S seconds, default 600, up to 900) whose requests peek, so the team block stays for the agent's next reply: it ends on what ends a sleep (a tell or mention, damage, death, board news, the queue finishing or stalling), on `alert` (a new attack area, enemy group or enemy base: `woke: alert`) or on a sleep `--until` condition. `--format json` adds the line as `result.line`.
-- `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), a chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`.
+- `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), a chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), eggs of ours on your surface or in a holder you built will hatch within 5 minutes (`eggs`, with the line; delivered in `team.alerts`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`.
   - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64), any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
   - With a deadline file (`--deadline-file`, `FH_DEADLINE_FILE`) a sleep never runs past it: it is cut to the time left and reports `woke: deadline` when it ends there; after the deadline it does not start (`woke: deadline`, `slept_s: 0`).
   - A sleep started within 10 game seconds of reading a wake on an event (anything but `elapsed`, `died`, `respawned`, `deadline`, `told`, `mentioned`) does not start: it returns at once with that wake, `repeat: true` and `while_asleep: this sleep did not start: you woke (damaged) 4 s ago; ...`, so a shell loop of sleeps ends on the first wake. At most 3 repeats per wake; none for a sleep given `--until`, none in `turns` mode. A tell or mention wakes once: the reply that woke the agent delivered it (shift07: Luna's 32 repeats of tells already read). `fh sleep` and `fh wait --until` wait out such a repeat (Muse, shift08: "woke 4s ago" refusals burned turns): on a `repeat: true` reply the CLI waits the rest of the 10 s and starts the sleep again (at most 3 tries), and the final reply carries `waited_out: your previous sleep woke (board) 4 s before this one, and a sleep within 10 s of a wake repeats that wake; this sleep started after 7 s more`, with the team block the earlier replies carried. The runtime's own `sleep` reply is unchanged.
@@ -533,6 +559,15 @@ fh sleep 900 --until researched                       # ...or until the research
 ## Messages and reads
 
 - `inspect` is a read: any entity in sight (32 tiles, visible chunk) works without reach, like `scan`; `in_reach` says whether acting on it would reach.
+  By remote view it reads any entity on the character's own surface in a chunk our force sees now (radar coverage or a
+  character's sight), as the game's map shows it, and the reply says `by: remote view` (Astra, operator 04:57: inspect
+  worked only within 32 tiles; `surface=` naming the character's own surface added nothing then). `surface=` another
+  surface reads its visible chunks and says `by: remote view` too. The cargo weigh read (`cargo {position}`) does the
+  same (`from.by`). Out of sight and of every chunk our force sees, the refusal names the nearest radar coverage:
+  `target at (3.5,0.5) ((3.5,0.5) is 196.5 tiles from the character at (200.0,0.0)) is in no chunk our force sees now
+  (radar coverage or a character's sight); the nearest radar coverage (or a character's sight) is chunk
+  (96,0)-(127,31), 93 tiles away`; actions keep the 32-tile sight rule, and name the nearest coverage when the target
+  is out of it.
 - Reach is the game's: the distance from the character to the entity's collision box (its edge, not its centre),
   within 10 tiles (`reach_distance`) for buildings and within 2.7 (`resource_reach_distance`) for ore, trees and rocks
   (read on the shift world: a tree 4.3 tiles from its edge was out of reach; a belt 10.25 from its centre, 9.7 from its
@@ -1235,6 +1270,15 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - `owner` takes an agent name, display name or player name without `pog-`, any case; an unknown name fails with the
   roster. Anyone may take an open unowned item or add a note; only the owner or requester changes status, reassigns or
   releases (`owner: ""`). Titles are cut at 120 bytes and notes at 200 instead of failing; the last 10 notes are kept.
+- `board_update {id, title?, needs?}` (Astra, shift10: a request's ask could not be corrected after posting) replaces
+  the title and what it asks for (`needs`: text, an array of item names or `{name, count}`, or `{item: count}`; `""` or
+  `[]` clears it). Its poster, its owner or the operator may; anyone may once the one responsible (the owner, else the
+  poster) has made no request for 20 minutes (30 for a project; a project with no owner: anyone, as its goal). Each
+  change goes into the item's `history` (shown by `board {id}`, the last 10: `title changed by astra: 'need 100 green
+  circuits' -> 'need 200 green circuits' (3m00s ago)`, `needs changed by sol: electronic-circuit*100 ->
+  electronic-circuit*200, copper-cable*50`), is a board event (`title_changed`, `needs_changed`), and its owner and
+  poster hear of it in `team.board` with the old value (`#12 (your request) title changed by grok: need 200 green
+  circuits at (10,4) - was: need 200 green circuits`). The team plan's goals stay `board_plan`'s.
 - `board` returns `plan` (below), `items` (list rows carry the last 2 notes and `note_count`; `id` gives one item in
   full), `matched` and `open_unowned`. `status:"active"` means open, claimed, doing or blocked. An agent's plain
   `board` read (no filter, no limit) is about 3 KB: the newest items with their last note (`note_count`), the plan's

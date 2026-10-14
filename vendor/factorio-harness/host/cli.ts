@@ -153,10 +153,10 @@ function untilEvent(text: string | undefined): Record<string, unknown> | undefin
 function wakeLine(reply: Reply): string {
   const r = reply.result ?? {};
   const said = (value: unknown) => String(value).replace(/\s*\n\s*/g, ' ');
-  const detail = r.tell ?? r.mention ?? r.board ?? r.alert ?? r.queue
+  const detail = r.tell ?? r.mention ?? r.board ?? r.eggs ?? r.alert ?? r.queue
     ?? (r.woke === 'condition' && r.saw !== undefined ? `saw ${typeof r.saw === 'string' ? r.saw : JSON.stringify(r.saw)}` : undefined)
     ?? (r.woke === 'damaged' ? `health ${r.health}${r.by ? `, hit by ${r.by}` : ''}` : undefined) ?? r.note;
-  const more = r.full ? '' : ['told','mentioned','board','alert','damaged'].includes(r.woke) ? '; your next reply\'s team block has the rest' : '';
+  const more = r.full ? '' : ['told','mentioned','board','eggs','alert','damaged'].includes(r.woke) ? '; your next reply\'s team block has the rest' : '';
   return `woke: ${r.woke ?? 'nothing'} after ${r.slept_s ?? 0} s${detail !== undefined ? ` (${said(detail)})` : ''}${more}`;
 }
 function deployingCommand(command: string): boolean { return command === 'deploy' || command === 'watch'; }
