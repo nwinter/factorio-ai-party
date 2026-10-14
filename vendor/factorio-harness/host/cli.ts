@@ -72,6 +72,8 @@ const help = `fh — Factorio agent CLI
   fh tells [--since SEQ] [--limit N]        The last 30 tells you received (time, sender, fyi), shown before or not;
                                             --since SEQ: the ones you sent or received after SEQ
   fh players [NAME] [--args '{"minutes":10}'] Human players on the map: where, group, what each built, removed, ordered, moved
+  fh platform [NAME]                        One space platform (the platforms read): hub free slots, cargo, speed, next stop,
+                                            ETA; without NAME every platform
   fh vote [no] mute|unmute|kick|ban|trust NAME "reason"
                                             Vote on a stream viewer (mute, unmute) or a human player (kick, ban, trust);
                                             a majority of the agents active in the last 10 minutes carries it; reason - reads stdin
@@ -555,6 +557,15 @@ async function main() {
     command = 'call';
   }
   if (command === 'chat' || command === 'tells' || command === 'votes') { positionals.splice(1, positionals.length - 1, command); command = 'call'; }
+  // fh platform NAME (Gemini, 07:55): the platforms read of one platform (hub slots, cargo, speed, next stop, ETA);
+  // without a name, every platform.
+  if (command === 'platform') {
+    const args = object(JSON.parse(values.args ?? '{}'),'args');
+    if (positionals[1] !== undefined) args.platform = positionals.slice(1).join(' ');
+    values.args = JSON.stringify(args);
+    positionals.splice(1, positionals.length - 1, 'platforms');
+    command = 'call';
+  }
   // --since/--limit/--peek for the reads that take them.
   if (values.since !== undefined || values.limit !== undefined || values.peek) {
     const action = positionals[1];
