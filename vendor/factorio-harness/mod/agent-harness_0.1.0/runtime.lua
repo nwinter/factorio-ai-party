@@ -225,6 +225,8 @@ local function finish(index, outcome)
     last.placed=action.placed; last.skipped=action.skipped; last.next_index=action.next_index; last.total=#action.cells
     last.next_position=action.cells[action.next_index] and action.cells[action.next_index].position
     last.error=action.error
+    -- Trees and rocks it mined in its way (construction.lua M.clear).
+    last.cleared=action.mined; last.cleared_names=construction.cleared_line(action)
   end
   if action and action.kind=='move_to' then
     local last=s.last[index]
@@ -518,6 +520,7 @@ local function active(index)
   end
   return {kind=action.kind,until_tick=action.until_tick,direction=action.direction,
     next_index=action.next_index,total=action.cells and #action.cells,placed=action.placed,skipped=action.skipped,
+    cleared=action.kind=='build_path' and action.mined or nil,mining=action.kind=='build_path' and action.mining and action.mining.entity.valid and action.mining.entity.name or nil,
     next_position=action.cells and action.cells[action.next_index] and action.cells[action.next_index].position,
     target=action.entity and action.entity.valid and {name=action.entity.name,position=action.entity.position} or nil,
     kills=action.kills,shooting=action.kind=='kite' and action.target or nil,
@@ -930,7 +933,7 @@ function handlers.describe()
       map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)',returns='player, entities, resource_patches, ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the radius by item (rows for them only with entity_types/entity_names)'},
       status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
         reports='teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name; latest: one line per loss incident (a raid: losses within 32 tiles on one surface) with causes; incidents: the same as rows {id, surface, platform, box {x0,y0,x1,y1}, total, names, by, first_tick, last_tick, line}; attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
-      build_path={points='2..64 tile-centred axis-aligned waypoints; at most 512 belt tiles',item='transport-belt by default',ticks='1..36000',start_index='resume at this tile index; default 1',end_direction='optional final belt direction',note='walks to a far start (or resume tile) with the pathfinder, then steers along the line placing belts'},
+      build_path={points='2..64 tile-centred axis-aligned waypoints; at most 512 belt tiles',item='transport-belt by default',ticks='1..36000',start_index='resume at this tile index; default 1',end_direction='optional final belt direction',note='walks to a far start (or resume tile) with the pathfinder, then steers along the line placing belts; trees, rocks and wild plants on a tile or across the walk are mined by hand first (hand-mining time; what they give goes to the inventory; last.cleared counts them, cleared_names by name); it stops for buildings, water and cliffs (the build\'s refusal)'},
       kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',retreat='optional {x,y}: below min_health or out of ammunition, walk there (firing at units in reach while ammunition lasts) instead of stopping where you stand; ends retreated on arrival',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | retreated | timed_out; last reports why (in words), kills, ammo_used, ammo_left, enemies_left, retreated_from'},
       belt_route={from='{x,y} first belt tile, or an existing belt end to extend; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
         belt='transport belt entity (default transport-belt); undergrounds of the same tier hop obstacles',undergrounds='default true',lane='left|right: side-load onto this lane of the belt at to (it needs an input from behind)',
@@ -5420,7 +5423,8 @@ M.ground=require('ground'){state=state,real=real,distance=distance,position=posi
   stop_walking=function(p) p.walking_state={walking=false,direction=defines.direction.north} end}
 -- Valid placements near a position (shore.lua): refused builds of offshore
 -- pumps or onto water list them; the placements read returns them.
-M.shore=require('shore'){position=position,integer=integer,assert_visible=assert_visible,directions=directions}
+M.shore=require('shore'){position=position,integer=integer,assert_visible=assert_visible,directions=directions,read_sight=M.read_sight,
+  chunk_seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) end}
 handlers.placements=M.shore.handlers.placements
 -- The defense read (defense.lua): built-up areas, turret cover and ammo, nests near them.
 M.details=require('details'){}
@@ -6486,7 +6490,7 @@ M.orders=require('orders'){state=state,player=player,scheduler=scheduler,agents=
   end}
 for name,handler in pairs(M.orders.handlers) do handlers[name]=handler end
 -- Queue writes answer briefly: the revision, state, the next steps by id and
--- the last results; queue_status has the whole queue (agent-minds study: each
+-- the last results; queue_status has steps in full (agent-minds study: each
 -- edit echoed 10-14 KB, and Sonnet sent its replies to /dev/null to cut them).
 function M.queue_brief(q)
   local function step(s) return s and ((s.id or '?')..' '..tostring(s.action)..(s.label and ' ['..s.label..']' or '')) or nil end
@@ -6504,7 +6508,7 @@ function M.queue_brief(q)
     pending_count=#(q.pending or {}),recent=#recent>0 and recent or nil,
     last_failure=f and (step(f)..(type(f.result)=='table' and f.result.reason and ': '..tostring(f.result.reason) or '')) or nil,
     repeating=q.repeating or nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,guards=q.guards and #q.guards or nil,
-    waiting=q.waiting,after_direct=q.after_direct,corrected=q.corrected,note='queue_status shows every step in full'}
+    waiting=q.waiting,after_direct=q.after_direct,corrected=q.corrected,note='queue_status: the active step, the next one and the last 3 in full (history, pending: a count or "all")'}
 end
 for _,name in ipairs{'queue_submit','queue_repeat','queue_edit','queue_cancel','queue_resume'} do
   local handler=handlers[name]

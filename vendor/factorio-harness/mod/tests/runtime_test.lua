@@ -1265,7 +1265,7 @@ call('queue_submit',{steps={{action='move_to',args={position={x=50,y=0},pathfind
 advance(1); eq(call('queue_status').active.action,'move_to')
 ground.valid=true
 call('pickup',{ticks=30})
-local requeued=call('queue_status'); eq(#requeued.pending,2); eq(requeued.pending[1].action,'move_to')
+local requeued=call('queue_status'); eq(requeued.pending_count,2); eq(requeued.pending[1].action,'move_to')
 advance(8); eq(call('status').last.outcome,'picked_up') -- done once nothing is left in reach
 call('queue_cancel',{})
 p.surface.find_entities_filtered,p.insert=saved_find,saved_insert

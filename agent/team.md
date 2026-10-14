@@ -156,6 +156,8 @@ already targets your character.
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
   open board items). `projects` lists the open projects, one line each with progress, next step and handoff.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
+  `./fh queue status` shows the active step (`running_s`), the next one and the last 3 results; `--args
+  '{"history":"all","pending":10}'` shows more.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` walks into reach of targets out of reach first, then transfers (one call); `transfer`/`collect {positions,
@@ -244,6 +246,9 @@ already targets your character.
 - Landfill on Gleba wetland goes in only where no slipstack, cuttlepop, hairyclubnub, water-cane or stromatolite stands:
   a dry run names them (`blocked by slipstack tree at (x,y): mine it first`); `place_ghosts` marks them for removal
   first (`tile_obstacles_marked`) and `construct` mines them before it lays the landfill.
+- `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'` lists up to 10 (`limit`
+  up to 50) positions where it fits now, nearest first, by the game's build check (`blocked`: positions something
+  stands in). `build_path` mines the trees and rocks in its way by hand as it goes (`last.cleared`, `cleared_names`).
 - `"dry_run":true` on `place_ghosts`, `paste` or `build` places nothing and reports the plan: per entity whether it
   fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
   new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that

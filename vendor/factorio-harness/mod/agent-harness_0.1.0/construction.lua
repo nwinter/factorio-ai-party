@@ -48,6 +48,12 @@ return function(api)
     if p.permission_group and not p.permission_group.allows_action(defines.input_action.start_walking) then
       action.error='permission denied: start_walking'; return 'build_failed'
     end
+    -- A tree or rock in the way being mined (M.clear): the character stands still until it is taken.
+    if action.mining then
+      local outcome=M.mine_tick(p,action)
+      if outcome then return outcome end
+      if action.mining then return end
+    end
     local progressed=false
     for _=1,4 do
       local cell=action.cells[action.next_index]
@@ -64,8 +70,17 @@ return function(api)
         end
         action.skipped=action.skipped+1
       else
+        -- Trees, rocks and wild plants on the tile are mined first, as a player clears them by hand.
+        local o=M.in_the_way(p,action,cell,0.01)
+        if o then return M.clear(p,action,o) end
         local ok,result=pcall(api.build,p,{item=action.item,position=cell.position,direction=names[cell.direction],quality=action.quality})
-        if not ok then action.error=tostring(result); return 'build_failed' end
+        if not ok then
+          -- One the first look missed (its box only near the tile's edge): a wider look, once a tile.
+          o=action.wider~=action.next_index and M.in_the_way(p,action,cell,0.3)
+          action.wider=action.next_index
+          if o then return M.clear(p,action,o) end
+          action.error=tostring(result); return 'build_failed'
+        end
         if result.consumed~=1 then action.error='native build did not consume one belt; inspect target before resuming'; return 'build_failed' end
         action.placed=action.placed+1
       end
@@ -95,7 +110,12 @@ return function(api)
     -- moving in place (a belt carrying the character back) does not count.
     local gap=api.distance(p.position,cell.position)
     if progressed or not action.best_gap or gap<action.best_gap-0.5 then action.best_gap=gap; action.best_tick=game.tick end
-    if game.tick-action.best_tick>=120 then action.error='walking made no progress for 120 ticks'; return 'blocked' end
+    if game.tick-action.best_tick>=120 then
+      -- A tree or rock across the walk (the character off the line, steering to the next tile): cleared the same way.
+      local o=M.walk_obstacle(p,cell.position)
+      if o then return M.clear(p,action,o) end
+      action.error='walking made no progress for 120 ticks'; return 'blocked'
+    end
     api.steer(p,cell.position,action)
   end
   -- Ghost construction by hand: visit ghosts in nearest-neighbour order and
@@ -268,6 +288,116 @@ return function(api)
     if not b then return true end -- no box to compare: the area search found it
     local l,t,r,btm=b.left_top.x,b.left_top.y,b.right_bottom.x,b.right_bottom.y
     return l<=box.right_bottom.x+margin and r>=box.left_top.x-margin and t<=box.right_bottom.y+margin and btm>=box.left_top.y-margin
+  end
+  -- build_path clears trees, rocks and wild plants in its way by hand as it
+  -- goes (Sonnet 10:50: it stopped at every rock of a Vulcanus line, ~5 times
+  -- a shift), one at a time, standing still for the hand-mining time, as a
+  -- player does; what they give goes to the inventory. It still stops for
+  -- buildings, water and cliffs (the build's own refusal).
+  local CLEARABLE={tree=true,plant=true,['simple-entity']=true}
+  local function clear_types()
+    return (script and script.active_mods and script.active_mods['space-age']) and {'tree','plant','simple-entity'} or {'tree','simple-entity'}
+  end
+  local function clearable(e)
+    return e.valid and CLEARABLE[e.type] and e.minable and (not e.force or e.force.name=='neutral')
+  end
+  -- The nearest one whose box meets the belt's on this tile (margin widens it).
+  function M.in_the_way(p,action,cell,margin)
+    local ep=prototypes.entity and prototypes.entity[action.entity_name]
+    local box=M.box(ep or {},cell.position,cell.direction)
+    local m=margin+0.1
+    local area={left_top={x=box.left_top.x-m,y=box.left_top.y-m},right_bottom={x=box.right_bottom.x+m,y=box.right_bottom.y+m}}
+    local best,bd
+    for _,e in pairs(p.surface.find_entities_filtered{area=area,type=clear_types(),force='neutral'}) do
+      if clearable(e) and touches(e,box,margin) then
+        local d=api.distance(p.position,e.position)
+        if not bd or d<bd then best,bd=e,d end
+      end
+    end
+    return best
+  end
+  -- The nearest one across the character's next 3 tiles toward target.
+  function M.walk_obstacle(p,target)
+    local from=p.position
+    local dx,dy=target.x-from.x,target.y-from.y
+    local len=(dx*dx+dy*dy)^0.5
+    if len<0.01 then return nil end
+    local ux,uy=dx/len,dy/len
+    local ahead=math.min(3,len)
+    local tx,ty=from.x+ux*ahead,from.y+uy*ahead
+    local area={left_top={x=math.min(from.x,tx)-1.5,y=math.min(from.y,ty)-1.5},right_bottom={x=math.max(from.x,tx)+1.5,y=math.max(from.y,ty)+1.5}}
+    local best,bd
+    for _,e in pairs(p.surface.find_entities_filtered{area=area,type=clear_types(),force='neutral'}) do
+      if clearable(e) then
+        local b=e.bounding_box
+        local half=b and math.max(b.right_bottom.x-b.left_top.x,b.right_bottom.y-b.left_top.y)/2 or 0.5
+        local ex,ey=e.position.x-from.x,e.position.y-from.y
+        local along,across=ex*ux+ey*uy,math.abs(ex*uy-ey*ux)
+        if along>-half and along<ahead+half and across<half+0.4 then
+          local d=(ex*ex+ey*ey)^0.5
+          if not bd or d<bd then best,bd=e,d end
+        end
+      end
+    end
+    return best
+  end
+  -- Mine e: in reach, start the hand-mining time; else walk to it (blocked
+  -- after 120 ticks without getting half a tile closer).
+  function M.clear(p,action,e)
+    action.best_gap=nil
+    if p.can_reach_entity(e) then
+      p.walking_state={walking=false,direction=0}
+      action.mining={entity=e,done_tick=game.tick+api.hand_mining_ticks(p,e)}
+      action.approach=nil
+      return nil
+    end
+    local pos=e.position
+    local d=api.distance(p.position,pos)
+    local a=action.approach
+    if not (a and a.x==pos.x and a.y==pos.y) then a={x=pos.x,y=pos.y,best=d,tick=game.tick}; action.approach=a end
+    if d<a.best-0.5 then a.best=d; a.tick=game.tick end
+    if game.tick-a.tick>=120 then
+      action.error=string.format('could not get within reach of %s at (%g,%g) in the way of tile %d to mine it: walking made no progress for 120 ticks',
+        e.name,pos.x,pos.y,action.next_index)
+      return 'blocked'
+    end
+    api.steer(p,pos,action)
+    return nil
+  end
+  -- The mining under way: done when its time is up (counted by name); an
+  -- inventory with no room for what it gives ends the build (inventory_full).
+  function M.mine_tick(p,action)
+    local m=action.mining
+    p.walking_state={walking=false,direction=0}
+    local e=m.entity
+    if not (e and e.valid) then action.mining=nil; return nil end
+    if game.tick<m.done_tick then return nil end
+    action.mining=nil
+    local name,pos=e.name,e.position
+    if p.mine_entity(e,false) and not e.valid then
+      action.mined=(action.mined or 0)+1
+      action.mined_names=action.mined_names or {}
+      action.mined_names[name]=(action.mined_names[name] or 0)+1
+      action.best_gap=nil
+      return nil
+    end
+    local inv=p.get_main_inventory and p.get_main_inventory()
+    if inv and inv.count_empty_stacks and inv.count_empty_stacks()>0 then
+      action.error=string.format('mining %s at (%g,%g) did not take it',name,pos.x,pos.y)
+      return 'build_failed'
+    end
+    action.error=string.format('inventory full: mining %s at (%g,%g) left it standing (no room for what it gives)',name,pos.x,pos.y)
+    return 'inventory_full'
+  end
+  -- What build_path cleared: "big-volcanic-rock*2 tree-08*1", most first.
+  function M.cleared_line(action)
+    if not action.mined_names then return nil end
+    local list={}
+    for name,n in pairs(action.mined_names) do list[#list+1]={name=name,n=n} end
+    table.sort(list,function(x,y) return x.n>y.n or (x.n==y.n and x.name<y.name) end)
+    local parts={}
+    for i,o in ipairs(list) do parts[i]=o.name..'*'..o.n end
+    return table.concat(parts,' ')
   end
   -- Trees and rocks under a ghost get deconstruction marks, as the game marks
   -- them when a player places ghosts over them. Any whose box reaches the

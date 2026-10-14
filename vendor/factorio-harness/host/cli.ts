@@ -777,6 +777,9 @@ async function main() {
       why: last?.why, note: status.result?.note,
       // collect over a radius: moved per item, places touched, what fell short.
       tally: last?.tally,
+      // build_path: belts placed, where it stopped, and the trees and rocks it mined in its way (round1050f).
+      ...(last?.kind === 'build_path' ? {placed: last.placed, skipped: last.skipped || undefined, next_index: last.next_index, total: last.total,
+        next_position: last.outcome === 'path_built' ? undefined : last.next_position, cleared: last.cleared, cleared_names: last.cleared_names} : {}),
       // collect waiting at a machine (collectwait): what it took against what the machine made and its inserters took.
       ...(last?.kind === 'gather' && last?.took !== undefined ? {took: last.took, made: last.made, inserters_took: last.inserters_took,
         crafts: last.crafts, waited_s: last.waited_s} : {}),
