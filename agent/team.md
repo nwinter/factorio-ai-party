@@ -259,6 +259,10 @@ already targets your character.
 - `move_to` keeps out of the range of the worms the map shows, plus 4 tiles; `"avoid_enemies":true` also keeps out of
   spawners' units' sight, 8 tiles more, walking legs around a nest (`last.avoided_enemies`); no way round: `no_safe_route`.
   A goal inside such a range is refused, naming the worm and the nearest safe spot toward it; `"unsafe_goal":true` goes anyway.
+- A walk stops short of rails that a moving train will cross within 6 s and goes on once it has passed (status
+  `train_wait`, then `last.train_waits`).
+- `./fh call recover --wait` walks to your own corpses on your surface, nearest first, and takes everything from each; a
+  corpse keeps what you carried when you died and does not expire. One inside a worm's range is left out (`left_out`).
 - A target in a narrow gap no path leads into ends the walk `arrived_near` before it (`last.pocket`; `"squeeze":true`
   walks in). Squeezed in, the walk gets out along the gaps first (`last.escaped`); closed in, `last.mine_to_get_out`.
 - Turret ghosts from `place_ghosts` and `paste` request ammo, so the robots that build them bring it (`ammo`: a name,

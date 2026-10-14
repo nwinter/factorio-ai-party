@@ -297,6 +297,9 @@ local function finish(index, outcome)
       if outcome~=nil and #action.via.legs<action.via.index then M.via_record(action,outcome) end
       last.target=action.via.final; last.legs=M.via_report(action)
     end
+    -- Waits for trains to pass the rails ahead (M.train_guard), one ending now too.
+    M.train_done(action)
+    last.train_waits=action.train_waits
     -- Movement diagnostics, only when something went wrong on the way.
     last.replans=(action.replans or 0)>0 and action.replans or nil
     last.stalls=action.stalls; last.no_progress=action.no_progress; last.paths_failed=(action.paths_failed or 0)>0 and action.paths_failed or nil
@@ -479,6 +482,8 @@ local function finish(index, outcome)
     last.item=action.item; last.got=action.got; last.want=action.want<10000 and action.want or nil; last.visited=action.visited
     -- The first place that failed and why (a tour where every place failed ends failed: Astra 08:47).
     last.first_error=action.first_error; last.error=last.error or (outcome=='failed' and action.first_error) or nil
+    -- The first place not reached and why (stock.lua: a walk that ended unreachable, no_safe_route, blocked ...).
+    last.first_unreached=action.first_unreached; last.why=last.why or (outcome=='unreached' and action.first_unreached) or nil
     -- Waiting at a machine: what it took against what the machine made and its inserters took (stock.lua).
     if action.wait then
       local r=stock.wait_report(action)
@@ -524,6 +529,16 @@ local function finish(index, outcome)
     last.tally=string.format('repaired %d, %d already full%s%s%s',action.repaired,action.already_full,
       action.unreached>0 and string.format(', %d not reached',action.unreached) or '',action.lost>0 and string.format(', %d gone',action.lost) or '',
       left>0 and string.format(', %d left (%s)',left,outcome) or '')
+  end
+  -- Waits for trains on the legs of other walks (M.train_guard: tours, construct, pickup); move_to's are above.
+  if action and action.kind~='move_to' then
+    if type(action.nav)=='table' then M.train_done(action.nav) end
+    s.last[index].train_waits=action.train_waits
+  end
+  -- A walk that ends on rails says so (M.on_rails).
+  if action and M.WALK_KINDS[action.kind] then
+    local ok,line=pcall(M.on_rails,body(M.lookup(index)))
+    s.last[index].on_rails=ok and line or nil
   end
   -- Item moves that ran over time: moved and the inventory line after (Muse 06:27).
   if action and (action.kind=='pickup' or action.kind=='gather' or action.kind=='feed' or action.kind=='mine') then pcall(M.moved_last,index,action,s.last[index]) end
@@ -697,6 +712,8 @@ local function active(index)
     awaiting_craft=action.awaiting_craft,got=action.got,
     condition=action.kind=='wait_until' and action.condition['until'] or nil,saw=action.kind=='wait_until' and action.saw or nil,
     stuck_s=action.watch and game.tick-action.watch.since>=STUCK_TICKS and math.floor((game.tick-action.watch.since)/60) or nil,
+    -- Waiting short of rails a moving train will pass (M.train_guard).
+    train_wait=M.train_wait_line(action.train_wait or (type(action.nav)=='table' and action.nav.train_wait) or nil),
     retreating=action.retreated and (action.retreated.why..(action.retreated.going and '; '..action.retreated.going or '')) or nil,
     -- the stream director's look-ahead: where the work is (set once when the action starts, never per tick)
     bounds=action.bounds,to=action.kind=='move_to' and action.position or nil,
@@ -1189,7 +1206,7 @@ function handlers.describe()
         tiles='optional {name, area={left_top,right_bottom}}: fill up to 4096 tile ghosts (landfill over water, foundation beside a platform); returns tiles_placed, tiles_existing (same ghost already there), tiles_refused (not placeable there)',
         platform='optional platform name: place on that space platform (its hub builds ghosts from hub items); positions are platform coordinates, hub at 0,0',surface='optional planet name: place the ghosts there by remote view, as a player does from the map (charted chunks; that planet\'s construction robots build them; dry_run too)',['repeat']='optional {count 1..64, dx, dy}: stamp the list count times, each shifted by dx,dy; per-copy rows',returns='placed, failed [{index,error}], bounds (construct defaults to them), obstacles_marked (trees/rocks under the ghosts, marked for deconstruction like a player placement; construct mines them); cliffs_marked and cliffs_note (cliffs under the ghosts, marked as a player placement marks them: one cliff-explosives each, against what you hold); underground_warnings: an underground belt or pipe-to-ground ghost whose span crosses tiles an underground cannot pass under (lava, empty space), which stays unpaired; inserters_without_target [{name, position, missing, pickup, drop}] (first 16; inserters_without_target_count past them): inserter ghosts with nothing to take from or put into on a point once the call\'s ghosts stand'},
       construct={area='optional {left_top,right_bottom} <=256x256; default: ghosts from the last paste',ticks='1..216000 (default 36000)',note='builds every ghost in reach from inventory and hand-mines every entity marked for deconstruction (timed like mine; contents to inventory, stops with inventory_full), then walks to the free stand point (never on a footprint) covering the most remaining ghosts near the nearest one; blocked ghosts retry once after moving; trees/rocks under ghosts are marked and mined first; ghosts whose item is in the hand-crafting queue are awaited (status awaiting_craft), not missing; status reports built/mined/remaining/missing/failed and blockers (trees/rocks in the way of a ghost, marked and mined first, also when a build bumps into one: name, position, ghost, at, cleared); outcomes: constructed (everything done) | incomplete (ghosts left for missing items or failures; a plan step fails) | nothing_to_do (a success, completes at once) | inventory_full | timed_out'},
-      move_to={retreat='optional {to: {x,y}, health_below: 0..1, shield_below: 0..1} (any one triggers; default health_below 0.4): checked every 5 ticks; when the health (or the armor\'s shield) falls under it during the action, the action ends retreated and you go back to `to` at once (on foot walking with avoid_enemies and the guns on auto while ammunition lasts; driving: the vehicle driven back); last.retreated: why, from, health, to; the walk back ends retreated on arrival; false: not even the standing retreat_guard',position='{x,y}, within 512 tiles',target='or an entity: {position={x,y}} (any tile of it, on a chunk the map draws; name or unit_number pick one of several there), or {unit_number=N} alone for what the game finds by number (vehicles and the like): the walk goes until the character is within reach of it (to its box, as the engine measures reach), choosing the nearest reachable spot itself, and arrives there; already within it, it arrives at once; a walk that ends another way (unreachable, blocked, timed_out ...) while within it counts as arrived (last.reach_note); with no path within reach it walks once to a spot within reach the give-up found (last.reach_walk); last.reach: how near it ended (iron-chest (12.5,3.5): 8.7 tiles to its box (transfer reach 10)); a plain {x,y} without reach is position',reach='with target: transfer (default: the engine\'s own test, 10 tiles; ore, trees and rocks 2.7), build (build_distance, 10) or tiles 0.5..64 to the box',ticks='1..36000, default 3600',tolerance='0.25..10, default 0.5 (alias within)',pathfind='default true: the engine pathfinder: a padded box on the tile grid (with a twin request avoiding belts, kept when at most 6 tiles or a quarter longer), then the character\'s own box from the nearest free tile centre, on the half-tile grid, and on the quarter-tile grid with a wider goal; when none finds a route the walk ends at once as unreachable (a target on ungenerated ground is steered to directly); a stall, back-and-forth, or no progress toward the next waypoint for 90 ticks (e.g. a belt carrying the character back) sidesteps, every 3rd stall replans wider, blocked after 15 stalls; false steers directly',note='never ends on a belt: arriving on one it steps to the nearest free tile without a belt within the arrival radius (else within 3 tiles). Where the path ends short of the target, the rest is walked straight only with room to turn (a 0.7-tile box): a gap narrower than that ends the walk before it (arrived_near; last.pocket says where). Squeezed into a gap no path leads out of, it walks out along the gaps to the nearest spot with room first (last.escaped); closed in, last.mine_to_get_out names the fewest of our entities, trees or rocks whose mining opens a way out',unsafe_goal='optional true: go to a goal or via point inside an enemy weapon\'s reach anyway (the reply\'s unsafe_goal names it); without it such a move_to is refused: goal (x,y) is inside big-worm-turret (x,y) range 38 (13.0 tiles from it): unsafe_goal: true to go anyway; the nearest safe spot toward it: (x,y), N tiles from it',squeeze='optional true: walk the last stretch into a narrow gap anyway; where no path request leads (none leads into a gap narrower than 0.7 tiles), walk the character\'s own steps there (a search over quarter-tile steps, up to 64 tiles a side; last.squeezed)',via='optional 1..16 points {x,y} (or [x,y]) walked in order before position, in one call: each leg its own walk, pathfound and checked for enemies as a single move_to (a via point counts as reached within 1 tile, or tolerance when larger; only the last leg steps off a belt; ticks covers the whole walk); a leg that does not arrive ends the walk with its outcome; last.legs lists each leg {to, outcome, s (seconds), why, avoided_enemies} and then those not walked; status active.leg says which (2 of 4); a queue step resumed after a pause goes on from the first via point it had not reached',avoid_enemies='default: worms the map shows are kept out of range + 4 tiles; true: worms and spawners (their units\' sight: 30 tiles on Nauvis, 40 on Gleba) + 8; a number 0..32: that margin; false: no check. A path through one\'s reach is walked as legs around the nest (corners of octagons around each worm\'s or spawner\'s reach, each leg the engine\'s path); a goal or via point inside a worm\'s range (with true, a spawner\'s units\' sight too) is refused, naming the weapon and the nearest safe spot toward it (outside every reach + the margin), unless unsafe_goal; a nest with the start in a weapon\'s range, or the goal with unsafe_goal, is not avoided, and one with the start or goal in its margin only keeps its discs short of them (last.enemies_at_start_or_goal names both); last.avoided_enemies names what was gone around; with no way round, a path crossing only a margin is walked (last.passed_within_margin) and one crossing a range ends no_safe_route',combat='optional true or a radius 1..32 (default 20): fire at enemies in range while walking, as shoot auto does (needs ammunition), until the walk ends; status/last_combat report it (outcome move_ended, ammo_used)',status='last reports why (unreachable: closed in, with the area and what closes it in, or no path; blocked; timed_out), nearest_reachable and reachable_gap (its distance to the target); unreachable: build_spot, a spot the character reaches within 9.25 tiles of the target (build reach 10), with room to turn when one is found, and build_spot_note saying so, or that it lies in a gap or only the character\'s own steps found it (build_spot_squeeze: the note names the move_to squeeze=true call that walks there), or that no reachable spot is within build reach; off_belt, path (off belts), steered (without a path), replans, stalls, no_progress, paths_failed',outcomes='arrived | arrived_near (stuck within tolerance+1.5, e.g. goal inside an entity; or stopped before a narrow gap: pocket) | unreachable (no route for the character: why, nearest_reachable, build_spot, mine_to_get_out) | no_safe_route (every way passes within an enemy\'s reach: why) | blocked | timed_out'},
+      move_to={retreat='optional {to: {x,y}, health_below: 0..1, shield_below: 0..1} (any one triggers; default health_below 0.4): checked every 5 ticks; when the health (or the armor\'s shield) falls under it during the action, the action ends retreated and you go back to `to` at once (on foot walking with avoid_enemies and the guns on auto while ammunition lasts; driving: the vehicle driven back); last.retreated: why, from, health, to; the walk back ends retreated on arrival; false: not even the standing retreat_guard',position='{x,y}, within 512 tiles',target='or an entity: {position={x,y}} (any tile of it, on a chunk the map draws; name or unit_number pick one of several there), or {unit_number=N} alone for what the game finds by number (vehicles and the like): the walk goes until the character is within reach of it (to its box, as the engine measures reach), choosing the nearest reachable spot itself, and arrives there; already within it, it arrives at once; a walk that ends another way (unreachable, blocked, timed_out ...) while within it counts as arrived (last.reach_note); with no path within reach it walks once to a spot within reach the give-up found (last.reach_walk); last.reach: how near it ended (iron-chest (12.5,3.5): 8.7 tiles to its box (transfer reach 10)); a plain {x,y} without reach is position',reach='with target: transfer (default: the engine\'s own test, 10 tiles; ore, trees and rocks 2.7), build (build_distance, 10) or tiles 0.5..64 to the box',ticks='1..36000, default 3600',tolerance='0.25..10, default 0.5 (alias within)',pathfind='default true: the engine pathfinder: a padded box on the tile grid (with a twin request avoiding belts, kept when at most 6 tiles or a quarter longer), then the character\'s own box from the nearest free tile centre, on the half-tile grid, and on the quarter-tile grid with a wider goal; when none finds a route the walk ends at once as unreachable (a target on ungenerated ground is steered to directly); a stall, back-and-forth, or no progress toward the next waypoint for 90 ticks (e.g. a belt carrying the character back) sidesteps, every 3rd stall replans wider, blocked after 15 stalls; false steers directly',note='trains: every 10 ticks the walk looks at the ground rails within 4 tiles ahead; while a train moves toward them and would reach them within 6 s at its speed (its path goes over them; with no path, within 30 tiles), or its wagons are on them, the character stops short of them (status active.train_wait) and walks on once it has passed; standing on a rail, it walks on off it. Never ends on a belt: arriving on one it steps to the nearest free tile without a belt within the arrival radius (else within 3 tiles). Where the path ends short of the target, the rest is walked straight only with room to turn (a 0.7-tile box): a gap narrower than that ends the walk before it (arrived_near; last.pocket says where). Squeezed into a gap no path leads out of, it walks out along the gaps to the nearest spot with room first (last.escaped); closed in, last.mine_to_get_out names the fewest of our entities, trees or rocks whose mining opens a way out',unsafe_goal='optional true: go to a goal or via point inside an enemy weapon\'s reach anyway (the reply\'s unsafe_goal names it); without it such a move_to is refused: goal (x,y) is inside big-worm-turret (x,y) range 38 (13.0 tiles from it): unsafe_goal: true to go anyway; the nearest safe spot toward it: (x,y), N tiles from it',squeeze='optional true: walk the last stretch into a narrow gap anyway; where no path request leads (none leads into a gap narrower than 0.7 tiles), walk the character\'s own steps there (a search over quarter-tile steps, up to 64 tiles a side; last.squeezed)',via='optional 1..16 points {x,y} (or [x,y]) walked in order before position, in one call: each leg its own walk, pathfound and checked for enemies as a single move_to (a via point counts as reached within 1 tile, or tolerance when larger; only the last leg steps off a belt; ticks covers the whole walk); a leg that does not arrive ends the walk with its outcome; last.legs lists each leg {to, outcome, s (seconds), why, avoided_enemies} and then those not walked; status active.leg says which (2 of 4); a queue step resumed after a pause goes on from the first via point it had not reached',avoid_enemies='default: worms the map shows are kept out of range + 4 tiles; true: worms and spawners (their units\' sight: 30 tiles on Nauvis, 40 on Gleba) + 8; a number 0..32: that margin; false: no check. A path through one\'s reach is walked as legs around the nest (corners of octagons around each worm\'s or spawner\'s reach, each leg the engine\'s path); a goal or via point inside a worm\'s range (with true, a spawner\'s units\' sight too) is refused, naming the weapon and the nearest safe spot toward it (outside every reach + the margin), unless unsafe_goal; a nest with the start in a weapon\'s range, or the goal with unsafe_goal, is not avoided, and one with the start or goal in its margin only keeps its discs short of them (last.enemies_at_start_or_goal names both); last.avoided_enemies names what was gone around; with no way round, a path crossing only a margin is walked (last.passed_within_margin) and one crossing a range ends no_safe_route',combat='optional true or a radius 1..32 (default 20): fire at enemies in range while walking, as shoot auto does (needs ammunition), until the walk ends; status/last_combat report it (outcome move_ended, ammo_used)',status='last reports why (unreachable: closed in, with the area and what closes it in, or no path; blocked; timed_out), nearest_reachable and reachable_gap (its distance to the target); unreachable: build_spot, a spot the character reaches within 9.25 tiles of the target (build reach 10), with room to turn when one is found, and build_spot_note saying so, or that it lies in a gap or only the character\'s own steps found it (build_spot_squeeze: the note names the move_to squeeze=true call that walks there), or that no reachable spot is within build reach; off_belt, path (off belts), steered (without a path), replans, stalls, no_progress, paths_failed; train_waits: each wait short of rails a moving train crossed; on_rails: the rail you stand on when the walk ends there',outcomes='arrived | arrived_near (stuck within tolerance+1.5, e.g. goal inside an entity; or stopped before a narrow gap: pocket) | unreachable (no route for the character: why, nearest_reachable, build_spot, mine_to_get_out) | no_safe_route (every way passes within an enemy\'s reach: why) | blocked | timed_out'},
       pickup={ticks='1..600 (default 30); over an area 1..36000 (default 3600)',area='optional {left_top,right_bottom} up to 64x64: pick up every item stack on the ground in it',position='optional centre of the square for radius (default you)',radius='optional 1..32 (default 8): the square around position, instead of area',items='optional 1..16 item names: only stacks of these',note='takes items on the ground within your pickup distance (stand on or next to them; refused when none is in reach); outcomes picked_up | duration_elapsed | inventory_full | nothing_in_reach, last.picked {item: count}, last.moved (the count) and last.inv (the inventory line after); the reply: moved 0, timed (until when), inv. Over an area (area, position/radius or items): one stack every 6 ticks, walking to the nearest stack left in the area; refused when it holds none; returns item_stacks and items; outcomes picked_up (none left) | inventory_full | blocked (stacks it could not walk to: last.skipped; it stops after 8) | timed_out; last.picked, last.left (stacks still in the area)'},repair={position='{x,y}',ticks='1..600; with positions or area 1..36000 (default 3600)',item='repair-pack by default',
         positions='or 1..64 {x,y} (each may carry name or unit_number): every damaged one, nearest first, walking to each (a timed action; outcomes repair_completed | timed_out | repair_tool_exhausted; last: repaired, already_full, unreached, lost, left, tally)',
         area='or {left_top, right_bottom} up to 128x128: every entity of ours with health in it, as positions (at most 64 damaged)',
@@ -1231,6 +1248,7 @@ function handlers.describe()
         returns='moved (alias transferred), inv (the inventory line after), items {name=count}, entities (position, name, gave; with recipe: loaded, short {item=missing}), unchanged, held (what is left of each item given)'},
       rearm={radius='1..256: a walking tour (timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left) through every turret in radius that takes the ammo and holds under below rounds (any ammo, counted in items), topping each up to count; turrets within 24 tiles of each other are one cluster (as the turrets read groups fronts), the nearest cluster first from where you stand, then from where the last one ends, nearest first inside one (clusters: one line each); up to 128 turrets a call (skipped: the rest)',area='or {left_top, right_bottom}: the same tour over every such turret in it, any size',surface='or true (or your surface\'s name): the same over your whole surface',below='optional 1..1000 rounds: turrets holding fewer get topped up to count (at least below); default count',ticks='with radius, area or surface: 1..36000 (default 3600)',ammo='ammo item (default firearm-magazine)',count='1..1000 target per turret (default 10)',positions='optional 1..64 positions instead of every turret in reach',types='default {ammo-turret}; artillery-turret allowed; an entity name is taken as a name (types_note)',returns='with radius, area or surface: places, clusters (one line each, nearest first: turrets, around (x,y), tiles from you or from the cluster before, rounds they hold), below, count, other_ammo (turrets there that take other ammo); when no turret needs it: nothing, nearest_outside (the nearest such turret outside radius or area, within 512 tiles), also in last.why',note='gives from the main inventory, then the gun ammo slots (crafted ammo lands there); fails when none is held and turrets want more; waits for ammo in the hand-craft queue (awaiting_craft; outcome fed | failed | timed_out)'},
       refuel={radius='1..256: walk a nearest-first route through every burner in radius below count and top it up (a timed action; outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left); none below count in it: nothing (how many there hold enough) and nearest_outside (the nearest burner below count outside the radius, within 512 tiles), also in last.why',ticks='with radius: 1..36000 (default 3600)',fuel='fuel item (default coal)',count='1..1000 target per entity (default 10)',positions='optional 1..64 positions instead of every burner in reach',types='optional entity types (furnace, boiler, mining-drill, ...); an entity name is taken as a name (types_note)',note='fails when no fuel is held and burners want more; waits for fuel in the hand-craft queue (awaiting_craft)'},
+      recover={ticks='1..36000 (default 3600)',avoid_enemies='as move_to\'s: default worms the map shows (range + 4); true: worms and spawners (their units\' sight) + 8; a number 0..32: that margin; false: no check. The walk goes around them as move_to\'s does, and a corpse inside a weapon\'s reach is left out (left_out: the weapon and the nearest safe spot toward it)',unsafe_goal='optional true: walk to such a corpse anyway (unsafe_goal names the weapon)',note='walks to your own character corpses on this surface, nearest first, and takes everything from each (a corpse goes once empty), as collect walk=true takes from a chest: one timed call (--wait waits; outcomes collected | nothing_collected | inventory_full | unreached (last.first_unreached: where and why) | timed_out). A bot\'s corpses are the ones its deaths left (found where it died, by the tick it died; up to 5 kept, newest first); a character corpse does not expire',returns='corpses (each: where, how long ago it died, how many items it holds), left_out, unsafe_goal, avoid_enemies, elsewhere (yours on other surfaces, not walked to), places, legs, until_tick; last: transferred, items, entities (removed: the corpse went), train_waits; no corpse to walk to: refused, naming those left out or elsewhere'},
       collect={wait_ticks='1..36000 with position: stand at that assembler or furnace (walking into reach first) and take each product from its output the tick it is there, as a player standing there does, until the ticks run out or count is taken (item: only that one); a timed action: outcomes collected | nothing_collected | inventory_full | unreached; last.took, last.made (counted in its output each tick: what arrived), last.inserters_took (what inserters picking from it took into their hands), last.left_otherwise (spoiled, or another player took it), last.crafts, last.chance (products a craft makes only by chance), last.why (when it took none: none made, with the chance; inserters took them; left otherwise; out of reach), last.waited_s; reach is the engine\'s, as transfer\'s (to its edge)',
         keep_taking='true (3600 ticks) or ticks: the same as wait_ticks',
         up_to='true: an empty source or a full inventory never fails the call or, as a queue step, pauses the plan (nothing_collected and inventory_full count as done); moved, short {asked, moved, reason}; it also stops at your personal request max for an item (left_at_max says what stayed in the source)',keep_max='true: refuse a take that would put you over your personal request max (the game moves what is over it to your trash slots); nothing is taken. Without it, a take over that max (or of an unrequested item while unrequested items go to trash) says so in the reply\'s trash lines: how many the game moves to your trash slots',types='entity types (default furnace, assembling-machine: machine outputs only)',chests='boolean: also empty plain chests (container, logistic-container) in reach or radius; off by default because chests are usually feed stock you placed (result notes chests_skipped / left_in_chests)',item='optional: only this item',positions='optional 1..64 positions instead of everything in reach (named chests are always taken from)',area='or {left_top, right_bottom} up to 128x128: our entities of types (default machines; chests=true adds chests) with their centre inside, as positions (at most 64; area_targets counts them)',
@@ -5011,6 +5029,57 @@ M.short_facts=short_facts
 -- usually feed chests the player stocked for machines, so they are only
 -- emptied when named by position, listed in types, or with chests=true.
 local collect_types={plain={'furnace','assembling-machine'},chests={'furnace','assembling-machine','container','logistic-container'}}
+-- recover (Opus, shift12 15:20): walk to your own character corpses on this surface, nearest first, and take
+-- everything from each, as a player empties a corpse (it goes once empty); one timed call, the tour collect walk=true
+-- makes. A bot's corpses are the ones its deaths left (bots.lua note_corpse: no player is named on them); a player's
+-- carry its index. Corpses on another surface are listed, not walked to. The walk keeps out of the enemy reach the map
+-- shows as move_to's does (avoid_enemies), and a corpse inside a weapon's reach is left out unless unsafe_goal.
+function handlers.recover(p,a)
+  assert(a.unsafe_goal==nil or type(a.unsafe_goal)=='boolean','unsafe_goal must be true or false')
+  local mode=M.avoid.mode(a.avoid_enemies)
+  local ticks=integer(a.ticks,3600,1,36000,'ticks')
+  local list
+  if M.bots.is(p) then list=M.bots.corpses(p.index)
+  else
+    list={}
+    for _,k in pairs(p.surface.find_entities_filtered{type='character-corpse',limit=64}) do
+      if k.character_corpse_player_index==p.index then
+        list[#list+1]={entity=k,surface=p.surface.name,position=k.position,tick=k.character_corpse_tick_of_death}
+      end
+    end
+  end
+  local here,rows,elsewhere,left_out,unsafe={},{},{},{},{}
+  for _,c in ipairs(list) do
+    local okc,n=pcall(function() return c.entity.get_inventory(defines.inventory.character_corpse).get_item_count() end)
+    local ago=math.floor((game.tick-(c.tick or game.tick))/60)
+    local held=okc and n or 0
+    local line=string.format('(%.1f,%.1f) on %s: died %dm%02ds ago, holds %d item%s',c.position.x,c.position.y,c.surface,math.floor(ago/60),ago%60,held,held==1 and '' or 's')
+    if c.surface~=p.surface.name then elsewhere[#elsewhere+1]=line
+    else
+      -- As move_to's goal check (avoid.lua): a corpse inside a worm's range (with avoid_enemies true, a spawner's units' sight too).
+      local chk=mode and M.avoid.goal_check(p,p.position,c.position,mode)
+      local text=chk and M.avoid.goal_text('the corpse',c.position,chk)
+      if chk and not a.unsafe_goal then left_out[#left_out+1]=line..'; '..text..M.avoid.spot_text(c.position,chk,mode)
+      else
+        if chk then unsafe[#unsafe+1]=text..' (unsafe_goal)' end
+        here[#here+1]=c.entity; rows[#rows+1]=line
+      end
+    end
+  end
+  if #here==0 then
+    if #left_out>0 then error('no corpse of yours on '..p.surface.name..' outside the enemy reach the map shows: '..table.concat(left_out,'; ')..': unsafe_goal: true to go anyway',0) end
+    error('no corpse of yours on '..p.surface.name..(#elsewhere>0 and ('; elsewhere: '..table.concat(elsewhere,'; ')) or ''),0)
+  end
+  local action,out=stock.start_tour(p,'transfer',here,ticks,
+    {transfer={direction='to_player'},rows={},items={},collect=true,recover=true,avoid_mode=mode})
+  if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
+  state().active[p.index]=action
+  out.op=nil; out.until_tick=action.until_tick; out.corpses=rows; out.elsewhere=#elsewhere>0 and elsewhere or nil
+  out.left_out=#left_out>0 and left_out or nil; out.unsafe_goal=#unsafe>0 and table.concat(unsafe,'; ') or nil
+  out.avoid_enemies=mode and M.avoid.describe(mode) or nil
+  out.legs,out.legs_more=M.legs(p,action.targets)
+  return out
+end
 function handlers.collect(p,a)
   if a.pick~=nil then return M.pick_source(p,a,'collect') end
   if a.items~=nil or a.to~=nil then
@@ -7330,7 +7399,7 @@ do
     end
   end
 end
-local permissions={walk='start_walking',move_to='start_walking',mine='begin_mining',pickup='change_picking_state',repair='start_repair',craft='craft',cancel_craft='cancel_craft',build='build',build_path='build',construct='build',place_ghosts='build',belt_route='build',pipe_route='build',pole_route='build',rail_route='build',train_stop='build',wire='wire_dragging',kite='change_shooting_state',revive_ghost='build',rotate='rotate_entity',configure='setup_assembling_machine',flush='flush_opened_entity_fluid',transfer='inventory_transfer',refuel='inventory_transfer',rearm='inventory_transfer',collect='inventory_transfer',feed='inventory_transfer',research='start_research',research_next='start_research',shoot='change_shooting_state',equip='inventory_transfer'}
+local permissions={recover='inventory_transfer',walk='start_walking',move_to='start_walking',mine='begin_mining',pickup='change_picking_state',repair='start_repair',craft='craft',cancel_craft='cancel_craft',build='build',build_path='build',construct='build',place_ghosts='build',belt_route='build',pipe_route='build',pole_route='build',rail_route='build',train_stop='build',wire='wire_dragging',kite='change_shooting_state',revive_ghost='build',rotate='rotate_entity',configure='setup_assembling_machine',flush='flush_opened_entity_fluid',transfer='inventory_transfer',refuel='inventory_transfer',rearm='inventory_transfer',collect='inventory_transfer',feed='inventory_transfer',research='start_research',research_next='start_research',shoot='change_shooting_state',equip='inventory_transfer'}
 for name,input in pairs(permissions) do
   local handler=handlers[name]
   handlers[name]=function(p,a)
@@ -7528,9 +7597,10 @@ handlers.equipment=function(p,a)
   assert(not p.permission_group or p.permission_group.allows_action(defines.input_action[input]),'permission denied: '..input)
   return equipment_handler(p,a)
 end
-local timed={walk=true,move_to=true,build_path=true,construct=true,kite=true,mine=true,pickup=true,repair=true,rearm=true,refuel=true,transfer=true,collect=true,feed=true,wait_until=true,wait_ticks=true,build=true}
+local timed={recover=true,walk=true,move_to=true,build_path=true,construct=true,kite=true,mine=true,pickup=true,repair=true,rearm=true,refuel=true,transfer=true,collect=true,feed=true,wait_until=true,wait_ticks=true,build=true}
 -- The active action kind a step's handler starts, where it differs from its name.
-local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true,gather=true},build={feed=true},collect={gather=true},feed={gather=true}}
+local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true,gather=true},build={feed=true},collect={gather=true},feed={gather=true},
+  recover={gather=true}}
 local conditions=conditions_module{known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end}
@@ -8071,7 +8141,7 @@ M.aliases=require('aliases'){}
 M.MOVES={transfer=true,feed=true,collect=true,rearm=true,refuel=true}
 -- Item moves say moved and end with the inventory line after the move (Muse 06:27, dozens a shift: transfer and
 -- collect printed moved or transferred, and a tour's reply was a tick alone, which read as a failure).
-M.ITEM_MOVES={transfer=true,feed=true,collect=true,rearm=true,refuel=true,pickup=true,
+M.ITEM_MOVES={transfer=true,feed=true,collect=true,rearm=true,refuel=true,pickup=true,recover=true,
   -- Operator 08:01 (Muse: the line was only partly there): crafts into the inventory, crafts cancelled (ingredients
   -- back), mining into the inventory, a recipe change that returns a machine's items.
   craft=true,cancel_craft=true,mine=true,configure=true}
@@ -8739,6 +8809,8 @@ stock=stock_module{distance=distance,integer=integer,position=position,claims=M.
         c.give_taken=nil; c.count=math.max(1,action.taken or 0)
         t=c
       end
+      -- Read before the take: a corpse emptied by it is gone after (recover).
+      local epos,ename=e.position,e.name
       local out=transfer_one(p,t,nil,e)
       local moved=t.item and {{name=t.item,count=out.transferred,quality=t.quality}} or out.items or {}
       for _,st in ipairs(moved) do
@@ -8747,8 +8819,8 @@ stock=stock_module{distance=distance,integer=integer,position=position,claims=M.
           action.items[key]=(action.items[key] or 0)+st.count
         end
       end
-      action.rows[#action.rows+1]={position=e.position,name=e.name,moved=out.transferred,direction=action.legs and t.direction or nil,
-        full=(out.inventory_full or out.entity_full) and true or nil}
+      action.rows[#action.rows+1]={position=epos,name=ename,moved=out.transferred,direction=action.legs and t.direction or nil,
+        full=(out.inventory_full or out.entity_full) and true or nil,removed=out.corpse_removed}
       -- The courier's take: nothing taken ends it before the walk on; a full inventory still carries what it took.
       if action.legs and action.index==1 then
         action.taken=out.transferred
@@ -8766,6 +8838,8 @@ stock=stock_module{distance=distance,integer=integer,position=position,claims=M.
   end,
   take=function(p,e,item,quality,count,inv,tally) return transfer_one(p,{direction='to_player',item=item,quality=quality,count=count,inventory=inv,tally=tally},nil,e) end,
   request_path=function(p,nav) return request_path(p,nav) end,navigate=function(p,nav) return navigate(p,nav) end,
+  -- recover's walk keeps out of the enemy reach the map shows, as move_to's (avoid.lua).
+  avoid_start=function(p,nav,mode) return M.avoid.start(p,nav,mode) end,
   stop_walking=function(p) p.walking_state={walking=false,direction=defines.direction.north} end,
   -- A courier's destination found on arrival: within reach of its position, then the entity there.
   near=function(p,pos) return distance(p.position,pos)<=math.max(1,(p.reach_distance or 10)-1) end,
@@ -8864,6 +8938,11 @@ navigate=function(p,nav)
     nav.retry_tick=nav.retry_tick or game.tick+20
     if game.tick>=nav.retry_tick then nav.retry_tick=nil; request_path(p,nav); return end
   end
+  -- A moving train on its way over the rails a few tiles ahead: wait short of them until it has passed (M.train_guard).
+  if M.train_guard(p,nav,pos,goal) then
+    p.walking_state={walking=false,direction=defines.direction.north}; nav.stalled=0; nav.progress_tick=nil; nav.sidestep=nil
+    return
+  end
   -- Flipping between two spots is a stall in disguise.
   if oscillating and near then return 'arrived_near' end
   nav.stalled=(moved<0.01 or oscillating) and (nav.stalled or 0)+1 or 0
@@ -8917,6 +8996,103 @@ navigate=function(p,nav)
     end
   end
   steer(p,wp,nav)
+end
+-- Trains (Opus, shift12 15:20: killed by our own train at (195,-150) walking to a locomotive). Every 10 ticks of a
+-- walk, the next 4 tiles of its way are checked for rails (elevated rails pass overhead and are left out). A train that
+-- moves and would reach them within 6 s at its speed (its path goes over one of them; a train with no path, within 30
+-- tiles), or whose wagons are on them now, stops the character short of the rail until it has passed. Standing on a
+-- rail already, it walks on off it. True while it waits (nav.train_wait); each wait ends in nav.train_waits, or for a
+-- leg of an action that walks several (a tour, construct, pickup), in the action's train_waits (its last, at finish).
+M.RAIL_TYPES={'straight-rail','half-diagonal-rail','curved-rail-a','curved-rail-b','legacy-straight-rail','legacy-curved-rail'}
+M.TRAIN_TICKS,M.TRAIN_LOOK=360,4
+function M.train_wait_line(w)
+  if not w then return nil end
+  return string.format('waiting %.0f s at (%.1f,%.1f) for %s to pass the rails ahead at (%.1f,%.1f)',(game.tick-w.since)/60,w.at.x,w.at.y,w.train,w.rails.x,w.rails.y)
+end
+function M.train_done(nav)
+  local w=nav.train_wait
+  if not w then return false end
+  nav.train_wait=nil
+  local a=w.index and state().active[w.index]
+  local into=(a and a~=nav and a.nav==nav) and a or nav
+  into.train_waits=into.train_waits or {}
+  if #into.train_waits<4 then
+    into.train_waits[#into.train_waits+1]=string.format('waited %.1f s at (%.1f,%.1f) for %s to pass the rails ahead at (%.1f,%.1f)',
+      (game.tick-w.since)/60,w.at.x,w.at.y,w.train,w.rails.x,w.rails.y)
+  end
+  return false
+end
+-- Standing on a ground rail at the end of a walk: the rail, as the guard finds one underfoot.
+M.WALK_KINDS={move_to=true,gather=true,construct=true,pickup=true,repair=true}
+function M.on_rails(p)
+  if not (p and p.valid and p.character and p.character.valid) then return nil end
+  local r=p.surface.find_entities_filtered{position=p.position,radius=0.9,type=M.RAIL_TYPES,limit=1}[1]
+  return r and string.format('you stand on %s (%g,%g)',r.name,r.position.x,r.position.y) or nil
+end
+function M.train_guard(p,nav,pos,goal)
+  if game.tick%10~=0 then return nav.train_wait~=nil end
+  local s=p.surface
+  -- The way ahead: TRAIN_LOOK tiles along the waypoints (or straight to the goal).
+  local pts,left,at={{x=pos.x,y=pos.y}},M.TRAIN_LOOK,pos
+  local list,i=nav.waypoints,nav.waypoint or 1
+  while left>0 do
+    local nxt=list and list[i] and list[i].position or goal
+    if not nxt then break end
+    local d=distance(at,nxt)
+    if d>=left then
+      local f=left/math.max(d,1e-6)
+      pts[#pts+1]={x=at.x+(nxt.x-at.x)*f,y=at.y+(nxt.y-at.y)*f}
+      break
+    end
+    pts[#pts+1]={x=nxt.x,y=nxt.y}; left=left-d; at=nxt
+    if not (list and list[i]) then break end
+    i=i+1
+  end
+  local x0,y0,x1,y1=pos.x,pos.y,pos.x,pos.y
+  for _,q in ipairs(pts) do x0=math.min(x0,q.x); y0=math.min(y0,q.y); x1=math.max(x1,q.x); y1=math.max(y1,q.y) end
+  local rails=s.find_entities_filtered{area={{x0-1,y0-1},{x1+1,y1+1}},type=M.RAIL_TYPES,limit=16}
+  if #rails==0 or #s.find_entities_filtered{position=pos,radius=0.9,type=M.RAIL_TYPES,limit=1}>0 then return M.train_done(nav) end
+  local ahead,cx,cy={},0,0
+  for _,r in ipairs(rails) do
+    ahead[r.unit_number or (r.position.x..','..r.position.y)]=true
+    cx,cy=cx+r.position.x,cy+r.position.y
+  end
+  local crossing={x=cx/#rails,y=cy/#rails}
+  local okt,trains=pcall(function() return game.train_manager.get_trains{surface=s} end)
+  local danger
+  for _,t in ipairs(okt and trains or {}) do
+    local speed=math.abs(t.speed)
+    if t.valid and speed>0.001 then
+      -- Its nearest wagon to the rails ahead.
+      local near,nd
+      for _,c in ipairs(t.carriages) do
+        local d=distance(c.position,crossing)
+        if not nd or d<nd then near,nd=c,d end
+      end
+      local eta=nd and nd/speed
+      if near and (nd<=4 or eta<=M.TRAIN_TICKS) then
+        local over=nd<=4
+        local path=not over and t.path
+        if path then
+          local okp=pcall(function()
+            for k=path.current,math.min(path.size,path.current+300) do
+              local r=path.rails[k]
+              if r and r.valid and ahead[r.unit_number or (r.position.x..','..r.position.y)] then over=true; break end
+            end
+          end)
+          if not okp then over=nd<30 end
+        elseif not over then over=nd<30 end
+        if over and (not danger or eta<danger.eta) then danger={stock=near,eta=eta,speed=speed} end
+      end
+    end
+  end
+  if not danger then return M.train_done(nav) end
+  if not nav.train_wait then
+    local st=danger.stock
+    nav.train_wait={since=game.tick,at={x=pos.x,y=pos.y},rails=crossing,index=p.index,
+      train=string.format('a train (%s at (%.0f,%.0f), %.0f km/h)',st.name,st.position.x,st.position.y,danger.speed*216)}
+  end
+  return true
 end
 -- Route planners take only tiles the piece stands on as they are (or on a tile ghost ordered there), and a
 -- route with no way says what tiles the straight line crosses (dryrun.lua; Sol, shift09: poles on Gleba wetland).

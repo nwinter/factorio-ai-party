@@ -85,6 +85,8 @@ return function(api)
 
   -- detail: a line for this entity (lost sources: the inserter, what it read, what it puts into), up to MAX_DETAIL a group.
   local MAX_DETAIL = 4
+  -- Turret kinds read again when shown (Haiku, shift12 15:20: two empty-ammo alerts sent it to guns already full).
+  local RECHECK, MAX_UNITS = {no_ammo=true, rebuilt_empty=true, flamer_dry=true}, 512
   local function add(groups, kind, surface, e, pos, name, by, detail)
     local cx, cy = math.floor(pos.x / CELL), math.floor(pos.y / CELL)
     local key = kind .. '|' .. surface .. '|' .. cx .. ',' .. cy
@@ -99,6 +101,15 @@ return function(api)
     if by then g.by[by] = (g.by[by] or 0) + 1 end
     if #g.at < 4 then g.at[#g.at+1] = {x=math.floor(pos.x * 10 + 0.5) / 10, y=math.floor(pos.y * 10 + 0.5) / 10} end
     if detail then g.lost = g.lost or {}; if #g.lost < MAX_DETAIL then g.lost[#g.lost+1] = detail end end
+    -- A turret group is read again before it is shown (M.recheck): its turrets by unit number, in its cells.
+    if RECHECK[kind] and e then
+      local unit = try(function() return e.unit_number end)
+      if unit then
+        g.units = g.units or {}
+        g.nunits = (g.nunits or 0) + 1
+        if g.nunits <= MAX_UNITS then g.units[unit] = true end
+      end
+    end
   end
   local function builder(e)
     return try(function() local u = e.last_user; return u and u.name end)
@@ -348,6 +359,13 @@ return function(api)
             end end
           end
           area.n, area.sx, area.sy = area.n + part.n, area.sx + part.sx, area.sy + part.sy
+          if part.units then
+            area.units = area.units or {}
+            for u in pairs(part.units) do area.units[u] = true end
+            area.nunits = (area.nunits or 0) + (part.nunits or 0)
+            area.cells = area.cells or {}
+            area.cells[#area.cells+1] = {c[1], c[2]}
+          end
           for n, v in pairs(part.names) do area.names[n] = (area.names[n] or 0) + v end
           for n, v in pairs(part.by) do area.by[n] = (area.by[n] or 0) + v end
           for _, pos in ipairs(part.at) do if #area.at < 4 then area.at[#area.at+1] = pos end end
@@ -515,6 +533,57 @@ return function(api)
     for i = 1, math.min(3, #names) do parts[i] = names[i].n .. ' ' .. names[i].name end
     return string.format('%d (%s%s)', g.n, table.concat(parts, ', '), #names > 3 and ', ...' or '')
   end
+  -- A turret group now (no_ammo, rebuilt_empty, flamer_dry): its turrets found again in its cells, only those still
+  -- empty counted (a turret refilled since the read, by anyone, drops out; one gone too). nil when none is: the group is
+  -- not shown, and its told count is cleared, so a turret that runs dry again is news. Other groups as they are.
+  local TURRET_TYPE = {no_ammo='ammo-turret', rebuilt_empty='ammo-turret', flamer_dry='fluid-turret'}
+  local function still_empty(e, kind)
+    if kind == 'flamer_dry' then
+      local amount = try(function() return (flameroil.read(e)) end)
+      return amount ~= nil and amount < 1
+    end
+    local inv = try(function() return e.get_inventory(defines.inventory.turret_ammo) end)
+    return inv ~= nil and inv.get_item_count() == 0
+  end
+  function M.recheck(g, force)
+    if not (RECHECK[g.kind] and g.units and g.cells) then return g end
+    local surface
+    for _, x in pairs(game.surfaces) do if x.name == g.surface then surface = x end end
+    if not surface then return nil end
+    local n, names, at, seen, keep, counted = 0, {}, {}, 0, {}, {}
+    for _, c in ipairs(g.cells) do
+      local box = {{c[1] * CELL, c[2] * CELL}, {(c[1] + 1) * CELL, (c[2] + 1) * CELL}}
+      for _, e in ipairs(surface.find_entities_filtered{area=box, type=TURRET_TYPE[g.kind], force=force, limit=4096}) do
+        local unit = e.valid and try(function() return e.unit_number end)
+        -- On a cell edge a turret is in two cells' finds: counted once.
+        if unit and g.units[unit] and not counted[unit] then
+          counted[unit] = true
+          seen = seen + 1
+          if still_empty(e, g.kind) then
+            n = n + 1
+            names[e.name] = (names[e.name] or 0) + 1
+            if #at < 4 then at[#at+1] = {x=math.floor(e.position.x * 10 + 0.5) / 10, y=math.floor(e.position.y * 10 + 0.5) / 10} end
+            keep[at_text(e.position)] = true
+          end
+        end
+      end
+    end
+    -- Past MAX_UNITS the rest were not remembered: taken as they were read.
+    n = n + math.max(0, (g.nunits or 0) - MAX_UNITS)
+    if n == 0 then return nil end
+    if n == g.n then return g end
+    local c = {}
+    for k, v in pairs(g) do c[k] = v end
+    c.n, c.names, c.at = n, names, at
+    if g.lost then
+      c.lost = {}
+      for _, d in ipairs(g.lost) do
+        local pos = d:match('(%(%-?[%d%.]+,%-?[%d%.]+%))')
+        if not pos or keep[pos] then c.lost[#c.lost+1] = d end
+      end
+    end
+    return c
+  end
   -- plain: without the hint (the review block, selfview.lua).
   -- was: the count told before, or (a group with now_text) what its now_text said then.
   function M.text(g, here, was, plain)
@@ -564,8 +633,10 @@ return function(api)
     local here = try(function() return p.surface.name end)
     local who = roster()
     local now, lines, more = {}, {}, 0
-    for _, g in ipairs(c.groups) do
-      if owners(g, who)[me] then
+    for _, g0 in ipairs(c.groups) do
+      -- One of yours, a turret group read again first: refilled since, it is not shown (nor counted as told).
+      local g = owners(g0, who)[me] and M.recheck(g0, p.force) or nil
+      if g then
         local level = g.rank or g.n
         now[g.key] = level
         local told = mem.told[g.key]
@@ -623,8 +694,10 @@ return function(api)
     local who = roster()
     local here = try(function() return p.surface.name end)
     local rows = {}
-    for _, g in ipairs(c.groups) do
-      if (a.surface == nil or g.surface == a.surface) and (a.kind == nil or g.kind == a.kind or g.kind:sub(1, #a.kind + 1) == a.kind .. '.') then
+    for _, g0 in ipairs(c.groups) do
+      local g = (a.surface == nil or g0.surface == a.surface) and (a.kind == nil or g0.kind == a.kind or g0.kind:sub(1, #a.kind + 1) == a.kind .. '.')
+        and M.recheck(g0, p.force)
+      if g then
         local to = {}
         for name, why in pairs(owners(g, who)) do to[#to+1] = name .. ' (' .. why .. ')' end
         table.sort(to)

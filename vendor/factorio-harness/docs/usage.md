@@ -95,7 +95,7 @@ fh call status
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
-- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `kite`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given (`rearm` also with `area` or `surface`), with `transfer` or `collect` when they walk (`walk`, `pick`), and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
+- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `kite`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given (`rearm` also with `area` or `surface`), with `transfer` or `collect` when they walk (`walk`, `pick`), with `recover`, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
 - With `--wait`, the command exits 0 when the action ended successfully, 1 when it failed, and 3 when the wait ended
   while the action still runs: a tell or mention ended it (the reply's `still_running` and `note` say so), or the wait
   timed out (`wait_timeout`). So `fh call ACTION --wait && next` runs `next` only after the action is done.
@@ -569,6 +569,20 @@ fh call status
     passes medium-worm-turret (60,0) (range 30 + 4) at 0.0 tiles`. `--wait` exits 1 with it.
   - The worms and spawners are read per chunk while the walk waits for its path (at most 8 chunks a tick) and kept a
     minute, so a nest built or killed in the last minute may not count yet.
+- Trains (Opus, shift12 15:20: our own train killed him at (195,-150) on his way to a locomotive): every walk the
+  harness steers (`move_to`, `construct`, `pickup`, `repair` over places, retreats, and the walking tours of `collect`,
+  `feed`, `rearm`, `refuel`, `transfer` and `recover`) looks every 10 ticks at the rails within the next 4 tiles of its
+  way (ground rails; elevated rails do not block it). `walk {direction}` has no such check.
+  - The character stops short of them while a train moves toward them and would reach them within 6 s at its speed
+    (its path goes over one of them; a train with no path counts within 30 tiles), or while its wagons are on them.
+    It walks on once the train has passed or stopped. Standing on a rail already, it walks on off it.
+  - Meanwhile status `active.train_wait` says so: `waiting 2 s at (197.4,-156.5) for a train (locomotive at
+    (177,-141), 70 km/h) to pass the rails ahead at (197.0,-151.0)`. After, the action's `last.train_waits` lists
+    each wait (up to 4; `--wait` shows them): `waited 2.0 s at (197.4,-156.5) for a train (...) to pass the rails
+    ahead at (197.0,-151.0)`.
+  - The time waiting counts against the walk's `ticks`, and does not count as a stall.
+  - A walk that ends on a ground rail says so in `last.on_rails`: `you stand on straight-rail (197,-151)`. The check
+    runs while walking only: a character standing still, or walking along a track, is not moved off it.
 - `move_to {target: {position: {x,y}} | {unit_number: N}, reach: "transfer" | "build" | tiles}` walks until the
   character is within reach of that entity, and arrives there (Astra, operator 07:55: a walk to (-72,-88) ended
   `unreachable` 3.5 tiles from its target, within transfer reach, and broke an `&&` chain).
@@ -1294,6 +1308,23 @@ fh sleep 900 --until researched                       # ...or until the research
   drops newest first: `{id, by, to, platform, surface, items, ago, state, aimed_near, at, landed_in, container
   {name, position, holds} or {gone}, note}`.
 - `transfer {position, direction: "to_player"}` takes items from a character corpse (inventory `character_corpse`); an emptied corpse is removed. It never mines the corpse (mining a corpse as a bot crashes the server; the harness takes the items instead).
+- `recover {ticks?, avoid_enemies?, unsafe_goal?}` (Opus, shift12 15:20) walks to your own character corpses on your
+  surface, nearest first, and takes everything from each; an emptied corpse is removed. A corpse keeps everything the
+  character carried (armor and guns too, which come back into the main inventory) and does not expire.
+  - A bot's corpses are the ones its deaths left: the game names no player on a bot's corpse, so the harness finds it
+    when the death is seen, where the bot was last (within 32 tiles, else 128) by the tick it died, and keeps the
+    newest 5. A player's corpses are the ones naming that player.
+  - One timed call (`ticks` 1..36000, default 3600; `--wait` waits). Outcomes `collected`, `nothing_collected`,
+    `inventory_full` (the corpse keeps what did not fit), `unreached` (`last.first_unreached`: where and why) and
+    `timed_out`. `last` has `transferred`, `items`, `entities` (one row per corpse, `removed: true` when it went)
+    and `train_waits`.
+  - The reply lists `corpses` (`(63.0,0.0) on nauvis: died 0m10s ago, holds 170 items`), `legs`, and `elsewhere`:
+    yours on other surfaces, not walked to. With none on your surface it is refused: `no corpse of yours on nauvis;
+    elsewhere: ...`.
+  - The walk keeps out of the enemy reach the map shows as a `move_to`'s does (`avoid_enemies`, the reply's
+    `avoid_enemies`). A corpse inside a worm's range (with `avoid_enemies: true`, a spawner's units' sight too) is left
+    out (`left_out`: the corpse, the weapon and the nearest safe spot toward it); when that leaves none, the call is
+    refused with the same text. `unsafe_goal: true` walks there anyway (`unsafe_goal` names it).
 - Trash slots: a rocket silo, cargo landing pad and platform hub have one (`rocket_silo_trash`, `cargo_landing_pad_trash`,
   `hub_trash`) where the game puts items the entity will not use. `inspect` lists them in `inventories` and as one line
   (`trash: "40 space-platform-foundation, 7 solar-panel (in rocket_silo_trash, ...)"`); `platforms` shows a silo's `trash`.
@@ -2044,7 +2075,7 @@ fh --bot astra call status                                                      
 - A new bot gets the freeplay starting items and its own spot on rings around the spawn point, at least 2 tiles from every other bot.
 - Every action works for bots. Building places directly (the item is consumed, reach is checked); tiles and blueprint pastes need no cursor (pastes cannot flip).
 - A bot keeps the chunks within about 48 tiles of it charted and visible, as a player's character does (refreshed every second; charting takes up to ~40 ticks, so a bot that just arrived somewhere new may need a moment).
-- Death ends the bot's action and queue step with outcome `died`. It respawns at its spawn spot after 600 ticks with the freeplay respawn items; `status` reports `dead_until_tick` meanwhile. Mining its corpse takes the items back, and so does `transfer` (below).
+- Death ends the bot's action and queue step with outcome `died`. It respawns at its spawn spot after 600 ticks with the freeplay respawn items; `status` reports `dead_until_tick` meanwhile. Mining its corpse takes the items back, and so do `transfer` and `recover`, which walks there (below).
 - The server's `auto_pause` stops the game while no client is connected; keep a director client connected while bots play.
 - Cost check (operator): `remote.call("agent_harness","profile_ticks",600)` times the harness tick for 600 ticks and writes the average to the server log (`agent-harness tick average ...`). Nine bots: about 0.05 ms per tick idle, 0.26 ms with all nine pathfinding at once.
 - Where the time goes (operator): `/silent-command rcon.print(remote.call("agent_harness","profile_ticks",{seconds=60}))` (1..600 s; `{stop=true}` ends a run early) times every dispatch by action (`observe/sleep_check` with its scope; operator relays marked `(operator)`), the encoding of each reply (`encode <action>`, timed once more beside control.lua's own), every forwarded event by name, the harness tick and parts of the reply and tick (`part board.team`, `part threat.on_damaged`, ...; inside their dispatch or tick). The server log gets `agent-harness profile second tick=T n=N key=K time=...` per key per game second (`key=*` is all harness work in that second, parts excluded), then `profile total` per key and `profile done`. A LuaProfiler reading cannot be compared in Lua, so rank them offline: `python3 tools/profile_log.py factorio-current.log` prints the worst keys (count, total, average, worst second) and the busiest game seconds. Runtime-only; nothing runs while no profile is on. Parts timed (task-statuscost): a full status's `survey.summary`, `threat.summary`, `pipes.overlong`, `ground.alerts`, `threat.alerts`, `where.team`, `belt.note`, `orders.brief`; every reply's `board.team` and inside it `research.lines`, `threat.watch`, `platalerts.lines`, `drops.lines`, `pushalerts.lines` (its scan, with `networks.alert_groups`), then `chat.unread`, `research.shift_block`, `networks.lines`, `selfview.retro`, `selfview.review_due`, `idle.request`, `selfview.request`, `tells.operator_lines`, `orders.line`, `platalerts.note`, `visuals.worked`, `claims.worked`, `carry.carry`; the heavy reads' `supply.scan`, `supply.chain`, `networks.read`; the background jobs' `pushalerts.tick`, `survey.tick`, `threat.tick`, `networks.tick`.
@@ -2256,6 +2287,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   again. The scan is shared and at most 30 s old. `game_alerts {surface?, kind?}` (read) lists every group now,
   worst first: `{kind, surface, count, center, names, at, line, to}`, where `to` says who hears it and why
   (claim, built, nearest).
+  - Turret groups (`out of ammo`, `rebuilt_empty`, `out of flamer oil`) are read again from their turrets just before
+    they are shown, here and in `game_alerts` (Haiku, shift12 15:20: two such lines sent Haiku to guns that were already
+    full; the scan behind them can be 30 s old). A turret that holds ammo again (a flamethrower turret: 1 oil or more),
+    or is gone, drops out of the count. A group with none left is not shown and its told count is cleared, so turrets
+    there that run dry again are news.
   - Per network (networks.lua), routed and limited the same way, with no hint: `power_high`, an electric network
     whose draw was at or above 85% of its capacity in every 5-second sample of the last 2 minutes (`electric #7 draw
     at or above 85% of capacity for 2 min: 20.0 MW of 22.1 MW now; 3 machines on low power`; worse is the next 5%

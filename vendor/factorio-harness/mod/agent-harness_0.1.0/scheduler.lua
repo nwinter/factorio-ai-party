@@ -240,7 +240,7 @@ return function(api)
   -- Steps toward an absolute goal restart cleanly; relative ones (walk N
   -- ticks, wait N ticks) would repeat what already happened, so they are not
   -- requeued.
-  local RESTARTABLE={move_to=true,construct=true,build_path=true,mine=true,repair=true,kite=true,wait_until=true,rearm=true,refuel=true,collect=true}
+  local RESTARTABLE={move_to=true,construct=true,build_path=true,mine=true,repair=true,kite=true,wait_until=true,rearm=true,refuel=true,collect=true,recover=true}
   function M.pause(index)
     local q=queue(index)
     if q.current then
