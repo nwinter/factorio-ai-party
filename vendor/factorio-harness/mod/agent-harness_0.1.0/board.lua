@@ -1330,6 +1330,11 @@ return function(api)
     out.research = api.research_lines and api.research_lines(p, h) or nil
     if api.watch then pcall(api.watch, p) end
     out.alerts = alert_lines(p, h, losses)
+    -- Labs, the limiting pack and its first short step, power and boilers (scienceline.lua): at most every 5 min, when changed.
+    if api.science_line then
+      local ok, line = pcall(api.science_line, p, h)
+      out.science = ok and line or nil
+    end
     out.reminders = reminders(p, h)
     return next(out) and out or nil
   end

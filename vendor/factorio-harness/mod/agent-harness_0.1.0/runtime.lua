@@ -5154,7 +5154,8 @@ M.board=require('board'){state=state,claims=M.claims,director=function(index) re
   research_lines=function(p,h) return M.research.lines(p,h) end,
   attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,news_lines=function(from,since,reader) return threat.news_lines(from,since,reader) end,
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
-  platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end}
+  platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,
+  science_line=function(p,h) return M.scienceline.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
 M.research=require('research'){state=state,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end}
@@ -5769,6 +5770,8 @@ rates=rates_module{position=position,status_name=function(e) return entity_statu
 -- the shift block, the networks read, and the network push alerts.
 M.networks=require('networks'){state=state}
 function handlers.networks(p,a) return M.networks.read(p,a) end
+-- One science line per agent in the team block, at most every 5 min and when it changed (scienceline.lua, operator 03:22).
+M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.networks,status_name=function(e) return entity_status_names[e.status] end}
 -- The game's alerts and key warnings, pushed to the agents they concern (pushalerts.lua).
 -- Lightning attractors on Fulgora whose catches have nowhere to go, and full accumulators beside them (lightning.lua).
 M.lightning=require('lightning'){}
@@ -5957,6 +5960,7 @@ function M.tick_body(event)
   M.drops.tick(event.tick)
   M.nametags.tick(event.tick)
   pcall(M.networks.tick,event.tick)  -- the networks' samples never stop the harness tick
+  pcall(M.scienceline.tick,event.tick)
   M.ores.tick()  -- queued chunks of an ore survey, a few a tick (never raises)
   M.seated_ok=nil
   for index,action in pairs(state().active) do
@@ -6233,6 +6237,7 @@ M.profile=require('profile')()
   for _,part in ipairs{{survey,'sample','survey.sample'},{survey,'summary','survey.summary'},{threat,'summary','threat.summary'},{pipes,'overlong','pipes.overlong'},{M.ground,'alerts','ground.alerts'},{threat,'alerts','threat.alerts'},{M.where,'team','where.team'},{M.belt,'note','belt.note'},{M.orders,'brief','orders.brief'},{M.pushalerts,'lines','pushalerts.lines'}} do parts[#parts+1]=part end
   for _,part in ipairs{{M.pushalerts,'claim_lines','pushalerts.claim_lines'},{M.networks,'alert_groups','networks.alert_groups'},{M.networks,'lines','networks.lines'},{M.platalerts,'lines','platalerts.lines'},{M.drops,'lines','drops.lines'},{M.research,'lines','research.lines'},{threat,'watch','threat.watch'},{M.selfview,'review_due','selfview.review_due'},{M.selfview,'retro','selfview.retro'},{M.selfview,'request','selfview.request'}} do parts[#parts+1]=part end
   for _,part in ipairs{{M.idle,'request','idle.request'},{M.tells,'operator_lines','tells.operator_lines'},{M.orders,'line','orders.line'},{M.platalerts,'note','platalerts.note'},{M.visuals,'worked','visuals.worked'},{M.claims,'worked','claims.worked'},{M.carry,'carry','carry.carry'},{M.supply,'scan','supply.scan'},{M.supply,'chain','supply.chain'},{M.networks,'read','networks.read'}} do parts[#parts+1]=part end
+  for _,part in ipairs{{M.scienceline,'tick','scienceline.tick'},{M.scienceline,'lines','scienceline.lines'}} do parts[#parts+1]=part end
   M.profile.wrap(M,parts)
 end)()
 return M

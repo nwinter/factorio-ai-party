@@ -1220,6 +1220,21 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   near our buildings, once each and again when grown by half; then up to 6 platform lines, below) and `reminders`
   (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
   request leaves the hints for later.
+- `team.science` (scienceline.lua; operator 03:22: Luna made about 47 reads in 10 minutes to watch copper, power
+  and labs): one line per agent, at most every 5 minutes and only when its facts changed (the research, the labs
+  working count, the limiting pack and its short step, the headroom in 10% steps, how many boilers have no fuel at
+  their feeders and their lowest step under 20/10/5 min): `science on nauvis: research plastics-2 41%; labs 12 of 20
+  working; limiting chemical-science-pack: 8 of 20 labs have none, made 12/min, used 30/min; first short step
+  plastic-bar: 4 of 4 working, made 30/min, used 52/min (chemical-science-pack > advanced-circuit > plastic-bar);
+  power electric #7: 18.5 MW of 22.1 MW, headroom 3.6 MW (16%); boilers 13: 11 with fuel at their feeders, the
+  other 2 on their own fuel, lowest 2 min`. The surface is the one with the most labs (labs on platforms are not
+  counted); the limiting pack is the one the most of its labs hold none of (`every lab holds every pack` when none);
+  its made and used per minute are the force's 10 minute statistics, and the short step is where the `science`
+  chain ends (the chain's path in brackets when it goes down). Power is that surface's largest electric network by
+  capacity, its draw the 5 minute average (the networks read), and boilers as in `boiler_fuel` below. The line is
+  rebuilt every 5 minutes by a background job, one bounded step a tick: a lab find per surface, a crafter find per
+  type (assembling-machine, furnace, rocket-silo; 2048 crafters at most), recipes 500 a tick, then the chain; a
+  step that fails keeps the last line and is counted in `storage.science_line_errors`.
 - Game alerts and warnings in `team.alerts` (pushalerts.lua): what a player's alert panel and entity status icons
   show, without pulling a full status.
   - Entity statuses on planet surfaces: `no power`, `not connected to power` (no pole reaches them), `low power`,
@@ -1243,21 +1258,23 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   - Per network (networks.lua), routed and limited the same way, with no hint: `power_high`, an electric network
     whose draw was at or above 85% of its capacity in every 5-second sample of the last 2 minutes (`electric #7 draw
     at or above 85% of capacity for 2 min: 20.0 MW of 22.1 MW now; 3 machines on low power`; worse is the next 5%
-    step: `(was 85%)`); `boiler_fuel`, boilers whose supply is under 20 minutes at the draw and running down, told
-    again when one drops under 10 and under 5 or when more boilers drop under 20 (Haiku, shift09: 10 minutes left was
-    too late to feed by hand; 01:53: it fired for hours on 13 working boilers fed from a belt and a chest with 150+
-    coal): `3 boilers under 20 min of fuel at this draw, 1 under 10, 1 under 5 and running down near (43,18) (electric
-    #7: 11 boilers, 32 min for all with their feeders' sources); boiler (66,16) 2 min: no inserter feeds it; boiler
-    (4,22) 12 min: no inserter feeds it; boiler (60,16) 17 min: burner-inserter (60,14) from wooden-chest (41,13)
-    holding 400 coal; fuel within 64 tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50; belts: coal 16
-    on 2 tiles, nearest (31,13), (31,12)` (the lowest 3, `+N more`) and `(was 3 under 20 min, lowest 17 min)` when
-    told again. A boiler's supply is its own fuel plus, for each source an inserter feeding it takes from (an
-    inserter within 4 tiles whose drop target is the boiler, by its pickup target), that source's stock shared among
-    the boilers it feeds: a chest or machine counts all it holds of the fuel, a boiler in a chain its fuel slot, a belt
-    its tile and up to 64 tiles upstream (boilers along one belt share it). Minutes are that supply at an even share
-    of the draw of the generators the boilers feed. Running down: less than 90% of the supply at the networks view's
-    last look (30 s before; a boiler's first look never counts), so a boiler kept supplied by a belt or a refilled
-    chest is not told, whatever its own fuel. The fuel is what the boilers burn or hold (when they hold none, the line
+    step: `(was 85%)`); `boiler_fuel`, boilers under 20 minutes of their own fuel at the draw that no feeder can
+    bring more to, told again when one drops under 10 and under 5 or when more boilers drop under 20 (Haiku, shift09:
+    10 minutes left was too late to feed by hand; 01:53 and 03:20: it fired on working boilers fed from full belts and
+    chests): `2 boilers under 20 min of their own fuel at this draw, 1 under 10, 1 under 5 and no fuel at their
+    feeders near (35,19) (electric #7: 11 boilers, 1 with fuel at their feeders); boiler (66,16) 2 min: no inserter
+    feeds it; boiler (60,16) 0 min: burner-inserter (60,14) from wooden-chest (41,13) holding no fuel; fuel within 64
+    tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50; belts: coal 16 on 2 tiles, nearest (31,13),
+    (31,12)` (the lowest 3, `+N more`) and `(was 2 under 20 min, lowest 2 min)` when told again. Minutes are a
+    boiler's own fuel (burning and in its fuel slot) at an even share of the draw of the generators the boilers feed;
+    an inserter keeps that low on purpose, so it alone never alerts. A boiler is fed, and never told, when an inserter
+    within 4 tiles whose drop target is the boiler holds fuel in its hand or takes from a source holding fuel: a chest
+    or machine, a boiler in a chain (its fuel slot), or a belt with fuel on its tile or up to 64 tiles upstream (an
+    underground followed from exit to entrance); when that belt run holds none, an inserter within 3 tiles that drops
+    onto the run from a chest or machine holding fuel counts too (`(with 6 belt tiles up to it holding no fuel; loaded
+    by fast-inserter (-24,35) from requester-chest (-24,34) holding no fuel)`). Any of coal, solid-fuel, wood,
+    rocket-fuel and nuclear-fuel counts at a source, besides what the boiler burns. A boiler out of fuel whose belt
+    brings it too slowly is not told here; its status shows in the `out of fuel` group above. The fuel nearby is what the boilers burn or hold (when they hold none, the line
     names the fuels it looked for: coal, solid-fuel, wood, rocket-fuel, nuclear-fuel); chests nearby are the 3 nearest
     holding it (and a count of the rest), belts the tiles holding it with the 2 nearest (each read is capped at 300
     chests and 300 belt tiles found within 64 tiles);
@@ -1311,7 +1328,7 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   the agent's surface first, `+N more networks: fh call networks`), one line per network, numbers only:
   `nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 min (now 18.5 MW) of 22.1 MW capacity (84%);
   solar 10 panels, 500 kW now, 600 kW peak; accumulators 2 at 50%; machines 30: 3 low power, 1 no power; boilers 11:
-  fuel (theirs and their feeders' sources) 32 min at this draw, 3 under 20 min and running down (lowest 2 min)`, `nauvis logistic #3: 4 roboports (+1 personal), logistic area
+  their own fuel 31 min at this draw, 1 with fuel at their feeders, 2 under 20 min with none (lowest 4 min)`, `nauvis logistic #3: 4 roboports (+1 personal), logistic area
   (0,25)-(125,75), construction area (-30,-5)-(155,105); logistic robots 147: 0 idle, 142 working, 3 charging, 2
   waiting to charge; construction robots 11: 4 idle, 6 working, 1 charging, 0 waiting to charge; no idle logistic
   robot for 4 min; requests unfilled 60+ s: 1 (iron-plate 300 missing); ghosts in its construction area: 5`, `nauvis

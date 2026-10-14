@@ -873,9 +873,10 @@ return function(api)
       end
       return text .. string.format(', made %d/min, used %d/min', n.made, n.used), top and top_n * 2 > n.makers and top or nil
     end
-    local parts, at_item, walked = {}, pack, {}
+    local parts, at_item, walked, path = {}, pack, {}, {}
     while at_item and by_item[at_item] and not walked[at_item] do
       walked[at_item] = true
+      path[#path+1] = at_item
       local text, next_item = step(by_item[at_item])
       parts[#parts+1] = text
       at_item = next_item
@@ -885,7 +886,8 @@ return function(api)
       rows[#rows+1] = {item=n.item, depth=n.depth, made_per_min=n.made, used_per_min=n.used, makers=n.makers, working=n.working,
         states=next(n.states) and n.states or nil, lacking=next(n.lack) and n.lack or nil}
     end
-    return {line='chain: ' .. table.concat(parts, '; '), tree=rows, cut=#nodes >= CHAIN_NODES or nil}
+    -- path: the items the line walked; last: its last step (where the shortage starts).
+    return {line='chain: ' .. table.concat(parts, '; '), tree=rows, cut=#nodes >= CHAIN_NODES or nil, path=path, last=parts[#parts]}
   end
   local function packs_of(force)
     local tech, packs = force.current_research, {}
