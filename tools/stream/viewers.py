@@ -34,8 +34,45 @@ RESERVED = {"operator", "op", "mod", "moderator", "admin", "caster", "host", "ho
             "announcer", "director", "harness", "board", "team", "viewer", "viewers", "agent", "agents", "nick"}
 
 
+RELAYED_FILE = "viewer-relayed.jsonl"  # ids the relay sent, in the run folder (Relay.remember_relayed)
+RELAYED_MAX = 5000
+
+
 def log(msg):
     print(f"[viewers] {msg}", file=sys.stderr, flush=True)
+
+
+def previous_run_file(path):
+    """The same file in the run this one resumed from (runs/RUN/resumed-from names it), or None."""
+    run_dir = os.path.dirname(path)
+    try:
+        prev = open(os.path.join(run_dir, "resumed-from")).readline().strip()
+    except OSError:
+        return None
+    other = os.path.join(os.path.dirname(run_dir), prev, os.path.basename(path)) if prev else None
+    return other if other and os.path.abspath(other) != os.path.abspath(path) else None
+
+
+def load_relayed(path):
+    """{id: True} of the lines relayed in this run and the one before it, oldest first (the last RELAYED_MAX)."""
+    done = collections.OrderedDict()
+    if not path:
+        return done
+    for p in (previous_run_file(path), path):
+        try:
+            with open(p) as f:
+                for line in f:
+                    try:
+                        row = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(row, dict) and row.get("id"):
+                        done[row["id"]] = True
+        except (OSError, TypeError):
+            continue
+    while len(done) > RELAYED_MAX:
+        done.popitem(last=False)
+    return done
 
 
 def http(url, data=None, headers=None, timeout=15):
@@ -764,9 +801,28 @@ class Relay:
         self.state, self.error, self.sent, self.next_probe = "off", None, 0, 0.0
         self.muted, self.next_muted = set(), 0.0
         self.dropped = collections.Counter()
+        # Ids already relayed, kept across restarts and shifts (operator 08:56: at the 07:44 shift change the new
+        # service re-read recent chat): runs/RUN/viewer-relayed.jsonl beside the switch, with the previous run's
+        # (resumed-from) read at start.
+        self.done_path = os.path.join(os.path.dirname(os.path.abspath(switch)), RELAYED_FILE) if switch else None
+        self.done = load_relayed(self.done_path)
 
     def on(self):
         return bool(self.switch) and os.path.exists(self.switch)
+
+    def remember_relayed(self, msg, now):
+        """A line the game took: never offered again, in this run or the next."""
+        if not msg.get("id"):
+            return
+        self.done[msg["id"]] = True
+        while len(self.done) > RELAYED_MAX:
+            self.done.popitem(last=False)
+        if self.done_path:
+            try:
+                with open(self.done_path, "a") as f:
+                    f.write(json.dumps({"id": msg["id"], "t": round(now, 1), "name": msg.get("name")}, ensure_ascii=False) + "\n")
+            except OSError as e:
+                log(f"relay: {self.done_path}: {e}")
 
     def status(self):
         return {"state": self.state, "fn": self.fn, "sent": self.sent, "queued": len(self.q), "error": self.error,
@@ -774,6 +830,10 @@ class Relay:
 
     def offer(self, msg, author):
         if not self.on():
+            return
+        if msg.get("id") and (msg["id"] in self.done or any(m.get("id") == msg["id"] for m, _ in self.q)):
+            msg["delivery"] = "relayed_before"  # sent already (a restart or a new shift read it again)
+            self.dropped["relayed_before"] += 1
             return
         if msg["name"].casefold() in self.muted:
             msg["muted"] = True
@@ -974,6 +1034,7 @@ class Relay:
         self.sent += 1
         msg["relayed"] = True
         msg["delivery"] = "sent"
+        self.remember_relayed(msg, now)
         if to:
             for n in to:
                 self.addressed_to(n, author, now)
