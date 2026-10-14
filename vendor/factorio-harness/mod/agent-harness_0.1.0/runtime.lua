@@ -329,6 +329,10 @@ local function finish(index, outcome)
       last.op=action.op; last.got=nil; last.given=action.got; last.errors=action.errors; last.items=action.items; last.entities=action.rows
       last.left=math.max(0,#action.targets-action.index+1)>0 and #action.targets-action.index+1 or nil
     end
+    if action.op=='transfer' then
+      last.given=nil; last.transferred=action.got; last.direction=action.transfer.direction
+      last.items=next(action.items) and action.items or nil; last.unreached=action.unreached
+    end
   end
   -- repair over positions or an area: repaired against already full, and what was not reached.
   if action and action.kind=='repair' and action.targets then
@@ -788,7 +792,7 @@ function handlers.describe()
         ammo='in a vehicle: an ammo name (cannon-shell, explosive-cannon-shell, firearm-magazine, flamethrower-ammo, rocket, ...): the gun that takes it, its slot loaded from your inventory when empty or holding another kind',
         note='seated in a car, tank or spidertron as its gunner (the driver, unless driver_is_gunner is off and a passenger sits in) it fires the vehicle\'s selected gun from the vehicle\'s ammo slots; the turret turns toward the target as a player\'s cursor turns it; position= aims at the entity there (not our own), auto=true at the nearest enemy in radius; vehicle {drive} goes on while it fires; reply: vehicle, seat, gun, gun_slot, range, guns (each slot with its ammo), target, out_of_range',
         outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={slot='gun|ammo|armor',item='owned item name',index='default 1'},
-      describe={}, inventory={returns='the character inventory: inventory (main), guns, ammo, armor, free (slots), crafting (hand queue), warnings (nearly full, hoarding); the same as observe player and status inv'},
+      describe={}, inventory={full='true: the stacks as lists {name, quality, count}, as observe player has them',returns='the character\'s inventories as short lines (name*count, name@quality*count, or empty): inventory (main), free (slots), guns, ammo, armor, equipment (in the armor\'s grid), trash (trash slots, when any), cursor (the stack or ghost in hand, when any), crafting (hand queue), warnings (nearly full, hoarding); status {inventory=true} gives it in one line'},
       map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)',returns='player, entities, resource_patches, ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the radius by item (rows for them only with entity_types/entity_names)'},
       status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
         reports='teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name; latest: one line per loss incident (a raid: losses within 32 tiles on one surface) with causes; incidents: the same as rows {id, surface, platform, box {x0,y0,x1,y1}, total, names, by, first_tick, last_tick, line}; attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
@@ -834,7 +838,9 @@ function handlers.describe()
       nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..128 (default 32); map-known (charted) entities only: after landing on a new planet about 48 tiles around you, so explore or build a radar',limit='1..64 (default 5)',returns='entities [{name?, position, distance}], total; note when nothing was found'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={dry_run='boolean: build nothing; check every entry from where you stand (a read): placeable or why not, out of reach (distance vs build reach), items short (held + hand-craft queue), tiles needing landfill, poles\'s wire reach, and standing spots that reach every entry; inserters: each planned inserter\'s pickup and drop target, as place_ghosts dry_run gives them',item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',entity='rail item (a rail planner): which rail it places: straight-rail (default), half-diagonal-rail, curved-rail-a, curved-rail-b; with directions including the in-between ones (northnortheast, eastnortheast, ...); place_ghosts takes the rail names too and construct builds them',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',skip_failed='boolean, with builds: a failing entry is listed in failed {index,position,error} and the rest still build',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired, and unpaired_why (lava or empty space under its reach, its partner a ghost or out of reach, or none in reach)',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait). Your own character the only thing on the footprint: it walks off first and then builds (stepping_aside {from,to}; the same timed action and outcomes; last.result holds the build result)'},
       inspect={position='{x,y}',positions='optional 1..32 positions: one inspect each in one call, results in order (an entry that fails has position and error)',platform='optional platform name: inspect on that space platform (platform coordinates, hub at 0,0; the whole platform is in sight)',note='read-only, without reach: any entity in sight (32 tiles of the character), or by remote view any entity on your surface in a chunk our force sees now (radar coverage or a character\'s sight), as the map shows it (by: remote view; surface= another surface reads the same way); out of both, the refusal names the nearest radar coverage; in_reach says whether acting on it would reach; holds (a chest, logistic chest, wagon, car or spider trunk, landing pad, hub): one line, the largest stacks first as name*count, then slots used of the total and the red-X limit; requests (requester, buffer): item held/asked per request, summed over active sections; output_fill (assembler, furnace): each product in the output held of its stack size and %, and full when the machine stopped for it (status full_output), e.g. copper-cable 200/200 (100%), full; inserters and mining drills show their drop tile and what stands there (io); build replies and observe entity rows show a drill\'s drop and drop_into too; trash: what the game put in a silo\'s, landing pad\'s or hub\'s trash slots; rocket_weight (a silo): cargo held/lift kg; modules {inventory_index (the inventory a blueprint module request names), slots, contents}; filters, filter_mode, use_filters (inserters, loaders); an asteroid collector: filters (chunk names), filter_slots (the game\'s count; 0 until a filter is set), arm (chunks its arms hold), its output under inventories.asteroid_collector_output; held (an inserter\'s hand), pickup_target, drop_target, io_warning (\'no pickup target\', \'no drop target\': the engine\'s targets; also in io and observe rows; build and rotate replies read what stands on the points, as the engine sets targets a tick later; a builds batch lists inserters_without_target after all its entries; an inserter ghost: what stands on its points); marked_for_deconstruction, marked_for_upgrade; ghosts_here (ghosts on the footprint, with their filters); on a platform: hub_slots, repair_packs and damaged (most damaged first, up to 10; damaged_count past that) on the hub, repair (how a damaged entity there gets repaired), and construction_blocked (hub full, ghosts whose items the hub lacks); spoiling: per inventory (and a belt\'s lanes, an inserter\'s hand, an item on the ground) each spoilable item, the time until its first stack spoils and how spoiled that stack is, and how many spoil within 5 min, earliest first; an item that hatches into enemies when it spoils (pentapod-egg, biter-egg) says hatches, and what into; hatch_warning sums those up (count, into what, the first, how many within 5 min); output_spoil (an assembler, furnace or biochamber whose products spoil): what the next products start at, the count-weighted spoilage of the spoilable ingredients in its input (bioflux from 15 yumako-mash at 80% and 12 jelly at 20%: about 53%), or fresh when the recipe resets freshness (pentapod-egg); an agricultural tower: tower {state, seeds, output, area, cells (growing, grown, free with soil for which seeds, blocked by what, no soil), plantable_now, planted_10min, plants (time until grown), harvest_made_10min}'}, rotate={direction='optional compass name (north, east, south, west; 2.0 numbers 0, 4, 8, 12 too): turn until it faces this way, one 90-degree turn at a time as the R key does',returns='rotated, before, after (compass names; 2.0 directions: north 0, east 4, south 8, west 12), turns (how many 90-degree turns it took), entity; one call without direction is one 90-degree turn clockwise, reverse=true counter-clockwise',position='{x,y}',reverse='boolean'},
       configure={surface='optional planet name: act there by remote view, where our force sees the chunk',auto_requests='rocket silo: boolean, the GUI\'s automatic requests (fill and launch for platforms\' requests in orbit; switched on with cargo loaded by hand, that cargo goes to the trash slots: cargo_to_trash, note)',send_to_orbit_automatically='rocket silo: boolean, the GUI\'s send to orbit automatically; a silo reply reads back settings {silo, auto_requests, send_to_orbit_automatically, requesting_for, rocket, parts}',position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine)',platform='optional platform name: configure on that space platform through remote view (platform coordinates, hub at 0,0)',recipe='enabled recipe',quality='optional recipe quality (normal, uncommon, rare, epic, legendary; the machine needs the quality unlocked)',filters='or: item names for a filtering inserter/loader, or asteroid chunk names (metallic-asteroid-chunk, ...) for an asteroid collector ([] clears; up to the entity\'s filter slot count; a collector\'s count reads 0 until a filter is set, so there each slot is tried and only the game\'s refusal fails it; the reply reads the filters back, not_set for a name that did not stick)',filter_mode='whitelist|blacklist (inserters; asteroid collectors have no filter mode in the game)',force='boolean: allow destroying held fluids',returns='returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change'},
-      transfer={position='{x,y}',positions='optional array of 1..64 {x,y}: same transfer per entity; per-entity rows plus total',area='or {left_top, right_bottom} up to 128x128: our entities of types (default chests, machines, labs, silos, boilers, drills, turrets, wagons, vehicles, landing pads, roboports, agricultural towers) with their centre inside, as positions (at most 64; area_targets counts them)',types='with area: entity types to take (1..16)',inventory='chest|fuel|furnace_source|furnace_result|assembling_machine_input|assembling_machine_output|lab_input|rocket_silo_rocket (silo cargo)|rocket_silo_trash|cargo_landing_pad_main|hub_main|asteroid_collector_output|... (*_trash: take-only, what the game moved out); inferred when omitted (to_player takes from non-empty trash slots first; fuel items->burner fuel, else the first inventory accepting the item, e.g. silo ingredients then rocket cargo; to_player->output or inventory holding item)',item='name; omit with to_player to take everything',quality='default normal',count='1..10000 per entity (default: to_entity 1, or total; to_player all of the item; unlimited when item omitted)',total='optional cap across positions, filled in order; echoed',returns='transferred; tally with 2+ positions: one line, moved per item, targets touched of the total, short (full, holding none, failed with the first reason); a target out of reach fails at once, without walking: entity is out of reach: NAME at (x,y) is D tiles away, reach R; in reach from (x,y) (a free spot); inventory_full|entity_full {requested,got,blocked_item} when space ran out; to_entity gives from the main inventory, then (ammo) the gun ammo slots; holding none fails; short of items the hand-craft queue will deliver, it waits for them (awaiting_craft, outcome fed | failed | timed_out); into rocket_silo_rocket only what fits under the rocket\'s 1000 kg lift (rocket_weight held/lift kg; weight_limited {requested,fits,note} when fewer fit; fails when none fits)',direction='to_entity|to_player (from_player, give, put, insert, to_chest, to_container = to_entity; from_entity, take, from_chest, from_container = to_player; to_entity=true, from_entity=true, or to_entity={x,y} / from_entity={x,y} as the target, noted in corrected); any container: chests, logistic chests, car and spider trunks, cargo wagons, landing pads, hubs; inferred when omitted (echoed as direction): no item -> to_player; an item only the character holds or is hand-crafting -> to_entity; one only the targets hold -> to_player; both or neither -> error',keep='optional source reserve count',keep_max='true (to_player): refuse a take that would put you over your personal request max (the game moves what is over it to your trash slots); nothing is taken; up_to=true stops at that max instead (left_at_max); every take over it says so in trash',up_to='a number: the target total cap (tops the target up to it); true: move what there is, min(count, held or in the source, room), never failing on a short or empty source: moved, short {asked, moved, reason: none_held|source_short|target_full}; as a queue step it never pauses the plan for that'},
+      transfer={position='{x,y}',positions='optional array of 1..64 {x,y}: same transfer per entity; per-entity rows plus total',
+        walk='true: targets out of reach are walked to first, nearest first, then the same transfer is made at each (one timed call, as feed and collect tours; returns places and until_tick, then last {op: transfer, transferred, items, entities, left}: transferred | nothing_to_do | out_of_items (nothing left to give) | nothing_collected (nothing to take) | inventory_full | unreached (no place reached) | timed_out); all in reach: the transfer at once',
+        ticks='with walk: 1..36000 (default 3600)',area='or {left_top, right_bottom} up to 128x128: our entities of types (default chests, machines, labs, silos, boilers, drills, turrets, wagons, vehicles, landing pads, roboports, agricultural towers) with their centre inside, as positions (at most 64; area_targets counts them)',types='with area: entity types to take (1..16)',inventory='chest|fuel|furnace_source|furnace_result|assembling_machine_input|assembling_machine_output|lab_input|rocket_silo_rocket (silo cargo)|rocket_silo_trash|cargo_landing_pad_main|hub_main|asteroid_collector_output|... (*_trash: take-only, what the game moved out); inferred when omitted (to_player takes from non-empty trash slots first; fuel items->burner fuel, else the first inventory accepting the item, e.g. silo ingredients then rocket cargo; to_player->output or inventory holding item)',item='name; omit with to_player to take everything',quality='default normal',count='1..10000 per entity (default: to_entity 1, or total; to_player all of the item; unlimited when item omitted)',total='optional cap across positions, filled in order; echoed',returns='transferred; tally with 2+ positions: one line, moved per item, targets touched of the total, short (full, holding none, failed with the first reason); a target out of reach fails at once, without walking: entity is out of reach: NAME at (x,y) is D tiles away, reach R; in reach from (x,y) (a free spot); inventory_full|entity_full {requested,got,blocked_item} when space ran out; to_entity gives from the main inventory, then (ammo) the gun ammo slots; holding none fails; short of items the hand-craft queue will deliver, it waits for them (awaiting_craft, outcome fed | failed | timed_out); into rocket_silo_rocket only what fits under the rocket\'s 1000 kg lift (rocket_weight held/lift kg; weight_limited {requested,fits,note} when fewer fit; fails when none fits)',direction='to_entity|to_player (from_player, give, put, insert, to_chest, to_container = to_entity; from_entity, take, from_chest, from_container = to_player; to_entity=true, from_entity=true, or to_entity={x,y} / from_entity={x,y} as the target, noted in corrected); any container: chests, logistic chests, car and spider trunks, cargo wagons, landing pads, hubs; inferred when omitted (echoed as direction): no item -> to_player; an item only the character holds or is hand-crafting -> to_entity; one only the targets hold -> to_player; both or neither -> error',keep='optional source reserve count',keep_max='true (to_player): refuse a take that would put you over your personal request max (the game moves what is over it to your trash slots); nothing is taken; up_to=true stops at that max instead (left_at_max); every take over it says so in trash',up_to='a number: the target total cap (tops the target up to it); true: move what there is, min(count, held or in the source, room), never failing on a short or empty source: moved, short {asked, moved, reason: none_held|source_short|target_full}; as a queue step it never pauses the plan for that'},
       feed={area='or {left_top, right_bottom} up to 128x128: our machines of types (default as in reach; with recipe assemblers and furnaces) with their centre inside, as positions (at most 64; those on another recipe are counted in other_recipe; area_targets counts them)',note='hand-feeds machines from inventory, nothing taken out: an assembler/furnace gets its recipe\'s item ingredients (an idle furnace its last recipe\'s; a furnace with no recipe yet the items or item named that it smelts), a lab its science packs, a burner (furnace, drill, boiler, burner inserter) fuel when its fuel slots are empty (or with fuel=true, fuel=NAME, or a fuel named in items); each item up to count per machine, keeping keep in inventory. In reach by default; positions or radius (a walking tour, timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, items, entities)',
         returns='transferred, items, entities: per machine fed {position, name, gave, fuel (its fuel slots after: "coal 10" or "empty")}, with positions or area also each one that got nothing (got nothing); unchanged (count); held; nothing_moved: why nothing was given (what you carry and the machines hold, burners left alone because they hold fuel, furnaces with no recipe yet)',
         radius='1..256: walk a nearest-first route through every machine in radius that wants something you hold',ticks='with radius: 1..36000 (default 3600)',
@@ -897,6 +903,7 @@ function handlers.describe()
   for name,schema in pairs(M.silo and M.silo.schema or {}) do description.actions[name]=schema end
   description.actions.status.brief='boolean: only active, last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older)'
   description.actions.status.alerts='boolean, with brief: add the alerts block (losses, attacked areas, groups, enemy news; read from what the game reported, no scan)'
+  description.actions.status.inventory='boolean: add inventory, one line: main (name*count, free slots), ammo, guns, armor with its equipment, trash slots, cursor (the inventory read in one line)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   -- inspect's circuit readback and another surface by remote view (circuits.lua).
   description.actions.inspect.surface='optional planet or surface name: inspect there by remote view (a visible chunk)'
@@ -1149,11 +1156,14 @@ function handlers.status(p,a)
   a=a or {}
   local controllable,control_error=pcall(player,p.index)
   local alive=p.character and p.character.valid
+  assert(a.inventory==nil or type(a.inventory)=='boolean','inventory must be true or false')
+  -- inventory=true: the character's inventory in one line (Gemini, 06:20; M.inventory_line).
+  local inv_line=a.inventory==true and alive and M.inventory_line(p) or nil
   -- What a wait polls for (fh --wait, several times a second): the action
   -- running and the last results, none of the factory, threat or alert scans.
   -- The stream's overlay adds alerts (stored incidents, no scan).
   if a.brief==true then
-    return {brief=true,active=active(p.index),last=state().last and state().last[p.index] or false,combat=state().combat and state().combat[p.index] or false,
+    return {brief=true,inventory=inv_line,active=active(p.index),last=state().last and state().last[p.index] or false,combat=state().combat and state().combat[p.index] or false,
       last_combat=state().last_combat and state().last_combat[p.index] or false,alive=alive or false,riding=p.driving or nil,connected=p.connected,
       drop_pending=M.drop_pending(p.index),last_drop=M.last_drop(p.index),
       surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,
@@ -1213,21 +1223,13 @@ function handlers.status(p,a)
     table.insert(factory.warnings,1,string.format('character: %s made no progress and moved under 2 tiles for %ds near (%.1f,%.1f); likely physically stuck (belt, obstacle, unreachable goal): cancel or redirect it',
       now.kind,now.stuck_s,p.position.x,p.position.y))
   end
-  return {crafting=alive and crafting_line(p) or nil,inv=factory.inv,factory=factory.factory,machines=factory.machines,machine_positions=factory.machine_positions,warnings=factory.warnings,factory_as_of=factory.as_of,survey_error=factory.error,
+  return {crafting=alive and crafting_line(p) or nil,inv=factory.inv,inventory=inv_line,factory=factory.factory,machines=factory.machines,machine_positions=factory.machine_positions,warnings=factory.warnings,factory_as_of=factory.as_of,survey_error=factory.error,
     evolution=threats.evolution,pollution=threats.pollution,enemies=threats.enemies,chart=threats.chart,threats_as_of=threats.as_of,
     alerts=alerts,runtime_fault=state().runtime_fault or false,connected=p.connected,alive=p.character and p.character.valid or false,cheat_mode=p.cheat_mode,
     supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,active=now,order=M.orders.brief(p.index),
     spoiling=alive and spoil_text(main_inventory(p)) or nil,on_belt=alive and M.belt.note(p) or nil,teammates=M.where.team(p),
     trash=alive and M.trash.status(p) or nil,
     surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,riding=p.driving or nil, last=state().last and state().last[p.index] or false, combat=state().combat and state().combat[p.index] or false, last_combat=state().last_combat and state().last_combat[p.index] or false, tick=game.tick, position=p.position}
-end
--- The character's inventory on its own (shake2: `call inventory` failed 15
--- times): observe's player inventories plus status's free-slot line.
-function handlers.inventory(p)
-  local free,warnings=survey.inventory(p)
-  return {inventory=contents(p.get_main_inventory()),guns=contents(p.get_inventory(defines.inventory.character_guns)),
-    ammo=contents(p.get_inventory(defines.inventory.character_ammo)),armor=contents(p.get_inventory(defines.inventory.character_armor)),
-    free=free,crafting=crafting_line(p),warnings=warnings and #warnings>0 and warnings or nil}
 end
 -- Connected visible resource tiles are summarized separately from structures so a
 -- large ore patch cannot consume the entity budget and hide machines or enemies.
@@ -1423,6 +1425,58 @@ local function stacks_text(list)
   local parts={}
   for _,s in ipairs(list) do parts[#parts+1]=s.name..(s.quality and s.quality~='normal' and '@'..s.quality or '')..'*'..s.count end
   return #parts>0 and table.concat(parts,' ') or 'empty'
+end
+-- The character's inventory on its own (shake2: `call inventory` failed 15 times; Gemini, 06:20: held items
+-- "without the overhead of full observe"): main, guns, ammo, armor with its equipment grid, trash slots and the
+-- cursor as short item lines (name*count, name@quality*count), free slots and hand crafting, in one small reply.
+-- full=true: the stacks as lists {name, quality, count}, as observe's player has them.
+function M.character_inventory(p,full)
+  local function inv(i) local ok,x=pcall(p.get_inventory,i); return ok and x or nil end
+  local function list(x) return x and contents(x) or {} end
+  local function text(x) return stacks_text(list(x)) end
+  local armor=inv(defines.inventory.character_armor)
+  local grid
+  pcall(function() local st=armor and armor[1]; if st and st.valid_for_read and st.grid then grid=st.grid.get_contents() end end)
+  local trash=defines.inventory.character_trash and inv(defines.inventory.character_trash)
+  local cursor
+  pcall(function()
+    local st=p.cursor_stack
+    if st and st.valid_for_read then cursor=stacks_text({{name=st.name,count=st.count,quality=st.quality and st.quality.name}})
+    elseif p.cursor_ghost then
+      local g=p.cursor_ghost
+      local name=type(g.name)=='string' and g.name or g.name and g.name.name
+      if name then cursor='ghost of '..name end
+    end
+  end)
+  local free,warnings=survey.inventory(p)
+  local out={free=free,crafting=crafting_line(p),warnings=warnings and #warnings>0 and warnings or nil,cursor=cursor}
+  if full then
+    out.inventory=contents(p.get_main_inventory()); out.guns=list(inv(defines.inventory.character_guns))
+    out.ammo=list(inv(defines.inventory.character_ammo)); out.armor=list(armor); out.equipment=grid or nil
+    out.trash=trash and #list(trash)>0 and list(trash) or nil
+    return out
+  end
+  out.inventory=stacks_text(contents(p.get_main_inventory())); out.guns=text(inv(defines.inventory.character_guns))
+  out.ammo=text(inv(defines.inventory.character_ammo)); out.armor=text(armor)
+  out.equipment=grid and #grid>0 and stacks_text(grid) or nil
+  local t=trash and list(trash)
+  out.trash=t and #t>0 and stacks_text(t) or nil
+  return out
+end
+function handlers.inventory(p,a)
+  assert(a==nil or a.full==nil or type(a.full)=='boolean','full must be true or false')
+  return M.character_inventory(p,a and a.full==true)
+end
+-- status {inventory=true}: the same in one line.
+function M.inventory_line(p)
+  local v=M.character_inventory(p,false)
+  local parts={'main '..v.inventory..' ('..tostring(v.free)..')'}
+  if v.ammo~='empty' then parts[#parts+1]='ammo '..v.ammo end
+  if v.guns~='empty' then parts[#parts+1]='guns '..v.guns end
+  if v.armor~='empty' then parts[#parts+1]='armor '..v.armor..(v.equipment and ' with '..v.equipment or '') end
+  if v.trash then parts[#parts+1]='trash '..v.trash end
+  if v.cursor then parts[#parts+1]='cursor '..v.cursor end
+  return table.concat(parts,'; ')
 end
 local function fuel_inventory(e) local ok,inv=pcall(e.get_fuel_inventory); return ok and inv or nil end
 -- Opt-in per-entity columns; each is a short string or number.
@@ -4051,8 +4105,63 @@ local function infer_direction(p,a)
   error(string.format('direction is required (to_entity|to_player): the character holds %d %s and the target%s %d',
     mine,a.item,a.positions and 's hold' or ' holds',theirs),0)
 end
+-- transfer {walk=true} (Haiku, 06:20: solid fuel from a chest into a boiler out of reach, in one call): the targets
+-- out of reach are walked to nearest first, then each gets the same transfer, as feed and collect tours do. All in
+-- reach: the transfer at once. A field, not a local (runtime.lua's top-level locals are nearly all used).
+function M.transfer_walk(p,a)
+  assert(a.total==nil and a.budget==nil,'total does not go with walk')
+  local list=a.positions or {a.position}
+  assert(type(list)=='table' and #list>=1 and #list<=64,'positions requires 1..64 entries')
+  assert(list[1]~=nil,'position or positions is required')
+  local args={}
+  for k,v in pairs(a) do args[k]=v end
+  args.walk=nil; args.ticks=nil
+  local ticks=integer(a.ticks,3600,1,36000,'ticks')
+  local entities,far={},0
+  for i,pos in ipairs(list) do
+    -- Seen, not yet in reach (a read's sight): the walk brings it into reach.
+    local e=entity(p,{position=pos,name=pos.name or a.name,unit_number=pos.unit_number or a.unit_number},true)
+    friendly(p,e)
+    entities[i]=e
+    if not p.can_reach_entity(e) then far=far+1 end
+  end
+  if far==0 then return handlers.transfer(p,args) end
+  if args.up_to==true then args.up_to=nil; args.partial=true end
+  if args.direction==nil then
+    -- As infer_direction, over the entities found (out of reach too).
+    local mine,theirs=args.item and held(p,args.item,args.quality)+crafting_count(p,args.item) or 0,0
+    for _,e in ipairs(entities) do if args.item then theirs=theirs+entity_holds(e,args.item,args.quality) end end
+    if args.item==nil or (theirs>0 and mine==0) then args.direction='to_player'
+    elseif mine>0 and theirs==0 then args.direction='to_entity'
+    elseif args.partial and mine==0 and theirs==0 then
+      return {transferred=0,moved=0,short={asked=args.count or 'all',moved=0,reason='none_held'}}
+    else
+      error(string.format('direction is required (to_entity|to_player): the character holds %d %s and the target%s %d',
+        mine,args.item,#entities>1 and 's hold' or ' holds',theirs),0)
+    end
+  end
+  assert(args.item or args.direction=='to_player','item is required for to_entity')
+  if args.direction=='to_entity' and held(p,args.item,args.quality)+crafting_count(p,args.item)==0 then
+    if args.partial then return {transferred=0,moved=0,direction='to_entity',short={asked=args.count or 1,moved=0,reason='none_held'}} end
+    error(string.format('no %s in inventory; nothing to give at %d place%s',args.item,#entities,#entities>1 and 's' or ''),0)
+  end
+  args.positions=nil; args.position=nil
+  local action,out=stock.start_tour(p,'transfer',entities,ticks,{transfer=args,item=args.item,quality=args.quality,rows={},items={}})
+  if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
+  state().active[p.index]=action
+  out.until_tick=action.until_tick; out.direction=args.direction; out.out_of_reach=far
+  return out
+end
 local transfer_directed
 function handlers.transfer(p,a)
+  assert(a.walk==nil or type(a.walk)=='boolean','walk must be true or false')
+  assert(a.ticks==nil or a.walk==true,'ticks applies with walk')
+  if a.walk==true then return M.transfer_walk(p,a) end
+  if a.walk==false then
+    local args={}
+    for k,v in pairs(a) do args[k]=v end
+    args.walk=nil; a=args
+  end
   assert(a.direction==nil or a.direction=='to_entity' or a.direction=='to_player','direction must be to_entity or to_player')
   assert(a.item==nil or type(a.item)=='string','item must be a string')
   assert(a.up_to==nil or a.up_to==true or type(a.up_to)=='number','up_to must be a number (target cap) or true (move what there is)')
@@ -5546,7 +5655,7 @@ handlers.equipment=function(p,a)
 end
 local timed={walk=true,move_to=true,build_path=true,construct=true,kite=true,mine=true,pickup=true,repair=true,rearm=true,refuel=true,transfer=true,collect=true,feed=true,wait_until=true,wait_ticks=true,build=true}
 -- The active action kind a step's handler starts, where it differs from its name.
-local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true},build={feed=true},collect={gather=true},feed={gather=true}}
+local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true,gather=true},build={feed=true},collect={gather=true},feed={gather=true}}
 local conditions=conditions_module{known=known,position=position}
 scheduler=scheduler_module{
   state=state,player=player,handlers=handlers,
@@ -5838,7 +5947,7 @@ passive.circuit_set=true; passive.wire=true
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
 for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route','rail_route','train_stop','blueprint_save','blueprint_rename'}) do passive[name]=true end
-local reads={ores=true,cargo=true,silo=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,networks=true}
+local reads={ores=true,cargo=true,silo=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,networks=true,boilers=true}
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
@@ -6293,6 +6402,7 @@ rates=rates_module{position=position,status_name=function(e) return entity_statu
 -- the shift block, the networks read, and the network push alerts.
 M.networks=require('networks'){state=state}
 function handlers.networks(p,a) return M.networks.read(p,a) end
+function handlers.boilers(p,a) return M.networks.boilers(p,a) end
 -- One science line per agent in the team block, at most every 5 min and when it changed (scienceline.lua, operator 03:22).
 M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.networks,status_name=function(e) return entity_status_names[e.status] end}
 -- The game's alerts and key warnings, pushed to the agents they concern (pushalerts.lua).
@@ -6369,6 +6479,23 @@ stock=stock_module{distance=distance,integer=integer,position=position,claims=M.
         if t.entity and t.entity.valid and feeding.hungry(p,t.entity,action.feed) then more=true; break end
       end
       return {transferred=n,stop=(not more and action.targets[action.index+1]) and 'out_of_items' or nil}
+    end
+    if action.op=='transfer' then
+      -- transfer {walk=true}: the call's own transfer at each place (M.transfer_walk); a row per place.
+      local t=action.transfer
+      local out=transfer_one(p,t,nil,e)
+      local moved=t.item and {{name=t.item,count=out.transferred,quality=t.quality}} or out.items or {}
+      for _,st in ipairs(moved) do
+        if (st.count or 0)>0 then
+          local key=st.name..(st.quality and st.quality~='normal' and '@'..st.quality or '')
+          action.items[key]=(action.items[key] or 0)+st.count
+        end
+      end
+      action.rows[#action.rows+1]={position=e.position,name=e.name,transferred=out.transferred,
+        full=(out.inventory_full or out.entity_full) and true or nil}
+      local stop
+      if t.direction=='to_entity' and held(p,t.item,t.quality)==0 and crafting_count(p,t.item)==0 and action.targets[action.index+1] then stop='out_of_items' end
+      return {transferred=out.transferred,inventory_full=t.direction=='to_player' and out.inventory_full or nil,stop=stop}
     end
     local args={direction='to_entity',item=action.item,quality=action.quality,count=action.count,up_to=action.count,
       inventory=action.op=='refuel' and 'fuel' or nil}

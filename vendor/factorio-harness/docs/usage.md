@@ -97,6 +97,13 @@ fh call status
   collision mask), a partner that is still a ghost, one in reach the game did not pair, the nearest end on its axis
   when it does not match, or none in reach. `place_ghosts` adds `underground_warnings` for a span that crosses such
   tiles (once per span).
+- `inventory` (read, `fh call inventory`; Gemini, 06:20: held items without a full observe) is one small reply of
+  short item lines (`name*count`, `name@quality*count`, or `empty`): `inventory` (main), `free` (`free=62/100`),
+  `guns`, `ammo`, `armor`, `equipment` (in the armor's grid), `trash` (trash slots, when any), `cursor` (the stack in
+  hand, or `ghost of NAME`, when any), `crafting` and `warnings` (nearly full, hoarding). `full: true` gives the stacks
+  as lists `{name, quality, count}`, as observe's `player` has them. `status {inventory: true}` (brief or full) adds
+  `inventory`, the same in one line: `main iron-plate*50 (free=1/2); ammo firearm-magazine*10; armor modular-armor*1
+  with solar-panel-equipment*3; trash iron-plate@uncommon*308; cursor transport-belt*50` (empty parts left out).
 - Full `status` (not `brief`) has `teammates`, one line on where every other agent is (compact output prints it right
   after `clock:`): agents elsewhere first, grouped by planet, platform or cargo pod, then the ones on your surface,
   nearest first, with distance and compass direction:
@@ -624,6 +631,16 @@ fh sleep 900 --until researched                       # ...or until the research
     when it fell short (on the final `warning:` line too). With `positions`, `asked` is count per entity, summed. A number
     keeps its old meaning: `up_to: N` tops the target up to N. `collect {..., "up_to": true}` adds the same `moved` and
     `short` (`asked: "all"` without count).
+  - `transfer {..., "walk": true}` (Haiku, 06:20: solid fuel from a chest into a boiler out of reach, in one call): when
+    a target (`position` or `positions`) is out of reach, the call walks a nearest-first route to each, as feed and
+    collect tours do, and makes the same transfer there; one timed call (`ticks` 1..36000, default 3600). The reply:
+    `op: "transfer"`, `places`, `out_of_reach`, `direction` (inferred as without walk when omitted), `until_tick`; then
+    `last {op, transferred, items, direction, entities [{position, name, transferred, full?}], left, unreached}` and the
+    outcome `transferred`, `nothing_to_do` (the targets wanted none), `out_of_items` (nothing left to give),
+    `nothing_collected` (nothing to take), `inventory_full`, `unreached` (no place reached) or `timed_out`. All targets
+    in reach: the plain transfer at once. Giving with none held (and none in the hand-craft queue) is refused before
+    walking; with `up_to: true` it is a short (`none_held`). Not with `total`. As a queue step it runs until the tour
+    ends; `transferred` counts as done.
   - Personal logistics (trash.lua; Astra, 01:53: two cargo hauls lost to auto-trash). The game moves what you hold over
     a personal request's max (and, with "trash unrequested" on, any item you do not request) from your inventory to
     your trash slots within a few ticks, logistic network or not. A `transfer` to you, `collect`, `pickup` and
@@ -1562,6 +1579,19 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   network's construction area, one count per network, up to 4000. Ammo: the surface's item statistics, consumed in the last hour. The read gives
   the same numbers as fields; everything is kept 60 s (`as_of`), and the network alerts read the same view; the pole
   map is redone every 5 min in the background and by the view when older than 60 s; requests are looked at every 30 s.
+- Boilers (networks.lua; Haiku, 06:20): `boilers {surface?}` (read, `fh call boilers`, default your surface) lists every
+  boiler of ours on the surface, grouped by the electric network its steam feeds (as `networks` maps them: the steam
+  generators on its output's fluid segment, else one within 12 tiles; `network: null` and `no electric network found`
+  otherwise). Networks with a boiler not working come first, and those boilers first in each (then by position). Each
+  network: `line` (`electric #7: 11 boilers: 1 output full, 2 no fuel, 8 working`), `total`, `not_working`, `boilers`,
+  `more`. Each boiler: `position`, `name`, `state` (`working`, `no fuel`, `output full`, `no water`, `low water`, `low
+  temperature`, `disabled by circuit`, or the game's status in words), `status` (the game's name), `working`, `fuel`
+  (its fuel slots, `coal*20`), `burning`, `water` and `steam` (`water 200/200`), `feeder` (the inserter dropping into it
+  and what it takes from, with the fuel there: `burner-inserter (60,14) from wooden-chest (41,13) holding 400 coal`; a
+  belt: the fuel on it and up to 64 tiles upstream, else what loads that run; or `no inserter feeds it`) and
+  `feeder_has_fuel` (fuel in its hand or at its source), as the `boiler_fuel` alert reads them. At most 64 rows: the
+  not-working ones, then up to 4 working ones in a network with a stopped boiler (all in a network where every boiler
+  works); `more` counts the rows left out (all working). Feeders are read only for the rows shown.
 - Platform alerts in `team.alerts`, for the agent who created a platform (`platform_create`), the 3 agents whose
   requests named it with `platform=` most recently (within 2 hours; the `platforms` read does not count) and anyone
   aboard; a platform with none of them known goes to every agent. Each line names the platform and its surface:

@@ -1062,6 +1062,59 @@ call('feed',{radius=20,types={'boiler'},fuel=true}); advance(1)
 local tour_last=call('status').last
 eq(tour_last.op,'feed'); eq(tour_last.given,9); eq(#tour_last.entities,2)
 eq(tour_last.entities[1].gave.coal,6); eq(tour_last.entities[1].fuel,'coal 10'); eq(tour_last.entities[2].gave.coal,3)
+-- transfer {walk=true} (Haiku, 06:20: solid fuel into a boiler out of reach, in one call): the call walks into reach
+-- first (a tour, as feed and collect), then transfers; all in reach, it transfers at once.
+do
+  local reach_was=p.can_reach_entity
+  local far={[b3]=true}
+  p.can_reach_entity=function(e) return not far[e] end
+  b3.fuel[1].count=5
+  main=inv(stack('coal',30),stack(nil,0),stack(nil,0))
+  local w=call('transfer',{position={x=3,y=3},item='coal',count=12,inventory='fuel',direction='to_entity',walk=true})
+  eq(w.op,'transfer'); eq(w.places,1); eq(w.out_of_reach,1); eq(w.direction,'to_entity'); eq(call('status').active.kind,'gather')
+  far={}  -- arrived in reach
+  advance(1)
+  local wl=call('status').last
+  eq(wl.outcome,'transferred'); eq(wl.op,'transfer'); eq(wl.transferred,12); eq(wl.items.coal,12); eq(wl.direction,'to_entity')
+  eq(wl.entities[1].transferred,12); eq(b3.fuel[1].count,17); eq(main[1].count,18)
+  -- all in reach: the plain transfer, at once
+  local now=call('transfer',{position={x=1,y=3},item='coal',count=2,inventory='fuel',direction='to_entity',walk=true})
+  eq(now.transferred,2); eq(now.op,nil); eq(b1.fuel[1].count,12)
+  -- takes from two, one out of reach; the direction inferred (only the boilers hold coal)
+  main=inv(stack(nil,0),stack(nil,0),stack(nil,0))
+  far={[b2]=true}
+  local take=call('transfer',{positions={{x=1,y=3},{x=2,y=3}},item='coal',count=4,inventory='fuel',walk=true})
+  eq(take.direction,'to_player'); eq(take.places,2); eq(take.out_of_reach,1)
+  far={}; advance(1)
+  local tl=call('status').last
+  eq(tl.outcome,'transferred'); eq(tl.transferred,8); eq(#tl.entities,2); eq(main[1].count,8)
+  -- nothing to give: refused before walking; up_to=true: a short instead
+  far={[b3]=true}
+  main=inv(stack(nil,0),stack(nil,0),stack(nil,0))
+  fails(function() call('transfer',{position={x=3,y=3},item='solid-fuel',count=5,direction='to_entity',walk=true}) end,'no solid-fuel in inventory; nothing to give at 1 place')
+  local short=call('transfer',{position={x=3,y=3},item='solid-fuel',count=5,direction='to_entity',walk=true,up_to=true})
+  eq(short.transferred,0); eq(short.short.reason,'none_held')
+  fails(function() call('transfer',{position={x=3,y=3},item='coal',direction='to_player',ticks=60}) end,'ticks applies with walk')
+  fails(function() call('transfer',{position={x=3,y=3},item='coal',direction='to_player',walk='yes'}) end,'walk must be true or false')
+  fails(function() call('transfer',{positions={{x=3,y=3}},item='coal',total=5,direction='to_player',walk=true}) end,'total does not go with walk')
+  -- never reached (the fake engine's paths fail): nothing moved, outcome unreached
+  local u=call('transfer',{position={x=3,y=3},item='coal',count=1,inventory='fuel',direction='to_player',walk=true})
+  eq(u.places,1)
+  advance(600)
+  local ul=call('status').last
+  eq(ul.outcome,'unreached'); eq(ul.transferred,0); eq(ul.unreached,1)
+  -- as a queue step: the step runs while the tour walks (out of reach when it starts, in reach a tick later), and
+  -- its outcome counts as done
+  main=inv(stack('coal',10),stack(nil,0),stack(nil,0))
+  local looks=0
+  p.can_reach_entity=function(e) if e==b3 then looks=looks+1; return looks>1 end return true end
+  call('queue_submit',{steps={{action='transfer',args={position={x=3,y=3},item='coal',count=3,inventory='fuel',direction='to_entity',walk=true}}}})
+  advance(3)
+  local qs=call('queue_status',{})
+  local h=qs.history[#qs.history]
+  eq(h.action,'transfer'); eq(h.ok,true); eq(h.result.outcome,'transferred'); eq(b3.fuel[1].count,20)
+  p.can_reach_entity=reach_was
+end
 fails(function() call('feed',{fuel=1}) end,'fuel must be a fuel item, true or false')
 prototypes.recipe=nil; f2.prototype=nil
 f1.get_recipe=nil
@@ -1220,16 +1273,44 @@ do
   main={{valid_for_read=true,name='iron-plate',count=50},{valid_for_read=false}}
   main.get_contents=function() return {{name='iron-plate',quality='normal',count=50}} end
   main.count_empty_stacks=function() return 1 end
-  defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor=2,3,4
-  p.get_inventory=function(id) return {get_contents=function() return id==3 and {{name='firearm-magazine',quality='normal',count=10}} or {} end} end
+  local trash_id,kept_cursor=defines.inventory.character_trash,p.cursor_stack
+  defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor,defines.inventory.character_trash=2,3,4,8
+  -- Gemini, 06:20: one small reply: short item lines, the armor's equipment, trash slots and the cursor.
+  local suit={valid_for_read=true,name='modular-armor',count=1,grid={get_contents=function() return {{name='solar-panel-equipment',quality='normal',count=3},{name='personal-roboport-equipment',quality='normal',count=1}} end}}
+  local by={[3]={{name='firearm-magazine',quality='normal',count=10}},[4]={{name='modular-armor',quality='normal',count=1}},[8]={{name='iron-plate',quality='uncommon',count=308}}}
+  p.get_inventory=function(id) local x={get_contents=function() return by[id] or {} end}; if id==4 then x[1]=suit end; return x end
+  p.cursor_stack={valid_for_read=true,name='transport-belt',count=50,quality={name='normal'}}
   call('walk',{direction='east',ticks=5})
   local held=call('inventory',{})
-  eq(held.inventory[1].name,'iron-plate'); eq(held.inventory[1].count,50); eq(held.ammo[1].count,10); eq(#held.guns,0)
+  eq(held.inventory,'iron-plate*50'); eq(held.ammo,'firearm-magazine*10'); eq(held.guns,'empty'); eq(held.armor,'modular-armor*1')
+  eq(held.equipment,'solar-panel-equipment*3 personal-roboport-equipment*1'); eq(held.trash,'iron-plate@uncommon*308')
+  eq(held.cursor,'transport-belt*50')
   eq(held.free,'free=1/2'); assert(held.clock,'inventory carries the clock line')
+  -- full=true: the stacks as lists, as before
+  local whole=call('inventory',{full=true})
+  eq(whole.inventory[1].name,'iron-plate'); eq(whole.inventory[1].count,50); eq(whole.ammo[1].count,10); eq(#whole.guns,0)
+  eq(whole.trash[1].count,308); eq(whole.equipment[1].name,'solar-panel-equipment')
+  -- status {inventory=true}: the same in one line, brief or full; without it, no line
+  local line='main iron-plate*50 (free=1/2); ammo firearm-magazine*10; armor modular-armor*1 with solar-panel-equipment*3 personal-roboport-equipment*1; trash iron-plate@uncommon*308; cursor transport-belt*50'
+  eq(call('status',{brief=true,inventory=true}).inventory,line)
+  eq(call('status',{brief=true}).inventory,nil)
+  -- a ghost in hand; nothing in hand; no trash, no armor
+  p.cursor_stack={valid_for_read=false}; p.cursor_ghost={name={name='assembling-machine-2'},quality={name='normal'}}
+  eq(call('inventory',{}).cursor,'ghost of assembling-machine-2')
+  p.cursor_ghost=nil; by[8]=nil; by[4]=nil; suit.valid_for_read=false
+  held=call('inventory',{})
+  eq(held.cursor,nil); eq(held.trash,nil); eq(held.equipment,nil); eq(held.armor,'empty')
+  eq(call('status',{brief=true,inventory=true}).inventory,'main iron-plate*50 (free=1/2); ammo firearm-magazine*10')
   eq(call('status').active.kind,'walk'); call('stop',{})
   fails(function() call('inventory',{item='iron-plate'}) end,'unknown argument item for inventory')
-  defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor=nil,nil,nil
+  fails(function() call('inventory',{full='yes'}) end,'full must be true or false')
+  -- boilers (networks.lua; tests/networks.lua) is a read every agent can call
+  local d=call('describe',{})
+  assert(d.actions.boilers.returns:find('feeder',1,true)); assert(d.actions.status.inventory)
+  assert(runtime.is_read('boilers') and runtime.is_read('inventory'))
+  defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor,defines.inventory.character_trash=nil,nil,nil,trash_id
   p.get_inventory=function() return {get_contents=function() return {} end} end
+  p.cursor_stack=kept_cursor
   main=kept
 end
 -- Resource summaries must not crowd structures out of a small entity budget.
