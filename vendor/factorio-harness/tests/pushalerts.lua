@@ -125,6 +125,29 @@ net[2]={key='robots_busy|vulcanus|3',kind='robots_busy',surface='vulcanus',n=1,n
 game.tick=game.tick+1800
 local rows=B.read(sol,{kind='robots_busy'}).groups
 eq(#rows,1); eq(rows[1].line,'logistic #3: no idle logistic robot for 10 min (40 robots; 2 requests unfilled 60+ s) on vulcanus'); eq(rows[1].to[1],'luna (nearest)')
+-- boiler_fuel (Haiku, shift09: 10 minutes was too late): told at 20 min, again at 10 and 5 or when more boilers drop
+-- under 20; the same step and count is not told again; what it was comes from its now_text.
+local function fuel(level,count,low)
+  return {key='boiler_fuel|nauvis|7',kind='boiler_fuel',surface='nauvis',n=count,rank=level*10000+count,names={boiler=count},by={},at={},
+    center={x=70,y=-160},now_text=string.format('%d under 20 min, lowest %d min',count,low),line=string.format('%d boilers ... lowest %d min',count,low)}
+end
+net={fuel(1,3,17)}; local hf={}
+game.tick=game.tick+1800
+l=B.lines(sol,hf); eq(l[1],'3 boilers ... lowest 17 min')
+game.tick=game.tick+151*60; net={fuel(1,3,15)}
+eq(#B.lines(sol,hf),0,'same step, same count: not told again')
+game.tick=game.tick+151*60; net={fuel(1,4,14)}
+l=B.lines(sol,hf); eq(l[1],'4 boilers ... lowest 14 min (was 3 under 20 min, lowest 17 min)')
+game.tick=game.tick+151*60; net={fuel(2,4,9)}
+l=B.lines(sol,hf); eq(l[1],'4 boilers ... lowest 9 min (was 4 under 20 min, lowest 14 min)')
+game.tick=game.tick+151*60; net={fuel(3,4,4)}
+l=B.lines(sol,hf); eq(l[1],'4 boilers ... lowest 4 min (was 4 under 20 min, lowest 9 min)')
+-- Fed: better is remembered, and a fall from there is news again.
+game.tick=game.tick+151*60; net={fuel(1,2,18)}
+eq(#B.lines(sol,hf),0)
+game.tick=game.tick+151*60; net={fuel(2,2,8)}
+l=B.lines(sol,hf); eq(l[1],'2 boilers ... lowest 8 min (was 2 under 20 min, lowest 18 min)')
+net={power}; game.tick=game.tick+1800  -- past the 30 s the scan is kept
 -- What is open in an agent's own claims, for its review (selfview.lua): claim groups only, no hints.
 local mine=B.claim_lines(sol)
 eq(#mine,1); eq(mine[1],power.line)

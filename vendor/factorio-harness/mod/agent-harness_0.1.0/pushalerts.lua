@@ -10,7 +10,7 @@
 -- - the game's alerts (LuaPlayer.get_alerts, read from an agent player whose
 --   alerts are on; attacks, losses and empty turrets are told elsewhere);
 -- - per network (networks.lua, task-selfview): draw at 85% of capacity or
---   more for 2 minutes, boilers under 10 minutes of fuel, no idle logistic
+--   more for 2 minutes, boilers under 20 minutes of fuel (again at 10 and 5), no idle logistic
 --   robot for 10 minutes.
 -- Grouped by kind and 64-tile area on each surface; each group goes to the
 -- agents whose board claim covers it, else who built it (last_user), else
@@ -206,9 +206,11 @@ return function(api)
     return string.format('%d (%s%s)', g.n, table.concat(parts, ', '), #names > 3 and ', ...' or '')
   end
   -- plain: without the hint (the review block, selfview.lua).
+  -- was: the count told before, or (a group with now_text) what its now_text said then.
   function M.text(g, here, was, plain)
     if g.line then
-      return g.line .. (g.surface ~= here and ' on ' .. g.surface or '') .. (was and string.format(' (was %d%s)', was, g.unit or '') or '')
+      local before = type(was) == 'string' and ' (was ' .. was .. ')' or was and string.format(' (was %d%s)', was, g.unit or '') or ''
+      return g.line .. (g.surface ~= here and ' on ' .. g.surface or '') .. before
     end
     local hint = not plain and HINT[g.kind]
     return string.format('%s %s near (%d,%d)%s%s%s', what(g), LABEL[g.kind] or g.kind:gsub('_', ' '), g.center.x, g.center.y,
@@ -216,7 +218,9 @@ return function(api)
   end
 
   -- Team block lines for p: at most one digest every DIGEST_TICKS, groups
-  -- addressed to p that are new or grew since p was told.
+  -- addressed to p that are new or grew since p was told. A group's rank,
+  -- when it has one, is what grows (boiler_fuel: the step it reached, then
+  -- how many boilers); its now_text is kept to say what it was.
   function M.lines(p, h)
     local mem = h.push or {told={}}
     if mem.tick and game.tick - mem.tick < DIGEST_TICKS then return {} end
@@ -227,17 +231,23 @@ return function(api)
     local now, lines, more = {}, {}, 0
     for _, g in ipairs(c.groups) do
       if owners(g, who)[me] then
-        now[g.key] = g.n
+        local level = g.rank or g.n
+        now[g.key] = level
         local told = mem.told[g.key]
-        if not told or g.n > told then
+        if not told or level > told then
           if #lines < MAX_LINES then
-            lines[#lines+1] = M.text(g, here, told)
-            mem.told[g.key] = g.n
+            lines[#lines+1] = M.text(g, here, told and (mem.said and mem.said[g.key] or (not g.rank and told)) or nil)
+            mem.told[g.key] = level
+            if g.now_text then mem.said = mem.said or {}; mem.said[g.key] = g.now_text end
           else more = more + 1 end
-        elseif g.n < told then mem.told[g.key] = g.n end  -- better: a rise from here is news again
+        elseif level < told then  -- better: a rise from here is news again
+          mem.told[g.key] = level
+          if g.now_text then mem.said = mem.said or {}; mem.said[g.key] = g.now_text end
+        end
       end
     end
     for key in pairs(mem.told) do if not now[key] then mem.told[key] = nil end end  -- gone: news again if it returns
+    for key in pairs(mem.said or {}) do if not mem.told[key] then mem.said[key] = nil end end
     if more > 0 then lines[#lines+1] = string.format('+%d more alert groups: fh call game_alerts', more) end
     if #lines > 0 then mem.tick = game.tick end
     h.push = (next(mem.told) or mem.tick) and mem or nil
@@ -274,7 +284,7 @@ return function(api)
       note=#rows == 0 and 'no alerts or warnings' or nil}
   end
   M.schema = {
-    game_alerts = {surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel, no_ammo, flamer_dry; per network: power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 10 min of fuel at the draw), robots_busy (no idle logistic robot for 10 min); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
+    game_alerts = {surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel, no_ammo, flamer_dry; per network: power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of fuel at the draw, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), robots_busy (no idle logistic robot for 10 min); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
       returns='groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest)}; scanned (the scan is at most 30 s old). What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
   }
   return M

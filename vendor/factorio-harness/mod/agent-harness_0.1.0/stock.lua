@@ -4,11 +4,12 @@
 -- radius walks the stock back.
 return function(api)
   local M={}
-  local TYPES={'assembling-machine','furnace','container','logistic-container','cargo-landing-pad'}
+  local TYPES={'assembling-machine','furnace','agricultural-tower','container','logistic-container','cargo-landing-pad'}
   -- Gathering leaves plain chests alone unless asked: they are usually feed
   -- chests the player stocked for machines, not stock to collect.
-  local NO_CHESTS={'assembling-machine','furnace','cargo-landing-pad'}
-  local CRAFTER={['assembling-machine']=true,furnace=true}
+  local NO_CHESTS={'assembling-machine','furnace','agricultural-tower','cargo-landing-pad'}
+  -- An agricultural tower's harvest is its output, as an assembler's product is (Gleba).
+  local CRAFTER={['assembling-machine']=true,furnace=true,['agricultural-tower']=true}
   local CHEST={container=true,['logistic-container']=true}
   local MAX_PLACES=32
   local function output_of(e)
@@ -215,6 +216,7 @@ return function(api)
         action.index=action.index+1; action.nav=nil; action.visited=action.visited+1
         if ok then
           action.got=action.got+out.transferred
+          if out.transferred>0 then action.touched=(action.touched or 0)+1 end
           for _,st in ipairs(action.all and out.items or {}) do
             local key=st.name..(st.quality and '@'..st.quality or '')
             action.items[key]=(action.items[key] or 0)+st.count
@@ -233,7 +235,7 @@ return function(api)
     end
     local outcome=api.navigate(p,action.nav)
     -- Arrived yet still out of reach, or blocked: skip this place.
-    if outcome then action.index=action.index+1; action.nav=nil; api.stop_walking(p) end
+    if outcome then action.index=action.index+1; action.nav=nil; action.unreached=(action.unreached or 0)+1; api.stop_walking(p) end
   end
   return M
 end

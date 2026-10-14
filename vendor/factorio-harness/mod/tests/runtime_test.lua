@@ -544,6 +544,21 @@ do
   p.surface.find_entities_filtered=function() return {beacon} end
   r=call('transfer',{position=beacon.position,item='speed-module',count=2,direction='to_entity'})
   eq(r.transferred,2); eq(r.inventory,'beacon_modules')
+  -- Gleba (Sol, shift09: "entity has no transferable inventory"): seeds go into an agricultural tower's input.
+  defines.inventory.agricultural_tower_input=defines.inventory.agricultural_tower_input or 33
+  defines.inventory.agricultural_tower_output=defines.inventory.agricultural_tower_output or 34
+  prototypes.item['yumako-seed']={name='yumako-seed',type='item'}
+  do
+    local seeds=stack('yumako-seed',10); main={seeds}
+    main.get_item_count=function(f) return seeds.valid_for_read and seeds.name==f.name and seeds.count or 0 end
+    local tower=machine('agricultural-tower',defines.inventory.agricultural_tower_input)
+    p.surface.find_entities_filtered=function() return {tower} end
+    r=call('transfer',{position=tower.position,item='yumako-seed',count=4,direction='to_entity'})
+    eq(r.transferred,4); eq(r.inventory,'agricultural_tower_input'); eq(tower.slots[1].name,'yumako-seed')
+    r=call('transfer',{position=tower.position,inventory='agricultural_tower_input',item='yumako-seed',count=1,direction='to_entity'})
+    eq(r.transferred,1)
+  end
+  main={mod_src}
   -- Inspect gives the module inventory's index (blueprint item requests name it).
   asm.slots.index=4
   asm.slots.get_contents=function() return {{name='speed-module',count=2,quality='normal'}} end
@@ -1238,6 +1253,8 @@ do
   advance(1)
   local took=call('status').last
   eq(took.outcome,'collected'); eq(took.got,12); eq(took.items['iron-gear-wheel'],5); eq(took.items['iron-plate'],7)
+  -- The total line (Muse): moved per item, places touched of the total.
+  eq(took.tally,'moved 7 iron-plate, 5 iron-gear-wheel; 2 of 2 places touched')
   eq(gear_slots[1].valid_for_read,false); eq(result[1].valid_for_read,false); eq(source[1].count,9); eq(fuel[1].count,3)
   -- Nothing left: nothing_collected, and the reply says so.
   local none=call('collect',{radius=20,up_to=true})
@@ -2138,5 +2155,83 @@ end
   fails(function() call('cargo',{position={x=1.5,y=0.5}}) end,'holds nothing in chest')
   p.surface.find_entities_filtered=find
   prototypes.item,prototypes.utility_constants,prototypes.quality,prototypes.entity['rocket-silo']=items,uc,quality,silo
+end)()
+-- Replies (00:20 round): transfer's direction named any way on a requester, car trunk or wagon (Haiku); an out of
+-- reach target's distance, reach and a spot that reaches it (Haiku); inspect's holds and requests lines (Muse); and
+-- the tally closing a transfer over several targets (Muse).
+;(function()
+  local find,getmain,reach,free=p.surface.find_entities_filtered,p.get_main_inventory,p.can_reach_entity,p.surface.find_non_colliding_position
+  local at,dist=p.position,p.reach_distance
+  defines.inventory.chest=defines.inventory.chest or 1
+  defines.inventory.car_trunk=defines.inventory.car_trunk or 41
+  defines.inventory.cargo_wagon=defines.inventory.cargo_wagon or 42
+  local function box(name,type_,x,id,...)
+    local slots=inv(...)
+    slots.can_insert=function() return true end
+    slots.get_contents=function() local out={}; for _,s in ipairs(slots) do if s.valid_for_read then out[#out+1]={name=s.name,count=s.count,quality='normal'} end end; return out end
+    slots.count_empty_stacks=function() local n=0; for _,s in ipairs(slots) do if not s.valid_for_read then n=n+1 end end; return n end
+    local e={valid=true,name=name,type=type_,position={x=x,y=0},force=p.force,slots=slots,get_fluid_contents=function() return {} end}
+    e.get_inventory=function(i) if i==defines.inventory[id] then return slots end end
+    return e
+  end
+  local req=box('requester-chest','logistic-container',2,'chest',stack('iron-plate',40),stack(nil,0),stack(nil,0),stack(nil,0))
+  req.prototype={logistic_mode='requester'}
+  req.get_logistic_sections=function() return {sections_count=1,get_section=function()
+    return {is_manual=true,active=true,filters={{value={name='iron-plate'},min=100},{value={name='coal'},min=50}}} end} end
+  local car=box('car','car',4,'car_trunk',stack('wood',3),stack(nil,0))
+  local wagon=box('cargo-wagon','cargo-wagon',6,'cargo_wagon',stack('stone',7),stack(nil,0),stack(nil,0),stack(nil,0))
+  wagon.slots.get_bar=function() return 3 end
+  local big=box('iron-chest','container',8,'chest',stack('a',1),stack('b',9),stack('c',3),stack('d',8),stack('e',2),stack('f',7),stack('g',5),stack(nil,0))
+  local far=box('wooden-chest','container',20,'chest',stack(nil,0))
+  local world={req,car,wagon,big,far}
+  p.surface.find_entities_filtered=function(f)
+    local out={}
+    for _,e in ipairs(world) do
+      if f.position and math.abs(e.position.x-f.position.x)<0.6 and math.abs(e.position.y-f.position.y)<0.6 and (not f.name or f.name==e.name) then out[#out+1]=e end
+    end
+    return out
+  end
+  local bag=inv(stack('iron-plate',60),stack(nil,0),stack(nil,0),stack(nil,0))
+  p.get_main_inventory=function() return bag end
+  p.can_reach_entity=function(e) return e.position.x<10 end
+  p.position={x=0,y=0}; p.reach_distance=10
+  -- inspect: what a chest, trunk or wagon holds in one line; a requester's asks with what it holds of each.
+  local seen=call('inspect',{position=req.position})
+  eq(seen.holds,'iron-plate*40; 1 of 4 slots'); eq(seen.requests,'iron-plate 40/100, coal 0/50')
+  eq(call('inspect',{position=wagon.position}).holds,'stone*7; 1 of 4 slots (limited to 2)')
+  eq(call('inspect',{position=big.position}).holds,'b*9 d*8 f*7 g*5 c*3 e*2 +1 more; 7 of 8 slots')
+  local rows=call('inspect',{positions={car.position,req.position}}).entities
+  eq(rows[1].holds,'wood*3; 1 of 2 slots'); eq(rows[1].requests,nil); eq(rows[2].requests,'iron-plate 40/100, coal 0/50')
+  -- Held on both sides, an omitted direction is still asked for; to_entity given as the target puts.
+  fails(function() call('transfer',{position=req.position,item='iron-plate',count=10}) end,'direction is required')
+  local put=call('transfer',{to_entity=req.position,item='iron-plate',count=10})
+  eq(put.transferred,10); eq(req.slots[1].count,50); eq(bag[1].count,50)
+  eq(put.corrected,'transfer {"count":10,"direction":"to_entity","item":"iron-plate","position":{"x":2,"y":0}} (to_entity={x,y} is direction="to_entity" position=...)')
+  -- from_entity over a car trunk and a wagon takes everything; the reply closes with its tally.
+  local took=call('transfer',{from_entity={car.position,wagon.position}})
+  eq(took.transferred,10); eq(car.slots[1].valid_for_read,false); eq(wagon.slots[1].valid_for_read,false)
+  eq(took.tally,'moved 3 wood, 7 stone; 2 of 2 targets touched')
+  assert(took.corrected:find('from_entity={x,y} is direction="to_player" positions=...',1,true),took.corrected)
+  -- direction named the other way round, and to_entity=true beside the same direction.
+  eq(call('transfer',{position=car.position,item='iron-plate',count=2,direction='from_player'}).transferred,2); eq(car.slots[1].name,'iron-plate')
+  eq(call('transfer',{position=car.position,item='iron-plate',count=2,direction='to_entity',to_entity=true}).transferred,2)
+  eq(call('transfer',{position=car.position,item='iron-plate',direction='take'}).transferred,4)
+  -- Out of reach: how far, the reach, and a free spot that reaches it; nothing walks.
+  p.surface.find_non_colliding_position=function(_,pos) return {x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5} end
+  fails(function() call('transfer',{position=far.position,item='iron-plate',count=1,direction='to_entity'}) end,
+    'entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away, reach 10; in reach from (11.5,0.5)')
+  eq(call('status').active,false)
+  -- Several targets, one failing: the tally names the moved total, the targets touched and the failure.
+  local spread=call('transfer',{positions={req.position,big.position,far.position},item='iron-plate',count=5,direction='to_entity'})
+  eq(spread.transferred,10)
+  eq(spread.tally,'moved 10 iron-plate; 2 of 3 targets touched; short: 1 failed (entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away, reach 10; in reach from (11.5,0.5))')
+  -- One target: no tally.
+  eq(call('transfer',{position=req.position,item='iron-plate',count=1,direction='to_entity'}).tally,nil)
+  -- The tally's other shorts.
+  eq(runtime.tally{moved={},targets=4,touched=1,unreached=2,errors=1,noun='places'},'moved nothing; 1 of 4 places touched; short: 2 not reached, 1 failed')
+  eq(runtime.tally{moved={{name='coal',count=5}},targets=3,rows={{transferred=5},{transferred=0,full=true}},none_held=1,full_item='coal'},
+    'moved 5 coal; 1 of 3 targets touched; short: your inventory full of coal, 1 full, 1 wanting more you hold none of')
+  p.surface.find_entities_filtered,p.get_main_inventory,p.can_reach_entity,p.surface.find_non_colliding_position=find,getmain,reach,free
+  p.position,p.reach_distance=at,dist
 end)()
 print('runtime: '..assertions..' assertions passed')

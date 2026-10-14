@@ -79,7 +79,7 @@ test('an OPERATOR: line seen on a --wait poll leads the reply',async()=>{
     assert(at>0 && at<stdout.indexOf('duration_elapsed'),stdout);
   });
 });
-test('a tell or mention ends --wait on an action that keeps going (exit 0, outcome told, from, still_running)',async()=>{
+test('a tell or mention ends --wait on an action that keeps going (exit 3, outcome told, from, still_running)',async()=>{
   let polls=0;
   await engine(request=>{
     if(request.action==='move_to')return {ok:true,result:{until_tick:600}};
@@ -88,8 +88,10 @@ test('a tell or mention ends --wait on an action that keeps going (exit 0, outco
     const active={kind:'move_to',until_tick:600};
     return {ok:true,result:polls<2?{active}:{active,inbox:{tick:5,woke:'told',from:'astra'},last:{kind:'walk',outcome:'duration_elapsed',tick:0}}};
   },async port=>{
-    const {stdout}=await cli(port,['call','move_to','--args','{"position":{"x":50,"y":5}}','--wait']);
-    const reply=JSON.parse(stdout);
+    // Sol, shift09: `fh ... --wait && next` ran next while the walk still ran: exit 3 says it still runs.
+    const failed:any=await cli(port,['call','move_to','--args','{"position":{"x":50,"y":5}}','--wait']).then(()=>assert.fail('exit 3 expected'),(error:any)=>error);
+    assert.equal(failed.code,3);
+    const reply=JSON.parse(failed.stdout);
     assert.equal(reply.ok,true); assert.equal(reply.result.completion.outcome,'told'); assert.equal(reply.result.completion.from,'astra');
     assert.match(reply.result.completion.still_running,/^move_to, up to \d+ s more$/);
     assert.match(reply.result.completion.note,/a tell from astra ended this wait/);
@@ -126,8 +128,46 @@ test('fh wait ends early on a tell or mention while the action keeps going',asyn
     const active={kind:'mine',until_tick:900};
     return {ok:true,result:polls<3?{active}:{active,inbox:{tick:2,woke:'mentioned',from:'sol'}}};
   },async port=>{
-    const reply=JSON.parse((await cli(port,['wait'])).stdout);
+    const failed:any=await cli(port,['wait']).then(()=>assert.fail('exit 3 expected'),(error:any)=>error);
+    assert.equal(failed.code,3);
+    const reply=JSON.parse(failed.stdout);
     assert.equal(reply.ok,true); assert.equal(reply.result.outcome,'mentioned'); assert.match(reply.result.note,/a mention from sol/);
+  });
+});
+test('--wait-through-tells keeps waiting past a tell; the end lists it and the exit is the action\'s',async()=>{
+  let polls=0;
+  await engine(request=>{
+    if(request.action==='move_to')return {ok:true,result:{until_tick:600}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:50,y:5},inventory:[]},team:{tells:['astra, 2s ago: coal first']}}};
+    polls++;
+    const active={kind:'move_to',until_tick:600};
+    if(polls<2)return {ok:true,result:{active}};
+    if(polls<4)return {ok:true,result:{active,inbox:{tick:5,woke:'told',from:'astra'}}};
+    return {ok:true,result:{active:false,inbox:{tick:5,woke:'told',from:'astra'},last:{kind:'move_to',outcome:'arrived',tick:300}}};
+  },async port=>{
+    const {stdout}=await cli(port,['call','move_to','--args','{"position":{"x":50,"y":5}}','--wait','--wait-through-tells']);
+    const reply=JSON.parse(stdout);
+    assert.equal(reply.ok,true); assert.equal(reply.result.completion.last.outcome,'arrived');
+    assert.deepEqual(reply.result.completion.told_during_wait,['tell from astra at tick 5']);
+    // compact: the end shows the outcome, the tells and the team block
+    polls=0;
+    const compact=await cli(port,['call','move_to','--args','{"position":{"x":50,"y":5}}','--wait','--wait-through-tells'],'compact');
+    assert.match(compact.stdout,/outcome: arrived/); assert.match(compact.stdout,/told_during_wait: \["tell from astra at tick 5"\]/);
+    assert.match(compact.stdout,/coal first/);
+  });
+});
+test('fh wait --wait-through-tells waits for the action through a mention',async()=>{
+  let polls=0;
+  await engine(()=>{
+    polls++;
+    const active={kind:'mine',until_tick:900};
+    if(polls<3)return {ok:true,tick:polls,result:{active}};
+    if(polls<5)return {ok:true,tick:polls,result:{active,inbox:{tick:3,woke:'mentioned',from:'sol'}}};
+    return {ok:true,tick:polls,result:{active:false,combat:false,last:{kind:'mine',outcome:'target_mined'}}};
+  },async port=>{
+    const reply=JSON.parse((await cli(port,['wait','--wait-through-tells'])).stdout);
+    assert.equal(reply.ok,true); assert.equal(reply.result.last.outcome,'target_mined');
+    assert.deepEqual(reply.result.told_during_wait,['mention from sol at tick 3']);
   });
 });
 test('fh wait --until EVENT --max S: one sleep, peek reads only, one line out',async()=>{

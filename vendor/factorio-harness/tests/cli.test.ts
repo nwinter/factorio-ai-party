@@ -161,7 +161,7 @@ test('a --wait that outlasts its timeout reports the action still running, after
       await exec(process.execPath,['dist/host/cli.js','--port',String(port),'call','construct','--wait','--wait-timeout','250'],{env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}});
       assert.fail('an unfinished wait must exit nonzero');
     } catch(error:any) {
-      assert.equal(error.code,1);
+      assert.equal(error.code,3,'3: the action still runs');
       assert.match(error.stdout,/^tick: 1\nwaiting: .*\nuntil_tick: 36000\ntotal: 4\n/);
       assert.match(error.stdout,/wait_timeout/);
       assert.match(error.stdout,/STILL RUNNING/);
@@ -206,6 +206,7 @@ test('fh wait exits nonzero when the action ended badly or is still running at t
   });
   await engine(()=>({ok:true,tick:5,result:{active:{kind:'mine',until_tick:65}}}),async port=>{
     await assert.rejects(cli(port,['wait','--wait-timeout','200']),(error:any)=>{
+      assert.equal(error.code,3);
       const reply=JSON.parse(error.stdout);
       assert.equal(reply.error.code,'wait_timeout'); assert.equal(reply.result.still_running.kind,'mine'); assert.match(reply.error.message,/up to 1 s more/);
       return true;
