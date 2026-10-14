@@ -84,6 +84,16 @@ test('full status: the teammates line follows the clock line', () => {
   const output = formatCompact({ok:true,id:'s',result:{teammates:'Sol on Vulcanus; Astra 110 tiles N',alive:true,clock:'game 1m',tick:5}});
   assert.equal(output,'alive: true\nclock: "game 1m"\nteammates: "Sol on Vulcanus; Astra 110 tiles N"\ntick: 5\n');
 });
+test('a transfer over several targets closes with its tally, before the team and clock lines', () => {
+  const tally = 'moved 10 iron-plate; 2 of 3 targets touched; short: 1 failed (entity is out of reach)';
+  const output = formatCompact({ok:true,id:'t',result:{tally,clock:'game 1m',transferred:10,team:{alerts:['x']},
+    entities:[{position:{x:2,y:0},transferred:5},{position:{x:8,y:0},transferred:5}]}});
+  assert.equal(output,'transferred: 10\nentities[2]: position | transferred\n  2,0 | 5\n  8,0 | 5\n'+
+    `tally: "${tally}"\nclock: "game 1m"\nteam: alerts=[x]\n`);
+  // The warning line stays last.
+  assert.match(formatCompact({ok:true,id:'t',result:{tally:'moved nothing; 0 of 2 targets touched',nothing_moved:'none of 2 targets'}}),
+    /tally: "moved nothing; 0 of 2 targets touched"\nwarning: nothing moved: none of 2 targets\n$/);
+});
 test('the standing orders line follows the clock line (and comes before teammates)', () => {
   const line = 'orders: restock-ammo running (3 turrets below 20), step 2/5';
   assert.equal(formatCompact({ok:true,id:'s',result:{orders:line,built:1,clock:'game 1m'}}),`built: 1\nclock: "game 1m"\norders: "${line}"\n`);

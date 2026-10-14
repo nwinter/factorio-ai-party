@@ -216,6 +216,7 @@ return function(api)
         action.index=action.index+1; action.nav=nil; action.visited=action.visited+1
         if ok then
           action.got=action.got+out.transferred
+          if out.transferred>0 then action.touched=(action.touched or 0)+1 end
           for _,st in ipairs(action.all and out.items or {}) do
             local key=st.name..(st.quality and '@'..st.quality or '')
             action.items[key]=(action.items[key] or 0)+st.count
@@ -234,7 +235,7 @@ return function(api)
     end
     local outcome=api.navigate(p,action.nav)
     -- Arrived yet still out of reach, or blocked: skip this place.
-    if outcome then action.index=action.index+1; action.nav=nil; api.stop_walking(p) end
+    if outcome then action.index=action.index+1; action.nav=nil; action.unreached=(action.unreached or 0)+1; api.stop_walking(p) end
   end
   return M
 end

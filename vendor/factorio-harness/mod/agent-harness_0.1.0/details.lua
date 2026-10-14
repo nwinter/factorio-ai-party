@@ -106,7 +106,66 @@ return function(api)
   local function where(t)
     return t and t.valid and string.format('%s (%g,%g)', t.name, t.position.x, t.position.y) or nil
   end
+  -- Storage a player opens: a chest, wagon, vehicle trunk, landing pad or hub. holds is one line as its GUI shows it
+  -- (Muse: a chest's contents were only readable in JSON): the largest stacks first with counts, slots used of the
+  -- total and the red-X limit; requests is a requester's or buffer's asks with what it holds of each.
+  local STORES = {'chest', 'cargo_wagon', 'car_trunk', 'spider_trunk', 'cargo_landing_pad_main', 'hub_main'}
+  local SHOWN = 6
+  local function label(s)
+    local q = s.quality
+    if type(q) == 'table' then q = q.name end
+    return s.name .. (type(q) == 'string' and q ~= 'normal' and '@' .. q or '')
+  end
+  function M.holds(e, out)
+    for _, name in ipairs(STORES) do
+      local list = out.inventories and out.inventories[name]
+      local inv = list and try(function() return e.get_inventory(defines.inventory[name]) end)
+      if inv then
+        local sorted, have = {}, {}
+        for i, s in ipairs(list) do sorted[i] = s; have[s.name] = (have[s.name] or 0) + s.count end
+        table.sort(sorted, function(x, y) if x.count ~= y.count then return x.count > y.count end return label(x) < label(y) end)
+        local parts = {}
+        for i = 1, math.min(SHOWN, #sorted) do parts[i] = label(sorted[i]) .. '*' .. sorted[i].count end
+        if #sorted > SHOWN then parts[#parts+1] = '+' .. (#sorted - SHOWN) .. ' more' end
+        local total, free = #inv, try(function() return inv.count_empty_stacks() end)
+        local bar = try(function() return inv.get_bar() end)
+        local slots = free and string.format('; %d of %d slots', total - free, total) or ''
+        if free and bar and bar <= total then slots = slots .. string.format(' (limited to %d)', bar - 1) end
+        out.holds = (#parts > 0 and table.concat(parts, ' ') or 'empty') .. slots
+        M.requests(e, out, have)
+        return
+      end
+    end
+  end
+  function M.requests(e, out, have)
+    local mode = try(function() return e.prototype.logistic_mode end)
+    if mode ~= 'requester' and mode ~= 'buffer' then return end
+    local secs = try(function() return e.get_logistic_sections() end)
+    local want, order, circuit = {}, {}, false
+    for i = 1, secs and secs.sections_count or 0 do
+      local sec = try(function() return secs.get_section(i) end)
+      if sec and sec.active ~= false then
+        if sec.is_manual == false then circuit = true end
+        for _, f in ipairs(try(function() return sec.filters end) or {}) do
+          local v = f.value
+          local item = type(v) == 'table' and v.name or v
+          if type(item) == 'string' and (f.min or 0) > 0 then
+            if not want[item] then want[item] = 0; order[#order+1] = item end
+            want[item] = want[item] + f.min
+          end
+        end
+      end
+    end
+    if #order == 0 then out.requests = 'none'; return end
+    local parts = {}
+    for i, item in ipairs(order) do
+      if i > 8 then parts[#parts+1] = '+' .. (#order - 8) .. ' more'; break end
+      parts[#parts+1] = string.format('%s %d/%d', item, have[item] or 0, want[item])
+    end
+    out.requests = table.concat(parts, ', ') .. (circuit and '; a section set by circuit' or '')
+  end
   function M.inspect(e, out)
+    pcall(M.holds, e, out)
     local f = filters(e)
     if f then out.filters = f.filters; out.filter_mode = f.filter_mode; out.use_filters = f.use_filters; out.filter_slots = f.filter_slots end
     -- A collector: chunks its arms hold on the way in (output is in inventories).

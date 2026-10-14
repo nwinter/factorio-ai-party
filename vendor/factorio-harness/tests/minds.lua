@@ -125,6 +125,18 @@ eq(r.corrected[1],'step 1: collect {"item":"copper-plate","positions":[{"x":3.5,
 local queued=sol('queue_status').pending[1].args
 eq(queued.positions[1].x,3.5); eq(queued.position,nil)
 sol('queue_cancel',{})
+-- transfer's direction named any way (Haiku, shift09): a direction word for the same move, from_entity=true, or the
+-- target given as to_entity / from_entity; a flag against the given direction still fails.
+r=sol('transfer',{position={x=3.5,y=3.5},direction='from_entity',item='copper-plate',count=1})
+eq(r.corrected,'transfer {"count":1,"direction":"to_player","item":"copper-plate","position":{"x":3.5,"y":3.5}} (direction from_entity is to_player)')
+r=sol('transfer',{position={x=3.5,y=3.5},from_entity=true,item='copper-plate',count=1})
+eq(r.corrected,'transfer {"count":1,"direction":"to_player","item":"copper-plate","position":{"x":3.5,"y":3.5}} (from_entity=true is direction="to_player")')
+r=sol('transfer',{from_entity={x=3.5,y=3.5},item='copper-plate',count=1})
+eq(r.corrected,'transfer {"count":1,"direction":"to_player","item":"copper-plate","position":{"x":3.5,"y":3.5}} (from_entity={x,y} is direction="to_player" position=...)')
+fails(function() sol('transfer',{position={x=3.5,y=3.5},direction='to_entity',to_player=true,item='copper-plate'}) end,'unknown argument to_player for transfer')
+r=sol('queue_submit',{start=false,steps={{action='transfer',args={to_entity={x=3.5,y=3.5},item='copper-plate'}}}})
+eq(r.corrected[1],'step 1: transfer {"direction":"to_entity","item":"copper-plate","position":{"x":3.5,"y":3.5}} (to_entity={x,y} is direction="to_entity" position=...)')
+sol('queue_cancel',{})
 
 -- Fix 6: an empty take says why; the third identical one in 7 min says so.
 r=sol('transfer',{position={x=3.5,y=3.5},direction='to_player',item='iron-plate'})

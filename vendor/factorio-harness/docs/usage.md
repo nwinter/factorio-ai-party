@@ -68,6 +68,12 @@ fh call status
   taken stays as it is; with `radius` neither is touched. Queue steps (`queue_submit`, `queue_repeat`, `queue_edit`)
   are corrected the same way, and the reply lists each in `corrected` (`step 1: collect {...} (position is positions
   (a list))`).
+- `transfer` takes its direction under other names, noted in `corrected`: `from_player`, `give`, `put`, `insert`,
+  `to_chest`, `to_container` are `to_entity`; `from_entity`, `take`, `from_chest`, `from_container` are `to_player`;
+  `to_entity: true` / `from_entity: true` (also beside the same `direction`); and the target given as one of them,
+  `{"to_entity": {"x": 8.5, "y": 37.5}, "item": "coal"}` or `{"from_entity": [{x,y}, ...]}`, is the direction and
+  `position` / `positions`. Queue steps too. A flag against the given direction still fails. Both directions work on
+  any container: chests, logistic chests, car and spider trunks, cargo wagons, landing pads and hubs.
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
@@ -429,6 +435,14 @@ fh sleep 900 --until researched                       # ...or until the research
 ## Messages and reads
 
 - `inspect` is a read: any entity in sight (32 tiles, visible chunk) works without reach, like `scan`; `in_reach` says whether acting on it would reach.
+- An action on a target out of reach fails at once, without walking, with the distance, your reach and a free spot
+  within reach of it: `entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away, reach 10; in reach from
+  (11.5,0.5)` (the spot is left out when none is free within 3 tiles of the line toward it).
+- `inspect` of a chest, logistic chest, cargo wagon, car or spider trunk, landing pad or hub shows `holds`, one line:
+  the largest stacks first (`iron-plate*400 coal*120 ... +3 more`), slots used of the total, and the red-X limit
+  (`; 7 of 48 slots (limited to 20)`). A requester or buffer chest adds `requests`: held/asked per item over its active
+  sections (`iron-plate 40/100, coal 0/50`; `; a section set by circuit` when one is). Both are columns in the
+  `inspect {positions}` table.
 - An electric machine no pole reaches reads `status_name: unpowered` (whatever the engine's status, often
   `low_power`) with `power: "unpowered: no pole reaches it; nearest pole medium-electric-pole at (17,10), 7 tiles"`,
   in `inspect` and in build replies (`power`).
@@ -453,6 +467,12 @@ fh sleep 900 --until researched                       # ...or until the research
     anything (chemical plants, refineries and the like are assemblers) and takes all of it: output slots only, never
     inputs or fuel. `count` caps the total; chests need `item`. The reply has `items: "all"`, `stock` and `places`;
     `last` reports `got` and `items {name=count}`.
+  - `transfer` and `collect` (and `rearm` and `refuel` without `radius`) over 2 or more targets (`positions`, or the
+    entities in reach) end with `tally`, one line:
+    `moved 10 iron-plate; 2 of 3 targets touched; short: 1 failed (entity is out of reach: ...)`. Shorts: `your
+    inventory full of ITEM`, `N full`, `N wanting more you hold none of`, `N failed (the first reason)`. `collect` with
+    `radius` puts it in `last` (and the `--wait` reply) over places: `N not reached`, `N failed`, `N places not visited
+    (OUTCOME)`. Compact output prints it after the action's own fields, before the team and clock lines.
   - `inspect {"positions": [...]}` (1..32 entries, each may carry `name` or `unit_number`): one inspect per entry in one
     call, `entities` in order and `count`; an entry that fails is `{position, error}`.
 - Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
@@ -557,6 +577,30 @@ fh sleep 900 --until researched                       # ...or until the research
   than a rocket lifts. Item weights are the 2.0 prototypes' (grams in the game, kg here; the API gives one weight
   per item, used for every quality); stacks of different qualities take their own slots. Shift world, 2026-10-13: 2 thrusters, 4 cargo bays, 30
   foundation, 150 processing units and 40 rocket fuel are 2300 kg, 3 rockets.
+- `silo {position?, surface?}` (read; silo.lua, Gemini's request) shows the silo nearest `position`, or every silo
+  on the surface (yours, or `surface`; up to 16). Per silo:
+  - `parts` (`15/50`, against the 2.0 `rocket_parts_required`), `state` (the rocket's: `building_rocket`,
+    `rocket_ready`, ...), `status` (the entity's: `working`, `item_ingredient_shortage`, `no_power`, ...),
+    `rocket_ready`;
+  - `crafting {part_progress, parts_left, part_s, productivity, rocket_eta_s}`, where `rocket_eta_s` is the rest of
+    the rocket at the silo's crafting speed while it works;
+  - `ingredients [{name, per_part, in_silo, in_hands, at_sources, needed, short}]` for the parts left
+    (productivity counted, the part in progress already paid): `in_hands` is what the feeding inserters hold,
+    `at_sources` what their belts and chests hold; `lacks` names ingredients the silo holds too few of for the next
+    part; `feeders {inserters, idle, sources}` (inserters within 8 tiles dropping into the silo);
+  - `cargo {kg, lift_kg, stacks, slots, items, over_kg}` (the rocket inventory weighed as `cargo` weighs it),
+    `trash`, `auto_requests` (the GUI checkbox), `platforms_above` (ours in orbit of this planet, a platform waiting
+    for its starter pack marked);
+  - `last_launch {ago, tick, to, cargo, by}`: launches the game orders (`on_rocket_launch_ordered`: the cargo pod's
+    contents and destination; automatic launches have no `by`) and launches an agent's `launch` call made (`by`).
+    The game event reaches the runtime once the mod's control.lua with it is loaded (a server start); until then
+    only `launch` calls are seen;
+  - `line`, all of it in one line: `rocket-silo (-65.5,90.5) on fulgora: building rocket, parts 15/50; working (part
+    40%), 35 parts left, the rocket in 1m44s at this speed; for the parts left: processing-unit 32 in the silo, 101 at
+    feeders (34 needed), ...; lacks rocket-fuel in the silo; short for this rocket: rocket-fuel 34; 2 feeding
+    inserters (1 idle: ...); no cargo loaded; automatic requests off; no launch seen`.
+
+  `rockets_launched` is the force's count.
 - `launch {position, platform}` sends the cargo to the platform's hub (a platform waiting for its starter pack gets it
   as its starter pack). A rocket lifts 1000 kg (item prototype weights; the game takes more by script, then refuses
   the launch): `transfer` into `rocket_silo_rocket` gives only what fits (`weight_limited {requested, fits, note}`)
@@ -935,6 +979,19 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     `robots_busy`, a logistic network with no idle logistic robot in every 30-second look for 10 minutes (`logistic
     #3: no idle logistic robot for 11 min (147 robots; 1 requests unfilled 60+ s)`). A network with machines on low
     power (satisfaction under 100%) shows as the `low power` groups above.
+  - Lightning on Fulgora (lightning.lua, Gemini's request), routed and limited the same way, with no hint. A rod or
+    collector (`lightning-attractor` with an energy buffer; ruin attractors are left out) charges its own buffer
+    from a strike and feeds it into its electric network:
+    - `lightning_unconnected`: attractors no pole reaches, per 64-tile cell (`1 lightning-rod in no electric
+      network (no pole reaches it) near (-5,3): a strike charges only its own buffer`);
+    - `lightning_unused`: attractors in a network with no accumulator where nothing drew power in the last minute
+      (the network's statistics, read from a pole within 10 tiles of an attractor);
+    - `lightning_storage_full`: a network with attractors whose accumulators hold 99% or more of their capacity
+      (`electric #300: its 11 accumulators are full (54.9 MJ of 55 MJ) with 1 lightning-rod in the network near
+      (-5,-3); their buffers hold 120 MJ of 500 MJ`; worse is more accumulators).
+
+    The API has no lightning property, so the planet is named (`fulgora`). The read takes the attractors and
+    accumulators on Fulgora once per 30-second scan.
 - The agent's own review (selfview.lua): `team.review` every 2 game hours per agent (the first 2 hours into the
   shift, or 2 hours after its first request), on a reply that is not a peek, and `review` (read, `fh call review`):
   one block of lines,

@@ -99,8 +99,9 @@ already targets your character.
   game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
   (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, an electric network drawing 85%
   or more of its capacity for 2 minutes, boilers under 10 minutes of fuel, a logistic network with no idle logistic
-  robot for 10 minutes; at most one digest every 2.5 minutes, new or worse only; `./fh call game_alerts` lists them
-  all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
+  robot for 10 minutes, Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
+  drawing power, full accumulators in an attractor network; at most one digest every 2.5 minutes, new or worse only;
+  `./fh call game_alerts` lists them all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
   your character's time by kind (the time before a request counts toward that request's kind), the hand hauls you
   repeated 5 or more times, what failed (by reason, top 3), alerts still open in your claims, and losses near where
   your character was (`review (last 2h): 412 actions: ...; time: 48% walking, 21% item moves, 9% building, 22%
@@ -124,7 +125,10 @@ already targets your character.
   `inspect {"positions": [...]}` inspects up to 32 entities in one call; `collect {"radius": N}` without `item` takes
   every assembler and furnace output in the radius (output slots only). `position` and `positions` are interchangeable
   in these calls (`corrected` says how it ran). A repeating queue (`queue_repeat`, optional `name`) puts a `queue:`
-  line in the team block when a round's short steps differ from the round before.
+  line in the team block when a round's short steps differ from the round before. `transfer` takes `to_entity` or
+  `from_entity` as the target (`{"to_entity": {x,y}}`) on any container; out of reach, it says the distance, your
+  reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
+  `collect` over several targets ends with a `tally` line.
 - Gleba: `inspect` on an agricultural tower shows its `tower` state, seeds, output, which cells have soil for which
   seeds, and its plants with time to harvest; `transfer`, `feed` and `collect` work on its seeds and harvest.
 - In a tank, car or spidertron you drive, `shoot` fires its gun: `--args '{"position":{"x":294,"y":-135},"gun":"tank-cannon"}'`
@@ -152,7 +156,9 @@ already targets your character.
   the recipe puts there; `inspect` of a ghost shows the same.
 - `./fh call cargo --args '{"items":{"thruster":2,"cargo-bay":4}}'` (or a chest, silo or pad `position`) weighs a
   rocket cargo list: each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets,
-  and one split into rockets that keeps each within both.
+  and one split into rockets that keeps each within both. `./fh call silo` (or a `position`) shows a silo's rocket
+  parts X/50, what it lacks for the parts left (in the silo and at its feeders), the cargo's kg and slots, and the
+  last launch.
 - Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,
   blueprints, deconstruction, `circuit_set`, `wire`, `requests`, schedules) leave your character's action, queue and
   standing orders running. `platforms` and `inspect` of a hub show each platform's `speed_kms`, `leg_left_km`,
