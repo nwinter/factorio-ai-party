@@ -2434,6 +2434,9 @@ function handlers.inspect(p,a)
   if okp and pl and space then
     if e.type=='space-platform-hub' then
       out.hub_slots=space.hub_slots(e)
+      -- The platform's flight: speed, the leg and the km left on it, minutes at this speed, the next stop.
+      local okf,flight=pcall(space.flight,pl)
+      out.flight=okf and flight or nil
       local okr,repair=pcall(space.repair_view,pl)
       if okr then out.repair_packs,out.damaged,out.damaged_count=repair.repair_packs,repair.damaged,repair.damaged_count end
     end
@@ -4385,6 +4388,10 @@ end
 local passive={order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
 -- circuit_set and wire (circuits.lua) leave the character and its queue alone, as circuit did.
 passive.circuit_set=true; passive.wire=true
+-- Planners and blueprint tools never drive the character, near or by remote
+-- view: paste, blueprint_place and the route tools put ghosts down (as
+-- place_ghosts), capture and copy read an area, cut marks it as the planner does.
+for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route'}) do passive[name]=true end
 local reads={placements=true,defense=true,flamers=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
@@ -4557,7 +4564,7 @@ function M.dispatch(request)
   local result
   -- A corrected call that still fails says how it ran.
   local function ran(r) return corrected and tostring(r)..' [ran as '..corrected.call..': '..table.concat(corrected.notes,'; ')..']' or r end
-  if M.keeps(request.action) then
+  if M.keeps(request.action,request.args) then
     local ok,r=pcall(dispatch_request,request)
     if not ok then M.seated_ok=nil; passive_failed=game.tick; error(ran(r),0) end
     result=r
@@ -4636,13 +4643,35 @@ end
 -- research, sleep, queue calls, votes; an unknown name): a direct call leaves
 -- the running action and queue alone, and so does its failure.
 function M.is_read(action) return reads[action]==true end
-function M.keeps(action)
+function M.keeps(action,args)
   return type(action)~='string' or not handlers[action] or reads[action] or passive[action] or action:match('^queue_')~=nil
-    or M.board.handlers[action]~=nil or M.players.handlers[action]~=nil or M.votes.handlers[action]~=nil
+    or M.board.handlers[action]~=nil or M.players.handlers[action]~=nil or M.votes.handlers[action]~=nil or M.away(args)
+end
+-- A call on a platform by name or on another surface by name (args alone).
+function M.away(args) return type(args)=='table' and (args.platform~=nil or args.surface~=nil) end
+-- A call that acts on another surface or by remote view leaves the character's
+-- action and queue alone, as a passive one does (Astra, shift08: her Nauvis
+-- courier queue paused about 30 times by platform configure and paste):
+-- platform= on any action, surface= naming a surface other than the
+-- character's, configure on an entity out of the character's reach (remote
+-- view). Character-bound work (walking, mining, crafting, inventory moves,
+-- building in reach) still takes over.
+function M.remote(p,action,args)
+  if type(args)~='table' then return false end
+  if args.platform~=nil then return true end
+  if args.surface~=nil then
+    local ok,here=pcall(function()
+      local s=p.surface
+      return args.surface==s.name or (s.platform~=nil and s.platform.name==args.surface)
+    end)
+    return not (ok and here)
+  end
+  if action=='configure' then return not pcall(entity,p,args) end
+  return false
 end
 dispatch_request=function(request)
   local handler=handlers[request.action]; assert(handler,'unsupported action; call describe')
-  M.seated_ok=(reads[request.action] or passive[request.action] or request.action=='vehicle') and true or nil
+  M.seated_ok=(reads[request.action] or passive[request.action] or M.away(request.args) or request.action=='vehicle') and true or nil
   check_args(request.action,request.args)
   if request.action=='describe' or request.action=='profiles' or request.action=='cameras' then return handler() end
   if M.bots.is_index(request.player) and (request.action=='attach' or request.action=='detach') then
@@ -4709,7 +4738,9 @@ dispatch_request=function(request)
     if M.bots.is_index(request.player) then M.bots.check_action(request.player,request.action,request.args) end
     p=player(request.player)
   end
-  if not reads[request.action] and not passive[request.action] and not request.action:match('^queue_') then
+  -- Passive, or acting on another surface or by remote view (M.remote): the action and queue go on.
+  local quiet=passive[request.action] or M.remote(p,request.action,request.args)
+  if not reads[request.action] and not quiet and not request.action:match('^queue_') then
     local q=state().queues and state().queues[p.index]
     -- A direct wait would pause a running queue (agent-minds study, fix 7:
     -- Sonnet's "queue resume, wait_ticks 20000" interrupted 22 queued walks,
@@ -4727,8 +4758,8 @@ dispatch_request=function(request)
     if q and not q.paused then M.stop_player(p.index) end
   end
   -- The agent's own character work and queue calls: standing orders wait a while after it (orders.lua hold).
-  if not reads[request.action] and not passive[request.action] and request.action~='queue_status' then M.orders.on_drive(p.index) end
-  if passive[request.action] then
+  if not reads[request.action] and not quiet and request.action~='queue_status' then M.orders.on_drive(p.index) end
+  if quiet then
     local ok,result=pcall(handler,p,request.args or {})
     if not ok then passive_failed=game.tick; error(result,0) end
     return result

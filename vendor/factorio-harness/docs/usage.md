@@ -344,6 +344,13 @@ fh queue repeat --file plan.json
   (out of reach, an unknown entity, a timed-out tour) still follow `on_fail`.
 - `queue edit` needs the current revision, so you can't accidentally edit a plan that has already moved on.
 - A direct call that moves or acts as the character pauses the queue. Reads, the board, chat, `say`, `tell`, `confess`, `operator`, `craft`/`cancel_craft`, research, votes, `sleep` and the queue calls don't, and when one of them fails (a `placements` out of sight, a `board_update` with an unknown argument) the running action and the queue go on as well. `sleep` leaves the queue running, and so does its end.
+- Calls that act on another surface or by remote view don't pause it either, nor stop a running standing order, and
+  neither does their failure: any call with `platform`, or with `surface` naming another surface than the
+  character's; `configure` on an entity out of the character's reach; the planners and blueprint tools wherever they
+  act (`place_ghosts`, `paste`, `blueprint_place`, `blueprint_capture`, `copy`, `cut`, `deconstruct`,
+  `cancel_deconstruction`, `belt_route`, `pipe_route`, `pole_route`); `circuit_set`, `wire`, `requests`, `flush`,
+  `train`, `platform_create`, `platform_schedule`, `launch`, `drop`. `configure` in reach, building, mining,
+  walking and inventory moves (`transfer`, `feed`, `collect`, ...) take over as before.
 - A harness update (a hot runtime install, or a restart with a changed mod) keeps a running queue going: a `wait_until` or `wait_ticks` step keeps its own clock, and a step toward a goal (`move_to`, `construct`, `build_path`, `mine`, `repair`, `kite`, `rearm`, `refuel`, `collect`) starts again. Any other step that was running is interrupted and leaves the queue paused (`fh queue resume` continues with the next step). A direct action is interrupted. Each agent whose work was cut gets `team.harness_updated` lines in its next reply.
 
 ## Waiting
@@ -427,6 +434,12 @@ fh sleep 900 --until researched                       # ...or until the research
   entity there adds the `repair` note.
 - `platforms` shows each platform's `defense`: `hub_health` (`637/1000`), `turrets` (`5 gun-turrets: 4 empty, 0 low
   (under 10 rounds)`) and `ammo`, the ammo flow (`turrets hold 6 rounds, the hub firearm-magazine 920`).
+- Flight, on every `platforms` row and in `inspect` of a hub under `flight`: `speed_kms` (the hub GUI's km/s; the game's
+  own value, `speed` with `platform` set, is km per tick), `next_stop` (the schedule's stop it flies to, or while it waits at its current stop, the
+  one after it), and on a route `leg` in the way it is flown (`vulcanus->nauvis`), `heading_to`, `leg_km`,
+  `leg_left_km` and `eta_min` (minutes to the end of the leg at the current speed; none at speed 0 or below, as when
+  paused and drifting back). `at` keeps the connection's own order and its percent from the first end
+  (`nauvis->vulcanus 25%`).
 - `platform_schedule {platform, paused: true}` says what pausing does: on a route (`note: paused on the route: the
   platform stays among the route's asteroids and drifts back the way it came ...; it reaches no orbit until
   unpaused`), in orbit (`paused in orbit: the platform stays where it is, among that orbit's asteroids`).

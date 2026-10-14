@@ -120,6 +120,10 @@ already targets your character.
   sets an entity's circuit condition, read switches, settings or combinator, in reach or by remote view (our entities
   in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`
   reads back the conditions, settings, each wire's far end and the signals on each network now.
+- Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,
+  blueprints, deconstruction, `circuit_set`, `wire`, `requests`, schedules) leave your character's action, queue and
+  standing orders running. `platforms` and `inspect` of a hub show each platform's `speed_kms`, `leg_left_km`,
+  `eta_min` (at the current speed) and `next_stop`.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
 
