@@ -239,7 +239,7 @@ local ring = {}
 for x = 6, 10 do for y = -2, 2 do if not (x >= 7 and x <= 9 and y >= -1 and y <= 1) then ring[#ring+1] = {name='space-platform-foundation', position={x=x+0.5, y=y+0.5}} end end end
 ring[#ring+1] = {name='space-platform-foundation', position={x=20.5, y=20.5}}
 local pl = dryrun.check(pp, {kind='ghosts', entities={{index=1, name='gun-turret', position={x=0, y=-5}}}, tiles=ring})
-eq(pl.entities[1].status, 'needs_tiles'); has(pl.entities[1].why, 'stands on 2 empty-space tiles: needs 2 space-platform-foundation first (its ghost goes there now')
+eq(pl.entities[1].status, 'needs_tiles'); has(pl.entities[1].why, 'stands on 2 empty-space tiles: needs 2 space-platform-foundation first (place_ghosts lays those tile ghosts under it first)')
 eq(pl.tiles.holes, 9); eq(pl.tiles.under_entities, 2); eq(pl.tiles.planned, 17); eq(pl.tiles.needed['space-platform-foundation'], 11)
 has(pl.tiles.holes_note, '9 empty tiles would be enclosed')
 has(pl.tiles.not_connected, '1 new foundation tile touches no existing foundation')

@@ -77,7 +77,7 @@ fh call status
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
-- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
+- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `kite`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
 - With `--wait`, the command exits 0 when the action ended successfully, 1 when it failed, and 3 when the wait ended
   while the action still runs: a tell or mention ended it (the reply's `still_running` and `note` say so), or the wait
   timed out (`wait_timeout`). So `fh call ACTION --wait && next` runs `next` only after the action is done.
@@ -224,6 +224,10 @@ fh call status
   to the retreat point, still firing at units in reach while ammunition lasts, and ends `retreated` there. Every kite
   end says why in `last.why` (`health 36% fell below min_health 40%; retreating to (-20,0)`, `out of ammunition`, `no
   enemies left within the scan radius`, `time up`), with `ammo_left`, `enemies_left` and `retreated_from`.
+  `kite --wait` waits for that end, as `move_to --wait` does (Sol, shift09: it returned at once while the fight went
+  on), and reports `outcome`, `why`, `kills`, `enemies_left`, `ammo_used`, `ammo_left` and `retreated_from`. `clear`
+  and the end of its `ticks` exit 0; `low_health`, `out_of_ammo` and `retreated` exit 1 with `Control ended:
+  low_health: health 38% fell below min_health 40%`.
 - Output is compact tables meant for reading. Use `--format json` for programs.
 
 ### Output shape, chat and time left
@@ -677,6 +681,29 @@ fh sleep 900 --until researched                       # ...or until the research
   the game's paste does: `wires {in_blueprint, connected (already), added, end_not_placed, failed, ends_not_placed
   ["chest #3"]}` (Astra 18:51: Sunward's module-audit paste made 0 ghosts over one collision, and its entities placed
   one by one with `place_ghosts` lost their wires).
+- Tiles an entity cannot stand on (water, Gleba wetland, lava, a platform's empty space; its collision mask against
+  the tile's, as the dry run judges them). Sol, shift09 01:38: 5 of 16 `pole_route` poles on Gleba wetland failed in
+  `construct` with "placement blocked by ghost medium-electric-pole" at their own positions. In 2.0.77 the forced ghost
+  check takes a pole ghost over water or wetland once the force has the landfill recipe, because a player's forced
+  placement lays landfill ghosts under it; the harness's script ghost got none, and nothing could build it.
+  - `pole_route` takes a spot the pole stands on as the tiles are, shifting up to 2 tiles sideways, before one that
+    needs landfill. A pole with no dry spot gets the landfill tile ghost under it, and the reply says so:
+    `tiles_under {landfill: 1}`, `tiles_short` (what you hold too little of) and `tiles_note` (`1 pole with no dry spot
+    within 2 tiles stands on wetland-blue-slime: 1 landfill under it, laid as tile ghosts that construct builds
+    first`; the dry run says the real call lays them).
+  - `place_ghosts` (and the routes through it) lays the tile ghosts the game expects under an entity ghost on such
+    tiles, before it: `tiles_laid {landfill: N}` and `tiles_note`. With no unlocked tile item for those tiles the entry
+    fails: `placement blocked by tiles: wetland-blue-slime at (18.5,4.5) (needs landfill (not researched))`.
+  - `belt_route` and `pipe_route` take only tiles the piece stands on as they are (or that a tile ghost already
+    covers). With no route, the error adds what the straight line crosses: `the straight line from (55.5,12.5) to
+    (82.5,12.5) crosses 18 tiles a transport-belt cannot stand on: wetland-blue-slime (landfill makes them
+    buildable)`.
+  - `construct` lays a tile ghost before an entity ghost standing on it (the entity waits for it), and a bot's tile
+    build fulfils a tile ghost of that tile as a player's does (it aborted on the ghost before).
+  - A refused build or revive names the tile (`placement blocked by tiles: wetland-blue-slime (needs landfill, ...)`),
+    never the ghost of the same entity on the same centre that it revives, nor a tile ghost under it. Another
+    entity's ghost there is still named. A build over its own ghost with the character on the footprint steps aside
+    first, as on clear ground.
 - `dry_run: true` on `place_ghosts`, `paste` / `blueprint_place` (with `repeat`, `platform`, `anchor`, flips) and
   `build` (one entry or `builds`) places nothing and returns the check of what the call would place (dryrun.lua). It is
   a read: the running action and queue go on, and a failed dry run stops nothing; a queue step with `dry_run` gets the

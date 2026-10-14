@@ -2090,6 +2090,10 @@ end
 -- the character itself, else the tiles it may not go on (water, space).
 -- Trees and rocks are called out: place_ghosts marks them and construct
 -- clears them, where a direct build cannot. Items on the ground: pick them up.
+-- A refused build (near) revives a ghost of the same entity on the same
+-- centre, so that ghost is never what blocks it (Sol, shift09 01:38: five
+-- pole ghosts on Gleba wetland read "placement blocked by ghost
+-- medium-electric-pole" at their own positions; the tiles refused them).
 local function placement_error(p,proto,pos,direction,near)
  local function blockers()
   local b=proto.collision_box or {left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}
@@ -2103,6 +2107,11 @@ local function placement_error(p,proto,pos,direction,near)
       -- Someone else stands there: say who, so the agent can ask them.
       local who=M.character_owner(e)
       found[#found+1]=string.format('%s standing at (%.1f,%.1f) (ask them to move, or build elsewhere)',who and who..'\'s character' or 'another character',e.position.x,e.position.y)
+    elseif near and e.valid and e.type=='entity-ghost' and e.ghost_name==proto.name
+      and math.abs(e.position.x-pos.x)<0.01 and math.abs(e.position.y-pos.y)<0.01 then
+      -- the ghost this build revives
+    elseif near and e.valid and e.type=='tile-ghost' then
+      -- a tile ordered under it: the tile there now decides
     elseif e.valid and e.type~='resource' and #found<4 then
       local name=e.type=='entity-ghost' and 'ghost '..e.ghost_name or e.type=='tile-ghost' and 'tile ghost '..e.ghost_name or e.name
       -- An item on the ground (shake4: Grok's 9 tries at one spot): say which.
@@ -2120,13 +2129,25 @@ local function placement_error(p,proto,pos,direction,near)
   -- front in empty space): the broken one; with rules, they judge the tiles.
   local rule,ruled=M.placewhy.tile_rules(p.surface,proto,pos,direction)
   if rule then return ': '..rule end
-  local tiles={}
-  for _,tile in pairs(ruled and {} or p.surface.find_tiles_filtered{area=area,limit=16}) do
+  -- Tiles it cannot stand on (its collision mask against each tile: water,
+  -- wetland, lava, space), with the tile item that makes them buildable;
+  -- else water, space and lava under it.
+  local tiles,items={},{}
+  local ok_fix,fixes=pcall(function() return not ruled and M.dryrun and M.dryrun.tile_fixes(p.surface,p.force,proto,pos,direction) end)
+  for _,f in ipairs(ok_fix and fixes or {}) do
+    if not tiles[f.tile] then tiles[f.tile]=true; tiles[#tiles+1]=f.tile end
+    local item=f.item or f.locked
+    if item and not items[item] then items[item]=true; items[#items+1]=item end
+  end
+  for _,tile in pairs(#tiles==0 and not ruled and p.surface.find_tiles_filtered{area=area,limit=16} or {}) do
     local mask=tile.prototype.collision_mask
     local layers=mask and mask.layers or {}
     if (layers.water_tile or layers.empty_space or layers.lava_tile) and not tiles[tile.name] then tiles[tile.name]=true; tiles[#tiles+1]=tile.name end
   end
-  if #tiles>0 then return ' by tiles: '..table.concat(tiles,', ')..' (needs landfill, or a shore position: scan fields=fluids / grid ~ marks water)' end
+  if #tiles>0 then
+    return ' by tiles: '..table.concat(tiles,', ')..' (needs '..(#items>0 and table.concat(items,' or ') or 'landfill')
+      ..', or a shore position: scan fields=fluids / grid ~ marks water)'
+  end
   return ' (nothing found in the footprint: check the position is a valid centre for a '..(proto.name or 'entity')..' and the direction)'
  end
  local ok,extra=pcall(blockers)
@@ -4002,17 +4023,45 @@ local function place_ghost(p,spec)
     and not construction.only_obstacles(p.surface,proto,pos,direction) then
     error(placement_error(p,proto,pos,direction),0)
   end
+  -- Tiles it cannot stand on (water, Gleba wetland): the forced ghost check
+  -- takes them once the force has landfill, because a player's forced
+  -- placement lays the tile ghosts under the entity; so do we, before it.
+  -- With no tile item for them the ghost would never be built: refused.
+  local fixes=M.dryrun.tile_fixes(p.surface,p.force,proto,pos,direction)
+  for _,f in ipairs(fixes or {}) do
+    local result=f.item and prototypes.item[f.item] and prototypes.item[f.item].place_as_tile_result
+    f.result=result and result.result.name
+    if not (f.result and p.surface.can_place_entity{name='tile-ghost',inner_name=f.result,position={x=f.x,y=f.y},force=p.force,
+        build_check_type=defines.build_check_type.manual_ghost}) then
+      error(string.format('placement blocked by tiles: %s at (%g,%g)%s',f.tile,f.x,f.y,
+        f.locked and ' (needs '..f.locked..')' or f.result and ' (the game refuses '..f.item..' there)' or ' (no tile item makes it buildable)'),0)
+    end
+  end
+  local laid,tiles={},{}
+  for _,f in ipairs(fixes or {}) do
+    tiles[#tiles+1]=place_tile_ghost(p,f.result,{x=f.x,y=f.y})
+    laid[f.item]=(laid[f.item] or 0)+1
+  end
   local ghost=p.surface.create_entity{name='entity-ghost',inner_name=spec.name,position=pos,direction=direction,force=p.force,player=real(p),raise_built=true,type=spec.type}
-  assert(ghost,'placement blocked')
+  if not ghost then
+    for _,t in ipairs(tiles) do if t.valid then t.destroy() end end
+    error('placement blocked',0)
+  end
   local _,marked=construction.mark_obstacles(p,ghost)
-  return ghost,marked
+  return ghost,marked,fixes and laid or nil,fixes and fixes[1].tile or nil
 end
 local function place_ghost_list(p,list)
   local placed,failed,bounds,marked=0,{},nil,0
   local unders,inserters={},{}
+  local tiles_laid,laid_under,laid_on=nil,0,nil
   for i,spec in ipairs(list) do
     local ok,err=pcall(function()
-      local ghost,n=place_ghost(p,spec)
+      local ghost,n,laid,on=place_ghost(p,spec)
+      if laid then
+        tiles_laid=tiles_laid or {}
+        for item,count in pairs(laid) do tiles_laid[item]=(tiles_laid[item] or 0)+count end
+        laid_under=laid_under+1; laid_on=laid_on or on
+      end
       local g=ghost.position
       if ghost.type=='entity-ghost' and ghost.ghost_type=='inserter' then inserters[#inserters+1]=ghost end
       if ghost.type=='entity-ghost' and (ghost.ghost_type=='underground-belt' or ghost.ghost_type=='pipe-to-ground') then
@@ -4047,8 +4096,20 @@ local function place_ghost_list(p,list)
   -- Inserter ghosts with nothing to take from or put into on their points,
   -- once all of this call's ghosts stand (targets.lua).
   local loose,nloose=M.targets.check(inserters,16)
+  -- Tile ghosts laid under entity ghosts that stand on water or wetland: construct lays them first.
+  local tile_note
+  if tiles_laid then
+    local parts={}
+    for item,count in pairs(tiles_laid) do parts[#parts+1]=count..' '..item end
+    table.sort(parts)
+    local n=0
+    for _,count in pairs(tiles_laid) do n=n+count end
+    tile_note=string.format('%d ghost%s %s on %s: %s tile ghost%s laid under %s, which construct builds first (it takes the items from your inventory)',
+      laid_under,laid_under==1 and '' or 's',laid_under==1 and 'stands' or 'stand',laid_on,table.concat(parts,', '),n==1 and '' or 's',laid_under==1 and 'it' or 'them')
+  end
   return {placed=placed,failed=#failed>0 and failed or nil,bounds=bounds,obstacles_marked=marked>0 and marked or nil,
-    underground_warnings=#warnings>0 and warnings or nil,inserters_without_target=loose,inserters_without_target_count=nloose}
+    underground_warnings=#warnings>0 and warnings or nil,inserters_without_target=loose,inserters_without_target_count=nloose,
+    tiles_laid=tiles_laid,tiles_note=tile_note}
 end
 -- A filled rectangle of tile ghosts (landfill, foundation, paths); tiles the
 -- game refuses there (landfill on land, a tile already present) are counted.
@@ -4202,6 +4263,11 @@ function handlers.pole_route(p,a)
   local function free(pos)
     return p.surface.can_place_entity{name=pole.name,position=pos,force=p.force,build_check_type=defines.build_check_type.manual_ghost,forced=true}
   end
+  -- The forced ghost check also takes water and Gleba wetland once the force
+  -- has landfill (Sol, shift09: 5 of 16 poles on wetland, which construct
+  -- could not build): a spot the pole stands on as the tiles are comes first,
+  -- else one with landfill under it (place_ghosts lays its ghost).
+  local function dry(pos) return not M.dryrun.tile_fixes(p.surface,p.force,pole,pos,0) end
   local function existing(pos)
     for _,e in pairs(p.surface.find_entities_filtered{position=pos,radius=1.1,name=pole.name,force=p.force,limit=1}) do
       if e.valid then return e end
@@ -4215,10 +4281,12 @@ function handlers.pole_route(p,a)
     local pos=snap(want)
     local there=existing(pos)
     if there then reused=reused+1; last=there.position; return end
-    for _,d in ipairs({0,1,-1,2,-2}) do
-      local try={x=pos.x+perp.x*d,y=pos.y+perp.y*d}
-      local ok_dist=not last or distance(last,try)<=reach
-      if ok_dist and free(try) then specs[#specs+1]={name=pole.name,position=try}; last=try; return end
+    for pass=1,2 do
+      for _,d in ipairs({0,1,-1,2,-2}) do
+        local try={x=pos.x+perp.x*d,y=pos.y+perp.y*d}
+        local ok_dist=not last or distance(last,try)<=reach
+        if ok_dist and free(try) and (pass==2 or dry(try)) then specs[#specs+1]={name=pole.name,position=try}; last=try; return end
+      end
     end
     failed[#failed+1]={position=pos,error=placement_error(p,pole,pos,0)}
     last=pos
@@ -4240,6 +4308,29 @@ function handlers.pole_route(p,a)
   local out={item=item,spacing=spacing,wire_reach=reach,poles=#specs,reused=reused>0 and reused or nil,failed=#failed>0 and failed or nil}
   local held=p.get_main_inventory().get_item_count(item)
   out.held=held; out.short=#specs>held and #specs-held or nil
+  -- Poles with no dry spot within 2 tiles stand on water or wetland: the
+  -- tile items laid under them.
+  local under,on,wet={},nil,0
+  for _,spec in ipairs(specs) do
+    local fixes=M.dryrun.tile_fixes(p.surface,p.force,pole,spec.position,0)
+    if fixes then wet=wet+1 end
+    for _,f in ipairs(fixes or {}) do
+      if f.item then under[f.item]=(under[f.item] or 0)+1; on=on or f.tile end
+    end
+  end
+  if next(under) then
+    out.tiles_under=under
+    local parts={}
+    for name,n in pairs(under) do
+      parts[#parts+1]=n..' '..name
+      local have=p.get_main_inventory().get_item_count(name)
+      if have<n then out.tiles_short=out.tiles_short or {}; out.tiles_short[name]=n-have end
+    end
+    table.sort(parts)
+    out.tiles_note=string.format('%d pole%s with no dry spot within 2 tiles %s on %s: %s under %s, %s',wet,wet==1 and '' or 's',wet==1 and 'stands' or 'stand',on,
+      table.concat(parts,', '),wet==1 and 'it' or 'them',
+      a.dry_run and 'which the real call lays as tile ghosts for construct to build first' or 'laid as tile ghosts that construct builds first')
+  end
   if a.dry_run then out.positions={}; for i,s in ipairs(specs) do out.positions[i]=s.position end; return out end
   if #specs>0 then
     local placed=handlers.place_ghosts(p,{entities=specs})
@@ -5441,8 +5532,13 @@ navigate=function(p,nav)
   end
   steer(p,waypoint_goal(p,nav,goal),nav)
 end
-route=route_module{position=position,directions=directions,chunk_of=chunk_of}
-pipes=pipes_module{position=position,directions=directions,chunk_of=chunk_of}
+-- Route planners take only tiles the piece stands on as they are (or on a tile ghost ordered there), and a
+-- route with no way says what tiles the straight line crosses (dryrun.lua; Sol, shift09: poles on Gleba wetland).
+do
+  local tiles={stands_fn=function(...) return M.dryrun.stands_fn(...) end,line_tiles=function(...) return M.dryrun.line_tiles(...) end}
+  route=route_module{position=position,directions=directions,chunk_of=chunk_of,tiles=tiles}
+  pipes=pipes_module{position=position,directions=directions,chunk_of=chunk_of,tiles=tiles}
+end
 construction=construction_module{position=position,distance=distance,integer=integer,visible=visible,steer=steer,real=real,
   known=known,reason=reason,directions=directions,waypoint_goal=waypoint_goal,
   request_path=function(p,nav) return request_path(p,nav) end,navigate=function(p,nav) return navigate(p,nav) end,

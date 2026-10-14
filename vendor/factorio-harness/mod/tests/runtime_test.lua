@@ -380,7 +380,20 @@ p.character.type=nil; p.character.position=nil
 eq(wood.count,3); eq(p.cursor_stack.valid_for_read,false)
 footprint={}; tiles={{name='water',prototype={collision_mask={layers={water_tile=true}}}},{name='water',prototype={collision_mask={layers={water_tile=true}}}}}
 fails(function() call('build',{item='wooden-chest',position={x=2,y=0}}) end,'placement blocked by tiles: water (needs landfill')
-tiles={{name='grass-1',prototype={collision_mask={layers={ground_tile=true}}}}}
+-- Sol, shift09 01:38: a build over its own ghost on tiles it cannot stand on (Gleba wetland) names the tiles, never
+-- the ghost it would revive ("placement blocked by ghost medium-electric-pole" at the pole's own position).
+wood.prototype.place_result.name='wooden-chest'
+footprint={{valid=true,type='entity-ghost',ghost_name='wooden-chest',position={x=2,y=0}},{valid=true,type='tile-ghost',ghost_name='landfill',position={x=2.5,y=0.5}}}
+tiles={{name='wetland-blue-slime',prototype={collision_mask={layers={water_tile=true,floor=true,resource=true}}}}}
+do
+  local ok,err=pcall(call,'build',{item='wooden-chest',position={x=2,y=0}})
+  assert(not ok and tostring(err):find('placement blocked by tiles: wetland-blue-slime (needs landfill',1,true) and not tostring(err):find('ghost',1,true),tostring(err))
+end
+-- Another entity's ghost on the footprint still blocks, and is named.
+footprint={{valid=true,type='entity-ghost',ghost_name='iron-chest',position={x=2,y=0}}}
+fails(function() call('build',{item='wooden-chest',position={x=2,y=0}}) end,'placement blocked by ghost iron-chest (2,0)')
+wood.prototype.place_result.name=nil
+footprint={}; tiles={{name='grass-1',prototype={collision_mask={layers={ground_tile=true}}}}}
 fails(function() call('build',{item='wooden-chest',position={x=2,y=0}}) end,'placement blocked (nothing found in the footprint')
 p.surface.find_tiles_filtered=nil
 p.can_build_from_cursor=function() return true end
@@ -1894,6 +1907,69 @@ local laid=call('pole_route',{from={x=0.5,y=0.5},to={x=30.5,y=0.5}})
 eq(laid.placed,5); eq(#ghosts,5); eq(ghosts[1],'small-electric-pole'); assert(laid.note:find('craft 2 more small-electric-pole',1,true))
 fails(function() call('pole_route',{from={x=0,y=0},to={x=1,y=0},item='gun-turret'}) end,'must place an electric pole')
 fails(function() call('pole_route',{from={x=0,y=0},to={x=1,y=0},spacing=9}) end,'beyond the wire reach')
+end
+-- Sol, shift09 01:38: 5 of 16 medium poles on Gleba wetland. The forced ghost check takes a pole there once the force
+-- has landfill (a player's forced placement lays landfill under it), and a lone script ghost was never built. pole_route
+-- now takes a dry spot within 2 tiles first, else lays the landfill tile ghost under the pole and says so.
+do
+local WET={layers={water_tile=true,floor=true,resource=true}}
+prototypes.tile=prototypes.tile or {}
+prototypes.tile['wetland-blue-slime']={name='wetland-blue-slime',collision_mask=WET}
+prototypes.tile['grass-1']={name='grass-1',collision_mask={layers={ground_tile=true}}}
+prototypes.tile['landfill']={name='landfill',collision_mask={layers={ground_tile=true}}}
+prototypes.entity['medium-electric-pole']={name='medium-electric-pole',type='electric-pole',items_to_place_this={{name='medium-electric-pole',count=1}},
+  max_wire_distance=9,collision_box={left_top={x=-0.15,y=-0.15},right_bottom={x=0.15,y=0.15}},
+  collision_mask={layers={water_tile=true,object=true,item=true,player=true}}}
+prototypes.item['medium-electric-pole']={place_result=prototypes.entity['medium-electric-pole']}
+prototypes.item['landfill']={place_as_tile_result={result=prototypes.tile['landfill'],condition={layers={ground_tile=true}}}}
+-- Wetland: a 1x3 patch at x 8 (y -1..1) a 2-tile shift avoids, and a band at x 16..20 it cannot.
+local function wet(x,y) return (x==8 and y>=-1 and y<=1) or (x>=16 and x<=20) end
+local made={}
+p.surface.get_tile=function(x,y)
+  local name=wet(math.floor(x),math.floor(y)) and 'wetland-blue-slime' or 'grass-1'
+  for _,m in ipairs(made) do if m.name=='tile-ghost' and m.laid and math.floor(m.position.x)==math.floor(x) and math.floor(m.position.y)==math.floor(y) then name='landfill' end end
+  return {valid=true,name=name,prototype=prototypes.tile[name]}
+end
+p.surface.find_entities_filtered=function(f)
+  local out={}
+  for _,m in ipairs(made) do
+    if f.type=='tile-ghost' and m.name=='tile-ghost' and f.position and math.abs(m.position.x-f.position.x)<0.2 and math.abs(m.position.y-f.position.y)<0.2 then
+      out[#out+1]={valid=true,type='tile-ghost',ghost_name=m.inner_name,position=m.position}
+    end
+  end
+  return out
+end
+p.surface.can_place_entity=function() return true end -- the forced ghost check, with landfill unlocked, takes all of it
+p.surface.create_entity=function(a) made[#made+1]=a; return {valid=true,position=a.position,type=a.name,ghost_type='electric-pole',ghost_name=a.inner_name,destroy=function() end} end
+p.get_main_inventory=function() return {get_item_count=function(n) return n=='medium-electric-pole' and 10 or 0 end} end
+local plan=call('pole_route',{from={x=0.5,y=0.5},to={x=24.5,y=0.5},item='medium-electric-pole',dry_run=true})
+eq(plan.spacing,8); eq(plan.poles,4)
+eq(plan.positions[2].x,8.5); eq(plan.positions[2].y,2.5) -- the patch: shifted 2 tiles to a dry spot
+eq(plan.positions[3].x,16.5); eq(plan.positions[3].y,0.5) -- the band: no dry spot within 2 tiles
+eq(plan.tiles_under.landfill,1); eq(plan.tiles_short.landfill,1); eq(#made,0)
+eq(plan.tiles_note,'1 pole with no dry spot within 2 tiles stands on wetland-blue-slime: 1 landfill under it, which the real call lays as tile ghosts for construct to build first')
+local laid=call('pole_route',{from={x=0.5,y=0.5},to={x=24.5,y=0.5},item='medium-electric-pole'})
+eq(laid.placed,4)
+local tile_ghosts={}
+for i,m in ipairs(made) do if m.name=='tile-ghost' then tile_ghosts[#tile_ghosts+1]={i=i,m=m} end end
+eq(#tile_ghosts,1); eq(tile_ghosts[1].m.inner_name,'landfill'); eq(tile_ghosts[1].m.position.x,16.5); eq(tile_ghosts[1].m.position.y,0.5)
+-- the landfill ghost goes down before the pole ghost on it
+local pole_i
+for i,m in ipairs(made) do if m.name=='entity-ghost' and m.position.x==16.5 then pole_i=i end end
+assert(pole_i and tile_ghosts[1].i<pole_i)
+-- place_ghosts the same way: a pole on the band gets its landfill ghost and a note
+made={}
+local pg=call('place_ghosts',{entities={{name='medium-electric-pole',position={x=18.5,y=4.5}}}})
+eq(pg.placed,1); eq(pg.tiles_laid.landfill,1)
+eq(pg.tiles_note,'1 ghost stands on wetland-blue-slime: 1 landfill tile ghost laid under it, which construct builds first (it takes the items from your inventory)')
+-- with landfill not researched the ghost is refused, naming the tile (a tree on the spot let the check through)
+local recipes=p.force.recipes
+p.force.recipes={landfill={enabled=false}}
+made={}
+pg=call('place_ghosts',{entities={{name='medium-electric-pole',position={x=18.5,y=4.5}}}})
+eq(pg.placed,0); eq(pg.failed[1].error,'placement blocked by tiles: wetland-blue-slime at (18.5,4.5) (needs landfill (not researched))'); eq(#made,0)
+p.force.recipes=recipes
+p.surface.get_tile=nil
 end
 -- belt_route plans around obstacles and places the line as ghosts, with
 -- underground ends typed; dry_run only plans; missing items are counted.

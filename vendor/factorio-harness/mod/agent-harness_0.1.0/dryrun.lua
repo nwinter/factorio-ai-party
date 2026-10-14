@@ -140,6 +140,101 @@ return function(api)
     return v
   end
 
+  -- The tiles under an entity at pos that it cannot stand on now (its
+  -- collision mask against each tile; a tile ghost already ordered there that
+  -- it can stand on counts as laid), each {x, y, tile, item}: item is the
+  -- tile item that makes it buildable, nil when none the force has unlocked
+  -- can. nil when there are none, or when the entity has tile rules of its own
+  -- (placewhy.tile_rules judges those). Sol, shift09 01:38: in 2.0.77 the
+  -- forced ghost check takes a pole ghost over Gleba wetland once the force
+  -- has the landfill recipe, as a player's forced placement lays landfill
+  -- ghosts under it; a script ghost got none, and nothing could build it.
+  function M.tile_fixes(surface, force, proto, pos, dir)
+    local rules = try(function() return proto.tile_buildability_rules end)
+    if type(rules) == 'table' and #rules > 0 then return nil end
+    local mask = layers(try(function() return proto.collision_mask end))
+    if not next(mask) then return nil end
+    remedy_cache = {}
+    local x0, y0, x1, y1 = span(M.footprint(proto, pos, dir))
+    local out
+    for x = x0, x1 do
+      for y = y0, y1 do
+        local t = try(function() return surface.get_tile(x, y) end)
+        local name = t and try(function() return t.name end)
+        local tl = name and try(function() return t.prototype.collision_mask.layers end) or {out_of_map=true}
+        if collide(mask, tl) then
+          local laid = false
+          for _, g in pairs(surface.find_entities_filtered{position={x+0.5, y+0.5}, radius=0.1, type='tile-ghost'}) do
+            local gl = try(function() return prototypes.tile[g.ghost_name].collision_mask.layers end)
+            if gl and not collide(mask, gl) then laid = true end
+          end
+          if not laid then
+            local fix = name and not tl.out_of_map and remedy(force, name, tl, mask) or nil
+            out = out or {}
+            out[#out+1] = {x=x+0.5, y=y+0.5, tile=name or 'out-of-map', item=fix and not fix:find(' ', 1, true) and fix or nil, locked=fix and fix:find(' ', 1, true) and fix or nil}
+          end
+        end
+      end
+    end
+    return out
+  end
+
+  -- For route planners (belts, pipes: one tile each): a function (x, y) ->
+  -- whether the entity stands on that tile as it is now, or on a tile ghost
+  -- ordered there; each tile kind's layers are read once. Call it only on a
+  -- tile the engine's ghost check took (its chunk is generated).
+  function M.stands_fn(surface, proto)
+    local mask = layers(try(function() return proto.collision_mask end))
+    if not next(mask) then return function() return true end end
+    local kinds = {}
+    return function(x, y)
+      local t = surface.get_tile(x, y)
+      local name = t.name
+      local c = kinds[name]
+      if c == nil then c = collide(mask, layers(t.prototype.collision_mask)); kinds[name] = c end
+      if not c then return true end
+      for _, g in pairs(surface.find_entities_filtered{position={x+0.5, y+0.5}, radius=0.1, type='tile-ghost'}) do
+        local gl = try(function() return prototypes.tile[g.ghost_name].collision_mask.layers end)
+        if gl and not collide(mask, gl) then return true end
+      end
+      return false
+    end
+  end
+  -- What the straight line between two points crosses that the entity cannot
+  -- stand on, for a route that found no way: 'the straight line ... crosses 14
+  -- tiles a transport-belt cannot stand on: wetland-blue-slime (landfill makes
+  -- them buildable)'; nil when it crosses none.
+  function M.line_tiles(surface, force, proto, from, to)
+    local mask = layers(try(function() return proto.collision_mask end))
+    if not next(mask) then return nil end
+    remedy_cache = {}
+    local dx, dy = to.x - from.x, to.y - from.y
+    local n = math.max(1, math.ceil(math.max(math.abs(dx), math.abs(dy)) * 2))
+    local seen, names, fixes, count = {}, {}, {}, 0
+    for i = 0, n do
+      local x, y = math.floor(from.x + dx * i / n), math.floor(from.y + dy * i / n)
+      local k = key(x, y)
+      if not seen[k] then
+        seen[k] = true
+        local t = try(function() return surface.get_tile(x, y) end)
+        local name = t and try(function() return t.name end)
+        local tl = name and try(function() return t.prototype.collision_mask.layers end)
+        if name and tl and collide(mask, tl) then
+          count = count + 1
+          if not names[name] then
+            names[name] = true; names[#names+1] = name
+            local fix = remedy(force, name, tl, mask)
+            if fix and not fixes[fix] then fixes[fix] = true; fixes[#fixes+1] = fix end
+          end
+        end
+      end
+    end
+    if count == 0 then return nil end
+    return string.format('the straight line from (%g,%g) to (%g,%g) crosses %d tile%s a %s cannot stand on: %s%s', from.x, from.y, to.x, to.y,
+      count, count == 1 and '' or 's', proto.name, table.concat(names, ', '),
+      #fixes > 0 and ' ('..table.concat(fixes, ' or ')..' makes them buildable)' or ' (no tile item makes them buildable)')
+  end
+
   -- Entities that stand on or beside a rail: the game places them only where
   -- a rail is, so a plan that lays its rails too is checked by the game later.
   local RAIL_BOUND = {['rail-signal']=true, ['rail-chain-signal']=true, ['train-stop']=true, locomotive=true,
@@ -405,8 +500,11 @@ return function(api)
             for item, n in pairs(by) do parts[#parts+1] = n..' '..item end
             table.sort(parts)
             rec.status = 'needs_tiles'
+            -- place_ghosts lays the tile ghosts under it first (as a player's forced placement does); a paste
+            -- leaves the entity ghost alone there.
             rec.note = string.format('stands on %d %s tile%s: needs %s first%s', #tile_need, tile_need[1].tile, #tile_need == 1 and '' or 's', table.concat(parts, ', '),
-              engine == true and not manual and ' (its ghost goes there now; nothing builds it before that)' or '')
+              engine == true and not manual and (kind == 'ghosts' and ' (place_ghosts lays those tile ghosts under it first)'
+                or ' (its ghost goes there now; nothing builds it before that)') or '')
           elseif engine == true then rec.status = 'ok'
           elseif covered then
             rec.status = 'after_tiles'; rec.note = 'placeable once the tiles under it are laid'
