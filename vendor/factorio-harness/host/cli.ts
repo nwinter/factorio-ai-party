@@ -1029,6 +1029,8 @@ async function main() {
         || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined)
         // A transfer or collect that walks (walk, pick, pick with to) runs as a timed tour.
         || (['transfer','collect'].includes(action) && reply.result?.op === 'transfer' && reply.result?.until_tick !== undefined)
+        // feed over positions with walk: a tour when any was out of reach (Opus 10:50).
+        || (action === 'feed' && args.walk === true && reply.result?.until_tick !== undefined)
         // transfer {walk: true} with a target out of reach: a tour (until_tick); all in reach, it moved at once
         || (action === 'transfer' && args.walk === true && reply.result?.until_tick !== undefined)
         // collect {wait_ticks | keep_taking}: standing at a machine, taking its products as they come (collectwait)
