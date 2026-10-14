@@ -53,7 +53,7 @@ local force={name='player',current_research=tech,research_progress=0.41,
 game={tick=0,surfaces={nauvis,vulcanus,plat},forces={player=force},get_surface=function(name) for _,s in ipairs({nauvis,vulcanus,plat}) do if s.name==name then return s end end end}
 storage={}
 local supply=dofile('mod/agent-harness_0.1.0/supply.lua'){status_name=function(e) return names[e.status] end}
-local power={id=7,capacity_kw=22100,draw_kw=18500,boilers=13,fed=11,unfed_min=2.4}
+local power={id=7,capacity_kw=22100,draw_kw=18500,boilers=13,fed=11,low=2,low_min=2.4}
 local asked
 local S=dofile('mod/agent-harness_0.1.0/scienceline.lua'){state=function() return storage end,supply=supply,
   networks={power_row=function(f,surface) asked=surface; return power end},status_name=function(e) return names[e.status] end}
@@ -70,7 +70,7 @@ local line=S.lines(p,h)
 eq(line,'science on nauvis: research plastics-2 41%; labs 12 of 20 working; limiting chemical-science-pack: 8 of 20 labs have none, '
   ..'made 12/min, used 30/min; first short step plastic-bar: 4 of 4 working, made 30/min, used 52/min '
   ..'(chemical-science-pack > advanced-circuit > plastic-bar); power electric #7: 18.5 MW of 22.1 MW, headroom 3.6 MW (16%); '
-  ..'boilers 13: 11 with fuel at their feeders, the other 2 on their own fuel, lowest 2 min')
+  ..'boilers 13: 11 with fuel at their feeders, 2 under 20 min of their own fuel and not refilled, lowest 2 min')
 -- 2. At most every 5 min: not again at once, nor after 5 min while nothing changed.
 eq(S.lines(p,h),nil)
 run(18000); eq(S.lines(p,h),nil,'stale: a new job starts'); run(10)
@@ -83,7 +83,7 @@ has(S.lines(p,h),'labs 16 of 20 working; limiting chemical-science-pack: 8 of 20
 has(S.lines(p,{}),'labs 16 of 20 working')
 -- 4. Every lab holds every pack: no chain read (lab finds only); the boilers all fed.
 for i=1,20 do labs[i].status=1; labs[i].get_inventory=function() return {get_item_count=function() return 5 end} end end
-power.fed=13; power.unfed_min=nil
+power.fed=13; power.low=0; power.low_min=nil
 finds=0
 run(18000); S.lines(p,h); run(10)
 eq(finds,2,'no crafter finds')

@@ -7,7 +7,8 @@
 --   follows what most makers lack down to where that stops);
 -- - power on that surface's largest electric network: draw (5 min average)
 --   against capacity and the headroom; its boilers, how many have fuel at
---   their feeders, and the lowest own fuel of the others (networks.lua).
+--   their feeders, and those under 20 min not refilled with the lowest
+--   (networks.lua, boiler_fuel's rule).
 -- Built by a background job in storage, one bounded step a tick (00:26 rule;
 -- task-statuscost: whole-surface finds one type a tick): labs one surface a
 -- tick, crafters one type a tick, recipes INDEX_SLICE a tick, then the chain
@@ -87,11 +88,11 @@ return function(api)
         local b = string.format('boilers %d', power.boilers)
         if power.fed then
           b = b .. string.format(': %d with fuel at their feeders', power.fed)
-          if power.fed < power.boilers then
-            b = b .. string.format(', the other %d on their own fuel, lowest %d min', power.boilers - power.fed, math.floor(power.unfed_min or 0))
-            local m = power.unfed_min or 0
-            key[#key+1] = power.boilers - power.fed
-            key[#key+1] = m < 5 and 3 or m < 10 and 2 or m < 20 and 1 or 0
+          if power.low > 0 then
+            local m = power.low_min or 0
+            b = b .. string.format(', %d under 20 min of their own fuel and not refilled, lowest %d min', power.low, math.floor(m))
+            key[#key+1] = power.low
+            key[#key+1] = m < 5 and 3 or m < 10 and 2 or 1
           end
         end
         text = text .. '; ' .. b

@@ -28,9 +28,13 @@ return function(api)
   -- Haiku, 01:53: the alert fired for hours ('lowest 0 min') on 13 boilers holding 4-26 coal each, all working, fed by
   -- inserters from a belt and a requester chest with 150+ coal. Haiku and Astra, 03:20: still 'under 5 min' for 12
   -- working boilers on full fuel belts (an inserter keeps a boiler's own fuel low; a belt's stock is a flow, not a
-  -- store). A boiler is low only when its own fuel is under a step and none of its feeders can bring more: no fuel
-  -- in the inserter's hand, at its source (a belt: up to BELT_WALK tiles upstream, else what loads that run).
-  local BELT_WALK = 64
+  -- store). A boiler is low only when its own fuel is under a step and nothing refills it: none of its feeders can
+  -- bring more (no fuel in the inserter's hand, at its source; a belt: up to BELT_WALK tiles upstream, else what
+  -- loads that run), or its own fuel fell by DRAIN or more of what it burns at its share of the draw since the last
+  -- look at least DRAIN_MIN_TICKS before (shift10 03:36-03:38: boiler (-15,42) went from 8 to 6 min on a 64-tile
+  -- belt with 4 solid-fuel on it). An inserter-kept buffer swings by a few items: a few coal is a quarter of a
+  -- minute's burn, a few solid-fuel nearly a minute's, so the look compared is 2 minutes back or more.
+  local BELT_WALK, DRAIN, DRAIN_MIN_TICKS, OWN_TICKS = 64, 0.8, 7200, 18000
   local FUEL_SCAN = 300   -- chests and belt tiles read per alert (00:26 rule: bounded reads on the live world)
   local FUELS = {'coal', 'solid-fuel', 'wood', 'rocket-fuel', 'nuclear-fuel'}
   local MAX_SCAN, MAX_GHOSTS, VIEW_TICKS, NEAR_BOILER = 20000, 4000, 3600, 12   -- the view: kept 60 s (task-statuscost)
@@ -289,21 +293,32 @@ return function(api)
           local under, low = {}, {}
           if fed_kw > 0 then
             -- Each boiler's own fuel in minutes at an even share of the draw;
-            -- low: under the first step with no feeder able to bring more
-            -- (M.boiler_supply: b.fed).
+            -- low: under the first step and not refilled (no feeder able to
+            -- bring more, M.boiler_supply: b.fed; or draining: its own fuel
+            -- fell by DRAIN of its burn since the last look).
             M.boiler_supply(net.boilers, surface, f)
             local each, own = fed_kw * 1000 / #net.boilers, 0
             net.fed = 0
-            store().boiler_prev = nil   -- (the running-down rule's memory, before 03:25)
+            local st = store()
+            st.boiler_prev = nil   -- (the running-down rule's memory, before 03:25)
+            st.boiler_own = st.boiler_own or {}
             for _, b in ipairs(net.boilers) do
               b.min = b.j / each / 60
               own = own + b.j
-              if b.fed then net.fed = net.fed + 1
-              elseif not net.unfed_min or b.min < net.unfed_min then net.unfed_min = b.min end
-              if b.min < FUEL_LOW and not b.fed then under[#under+1] = b.e end
-              if b.min < FUEL_STEPS[1] and not b.fed then low[#low+1] = b end
+              local unit = try(function() return b.e.unit_number end)
+              local prev = unit and st.boiler_own[unit]
+              local dt = prev and (game.tick - prev.tick) / 60
+              if dt and dt * 60 >= DRAIN_MIN_TICKS and prev.j - b.j >= DRAIN * each * dt then
+                b.drop = string.format('down from %d min %d s before', math.floor(prev.j / each / 60), math.floor(dt))
+              end
+              if unit and (not prev or game.tick - prev.tick >= DRAIN_MIN_TICKS) then st.boiler_own[unit] = {tick=game.tick, j=b.j} end
+              if b.fed then net.fed = net.fed + 1 end
+              local refilled = b.fed and not b.drop
+              if b.min < FUEL_LOW and not refilled then under[#under+1] = b.e end
+              if b.min < FUEL_STEPS[1] and not refilled then low[#low+1] = b end
               if not net.lowest_min or b.min < net.lowest_min then net.lowest_min = b.min end
             end
+            for unit, v in pairs(st.boiler_own) do if game.tick - v.tick > OWN_TICKS then st.boiler_own[unit] = nil end end
             net.fuel_min = own / (fed_kw * 1000) / 60
           end
           net.fuel_under = under
@@ -322,7 +337,7 @@ return function(api)
           parts[#parts+1] = string.format('boilers %d: their own fuel %s at this draw%s%s', #net.boilers,
             net.fuel_min and string.format('%d min', math.floor(net.fuel_min)) or 'n/a (no draw)',
             net.fed and string.format(', %d with fuel at their feeders', net.fed) or '',
-            net.fuel_low and #net.fuel_low > 0 and string.format(', %d under %d min with none (lowest %d min)', #net.fuel_low, FUEL_STEPS[1],
+            net.fuel_low and #net.fuel_low > 0 and string.format(', %d under %d min not refilled (lowest %d min)', #net.fuel_low, FUEL_STEPS[1],
               math.floor(net.fuel_low[1].min)) or '')
         end
         net.line = table.remove(parts, 1) .. ': ' .. table.concat(parts, '; ')
@@ -609,7 +624,7 @@ return function(api)
   end
   -- One surface's largest electric network by capacity, as plain numbers
   -- (scienceline.lua): {id, capacity_kw, draw_kw (5 min avg), boilers, fed,
-  -- unfed_min (the lowest own fuel of the boilers with none at their feeders)}.
+  -- low (boilers under 20 min of their own fuel not refilled), low_min (the lowest of them)}.
   function M.power_row(f, surface_name)
     local best
     for _, s in ipairs(view(f).surfaces) do
@@ -619,7 +634,7 @@ return function(api)
     end
     if not best then return nil end
     return {id=best.id, capacity_kw=best.capacity_kw, draw_kw=best.draw and best.draw.avg or nil, boilers=#best.boilers,
-      fed=best.fed, unfed_min=best.unfed_min}
+      fed=best.fed, low=best.fuel_low and #best.fuel_low or 0, low_min=best.fuel_low and best.fuel_low[1] and best.fuel_low[1].min or nil}
   end
   -- The lines, the agent's surface first; at most `max` (the rest counted).
   function M.lines(f, here, max)
@@ -676,7 +691,7 @@ return function(api)
       note='draw: the network\'s production statistics sampled every 5 s; capacity: generators at their maximum plus solar at its output now; '
         .. 'boiler fuel: the boilers\' own fuel in minutes at the draw of the generators they feed, shared evenly over the boilers; '
         .. 'boilers_fed: boilers an inserter can bring fuel to now (fuel in its hand, at its source, on its belt within 64 tiles upstream or at what loads that belt); '
-        .. 'boilers_under_N_min: under N min of their own fuel with no fuel at their feeders; requests unfilled: '
+        .. 'boilers_under_N_min: under N min of their own fuel and not refilled (no fuel at their feeders, or their own fuel fell by 80% or more of their burn over the last 2+ min); requests unfilled: '
         .. 'held plus on the way below the request for 60 s or more; ammo: consumed on the surface (items statistics); '
         .. 'logistic areas: bounding boxes of the roboports\' logistic and construction squares (a gap inside one is not shown); '
         .. 'robots: idle are stationed in a roboport, charging and waiting to charge are at a roboport, working are the rest (out on a job or flying)'}
@@ -887,9 +902,9 @@ return function(api)
     for i = 1, math.min(3, #low) do
       local b = low[i]
       local pos = b.e.valid and at(b.e.position.x, b.e.position.y) or '?'
-      which[i] = string.format('boiler %s %d min: %s', pos, math.floor(b.min), b.feeder or 'no inserter feeds it')
+      which[i] = string.format('boiler %s %d min%s: %s', pos, math.floor(b.min), b.drop and ', ' .. b.drop or '', b.feeder or 'no inserter feeds it')
     end
-    g.line = string.format('%s and no fuel at their feeders near %s (electric #%d: %d boiler%s, %s); %s%s; %s', table.concat(steps, ', '),
+    g.line = string.format('%s, not refilled, near %s (electric #%d: %d boiler%s, %s); %s%s; %s', table.concat(steps, ', '),
       at(g.center.x, g.center.y), r.id, #r.boilers, #r.boilers == 1 and '' or 's',
       r.fed and string.format('%d with fuel at their feeders', r.fed) or 'no draw',
       table.concat(which, '; '), #low > 3 and string.format('; +%d more', #low - 3) or '', fuel_text)
