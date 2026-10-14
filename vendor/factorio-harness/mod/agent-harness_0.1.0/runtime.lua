@@ -5862,7 +5862,7 @@ M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.netw
 -- Lightning attractors on Fulgora whose catches have nowhere to go, and full accumulators beside them (lightning.lua).
 M.lightning=require('lightning'){}
 M.pushalerts=require('pushalerts'){state=state,agents=function() return M.board.agents() end,who=M.board.who,
-  place=function(index) return M.where.place(index) end,
+  place=function(index) return M.where.place(index) end,targets=M.targets,
   network_groups=function(force)
     local out=M.networks.alert_groups(force)
     local ok,more=pcall(M.lightning.alert_groups,force)

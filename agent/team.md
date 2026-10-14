@@ -113,7 +113,8 @@ already targets your character.
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, and the
   game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
-  (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, an electric network drawing 85%
+  (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, inserters that lost their pickup or drop target (by
+  what they feed, with what each read and puts into), an electric network drawing 85%
   or more of its capacity for 2 minutes, boilers under 20 minutes of their own fuel that nothing refills (their feeding
   inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel fell about
   as fast as they burn over 2+ minutes, or by a quarter of their burn over 4+ minutes) (again under 10 and 5; each low boiler with its feeder and that

@@ -226,4 +226,64 @@ game.tick=game.tick+5000; finds={}
 eq(#C.read(astra,{}).groups,2); eq(#finds,0,'no read in the reply')
 run(1); assert(st5.push_jobs.player,'a new job')
 force.players={}; game.forces=nil
+
+-- 6. Lost sources (Haiku, 04:52: "a chest gone alert when a feed chest disappears, since an inserter with no source
+-- fails silently"): an inserter that had a pickup target and has none now, or whose drop target is gone, grouped by
+-- area and by what it feeds, with the inserter, what it read and what it puts into; told when new or more.
+do
+  local st6={board={items={}}}
+  local T=dofile('mod/agent-harness_0.1.0/targets.lua'){}
+  local D=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){
+    state=function() return st6 end,
+    agents=function() return {{index=1,name='astra'}} end,
+    who=function(p) return p.name end,
+    place=function(index) return {key='nauvis',position={x=50,y=10}} end,
+    targets=T}
+  ents.nauvis={}; ents.vulcanus={}
+  local function thing(name,type,x,y) return {valid=true,name=name,type=type,position={x=x,y=y}} end
+  local chest=thing('wooden-chest','container',41.5,13.5)
+  local boiler,furnace,lab=thing('boiler','boiler',60,16.5),thing('stone-furnace','furnace',44,16),thing('lab','lab',70.5,20.5)
+  local u=0
+  local function inserter(name,x,y,pick,drop)
+    u=u+1
+    return ent('nauvis',name,'inserter',x,y,{unit_number=700+u,pickup_target=pick,drop_target=drop})
+  end
+  local a=inserter('burner-inserter',60.5,14.5,chest,boiler)
+  local b=inserter('inserter',44.5,14.5,chest,furnace)
+  local c=inserter('inserter',30.5,30.5,nil,boiler)          -- takes from the ground: never had a pickup target
+  local d=inserter('fast-inserter',70.5,18.5,chest,lab)
+  local function read() game.tick=game.tick+1800; return D.read(astra,{}).groups end
+  local function lost(groups) local out={} for _,g in ipairs(groups) do if g.kind:find('^lost_') then out[g.kind]=g end end return out end
+  local ha6={}
+  eq(next(lost(read())),nil,'the first read only remembers')
+  -- The chest is gone: a and b lost their source (by what they feed); c never had one.
+  chest.valid=false; a.pickup_target=nil; b.pickup_target=nil; d.pickup_target=nil
+  local g=lost(read())
+  eq(g['lost_source.boiler'].count,1); eq(g['lost_source.furnace'].count,1); eq(g['lost_source.lab'].count,1)
+  eq(g['lost_source.boiler'].line,'1 inserter feeding boiler lost its pickup target near (61,15): burner-inserter (60.5,14.5) read wooden-chest (41.5,13.5), puts into boiler (60,16.5)')
+  eq(g['lost_source.boiler'].lost[1],'burner-inserter (60.5,14.5) read wooden-chest (41.5,13.5), puts into boiler (60,16.5)')
+  eq(#D.read(astra,{kind='lost_source'}).groups,3,'kind lost_source: every fed kind')
+  local told=D.lines(astra,ha6)
+  assert(has(told,'1 inserter feeding furnace lost its pickup target near (45,15): inserter (44.5,14.5) read wooden-chest (41.5,13.5), puts into stone-furnace (44,16)'),table.concat(told,' | '))
+  -- Still lost a read later: kept with what it read then; not told again.
+  g=lost(read())
+  eq(g['lost_source.boiler'].count,1); assert(g['lost_source.boiler'].line:find('read wooden-chest (41.5,13.5)',1,true))
+  game.tick=game.tick+9000
+  eq(#D.lines(astra,ha6),0,'not new, not worse')
+  -- The lab is gone too: d lost both; still under the lab it fed.
+  lab.valid=false; d.drop_target=nil
+  g=lost(read())
+  eq(g['lost_source.lab'].lost[1],'fast-inserter (70.5,18.5) read wooden-chest (41.5,13.5), put into lab (70.5,20.5) (gone too)')
+  -- A new chest: a reads it again and leaves the group; b's furnace goes: a drop target lost.
+  local chest2=thing('iron-chest','container',41.5,13.5)
+  a.pickup_target=chest2; b.pickup_target=chest2; furnace.valid=false; b.drop_target=nil
+  g=lost(read())
+  eq(g['lost_source.boiler'],nil,'a reads again')
+  eq(g['lost_target.furnace'].line,'1 inserter feeding furnace lost its drop target near (45,15): inserter (44.5,14.5) put into stone-furnace (44,16), reads iron-chest (41.5,13.5)')
+  -- An inserter that is gone is forgotten.
+  b.valid=false
+  g=lost(read())
+  eq(g['lost_target.furnace'],nil); eq(st6.push_inserters.player.units[702],nil)
+  ents.nauvis={}
+end
 print('pushalerts: ok')
