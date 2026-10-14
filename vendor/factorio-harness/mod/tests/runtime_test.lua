@@ -2396,10 +2396,25 @@ end
 prototypes.entity['transport-belt']={name='transport-belt',type='transport-belt',items_to_place_this={{name='transport-belt',count=1}},
   related_underground_belt={name='underground-belt',type='underground-belt',max_underground_distance=5}}
 prototypes.entity['underground-belt']={name='underground-belt',type='underground-belt',items_to_place_this={{name='underground-belt',count=1}}}
-local made={}
-p.surface.find_entities_filtered=function() return {} end
+local made={ghosts={}}
+p.surface.find_entities_filtered=function(f)
+  -- (the search for belts and belt ghosts around the last belt ghost placed: last_belt)
+  local out={}
+  if type(f.type)=='table' and f.area and f.area[1] then
+    for _,g in ipairs(made.ghosts) do
+      if g.position.x>=f.area[1][1] and g.position.x<=f.area[2][1] and g.position.y>=f.area[1][2] and g.position.y<=f.area[2][2] then out[#out+1]=g end
+    end
+  end
+  return out
+end
 p.surface.can_place_entity=function(a) return a.position.x~=3.5 end
-p.surface.create_entity=function(a) made[#made+1]=a; return {valid=true,position=a.position} end
+p.surface.create_entity=function(a)
+  made[#made+1]=a
+  local proto=prototypes.entity[a.inner_name]
+  made.ghosts[#made.ghosts+1]={valid=true,type='entity-ghost',ghost_type=proto and proto.type,ghost_name=a.inner_name,ghost_prototype=proto,
+    position=a.position,direction=a.direction,belt_to_ground_type=a.type,surface=p.surface,force=p.force}
+  return made.ghosts[#made.ghosts]
+end
 p.get_main_inventory=function() return {get_item_count=function(n) return n=='transport-belt' and 1 or 0 end} end
 local plan=call('belt_route',{from={x=0,y=0},to={x=6,y=0},dry_run=true})
 eq(plan.dry_run,true); eq(#made,0); eq(plan.missing['underground-belt'],2); eq(plan.entities,nil)
@@ -2408,6 +2423,9 @@ eq(routed.placed,routed.tiles); eq(routed.route,plan.belt_route.route); eq(route
 local kinds={}
 for _,a in ipairs(made) do if a.type then kinds[#kinds+1]=a.type..'@'..a.position.x end end
 eq(table.concat(kinds,','),'input@2.5,output@5.5')
+eq(routed.last_belt,'transport-belt (6.5,0.5): moves items east to (7.5,0.5); fed from (5.5,0.5)')
+p.surface.find_entities_filtered=function() return {} end
+p.surface.create_entity=function(a) made[#made+1]=a; return {valid=true,position=a.position} end
 assert(call('place_ghosts',{entities={{name='transport-belt',position={x=0,y=0},type='input'}}}).failed[1].error:find('underground belts only',1,true))
 -- pipe_route: the same flow for fluids; pipe-to-ground ends face their open
 -- side (entrance back along the line, exit onward).
