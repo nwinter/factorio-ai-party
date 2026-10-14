@@ -4,7 +4,7 @@
 - team_bots: a resumed save keeps its bots and creates only the members it lacks; a fresh one creates all.
 - new-run.sh: each workspace starts from the previous shift's notes.md, under a one-line header naming that shift.
 - launch-agent.sh: the resume sentence is added to the prompt.
-- start-team.sh: the dry run prints the plan (notes found or not, the resume check) and touches nothing.
+- start-team.sh: the dry run prints the plan (notes found or not, tools to carry, the resume check) and touches nothing.
 """
 import json
 import os
@@ -91,6 +91,8 @@ def dry_run():
         prev = os.path.join(tmp, "shake4")
         os.makedirs(os.path.join(prev, "haiku"))
         open(os.path.join(prev, "haiku", "notes.md"), "w").write("a\nb\n")
+        os.makedirs(os.path.join(prev, "haiku", "tools"))
+        open(os.path.join(prev, "haiku", "tools", "belt.py"), "w").write("print(1)\n")
         open(os.path.join(prev, "scores.jsonl"), "w").write(json.dumps({"score": {"tick": 236000}}) + "\n")
         team = os.path.join(tmp, "team.tsv")
         open(team, "w").write("haiku\tclaude\tclaude-b\thaiku\tlow\tHaiku 5.5\tClaude Code\n"
@@ -109,6 +111,8 @@ def dry_run():
         assert "bot haiku: kept if the save has it, else created; notes.md from" in out, out
         assert "bot luna: kept if the save has it, else created; fresh notes.md (none in shake4)" in out, out
         assert "prompt adds: This is a later shift" in out, out
+        assert "3b. carry haiku tools/: 1 file (0.0 MB) from shake4" in out, out
+        assert "3b. carry luna tools/: none in shake4" in out and "3b. carry team-tools/: none in shake4" in out, out
         assert "WARNING quota codex_account_b (luna) Codex · Weekly: 100% used" in out, out
         assert "no ai-usage profile" in out and "(route claude-b)" in out, out
         assert "code ok: " in out or "WARNING code: " in out, out

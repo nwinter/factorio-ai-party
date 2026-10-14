@@ -66,7 +66,10 @@ from `agent/context.tsv` (model, kind, window, compact_at) without touching glob
 - Claude Code (Haiku 80K, Sonnet 200K, Opus 250K): workspace `.claude/settings.json` gets
   `autoCompactWindow = compact_at + 33000` and hooks: `SessionStart`/`compact` prints `notes.md` after a compaction,
   `PostToolUse` warns the agent to update `notes.md` (in the second half of the room above the post-compaction
-  context, and at least 20% before the point), `Pre/PostCompact` log.
+  context, and at least 20% before the point), `Pre/PostCompact` log. `PostToolUse` (Claude and Muse) also shows,
+  once each, the operator's tells fh filed (`OPERATOR: ...`) and the mentions and tells in fh replies' team blocks
+  (the journal since its last look) that the tool call's own output did not show (`MENTION: ...`, `TELL: ...`; at
+  most 10 and a count; shift08: Sonnet's replies went to /dev/null for 2h20m).
 - Codex (140K): workspace `.codex/config.toml` (`model_context_window`, `model_auto_compact_token_limit`); loads
   because run dirs are inside the trusted repo.
 - Grok (60%): `GROK_AUTO_COMPACT_THRESHOLD_PERCENT` on the launch command, `--rules`, and the repo's

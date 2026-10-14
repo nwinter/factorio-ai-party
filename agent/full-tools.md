@@ -3,6 +3,8 @@
 Besides `./fh` and `./shot` you have a full engineering setup:
 - `tools/` in this directory is yours: scripts, calculators, simulations, blueprint planners, anything you write.
 - `team-tools/` is shared with your teammates: what you put there they can read and run, and theirs is there for you.
+- A later shift of the same world starts with `tools/` and `team-tools/` as the previous shift left them, apart from
+  files over 5 MB, caches such as `__pycache__`, dotfiles and symlinks.
 - `gamedata/` holds the game's own prototype data for this version ({{KB}}): `recipes.json`, `items.json`,
   `entities.json`, `fluids.json`, `technologies.json` and `locations.json`, the same facts the wiki has, and in Space
   Age `asteroids.json` (each route's and orbit's asteroid spawns, and the asteroids' health and resistances). Read-only.

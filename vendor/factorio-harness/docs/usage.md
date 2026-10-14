@@ -62,11 +62,17 @@ fh call status
   `board` call with an `id` and a `note`, `owner` or `status` is `board_update`. A valid argument is never renamed; a
   corrected call that still fails says `[ran as ...]`; any other unknown argument fails with the valid list. `scan`
   `fields` also takes one string (`"status|hp"` or `"status,hp"`).
+- `transfer`, `collect`, `feed`, `inspect`, `rearm` and `refuel` run `position` and `positions` as one list and say so
+  in `corrected`: one `{x,y}` given as `positions`, a list given as `position`, a `position` where only `positions` is
+  taken (`collect`, `feed`, `rearm`, `refuel`), or both at once (`position` first). A plain `position` where it is
+  taken stays as it is; with `radius` neither is touched. Queue steps (`queue_submit`, `queue_repeat`, `queue_edit`)
+  are corrected the same way, and the reply lists each in `corrected` (`step 1: collect {...} (position is positions
+  (a list))`).
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
 - Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
-- With `--wait`, the command exits nonzero unless the action ended successfully, or when the wait times out. `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
+- With `--wait`, the command exits nonzero unless the action ended successfully, or when the wait times out. `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success; `unreachable` and `blocked` fail with `last.why` on the error line. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
 - A timed-out wait is not a finished action. The reply has `error.code` `wait_timeout`, `timed_out: true` and `still_running` (the action's kind and end tick) and no `completion`. The action keeps running in game; a new character action would interrupt it. `fh wait` blocks until the character is idle again and reports the last outcome.
 - Ctrl-C does not stop an action the game already accepted. `fh call stop` does.
 - An action that ends with the character on a belt, underground belt or splitter says so in `last.on_belt`
@@ -159,6 +165,22 @@ fh call status
   An entity with several segments holding fluid (a chemical plant's input and output) needs `fluid` or `index`; the
   error lists them. Returns `flushed {fluid: amount}`, `amount`, `index` and `segment {id, extent, size, capacity,
   entities}`. It leaves the running action and queue alone, and the `pog-guest` group cannot flush.
+- `move_to {position, within?}` walks the engine pathfinder's route. Requests climb a ladder until one finds a route:
+  a padded box (0.7 tiles) on the tile grid, asked twice (as the character walks, and with belts as obstacles; the
+  belt-free route is kept when it is at most 6 tiles or a quarter longer: `last.path: off belts`), then the character's
+  own box (0.4 tiles) from the nearest free tile centre, then on the half-tile grid, then on the quarter-tile grid with
+  a goal radius 3 tiles wider. A route that ends no nearer the goal is not one. When no level finds a route the walk
+  ends at once with outcome `unreachable` and `last.why`: `closed in: the character (0.4 tiles wide) fits through no gap
+  out of the area (9,42)-(14,53) (about 45 tiles); around it: steam-engine, assembling-machine-2, iron-chest, ...`
+  (the area it can reach, mapped at quarter-tile steps within 24 tiles), or `no path for the character to (x,y) ...`;
+  `last.nearest_reachable` is the point nearest the target it can reach and `last.reachable_gap` how far that is from
+  the target. A target on ungenerated ground is steered to directly (`last.steered: without a path: ungenerated`).
+  `blocked` (stalls on the way) and `timed_out` also say why, with where it stopped. A walk never ends on a belt: arriving
+  on one it steps to the nearest free tile without a belt within the arrival radius, else within 3 tiles
+  (`last.off_belt: arrived on a transport-belt; stepped to (25.5,-28.5), the nearest free tile without a belt (none
+  within the arrival radius)`). With `--wait`, the error line carries `last.why`. (shift08, world n: Haiku's pocket south
+  of the boiler row at (8..12,42) was closed for the character's box; the old fallback planned with a 0.3-tile box that
+  gets out, and the walk pushed at 0.22-tile gaps until 15 stalls.)
 - `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
   as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
   ammunition in the ammo slots. `shoot`, `move_to combat` and `kite` fill empty ammo slots from carried ammo first
@@ -344,6 +366,13 @@ fh queue repeat --file plan.json
   (out of reach, an unknown entity, a timed-out tour) still follow `on_fail`.
 - `queue edit` needs the current revision, so you can't accidentally edit a plan that has already moved on.
 - A direct call that moves or acts as the character pauses the queue. Reads, the board, chat, `say`, `tell`, `confess`, `operator`, `craft`/`cancel_craft`, research, votes, `sleep` and the queue calls don't, and when one of them fails (a `placements` out of sight, a `board_update` with an unknown argument) the running action and the queue go on as well. `sleep` leaves the queue running, and so does its end.
+- Calls that act on another surface or by remote view don't pause it either, nor stop a running standing order, and
+  neither does their failure: any call with `platform`, or with `surface` naming another surface than the
+  character's; `configure` on an entity out of the character's reach; the planners and blueprint tools wherever they
+  act (`place_ghosts`, `paste`, `blueprint_place`, `blueprint_capture`, `copy`, `cut`, `deconstruct`,
+  `cancel_deconstruction`, `belt_route`, `pipe_route`, `pole_route`); `circuit_set`, `wire`, `requests`, `flush`,
+  `train`, `platform_create`, `platform_schedule`, `launch`, `drop`. `configure` in reach, building, mining,
+  walking and inventory moves (`transfer`, `feed`, `collect`, ...) take over as before.
 - A harness update (a hot runtime install, or a restart with a changed mod) keeps a running queue going: a `wait_until` or `wait_ticks` step keeps its own clock, and a step toward a goal (`move_to`, `construct`, `build_path`, `mine`, `repair`, `kite`, `rearm`, `refuel`, `collect`) starts again. Any other step that was running is interrupted and leaves the queue paused (`fh queue resume` continues with the next step). A direct action is interrupted. Each agent whose work was cut gets `team.harness_updated` lines in its next reply.
 
 ## Waiting
@@ -364,7 +393,7 @@ fh sleep 900 --until researched                       # ...or until the research
 - `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), a chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`.
   - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64), any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
   - With a deadline file (`--deadline-file`, `FH_DEADLINE_FILE`) a sleep never runs past it: it is cut to the time left and reports `woke: deadline` when it ends there; after the deadline it does not start (`woke: deadline`, `slept_s: 0`).
-  - A sleep started within 10 game seconds of reading a wake on an event (anything but `elapsed`, `died`, `respawned`, `deadline`, `told`, `mentioned`) does not start: it returns at once with that wake, `repeat: true` and `while_asleep: this sleep did not start: you woke (damaged) 4 s ago; ...`, so a shell loop of sleeps ends on the first wake. At most 3 repeats per wake; none for a sleep given `--until`, none in `turns` mode. A tell or mention wakes once: the reply that woke the agent delivered it (shift07: Luna's 32 repeats of tells already read).
+  - A sleep started within 10 game seconds of reading a wake on an event (anything but `elapsed`, `died`, `respawned`, `deadline`, `told`, `mentioned`) does not start: it returns at once with that wake, `repeat: true` and `while_asleep: this sleep did not start: you woke (damaged) 4 s ago; ...`, so a shell loop of sleeps ends on the first wake. At most 3 repeats per wake; none for a sleep given `--until`, none in `turns` mode. A tell or mention wakes once: the reply that woke the agent delivered it (shift07: Luna's 32 repeats of tells already read). `fh sleep` and `fh wait --until` wait out such a repeat (Muse, shift08: "woke 4s ago" refusals burned turns): on a `repeat: true` reply the CLI waits the rest of the 10 s and starts the sleep again (at most 3 tries), and the final reply carries `waited_out: your previous sleep woke (board) 4 s before this one, and a sleep within 10 s of a wake repeats that wake; this sleep started after 7 s more`, with the team block the earlier replies carried. The runtime's own `sleep` reply is unchanged.
   - `{until: "alert"}` as the condition (`fh wait --until alert`) wakes on a new attack area, enemy group or enemy base for the team (`woke: alert`).
   - `fh call sleep --args '{"seconds":N}'` (with or without `--wait`, also in `fh run` and `fh stream`) is the same blocking wait; the raw action only starts a sleep.
   - Claude Code agents get a 20-minute Bash timeout (tools/clean-profile.py in the pog repo), above the longest sleep. Codex agents' `yield_time_ms` returns earlier and leaves the sleep running in the background.
@@ -390,17 +419,30 @@ fh sleep 900 --until researched                       # ...or until the research
     walking tour) tops every machine set to that recipe up to each item ingredient's amount x crafts, from your
     inventory, in one call: `entities` rows with `loaded {item=count}` and `short {item=still missing}`; a named machine
     set to another recipe is a row with `recipe` (what it runs, or `none`), and in reach they are counted in
-    `other_recipe`. `crafts` 1..1000 (default 1); not with `items`.
+    `other_recipe`. `crafts` 1..1000 (default 1); not with `items` or `item`.
+  - `feed {"item": "iron-plate", "count": 50}` gives only that item, as `items: ["iron-plate"]` does (with `items`, it is
+    added to them); `count` is what each machine is topped up to.
+  - `collect {"radius": 20}` without `item` walks to every assembler and furnace output in the radius that holds
+    anything (chemical plants, refineries and the like are assemblers) and takes all of it: output slots only, never
+    inputs or fuel. `count` caps the total; chests need `item`. The reply has `items: "all"`, `stock` and `places`;
+    `last` reports `got` and `items {name=count}`.
   - `inspect {"positions": [...]}` (1..32 entries, each may carry `name` or `unit_number`): one inspect per entry in one
     call, `entities` in order and `count`; an entry that fails is `{position, error}`.
 - Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
   `revision`, `paused`, `active`, `pending` (the next 5 as `id action [label]`), `pending_count`, `recent` (the last 2
   results), `last_failure`; `queue_status` shows every step in full.
+- A repeating plan (`queue_repeat`, optional `name` up to 32 characters) whose round had steps that ran short (the
+  outcomes `out_of_items`, `nothing_collected`, `inventory_full`, a give with none held, or a reply's `short`) puts one
+  grouped line in the team block under `queue`: `queue loop3 round 4: 3 of 9 steps short: transfer iron-plate
+  inventory_full x2, collect coal nothing_collected`. It comes only when a round's list differs from the round
+  before, so a steady loop says it once.
 - `inspect` also shows what the entity GUI and cursor show: `status_name` (e.g. `marked_for_deconstruction`,
   `waiting_for_source_items`), `filters`, `filter_mode` and `use_filters` (inserters, loaders), `held` (an inserter's
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
   on the footprint, such as a paste replacing it, with their filters). A ghost on a building yields to the building
-  unless you name it (`name: "entity-ghost"`).
+  unless you name it (`name: "entity-ghost"`). So does a flying robot, a biter, a projectile or any unselectable entity
+  over it, in `inspect`, `transfer`, `collect` and every other call on a position: `name` or `unit_number` picks it,
+  and alone at the position it is the target.
 - `inspect` on a roboport or a logistic chest shows `logistic_network`: its `id`, `roboports`, `logistic_area` and
   `construction_area`, `logistic_robots` and `construction_robots` `{total, idle, working, charging, waiting}` and a
   `line` (the networks read's words), or `none: in no logistic network: no roboport's logistic area covers it`. On a
@@ -433,6 +475,12 @@ fh sleep 900 --until researched                       # ...or until the research
   entity there adds the `repair` note.
 - `platforms` shows each platform's `defense`: `hub_health` (`637/1000`), `turrets` (`5 gun-turrets: 4 empty, 0 low
   (under 10 rounds)`) and `ammo`, the ammo flow (`turrets hold 6 rounds, the hub firearm-magazine 920`).
+- Flight, on every `platforms` row and in `inspect` of a hub under `flight`: `speed_kms` (the hub GUI's km/s; the game's
+  own value, `speed` with `platform` set, is km per tick), `next_stop` (the schedule's stop it flies to, or while it waits at its current stop, the
+  one after it), and on a route `leg` in the way it is flown (`vulcanus->nauvis`), `heading_to`, `leg_km`,
+  `leg_left_km` and `eta_min` (minutes to the end of the leg at the current speed; none at speed 0 or below, as when
+  paused and drifting back). `at` keeps the connection's own order and its percent from the first end
+  (`nauvis->vulcanus 25%`).
 - `platform_schedule {platform, paused: true}` says what pausing does: on a route (`note: paused on the route: the
   platform stays among the route's asteroids and drifts back the way it came ...; it reaches no orbit until
   unpaused`), in orbit (`paused in orbit: the platform stays where it is, among that orbit's asteroids`).
@@ -470,6 +518,18 @@ fh sleep 900 --until researched                       # ...or until the research
 - `launch {position, auto_requests: true}` on a silo whose rocket holds cargo loaded by hand: the game moves that cargo
   into the silo's trash slots, where it never launches. The reply has `cargo_to_trash` (what was aboard), `trash` and a
   `note` with the transfer that takes it back.
+- `cargo {items: {name: count}}` (or `[{name, count, quality}]`, or `position` of a chest, rocket silo (its loaded
+  cargo), landing pad, platform hub, wagon or vehicle in sight; `platform` for one on a platform) weighs a rocket cargo
+  list before it is staged (cargo.lua; Sol rebuilt three kits into two after working the weights out offline). A
+  read: `lift` (`1000 kg and 20 cargo slots a rocket`: the utility constant `rocket_lift_weight` and the silo's rocket
+  inventory), `items [{name, quality, count, each_kg, kg, stacks, per_rocket, share}]` heaviest first (`per_rocket`:
+  as many as one rocket takes alone, by weight and by its slots; `share`: of a rocket's lift), `total_kg`, `stacks`,
+  `fewest` (rockets by total weight and by stacks), `rockets` and `split [{rocket, kg, slots, items}]`: one split in
+  which every rocket stays within both, heaviest items first, each into the first rocket with room (a part stack's
+  room counted before a new slot); `note` when it takes more rockets than `fewest`; `too_heavy` for an item heavier
+  than a rocket lifts. Item weights are the 2.0 prototypes' (grams in the game, kg here; the API gives one weight
+  per item, used for every quality); stacks of different qualities take their own slots. Shift world, 2026-10-13: 2 thrusters, 4 cargo bays, 30
+  foundation, 150 processing units and 40 rocket fuel are 2300 kg, 3 rockets.
 - `launch {position, platform}` sends the cargo to the platform's hub (a platform waiting for its starter pack gets it
   as its starter pack). A rocket lifts 1000 kg (item prototype weights; the game takes more by script, then refuses
   the launch): `transfer` into `rocket_silo_rocket` gives only what fits (`weight_limited {requested, fits, note}`)

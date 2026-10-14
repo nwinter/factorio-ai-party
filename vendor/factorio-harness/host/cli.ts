@@ -660,6 +660,9 @@ async function main() {
       // construct: what it did and what stopped it, blockers with coordinates (request #167); kite: why it stopped.
       ...(last?.kind === 'construct' ? {built: last.built, mined: last.mined, remaining: last.remaining || undefined,
         missing: last.missing, failed: last.failed, blockers: last.blockers} : {}),
+      // move_to: where it can get to when it gave up, and how it ended off a belt (pathing.lua).
+      ...(last?.kind === 'move_to' ? {nearest_reachable: last.nearest_reachable, reachable_gap: last.reachable_gap, off_belt: last.off_belt,
+        path: last.path, steered: last.steered} : {}),
       why: last?.why, note: status.result?.note,
       team: carrier.result?.team, clock: carrier.result?.clock, orders: carrier.result?.orders, chat: carrier.result?.chat,
     };
@@ -731,7 +734,8 @@ async function main() {
   // A timed action that hit its own limit says so first (timed_out), with the
   // condition a wait_until was still waiting for.
   function endedError(action: string, last: any) {
-    if (last.outcome !== 'timed_out') return {code:'action_interrupted',message:`Control ended: ${last.outcome}`};
+    // A walk that gave up says why on the error line (move_to: unreachable, blocked).
+    if (last.outcome !== 'timed_out') return {code:'action_interrupted',message:`Control ended: ${last.outcome}${typeof last.why === 'string' ? `: ${last.why}` : ''}`};
     const what = action === 'wait_until' ? `wait_until timed_out: ${last.condition ?? 'condition'} not met${last.saw !== undefined ? ` (saw ${JSON.stringify(last.saw)})` : ''}; `+
       `the timeout comes from --wait-timeout MS (up to 900000) or args.timeout ticks (up to 54000)` : `${action} timed_out at its own tick limit`;
     return {code:'timed_out',message:what};
@@ -771,6 +775,26 @@ async function main() {
       if (condition?.until === 'alert') return {...started, error:{...started.error, message:`${started.error?.message ?? 'sleep failed'}; the alert wake comes with the next harness deploy`}};
       return started;
     }
+    // A sleep within 10 s of a wake the agent read repeats that wake at once (waits.lua repeat_of, for shell loops of
+    // sleeps). Muse, shift08: "woke 4s ago" refusals burn turns when tells arrive mid-cycle. Wait out the rest of the
+    // 10 s and start the sleep then (at most 3 tries); the team block those replies carried is kept.
+    let waitedOut: string | undefined;
+    for (let tries = 0; started.ok && started.result?.repeat === true && tries < 3 && !stopping; tries++) {
+      const text = String(started.result?.while_asleep ?? '');
+      const match = /you woke \(([^)]+)\) (\d+) s ago/.exec(text);
+      const ago = match ? Number(match[2]) : 0;
+      const wait = Math.min(11, Math.max(1, 11-ago));
+      await delay(wait*1000);
+      if (stopping) break;
+      const again = await harness.request('sleep',{seconds, ...(condition ? {condition} : {}), ...(quiet ? {peek:true} : {})});
+      if (!again.ok) return mergeTeam(started, again);
+      const first = waitedOut === undefined;
+      if (first) waitedOut = `your previous sleep woke (${match?.[1] ?? started.result?.woke ?? 'event'}) ${ago} s before this one, and a sleep `+
+        `within 10 s of a wake repeats that wake; this sleep started after ${wait} s more`;
+      else waitedOut += ` and ${wait} s more`;
+      started = mergeTeam(started, again);
+    }
+    if (started.result?.repeat === true) waitedOut = undefined;
     // What keeps going, at once (a shell that returns early, as Codex's, shows it before the wake).
     if (!quiet && outputFormat === 'compact' && typeof started.result?.while_asleep === 'string') process.stdout.write(`${operatorHead()}while_asleep: ${started.result.while_asleep}\n`);
     let until = Date.now()+seconds*1250+10000;
@@ -798,7 +822,8 @@ async function main() {
     }
     if (final.ok && !woke) return {...final, ok:false, error:{code:'timed_out',message:`sleep timed_out: the game advanced less than ${seconds} s in ${Math.round(seconds*1.25+10)} s of real time (paused or slow server)`}};
     if (final.ok && woke === 'died') return {...final, ok:false, error:{code:'died',message:'your character died while sleeping'}};
-    return full ? {...final, result:{...final.result, full:true}} : final;
+    const shown = waitedOut !== undefined && final.result ? {...final, result:{...final.result, waited_out:waitedOut}} : final;
+    return full ? {...shown, result:{...shown.result, full:true}} : shown;
   }
   // fh wait: block until whatever the character is doing (and any combat) ends.
   async function waitForIdle(): Promise<Reply> {

@@ -136,6 +136,11 @@ eq(c.inventories.asteroid_collector_output[3].name,'oxide-asteroid-chunk'); eq(c
 eq(c.construction_blocked,nil)
 local h=bot('inspect',{platform='Starling',position={x=0,y=0}})
 eq(h.hub_slots,'0 of 2 free'); eq(#h.construction_blocked,2)
+-- The hub shows the platform's flight (space.lua flight): speed, and the next stop while waiting here.
+platform.speed=0; platform.schedule={current=1,records={{station='nauvis'},{station='vulcanus'}}}
+h=bot('inspect',{platform='Starling',position={x=0,y=0}})
+eq(h.flight.speed_kms,0); eq(h.flight.next_stop,'vulcanus'); eq(h.flight.leg,nil)
+platform.speed=nil; platform.schedule=nil
 -- Anywhere on the platform is in sight, beyond the 32 tiles of a character.
 collector.position={x=-2.5,y=-60.5}; collector.bounding_box={left_top={x=-4,y=-62},right_bottom={x=-1,y=-59}}
 eq(bot('inspect',{platform='Starling',position={x=-2.5,y=-60.5}}).name,'asteroid-collector')
