@@ -18,13 +18,22 @@ return function(api)
   end
   local function steps(a)
     assert(type(a.steps)=='table' and #a.steps<=MAX_PENDING,'steps must be an array of at most 128 entries')
-    local out={}
-    for _,step in ipairs(a.steps) do
+    local out,corrected={},{}
+    for i,step in ipairs(a.steps) do
       assert(type(step)=='table' and type(step.action)=='string','each step needs an action')
-      assert(not step.action:match('^queue_') and not forbidden[step.action],'action is not queueable')
-      assert(step.action=='wait_ticks' or step.action=='wait_until' or api.handlers[step.action],'unknown action in plan')
-      assert(step.args==nil or type(step.args)=='table','step args must be an object')
-      if api.check_args then api.check_args(step.action,step.args) end
+      -- Wrong argument names and position/positions mix-ups run as a direct call would (aliases.lua).
+      local action,args=step.action,step.args
+      if api.fix_args and type(args)=='table' then
+        local ok,fixed_action,fixed_args,fix=pcall(api.fix_args,action,args)
+        if ok and fix then
+          action,args=fixed_action,fixed_args
+          corrected[#corrected+1]='step '..i..': '..fix.call..' ('..table.concat(fix.notes,'; ')..')'
+        end
+      end
+      assert(not action:match('^queue_') and not forbidden[action],'action is not queueable')
+      assert(action=='wait_ticks' or action=='wait_until' or api.handlers[action],'unknown action in plan')
+      assert(args==nil or type(args)=='table','step args must be an object')
+      if api.check_args then api.check_args(action,args) end
       assert(step.wait==nil or type(step.wait)=='boolean','step wait must be boolean')
       assert(step.label==nil or (type(step.label)=='string' and #step.label<=64),'step label must be a short string')
       local on_fail=step.on_fail
@@ -39,9 +48,9 @@ return function(api)
         assert(timeout==nil or (type(timeout)=='number' and timeout==math.floor(timeout) and timeout>=1 and timeout<=54000),'wait_until timeout must be 1..54000 ticks')
         api.validate_condition(step.args)
       end
-      out[#out+1]={action=step.action,args=step.args or {},wait=step.wait~=false,label=step.label,on_fail=on_fail,on_short=step.on_short}
+      out[#out+1]={action=action,args=args or {},wait=step.wait~=false,label=step.label,on_fail=on_fail,on_short=step.on_short}
     end
-    return out
+    return out,#corrected>0 and corrected or nil
   end
   -- Conservative JSON-size estimate, independent of Factorio's serializer.
   -- Count keys even for arrays; this slightly overestimates rather than allowing
@@ -106,7 +115,51 @@ return function(api)
       repeating=q.loop~=nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,
       limits={pending=MAX_PENDING,history=MAX_HISTORY,instant_per_tick=MAX_INSTANT,argument_bytes=MAX_BYTES}}
   end
+  -- A repeating plan's round tallies its steps that ran short (Opus, after short steps were skipped): action, item and
+  -- why, e.g. "transfer iron-plate inventory_full". The outcomes and errors short() reads, or a reply's short {reason}.
+  local ROUND_SHORT={out_of_items=true,nothing_collected=true,inventory_full=true}
+  local function short_key(step,result)
+    if type(result)~='table' then return nil end
+    local why
+    if ROUND_SHORT[result.outcome] then why=result.outcome
+    elseif type(result.reason)=='string' and result.reason:match('^no %S+ in inventory') then why='none_held'
+    elseif type(result.short)=='table' and type(result.short.reason)=='string' then why=result.short.reason end
+    if not why then return nil end
+    local a=type(step.args)=='table' and step.args or {}
+    local what=a.item or a.recipe or (type(a.items)=='table' and a.items[1]) or a.fuel or a.ammo
+    return step.action..(type(what)=='string' and ' '..what or '')..' '..why
+  end
+  local function tally(q,step,result)
+    local r=q.loop and not step.order and q.round
+    local key=r and short_key(step,result)
+    if not key then return end
+    if not r.counts[key] then r.counts[key]=0; r.keys[#r.keys+1]=key end
+    r.counts[key]=r.counts[key]+1; r.n=r.n+1
+  end
+  -- At a round's end: one line when its shorts differ from the last round's (a steady loop says it once).
+  local function round_done(q)
+    local r=q.round
+    q.round={counts={},keys={},n=0}
+    if not r then return end
+    local parts={}
+    for _,key in ipairs(r.keys) do parts[#parts+1]=key..(r.counts[key]>1 and ' x'..r.counts[key] or '') end
+    local sig=table.concat(parts,', ')
+    if sig==(q.round_sig or '') then return end
+    q.round_sig=sig
+    if sig=='' then return end
+    q.round_news=q.round_news or {}
+    q.round_news[#q.round_news+1]=string.format('queue %sround %d: %d of %d steps short: %s',q.name and q.name..' ' or '',q.cycle or 1,r.n,#q.loop,sig)
+    while #q.round_news>3 do table.remove(q.round_news,1) end
+  end
+  -- The round lines not yet shown to the agent (the reply's team block).
+  function M.round_news(index)
+    local q=(api.state().queues or {})[index]
+    local lines=q and q.round_news
+    if lines then q.round_news=nil end
+    return lines
+  end
   local function record(q,step,ok,result)
+    tally(q,step,result)
     q.history[#q.history+1]={id=step.id,action=step.action,label=step.label,ok=ok,result=result,started_tick=step.started_tick,finished_tick=game.tick,order=step.order}
     if #q.history>MAX_HISTORY then table.remove(q.history,1) end
     q.revision=q.revision+1
@@ -245,16 +298,18 @@ return function(api)
   -- Checks a plan as queue_submit would (saved plans, standing orders);
   -- returns its byte size and the checked steps.
   function M.validate(a)
-    local items=steps(a)
+    local items,corrected=steps(a)
     assert(#items<=MAX_PENDING,'queue capacity exceeded')
     guards(a)
     local size=total(items)
     assert(size<=MAX_BYTES,'queue argument byte budget exceeded')
-    return size,items
+    return size,items,corrected
   end
+  -- A reply that carries the steps' corrections.
+  local function with(out,corrected) out.corrected=corrected; return out end
   function M.handlers.queue_submit(p,a)
     local q=queue(p.index); revision(q,a)
-    local items=steps(a)
+    local items,corrected=steps(a)
     local new_guards=guards(a)
     preempt(p,q)
     assert(a.mode==nil or a.mode=='append' or a.mode=='replace','mode must be append or replace')
@@ -269,21 +324,23 @@ return function(api)
     for _,g in ipairs(new_guards) do q.guards[#q.guards+1]=g end
     if a.start~=false then q.paused=false end
     q.revision=q.revision+1
-    return snapshot(q,RECENT)
+    return with(snapshot(q,RECENT),corrected)
   end
   function M.handlers.queue_repeat(p,a)
     local q=queue(p.index); revision(q,a)
-    local items=steps(a)
+    local items,corrected=steps(a)
     assert(#items>0,'repeating plan must not be empty')
     assert(total(items)<=MAX_BYTES,'queue argument byte budget exceeded')
     local interval=a.interval_ticks or 1800
     assert(type(interval)=='number' and interval==math.floor(interval) and interval>=60 and interval<=36000,'interval_ticks must be 60..36000')
+    assert(a.name==nil or (type(a.name)=='string' and #a.name>=1 and #a.name<=32),'name must be 1..32 characters')
     preempt(p,q)
     api.stop(p)
     M.pause(p.index)
     q.loop=copy_steps(items); q.interval=interval; q.next_cycle_tick=nil; q.cycle=1
+    q.name=a.name; q.round={counts={},keys={},n=0}; q.round_sig=nil; q.round_news=nil
     assign(q,items); q.pending=items; q.paused=false; q.revision=q.revision+1
-    return snapshot(q,RECENT)
+    return with(snapshot(q,RECENT),corrected)
   end
   function M.handlers.queue_edit(p,a)
     local q=queue(p.index)
@@ -294,7 +351,7 @@ return function(api)
     assert(type(index)=='number' and index==math.floor(index) and index>=1 and index<=#q.pending+1,'index outside pending queue (1-based)')
     local remove=a.remove or 0
     assert(type(remove)=='number' and remove==math.floor(remove) and remove>=0 and remove<=#q.pending-index+1,'invalid remove count')
-    local items=steps(a)
+    local items,corrected=steps(a)
     assert(#q.pending-remove+#items<=MAX_PENDING,'queue capacity exceeded')
     local size=total(q.pending)+total(items)
     for n=index,index+remove-1 do size=size-bytes(q.pending[n],0) end
@@ -303,7 +360,7 @@ return function(api)
     for _=1,remove do table.remove(q.pending,index) end
     for n=#items,1,-1 do table.insert(q.pending,index,items[n]) end
     q.revision=q.revision+1
-    return snapshot(q,RECENT)
+    return with(snapshot(q,RECENT),corrected)
   end
   function M.handlers.queue_cancel(p,a)
     local q=queue(p.index); revision(q,a)
@@ -352,7 +409,7 @@ return function(api)
             end
           end
           if not q.paused and not q.current and #q.pending==0 and q.loop then
-            if not q.next_cycle_tick then q.next_cycle_tick=game.tick+q.interval end
+            if not q.next_cycle_tick then q.next_cycle_tick=game.tick+q.interval; round_done(q) end
             if game.tick>=q.next_cycle_tick then
               q.pending=copy_steps(q.loop); assign(q,q.pending)
               q.next_cycle_tick=nil; q.cycle=q.cycle+1; q.revision=q.revision+1
@@ -398,7 +455,8 @@ return function(api)
   local PAUSE_QUEUE='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'
   M.schema={
     queue_status={returns='the whole history (up to 64 entries); the other queue calls return only the newest 3 and history_total'},
-    queue_repeat={steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional'},
+    queue_repeat={steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional',
+      name='optional 1..32 characters: names the loop in its round lines',note='a round whose steps ran short (out_of_items, nothing_collected, inventory_full, none held, or a short reply) puts one line in the team block (queue: "queue NAME round N: K of M steps short: transfer iron-plate inventory_full x2, ..."), only when it differs from the last round\'s'},
     queue_submit={steps='array of {action,args,wait?,label?,on_fail?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace pending only',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them'},
     queue_edit={expected_revision='required from queue_status',index='1-based pending index',remove='count to remove',steps='replacement steps'},
     queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses',expected_revision='optional'},

@@ -62,6 +62,12 @@ fh call status
   `board` call with an `id` and a `note`, `owner` or `status` is `board_update`. A valid argument is never renamed; a
   corrected call that still fails says `[ran as ...]`; any other unknown argument fails with the valid list. `scan`
   `fields` also takes one string (`"status|hp"` or `"status,hp"`).
+- `transfer`, `collect`, `feed`, `inspect`, `rearm` and `refuel` run `position` and `positions` as one list and say so
+  in `corrected`: one `{x,y}` given as `positions`, a list given as `position`, a `position` where only `positions` is
+  taken (`collect`, `feed`, `rearm`, `refuel`), or both at once (`position` first). A plain `position` where it is
+  taken stays as it is; with `radius` neither is touched. Queue steps (`queue_submit`, `queue_repeat`, `queue_edit`)
+  are corrected the same way, and the reply lists each in `corrected` (`step 1: collect {...} (position is positions
+  (a list))`).
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
@@ -397,17 +403,30 @@ fh sleep 900 --until researched                       # ...or until the research
     walking tour) tops every machine set to that recipe up to each item ingredient's amount x crafts, from your
     inventory, in one call: `entities` rows with `loaded {item=count}` and `short {item=still missing}`; a named machine
     set to another recipe is a row with `recipe` (what it runs, or `none`), and in reach they are counted in
-    `other_recipe`. `crafts` 1..1000 (default 1); not with `items`.
+    `other_recipe`. `crafts` 1..1000 (default 1); not with `items` or `item`.
+  - `feed {"item": "iron-plate", "count": 50}` gives only that item, as `items: ["iron-plate"]` does (with `items`, it is
+    added to them); `count` is what each machine is topped up to.
+  - `collect {"radius": 20}` without `item` walks to every assembler and furnace output in the radius that holds
+    anything (chemical plants, refineries and the like are assemblers) and takes all of it: output slots only, never
+    inputs or fuel. `count` caps the total; chests need `item`. The reply has `items: "all"`, `stock` and `places`;
+    `last` reports `got` and `items {name=count}`.
   - `inspect {"positions": [...]}` (1..32 entries, each may carry `name` or `unit_number`): one inspect per entry in one
     call, `entities` in order and `count`; an entry that fails is `{position, error}`.
 - Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
   `revision`, `paused`, `active`, `pending` (the next 5 as `id action [label]`), `pending_count`, `recent` (the last 2
   results), `last_failure`; `queue_status` shows every step in full.
+- A repeating plan (`queue_repeat`, optional `name` up to 32 characters) whose round had steps that ran short (the
+  outcomes `out_of_items`, `nothing_collected`, `inventory_full`, a give with none held, or a reply's `short`) puts one
+  grouped line in the team block under `queue`: `queue loop3 round 4: 3 of 9 steps short: transfer iron-plate
+  inventory_full x2, collect coal nothing_collected`. It comes only when a round's list differs from the round
+  before, so a steady loop says it once.
 - `inspect` also shows what the entity GUI and cursor show: `status_name` (e.g. `marked_for_deconstruction`,
   `waiting_for_source_items`), `filters`, `filter_mode` and `use_filters` (inserters, loaders), `held` (an inserter's
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
   on the footprint, such as a paste replacing it, with their filters). A ghost on a building yields to the building
-  unless you name it (`name: "entity-ghost"`).
+  unless you name it (`name: "entity-ghost"`). So does a flying robot, a biter, a projectile or any unselectable entity
+  over it, in `inspect`, `transfer`, `collect` and every other call on a position: `name` or `unit_number` picks it,
+  and alone at the position it is the target.
 - An asteroid collector: `inspect` shows `filters` (asteroid chunk names), `filter_slots` (the game's count, which
   reads 0 until a filter is set), `arm` (chunks its arms hold) and its output in
   `inventories.asteroid_collector_output`. `configure {position, filters}` sets the chunk filters as its GUI does,

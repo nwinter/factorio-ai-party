@@ -102,6 +102,29 @@ eq(r.item.notes[1].text,'poles on the way'); eq(r.corrected,'board_update {"id":
 -- scan fields as one string, as describe's example reads.
 r=sol('scan',{radius=8,fields='status|hp'})
 eq(r.corrected,nil); assert(r.entities,'scan ran')
+-- position and positions (Muse, shift08): one {x,y} as positions, a list as position, position where only positions
+-- is taken, or both at once run as one list, with a note in corrected.
+r=sol('inspect',{positions={x=3.5,y=3.5}})
+eq(r.corrected,'inspect {"positions":[{"x":3.5,"y":3.5}]} (positions is a list: [{x,y}])'); eq(r.count,1)
+r=sol('inspect',{position={x=3.5,y=3.5},positions={{x=10,y=10}}})
+eq(r.corrected,'inspect {"positions":[{"x":3.5,"y":3.5},{"x":10,"y":10}]} (position and positions are one list (position first))')
+eq(r.entities[1].name,'wooden-chest'); eq(r.entities[2].name,'roboport')
+r=sol('transfer',{position={{x=3.5,y=3.5}},direction='to_player',item='copper-plate',count=1})
+eq(r.corrected,'transfer {"count":1,"direction":"to_player","item":"copper-plate","positions":[{"x":3.5,"y":3.5}]} (position with a list is positions)')
+assert(r.entities,'ran as a batch')
+r=sol('collect',{position={3.5,3.5},item='copper-plate'})
+eq(r.corrected,'collect {"item":"copper-plate","positions":[[3.5,3.5]]} (position is positions (a list))')
+r=sol('feed',{position={x=3.5,y=3.5}})
+eq(r.corrected,'feed {"positions":[{"x":3.5,"y":3.5}]} (position is positions (a list))')
+-- A plain position where position is taken, and anything with radius, are left alone.
+eq(sol('inspect',{position={x=3.5,y=3.5}}).corrected,nil)
+fails(function() sol('collect',{radius=5,position={x=1,y=1},item='copper-plate'}) end,'unknown argument position for collect')
+-- Queue steps are corrected the same way; the reply lists them.
+r=sol('queue_submit',{start=false,steps={{action='collect',args={position={x=3.5,y=3.5},item='copper-plate'}},{action='wait_ticks',args={ticks=60}}}})
+eq(r.corrected[1],'step 1: collect {"item":"copper-plate","positions":[{"x":3.5,"y":3.5}]} (position is positions (a list))'); eq(#r.corrected,1)
+local queued=sol('queue_status').pending[1].args
+eq(queued.positions[1].x,3.5); eq(queued.position,nil)
+sol('queue_cancel',{})
 
 -- Fix 6: an empty take says why; the third identical one in 7 min says so.
 r=sol('transfer',{position={x=3.5,y=3.5},direction='to_player',item='iron-plate'})

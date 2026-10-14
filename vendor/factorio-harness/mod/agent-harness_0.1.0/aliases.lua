@@ -31,6 +31,8 @@ return function(api)
   }
   -- A one-name list given where a name is taken: its name.
   local SINGLE = {prefix=true}
+  -- Actions whose positions is a list of targets of the same move or read.
+  local LISTS = {transfer=true, collect=true, feed=true, inspect=true, rearm=true, refuel=true}
   local function encode(v)
     local t = type(v)
     if t == 'string' then return '"' .. v:gsub('[%c"\\]', function(c) return string.format('\\u%04x', c:byte()) end) .. '"' end
@@ -49,6 +51,17 @@ return function(api)
     return '{' .. table.concat(parts, ',') .. '}'
   end
   M.encode = encode
+  -- One position, {x,y} or [x,y]; a list of them.
+  local function is_pos(v)
+    return type(v) == 'table' and ((type(v.x) == 'number' and type(v.y) == 'number')
+      or (v.x == nil and type(v[1]) == 'number' and type(v[2]) == 'number' and v[3] == nil))
+  end
+  local function is_list(v)
+    if type(v) ~= 'table' or v.x ~= nil or #v == 0 then return false end
+    for _, e in ipairs(v) do if not is_pos(e) then return false end end
+    return true
+  end
+  local function xy(v) return {x = v.x or v[1], y = v.y or v[2]} end
   -- (action, args) -> action, args, notes (nil when nothing changed). `takes`
   -- tells whether an action takes an argument (describe's schema).
   function M.fix(action, args, takes)
@@ -79,10 +92,40 @@ return function(api)
       action = 'circuit_set'
       notes[#notes+1] = 'circuit is circuit_set'
     end
-    -- feed {position}: positions.
-    if action == 'feed' and out.position ~= nil and out.positions == nil and not takes('feed', 'position') then
-      out.positions, out.position = {out.position}, nil
-      notes[#notes+1] = 'position is positions (a list)'
+    -- position and positions (Muse, shift08, dozens a shift): one {x,y} as positions, a list as position, a position
+    -- where only positions is taken, or both at once, run as one list. Not with radius (neither applies there).
+    if LISTS[action] and out.radius == nil and takes(action, 'positions') then
+      local P, L = out.position, out.positions
+      if is_pos(L) then
+        L = {L}; out.positions = L
+        notes[#notes+1] = 'positions is a list: [{x,y}]'
+      end
+      if is_list(P) then
+        if L == nil then
+          out.positions, out.position = P, nil
+          notes[#notes+1] = 'position with a list is positions'
+        elseif is_list(L) then
+          local all = {}
+          for _, v in ipairs(P) do all[#all+1] = v end
+          for _, v in ipairs(L) do all[#all+1] = v end
+          out.positions, out.position = all, nil
+          notes[#notes+1] = 'position and positions are one list'
+        end
+      elseif is_pos(P) and (is_list(L) or (L == nil and not takes(action, 'position'))) then
+        local entry = P
+        -- A unit_number beside one position names that entry.
+        if out.unit_number ~= nil and (L ~= nil or not takes(action, 'unit_number')) and P.x ~= nil then
+          entry = {}
+          for k, v in pairs(P) do entry[k] = v end
+          entry.unit_number, out.unit_number = out.unit_number, nil
+        end
+        local all = {entry}
+        for _, v in ipairs(L or {}) do
+          if not (xy(v).x == xy(P).x and xy(v).y == xy(P).y) then all[#all+1] = v end
+        end
+        out.positions, out.position = all, nil
+        notes[#notes+1] = L and 'position and positions are one list (position first)' or 'position is positions (a list)'
+      end
     end
     -- fh sends scan, nearest, map ... as observe {scope}: the view's own names.
     local view = action == 'observe' and type(out.scope) == 'string' and out.scope or action
