@@ -572,7 +572,8 @@ async function main() {
     return {...status, ok:false, error:{code:'wait_timeout', message:`${action} still running after the wait timeout; it continues in game: poll status or wait again (--wait-timeout MS)`}};
   }
   // arrived_near: stopped beside a goal inside an entity, which is where callers want to be.
-  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up'];
+  // target_destroyed: a shoot at an entity ended because it is gone.
+  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed'];
   // How long to wait: an explicit --wait-timeout, else until the action's own
   // end tick (at 60 ticks/s plus a margin), never less than 30 s nor more than 15 min.
   // ownEnd: the action's end tick already reflects --wait-timeout (wait_until), so
@@ -664,6 +665,8 @@ async function main() {
       ...(last?.kind === 'move_to' ? {nearest_reachable: last.nearest_reachable, reachable_gap: last.reachable_gap, off_belt: last.off_belt,
         path: last.path, steered: last.steered} : {}),
       why: last?.why, note: status.result?.note,
+      // collect over a radius: moved per item, places touched, what fell short.
+      tally: last?.tally,
       team: carrier.result?.team, clock: carrier.result?.clock, orders: carrier.result?.orders, chat: carrier.result?.chat,
     };
     for (const key of Object.keys(result)) if (result[key] === undefined) delete result[key];
