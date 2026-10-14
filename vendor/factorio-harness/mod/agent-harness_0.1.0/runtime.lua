@@ -4132,7 +4132,6 @@ end
 -- Actions that never drive the character; they leave a running queue alone.
 local passive={circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
 local reads={placements=true,defense=true,flamers=true,labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true}
-function M.is_read(action) return reads[action]==true end
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
@@ -4313,6 +4312,7 @@ end
 -- Actions that never drive the character (reads, talk, the board, crafting,
 -- research, sleep, queue calls, votes; an unknown name): a direct call leaves
 -- the running action and queue alone, and so does its failure.
+function M.is_read(action) return reads[action]==true end
 function M.keeps(action)
   return type(action)~='string' or not handlers[action] or reads[action] or passive[action] or action:match('^queue_')~=nil
     or M.board.handlers[action]~=nil or M.players.handlers[action]~=nil or M.votes.handlers[action]~=nil

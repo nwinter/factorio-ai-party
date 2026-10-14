@@ -256,7 +256,8 @@ async function main() {
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
     full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'}, look:{type:'string'},
-    'text-file':{type:'string'}, 'deadline-file':{type:'string'}, until:{type:'string'}, max:{type:'string'},
+    'text-file':{type:'string'}, 'deadline-file':{type:'string'}, until:{type:'string'},
+    max:{type:'string'},
   }});
   let command = positionals[0];
   if (!command || values.help || command === 'help') { process.stdout.write(help); return; }
