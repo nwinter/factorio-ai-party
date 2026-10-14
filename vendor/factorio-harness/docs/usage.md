@@ -66,7 +66,7 @@ fh call status
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
 - Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
-- With `--wait`, the command exits nonzero unless the action ended successfully, or when the wait times out. `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
+- With `--wait`, the command exits nonzero unless the action ended successfully, or when the wait times out. `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success; `unreachable` and `blocked` fail with `last.why` on the error line. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
 - A timed-out wait is not a finished action. The reply has `error.code` `wait_timeout`, `timed_out: true` and `still_running` (the action's kind and end tick) and no `completion`. The action keeps running in game; a new character action would interrupt it. `fh wait` blocks until the character is idle again and reports the last outcome.
 - Ctrl-C does not stop an action the game already accepted. `fh call stop` does.
 - An action that ends with the character on a belt, underground belt or splitter says so in `last.on_belt`
@@ -159,6 +159,22 @@ fh call status
   An entity with several segments holding fluid (a chemical plant's input and output) needs `fluid` or `index`; the
   error lists them. Returns `flushed {fluid: amount}`, `amount`, `index` and `segment {id, extent, size, capacity,
   entities}`. It leaves the running action and queue alone, and the `pog-guest` group cannot flush.
+- `move_to {position, within?}` walks the engine pathfinder's route. Requests climb a ladder until one finds a route:
+  a padded box (0.7 tiles) on the tile grid, asked twice (as the character walks, and with belts as obstacles; the
+  belt-free route is kept when it is at most 6 tiles or a quarter longer: `last.path: off belts`), then the character's
+  own box (0.4 tiles) from the nearest free tile centre, then on the half-tile grid, then on the quarter-tile grid with
+  a goal radius 3 tiles wider. A route that ends no nearer the goal is not one. When no level finds a route the walk
+  ends at once with outcome `unreachable` and `last.why`: `closed in: the character (0.4 tiles wide) fits through no gap
+  out of the area (9,42)-(14,53) (about 45 tiles); around it: steam-engine, assembling-machine-2, iron-chest, ...`
+  (the area it can reach, mapped at quarter-tile steps within 24 tiles), or `no path for the character to (x,y) ...`;
+  `last.nearest_reachable` is the point nearest the target it can reach and `last.reachable_gap` how far that is from
+  the target. A target on ungenerated ground is steered to directly (`last.steered: without a path: ungenerated`).
+  `blocked` (stalls on the way) and `timed_out` also say why, with where it stopped. A walk never ends on a belt: arriving
+  on one it steps to the nearest free tile without a belt within the arrival radius, else within 3 tiles
+  (`last.off_belt: arrived on a transport-belt; stepped to (25.5,-28.5), the nearest free tile without a belt (none
+  within the arrival radius)`). With `--wait`, the error line carries `last.why`. (shift08, world n: Haiku's pocket south
+  of the boiler row at (8..12,42) was closed for the character's box; the old fallback planned with a 0.3-tile box that
+  gets out, and the walk pushed at 0.22-tile gaps until 15 stalls.)
 - `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
   as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
   ammunition in the ammo slots. `shoot`, `move_to combat` and `kite` fill empty ammo slots from carried ammo first

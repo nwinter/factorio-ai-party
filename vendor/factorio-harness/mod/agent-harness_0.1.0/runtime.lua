@@ -183,6 +183,29 @@ local function finish(index, outcome)
     -- Movement diagnostics, only when something went wrong on the way.
     last.replans=(action.replans or 0)>0 and action.replans or nil
     last.stalls=action.stalls; last.no_progress=action.no_progress; last.paths_failed=(action.paths_failed or 0)>0 and action.paths_failed or nil
+    -- Why it gave up, the nearest point it can reach, and how it ended off a belt (pathing.lua).
+    local pb=body(M.lookup(index))
+    local here=pb and pb.valid and pb.character and pb.character.valid and pb.position
+    local at=M.pathing.at
+    if outcome=='unreachable' then
+      last.why=action.why
+      if action.reachable then
+        last.nearest_reachable={x=math.floor(action.reachable.x*10+0.5)/10,y=math.floor(action.reachable.y*10+0.5)/10}
+        last.reachable_gap=math.floor(distance(action.reachable,action.position)*10+0.5)/10
+      end
+    elseif outcome=='blocked' then
+      last.why=string.format('stalled %d times%s; stopped at %s, %.1f tiles from the target',action.stalls or 0,
+        action.no_progress and string.format(' (%d of them no progress for 90 ticks)',action.no_progress) or '',here and at(here) or '?',here and distance(here,action.position) or 0)
+    elseif outcome=='timed_out' and here then
+      last.why=string.format('time ran out at %s, %.1f tiles from the target',at(here),distance(here,action.position))
+    end
+    if action.blind then last.steered='without a path: '..action.blind end
+    if action.avoided then last.path='off belts' end
+    local ob=action.off_belt
+    if ob then
+      last.off_belt=ob.spot and string.format('arrived on a %s; stepped to %s, the nearest free tile without a belt %s',ob.belt,at(ob.spot),
+        ob.within and 'within the arrival radius' or '(none within the arrival radius)') or ('arrived on a '..ob.belt..'; no free tile without a belt within 3 tiles')
+    end
     -- move_to combat fires for the walk only: the combat channel ends next tick.
     local combat=s.combat and s.combat[index]
     if combat and combat.with_move then combat.until_tick=game.tick-1; combat.end_outcome='move_ended' end
@@ -585,7 +608,7 @@ function handlers.describe()
         tiles='optional {name, area={left_top,right_bottom}}: fill up to 4096 tile ghosts (landfill over water, foundation beside a platform); returns tiles_placed, tiles_existing (same ghost already there), tiles_refused (not placeable there)',
         platform='optional platform name: place on that space platform (its hub builds ghosts from hub items); positions are platform coordinates, hub at 0,0',['repeat']='optional {count 1..64, dx, dy}: stamp the list count times, each shifted by dx,dy; per-copy rows',returns='placed, failed [{index,error}], bounds (construct defaults to them), obstacles_marked (trees/rocks under the ghosts, marked for deconstruction like a player placement; construct mines them); underground_warnings: an underground belt or pipe-to-ground ghost whose span crosses tiles an underground cannot pass under (lava, empty space), which stays unpaired'},
       construct={area='optional {left_top,right_bottom} <=256x256; default: ghosts from the last paste',ticks='1..216000 (default 36000)',note='builds every ghost in reach from inventory and hand-mines every entity marked for deconstruction (timed like mine; contents to inventory, stops with inventory_full), then walks to the free stand point (never on a footprint) covering the most remaining ghosts near the nearest one; blocked ghosts retry once after moving; trees/rocks under ghosts are marked and mined first; ghosts whose item is in the hand-crafting queue are awaited (status awaiting_craft), not missing; status reports built/mined/remaining/missing/failed and blockers (trees/rocks in the way of a ghost, marked and mined first, also when a build bumps into one: name, position, ghost, at, cleared); outcomes: constructed (everything done) | incomplete (ghosts left for missing items or failures; a plan step fails) | nothing_to_do (a success, completes at once) | inventory_full | timed_out'},
-      move_to={position='{x,y}, within 512 tiles',ticks='1..36000, default 3600',tolerance='0.25..10, default 0.5 (alias within)',pathfind='default true: engine pathfinder (a failed request retries from the nearest free tile centre with a slimmer box, then a wider goal); a stall, back-and-forth, or no progress toward the next waypoint for 90 ticks (e.g. a belt carrying the character back) sidesteps, every 3rd stall replans wider, blocked after 15 stalls; false steers directly',combat='optional true or a radius 1..32 (default 20): fire at enemies in range while walking, as shoot auto does (needs ammunition), until the walk ends; status/last_combat report it (outcome move_ended, ammo_used)',status='last reports replans, stalls, no_progress, paths_failed',outcomes='arrived | arrived_near (stuck within tolerance+1.5, e.g. goal inside an entity) | blocked | timed_out'},
+      move_to={position='{x,y}, within 512 tiles',ticks='1..36000, default 3600',tolerance='0.25..10, default 0.5 (alias within)',pathfind='default true: the engine pathfinder: a padded box on the tile grid (with a twin request avoiding belts, kept when at most 6 tiles or a quarter longer), then the character\'s own box from the nearest free tile centre, on the half-tile grid, and on the quarter-tile grid with a wider goal; when none finds a route the walk ends at once as unreachable (a target on ungenerated ground is steered to directly); a stall, back-and-forth, or no progress toward the next waypoint for 90 ticks (e.g. a belt carrying the character back) sidesteps, every 3rd stall replans wider, blocked after 15 stalls; false steers directly',note='never ends on a belt: arriving on one it steps to the nearest free tile without a belt within the arrival radius (else within 3 tiles)',combat='optional true or a radius 1..32 (default 20): fire at enemies in range while walking, as shoot auto does (needs ammunition), until the walk ends; status/last_combat report it (outcome move_ended, ammo_used)',status='last reports why (unreachable: closed in, with the area and what closes it in, or no path; blocked; timed_out), nearest_reachable and reachable_gap (its distance to the target), off_belt, path (off belts), steered (without a path), replans, stalls, no_progress, paths_failed',outcomes='arrived | arrived_near (stuck within tolerance+1.5, e.g. goal inside an entity) | unreachable (no route for the character: why, nearest_reachable) | blocked | timed_out'},
       pickup={ticks='1..600 (default 30); over an area 1..36000 (default 3600)',area='optional {left_top,right_bottom} up to 64x64: pick up every item stack on the ground in it',position='optional centre of the square for radius (default you)',radius='optional 1..32 (default 8): the square around position, instead of area',items='optional 1..16 item names: only stacks of these',note='takes items on the ground within your pickup distance (stand on or next to them; refused when none is in reach); outcomes picked_up | duration_elapsed | inventory_full | nothing_in_reach, last.picked {item: count}. Over an area (area, position/radius or items): one stack every 6 ticks, walking to the nearest stack left in the area; refused when it holds none; returns item_stacks and items; outcomes picked_up (none left) | inventory_full | blocked (stacks it could not walk to: last.skipped; it stops after 8) | timed_out; last.picked, last.left (stacks still in the area)'},repair={position='{x,y}',ticks='1..600',item='repair-pack by default',platform='refused: the game repairs platform entities itself, one at a time, with repair packs from the hub; platforms {platform} and inspect of the hub list damaged and repair_packs'},
       mine={position='{x,y}', ticks='1..600', name='optional', outcomes='target_mined | duration_elapsed (ore: last reports mined) | inventory_full (blocked_item) | not_minable (a stump, remnant or corpse; last.error) | target_lost | out_of_reach'},
       stock={item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',quality='default normal',
@@ -1608,30 +1631,15 @@ function handlers.walk(p,a)
   state().active[p.index]={kind='walk',direction=direction,until_tick=game.tick+ticks}
   return {until_tick=game.tick+ticks}
 end
--- Engine pathfinding for the character's own footprint (slightly padded so
--- 8-direction walking does not snag corners). Results arrive through
+-- Engine pathfinding for the character's walks (pathing.lua): a ladder of
+-- requests (padded box, a belt-free variant, the character's own box on the
+-- tile, half- and quarter-tile grids) whose results arrive through
 -- on_script_path_request_finished; until then the character waits in place.
--- Each replan widens the goal radius so a goal boxed in by entities still
--- yields a path to somewhere beside it. The shared path cache is skipped: it
--- can hand back routes planned for other units.
--- Paths are planned for a padded box so they keep clear of corners the
--- character snags on at speed. A padded box that already overlaps something
--- at the start makes the engine fail the request, and so does a start in a gap
--- narrower than a tile (between two drills): the pathfinder works from tile
--- nodes. Failures retry from the nearest free tile centre with a slimmer box,
--- then also with a wider goal.
-local PADDED_BOX,SLIM_BOX={{-0.35,-0.35},{0.35,0.35}},{{-0.15,-0.15},{0.15,0.15}}
-request_path=function(p,nav)
-  local c=p.character
-  local level=nav.path_level or 0
-  local start=level>0 and p.surface.find_non_colliding_position(c.name,p.position,3,0.5,true) or p.position
-  local id=p.surface.request_path{bounding_box=level==0 and PADDED_BOX or SLIM_BOX,collision_mask=c.prototype.collision_mask,
-    start=start,goal=nav.position,force=p.force,radius=nav.tolerance+1+(nav.replans or 0)+(level>=2 and 3 or 0),entity_to_ignore=c,
-    can_open_gates=true,pathfind_flags={prefer_straight_paths=true,no_break=true,cache=false}}
-  state().paths=state().paths or {}
-  state().paths[id]=p.index
-  nav.path_id=id; nav.path_state='pending'; nav.waypoints=nil; nav.waypoint=nil; nav.sidestep=nil
-end
+-- When no level finds a route the walk ends as unreachable with why and the
+-- nearest reachable point. The shared path cache is skipped: it can hand back
+-- routes planned for other units.
+M.pathing=require('pathing'){paths=function() state().paths=state().paths or {}; return state().paths end}
+request_path=function(p,nav) return M.pathing.request(p,nav) end
 function handlers.move_to(p,a)
   local target=position(a.position)
   assert(distance(p.position,target)<=512,'movement target must be within 512 tiles')
@@ -1640,7 +1648,7 @@ function handlers.move_to(p,a)
   local tolerance=a.within or a.tolerance or 0.5
   assert(type(tolerance)=='number' and tolerance>=0.25 and tolerance<=10,'tolerance/within out of range 0.25..10')
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
-  local action={kind='move_to',position=target,tolerance=tolerance,
+  local action={kind='move_to',position=target,tolerance=tolerance,off_belts=true,
     until_tick=game.tick+ticks,last_position=p.position,stalled=0,replans=0,direct=a.pathfind==false}
   -- combat: the combat channel fires at enemies in range for the walk (as
   -- shoot auto), so a walk into an attacked area shoots back (request #57).
@@ -4818,7 +4826,21 @@ stock=stock_module{distance=distance,integer=integer,position=position,claims=M.
 local STALL_TICKS,SIDESTEP_TICKS,MAX_STALLS,MAX_REPLANS,PROGRESS_TICKS=8,12,15,5,90
 navigate=function(p,nav)
   local pos,goal=p.position,nav.position
-  if distance(pos,goal)<=math.max(nav.tolerance,(p.character_running_speed or 0)*0.55) then return 'arrived' end
+  -- A move_to never ends on a belt (shift08: Grok's arrivals on the y=-27.5
+  -- belt carried it off, then transfers failed out of reach): from a belt it
+  -- steps to the nearest free tile without one (pathing.lua).
+  if nav.step_off then
+    if distance(pos,nav.step_off)<=0.3 or game.tick-nav.step_off_tick>120 then return 'arrived' end
+    steer(p,nav.step_off,nav); return
+  end
+  if distance(pos,goal)<=math.max(nav.tolerance,(p.character_running_speed or 0)*0.55) then
+    local belt=nav.off_belts and M.pathing.belt_at(p.surface,pos)
+    if not belt then return 'arrived' end
+    local spot,within=M.pathing.off_belt_spot(p,goal,nav.tolerance)
+    nav.off_belt={belt=belt.name,spot=spot,within=within}
+    if not spot then return 'arrived' end
+    nav.step_off=spot; nav.step_off_tick=game.tick; steer(p,spot,nav); return
+  end
   local last=nav.last_position or pos
   local moved=distance(pos,last)
   local oscillating=nav.previous_position and distance(pos,nav.previous_position)<0.005 and moved>0.005
@@ -4826,7 +4848,12 @@ navigate=function(p,nav)
   -- A goal inside an entity is unreachable; stopping just beside it is what
   -- callers targeting a machine or chest want.
   local near=distance(pos,goal)<=nav.tolerance+1.5
-  if nav.path_state=='pending' then p.walking_state={walking=false,direction=defines.direction.north}; nav.stalled=0; nav.progress_tick=nil; return end
+  if nav.path_state=='pending' or nav.path_state=='probing' then
+    -- The first level's belt-free twin may answer late: decide without it after a while.
+    if nav.found then M.pathing.grace(p,nav) end
+    if nav.path_state=='pending' or nav.path_state=='probing' then p.walking_state={walking=false,direction=defines.direction.north}; nav.stalled=0; nav.progress_tick=nil; return end
+  end
+  if nav.path_state=='unreachable' then return 'unreachable' end
   if nav.path_state=='busy' then
     nav.retry_tick=nav.retry_tick or game.tick+20
     if game.tick>=nav.retry_tick then nav.retry_tick=nil; request_path(p,nav); return end
@@ -5122,16 +5149,10 @@ function M.on_event(event)
     local index=paths[event.id]; paths[event.id]=nil
     local action=index and state().active[index]
     local nav=action and (action.nav or action)
-    if not nav or nav.path_id~=event.id then return end
-    nav.paths_failed=(nav.paths_failed or 0)+(event.path and 0 or 1)
-    if event.path then nav.waypoints=event.path; nav.waypoint=1; nav.path_state='found'
-    elseif event.try_again_later then nav.path_state='busy'
-    elseif (nav.path_level or 0)<2 then
-      -- Escalate (true box, then wider goal) before steering blind.
-      nav.path_level=(nav.path_level or 0)+1
-      local ok,p=pcall(player,index)
-      if ok then request_path(p,nav) else nav.path_state='failed' end
-    else nav.path_state='failed' end
+    if not nav then return end
+    -- The walk's own request, its belt-free twin, or the probe after a give-up (pathing.lua).
+    local ok,p=pcall(player,index)
+    if ok then M.pathing.on_finished(p,nav,event) elseif nav.path_id==event.id then nav.path_state='failed' end
   elseif event.name==defines.events.on_console_chat then
     if M.chat then M.chat.on_console_chat(event) end
   elseif event.name==defines.events.on_unit_group_finished_gathering then

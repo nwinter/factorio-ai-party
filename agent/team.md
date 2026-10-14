@@ -108,6 +108,9 @@ already targets your character.
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `feed {"recipe": NAME,
   "crafts": N, "positions": [...]}` loads each machine set to that recipe for N crafts; `inspect {"positions": [...]}`
   inspects up to 32 entities in one call.
+- `move_to` never ends on a belt (it steps to the nearest free tile without one, `last.off_belt`). With no route for
+  your character it ends at once as `unreachable`, with `last.why` (closed in: the area and what closes it in) and
+  `last.nearest_reachable`.
 - Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, repairs,
   ghosts. `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":
   "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[...]}'` runs its queue steps whenever

@@ -660,6 +660,9 @@ async function main() {
       // construct: what it did and what stopped it, blockers with coordinates (request #167); kite: why it stopped.
       ...(last?.kind === 'construct' ? {built: last.built, mined: last.mined, remaining: last.remaining || undefined,
         missing: last.missing, failed: last.failed, blockers: last.blockers} : {}),
+      // move_to: where it can get to when it gave up, and how it ended off a belt (pathing.lua).
+      ...(last?.kind === 'move_to' ? {nearest_reachable: last.nearest_reachable, reachable_gap: last.reachable_gap, off_belt: last.off_belt,
+        path: last.path, steered: last.steered} : {}),
       why: last?.why, note: status.result?.note,
       team: carrier.result?.team, clock: carrier.result?.clock, orders: carrier.result?.orders, chat: carrier.result?.chat,
     };
@@ -731,7 +734,8 @@ async function main() {
   // A timed action that hit its own limit says so first (timed_out), with the
   // condition a wait_until was still waiting for.
   function endedError(action: string, last: any) {
-    if (last.outcome !== 'timed_out') return {code:'action_interrupted',message:`Control ended: ${last.outcome}`};
+    // A walk that gave up says why on the error line (move_to: unreachable, blocked).
+    if (last.outcome !== 'timed_out') return {code:'action_interrupted',message:`Control ended: ${last.outcome}${typeof last.why === 'string' ? `: ${last.why}` : ''}`};
     const what = action === 'wait_until' ? `wait_until timed_out: ${last.condition ?? 'condition'} not met${last.saw !== undefined ? ` (saw ${JSON.stringify(last.saw)})` : ''}; `+
       `the timeout comes from --wait-timeout MS (up to 900000) or args.timeout ticks (up to 54000)` : `${action} timed_out at its own tick limit`;
     return {code:'timed_out',message:what};

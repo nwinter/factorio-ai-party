@@ -481,6 +481,18 @@ test('a compact wait that ends badly still ends with the error line and exits no
     assert.match(stdout,/\nerror: action_interrupted: Control ended: blocked\n$/);
   });
 });
+test('a walk that gave up says why on the error line',async()=>{
+  await engine(request=>{
+    if(request.action==='move_to')return {ok:true,result:{until_tick:60}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:1,y:1},health:250,max_health:250,inventory:[]},clock:'c'}};
+    return {ok:true,result:{active:false,last:{kind:'move_to',outcome:'unreachable',why:'closed in: the character (0.4 tiles wide) fits through no gap out of the area (9,42)-(14,53) (about 45 tiles)',nearest_reachable:{x:9.5,y:42.5}}}};
+  },async port=>{
+    const {code,stdout}=await compact(port,['call','move_to','--args','{"position":{"x":6.5,"y":38.9}}','--wait']);
+    assert.equal(code,1);
+    assert.match(stdout,/nearest_reachable/);
+    assert.match(stdout,/\nerror: action_interrupted: Control ended: unreachable: closed in: the character \(0\.4 tiles wide\) fits through no gap out of the area \(9,42\)-\(14,53\) \(about 45 tiles\)\n$/);
+  });
+});
 test('polls fall back to plain status on a runtime without peek',async()=>{
   const seen:any[]=[];
   await engine(request=>{

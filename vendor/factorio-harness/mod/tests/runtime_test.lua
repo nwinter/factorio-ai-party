@@ -63,21 +63,26 @@ p.position={x=9.8,y=0}; advance(1)
 eq(call('status').last.outcome,'arrived'); eq(p.walking_state.walking,false)
 eq(call('status').last.target.x,10)
 eq(call('status').last.on_belt,nil); eq(call('status').on_belt,nil)
--- Arriving on a belt: the result and status say it carries the character
--- (shift03), status for as long as it stands there.
+-- Arriving on a belt (shift08: Grok's arrivals on the y=-27.5 belt carried it
+-- off): move_to steps to the nearest free tile without a belt and says so;
+-- status says a belt carries the character for as long as it stands on one.
 do
 local belt={valid=true,name='fast-transport-belt',direction=0}
 local belt_area
+local function on_belt_tile(area) return area[1][1]==9 and area[1][2]==0 end
 p.surface.find_entities_filtered=function(f)
-  if f.area and f.type and f.limit==1 and p.position.x>=f.area[1][1] and p.position.x<f.area[2][1] and p.position.y>=f.area[1][2] and p.position.y<f.area[2][2] then
-    belt_area=f.area; return {belt}
-  end
+  if f.area and f.type and f.limit==1 and on_belt_tile(f.area) then belt_area=f.area; return {belt} end
   return {}
 end
 call('move_to',{position={x=10,y=0},pathfind=false}); advance(1); advance(1)
+eq(call('status').active.kind,'move_to'); eq(p.walking_state.direction,14) -- off the belt: northwest to (9.5,-0.5)
+p.position={x=9.5,y=-0.4}; advance(1)
+eq(call('status').last.outcome,'arrived'); eq(call('status').last.on_belt,nil)
+eq(call('status').last.off_belt,'arrived on a fast-transport-belt; stepped to (9.5,-0.5), the nearest free tile without a belt (none within the arrival radius)')
+-- Standing on one: status says it carries the character.
+p.position={x=9.8,y=0}
 local note='standing on a fast-transport-belt facing north: it carries you; step off to stay put'
-eq(call('status').last.outcome,'arrived'); eq(call('status').last.on_belt,note); eq(call('status').on_belt,note)
-eq(belt_area[1][1],9); eq(belt_area[2][2],1)
+eq(call('status').on_belt,note); eq(belt_area[1][1],9); eq(belt_area[2][2],1)
 p.driving=true; eq(call('status').on_belt,nil); p.driving=false
 p.surface.find_entities_filtered=function() return {} end
 eq(call('status').on_belt,nil)
@@ -121,34 +126,61 @@ eq(call('status').active.kind,'move_to'); advance(1); eq(call('status').last.out
 -- within widens the arrival radius up to 10 tiles.
 call('move_to',{position={x=8,y=0},within=9}); advance(1)
 eq(call('status').last.outcome,'arrived')
--- Pathfinding: wait for the engine path, follow waypoints, replan when stuck,
--- and fall back to direct steering when no path exists.
+-- Pathfinding: wait for the engine path and its belt-free twin, follow
+-- waypoints, replan when stuck; failures climb the ladder (pathing.lua).
 p.position={x=0,y=0}
 eq(call('move_to',{position={x=10,y=10}}).pathfinding,true)
-local request=path_requests[#path_requests]
-eq(request.goal.x,10); eq(request.entity_to_ignore,p.character)
+local request=path_requests[#path_requests-1]
+eq(request.goal.x,10); eq(request.entity_to_ignore,p.character); eq(request.bounding_box[1][1],-0.35)
+do
+  local twin=path_requests[#path_requests]
+  eq(twin.collision_mask.layers.transport_belt,true); eq(twin.collision_mask.layers.player,true); eq(request.collision_mask.layers.transport_belt,nil)
+end
 advance(1); eq(p.walking_state.walking,false)
-runtime.on_event{name=10,id=#path_requests,path={{position={x=0,y=5}},{position={x=10,y=10}}}}
+runtime.on_event{name=10,id=#path_requests-1,path={{position={x=0,y=5}},{position={x=10,y=10}}}}
+advance(1); eq(p.walking_state.walking,false) -- the twin has not answered yet
+runtime.on_event{name=10,id=#path_requests,path=nil} -- no way off belts: the walk's own path
 advance(1); eq(p.walking_state.direction,8) -- south toward the first waypoint
 advance(1); eq(p.walking_state.direction,8) -- hysteresis holds the heading
 p.position={x=0,y=4.8}; advance(1); eq(p.walking_state.direction,6) -- next waypoint: southeast
-local before=#path_requests; advance(30); eq(#path_requests,before+1) -- third stall: replan
-eq(path_requests[#path_requests].radius>request.radius,true) -- wider radius
--- A failed request retries with a slimmer box, then a wider goal,
--- and only then steers directly.
-local padded=path_requests[#path_requests]
+local before=#path_requests; advance(30); eq(#path_requests,before+2) -- third stall: replan, with its twin
+eq(path_requests[#path_requests-1].radius>request.radius,true) -- wider radius
+-- Both fail: the character's own box from the nearest free tile centre, then
+-- the half-tile grid, then the quarter-tile grid with a wider goal.
+local padded=path_requests[#path_requests-1]
 p.surface.find_non_colliding_position=function(name,pos,radius,precision,tile_centre)
   eq(tile_centre,true); return {x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5}
 end
+runtime.on_event{name=10,id=#path_requests-1,path=nil}; runtime.on_event{name=10,id=#path_requests,path=nil}
+do
+  local own=path_requests[#path_requests]
+  eq(own.bounding_box[1][1],-0.2); eq(own.radius,padded.radius); eq(own.start.x,math.floor(p.position.x)+0.5); eq(own.path_resolution_modifier,nil)
+end
 runtime.on_event{name=10,id=#path_requests,path=nil}
-eq(path_requests[#path_requests].bounding_box[1][1],-0.15); eq(path_requests[#path_requests].radius,padded.radius)
-eq(path_requests[#path_requests].start.x,math.floor(p.position.x)+0.5); eq(padded.start.x,p.position.x)
+eq(path_requests[#path_requests].path_resolution_modifier,1); eq(path_requests[#path_requests].start.x,p.position.x)
+eq(path_requests[#path_requests].pathfind_flags.no_break,false)
 runtime.on_event{name=10,id=#path_requests,path=nil}
-eq(path_requests[#path_requests].radius,padded.radius+3)
-local tries=#path_requests
-runtime.on_event{name=10,id=#path_requests,path=nil}; eq(#path_requests,tries)
+eq(path_requests[#path_requests].path_resolution_modifier,2); eq(path_requests[#path_requests].radius,padded.radius+3)
+-- None found a route; open ground around (not closed in), so one wide request
+-- says where it can get to, and the walk ends unreachable.
+runtime.on_event{name=10,id=#path_requests,path=nil}
+eq(path_requests[#path_requests].radius>padded.radius+3,true)
+advance(1); eq(p.walking_state.walking,false); eq(call('status').active.kind,'move_to')
+runtime.on_event{name=10,id=#path_requests,path={{position={x=0,y=4.8}},{position={x=6,y=6}}}}
+advance(1)
+do
+  local gave=call('status').last
+  eq(gave.outcome,'unreachable'); eq(gave.nearest_reachable.x,6); eq(gave.reachable_gap,5.7); eq(gave.paths_failed,4)
+  eq(gave.why,'no path for the character to (10,10) on the tile, half- or quarter-tile grid')
+end
+-- A target on ungenerated ground: the pathfinder knows none of it, so steer directly as before.
+p.surface.is_chunk_generated=function() return false end
+call('move_to',{position={x=10,y=10}})
+runtime.on_event{name=10,id=#path_requests-1,path=nil}; runtime.on_event{name=10,id=#path_requests,path=nil}
+for _=1,3 do runtime.on_event{name=10,id=#path_requests,path=nil} end
 p.position={x=5,y=10}; advance(1); eq(p.walking_state.direction,4) -- direct fallback
-p.position={x=9.9,y=10}; advance(1); eq(call('status').last.outcome,'arrived')
+p.position={x=9.9,y=10}; advance(1); eq(call('status').last.outcome,'arrived'); eq(call('status').last.steered,'without a path: ungenerated')
+p.surface.is_chunk_generated=nil
 -- Stale path results for replaced actions are ignored.
 runtime.on_event{name=10,id=1,path={{position={x=99,y=99}}}}
 -- Destroyed player buildings become status alerts; enemies do not.
