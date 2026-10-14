@@ -652,7 +652,8 @@ async function main() {
   }
   // arrived_near: stopped beside a goal inside an entity, which is where callers want to be.
   // target_destroyed: a shoot at an entity ended because it is gone.
-  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear','dropped'];
+  // transferred: transfer {walk: true} walked into reach and moved items (Astra 07:53: exit 1 after moving 200).
+  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear','dropped','transferred'];
   // How long to wait: an explicit --wait-timeout, else until the action's own
   // end tick (at 60 ticks/s plus a margin), never less than 30 s nor more than 15 min.
   // ownEnd: the action's end tick already reflects --wait-timeout (wait_until), so
@@ -785,8 +786,9 @@ async function main() {
       // active may report shooting when movement has already finished. A
       // transfer/refuel/rearm short of items waits for the hand-craft queue as
       // an active 'feed'; the radius tours run as 'gather'; vehicle drive runs
-      // as 'drive' (request #5: the wait returned the previous action's result).
-      const kinds = action === 'collect' || action === 'feed' ? ['gather'] : ['rearm','refuel'].includes(action) ? ['gather','feed'] : ['transfer','build'].includes(action) ? ['feed']
+      // as 'drive' (request #5: the wait returned the previous action's result); transfer {walk: true} walks as a
+      // 'gather' tour too.
+      const kinds = action === 'collect' || action === 'feed' ? ['gather'] : ['rearm','refuel','transfer'].includes(action) ? ['gather','feed'] : action === 'build' ? ['feed']
         : action === 'vehicle' ? ['drive'] : [action];
       const stillRunning = active && (action === 'shoot' || action === 'drop' || kinds.includes(active.kind));
       if (status.ok && stillRunning && told(status, acceptedTick) && action !== 'wait_ticks' && action !== 'wait_until') {
@@ -1004,6 +1006,8 @@ async function main() {
     const waits = bridged ? ['walk','mine','build'].includes(action)
       : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until','wait_ticks','kite'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
         || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined)
+        // transfer {walk: true} with a target out of reach: a tour (until_tick); all in reach, it moved at once
+        || (action === 'transfer' && args.walk === true && reply.result?.until_tick !== undefined)
         || (action === 'vehicle' && args.drive !== undefined)
         // drop full: pods past the free hatches go as each hatch frees up (space.lua).
         || (action === 'drop' && reply.result?.until_tick !== undefined);
