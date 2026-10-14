@@ -453,6 +453,9 @@ fh sleep 900 --until researched                       # ...or until the research
   (`; 7 of 48 slots (limited to 20)`). A requester or buffer chest adds `requests`: held/asked per item over its active
   sections (`iron-plate 40/100, coal 0/50`; `; a section set by circuit` when one is). Both are columns in the
   `inspect {positions}` table.
+- `inspect` of an assembler or furnace shows `output_fill`: each product in its output slots held of its stack size
+  with the %, and `full` when the machine has stopped for it (status `full_output`): `copper-cable 200/200 (100%),
+  full`, or `empty`. A column in the `inspect {positions}` table too.
 - An electric machine no pole reaches reads `status_name: unpowered` (whatever the engine's status, often
   `low_power`) with `power: "unpowered: no pole reaches it; nearest pole medium-electric-pole at (17,10), 7 tiles"`,
   in `inspect` and in build replies (`power`).
@@ -483,6 +486,14 @@ fh sleep 900 --until researched                       # ...or until the research
     inventory full of ITEM`, `N full`, `N wanting more you hold none of`, `N failed (the first reason)`. `collect` with
     `radius` puts it in `last` (and the `--wait` reply) over places: `N not reached`, `N failed`, `N places not visited
     (OUTCOME)`. Compact output prints it after the action's own fields, before the team and clock lines.
+  - `feed`, `collect` and `transfer` take `area {left_top, right_bottom}` (up to 128x128) in place of `positions`: our
+    entities whose centre lies inside it, of the call's types, run as its positions (nearest first, each by its
+    unit_number; at most 64), and the reply says how many in `area_targets`. Types: `feed` as in reach (with `recipe`,
+    assemblers and furnaces; those on another recipe counted in `other_recipe`), `collect` machines (`chests: true` adds
+    chests), `transfer` chests, machines, labs, silos, boilers, drills, turrets, wagons, vehicles, landing pads,
+    roboports and agricultural towers, or `types` on any of the three. A target out of reach is a row with the reach
+    line. Not with `positions`, `position` or `radius`; an area with none of them fails with what it looked for.
+    `feed {"area": {...}, "recipe": "advanced-circuit", "crafts": 5}` loads every advanced circuit assembler in it.
   - `inspect {"positions": [...]}` (1..32 entries, each may carry `name` or `unit_number`): one inspect per entry in one
     call, `entities` in order and `count`; an entry that fails is `{position, error}`.
 - Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
