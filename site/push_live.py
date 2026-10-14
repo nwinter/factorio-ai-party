@@ -28,7 +28,7 @@ ATTENTION_KEYS = ("kind", "text", "surface", "platform", "age_s", "dist", "far")
 # What each agent carries, wears and builds (the harness's loadout read via serve.py; the agents page shows it)
 LOADOUT_KEYS = ("health", "vehicle", "guns", "ammo", "selected_gun", "armor", "items", "item_kinds", "slots", "crafting",
                 "building", "age_s")
-CHAT_KEYS = ("seq", "tick", "from", "agent", "text", "t")
+CHAT_KEYS = ("seq", "tick", "from", "agent", "text", "t", "source")  # source: a relayed viewer's YouTube or site
 
 
 def scrub(v):

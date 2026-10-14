@@ -232,7 +232,7 @@ function errorText(error: unknown): string {
 // still shows them; copies nested in a --wait reply are reported too.
 const NOTES: Record<string, string> = { short: 'short', awaiting_craft: 'awaiting_craft', errors: 'not done',
   none_held: 'none held', tiles_refused: 'tiles refused', extent_warning: 'fluid', corrected: 'corrected',
-  nothing_moved: 'nothing moved', repeated: 'repeated' };
+  nothing_moved: 'nothing moved', repeated: 'repeated', stays_disabled: 'stays disabled', closed_in: 'closed in', closes_in: 'closes in' };
 function lift(result: unknown): { body: unknown; notes: string[] } {
   if (!record(result)) return { body: result, notes: [] };
   const notes: string[] = [];
