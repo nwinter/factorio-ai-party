@@ -289,7 +289,11 @@ already targets your character.
   first (`tile_obstacles_marked`) and `construct` mines them before it lays the landfill.
 - `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'` lists up to 10 (`limit`
   up to 50) positions where it fits now, nearest first, by the game's build check (`blocked`: positions something
-  stands in). `build_path` mines the trees and rocks in its way by hand as it goes (`last.cleared`, `cleared_names`).
+  stands in); `"separate":true` lists spots that do not overlap each other, `"powered":true` only spots in one of our
+  poles' supply areas. `build_path` mines the trees and rocks in its way by hand as it goes (`last.cleared`, `cleared_names`).
+- `build`, `place_ghosts` and `placements` take a direction as the number inspect prints (0, 4, 8, 12) or a compass
+  name. `map` and `grid` tell `walkable water` (`,` on the grid: shallow water, wetland, Fulgora's oil ocean, deep too)
+  from water a character cannot cross (`~`).
 - `"dry_run":true` on `place_ghosts`, `paste` or `build` places nothing and reports the plan: per entity whether it
   fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
   new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that
