@@ -141,6 +141,9 @@ already targets your character.
   `from_entity` as the target (`{"to_entity": {x,y}}`) on any container; out of reach, it says the distance, your
   reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
   `collect` over several targets ends with a `tally` line.
+- What you take over a personal request's max goes to your trash slots: `transfer`, `collect` and `pickup` say how much
+  (`trash`); `"up_to": true` stops at the max, `"keep_max": true` refuses the take. A paste leaves the requests of a hub
+  or requester chest it lands on (`requests_kept`).
 - Gleba: `inspect` on an agricultural tower shows its `tower` state, seeds, output, which cells have soil for which
   seeds, and its plants with time to harvest; `transfer`, `feed` and `collect` work on its seeds and harvest.
 - In a tank, car or spidertron you drive, `shoot` fires its gun: `--args '{"position":{"x":294,"y":-135},"gun":"tank-cannon"}'`

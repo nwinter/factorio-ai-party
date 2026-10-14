@@ -2352,4 +2352,39 @@ end)()
   p.surface.can_place_entity,p.surface.create_entity,p.surface.find_entities_filtered,prototypes.entity,p.surface.get_tile=can,create,find,entities,tile
   p.force.is_chunk_charted,p.position=charted,at
 end)()
+;(function()
+  -- Personal logistics (trash.lua; Astra 01:53: two hauls lost to auto-trash): a take over the request max says how
+  -- many go to trash; up_to=true stops at the max; keep_max refuses the take.
+  local find,getmain,reach,at=p.surface.find_entities_filtered,p.get_main_inventory,p.can_reach_entity,p.position
+  local get_rp,get_inv=p.character.get_requester_point,p.character.get_inventory
+  defines.inventory.chest=defines.inventory.chest or 1
+  defines.inventory.character_trash=defines.inventory.character_trash or 8
+  local function contents(slots)
+    slots.get_contents=function() local out={}; for _,st in ipairs(slots) do if st.valid_for_read then out[#out+1]={name=st.name,count=st.count,quality='normal'} end end; return out end
+    return slots
+  end
+  local slots=contents(inv(stack('iron-plate',100),stack('iron-plate',100),stack('iron-plate',100),stack('iron-plate',100)))
+  local chest={valid=true,name='iron-chest',type='container',position={x=2.5,y=0.5},force=p.force,get_inventory=function() return slots end,get_fluid_contents=function() return {} end}
+  p.surface.find_entities_filtered=function(f) if f.position and math.abs(f.position.x-2.5)<0.6 then return {chest} end return {} end
+  local bag=contents(inv(stack(nil,0),stack(nil,0),stack(nil,0),stack(nil,0),stack(nil,0),stack(nil,0)))
+  p.get_main_inventory=function() return bag end
+  p.can_reach_entity=function() return true end
+  p.position={x=0,y=0}
+  local rp={enabled=true,trash_not_requested=false,filters={{name='iron-plate',quality='normal',max_count=100}}}
+  p.character.get_requester_point=function() return rp end
+  p.character.get_inventory=function() return {get_insertable_count=function() return 1000 end,is_empty=function() return true end,get_contents=function() return {} end} end
+  fails(function() call('transfer',{position=chest.position,item='iron-plate',direction='to_player',keep_max=true}) end,
+    'keep_max: nothing taken; 400 iron-plate would put you 300 over your request max (100)')
+  eq(bag.get_item_count{name='iron-plate'},0,'nothing moved')
+  local capped=call('transfer',{position=chest.position,item='iron-plate',direction='to_player',up_to=true})
+  eq(capped.transferred,100); eq(capped.left_at_max,'300 iron-plate (your request max 100) left in the source'); eq(capped.trash,nil)
+  local over=call('transfer',{position=chest.position,item='iron-plate',direction='to_player',count=50})
+  eq(over.transferred,50); eq(over.trash[1],'50 iron-plate taken; your request max is 100: 50 go to trash')
+  fails(function() call('transfer',{position=chest.position,item='iron-plate',direction='to_player',keep_max='yes'}) end,'keep_max must be true or false')
+  -- Personal logistics off: no lines, no cap.
+  rp.enabled=false
+  eq(call('transfer',{position=chest.position,item='iron-plate',direction='to_player',count=10}).trash,nil)
+  p.surface.find_entities_filtered,p.get_main_inventory,p.can_reach_entity,p.position=find,getmain,reach,at
+  p.character.get_requester_point,p.character.get_inventory=get_rp,get_inv
+end)()
 print('runtime: '..assertions..' assertions passed')

@@ -462,6 +462,16 @@ fh sleep 900 --until researched                       # ...or until the research
     when it fell short (on the final `warning:` line too). With `positions`, `asked` is count per entity, summed. A number
     keeps its old meaning: `up_to: N` tops the target up to N. `collect {..., "up_to": true}` adds the same `moved` and
     `short` (`asked: "all"` without count).
+  - Personal logistics (trash.lua; Astra, 01:53: two cargo hauls lost to auto-trash). The game moves what you hold over
+    a personal request's max (and, with "trash unrequested" on, any item you do not request) from your inventory to
+    your trash slots within a few ticks, logistic network or not. A `transfer` to you, `collect`, `pickup` and
+    `collect {radius}` that do that say so: `trash: ["400 iron-plate taken; your request max is 100: 300 go to
+    trash"]` (`; N more stay in your inventory (trash slots full)` when the trash slots are short); `pickup` and
+    `collect {radius}` say it in `last.trash`, counted at each take. `"up_to": true` on `transfer` or `collect` also stops
+    at that max: `left_at_max: "300 iron-plate (your request max 100) left in the source"` (without `item`, per item).
+    `"keep_max": true` refuses a take that would go over it, and nothing moves: `keep_max: nothing taken; 400
+    iron-plate would put you 300 over your request max (100)`. `status` adds a `trash` line while your trash slots hold
+    anything. Personal logistics switched off: none of this applies.
   - `feed {"recipe": "logistic-science-pack", "crafts": 10, "positions": [...]}` (or in reach, or `radius` for the
     walking tour) tops every machine set to that recipe up to each item ingredient's amount x crafts, from your
     inventory, in one call: `entities` rows with `loaded {item=count}` and `short {item=still missing}`; a named machine
@@ -742,6 +752,10 @@ fh sleep 900 --until researched                       # ...or until the research
     a later entry, a tile brush that lays nothing).
   - A dry run checks at most 1024 entities and 8192 tiles (repeat copies included) and refuses a larger plan before
     any check. Real engine, shift world: 7 entries on nauvis 9 ms, the platform case 14 ms.
+  - `requests_kept` (a paste): for each entity with requests the blueprint lands on (a platform hub, requester and
+    buffer chests, landing pads, spidertrons), `space-platform-hub (0,0): its requests stay (14 sections, 1 off)`, and
+    when the blueprint carries requests of its own for it, `the blueprint's own requests (1 section) are not applied by
+    a paste`.
   - `items` the placeable entries and needed tiles use, `missing` against your inventory (for `build` plus the
     hand-craft queue; on a platform the hub), `missing_from`. A paste adds `paste {slot, label, origin_at, center_at,
     anchor}` (where the blueprint lands, computed as the game places it: its center at `position`, shifted onto the

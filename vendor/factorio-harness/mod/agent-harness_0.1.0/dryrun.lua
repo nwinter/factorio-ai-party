@@ -275,7 +275,7 @@ return function(api)
     end
     for _, e in ipairs(plan.entities or {}) do
       local proto = prototypes.entity[e.name or '']
-      local rec = {index=e.index, copy=e.copy, name=e.name, dir=e.direction or 0, quality=e.quality, item=e.item}
+      local rec = {index=e.index, copy=e.copy, name=e.name, dir=e.direction or 0, quality=e.quality, item=e.item, requests=e.requests}
       recs[#recs+1] = rec
       local reasons = {}
       if not proto then
@@ -948,6 +948,18 @@ return function(api)
     end
     out.entities = #rows > 0 and rows or nil
     if nproblems > #rows and not plan.details then out.more_problems = nproblems-#rows end
+    -- A paste over an entity with requests (a hub, requester chests, landing
+    -- pads): its requests stay, and the blueprint's own are not applied (keep.lua).
+    if kind == 'paste' and api.keep then
+      local lines = {}
+      for _, r in ipairs(recs) do
+        if r.pos and #lines < 16 then
+          local line = try(function() return api.keep.plan(s, r.name, r.pos, r.requests) end)
+          if line then lines[#lines+1] = line end
+        end
+      end
+      out.requests_kept = #lines > 0 and lines or nil
+    end
     -- Each planned inserter: what stands on its pickup and drop points (built,
     -- planned in this call, or a ghost) and whether it has a target there
     -- (targets.lua; Astra's bypass inserter that reached no crusher).
