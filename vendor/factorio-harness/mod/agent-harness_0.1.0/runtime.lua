@@ -331,8 +331,31 @@ local function finish(index, outcome)
   if action and action.kind=='drive' then
     local p=body(M.lookup(index))
     local last=s.last[index]
-    if p and p.valid then M.vehicles.stop(p); local v=p.character and p.character.valid and p.character.vehicle; last.position=v and v.position or nil end
+    if action.remote then
+      -- By remote view: the vehicle stops where it is; the character stayed where it was.
+      local v=action.vehicle
+      M.vehicles.stop(p,v)
+      last.remote=true
+      if v and v.valid then last.position=v.position; last.vehicle=string.format('%s, unit_number %d, at (%.1f,%.1f)',v.name,v.unit_number,v.position.x,v.position.y) end
+    elseif p and p.valid then M.vehicles.stop(p); local v=p.character and p.character.valid and p.character.vehicle; last.position=v and v.position or nil end
     last.target=action.target
+    -- combat (Astra, operator 08:34): the guns' rounds and kills over the drive; the combat channel ends with it.
+    local combat=s.combat and s.combat[index]
+    local fired=combat and combat.with_drive and combat or action.combat_done
+    if fired then
+      local v=fired.vehicle_entity
+      local left=v and v.valid and M.vehicles.rounds(v,fired.slot) or fired.rounds_left or 0
+      last.shots=math.max(0,(fired.rounds_start or 0)-left)
+      last.kills=fired.kills or 0
+      if fired.kills_by and next(fired.kills_by) then
+        local parts={}
+        for name,n in pairs(fired.kills_by) do parts[#parts+1]=n..' '..name end
+        table.sort(parts)
+        last.kills_by_name=table.concat(parts,', ')
+      end
+      last.combat_ended=action.combat_done and action.combat_done.outcome or nil
+    end
+    if combat and combat.with_drive then combat.until_tick=game.tick-1; combat.end_outcome='drive_ended' end
     -- The path it followed, a back-up, why it stopped, enemies gone around (vehicles.lua, avoid.lua).
     local nav=action.nav
     if nav then
@@ -438,9 +461,17 @@ local function stop_combat(index,outcome)
     elseif combat and combat.ammo_start then used=math.max(0,combat.ammo_start-kite.ammo_count(p)) end
   end
   if state().combat then state().combat[index]=nil end
+  -- A drive's guns stopping first (out of ammo): their count stays with the drive for its last.
+  local active=state().active[index]
+  if combat and combat.with_drive and active and active.kind=='drive' and outcome~='drive_ended' then
+    local v=combat.vehicle_entity
+    combat.rounds_left=v and v.valid and M.vehicles.rounds(v,combat.slot) or 0
+    combat.outcome=outcome
+    active.combat_done=combat
+  end
   state().last_combat=state().last_combat or {}
   state().last_combat[index]={outcome=outcome,tick=game.tick,ammo_used=used,reloads=combat and combat.reloads,equipped=combat and combat.equipped,
-    vehicle=combat and combat.vehicle,gun=combat and combat.gun,guns=guns}
+    vehicle=combat and combat.vehicle,gun=combat and combat.gun,guns=guns,kills=combat and combat.kills}
 end
 -- The tick a read or passive action raised: the bootstrap's failure handler
 -- calls stop_player right after, which must leave the action and queue alone.
@@ -487,7 +518,9 @@ local function active(index)
     stuck_s=action.watch and game.tick-action.watch.since>=STUCK_TICKS and math.floor((game.tick-action.watch.since)/60) or nil,
     -- the stream director's look-ahead: where the work is (set once when the action starts, never per tick)
     bounds=action.bounds,to=action.kind=='move_to' and action.position or nil,
-    leg=action.kind=='move_to' and action.via and string.format('%d of %d',action.via.index,#action.via.points+1) or nil}
+    leg=action.kind=='move_to' and action.via and string.format('%d of %d',action.via.index,#action.via.points+1) or nil,
+    remote=action.kind=='drive' and action.remote and action.vehicle and action.vehicle.valid and
+      string.format('%s at (%.1f,%.1f) by remote view',action.vehicle.name,action.vehicle.position.x,action.vehicle.position.y) or nil}
 end
 M.active=active
 -- {left,top,right,bottom} around a list of cells or ghosts, once when an action is planned (at most 512 cells).
@@ -878,7 +911,7 @@ function handlers.describe()
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
       equipment={operation='insert|remove',item='owned equipment item for insert',position='{x,y} grid cell; optional for insert',quality='default normal'},revive_ghost={position='{x,y}',name='optional entity-ghost'},
-      shoot={position='{x,y} or auto=true',ticks='1..600',radius='1..32 (in a vehicle 1..36, default its gun\'s range)',gun_slot='1..3 (in a vehicle: 1..its guns)',
+      shoot={position='{x,y} or auto=true',ticks='1..600',vehicle='optional: the vehicle whose guns fire (unit_number or {x,y}): the one you sit in as its gunner; a vehicle you drive by remote view is refused (its guns fire for a gunner seated in it or a player driving it remotely, and an agent\'s character has no player); a whole drive\'s fire: vehicle {drive, combat: true}',radius='1..32 (in a vehicle 1..36, default its gun\'s range)',gun_slot='1..3 (in a vehicle: 1..its guns)',
         gun='in a vehicle: a gun name (tank-cannon, tank-machine-gun, tank-flamethrower, vehicle-machine-gun, spidertron-rocket-launcher-1..4)',
         ammo='in a vehicle: an ammo name (cannon-shell, explosive-cannon-shell, firearm-magazine, flamethrower-ammo, rocket, ...): the gun that takes it, its slot loaded from your inventory when empty or holding another kind',
         note='seated in a car, tank or spidertron as its gunner (the driver, unless driver_is_gunner is off and a passenger sits in) it fires the vehicle\'s selected gun from the vehicle\'s ammo slots; the turret turns toward the target as a player\'s cursor turns it; position= aims at the entity there (not our own), auto=true at the nearest enemy in radius; vehicle {drive} goes on while it fires; reply: vehicle, seat, gun, gun_slot, range, guns (each slot with its ammo), target, out_of_range',
@@ -5032,6 +5065,16 @@ function handlers.equipment(p,a)
 end
 function handlers.shoot(p,a)
   local ticks=integer(a.ticks,60,1,MAX_TICKS,'ticks')
+  -- vehicle=: a vehicle's guns (operator 08:32). Seated in it, as below; by remote view the game fires them for a
+  -- gunner seated in it or a player driving it remotely, and an agent's character has no player (vehicles.lua).
+  if a.vehicle~=nil then
+    local sat=p.character and p.character.valid and p.character.vehicle
+    local same=sat and sat.valid and ((type(a.vehicle)=='number' and sat.unit_number==a.vehicle)
+      or (type(a.vehicle)=='table' and distance(sat.position,position(a.vehicle.position or a.vehicle))<=3))
+    if not same then
+      error('shoot vehicle=: an agent fires a vehicle\'s guns only seated in it (vehicle {position, enter: true}); by remote view the game fires them for a gunner seated in it or a player driving it remotely, and an agent\'s character has no player',0)
+    end
+  end
   -- Seated: the vehicle's gun (vehicles.lua), aimed at an entity the gunner selects.
   if p.character and p.character.valid and p.character.vehicle then
     local action,out,target=M.vehicles.shoot(p,a,ticks)
@@ -5170,7 +5213,21 @@ M.vehicles=require('vehicles'){entity=entity,friendly=friendly,integer=integer,p
   accept=function(p,nav,path) return M.avoid.accept(p,nav,path) end,
   avoid_mode=function(v) return M.avoid.mode(v) end,avoid_describe=function(mode) return M.avoid.describe(mode) end,
   avoid_start=function(p,nav,mode) return M.avoid.start(p,nav,mode) end,avoid_tick=function(p,nav) return M.avoid.tick(p,nav) end,
-  leg=function(p,nav) return M.avoid.leg_done(p,nav,'arrived') end}
+  leg=function(p,nav) return M.avoid.leg_done(p,nav,'arrived') end,
+  -- Remote driving (operator 08:32): whose character sits in a seat, the nearest coverage to a vehicle out of view,
+  -- the agent driving a vehicle by remote view (its driver seat is taken), and a drive's guns on the combat channel.
+  owner=function(e) return M.character_owner(e) end,
+  coverage_note=function(p,v) if v.surface~=p.surface then return '' end local n=M.nearest_coverage(p,v.position) return n and '; '..n or '' end,
+  remote_driver=function(v,index)
+    for i,act in pairs(state().active) do
+      if i~=index and act.kind=='drive' and act.remote and act.vehicle==v then
+        local b=M.bots.record(i)
+        local pl=not b and game.get_player(i)
+        return b and b.name or pl and pl.name or 'another agent'
+      end
+    end
+  end,
+  start_combat=function(p,caction) state().combat=state().combat or {}; combat_targets()[p.index]=nil; state().combat[p.index]=caction end}
 handlers.vehicle=M.vehicles.handlers.vehicle
 -- Items on the ground (ground.lua): summaries for scan/observe, spill and pile
 -- alerts, deconstruct items_on_ground, pickup over an area.
@@ -7637,6 +7694,19 @@ function M.on_event(event)
       for index,action in pairs(state().active) do
         local p=action.kind=='kite' and M.lookup(index)
         if p and p.character==cause then action.kills=action.kills+1 end
+      end
+    end
+    -- A vehicle's guns (shoot seated, drive combat): a death caused by the vehicle or by its gunner counts.
+    if cause and cause.valid then
+      for index,combat in pairs(state().combat or {}) do
+        local v=combat.vehicle_entity
+        local mine=v and v.valid and (cause==v or (cause.type=='character' and pcall(function() return cause.vehicle==v end) and cause.vehicle==v))
+        local died=event.entity
+        if mine and died and died.valid and died.force and died.force.name~='neutral' and died.force~=v.force then
+          combat.kills=(combat.kills or 0)+1
+          combat.kills_by=combat.kills_by or {}
+          combat.kills_by[died.name]=(combat.kills_by[died.name] or 0)+1
+        end
       end
     end
     local e=event.entity

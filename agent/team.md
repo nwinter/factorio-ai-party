@@ -188,6 +188,9 @@ already targets your character.
   hatching within 5 minutes on your surface top `team.alerts` (`eggs hatching: ...`) and wake `fh sleep` (`woke: eggs`).
 - In a tank, car or spidertron you drive, `shoot` fires its gun: `--args '{"position":{"x":294,"y":-135},"gun":"tank-cannon"}'`
   (or `"ammo":"explosive-cannon-shell"`, `"auto":true`), loading the slot from your inventory; `vehicle {drive}` goes on meanwhile.
+  `vehicle {"drive":{...},"combat":true}` keeps the guns on auto for the whole drive (`last.shots`, `last.kills`).
+- `vehicle {"drive":{"x":-40,"y":-200},"remote":true,"vehicle":311799}` drives one of our cars or tanks in radar coverage by
+  remote view while your character stays put; its guns do not fire that way.
 - `vehicle {drive}` follows the engine's path for the vehicle around cliffs and water, backs off once when stuck, pushes
   through units (`last.rammed`), backs there rear first with `"reverse":true`, and takes `avoid_enemies` as `move_to` does.
 - `move_to` never ends on a belt (it steps to the nearest free tile without one, `last.off_belt`). With no route for

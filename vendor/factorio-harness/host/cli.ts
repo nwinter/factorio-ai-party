@@ -768,7 +768,9 @@ async function main() {
         // a walk to a target's reach: how near it ended, an end within reach counted as arrived, a spot walked to (movetarget)
         reach: last.reach, reach_note: last.reach_note, reach_walk: last.reach_walk} : {}),
       // vehicle drive: the path it followed and a back-up (vehicles.lua).
-      ...(last?.kind === 'drive' ? {path_length: last.path_length, backed_up: last.backed_up} : {}),
+      ...(last?.kind === 'drive' ? {path_length: last.path_length, backed_up: last.backed_up,
+        // remote driving and a drive's guns (remotedrive): the vehicle driven by remote view, rounds fired and kills
+        remote: last.remote, vehicle: last.vehicle, shots: last.shots, kills: last.kills, kills_by_name: last.kills_by_name, combat_ended: last.combat_ended} : {}),
       ...(last?.kind === 'move_to' || last?.kind === 'drive' ? {avoided_enemies: last.avoided_enemies,
         enemies_at_start_or_goal: last.enemies_at_start_or_goal, passed_within_margin: last.passed_within_margin} : {}),
       why: last?.why, note: status.result?.note,
