@@ -9,12 +9,16 @@ one bin/fh sends (`/silent-command rcon.print(remote.call("agent_harness", "disp
 request whose bot is the socket's bot, and the broker rebuilds the command from the parsed JSON before sending it.
 Everything else (console commands, other Lua, deploys, another bot, a player) is refused and logged.
 Wire format, JSON lines (factorio-harness host/broker.ts, `fh --socket`):
-  {"command": "..."}  ->  {"ok": true, "text": "<RCON reply>"} | {"ok": false, "error": "...", "refused"|"unknown": true}
+  {"command": "..."}  ->  {"ok": true, "text": "<RCON reply>"} | {"ok": false, "error": "...", "refused"|"unknown"|"unavailable": true}
+unavailable: the RCON connection or its login failed, so nothing was sent (with since when the game is unreachable);
+unknown: the request went out and the connection dropped before the answer. A retried request id is answered from
+the broker's record when it was answered, and one that got no answer is checked against the game's tick (parse, MAX_IDS).
 Each client connection gets its own RCON connection, as a direct fh call would.
 Limits: agents run as the owner's user, so socket permissions do not keep one agent off a teammate's socket
 (docs/LAUNCH-NOTES.md, "What still leaks with the broker on"); the peer's pid is logged with each refusal.
 """
-import argparse, json, os, re, signal, socket, socketserver, struct, sys, threading, time
+import argparse, json, os, re, signal, socket, socketserver, struct, sys, threading, time, uuid
+from collections import OrderedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pog  # noqa: E402
@@ -37,6 +41,11 @@ def lua_string(text):
 
 def check(command, bot):
     """The RCON command to send for `command` from `bot`'s socket, or Refused with the reason."""
+    return parse(command, bot)[0]
+
+
+def parse(command, bot):
+    """(the RCON command to send, the request) for `command` from `bot`'s socket, or Refused with the reason."""
     if not isinstance(command, str):
         raise Refused("command must be a string")
     m = HARNESS.fullmatch(command)
@@ -61,8 +70,47 @@ def check(command, bot):
         raise Refused("action must be an action name")
     if "args" in req and not isinstance(req["args"], dict):
         raise Refused("args must be an object")
+    return dispatch(req), req
+
+
+def dispatch(req):
     payload = json.dumps(req, ensure_ascii=False, separators=(",", ":"))
     return f'/silent-command rcon.print(remote.call("agent_harness", "dispatch", {lua_string(payload)}))'
+
+
+# Request ids (Luna, shift12 13:41: exact-ID retries during the outage all read outcome_unknown): per bot the last
+# MAX_IDS ids, each sent (no answer: the connection dropped after it went out) or answered (with the reply, up to
+# MAX_KEPT bytes). A retried id that was answered is answered from this record and not sent again; one that got no
+# answer is checked against the game's tick when it is sent again: the game answers an id it applied from its own
+# record (the old tick), and runs one it never got.
+MAX_IDS, MAX_KEPT, ROLLBACK = 512, 262144, 600
+
+
+def tick_of(text):
+    try:
+        t = json.loads(text).get("tick")
+        return t if isinstance(t, int) else None
+    except (ValueError, AttributeError):
+        return None
+
+
+def with_note(text, note):
+    """The reply with `note` as result.broker (or broker_note when it has no result object)."""
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return text
+    if not isinstance(obj, dict):
+        return text
+    if isinstance(obj.get("result"), dict):
+        obj["result"]["broker"] = note
+    else:
+        obj["broker_note"] = note
+    return json.dumps(obj, ensure_ascii=False)
+
+
+def hms(t):
+    return time.strftime("%H:%M:%S", time.localtime(t))
 
 
 class Rcon(pog.Rcon):
@@ -102,6 +150,35 @@ class Broker:
         self.group, self.uids = group, uids or {}
         self.counts = {}
         self.servers = []
+        self.ids = {}                 # bot -> OrderedDict id -> {state, at, tick?, text?}
+        self.down_since = None        # the first failed RCON connection of an outage in course
+        self.last_tick = None         # the newest reply's tick (a later lower one is a rollback)
+
+    def seen(self, bot, rid):
+        with self.lock:
+            entry = self.ids.get(bot, {}).get(rid)
+            return dict(entry) if entry else None
+
+    def remember(self, bot, rid, **entry):
+        with self.lock:
+            ids = self.ids.setdefault(bot, OrderedDict())
+            ids[rid] = {**ids.get(rid, {}), **entry}
+            ids.move_to_end(rid)
+            while len(ids) > MAX_IDS:
+                ids.popitem(last=False)
+
+    def down(self, error):
+        with self.lock:
+            if self.down_since is None:
+                self.down_since = time.time()
+            since = self.down_since
+        return f"game unreachable since {hms(since)} ({int(time.time() - since)}s)"
+
+    def up(self, tick):
+        with self.lock:
+            self.down_since = None
+            if tick is not None:
+                self.last_tick = tick
 
     def log(self, **entry):
         line = json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%S"), **entry})
@@ -135,22 +212,61 @@ class Broker:
                         except (ValueError, AttributeError):
                             command = None
                         try:
-                            out = check(command, bot)
+                            out, req = parse(command, bot)
                         except Refused as e:
                             broker.count(bot, "refused")
                             broker.log(event="refused", bot=bot, pid=pid, uid=uid, reason=str(e), command=str(command)[:300])
                             self.reply({"ok": False, "refused": True, "error": f"refused: {e}"})
                             continue
+                        rid, before = req["id"], broker.seen(bot, req["id"])
+                        # An id answered before: from the record, not sent again.
+                        if before and before.get("state") == "answered" and before.get("text") is not None:
+                            note = f"answered from the broker's record: request {rid} was answered at {hms(before['at'])}"
+                            if before.get("tick") is not None:
+                                note += f" (tick {before['tick']})"
+                                if broker.last_tick is not None and broker.last_tick < before["tick"] - ROLLBACK:
+                                    note += (f"; the game has since rolled back to tick {broker.last_tick}, before that answer: what it did is "
+                                             "not in the game now (send it again with a new id)")
+                            note += "; it was not sent again"
+                            broker.log(event="replayed", bot=bot, pid=pid, id=rid)
+                            self.reply({"ok": True, "text": with_note(before["text"], note)})
+                            continue
                         try:
                             if rcon is None:
                                 rcon = Rcon(broker.host, broker.port, broker.password, timeout=broker.rcon_timeout)
+                            # An id sent before with no answer: the game's tick now, so its answer tells applied from new.
+                            now_tick = None
+                            if before and before.get("state") == "sent":
+                                probe = {"id": f"broker-{uuid.uuid4().hex[:16]}", "action": "status", "args": {"peek": True, "brief": True}, "bot": bot}
+                                now_tick = tick_of(rcon.command(dispatch(probe)))
+                        except (OSError, ConnectionError, struct.error) as e:
+                            # Nothing went out: the connection (or its login) failed (Luna, 13:41: these read outcome_unknown).
+                            rcon = None
+                            since = broker.down(str(e))
+                            broker.count(bot, "rcon_errors")
+                            broker.log(event="rcon_unreachable", bot=bot, pid=pid, error=str(e))
+                            unsure = (f"; request {rid} was sent at {hms(before['at'])} and got no answer, so whether it was applied is "
+                                      "not known until the game answers: retry this id then") if before and before.get("state") == "sent" else ""
+                            self.reply({"ok": False, "unavailable": True, "error": f"{since}: rcon: {e}; this request was not sent{unsure}"})
+                            continue
+                        broker.remember(bot, rid, state="sent", at=before["at"] if before else time.time())
+                        try:
                             text = rcon.command(out)
                         except (OSError, ConnectionError, struct.error) as e:
                             rcon = None
+                            broker.down(str(e))
                             broker.count(bot, "rcon_errors")
                             broker.log(event="rcon_error", bot=bot, pid=pid, error=str(e))
                             self.reply({"ok": False, "unknown": True, "error": f"rcon: {e}"})
                             continue
+                        tick = tick_of(text)
+                        broker.up(tick)
+                        broker.remember(bot, rid, state="answered", at=time.time(), tick=tick, text=text if len(text) <= MAX_KEPT else None)
+                        if before and before.get("state") == "sent" and now_tick is not None and tick is not None:
+                            sent = hms(before["at"])
+                            text = with_note(text, f"an earlier send of request {rid} at {sent} got no answer (the connection dropped); "
+                                             + (f"the game answered it from its own record (tick {tick}, now {now_tick}): it was applied then and not again now"
+                                                if tick < now_tick else "the game had no record of it (never applied, or applied and then rolled back): it ran now"))
                         broker.count(bot, "forwarded")
                         self.reply({"ok": True, "text": text})
                 finally:
