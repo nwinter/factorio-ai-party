@@ -309,6 +309,9 @@ already targets your character.
   (`"section":N,"active":true` switches it on), and each request shows the planet it imports from.
 - `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without
   a planet); it is also a `wait_until` condition, a queue guard and an order's `when`.
+- `./fh call networks --args '{"platform":"Starling"}'` gives a platform's electric network line (capacity, draw, solar
+  power where it is and its panels' output, accumulators, machines on low power); `power` takes `platform` too, and
+  `inspect` on a machine, solar panel or accumulator shows its maximum under `electricity`.
 - `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list
   takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first.
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods, to

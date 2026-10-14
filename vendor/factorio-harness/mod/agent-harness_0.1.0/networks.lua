@@ -237,12 +237,52 @@ return function(api)
     local proto = e.prototype
     return try(function() return proto.get_max_power_output(q) end) or try(function() return proto.get_max_energy_production(q) end) or 0
   end
+  -- The solar power where a surface is, in percent (100 is a solar panel's nameplate output; Astra, 13:10): a planet's
+  -- solar-power property against its default; on a platform, the solar power in space of the location it stops at,
+  -- or, flying, of the two ends of its connection weighted by how far along it is (pl.distance, from the connection's
+  -- own first end). Times the surface's solar_power_multiplier (1 unless a script changed it). {percent, text, platform}.
+  local function pct(v) return math.floor(v + 0.5) end
+  function M.solar(surface)
+    local mult = try(function() return surface.solar_power_multiplier end) or 1
+    local def = try(function() return prototypes.surface_property['solar-power'].default_value end) or 100
+    if def <= 0 then def = 100 end
+    local pl = try(function() return surface.platform end)
+    if pl then
+      local loc = try(function() return pl.space_location end)
+      local here = loc and try(function() return loc.solar_power_in_space end)
+      if here then
+        local v = here / def * 100 * mult
+        return {percent=v, platform=pl.name, text=string.format('solar power %d%% at %s', pct(v), loc.name)}
+      end
+      local c = try(function() return pl.space_connection end)
+      local a, b = c and try(function() return c.from.solar_power_in_space end), c and try(function() return c.to.solar_power_in_space end)
+      if a and b then
+        local d = try(function() return pl.distance end) or 0
+        local v = (a * (1 - d) + b * d) / def * 100 * mult
+        return {percent=v, platform=pl.name, text=string.format('solar power %d%% between %s (%d%%) and %s (%d%%), %d%% of the way from %s',
+          pct(v), c.from.name, pct(a / def * 100 * mult), c.to.name, pct(b / def * 100 * mult), pct(d * 100), c.from.name)}
+      end
+    end
+    local prop = try(function() return surface.get_property('solar-power') end)
+    if prop then
+      local v = prop / def * 100 * mult
+      return {percent=v, platform=pl and pl.name or nil, text=string.format('solar power %d%%', pct(v))}
+    end
+    return {percent=100 * mult, platform=pl and pl.name or nil, text=string.format('solar power %d%% (no solar property read)', pct(100 * mult))}
+  end
+  -- A surface by its name for people: a platform's name, else the surface's.
+  local function label(surface)
+    local pl = try(function() return surface.platform end)
+    return pl and pl.name or surface.name
+  end
+  M.label = label
+  local solar_cache = {}
   local function solar_peak(e)
     local v = try(function() return e.prototype.get_max_energy_production(e.quality) end) or 0
-    local scale = try(function()
-      return e.surface.solar_power_multiplier * e.surface.get_property('solar-power') / prototypes.surface_property['solar-power'].default_value
-    end) or 1
-    return v * scale
+    local index = try(function() return e.surface.index end) or 0
+    local s = solar_cache[index]
+    if not s or s.tick ~= game.tick then s = {tick=game.tick, scale=M.solar(e.surface).percent / 100}; solar_cache[index] = s end
+    return v * s.scale
   end
   local function fuel_energy(e)
     local burner = try(function() return e.burner end)
@@ -355,6 +395,12 @@ return function(api)
         net.draw = d
         local solar_now = d and d.by['solar-panel'] or 0
         net.capacity_kw = net.cap_kw + solar_now
+        -- A platform (Astra, 13:10): no night in space, so its panels make their output at the solar power where it
+        -- is; that counts in its capacity (their output now is what the network draws of them).
+        local plat = try(function() return surface.platform end)
+        local sun = (plat or net.solar > 0) and M.solar(surface) or nil
+        if plat then net.platform, net.capacity_kw = plat.name, net.cap_kw + net.solar_peak_kw end
+        net.solar_power, net.solar_power_text = sun and sun.percent, sun and sun.text
         -- Boilers: their fuel at the draw of the generators they feed, shared evenly.
         if #net.boilers > 0 and d then
           local fed_kw, names = 0, {}
@@ -408,12 +454,15 @@ return function(api)
           table.sort(low, function(a, b) return a.min < b.min end)
           net.fuel_low = low
         end
-        local parts = {string.format('%s electric #%d (%d poles near %s)', surface.name, net.id, net.poles, at(net.center.x, net.center.y))}
+        local parts = {string.format('%s electric #%d (%d poles near %s)', plat and plat.name .. ' (platform)' or surface.name, net.id, net.poles, at(net.center.x, net.center.y))}
         if d then
           parts[#parts+1] = string.format('draw %s avg over %s (now %s) of %s capacity%s', mw(d.avg), d.span_s >= 300 and '5 min' or d.span_s .. ' s',
             mw(d.now), mw(net.capacity_kw), net.capacity_kw > 0 and string.format(' (%d%%)', math.floor(100 * d.avg / net.capacity_kw + 0.5)) or '')
         else parts[#parts+1] = string.format('capacity %s; no draw sample yet', mw(net.capacity_kw)) end
-        if net.solar > 0 then parts[#parts+1] = string.format('solar %d panels, %s now, %s peak', net.solar, mw(solar_now), mw(net.solar_peak_kw)) end
+        if plat then
+          parts[#parts+1] = net.solar > 0 and string.format('solar %d panels, %s now, %s at this solar power (%s)', net.solar, mw(solar_now), mw(net.solar_peak_kw), sun.text)
+            or string.format('no solar panels (%s)', sun.text)
+        elseif net.solar > 0 then parts[#parts+1] = string.format('solar %d panels, %s now, %s peak', net.solar, mw(solar_now), mw(net.solar_peak_kw)) end
         -- Stored energy against the maximum (Gemini, 07:55, Fulgora: lightning charges the accumulators).
         if net.acc > 0 then parts[#parts+1] = string.format('accumulators %d at %d%% (%s of %s)', net.acc, net.acc_buf > 0 and math.floor(100 * net.acc_j / net.acc_buf + 0.5) or 0,
           mj(net.acc_j), mj(net.acc_buf)) end
@@ -661,7 +710,7 @@ return function(api)
     v = {tick=game.tick, surfaces={}}
     for _, surface in ipairs(surfaces()) do
       local e, l, t = electric(n, f, surface), logistic(n, f, surface), turrets(f, surface)
-      if #e > 0 or #l > 0 or t then v.surfaces[#v.surfaces+1] = {name=surface.name, electric=e, logistic=l, turrets=t} end
+      if #e > 0 or #l > 0 or t then v.surfaces[#v.surfaces+1] = {name=surface.name, platform=try(function() return surface.platform.name end), electric=e, logistic=l, turrets=t} end
     end
     n.views[f.name] = v
     return v
@@ -739,7 +788,7 @@ return function(api)
     local surface
     for _, s in ipairs(surfaces()) do if s.name == step.surface then surface = s end end
     if not surface then job.i, job.walk, job.list = job.i + 1, nil, nil; job.ctx[step.surface] = nil; return end  -- the surface is gone
-    local row = job.out[step.surface] or {name=surface.name, logistic={}}
+    local row = job.out[step.surface] or {name=surface.name, platform=try(function() return surface.platform.name end), logistic={}}
     job.out[step.surface] = row
     local ctx = job.ctx[step.surface]
     if step.step == 'walk' then
@@ -816,17 +865,43 @@ return function(api)
     end
     return list
   end
+  -- The surface a read names: platform (a name or index) or surface (a planet or surface name, or a platform's name;
+  -- Astra, 13:10: networks {surface: "Starling"} matched nothing, a platform's surface being platform-N).
+  function M.surface_named(f, a)
+    local want = a.platform ~= nil and a.platform or a.surface
+    if want == nil then return nil end
+    assert(a.platform == nil or a.surface == nil, 'give platform or surface, not both')
+    local names = {}
+    for _, pl in pairs(try(function() return f.platforms end) or {}) do
+      if pl.valid then
+        local s = try(function() return pl.surface end)
+        if (pl.name == want or pl.index == want or (s and s.name == want)) and s then return s end
+        names[#names+1] = pl.name
+      end
+    end
+    if a.platform == nil then
+      local s = game.get_surface(want)
+      if s then return s end
+    end
+    table.sort(names)
+    local planets = {}
+    for _, s in ipairs(surfaces()) do if not try(function() return s.platform end) then planets[#planets+1] = s.name end end
+    error(string.format('no %s named %s; platforms: %s; planets and surfaces: %s', a.platform ~= nil and 'platform of ours' or 'surface or platform',
+      tostring(want), #names > 0 and table.concat(names, ', ') or 'none', table.concat(planets, ', ')), 0)
+  end
   function M.read(p, a)
     local v = view(p.force)
+    local named = M.surface_named(p.force, a)
     local out = {}
     for _, s in ipairs(v.surfaces) do
-      if a.surface == nil or a.surface == s.name then
-        local row = {surface=s.name, electric={}, logistic={}, turrets=s.turrets and {by_name=s.turrets.by, ammo_used_1h=s.turrets.used, line=s.turrets.line} or nil}
+      if named == nil or named.name == s.name then
+        local row = {surface=s.name, platform=s.platform, electric={}, logistic={}, turrets=s.turrets and {by_name=s.turrets.by, ammo_used_1h=s.turrets.used, line=s.turrets.line} or nil}
         for _, r in ipairs(s.electric) do
           local x = plain(r, {'id', 'poles', 'machines', 'low', 'none', 'acc', 'solar', 'line'})
           x.center = {x=math.floor(r.center.x + 0.5), y=math.floor(r.center.y + 0.5)}
           x.capacity_kw = math.floor(r.capacity_kw + 0.5)
           x.generators_kw, x.solar_peak_kw = math.floor(r.cap_kw + 0.5), math.floor(r.solar_peak_kw + 0.5)
+          x.solar_power, x.solar_power_text = r.solar_power and math.floor(r.solar_power + 0.5), r.solar_power_text
           if r.draw then x.draw_kw = {avg=math.floor(r.draw.avg + 0.5), now=math.floor(r.draw.now + 0.5), over_s=r.draw.span_s} end
           x.boilers = #r.boilers > 0 and #r.boilers or nil
           x.fuel_min = r.fuel_min and math.floor(r.fuel_min) or nil
@@ -855,8 +930,13 @@ return function(api)
         out[#out+1] = row
       end
     end
-    return {surfaces=out, as_of=string.format('%ds ago', math.floor((game.tick - v.tick) / 60)),
-      note='draw: the network\'s production statistics sampled every 5 s; capacity: generators at their maximum plus solar at its output now; '
+    -- A surface named with nothing in the view: said, with when the view looked (a new network shows within about 3 min).
+    local none = named and #out == 0 and string.format('no electric network over 2 poles or with a generator, no logistic network and no turret of ours on %s as of %ds ago',
+      label(named) .. (try(function() return named.platform end) and ' (' .. named.name .. ')' or ''), math.floor((game.tick - v.tick) / 60)) or nil
+    return {surfaces=out, none=none, as_of=string.format('%ds ago', math.floor((game.tick - v.tick) / 60)),
+      note='draw: the network\'s production statistics sampled every 5 s; capacity: generators at their maximum plus solar at its output now '
+        .. '(on a platform, solar at the solar power where it is: no night in space); solar power: a planet\'s solar-power against 100%, '
+        .. 'a platform\'s the solar power in space of where it stops, or flying, of both ends of its connection by how far along it is; '
         .. 'boiler fuel: the boilers\' own fuel in minutes at the draw of the generators they feed, shared evenly over the boilers; '
         .. 'boilers_fed: boilers an inserter can bring fuel to now (fuel in its hand, at its source, on its belt within 64 tiles upstream or at what loads that belt); '
         .. 'boilers_under_N_min: under N min of their own fuel and not refilled (no fuel at their feeders, or their own fuel fell by 80% or more of their burn over 2+ min, or 25% over 4+ min); requests unfilled: '
@@ -1247,6 +1327,55 @@ return function(api)
     return {surface=surface.name, boilers=#rows, not_working=not_working, networks=groups,
       note=#rows == 0 and 'no boiler of ours on ' .. surface.name or nil}
   end
+  -- One producer's or consumer's power for inspect's `electricity` (Astra, 13:10: inspect on solar panels and machines showed no
+  -- maximum): its maximum from the prototype at its quality (a machine's with its modules' consumption bonus, and its
+  -- drain), a solar panel's at the solar power where it is, an accumulator's stored energy and flow limits; then now,
+  -- from its network's statistics (the 5-second average, as power reads it): what all of its name on that network make
+  -- or draw, since the game counts power by prototype, not by entity. nil for an entity with no electric part.
+  local function kw(j) return math.floor(j * 60 / 1000 * 10 + 0.5) / 10 end
+  function M.entity_power(e)
+    if not (e and e.valid) then return nil end
+    local proto, q = e.prototype, try(function() return e.quality end)
+    local src = try(function() return proto.electric_energy_source_prototype end)
+    local out, category = {}, nil
+    if e.type == 'solar-panel' then
+      local max = try(function() return proto.get_max_energy_production(q) end) or 0
+      local s = M.solar(e.surface)
+      out.max_kw, out.at_solar_power_kw, out.solar_power = kw(max), kw(max * s.percent / 100), s.text
+      category = 'output'
+    elseif e.type == 'accumulator' then
+      out.stored_mj = math.floor((try(function() return e.energy end) or 0) / 1e5 + 0.5) / 10
+      out.capacity_mj = math.floor((try(function() return e.electric_buffer_size end) or 0) / 1e5 + 0.5) / 10
+      out.charge_kw = src and try(function() return kw(src.input_flow_limit) end) or nil
+      out.discharge_kw = src and try(function() return kw(src.output_flow_limit) end) or nil
+      category = 'output'
+    elseif e.type == 'generator' or e.type == 'burner-generator' or e.type == 'fusion-generator' then
+      out.max_kw = kw(max_output(e))
+      category = 'output'
+    elseif src then
+      local use = try(function() return proto.get_max_energy_usage(q) end) or try(function() return proto.max_energy_usage end)
+      if use and use > 0 then
+        local bonus = try(function() return e.consumption_bonus end) or 0
+        out.max_kw = kw(use * math.max(0.2, 1 + bonus))
+        if bonus ~= 0 then out.consumption_bonus = string.format('%+d%%', math.floor(bonus * 100 + 0.5)) end
+      end
+      local drain = try(function() return src.drain end)
+      if drain and drain > 0 then out.drain_kw = kw(drain) end
+      category = 'input'
+    else return nil end
+    local id = try(function() return e.electric_network_id end)
+    if not id then out.now = 'no electric network: no pole reaches it'; return out end
+    local m = store().map[id]
+    local pole = e.type == 'electric-pole' and e or (m and m.pole and m.pole.valid and m.pole)
+    local stats = pole and try(function() return pole.electric_network_statistics end)
+    local v = stats and try(function() return stats.get_flow_count{name=e.name, category=category, precision_index=defines.flow_precision_index.five_seconds} end)
+    if v then
+      out.now_kw_all_of_name = kw(v)
+      out.now = string.format('all %s on electric network #%d %s %s now (5 s average); the game counts power by prototype, not per entity',
+        e.name, id, category == 'output' and 'make' or 'draw', mw(v * 60 / 1000))
+    else out.now = string.format('electric network #%d: not mapped yet (the pole map is redone every minute)', id) end
+    return out
+  end
   M.schema = {
     boilers = {surface='optional surface name (default yours)',
       returns='boilers (count), not_working, networks [{network (electric network id its steam feeds, or none found), line, total, not_working, '
@@ -1254,13 +1383,13 @@ return function(api)
         .. 'fuel (its fuel slots, e.g. coal*5), burning, water and steam (amount/capacity), feeder (the inserter dropping into it and '
         .. 'what it takes from, with the fuel there, or no inserter feeds it), feeder_has_fuel}], more}], networks with a boiler not '
         .. 'working first, and those boilers first in each; at most 64 rows (more: rows left out, all working). Read only'},
-    networks = {surface='optional surface name',
-      returns='surfaces [{surface, electric [{id, poles, center, draw_kw {avg, now, over_s}, capacity_kw, generators_kw, solar, solar_peak_kw, '
+    networks = {surface='optional planet or surface name, or a platform\'s name',platform='optional platform name or index (its surface\'s networks)',
+      returns='surfaces [{surface, platform (on a platform surface), electric [{id, poles, center, draw_kw {avg, now, over_s}, capacity_kw, generators_kw, solar, solar_peak_kw (on a platform: at the solar power where it is), solar_power (percent), solar_power_text, '
         .. 'acc, machines, low, none, boilers, fuel_min, boilers_fed, boilers_under_20_min, boilers_under_10_min, lowest_boiler_min, line}], logistic [{id, roboports, personal, center, '
         .. 'logistic_area and construction_area {x0, y0, x1, y1}, logistic_robots and construction_robots {total, idle, working, '
         .. 'charging, waiting}, logistic, logistic_idle, none_idle_s, construction, construction_idle, unfilled, unfilled_items, '
         .. 'ghosts, line}], turrets {by_name, '
-        .. 'ammo_used_1h, line}}]; as_of (kept 60 s); note (how each number is counted). Electric networks over 2 poles or with '
+        .. 'ammo_used_1h, line}}]; none (a surface or platform named with none of these); as_of (kept 60 s); note (how each number is counted). Electric networks over 2 poles or with '
         .. 'a generator. Read only'},
   }
   return M
