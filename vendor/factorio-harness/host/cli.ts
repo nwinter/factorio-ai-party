@@ -776,6 +776,9 @@ async function main() {
       why: last?.why, note: status.result?.note,
       // collect over a radius: moved per item, places touched, what fell short.
       tally: last?.tally,
+      // collect waiting at a machine (collectwait): what it took against what the machine made and its inserters took.
+      ...(last?.kind === 'gather' && last?.took !== undefined ? {took: last.took, made: last.made, inserters_took: last.inserters_took,
+        crafts: last.crafts, waited_s: last.waited_s} : {}),
       // An item move that ran over time: what it moved and the inventory line after (Muse 06:27).
       moved: last?.moved, inv: last?.inv,
       team: carrier.result?.team, clock: carrier.result?.clock, orders: carrier.result?.orders, chat: carrier.result?.chat,
@@ -1023,6 +1026,8 @@ async function main() {
         || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined)
         // transfer {walk: true} with a target out of reach: a tour (until_tick); all in reach, it moved at once
         || (action === 'transfer' && args.walk === true && reply.result?.until_tick !== undefined)
+        // collect {wait_ticks | keep_taking}: standing at a machine, taking its products as they come (collectwait)
+        || (action === 'collect' && (args.wait_ticks !== undefined || args.keep_taking !== undefined) && reply.result?.until_tick !== undefined)
         || (action === 'vehicle' && args.drive !== undefined)
         // drop full: pods past the free hatches go as each hatch frees up (space.lua).
         || (action === 'drop' && reply.result?.until_tick !== undefined);

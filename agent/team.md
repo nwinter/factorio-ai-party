@@ -178,6 +178,8 @@ already targets your character.
   reach first, and names it in `instead`. `fh research` times (`done_in`) use the last minute's lab throughput.
   `repair` on an undamaged entity is ok with `unchanged: "not damaged"`; `repair` takes `positions` or `area` and
   reports `repaired` and `already_full`.
+- `collect {"position":{"x":10.5,"y":3.5},"wait_ticks":1800}` stands at that machine and takes each product the tick it
+  appears (`"count"` stops early); `last.took`, `last.made` and `last.inserters_took` say who got what.
 - What you take over a personal request's max goes to your trash slots: `transfer`, `collect` and `pickup` say how much
   (`trash`); `"up_to": true` stops at the max, `"keep_max": true` refuses the take. A paste leaves the requests of a hub
   or requester chest it lands on (`requests_kept`).
