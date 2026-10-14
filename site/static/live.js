@@ -397,6 +397,30 @@
   var TONES = { live: 'red', sample: 'orange', offline: 'grey' };
   function setBadge(state, text) { badge.className = 'fx-chip fx-chip--' + TONES[state]; badge.textContent = text; }
 
+  // Watchers: YouTube's "watching now" (state.watching, read by the stream once a minute) and the live pages open on
+  // this site (site_watching, from the heartbeat below); each part shown only when known, none while offline.
+  function watchingText(s, site, live) {
+    if (!live) return '';
+    var yt = s && s.watching && typeof s.watching.youtube === 'number' ? s.watching.youtube : null;
+    var parts = [];
+    if (yt != null) parts.push(yt + ' YouTube');
+    if (typeof site === 'number' && site > 0) parts.push(site + ' site');
+    return parts.length ? 'Watching: ' + parts.join(' · ') : '';
+  }
+  function setWatching(t) { var w = $('#watching'); if (w) { w.textContent = t; w.hidden = !t; } }
+  // One random id per page load (never stored), sent once a minute while the page is open.
+  if (API && !demo && window.crypto && crypto.getRandomValues) {
+    var hereId = Array.prototype.map.call(crypto.getRandomValues(new Uint8Array(12)), function (b) {
+      return ('0' + b.toString(16)).slice(-2);
+    }).join('');
+    var beat = function () {
+      fetch(API + '/v1/here', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ id: hereId }) })
+        .catch(function () {});
+    };
+    beat();
+    setInterval(beat, 60000);
+  }
+
   function renderOffline(st) {
     var h = '';
     if (st && st.message) h += '<p>' + esc(st.message) + '</p>';
@@ -429,6 +453,7 @@
       var s = demo ? d : d.state, age = demo ? 0 : d.age_s;
       var live = s && age != null && age <= LIVE_MAX_AGE;
       if (demo) setBadge('sample', 'Sample'); else if (live) setBadge('live', 'Live'); else setBadge('offline', 'Offline');
+      setWatching(watchingText(s, demo ? null : d.site_watching, live || demo));
       app.classList.toggle('has-state', !!s);
       app.classList.toggle('is-live', !!live);
       $('#updated').textContent = demo ? 'Sample data from the stream service\'s mock session.' : (d.received ? 'Updated ' + ago(age) : '');
@@ -438,6 +463,7 @@
     }).catch(function () {
       placeSummary(false);
       setBadge('offline', 'Offline');
+      setWatching('');
       $('#updated').textContent = 'Live data is unavailable right now.';
       if (!offlineStatus) loadStatus();
     }).then(function () { if (!demo) setTimeout(tick, document.hidden ? POLL * 4 : POLL); });

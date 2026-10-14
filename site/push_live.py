@@ -41,6 +41,7 @@ def scrub(v):
 CAMERA_LABELS = ("attack", "work", "segment")  # what a camera shows when it is not just following an agent
 PLATFORM_KEYS = ("name", "where", "route", "state", "paused", "speed_kms")
 FIGHT_RECENT_S = 120  # fights the map marks: reported in the last two minutes
+WATCHING_STALE = 180  # a "watching now" reading older than this is unknown (caster.py WATCH_STALE)
 
 
 def public_space(sp):
@@ -86,6 +87,11 @@ def public_state(s):
     yt = ((s.get("viewers_status") or {}).get("youtube") or {})
     if re.fullmatch(r"[\w-]{11}", str(yt.get("video") or "")):
         out["stream"] = {"youtube_video_id": yt["video"]}
+    # YouTube's "watching now" (viewers.py poll_watching, once a minute); left out when unknown or older than 3 minutes
+    n, t = yt.get("watching"), yt.get("watching_t")
+    if isinstance(n, int) and not isinstance(n, bool) and n >= 0 and isinstance(t, (int, float)) \
+            and (s.get("now") or time.time()) - t <= WATCHING_STALE:
+        out["watching"] = {"youtube": n, "t": round(t)}
     out["schema"] = 1
     return scrub(out)
 
