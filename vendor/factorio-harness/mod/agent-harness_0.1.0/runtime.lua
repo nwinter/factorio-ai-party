@@ -5446,6 +5446,7 @@ function M.tick_body(event)
   M.nametags.tick(event.tick)
   pcall(M.networks.tick,event.tick)  -- the networks' samples never stop the harness tick
   pcall(M.pushalerts.tick,event.tick)  -- the alert read, one stage a tick (task-statuscost)
+  pcall(survey.tick,event.tick)  -- status's factory survey, a slice a tick (task-statuscost)
   M.seated_ok=nil
   for index,action in pairs(state().active) do
     local ok,p=pcall(player,index,action.kind=='drive')

@@ -158,18 +158,19 @@ return function(api)
   local STEP={[0]={0,-1},[4]={1,0},[8]={0,1},[12]={-1,0}}
   local MAX_LISTED=4
   local function at(e) return string.format('(%s,%s)',e.position.x,e.position.y) end
-  local function belts(surface,force,warnings,detail)
-    local unpaired,stuck,ends={},{},{}
-    for _,e in pairs(surface.find_entities_filtered{force=force,type='underground-belt'}) do
-      if not e.neighbours then unpaired[#unpaired+1]=e.belt_to_ground_type..' '..at(e) end
+  -- One underground or transport belt into the belt tally b.
+  local function belt_one(b,surface,force,e,kind)
+    if e.valid==false then return end  -- gone since the job's find (a slice a tick)
+    if kind=='underground-belt' then
+      if not e.neighbours then b.unpaired[#b.unpaired+1]=e.belt_to_ground_type..' '..at(e) end
+    elseif #e.belt_neighbours.outputs==0 then
+      local s=STEP[e.direction]
+      local ahead=s and surface.find_entities_filtered{position={x=e.position.x+s[1],y=e.position.y+s[2]},radius=0.3,type=BELT_TYPES,force=force,limit=1}[1]
+      if ahead then b.stuck[#b.stuck+1]=at(e)..' into '..ahead.name else b.ends[#b.ends+1]=at(e) end
     end
-    for _,e in pairs(surface.find_entities_filtered{force=force,type='transport-belt'}) do
-      if #e.belt_neighbours.outputs==0 then
-        local s=STEP[e.direction]
-        local ahead=s and surface.find_entities_filtered{position={x=e.position.x+s[1],y=e.position.y+s[2]},radius=0.3,type=BELT_TYPES,force=force,limit=1}[1]
-        if ahead then stuck[#stuck+1]=at(e)..' into '..ahead.name else ends[#ends+1]=at(e) end
-      end
-    end
+  end
+  local function belts_done(b,warnings,detail)
+    local unpaired,stuck,ends=b.unpaired,b.stuck,b.ends
     local function list(t)
       table.sort(t)
       local shown={}
@@ -183,18 +184,16 @@ return function(api)
     for i=1,math.min(#ends,16) do listed[i]=ends[i] end
     return #ends>0 and (#ends..' line ends') or nil,detail and listed or nil
   end
-  local function survey(p)
-    local force,surface=p.force,p.surface
-    local found=surface.find_entities_filtered{force=force,type=SURVEY_TYPES}
-    local machines,order,warnings={},{},{}
-    local fuel,fuel_order={},{}
-    local labs,missing,lab_count={},{},0
-    local powered,starved,unpowered,unconnected=0,0,0,0
-    local turrets,turret_order={},{}
-    local flamers,flamer_order={},{}
-    local tech=force.current_research
+  -- The survey in pieces: an accumulator, one entity at a time into it, then
+  -- the summary (survey() all at once; the background job in slices).
+  local function acc_new()
+    return {machines={},order={},fuel={},fuel_order={},labs=0,missing={},lab_count=0,powered=0,starved=0,unpowered=0,unconnected=0,
+      turrets={},turret_order={},flamers={},flamer_order={}}
+  end
+  local function acc_entity(a,e,tech)
+    local machines,order,fuel,fuel_order,missing=a.machines,a.order,a.fuel,a.fuel_order,a.missing
+    local turrets,turret_order,flamers,flamer_order=a.turrets,a.turret_order,a.flamers,a.flamer_order
     local status_ids=defines.entity_status
-    for _,e in ipairs(found) do
       if e.valid then
         local status=api.status_name(e) or 'unknown'
         if MACHINE_TYPES[e.type] then
@@ -214,11 +213,11 @@ return function(api)
           if e.status==status_ids.no_fuel then f.empty=f.empty+1
           elseif burner.inventory.is_empty() and (burner.remaining_burning_fuel or 0)>0 then f.low=f.low+1 end
         elseif e.electric_buffer_size and e.electric_buffer_size>0 and e.type~='boiler' then
-          powered=powered+1
-          if e.status==status_ids.low_power then starved=starved+1
+          a.powered=a.powered+1
+          if e.status==status_ids.low_power then a.starved=a.starved+1
           -- no_power without a network id: no pole reaches it.
           elseif e.status==status_ids.no_power then
-            if e.electric_network_id then unpowered=unpowered+1 else unconnected=unconnected+1 end
+            if e.electric_network_id then a.unpowered=a.unpowered+1 else a.unconnected=a.unconnected+1 end
           end
         end
         if e.type=='ammo-turret' then
@@ -250,17 +249,24 @@ return function(api)
           end
         end
         if e.type=='lab' then
-          lab_count=lab_count+1
+          a.lab_count=a.lab_count+1
           if tech and e.status==status_ids.missing_science_packs then
             local inv=e.get_inventory(defines.inventory.lab_input)
             for _,ingredient in ipairs(tech.research_unit_ingredients) do
               if inv and inv.get_item_count(ingredient.name)==0 then missing[ingredient.name]=(missing[ingredient.name] or 0)+1 end
             end
-            labs[#labs+1]=e
+            a.labs=a.labs+1
           end
         end
       end
-    end
+  end
+  -- The summary from a filled accumulator and belt tally (b).
+  local function acc_done(a,b,force,surface)
+    local machines,order,fuel,fuel_order,missing=a.machines,a.order,a.fuel,a.fuel_order,a.missing
+    local turrets,turret_order,flamers,flamer_order=a.turrets,a.turret_order,a.flamers,a.flamer_order
+    local powered,starved,unpowered,unconnected,lab_count=a.powered,a.starved,a.unpowered,a.unconnected,a.lab_count
+    local labs={n=a.labs}
+    local warnings={}
     local summary,detail={},{}
     table.sort(order)
     for _,name in ipairs(order) do
@@ -314,7 +320,7 @@ return function(api)
     local packs={}
     for name,n in pairs(missing) do packs[#packs+1]=name..' ('..n..' labs)' end
     table.sort(packs)
-    if #packs>0 then warnings[#warnings+1]=string.format('labs: %d/%d missing packs: %s',#labs,lab_count,table.concat(packs,', ')) end
+    if #packs>0 then warnings[#warnings+1]=string.format('labs: %d/%d missing packs: %s',labs.n,lab_count,table.concat(packs,', ')) end
     local stats=force.get_item_production_statistics(surface)
     local one,ten=defines.flow_precision_index.one_minute,defines.flow_precision_index.ten_minutes
     local science,plates={},{}
@@ -332,13 +338,73 @@ return function(api)
       local a,b=flow(stats,name,'input',one),flow(stats,name,'input',ten)
       if a>0 or b>0 then plates[#plates+1]=string.format('%s %s|%s',name,round(a),round(b)) end
     end
-    local belt_ends,end_positions=belts(surface,force,warnings,true)
+    local belt_ends,end_positions=belts_done(b,warnings,true)
     local factory={belt_ends=belt_ends,science=#science>0 and table.concat(science,', ')..' /min (1m|10m)' or nil,
       research=research_line(force,warnings,lab_count),
       plates=#plates>0 and table.concat(plates,', ')..' /min (1m|10m)' or nil,
       hand=hand_line(stats)}
     if end_positions and #end_positions>0 then detail.belt_ends=end_positions end
     return {tick=game.tick,surface=surface.index,factory=factory,machines=summary,positions=detail,warnings=warnings}
+  end
+  -- All at once (machines=true, a surface's first survey, tests without the job).
+  local function survey(p)
+    local force,surface=p.force,p.surface
+    local a,tech=acc_new(),force.current_research
+    for _,e in ipairs(surface.find_entities_filtered{force=force,type=SURVEY_TYPES}) do acc_entity(a,e,tech) end
+    local b={unpaired={},stuck={},ends={}}
+    for _,e in pairs(surface.find_entities_filtered{force=force,type='underground-belt'}) do belt_one(b,surface,force,e,'underground-belt') end
+    for _,e in pairs(surface.find_entities_filtered{force=force,type='transport-belt'}) do belt_one(b,surface,force,e,'transport-belt') end
+    return acc_done(a,b,force,surface)
+  end
+  -- The background survey (task-statuscost, 01:15 on world n: survey.summary
+  -- 60 ms in a full status): per force and surface someone read in the last
+  -- KEEP_TICKS, a job started when the survey is CACHE_TICKS old; each step
+  -- finds one type (the survey's types, undergrounds, belts) and then reads
+  -- SLICE of them a tick; the last step makes the summary. Its state is in
+  -- storage, so every peer runs the same.
+  local SLICE,KEEP_TICKS=1500,18000
+  local STEPS={}
+  for _,t in ipairs(SURVEY_TYPES) do STEPS[#STEPS+1]=t end
+  STEPS[#STEPS+1]='underground-belt'; STEPS[#STEPS+1]='transport-belt'
+  function M.tick(tick)
+    local st=api.state()
+    st.survey_bg=true
+    local cache=st.survey_cache or {}
+    st.survey_cache=cache
+    st.survey_jobs=st.survey_jobs or {}
+    st.survey_read=st.survey_read or {}
+    for key,entry in pairs(cache) do
+      local job=st.survey_jobs[key]
+      local read=st.survey_read[key]
+      if not job and (not read or tick-read>=KEEP_TICKS) then
+        if tick-entry.tick>=KEEP_TICKS then cache[key]=nil; st.survey_read[key]=nil end
+      elseif not job and tick-entry.tick>=CACHE_TICKS then
+        local force_name,index=key:match('^(.*)/(%d+)$')
+        st.survey_jobs[key]={start=tick,force=force_name,surface=tonumber(index),step=1,a=acc_new(),b={unpaired={},stuck={},ends={}}}
+      elseif job then
+        local force=game.forces[job.force]
+        local surface=force and game.get_surface(job.surface)
+        if not (force and surface) then st.survey_jobs[key]=nil
+        elseif job.step>#STEPS then
+          local entry2=acc_done(job.a,job.b,force,surface)
+          entry2.tick=job.start
+          cache[key]=entry2
+          st.survey_jobs[key]=nil
+        else
+          local t=STEPS[job.step]
+          if not job.list then job.list=surface.find_entities_filtered{force=force,type=t}; job.i=1; job.tech=force.current_research
+          else
+            local last=math.min(#job.list,job.i+SLICE-1)
+            for i=job.i,last do
+              local e=job.list[i]
+              if t=='underground-belt' or t=='transport-belt' then belt_one(job.b,surface,force,e,t) else acc_entity(job.a,e,job.tech) end
+            end
+            job.i=last+1
+            if job.i>#job.list then job.list,job.i,job.tech=nil,nil,nil; job.step=job.step+1 end
+          end
+        end
+      end
+    end
   end
 
   -- `machines=true` adds the positions of every non-working machine (up to 16
@@ -347,13 +413,17 @@ return function(api)
   -- entry per force, so agents on Nauvis, Vulcanus and a platform took turns
   -- replacing it and nearly every status rescanned).
   function M.summary(p,detail)
-    local cache=api.state().survey_cache or {}
-    api.state().survey_cache=cache
+    local st=api.state()
+    local cache=st.survey_cache or {}
+    st.survey_cache=cache
     local key=p.force.name..'/'..p.surface.index
     local entry=cache[key]
-    if detail or not entry or game.tick-entry.tick>=CACHE_TICKS then
+    -- With the background job running (M.tick) a status reads the last finished survey.
+    if detail or not entry or (not st.survey_bg and game.tick-entry.tick>=CACHE_TICKS) then
       entry=survey(p); cache[key]=entry
     end
+    st.survey_read=st.survey_read or {}
+    st.survey_read[key]=game.tick
     local inv,warnings=M.inventory(p)
     warnings=warnings or {}
     for _,w in ipairs(entry.warnings) do warnings[#warnings+1]=w end

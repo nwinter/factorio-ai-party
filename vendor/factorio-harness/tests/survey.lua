@@ -135,4 +135,53 @@ eq(scans,2)
 eq(S.summary(q).machines['assembling-machine-1'],'1/1 working'); eq(S.summary(p).machines['assembling-machine-1'],'2/3 working, 1 low_power')
 eq(S.summary(q).as_of,200000)
 game.tick=200600; S.summary(q); eq(scans,3)
+
+-- The background survey (task-statuscost, 01:15 on world n: survey.summary 60 ms in a full status): for each force and
+-- surface read lately, a job finds one type and reads a slice of it a tick, then makes the same summary; a status
+-- reads the last finished one and finds nothing.
+do
+  storage.survey_cache=nil; storage.survey_jobs=nil; storage.survey_bg=nil; storage.survey_read=nil
+  game.tick=300000
+  local at_once=S.summary(p)
+  game.forces={[force.name]=force}
+  game.get_surface=function(i) return i==surface.index and surface or nil end
+  local find=surface.find_entities_filtered
+  local per_tick=0
+  -- (the fake answers any machine type with every entity; one type at a time, as the game does)
+  surface.find_entities_filtered=function(f)
+    per_tick=per_tick+1
+    local out=find(f)
+    if type(f.type)=='string' and f.type~='underground-belt' and f.type~='transport-belt' and not f.position then
+      local kept={}
+      for _,e in ipairs(out) do if e.type==f.type then kept[#kept+1]=e end end
+      out=kept
+    end
+    return out
+  end
+  game.tick=game.tick+600
+  local ticks,worst=0,0
+  repeat
+    game.tick=game.tick+1; per_tick=0; S.tick(game.tick); ticks=ticks+1
+    worst=math.max(worst,per_tick)
+  until (ticks>1 and not (storage.survey_jobs or {})['player/1']) or ticks>200
+  assert(ticks<200,'the job ends')
+  assert(worst<=2,'at most the step\'s find and a belt end check a tick: '..worst)
+  local entry=storage.survey_cache['player/1']
+  eq(entry.tick,300601,'the job\'s start')
+  per_tick=0
+  game.tick=game.tick+300
+  local later=S.summary(p)
+  eq(per_tick,0,'the status reads the last survey')
+  eq(later.as_of,300601)
+  local function surveyed(list)
+    local out={}
+    for _,w in ipairs(list) do if not w:find('^inventory') and not w:find('^hoarding') then out[#out+1]=w end end  -- per call
+    return table.concat(out,' | ')
+  end
+  eq(surveyed(later.warnings),surveyed(at_once.warnings),'the same summary')
+  for name,line in pairs(at_once.machines) do eq(later.machines[name],line) end
+  eq(later.factory.belt_ends,at_once.factory.belt_ends)
+  surface.find_entities_filtered=find
+  game.forces=nil
+end
 print('survey: ok')
