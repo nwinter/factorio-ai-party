@@ -325,4 +325,19 @@ eq(whole.makers,'8 makers (2 electromagnetic-plant, 1 assembling-machine-2, 1 bi
 local near=supply_read(p,{item=EC,near={x=23,y=73},radius=40})
 has(near.makers,'3 makers (2 electromagnetic-plant, 1 assembling-machine-2)')
 any(near.makers_worst,'(23,73) electromagnetic-plant item_ingredient_shortage (missing copper-cable)')
+-- What robots have reserved at a logistic chest (Grok, 15:20): c1's 3, all reserved; none at a plain chest.
+eq(S.reserved(c1,AC),3); eq(S.reserved(c6,AC),0); eq(S.reserved(c1,EC),0)
+-- bottleneck {item} (Sonnet, 15:20): the chain line and, on each step it walked, the makers not working with what they lack.
+prototypes.item['processing-unit']={type='item'}
+game.tick=game.tick+600
+local bn=S.bottleneck_item(p,{item='processing-unit'})
+eq(bn.line,'chain: processing-unit: 1 of 3 working (1 item_ingredient_shortage, 1 no_power), made 30/min, used 12/min')
+eq(bn.root,'processing-unit: 1 of 3 working (1 item_ingredient_shortage, 1 no_power), made 30/min, used 12/min')
+eq(bn.not_working[1],'processing-unit: assembling-machine-3 (20,0) item_ingredient_shortage (lacks advanced-circuit); '
+  ..'assembling-machine-3 (28,0) no_power (lacks electronic-circuit, advanced-circuit, sulfuric-acid)')
+assert(#bn.steps>=3,'the tree below it')
+game.tick=game.tick+600
+bn=S.bottleneck_item(p,{item=AC})
+eq(bn.not_working[1],'advanced-circuit: assembling-machine-2 (4,0) item_ingredient_shortage (lacks electronic-circuit); assembling-machine-2 (8,0) full_output')
+assert(not pcall(S.bottleneck_item,p,{item='nope'}),'an unknown item is refused')
 print('supply: ok')

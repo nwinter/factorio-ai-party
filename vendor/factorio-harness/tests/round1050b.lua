@@ -284,4 +284,33 @@ eq(r.replaced.kept[1],'filters whitelist: coal'); eq(r.replaced.kept[2],'1 of 1 
 assert(r.replaced.kept[3]:find('^circuit settings %(.*circuit_condition.*circuit_enable_disable.*circuit_read_hand_contents'),r.replaced.kept[3])
 eq(r.replaced.not_kept,nil); eq(main.get_item_count('inserter'),1)
 
+-- Round 15:20 item 10 (Grok: three walks to a copper-cable provider that robots had emptied): what robots have
+-- reserved at a chest is named; one with free stock comes first; a walk to a reserved one says so; an empty take
+-- there says what it held when it was named.
+defines.logistic_member_index=defines.logistic_member_index or {logistic_container=0}
+prototypes.item['copper-cable']={name='copper-cable',type='item',stack_size=200}
+local function provider(pos,n,reserved)
+  local e=chest(pos,{['copper-cable']=n})
+  e.type='logistic-container'; e.name='passive-provider-chest'; e.prototype={name='passive-provider-chest',type='logistic-container'}
+  e.reserved=reserved
+  e.get_logistic_point=function() return {targeted_items_pickup={{name='copper-cable',quality='normal',count=e.reserved}}} end
+  return e
+end
+body.position={x=50,y=32}
+provider({x=52.5,y=32.5},10,10)                 -- nearer, all of it reserved
+local free_p=provider({x=57.5,y=32.5},30,5)
+r=luna('transfer',{item='copper-cable',from='nearest',count=5})
+eq(r.moved,5)
+assert(r.from_nearest:find('^passive%-provider%-chest at %(57.5,32.5%), 7.5 tiles from you, holds 30 copper%-cable, 5 of it reserved for robots to take %(%d+ chests checked, 2 holding it%)$'),r.from_nearest)
+-- Robots take the rest before the next take: the empty take says what it held when named.
+free_p.inv.remove{name='copper-cable',count=25}
+r=luna('transfer',{position=free_p.position,item='copper-cable',count=5,direction='to_player'})
+eq(r.moved,0)
+assert(r.nothing_moved:find('; it held 30 copper-cable 0s ago when named to you, 5 of it then reserved for robots to take',1,true),r.nothing_moved)
+-- A walk to a provider whose stock robots have reserved says so as it starts.
+local far_p=provider({x=75.5,y=32.5},20,20)
+r=luna('transfer',{position=far_p.position,item='copper-cable',count=5,direction='to_player',walk=true})
+eq(r.reserved_note,'robots have 20 copper-cable reserved to take at it now: they may empty it before you arrive')
+luna('stop')
+
 print('round1050b: ok')
