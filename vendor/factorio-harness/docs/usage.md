@@ -180,7 +180,14 @@ fh call status
   distractor or destroyer capsule) at a position in sight: the game's own projectile from the capsule's action, from
   your character, so damage and kills are the game's. The item prototype's range, minimum range and cooldown apply
   (`out of range ... reaches N tiles`, `cooling down: N ticks left`); one item is used. `use_item {item: "raw-fish"}`
-  uses a capsule on yourself (the heal). Capsules of other kinds (cliff explosives, remotes) are refused. Reply: `kind`
+  uses a capsule on yourself (the heal). Capsules of other kinds (remotes) are refused. Cliff explosives: `use_item
+  {item: "cliff-explosives", position, walk?}` and `clear_cliffs {position | positions (1..16), walk (default true),
+  item?, ticks?}` throw the game's capsule as a player does (range 10 from the character, cooldown 30 ticks, blast radius
+  1.5), one per spot, each landing before the next, walking into range with walk; a timed call. The reply lists each
+  spot's cliffs in the blast; a spot with none is refused at once (the nearest cliff named). `last`: `thrown`,
+  `destroyed [{name, position}]`, `skipped [{position, why}]`, `left`; outcomes cliffs_destroyed | nothing_destroyed |
+  out_of_items | out_of_range | timed_out. Dry runs over cliffs no construction robot reaches add the call to clear
+  them (`cliffs`, `cliffs_by_hand`). Reply: `kind`
   (throw|self), `projectile`, `distance`, `range`, `cooldown_ticks`, `left`, `healed`. It is an instant action that
   stops what the character was doing, as `shoot` does.
 - Circuit network (2.0's rules: a wire or a circuit GUI is in reach of the character, or by remote view on our own

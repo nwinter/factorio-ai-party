@@ -1572,6 +1572,25 @@ return function(api)
         out.cliffs = string.format('%d placeable entr%s stand%s over %d cliff%s: placing marks %s, and a marked cliff goes only with one explosive (construction robots bring it): %s',
           over_cliffs, over_cliffs == 1 and 'y' or 'ies', over_cliffs == 1 and 's' or '', ncliffs, ncliffs == 1 and '' or 's',
           ncliffs == 1 and 'it' or 'them', table.concat(parts, '; '))
+        -- No construction robot reaches them (Sol 15:41: a nutrient belt over cliffs on Gleba with no robots there):
+        -- the cliffs to clear by hand with clear_cliffs, which throws the explosives as a player does.
+        local robots, at = 0, {}
+        for _, c in pairs(cliffs) do
+          if c.e.valid then
+            if #at < 8 then at[#at+1] = {x=c.e.position.x, y=c.e.position.y} end
+            local net = try(function() return s.find_logistic_network_by_position(c.e.position, p.force) end)
+            robots = robots + (net and try(function() return net.available_construction_robots end) or 0)
+          end
+        end
+        local own = try(function() return p.character and p.character.logistic_network end)
+        robots = robots + (own and try(function() return own.available_construction_robots end) or 0)
+        if robots == 0 and #at > 0 then
+          local list = {}
+          for _, q in ipairs(at) do list[#list+1] = string.format('{"x":%g,"y":%g}', q.x, q.y) end
+          out.cliffs = out.cliffs .. string.format('; no construction robots reach %s here: clear %s by hand first, clear_cliffs {"positions":[%s]} (throws the explosives from within their range, walking there)',
+            ncliffs == 1 and 'it' or 'them', ncliffs == 1 and 'it' or 'them', table.concat(list, ','))
+          out.cliffs_by_hand = at
+        end
       end
     end
 
