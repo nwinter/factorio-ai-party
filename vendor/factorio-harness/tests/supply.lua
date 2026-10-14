@@ -116,6 +116,10 @@ local pad=entity{name='cargo-landing-pad',type='cargo-landing-pad',position={x=-
 local padinv=inv({[AC]=7})
 pad.get_inventory=function(id) return id==defines.inventory.cargo_landing_pad_main and padinv or nil end
 N11.requester_points[#N11.requester_points+1]=point(pad,N11,3,{{name=AC,count=100}})
+-- A landed cargo pod's container (operator 09:04: a stopped platform's hub trash on a planet with no landing pad).
+local podc=entity{name='cargo-pod-container',type='temporary-container',position={x=-40,y=0}}
+local podinv=inv({[AC]=4})
+podc.get_inventory=function(id) return id==defines.inventory.chest and podinv or nil end
 -- Belts: one carries 7 (two lines), one is empty.
 local function belt(x,y,lines)
   local e=entity{name='transport-belt',type='transport-belt',position={x=x,y=y}}
@@ -199,7 +203,7 @@ local r=supply_read(p,{item=AC})
 eq(r.item,AC); eq(r.surface,'nauvis')
 eq(r.flow,'made 300, used 120 in the last 10 min on nauvis')
 -- Where it sits: every kind of place, the team's characters on this surface only.
-eq(r.where,'462: belts 7, requester chests 59, passive-provider chests 3, buffer chests 50, other chests 100, landing pads 7, machine outputs 205, users\' inputs 5, silo rockets 10, inserter hands 1, robots 3, characters 12 (sol 12)')
+eq(r.where,'466: belts 7, requester chests 59, passive-provider chests 3, buffer chests 50, other chests 100, landing pads 7, landed cargo pods 4, machine outputs 205, users\' inputs 5, silo rockets 10, inserter hands 1, robots 3, characters 12 (sol 12)')
 eq(r.chests[1],'(50,0) steel-chest 100')
 eq(r.chests[2],'(40,3) requester-chest 40 (no request for it: its section asking for it is off)')
 eq(r.chests[3],'(300,0) buffer-chest 30 (no request for it)')

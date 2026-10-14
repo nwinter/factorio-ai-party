@@ -9,7 +9,7 @@ return function(api)
   local MAX_LIMIT = 50
   -- Entity types that hold items, and how where_is calls them.
   local KIND = {container='chest', ['logistic-container']='chest', ['linked-container']='chest',
-    ['infinity-container']='chest', lab='lab', ['assembling-machine']='machine', furnace='machine',
+    ['infinity-container']='chest', ['temporary-container']='pod', lab='lab', ['assembling-machine']='machine', furnace='machine',
     ['rocket-silo']='machine', car='vehicle', ['cargo-wagon']='vehicle', ['spider-vehicle']='vehicle',
     ['cargo-landing-pad']='pad', ['space-platform-hub']='hub', roboport='roboport'}
   local BELTS = {'transport-belt', 'underground-belt', 'splitter', 'loader', 'loader-1x1', 'linked-belt'}

@@ -278,6 +278,8 @@ already targets your character.
   a planet); it is also a `wait_until` condition, a queue guard and an order's `when`.
 - `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list
   takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first.
+- A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods, to
+  the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it).
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
 
