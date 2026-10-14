@@ -1286,6 +1286,7 @@ function handlers.describe()
   for name,schema in pairs(M.lookahead and M.lookahead.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.networks and M.networks.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.silo and M.silo.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.rocketload and M.rocketload.schema or {}) do description.actions[name]=schema end
   description.actions.status.brief='boolean: only active, last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older)'
   description.actions.status.alerts='boolean, with brief: add the alerts block (losses, attacked areas, groups, enemy news; read from what the game reported, no scan)'
   description.actions.status.inventory='boolean: add inventory, one line: main (name*count, free slots), ammo, guns, armor with its equipment, trash slots, cursor (the inventory read in one line)'
@@ -2265,7 +2266,15 @@ end
 -- A launch an agent ordered is the silo read's last launch (silo.lua), with who ordered it.
 handlers.launch=function(p,a)
   if a.position==nil and a.unit_number==nil then error(M.launch_needs_silo(p,a),0) end
+  -- min_cargo and arrived (Luna 15:20): read in this tick, the one the rocket goes in (rocketload.lua M.guard); a rocket
+  -- not ready yet is refused by space.launch first.
+  local checked
+  if a.min_cargo~=nil or a.arrived~=nil then
+    local silo=remote_entity(p,{position=a.position,name=a.name,unit_number=a.unit_number})
+    if silo.type=='rocket-silo' and silo.rocket_silo_status==defines.rocket_silo_status.rocket_ready then checked=M.rocketload.guard(p,a,silo) end
+  end
   local out=space.launch(p,a)
+  out.checked=checked
   pcall(function()
     local silo=remote_entity(p,{position=a.position,name=a.name,unit_number=a.unit_number})
     if out.launched then M.silo.record(silo,{by=M.board.who(p),to=out.to,cargo=type(out.cargo)=='string' and out.cargo or nil}) end
@@ -4743,6 +4752,7 @@ function M.await_crafts(p,handler,a,wants)
 end
 -- A feed waiting for crafts goes once every item it waits for is held, or no longer coming.
 function M.feed_ready(p,action)
+  if action.await_silo then return M.rocketload.ready(p,action) end
   for _,w in ipairs(action.items or {{item=action.item,need=action.need}}) do
     if w.item and crafting_count(p,w.item)>0 and held(p,w.item,action.args.quality)<w.need then return false end
   end
@@ -6342,6 +6352,44 @@ end
 -- what it lacks, cargo against the lift, automatic requests, the last launch.
 M.silo=require('silo'){state=state,cargo=M.cargo,position=position,status_name=function(e) return entity_status_names[e.status] end}
 function handlers.silo(p,a) return M.silo.read(p,a) end
+-- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),
+-- launch's min_cargo and arrived guard and a queue dry run's cargo (Luna).
+M.rocketload=require('rocketload'){cargo=M.cargo,remote_entity=remote_entity,reason=reason,
+  where=function(pl) return M.freight.where(pl) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
+  reach_entity=function(p,pos) return entity(p,{position=pos}) end,
+  platform=function(p,name) return space.platform(p,name) end,
+  rocket=function(e) return M.silo.rocket(e) end,ingredients=function(e) return M.silo.ingredients(e) end,
+  inventory_name=function(e,name) return M.inventory_name(e,name) end,
+  rocket_room=function(silo,item) return space.rocket_room(silo,item) end,
+  rocket_weight=function(silo) return space.rocket_weight(silo) end,
+  move_stacks=move_stacks,give_sources=give_sources,
+  launch=function(p,a) return handlers.launch(p,a) end,
+  -- What a player sees moving items by hand, and the hauls and hand share they count, as transfer does.
+  moved=function(p,silo,stacks)
+    local parts={}
+    for _,s in ipairs(stacks) do parts[#parts+1]='-'..s.count..' [item='..s.name..']'; survey.log_hand('fed',s.name,s.count) end
+    p.create_local_flying_text{text=table.concat(parts,' '),position=silo.position}
+    pcall(M.visuals.moved,p,silo.position,silo.surface,table.concat(parts,' '))
+    pcall(M.selfview.moved,p,'to_entity',silo,stacks)
+    pcall(M.hauling.moved,p.index,'to_entity',silo.position,silo.surface and silo.surface.name,stacks,silo.name)
+  end}
+-- No rocket yet, or launch=true before it is ready: a timed action until it is (kind feed; M.feed_ready asks
+-- rocketload.ready), then the same call runs whole in that tick.
+function handlers.load_silo(p,a)
+  local ticks=integer(a.ticks,3600,1,36000,'ticks')
+  local r=M.rocketload.load(p,a)
+  if not r.wait then return r end
+  if a.awaited then error('the rocket is still not ready: '..r.why,0) end
+  local rest={}
+  for k,v in pairs(a) do rest[k]=v end
+  rest.awaited=true
+  if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
+  local until_tick=game.tick+ticks
+  state().active[p.index]={kind='feed',handler='load_silo',args=rest,await_silo={position=a.position,launch=a.launch==true},
+    until_tick=until_tick,next_check=game.tick+FEED_CHECK}
+  return {waiting={why=r.why,rocket=r.rocket},until_tick=until_tick}
+end
+function handlers.preflight(p,a) return M.rocketload.preflight(p,a) end
 -- Circuit wires and settings (circuits.lua), train stops and schedules (trains.lua).
 M.circuits=require('circuits'){entity=entity,remote_entity=remote_entity,friendly=friendly,own_platform=own_platform,position=position,
   configure_filters=function(e,a) return M.configure_filters(e,a) end}
@@ -7268,7 +7316,7 @@ do
   -- board #377: a requester chest on Vulcanus feeding an assembler there); place_ghosts and scan (Astra 12:33: laying
   -- out a Vulcanus chain while Sonnet builds there by hand; in 2.0 a player places ghosts on another planet from the
   -- map, and that planet's robots build them).
-  for _,name in ipairs({'inspect','circuit_set','circuit','wire','ores','launch','configure','silo','requests','place_ghosts','scan'}) do
+  for _,name in ipairs({'inspect','circuit_set','circuit','wire','ores','launch','configure','silo','preflight','requests','place_ghosts','scan'}) do
     local handler=handlers[name]
     handlers[name]=function(p,a)
       if a.surface==nil then return handler(p,a) end
@@ -7528,9 +7576,9 @@ handlers.equipment=function(p,a)
   assert(not p.permission_group or p.permission_group.allows_action(defines.input_action[input]),'permission denied: '..input)
   return equipment_handler(p,a)
 end
-local timed={walk=true,move_to=true,build_path=true,construct=true,kite=true,mine=true,pickup=true,repair=true,rearm=true,refuel=true,transfer=true,collect=true,feed=true,wait_until=true,wait_ticks=true,build=true}
+local timed={walk=true,move_to=true,build_path=true,construct=true,kite=true,mine=true,pickup=true,repair=true,rearm=true,refuel=true,transfer=true,collect=true,feed=true,wait_until=true,wait_ticks=true,build=true,load_silo=true}
 -- The active action kind a step's handler starts, where it differs from its name.
-local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true,gather=true},build={feed=true},collect={gather=true},feed={gather=true}}
+local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true,gather=true},build={feed=true},collect={gather=true},feed={gather=true},load_silo={feed=true}}
 local conditions=conditions_module{known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end}
@@ -7538,6 +7586,7 @@ scheduler=scheduler_module{
   state=state,player=player,handlers=handlers,
   condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) return check_args(action,args) end,validate_condition=function(c) return conditions.validate(c) end,
   fix_args=function(action,args) return M.aliases.fix(action,args,M.takes) end,
+  simulate=function(p,items) return M.rocketload.simulate(p,items) end,
   busy=function(p,action)
     if action=='shoot' then return state().combat and state().combat[p.index]~=nil end
     if action=='drop' then return state().drop_jobs and state().drop_jobs[p.index]~=nil or false end
@@ -7609,7 +7658,13 @@ for name,handler in pairs(M.orders.handlers) do handlers[name]=handler end
 -- Queue writes answer briefly: the revision, state, the next steps by id and
 -- the last results; queue_status has steps in full (agent-minds study: each
 -- edit echoed 10-14 KB, and Sonnet sent its replies to /dev/null to cut them).
+-- queue_submit dry_run=true queues nothing: standing orders do not hold for it.
+function M.queue_dry_run(request)
+  return request.action=='queue_submit' and type(request.args)=='table' and request.args.dry_run==true
+end
 function M.queue_brief(q)
+  -- A dry run queued nothing: its own reply as it is.
+  if q.dry_run then return q end
   local function step(s) return s and ((s.id or '?')..' '..tostring(s.action)..(s.label and ' ['..s.label..']' or '')) or nil end
   local pending={}
   for i,s in ipairs(q.pending or {}) do if i<=5 then pending[i]=step(s) end end
@@ -7857,7 +7912,7 @@ passive.circuit_set=true; passive.wire=true
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
 for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route','rail_route','train_stop','blueprint_save','blueprint_rename'}) do passive[name]=true end
-local reads={ores=true,cargo=true,silo=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
+local reads={ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
@@ -8552,7 +8607,7 @@ dispatch_request=function(request)
     if q and not q.paused then M.stop_player(p.index) end
   end
   -- The agent's own character work and queue calls: standing orders wait a while after it (orders.lua hold).
-  if not reads[request.action] and not quiet and request.action~='queue_status' then M.orders.on_drive(p.index) end
+  if not reads[request.action] and not quiet and request.action~='queue_status' and not M.queue_dry_run(request) then M.orders.on_drive(p.index) end
   if quiet then
     local ok,result=pcall(handler,p,request.args or {})
     if not ok then passive_failed=game.tick; error(result,0) end

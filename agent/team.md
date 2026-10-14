@@ -333,6 +333,13 @@ already targets your character.
   `launch` refuses a rocket with no cargo (a launch spends its parts) unless `allow_empty: true`, naming science in
   chests near the silo. A silo's transfer inventories: `assembling_machine_input` (alias `parts`, the rocket-part
   ingredients) and `rocket_silo_rocket` (alias `cargo`, what goes up with the rocket); `inspect` lists them with a call each.
+- `./fh call load_silo --args '{"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","position":{"x":65.5,"y":14.5},"to_total":true}' --wait`
+  loads the list into the rocket from your inventory and our chests in reach (`from` for given chests) and launches
+  in the same tick once every count is aboard; before the rocket is ready it waits for it. `./fh call preflight` (silo
+  `position`, optional `items`, `platform`) shows the cargo against 1000 kg and 20 slots, what a list lacks, and the
+  platform's requests from this planet less its hub and this rocket. `launch` takes `min_cargo` and `arrived: true`,
+  read in the tick it launches; `fh queue submit --file plan.json --args '{"dry_run":true}'` queues nothing and shows
+  the silo cargo before each launch step.
 - `./fh platform NAME` also shows `freight` (per stop what was expected down and up, what left the hub, came aboard
   and spoiled, the rockets sent to it; per leg what spoiled on the way) and `spoiling` (when its spoilable items spoil,
   against the arrival). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when

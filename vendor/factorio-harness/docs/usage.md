@@ -826,6 +826,12 @@ fh queue repeat --file plan.json
   or `feed` step's args: its history entry has `ok: true` and `short: true`, and the plan goes on. Other failures
   (out of reach, an unknown entity, a timed-out tour) still follow `on_fail`.
 - `queue edit` needs the current revision, so you can't accidentally edit a plan that has already moved on.
+- `fh queue submit --file plan.json --args '{"dry_run":true}'` checks the plan as a submit does and queues nothing (the
+  queue, its revision and a running standing order are left as they are; Luna, shift12 15:20). It counts the silo
+  cargo the steps would leave, from what you, the chests and the silos hold now through `transfer`, `load_silo` and
+  `launch` steps (waits move nothing): `launches [{step, label, silo, cargo (before that launch), kg, min_cargo,
+  platform_now, would_refuse}]`, `silos_after`, and `notes` for steps whose item moves are not counted (`collect`,
+  `craft`, `feed`, ...) or a transfer that would be refused.
 - A direct call that moves or acts as the character pauses the queue. Reads, the board, chat, `say`, `tell`, `confess`, `operator`, `craft`/`cancel_craft`, research, votes, `sleep` and the queue calls don't, and when one of them fails (a `placements` out of sight, a `board_update` with an unknown argument) the running action and the queue go on as well. `sleep` leaves the queue running, and so does its end.
 - Calls that act on another surface or by remote view don't pause it either, nor stop a running standing order, and
   neither does their failure: any call with `platform`, or with `surface` naming another surface than the
@@ -1393,6 +1399,51 @@ fh sleep 900 --until researched                       # ...or until the research
   the rocket holds nothing, ...; science in chests within 32 tiles: wooden-chest (30.5,22.5)
   agricultural-science-pack*120`. When the game refuses (it gives no reason), the error lists what it may check: a missing rocket,
   automatic requests, a paused platform, then the silo, cargo, platform and destination it saw.
+- `launch {position, platform, min_cargo, arrived}` (Luna, shift12 15:20: a rocket_ready wait ran before an
+  agricultural science top-up, and the queued launch went with the old cargo): read in the tick the rocket launches
+  (a queue step's launch runs whole in its tick), after the rocket is ready.
+  - `min_cargo` (`{"agricultural-science-pack":1000}` or `[{item, count, quality}]`): the rocket holds at least these,
+    else `launch refused at tick 9606118, nothing launched: min_cargo not met: agricultural-science-pack 600 of 1000
+    (400 short); the rocket holds agricultural-science-pack*600`.
+  - `arrived: true`: the platform is stopped at this planet (not on its path), the `platform_arrived` rule, else
+    `... platform Sunward has not arrived at nauvis (at nauvis, on its path (not stopped))`.
+  - The reply's `checked {tick, lines}` lists what was read. A launch step that is refused fails, so the plan pauses
+    (or follows its `on_fail`) and the rocket stays. `wait_until {"until":"item_count","item":...,"at_least":1000,
+    "positions":[silo]}` counts the silo's rocket cargo.
+  - `fh call launch --args '{"min_cargo":{"agricultural-science-pack":1000},"platform":"Sunward","position":{"x":65.5,"y":14.5},"arrived":true}'`
+- `load_silo {position, items, to_total?, from?, chests?, launch?, platform?, orbit?, min_cargo?, arrived?, ticks?}`
+  (rocketload.lua; Sonnet, shift12: about 40 transfer and launch round trips a shift) loads an item list into a silo's
+  rocket cargo in one call. The silo must be within reach.
+  - `items`: `{"agricultural-science-pack":1000}` or `[{item, count, quality}]`, 1..20 items. Each count is loaded on top
+    of what the rocket holds; with `to_total: true` each count is what it should hold in all.
+  - Sources: your inventory first, then our chests within reach, nearest first (at most 16); `from` (a chest `{x,y}` or
+    up to 16) reads only those after your inventory; `chests: false` your inventory only.
+  - Only what fits under the 1000 kg lift and in the rocket's 20 cargo slots goes in. A silo with automatic requests
+    on is refused (the game takes no cargo by hand then).
+  - Reply: `loaded [{item, asked, aboard_before, loaded, aboard, from ("you 300, iron-chest (61.5,10.5) 400"), short,
+    why}]` (`why`: weight, the cargo slots, or `you and the 2 chests read held only 200`), `cargo`, `rocket_weight`,
+    `slots` (used/total), `chests`, `complete`, `short`.
+  - `launch: true` with `platform` (or `orbit: true`) launches in the same tick, once every count is aboard;
+    `min_cargo` and `arrived` are checked as `launch` checks them. Any count short: `not launched: ...; what was loaded
+    stays in the rocket (it holds ..., 600/1000 kg)`. A launch refused after loading: `loaded, then the launch was
+    refused: ...; the cargo stays in the rocket`.
+  - No rocket yet, or `launch: true` before the rocket is ready: a timed action (`waiting {why, rocket}`,
+    `until_tick`; `ticks` 1..36000, default 3600) that runs the whole call in the tick the rocket is there (ready, for
+    a launch); outcome `fed` (`last.result` holds the reply), `failed` (`last.error`) or `timed_out`. `--wait` follows
+    it.
+  - `fh call load_silo --args '{"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","position":{"x":65.5,"y":14.5},"to_total":true}'`
+- `preflight {position, items?, platform?, surface?}` (read; Gemini, shift12) shows what the silo's rocket would carry,
+  by remote view (a visible chunk):
+  - `cargo {items, rows [{item, count, each_kg, kg, stacks}], kg, lift_kg, free_kg, over_kg, slots, free_slots}`,
+    `rocket`, `rocket_ready`, `auto_requests`;
+  - with `items`: `order [{item, want, aboard, lacks, fits, you_hold}]` (`fits`: how many of what it lacks the rocket
+    takes by weight and slots);
+  - with `platform`: `platform {name, where, arrived, requests [{item, min, hub, aboard, lacks_after}], not_requested}`:
+    its hub's requests importing from this planet (active sections), what the hub holds, what this rocket carries, and
+    what they lack after it; `not_requested` is cargo it does not request from here;
+  - `launch_now`: `ok`, or `refused: ` and what `launch` would refuse now (the rocket not ready, overweight, empty, the
+    platform not stopped here); `line`, all of it in one line.
+  - `fh call preflight --args '{"items":{"agricultural-science-pack":1000},"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`
 - supply and science count a silo's rocket once, as silo cargo (`silo rockets N`); its output inventory is that rocket,
   which was also counted under machine outputs (Astra, 06:29: 90 counted for 45 in the rocket).
 - `inspect` of an entity with module slots shows `modules {inventory_index, slots, contents}`. A blueprint entity's
