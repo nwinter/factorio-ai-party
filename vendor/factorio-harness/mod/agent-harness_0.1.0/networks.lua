@@ -19,14 +19,14 @@
 -- 5 s, 1 min and 10 min.
 return function(api)
   local M = {}
-  local SAMPLE, MAP_TICKS, WINDOW = 300, 1800, 18000
+  local SAMPLE, MAP_TICKS, WATCH_TICKS, WINDOW = 300, 18000, 1800, 18000
   local HIGH, HIGH_TICKS = 0.85, 7200
   local BUSY_TICKS, FUEL_LOW, UNFILLED_TICKS = 36000, 10, 3600
   -- boiler_fuel steps (Haiku, shift09: 10 minutes left was too late to feed by hand): told at 20, again at 10 and 5.
   local FUEL_STEPS, FUEL_RADIUS = {20, 10, 5}, 64
   local FUEL_SCAN = 300   -- chests and belt tiles read per alert (00:26 rule: bounded reads on the live world)
   local FUELS = {'coal', 'solid-fuel', 'wood', 'rocket-fuel', 'nuclear-fuel'}
-  local MAX_SCAN, MAX_GHOSTS, VIEW_TICKS, NEAR_BOILER = 20000, 4000, 1800, 12
+  local MAX_SCAN, MAX_GHOSTS, VIEW_TICKS, NEAR_BOILER = 20000, 4000, 3600, 12   -- the view: kept 60 s (task-statuscost)
   local GENERATORS = {'generator', 'burner-generator', 'solar-panel', 'accumulator', 'fusion-generator', 'electric-energy-interface'}
   local MACHINES = {'assembling-machine', 'furnace', 'mining-drill', 'lab', 'inserter', 'beacon', 'radar', 'roboport', 'pump',
     'electric-turret', 'rocket-silo', 'agricultural-tower', 'asteroid-collector', 'lamp', 'loader', 'loader-1x1', 'offshore-pump'}
@@ -136,10 +136,14 @@ return function(api)
     end
     n.busy, n.unfilled = busy, unfilled
   end
+  -- task-statuscost: the requests are looked at every 30 s (unfilled for 60 s,
+  -- no idle robot for 10 min); the poles are mapped again every 5 min in the
+  -- background, and by the view when its map is older than the view's age.
   function M.tick(tick)
     if tick % SAMPLE ~= 0 then return end
     local n = store()
-    if not n.map_tick or tick - n.map_tick >= MAP_TICKS then map_poles(n); watch_logistics(n) end
+    if not n.map_tick or tick - n.map_tick >= MAP_TICKS then map_poles(n) end
+    if not n.watch_tick or tick - n.watch_tick >= WATCH_TICKS then watch_logistics(n); n.watch_tick = tick end
     sample(n)
   end
 
@@ -455,12 +459,13 @@ return function(api)
     return {by=by, used=used, line=string.format('%s turrets: %s; ammo used in the last hour: %s', surface.name, t ~= '' and t or 'none', u ~= '' and u or 'none')}
   end
 
-  -- Everything for one force, kept 30 s so every peer and reply sees the same.
+  -- Everything for one force, kept 60 s so every peer and reply sees the same.
   local function view(f)
     local n = store()
     local v = n.views[f.name]
     if v and game.tick - v.tick < VIEW_TICKS then return v end
-    if not n.map_tick then map_poles(n); watch_logistics(n); sample(n) end
+    if not n.map_tick then map_poles(n); watch_logistics(n); n.watch_tick = game.tick; sample(n)
+    elseif game.tick - n.map_tick >= VIEW_TICKS then map_poles(n); sample(n) end
     v = {tick=game.tick, surfaces={}}
     for _, surface in ipairs(surfaces()) do
       local e, l, t = electric(n, f, surface), logistic(n, f, surface), turrets(f, surface)
@@ -709,7 +714,7 @@ return function(api)
         .. 'logistic_area and construction_area {x0, y0, x1, y1}, logistic_robots and construction_robots {total, idle, working, '
         .. 'charging, waiting}, logistic, logistic_idle, none_idle_s, construction, construction_idle, unfilled, unfilled_items, '
         .. 'ghosts, line}], turrets {by_name, '
-        .. 'ammo_used_1h, line}}]; as_of (kept 30 s); note (how each number is counted). Electric networks over 2 poles or with '
+        .. 'ammo_used_1h, line}}]; as_of (kept 60 s); note (how each number is counted). Electric networks over 2 poles or with '
         .. 'a generator. Read only'},
   }
   return M

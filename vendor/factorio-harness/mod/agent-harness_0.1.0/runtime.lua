@@ -5704,5 +5704,16 @@ M.profile.wrap(M,{{M.board,'team','board.team'},{M.ground,'unseen','ground.unsee
   {clock,'tick','clock.tick'},{clock,'after_dispatch','clock.after_dispatch'},{threat,'on_damaged','threat.on_damaged'},{threat,'on_group','threat.on_group'},
   {M.players,'on_event','players.on_event'},{M.vehicles,'tick','vehicles.tick'},{M.ground,'tick','ground.tick'},{survey,'sample','survey.sample'},
   -- a full status's scans (each cached; these show when one ran and what it cost)
-  {survey,'summary','survey.summary'},{threat,'summary','threat.summary'},{pipes,'overlong','pipes.overlong'},{M.ground,'alerts','ground.alerts'}})
+  {survey,'summary','survey.summary'},{threat,'summary','threat.summary'},{pipes,'overlong','pipes.overlong'},{M.ground,'alerts','ground.alerts'},
+  -- the rest of a full status, per call (task-statuscost: a full status as haiku took 73.9 ms at 00:27)
+  {threat,'alerts','threat.alerts'},{M.where,'team','where.team'},{M.belt,'note','belt.note'},{M.orders,'brief','orders.brief'},
+  -- every reply's team block and hooks (dispatch): the parts inside board.team, then the rest
+  {M.pushalerts,'lines','pushalerts.lines'},{M.pushalerts,'claim_lines','pushalerts.claim_lines'},{M.networks,'alert_groups','networks.alert_groups'},
+  {M.networks,'lines','networks.lines'},{M.platalerts,'lines','platalerts.lines'},{M.drops,'lines','drops.lines'},{M.research,'lines','research.lines'},
+  {threat,'watch','threat.watch'},{M.selfview,'review_due','selfview.review_due'},{M.selfview,'retro','selfview.retro'},
+  {M.selfview,'request','selfview.request'},{M.idle,'request','idle.request'},{M.tells,'operator_lines','tells.operator_lines'},
+  {M.orders,'line','orders.line'},{M.platalerts,'note','platalerts.note'},{M.visuals,'worked','visuals.worked'},{M.claims,'worked','claims.worked'},
+  {M.carry,'carry','carry.carry'},
+  -- the heavy reads (task-statuscost item 3)
+  {M.supply,'scan','supply.scan'},{M.supply,'chain','supply.chain'},{M.networks,'read','networks.read'}})
 return M
