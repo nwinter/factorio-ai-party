@@ -37,7 +37,9 @@ local silo={valid=true,type='rocket-silo',position={x=20.5,y=20.5},rocket_silo_s
   get_inventory=function() return silo_cargo end,launch_rocket=function(d) launched=d; return true end}
 local p={index=1,force={platforms={platform},recipes={}},character={get_logistic_sections=function() return char_sections end},
   surface={planet={name='nauvis'},find_entities_filtered=function() return {silo} end}}
+local space_state={}
 local space=dofile('mod/agent-harness_0.1.0/space.lua'){
+  state=function() return space_state end,
   position=function(v) return v end,
   integer=function(v,d,lo,hi,name) v=v==nil and d or v; assert(type(v)=='number' and v>=lo and v<=hi,name..' out of range'); return v end,
   remote_entity=function(_,a) assert(a.position.x==20.5,'no entity of ours at that position'); return silo end,
@@ -534,4 +536,48 @@ platform.schedule={current=1,records={{station='vulcanus'},{station='nauvis'}}}
 row=space.platforms(p,{}).platforms[1]
 eq(row.next_stop,'nauvis'); eq(row.leg,nil); eq(row.at,'vulcanus')
 eq(space.flight(platform).next_stop,'nauvis')
+-- Each stop with its wait conditions, where it waits (with how far each is) or flies to, and the next one
+-- (operator 10:53, Gemini). The arrival tick comes from the watcher (once a second from the harness tick).
+do
+  local saved={sched=platform.schedule,state=platform.state,loc=platform.space_location,conn=platform.space_connection,hub=platform.hub}
+  game.tick=1000
+  game.forces={player={platforms={platform}}}
+  platform.state=6; platform.space_location={name='vulcanus'}; platform.space_connection=nil
+  platform.schedule={current=1,records={
+    {station='vulcanus',wait_conditions={{type='time',ticks=1800},{type='item_count',compare_type='and',
+      condition={first_signal={type='item',name='calcite'},comparator='≥',constant=500}}}},
+    {station='nauvis',wait_conditions={{type='all_requests_satisfied'},{type='inactivity',ticks=600,compare_type='or'}}}}}
+  local hub_counts={calcite=120,['iron-plate']=40}
+  local reqs={sections_count=1,get_section=function() return {active=true,filters={
+    {value={name='iron-plate',quality='normal'},min=100},{value={name='calcite',quality='normal'},min=50},{value={name='coal',quality='normal'},min=0}}} end}
+  platform.hub={valid=true,position={x=0,y=0},get_logistic_sections=function() return reqs end,
+    get_inventory=function() return {get_item_count=function(it) return hub_counts[type(it)=='table' and it.name or it] or 0 end,get_contents=function() return {} end} end}
+  -- First look after a deploy: stopped before the harness watched.
+  space.watch_stops(1000)
+  game.tick=1600
+  local st=space.stops(platform)
+  eq(st[1],'1 vulcanus (waiting here): time 30s: waited at least 10s (stopped before the harness looked) and item_count calcite >= 500: the hub holds 120, 380 to go')
+  eq(st[2],'2 nauvis (next): all_requests_satisfied or inactivity 10s')
+  -- Flying on, then arriving: the countdown from the arrival.
+  platform.state=2; platform.space_location=nil; platform.space_connection={from={name='vulcanus'},to={name='nauvis'},length=1000}
+  platform.schedule.current=2
+  space.watch_stops(1700)
+  eq(space.stops(platform)[2],'2 nauvis (flying to it): all_requests_satisfied or inactivity 10s')
+  platform.state=6; platform.space_location={name='nauvis'}; platform.space_connection=nil
+  space.watch_stops(2000)
+  game.tick=2300
+  platform.get_schedule=function() return {tick_of_last_activity=2200} end
+  st=space.stops(platform)
+  eq(st[2],'2 nauvis (waiting here): all_requests_satisfied: 1 of 2 requests unmet (iron-plate 40/100) or inactivity 10s: 2s without activity, 8s left')
+  eq(st[1],'1 vulcanus (next): time 30s and item_count calcite >= 500')
+  platform.schedule.records[2].wait_conditions={{type='time',ticks=1800}}
+  eq(space.stops(platform)[2],'2 nauvis (waiting here): time 30s: 25s left')
+  -- The maximum time reads as such.
+  platform.schedule.records[2].wait_conditions={{type='time',ticks=2147483647}}
+  eq(space.stops(platform)[2],'2 nauvis (waiting here): time the maximum (about 414 days)')
+  -- The platforms row carries them.
+  eq(space.platforms(p,{}).platforms[1].stops[2],'2 nauvis (waiting here): time the maximum (about 414 days)')
+  platform.schedule,platform.state,platform.space_location,platform.space_connection,platform.hub=saved.sched,saved.state,saved.loc,saved.conn,saved.hub
+  platform.get_schedule=nil
+end
 print('space: ok')

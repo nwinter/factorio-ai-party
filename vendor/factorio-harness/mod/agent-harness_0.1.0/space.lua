@@ -303,6 +303,9 @@ return function(api)
           end
         end
         row.thrusters=string.format('%d, lowest tank %d%%',#thrusters,math.floor(low*100))
+        -- What they lack and the chain behind it (thrust.lua): a line per input under half full.
+        local t=api.thrust and try(function() return api.thrust(pl) end)
+        row.thrust_inputs=t and #t.lines>0 and t.lines or nil
       end
       local ghosts=try(function() return s.count_entities_filtered{type={'entity-ghost','tile-ghost'}} end)
       row.unbuilt_ghosts=ghosts and ghosts>0 and ghosts or nil
@@ -397,12 +400,124 @@ return function(api)
     for _,line in ipairs(try(function() return tiles.stalled(pl) end) or {}) do out[#out+1]=line end
     return #out>0 and out or nil
   end
+  -- When each platform stopped where it is (operator 10:53, Gemini: each stop's
+  -- wait with time left): polled once a second from the harness tick and kept
+  -- in storage; a stop already under way when the harness first looked has no
+  -- arrival tick.
+  function M.watch_stops(tick)
+    local st=api.state and api.state()
+    if not st then return end
+    st.platform_stops=st.platform_stops or {}
+    local seen={}
+    for _,f in pairs(game.forces) do
+      for _,pl in pairs(try(function() return f.platforms end) or {}) do
+        if pl.valid then
+          seen[pl.index]=true
+          local here=pl.state==defines.space_platform_state.waiting_at_station and try(function() return pl.space_location.name end) or false
+          local r=st.platform_stops[pl.index]
+          if not r then st.platform_stops[pl.index]={at=here,first=tick}
+          elseif r.at~=here then st.platform_stops[pl.index]={at=here,tick=tick} end
+        end
+      end
+    end
+    for index in pairs(st.platform_stops) do if not seen[index] then st.platform_stops[index]=nil end end
+  end
+  local function secs(t) t=math.max(0,math.floor(t/60+0.5)); return t>=120 and string.format('%dm%02ds',math.floor(t/60),t%60) or t..'s' end
+  local function cond_text(c)
+    if type(c)~='table' then return '' end
+    local first=c.first_signal and c.first_signal.name or '?'
+    local right=c.second_signal and c.second_signal.name or tostring(c.constant or 0)
+    local cmp=({['≥']='>=',['≤']='<=',['≠']='!='})[c.comparator] or c.comparator or '<'
+    return first..' '..cmp..' '..right
+  end
+  local function compare(a,cmp,b)
+    if cmp=='<' then return a<b elseif cmp=='>' then return a>b elseif cmp=='=' then return a==b
+    elseif cmp=='>=' or cmp=='≥' then return a>=b elseif cmp=='<=' or cmp=='≤' then return a<=b else return a~=b end
+  end
+  -- The hub's requests it does not hold yet: "iron-plate 420/1000", most short first.
+  local function unmet(pl)
+    local hub=pl.hub
+    local inv=hub and hub.valid and try(function() return hub.get_inventory(defines.inventory.hub_main) end)
+    local secs_=hub and hub.valid and try(function() return hub.get_logistic_sections() end)
+    local rows,total={},0
+    for i=1,(secs_ and secs_.sections_count or 0) do
+      local sec=secs_.get_section(i)
+      if sec.active~=false then
+        for _,f in ipairs(sec.filters or {}) do
+          local v=f.value
+          local name=type(v)=='table' and v.name or v
+          if name and (f.min or 0)>0 then
+            total=total+1
+            local n=inv and try(function() return inv.get_item_count({name=name,quality=type(v)=='table' and v.quality or 'normal'}) end) or 0
+            if n<f.min then rows[#rows+1]={name=name,n=n,min=f.min} end
+          end
+        end
+      end
+    end
+    table.sort(rows,function(x,y) return x.min-x.n>y.min-y.n end)
+    return rows,total
+  end
+  -- One wait condition in words; at the stop where the platform waits, how far it is.
+  local function wait_text(pl,w,here,arrived)
+    local t=w.type or '?'
+    local text=t
+    if w.ticks then text=t..' '..(w.ticks>=2147483647 and 'the maximum (about 414 days)' or secs(w.ticks)) end
+    if w.condition and (t=='item_count' or t=='circuit' or t=='fluid_count') then text=t..' '..cond_text(w.condition) end
+    if not here then return text end
+    if t=='time' and w.ticks and w.ticks<2147483647 then
+      if arrived.tick then text=text..': '..secs(w.ticks-(game.tick-arrived.tick))..' left'
+      else text=text..string.format(': waited at least %s (stopped before the harness looked)',secs(game.tick-(arrived.first or game.tick))) end
+    elseif t=='inactivity' and w.ticks then
+      local last=try(function() return pl.get_schedule().tick_of_last_activity end) or 0
+      local since=game.tick-math.max(last,arrived.tick or arrived.first or 0)
+      text=text..string.format(': %s without activity, %s left',secs(since),secs(w.ticks-since))
+    elseif t=='item_count' and w.condition and w.condition.first_signal and not w.condition.second_signal then
+      local c=w.condition
+      local hub=pl.hub
+      local inv=hub and hub.valid and try(function() return hub.get_inventory(defines.inventory.hub_main) end)
+      local n=inv and try(function() return inv.get_item_count({name=c.first_signal.name,quality=c.first_signal.quality or 'normal'}) end) or 0
+      local goal=c.constant or 0
+      local met=compare(n,c.comparator or '<',goal)
+      text=text..string.format(': the hub holds %d%s',n,met and ' (met)' or ((c.comparator=='>=' or c.comparator=='≥' or c.comparator=='>') and string.format(', %d to go',goal-n+((c.comparator=='>') and 1 or 0)) or ''))
+    elseif t=='all_requests_satisfied' or t=='any_request_satisfied' or t=='any_request_not_satisfied' or t=='request_satisfied' or t=='request_not_satisfied' then
+      local rows,total=unmet(pl)
+      local parts={}
+      for i=1,math.min(4,#rows) do parts[i]=string.format('%s %d/%d',rows[i].name,rows[i].n,rows[i].min) end
+      text=text..string.format(': %d of %d requests unmet%s',#rows,total,#parts>0 and ' ('..table.concat(parts,', ')..(#rows>4 and ', ...' or '')..')' or '')
+    end
+    return text
+  end
+  -- Each stop of the schedule: its wait conditions, where the platform waits
+  -- (with how far each condition is) or which stop it flies to, and the next one.
+  function M.stops(pl)
+    local sch=try(function() return pl.schedule end)
+    local records=sch and sch.records or {}
+    if #records==0 then return nil end
+    local cur=sch.current or 1
+    local here=try(function() return pl.space_location.name end)
+    local waiting=pl.state==defines.space_platform_state.waiting_at_station and records[cur] and records[cur].station==here
+    local st=api.state and api.state()
+    local arrived=st and st.platform_stops and st.platform_stops[pl.index] or {}
+    if arrived.at~=here then arrived={} end
+    local nxt=waiting and cur%#records+1 or cur
+    local out={}
+    for i,rec in ipairs(records) do
+      local ws={}
+      for k,w in ipairs(rec.wait_conditions or {}) do
+        local text=wait_text(pl,w,waiting and i==cur,arrived)
+        ws[#ws+1]=(k>1 and (w.compare_type=='or' and 'or ' or 'and ') or '')..text
+      end
+      local tag=waiting and i==cur and 'waiting here' or (i==nxt and (waiting and 'next' or 'flying to it')) or nil
+      out[i]=string.format('%d %s%s: %s',i,rec.station or '?',tag and ' ('..tag..')' or '',#ws>0 and table.concat(ws,' ') or 'no wait condition')
+    end
+    return out
+  end
   function M.platforms(p,a)
     local out={platforms={}}
     for _,pl in pairs(p.force.platforms) do
       if pl.valid and (a.platform==nil or pl.name==a.platform) then
         local row={name=pl.name,state=platform_states[pl.state],at=location(pl),paused=pl.paused or nil,
-          schedule=schedule_text(pl),deleting=pl.scheduled_for_deletion and pl.scheduled_for_deletion>0 or nil,
+          schedule=schedule_text(pl),stops=try(function() return M.stops(pl) end),deleting=pl.scheduled_for_deletion and pl.scheduled_for_deletion>0 or nil,
           weight=pl.weight and math.floor(pl.weight/1000) or nil}
         for k,v in pairs(M.flight(pl) or {}) do row[k]=v end
         local hub=pl.hub
@@ -924,7 +1039,7 @@ return function(api)
       set='array of {item,min,max?,quality?,from? (planet to import from, platform hubs)}; replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       active='boolean: switch the section on or off (the GUI\'s checkbox; a section that is off requests nothing)',
       returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"]}], changed_section, note (sections that are off but hold requests); on a platform hub: over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); call with no set/clear/active to just read'},
-    platforms={platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface)',returns='platforms [{name, state, at (location or from->to %), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to, leg_km, leg_left_km, eta_min (at the current speed), schedule, hub, hub_items, hub_slots (free of all), hub_trash, hub_trash_note (where the game sends the trash: kept in flight; at a planet stop down in cargo pods to its landing pad, or with none as cargo-pod containers near (0,0)), requests, requests_off (in hub sections switched off: not requested), leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
+    platforms={platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), thrust_inputs (a line per thruster input under half full: the pumps, tanks and machines behind it and why they stop, down to the hub\'s asteroid chunks), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface)',returns='platforms [{name, state, at (location or from->to %), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to, leg_km, leg_left_km, eta_min (at the current speed), schedule, stops (each stop with its wait conditions: waiting here with how far each is (time left, inactivity, the hub\'s count for item_count, unmet requests), flying to it, next), hub, hub_items, hub_slots (free of all), hub_trash, hub_trash_note (where the game sends the trash: kept in flight; at a planet stop down in cargo pods to its landing pad, or with none as cargo-pod containers near (0,0)), requests, requests_off (in hub sections switched off: not requested), leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_zero|time|inactivity|..., ticks?, compare=and|or}]}; [] clears',current='1-based stop to head for (default 1)',paused='boolean: pause/unpause thrust and the schedule (paused on a route, the platform stays among its asteroids and drifts back; the reply\'s note says so)'},
     drop={platform='platform name (default: the one you are aboard)',items='array of 1..20 {item,count,quality?} from the hub inventory',position='optional {x,y} to land near when the planet has no landing pad of ours (default: a bot\'s last spot there, else the spawn point)',to='optional teammate name or list: told where it landed too, in their team block',

@@ -27,6 +27,7 @@ local C=dofile('mod/agent-harness_0.1.0/construction.lua'){
     local step=math.min(.25,d);p.navigated=(p.navigated or 0)+1
     p.position={x=p.position.x+(nav.position.x-p.position.x)/d*step,y=p.position.y+(nav.position.y-p.position.y)/d*step}
   end,
+  hand_mining_ticks=function(_,e) return e.mining_ticks or 30 end,
   build=function(_,a)
     assert(distance(p.position,a.position)<=p.build_distance)
     assert(key(a.position)~=blocked,'placement blocked');assert(stock>0,'item is not in main inventory')
@@ -83,6 +84,93 @@ p.position={x=37.3,y=.5}
 local pushed=C.plan(p,{points={{x=40.5,y=.5},{x=42.5,y=.5}}})
 for i=1,120 do p.position={x=37.3-(i%3)*0.2,y=.5}; eq(C.tick(p,pushed),nil); game.tick=game.tick+1 end
 p.position={x=37.3,y=.5}; eq(C.tick(p,pushed),"blocked")
+-- Trees and rocks on the line are mined by hand as it goes (Sonnet 10:50: build_path stopped at every rock of a
+-- Vulcanus line), one at a time, standing still for the hand-mining time, and counted by name.
+local took,full={},false
+p.can_reach_entity=function(e) return distance(p.position,e.position)<=2.7 end
+p.mine_entity=function(e,force) eq(force,false); if full then return false end; e.valid=false; took[#took+1]={name=e.name,tick=game.tick}; return true end
+local function run2(a)
+  for _=1,3000 do
+    game.tick=game.tick+1; p.target=nil
+    local outcome=C.tick(p,a); if outcome then return outcome end
+    if not a.nav and not a.mining and p.target then
+      local d=distance(p.position,p.target)
+      if d>0.01 then local step=math.min(.25,d); p.position={x=p.position.x+(p.target.x-p.position.x)/d*step,y=p.position.y+(p.target.y-p.position.y)/d*step} end
+    end
+  end
+  error('controller did not complete')
+end
+local rock={valid=true,type='simple-entity',name='big-rock',minable=true,force={name='neutral'},position={x=45.5,y=0.5},
+  bounding_box={left_top={x=44.6,y=-0.4},right_bottom={x=46.4,y=1.4}},mining_ticks=40}
+local tree={valid=true,type='tree',name='tree-08',minable=true,force={name='neutral'},position={x=48.2,y=0.9},
+  bounding_box={left_top={x=47.9,y=0.6},right_bottom={x=48.5,y=1.2}},mining_ticks=20}
+local mine_tree={valid=true,type='tree',name='tree-08',minable=false,force={name='neutral'},position={x=49.5,y=0.5},
+  bounding_box={left_top={x=49.2,y=0.2},right_bottom={x=49.8,y=0.8}}}
+local farm={valid=true,type='plant',name='yumako-tree',minable=true,force={name='player'},position={x=50.5,y=0.5},
+  bounding_box={left_top={x=50.2,y=0.2},right_bottom={x=50.8,y=0.8}}}
+obstacles={rock,tree,mine_tree,farm}
+p.position={x=41.5,y=.5}; stock=100
+local start,asked=game.tick,p.path_requests or 0
+local cleared=C.plan(p,{points={{x=43.5,y=.5},{x=50.5,y=.5}}})
+eq(run2(cleared),'path_built'); eq(cleared.placed,8); eq(cleared.mined,2)
+-- out of reach when found: it walked next to it with the pathfinder
+assert((p.path_requests or 0)>asked)
+-- a tree that cannot be mined and a farm's own plant are left alone (the build decides about them)
+eq(#took,2); eq(took[1].name,'big-rock'); eq(took[2].name,'tree-08')
+assert(took[1].tick-start>=40,'the rock took its mining time')
+eq(C.cleared_line(cleared),'big-rock*1 tree-08*1')
+-- standing still while it mined: no belt was placed past the rock before it went
+assert(placed['45.5,0.5'] and placed['46.5,0.5'])
+-- A full inventory leaves the rock standing and ends the build, saying so.
+local rock2={valid=true,type='simple-entity',name='huge-rock',minable=true,force={name='neutral'},position={x=53.5,y=0.5},
+  bounding_box={left_top={x=52.6,y=-0.4},right_bottom={x=54.4,y=1.4}},mining_ticks=30}
+obstacles={rock2}; full=true; p.position={x=51.5,y=.5}
+p.get_main_inventory=function() return {count_empty_stacks=function() return 0 end} end
+local stuck=C.plan(p,{points={{x=52.5,y=.5},{x=55.5,y=.5}}})
+eq(run2(stuck),'inventory_full'); assert(rock2.valid); eq(stuck.next_index,1)
+assert(stuck.error:find('inventory full: mining huge-rock at (53.5,0.5)',1,true),stuck.error)
+-- With room left, a mine that did not take it is a failure of its own.
+p.get_main_inventory=function() return {count_empty_stacks=function() return 5 end} end
+p.position={x=51.5,y=.5}
+local odd=C.plan(p,{points={{x=52.5,y=.5},{x=55.5,y=.5}}})
+eq(run2(odd),'build_failed'); assert(odd.error:find('mining huge-rock at (53.5,0.5) did not take it',1,true),odd.error)
+p.get_main_inventory=nil
+full=false
+-- No way to get next to it: blocked, naming it.
+local walled_rock={valid=true,type='simple-entity',name='big-rock',minable=true,force={name='neutral'},position={x=58.5,y=0.5},
+  bounding_box={left_top={x=57.6,y=-0.4},right_bottom={x=59.4,y=1.4}},mining_ticks=30}
+obstacles={walled_rock}; p.position={x=55.5,y=.5}; p.walled=true
+local fenced=C.plan(p,{points={{x=56.5,y=.5},{x=60.5,y=.5}}})
+eq(run2(fenced),'blocked'); assert(walled_rock.valid)
+assert(fenced.error:find('could not walk within reach of big-rock at (58.5,0.5) in the way of tile 2 to mine it: blocked',1,true),fenced.error)
+p.walled=nil
+-- A building in the way still stops it (the build's own refusal), with nothing mined.
+obstacles={}; p.position={x=61.5,y=2.5}; blocked='64.5,0.5'
+local wall=C.plan(p,{points={{x=62.5,y=.5},{x=66.5,y=.5}}})
+eq(run2(wall),'build_failed'); eq(wall.next_index,3); eq(wall.mined,nil); blocked=nil
+-- A tree the first look misses (its box ends 0.25 short of the belt's) but the build refuses: a wider look finds it.
+local near_tree={valid=true,type='tree',name='tree-02',minable=true,force={name='neutral'},position={x=71.5,y=-0.5},
+  bounding_box={left_top={x=71.2,y=-0.75},right_bottom={x=71.8,y=-0.15}},mining_ticks=10}
+obstacles={near_tree}; p.position={x=69.5,y=.5}; blocked='71.5,0.5'
+local mine=p.mine_entity
+p.mine_entity=function(e,f) local r=mine(e,f); if e==near_tree then blocked=nil end; return r end
+local edge=C.plan(p,{points={{x=70.5,y=.5},{x=72.5,y=.5}}})
+eq(run2(edge),'path_built'); eq(edge.mined,1); eq(near_tree.valid,false)
+p.mine_entity=mine
+-- Off the line with a tree across the walk: no progress for 120 ticks mines it instead of stopping.
+local across={valid=true,type='tree',name='tree-05',minable=true,force={name='neutral'},position={x=78.6,y=1.8},
+  bounding_box={left_top={x=78.3,y=1.5},right_bottom={x=78.9,y=2.1}},mining_ticks=10}
+obstacles={across}; p.position={x=77.5,y=2.5}
+local walk=C.plan(p,{points={{x=80.5,y=.5},{x=81.5,y=.5}}})
+local outcome2,mined_at
+for i=1,600 do
+  outcome2=C.tick(p,walk); if outcome2 then break end
+  if walk.mined==1 and not mined_at then mined_at=i end
+  game.tick=game.tick+1
+end
+eq(walk.mined,1); eq(across.valid,false); eq(outcome2,'blocked'); assert(mined_at>120,mined_at)
+eq(walk.error,'walking made no progress for 120 ticks')
+obstacles={}
 -- Ghost construction: build everything in reach before walking, walk to stand
 -- points (off ghost footprints) that cover the most ghosts, skip and report
 -- missing items, retry a blocked ghost once after moving, then report it.

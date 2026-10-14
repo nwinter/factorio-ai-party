@@ -226,7 +226,7 @@ local steps={}
 for i=1,7 do steps[i]={action='wait_ticks',args={ticks=600},label='w'..i} end
 r=sol('queue_submit',{steps=steps,start=false})
 eq(#r.pending,5); eq(r.pending_count,7); assert(r.pending[1]:find('wait_ticks [w1]',1,true),r.pending[1])
-eq(r.note,'queue_status shows every step in full')
-eq(#sol('queue_status').pending,7)
+eq(r.note,'queue_status: the active step, the next one and the last 3 in full (history, pending: a count or "all")')
+eq(#sol('queue_status').pending,1); eq(sol('queue_status').pending_count,7); eq(#sol('queue_status',{pending='all'}).pending,7)
 eq(sol('queue_cancel').pending_count,0)
 print('minds: ok')

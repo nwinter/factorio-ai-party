@@ -534,6 +534,9 @@ test('a walk that gave up says why on the error line',async()=>{
 test('move_to and drive --wait show gaps, escapes, enemies gone around; no_safe_route fails with why',async()=>{
   // Sol (shift09 03:13): trapped in gaps between pipes and machines; Opus (03:20): walked past a nest, a tank stuck on cliffs.
   const ends=[
+    // round1050f: a belt line that mined the rocks and trees in its way.
+    {action:'build_path',last:{kind:'build_path',outcome:'path_built',placed:30,skipped:0,next_index:31,total:30,cleared:3,cleared_names:'big-volcanic-rock*2 tree-08*1'},code:0,shown:['placed','cleared','cleared_names'],lines:['big-volcanic-rock*2 tree-08*1']},
+    {action:'build_path',last:{kind:'build_path',outcome:'build_failed',placed:4,skipped:0,next_index:5,total:30,next_position:{x:24.5,y:0.5},error:'placement blocked by stone-furnace (24,1)',cleared:1,cleared_names:'huge-rock*1'},code:1,shown:['placed','next_index','next_position','cleared'],lines:['Control ended: build_failed: placement blocked by stone-furnace (24,1)']},
     // collectwait: a collect waiting at a machine, what it took against what the inserters took.
     {action:'collect',last:{kind:'gather',outcome:'collected',took:'iron-gear-wheel*11',made:'iron-gear-wheel*10',inserters_took:'iron-gear-wheel*3',crafts:10,waited_s:5},code:0,shown:['took','made','inserters_took','crafts','waited_s']},
     {action:'move_to',last:{kind:'move_to',outcome:'arrived_near',pocket:'(55,21) lies in a gap narrower than 0.7 tiles (assembling-machine-2 (53.5,22.5)) that no path led into; stopped at (51.5,24.4), 4.8 tiles from it (squeeze=true walks in)'},code:0,shown:['pocket']},

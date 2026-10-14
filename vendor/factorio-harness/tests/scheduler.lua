@@ -36,16 +36,23 @@ tick(); tick(); check(#calls==2)
 tick(); check(calls[3]=='craft'); check(combat[1]~=nil)
 q=h.queue_status(p); check(#q.history==3 and not q.active)
 -- Changing calls return only the newest 3 entries (shake3: Opus's queue cancel
--- printed 60+); queue_status keeps them all.
+-- printed 60+); so does queue_status (Sol 10:50: a long done history hid the
+-- stalled step), with history: N or 'all' for more.
 h.queue_submit(p,{steps={{action='craft'}}}); tick()
 q=h.queue_submit(p,{steps={},start=false}); check(#q.history==3 and q.history_total==4 and q.history[3].action=='craft')
-check(#h.queue_status(p).history==4 and h.queue_status(p).history_total==nil)
+check(#h.queue_status(p).history==3 and h.queue_status(p).history_total==4 and h.queue_status(p).history[3].action=='craft')
+check(#h.queue_status(p,{history='all'}).history==4 and #h.queue_status(p,{history=1}).history==1)
+check(h.queue_status(p,{history=1}).history[1].action=='craft' and #h.queue_status(p,{history=0}).history==0)
+check(not pcall(h.queue_status,p,{history=-1}) and not pcall(h.queue_status,p,{history=65}) and not pcall(h.queue_status,p,{pending='some'}))
 -- Edit only pending steps and reject stale revisions before side effects.
 q=h.queue_submit(p,{steps={{action='wait_ticks',args={ticks=10}},{action='craft'}}})
 tick(); q=h.queue_status(p)
 local revision=q.revision
 check(not pcall(h.queue_edit,p,{expected_revision=revision-1,index=1,remove=1,steps={}}))
-check(h.queue_status(p).active.action=='wait_ticks')
+-- The active step in full with how long it has run; the next step; the count.
+check(h.queue_status(p).active.action=='wait_ticks' and h.queue_status(p).active.args.ticks==10)
+tick(); check(h.queue_status(p).active.running_s==0)
+check(h.queue_status(p).pending[1].action=='craft' and h.queue_status(p).pending_count==1)
 q=h.queue_edit(p,{expected_revision=revision,index=1,remove=1,steps={{action='walk'}}})
 check(#q.pending==1 and q.pending[1].action=='walk')
 q=h.queue_cancel(p,{clear=false})
@@ -66,11 +73,11 @@ h.queue_cancel(p,{})
 -- Instant work is bounded per tick.
 local steps={}; for i=1,10 do steps[i]={action='craft'} end
 h.queue_submit(p,{steps=steps});tick();q=h.queue_status(p)
-check(#q.pending==6)
+check(q.pending_count==6 and #q.pending==1 and #h.queue_status(p,{pending='all'}).pending==6 and #h.queue_status(p,{pending=2}).pending==2)
 -- Invalid whole plans must not partially append.
-local count=#q.pending
+local count=q.pending_count
 check(not pcall(h.queue_submit,p,{steps={{action='craft'},{action='unknown'}}}))
-check(#h.queue_status(p).pending==count)
+check(h.queue_status(p).pending_count==count)
 check(not pcall(h.queue_submit,p,{steps={{action='queue_submit'}}}))
 check(not pcall(h.queue_submit,p,{steps={{action='wait_ticks',args={ticks=-1}}}}))
 -- Death/disappearance pauses instead of continuing mutations.
@@ -187,7 +194,7 @@ do
   local lines=cs.round_news(1)
   check(lines and #lines==1); check(lines[1]=='queue loop3 round 1: 3 of 6 steps short: give iron-plate none_held x2, tour coal nothing_collected')
   check(cs.round_news(1)==nil)
-  local h=cs.handlers.queue_status(p).history
+  local h=cs.handlers.queue_status(p,{history='all'}).history
   check(h[4].action=='give' and h[4].ok and h[4].result.short==true) -- the allowed short is still in the history
   check(h[5].action=='tour' and h[5].ok and h[5].result.short==true)
   for _=1,70 do ctick() end

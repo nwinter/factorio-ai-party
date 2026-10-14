@@ -110,7 +110,7 @@ local step=q.active
 -- configure on a platform (remote view): the plan keeps running, the filter is set.
 local r=astra('configure',{platform='Sunward',position={x=-2.5,y=-4.5},filters={'iron-plate'}})
 eq(r.filters[1],'iron-plate'); eq(aboard.filters[1],'iron-plate')
-q=queue(); eq(q.paused,false); eq(q.active,step,'the same step goes on')
+q=queue(); eq(q.paused,false); eq(q.active.id,step.id,'the same step goes on'); eq(q.active.started_tick,step.started_tick)
 -- configure out of reach by remote view on the planet: the same.
 astra('configure',{position=far.position,filters={'iron-plate'}})
 eq(far.filters[1],'iron-plate'); eq(queue().paused,false)
@@ -148,8 +148,10 @@ end
 for _,name in ipairs({'configure','build','transfer','move_to','mine','rotate','construct','feed'}) do eq(runtime.keeps(name),false,name) end
 eq(runtime.keeps('configure',{platform='Sunward'}),true)
 local me=runtime.lookup(runtime.bots.index_of('astra'))
-eq(runtime.remote(me,'configure',{surface='vulcanus'}),true); eq(runtime.remote(me,'configure',{surface='nauvis'}),false)
+eq(runtime.remote(me,'configure',{surface='vulcanus'}),true)
 eq(runtime.remote(me,'configure',{position=near.position}),false); eq(runtime.remote(me,'configure',{position=far.position}),true)
+-- surface naming the character's own surface is the same as none (Astra 11:01: a refused configure with surface=nauvis paused her queue).
+eq(runtime.remote(me,'configure',{surface='nauvis',position=near.position}),false); eq(runtime.remote(me,'configure',{surface='nauvis',position=far.position}),true)
 eq(runtime.remote(me,'transfer',{position=far.position}),false)
 -- trace is a read, on a platform too (trace.lua through the platform= wrapper).
 eq(runtime.keeps('trace'),true)

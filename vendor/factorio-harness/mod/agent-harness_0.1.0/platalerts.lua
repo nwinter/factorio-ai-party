@@ -15,6 +15,7 @@ return function(api)
   local REPEAT = 5 * 3600        -- a condition that lasts is told again after 5 min
   local DAMAGE_GAP = 3600        -- hit lines at most once a minute per reader and platform
   local HUB_HISTORY = 30         -- hub health samples kept (one per scan)
+  local SLOW_KMS = 5             -- flying under this many km/s on two scans: the thrust alert
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function round(v) return math.floor(v + 0.5) end
   local function ago(ticks)
@@ -171,6 +172,17 @@ return function(api)
         while #r.hub > HUB_HISTORY do table.remove(r.hub, 1) end
       end
     end
+    -- Flying slowly (operator 10:53, Astra): under SLOW_KMS on a route leg, on
+    -- this scan and the one before, with what the thrusters lack (thrust.lua).
+    local moving = try(function() return pl.space_connection end) and pl.state == defines.space_platform_state.on_the_path
+    local speed = try(function() return pl.speed end)
+    if moving and type(speed) == 'number' and speed * 60 < SLOW_KMS then
+      if r.slow_since and game.tick - r.slow_since >= SCAN_TICKS then
+        sc.slow = {kms=math.floor(speed * 600 + 0.5) / 10, thrust=api.thrust and try(function() return api.thrust(pl) end),
+          leg=try(function() return pl.space_connection.from.name .. '->' .. pl.space_connection.to.name end)}
+      end
+      r.slow_since = r.slow_since or game.tick
+    else r.slow_since = nil end
     r.scan = sc
     return sc
   end
@@ -268,6 +280,20 @@ return function(api)
             seen.turrets, seen.turrets_tick = level, game.tick
           end
         else seen.turrets = nil end
+        -- Flying under 5 km/s: which thrusters lack which input, and the chain behind it.
+        if sc.slow then
+          local t = sc.slow.thrust
+          local why
+          if not t or t.count == 0 then why = 'it has no thrusters'
+          elseif #t.lines > 0 then why = table.concat(t.lines, ' | ')
+          else why = string.format('no thruster tank is under half (lowest: %s); %d thruster%s', api.thrust_lowest and api.thrust_lowest(t) or '?', t.count, t.count == 1 and '' or 's') end
+          local key = t and table.concat(t.lines, '|'):gsub('%d+%%', '') or 'none'
+          if key ~= seen.slow_key or game.tick - (seen.slow_tick or -REPEAT) >= REPEAT then
+            lines[#lines+1] = string.format('platform %s flies at %g km/s (under %d%s) on %s: %s', name, sc.slow.kms, SLOW_KMS,
+              sc.slow.kms < 0 and '; backwards along its leg' or '', sc.slow.leg or '?', why)
+            seen.slow_key, seen.slow_tick = key, game.tick
+          end
+        else seen.slow_key = nil end
         -- No repair packs while it takes hits.
         local recent = r.last_hit and game.tick - r.last_hit <= KEEP_MINUTES * 3600
         if sc.packs == 0 and pl.hub and pl.hub.valid and (recent or (sc.health and sc.max and sc.health < sc.max)) then

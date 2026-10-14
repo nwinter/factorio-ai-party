@@ -157,6 +157,8 @@ already targets your character.
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
   open board items). `projects` lists the open projects, one line each with progress, next step and handoff.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
+  `./fh queue status` shows the active step (`running_s`), the next one and the last 3 results; `--args
+  '{"history":"all","pending":10}'` shows more.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` (and `feed {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one
@@ -249,6 +251,9 @@ already targets your character.
 - Landfill on Gleba wetland goes in only where no slipstack, cuttlepop, hairyclubnub, water-cane or stromatolite stands:
   a dry run names them (`blocked by slipstack tree at (x,y): mine it first`); `place_ghosts` marks them for removal
   first (`tile_obstacles_marked`) and `construct` mines them before it lays the landfill.
+- `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'` lists up to 10 (`limit`
+  up to 50) positions where it fits now, nearest first, by the game's build check (`blocked`: positions something
+  stands in). `build_path` mines the trees and rocks in its way by hand as it goes (`last.cleared`, `cleared_names`).
 - `"dry_run":true` on `place_ghosts`, `paste` or `build` places nothing and reports the plan: per entity whether it
   fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
   new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that
@@ -287,8 +292,11 @@ already targets your character.
   enemy spawners and worms within 50 tiles, and how many of our drills are on it.
 - Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,
   blueprints, deconstruction, `circuit_set`, `wire`, `requests`, schedules) leave your character's action, queue and
-  standing orders running. `platforms` and `inspect` of a hub show each platform's `speed_kms`, `leg_left_km`,
-  `eta_min` (at the current speed) and `next_stop`.
+  standing orders running; so does a `configure` its checks refuse. `platforms` and `inspect` of a hub show each
+  platform's `speed_kms`, `leg_left_km`, `eta_min` (at the current speed) and `next_stop`; `stops` lists each stop's wait
+  conditions with time left and items to go where it waits. A platform flying under 5 km/s is an alert naming the
+  thruster input it lacks and the pumps, plants, crushers and chunks behind it (`platforms {platform}`:
+  `thrust_inputs`).
 - `./fh call requests --args '{"platform":"NAME"}'` shows each hub section; `off: true` means it requests nothing
   (`"section":N,"active":true` switches it on), and each request shows the planet it imports from.
 - `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without
