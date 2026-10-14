@@ -12,7 +12,8 @@ import { renderMap } from './view.js';
 import { parseLook } from './look.js';
 import { writeFileSync, readFileSync, rmSync, appendFileSync } from 'node:fs';
 import { formatCompact, finalLine, actionHelp, paginate } from './format.js';
-import { parseDeadline, deadlineText } from './deadline.js';
+import { parseDeadline, deadlineText, timeLeftText } from './deadline.js';
+import { lookaheadDue } from './lookahead.js';
 import { bundleRuntime } from './bundle.js';
 import { startSession, stopSession, sessionConnection, connectSession, type SessionConnection } from './session.js';
 import { BridgeClient, BridgeOutcomeUnknown } from './bridge.js';
@@ -258,6 +259,16 @@ function noteProjects(reply: unknown) {
     }
     writeFileSync(projectsFile, JSON.stringify({at:new Date().toISOString(), lines}) + '\n');
   } catch (error) { process.stderr.write(`projects file: ${String(error)}\n`); }
+}
+// The look-ahead block (Nick 12:35; when: lookahead.ts), shown once in a reply as `lookahead`. FH_LOOKAHEAD_FILE
+// (default .lookahead.json next to the journal) keeps when the workspace's first call came and when it was last shown.
+let lookaheadFile: string | undefined;
+let lookaheadName = '';
+function lookaheadLines(result: Record<string, unknown>): string[] {
+  const lines = Array.isArray(result.lines) ? result.lines.filter((l): l is string => typeof l === 'string') : [];
+  if (deadline !== undefined) lines.push(timeLeftText(deadline));
+  if (typeof result.sentence === 'string') lines.push(result.sentence);
+  return lines;
 }
 // The OPERATOR: lines not yet on stdout, for the head of the next stdout write.
 function operatorHead(): string {
@@ -635,9 +646,29 @@ async function main() {
   }
   operatorFile = process.env.FH_OPERATOR_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.operator-tells.jsonl') : undefined);
   projectsFile = process.env.FH_PROJECTS_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.projects.json') : undefined);
+  lookaheadFile = process.env.FH_LOOKAHEAD_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.lookahead.json') : undefined);
+  lookaheadName = bot ?? (values.journal ? dirname(resolve(values.journal)).split('/').pop() ?? '' : '');
   {
     const inner = harness;
     harness = {request: async (...a: Parameters<Harness['request']>) => { const reply = await inner.request(...a); noteOperator(reply); noteProjects(reply); return reply; }};
+  }
+  // The look-ahead block on a reply when it is due (LOOKAHEAD_MS); the first call of a workspace starts its clock. Read
+  // with peek, so the extra request leaves the agent's team news for its own replies.
+  async function addLookahead(reply: Reply, action: string, args: Record<string, unknown>) {
+    if (!lookaheadFile || !reply.ok || !reply.result || typeof reply.result !== 'object') return;
+    if (args?.peek === true || ['describe','sleep_check','profiles','cameras','lookahead'].includes(action)) return;
+    const now = Date.now();
+    let state: {started: number; last?: number} | undefined;
+    try { state = JSON.parse(readFileSync(lookaheadFile, 'utf8')); } catch { /* the workspace's first call */ }
+    if (!state || typeof state.started !== 'number') {
+      try { writeFileSync(lookaheadFile, JSON.stringify({started:now}) + '\n'); } catch (error) { process.stderr.write(`lookahead file: ${String(error)}\n`); }
+      return;
+    }
+    if (now < lookaheadDue(state, lookaheadName)) return;
+    const block = await harness.request('lookahead', {peek:true});
+    if (!block.ok || !block.result) return;
+    reply.result = {...reply.result, lookahead:lookaheadLines(block.result)};
+    try { writeFileSync(lookaheadFile, JSON.stringify({...state, last:now}) + '\n'); } catch (error) { process.stderr.write(`lookahead file: ${String(error)}\n`); }
   }
   let stopping = false;
   const stop = () => { stopping = true; client.close(); };
@@ -1165,6 +1196,9 @@ async function main() {
         outputFormat === 'compact' ? accepted => output({...accepted, waiting:`until completion (poll status if interrupted)`,
           // The completion carries the clock line.
           ...(compactWaits && accepted.result ? {result:{...accepted.result, clock:undefined}} : {})}) : undefined);
+      // The look-ahead: fh call lookahead with the time left in the shift; on any other reply when it is due.
+      if (action === 'lookahead' && reply.ok && reply.result) reply.result = {lines:lookaheadLines(reply.result)};
+      else await addLookahead(reply, action, args);
       if (reply.ok && action === 'blueprint_export' && !args.layout && values.out) {
         await mkdir(dirname(resolve(values.out)),{recursive:true});
         await writeFile(values.out,reply.result.blueprint+'\n');

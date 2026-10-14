@@ -190,6 +190,62 @@ return function(api)
     end
     n.busy, n.unfilled = busy, unfilled
   end
+  -- Stock per logistic network every 5 min, the last 8 kept (35 min), for the look-ahead (lookahead.lua, Nick 12:35):
+  -- items whose stock falls at the last 30 min's rate to zero within 2 hours (all game time).
+  local STOCK_EVERY, STOCK_KEEP, STOCK_LOOK, STOCK_HORIZON = 18000, 8, 108000, 432000
+  local function sample_stock(n)
+    n.stock = n.stock or {}
+    local seen = {}
+    for _, f in ipairs(forces()) do
+      for _, surface in ipairs(surfaces()) do
+        for _, ln in ipairs(logistic_networks(f, surface)) do
+          local id = try(function() return ln.network_id end)
+          if id then
+            local key = f.name .. '|' .. id
+            seen[key] = true
+            local counts = {}
+            for _, x in ipairs(try(function() return ln.get_contents() end) or {}) do
+              local name = type(x.name) == 'table' and x.name.name or x.name
+              if name then counts[name] = (counts[name] or 0) + (x.count or 0) end
+            end
+            local h = n.stock[key] or {force=f.name, id=id, samples={}}
+            h.surface = surface.name
+            h.samples[#h.samples+1] = {tick=game.tick, counts=counts}
+            while #h.samples > STOCK_KEEP do table.remove(h.samples, 1) end
+            n.stock[key] = h
+          end
+        end
+      end
+    end
+    for key in pairs(n.stock) do if not seen[key] then n.stock[key] = nil end end
+  end
+  -- Rows {name, id, surface, ticks (to zero), left}, soonest first, at most max; and whether any network has 30 min
+  -- of samples yet.
+  function M.running_out(f, max)
+    local n = store()
+    local rows, enough = {}, false
+    for _, h in pairs(n.stock or {}) do
+      local now = h.force == f.name and h.samples[#h.samples]
+      local old
+      for i = #h.samples - 1, 1, -1 do
+        if now and now.tick - h.samples[i].tick >= STOCK_LOOK then old = h.samples[i]; break end
+      end
+      if old then
+        enough = true
+        local dt = now.tick - old.tick
+        for name, before in pairs(old.counts) do
+          local left = now.counts[name] or 0
+          if left > 0 and left < before then
+            local ticks = left / ((before - left) / dt)
+            if ticks <= STOCK_HORIZON then rows[#rows+1] = {name=name, id=h.id, surface=h.surface, ticks=ticks, left=left} end
+          end
+        end
+      end
+    end
+    table.sort(rows, function(a, b) return a.ticks < b.ticks or (a.ticks == b.ticks and a.name < b.name) end)
+    while max and #rows > max do table.remove(rows) end
+    return rows, enough
+  end
   -- task-statuscost: the requests are looked at every 30 s (unfilled for 60 s,
   -- no idle robot for 10 min); the poles are mapped again by map_step, a walk
   -- spread over each VIEW_TICKS (at once only when there is no map yet).
@@ -205,6 +261,7 @@ return function(api)
     if tick % SAMPLE ~= 0 then return end
     if not n.map_tick then map_poles(n) end
     if not n.watch_tick or tick - n.watch_tick >= WATCH_TICKS then watch_logistics(n); n.watch_tick = tick end
+    if not n.stock_tick or tick - n.stock_tick >= STOCK_EVERY then pcall(sample_stock, n); n.stock_tick = tick end
     sample(n)
   end
 
