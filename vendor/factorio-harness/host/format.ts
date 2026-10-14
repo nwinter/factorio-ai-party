@@ -111,7 +111,7 @@ export function formatCompact(value: unknown): string {
       lines.push(`error: ${errorText(error)}${notes.length ? '; ' + notes.join('; ') : ''}`);
     } else {
       render(rest, '', 0);
-      if (record(body)) render(byClock(body), '', 0);
+      if (record(body)) render(byClock(tallyLast(body)), '', 0);
       else if (!empty(body)) render(body, 'result', 0);
       if (notes.length) lines.push(`warning: ${notes.join('; ')}`);
     }
@@ -187,6 +187,20 @@ function byClock(body: Json): Json {
   }
   if (orders !== undefined && typeof orders !== 'string') out.orders = orders;
   if (teammates !== undefined && typeof teammates !== 'string') out.teammates = teammates;
+  return out;
+}
+/**
+ * A transfer or collect over several targets closes with its total line (Muse): `tally` goes after the action's own
+ * fields, before the reply's trailer (team, chat, clock and the like).
+ */
+const TRAILER = new Set(['team', 'chat', 'clock', 'orders', 'teammates', 'inbox', 'tells']);
+function tallyLast(body: Json): Json {
+  if (typeof body.tally !== 'string') return body;
+  const { tally, ...rest } = body;
+  const out: Json = {};
+  for (const [key, entry] of Object.entries(rest)) if (!TRAILER.has(key)) out[key] = entry;
+  out.tally = tally;
+  for (const [key, entry] of Object.entries(rest)) if (TRAILER.has(key)) out[key] = entry;
   return out;
 }
 /** One line, whatever the value. */

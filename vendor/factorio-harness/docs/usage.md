@@ -68,6 +68,12 @@ fh call status
   taken stays as it is; with `radius` neither is touched. Queue steps (`queue_submit`, `queue_repeat`, `queue_edit`)
   are corrected the same way, and the reply lists each in `corrected` (`step 1: collect {...} (position is positions
   (a list))`).
+- `transfer` takes its direction under other names, noted in `corrected`: `from_player`, `give`, `put`, `insert`,
+  `to_chest`, `to_container` are `to_entity`; `from_entity`, `take`, `from_chest`, `from_container` are `to_player`;
+  `to_entity: true` / `from_entity: true` (also beside the same `direction`); and the target given as one of them,
+  `{"to_entity": {"x": 8.5, "y": 37.5}, "item": "coal"}` or `{"from_entity": [{x,y}, ...]}`, is the direction and
+  `position` / `positions`. Queue steps too. A flag against the given direction still fails. Both directions work on
+  any container: chests, logistic chests, car and spider trunks, cargo wagons, landing pads and hubs.
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
@@ -402,6 +408,14 @@ fh sleep 900 --until researched                       # ...or until the research
 ## Messages and reads
 
 - `inspect` is a read: any entity in sight (32 tiles, visible chunk) works without reach, like `scan`; `in_reach` says whether acting on it would reach.
+- An action on a target out of reach fails at once, without walking, with the distance, your reach and a free spot
+  within reach of it: `entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away, reach 10; in reach from
+  (11.5,0.5)` (the spot is left out when none is free within 3 tiles of the line toward it).
+- `inspect` of a chest, logistic chest, cargo wagon, car or spider trunk, landing pad or hub shows `holds`, one line:
+  the largest stacks first (`iron-plate*400 coal*120 ... +3 more`), slots used of the total, and the red-X limit
+  (`; 7 of 48 slots (limited to 20)`). A requester or buffer chest adds `requests`: held/asked per item over its active
+  sections (`iron-plate 40/100, coal 0/50`; `; a section set by circuit` when one is). Both are columns in the
+  `inspect {positions}` table.
 - An electric machine no pole reaches reads `status_name: unpowered` (whatever the engine's status, often
   `low_power`) with `power: "unpowered: no pole reaches it; nearest pole medium-electric-pole at (17,10), 7 tiles"`,
   in `inspect` and in build replies (`power`).
@@ -426,6 +440,12 @@ fh sleep 900 --until researched                       # ...or until the research
     anything (chemical plants, refineries and the like are assemblers) and takes all of it: output slots only, never
     inputs or fuel. `count` caps the total; chests need `item`. The reply has `items: "all"`, `stock` and `places`;
     `last` reports `got` and `items {name=count}`.
+  - `transfer` and `collect` (and `rearm` and `refuel` without `radius`) over 2 or more targets (`positions`, or the
+    entities in reach) end with `tally`, one line:
+    `moved 10 iron-plate; 2 of 3 targets touched; short: 1 failed (entity is out of reach: ...)`. Shorts: `your
+    inventory full of ITEM`, `N full`, `N wanting more you hold none of`, `N failed (the first reason)`. `collect` with
+    `radius` puts it in `last` (and the `--wait` reply) over places: `N not reached`, `N failed`, `N places not visited
+    (OUTCOME)`. Compact output prints it after the action's own fields, before the team and clock lines.
   - `inspect {"positions": [...]}` (1..32 entries, each may carry `name` or `unit_number`): one inspect per entry in one
     call, `entities` in order and `count`; an entry that fails is `{position, error}`.
 - Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
