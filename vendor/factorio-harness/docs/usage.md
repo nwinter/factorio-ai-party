@@ -782,6 +782,17 @@ fh sleep 900 --until researched                       # ...or until the research
     starts a move over time (a `pickup`, a tour with `radius`, a give that waits for crafts) has `moved: 0` and
     `timed: moves until tick N: last.moved and last.inv say what it moved`; when it ends, `last.moved` and `last.inv`
     hold the count and the line, and the `--wait` reply shows both.
+  - `collect {position, wait_ticks: N}` (1..36000; or `keep_taking: true`, 3600 ticks, or ticks) stands at that
+    assembler or furnace and takes each product from its output the tick it is there, as a player standing there does
+    (Muse, operator 09:31: a collect from a machine's output lost to its output inserters about four times).
+    - Out of reach it walks there first (`ticks` caps the walk, default 3600). `item` takes only that one; `count`
+      ends it once that many are taken.
+    - A timed action (`--wait` follows it): outcomes `collected`, `nothing_collected`, `inventory_full`, or
+      `unreached` (the walk ended out of reach, `last.why`).
+    - `last` weighs what it took against what the machine made: `took` (`iron-gear-wheel*11`), `crafts` (its
+      products_finished since it began), `made` (crafts times the recipe's products per craft), `inserters_took` (what
+      the output held and the machine made, less what you took and what is left), and `waited_s`.
+    - An empty output costs nothing that tick.
   - `feed`, `collect` and `transfer` take `area {left_top, right_bottom}` (up to 128x128) in place of `positions`: our
     entities whose centre lies inside it, of the call's types, run as its positions (nearest first, each by its
     unit_number; at most 64), and the reply says how many in `area_targets`. Types: `feed` as in reach (with `recipe`,

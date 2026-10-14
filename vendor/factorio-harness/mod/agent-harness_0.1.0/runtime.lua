@@ -405,6 +405,13 @@ local function finish(index, outcome)
   if action and action.kind=='gather' then
     local last=s.last[index]
     last.item=action.item; last.got=action.got; last.want=action.want<10000 and action.want or nil; last.visited=action.visited
+    -- Waiting at a machine: what it took against what the machine made and its inserters took (stock.lua).
+    if action.wait then
+      local r=stock.wait_report(action)
+      if r then for k,v in pairs(r) do last[k]=v end end
+      last.why=action.why
+      last.want=action.want<1000000 and action.want or nil
+    end
     if action.all then last.items=next(action.items) and action.items or nil end
     -- collect over a radius: the same total line as a transfer over several targets.
     if not action.op and #action.targets>1 then
@@ -496,7 +503,8 @@ local function watch(p,action)
   if not watched[action.kind] or game.tick%WATCH_TICKS~=0 then return end
   local key=table.concat({action.built or 0,action.mined or 0,action.placed or 0,action.next_index or 0,action.kills or 0,action.got or 0,action.index or 0},':')
   local w,pos=action.watch,p.position
-  if not w or w.key~=key or action.mining or action.awaiting_craft or distance(pos,w.anchor)>=2 then
+  -- A collect waiting at its machine stands still on purpose (stock.lua wait_tick).
+  if not w or w.key~=key or action.mining or action.awaiting_craft or action.waiting or distance(pos,w.anchor)>=2 then
     action.watch={key=key,anchor={x=pos.x,y=pos.y},since=game.tick}
   end
 end
@@ -977,7 +985,9 @@ function handlers.describe()
         returns='moved (alias transferred), inv (the inventory line after), items {name=count}, entities (position, name, gave; with recipe: loaded, short {item=missing}), unchanged, held (what is left of each item given)'},
       rearm={radius='1..256: walk a nearest-first route through every turret in radius below count and top it up (a timed action; outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left)',ticks='with radius: 1..36000 (default 3600)',ammo='ammo item (default firearm-magazine)',count='1..1000 target per turret (default 10)',positions='optional 1..64 positions instead of every turret in reach',types='default {ammo-turret}; artillery-turret allowed',note='gives from the main inventory, then the gun ammo slots (crafted ammo lands there); fails when none is held and turrets want more; waits for ammo in the hand-craft queue (awaiting_craft; outcome fed | failed | timed_out)'},
       refuel={radius='1..256: walk a nearest-first route through every burner in radius below count and top it up (a timed action; outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left)',ticks='with radius: 1..36000 (default 3600)',fuel='fuel item (default coal)',count='1..1000 target per entity (default 10)',positions='optional 1..64 positions instead of every burner in reach',types='optional entity type filter',note='fails when no fuel is held and burners want more; waits for fuel in the hand-craft queue (awaiting_craft)'},
-      collect={up_to='true: an empty source or a full inventory never fails the call or, as a queue step, pauses the plan (nothing_collected and inventory_full count as done); moved, short {asked, moved, reason}; it also stops at your personal request max for an item (left_at_max says what stayed in the source)',keep_max='true: refuse a take that would put you over your personal request max (the game moves what is over it to your trash slots); nothing is taken. Without it, a take over that max (or of an unrequested item while unrequested items go to trash) says so in the reply\'s trash lines: how many the game moves to your trash slots',types='entity types (default furnace, assembling-machine: machine outputs only)',chests='boolean: also empty plain chests (container, logistic-container) in reach or radius; off by default because chests are usually feed stock you placed (result notes chests_skipped / left_in_chests)',item='optional: only this item',positions='optional 1..64 positions instead of everything in reach (named chests are always taken from)',area='or {left_top, right_bottom} up to 128x128: our entities of types (default machines; chests=true adds chests) with their centre inside, as positions (at most 64; area_targets counts them)',
+      collect={wait_ticks='1..36000 with position: stand at that assembler or furnace (walking into reach first) and take each product from its output the tick it is there, as a player standing there does, until the ticks run out or count is taken (item: only that one); a timed action: outcomes collected | nothing_collected | inventory_full | unreached; last.took, last.made (crafts x products per craft), last.inserters_took (what the machine made less what you took and what is left), last.crafts, last.waited_s',
+        keep_taking='true (3600 ticks) or ticks: the same as wait_ticks',
+        up_to='true: an empty source or a full inventory never fails the call or, as a queue step, pauses the plan (nothing_collected and inventory_full count as done); moved, short {asked, moved, reason}; it also stops at your personal request max for an item (left_at_max says what stayed in the source)',keep_max='true: refuse a take that would put you over your personal request max (the game moves what is over it to your trash slots); nothing is taken. Without it, a take over that max (or of an unrequested item while unrequested items go to trash) says so in the reply\'s trash lines: how many the game moves to your trash slots',types='entity types (default furnace, assembling-machine: machine outputs only)',chests='boolean: also empty plain chests (container, logistic-container) in reach or radius; off by default because chests are usually feed stock you placed (result notes chests_skipped / left_in_chests)',item='optional: only this item',positions='optional 1..64 positions instead of everything in reach (named chests are always taken from)',area='or {left_top, right_bottom} up to 128x128: our entities of types (default machines; chests=true adds chests) with their centre inside, as positions (at most 64; area_targets counts them)',
         radius='1..256: with item, walk to our machine outputs/chests holding it (as stock lists), nearest-neighbour route, taking it until count; without item, to every assembler and furnace output in it holding anything, taking all of it (output slots only, never inputs or fuel; chests need item; last reports items); a timed action',count='with radius: stop after this many (default all)',want='optional, with item: hold this many; takes only the difference (nothing when you already have it); not with count',ticks='with radius: 1..36000 (default 3600)',
         outcomes='with radius: collected | nothing_collected | inventory_full | timed_out; status reports got, visited, and tally with 2+ places: moved per item, places touched of the total, short (not reached, failed, not visited); in reach or with positions, 2+ targets: tally as transfer\'s'},
       research={technology='name (omit everything to report: current, progress, queue, pending, and entries: each queued technology with progress %, queued_by, packs, done_in at the lab throughput of the last minute (2 minutes, then the last 5, when the last minute had no research progress; throughput says which), waits_for a pack nobody made in 10 minutes; throughput; clock_stops_at)',remove='a queued technology name, or an array: takes it out of the queue as the research GUI does, with queued technologies that need it (also_removed); progress is kept for later',cancel='same as remove',move='a queued technology name: reorders it to position `to` (1 = researched now); refused ahead of a queued prerequisite or behind a queued technology that needs it',to='position for move (1..queue length)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={prefix='optional',limit='1..256'}, technologies={prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those'},
@@ -4174,6 +4184,25 @@ function handlers.collect(p,a)
     copy.want=nil; copy.count=math.min(want-have,10000)
     a=copy
   end
+  -- wait_ticks or keep_taking (Muse, operator 09:31: a collect from a machine's output lost to its output inserters
+  -- about four times): stand at the machine and take each product as it appears (stock.lua start_wait).
+  if a.wait_ticks~=nil or a.keep_taking~=nil then
+    -- One machine: position (the alias layer hands a single position over as positions).
+    local at=a.position
+    if at==nil and type(a.positions)=='table' and #a.positions==1 then at=a.positions[1] end
+    if a.radius~=nil or a.area~=nil or at==nil or (a.positions~=nil and #a.positions~=1) then
+      error('wait_ticks waits at one machine: give its position (an assembler or furnace)',0)
+    end
+    if not (a.keep_taking==nil or a.keep_taking==true or type(a.keep_taking)=='number') then error('keep_taking is true (3600 ticks) or ticks',0) end
+    local wait=a.wait_ticks~=nil and integer(a.wait_ticks,nil,1,36000,'wait_ticks')
+      or a.keep_taking==true and 3600 or integer(a.keep_taking,nil,1,36000,'keep_taking')
+    local e=entity(p,{position=at.position or at,name=a.name or at.name,unit_number=at.unit_number},'walk')
+    local action,out=stock.start_wait(p,a,e,wait)
+    if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
+    state().active[p.index]=action
+    out.until_tick=action.until_tick
+    return out
+  end
   if a.radius~=nil then
     local action,out=stock.start(p,a,integer(a.ticks,3600,1,36000,'ticks'))
     if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
@@ -4181,7 +4210,7 @@ function handlers.collect(p,a)
     out.until_tick=action.until_tick
     return out
   end
-  assert(a.ticks==nil,'ticks applies to collect with radius')
+  assert(a.ticks==nil,'ticks applies to collect with radius or wait_ticks')
   assert(a.keep_max==nil or type(a.keep_max)=='boolean','keep_max must be true or false')
   -- up_to=true stops at the request max (partial); keep_max refuses a take over it (trash.lua).
   local args={direction='to_player',item=a.item,types=a.types or (a.chests and collect_types.chests or collect_types.plain),positions=a.positions,quality=a.quality,
@@ -6811,7 +6840,8 @@ function M.dispatch_inner(request)
   local corrected
   do
     local ok,action,args,fix=pcall(M.aliases.fix,request.action,request.args,M.takes)
-    if ok and fix then request.action,request.args,corrected=action,args,fix end
+    -- (a fix with no note changed the args silently: a collect waiting at one machine's position)
+    if ok and (fix or args~=request.args) then request.action,request.args,corrected=action,args,fix end
   end
   -- dry_run=true on place_ghosts, paste, blueprint_place or build is a read of
   -- the plan (dryrun.lua): it leaves the running action and queue alone.

@@ -534,6 +534,8 @@ test('a walk that gave up says why on the error line',async()=>{
 test('move_to and drive --wait show gaps, escapes, enemies gone around; no_safe_route fails with why',async()=>{
   // Sol (shift09 03:13): trapped in gaps between pipes and machines; Opus (03:20): walked past a nest, a tank stuck on cliffs.
   const ends=[
+    // collectwait: a collect waiting at a machine, what it took against what the inserters took.
+    {action:'collect',last:{kind:'gather',outcome:'collected',took:'iron-gear-wheel*11',made:'iron-gear-wheel*10',inserters_took:'iron-gear-wheel*3',crafts:10,waited_s:5},code:0,shown:['took','made','inserters_took','crafts','waited_s']},
     {action:'move_to',last:{kind:'move_to',outcome:'arrived_near',pocket:'(55,21) lies in a gap narrower than 0.7 tiles (assembling-machine-2 (53.5,22.5)) that no path led into; stopped at (51.5,24.4), 4.8 tiles from it (squeeze=true walks in)'},code:0,shown:['pocket']},
     {action:'move_to',last:{kind:'move_to',outcome:'arrived',escaped:'no path led out of the gap at (54.2,21): walked out to (55,24.3) first',avoided_enemies:['2 big-worm-turret around (88,165)'],passed_within_margin:['medium-worm-turret (60,170): 33.7 tiles (range 30)']},code:0,shown:['escaped','avoided_enemies','passed_within_margin']},
     {action:'move_to',last:{kind:'move_to',outcome:'unreachable',why:'closed in: ...; mining pipe (-27.5,69.5) opens a way out to (-26.7,69.5)',mine_to_get_out:['pipe (-27.5,69.5)']},code:1,shown:['mine_to_get_out']},
@@ -554,7 +556,7 @@ test('move_to and drive --wait show gaps, escapes, enemies gone around; no_safe_
       polls++;
       return {ok:true,result:polls<2?{active:{kind:end.last.kind,until_tick:180}}:{active:false,last:end.last}};
     },async port=>{
-      const args=end.action==='vehicle'?'{"drive":{"x":30,"y":145}}':'{"position":{"x":55,"y":21}}';
+      const args=end.action==='vehicle'?'{"drive":{"x":30,"y":145}}':end.action==='collect'?'{"position":{"x":55,"y":21},"wait_ticks":300}':'{"position":{"x":55,"y":21}}';
       const {code,stdout}=await compact(port,['call',end.action,'--args',args,'--wait']);
       assert.equal(code,end.code,stdout);
       // A wait that ended in success lists fields one per line; a failed one on the error_result line (key=value).

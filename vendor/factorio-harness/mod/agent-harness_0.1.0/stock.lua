@@ -209,6 +209,104 @@ return function(api)
     end
     return action,out
   end
+  -- Waiting at one machine (Muse, operator 09:31: a collect from a machine's
+  -- output lost to its output inserters about four times): walk into reach,
+  -- then take each product from its output the tick it is there, for up to
+  -- wait ticks or until count, as a player standing there does. The machine's
+  -- products_finished gives what it made meanwhile; what it made and what
+  -- the output held less what was taken and what is left went to inserters.
+  local WAIT_TYPES={['assembling-machine']=true,furnace=true}
+  function M.start_wait(p,a,e,wait)
+    if not WAIT_TYPES[e.type] then error(e.name..' is no assembler or furnace: wait_ticks waits at a machine\'s output',0) end
+    if e.force~=p.force then error(e.name..' is not ours',0) end
+    if a.item~=nil then assert(type(a.item)=='string' and prototypes.item[a.item],'item must be a known item') end
+    local want=a.count and api.integer(a.count,nil,1,100000,'count') or 1000000
+    local walk=api.integer(a.ticks,3600,1,36000,'ticks')
+    local action={kind='gather',wait=wait,item=a.item,quality=a.quality,all=a.item==nil or nil,want=want,got=0,visited=0,items={},
+      targets={{entity=e,position=e.position}},index=1,until_tick=game.tick+walk+wait}
+    local recipe=pcall(e.get_recipe) and e.get_recipe()
+    return action,{machine=string.format('%s (%g,%g)',e.name,e.position.x,e.position.y),recipe=recipe and recipe.name or nil,wait_ticks=wait,
+      count=a.count and want or nil,item=a.item,in_reach=p.can_reach_entity(e)}
+  end
+  local function counts(inv)
+    local out={}
+    for _,st in ipairs(inv and inv.get_contents() or {}) do out[st.name]=(out[st.name] or 0)+st.count end
+    return out
+  end
+  -- What one craft of the machine's recipe yields per item (the expected amount for a ranged or chance product).
+  local function per_craft(e)
+    local ok,recipe=pcall(e.get_recipe)
+    if not (ok and recipe) and e.type=='furnace' then ok,recipe=pcall(function() return e.previous_recipe end) end
+    local out={}
+    for _,pr in ipairs(ok and recipe and recipe.products or {}) do
+      if pr.type=='item' then
+        local amount=pr.amount or ((pr.amount_min or 0)+(pr.amount_max or 0))/2
+        out[pr.name]=(out[pr.name] or 0)+amount*(pr.probability or 1)
+      end
+    end
+    return out
+  end
+  local function finished(e) local ok,n=pcall(function() return e.products_finished end); return ok and n or nil end
+  function M.wait_tick(p,action)
+    local t=action.targets[1]
+    local e=t.entity
+    if not (e and e.valid) then action.why='the machine is gone'; return action.got>0 and 'collected' or 'nothing_collected' end
+    if not p.can_reach_entity(e) then
+      if not action.nav then
+        action.nav={position=t.position,tolerance=math.max(1,(p.reach_distance or 10)-3),max_stalls=6,replans=0,stalled=0,last_position=p.position}
+        api.request_path(p,action.nav)
+      end
+      local outcome=api.navigate(p,action.nav)
+      if outcome then api.stop_walking(p); action.unreached=1; action.why='the walk to it ended '..outcome..' out of reach'; return 'unreached' end
+      return nil
+    end
+    if not action.waiting then
+      api.stop_walking(p); action.nav=nil; action.visited=1
+      action.waiting={since=game.tick,finished=finished(e),output=counts(output_of(e)),per_craft=per_craft(e)}
+      action.wait_end=game.tick+action.wait
+    end
+    local inv=output_of(e)
+    local here=inv and (action.item and inv.get_item_count{name=action.item,quality=action.quality or 'normal'} or (not inv.is_empty() and 1 or 0)) or 0
+    if here>0 then
+      action.trash_tally=action.trash_tally or {}
+      local ok,out=pcall(api.take,p,e,action.item,action.quality,math.min(10000,action.want-action.got),OUTPUT[e.type],action.trash_tally)
+      if ok then
+        action.got=action.got+out.transferred
+        for _,st in ipairs(out.items or {{name=action.item,count=out.transferred}}) do
+          if st.name and st.count and st.count>0 then action.items[st.name]=(action.items[st.name] or 0)+st.count end
+        end
+        if out.inventory_full then return 'inventory_full' end
+      end
+    end
+    if action.got>=action.want then return 'collected' end
+    if game.tick>=action.wait_end then return action.got>0 and 'collected' or 'nothing_collected' end
+  end
+  -- The wait's count: what it took, what the machine made, what its inserters took (per item, as name*count lines).
+  function M.wait_report(action)
+    local w=action.waiting
+    if not w then return nil end
+    local e=action.targets[1].entity
+    local function line(t)
+      local parts={}
+      for name,n in pairs(t) do if n>0 then parts[#parts+1]={name=name,n=n} end end
+      table.sort(parts,function(x,y) return x.n>y.n or (x.n==y.n and x.name<y.name) end)
+      for i,v in ipairs(parts) do parts[i]=v.name..'*'..math.floor(v.n+0.5) end
+      return #parts>0 and table.concat(parts,' ') or 'none'
+    end
+    local out={took=line(action.items),waited_s=math.floor((game.tick-w.since)/6+0.5)/10}
+    local now=e and e.valid and finished(e)
+    if now and w.finished then
+      local crafts=now-w.finished
+      local made,others={},{}
+      local left=e.valid and counts(output_of(e)) or {}
+      for name,k in pairs(w.per_craft) do
+        made[name]=crafts*k
+        others[name]=math.max(0,(w.output[name] or 0)+made[name]-(action.items[name] or 0)-(left[name] or 0))
+      end
+      out.crafts=crafts; out.made=line(made); out.inserters_took=line(others)
+    end
+    return out
+  end
   -- Tours: the same walk through given entities (turrets, burners), topping
   -- each up; op names the runtime's visit ('rearm' or 'refuel').
   local MAX_TOUR=128
@@ -231,6 +329,7 @@ return function(api)
   end
   -- Returns an outcome when the gathering is over.
   function M.tick(p,action)
+    if action.wait then return M.wait_tick(p,action) end
     while true do
       if action.got>=action.want then return 'collected' end
       local t=action.targets[action.index]

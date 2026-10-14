@@ -86,6 +86,15 @@ body.position={x=5,y=5}
 -- Fix 10: a wrong argument name the harness knows runs as meant; the reply shows the call as it ran.
 local r=sol('move_to',{target={x=3,y=3}})
 eq(r.corrected,'move_to {"position":{"x":3,"y":3}} (target is position)')
+-- A collect waiting at one machine takes its one position as positions without a correction (collectwait).
+do
+  local A=dofile('mod/agent-harness_0.1.0/aliases.lua')({})
+  local takes=function(_,k) return k=='positions' or k=='wait_ticks' end
+  local _,fixed,notes=A.fix('collect',{position={x=18.5,y=-31.5},wait_ticks=60},takes)
+  eq(notes,nil); eq(fixed.position,nil); eq(fixed.positions[1].x,18.5)
+  local _,plain,noted=A.fix('collect',{position={x=18.5,y=-31.5}},takes)
+  eq(noted.notes[1],'position is positions (a list)'); eq(plain.positions[1].y,-31.5)
+end
 sol('stop')
 -- A scoped read (fh sends scan as observe {scope}): the view's own names.
 r=sol('observe',{scope='scan',names='wooden-chest',radius=5})
