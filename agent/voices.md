@@ -1,72 +1,72 @@
-- `ca-archie`: British accent, lower voice
-- `ca-daniel`: American, lower voice, even all-rounder
-- `ca-jacqueline`: American, lighter voice, composed
-- `ca-skylar`: American, lighter voice, even all-rounder
-- `el-bill`: old, wise and crackly, American
-- `el-brian`: middle-aged, deep, resonant and comforting, American
-- `el-callum`: middle-aged, husky and a bit mischievous, transatlantic
-- `el-charlie`: young adult, deep and energetic, Australian accent
-- `el-chris`: middle-aged, charming, down-to-earth, American
-- `el-daniel`: middle-aged, steady broadcaster, British accent
-- `el-george`: middle-aged, warm storyteller, British accent
-- `el-jessica`: young adult, playful, bright and warm, American
-- `el-laura`: young adult, quirky and enthusiastic, bright, American
-- `el-liam`: young adult, energetic and punchy, American
-- `el-lily`: middle-aged, velvety, British accent
-- `el-matilda`: middle-aged, knowledgeable and upbeat, American
-- `el-river`: relaxed, neutral and informative, mid pitch, American
-- `el-roger`: laid-back, casual, resonant mid-low, American
-- `el-sarah`: young adult, soft and confident, American
-- `el-will`: young adult, relaxed optimist, American
-- `in-alex`: energetic and expressive, mid-range, a little nasal
-- `in-dennis`: middle-aged, smooth, calm and friendly, lower
-- `oa-alloy`: neutral, even, mid pitch
-- `oa-ash`: mid-low, clear and direct
-- `oa-coral`: bright, warm and friendly
-- `oa-echo`: mid-low, calm, resonant
-- `oa-fable`: expressive storyteller, British accent
-- `oa-marin`: natural and warm, bright, conversational
-- `oa-nova`: bright, youthful and energetic
-- `oa-onyx`: deep and authoritative
-- `oa-sage`: calm, gentle and thoughtful
-- `oa-shimmer`: bright, clear and upbeat
-- `oa-verse`: expressive, animated, mid pitch
-- `amalthea`: bright young voice, Filipino accent, cheerful and natural
-- `andromeda`: bright, casual and expressive, American, easygoing
-- `apollo`: mid-low, confident and casual, American
-- `arcas`: mid-low, smooth and clear, American, relaxed
-- `aries`: mid-low, warm and energetic, American
-- `asteria`: bright, clear and confident, American, energetic
-- `athena`: bright, mature, calm and smooth, American
-- `aurora`: bright, cheerful and expressive, American, high energy
-- `callista`: bright, clear and energetic, American, polished
-- `cora`: bright, smooth and melodic, American, gentle
-- `cordelia`: light young voice, warm and polite, American
-- `delia`: light young voice, breathy and cheerful, American, casual
-- `draco`: warm baritone, British accent, trustworthy
-- `electra`: bright, professional and engaging, American
-- `harmonia`: bright, calm and empathetic, American, steady
-- `helena`: slightly raspy, friendly and positive, American
-- `hera`: smooth and warm, American, professional
-- `hermes`: mid-low, expressive and engaging, American
-- `hyperion`: mid-low, warm, Australian accent, caring
-- `iris`: light young voice, cheerful and upbeat, American
-- `janus`: smooth, Southern American accent, trustworthy
-- `juno`: breathy and melodic, American, natural
-- `jupiter`: baritone, expressive and knowing, American
-- `luna`: light young voice, friendly and natural, American
-- `mars`: smooth baritone, patient, American
-- `minerva`: bright, positive and friendly, American
-- `neptune`: mid-low, patient and polite, American
-- `odysseus`: mid-low, calm and smooth, American
-- `ophelia`: bright, enthusiastic and cheerful, American
-- `orion`: mid-low, calm and approachable, American
-- `orpheus`: mid-low, clear and confident, American
-- `pandora`: smooth and breathy, British accent, calm
-- `phoebe`: bright, warm and energetic, American, casual
-- `pluto`: smooth baritone, calm and empathetic, American
-- `saturn`: baritone, confident and knowing, American
-- `selene`: bright, expressive and energetic, American
-- `theia`: expressive and sincere, Australian accent
-- `vesta`: natural and expressive, American, patient
-- `zeus`: deep, smooth and steady, American
+- `ca-archie`: male voice, British accent, lower voice
+- `ca-daniel`: male voice, American, lower voice, even all-rounder
+- `ca-jacqueline`: female voice, American, lighter voice, composed
+- `ca-skylar`: female voice, American, lighter voice, even all-rounder
+- `el-bill`: male voice, old, wise and crackly, American
+- `el-brian`: male voice, middle-aged, deep, resonant and comforting, American
+- `el-callum`: male voice, middle-aged, husky and a bit mischievous, transatlantic
+- `el-charlie`: male voice, young adult, deep and energetic, Australian accent
+- `el-chris`: male voice, middle-aged, charming, down-to-earth, American
+- `el-daniel`: male voice, middle-aged, steady broadcaster, British accent
+- `el-george`: male voice, middle-aged, warm storyteller, British accent
+- `el-jessica`: female voice, young adult, playful, bright and warm, American
+- `el-laura`: female voice, young adult, quirky and enthusiastic, bright, American
+- `el-liam`: male voice, young adult, energetic and punchy, American
+- `el-lily`: female voice, middle-aged, velvety, British accent
+- `el-matilda`: female voice, middle-aged, knowledgeable and upbeat, American
+- `el-river`: gender-neutral voice, relaxed, neutral and informative, mid pitch, American
+- `el-roger`: male voice, laid-back, casual, resonant mid-low, American
+- `el-sarah`: female voice, young adult, soft and confident, American
+- `el-will`: male voice, young adult, relaxed optimist, American
+- `in-alex`: male voice, energetic and expressive, mid-range, a little nasal
+- `in-dennis`: male voice, middle-aged, smooth, calm and friendly, lower
+- `oa-alloy`: gender-neutral voice, neutral, even, mid pitch
+- `oa-ash`: male voice, mid-low, clear and direct
+- `oa-coral`: female voice, bright, warm and friendly
+- `oa-echo`: male voice, mid-low, calm, resonant
+- `oa-fable`: male voice, expressive storyteller, British accent
+- `oa-marin`: female voice, natural and warm, bright, conversational
+- `oa-nova`: female voice, bright, youthful and energetic
+- `oa-onyx`: male voice, deep and authoritative
+- `oa-sage`: female voice, calm, gentle and thoughtful
+- `oa-shimmer`: female voice, bright, clear and upbeat
+- `oa-verse`: male voice, expressive, animated, mid pitch
+- `amalthea`: female voice, bright young voice, Filipino accent, cheerful and natural
+- `andromeda`: female voice, bright, casual and expressive, American, easygoing
+- `apollo`: male voice, mid-low, confident and casual, American
+- `arcas`: male voice, mid-low, smooth and clear, American, relaxed
+- `aries`: male voice, mid-low, warm and energetic, American
+- `asteria`: female voice, bright, clear and confident, American, energetic
+- `athena`: female voice, bright, mature, calm and smooth, American
+- `aurora`: female voice, bright, cheerful and expressive, American, high energy
+- `callista`: female voice, bright, clear and energetic, American, polished
+- `cora`: female voice, bright, smooth and melodic, American, gentle
+- `cordelia`: female voice, light young voice, warm and polite, American
+- `delia`: female voice, light young voice, breathy and cheerful, American, casual
+- `draco`: male voice, warm baritone, British accent, trustworthy
+- `electra`: female voice, bright, professional and engaging, American
+- `harmonia`: female voice, bright, calm and empathetic, American, steady
+- `helena`: female voice, slightly raspy, friendly and positive, American
+- `hera`: female voice, smooth and warm, American, professional
+- `hermes`: male voice, mid-low, expressive and engaging, American
+- `hyperion`: male voice, mid-low, warm, Australian accent, caring
+- `iris`: female voice, light young voice, cheerful and upbeat, American
+- `janus`: female voice, smooth, Southern American accent, trustworthy
+- `juno`: female voice, breathy and melodic, American, natural
+- `jupiter`: male voice, baritone, expressive and knowing, American
+- `luna`: female voice, light young voice, friendly and natural, American
+- `mars`: male voice, smooth baritone, patient, American
+- `minerva`: female voice, bright, positive and friendly, American
+- `neptune`: male voice, mid-low, patient and polite, American
+- `odysseus`: male voice, mid-low, calm and smooth, American
+- `ophelia`: female voice, bright, enthusiastic and cheerful, American
+- `orion`: male voice, mid-low, calm and approachable, American
+- `orpheus`: male voice, mid-low, clear and confident, American
+- `pandora`: female voice, smooth and breathy, British accent, calm
+- `phoebe`: female voice, bright, warm and energetic, American, casual
+- `pluto`: male voice, smooth baritone, calm and empathetic, American
+- `saturn`: male voice, baritone, confident and knowing, American
+- `selene`: female voice, bright, expressive and energetic, American
+- `theia`: female voice, expressive and sincere, Australian accent
+- `vesta`: female voice, natural and expressive, American, patient
+- `zeus`: male voice, deep, smooth and steady, American

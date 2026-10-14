@@ -696,7 +696,7 @@ async function main() {
   // target_destroyed: a shoot at an entity ended because it is gone.
   // transferred: a transfer that walked (walk, pick, a courier's to) moved items (Astra 07:53: exit 1 'Control ended:
   // transferred' after moving 200 solid fuel); unreached and nothing_collected still fail.
-  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear','dropped','transferred'];
+  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear','dropped','transferred','previewed'];
   // How long to wait: an explicit --wait-timeout, else until the action's own
   // end tick (at 60 ticks/s plus a margin), never less than 30 s nor more than 15 min.
   // ownEnd: the action's end tick already reflects --wait-timeout (wait_until), so
@@ -801,6 +801,8 @@ async function main() {
         reach: last.reach, reach_note: last.reach_note, reach_walk: last.reach_walk} : {}),
       // vehicle drive: the path it followed and a back-up (vehicles.lua).
       ...(last?.kind === 'drive' ? {path_length: last.path_length, backed_up: last.backed_up,
+        // drivesafe: the box it planned for, a stop short of the target, ours it braked or stopped for, a dry run's path
+        plan: last.plan, stopped_short: last.stopped_short, spared: last.spared, preview: last.preview,
         // remote driving and a drive's guns (remotedrive): the vehicle driven by remote view, rounds fired and kills
         remote: last.remote, vehicle: last.vehicle, shots: last.shots, kills: last.kills, kills_by_name: last.kills_by_name, combat_ended: last.combat_ended} : {}),
       ...(last?.kind === 'move_to' || last?.kind === 'drive' ? {avoided_enemies: last.avoided_enemies,

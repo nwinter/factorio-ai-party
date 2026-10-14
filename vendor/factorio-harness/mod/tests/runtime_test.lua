@@ -925,6 +925,50 @@ do
   call('queue_cancel',{})
   p.force.platforms,game.get_surface=saved_platforms,saved_get
 end
+-- An entity ghost takes a recipe and filters as its entity would (Astra 12:20: configure on a 75-ghost Starling layout
+-- found only the foundation tile ghosts); a tile ghost under it never takes its place as the target; name may be what
+-- the ghost builds.
+do
+  local ghost_recipe
+  local g={valid=true,name='entity-ghost',type='entity-ghost',ghost_name='assembling-machine-2',ghost_type='assembling-machine',
+    position={x=6,y=0},force=p.force,ghost_prototype={crafting_categories={crafting=true}}}
+  g.get_recipe=function() return ghost_recipe end
+  g.set_recipe=function(name) ghost_recipe={name=name}; return {} end
+  local tg={valid=true,name='tile-ghost',type='tile-ghost',ghost_name='space-platform-foundation',position={x=6.5,y=0.5},force=p.force}
+  local filters_set,mode={},'whitelist'
+  local ig={valid=true,name='entity-ghost',type='entity-ghost',ghost_name='fast-inserter',ghost_type='inserter',position={x=8.5,y=0.5},force=p.force,
+    filter_slot_count=5,use_filters=false}
+  ig.set_filter=function(i,name) filters_set[i]=name end
+  ig.get_filter=function(i) return filters_set[i] and {name=filters_set[i],quality='normal'} or nil end
+  setmetatable(ig,{__index=function(_,k) if k=='inserter_filter_mode' then return mode end end,
+    __newindex=function(t,k,v) if k=='inserter_filter_mode' then mode=v else rawset(t,k,v) end end})
+  local saved_find=p.surface.find_entities_filtered
+  p.surface.find_entities_filtered=function(f)
+    local out={}
+    for _,e in ipairs({tg,g,ig}) do
+      local near=not f.position or (math.abs(e.position.x-f.position.x)<=(f.radius or 0.6)+0.5 and math.abs(e.position.y-f.position.y)<=(f.radius or 0.6)+0.5)
+      if near and (not f.name or e.name==f.name) and (not f.ghost_name or e.ghost_name==f.ghost_name) and (not f.type or e.type==f.type) then out[#out+1]=e end
+    end
+    return out
+  end
+  p.can_reach_entity=function() return true end
+  local r=call('configure',{position={x=6,y=0},recipe='iron-gear-wheel'})
+  eq(r.recipe,'iron-gear-wheel'); eq(r.ghost,'assembling-machine-2'); eq(ghost_recipe.name,'iron-gear-wheel')
+  fails(function() call('configure',{position={x=6,y=0},recipe='sulfur'}) end,'incompatible')
+  r=call('configure',{position={x=6,y=0},name='assembling-machine-2',recipe='copper-cable'})
+  eq(r.recipe,'copper-cable'); eq(ghost_recipe.name,'copper-cable')
+  local had_plate=prototypes.item['iron-plate']
+  prototypes.item['iron-plate']=had_plate or {name='iron-plate',type='item'}
+  r=call('configure',{position={x=8.5,y=0.5},name='fast-inserter',filters={'iron-plate'}})
+  eq(r.ghost,'fast-inserter'); eq(filters_set[1],'iron-plate'); eq(ig.use_filters,true)
+  prototypes.item['iron-plate']=had_plate
+  -- By remote view too (out of reach): the ghost, not the tile ghost under it.
+  p.can_reach_entity=function() return false end
+  r=call('configure',{position={x=6,y=0},recipe='iron-gear-wheel'})
+  eq(r.ghost,'assembling-machine-2'); eq(r.remote,true); eq(ghost_recipe.name,'iron-gear-wheel')
+  p.can_reach_entity=function() return true end
+  p.surface.find_entities_filtered=saved_find
+end
 -- Filters go on filtering inserters, not machines without slots.
 local set_filters={}
 prototypes.item['stone-brick']={type='item'}

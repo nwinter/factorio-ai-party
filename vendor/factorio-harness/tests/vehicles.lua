@@ -216,14 +216,19 @@ last=astra('status').last
 eq(last.outcome,'blocked')
 assert(last.why:find('again after backing off once',1,true) and last.why:find('in front: nothing that collides',1,true),last.why)
 assert(last.backed_up:find('backed off and asked for a new path',1,true),last.backed_up)
--- No path for the car's length, nor its width: unreachable, saying so.
+-- No path for the car's turning room, nor to open ground near the target, nor for its length or width:
+-- unreachable, saying so (drivesafe: the turning room first, then near the target, then narrower).
 blocked=false; asked={}
 astra('vehicle',{drive={x=100,y=90}})
 runtime.on_event{name=10,id=901}
-eq(#asked,2); eq(asked[2].bounding_box[2][1],1) -- as wide as it is long
+eq(#asked,2); assert(math.abs(asked[2].bounding_box[2][1]-1.7207)<0.001); eq(asked[2].radius,8) -- open ground within 8
 runtime.on_event{name=10,id=902}
-eq(#asked,3); eq(asked[3].bounding_box[2][1],0.7) -- as wide as it is wide
+eq(#asked,3); eq(asked[3].radius,13) -- within 13
 runtime.on_event{name=10,id=903}
+eq(#asked,4); eq(asked[4].bounding_box[2][1],1) -- as wide as it is long
+runtime.on_event{name=10,id=904}
+eq(#asked,5); eq(asked[5].bounding_box[2][1],0.7) -- as wide as it is wide
+runtime.on_event{name=10,id=905}
 drive_ticks(1)
 last=astra('status').last
 eq(last.outcome,'unreachable'); eq(last.why,'no path for the car (1.4 by 2.0 tiles) to (100,90)')
@@ -290,6 +295,117 @@ last=astra('status').last
 eq(last.outcome,'arrived'); eq(last.reverse,true)
 assert(turned_most<0.05,'backed straight there without turning round: '..turned_most)
 assert(math.abs(car.position.x-110)<4,car.position.x)
+-- drivesafe (Astra, operator 12:06: a tank drive crushed 7 of our oil entities, a pumpjack among them): our
+-- entities as boxes the fake finds by area and force.
+local ours={}
+local function our(name,x,y,hw,hh)
+  local e={valid=true,name=name,type='pipe',force=force,position={x=x,y=y},unit_number=7000+#ours,
+    bounding_box={left_top={x=x-(hw or 0.3),y=y-(hh or 0.3)},right_bottom={x=x+(hw or 0.3),y=y+(hh or 0.3)}},
+    prototype={collision_mask={layers={player=true,object=true}}}}
+  ours[#ours+1]=e
+  return e
+end
+local function corners(a) local lt,rb=a[1] or a.left_top,a[2] or a.right_bottom; return lt[1] or lt.x,lt[2] or lt.y,rb[1] or rb.x,rb[2] or rb.y end
+surface.find_entities_filtered=function(f)
+  if f.area then
+    local l,t,r,b=corners(f.area)
+    local out={}
+    for _,e in ipairs(ours) do
+      local bb=e.bounding_box
+      if e.valid and bb.right_bottom.x>=l and bb.left_top.x<=r and bb.right_bottom.y>=t and bb.left_top.y<=b and (f.force==nil or f.force==e.force) then out[#out+1]=e end
+    end
+    return out
+  end
+  return plain_find(f)
+end
+-- Whether the car's turned box (1.4 by 2.0) overlaps a box: separating axes.
+local function overlaps(bb)
+  local o=car.orientation*2*math.pi
+  local fx,fy,rx,ry=math.sin(o),-math.cos(o),math.cos(o),math.sin(o)
+  local cs={}
+  for _,s in ipairs{{1,1},{1,-1},{-1,1},{-1,-1}} do cs[#cs+1]={x=car.position.x+fx*s[1]+rx*0.7*s[2],y=car.position.y+fy*s[1]+ry*0.7*s[2]} end
+  local function sep(ax,ay,list1,list2)
+    local a1,b1,a2,b2=math.huge,-math.huge,math.huge,-math.huge
+    for _,q in ipairs(list1) do local d=q.x*ax+q.y*ay; a1=math.min(a1,d); b1=math.max(b1,d) end
+    for _,q in ipairs(list2) do local d=q.x*ax+q.y*ay; a2=math.min(a2,d); b2=math.max(b2,d) end
+    return b1<a2 or b2<a1
+  end
+  local bc={{x=bb.left_top.x,y=bb.left_top.y},{x=bb.right_bottom.x,y=bb.left_top.y},{x=bb.left_top.x,y=bb.right_bottom.y},{x=bb.right_bottom.x,y=bb.right_bottom.y}}
+  for _,ax in ipairs{{1,0},{0,1},{fx,fy},{rx,ry}} do if sep(ax[1],ax[2],cs,bc) then return false end end
+  return true
+end
+local function drive_watch(n,watch)
+  local touched=false
+  for _=1,n do physics_r(); advance(1); for _,e in ipairs(watch or ours) do if overlaps(e.bounding_box) then touched=true end end; if not astra('status').active then break end end
+  return touched
+end
+-- Straight at one of ours: it brakes to stop 0.5 tiles short and ends blocked naming it, never touching it.
+ours={}; our('pipe',230.5,90.5)
+car.position={x=200,y=90.5}; car.orientation=0.25; car.speed=0
+astra('vehicle',{drive={x=260,y=90.5},pathfind=false})
+eq(drive_watch(900),false)
+last=astra('status').last
+eq(last.outcome,'blocked'); assert(last.why:find('to spare our pipe (230.5,90.5)',1,true),last.why); eq(last.spared,'pipe (230.5,90.5)')
+assert(car.position.x>226,'it got close: '..car.position.x)
+-- Turning at a crawl with ours within its corners' sweep: the wheel stays straight until it is clear.
+ours={}; our('pipe',100.5,91.8)
+car.position={x=100,y=90.5}; car.orientation=0.25; car.speed=0
+astra('vehicle',{drive={x=70,y=90.5},pathfind=false})
+advance(1); eq(car.riding_state.direction,defines.riding.direction.straight)
+eq(drive_watch(900),false)
+-- A narrow path past ours is not taken: no turning-room path (nor near the target), the length and width paths pass
+-- our pipe within the turning room: unreachable, naming it.
+ours={}; our('pipe',150.5,95.5)
+car.position={x=120,y=90.5}; car.orientation=0.25; car.speed=0
+asked={}
+astra('vehicle',{drive={x=180,y=90.5}})
+for id=901,903 do runtime.on_event{name=10,id=id} end
+eq(#asked,4); eq(asked[4].bounding_box[2][1],1)
+local squeeze={{position={x=120,y=90.5}},{position={x=150,y=94.3}},{position={x=180,y=90.5}}}
+runtime.on_event{name=10,id=904,path=squeeze}
+eq(#asked,5); eq(asked[5].bounding_box[2][1],0.7) -- the length path passed it: the width next
+runtime.on_event{name=10,id=905,path=squeeze}
+advance(1)
+last=astra('status').last
+eq(last.outcome,'unreachable')
+assert(last.why:find("no path keeps the car's turning room",1,true) and last.why:find('the path for its width passes our pipe (150.5,95.5) 0.',1,true),last.why)
+-- None by it: the turning room near the target is taken, and the drive stops at its end (stopped_short).
+ours={}
+car.position={x=120,y=90.5}; car.orientation=0.25; car.speed=0
+asked={}
+astra('vehicle',{drive={x=180,y=90.5}})
+runtime.on_event{name=10,id=901}
+eq(asked[2].radius,8)
+runtime.on_event{name=10,id=902,path={{position={x=120,y=90.5}},{position={x=150,y=90.5}},{position={x=174,y=90.5}}}}
+eq(drive_watch(1500),false)
+last=astra('status').last
+eq(last.outcome,'arrived'); eq(last.plan,'turning room, near the target')
+assert(last.stopped_short:find('6.0 tiles from (180,90.5)',1,true),last.stopped_short)
+assert(math.abs(car.position.x-174)<2,'stopped at the path end: '..car.position.x)
+-- Parked beside ours (the turning box collides there): the plan starts at the nearest spot where it fits, and the
+-- path begins where the car stands.
+ours={}; our('pipe',121,91.6)
+car.position={x=120,y=90.5}; car.orientation=0.25; car.speed=0
+asked={}
+r=astra('vehicle',{drive={x=150,y=90.5},dry_run=true})
+eq(r.dry_run,true)
+assert(asked[1].start.x~=120 or asked[1].start.y~=90.5,'started elsewhere')
+local lead=asked[1].start
+runtime.on_event{name=10,id=901,path={{position=lead},{position={x=150,y=90.5}}}}
+advance(1)
+last=astra('status').last
+eq(last.outcome,'previewed'); eq(car.position.x,120)
+assert(last.preview.path:find('^%(120,90.5%) '),last.preview.path); eq(last.preview.plan,'turning room')
+assert(last.preview.touches:find('^pipe %(121,91.5%) [01]%.%d tiles$'),last.preview.touches) -- beside it as it drives off
+assert(last.preview.nearest_ours:find('pipe (121,91.5), ',1,true),last.preview.nearest_ours)
+-- A dry run straight at the target: the line and what it would touch.
+ours={}; our('pipe',140.5,90.5)
+astra('vehicle',{drive={x=160,y=90.5},pathfind=false,dry_run=true})
+advance(1)
+last=astra('status').last
+eq(last.outcome,'previewed'); eq(last.preview.touches,'pipe (140.5,90.5) 0.0 tiles'); eq(car.position.x,120)
+fails(function() astra('vehicle',{drive={x=160,y=90.5},dry_run='yes'}) end,'dry_run must be true or false')
+ours={}
 surface.find_entities_filtered=plain_find
 -- Only the driver drives; drive needs a car.
 astra('vehicle',{exit=true})
