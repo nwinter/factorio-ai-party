@@ -34,7 +34,7 @@ return function(api)
   -- look at least DRAIN_MIN_TICKS before (shift10 03:36-03:38: boiler (-15,42) went from 8 to 6 min on a 64-tile
   -- belt with 4 solid-fuel on it). An inserter-kept buffer swings by a few items: a few coal is a quarter of a
   -- minute's burn, a few solid-fuel nearly a minute's, so the look compared is 2 minutes back or more.
-  local BELT_WALK, DRAIN, DRAIN_MIN_TICKS, OWN_TICKS = 64, 0.8, 7200, 18000
+  local BELT_WALK, DRAIN, DRAIN_MIN_TICKS, OWN_TICKS, OWN_LOOKS = 64, 0.8, 7200, 18000, 20
   local FUEL_SCAN = 300   -- chests and belt tiles read per alert (00:26 rule: bounded reads on the live world)
   local FUELS = {'coal', 'solid-fuel', 'wood', 'rocket-fuel', 'nuclear-fuel'}
   local MAX_SCAN, MAX_GHOSTS, VIEW_TICKS, NEAR_BOILER = 20000, 4000, 3600, 12   -- the view: kept 60 s (task-statuscost)
@@ -282,20 +282,32 @@ return function(api)
             for _, b in ipairs(net.boilers) do
               b.min = b.j / each / 60
               own = own + b.j
+              -- Its looks of the last OWN_TICKS, oldest first; compared with the newest one DRAIN_MIN_TICKS old or more,
+              -- so every look after the first 2 minutes says the same (one sample kept and replaced would not).
               local unit = try(function() return b.e.unit_number end)
-              local prev = unit and st.boiler_own[unit]
+              local hist = unit and st.boiler_own[unit] or {}
+              while hist[1] and game.tick - hist[1].tick > OWN_TICKS do table.remove(hist, 1) end
+              local prev
+              for _, x in ipairs(hist) do if game.tick - x.tick >= DRAIN_MIN_TICKS then prev = x end end
               local dt = prev and (game.tick - prev.tick) / 60
-              if dt and dt * 60 >= DRAIN_MIN_TICKS and prev.j - b.j >= DRAIN * each * dt then
+              if dt and prev.j - b.j >= DRAIN * each * dt then
                 b.drop = string.format('down from %d min %d s before', math.floor(prev.j / each / 60), math.floor(dt))
               end
-              if unit and (not prev or game.tick - prev.tick >= DRAIN_MIN_TICKS) then st.boiler_own[unit] = {tick=game.tick, j=b.j} end
+              if unit and (not hist[#hist] or hist[#hist].tick < game.tick) then
+                hist[#hist+1] = {tick=game.tick, j=b.j}
+                if #hist > OWN_LOOKS then table.remove(hist, 1) end
+                st.boiler_own[unit] = hist
+              end
               if b.fed then net.fed = net.fed + 1 end
               local refilled = b.fed and not b.drop
               if b.min < FUEL_LOW and not refilled then under[#under+1] = b.e end
               if b.min < FUEL_STEPS[1] and not refilled then low[#low+1] = b end
               if not net.lowest_min or b.min < net.lowest_min then net.lowest_min = b.min end
             end
-            for unit, v in pairs(st.boiler_own) do if game.tick - v.tick > OWN_TICKS then st.boiler_own[unit] = nil end end
+            for unit, hist in pairs(st.boiler_own) do
+              local last = hist[#hist]
+              if not last or game.tick - last.tick > OWN_TICKS then st.boiler_own[unit] = nil end
+            end
             net.fuel_min = own / (fed_kw * 1000) / 60
           end
           net.fuel_under = under
