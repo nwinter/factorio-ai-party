@@ -364,12 +364,20 @@ local function finish(index, outcome)
     local nav=action.nav
     if nav then
       last.path_length=nav.path_length
+      -- Which box the path was planned for, and a stop short of a target with no turning room around it (drivesafe).
+      last.plan=nav.plan
+      if nav.short_of and nav.finish then
+        last.stopped_short=string.format('%.1f tiles from (%g,%g): the %s\'s turning room fits no closer (our entities or obstacles around it)',
+          nav.short_of,action.target.x,action.target.y,action.vehicle and action.vehicle.valid and action.vehicle.name or 'vehicle')
+      end
       if action.backed then last.backed_up=string.format('stuck at (%.1f,%.1f) (%s: %s): backed off and asked for a new path',action.backed.at.x,action.backed.at.y,action.backed.side or 'in front',action.backed.front) end
       M.avoid.report(last,nav)
     end
     last.why=last.why or action.why
-    -- Units it pushed through or hit (vehicles.lua: units are no block).
+    -- Units it pushed through or hit (vehicles.lua: units are no block); ours it braked or stopped for; a dry run's path.
     last.rammed=action.rammed_n
+    last.spared=action.spared_list and table.concat(action.spared_list,', ') or nil
+    last.preview=action.preview
     last.reverse=action.reverse
     if outcome=='timed_out' and last.position then last.why=string.format('time ran out at (%.1f,%.1f), %.1f tiles from the target',last.position.x,last.position.y,distance(last.position,action.target)) end
   end
