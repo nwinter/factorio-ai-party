@@ -25,6 +25,9 @@ AGENT_KEYS = ("name", "kind", "display_name", "color", "glyph", "motto", "profil
 TOP_KEYS = ("now", "tick", "paused", "game_time", "title", "subtitle", "research", "production", "science", "alerts",
             "board", "basemap", "shift")
 ATTENTION_KEYS = ("kind", "text", "surface", "platform", "age_s", "dist", "far")
+# What each agent carries, wears and builds (the harness's loadout read via serve.py; the agents page shows it)
+LOADOUT_KEYS = ("health", "vehicle", "guns", "ammo", "selected_gun", "armor", "items", "item_kinds", "slots", "crafting",
+                "building", "age_s")
 CHAT_KEYS = ("seq", "tick", "from", "agent", "text", "t")
 
 
@@ -74,6 +77,11 @@ def public_state(s):
             p = t.get("position") or {}
             a["attention"] = dict({k: t[k] for k in ATTENTION_KEYS if t.get(k) is not None},
                                   **({"position": {"x": round(p["x"], 1), "y": round(p["y"], 1)}} if "x" in p else {}))
+    loadouts = s.get("loadouts") or {}
+    for a in out["agents"]:
+        lo = loadouts.get(a.get("name"))
+        if isinstance(lo, dict) and lo.get("alive"):
+            a["loadout"] = {k: lo[k] for k in LOADOUT_KEYS if lo.get(k) is not None}
     out["chat"] = [{k: c[k] for k in CHAT_KEYS if k in c} for c in s.get("chat", [])[-40:]]
     out["cameras"] = {slot: dict({"agents": c.get("agents", []), "pair": c.get("pair", False), "since": c.get("since")},
                                  **{k: c[k] for k in CAMERA_LABELS if c.get(k)})

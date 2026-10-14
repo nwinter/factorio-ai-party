@@ -557,6 +557,31 @@ a battle, a follow, an incoming group, a segment or an agent fighting on air, th
 replay or a trio it is dropped. One cue per agent per `cue_agent_gap` (180 s), cues `cue_gap` (45 s) apart;
 `director: {cues: false}` turns them off. Live: `grep "cue " runs/RUN/stream-service.log`.
 
+### Loadout strips: guns, armor, building, what they carry (2026-10-14, eng/loadout)
+
+Nick, 08:55: "Especially when they are in combat, I'd like to see their guns/ammo. This can't be shown all the time,
+but maybe we can find good heuristics." live.py reads the harness's operator `loadout` every 4 s once `describe`
+lists it (a failed read waits 30 s). tools/stream/loadout.py keeps the rows and picks one mode per agent:
+
+- `combat`: shooting (shoot or kite), health lower than 10 s before, in a vehicle, a fight within 48 tiles reported
+  in the last 30 s (snapshot `fights`), or the stream's own combat flag. The strip shows the gun in hand with its
+  ammo count large, the other guns small, shield and health bars, and armor equipment.
+- `building`: a build action running (build x of y) or the hand-craft queue busy (the head with its progress bar, the
+  next few).
+- `carrying`: otherwise, for 12 s every 3 min, offset per agent so they do not all show at once. The largest 6 stacks
+  and armor equipment.
+- otherwise nothing.
+
+Snapshot: each agent row has `loadout` (`{mode, ...}` or null) and the top level `loadouts` (every agent's full row,
+for push_live.py and the site). overlay.js `renderLoadouts` draws one strip inside the main camera's frame (lower
+left, above the bar; hidden while a segment card is up) and one along the inset's top (smaller), for the first agent
+each camera shows. Icons come from items.js, with a coloured swatch for items it does not draw. CSS: `.loadout.lo-main`
+and `.loadout.lo-inset`. It goes live with a serve.py restart (the overlay reloads on its static version).
+
+The site's agents page has a "Now" block per card (guns and ammo, armor and equipment, shield, health, vehicle,
+largest stacks, free slots, crafting, building), filled by site.js from the live API every 30 s and hidden when no
+shift is on. push_live.py publishes `agents[].loadout`.
+
 ## Unused cameras
 
 With fewer agents than cameras (or when the director pairs two agents on one), cam2 or cam3 would show an empty or

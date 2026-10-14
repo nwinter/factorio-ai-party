@@ -1249,6 +1249,127 @@
     return true;
   }
 
+  // ---------- loadout strips (Nick, 08:55: guns and ammo in combat, armor, building progress, what they carry) ----------
+  // The agent on the main camera and the one in the inset get one strip each, inside the camera frame, in the mode
+  // model.py picked (tools/stream/loadout.py: combat | building | carrying); none when there is none. Main's strip
+  // gives way to a segment card (both sit lower left).
+  const LOADOUT_HEAD = { combat: "Combat", building: "Building", carrying: "Carrying" };
+  function loIcon(name, size) {
+    const i = itemIcon(name, size);
+    if (i) return i;
+    const sw = el("i", "lo-swatch");
+    sw.style.background = itemInfo(name)[1];
+    return sw;
+  }
+  function loBar(label, now, max, cls) {
+    const row = el("div", "lo-bar " + cls);
+    const bar = el("span", "bar");
+    const fill = el("i");
+    fill.style.width = Math.max(0, Math.min(100, max ? (100 * now) / max : 0)) + "%";
+    bar.append(fill);
+    row.append(el("span", "lo-k", label), bar, el("span", "lo-v", Math.round(now) + "/" + Math.round(max)));
+    return row;
+  }
+  function loEquipment(L, small) {
+    const eq = (L.armor && L.armor.equipment) || [];
+    if (!eq.length) return null;
+    const row = el("div", "lo-equip");
+    for (const e of eq.slice(0, small ? 4 : 6)) {
+      const it = el("span", "lo-eq");
+      it.append(loIcon(e.name, small ? 16 : 20), el("span", "", (e.count > 1 ? e.count + "× " : "") + humanItem(e.name.replace(/-equipment$/, ""))));
+      row.append(it);
+    }
+    return row;
+  }
+  function loadoutBody(L, small) {
+    const box = el("div", "lo-body");
+    if (L.mode === "combat") {
+      const guns = L.guns || [];
+      for (const [i, g] of guns.entries()) {
+        if (small && i > 0) break;
+        const row = el("div", "lo-gun" + (i ? " lo-other" : ""));
+        row.append(loIcon(g.name, i ? 20 : small ? 24 : 36), el("span", "lo-name", humanItem(g.name)));
+        if (g.ammo) row.append(loIcon(g.ammo, i ? 16 : small ? 20 : 28), el("b", "lo-count", String(g.count)));
+        else row.append(el("span", "lo-empty", "no ammo"));
+        box.append(row);
+      }
+      if (!guns.length) box.append(el("div", "lo-empty", "no gun"));
+      const sh = L.armor && L.armor.shield;
+      if (sh) box.append(loBar("shield", sh.now, sh.max, "shield"));
+      if (L.health && L.health.max) box.append(loBar("health", L.health.now, L.health.max, "health"));
+    } else if (L.mode === "building") {
+      const c = L.crafting;
+      if (c && c.queue && c.queue.length) {
+        const head = c.queue[0];
+        const row = el("div", "lo-craft");
+        row.append(loIcon(head.recipe, small ? 20 : 28), el("span", "lo-name", humanItem(head.recipe) + " ×" + head.count));
+        const bar = el("span", "bar");
+        const fill = el("i");
+        fill.style.width = Math.round((c.progress || 0) * 100) + "%";
+        bar.append(fill);
+        row.append(bar);
+        box.append(row);
+        if (c.queue.length > 1) {
+          const next = el("div", "lo-queue");
+          for (const q of c.queue.slice(1, small ? 3 : 6)) {
+            const it = el("span", "lo-q");
+            it.append(loIcon(q.recipe, 16), el("span", "", "×" + q.count));
+            next.append(it);
+          }
+          box.append(next);
+        }
+      }
+      const b = L.building;
+      if (b) {
+        const what = { construct: "construct", build_path: "build path", place_ghosts: "ghosts" }[b.kind] || b.kind.replace(/_/g, " ");
+        box.append(el("div", "lo-build", b.total != null ? what + " " + b.done + " of " + b.total : what));
+      }
+    } else if (L.mode === "carrying") {
+      const row = el("div", "lo-items");
+      for (const it of (L.items || []).slice(0, small ? 4 : 6)) {
+        const cell = el("span", "lo-item");
+        cell.append(loIcon(it.name, small ? 20 : 28), el("b", "", fmtCount(it.count)));
+        cell.title = humanItem(it.name);
+        row.append(cell);
+      }
+      box.append(row);
+    }
+    if (L.mode !== "building") {
+      const eq = loEquipment(L, small);
+      if (eq) box.append(eq);
+    }
+    return box;
+  }
+  function fmtCount(n) { return n >= 10000 ? Math.round(n / 1000) + "k" : n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n); }
+  function renderLoadouts(s) {
+    const byName = new Map((s.agents || []).map((a) => [a.name, a]));
+    const seg = $("segment");
+    for (const slot of ["main", "inset"]) {
+      const frame = $("cam-" + slot);
+      if (!frame) continue;
+      let strip = frame.querySelector(".loadout");
+      const cam = (s.cameras || {})[slot] || {};
+      const who = (cam.agents || [])[0];
+      const L = who && byName.get(who) ? byName.get(who).loadout : null;
+      const hidden = !L || (slot === "inset" && !frame.classList.contains("on")) || (slot === "main" && seg && !seg.hidden);
+      if (hidden) { if (strip) strip.hidden = true; continue; }
+      if (!strip) { strip = el("div", "loadout"); frame.append(strip); }
+      const { age_s, ...shown } = L;
+      const sig = JSON.stringify(shown);
+      if (strip.dataset.sig !== sig) {
+        strip.dataset.sig = sig;
+        strip.textContent = "";
+        strip.className = "loadout panel lo-" + slot + " lo-" + L.mode;
+        const head = el("div", "lo-head");
+        head.append(el("span", "lo-mode", LOADOUT_HEAD[L.mode] || L.mode));
+        if (L.why && L.mode === "combat") head.append(el("span", "lo-why", L.why));
+        if (L.armor && L.armor.name && L.mode !== "building") head.append(el("span", "lo-armor", humanItem(L.armor.name)));
+        strip.append(head, loadoutBody(L, slot === "inset"));
+      }
+      strip.hidden = false;
+    }
+  }
+
   function render(s) {
     if (staleCheck(s)) return;
     state = s;
@@ -1265,6 +1386,7 @@
     renderResearchCard(s);
     renderCams(s);
     renderSegment(s);
+    renderLoadouts(s);
     rotateWidgets();
     watchVoice();
     watchAlerts();

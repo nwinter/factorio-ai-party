@@ -177,6 +177,10 @@ STYLE = """<style>
 .agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 16px; }
 .agent-card { padding: 14px 16px; border-top: 4px solid var(--ac); }
 .agent-card .voice { margin: .15rem 0 0; color: var(--muted); font-size: .82rem; }
+.agent-card .agent-now { margin: .5rem 0; padding: .4rem .6rem; border-left: 3px solid var(--ac); background: var(--surface); }
+.agent-card .agent-now h4 { margin: 0 0 .2rem; font-size: .82rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.agent-card .now-kv { grid-template-columns: 1fr; }
+.agent-card .now-kv dd { overflow-wrap: anywhere; }
 .agent-card .kv { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
 .agent-card .kv dd { font-variant-numeric: tabular-nums; }
 .agent-card .spark { display: flex; align-items: flex-end; gap: 3px; height: 34px; margin: .4rem 0 0; }
@@ -259,6 +263,7 @@ def card(k, t, data, agent, avatar, esc):
             f'<header>{avatar(k, "lg")}<div><h3>{esc(a["name"])}</h3>'
             f'<p class="model">{esc(a.get("model", ""))}{" · " + esc(maker) if maker else ""} · {esc(a.get("harness", ""))}</p>'
             f'{f"<p class=voice>Voice: {esc(voice)}</p>" if voice else ""}</div></header>'
+            f'<section class="agent-now" data-agent="{esc(k)}" hidden><h4>Now</h4><dl class="kv now-kv"></dl></section>'
             f'<dl class="kv">{dl}</dl>{spark}</article>')
 
 
@@ -510,7 +515,7 @@ def maker_table(data, agent, avatar, esc):
             f'<tbody>{"".join(body)}</tbody></table></div>')
 
 
-def build_agents(data, agent, avatar, esc):
+def build_agents(data, agent, avatar, esc, api=None):
     """The /agents/ page body and its head extras."""
     shifts = data["shifts"]
     n0, n1 = (shifts[0][0], shifts[-1][0]) if shifts else (None, None)
@@ -533,7 +538,8 @@ def build_agents(data, agent, avatar, esc):
             f'<h2 id="makers">By maker</h2>{maker_table(data, agent, avatar, esc)}'
             f'<h2 id="hauling">Hand hauling</h2>{hauling_table(data, agent, avatar, esc)}'
             f'{tokens_section(data, agent, avatar, esc)}'
-            f'<h2 id="cards">The team</h2><div class="agent-grid">{cards}</div>'
+            # each card's "Now" (guns, armor, inventory, crafting, building) comes from the live API (site.js)
+            f'<h2 id="cards">The team</h2><div class="agent-grid"{f" data-api={chr(34)}{esc(api)}{chr(34)}" if api else ""}>{cards}</div>'
             f'<h2 id="notes">Definitions</h2><dl class="kv defs">'
             + "".join(f"<div><dt>{esc(a)}</dt><dd>{esc(b)}</dd></div>" for a, b in DEFS) + "</dl>" + SORT_JS)
     return body, STYLE
