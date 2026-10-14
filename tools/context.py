@@ -214,6 +214,102 @@ def trim_log(notes, keep=LOG_KEEP):
                                       "delete them from notes.md]"] + lines[cut:])
 
 
+BRIEF_MAX = 3000   # characters (docs/studies/2026-10-13-agent-minds.md fix 8: re-reads of 25-260 KB after a compaction)
+# Harnesses that keep AGENTS.md through a compaction: Claude Code loads CLAUDE.md (a link to it) as memory, Codex loads
+# AGENTS.md as its instructions. Grok and Muse read it as a file, so they are not told to skip it.
+KEEPS_AGENTS_MD = ("claude", "codex")
+
+
+def section(notes, *names, cap=900):
+    """The body of the first `## NAME` section of notes.md matching any of `names` (case-insensitive), cut to cap."""
+    lines = notes.split("\n")
+    for i, l in enumerate(lines):
+        if l.startswith("## ") and any(n in l[3:].strip().lower() for n in names):
+            end = next((j for j in range(i + 1, len(lines)) if lines[j].startswith("## ")), len(lines))
+            body = "\n".join(lines[i + 1:end]).strip()
+            return body if len(body) <= cap else body[:cap].rstrip() + " [...]"
+    return ""
+
+
+def journal_tail(d, n_lines=4000):
+    path = os.path.join(d, "journal.jsonl")
+    try:
+        return tail_lines(path, size=3_000_000)[-n_lines:]
+    except OSError:
+        return []
+
+
+def recent_tells(lines, keep=3):
+    """The last tells to this agent, from its replies' team hints ("astra, 2s ago: ...")."""
+    found = []
+    for line in lines:
+        if '"tells"' not in line or '"team"' not in line:
+            continue
+        try:
+            team = ((json.loads(line).get("response") or {}).get("result") or {}).get("team") or {}
+        except ValueError:
+            continue
+        for t in team.get("tells") or []:
+            if isinstance(t, str) and t not in found:
+                found.append(t)
+    return [t if len(t) <= 180 else t[:180] + " [...]" for t in found[-keep:]]
+
+
+def my_claims(lines, me, keep=3):
+    """Board items this agent owns from its own board_post/board_update replies: the latest state of each."""
+    items = {}
+    for line in lines:
+        if '"item"' not in line or '"owner"' not in line:
+            continue
+        try:
+            item = ((json.loads(line).get("response") or {}).get("result") or {}).get("item") or {}
+        except ValueError:
+            continue
+        if item.get("id") is not None and item.get("owner") == me:
+            items[item["id"]] = item
+    open_ = [i for i in items.values() if i.get("status") not in ("done", "closed", "cancelled")]
+    return [f"#{i['id']} {i.get('title', '')[:90]} ({i.get('status')})" for i in open_[-keep:]]
+
+
+def brief(d, why):
+    """After a compaction: at most BRIEF_MAX characters from notes.md (Now, claims, agreements), the agent's own
+    claims and the last tells to it from its journal, and what its last 30 minutes measured (handover.py), instead of
+    the whole notes.md; the harnesses that keep AGENTS.md are told not to re-read it."""
+    try:
+        kind = open(os.path.join(d, MARKER)).read().split()[0]
+    except (OSError, IndexError):
+        kind = ""
+    try:
+        notes = open(os.path.join(d, "notes.md"), errors="replace").read()
+    except OSError:
+        notes = ""
+    me = os.path.basename(os.path.realpath(d))
+    lines = journal_tail(d)
+    out = [f"{why} A brief of at most 3 KB follows; notes.md has the rest (read only what this lacks)."]
+    if kind in KEEPS_AGENTS_MD:
+        out.append("AGENTS.md is still loaded in your context: do not re-read it.")
+    now = section(notes, "now")
+    out += ["", "## Now (notes.md)", now or "(notes.md has no Now section)"]
+    for name in ("claim", "agreement"):
+        s = section(notes, name, cap=400)
+        if s:
+            out += ["", f"## {name.capitalize()}s (notes.md)", s]
+    claims = my_claims(lines, me)
+    if claims:
+        out += ["", "## Your open board items (your replies)"] + [f"- {c}" for c in claims]
+    tells = recent_tells(lines)
+    if tells:
+        out += ["", "## Last tells to you"] + [f"- {t}" for t in tells]
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from handover import journal_stats, measured_lines
+    st = journal_stats(os.path.join(d, "journal.jsonl"), since=time.time() - 1800, max_bytes=3_000_000)
+    if st and st["first"]:
+        out += ["", "## Your last 30 minutes, measured (your journal)"] + measured_lines(st, "last 30 minutes")[:6]
+    out += ["", "Before acting: read deadline.txt, then ./fh call status and ./fh call chat."]
+    text = "\n".join(out)
+    return text if len(text) <= BRIEF_MAX else text[:BRIEF_MAX - 40].rstrip() + "\n[... brief cut at 3 KB]"
+
+
 def notes_block(d, why):
     try:
         notes = trim_log(open(os.path.join(d, "notes.md")).read())
@@ -306,7 +402,7 @@ def hook(event, args):
         state.pop("reinject", None)
         save()
         log(source=payload.get("source"))
-        print(notes_block(d, "Your context was just compacted."))
+        print(brief(d, "Your context was just compacted."))
     elif event == "post-tool":
         context = None
         if "hooks_seen" not in state:
@@ -320,7 +416,7 @@ def hook(event, args):
             state.pop("reinject")
             save()
             log(action="reinject")
-            context = notes_block(d, "Your context was just compacted.")
+            context = brief(d, "Your context was just compacted.")
         elif "--at" in args and transcript and not state.get("nudged"):
             at = int(args[args.index("--at") + 1])
             tokens = claude_tokens(transcript, state.get("since", 0))

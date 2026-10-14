@@ -109,6 +109,39 @@ def memo_tests():
     again = hoststory.StoryMemo(path)
     assert [h["text"] for h in again.headlines][-1] == "Haiku died" and again.facts()["research"].startswith("Battery")
     assert hoststory.StoryMemo(None).facts() is None
+    # moments from the agents' own minds (site/content/moments.json): the latest 3 marked for the memo, one line each,
+    # only what viewers saw (operator, 2026-10-13): a quote of another kind (a thought, a tell) is skipped
+    mp = os.path.join(d, "moments.json")
+    rows = [{"n": 22, "agents": ["astra"], "shift": 7, "time": "16:06", "fits": ["memo"], "seen": ["voiced"],
+             "title": "five thousand circuits out of reach",
+             "quotes": [{"who": "astra", "kind": "voiced 16:06", "text": "A provider chest only helps if robots can reach it."}]},
+            {"n": 18, "agents": ["sonnet"], "shift": 7, "time": "16:58", "fits": ["memo", "chat"], "seen": ["voiced"],
+             "title": "fair point, I was stuck in ...",
+             "quotes": [{"who": "sonnet", "kind": "voiced", "text": "fair point, I was stuck in a courier loop."},
+                        {"who": "sonnet", "kind": "working text", "text": "never seen"}]},
+            {"n": 3, "agents": ["gemini"], "shift": 7, "time": "17:47", "fits": ["memo"], "seen": ["voiced"],
+             "quotes": [{"who": "gemini", "kind": "thought 17:47", "text": "private thought"}]},
+            {"n": 6, "agents": ["haiku"], "shift": 7, "time": "15:52", "fits": ["chat"], "seen": ["chat"],
+             "quotes": [{"who": "haiku", "kind": "chat", "text": "correction: I have 0 coal now."}]},
+            {"n": 29, "agents": ["opus"], "shift": 5, "time": "10:16", "fits": ["memo"], "seen": ["chat"], "title": "the delivery van",
+             "quotes": [{"who": "opus", "kind": "confession", "text": "Quiet shift for me: I mostly became the team's delivery van."}]},
+            {"n": 28, "agents": ["astra"], "shift": 5, "time": "09:15", "fits": ["memo"], "seen": ["voiced"],
+             "quotes": [{"who": "astra", "kind": "voiced", "text": "Every hand-carried stack feels productive."}]}]
+    with open(mp, "w") as f:
+        json.dump(rows, f)
+    assert hoststory.memo_moments(mp) == [
+        'Sonnet (shift 7, 16:58), fair point, I was stuck in ...: "fair point, I was stuck in a courier loop." (said on stream)',
+        'Astra (shift 7, 16:06), five thousand circuits out of reach: "A provider chest only helps if robots can reach it." '
+        '(said on stream)',
+        'Opus (shift 5, 10:16), the delivery van: "Quiet shift for me: I mostly became the team\'s delivery van." (in chat)']
+    assert "private" not in json.dumps(hoststory.memo_moments(mp)) and "never seen" not in json.dumps(hoststory.memo_moments(mp))
+    m2 = hoststory.StoryMemo(None, moments_path=mp)
+    assert m2.update(s, t0 + 4800)["moments"][0].startswith("Sonnet (shift 7")
+    assert "moments" not in hoststory.StoryMemo(None, moments_path=os.path.join(d, "none.json")).update(s, t0 + 4800)
+    # the site's file parses into moments the memo can use, all of them seen by viewers
+    real = hoststory.memo_moments()
+    assert real and all(line.count('"') >= 2 and line.endswith(("(said on stream)", "(in chat)", "(said on stream; in chat)"))
+                        for line in real), real
 
 
 def caster_tests():

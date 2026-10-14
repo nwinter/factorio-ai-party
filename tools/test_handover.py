@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+"""Shift handover with measured outcomes and the post-compaction brief (tools/handover.py, tools/context.py;
+docs/studies/2026-10-13-agent-minds.md fixes 8 and 12): python3 tools/test_handover.py
+
+1. journal_stats: world actions, messages, reads and waits counted apart; idle from the replies' clock lines, never
+   more than the time between requests (parallel requests counted one stretch twice: 643%); transfers and feeds that
+   moved nothing; failures by message; the jobs a queue got through (its job ids advance).
+2. carry: the new notes.md opens with "## Last shift, measured" (replacing the one before), keeps the notes, and caps
+   them at 16 KB (the full text to notes-archive.md; Muse's was 134 KB).
+3. brief: at most 3 KB after a compaction: notes.md's Now, Claims and Agreements, open board items and the last tells
+   from the journal, the last 30 minutes measured; "AGENTS.md is still loaded" for Claude Code and Codex only.
+"""
+import json, os, shutil, subprocess, sys, tempfile, time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import context  # noqa: E402
+import handover  # noqa: E402
+
+
+def iso(t):
+    return time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(t))
+
+
+def journal(path, t0, rows):
+    """rows: (seconds after t0, action, args, ok, result) -> request/response pairs as fh journals them."""
+    with open(path, "w") as f:
+        for i, (s, action, args, ok, result) in enumerate(rows):
+            rid = f"r{i}"
+            f.write(json.dumps({"at": iso(t0 + s), "event": "request",
+                                "request": {"id": rid, "action": action, "bot": "haiku", "args": args}}) + "\n")
+            resp = {"id": rid, "ok": ok, "tick": 1}
+            if ok:
+                resp["result"] = result
+            else:
+                resp["error"] = {"code": "action_failed", "message": result}
+            f.write(json.dumps({"at": iso(t0 + s + 0.5), "event": "response", "response": resp}) + "\n")
+
+
+def clock(idle):
+    return f"game 23h18m; +{idle}s since your last request, character idle {idle}s of it (100%); hand crafting 0s queued"
+
+
+def sample(path, t0):
+    journal(path, t0, [
+        (0, "status", {}, True, {"clock": clock(0)}),
+        (10, "transfer", {"item": "coal"}, True, {"transferred": 0, "clock": clock(10)}),
+        (20, "transfer", {"item": "coal"}, True, {"transferred": 50, "clock": clock(2)}),
+        (30, "feed", {}, True, {"transferred": 0, "clock": clock(10)}),
+        (40, "sleep", {"seconds": 150}, True, {"sleeping_s": 150, "clock": clock(10)}),
+        (200, "inspect", {"position": {"x": 1, "y": 2}}, False, "agent-harness/runtime:8746: target is outside local visible area: (12,5)"),
+        (210, "inspect", {"position": {"x": 3, "y": 4}}, False, "agent-harness/runtime:8746: target is outside local visible area: (14,9)"),
+        (220, "tell", {"to": "astra", "text": "on it"}, True, {"seq": 5, "clock": clock(9999),
+                                                               "team": {"tells": ["astra, 2s ago: please feed the boilers"]}}),
+        (230, "queue_status", {}, True, {"pending": [{"id": "job-100"}, {"id": "job-101"}]}),
+        (900, "queue_status", {}, True, {"pending": [{"id": "job-140"}]}),
+        (910, "board_post", {"kind": "claim", "title": "LDS line"}, True,
+         {"item": {"id": 297, "title": "Fulgora ship: 85 foundation", "owner": "haiku", "status": "claimed"}}),
+    ])
+
+
+def stats():
+    d = tempfile.mkdtemp()
+    try:
+        path = os.path.join(d, "journal.jsonl")
+        t0 = time.time() - 1000
+        sample(path, t0)
+        st = handover.journal_stats(path)
+        assert st["actions"] == 3 and st["talk"] == 2 and st["reads"] == 5 and st["waits"] == 1, st
+        assert st["noop"] == {"transfer": 1, "feed": 1} and st["wait_s"] == 150, st
+        assert st["errors"][0] == ("inspect: agent-harness/runtime:N: target is outside local visible area: (N,N)", 2), st
+        assert st["queue_jobs"] == 40, st
+        # idle: the tell's reply claims 9999 s; the gap before it was 10 s, so 10 counts
+        assert st["idle_s"] == 10 + 2 + 10 + 10 + 10, st["idle_s"]
+        lines = handover.measured_lines(st)
+        assert lines[0] == "- 3 world actions, 2 messages and board posts, 5 reads, 1 waits (2 min of waiting asked) over 15 min", lines
+        assert "- moved nothing: transfer x1, feed x1" in lines and "- your queue got through about 40 jobs" in lines, lines
+        assert any(l.startswith("- failed x2: inspect:") for l in lines), lines
+        # since: the last 5 minutes only
+        st5 = handover.journal_stats(path, since=t0 + 800)
+        assert st5["reads"] == 1 and st5["talk"] == 1 and st5["actions"] == 0, st5
+        print("stats: ok")
+    finally:
+        shutil.rmtree(d)
+
+
+def carry():
+    d = tempfile.mkdtemp()
+    try:
+        prev, new = os.path.join(d, "prev"), os.path.join(d, "new")
+        os.makedirs(prev)
+        os.makedirs(new)
+        sample(os.path.join(prev, "journal.jsonl"), time.time() - 1000)
+        notes = ("(Carried over from the previous shift, run shift05: its notes.md for haiku, as that shift left it.)\n\n"
+                 "## Last shift, measured (from your journal, replaced each shift)\n- 1 world actions\n\n"
+                 "# Notes\n\n## Now\nFeeding boilers.\n\n## Lessons\n" + ("x" * 90 + "\n") * 300 +
+                 "## Log\n" + "".join(f"- line {i}\n" for i in range(40)))
+        open(os.path.join(prev, "notes.md"), "w").write(notes)
+        r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "handover.py"), "carry", os.path.join(prev, "notes.md"),
+                            os.path.join(prev, "journal.jsonl"), os.path.join(new, "notes.md"), "shift06", "haiku"],
+                           capture_output=True, text=True)
+        assert r.returncode == 0 and r.stdout.strip() == "cut", r.stdout + r.stderr
+        out = open(os.path.join(new, "notes.md")).read()
+        assert out.startswith("(Carried over from the previous shift, run shift06: its notes.md for haiku, as that shift left it; it was 27 KB, cut to 16 KB"), out[:200]
+        assert out.count("## Last shift, measured") == 1 and "- 3 world actions" in out and "- 1 world actions" not in out, out[:600]
+        assert "## Now\nFeeding boilers." in out and len(out) < handover.NOTES_MAX + 1200, len(out)
+        assert out.count("Carried over") == 1
+        arch = open(os.path.join(new, "notes-archive.md")).read()
+        assert "- line 39" in arch and len(arch) > 27000, len(arch)
+        # small notes: no cut, no archive
+        shutil.rmtree(new)
+        os.makedirs(new)
+        open(os.path.join(prev, "notes.md"), "w").write("# Notes\n\n## Now\nFeeding boilers.\n")
+        handover.carry(os.path.join(prev, "notes.md"), os.path.join(prev, "journal.jsonl"), os.path.join(new, "notes.md"),
+                       "shift06", "haiku")
+        assert not os.path.exists(os.path.join(new, "notes-archive.md"))
+        # new-run.sh uses it for a resumed shift
+        src = open(os.path.join(ROOT, "tools", "new-run.sh")).read()
+        assert 'tools/handover.py" carry "$prev_notes"' in src
+        print("carry: ok")
+    finally:
+        shutil.rmtree(d)
+
+
+def brief():
+    d = tempfile.mkdtemp()
+    try:
+        ws = os.path.join(d, "haiku")
+        os.makedirs(ws)
+        sample(os.path.join(ws, "journal.jsonl"), time.time() - 1000)
+        open(os.path.join(ws, "notes.md"), "w").write(
+            "# Notes\n\n## Now\nFeeding boilers for astra.\n\n## Claims\n- RF reserve chest 14.5,37.5\n\n"
+            "## Agreements\n- Haiku keeps coal for boilers.\n\n## Lessons\n" + "y" * 20000 + "\n")
+        open(os.path.join(ws, context.MARKER), "w").write("claude haiku 80000\n")
+        b = context.brief(ws, "Your context was just compacted.")
+        assert len(b) <= context.BRIEF_MAX, len(b)
+        assert "AGENTS.md is still loaded in your context: do not re-read it." in b, b
+        assert "## Now (notes.md)\nFeeding boilers for astra." in b and "RF reserve chest" in b and "keeps coal" in b, b
+        assert "#297 Fulgora ship: 85 foundation (claimed)" in b and "astra, 2s ago: please feed the boilers" in b, b
+        assert "## Your last 30 minutes, measured" in b and "moved nothing: transfer x1, feed x1" in b, b
+        assert "yyyy" not in b  # the rest of notes.md stays in the file
+        open(os.path.join(ws, context.MARKER), "w").write("grok grok-4.7 154000\n")
+        assert "AGENTS.md is still loaded" not in context.brief(ws, "x")  # Grok reads it as a file
+        # the hooks print the brief, not the whole notes.md
+        open(os.path.join(ws, context.MARKER), "w").write("claude haiku 80000\n")
+        r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "context.py"), "hook", "session-compact"],
+                           input=json.dumps({"cwd": ws, "source": "compact"}), capture_output=True, text=True)
+        assert r.returncode == 0 and r.stdout.startswith("Your context was just compacted. A brief of at most 3 KB"), r.stdout[:200]
+        assert len(r.stdout) <= context.BRIEF_MAX + 2
+        print(f"brief: ok ({len(b)} characters)")
+    finally:
+        shutil.rmtree(d)
+
+
+if __name__ == "__main__":
+    stats()
+    carry()
+    brief()

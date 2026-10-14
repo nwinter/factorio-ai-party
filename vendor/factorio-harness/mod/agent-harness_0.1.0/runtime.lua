@@ -48,7 +48,7 @@ local function state() return storage.agent_harness end
 -- Bots (script-driven characters), profiles/speech bubbles and director
 -- cameras. Bot indices sit above every player index (bots.BASE).
 M.crafting=require('crafting'){state=state}
-M.claims=require('claims'){state=state,where_from=function(me) return M.where.from(me) end}
+M.claims=require('claims'){state=state,where_from=function(me) return M.where.from(me) end,owner_state=function(name) return M.board.owner_state(name) end}
 M.belt=require('belt')()
 -- Queues carried over a hot install (carry.lua: notes them while this loads).
 M.carry=require('carry'){state=state}
@@ -468,6 +468,12 @@ local function summary(e)
     direction=e.direction~=0 and e.direction or nil, health=e.health and max_health and e.health<max_health and e.health or nil,
     force=e.force.name~='player' and e.force.name or nil, status_name=entity_status_names[e.status], amount=e.type == 'resource' and e.amount or nil,
     ghost_name=(e.type=='entity-ghost' or e.type=='tile-ghost') and e.ghost_name or nil,ghost_type=e.type=='entity-ghost' and e.ghost_type or nil}
+  -- An electric machine no pole reaches is unpowered, whatever its status
+  -- reads (Gemini's roboports read low_power for 2 h 45 min).
+  if e.type~='entity-ghost' and e.type~='tile-ghost' and M.unpowered then
+    local ok,why=pcall(M.unpowered,e)
+    if ok and why then out.status_name='unpowered'; out.power=why end
+  end
   -- An underground end shows what the belt GUI arrows show: which end it is
   -- (flow direction by name) and where its partner is.
   if e.type=='underground-belt' then
@@ -608,7 +614,7 @@ function handlers.describe()
         outcomes='with radius: collected | nothing_collected | inventory_full | timed_out; status reports got, visited'},
       research={technology='name (omit everything to report: current, progress, queue, pending, and entries: each queued technology with progress %, queued_by, packs, done_in at the lab throughput measured over the last 5 minutes, waits_for a pack nobody made in 10 minutes; throughput; clock_stops_at)',remove='a queued technology name, or an array: takes it out of the queue as the research GUI does, with queued technologies that need it (also_removed); progress is kept for later',cancel='same as remove',move='a queued technology name: reorders it to position `to` (1 = researched now); refused ahead of a queued prerequisite or behind a queued technology that needs it',to='position for move (1..queue length)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={prefix='optional',limit='1..256'}, technologies={prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those'},
       blueprint_import={blueprint='export string',slot='default clipboard'},blueprint_export={slot='default clipboard',layout='true returns normalized relative layout and material costs instead of export string'},blueprint_list={},blueprint_delete={slot='name'},
-      blueprint_capture={area='{left_top:{x,y},right_bottom:{x,y}}',slot='default clipboard',tiles='boolean',station_names='boolean'},copy={area='{left_top:{x,y},right_bottom:{x,y}}'},cut={area='{left_top:{x,y},right_bottom:{x,y}}'},paste={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost',returns='count, by_name, bounds; fewer ghosts than the blueprint holds: expected, not_placed [{name,position,direction,reason}] (first 20, not_placed_count; reason: uncharted, a broken tile rule, what blocks the footprint), existing_entities/existing_ghosts at the blueprint\'s spots, settings_differ [{name,position,ghost?,differs,fix}] (recipe, filters, modules unlike the blueprint; fix is the configure call), reason'},blueprint_place={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost',returns='count, by_name, bounds; fewer ghosts than the blueprint holds: expected, not_placed [{name,position,direction,reason}] (first 20, not_placed_count; reason: uncharted, a broken tile rule, what blocks the footprint), existing_entities/existing_ghosts at the blueprint\'s spots, settings_differ [{name,position,ghost?,differs,fix}] (recipe, filters, modules unlike the blueprint; fix is the configure call), reason'},deconstruct={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top:{x,y},right_bottom:{x,y}} up to 256x256 of charted map',entity_names='optional array',entity_types='optional array',items_on_ground='optional boolean: mark every item stack on the ground in the area, as a planner over items on the ground (construction robots carry them to storage chests); other entities then only with entity_names/entity_types. Returns item_stacks (marked), item_stacks_already, items [{name,count,stacks}], robot_networks and storage_chests (logistic networks whose construction area covers marked stacks), outside_construction_area (stacks no roboport covers)',
+      blueprint_capture={area='{left_top:{x,y},right_bottom:{x,y}}',slot='default clipboard',tiles='boolean',station_names='boolean'},copy={area='{left_top:{x,y},right_bottom:{x,y}}'},cut={area='{left_top:{x,y},right_bottom:{x,y}}'},paste={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}: where the blueprint\'s center goes (the game centers it there); with anchor hub, where its hub goes (default the platform\'s hub)',anchor='hub | center: on a platform a blueprint holding a space-platform-hub is placed by its hub (default there); center places its center at position',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost',mode='normal (default: all or nothing, as a player\'s paste) | forced (shift-paste: ghosts where they fit; trees, rocks and the like in the way marked for deconstruction) | superforced (ctrl+shift-paste: our own entities in the way marked too)',returns='count, by_name, bounds; mode; origin_at, center_at (where the blueprint\'s 0,0 and center landed); anchor {by, hub, paste_position, hub_landed, aligned}; marked_for_deconstruction, marked_by_name (what a forced paste marked); wires {in_blueprint, connected, added, end_not_placed, failed, ends_not_placed} (the blueprint\'s wires between placed ends: missing ones connected); fewer ghosts than the blueprint holds: expected, not_placed [{name,position,direction,reason}] (first 20, not_placed_count; reason: uncharted, a broken tile rule, what blocks the footprint), existing_entities/existing_ghosts at the blueprint\'s spots, settings_differ [{name,position,ghost?,differs,fix}] (recipe, filters, modules unlike the blueprint; fix is the configure call), reason'},blueprint_place={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}: where the blueprint\'s center goes (the game centers it there); with anchor hub, where its hub goes (default the platform\'s hub)',anchor='hub | center: on a platform a blueprint holding a space-platform-hub is placed by its hub (default there); center places its center at position',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost',mode='normal (default: all or nothing, as a player\'s paste) | forced (shift-paste: ghosts where they fit; trees, rocks and the like in the way marked for deconstruction) | superforced (ctrl+shift-paste: our own entities in the way marked too)',returns='count, by_name, bounds; mode; origin_at, center_at (where the blueprint\'s 0,0 and center landed); anchor {by, hub, paste_position, hub_landed, aligned}; marked_for_deconstruction, marked_by_name (what a forced paste marked); wires {in_blueprint, connected, added, end_not_placed, failed, ends_not_placed} (the blueprint\'s wires between placed ends: missing ones connected); fewer ghosts than the blueprint holds: expected, not_placed [{name,position,direction,reason}] (first 20, not_placed_count; reason: uncharted, a broken tile rule, what blocks the footprint), existing_entities/existing_ghosts at the blueprint\'s spots, settings_differ [{name,position,ghost?,differs,fix}] (recipe, filters, modules unlike the blueprint; fix is the configure call), reason'},deconstruct={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top:{x,y},right_bottom:{x,y}} up to 256x256 of charted map',entity_names='optional array',entity_types='optional array',items_on_ground='optional boolean: mark every item stack on the ground in the area, as a planner over items on the ground (construction robots carry them to storage chests); other entities then only with entity_names/entity_types. Returns item_stacks (marked), item_stacks_already, items [{name,count,stacks}], robot_networks and storage_chests (logistic networks whose construction area covers marked stacks), outside_construction_area (stacks no roboport covers)',
         tiles='optional: true (every minable tile in the area) or 1..32 tile names, e.g. ["space-platform-foundation"]: marks tiles as a planner in tile mode does (robots take them back to the hub or a roboport); entities then only with entity_names/entity_types. Returns tiles_marked, tiles_already, tiles_refused with refused {under_entity, engine, not_minable, error}, tiles_blocked (marked tiles under entities not marked; a note names them)'},cancel_deconstruction={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top:{x,y},right_bottom:{x,y}}',entity_names='optional array',entity_types='optional array',items_on_ground='optional boolean: unmark the item stacks on the ground in the area (item_stacks)',
         tiles='optional: true or 1..32 tile names: clears tile marks (tiles_cancelled); entities then only with entity_names/entity_types'},
       screenshot={path='relative .png path under script-output',width='320..1920',height='240..1080'}},
@@ -1263,7 +1269,12 @@ function handlers.scan(p,a)
     local v=a[key]
     assert(v==nil or type(v)=='string' or (type(v)=='table' and #v<=32),key..' must be a string or up to 32 strings')
   end
-  local fields=type(a.fields)=='string' and {a.fields} or a.fields or {}
+  -- "hp|fuel" or "hp,fuel" as one string, as describe's example reads (61% of
+  -- unknown-field errors copied it whole): each name a field.
+  local fields={}
+  for _,v in ipairs(type(a.fields)=='string' and {a.fields} or a.fields or {}) do
+    for f in tostring(v):gmatch('[^|,%s]+') do fields[#fields+1]=f end
+  end
   for _,f in ipairs(fields) do assert(scan_fields[f],'unknown field '..tostring(f)..'; use hp|fuel|inventory|output|spoil|status|recipe|direction|amount|range|ammo|target|lanes|io|fluids') end
   local limit=integer(a.limit,256,1,1024,'limit')
   local filtered=a.name~=nil or a.type~=nil
@@ -1498,7 +1509,7 @@ function handlers.platforms(p,a) return space.platforms(p,a) end
 for _,name in ipairs({'requests','platform_create','platform_schedule','launch','land','drop'}) do
   handlers[name]=function(p,a) return space[name](p,a) end
 end
-local views={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,sleep_check=true}
+local views={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,sleep_check=true}
 function handlers.observe(p,a)
   -- Newer read-only views travel as observe scopes: an already loaded
   -- bootstrap treats unknown action names as cached mutations.
@@ -2373,7 +2384,8 @@ function handlers.inspect(p,a)
   out.in_reach=p.can_reach_entity(e)
   out.health=e.health; out.max_health=e.max_health; out.direction=e.direction
   out.status=e.status
-  out.status_name=entity_status_names[out.status]
+  -- summary's "unpowered" (no pole reaches it) stands over the engine's name.
+  out.status_name=out.power and 'unpowered' or entity_status_names[out.status]
   out.energy=e.energy
   out.fluids=e.get_fluid_contents()
   out.electric_network_id=e.electric_network_id
@@ -2722,6 +2734,26 @@ local function transfer_one(p,a,pos,e)
     at_up_to=a.item and a.up_to~=nil and a.direction=='to_entity' and count(target)>=a.up_to or nil}
   if a.direction=='to_player' then out.inventory_full=full else out.entity_full=full end
   if rocket then out.rocket_weight=space.rocket_weight(e); out.weight_limited=rocket.limited end
+  -- Nothing moved and nothing was full: say why (agent-minds study: about 125
+  -- empty takes a shift read as a success; Muse 38 of 43 circuit takes).
+  if moved==0 and not full and not short then
+    pcall(function()
+      local where=string.format('%s at (%g,%g)',e.name,e.position.x,e.position.y)
+      local label=a.item and (a.item..(quality~='normal' and '@'..quality or '')) or 'items'
+      if a.direction=='to_player' then
+        local list={}
+        for i,s in ipairs(sources[1].get_contents()) do if i<=3 then list[#list+1]=s.name..'*'..s.count end end
+        out.nothing_moved=string.format('%s holds no %s in %s; %s',where,label,a.inventory or inferred or 'its inventories',
+          #list>0 and 'it holds '..table.concat(list,' ') or 'it is empty')
+      elseif out.at_up_to then
+        out.nothing_moved=string.format('%s already holds %d %s (up_to %d)',where,count(target),label,a.up_to)
+      elseif a.keep~=nil and wanted==0 then
+        out.nothing_moved=string.format('you hold %d %s and keep %d',available(),label,a.keep)
+      else
+        out.nothing_moved=string.format('%s took no %s into %s',where,label,a.inventory or inferred or 'its inventory')
+      end
+    end)
+  end
   -- An emptied corpse goes, as when a player takes everything from it.
   if a.direction=='to_player' and e.type=='character-corpse' and sources[1].is_empty() then e.destroy(); out.corpse_removed=true end
   return out
@@ -2730,7 +2762,7 @@ end
 -- must not undo the others. Quiet batches list only entities that changed or failed.
 local function transfer_batch(p,a,targets,quiet)
   local total,totals,items,rows,untouched=0,{},{},{},0
-  local blocked,short
+  local blocked,short,empty
   for _,t in ipairs(targets) do
     local pos=t.entity and t.entity.position or t.position
     local ok,result
@@ -2740,6 +2772,7 @@ local function transfer_batch(p,a,targets,quiet)
     if result==nil then untouched=untouched+1
     elseif ok then
       total=total+result.transferred
+      empty=empty or result.nothing_moved
       blocked=result.inventory_full and result.inventory_full.blocked_item
       if result.none_held then
         short=short or {}
@@ -2758,7 +2791,8 @@ local function transfer_batch(p,a,targets,quiet)
     error(string.format('no %s in inventory or ammo slots; %d target(s) want more: %s',a.item,#short,table.concat(short,', ',1,math.min(#short,6))),0)
   end
   return {transferred=total,items=not a.item and items or nil,entities=rows,unchanged=(quiet or untouched>0) and untouched or nil,
-    none_held=short and #short or nil,total=a.budget and a.budget.cap,inventory_full=blocked and {got=total,blocked_item=blocked} or nil}
+    none_held=short and #short or nil,total=a.budget and a.budget.cap,inventory_full=blocked and {got=total,blocked_item=blocked} or nil,
+    nothing_moved=total==0 and not blocked and empty and (#targets>1 and string.format('none of %d targets: first, %s',#targets,empty) or empty) or nil}
 end
 -- Items a feed still needs across its targets (up_to tops up; else count each).
 local function shortfall(p,a,targets)
@@ -2898,11 +2932,11 @@ function handlers.collect(p,a)
   args.count=a.item and integer(a.count,10000,1,10000,'count') or nil
   local targets=reachable(p,args,function() return true end)
   local out=transfer_batch(p,args,targets,true)
-  -- Named targets inside another agent's claim are taken from, but say whose.
+  -- Named targets inside another agent's claim are taken from, but say whose (and when no permission is needed).
   local claimed={}
   for _,t in ipairs(targets) do
     local ok,at=pcall(position,t.entity and t.entity.valid and t.entity.position or t.position)
-    local c=ok and #claimed<4 and M.claims.other(p,at)
+    local c=ok and #claimed<4 and M.claims.find(p,at)
     if c then claimed[#claimed+1]=string.format('(%g,%g) in %s',at.x,at.y,M.claims.label(c,p)) end
   end
   if #claimed>0 then out.claimed=claimed end
@@ -2974,6 +3008,35 @@ function feeding.hungry(p,e,a)
   end
   return false
 end
+-- Why a feed gave nothing, per wanted item: what the character carries and
+-- what the machines hold (Haiku's 35 empty feeds read "nothing_to_do, given
+-- 0" while it carried no coal).
+function feeding.why(p,es,a)
+  local keep=integer(a.keep,0,0,100000,'keep')
+  local by,order={},{}
+  for _,e in ipairs(es) do
+    for _,w in ipairs(feeding.wants(p,e,a)) do
+      local ok,inv=pcall(inventory,e,w.inventory)
+      local c=ok and inv.get_item_count{name=w.item,quality=a.quality or 'normal'} or 0
+      local b=by[w.item]
+      if not b then b={n=0,lo=math.huge,hi=0,count=w.count}; by[w.item]=b; order[#order+1]=w.item end
+      b.n=b.n+1; b.lo=math.min(b.lo,c); b.hi=math.max(b.hi,c)
+    end
+  end
+  if #order==0 then return string.format('none of the %d machines wants an item (no recipe set, or not a machine feed fills)',#es) end
+  local parts={}
+  for i,item in ipairs(order) do
+    if i>4 then parts[#parts+1]='+'..(#order-4)..' more'; break end
+    local b,have=by[item],held(p,item,a.quality)
+    local hold=b.lo==b.hi and tostring(b.lo) or (b.lo..'-'..b.hi)
+    if have<=keep then
+      parts[#parts+1]=string.format('you carry %d %s%s; %d machine%s hold %s',have,item,keep>0 and ' (keep '..keep..')' or '',b.n,b.n==1 and '' or 's',hold)
+    else
+      parts[#parts+1]=string.format('%d machine%s hold %s %s, at count %d already',b.n,b.n==1 and '' or 's',hold,item,b.count)
+    end
+  end
+  return table.concat(parts,'; ')
+end
 -- Hand-feeds machines from inventory: recipe ingredients, science packs and
 -- fuel, up to count each, keeping a reserve. In reach by default, at given
 -- positions, or as a walking tour with radius. Nothing is taken out.
@@ -2986,23 +3049,28 @@ function handlers.feed(p,a)
   local types=a.types or feeding.TYPES
   if a.radius~=nil then
     assert(a.positions==nil,'give radius or positions, not both')
-    local targets={}
+    local targets,found={},{}
     for _,e in pairs(p.surface.find_entities_filtered{position=p.position,radius=integer(a.radius,32,1,256,'radius'),force=p.force,type=types}) do
-      if e.valid and feeding.hungry(p,e,a) then targets[#targets+1]=e end
+      if e.valid then found[#found+1]=e; if feeding.hungry(p,e,a) then targets[#targets+1]=e end end
     end
     local action,out=stock.start_tour(p,'feed',targets,integer(a.ticks,3600,1,36000,'ticks'),{feed=a})
     if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
     state().active[p.index]=action
     out.until_tick=action.until_tick
+    if #targets==0 then
+      local ok,why=pcall(feeding.why,p,found,a)
+      out.nothing_moved=ok and ('nothing to feed: '..why) or nil
+    end
     return out
   end
   assert(a.ticks==nil,'ticks applies with radius')
   local targets=reachable(p,{positions=a.positions,types=types},function() return true end)
-  local rows,items,total,unchanged={},{},0,0
+  local rows,items,total,unchanged,seen={},{},0,0,{}
   for _,t in ipairs(targets) do
     local ok,e=pcall(function() return t.entity or entity(p,{position=t.position,name=t.position.name,unit_number=t.position.unit_number}) end)
     if not ok then rows[#rows+1]={position=t.position,error=reason(e)}
     else
+      seen[#seen+1]=e
       local okf,gave,n=pcall(feeding.one,p,e,a)
       if not okf then rows[#rows+1]={position=e.position,name=e.name,error=reason(gave)}
       elseif n>0 then
@@ -3014,8 +3082,13 @@ function handlers.feed(p,a)
   end
   local left={}
   for item in pairs(items) do left[item]=held(p,item,a.quality) end
+  local why
+  if total==0 then
+    local ok,w=pcall(feeding.why,p,seen,a)
+    why=ok and w or 'no machine in reach wants an item you hold above keep (or they are at count already)'
+  end
   return {transferred=total,items=next(items) and items or nil,entities=rows,unchanged=unchanged>0 and unchanged or nil,held=next(left) and left or nil,
-    note=total==0 and 'nothing given: no machine in reach wants an item you hold above keep (or they are at count already)' or nil}
+    nothing_moved=why and ('nothing given: '..why) or nil}
 end
 -- Items of this name in an entity's transferable inventories (fuel included).
 local function entity_holds(e,item,quality)
@@ -3882,7 +3955,7 @@ for name,shift in pairs(repeat_shift) do
         for k,v in pairs(out) do
           if type(v)=='number' and k~='expected' and k~='existing_ghosts' and k~='existing_entities' then total[k]=(total[k] or 0)+v; row[k]=v end
         end
-        row.reason=out.reason
+        row.reason=out.reason; row.wires=out.wires
         for item,n in pairs(out.by_name or {}) do total.by_name=total.by_name or {}; total.by_name[item]=(total.by_name[item] or 0)+n end
         for _,failure in ipairs(out.failed or {}) do
           total.failed=total.failed or {}; failure.copy=i+1; total.failed[#total.failed+1]=failure
@@ -3973,6 +4046,31 @@ scheduler=scheduler_module{
   end
 }
 for name,handler in pairs(scheduler.handlers) do handlers[name]=handler end
+-- Queue writes answer briefly: the revision, state, the next steps by id and
+-- the last results; queue_status has the whole queue (agent-minds study: each
+-- edit echoed 10-14 KB, and Sonnet sent its replies to /dev/null to cut them).
+function M.queue_brief(q)
+  local function step(s) return s and ((s.id or '?')..' '..tostring(s.action)..(s.label and ' ['..s.label..']' or '')) or nil end
+  local pending={}
+  for i,s in ipairs(q.pending or {}) do if i<=5 then pending[i]=step(s) end end
+  local recent={}
+  local h=q.history or {}
+  for i=math.max(1,#h-1),#h do
+    local r=h[i]
+    local why=type(r.result)=='table' and (r.result.reason or r.result.outcome) or nil
+    recent[#recent+1]=step(r)..(r.ok and ' ok' or ' failed')..(why and ': '..tostring(why) or '')
+  end
+  local f=q.last_failure
+  return {revision=q.revision,paused=q.paused,active=q.active and step(q.active) or false,pending=pending,
+    pending_count=#(q.pending or {}),recent=#recent>0 and recent or nil,
+    last_failure=f and (step(f)..(type(f.result)=='table' and f.result.reason and ': '..tostring(f.result.reason) or '')) or nil,
+    repeating=q.repeating or nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,guards=q.guards and #q.guards or nil,
+    waiting=q.waiting,after_direct=q.after_direct,note='queue_status shows every step in full'}
+end
+for _,name in ipairs{'queue_submit','queue_repeat','queue_edit','queue_cancel','queue_resume'} do
+  local handler=handlers[name]
+  if handler then handlers[name]=function(p,a) return M.queue_brief(handler(p,a)) end end
+end
 clock=clock_module{state=state,lookup=function(index) return M.lookup(index) end}
 for name,handler in pairs(clock.handlers) do handlers[name]=handler end
 -- Direct wait_ticks and sleep/sleep_check (waits.lua).
@@ -4001,7 +4099,7 @@ for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 -- Team board, reply hints, harness requests and saved plans (board.lua).
 -- Bots are never directors (and game.get_player refuses their indices).
 function M.is_director(index) return not M.bots.is_index(index) and M.cameras.director(index) end
-M.board=require('board'){state=state,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
+M.board=require('board'){state=state,claims=M.claims,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
   profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
   submit=function(p,a) return handlers.queue_submit(p,a) end,
   research_lines=function(p,h) return M.research.lines(p,h) end,
@@ -4131,7 +4229,7 @@ end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
 local passive={circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
-local reads={placements=true,defense=true,flamers=true,labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true}
+local reads={placements=true,defense=true,flamers=true,labs=true,science=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
@@ -4143,7 +4241,7 @@ local EXTRA_ARGS={attach={'offline'},build={'quality','entity'},collect={'count'
   configure={'name','unit_number','quality'},revive_ghost={'unit_number'},observe={'scope'},requests=TARGET,launch=TARGET,
   board={'status'},board_post={'note'},board_update={'status','note'},plan_save={'note'}}
 -- observe forwards to the scoped views; a scoped call is checked as that view.
-local VIEW_SCOPES={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,sleep_check=true}
+local VIEW_SCOPES={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,sleep_check=true}
 local allowed_args
 function check_args(action,args)
   if not allowed_args then
@@ -4176,6 +4274,48 @@ function check_args(action,args)
   end
 end
 M.check_args=check_args
+-- Whether an action takes an argument (describe's schema, as check_args reads it).
+function M.takes(action,key)
+  if not allowed_args then pcall(check_args,'describe',{}) end
+  local set=allowed_args and allowed_args[action]
+  return set~=nil and set[key]==true
+end
+-- An electric machine no pole reaches (no electric network): the nearest pole
+-- and how far, else nil. Generators, poles and storage are not machines here.
+function M.unpowered(e)
+  if e.electric_network_id~=nil then return nil end
+  local ok,src=pcall(function() return e.prototype.electric_energy_source_prototype end)
+  if not (ok and src) then return nil end
+  local own={['electric-pole']=true,['solar-panel']=true,accumulator=true,generator=true,['burner-generator']=true,
+    ['electric-energy-interface']=true,['power-switch']=true,['fusion-generator']=true,['lightning-attractor']=true}
+  if own[e.type] then return nil end
+  local best,bd
+  for _,pole in pairs(e.surface.find_entities_filtered{type='electric-pole',force=e.force,position=e.position,radius=64,limit=256}) do
+    local d=distance(pole.position,e.position)
+    if not bd or d<bd then best,bd=pole,d end
+  end
+  if not best then return 'unpowered: no pole reaches it, none within 64 tiles' end
+  return string.format('unpowered: no pole reaches it; nearest pole %s at (%g,%g), %d tiles',best.name,best.position.x,best.position.y,math.floor(bd+0.5))
+end
+-- Common wrong argument names renamed to the real ones (aliases.lua).
+M.aliases=require('aliases'){}
+-- An empty item move an agent repeats (agent-minds study: Haiku's 35 identical
+-- feeds that gave nothing): the third identical one in 7 minutes says so.
+M.MOVES={transfer=true,feed=true,collect=true,rearm=true,refuel=true}
+function M.repeats(index,action,args)
+  local s=state(); s.empty_moves=s.empty_moves or {}
+  local parts={action}
+  for _,k in ipairs{'position','positions','item','items','direction','radius','fuel','ammo'} do parts[#parts+1]=M.aliases.encode(args[k]) end
+  local key=table.concat(parts,' ')
+  local keep,n={},1
+  for _,m in ipairs(s.empty_moves[index] or {}) do
+    if game.tick-m.tick<=25200 then keep[#keep+1]=m; if m.key==key then n=n+1 end end
+  end
+  keep[#keep+1]={key=key,tick=game.tick}
+  while #keep>20 do table.remove(keep,1) end
+  s.empty_moves[index]=keep
+  if n>=3 then return string.format('%s %d times in 7 min with nothing moved (same target and item)',action,n) end
+end
 -- Game-time feedback on every reply: how long since this player's previous
 -- request, and how much of it the character was idle (idle.lua busy(), the
 -- nudge's own definition: no action and no running plan; a wait or sleep is
@@ -4245,18 +4385,40 @@ function M.dispatch(request)
     assert(request.player==nil,'a request may name a player or a bot, not both')
     request.player=M.bots.index_of(request.bot)
   end
+  -- Wrong argument names the harness knows (craft item, move_to target, ...)
+  -- run as the call meant; the reply says the call as it ran (corrected).
+  local corrected
+  do
+    local ok,action,args,fix=pcall(M.aliases.fix,request.action,request.args,M.takes)
+    if ok and fix then request.action,request.args,corrected=action,args,fix end
+  end
   -- A failed request of an action that does not drive the character, from the
   -- argument check on, stops nothing (shift04: a failed placements read and a
   -- board_update with an unknown argument each paused Sol's queue; control.lua's
   -- own list of reads lacks those).
   passive_failed=false
   local result
+  -- A corrected call that still fails says how it ran.
+  local function ran(r) return corrected and tostring(r)..' [ran as '..corrected.call..': '..table.concat(corrected.notes,'; ')..']' or r end
   if M.keeps(request.action) then
     local ok,r=pcall(dispatch_request,request)
-    if not ok then M.seated_ok=nil; passive_failed=game.tick; error(r,0) end
+    if not ok then M.seated_ok=nil; passive_failed=game.tick; error(ran(r),0) end
+    result=r
+  elseif corrected then
+    local ok,r=pcall(dispatch_request,request)
+    if not ok then M.seated_ok=nil; error(ran(r),0) end
     result=r
   else result=dispatch_request(request) end
   M.seated_ok=nil
+  if corrected and type(result)=='table' then
+    result.corrected=corrected.call..' ('..table.concat(corrected.notes,'; ')..')'
+  end
+  -- The same empty move again (M.repeats).
+  if type(result)=='table' and M.MOVES[request.action] and type(request.args)=='table'
+    and (result.nothing_moved or (result.transferred==0 and not result.inventory_full and not result.entity_full)) then
+    local ok,r=pcall(M.repeats,request.player,request.action,request.args)
+    if ok and r then result.repeated=r end
+  end
   if clock then clock.after_dispatch() end
   if request.action=='status' then M.bots.status(request.player,result) end
   if type(result)=='table' and request.action~='describe' and request.action~='profiles' and request.action~='cameras' then
@@ -4285,6 +4447,8 @@ function M.dispatch(request)
       -- A brief ring on what a building, removing or configuring request acted on (visuals.lua).
       pcall(M.visuals.worked,p,request.action,request.args)
     end
+    -- The owner's own request standing in a claim of theirs, or acting on a position in it, keeps it fresh (claims.lua).
+    if p and p.valid and not peek then pcall(M.claims.worked,p,request.args) end
     -- An fh sleep poll keeps a sleeping agent active for votes (votes.lua).
     if p and p.valid and peek and (request.action=='sleep_check' or (request.action=='observe' and request.args.scope=='sleep_check')) then
       local c=(state().clocks or {})[p.index]; if c then c.wait_tick=game.tick end
@@ -4433,8 +4597,10 @@ kite=kite_module{position=position,distance=distance,integer=integer,visible=vis
 threat=threat_module{state=state,known=known,distance=distance,on_character_hit=function(event) M.board.on_character_hit(event) end}
 survey=survey_module{state=state,status_name=function(e) return entity_status_names[e.status] end}
 -- labs: research line diagnostics (labs.lua), an observe scope.
-M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end}
+M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
+  agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end}
 function handlers.labs(p,a) return M.labs.view(p,a) end
+function handlers.science(p,a) return M.labs.science(p,a) end
 rates=rates_module{position=position,status_name=function(e) return entity_status_names[e.status] end}
 -- The game's alerts and key warnings, pushed to the agents they concern (pushalerts.lua).
 M.pushalerts=require('pushalerts'){state=state,agents=function() return M.board.agents() end,who=M.board.who,

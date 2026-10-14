@@ -88,8 +88,9 @@ def nudge_text(row, standing_s=None):
 class Nudger:
     """The rules, apart from RCON (tests drive it with a fake report and a fake send)."""
 
-    def __init__(self, members=None, idle_min=10, every_min=20, grace_min=5, start=None, deadline=None):
+    def __init__(self, members=None, idle_min=10, every_min=20, grace_min=5, start=None, deadline=None, run_dir=None):
         self.members = set(members or [])
+        self.run_dir = run_dir
         self.idle_s, self.every_s, self.grace_s = idle_min * 60, every_min * 60, grace_min * 60
         self.start = start if start is not None else time.time()
         self.deadline = deadline
@@ -118,6 +119,32 @@ class Nudger:
             if row.get("last_request_s") is not None and now - row["last_request_s"] > self.last[name]:
                 s["requests"] = True
 
+    QUEUE_WORK = ('"action":"queue_submit"', '"action":"queue_repeat"', '"action":"queue_resume"', '"action":"plan_run"')
+
+    def queue_work(self, name, now):
+        """Did the agent start queued work within the idle window (journal requests)? A queue of short jobs can finish
+        between two polls, so the polls see an empty queue while the character works (shift07 19:08, Sol: 30+ queue
+        jobs in 10 min, nudged as idle). Until the harness's own standing count sees queue steps (eng/minds-waits)."""
+        if not self.run_dir:
+            return False
+        path = os.path.join(self.run_dir, name, "journal.jsonl")
+        try:
+            with open(path, "rb") as f:
+                f.seek(0, os.SEEK_END)
+                f.seek(max(0, f.tell() - 400000))
+                lines = f.read().decode("utf-8", "replace").splitlines()
+        except OSError:
+            return False
+        for line in reversed(lines):
+            if '"event":"request"' not in line or not any(k in line for k in self.QUEUE_WORK):
+                continue
+            try:
+                at = datetime.datetime.fromisoformat(json.loads(line)["at"].replace("Z", "+00:00")).timestamp()
+            except Exception:
+                continue
+            return now - at < min(300, self.idle_s)  # a plan started 8 min ago and long finished is not work now
+        return False
+
     def standing(self, row, now):
         """The harness's count where it reports what it counted (one definition, idle.lua); before that, the longer of
         the harness's count and this process's own."""
@@ -134,6 +161,8 @@ class Nudger:
             return "active"
         if working(row):
             return "in an action"
+        if self.queue_work(row["name"], now):
+            return "queued work in its journal"
         if now - self.start < self.grace_s:
             return "first minutes of the shift"
         if self.deadline and now >= self.deadline:
@@ -237,7 +266,7 @@ def main():
     ap.add_argument("--once", action="store_true", help="one poll (with --grace-min 0 to check the rules now)")
     a = ap.parse_args()
     h = Harness(a.world, a.port)
-    n = Nudger(team_members(a.run), a.idle_min, a.every_min, a.grace_min, deadline=run_deadline(a.run))
+    n = Nudger(team_members(a.run), a.idle_min, a.every_min, a.grace_min, deadline=run_deadline(a.run), run_dir=a.run)
     path = os.path.join(a.run, "nudges.jsonl")
 
     def send(name, text):

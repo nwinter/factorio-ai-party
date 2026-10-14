@@ -198,7 +198,7 @@ return function(api)
     local box = api.state().mentions and api.state().mentions[p.index]
     for i = #(box and box.list or {}), 1, -1 do
       local m = box.list[i]
-      if m.tick >= record.start_tick then
+      if m.tick >= record.start_tick and not m.fyi then
         if m.tell then
           out.tell = string.format('%s: %s', m.from, m.text)
           return 'told'

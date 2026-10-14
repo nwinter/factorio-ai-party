@@ -101,17 +101,18 @@ def main():
         assert "--mark" in hooks["PostCompact"][0]["hooks"][0]["command"]
         run("hook", "post-compact", "--mark", stdin=json.dumps({"cwd": d, "trigger": "auto"}))
         ctx = json.loads(run("hook", "post-tool", stdin=json.dumps({"cwd": d})))["hookSpecificOutput"]["additionalContext"]
-        assert "truncated" in ctx and len(ctx) < 10000
+        # the post-compaction brief (fix 8 of docs/studies/2026-10-13-agent-minds.md), not the whole notes.md
+        assert ctx.startswith("Your context was just compacted. A brief of at most 3 KB") and len(ctx) <= 3000, ctx[:300]
+        assert "AGENTS.md is still loaded" not in ctx  # (Grok reads it as a file)
         assert run("hook", "post-tool", stdin=json.dumps({"cwd": d})) == "", "re-inject once"
 
-    with tempfile.TemporaryDirectory() as d:   # only the last 10 Log lines come back after a compaction
+    with tempfile.TemporaryDirectory() as d:   # the brief carries Now; the Log stays in notes.md
         log = "\n".join(f"- 1h{i:02d}m: event {i}" for i in range(39))
         open(os.path.join(d, "notes.md"), "w").write(f"# Notes\n\n## Now\nGoal: g\n\n## Log\n{log}\n")
         run("setup", "grok", "grok-4.7", d)
         run("hook", "post-compact", "--mark", stdin=json.dumps({"cwd": d, "trigger": "auto"}))
         ctx = json.loads(run("hook", "post-tool", stdin=json.dumps({"cwd": d})))["hookSpecificOutput"]["additionalContext"]
-        assert "Goal: g" in ctx and "event 38" in ctx and "event 29" in ctx and "event 28" not in ctx, ctx
-        assert "[29 older Log lines left out" in ctx
+        assert "## Now (notes.md)\nGoal: g" in ctx and "event 38" not in ctx, ctx
 
     with tempfile.TemporaryDirectory() as d:   # operator tells fh filed: shown once each, whatever the output filter
         run("setup", "claude", "claude-sonnet-5.5", d)

@@ -213,7 +213,12 @@ return function(api)
   -- entities there from before with other settings (recipe, filters,
   -- modules) are listed with the configure call that fixes them.
   local MAX_ROWS=20
-  local function explain(p,a,entities,pos,direction,box,before,ghost_key,out)
+  -- Where the paste put each blueprint entity: the shift the game used, and a
+  -- function from a blueprint entity to its spot and to what stands there
+  -- (a ghost or an entity of its name), or nil; and the shift (where the
+  -- blueprint's origin landed). The game puts the blueprint's center (c,
+  -- blueprint coordinates) at the paste position.
+  local function locate(p,a,entities,pos,direction,box,c)
     local W=api.placewhy
     local function turn(e)
       local x,y=e.position.x,e.position.y
@@ -221,6 +226,8 @@ return function(api)
       if a.flip_vertical then y=-y end
       return W.rotate(x,y,direction)
     end
+    local cx,cy=turn({position=c})
+    local expect={x=pos.x-cx,y=pos.y-cy}
     local found={}
     for _,e in pairs(p.surface.find_entities_filtered{area=box,force=p.force}) do
       if e.valid and e.type~='tile-ghost' then
@@ -237,7 +244,7 @@ return function(api)
         local ox,oy=f.position.x-x,f.position.y-y
         local k=ox..','..oy
         votes[k]=(votes[k] or 0)+1
-        local d=(ox-pos.x)^2+(oy-pos.y)^2
+        local d=(ox-expect.x)^2+(oy-expect.y)^2
         if votes[k]>best or (votes[k]==best and d<near) then best,near,shift=votes[k],d,{x=ox,y=oy} end
       end
     end
@@ -248,17 +255,92 @@ return function(api)
       if ((e.direction or 0)+direction)%8==4 then w,h=h,w end
       local x,y=turn(e)
       local function snap(v,odd) return odd and math.floor(v)+0.5 or math.floor(v+0.5) end
-      shift={x=snap(pos.x+x,w%2==1)-x,y=snap(pos.y+y,h%2==1)-y}
+      shift={x=snap(expect.x+x,w%2==1)-x,y=snap(expect.y+y,h%2==1)-y}
     end
-    local missing,differ,old_ghosts,old_entities,nmiss,ndiff={},{},0,0,0,0
-    for _,e in ipairs(entities) do
+    return function(e)
       local x,y=turn(e)
       local at={x=shift.x+x,y=shift.y+y}
-      local dir=((e.direction or 0)+direction)%16
-      local match
       for _,f in ipairs(found[e.name] or {}) do
-        if math.abs(f.position.x-at.x)<0.01 and math.abs(f.position.y-at.y)<0.01 then match=f; break end
+        if f.valid and math.abs(f.position.x-at.x)<0.01 and math.abs(f.position.y-at.y)<0.01 then return at,f end
       end
+      return at,nil
+    end, shift, turn
+  end
+  -- The blueprint's center as the game takes it: the middle of the box around
+  -- every entity's tiles and every tile, in blueprint coordinates.
+  local function center(entities,tiles)
+    local l,t,r,b
+    local function add(x1,y1,x2,y2)
+      l,t=math.min(l or x1,x1),math.min(t or y1,y1); r,b=math.max(r or x2,x2),math.max(b or y2,y2)
+    end
+    for _,e in ipairs(entities) do
+      local proto=prototypes.entity[e.name]
+      local w,h=proto and proto.tile_width or 1,proto and proto.tile_height or 1
+      if (e.direction or 0)%8==4 then w,h=h,w end
+      add(e.position.x-w/2,e.position.y-h/2,e.position.x+w/2,e.position.y+h/2)
+    end
+    for _,tl in ipairs(tiles or {}) do add(tl.position.x,tl.position.y,tl.position.x+1,tl.position.y+1) end
+    if not l then return {x=0,y=0} end
+    return {x=(l+r)/2,y=(t+b)/2}
+  end
+  -- The blueprint's circuit and copper wires between ends that stand now
+  -- (forced paste, Astra 18:51: Sunward's module-audit paste needed its wires
+  -- after place_ghosts one by one): each missing one is connected as a player's
+  -- paste does, ghost to ghost or to a matching entity from before; a wire
+  -- with an end not placed is counted apart.
+  local function wire_list(entities)
+    local list,seen={},{}
+    for _,e in ipairs(entities) do
+      for _,w in ipairs(e.wires or {}) do
+        local s,sid,t,tid=w[1] or w.source_entity_number or e.entity_number,w[2] or w.source_wire_connector_id,w[3] or w.target_entity_number,w[4] or w.target_wire_connector_id
+        if s and sid and t and tid then
+          local k1,k2=s..':'..sid,t..':'..tid
+          local key=k1<k2 and k1..'-'..k2 or k2..'-'..k1
+          if not seen[key] then seen[key]=true; list[#list+1]={s,sid,t,tid} end
+        end
+      end
+    end
+    return list
+  end
+  local function restore_wires(entities,where,out)
+    local list=wire_list(entities)
+    if #list==0 then return end
+    local by_number={}
+    for _,e in ipairs(entities) do if e.entity_number then by_number[e.entity_number]=e end end
+    local cache={}
+    local function stands(n)
+      if cache[n]==nil then cache[n]=select(2,where(by_number[n])) or false end
+      return cache[n] or nil
+    end
+    local w={in_blueprint=#list,connected=0,added=0,end_not_placed=0,failed=0}
+    local missing={}
+    for _,wire in ipairs(list) do
+      local e1,e2=by_number[wire[1]],by_number[wire[3]]
+      local f1,f2=e1 and stands(wire[1]),e2 and stands(wire[3])
+      if not (f1 and f2) then
+        w.end_not_placed=w.end_not_placed+1
+        local gone=not f1 and e1 or e2
+        if gone and #missing<MAX_ROWS then missing[#missing+1]=gone.name..' #'..(not f1 and wire[1] or wire[3]) end
+      else
+        local ok,res=pcall(function()
+          local c1,c2=f1.get_wire_connector(wire[2],true),f2.get_wire_connector(wire[4],true)
+          if not (c1 and c2) then return 'failed' end
+          if c1.is_connected_to(c2) then return 'connected' end
+          return c1.connect_to(c2,false) and 'added' or 'failed'
+        end)
+        local k=ok and res or 'failed'
+        w[k]=w[k]+1
+      end
+    end
+    if #missing>0 then w.ends_not_placed=missing end
+    out.wires=w
+  end
+  local function explain(p,a,entities,direction,before,ghost_key,where,out)
+    local W=api.placewhy
+    local missing,differ,old_ghosts,old_entities,nmiss,ndiff={},{},0,0,0,0
+    for _,e in ipairs(entities) do
+      local at,match=where(e)
+      local dir=((e.direction or 0)+direction)%16
       if not match then
         nmiss=nmiss+1
         if #missing<MAX_ROWS then
@@ -299,10 +381,21 @@ return function(api)
     out.reason=#parts>0 and table.concat(parts,'; ') or 'the game placed fewer ghosts than the blueprint holds'
   end
 
+  -- normal: all or nothing, as a player's paste; forced (shift-paste): ghosts
+  -- where they fit, trees, rocks and the like in the way marked for
+  -- deconstruction; superforced (ctrl+shift): our own entities in the way too.
+  local MODES={normal=true,forced=true,superforced=true}
   function H.blueprint_place(p,a)
     permission(p,'build')
-    local pos=api.position(a.position)
+    local on_platform=type(p)=='table' and rawget(p,'__platform')~=nil
+    assert(a.anchor==nil or a.anchor=='hub' or a.anchor=='center','anchor must be hub or center')
+    -- With the hub anchor, position is where the blueprint's hub goes (default: the platform's hub).
+    local pos=a.position~=nil and api.position(a.position) or nil
     local direction=directions[a.direction or 'north']; assert(direction, 'blueprint direction must be north, east, south, or west')
+    local mode=a.mode or 'normal'
+    assert(MODES[mode],'paste mode must be normal, forced or superforced')
+    local build_mode=defines.build_mode[mode]
+    assert(build_mode~=nil,'this game has no '..mode..' build mode')
     return load(p,a,function(root)
       -- Moving a nested book entry can invalidate its LuaItemStack slot. Copy
       -- the selected leaf into an independent inventory before cursor swaps.
@@ -312,8 +405,33 @@ return function(api)
         local snapping_disabled=stack.blueprint_snap_to_grid~=nil
         stack.blueprint_snap_to_grid=nil
         local entities, tiles=validate(stack)
+        local c=center(entities,tiles)
+        -- Hub anchoring (Astra 18:55: a 33-entity Sunward paste placed 0, a
+        -- 22-entity one landed at another offset): the game puts the
+        -- blueprint's center at the paste position, so a blueprint whose hub
+        -- is off its center lands shifted and its hub collides with the
+        -- platform's own. On a platform a blueprint holding a hub is pasted so
+        -- that its hub lands on the platform's hub (or on `position`).
+        local hub_e
+        for _,e in ipairs(entities) do if e.name=='space-platform-hub' then hub_e=e; break end end
+        local anchor=a.anchor or (hub_e and on_platform and 'hub') or 'center'
+        local anchored
+        if anchor=='hub' then
+          assert(hub_e,'anchor hub: this blueprint holds no space-platform-hub')
+          assert(on_platform,'anchor hub works on a platform (platform=NAME)')
+          local target=pos
+          if not target then
+            local pl=p.surface.platform
+            local hub=pl and pl.hub
+            target=hub and hub.valid and {x=hub.position.x,y=hub.position.y} or {x=0,y=0}
+          end
+          local hx,hy=api.placewhy.rotate(hub_e.position.x-c.x,hub_e.position.y-c.y,direction)
+          pos={x=target.x-hx,y=target.y-hy}
+          anchored={by='hub',hub=target,paste_position=pos}
+        end
+        assert(pos,'position is required (the blueprint\'s center goes there; on a platform a blueprint with a hub is placed by its hub)')
         -- Validate a square containing every possible rotated or flipped
-        -- footprint: quarter turns and flips keep max(|x|,|y|) invariant.
+        -- footprint around the center: quarter turns and flips keep max(|x|,|y|) invariant.
         local radius=1
         for _, e in ipairs(entities) do
           local proto=prototypes.entity[e.name]
@@ -323,9 +441,9 @@ return function(api)
           for _, corner in ipairs({box.left_top,box.right_bottom}) do
             margin=math.max(margin,math.abs(corner.x),math.abs(corner.y))
           end
-          radius=math.max(radius, math.max(math.abs(e.position.x),math.abs(e.position.y))+margin+1)
+          radius=math.max(radius, math.max(math.abs(e.position.x-c.x),math.abs(e.position.y-c.y))+margin+1)
         end
-        for _, tile in ipairs(tiles) do radius=math.max(radius,math.max(math.abs(tile.position.x),math.abs(tile.position.y))+2) end
+        for _, tile in ipairs(tiles) do radius=math.max(radius,math.max(math.abs(tile.position.x-c.x),math.abs(tile.position.y-c.y))+2) end
         local box=area(p,{area={left_top={x=pos.x-radius,y=pos.y-radius},right_bottom={x=pos.x+radius,y=pos.y+radius}}})
         local function ghosts()
           return p.surface.find_entities_filtered{area=box,type={'entity-ghost','tile-ghost'},force=p.force}
@@ -335,20 +453,30 @@ return function(api)
         end
         local before={}
         for _,e in pairs(ghosts()) do before[ghost_key(e)]=true end
+        -- What stood marked for deconstruction before a forced paste, to tell what it marked.
+        local function marked()
+          return p.surface.find_entities_filtered{area=box,to_be_deconstructed=true}
+        end
+        local function mark_key(e) return e.unit_number or (e.name..':'..e.position.x..':'..e.position.y) end
+        local marked_before
+        if mode~='normal' then
+          marked_before={}
+          for _,e in pairs(marked()) do marked_before[mark_key(e)]=true end
+        end
         if type(p)=='table' and (rawget(p,'__platform') or rawget(p,'__bot')) then
           -- A platform is built from remote view: place the blueprint's ghosts
           -- on its surface directly; the cursor lives on the player's surface.
           -- A bot has no cursor at all.
           assert(not a.flip_horizontal and not a.flip_vertical, 'flips are not supported when pasting on a platform or as a bot')
           stack.build_blueprint{surface=p.surface,force=p.force,position=pos,direction=direction,
-            build_mode=defines.build_mode.normal,skip_fog_of_war=true,by_player=real(p),raise_built=true}
+            build_mode=build_mode,skip_fog_of_war=true,by_player=real(p),raise_built=true}
         else
         assert(p.cursor_stack and not p.cursor_stack.valid_for_read, 'cursor must be empty; put held items away before pasting')
         local cursor_ghost=p.cursor_ghost
         assert(p.cursor_stack.swap_stack(stack), 'could not borrow cursor for blueprint')
         local ok,err=pcall(function()
           p.build_from_cursor{position=pos,direction=direction,flip_horizontal=a.flip_horizontal==true,
-            flip_vertical=a.flip_vertical==true,build_mode=defines.build_mode.normal,skip_fog_of_war=true}
+            flip_vertical=a.flip_vertical==true,build_mode=build_mode,skip_fog_of_war=true}
         end)
         local restored=p.cursor_stack.swap_stack(stack)
         if cursor_ghost then p.cursor_ghost=cursor_ghost end
@@ -358,7 +486,7 @@ return function(api)
         assert(ok,err)
         end
         -- Per-ghost rows are opt-in: large layouts otherwise flood agent context.
-        local out={count=0,by_name={},slot=slot_name(a),snapping_disabled=snapping_disabled}
+        local out={count=0,by_name={},slot=slot_name(a),snapping_disabled=snapping_disabled,mode=mode~='normal' and mode or nil}
         if a.details then out.ghosts={} end
         for _, e in pairs(ghosts()) do
           if e.valid and not before[ghost_key(e)] then
@@ -376,7 +504,29 @@ return function(api)
         -- already hold a matching ghost or entity, that collide, or whose
         -- tiles break the entity's rules. Per blueprint entity: there now (new
         -- ghost, or one from before), or not placed and why.
-        if out.count<#entities then explain(p,a,entities,pos,direction,box,before,ghost_key,out) end
+        local wired=#wire_list(entities)>0
+        if out.count<#entities or wired or anchored then
+          local where,shift,turn=locate(p,a,entities,pos,direction,box,c)
+          if out.count<#entities then explain(p,a,entities,direction,before,ghost_key,where,out) end
+          if wired then restore_wires(entities,where,out) end
+          -- Where the blueprint landed: its origin (blueprint 0,0) and center, and its hub against the target.
+          local cx,cy=turn({position=c})
+          out.origin_at={x=shift.x,y=shift.y}; out.center_at={x=shift.x+cx,y=shift.y+cy}
+          if anchored then
+            local at=where(hub_e)
+            anchored.hub_landed=at
+            anchored.aligned=math.abs(at.x-anchored.hub.x)<0.01 and math.abs(at.y-anchored.hub.y)<0.01
+            out.anchor=anchored
+          end
+        end
+        -- What a forced paste marked for deconstruction (trees, rocks; superforced: our own entities in the way).
+        if marked_before then
+          local n,by=0,{}
+          for _,e in pairs(marked()) do
+            if e.valid and not marked_before[mark_key(e)] then n=n+1; by[e.name]=(by[e.name] or 0)+1 end
+          end
+          if n>0 then out.marked_for_deconstruction=n; out.marked_by_name=by end
+        end
         return out
       end)
     end)

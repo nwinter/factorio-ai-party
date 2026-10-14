@@ -56,17 +56,19 @@ return function(api)
   M.schema = {
     tell = {to='a teammate name or display name, several (array or "luna,sol"), or "team" for everyone',
       text='1..500 characters, one line (longer is cut to 500; the reply says so)',
+      fyi='true: for their information; it waits for their next reply (marked fyi) and wakes nobody: routine updates, no answer needed',
       returns='seq and to (cut {length, kept} when the text was cut; away "sol is on Vulcanus" for recipients on another planet, platform or in a cargo pod): the line goes to each recipient\'s next reply (team: tells), wakes them if asleep (woke=told), and stays out of the game chat; viewers see it as text on the stream\'s logistics ticker, never spoken'},
-    tells = {since='optional sequence number', limit='1..100, newest kept (default 30)',
+    tells = {since='optional sequence number (default: the tells since your last read, or the last 10 on a first read; since=0 lists them all)', limit='1..100, newest kept (default 30)',
       returns='tells you sent or received {seq,tick,from,away?,to,team?,text} oldest first (away: "on Vulcanus" when the sender is somewhere other than you now), and cursor'},
   }
   function M.handlers.tell(p, a)
     local me = api.who(p)
+    assert(a.fyi == nil or type(a.fyi) == 'boolean', 'fyi must be true or false')
     local text, cut = one_line(a.text)
     local names, team = recipients(a.to, me)
     local s = store()
     s.seq = s.seq + 1
-    local t = {seq=s.seq, tick=game.tick, player=p.index, from=me, to=names, team=team or nil, text=text}
+    local t = {seq=s.seq, tick=game.tick, player=p.index, from=me, to=names, team=team or nil, text=text, fyi=a.fyi or nil}
     s.log[#s.log+1] = t
     while #s.log > MAX_LOG do table.remove(s.log, 1) end
     local index = {}
@@ -81,13 +83,26 @@ return function(api)
       if w then away[#away+1] = name .. ' is ' .. w end
     end
     return {seq=t.seq, to=team and 'team' or names, cut=cut, away=#away > 0 and table.concat(away, '; ') or nil,
-      note='in their next reply (team: tells), waking them if asleep; not in chat'}
+      note=t.fyi and 'fyi: in their next reply (team: tells), not waking them; not in chat' or 'in their next reply (team: tells), waking them if asleep; not in chat'}
   end
   local function read(a, me)
     assert(a.since == nil or type(a.since) == 'number', 'since must be a number')
+    local s = store()
+    -- An agent's read without since: the tells since its last read (the last
+    -- 10 on a first read), and the cursor moves (agent-minds study: tells
+    -- replies were 7.9 KB at the median, every read listing the last 30).
+    s.cursors = s.cursors or {}
+    local cursor_read = me ~= nil and a.since == nil
+    if cursor_read then
+      local args = {}
+      for k, v in pairs(a) do args[k] = v end
+      args.since = s.cursors[me] or 0
+      args.limit = a.limit or (s.cursors[me] and 30 or 10)
+      if a.peek ~= true then s.cursors[me] = s.seq end
+      a = args
+    end
     local limit = a.limit or 30
     assert(type(limit) == 'number' and limit >= 1 and limit <= 100, 'limit must be 1..100')
-    local s = store()
     local picked = {}
     for _, t in ipairs(s.log) do
       local mine = me == nil or t.from == me
@@ -98,7 +113,7 @@ return function(api)
     local where = me and api.where_from and api.where_from(me)
     for i = math.max(1, #picked - limit + 1), #picked do
       local t = picked[i]
-      out[#out+1] = {seq=t.seq, tick=t.tick, from=t.from, away=where and where(t.from) or nil, to=t.team and 'team' or t.to, team=t.team, text=t.text}
+      out[#out+1] = {seq=t.seq, tick=t.tick, from=t.from, away=where and where(t.from) or nil, to=t.team and 'team' or t.to, team=t.team, fyi=t.fyi, text=t.text}
     end
     return {tells=out, cursor=s.seq, tick=game.tick}
   end
