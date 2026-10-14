@@ -446,8 +446,12 @@ return function(api)
     for _,e in pairs(p.surface.find_entities_filtered{type='rocket-silo',force=p.force,limit=16}) do
       local cargo=e.get_inventory(defines.inventory.rocket_silo_rocket)
       local trash=defines.inventory.rocket_silo_trash and e.get_inventory(defines.inventory.rocket_silo_trash)
+      -- rocket_ready beside parts, and the rocket in words (silo.lua M.rocket; Astra 10:50)
+      local okr,rk=pcall(function() return api.rocket and api.rocket(e) end)
       silos[#silos+1]={position=e.position,status=silo_states[e.rocket_silo_status],
-        parts=e.rocket_parts..'/'..e.prototype.rocket_parts_required,cargo=cargo and top_items(cargo,8) or nil,
+        parts=e.rocket_parts..'/'..e.prototype.rocket_parts_required,
+        rocket_ready=e.rocket_silo_status==defines.rocket_silo_status.rocket_ready,rocket=okr and rk and rk.rocket or nil,
+        cargo=cargo and top_items(cargo,8) or nil,
         trash=trash and top_items(trash,8) or nil,auto_requests=e.use_transitional_requests or nil,
         weight=cargo and M.rocket_weight(e) or nil}
     end

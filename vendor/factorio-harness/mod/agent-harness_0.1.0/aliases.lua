@@ -117,15 +117,17 @@ return function(api)
           end
         end
       end
-      -- to or from as the one target, without pick (pick takes to: where what it took is given): the position and
-      -- the side. Both given: a move between two entities, which only pick makes (the refusal shows it).
+      -- from {x,y} is the position (from: "nearest" is transfer's own: the nearest chest holding the item), a take
+      -- from there; to as the one target, without pick (pick takes to: where what it took is given), the position and
+      -- a give. A from and a to: the take is at from, and to the refusal's pick form gives at (the handler shows it).
       if out.pick == nil and out.position == nil and out.positions == nil then
-        if is_pos(out.to) and not is_pos(out.from) and (out.direction == nil or out.direction == 'to_entity') then
+        if is_pos(out.to) and not (is_pos(out.from) or is_list(out.from)) and (out.direction == nil or out.direction == 'to_entity') then
           out.position, out.to, out.direction = xy(out.to), nil, 'to_entity'
           notes[#notes+1] = 'to={x,y} without pick is position=... direction="to_entity"'
-        elseif is_pos(out.from) and not is_pos(out.to) and (out.direction == nil or out.direction == 'to_player') then
-          out.position, out.from, out.direction = xy(out.from), nil, 'to_player'
-          notes[#notes+1] = 'from={x,y} without pick is position=... direction="to_player"'
+        elseif is_pos(out.from) or is_list(out.from) then
+          out.position, out.from = out.from, nil
+          if out.direction == nil and not is_pos(out.to) then out.direction = 'to_player' end
+          notes[#notes+1] = 'from is position' .. (out.direction == 'to_player' and ' (a take: direction="to_player")' or '')
         end
       end
       if type(out.direction) == 'string' and DIRECTION[out.direction] then

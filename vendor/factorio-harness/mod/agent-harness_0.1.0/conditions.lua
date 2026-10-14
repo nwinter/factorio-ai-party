@@ -43,6 +43,11 @@ return function(api)
     local state,ready=rocket_state(e)
     local parts=''
     pcall(function() parts=string.format(', parts %d/%d',e.rocket_parts,e.prototype.rocket_parts_required) end)
+    -- A built rocket said plainly: its parts are consumed and it is not launched (Astra 10:50).
+    if ready then
+      state='rocket built and ready'
+      pcall(function() parts=string.format(': parts consumed (%d/%d), not launched',e.rocket_parts,e.prototype.rocket_parts_required) end)
+    end
     local cargo={}
     local ok,inv=pcall(e.get_inventory,defines.inventory.rocket_silo_rocket)
     if ok and inv then

@@ -595,9 +595,29 @@ class MockSource:
             except (OSError, ValueError):
                 pass
         obs["attention"] = self.attention_step(obs["agents"], now)
+        obs["loadout"] = self.loadout_rows(now)
         if self.space_age:
             self.space_step(now, obs)
         return obs
+
+    def loadout_rows(self, now):
+        """The harness's `loadout` read as live.py passes it on (loadout.lua): a fighter shoots with a submachine gun,
+        every other agent hand-crafts something, so previews show the combat and building strips."""
+        rows = []
+        for i, a in enumerate(self.agents.values()):
+            fighting = a.get("combat_until", 0) > now
+            rows.append({"name": a["name"], "alive": a["alive"], "surface": "nauvis",
+                         "health": {"now": 180 if fighting else 250, "max": 250}, "selected_gun": 1,
+                         "guns": [{"name": "submachine-gun", "count": 1}, {"name": "pistol", "count": 1}, False],
+                         "ammo": [{"name": "piercing-rounds-magazine", "count": 140 + i}, {"name": "firearm-magazine", "count": 30}, False],
+                         "armor": {"name": "modular-armor", "equipment": [{"name": "energy-shield-equipment", "count": 2},
+                                   {"name": "solar-panel-equipment", "count": 4}], "shield": {"now": 60 if fighting else 100, "max": 100}},
+                         "items": [{"name": "iron-plate", "count": 400}, {"name": "copper-cable", "count": 1200},
+                                   {"name": "electronic-circuit", "count": 90}, {"name": "stone-brick", "count": 200}],
+                         "item_kinds": 4, "slots": {"free": 60, "total": 80}, "shooting": fighting or None,
+                         "crafting": {"queue": [{"recipe": "electronic-circuit", "count": 20}, {"recipe": "inserter", "count": 5}],
+                                      "items": 25, "progress": (now % 10) / 10} if i % 2 else None})
+        return rows
 
     def attention_step(self, agents, now):
         """Requests with a place (attention.py), as the agents' journals give them: every few seconds an agent
