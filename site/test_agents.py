@@ -197,6 +197,10 @@ def main():
                      'id="hl-q"', 'value="confession" checked', "Confessions (1)", "Spoken on stream (2)", 'href="/chat/"'):
             assert want in chat, want
         assert "SECRET" not in chat and "example.com" not in chat and "Nick" not in chat
+        # the highlights (site/content/moments.json, the agent-minds study) above the lines
+        n_moments = len(json.loads((SITE / "content" / "moments.json").read_text()))
+        assert f'id="highlights"><h2>Highlights<span class="h-sub">{n_moments} moments</span>' in chat
+        assert chat.index('id="highlights"') < chat.index('class="hl-shift"') and 'id="m3"' in chat and "Seen: <span" in chat
         # search: the index has the agents, shifts, events and chat lines, each with a link that exists
         tl = (out / "timeline" / "index.html").read_text()
         idx = json.loads((out / "search" / "index.json").read_text())

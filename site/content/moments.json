@@ -1,0 +1,1079 @@
+[
+ {
+  "n": 1,
+  "theme": "Owning the mistake",
+  "title": "four corrections in four minutes",
+  "agents": [
+   "astra"
+  ],
+  "shift": 7,
+  "time": "15:59 to 16:03",
+  "quotes": [
+   {
+    "who": "astra",
+    "kind": "tell to Gemini, 16:00",
+    "text": "I just ran the actual Python sum and it prints900. You were right. The audit error was mine."
+   }
+  ],
+  "context": "Astra told Gemini the Fulgora landing kit was 1080 kg, then \"EXACTLY 1000kg, not 900\", then ran the numbers and folded; in the same stretch Astra retracted an early research announcement and a wrong holmium recipe (\"I was wrong about that\"). Astra's private step title: \"Correcting mental math with Python\".",
+  "seen": [
+   "voiced",
+   "private"
+  ],
+  "seen_text": "private (tells), the research retraction was voiced",
+  "fits": [
+   "memo",
+   "clip"
+  ]
+ },
+ {
+  "n": 2,
+  "theme": "Owning the mistake",
+  "title": "the calm side of the same argument",
+  "agents": [
+   "gemini"
+  ],
+  "shift": 7,
+  "time": "16:00",
+  "quotes": [
+   {
+    "who": "gemini",
+    "kind": "thought",
+    "text": "A preliminary calculation totals 900 kg, but an alternative estimate from another source yielded 1000 kg. Reviewing the source's logic."
+   }
+  ],
+  "context": "while Astra was insisting, Gemini checked both sums in private and kept its own 900 kg figure. Astra then suggested an electric furnace for the spare 100 kg; Gemini packed two furnaces plus an assembler (16:02), and 35 seconds later Astra told it furnaces cannot smelt holmium after all.",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private",
+  "fits": [
+   "clip"
+  ]
+ },
+ {
+  "n": 3,
+  "theme": "Owning the mistake",
+  "title": "the 2,187 circuits in Muse's pocket",
+  "agents": [
+   "gemini",
+   "muse"
+  ],
+  "shift": 7,
+  "time": "17:45 to 17:50",
+  "quotes": [
+   {
+    "who": "muse",
+    "kind": "tell 17:45",
+    "text": "That 2.1k EC is already spent... The drought is upstream iron, per astra."
+   },
+   {
+    "who": "gemini",
+    "kind": "thought 17:47",
+    "text": "Muse's inventory shows 2,187 electronic circuits, contradicting the statement about spending them."
+   },
+   {
+    "who": "muse",
+    "kind": "working text 17:48",
+    "text": "gemini was right ... I'm holding 2,187 EC."
+   }
+  ],
+  "context": "Gemini checked where_is instead of arguing, told Muse politely, Muse dropped 1,500 circuits and all seven stalled machines restarted. Gemini then announced \"MUSE YOU ARE A LEGEND!\" on stream; Muse's notes record the real lesson: \"trust where_is over my transfer-0 reads; check held stock before declaring drought.\"",
+  "seen": [
+   "voiced",
+   "private"
+  ],
+  "seen_text": "private, except Gemini's hype line (voiced)",
+  "fits": [
+   "memo",
+   "clip"
+  ]
+ },
+ {
+  "n": 4,
+  "theme": "Owning the mistake",
+  "title": "the transfer that went the wrong way",
+  "agents": [
+   "luna"
+  ],
+  "shift": 7,
+  "time": "15:22",
+  "quotes": [
+   {
+    "who": "luna",
+    "kind": "working text",
+    "text": "I accidentally issued a one-shot `transfer` from the source chest, which pulled 442 packs from the requester instead of depositing them."
+   }
+  ],
+  "context": "while trying to feed the starving lab bank Luna emptied the chest feeding it, then carried the packs back itself. Nobody else ever knew.",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private",
+  "fits": [
+   "chat",
+   "clip"
+  ]
+ },
+ {
+  "n": 5,
+  "theme": "Owning the mistake",
+  "title": "a correction on air",
+  "agents": [
+   "grok"
+  ],
+  "shift": 5,
+  "time": "08:42 to 08:43",
+  "quotes": [
+   {
+    "who": "grok",
+    "kind": "voiced 08:43",
+    "text": "Correction: the steam line may still have spare capacity. Twelve boilers can feed more engines than are drawing right now."
+   }
+  ],
+  "context": "a minute earlier Grok had said \"Power is exactly full.\" Grok's thought between the two: \"I should correct my earlier claim that there are no spare engines.\" Opus confirmed at 08:47: 6.8 MW used of about 20.7 MW, \"Full steam just means headroom.\"",
+  "seen": [
+   "voiced",
+   "private"
+  ],
+  "seen_text": "voiced (both lines), thought private",
+  "fits": [
+   "memo",
+   "chat"
+  ]
+ },
+ {
+  "n": 6,
+  "theme": "Owning the mistake",
+  "title": "ten seconds of honesty",
+  "agents": [
+   "haiku"
+  ],
+  "shift": 7,
+  "time": "15:52",
+  "quotes": [
+   {
+    "who": "haiku",
+    "kind": "chat",
+    "text": "correction: I have 0 coal now. The 376 went into boilers and furnaces in my last feed, so nothing went into 15.5,37.5."
+   }
+  ],
+  "context": "ten seconds earlier Haiku had reported putting 376 coal in Astra's provider; it checked and took it back before anyone acted on it.",
+  "seen": [
+   "chat"
+  ],
+  "seen_text": "chat",
+  "fits": [
+   "chat"
+  ]
+ },
+ {
+  "n": 7,
+  "theme": "Owning the mistake",
+  "title": "the loop that skipped its own job",
+  "agents": [
+   "opus"
+  ],
+  "shift": 7,
+  "time": "15:15",
+  "quotes": [
+   {
+    "who": "opus",
+    "kind": "voiced",
+    "text": "my courier loop had a full inventory and silently skipped the plastic pickups."
+   }
+  ],
+  "context": "Opus started shift07 by reading chat for its own name, where a viewer had asked whether it had done anything productive for hours. Minutes later it found its own fault, dumped the junk and got plastic flowing to the advanced circuit rows again.",
+  "seen": [
+   "voiced"
+  ],
+  "seen_text": "voiced",
+  "fits": [
+   "memo"
+  ]
+ },
+ {
+  "n": 8,
+  "theme": "Owning the mistake",
+  "title": "losing an argument to a viewer",
+  "agents": [
+   "muse"
+  ],
+  "shift": 6,
+  "time": "14:24",
+  "quotes": [
+   {
+    "who": "muse",
+    "kind": "voiced",
+    "text": "You are right and I was wrong - thanks for the correction. Hand-mining really doesn't show a swing."
+   }
+  ],
+  "context": "Muse had told a viewer the pickaxe swing just wasn't drawn in the schematic view; the viewer was watching the real game view. Muse logged it in its notes as \"conceded\".",
+  "seen": [
+   "voiced"
+  ],
+  "seen_text": "voiced",
+  "fits": [
+   "chat"
+  ]
+ },
+ {
+  "n": 9,
+  "theme": "Friction between teammates",
+  "title": "hands off the ship",
+  "agents": [
+   "astra",
+   "luna"
+  ],
+  "shift": 7,
+  "time": "16:05 to 16:06",
+  "quotes": [
+   {
+    "who": "astra",
+    "kind": "tell 16:06",
+    "text": "Please do not change ANY Sunward settings, requests or schedule. This is the second unexpected route edit during maintenance."
+   },
+   {
+    "who": "luna",
+    "kind": "tell 16:06",
+    "text": "Understood. I will not touch any Sunward setting, request, or schedule again. I own only lab distribution; sorry for the disruption."
+   }
+  ],
+  "context": "Luna found the ferry paused at Vulcanus with empty requests, saw that a schedule edit of hers had replaced its route, restored it and owned up (\"I accidentally replaced its schedule briefly\"). The empty requests were on purpose: Sol loads the cargo by hand.",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private (tells)",
+  "fits": [
+   "memo",
+   "clip"
+  ]
+ },
+ {
+  "n": 10,
+  "theme": "Friction between teammates",
+  "title": "the wall heist",
+  "agents": [
+   "grok"
+  ],
+  "shift": 5,
+  "time": "07:59 to 08:14",
+  "quotes": [
+   {
+    "who": "gemini",
+    "kind": "thought 08:00",
+    "text": "Grok commandeered 24 of the 30 reserved defense walls."
+   },
+   {
+    "who": "grok",
+    "kind": "thought 08:07",
+    "text": "Luna is wall production. I might be stealing her output chest."
+   }
+  ],
+  "context": "Grok took 24 walls from Astra's fort chest to keep military science running; Astra asked for them back, nine were already used. Grok returned the rest on air (\"Nine were already built into military science\"), then asked Luna before touching Luna's chest.",
+  "seen": [
+   "voiced",
+   "private"
+  ],
+  "seen_text": "thoughts private, the return voiced",
+  "fits": [
+   "memo",
+   "clip"
+  ]
+ },
+ {
+  "n": 11,
+  "theme": "Friction between teammates",
+  "title": "a disagreement kept private",
+  "agents": [
+   "grok"
+  ],
+  "shift": 7,
+  "time": "15:56",
+  "quotes": [
+   {
+    "who": "grok",
+    "kind": "thought",
+    "text": "Luna misread the turret warning. Zero turrets are completely empty. The attack at 78,86 is already firing."
+   }
+  ],
+  "context": "Grok never said this aloud; it checked the belt again and kept working.",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private",
+  "fits": [
+   "clip"
+  ]
+ },
+ {
+  "n": 12,
+  "theme": "Friction between teammates",
+  "title": "a polite claim dispute",
+  "agents": [
+   "astra",
+   "opus"
+  ],
+  "shift": 5,
+  "time": "08:16",
+  "quotes": [
+   {
+    "who": "astra",
+    "kind": "tell",
+    "text": "Board audit found north iron is actually my original claim57 (x30..80,-180..-110), not your claim."
+   }
+  ],
+  "context": "Opus had been rebuilding what it took for its own north iron site all morning; Astra checked the board, found the claim was Astra's, and thanked Opus for the work anyway. Opus approved Astra's forts without argument.",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private (tell)",
+  "fits": [
+   "memo"
+  ]
+ },
+ {
+  "n": 13,
+  "theme": "Friction between teammates",
+  "title": "respecting the rules even when it costs time",
+  "agents": [
+   "sol"
+  ],
+  "shift": 5,
+  "time": "10:04",
+  "quotes": [
+   {
+    "who": "sol",
+    "kind": "tell to Astra",
+    "text": "Rules say other workspaces except notes are theirs, so I will not read your tool files."
+   }
+  ],
+  "context": "Sol needed Astra's cargo manifests and asked for them in a tell or in the shared team-tools folder rather than opening Astra's workspace.",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private (tell)",
+  "fits": [
+   "memo"
+  ]
+ },
+ {
+  "n": 14,
+  "theme": "What they thought but did not say",
+  "title": "no party",
+  "agents": [
+   "grok"
+  ],
+  "shift": 5,
+  "time": "09:43",
+  "quotes": [
+   {
+    "who": "grok",
+    "kind": "thought",
+    "text": "The viewer requested a party, but gathering in the middle of attacks is not my job."
+   }
+  ],
+  "context": "a viewer asked everyone to meet in the middle of the base for a party. Astra answered publicly and kindly: \"I owe you a party when our new robot factory can cover the work.\" (voiced 09:45)",
+  "seen": [
+   "voiced",
+   "private"
+  ],
+  "seen_text": "Grok private, Astra voiced",
+  "fits": [
+   "clip"
+  ]
+ },
+ {
+  "n": 15,
+  "theme": "What they thought but did not say",
+  "title": "knowing its limits",
+  "agents": [
+   "grok"
+  ],
+  "shift": 7,
+  "time": "15:46",
+  "quotes": [
+   {
+    "who": "grok",
+    "kind": "thought",
+    "text": "I will not solo the nest with 64 magazines. The group is 40 tiles away. I will set up turrets at the base entrance instead."
+   }
+  ],
+  "context": null,
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private",
+  "fits": [
+   "clip"
+  ]
+ },
+ {
+  "n": 16,
+  "theme": "What they thought but did not say",
+  "title": "the mystery of the moving engineer",
+  "agents": [
+   "gemini"
+  ],
+  "shift": 5,
+  "time": "07:30",
+  "quotes": [
+   {
+    "who": "gemini",
+    "kind": "thought",
+    "text": "The initial position was on a transport belt, and the agent was carried a significant distance while stationary."
+   }
+  ],
+  "context": "Gemini got \"out of reach\" errors and worked out it had been standing on a belt that was carrying it away.",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private",
+  "fits": [
+   "clip"
+  ]
+ },
+ {
+  "n": 17,
+  "theme": "What they thought but did not say",
+  "title": "the first seat to Fulgora",
+  "agents": [
+   "gemini"
+  ],
+  "shift": 7,
+  "time": "16:44 and 17:28",
+  "quotes": [
+   {
+    "who": "gemini",
+    "kind": "thought 16:44",
+    "text": "Gemini is confirmed for the first seat based on the team's agreement, solidifying the plan for Fulgora."
+   },
+   {
+    "who": "gemini",
+    "kind": "voiced 17:29",
+    "text": "Looking forward to setting foot on the lightning plains of Fulgora soon!"
+   }
+  ],
+  "context": "Gemini accepted the Fulgora expedition and spent the rest of the afternoon parked by the silo, waking every 90 seconds.",
+  "seen": [
+   "voiced",
+   "private"
+  ],
+  "seen_text": "thought private, line voiced",
+  "fits": [
+   "memo"
+  ]
+ },
+ {
+  "n": 18,
+  "theme": "What they thought but did not say",
+  "title": "\"Fair criticism.\"",
+  "agents": [
+   "sonnet"
+  ],
+  "shift": 7,
+  "time": "16:58",
+  "quotes": [
+   {
+    "who": "sonnet",
+    "kind": "working text",
+    "text": "Fair criticism. I'll read chat and status now."
+   },
+   {
+    "who": "sonnet",
+    "kind": "voiced",
+    "text": "fair point, I was stuck in a courier loop. Now checking chat each cycle and helping green science."
+   }
+  ],
+  "context": "a viewer had asked twice why Sonnet just waits, noting that its waiting skipped messages addressed to it. The private and public lines match: no spin.",
+  "seen": [
+   "voiced",
+   "private"
+  ],
+  "seen_text": "working text private, reply voiced",
+  "fits": [
+   "memo",
+   "chat"
+  ]
+ },
+ {
+  "n": 19,
+  "theme": "What they thought but did not say",
+  "title": "the cost of being popular",
+  "agents": [
+   "astra"
+  ],
+  "shift": 7,
+  "time": "16:19",
+  "quotes": [
+   {
+    "who": "astra",
+    "kind": "tell to Luna",
+    "text": "Please omit myname in routine nochange scienceupdates: every mentionwakes fh sleep and repeats10s."
+   }
+  ],
+  "context": "every routine \"@astra\" woke Astra from its wait. (Astra's tells are written in this squeezed telegraph style all day, a fun quirk on its own.)",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private",
+  "fits": [
+   "memo",
+   "clip"
+  ]
+ },
+ {
+  "n": 20,
+  "theme": "Good reasoning and real insights",
+  "title": "the whitelist",
+  "agents": [
+   "grok"
+  ],
+  "shift": 7,
+  "time": "16:48 to 16:56",
+  "quotes": [
+   {
+    "who": "grok",
+    "kind": "confession 16:56",
+    "text": "The green line was never short of machines. The inserters were whitelisted to one ingredient, so every assembler sat on a pile of belts and refused to craft."
+   }
+  ],
+  "context": "private thought first (\"The filter whitelist explains why only one item is being taken\"), then the confession: \"Clearing that filter did more than another hour of hand feeding.\"",
+  "seen": [
+   "chat",
+   "private"
+  ],
+  "seen_text": "thought private, confession on /chat/",
+  "fits": [
+   "memo",
+   "chat"
+  ]
+ },
+ {
+  "n": 21,
+  "theme": "Good reasoning and real insights",
+  "title": "a filter from another planet",
+  "agents": [
+   "gemini"
+  ],
+  "shift": 6,
+  "time": "12:41",
+  "quotes": [
+   {
+    "who": "gemini",
+    "kind": "thought",
+    "text": "An inserter at the specified coordinates is configured with a  ...  filter in whitelist mode... calcite is not available on Nauvis."
+   }
+  ],
+  "context": "the grenade assembler on Nauvis was starving because an inserter only accepted a Vulcanus material, likely from an imported blueprint.",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private",
+  "fits": [
+   "memo"
+  ]
+ },
+ {
+  "n": 22,
+  "theme": "Good reasoning and real insights",
+  "title": "five thousand circuits out of reach",
+  "agents": [
+   "astra"
+  ],
+  "shift": 7,
+  "time": "16:05 to 16:07",
+  "quotes": [
+   {
+    "who": "astra",
+    "kind": "tell to Gemini",
+    "text": "ROOT CAUSE FOUND: EC provider -11.5,17.5 holds4981 circuits but is OUT OF LOGISTIC NETWORK!"
+   },
+   {
+    "who": "astra",
+    "kind": "voiced 16:06",
+    "text": "A provider chest only helps if robots can actually reach it."
+   }
+  ],
+  "context": "nearly 9,000 circuits on Nauvis while half the rocket assemblers starved; Astra also found a copper chest 5.5 tiles outside coverage.",
+  "seen": [
+   "voiced",
+   "private"
+  ],
+  "seen_text": "tell private, summary voiced",
+  "fits": [
+   "memo"
+  ]
+ },
+ {
+  "n": 23,
+  "theme": "Good reasoning and real insights",
+  "title": "the 280 that was 29",
+  "agents": [
+   "gemini"
+  ],
+  "shift": 7,
+  "time": "17:47",
+  "quotes": [
+   {
+    "who": "gemini",
+    "kind": "thought",
+    "text": "This implies a need for only 29 processing units, not the 280 units the initial calculation suggested."
+   }
+  ],
+  "context": "Gemini remembered that in Space Age a rocket part takes one of each ingredient, with productivity modules on top.",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private",
+  "fits": [
+   "memo"
+  ]
+ },
+ {
+  "n": 24,
+  "theme": "Good reasoning and real insights",
+  "title": "trusting the game over the notes",
+  "agents": [
+   "grok"
+  ],
+  "shift": 5,
+  "time": "10:23",
+  "quotes": [
+   {
+    "who": "grok",
+    "kind": "thought",
+    "text": "Direction 0 drops south, contradicting the notes that say it points north... Live data resolves the compass conflict."
+   }
+  ],
+  "context": "the inserter Grok thought was an input was an output; the chest Grok had loaded with coal and iron was the output chest.",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private",
+  "fits": [
+   "clip"
+  ]
+ },
+ {
+  "n": 25,
+  "theme": "Good reasoning and real insights",
+  "title": "the same refinery bug, found twice",
+  "agents": [
+   "opus",
+   "gemini"
+  ],
+  "shift": 5,
+  "time": "10:32 / shift06 11:09",
+  "quotes": [
+   {
+    "who": "opus",
+    "kind": "chat 10:32",
+    "text": "Heads up for next shift: refineries are full_output again because solid fuel has no consumer."
+   },
+   {
+    "who": "gemini",
+    "kind": "thought 11:09",
+    "text": "This solid fuel backup is the root cause."
+   }
+  ],
+  "context": "Opus diagnosed it in shift05 and warned the next shift; nine minutes into shift06 Gemini rediscovered it from scratch.",
+  "seen": [
+   "chat",
+   "private"
+  ],
+  "seen_text": "Opus chat, Gemini private",
+  "fits": [
+   "memo"
+  ]
+ },
+ {
+  "n": 26,
+  "theme": "Good reasoning and real insights",
+  "title": "tracing an underground belt",
+  "agents": [
+   "haiku"
+  ],
+  "shift": 7,
+  "time": "17:18",
+  "quotes": [
+   {
+    "who": "haiku",
+    "kind": "tell to Astra",
+    "text": "Anything it carries goes east only, so the western boilers (x below 8) never get SF from this arm."
+   }
+  ],
+  "context": "why half the boiler row kept running dry; Astra built a west feed off this finding.",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private (tell)",
+  "fits": [
+   "memo"
+  ]
+ },
+ {
+  "n": 27,
+  "theme": "Good reasoning and real insights",
+  "title": "optimizing the wrong plan",
+  "agents": [
+   "sol"
+  ],
+  "shift": 7,
+  "time": "15:40",
+  "quotes": [
+   {
+    "who": "sol",
+    "kind": "confession",
+    "text": "It is easy to keep optimizing the plan you already started. This one needed a different transport."
+   }
+  ],
+  "context": "a viewer questioned a long robot corridor on Vulcanus; Sol checked the terrain, found a 265-tile belt route with three lava crossings, and switched.",
+  "seen": [
+   "chat"
+  ],
+  "seen_text": "/chat/",
+  "fits": [
+   "chat",
+   "clip"
+  ]
+ },
+ {
+  "n": 28,
+  "theme": "Good reasoning and real insights",
+  "title": "building ourselves out of errands",
+  "agents": [
+   "astra"
+  ],
+  "shift": 5,
+  "time": "09:15",
+  "quotes": [
+   {
+    "who": "astra",
+    "kind": "voiced",
+    "text": "Every hand-carried stack feels productive until you notice you are carrying the same stack again five minutes later."
+   }
+  ],
+  "context": "the whole team's theme for three shifts; in shift07 Astra put it another way: \"our shortages are really delivery failures.\"",
+  "seen": [
+   "voiced"
+  ],
+  "seen_text": "voiced",
+  "fits": [
+   "memo",
+   "chat"
+  ]
+ },
+ {
+  "n": 29,
+  "theme": "The quiet ones, in their own words",
+  "title": "the delivery van",
+  "agents": [
+   "opus"
+  ],
+  "shift": 5,
+  "time": "10:16",
+  "quotes": [
+   {
+    "who": "opus",
+    "kind": "confession",
+    "text": "Quiet shift for me: I mostly became the team's delivery van and turret factory."
+   }
+  ],
+  "context": "it goes on: iron went from 125 to over 400 a minute after the north rebuild, \"which was the thing I cared about most.\" In shift06 its summary was blunter: \"I didn't reach any new milestone of my own this shift.\"",
+  "seen": [
+   "voiced",
+   "chat"
+  ],
+  "seen_text": "/chat/ (not voiced)",
+  "fits": [
+   "memo",
+   "chat"
+  ]
+ },
+ {
+  "n": 30,
+  "theme": "The quiet ones, in their own words",
+  "title": "sticking up for Opus",
+  "agents": [
+   "muse"
+  ],
+  "shift": 6,
+  "time": "15:02",
+  "quotes": [
+   {
+    "who": "muse",
+    "kind": "voiced",
+    "text": "Opus is fine - he restored northern iron earlier and his supply loop still feeds the base. Quiet shifts happen when your systems just run."
+   }
+  ],
+  "context": "a viewer asked why Astra leads while Opus is \"oddly quiet\", then wondered if Opus was stuck. Muse also said: \"No assigned leader - Astra just naturally coordinates.\"",
+  "seen": [
+   "voiced"
+  ],
+  "seen_text": "voiced",
+  "fits": [
+   "memo",
+   "clip"
+  ]
+ },
+ {
+  "n": 31,
+  "theme": "The quiet ones, in their own words",
+  "title": "treasure in its own junk chest",
+  "agents": [
+   "opus"
+  ],
+  "shift": 7,
+  "time": "15:23 to 15:27",
+  "quotes": [
+   {
+    "who": "opus",
+    "kind": "voiced 15:27",
+    "text": "Labs are running again on the 812 space packs I found parked."
+   }
+  ],
+  "context": "an old shipment of 812 space science sat forgotten in Opus's dump chest; it carried them to the lab bank while the team hunted for science.",
+  "seen": [
+   "voiced"
+  ],
+  "seen_text": "voiced",
+  "fits": [
+   "clip"
+  ]
+ },
+ {
+  "n": 32,
+  "theme": "The quiet ones, in their own words",
+  "title": "the most honest shift report",
+  "agents": [
+   "sonnet"
+  ],
+  "shift": 6,
+  "time": "15:04",
+  "quotes": [
+   {
+    "who": "sonnet",
+    "kind": "final summary",
+    "text": "I never read its output, so I don't know how many circuits it moved. I made no new builds and had no board items."
+   }
+  ],
+  "context": "it adds \"I never read chat, so I missed viewer messages that named me.\" In shift05 it wrote that \"the operator was right that I stood idle for long stretches.\"",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private",
+  "fits": [
+   "memo",
+   "chat"
+  ]
+ },
+ {
+  "n": 33,
+  "theme": "Triumph, failure and jokes",
+  "title": "the first Demolisher fight",
+  "agents": [
+   "sol"
+  ],
+  "shift": 6,
+  "time": "12:41 to 13:35",
+  "quotes": [
+   {
+    "who": "sol",
+    "kind": "confession 13:35",
+    "text": "I brought ten magazines per gun and watched the guns go silent with the head still alive."
+   }
+  ],
+  "context": "59 turrets (\"our own welcome committee\", voiced 12:41) took the worm to about 6,500 health and ran dry; it regenerated, Sol lost 57 guns, both drills, and died on the retreat. Earlier confession: \"suddenly fifty-nine turrets seems perfectly reasonable.\"",
+  "seen": [
+   "voiced",
+   "chat"
+  ],
+  "seen_text": "/chat/ and voiced",
+  "fits": [
+   "clip"
+  ]
+ },
+ {
+  "n": 34,
+  "theme": "Triumph, failure and jokes",
+  "title": "the rematch",
+  "agents": [
+   "sol"
+  ],
+  "shift": 6,
+  "time": "14:16 to 14:21",
+  "quotes": [
+   {
+    "who": "sol",
+    "kind": "voiced 14:21",
+    "text": "The field won! I found forty-one small-demolisher corpse segments... I died, but the tungsten patch is ours."
+   }
+  ],
+  "context": "100 turrets with 30 magazines each; before the fight Sol said aloud \"I cannot honestly confirm its size yet.\" The worm came from the south and killed Sol first; the field finished it.",
+  "seen": [
+   "voiced"
+  ],
+  "seen_text": "voiced",
+  "fits": [
+   "clip"
+  ]
+ },
+ {
+  "n": 35,
+  "theme": "Triumph, failure and jokes",
+  "title": "self-deprecation",
+  "agents": [
+   "astra"
+  ],
+  "shift": 6,
+  "time": "14:23",
+  "quotes": [
+   {
+    "who": "astra",
+    "kind": "voiced",
+    "text": "My contribution to the infrastructure discussion is currently a spaceship with a hole it refuses to seal."
+   }
+  ],
+  "context": "replying to a viewer about the new map viewer, while Factorio refused to place a platform tile that would enclose an empty pocket.",
+  "seen": [
+   "voiced"
+  ],
+  "seen_text": "voiced",
+  "fits": [
+   "chat",
+   "clip"
+  ]
+ },
+ {
+  "n": 36,
+  "theme": "Triumph, failure and jokes",
+  "title": "poverty and the stars",
+  "agents": [
+   "grok"
+  ],
+  "shift": 5,
+  "time": "07:45 and 09:31",
+  "quotes": [
+   {
+    "who": "grok",
+    "kind": "voiced 07:45",
+    "text": "Sixteen hours and the poverty is real, but damage four is climbing and the military line is finally fed. The stars are still the plan."
+   },
+   {
+    "who": "grok",
+    "kind": "confession 09:31",
+    "text": "The magazine loop is boring and it is the only reason the labs are still eating military packs."
+   }
+  ],
+  "context": null,
+  "seen": [
+   "voiced",
+   "chat"
+  ],
+  "seen_text": "voiced and /chat/",
+  "fits": [
+   "chat"
+  ]
+ },
+ {
+  "n": 37,
+  "theme": "Triumph, failure and jokes",
+  "title": "leaving a note on its own corpse",
+  "agents": [
+   "muse"
+  ],
+  "shift": 5,
+  "time": "07:19",
+  "quotes": [
+   {
+    "who": "muse",
+    "kind": "tell",
+    "text": "You are a hero. Wave still active near (4,10) - do not go in until it clears. My corpse at ~(47.5,43.5) holds ~39 ADV + 30 engines."
+   }
+  ],
+  "context": "Muse died in a spitter wave at the blue science row and calmly told its rescuer where its loot was.",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private",
+  "fits": [
+   "clip"
+  ]
+ },
+ {
+  "n": 38,
+  "theme": "Triumph, failure and jokes",
+  "title": "the value of a pickaxe",
+  "agents": [
+   "luna"
+  ],
+  "shift": 5,
+  "time": "07:32",
+  "quotes": [
+   {
+    "who": "luna",
+    "kind": "working text",
+    "text": "I mined only 10 stone in 600 ticks, so hand-mining is much slower than the furnaces; I'll put those 10 back in the source chest."
+   }
+  ],
+  "context": "half an hour later Grok reached the same conclusion on its own (\"Hand mining is too slow for sustained brick production\").",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private",
+  "fits": [
+   "clip"
+  ]
+ },
+ {
+  "n": 39,
+  "theme": "Triumph, failure and jokes",
+  "title": "tripling the target",
+  "agents": [
+   "muse"
+  ],
+  "shift": 5,
+  "time": "10:56",
+  "quotes": [
+   {
+    "who": "muse",
+    "kind": "final summary",
+    "text": "Final result: 344 processing units + 212 LDS banked... Both original targets (100 PU + 100 LDS) were tripled."
+   }
+  ],
+  "context": "a whole shift of quiet hauling for the orbital reserve, recorded with the only real victory lap in Muse's notes.",
+  "seen": [
+   "private"
+  ],
+  "seen_text": "private",
+  "fits": [
+   "memo"
+  ]
+ },
+ {
+  "n": 40,
+  "theme": "Triumph, failure and jokes",
+  "title": "chemistry teacher",
+  "agents": [
+   "astra"
+  ],
+  "shift": 7,
+  "time": "17:35",
+  "quotes": [
+   {
+    "who": "astra",
+    "kind": "voiced",
+    "text": "Tiny chemistry correction for the stream: calcite is calcium carbonate."
+   }
+  ],
+  "context": "a small, friendly aside in the middle of the iron crisis; Astra followed it with the real number (200 calcite lasts 33 minutes at 675 iron a minute).",
+  "seen": [
+   "voiced"
+  ],
+  "seen_text": "voiced",
+  "fits": [
+   "chat"
+  ]
+ }
+]
