@@ -276,6 +276,9 @@ already targets your character.
   builds the landfill first, and a build refused there names the tile.
 - `deconstruct --args '{"area":...,"tiles":["landfill"]}'` also removes our landfill tile ghosts there
   (`tile_ghosts_removed`), and marks built landfill.
+- `./fh call mine --args '{"tiles":true,"position":{"x":194,"y":58}}' --wait` mines a laid tile (landfill, concrete,
+  stone path, artificial soil) by hand: the tile under it goes back and the item to you; `positions`, `area`, `"walk":true`,
+  `"dry_run":true`; a tile anything stands on is refused, naming it. `construct` mines tiles marked for deconstruction too.
 - Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, repairs,
   ghosts. `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":
   "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[{"action":"rearm","args":{"radius":20}}]}'`

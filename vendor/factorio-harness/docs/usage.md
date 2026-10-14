@@ -964,6 +964,29 @@ fh sleep 900 --until researched                       # ...or until the research
   (73.5,-54.5) is mined out; the nearest stone within 8 tiles is out of reach: entity is out of reach: ...` with its
   spot; none left: `stone at (73.5,-54.5) is mined out and no stone is left within 8 tiles of it`. A position never
   mined and given no `name` fails as before (`entity not found at ...`).
+- `mine {tiles: true, position | positions | area, name?, walk?, dry_run?}` (minetile; Sol 15:28: landfill under an old
+  pole at (194,58) kept a 3x3 planting cell off the yumako farm, with no robots there) mines tiles laid by a player by
+  hand, as a player mines them:
+  - within reach (`reach_distance`, 10, to the tile's edge), the tile's mining time at your mining speed (landfill and
+    artificial soil 0.5 s at Sol's speed 1, concrete and stone path 0.1 s), the product to your inventory, and the tile
+    under it put back (landfill on wetland: wetland; concrete on landfill on water: landfill, water under it);
+  - a natural tile (`water at (-53,21) is not minable (a natural tile)`) and a tile anything stands on are refused or
+    skipped, naming it (`landfill at (194,58) has small-electric-pole (194.5,58.5) on it: mine it first`); a character
+    only when the tile put back is one it cannot stand on (water);
+  - tiles by the game's tile coordinates (the top-left corner, as `grid` and F4 show them); `positions` 1..64, `area`
+    up to 32x32 (the laid tiles there, `name` only that tile; `natural` counts the rest);
+  - a timed action as `mine` is, nearest first: `walk: true` walks into reach of those out of reach (else refused);
+    outcomes `target_mined`, `inventory_full` (`blocked_item`), `out_of_reach`, `failed` (none mined; `skipped` says
+    why), `timed_out`; `last.mined`, `last.tiles` (`landfill (194,58) -> wetland-yumako` in the `--wait` reply),
+    `last.skipped`, `last.items`, `last.moved`, `last.inv`;
+  - `dry_run: true` mines nothing: each tile with `tile`, `restores`, `seconds`, `in_reach` and `distance`; `items`,
+    `seconds`, `skipped`.
+  - On 2.0.77 the game's own `mine_tile` returned false for a character without a player (on a copy of world n, on the
+    tile, beside it, with room), so the harness mines it as above.
+- `construct` also hand-mines tiles marked for deconstruction (as `mine {tiles}`: the tile under each put back, the
+  product to your inventory; `last.tiles_mined`). Sol 15:38: a tile mark over landfill was mined as an entity and ended
+  `inventory_full` with 73 free slots. `inventory_full` now comes only when a product has no room; an entity the
+  engine will not mine by hand fails, named, and the rest goes on.
 - `rotate {position}` is one 90-degree turn clockwise, as the R key (`reverse: true`: counter-clockwise); `rotate
   {position, direction: "south"}` (or 0, 4, 8, 12) turns it until it faces that way, the shorter way round. The reply
   has `before` and `after` (compass names; 2.0 directions are north 0, east 4, south 8, west 12, and replies leave out
