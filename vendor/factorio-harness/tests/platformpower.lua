@@ -109,4 +109,42 @@ eq(N.entity_power(add{type='container',name='iron-chest',prototype={},position={
 -- A planet's panel: solar power from the surface property.
 local np={valid=true,type='solar-panel',name='solar-panel',prototype=panel_proto,surface=nauvis}
 eq(N.entity_power(np).at_solar_power_kw,60)
+-- 6. Astra, 14:05: Starling's network 475 (5 solar panels, assemblers on low power) was not found. A platform's
+-- poles are found at once each view, so the pole map's missing them does not matter; and a network with no pole of
+-- ours gets a line from its panels and machines, without draw figures.
+local lonely={valid=true,name='Lonely',index=5,force=force,space_location=nauvis_loc}
+local lsurf={name='platform-5',index=6,platform=lonely,solar_power_multiplier=1,get_property=function() return 100 end,count_entities_filtered=function() return 0 end}
+lonely.surface=lsurf
+local llist={}
+lsurf.find_entities_filtered=function(f)
+  local out={}
+  for _,e in ipairs(llist) do
+    local ok=true
+    if f.type then ok=false; for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do if e.type==t then ok=true end end end
+    if ok then out[#out+1]=e end
+  end
+  return out
+end
+local function ladd(e) e.valid=true; e.force=force; e.surface=lsurf; llist[#llist+1]=e; return e end
+for i=1,5 do ladd{type='solar-panel',name='solar-panel',prototype=panel_proto,position={x=i*3,y=-6},electric_network_id=475} end
+local lm={}
+for i=1,3 do lm[i]=ladd{type='assembling-machine',name='assembling-machine-2',prototype=am_proto,position={x=i*4,y=4},electric_network_id=475,status=i<=2 and 2 or 0} end
+force.platforms={starling,lonely}
+game.surfaces={nauvis,surf,lsurf}
+-- Starling's poles drop out of the pole map (as when its walk missed them): the view finds them again.
+for id,m in pairs(storage.networks.map) do if m.surface=='platform-3' then storage.networks.map[id]=nil end end
+starling.space_connection=nil; starling.space_location=nauvis_loc
+storage.networks.views={}; game.tick=game.tick+1
+r=N.read({force=force},{platform='Starling'})
+eq(r.surfaces[1].electric[1].id,280,'Starling found again'); eq(r.surfaces[1].electric[1].poles,6)
+assert(storage.networks.map[280],'its poles are in the pole map again')
+r=N.read({force=force},{platform='Lonely'})
+eq(#r.surfaces,1); local le=r.surfaces[1].electric[1]
+eq(le.id,475); eq(le.poles,0); eq(le.machines,3); eq(le.low,2); eq(le.solar,5)
+eq(le.line,'Lonely (platform) electric #475 (no pole of ours found near (3,-6)): capacity 900 kW; no draw figures (the game gives a network\'s statistics through its poles); '
+  ..'solar 5 panels, 0 kW now, 900 kW at this solar power (solar power 300% at nauvis); machines 3: 2 low power, 0 no power')
+-- inspect: a machine whose network is not in the pole map finds a pole of it within 64 tiles; with none, says so.
+storage.networks.map[280]=nil
+eq(N.entity_power(machines[3]).now_kw_all_of_name,1200,'a pole of network 280 nearby')
+eq(N.entity_power(lm[1]).now,'electric network #475: no pole of ours in it within 64 tiles, and the game gives a network\'s statistics through its poles')
 print('platformpower: ok')

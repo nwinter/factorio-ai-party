@@ -2051,6 +2051,15 @@ do
     eq(pp.platform,'Starling'); eq(#pp.networks,3); eq(#pp.unpowered,2)
   end
   fails(function() call('observe',{scope='power',platform='Nope'}) end,'no platform named Nope')
+  -- A network with no pole in the area (Astra, 14:05: Starling's 475): listed from its machines, without figures.
+  local n=#world
+  machine(6,475,defines.entity_status.low_power); machine(8,475,defines.entity_status.working)
+  local pp=call('observe',{scope='power',platform='Starling'})
+  local lone
+  for _,x in ipairs(pp.networks) do if x.id==475 then lone=x end end
+  assert(lone,'network 475 listed'); eq(lone.poles,0); eq(lone.entities,2); eq(lone.unpowered,1)
+  eq(lone.note,'no pole of ours in the area: the game gives a network\'s statistics through its poles')
+  while #world>n do table.remove(world) end
   p.force.platforms=kept
 end
 -- A pole the engine left unconnected (its own network) joins every network in reach: no orphans.

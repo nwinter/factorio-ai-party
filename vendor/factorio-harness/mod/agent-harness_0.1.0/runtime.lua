@@ -2079,6 +2079,13 @@ function handlers.power(p,a)
   for _,e in pairs(p.surface.find_entities_filtered{area=area,force=p.force}) do
     if e.valid and e.type~='electric-pole' and known(p,e) and e.prototype.electric_energy_source_prototype then
       local id=e.electric_network_id
+      -- A network with no pole in the area (Astra, 14:05: Starling's network 475 showed nothing): listed from its
+      -- machines and panels, without figures (the game gives a network's statistics through its poles).
+      if id and not networks[id] then
+        networks[id]={id=id,poles=0,unpowered=0,entities=0,note='no pole of ours in the area: the game gives a network\'s statistics through its poles'}
+        order[#order+1]=networks[id]
+      end
+      if id and networks[id].entities then networks[id].entities=networks[id].entities+1 end
       local why=not id and 'unconnected' or UNPOWERED[e.status]
       if why then
         total=total+1

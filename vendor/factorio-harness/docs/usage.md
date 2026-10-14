@@ -2330,13 +2330,13 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   at that solar power (a planet's counts them at their output now). Read fields `platform` (per surface),
   `solar_power` (percent) and `solar_power_text` (per electric network). `power {platform}` (`fh call observe --args
   '{"scope":"power","platform":"Starling"}'`) reads that platform, 64 tiles round its hub unless an area, position
-  or radius is given; every `power` reply adds `solar_power` and `lines`, those networks' lines as above.
+  or radius is given; every `power` reply adds `solar_power` and `lines`, those networks' lines as above. A platform's poles are found at once each view (Astra, 14:05: Starling's network 475 was not found), and a platform network with no pole of ours gets a line from its panels and machines: `Lonely (platform) electric #475 (no pole of ours found near (3,-6)): capacity 900 kW; no draw figures (the game gives a network's statistics through its poles); ...`; `power` lists such a network from the machines in its area (`poles: 0`, `entities`, `note`).
 - `inspect` on a producer or consumer of electricity adds `electricity`: `max_kw` at its quality (a machine's times
   its modules' consumption bonus, `consumption_bonus: "-60%"`, with `drain_kw`; a solar panel's at 100% and
   `at_solar_power_kw` where it is, with `solar_power`; a generator's maximum output; an accumulator's `stored_mj`,
   `capacity_mj`, `charge_kw`, `discharge_kw`), and `now`: what all of its name on its electric network make or draw
   (`all solar-panel on electric network #280 make 2.4 MW now (5 s average)`; the game counts power by prototype, not
-  per entity), or `no electric network: no pole reaches it`. (`power` stays the "unpowered: ..." line.)
+  per entity), or `no electric network: no pole reaches it`; a network missing from the pole map is read through a pole of it within 64 tiles. (`power` stays the "unpowered: ..." line.)
 - Platform alerts in `team.alerts`, for the agent who created a platform (`platform_create`), the 3 agents whose
   requests named it with `platform=` most recently (within 2 hours; the `platforms` read does not count) and anyone
   aboard; a platform with none of them known goes to every agent. Each line names the platform and its surface:
