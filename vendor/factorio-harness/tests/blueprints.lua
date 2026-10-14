@@ -532,6 +532,10 @@ eq(pl.mode,'normal'); eq(pl.slot,'plan')
 pl=H.plan(p,{slot='plan',position={x=10.3,y=5.2},direction='east'})
 eq(pl.entities[1].position.x,10.5); eq(pl.entities[1].position.y,3.5); eq(pl.entities[2].position.x,10.5); eq(pl.entities[2].position.y,7.5)
 eq(pl.entities[2].direction,8)
+-- The number inspect prints turns it the same (friction1300); a diagonal does not turn a blueprint.
+pl=H.plan(p,{slot='plan',position={x=10.3,y=5.2},direction=4})
+eq(pl.entities[1].position.x,10.5); eq(pl.entities[2].direction,8)
+fails(function() H.plan(p,{slot='plan',position={x=10.3,y=5.2},direction=2}) end,'blueprint direction must be north, east, south, or west %(or 0, 4, 8, 12%)')
 -- Flipped: positions and directions mirror before the turn.
 pl=H.plan(p,{slot='plan',position={x=10.3,y=5.2},flip_horizontal=true})
 eq(pl.entities[1].position.x,11.5); eq(pl.entities[2].position.x,7.5); eq(pl.entities[2].direction,12)

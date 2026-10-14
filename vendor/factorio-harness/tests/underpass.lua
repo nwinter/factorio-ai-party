@@ -134,4 +134,15 @@ eq(r.underground_warnings[1],'underground-belt input ghost at (-216.5,72.5) will
 entities={}
 r=sol('place_ghosts',{entities={{name='underground-belt',position={x=-152.5,y=84.5},direction='east'}}})
 assert(r.underground_warnings[1]:find('lava at (-152,84)',1,true),r.underground_warnings[1])
+-- A direction as the number inspect prints (friction1300: Gemini's 18 place_ghosts dry runs with direction 0 were
+-- refused, and Astra mapped 4/8/12 to names by hand): 0..15 as the game numbers them; a dry run too.
+entities={}
+r=sol('place_ghosts',{entities={{name='underground-belt',position={x=40.5,y=0.5},direction=4,type='input'}}})
+eq(r.placed,1); eq(entities[#entities].direction,4)
+r=sol('place_ghosts',{dry_run=true,entities={{name='underground-belt',position={x=40.5,y=4.5},direction=8,type='input'}}})
+eq(r.dry_run,true); eq(r.summary,'1 placeable (of 1)')
+for _,bad in ipairs({16,-4,2.5,'up'}) do
+  r=sol('place_ghosts',{entities={{name='underground-belt',position={x=40.5,y=8.5},direction=bad}}})
+  eq(r.placed,0); eq(r.failed[1].error,'direction must be a compass name (north, east, south, west) or 0..15')
+end
 print('underpass: ok')

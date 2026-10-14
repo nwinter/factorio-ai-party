@@ -19,8 +19,9 @@ Record each milestone you reach in `notes.md` with the game time printed in fh's
   is missing, make it with `./fh call describe --format json > describe.json`.) Check it before guessing arguments.
 - Look: `./fh observe`, `./fh call map`, `./fh call scan`, `./fh call nearest`, `./fh call status`,
   `./fh call rates`, `./fh call bottleneck`, `./fh call recipes`, `./fh call technologies`.
-- Act: `./fh call ACTION --args '{...}'`. Timed actions (move_to, mine, build_path, construct, ...) take
-  `--wait --wait-timeout 60000` (milliseconds). `build` accepts a batch of up to 64 placements.
+- Act: `./fh call ACTION --args '{...}'`. Timed actions (move_to, mine, build_path, construct, ...) take `--wait`,
+  which lasts until the action's own end tick (`--wait-timeout MS` cuts it shorter). `build` accepts a batch of up to
+  64 placements.
 - Plans: `./fh queue submit --file plan.json` runs a multi-step plan inside the game with no round trips.
 - Pictures: `./fh view --out view.png` draws a schematic map; `./shot NAME` saves a real game screenshot to
   `shots/NAME.png` that you can open and look at. Use pictures to check layouts (inserter directions, belt flow).
@@ -77,9 +78,11 @@ Your character stands still while you think, and the clock does not.
   `--until "item_count iron-plate>=200"` (your inventory) or `"item_count iron-plate>=200 at -18.5,-34.5 -16.5,-34.5"`
   (chests). It does not return when a machine starves, and never runs past your deadline. `./fh call sleep` is the
   same wait. A tell or mention wakes it once.
-- `./fh wait --until tell|alert|COND --max 600` is the same wait with one line out (`woke: told after 42 s (astra:
+- `./fh wait --until "tell|alert|COND" --max 600` is the same wait with one line out (`woke: told after 42 s (astra:
   ...)`): it ends on a tell or mention, a new attack/enemy alert (`alert`), a `--until` condition as for sleep, or
   after `--max` seconds (up to 900); the team block comes with your next reply.
+- `./fh wait --max 150` (or `--until idle`) waits for your running action (and combat) to end, at most 150 s, and
+  returns at once when nothing runs.
 - A tell or mention ends any wait early: a direct `wait_ticks`/`wait_until` (outcome `told` or `mentioned`), and
   `--wait` or `./fh wait` on an action (outcome `told`, `still_running`: the action keeps going).
 - A direct action that drives your character (walk, `move_to`, build, mine, transfer, collect, feed and the like)

@@ -761,6 +761,10 @@ fh sleep 900 --until researched                       # ...or until the research
 - `item_count` with `positions` on a rocket silo counts its rocket cargo (the game counts it with the silo's inventories), and `saw` adds the silo's line: `agricultural-science-pack 45 in 1 entities; rocket-silo (65.5,14.5): rocket built and ready: parts consumed (0/50), not launched, cargo agricultural-science-pack*45`.
 - A direct `wait_ticks` or `wait_until` while the queue runs is refused (it would pause the queue: "wait_ticks would pause your queue (8 steps, repeating): ..."); `pause_queue: true` pauses it for the wait as before. A paused or empty queue is no reason to refuse. Queue steps are unchanged.
 - A tell or mention that arrives during a direct `wait_ticks` or `wait_until` ends it (outcome `told` or `mentioned`, `last.why` `told by astra`; within 30 ticks); one pending from before the wait does not, nor an fyi tell. `--wait` on any other action, and `fh wait`, end early the same way while the action keeps going: outcome `told` or `mentioned`, `from`, `still_running` and a note. The peek `status` polls carry the newest undelivered one as `inbox {tick, woke, from}`.
+- `fh wait --max S` (or `fh wait --until idle [--max S]`) waits for the running action and combat to end, as `fh wait`
+  does, for at most S seconds, and returns at once when nothing runs (friction1300: Grok and Haiku read `fh wait --max
+  150` as that; it slept the whole 150 s while the walk had ended after 46). Out of time it ends as a timed-out wait
+  (`wait_timeout`, `still_running`).
 - `fh wait --until tell|alert|COND [--max S]` is one blocking wait with one line out: `woke: told after 42 s (astra: coal please); your next reply's team block has the rest`. It is a sleep (S seconds, default 600, up to 900) whose requests peek, so the team block stays for the agent's next reply: it ends on what ends a sleep (a tell or mention, damage, death, board news, the queue finishing or stalling), on `alert` (a new attack area, enemy group or enemy base: `woke: alert`) or on a sleep `--until` condition. `--format json` adds the line as `result.line`.
 - `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), a chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), eggs of ours on your surface or in a holder you built will hatch within 5 minutes (`eggs`, with the line; delivered in `team.alerts`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`.
   - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64), `rocket_ready X,Y` (the silo at X,Y has its rocket built and ready to launch), `platform_arrived PLATFORM [PLANET]`, any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
@@ -1506,6 +1510,26 @@ fh sleep 900 --until researched                       # ...or until the research
     list stopped at `limit` (or at 200 checks) with positions left.
   - Cost on a copy of world n: 3 to 8 ms a call up to radius 24 (a dense base, a Fulgora island); the old 3-spot search
     took 7 to 32 ms at radius 10 to 16.
+  - `separate: true` lists spots that overlap no spot nearer in the list, so every one of them can be built (friction1300:
+    Gemini built accumulators from one list and the third was `blocked by accumulator (-60,71)`, the second, 1 tile
+    off); `overlap` counts the positions left out for that. On a copy of world n, Gemini's island: 7 spots without it, 4
+    with it, and all 4 built in one `build`.
+  - `powered: true` lists only spots with a tile in the supply area of one of our built electric poles (the square of
+    its supply area distance, by quality; a machine there connects); `unpowered` counts the positions left out for
+    that, `poles` our poles whose area reaches the search.
+  - `direction` takes a compass name or the number inspect prints (0, 4, 8, 12).
+- Directions as numbers: `build` (and its `builds`), `place_ghosts` entries (and its dry run) take the number inspect and
+  scan print (0..15, 4 is east) as well as a compass name; `paste`, `blueprint_place` and `plan` take 0, 4, 8 or 12
+  (friction1300: Gemini's script sent `"direction": 0` in 18 place_ghosts dry runs, read only the summary of the
+  refusals and dropped its drill expansion; Grok and Astra re-sent with names).
+- Water a character walks through (friction1300: Gemini read Fulgora's oil ocean, drawn as water, as water it could
+  not cross; on a copy of world n a character walked across 6 tiles of `oil-ocean-deep` at half speed): `map` regions
+  are `water` (a character cannot cross it: deep water, ammoniacal ocean), `walkable water` (kind `water`: shallow
+  water, wetland, `oil-ocean-shallow` and `oil-ocean-deep`, whose collision layers meet none of the character's) and
+  `lava` (kind `lava`; it was `water` before). `grid` draws `~` for water a character cannot cross (lava too) and `,`
+  for water it walks through; the legend names the tiles (`,`: `water a character walks through: oil-ocean-deep,
+  oil-ocean-shallow`). Buildings still need landfill or foundation on either. `scan` `ore: grid` keeps `~` for every
+  water tile (no drill stands there).
 - A refused turret build (gun, laser, flamethrower or artillery turret) lists up to 3 spots within your build reach
   where the game's manual build check accepts it: when blocked, the nearest to the asked position within 6 tiles of
   it (`; nearest spots where gun-turret fits within your build reach (game build check): (5,-2), (5,2), (4,-2)`); when

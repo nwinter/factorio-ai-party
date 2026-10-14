@@ -120,6 +120,12 @@ blocked_y[-0.5]=true
 fails(function() bot('build',{item='offshore-pump',position={x=10,y=-0.5},direction='east'}) end,
   'within 12 tiles): (10,-1.5) east, (10,0.5) east, (10,-2.5) east')
 blocked_y[-0.5]=nil
+-- A direction as the number inspect prints (friction1300: Grok's build with direction 0 was refused): 4 is east.
+c.items['offshore-pump']=c.items['offshore-pump']+1
+r=bot('build',{item='offshore-pump',position={x=10,y=1.5},direction=4})
+eq(r.consumed,1); eq(created[#created].direction,4)
+fails(function() bot('build',{item='offshore-pump',position={x=10,y=1.5},direction=16}) end,
+  'invalid direction: a compass name (north, east, south, west) or 0..15')
 
 -- A boiler on water: the nearest positions where it fits facing north.
 fails(function() bot('build',{item='boiler',position={x=10.5,y=5}}) end,
@@ -176,6 +182,13 @@ eq(#p.placements,0); eq(p.checked,0)
 fails(function() bot('placements',{name='offshore-pump',radius=25}) end,'radius out of range')
 fails(function() bot('placements',{name='offshore-pump',limit=51}) end,'limit out of range')
 fails(function() bot('placements',{name='offshore-pump',direction='northeast'}) end,'direction is north, east, south or west')
+-- A number as inspect prints it.
+p=bot('placements',{name='offshore-pump',direction=4,limit=2})
+eq(#p.placements,2); eq(p.placements[1].direction,'east')
+eq(#bot('placements',{name='offshore-pump',direction=0}).placements,0)
+fails(function() bot('placements',{name='offshore-pump',direction=2}) end,'direction is north, east, south or west (or 0, 4, 8, 12)')
+fails(function() bot('placements',{name='boiler',separate='yes'}) end,'separate must be true or false')
+fails(function() bot('placements',{name='boiler',powered=1}) end,'powered must be true or false')
 fails(function() bot('placements',{name='nothing'}) end,'no entity or item named nothing')
 fails(function() bot('placements',{}) end,'name is required')
 fails(function() bot('placements',{name='boiler',size=3}) end,'size')
@@ -236,6 +249,65 @@ eq(p.more,nil)
 local at={}
 for _,s in ipairs(p.placements) do at[s.position.x..','..s.position.y]=true end
 assert(at['0,0'] and at['1,-2'] and not at['2,2'] and not at['-1,1'])
+-- separate (friction1300: Gemini built accumulators from one placements list, and the third was blocked by the
+-- second, 1 tile apart): each spot overlaps none nearer in the list, so all of them can be built.
+local all=p
+asked={}
+p=bot('placements',{name='accumulator',near={x=1,y=1},radius=3,limit=50,separate=true})
+eq(p.separate,true); assert(#p.placements>1 and #p.placements<#all.placements,#p.placements)
+assert(p.overlap and p.overlap>0,tostring(p.overlap))
+for i,s in ipairs(p.placements) do
+  for k=1,i-1 do
+    local o=p.placements[k]
+    assert(math.abs(s.position.x-o.position.x)>=2 or math.abs(s.position.y-o.position.y)>=2,
+      'overlap: ('..s.position.x..','..s.position.y..') and ('..o.position.x..','..o.position.y..')')
+  end
+end
+-- the nearest spot is the same; the game was asked about the listed spots only
+eq(p.placements[1].position.x,all.placements[1].position.x); eq(p.placements[1].position.y,all.placements[1].position.y)
+eq(#asked,#p.placements)
+-- powered: a small pole of ours at (-2.5,-2.5) supplies -5..0 (supply area distance 2.5); an accumulator (2x2)
+-- there needs a tile in it: centre x <= 0 and y <= 0. Another force's pole counts for nothing.
+local pole={valid=true,type='electric-pole',name='small-electric-pole',position={x=-2.5,y=-2.5},force=force,quality={name='normal'},
+  prototype={get_supply_area_distance=function(q) eq(q,'normal'); return 2.5 end}}
+local theirs={valid=true,type='electric-pole',name='small-electric-pole',position={x=3.5,y=3.5},force={name='enemy'},quality={name='normal'},
+  prototype={get_supply_area_distance=function() return 2.5 end}}
+local find_entities=surface.find_entities_filtered
+local pole_query
+surface.find_entities_filtered=function(f)
+  if f.type=='electric-pole' then
+    pole_query=f
+    local out={}
+    for _,e in ipairs({pole,theirs}) do if e.force==f.force then out[#out+1]=e end end
+    return out
+  end
+  return find_entities(f)
+end
+asked={}
+p=bot('placements',{name='accumulator',near={x=1,y=1},radius=3,limit=50,powered=true})
+eq(pole_query.force,force)
+eq(p.powered,true); eq(p.poles,1); assert(p.unpowered and p.unpowered>0,tostring(p.unpowered))
+assert(#p.placements>0)
+for _,s in ipairs(p.placements) do assert(s.position.x<=0 and s.position.y<=0,'unpowered: '..s.position.x..','..s.position.y) end
+local at0={}
+for _,s in ipairs(p.placements) do at0[s.position.x..','..s.position.y]=true end
+-- within 3 tiles of (1,1): (0,0), (0,-1), (-1,-1); (-1,0) is on the tree
+eq(#p.placements,3); assert(at0['0,0'] and at0['0,-1'] and at0['-1,-1'],'powered spots')
+eq(#asked,#p.placements)
+-- both: powered spots that do not overlap
+p=bot('placements',{name='accumulator',near={x=1,y=1},radius=3,limit=50,powered=true,separate=true})
+for i,s in ipairs(p.placements) do
+  assert(s.position.x<=0 and s.position.y<=0)
+  for k=1,i-1 do
+    local o=p.placements[k]
+    assert(math.abs(s.position.x-o.position.x)>=2 or math.abs(s.position.y-o.position.y)>=2,'overlap')
+  end
+end
+-- no pole near: nothing listed, every candidate counted as unpowered
+pole.position={x=-60.5,y=-60.5}
+p=bot('placements',{name='accumulator',near={x=1,y=1},radius=3,limit=50,powered=true})
+eq(#p.placements,0); eq(p.poles,0); assert(p.unpowered>0)
+surface.find_entities_filtered=find_entities
 -- Water: a boiler beside the lake; positions with water under them are blocked, not checked.
 checks={}
 p=bot('placements',{name='boiler',near={x=9,y=-5},radius=3,direction='north',limit=50})

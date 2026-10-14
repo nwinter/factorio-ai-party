@@ -276,14 +276,18 @@ return function(api)
   -- matches an earlier one's adds nothing (a square building turns in place).
   -- opts (optional): keep(x, y) filters candidate centres before the game
   -- check; seen(x, y) likewise, counted apart; ref: sort by distance to this
-  -- point instead of pos; max_checks (default 200).
+  -- point instead of pos; max_checks (default 200); separate: a position
+  -- whose tiles overlap a spot found before is left out (info.overlap);
+  -- powered: a position none of whose tiles lies in a built pole's supply
+  -- area (ours, as the game connects a machine) is left out (info.unpowered;
+  -- info.poles: the poles whose area reaches the search).
   function M.find(p, proto, pos, radius, dirs, opts)
     opts = opts or {}
     local limit, budget = opts.limit or MAX, opts.max_checks or MAX_CHECKS
     local ref = opts.ref or pos
     local surface = p.surface
     local pump = proto.type == 'offshore-pump'
-    local info = {blocked=0, unseen=0}
+    local info = {blocked=0, unseen=0, overlap=0, unpowered=0}
     local boxes, rules, extent = {}, {}, 1
     for rank, dir in ipairs(dirs) do
       local b = box_of(proto, dir)
@@ -306,6 +310,42 @@ return function(api)
     end
     local G = grid(p, proto, gx, gy, gw, pump)
     local in_way, wet, flag, water = G.in_way, G.wet, G.flag, G.water
+    -- Tiles of the grid by number ((tx - gx) * gw + ty - gy): any marked in x1..x2, y1..y2; mark them all.
+    local function any(t, x1, y1, x2, y2)
+      for tx = math.max(x1, gx), math.min(x2, gx + gw - 1) do
+        local base = (tx - gx) * gw - gy
+        for ty = math.max(y1, gy), math.min(y2, gy + gw - 1) do if t[base + ty] then return true end end
+      end
+      return false
+    end
+    local function mark(t, x1, y1, x2, y2)
+      for tx = math.max(x1, gx), math.min(x2, gx + gw - 1) do
+        local base = (tx - gx) * gw - gy
+        for ty = math.max(y1, gy), math.min(y2, gy + gw - 1) do t[base + ty] = true end
+      end
+    end
+    local taken = opts.separate and {} or nil
+    -- A machine connects to a pole whose supply area (a square, supply area
+    -- distance each way) overlaps its box: the tiles that square overlaps.
+    local supplied
+    if opts.powered then
+      supplied, info.poles = {}, 0
+      local far = 16
+      local area = {left_top={x=gx - far, y=gy - far}, right_bottom={x=gx + gw + far, y=gy + gw + far}}
+      for _, e in pairs(surface.find_entities_filtered{area=area, type='electric-pole', force=p.force, limit=2048}) do
+        if e.valid then
+          local q = try(function() return e.quality.name end)
+          local d = try(function() return e.prototype.get_supply_area_distance(q or 'normal') end) or try(function() return e.prototype.supply_area_distance end) or 0
+          local c = e.position
+          local x1, x2 = math.floor(c.x - d + EPS), math.ceil(c.x + d - EPS) - 1
+          local y1, y2 = math.floor(c.y - d + EPS), math.ceil(c.y + d - EPS) - 1
+          if d > 0 and x2 >= gx and y2 >= gy and x1 < gx + gw and y1 < gy + gw then
+            info.poles = info.poles + 1
+            mark(supplied, x1, y1, x2, y2)
+          end
+        end
+      end
+    end
     -- The rules' tiles are counted from a tile centre: an odd footprint (a 1x1 pump).
     local w1, h1 = size(proto, dirs[1])
     local ruled = pump and #(rules[1] or {}) > 0 and w1 % 2 == 1 and h1 % 2 == 1
@@ -412,8 +452,11 @@ return function(api)
               fits = wets > 0 and drys > 0
             end
             if fits and keep then fits = keep(x, y) end
-            if fits and in_way(math.ceil(x + b[1] - 0.5 + EPS), math.ceil(y + b[2] - 0.5 + EPS),
-                math.floor(x + b[3] - 0.5 - EPS), math.floor(y + b[4] - 0.5 - EPS)) then
+            local x1, y1 = math.ceil(x + b[1] - 0.5 + EPS), math.ceil(y + b[2] - 0.5 + EPS)
+            local x2, y2 = math.floor(x + b[3] - 0.5 - EPS), math.floor(y + b[4] - 0.5 - EPS)
+            if fits and supplied and not any(supplied, x1, y1, x2, y2) then fits = false; info.unpowered = info.unpowered + 1 end
+            if fits and taken and any(taken, x1, y1, x2, y2) then fits = false; info.overlap = info.overlap + 1 end
+            if fits and in_way(x1, y1, x2, y2) then
               fits = false; info.blocked = info.blocked + 1
             end
             if fits and seen and not seen(x, y) then fits = false; info.unseen = info.unseen + 1 end
@@ -424,6 +467,7 @@ return function(api)
                   build_check_type=defines.build_check_type.manual} then
                 done[at] = true
                 out[#out+1] = {position=position, direction=NAMES[dir]}
+                if taken then mark(taken, x1, y1, x2, y2) end
               end
             end
           end
@@ -494,7 +538,9 @@ return function(api)
     placements={name='entity or item name (an item: the entity it places)',
       near='optional {x,y} centre (default you): in sight, or by remote view in a chunk our force sees now',position='the same as near',
       radius='optional 1..24 (default 12 for an offshore-pump, else 10)',limit='optional 1..50 positions (default 10)',
-      direction='optional compass name: only this direction (default north, east, south, west; a building that does not turn has none)',
+      direction='optional compass name or 0, 4, 8, 12: only this direction (default north, east, south, west; a building that does not turn has none)',
+      separate='optional true: spots that do not overlap each other, so all of them can be built (each overlaps no spot nearer in the list); overlap: positions left out for that',
+      powered='optional true: only spots with a tile in the supply area of one of our built electric poles (the game connects the machine there); unpowered: positions left out for that; poles: our poles whose area reaches the search',
       returns='placements [{position, direction}]: where the entity fits now, nearest first, one per position, by the game\'s manual build check (as build and dry_run: water, cliffs, entities, tiles; no reach or item check); count; checked: positions the game checked (at most 200); blocked: positions an entity or tile was in the way of (a scan before the game check); unseen: positions in chunks our force does not see now (left out); more: true when positions were left unchecked'},
   }
   M.handlers = {}
@@ -520,8 +566,8 @@ return function(api)
     local turns = try(function() return proto.supports_direction end) ~= false
     local dirs = turns and DIRS or {0}
     if a.direction ~= nil then
-      local d = api.directions[a.direction]
-      assert(d and NAMES[d], 'direction is north, east, south or west')
+      local d = api.direction_of and api.direction_of(a.direction) or api.directions[a.direction]
+      assert(d and NAMES[d], 'direction is north, east, south or west (or 0, 4, 8, 12)')
       dirs = {d}
     end
     -- Positions in a chunk our force does not see now are left out, as the map shows nothing live there.
@@ -536,10 +582,14 @@ return function(api)
         return v
       end
     end
-    local found, checked, info = M.find(p, proto, pos, radius, dirs, {limit=limit, seen=seen})
+    assert(a.separate == nil or type(a.separate) == 'boolean', 'separate must be true or false')
+    assert(a.powered == nil or type(a.powered) == 'boolean', 'powered must be true or false')
+    local found, checked, info = M.find(p, proto, pos, radius, dirs, {limit=limit, seen=seen, separate=a.separate, powered=a.powered})
     if not turns then for _, s in ipairs(found) do s.direction = nil end end
     return {name=proto.name, near=pos, radius=radius, placements=found, count=#found, checked=checked, by=by,
-      blocked=info.blocked > 0 and info.blocked or nil, unseen=info.unseen > 0 and info.unseen or nil, more=info.more or nil}
+      blocked=info.blocked > 0 and info.blocked or nil, unseen=info.unseen > 0 and info.unseen or nil, more=info.more or nil,
+      separate=a.separate or nil, overlap=a.separate and info.overlap or nil,
+      powered=a.powered or nil, unpowered=a.powered and info.unpowered or nil, poles=a.powered and info.poles or nil}
   end
   return M
 end

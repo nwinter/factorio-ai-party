@@ -37,7 +37,8 @@ const help = `fh — Factorio agent CLI
   fh observe [--args '{"radius":24}']        Bounded local world state
   fh call ACTION [--args JSON] [--id ID]      Execute an action; keep ID on uncertain outcomes
   fh call walk --args '{"direction":"east","ticks":60}' --wait
-  fh wait                                   Block until the character's current action (and combat) ends; a tell or mention ends the wait early
+  fh wait [--max S]                         Block until the character's current action (and combat) ends, at most S s (at once when
+                                            idle; --until idle is the same); a tell or mention ends the wait early
                                             (exit 3: it still runs; --wait-through-tells keeps waiting)
   fh wait --until tell|alert|COND [--max S] One blocking wait, one line out: ends on a tell or mention, a new alert (alert),
                                             a sleep condition (researched [TECH], item_count ITEM>=N, rocket_ready X,Y, ...), or after S s (default 600, up to 900);
@@ -968,13 +969,15 @@ async function main() {
     return full ? {...shown, result:{...shown.result, full:true}} : shown;
   }
   // fh wait: block until whatever the character is doing (and any combat) ends.
-  async function waitForIdle(): Promise<Reply> {
+  // capMs: fh wait --max S (or --until idle): at most that long (friction1300: Grok and Haiku took `fh wait --max 150`
+  // for a wait on the walk; it slept the whole 150 s, the walk done after 46).
+  async function waitForIdle(capMs?: number): Promise<Reply> {
     const started = Date.now();
     let first = await poll();
     if (!first.ok) return first;
     const since = typeof first.tick === 'number' ? first.tick + 1 : undefined;
     const untilTick = first.result?.active?.until_tick ?? first.result?.combat?.until_tick;
-    const deadline = started+waitBudget(untilTick,first.tick ?? first.result?.tick);
+    const deadline = started+(capMs ?? waitBudget(untilTick,first.tick ?? first.result?.tick));
     let status = first;
     while (!stopping && Date.now()<deadline) {
       if (!status.result?.active && !status.result?.combat) {
@@ -1125,6 +1128,19 @@ async function main() {
       const reply = await sleep(seconds, values.until === undefined ? undefined : parseUntil(values.until));
       output(reply);
       if (!reply.ok) process.exitCode=1;
+    } else if (command === 'wait' && (values.until === undefined || /^\s*idle\s*$/.test(values.until)) && values.max !== undefined) {
+      // fh wait --max S, fh wait --until idle --max S: the action (and combat) to end, at most S s; at once when idle.
+      if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
+      const max = integer(values.max, 600);
+      if (max > 900) throw new Error('wait --max takes 1..900 seconds');
+      const reply = await waitForIdle(max*1000);
+      output(reply);
+      process.exitCode=exitCode(reply);
+    } else if (command === 'wait' && values.until !== undefined && /^\s*idle\s*$/.test(values.until)) {
+      if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
+      const reply = await waitForIdle();
+      output(reply);
+      process.exitCode=exitCode(reply);
     } else if (command === 'wait' && (values.until !== undefined || values.max !== undefined)) {
       if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
       const max = integer(values.max, 600);
