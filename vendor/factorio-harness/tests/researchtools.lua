@@ -191,6 +191,27 @@ eq(((astra('status').team or {}).research),nil)
 made['military-science-pack']=50
 force.research_progress=0.1; advance(600*70)
 eq(((astra('status').team or {}).research),nil)
+-- With the science line's lab state (Astra, 12:02: automation named for none made while all 43 labs lacked agricultural
+-- science): the pack the labs lack is named, with how many have none, made in 10 min and logistic network stock; a pack
+-- none was made of but every lab holds is not.
+made['military-science-pack']=0
+-- (the science line's own job, which would read this test world's two labs, held off: its line counts as just built)
+storage.agent_harness.science_jobs=nil; storage.agent_harness.science_line={player={tick=1e12}}
+storage.agent_harness.science_labs={player={tick=game.tick,surface='nauvis',n=43,working=0,lack={['logistic-science-pack']=43}}}
+force.logistic_networks={nauvis={{get_item_count=function(n) return n=='logistic-science-pack' and 12 or 0 end}}}
+local function refresh_labs() storage.agent_harness.science_labs.player.tick=game.tick end
+force.research_progress=0.12; advance(600); refresh_labs()
+for _=1,7 do advance(600*10); refresh_labs() end
+line=has(astra('status').team.research,'research stalled: physical-projectile-damage-4 heads the queue and has made no progress for')
+assert(line:find('its labs lack logistic-science-pack (43 of 43 labs on nauvis have none; '..math.floor(made['logistic-science-pack'] or 0)
+  ..' made in the last 10 min; 12 in logistic networks there)',1,true),line)
+assert(not line:find('military',1,true),'every lab holds military packs: '..line)
+-- Every lab holds every pack: no stall alert, whatever was made.
+storage.agent_harness.science_labs.player.lack={}
+force.research_progress=0.14; advance(600); refresh_labs()
+for _=1,13 do advance(600*10); refresh_labs() end
+eq(((astra('status').team or {}).research),nil)
+storage.agent_harness.science_labs=nil; storage.agent_harness.science_line=nil; force.logistic_networks=nil
 
 -- 4. where_is: nearest first from the caller, belts and inserter hands as totals, teammates by name
 runtime.bots.lookup(runtime.bots.index_of('sol')).character.insert{name='automation-science-pack',count=7}

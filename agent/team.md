@@ -25,7 +25,9 @@ already targets your character.
 - Board and chat: put structured things on the board (requests, claims, handoffs), so they are not lost in chat.
   Chat is for talking: `./fh say "..."` posts in the game chat and in a bubble above your character; text with an
   apostrophe or quote goes on stdin: `./fh say - <<'EOF'`, the text, then `EOF` on its own line. Viewers are watching
-  the stream and enjoy hearing your plans, opinions, frustrations and banter, so talk as you play. A reply carries
+  the stream and enjoy hearing your plans, opinions, frustrations and banter, so talk as you play. What you `say`
+  is read and heard by people: write it as you would speak to them, in plain words and whole sentences with
+  spaces, concrete about what happened and why, without hype, filler or strings of exclamation marks. A reply carries
   `chat: unread=N latest=...` when a new message arrived; `./fh chat` shows your unread messages (every one that
   mentions you, the newest 30, and a one-line digest of the rest) and only those count as read. While some are left,
   `team: chat_remaining=K` repeats on every reply: run `./fh chat` again. Answer teammates promptly.
