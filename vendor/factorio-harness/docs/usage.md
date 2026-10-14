@@ -1078,6 +1078,16 @@ fh sleep 900 --until researched                       # ...or until the research
   - `place_ghosts` (and the routes through it) lays the tile ghosts the game expects under an entity ghost on such
     tiles, before it: `tiles_laid {landfill: N}` and `tiles_note`. With no unlocked tile item for those tiles the entry
     fails: `placement blocked by tiles: wetland-blue-slime at (18.5,4.5) (needs landfill (not researched))`.
+  - `pipe_route` and pipe ghosts (Astra 08:19: `Unknown entity name: pipe(ghost)` with a ghost at an end and
+    `pumps: true`): a pipe ghost at `from` or `to` is joined as part of its line. `joins` names what it builds
+    (`{name: "pipe", ghost: true, ...}`); `pipe(ghost)` is only how messages show it. For `segment_extent` and pumps,
+    the joined line is every pipe-like ghost connected to it (pipe-to-ground pairs followed) and, where it meets
+    built pipe, that pipe's fluid segment. The walk stops once the span passes the 320-tile limit. With waypoints,
+    a dry run plans the legs in order: each later leg starts from what the leg before leaves on its waypoint (a
+    pipe, or a pipe-to-ground exit open one way) and keeps off that leg's tiles, as the real call does with the
+    ghosts it places. An end on a pipe or ghost with no free side says what takes each one: `from holds
+    pipe(ghost) but no tile at its connections is free of other connections: (3.5,-1.5) blocked or not charted;
+    (4.5,-0.5) blocked or not charted`. `belt_route` and `pole_route` already find ghosts by `ghost_name`.
   - `belt_route` and `pipe_route` take only tiles the piece stands on as they are (or that a tile ghost already
     covers). With no route, the error adds what the straight line crosses: `the straight line from (55.5,12.5) to
     (82.5,12.5) crosses 18 tiles a transport-belt cannot stand on: wetland-blue-slime (landfill makes them
