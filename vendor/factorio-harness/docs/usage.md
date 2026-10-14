@@ -81,7 +81,7 @@ fh call status
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
-- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `kite`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
+- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `kite`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, with `transfer` or `collect` when they walk (`walk`, `pick`), and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
 - With `--wait`, the command exits 0 when the action ended successfully, 1 when it failed, and 3 when the wait ended
   while the action still runs: a tell or mention ended it (the reply's `still_running` and `note` say so), or the wait
   timed out (`wait_timeout`). So `fh call ACTION --wait && next` runs `next` only after the action is done.
@@ -772,12 +772,32 @@ fh sleep 900 --until researched                       # ...or until the research
     a target (`position` or `positions`) is out of reach, the call walks a nearest-first route to each, as feed and
     collect tours do, and makes the same transfer there; one timed call (`ticks` 1..36000, default 3600). The reply:
     `op: "transfer"`, `places`, `out_of_reach`, `direction` (inferred as without walk when omitted), `until_tick`; then
-    `last {op, transferred, items, direction, entities [{position, name, transferred, full?}], left, unreached}` and the
+    `last {op, transferred, items, direction, entities [{position, name, moved, full?}], left, unreached}` and the
     outcome `transferred`, `nothing_to_do` (the targets wanted none), `out_of_items` (nothing left to give),
     `nothing_collected` (nothing to take), `inventory_full`, `unreached` (no place reached) or `timed_out`. All targets
     in reach: the plain transfer at once. Giving with none held (and none in the hand-craft queue) is refused before
     walking; with `up_to: true` it is a short (`none_held`). Not with `total`. As a queue step it runs until the tour
     ends; `transferred` counts as done.
+  - `transfer` or `collect {positions, item | items, pick, to}` (Luna 07:57: a repeating seed courier walked 300+ tile
+    laps from empty seed chests):
+    - `pick: "first_with_stock"` reads every listed place as `inspect` does (in sight, or by remote view where our
+      force sees the chunk) and takes at the first in list order that holds a listed item now (its first listed item
+      it holds); `pick: "most_stock"` takes at the place holding the most. `items` lists up to 16 items to look for
+      (`item` too); the item picked is the one taken (`count`, `up_to`, `keep` as in a plain take). The take walks
+      there when out of reach (as `walk`).
+    - Empty places are skipped: `skipped` counts them and `skipped_places` lists up to 8 (`holds: 0`, or the
+      `error` reading one); they are never short. When none holds any, the reply is `moved: 0`, `picked: "none"` and a
+      `note` (`none of the 2 listed places holds yumako-seed now: nothing taken, nothing walked`); nothing starts, and
+      as a queue step it succeeds and the plan goes on.
+    - `picked {position, name, item, holds, rule, line}`: `wooden-chest at (52.5,29.5) holds 30 jellynut-seed
+      (first_with_stock; 2 listed places skipped)`.
+    - `to`: `{x,y}`, or a map item -> `{x,y}` (`{"yumako-seed": {x,y}, "jellynut-seed": {x,y}}`, every listed item in
+      it): the same timed call (`ticks` default 18000) takes at the picked place, then walks to the destination of the
+      item picked and gives what it took there (the inventory inferred as a give). A destination out of sight now is
+      found on arrival (`to_line` says so). A take that gets nothing ends the call there (`nothing_collected`), with no
+      walk on. `last`: `picked`, `taken`, `delivered`, `moved` (delivered), `entities` (one row per leg, with
+      `direction` and `moved`); outcome `transferred`, `nothing_collected`, `unreached` or `timed_out`. `--wait` waits
+      for it and shows `picked`, `taken`, `delivered`.
   - Personal logistics (trash.lua; Astra, 01:53: two cargo hauls lost to auto-trash). The game moves what you hold over
     a personal request's max (and, with "trash unrequested" on, any item you do not request) from your inventory to
     your trash slots within a few ticks, logistic network or not. A `transfer` to you, `collect`, `pickup` and
@@ -809,6 +829,12 @@ fh sleep 900 --until researched                       # ...or until the research
     inventory full of ITEM`, `N full`, `N wanting more you hold none of`, `N failed (the first reason)`. `collect` with
     `radius` puts it in `last` (and the `--wait` reply) over places: `N not reached`, `N failed`, `N places not visited
     (OUTCOME)`. Compact output prints it after the action's own fields, before the team and clock lines.
+  - A call over several targets (`positions`, `area`, in reach) where every target failed is a failure (Astra 08:47:
+    `rearm` on 6 guns returned ok with moved 0 while each was refused): `transfer`, `collect`, `feed`, `rearm`,
+    `refuel` fail with `all 6 targets failed, nothing moved; the first (x,y): REASON`, and a queue step fails. Any
+    target that moved something, was already full or wanted nothing keeps the call ok, with the tally. A walking tour
+    (`radius`, `walk`, `pick`) that moved nothing because every place it reached failed ends `failed` (`unreached`
+    when it reached none), with `last.first_error` (`(x,y): REASON`); `--wait` exits nonzero.
   - One word for item moves (Muse 06:27): `transfer`, `collect`, `feed`, `pickup`, `rearm` and `refuel` replies say
     `moved` (the count moved; `transferred` stays beside it as an alias for one shift), and rows over several targets
     say `moved` per target. Every one of these replies ends with `inv`, the inventory line after the move: `free
@@ -817,6 +843,16 @@ fh sleep 900 --until researched                       # ...or until the research
     starts a move over time (a `pickup`, a tour with `radius`, a give that waits for crafts) has `moved: 0` and
     `timed: moves until tick N: last.moved and last.inv say what it moved`; when it ends, `last.moved` and `last.inv`
     hold the count and the line, and the `--wait` reply shows both.
+  - The same on every other path that moves items into or out of your inventory (operator 08:01): `mine` (timed:
+    `last.moved` is how many more of its products you hold when it ends), `craft` (`moved: 0`, `timed: crafts land in
+    your inventory as each finishes (hand queue Ns); wait_until crafting_done waits for them`, and the line with the
+    products), `cancel_craft` (`moved` and `returned`: the recipe's ingredients that came back), and `configure` when
+    a recipe change returns a machine's items (`moved` is what `returned` sums). Queue steps and standing orders (they
+    run in the queue) carry `moved` and `inv` in their history entries: a step done at once as its direct reply, a
+    timed one from its `last` when it ends, a step that failed at once the line only.
+  - Not on: `build`, `construct` and the ghost tools (they place or take entities; the replies count `consumed`,
+    `built`, `mined`, `missing`), `drop` and `launch` (items leave a hub or silo, not your inventory), and a craft as
+    it finishes (no reply then; the `craft` reply has the line).
   - `collect {position, wait_ticks: N}` (1..36000; or `keep_taking: true`, 3600 ticks, or ticks) stands at that
     assembler or furnace and takes each product from its output the tick it is there, as a player standing there does
     (Muse, operator 09:31: a collect from a machine's output lost to its output inserters about four times).

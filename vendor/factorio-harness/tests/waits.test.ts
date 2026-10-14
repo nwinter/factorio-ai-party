@@ -90,14 +90,19 @@ test('construct --wait (compact) reports what it built and the blockers with coo
     assert.match(text,/built.*3/); assert.match(text,/tree-08/); assert.match(text,/blockers.*\n.*tree-08 position=-80\.94,3\.25 ghost=transport-belt at=-81\.5,2\.5 cleared=true/); assert.match(text,/-77\.0625,16\.25/);
   });
 });
-test('wait_ticks and a build awaiting a hand craft are waited for',async()=>{
+test('wait_ticks, a build awaiting a hand craft, and a transfer or collect that walks (walk, pick) are waited for',async()=>{
   for (const [action,kind,args,accepted] of [['wait_ticks','wait_ticks','{"ticks":30}',{until_tick:31}],
-    ['build','feed','{"item":"lab","position":{"x":1,"y":1}}',{awaiting_craft:{item:'lab',held:0,need:1,crafting:1},until_tick:900}]] as const) {
+    ['build','feed','{"item":"lab","position":{"x":1,"y":1}}',{awaiting_craft:{item:'lab',held:0,need:1,crafting:1},until_tick:900}],
+    // Luna 07:57: a courier step runs as a tour (kind gather); --wait returned at once before.
+    ['transfer','gather','{"positions":[{"x":1,"y":1}],"item":"yumako-seed","pick":"first_with_stock","to":{"x":9,"y":9}}',{op:'transfer',places:2,until_tick:900}],
+    ['collect','gather','{"positions":[{"x":1,"y":1}],"item":"yumako-seed","pick":"most_stock"}',{op:'transfer',places:1,until_tick:900}]] as const) {
     let polls=0;
     await engine(request=>{
       if(request.action===action)return {ok:true,result:accepted};
       polls++;
-      return {ok:true,result:polls===1?{active:{kind,until_tick:31}}:{active:false,last:{kind,outcome:kind==='feed'?'fed':'duration_elapsed'}}};
+      // A walking transfer ends transferred, a success (Astra 07:53: it exited 1).
+      return {ok:true,result:polls===1?{active:{kind,until_tick:31}}:{active:false,last:{kind,op:kind==='gather'?'transfer':undefined,
+        outcome:kind==='feed'?'fed':kind==='gather'?'transferred':'duration_elapsed'}}};
     },async port=>{
       const {stdout}=await cli(port,['call',action,'--args',args,'--wait']);
       // At least the running poll and the finished one (a final plain status read may follow).

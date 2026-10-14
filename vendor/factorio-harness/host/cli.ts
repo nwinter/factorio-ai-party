@@ -663,7 +663,8 @@ async function main() {
   }
   // arrived_near: stopped beside a goal inside an entity, which is where callers want to be.
   // target_destroyed: a shoot at an entity ended because it is gone.
-  // transferred: transfer {walk: true} walked into reach and moved items (Astra 07:53: exit 1 after moving 200).
+  // transferred: a transfer that walked (walk, pick, a courier's to) moved items (Astra 07:53: exit 1 'Control ended:
+  // transferred' after moving 200 solid fuel); unreached and nothing_collected still fail.
   const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear','dropped','transferred'];
   // How long to wait: an explicit --wait-timeout, else until the action's own
   // end tick (at 60 ticks/s plus a margin), never less than 30 s nor more than 15 min.
@@ -781,6 +782,8 @@ async function main() {
         crafts: last.crafts, waited_s: last.waited_s} : {}),
       // An item move that ran over time: what it moved and the inventory line after (Muse 06:27).
       moved: last?.moved, inv: last?.inv,
+      // A courier (transfer or collect with pick and to): where it took from, what it took and what arrived.
+      picked: last?.picked, taken: last?.taken, delivered: last?.delivered,
       team: carrier.result?.team, clock: carrier.result?.clock, orders: carrier.result?.orders, chat: carrier.result?.chat,
     };
     for (const key of Object.keys(result)) if (result[key] === undefined) delete result[key];
@@ -804,8 +807,8 @@ async function main() {
       // active may report shooting when movement has already finished. A
       // transfer/refuel/rearm short of items waits for the hand-craft queue as
       // an active 'feed'; the radius tours run as 'gather'; vehicle drive runs
-      // as 'drive' (request #5: the wait returned the previous action's result); transfer {walk: true} walks as a
-      // 'gather' tour too.
+      // as 'drive' (request #5: the wait returned the previous action's result). A transfer that walks (walk, pick)
+      // runs as 'gather' too.
       const kinds = action === 'collect' || action === 'feed' ? ['gather'] : ['rearm','refuel','transfer'].includes(action) ? ['gather','feed'] : action === 'build' ? ['feed']
         : action === 'vehicle' ? ['drive'] : [action];
       const stillRunning = active && (action === 'shoot' || action === 'drop' || kinds.includes(active.kind));
@@ -1024,6 +1027,8 @@ async function main() {
     const waits = bridged ? ['walk','mine','build'].includes(action)
       : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until','wait_ticks','kite'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
         || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined)
+        // A transfer or collect that walks (walk, pick, pick with to) runs as a timed tour.
+        || (['transfer','collect'].includes(action) && reply.result?.op === 'transfer' && reply.result?.until_tick !== undefined)
         // transfer {walk: true} with a target out of reach: a tour (until_tick); all in reach, it moved at once
         || (action === 'transfer' && args.walk === true && reply.result?.until_tick !== undefined)
         // collect {wait_ticks | keep_taking}: standing at a machine, taking its products as they come (collectwait)

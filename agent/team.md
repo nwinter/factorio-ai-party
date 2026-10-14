@@ -158,7 +158,10 @@ already targets your character.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
-  true}` walks into reach of targets out of reach first, then transfers (one call); `./fh call inventory` shows main,
+  true}` walks into reach of targets out of reach first, then transfers (one call); `transfer`/`collect {positions,
+  item | items, pick: "first_with_stock" | "most_stock"}` takes at one listed place that holds the item now (empty
+  ones are `skipped`, not short; none: nothing walked), and `to` (`{x,y}` or `{item: {x,y}}`) carries it on to that
+  item's destination in the same call; `./fh call inventory` shows main,
   ammo, armor and equipment, trash and cursor in one small reply (`status {"inventory": true}`: one line); `feed`
   skips a burner whose fuel slots all hold another fuel (`other_fuel`), with no warning under `up_to`; `feed {"recipe": NAME,
   "crafts": N, "positions": [...]}` loads each machine set to that recipe for N crafts; `feed` takes `item` or `items`;
@@ -169,9 +172,11 @@ already targets your character.
   `"on_short": "skip"` are left out of it. `transfer` takes `to_entity` or
   `from_entity` as the target (`{"to_entity": {x,y}}`) on any container; out of reach, it says the distance, your
   reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
-  `collect` over several targets ends with a `tally` line. Item moves (`transfer`, `collect`, `feed`, `pickup`,
-  `rearm`, `refuel`) say `moved` and end with `inv` (free slots, what you hold of the items moved); a move over time
-  says `timed`, and `last.moved`/`last.inv` when it ends. `feed`, `collect` and `transfer` take `area {left_top,
+  `collect` over several targets ends with a `tally` line; one where every target failed fails with the first reason
+  (a tour: outcome `failed`, `last.first_error`). Item moves (`transfer`, `collect`, `feed`, `pickup`,
+  `rearm`, `refuel`, `mine`, `craft`, `cancel_craft`, a `configure` recipe change) say `moved` and end with `inv` (free
+  slots, what you hold of the items moved); a move over time says `timed`, and `last.moved`/`last.inv` when it ends;
+  queue and standing-order history entries carry both. `feed`, `collect` and `transfer` take `area {left_top,
   right_bottom}` for every machine (or chest) inside it; `inspect` of a machine shows `output_fill` (and `full`).
   `feed` gives a burner fuel when its fuel slots are empty, or with `fuel` (`true` or a fuel name); a furnace with no
   recipe yet takes the `item`/`items` it smelts; each named machine gets a row (`gave` or `got`, and its `fuel`).
