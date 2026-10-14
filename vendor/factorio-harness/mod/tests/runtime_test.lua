@@ -888,6 +888,33 @@ plate_stack.name,plate_stack.count,plate_stack.valid_for_read='iron-plate',4,tru
 fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel'}) end,'remote recipe change: the machine at (3,0) holds items')
 p.can_reach_entity=function() return true end
 eq(call('configure',{position=am.position,recipe='iron-gear-wheel'}).remote,nil)
+-- A refused configure stops nothing (Astra 11:01, twice: configure with surface=nauvis, her own surface, failed and
+-- paused her queue): its target and checks run before the queue would stop; surface naming the character's own surface
+-- is the same as none (out of reach: remote view, the queue goes on).
+do
+  local function queue_walking()
+    call('queue_cancel',{}); call('queue_submit',{steps={{action='walk',args={direction='east',ticks=200}}}}); advance(1)
+    eq(call('queue_status').paused,false)
+  end
+  local saved_platforms,saved_get=p.force.platforms,game.get_surface
+  p.force.platforms=p.force.platforms or {}
+  game.get_surface=function(n) if n==p.surface.name then return p.surface end end
+  queue_walking()
+  fails(function() call('configure',{position=am.position,recipe='rocket-part',surface=p.surface.name}) end,'recipe is unavailable')
+  eq(call('queue_status').paused,false)
+  fails(function() call('configure',{position=am.position,recipe='rocket-part'}) end,'recipe is unavailable')
+  eq(call('queue_status').paused,false)
+  p.can_reach_entity=function() return false end
+  plate_stack.valid_for_read=false
+  eq(call('configure',{position=am.position,recipe='copper-cable',surface=p.surface.name}).remote,true)
+  eq(call('queue_status').paused,false)
+  p.can_reach_entity=function() return true end
+  -- In reach, a configure that acts still takes over from the queue, as before.
+  eq(call('configure',{position=am.position,recipe='iron-gear-wheel'}).recipe,'iron-gear-wheel')
+  eq(call('queue_status').paused,true)
+  call('queue_cancel',{})
+  p.force.platforms,game.get_surface=saved_platforms,saved_get
+end
 -- Filters go on filtering inserters, not machines without slots.
 local set_filters={}
 prototypes.item['stone-brick']={type='item'}
@@ -1430,6 +1457,48 @@ eq(crafted.started['iron-gear-wheel'],5); eq(crafted.started.pipe,0); eq(crafted
 -- Crafts land in the inventory as each finishes (operator 08:01): moved 0 now, timed says when, the line now.
 eq(crafted.moved,0); assert(crafted.timed:find('^crafts land in your inventory as each finishes'),crafted.timed)
 eq(crafted.no_assembler,nil); eq(crafted.blocks,nil) -- no assembler unlocked, short queue
+-- An ingredient still in the hand-craft queue (Astra 11:01: 75 electronic circuits queued, then laser turrets made
+-- 20 more): up to the shortfall the queued crafts are cancelled first, so the game crafts them again as this craft's
+-- own ingredients, none extra; any it does not use go back in the queue.
+do
+  local saved={begin=p.begin_crafting,cancel=p.cancel_crafting,inv=p.get_main_inventory,queue=p.crafting_queue}
+  p.force.recipes['electronic-circuit']={enabled=true,category='crafting',energy=0.5,products={{type='item',name='electronic-circuit',amount=1}},
+    ingredients={{type='item',name='iron-plate',amount=1},{type='item',name='copper-cable',amount=3}}}
+  p.force.recipes['laser-turret']={enabled=true,category='crafting',energy=20,products={{type='item',name='laser-turret',amount=1}},
+    ingredients={{type='item',name='steel-plate',amount=20},{type='item',name='electronic-circuit',amount=20},{type='item',name='battery',amount=12}}}
+  local held={['steel-plate']=20,battery=12,['electronic-circuit']=0}
+  p.get_main_inventory=function() return {get_item_count=function(f) return held[type(f)=='table' and f.name or f] or 0 end} end
+  local queue={{index=1,recipe='electronic-circuit',count=75}}
+  p.crafting_queue=queue
+  local cancels,can_start={},true
+  p.cancel_crafting=function(c) cancels[#cancels+1]=c.index..':'..c.count; queue[c.index].count=queue[c.index].count-c.count end
+  -- As the engine: what the inventory lacks is crafted first, as the parent's own (prerequisite) entries.
+  p.begin_crafting=function(r)
+    if r.recipe=='laser-turret' then
+      if not can_start then return 0 end
+      local short=20*r.count-held['electronic-circuit']
+      if short>0 then queue[#queue+1]={index=#queue+1,recipe='electronic-circuit',count=short,prerequisite=true} end
+      queue[#queue+1]={index=#queue+1,recipe='laser-turret',count=r.count}
+      return r.count
+    end
+    queue[#queue+1]={index=#queue+1,recipe=r.recipe,count=r.count}
+    return r.count
+  end
+  local made=call('craft',{recipe='laser-turret',count=1})
+  eq(made.started,1); eq(cancels[1],'1:20'); eq(queue[1].count,55); eq(queue[2].count,20); eq(queue[2].prerequisite,true)
+  eq(made.from_queue['electronic-circuit'],'20 of the 75 queued go into laser-turret (the game crafts them again as its ingredients: none extra)')
+  -- The craft cannot start (the game started none): the cancelled ones go back in the queue.
+  queue={{index=1,recipe='electronic-circuit',count=75}}; p.crafting_queue=queue; cancels={}; can_start=false
+  made=call('craft',{recipe='laser-turret',count=1})
+  eq(made.started,0); eq(queue[1].count,55); eq(queue[2].recipe,'electronic-circuit'); eq(queue[2].count,20); eq(queue[2].prerequisite,nil)
+  eq(made.from_queue['electronic-circuit'],'0 of the 75 queued go into laser-turret (the game crafts them again as its ingredients: none extra); 20 not used, queued again as before')
+  -- Enough held already: the queue is left alone.
+  queue={{index=1,recipe='electronic-circuit',count=75}}; p.crafting_queue=queue; cancels={}; can_start=true; held['electronic-circuit']=20
+  made=call('craft',{recipe='laser-turret',count=1})
+  eq(#cancels,0); eq(made.from_queue,nil); eq(queue[1].count,75)
+  p.begin_crafting,p.cancel_crafting,p.get_main_inventory,p.crafting_queue=saved.begin,saved.cancel,saved.inv,saved.queue
+  p.force.recipes['electronic-circuit'],p.force.recipes['laser-turret']=nil,nil
+end
 -- A machine-only recipe says so (shake3: Grok's engine-unit read "not hand-craftable now").
 p.force.recipes['engine-unit']={enabled=true,category='advanced-crafting'}
 eq(call('craft',{recipes={{recipe='engine-unit',count=1}}}).errors['engine-unit'],

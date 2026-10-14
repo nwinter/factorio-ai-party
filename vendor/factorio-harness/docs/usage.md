@@ -675,7 +675,10 @@ fh queue repeat --file plan.json
 - A direct call that moves or acts as the character pauses the queue. Reads, the board, chat, `say`, `tell`, `confess`, `operator`, `craft`/`cancel_craft`, research, votes, `sleep` and the queue calls don't, and when one of them fails (a `placements` out of sight, a `board_update` with an unknown argument) the running action and the queue go on as well. `sleep` leaves the queue running, and so does its end.
 - Calls that act on another surface or by remote view don't pause it either, nor stop a running standing order, and
   neither does their failure: any call with `platform`, or with `surface` naming another surface than the
-  character's; `configure` on an entity out of the character's reach; the planners and blueprint tools wherever they
+  character's (`surface` naming the character's own surface is the same as none); `configure` on an entity out of the
+  character's reach. A `configure` in reach that its checks refuse (no such entity, recipe unavailable or not taken by
+  the machine, fluid inside without `force`) changes nothing either (Astra 11:01: two refused calls paused her queue);
+  the planners and blueprint tools wherever they
   act (`place_ghosts`, `paste`, `blueprint_place`, `blueprint_capture`, `blueprint_save`, `blueprint_rename`, `copy`, `cut`, `deconstruct`,
   `cancel_deconstruction`, `belt_route`, `pipe_route`, `pole_route`, `rail_route`, `train_stop`); `circuit_set`, `wire`,
   `requests`, `flush`, `train`, `platform_create`, `platform_schedule`, `launch`, `drop`. `configure` in reach, building, mining,
@@ -851,7 +854,10 @@ fh sleep 900 --until researched                       # ...or until the research
   - The same on every other path that moves items into or out of your inventory (operator 08:01): `mine` (timed:
     `last.moved` is how many more of its products you hold when it ends), `craft` (`moved: 0`, `timed: crafts land in
     your inventory as each finishes (hand queue Ns); wait_until crafting_done waits for them`, and the line with the
-    products), `cancel_craft` (`moved` and `returned`: the recipe's ingredients that came back), and `configure` when
+    products; `from_queue` when an ingredient is still in the hand-craft queue: the game counts only what you hold and
+    would craft it again from raw, so up to the shortfall its queued crafts are cancelled first and the game crafts them
+    again as this craft's own, none extra: `electronic-circuit: 20 of the 75 queued go into laser-turret (...)`; ones the
+    game does not use go back in the queue (Astra 11:01: 75 circuits queued, then laser turrets made 20 more)), `cancel_craft` (`moved` and `returned`: the recipe's ingredients that came back), and `configure` when
     a recipe change returns a machine's items (`moved` is what `returned` sums). Queue steps and standing orders (they
     run in the queue) carry `moved` and `inv` in their history entries: a step done at once as its direct reply, a
     timed one from its `last` when it ends, a step that failed at once the line only.
