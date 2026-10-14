@@ -108,6 +108,19 @@ fh call status
   as lists `{name, quality, count}`, as observe's `player` has them. `status {inventory: true}` (brief or full) adds
   `inventory`, the same in one line: `main iron-plate*50 (free=1/2); ammo firearm-magazine*10; armor modular-armor*1
   with solar-panel-equipment*3; trash iron-plate@uncommon*308; cursor transport-belt*50` (empty parts left out).
+- `equipment {operation: insert|remove|list, item, position, quality, vehicle}` works the armor's equipment grid, or with
+  `vehicle` (a unit_number or `{x,y}` on it) a vehicle's (operator 09:13, a viewer via Astra: equipment worked only on
+  the armor's grid). Read on world n:
+  - a tank carries a `medium-equipment-grid` (6x8) and a spidertron a `spidertron-equipment-grid` (10x6), both taking
+    armor equipment;
+  - a car, locomotive or wagon has none (`car (30,0) has no equipment grid ...`).
+  - As the vehicle's GUI allows: `insert` (from your main inventory) and `remove` (to it) in reach or seated in it;
+    `list` (the default) also by remote view in a chunk our force sees. Seated, `equipment` works for the armor too.
+  - Replies carry `where` (`tank (6,0), unit_number 9100 (seated)`) and `grid {grid: 6x8, equipment:
+    energy-shield-equipment*2, free_cells, shield now/max, battery_mj now/max}`; `list` adds `rows` (each piece at
+    its cell). A piece that does not fit names the free cells.
+  - `inspect` on a vehicle with a grid shows the same `equipment` block. The operator's `loadout` gives
+    `vehicle_equipment` for the vehicle an agent sits in.
 - Full `status` (not `brief`) has `teammates`, one line on where every other agent is (compact output prints it right
   after `clock:`): agents elsewhere first, grouped by planet, platform or cargo pod, then the ones on your surface,
   nearest first, with distance and compass direction:
@@ -1957,7 +1970,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   every 5 minutes into `runs/RUN/hauling.jsonl` (tools/stream/hauling.py); a shift's numbers are its last read less
   its first. Agents never see it.
 - Operator loadout (loadout.lua; Nick, 08:55): `loadout {names?, top?}` (read; top 1..32, default 8) gives per agent
-  `name, display_name, alive, surface, health {now, max}, vehicle, guns [{name, count, quality?} | false] and ammo
+  `name, display_name, alive, surface, health {now, max}, vehicle, vehicle_equipment (its grid, as armor's: equipment,
+  shield, battery_mj, grid), guns [{name, count, quality?} | false] and ammo
   (by slot), selected_gun, armor {name, quality, equipment [{name, type, count}], shield {now, max}, battery_mj {now,
   max}, grid {width, height}}, items` (the main inventory's largest stacks, `top` of them), `item_kinds, slots {free,
   total}, crafting {queue [{recipe, count}] (up to 6, prerequisites left out), items, progress (the head's, 0..1)},

@@ -487,4 +487,42 @@ fails(function() astra('vehicle',{remote=true,vehicle=9001}) end,'remote goes wi
 -- Its guns stay silent by remote view: the game fires them for a gunner seated in it or a player driving it remotely.
 fails(function() astra('vehicle',{drive={x=60,y=0},remote=true,vehicle=9001,combat=true}) end,'a remote drive cannot fire its guns')
 fails(function() astra('shoot',{auto=true,vehicle=9001}) end,'an agent fires a vehicle\'s guns only seated in it')
+-- A vehicle's equipment grid (operator 09:13, a viewer via Astra): insert, list and remove there, in reach or seated.
+do
+  local g={width=6,height=8,equipment={},shield=0,max_shield=0,available_in_batteries=0,battery_capacity=0}
+  g.put=function(args)
+    if #g.equipment>=2 then return nil end
+    local e={name=args.name,position=args.position or {x=#g.equipment*2,y=0},shape={width=2,height=2},quality={name='normal'},prototype={take_result={name=args.name}}}
+    g.equipment[#g.equipment+1]=e; return e
+  end
+  g.get=function(pos) for _,e in ipairs(g.equipment) do if e.position.x==pos.x and e.position.y==pos.y then return e end end end
+  g.take=function(args) for i,e in ipairs(g.equipment) do if e==args.equipment then table.remove(g.equipment,i); return {name=e.name,quality='normal',count=1} end end end
+  tank.grid=g; tank.unit_number=9100
+  local held={['energy-shield-equipment']=3}
+  local inv={find_item_stack=function(q)
+      local name=type(q)=='table' and q.name or q
+      if not held[name] or held[name]==0 then return nil end
+      local st={name=name,quality='normal',prototype={place_as_equipment_result={name=name}}}
+      return setmetatable(st,{__newindex=function(t,k,v) if k=='count' then held[name]=v else rawset(t,k,v) end end,__index=function(t,k) if k=='count' then return held[name] end end})
+    end,
+    can_insert=function() return true end,insert=function(it) held[it.name]=(held[it.name] or 0)+it.count; return it.count end}
+  a_body.get_main_inventory=function() return inv end
+  if a_body.vehicle then astra('vehicle',{exit=true}) end
+  r=astra('equipment',{vehicle=9100,operation='insert',item='energy-shield-equipment'})
+  eq(r.inserted,'energy-shield-equipment'); eq(r.where,'tank (6,0), unit_number 9100'); eq(r.grid.equipment,'energy-shield-equipment*1'); eq(held['energy-shield-equipment'],2)
+  r=astra('equipment',{vehicle={x=6,y=0}})
+  eq(r.grid,'6x8'); eq(#r.rows,1); eq(r.rows[1].position.x,0); eq(r.free_cells,44)
+  r=astra('equipment',{vehicle=9100,operation='insert',item='energy-shield-equipment'}); eq(r.grid.equipment,'energy-shield-equipment*2')
+  -- Full: says how much room is left.
+  fails(function() astra('equipment',{vehicle=9100,operation='insert',item='energy-shield-equipment'}) end,'energy-shield-equipment does not fit in tank (6,0), unit_number 9100 6x8 (40 free cells)')
+  r=astra('equipment',{vehicle=9100,operation='remove',position={x=0,y=0}})
+  eq(r.removed,'energy-shield-equipment'); eq(r.grid.equipment,'energy-shield-equipment*1'); eq(held['energy-shield-equipment'],2)
+  -- Seated in it, the same; a car has no grid.
+  astra('vehicle',{position={x=6,y=0},enter=true})
+  eq(astra('equipment',{vehicle=9100}).where,'tank (6,0), unit_number 9100 (seated)')
+  astra('vehicle',{exit=true})
+  rcar.valid=true
+  fails(function() astra('equipment',{vehicle=9001,operation='list'}) end,'car (30,0) has no equipment grid')
+  fails(function() astra('equipment',{operation='bogus'}) end,'operation must be insert, remove or list')
+end
 print('vehicles: ok')
