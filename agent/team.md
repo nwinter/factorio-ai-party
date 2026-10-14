@@ -129,6 +129,10 @@ already targets your character.
 - `./fh call cargo --args '{"items":{"thruster":2,"cargo-bay":4}}'` (or a chest, silo or pad `position`) weighs a
   rocket cargo list: each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets,
   and one split into rockets that keeps each within both.
+- Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,
+  blueprints, deconstruction, `circuit_set`, `wire`, `requests`, schedules) leave your character's action, queue and
+  standing orders running. `platforms` and `inspect` of a hub show each platform's `speed_kms`, `leg_left_km`,
+  `eta_min` (at the current speed) and `next_stop`.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
 
