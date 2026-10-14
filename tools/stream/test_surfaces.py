@@ -48,11 +48,12 @@ def main():
     on, share_on = run()
     print("air share, balance off:", share_off)
     print("air share, balance on: ", share_on)
-    # the two newer planets get their share (target 25% plus up to 10% while new; together at most 60%), Nauvis keeps
-    # the rest (without the balance, equal scores broke ties in list order and Nauvis had all of it)
+    # the two newer planets get their share (target 25% plus up to 25% while new; together at most 75%), Nauvis keeps
+    # the rest, about 25% while both are new (without the balance, equal scores broke ties in list order and Nauvis
+    # had all of it)
     assert share_on.get("fulgora", 0) >= 0.2 and share_on.get("vulcanus", 0) >= 0.2, share_on
     assert share_on.get("fulgora", 0) + share_on.get("vulcanus", 0) > share_off.get("fulgora", 0) + share_off.get("vulcanus", 0) + 0.15
-    assert 0.35 <= share_on.get("nauvis", 0) <= 0.6, share_on
+    assert 0.2 <= share_on.get("nauvis", 0) <= 0.6, share_on
     # the score line says why: the cut reason and the director's log entry
     helped = [r for _, _, r in on.cuts if "(surface " in r]
     assert helped and any("fulgora" in r or "vulcanus" in r for r in helped), on.cuts[-8:]

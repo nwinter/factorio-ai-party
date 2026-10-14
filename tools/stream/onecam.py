@@ -232,11 +232,11 @@ ONECAM = {
     # come first as before. surface_bonus 0 turns it off.
     "surface_window": 1800.0,
     "surface_share": 0.25,
-    "surface_new_share": 0.10,
+    "surface_new_share": 0.25,  # 0.10 until 2026-10-13 23:20 (viewers asked for more of a new planet, Gleba)
     "surface_new_hours": 3.0,
     "surface_bonus": 1.5,
     "nauvis_penalty": 0.15,
-    "surface_total": 0.6,    # the other surfaces' targets together at most this (scaled down): Nauvis keeps 40%
+    "surface_total": 0.75,   # the other surfaces' targets together at most this (scaled down): Nauvis keeps 25%
     "surface_floor": 300.0,  # seconds: shares over at least this much time (a fresh start does not swing at once)
     "surface_warmup": 180.0,  # seconds of air history before the balance applies (no swing right after a restart)
 }
