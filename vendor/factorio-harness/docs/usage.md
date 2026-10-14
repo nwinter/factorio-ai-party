@@ -406,7 +406,12 @@ fh queue repeat --file plan.json
   `cancel_deconstruction`, `belt_route`, `pipe_route`, `pole_route`); `circuit_set`, `wire`, `requests`, `flush`,
   `train`, `platform_create`, `platform_schedule`, `launch`, `drop`. `configure` in reach, building, mining,
   walking and inventory moves (`transfer`, `feed`, `collect`, ...) take over as before.
-- A harness update (a hot runtime install, or a restart with a changed mod) keeps a running queue going: a `wait_until` or `wait_ticks` step keeps its own clock, and a step toward a goal (`move_to`, `construct`, `build_path`, `mine`, `repair`, `kite`, `rearm`, `refuel`, `collect`) starts again. Any other step that was running is interrupted and leaves the queue paused (`fh queue resume` continues with the next step). A direct action is interrupted. Each agent whose work was cut gets `team.harness_updated` lines in its next reply.
+- A hot runtime install (a harness update) carries running work over; the runtime that is installed puts back what the one it replaces stopped, on its first tick or request:
+  - Waits keep running: `wait_until` and `wait_ticks`, direct or queued, keep their `until_tick` and condition, and so do `walk` and a `transfer`, `build` or `feed` waiting for a hand craft (`feed`). `status` shows them active with no interrupted `last`, so a pending `--wait` ends with the result as if there had been no update. `sleep` is not stopped at all.
+  - Queues, repeating plans and standing orders run on with their pending steps, cycle and order run. A step that moves or builds (`move_to`, `construct`, `build_path`, `mine`, `collect`, `pickup`, `shoot`, ...) starts again once by itself from the head of the queue; if it then fails, its `on_fail` applies as usual.
+  - A direct action that moves or builds starts again from the call that started it. An action started before this runtime was installed has no call kept, and is interrupted.
+  - Each agent that had something running gets one line in its next reply, `team.harness_updated`: `harness updated at tick T (your wait/queue carried over)`, or `harness updated at tick T: your queue step move_to (job-4) was interrupted by a harness update; resumed` (direct: `your move_to was interrupted by a harness update; resumed`, or `...; start it again if it is still needed`).
+  - A restart of the server with a changed mod, and a stop after a runtime fault, carry nothing: queues are paused (`fh queue resume`) and actions interrupted.
 
 ## Waiting
 
