@@ -109,4 +109,14 @@ nauvis.find_entities_filtered=function() error('boom') end
 run(18000); S.lines(p,h); finish()
 eq(storage.science_jobs,nil); eq(storage.science_line_errors.count,1); eq(storage.science_line_errors.step,'labs')
 has(storage.science_line.player.text,'labs 20 of 20 working')
+-- 6. A job an older runtime left (main's shape: no start, every or n) when this one is deployed: dropped like a
+-- failing step, the error recorded and the last line kept; never a tick error, and the next job runs.
+nauvis.find_entities_filtered=finder({lab=labs,['assembling-machine']=cs})
+storage.science_jobs={player={step='labs',force='player',tech='plastics-2',progress=0.41,packs={red,chem},surfaces={'nauvis','vulcanus'},
+  si=1,labs={},crafters={},ti=1,idx=1,by_product={}}}
+run(1)
+eq(storage.science_jobs,nil,'the old job is dropped'); eq(storage.science_line_errors.count,2); eq(storage.science_line_errors.step,'labs')
+has(storage.science_line.player.text,'labs 20 of 20 working')
+run(18000); S.lines(p,h); finish()
+eq(storage.science_line_errors.count,2,'the next job runs'); eq(storage.science_line.player.tick>game.tick-18000,true)
 print('scienceline: ok')

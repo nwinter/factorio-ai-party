@@ -187,8 +187,10 @@ return function(api)
     local jobs = s.science_jobs
     if not jobs then return end
     for name, job in pairs(jobs) do
-      local ok, done = true, false
-      if walk.due(job, tick, PUSH_TICKS) then
+      -- A job an older runtime left (no start, every or n: deployed over it mid-job) fails here and is dropped like a
+      -- failing step; outside the pcall it raised every tick and the job, and the line, never ended.
+      local ok, done = pcall(walk.due, job, tick, PUSH_TICKS)
+      if ok and done then
         job.n = job.n + 1
         ok, done = pcall(step, job)
         if ok and done then s.science_steps = s.science_steps or {}; s.science_steps[name] = job.n end
