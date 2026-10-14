@@ -1003,6 +1003,11 @@ end
 -- once a game minute while it grows (shift 5: 839 loss lines for about 30 raids, each growth repeated).
 -- One table: runtime.lua's main chunk is near Lua's 200-local limit (tests/locals.lua).
 local LOSS={cell=64,max=64,join=32,span=192,again=3600,first=18000}
+-- Entities the game removes on its own are no losses (Luna, 08:56: a cargo pod's container emptied of its 50 rocket
+-- fuel vanished and was told as incident #183, friendly fire from an unknown source): a landed pod's container
+-- (temporary-container) and the pod itself, items on the ground, corpses, ghosts and request proxies.
+LOSS.not_lost={['temporary-container']=true,['cargo-pod']=true,['item-entity']=true,corpse=true,['character-corpse']=true,
+  ['entity-ghost']=true,['tile-ghost']=true,['item-request-proxy']=true}
 -- An incident's latest tick is `(i.last or i.first or 0)`: saves from before shake11 can hold one created without
 -- `last` (it was set only after the 64-incident cap check, which then failed on it in the tick: shake10's quarantines).
 -- friendly: the cause is one of the entity's own force (shake11-12: our flamethrower turrets burnt gun turrets, radars,
@@ -7519,6 +7524,7 @@ function M.on_event(event)
       return
     end
     if not (e and e.valid and e.force and e.force.name~='enemy' and e.force.name~='neutral') then return end
+    if LOSS.not_lost[e.type] then return end
     s.alerts=nil -- superseded by incidents
     -- A turret of ours that died: its ghost requests the ammo it held (turretammo.lua); a fault is counted.
     if e.type=='ammo-turret' or e.type=='artillery-turret' then

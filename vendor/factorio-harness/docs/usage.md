@@ -1612,7 +1612,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   spawner; `no charted nest within 384 tiles`); an incident you were told about comes again as `attack #ID ... continues`
   with its totals only when it had new hits and at least 2 game minutes passed; `pollution reached nest (x,y), N
   spawners: N tiles DIR of base centre (spawn x,y), N tiles DIR of our nearest building`, once per nest per shift
-  (a new shift hears again of nests still reached); enemy groups gathering; buildings destroyed, one numbered incident
+  (a new shift hears again of nests still reached); enemy groups gathering; buildings destroyed (not what the game removes
+  on its own: an emptied cargo pod's container, the pod, items on the ground, corpses, ghosts, request proxies), one numbered incident
   per raid (losses on one surface within 32 tiles of each other, up to 192 tiles across): `losses #7 in (x,y)-(x,y)
   12 destroyed: 8 transport-belt, 4 inserter by 20 medium-biter, 1s ago`, told once, then its running total at most
   once a game minute while it grows (`losses #7 in ... continue: 40 destroyed (+28 since you were told): ...`);
