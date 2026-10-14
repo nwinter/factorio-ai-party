@@ -269,6 +269,40 @@ fh call status
   within the arrival radius)`). With `--wait`, the error line carries `last.why`. (shift08, world n: Haiku's pocket south
   of the boiler row at (8..12,42) was closed for the character's box; the old fallback planned with a 0.3-tile box that
   gets out, and the walk pushed at 0.22-tile gaps until 15 stalls.)
+- Narrow gaps (Sol, shift09 03:12 on Gleba: the walk to (55,21) ended in the 0.6-tile gap between two assembling
+  machines under a pipe row, no path request led out of it, and he mined his own pipes to get out, twice):
+  - Where the path ends short of the target, the rest is walked straight only when a box with room to turn (0.7
+    tiles) fits within the arrival radius of the target. When only the character's own box fits there, the walk ends
+    `arrived_near` where the path ended, with `last.pocket`: `(55,21) lies in a gap narrower than 0.7 tiles (pipe
+    (55.5,20.5), pipe (54.5,20.5), assembling-machine-2 (53.5,22.5), assembling-machine-2 (56.5,22.5)) that no path
+    led into; stopped at (51.5,24.4), 4.8 tiles from it (squeeze=true walks in)`. `squeeze: true` walks in anyway.
+  - Squeezed in where no level finds a route (no room to turn where it stands), the walk first follows the gaps to the
+    nearest spot with room to turn (a flood over quarter-tile steps with the character's own box), then asks for its
+    route again; up to three times, each wanting more room: `last.escaped: no path led out of the gap at (54.2,21):
+    walked out to (55,24.3) first`.
+  - The second level starts from the nearest free tile centre only when the character gets there in a straight line
+    (beside a pipe row it lay past the pipes, and every path from there stalled at them).
+  - Closed in (no way out for the character's box), `last.why` and `last.mine_to_get_out` name the fewest of our
+    entities, trees or rocks whose mining opens a way out: `...; mining pipe (-27.5,69.5) opens a way out to
+    (-26.7,69.5)`.
+- Enemies on the way (Opus, shift09 03:20: the pathfinder walked him 30 tiles from a nest, and big biters killed him; on
+  a copy of world n the engine's path from (-110,447) to (62,40) passes 31 tiles from a biter spawner): a path found
+  for `move_to` is checked against the enemy worms and spawners the map shows (on charted chunks).
+  - By default worms only, each with its range + 4 tiles (small 25, medium 30, big 38, behemoth 48).
+    `avoid_enemies: true` adds spawners, with their units' sight (30 tiles on Nauvis, 40 on Gleba), and makes the
+    margin 8; a number 0..32 is that margin; `false` turns the check off. The reply says what is checked
+    (`avoid_enemies: worms (range + 4)`).
+  - Structures within 32 tiles of each other are one nest. A path through a reach (its deepest pass counts) is walked
+    as legs around it: corners of an octagon around each worm's or spawner's reach, the shortest way along them, each
+    leg the engine's path, checked again (up to 4 detours). `last.avoided_enemies` names each nest gone around (`2
+    big-worm-turret, 3 biter-spawner, 3 medium-worm-turret, 2 small-worm-turret around (-12,359)`).
+  - A nest whose reach holds the start or the target is not avoided: `last.enemies_at_start_or_goal` names it.
+  - With no way round, a path that crosses only the margin (outside the weapon's own range) is walked and named in
+    `last.passed_within_margin` (`medium-worm-turret (60,170): 33.7 tiles (range 30)`). One that crosses a range ends
+    the walk `no_safe_route`, with `last.why`: `no way to (100,0) around 4 medium-worm-turret around (100,0): the path
+    passes medium-worm-turret (60,0) (range 30 + 4) at 0.0 tiles`. `--wait` exits 1 with it.
+  - The worms and spawners are read per chunk while the walk waits for its path (at most 8 chunks a tick) and kept a
+    minute, so a nest built or killed in the last minute may not count yet.
 - `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
   as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
   ammunition in the ammo slots. `shoot`, `move_to combat` and `kite` fill empty ammo slots from carried ammo first
@@ -494,7 +528,7 @@ fh sleep 900 --until researched                       # ...or until the research
   - `{until: "alert"}` as the condition (`fh wait --until alert`) wakes on a new attack area, enemy group or enemy base for the team (`woke: alert`).
   - `fh call sleep --args '{"seconds":N}'` (with or without `--wait`, also in `fh run` and `fh stream`) is the same blocking wait; the raw action only starts a sleep.
   - Claude Code agents get a 20-minute Bash timeout (tools/clean-profile.py in the pog repo), above the longest sleep. Codex agents' `yield_time_ms` returns earlier and leaves the sleep running in the background.
-- A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works.
+- A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works. A wait that ends `failed` names the call (`action: build`) and puts its error on the error line (Sol, shift09: the silo build hit trees after its craft and read only `Control ended: failed`): `error: action_interrupted: Control ended: failed: placement blocked by stingfrond (63.9375,11.375), stingfrond (68.125,12.4375); it needs the trees mined first (mine them, or place_ghosts marks them and construct clears them)`. A refused build names what is in the way the same way, direct or after a craft: trees and rocks need mining first, and a cliff takes cliff explosives (a character cannot mine one).
 
 ## Messages and reads
 
@@ -577,7 +611,9 @@ fh sleep 900 --until researched                       # ...or until the research
   outcomes `out_of_items`, `nothing_collected`, `inventory_full`, a give with none held, or a reply's `short`) puts one
   grouped line in the team block under `queue`: `queue loop3 round 4: 3 of 9 steps short: transfer iron-plate
   inventory_full x2, collect coal nothing_collected`. It comes only when a round's list differs from the round
-  before, so a steady loop says it once.
+  before, so a steady loop says it once. A step with `up_to: true` or `on_short: "skip"` is left out of the line (its
+  short was allowed for); `queue_status` history still marks it `short: true`. `on_fail: "skip"` does not count as
+  allowing a short.
 - `inspect` also shows what the entity GUI and cursor show: `status_name` (e.g. `marked_for_deconstruction`,
   `waiting_for_source_items`), `filters`, `filter_mode` and `use_filters` (inserters, loaders), `held` (an inserter's
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
@@ -644,6 +680,27 @@ fh sleep 900 --until researched                       # ...or until the research
   inserter with no drop target shows `drop_tile` (and `drop_note` when it is empty space: thrown overboard).
 - A `drop` whose pod destination the game refuses returns the items to the hub; what the hub cannot take back stays in
   the cargo pod on the hub, and the error says which.
+- Cargo pods (2.0.77, read on a private server): a pod holds 10 slots and has no weight limit; a hub sends one pod per
+  output hatch at a time (3 on a hub), and a hatch sends its next pod 120 ticks (2 s) after its last. A `drop` list
+  splits into pods in the list's own order (cargo.lua's split, slots alone: Astra's shift09 Gleba kit is
+  `stone-brick*500 assembling-machine-2*1 steel-plate*400`, `steel-plate*600 electric-engine-unit*200`, then the
+  rest), stacks packed together (a part stack in the pod is topped up before a new slot).
+  - Without `full`, only the first pod goes. When the list takes more, the reply's `short` (the compact output's
+    `warning:` line) says what stays in the hub: `not sent, still in the hub: steel-plate*600 ... (a cargo pod holds 10
+    slots and the list takes 3 pods; full: true sends them all)` (Astra, shift09: the first partial drop of a kit
+    read as complete).
+  - `full: true` sends every pod: as many at once as the hatches are free, each pod in `pods [{pod, drop, items,
+    slots}]` (`drop` is its number for the team block and the `drops` read). Pods past the free hatches go as each
+    hatch frees up, apart from the character: its running action and queue go on (`drop` is passive). The reply
+    then has `pods_waiting` (their items) and `until_tick`; `status` shows `drop_pending {platform, pods_sent,
+    pods_left, until_tick}` while they wait and then `last_drop {outcome, result {pods, dropped, not_sent, short},
+    why}` for a minute. `--wait` waits for them (outcome `dropped`; `short` when the hub no longer held some items,
+    `failed` when the platform left or the hub refused, `timed_out`: these exit 1 with `why` on the error line). One
+    full drop at a time per agent: another is refused while pods wait. A queue step `drop` with `full` waits for its
+    pods too.
+  - `dry_run: true` sends nothing and shows the split: `pods` (`pod 1 (10 slots): stone-brick*500 ...`),
+    `pod_slots`, `hatches`, `sends` (what a call with and without `full` sends) and `short` (items the hub holds
+    less of).
 - A `drop` returns its number (`drop: N`). Its pod is followed down, because pods land after the call returns and often
   10-20 tiles from the spot they were aimed at (shift06 14:55: aimed near (14,134), landed at (0,129)). The sender,
   and the teammates named in `to` (a name or a list), hear about it in their team block, at most 4 drop lines per
@@ -859,6 +916,20 @@ fh sleep 900 --until researched                       # ...or until the research
     a later entry, a tile brush that lays nothing).
   - A dry run checks at most 1024 entities and 8192 tiles (repeat copies included) and refuses a larger plan before
     any check. Real engine, shift world: 7 entries on nauvis 9 ms, the platform case 14 ms.
+  - `closes_in` (off a platform, Gemini shift09: a placement trapped the character in a closed box): the plan's
+    footprints that stop a character, within 16 tiles, would leave the character no way out where it stands. The
+    area it reaches is flooded with the character's 0.4-tile box (pathing.lua, as move_to's `closed in`):
+    `placed, these close the character in where it stands (40.5,140.5): the last gap out is where #1 stone-wall
+    (42.5,140.5) goes; the area (39,139)-(42,142) (about 10 tiles) has no gap the character (0.4 tiles wide) fits
+    through; around it: stone-wall`. When several entries each leave a gap: `without any one of #1 ..., #2 ... (of 15
+    planned entries around it) a gap out stays`. Walls, gates and pipes stretch their box toward what they join
+    (2.0.77: 0.289 lone, 0.488 toward a joined wall, pipe, a gate in its line, a pipe-to-ground's open side or a
+    built machine's fluid connection), so a joined line leaves no gap a lone pair would; the plan's walls and pipes
+    are checked joined (fluid connections of machines planned in the same call are not read). Our gates open for the
+    character. `closed_in` instead: `the character is closed in already where it stands ...` (nothing blamed on the
+    plan). A build reply says the same after the fact: `closed_in: the character is closed in now where it stands
+    (0.5,78.5): the last gap out was where pipe (-1.5,78.5) now stands; ...`. About 1 ms a check on a private 2.0.77
+    server (no way out within 16 tiles counts as closed in).
   - `requests_kept` (a paste): for each entity with requests the blueprint lands on (a platform hub, requester and
     buffer chests, landing pads, spidertrons), `space-platform-hub (0,0): its requests stay (14 sections, 1 off)`, and
     when the blueprint carries requests of its own for it, `the blueprint's own requests (1 section) are not applied by
@@ -1033,8 +1104,23 @@ Some actions work at a distance, the way a player can through remote view:
 
 - Vehicles: `vehicle {position, enter: true}` gets in (the driver's seat if free, else a car's or spidertron's
   passenger seat; a locomotive or wagon, whose train runs its schedule as usual), within 10 tiles; `vehicle {exit:
-  true}` gets out; `vehicle {drive: {x,y}}` drives the car or tank you drive there (a timed action steering as a
-  player's keys do: outcomes `arrived`, `blocked` after 3 s without progress, `timed_out`; `--wait` waits for it);
+  true}` gets out; `vehicle {drive: {x,y}}` drives the car or tank you drive there, a timed action steering as a
+  player's keys do (Opus, shift09 03:20: a tank driven straight at its target got stuck on cliffs and was killed;
+  Astra, shift10 04:10: a drive into an attack group ended blocked and left the tank surrounded):
+  - It follows the engine's path for the vehicle's box (a square as wide as its diagonal plus a tile, else as wide as
+    it is long, else as wide as it is wide), around cliffs, water, trees and buildings, aiming a few tiles ahead on the
+    path. `last.path_length`.
+  - Neither moving nor turning for 1.5 s against something solid, it backs off 1 s with the wheel turned toward the
+    path and asks for a path again, once (`last.backed_up: stuck at (30.0,123.7) (in front: cliff (30,126.5)):
+    backed off and asked for a new path`); stuck again it ends `blocked`, `last.why` naming what is in front.
+  - Units in the way (biters, pentapods) are no block: it keeps the throttle and pushes through, as a player holding
+    the key does; `last.rammed` counts the units it pressed against or hit. Buildings, cliffs, rocks and water stop it.
+  - `reverse: true` backs there, rear first (out of a crowd, off an obstacle), the same way.
+  - `avoid_enemies` works as for `move_to`. `pathfind: false` steers straight at the target (`blocked` after 3 s
+    without progress).
+  - Outcomes `arrived`, `blocked`, `unreachable` (no path for any of the three boxes, `last.why`),
+    `no_safe_route`, `timed_out`; `--wait` waits for it and shows `path_length`, `backed_up`, `rammed` and the enemy
+    fields.
   `vehicle {position, go_to: {x,y}}` sends a spidertron walking by itself (from outside, or the one you ride; one
   with an empty fuel slot does not walk, and the reply says so: fuel goes in with `transfer`);
   `vehicle {}` says where you sit and, for a vehicle with guns, `guns`: each slot's gun, its ammo and count, range,
@@ -1413,11 +1499,14 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   gets it in the next reply's `team.tells` and, if asleep, wakes with `woke: told` (and `tell: "from: text"`); it is
   never in the game chat, `chat` reads, the `chat:` trailer or `chat_remaining`, and draws no bubble. Unknown names
   fail with the roster; yourself is left out. The reply: `seq`, `to` (names, or `team`), and `away` for recipients on
-  another planet, a platform or in a cargo pod (`sol is on Vulcanus`). `tells {since?, limit?}`
-  returns the tells you sent or received `{seq,tick,from,away?,to,team?,text}`, by default those since your last
-  `tells` read (the last 10 on a first read; `since: 0` lists them all); the operator path returns every tell, which
+  another planet, a platform or in a cargo pod (`sol is on Vulcanus`). `tells {since?, limit?}` (limit 1..100,
+  default 30, newest kept) lists tells oldest first as `{seq,tick,ago_s,from,away?,to?,team?,fyi?,text}`. Without
+  `since`: the last 30 you received (team tells included), at every read, whether or not a team block showed them
+  (Muse, shift10: two tells shown once and missed were lost). With `since`: the ones you sent or received after that
+  seq, each with `to` (`since: 0` lists them all). `cursor` is the newest seq. The team block still shows each tell
+  once. The operator path returns every tell, which
   the stream shows on its logistics ticker (`-> Sol: text`, never voiced). CLI: `fh tell luna "text"`,
-  `fh tell luna,sol - <<'EOF'`, `fh tell team "text"`, `fh tells --since N`.
+  `fh tell luna,sol - <<'EOF'`, `fh tell team "text"`, `fh tells`, `fh tells --since N`, `fh tells --limit 10`.
 - `operator {text}` (1..500 characters, one line; longer is cut and the reply carries `cut {length, kept}`) files a
   request to the operator: harness bugs, tool requests, things viewers asked for that the agents cannot do. The reply:
   `seq`. At most one a minute and 10 an hour per agent; a refusal names the wait. No teammate sees it. The operator

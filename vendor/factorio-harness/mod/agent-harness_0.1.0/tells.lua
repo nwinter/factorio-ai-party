@@ -58,8 +58,8 @@ return function(api)
       text='1..500 characters, one line (longer is cut to 500; the reply says so)',
       fyi='true: for their information; it waits for their next reply (marked fyi) and wakes nobody: routine updates, no answer needed',
       returns='seq and to (cut {length, kept} when the text was cut; away "sol is on Vulcanus" for recipients on another planet, platform or in a cargo pod): the line goes to each recipient\'s next reply (team: tells), wakes them if asleep (woke=told), and stays out of the game chat; viewers see it as text on the stream\'s logistics ticker, never spoken'},
-    tells = {since='optional sequence number (default: the tells since your last read, or the last 10 on a first read; since=0 lists them all)', limit='1..100, newest kept (default 30)',
-      returns='tells you sent or received {seq,tick,from,away?,to,team?,text} oldest first (away: "on Vulcanus" when the sender is somewhere other than you now), and cursor'},
+    tells = {since='optional sequence number: the tells you sent or received after it (since=0: all of them); without it, the tells you received', limit='1..100, newest kept (default 30)',
+      returns='tells {seq,tick,ago_s,from,away?,to?,team?,fyi?,text} oldest first: without since the last 30 you received, whether or not a team block showed them; with since those you sent or received (to on each). away: "on Vulcanus" when the sender is somewhere other than you now. cursor: the newest seq'},
   }
   function M.handlers.tell(p, a)
     local me = api.who(p)
@@ -88,32 +88,25 @@ return function(api)
   local function read(a, me)
     assert(a.since == nil or type(a.since) == 'number', 'since must be a number')
     local s = store()
-    -- An agent's read without since: the tells since its last read (the last
-    -- 10 on a first read), and the cursor moves (agent-minds study: tells
-    -- replies were 7.9 KB at the median, every read listing the last 30).
-    s.cursors = s.cursors or {}
-    local cursor_read = me ~= nil and a.since == nil
-    if cursor_read then
-      local args = {}
-      for k, v in pairs(a) do args[k] = v end
-      args.since = s.cursors[me] or 0
-      args.limit = a.limit or (s.cursors[me] and 30 or 10)
-      if a.peek ~= true then s.cursors[me] = s.seq end
-      a = args
-    end
+    -- An agent's read without since: the last 30 tells it received, whether
+    -- or not a team block showed them (Muse, shift10: two tells shown once and
+    -- missed were lost, the read listing only those since the last read).
+    local received = me ~= nil and a.since == nil
     local limit = a.limit or 30
     assert(type(limit) == 'number' and limit >= 1 and limit <= 100, 'limit must be 1..100')
     local picked = {}
     for _, t in ipairs(s.log) do
-      local mine = me == nil or t.from == me
-      if not mine then for _, n in ipairs(t.to) do if n == me then mine = true; break end end end
+      local to_me = false
+      for _, n in ipairs(me and t.to or {}) do if n == me then to_me = true; break end end
+      local mine = me == nil or to_me or (not received and t.from == me)
       if mine and t.seq > (a.since or 0) then picked[#picked+1] = t end
     end
     local out = {}
     local where = me and api.where_from and api.where_from(me)
     for i = math.max(1, #picked - limit + 1), #picked do
       local t = picked[i]
-      out[#out+1] = {seq=t.seq, tick=t.tick, from=t.from, away=where and where(t.from) or nil, to=t.team and 'team' or t.to, team=t.team, fyi=t.fyi, text=t.text}
+      out[#out+1] = {seq=t.seq, tick=t.tick, ago_s=math.floor((game.tick - t.tick) / 60), from=t.from, away=where and where(t.from) or nil,
+        to=not received and (t.team and 'team' or t.to) or nil, team=t.team, fyi=t.fyi, text=t.text}
     end
     return {tells=out, cursor=s.seq, tick=game.tick}
   end

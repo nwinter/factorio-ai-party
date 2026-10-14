@@ -1,0 +1,202 @@
+-- Run from repository root: lua tests/avoid.lua
+-- Walks around enemy worms and spawners (avoid.lua), alone and through move_to
+-- against a fake engine (Opus, shift09 03:20: the pathfinder walked him 30 tiles from a nest).
+local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
+local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
+local function has(list,text)
+  for _,line in ipairs(list or {}) do if line:find(text,1,true) then return line end end
+  return nil
+end
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
+storage={agent_harness={active={}}}
+defines={events={on_script_path_request_finished=10,on_entity_died=11,on_entity_damaged=12,on_console_chat=13,on_unit_group_finished_gathering=14},
+  shooting={not_shooting=0,shooting_enemies=1},controllers={character=1,remote=27,spectator=2},direction={north=0},inventory={chest=1},
+  build_mode={normal=1},build_check_type={manual=1},flow_precision_index={five_seconds=0,one_minute=1}}
+local drawn={}
+rendering={draw_text=function(t) local obj={id=#drawn+1,valid=true}; obj.destroy=function() obj.valid=false end; drawn[#drawn+1]=obj; return obj end,
+  get_object_by_id=function(id) return drawn[id] end}
+remote={interfaces={}}
+helpers={json_to_table=function(t) return t end}
+local force={name='player',chart=function() end,is_chunk_visible=function() return true end,is_chunk_charted=function() return true end,get_spawn_position=function() return {x=0,y=0} end}
+local surface={name='nauvis',index=1}
+local units=0
+local function character(pos)
+  local items={}
+  units=units+1
+  local c={valid=true,name='character',type='character',force=force,surface=surface,position=pos,unit_number=500+units,health=250,
+    driving=false,build_distance=10,reach_distance=10,character_running_speed=0.15,walking_state={walking=false}}
+  local inv={get_item_count=function(q) return items[type(q)=='table' and q.name or q] or 0 end,find_item_stack=function() return nil end,
+    get_contents=function() return {} end}
+  c.items=items
+  c.insert=function(s) items[s.name]=(items[s.name] or 0)+s.count; return s.count end
+  c.get_main_inventory=function() return inv end
+  c.get_item_count=function(n) return items[n] or 0 end
+  c.can_reach_entity=function() return true end
+  c.destroy=function() c.valid=false end
+  return c
+end
+surface.find_non_colliding_position=function(_,origin) return origin end
+surface.create_entity=function(args) if args.name=='character' then return character(args.position) end return {valid=true,name=args.name,position=args.position} end
+surface.can_place_entity=function() return true end
+surface.find_entities_filtered=function() return {} end
+surface.get_total_pollution=function() return 0 end; surface.get_chunks=function() return function() end end; surface.get_pollution=function() return 0 end
+surface.request_path=function() return 1 end
+local nick={index=1,name='nick',valid=true,connected=true,controller_type=1,physical_controller_type=1,cheat_mode=false,driving=false,force=force,surface=surface,position={x=5,y=5},chat_color={r=1,g=1,b=1}}
+nick.character=character({x=5,y=5})
+local director={index=2,name='pog-director',valid=true,connected=true,controller_type=2,physical_controller_type=2,force=force,surface=surface,position={x=50,y=50}}
+local players={nick,director}
+for _,pl in ipairs(players) do pl.print=function() end end
+local tick=0
+game={tick=0,players=players,forces={player=force,enemy={name='enemy',get_evolution_factor=function() return 0 end,get_evolution_factor_by_time=function() return 0 end,
+  get_evolution_factor_by_pollution=function() return 0 end,get_evolution_factor_by_killing_spawners=function() return 0 end}},
+  -- As the engine: a bot's index is no player index.
+  get_player=function(i) assert(type(i)=='string' or i<=65536,'Given player value is too big'); if type(i)=='string' then for _,p in ipairs(players) do if p.name==i then return p end end return nil end return players[i] end,
+  get_surface=function() return surface end,print=function() end,connected_players=players,
+  get_pollution_statistics=function() return {input_counts={},output_counts={},get_flow_count=function() return 0 end} end}
+local runtime=dofile('mod/agent-harness_0.1.0/runtime.lua')
+local function advance(n) for _=1,n do tick=tick+1; game.tick=tick; runtime.tick{tick=tick} end end
+local function request(req)
+  local ok,result=pcall(runtime.dispatch,req)
+  if not ok then
+    if req.bot then pcall(runtime.stop_player,runtime.bots.index_of(req.bot)) end
+    error(result,0)
+  end
+  return result
+end
+local function as(name) return function(action,args) return request{action=action,args=args or {},bot=name} end end
+local astra=as('astra')
+runtime.operator.bot_create('astra')
+
+-- The module on its own: modes, nests, crossings, the way round.
+local A=runtime.avoid
+eq(A.mode(nil).pad,4); eq(A.mode(nil).spawners,nil); eq(A.mode(false),nil); eq(A.mode(true).spawners,true); eq(A.mode(true).pad,8); eq(A.mode(12).pad,12)
+fails(function() A.mode('yes') end,'avoid_enemies must be true, false or a margin 0..32 tiles')
+eq(A.describe(A.mode(nil)),'worms (range + 4)')
+eq(A.describe(A.mode(true)),"worms (range + 8) and spawners (their units' sight + 8)")
+-- A detour clears the disc; a clear line needs none; a goal walled in by discs has no way.
+local disc={x=50,y=0,r=10,members={{x=50,y=0,r=10,range=6,name='w'}}}
+eq(#A.detour({x=0,y=0},{x=100,y=30},{disc},{}),0)
+local vias=A.detour({x=0,y=0},{x=100,y=0},{disc},{})
+assert(#vias>=2,'corners around the disc'); eq(vias[#vias].x,100)
+local from={x=0,y=0}
+for _,v in ipairs(vias) do assert(A.seg_dist(from,v,disc)>=9.99,'leg clear of the disc'); from=v end
+local ring={}
+for _,c in ipairs({{140,0},{60,0},{100,40},{100,-40}}) do ring[#ring+1]={x=c[1],y=c[2],r=34,members={{x=c[1],y=c[2],r=34,range=30,name='w'}}} end
+eq(A.detour({x=0,y=0},{x=100,y=0},ring,{}),nil)
+-- The crossing names the member whose reach the path enters.
+local bi,m,d=A.crossing({{x=0,y=0},{x=100,y=0}},{disc},{})
+eq(bi,1); eq(m.name,'w'); eq(d,0)
+eq(A.crossing({{x=0,y=20},{x=100,y=20}},{disc},{}),nil)
+-- The deepest pass counts, not the first one into a margin (world n copy: a walk
+-- whose path entered a big worm's margin at 41 tiles, then passed 12 from it, was
+-- taken as margin-only and the character died).
+local nest={x=0,y=0,r=60,members={{x=-20,y=0,r=42,range=38,name='big-worm-turret'},{x=20,y=0,r=34,range=30,name='medium-worm-turret'}}}
+bi,m,d=A.crossing({{x=-100,y=-40},{x=-30,y=-40},{x=30,y=-5},{x=100,y=-5}},{nest},{})
+eq(m.name,'medium-worm-turret'); assert(d>9 and d<10,d)
+-- A goal between members' reach but inside the nest's outline is reached round the members' own discs.
+local v2=A.detour({x=-100,y=0},{x=0,y=45},{nest},{})
+assert(v2 and #v2>=1 and v2[#v2].y==45,'a way to a goal between the members')
+from={x=-100,y=0}
+for _,v in ipairs(v2) do for _,mm in ipairs(nest.members) do assert(A.seg_dist(from,v,mm)>=mm.r-0.01,'leg clear of '..mm.name) end; from=v end
+
+-- A walk past a medium worm (range 30): the engine's path goes 5 tiles from it,
+-- so the walk goes round in legs, each the engine's path, and says so.
+prototypes={entity={['medium-worm-turret']={attack_parameters={range=30}},['biter-spawner']={result_units={{unit='small-biter'}}},['small-biter']={vision_distance=30}}}
+force.get_friend=function() return false end; force.get_cease_fire=function() return false end
+local enemy=game.forces.enemy
+local structures={}
+surface.find_entities_filtered=function(f)
+  local out={}
+  if f.area and f.type then
+    local a=f.area
+    for _,e in ipairs(structures) do
+      if e.position.x>=a[1][1] and e.position.x<a[2][1] and e.position.y>=a[1][2] and e.position.y<a[2][2] then out[#out+1]=e end
+    end
+  end
+  return out
+end
+local asked={}
+surface.request_path=function(a) asked[#asked+1]=a; return 700+#asked end
+local me=runtime.lookup(runtime.bots.index_of('astra')).character
+me.position={x=0,y=0}
+me.prototype={collision_box={left_top={x=-0.2,y=-0.2},right_bottom={x=0.2,y=0.2}},collision_mask={layers={player=true}}}
+local worm={valid=true,name='medium-worm-turret',type='turret',position={x=50,y=5},force=enemy}
+structures={worm}
+local function path(points) local out={} for i,q in ipairs(points) do out[i]={position={x=q[1],y=q[2]}} end return out end
+local function answer(points) local n=#asked; runtime.on_event{name=10,id=700+n-1,path=path(points)}; runtime.on_event{name=10,id=700+n,path=path(points)} end
+local r=astra('move_to',{position={x=100,y=0}})
+eq(r.avoid_enemies,'worms (range + 4)'); eq(#asked,2)
+advance(3) -- the chunks along the way are read meanwhile (8 a tick)
+answer({{0,0},{50,0},{100,0}})
+advance(2)
+local nav=storage.agent_harness.active[runtime.bots.index_of('astra')]
+eq(nav.foes.detours,1); eq(#asked,4) -- the first leg asked for
+assert(nav.position.x~=100,'the first leg goes to a corner, not the goal')
+local legs=0
+while nav.position.x~=100 or nav.position.y~=0 do
+  local target={x=nav.position.x,y=nav.position.y}
+  assert(((target.x-50)^2+(target.y-5)^2)^0.5>=34,'corner outside the worm\'s reach + 4')
+  answer({{me.position.x,me.position.y},{target.x,target.y}})
+  me.position={x=target.x,y=target.y}
+  advance(2)
+  legs=legs+1
+  assert(legs<20,'legs end')
+  nav=storage.agent_harness.active[runtime.bots.index_of('astra')]
+  assert(nav,'walk still running')
+end
+answer({{me.position.x,me.position.y},{100,0}})
+me.position={x=100,y=0}
+advance(2)
+local last=astra('status').last
+eq(last.outcome,'arrived'); eq(last.target.x,100)
+eq(last.avoided_enemies[1],'1 medium-worm-turret around (50,5)')
+-- A worm whose reach holds the goal is not avoided (the walk goes there): named.
+asked={}
+r=astra('move_to',{position={x=60,y=0}})
+advance(3)
+answer({{100,0},{60,0}})
+me.position={x=60,y=0}
+advance(2)
+last=astra('status').last
+eq(last.outcome,'arrived'); eq(last.avoided_enemies,nil); eq(last.enemies_at_start_or_goal[1],'1 medium-worm-turret around (50,5)')
+-- Worms all round the goal (none reaching it): no safe route, the walk ends where it stands.
+me.position={x=0,y=0}; asked={}
+structures={}
+for _,c in ipairs({{140,0},{60,0},{100,40},{100,-40}}) do structures[#structures+1]={valid=true,name='medium-worm-turret',type='turret',position={x=c[1],y=c[2]},force=enemy} end
+storage.agent_harness.enemy_chunks=nil
+astra('move_to',{position={x=100,y=0}})
+advance(3)
+answer({{0,0},{100,0}})
+advance(3)
+last=astra('status').last
+eq(last.outcome,'no_safe_route')
+assert(last.why:find('no way to (100,0) around',1,true),last.why)
+-- avoid_enemies=false: no check, the engine's path as it is.
+asked={}
+r=astra('move_to',{position={x=100,y=0},avoid_enemies=false})
+eq(r.avoid_enemies,nil)
+answer({{0,0},{100,0}})
+nav=storage.agent_harness.active[runtime.bots.index_of('astra')]
+eq(nav.path_state,'found'); eq(nav.foes,nil)
+-- Spawners count with avoid_enemies=true: a biter spawner 20 tiles off the way (sight 30 + 8).
+astra('stop')
+structures={{valid=true,name='biter-spawner',type='unit-spawner',position={x=50,y=20},force=enemy}}
+storage.agent_harness.enemy_chunks=nil
+asked={}
+r=astra('move_to',{position={x=100,y=0},avoid_enemies=true})
+eq(r.avoid_enemies,"worms (range + 8) and spawners (their units' sight + 8)")
+advance(3)
+answer({{0,0},{100,0}})
+advance(2)
+nav=storage.agent_harness.active[runtime.bots.index_of('astra')]
+eq(nav.foes.detours,1); eq(nav.foes.avoided[1],'1 biter-spawner around (50,20)')
+-- Without avoid_enemies the spawner is no matter: worms only.
+astra('stop'); asked={}
+storage.agent_harness.enemy_chunks=nil
+astra('move_to',{position={x=100,y=0}})
+advance(3)
+answer({{0,0},{100,0}})
+advance(2)
+nav=storage.agent_harness.active[runtime.bots.index_of('astra')]
+eq(nav.path_state,'found'); eq(nav.foes.detours,0)
+print('avoid: ok')

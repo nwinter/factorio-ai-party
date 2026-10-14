@@ -371,7 +371,7 @@ p.surface.find_tiles_filtered=function() return tiles end
 footprint={{valid=true,type='tree',name='tree-02',position={x=2.1,y=0.3}},p.character}
 p.character.type='character'; p.character.position={x=2,y=0}
 fails(function() call('build',{item='wooden-chest',position={x=2,y=0}}) end,
-  'placement blocked by tree-02 (2.1,0.3), the character standing on the footprint (move off it first); mine it, or place_ghosts (marks it) + construct (clears it)')
+  'placement blocked by tree-02 (2.1,0.3), the character standing on the footprint (move off it first); it needs the tree mined first (mine it, or place_ghosts marks it and construct clears it)')
 -- Someone else's character is named.
 footprint={{valid=true,type='character',name='character',position={x=2,y=0.2},player={valid=true,name='pog-sol'}}}
 fails(function() call('build',{item='wooden-chest',position={x=2,y=0}}) end,
@@ -407,7 +407,22 @@ fails(function() call('build',{item='wooden-chest',position={x=20,y=0}}) end,'po
 fails(function() call('build',{item='wooden-chest',position={x=40,y=0}}) end,'position is outside local visible area: (40,0) is 40.0 tiles from the character')
 local built=call('build',{item='wooden-chest',position={x=2,y=0}})
 eq(built.consumed,1); eq(built.entity.position.x,2.5); eq(built.entity.position.y,0.5)
-eq(wood.count,2); eq(p.cursor_stack.valid_for_read,false)
+eq(wood.count,2); eq(p.cursor_stack.valid_for_read,false); eq(built.closed_in,nil)
+-- A build that closes the character in says so, naming what filled the last
+-- gap (pathing.lua closed_by; Gemini, shift09: a placement trapped the character).
+;(function()
+  local closed_by=runtime.pathing.closed_by
+  runtime.pathing.closed_by=function(_,_,half,list)
+    eq(half,0.2); eq(list[1],placed)
+    return {region={closed=true,tiles=10,x0=1,y0=1,x1=3,y1=3,by={'wooden-chest'}},gaps={placed}}
+  end
+  placed=nil
+  local walled=call('build',{item='wooden-chest',position={x=2,y=0}})
+  eq(walled.closed_in,'the character is closed in now where it stands (0,0): the last gap out was where wooden-chest (2.5,0.5) now stands; '..
+    'the area (1,1)-(3,3) (about 10 tiles) has no gap the character (0.4 tiles wide) fits through; around it: wooden-chest')
+  runtime.pathing.closed_by=closed_by
+  wood.count=2
+end)()
 -- Batches share defaults, return placed positions, and fail at the first failure
 -- (so plan on_fail policies see it); earlier entries stay built.
 local build_single,single_placed=p.build_from_cursor,placed
@@ -1297,12 +1312,21 @@ do
   fails(function() call('collect',{radius=20,types={'container'}}) end,'types may be assembling-machine and furnace')
   fails(function() call('collect',{radius=20,quality='rare'}) end,'quality goes with item')
   -- A repeating sweep: round 1 takes the 3 plates left, round 2 finds nothing; its line reaches the team block once.
-  call('queue_repeat',{name='sweep',interval_ticks=60,steps={{action='collect',args={radius=20,up_to=true}}}})
+  call('queue_repeat',{name='sweep',interval_ticks=60,steps={{action='collect',args={radius=20},on_fail='skip'}}})
   advance(5); eq(result[1].valid_for_read,false)
   advance(70)
   local team=call('status').team
   eq(team and team.queue and team.queue[1],'queue sweep round 2: 1 of 1 steps short: collect nothing_collected')
   advance(70); eq((call('status').team or {}).queue,nil)
+  call('queue_cancel',{})
+  -- With up_to=true the plan allowed for the short (Grok, shift10): no line, while its history says short.
+  result[1].name,result[1].count,result[1].valid_for_read='iron-plate',3,true
+  call('queue_repeat',{name='sweep2',interval_ticks=60,steps={{action='collect',args={radius=20,up_to=true}}}})
+  advance(5); eq(result[1].valid_for_read,false)
+  advance(140)
+  eq((call('status').team or {}).queue,nil)
+  local h=call('queue_status',{}).history
+  eq(h[#h].ok,true); eq(h[#h].result.short,true)
   call('queue_cancel',{})
   gear_machine.get_output_inventory=gear_output
 end
@@ -2551,5 +2575,23 @@ end)()
   eq(rows[1].output_fill,'copper-cable 180/200 (90%)'); eq(rows[2].output_fill,'copper-cable 200/200 (100%), full'); eq(rows[3].output_fill,'empty')
   p.surface.find_entities_filtered,p.get_main_inventory,p.can_reach_entity,p.position=find,getmain,reach,at
   prototypes.recipe,prototypes.item,defines.entity_status=recipes,items,status
+end)()
+;(function()
+  -- A full drop's pods that wait for a hatch run on their own channel (space.lua, runtime drop_jobs_tick):
+  -- the character's action is untouched, a queue step waits for them, status shows drop_pending then last_drop.
+  local st=storage.agent_harness
+  local job={kind='drop',platform={valid=false},planet='vulcanus',surface='vulcanus',pods={{items={{name='coal',quality='normal',count=50}}}},
+    sent={{pod=1,drop=3,items='iron-plate*1000',slots=10}},short={},moved={['iron-plate@normal']=1000},
+    want={{name='iron-plate',quality='normal',count=1000},{name='coal',quality='normal',count=50}},until_tick=game.tick+600}
+  st.drop_jobs={[1]=job}
+  local brief=call('status',{brief=true})
+  eq(brief.drop_pending.pods_sent,1); eq(brief.drop_pending.pods_left,1); eq(brief.last_drop,nil)
+  game.tick=game.tick+10-(game.tick%10)
+  runtime.drop_jobs_tick(game.tick)
+  eq(st.drop_jobs[1],nil)
+  brief=call('status',{brief=true})
+  eq(brief.drop_pending,nil); eq(brief.last_drop.outcome,'failed'); eq(brief.last_drop.why,'the platform or its hub is gone')
+  eq(brief.last_drop.result.not_sent,'coal*50'); eq(brief.last_drop.result.dropped[1],'iron-plate*1000')
+  st.drop_jobs=nil; st.last_drop=nil
 end)()
 print('runtime: '..assertions..' assertions passed')

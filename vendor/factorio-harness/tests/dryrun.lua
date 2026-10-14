@@ -441,4 +441,90 @@ local twice = rdry.check(rp, {kind='ghosts', entities={{index=1, name='straight-
   {index=2, name='straight-rail', position={x=1, y=-21}, direction=8}, {index=3, name='straight-rail', position={x=1, y=-21}, direction=4}}})
 eq(twice.entities[1].status, 'blocked'); has(twice.entities[1].why, 'collides with planned #1')
 eq(twice.summary, '2 placeable, 1 blocked (of 3)')
+-- Closing the character in (Gemini, shift09). Walls and pipes stretch their
+-- box toward what they join (2.0.77: 0.289 lone, 0.488 toward a joined
+-- neighbour), so pieces for the planned ones join them (joined_pieces).
+local function lone(h) return {left_top={x=-h, y=-h}, right_bottom={x=h, y=h}} end
+prototypes.entity.pipe = {name='pipe', type='pipe', tile_width=1, tile_height=1, collision_box=lone(0.289), collision_mask=BUILDING,
+  items_to_place_this={{name='pipe', count=1}}}
+prototypes.entity['pipe-to-ground'] = {name='pipe-to-ground', type='pipe-to-ground', tile_width=1, tile_height=1,
+  collision_box={left_top={x=-0.289, y=-0.289}, right_bottom={x=0.289, y=0.2}}, collision_mask=BUILDING}
+prototypes.entity.wall = {name='wall', type='wall', tile_width=1, tile_height=1, collision_box=lone(0.289), collision_mask=BUILDING,
+  items_to_place_this={{name='wall', count=1}}}
+prototypes.entity.gate = {name='gate', type='gate', tile_width=1, tile_height=1, collision_box=lone(0.289), collision_mask=BUILDING}
+prototypes.entity.boiler = {name='boiler', type='boiler', tile_width=3, tile_height=2, collision_box={left_top={x=-1.29, y=-0.79}, right_bottom={x=1.29, y=0.79}}, collision_mask=BUILDING}
+local function rec(name, x, y, dir)
+  local proto = prototypes.entity[name]
+  local b = placewhy.box_at(proto.collision_box, {x=x, y=y}, dir or 0)
+  return {name=name, proto=proto, pos={x=x, y=y}, dir=dir or 0, box=b}
+end
+local jw = world(function() return 'grass-1' end, {
+  {name='wall', type='wall', position={x=10.5, y=0.5}},
+  {name='gate', type='gate', position={x=12.5, y=0.5}, direction=4},
+  {name='pipe-to-ground', type='pipe-to-ground', position={x=20.5, y=0.5}, direction=4},
+  {name='boiler', type='boiler', position={x=31.5, y=1}, fluidbox=setmetatable({get_pipe_connections=function()
+    return {{position={x=29.5+1, y=1.5}, target_position={x=29.5, y=1.5}, connection_type='normal'}} end}, {__len=function() return 1 end})},
+})
+-- Two planned pipes side by side: each stretches toward the other while both stand.
+local p1, p2 = rec('pipe', 0.5, 0.5), rec('pipe', 1.5, 0.5)
+local pieces = dryrun.joined_pieces(jw, force, {p1, p2})
+eq(#pieces, 2); eq(pieces[1].ids[1] == p1 or pieces[1].ids[1] == p2, true); eq(#pieces[1].ids, 2)
+-- A planned wall beside a built wall: its own side, and the built one's toward it.
+local w1 = rec('wall', 11.5, 0.5)
+pieces = dryrun.joined_pieces(jw, force, {w1})
+eq(#pieces, 3, 'west to the built wall (2 pieces), east to the gate in its line (1: the gate opens)')
+local west, built_side
+for _, piece in ipairs(pieces) do
+  if piece[1] > 11 and piece[3] < 11.3 then west = piece end
+  if piece[3] < 11 then built_side = piece end
+end
+eq(west[1], 11.5-0.488); eq(west[3], 11.5-0.289); eq(#west.ids, 1)
+eq(built_side[1], 10.5+0.289, 'the built wall stretches east once the planned one stands'); eq(built_side[3], 10.5+0.488)
+-- A planned gate makes no pieces of its own (it opens for the character).
+eq(#dryrun.joined_pieces(jw, force, {rec('gate', 14.5, 5.5, 4)}), 0)
+-- A pipe-to-ground joins on its open side only (its direction, 2.0.77): the built one opens east.
+eq(#dryrun.joined_pieces(jw, force, {rec('pipe', 19.5, 0.5)}), 0, 'west of it is its underground side')
+eq(#dryrun.joined_pieces(jw, force, {rec('pipe', 21.5, 0.5)}), 2, 'east: the pipe and the pipe-to-ground stretch')
+-- A built machine's fluid connection on the tile: the pipe stretches toward it.
+pieces = dryrun.joined_pieces(jw, force, {rec('pipe', 29.5, 1.5)})
+eq(#pieces, 1); eq(pieces[1][1], 29.5+0.289); eq(pieces[1][3], 29.5+0.488)
+-- The dry run: a ring of 16 pipes around the character closes it in; a ring with a gap does not.
+local ring_me = {name='character', type='character', position={x=50.5, y=50.5}, prototype=prototypes.entity.character}
+local rw = world(function() return 'grass-1' end, {ring_me})
+local rapi2 = {}
+for k, v in pairs(api) do rapi2[k] = v end
+rapi2.pathing = dofile('mod/agent-harness_0.1.0/pathing.lua'){paths=function() return {} end}
+local rdr = dofile('mod/agent-harness_0.1.0/dryrun.lua')(rapi2)
+local rme = {surface=rw, force=force, position=ring_me.position, character=ring_me, build_distance=10,
+  get_main_inventory=function() return {get_item_count=function() return 100 end} end}
+local function ring(skip)
+  local list = {}
+  for x = 48.5, 52.5 do for y = 48.5, 52.5 do
+    if (x == 48.5 or x == 52.5 or y == 48.5 or y == 52.5) and not (skip and x == skip.x and y == skip.y) then
+      list[#list+1] = {index=#list+1, name='pipe', position={x=x, y=y}, direction=0, item='pipe'}
+    end
+  end end
+  return list
+end
+local closed = rdr.check(rme, {kind='build', entities=ring()})
+has(closed.closes_in, 'placed, these close the character in where it stands (50.5,50.5): without any one of #1 pipe (48.5,48.5)')
+has(closed.closes_in, '(of 16 planned entries around it) a gap out stays; the area (49,49)-(52,52) (about 11 tiles)')
+eq(rdr.check(rme, {kind='build', entities=ring({x=52.5, y=50.5})}).closes_in, nil, 'one gap left')
+-- Built ring with one gap (stretched as built), the last pipe planned: it fills the last gap out.
+local built_ring = {ring_me}
+for _, e in ipairs(ring({x=52.5, y=50.5})) do built_ring[#built_ring+1] = {name='pipe', type='pipe', position=e.position} end
+local bw = world(function() return 'grass-1' end, built_ring)
+for _, e in ipairs(built_ring) do if e.type == 'pipe' then e.bounding_box = {left_top={x=e.position.x-0.488, y=e.position.y-0.488}, right_bottom={x=e.position.x+0.488, y=e.position.y+0.488}} end end
+rme.surface = bw
+local last = rdr.check(rme, {kind='build', entities={{index=1, name='pipe', position={x=52.5, y=50.5}, direction=0, item='pipe'}}})
+eq(last.closes_in, 'placed, these close the character in where it stands (50.5,50.5): the last gap out is where #1 pipe (52.5,50.5) goes; the area (49.3,49.3)-(52,51.8) (about 8 tiles) has no gap the character (0.4 tiles wide) fits through; around it: pipe')
+-- A far pipe planned while the gap is open: nothing said.
+eq(rdr.check(rme, {kind='build', entities={{index=1, name='pipe', position={x=60.5, y=50.5}, direction=0, item='pipe'}}}).closes_in, nil)
+-- Closed in already (the last pipe built): said as a fact of where it stands, nothing blamed on the plan.
+local lastpipe = {name='pipe', type='pipe', position={x=52.5, y=50.5}}
+built_ring[#built_ring+1] = lastpipe
+rme.surface = world(function() return 'grass-1' end, built_ring)
+for _, e in ipairs(built_ring) do if e.type == 'pipe' then e.bounding_box = {left_top={x=e.position.x-0.488, y=e.position.y-0.488}, right_bottom={x=e.position.x+0.488, y=e.position.y+0.488}} end end
+local shut = rdr.check(rme, {kind='build', entities={{index=1, name='pipe', position={x=60.5, y=50.5}, direction=0, item='pipe'}}})
+eq(shut.closes_in, nil); has(shut.closed_in, 'the character is closed in already where it stands (50.5,50.5): the area')
 print('dryrun: ok')
