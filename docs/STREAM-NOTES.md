@@ -603,7 +603,7 @@ by the egg breeders on Gleba, nothing in range) gave 7 insets and fight records 
   director, weight 0.3). A runtime without the new fields: a shoot at a position fights, an auto shoot guards; the
   mock's `combat: true` is a hit. Snapshot agents carry `combat_state` and `combat_info`.
 - Incoming groups: "aimed at an agent" counts only agents on the group's surface (Sol on Gleba at (46, 51) counted
-  for Nauvis groups heading for (47, 34)). A demolisher's label matches its owner by position on its own surface.
+  for any Nauvis group heading near that spot, inside the base). A demolisher's label matches its owner by position on its own surface.
 - The last hour (12:43-13:43) replayed: 10 agent "under attack" insets, 0 remain; 26 area hits (turrets, belts) and
   8 losses stay; all 41 attacked areas the team's status replies listed were on Nauvis. The hour before: 3 agent
   insets, 1 remains (Astra in the 12:10 tank fight). Tests: tools/stream/test_attackflag.py,

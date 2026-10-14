@@ -12,8 +12,8 @@ vehicle, eng/attackflag's runtime):
    hosts' attack event); 16 s later no more.
 4. A runtime from before these fields: a shoot at a position fights, an auto shoot guards; the mock's True is a hit.
 5. The director: a guard makes no attack inset or cut; a hit does.
-6. An incoming group's "aimed at an agent" counts agents on the group's surface only (Sol on Gleba at (46, 51) made
-   Nauvis groups heading for (47, 34) count).
+6. An incoming group's "aimed at an agent" counts agents on the group's surface only (Sol on Gleba at (46, 51) counted
+   for a Nauvis group heading near that spot).
 """
 import os, sys
 

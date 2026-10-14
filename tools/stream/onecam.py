@@ -1182,8 +1182,8 @@ class OneCam(Director):
                 core_g, centre_g = None, None
             else:
                 core_g, centre_g = core, centre
-            # agents on the group's surface only: Sol by the egg breeders on Gleba at (46, 51) made a Nauvis group
-            # heading for (47, 34) "aimed at an agent" (13:00-13:40)
+            # agents on the group's surface only: Sol by the egg breeders on Gleba at (46, 51) counted for any Nauvis
+            # group heading near that spot, inside the base (13:00-13:40)
             near = [a for a in by_name.values() if surface_of(a) == (g.get("surface") or "nauvis")]
             score, parts = self.threats.score_group(g, centre=centre_g, agents=near, core=core_g)
             self.threats.learn_group(g, centre=centre_g)
