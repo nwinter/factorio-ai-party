@@ -166,6 +166,28 @@ test('a sleep replaced by a newer one ends (woke replaced) without reading the o
   });
   const reads=seen.filter(isCheck); assert(reads.length>0 && reads.every(r=>r.args.peek===true),'no read of the other sleep');
 });
+test('a sleep that would repeat a wake read under 10 s ago waits out the rest and then sleeps (team block kept)',async()=>{
+  // Muse, shift08: "woke 4s ago" refusals burn turns when tells arrive mid-cycle.
+  const seen:any[]=[];let sleeps=0;
+  await engine(request=>{
+    seen.push(request);
+    if(request.action==='sleep'){
+      sleeps++;
+      if(sleeps===1)return {ok:true,result:{repeat:true,woke:'board',sleeping_s:0,until_tick:900,
+        while_asleep:'this sleep did not start: you woke (board) 9 s ago; it ends at once and repeats that wake',team:{tells:['astra, 1s ago: coal please']}}};
+      return {ok:true,result:{while_asleep:'no queue and no action',sleeping_s:5,until_tick:1500}};
+    }
+    return {ok:true,result:{slept_s:5,until_tick:1500,woke:'elapsed'}};
+  },async port=>{
+    const began=Date.now();
+    const reply=JSON.parse((await cli(port,['sleep','5'])).stdout);
+    assert(Date.now()-began>=2000,'waited out the rest of the 10 s');
+    assert.equal(reply.ok,true); assert.equal(reply.result.woke,'elapsed'); assert.equal(reply.result.repeat,undefined);
+    assert.equal(reply.result.waited_out,'your previous sleep woke (board) 9 s before this one, and a sleep within 10 s of a wake repeats that wake; this sleep started after 2 s more');
+    assert.deepEqual(reply.result.team.tells,['astra, 1s ago: coal please']);
+  });
+  assert.equal(seen.filter(r=>r.action==='sleep').length,2);
+});
 test('fh wait --until on a runtime without sleep peek: the sleep as fh sleep, shown whole; alert says when it comes',async()=>{
   const seen:any[]=[];let checks=0;
   await engine(request=>{

@@ -347,6 +347,68 @@ def operator_unseen(d, state):
             "\n(From the operator, in your last fh reply; shown here once in case your output filter hid it.)")
 
 
+INBOX_MAX, INBOX_LINE = 10, 300
+
+
+def inbox_unseen(d, state, payload):
+    """Mentions and tells that fh replies carried since this hook last looked (the journal from state["inbox_offset"])
+    and that this tool call's output did not show, as context lines, or None (Sonnet, shift08: its replies went to
+    /dev/null for 2h20m, so the team block's mentions and tells never reached the model). Each is shown once."""
+    path = os.path.join(d, "journal.jsonl")
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return None
+    start = state.get("inbox_offset")
+    state["inbox_offset"] = size
+    if start is None or size <= start:
+        return None   # the first look starts here; a journal that shrank starts again
+    with open(path, "rb") as f:
+        f.seek(max(start, size - 3_000_000))
+        lines = f.read().decode("utf-8", "replace").splitlines()
+    found = []
+    for line in lines:
+        if '"team"' not in line or ('"mentions"' not in line and '"tells"' not in line):
+            continue
+        try:
+            team = ((json.loads(line).get("response") or {}).get("result") or {}).get("team") or {}
+        except ValueError:
+            continue
+        for kind in ("mentions", "tells"):
+            for t in team.get(kind) or []:
+                # The operator's tells come as OPERATOR: lines (operator_unseen).
+                if isinstance(t, str) and (kind, t) not in found and not t.startswith(("operator, ", "operator to ")):
+                    found.append((kind, t))
+    if not found:
+        return None
+    def strings(v):
+        if isinstance(v, str):
+            yield v
+        elif isinstance(v, dict):
+            for x in v.values():
+                yield from strings(x)
+        elif isinstance(v, list):
+            for x in v:
+                yield from strings(x)
+    shown = "\n".join(strings(payload.get("tool_response")))
+
+    def seen(text):
+        # The message itself, after "<age> ago: " (the age a reply prints may differ from the journal's).
+        body = text.split(" ago: ", 1)[1] if " ago: " in text else text
+        needle = body[:80]
+        return needle in shown or json.dumps(needle, ensure_ascii=False)[1:-1] in shown
+    unseen = [(k, t) for k, t in found if not seen(t)]
+    if not unseen:
+        return None
+    out = [f"{'MENTION' if k == 'mentions' else 'TELL'}: {t if len(t) <= INBOX_LINE else t[:INBOX_LINE] + ' [...]'}"
+           for k, t in unseen[:INBOX_MAX]]
+    if len(unseen) > INBOX_MAX:
+        out.append(f"+{len(unseen) - INBOX_MAX} more: ./fh tells and ./fh call chat list them")
+    state["inbox_shown"] = state.get("inbox_shown", 0) + len(unseen)
+    return "\n".join(out) + ("\n(From your fh replies' team block since your last tool call; this tool call's output "
+                             "did not show them. Shown here once.)")
+
+
 def hook(event, args):
     raw = sys.stdin.read()
     try:
@@ -412,6 +474,12 @@ def hook(event, args):
         if operator:
             save()
             log(action="operator", seq=state["operator_seq"])
+        before = state.get("inbox_offset")
+        inbox = inbox_unseen(d, state, payload)
+        if state.get("inbox_offset") != before:
+            save()
+        if inbox:
+            log(action="inbox", lines=inbox.count("\n"))
         if state.get("reinject"):
             state.pop("reinject")
             save()
@@ -435,6 +503,8 @@ def hook(event, args):
                            "summary keeps only your last few actions. Update notes.md now (Now, claims and "
                            "coordinates, agreements, open board items, lessons) and cut its Log to the last 10 lines, "
                            "then continue.")
+        if inbox:
+            context = inbox + ("\n\n" + context if context else "")
         if operator:
             context = operator + ("\n\n" + context if context else "")
         if context:

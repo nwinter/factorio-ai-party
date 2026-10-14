@@ -129,6 +129,37 @@ def main():
         assert ctx.startswith("OPERATOR: second\n") and "12 min" not in ctx, ctx
         assert "post-tool:operator" in log_events(d), log_events(d)
 
+    with tempfile.TemporaryDirectory() as d:   # mentions and tells the tool output did not show: once each (Sonnet's /dev/null)
+        run("setup", "claude", "claude-sonnet-5.5", d)
+        journal = os.path.join(d, "journal.jsonl")
+
+        def reply(team):
+            with open(journal, "a") as f:
+                f.write(json.dumps({"request": {"action": "status"}, "response": {"ok": True, "result": {"team": team}}}) + "\n")
+
+        def post(stdout=""):
+            return run("hook", "post-tool", stdin=json.dumps({"cwd": d, "tool_response": {"stdout": stdout, "stderr": ""}}))
+        reply({"tells": ["astra, 1s ago: old news"]})
+        assert post() == "", "the first look starts at the journal's end"
+        reply({"mentions": ["from @sonnet, 3s ago: @sonnet the copper line is down"], "tells": ["astra, 2s ago: need 40 plates"]})
+        ctx = json.loads(post())["hookSpecificOutput"]["additionalContext"]
+        assert ctx == ("MENTION: from @sonnet, 3s ago: @sonnet the copper line is down\nTELL: astra, 2s ago: need 40 plates\n"
+                       "(From your fh replies' team block since your last tool call; this tool call's output did not show "
+                       "them. Shown here once.)"), ctx
+        assert post() == "", "once"
+        # Shown in the output (the age may read differently there): not repeated.
+        reply({"tells": ["luna, 0s ago: belts at (3,4) done", "sol, 0s ago: coal \"low\""]})
+        ctx = json.loads(post('team:\n  tells:\n  - luna, 1s ago: belts at (3,4) done'))["hookSpecificOutput"]["additionalContext"]
+        assert ctx.startswith('TELL: sol, 0s ago: coal "low"\n') and "belts" not in ctx, ctx
+        reply({"tells": ["sol, 0s ago: coal \"low\" again"]})
+        assert post(json.dumps({"team": {"tells": ["sol, 0s ago: coal \"low\" again"]}})) == "", "JSON output counts as shown"
+        reply({"tells": ["operator, 0s ago: your character has stood idle for 12 min"]})
+        assert post() == "", "operator tells come as OPERATOR: lines"
+        reply({"tells": [f"grok, 1s ago: t{i}" for i in range(12)]})
+        ctx = json.loads(post())["hookSpecificOutput"]["additionalContext"]
+        assert "TELL: grok, 1s ago: t9\n+2 more: ./fh tells and ./fh call chat list them\n" in ctx, ctx
+        assert "post-tool:inbox" in log_events(d), log_events(d)
+
     with tempfile.TemporaryDirectory() as d:   # the repo-wide Grok hooks also see sessions outside agent workspaces
         run("hook", "post-compact", "--mark", stdin=json.dumps({"cwd": d}))
         assert os.listdir(d) == [], "hooks do nothing without the setup marker"
