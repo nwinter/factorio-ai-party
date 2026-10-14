@@ -25,11 +25,20 @@ deadline=\$(date -j -f "%Y-%m-%d %H:%M:%S %Z" "\${d% *}:00 \${d##* }" +%s)
 # than 15 s waits 30 s before the next. started stays 0 until a run gets past the quota, so the first prompt is sent
 # again rather than "Continue" to a conversation that never began.
 started=0
+# The agy line's --print-timeout ends a turn after turn_s (POG_AGY_TURN_S when the loop is written, default 300), so
+# the context check below runs every few minutes: one turn lasted up to an hour and agy compacted itself at
+# 276-290K (docs/studies/2026-10-13-agent-minds.md Q3.1: 45% of all main-thread tokens). A turn that ran into the
+# timeout is continued with one short line, no re-reads.
+turn_s=${POG_AGY_TURN_S:-300}
+timed_out=0
 turn() {
   touch .agy-stamp
   t0=\$(date +%s)
   # The wait cap goes on agy only: this loop's own sleep until a quota reset stays a plain sleep.
   '$sleepcap_run' agy "\$@" --model $model --dangerously-skip-permissions
+  # ran into the timeout: it ends at turn_s (a turn that ends by itself much later was not cut)
+  took=\$((\$(date +%s) - t0)); timed_out=0
+  [ "\$took" -ge "\$((turn_s - 2))" ] && [ "\$took" -le "\$((turn_s + 30))" ] && timed_out=1
   q=\$(python3 '$root/tools/agy-quota.py' '$dir' .agy-stamp "\$deadline")
   case "\$q" in
     stop) exit 0 ;;
@@ -40,7 +49,8 @@ turn() {
 turn -p "\$(cat '$prompt')"
 ${POG_ONE_TURN:+exit 0  # POG_ONE_TURN: smoke tests run the first turn only}
 while [ "\$(date +%s)" -lt "\$((deadline - 20))" ]; do
-  tokens=\$(python3 '$root/tools/context.py' agy-tokens '$dir')
+  # (POG_AGY_TOKENS_CMD: tools/test_quota.py's stand-in for the context size)
+  tokens=\$(\${POG_AGY_TOKENS_CMD:-python3 '$root/tools/context.py' agy-tokens} '$dir')
   left=\$(( (deadline - \$(date +%s) + 59) / 60 ))
   # No fresh start in the last 2 minutes: it costs a re-read of notes.md (shake3: Grok's compaction 39 s before its
   # deadline ended its play).
@@ -49,6 +59,8 @@ while [ "\$(date +%s)" -lt "\$((deadline - 20))" ]; do
   elif [ "$limit" -gt 0 ] && [ "\$tokens" -ge "$limit" ] && [ "\$((deadline - \$(date +%s)))" -gt 120 ]; then
     echo "{\"time\": \"\$(date '+%Y-%m-%d %H:%M:%S')\", \"event\": \"agy-fresh\", \"tokens\": \$tokens}" >> context.log
     turn -p "\$(cat '$prompt') This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat. The deadline is \$left minutes away."
+  elif [ "\$timed_out" = 1 ]; then
+    turn -c -p "Continue where you were: the harness paused this turn to check your context size; nothing else changed. The deadline is \$left minutes away."
   else
     turn -c -p "Continue: the deadline in deadline.txt is \$left minutes away (the clock: line shows it) and it is the only stop condition. Re-read notes.md, check ./fh call status, ./fh call chat and ./fh board, and keep playing until the deadline has passed."
   fi
