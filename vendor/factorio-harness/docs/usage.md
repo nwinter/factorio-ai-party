@@ -469,6 +469,27 @@ fh call status
   `circuit_set`) circuit settings, as the entity would (Astra 12:20: a 75-ghost Starling layout); the reply says
   `ghost` and its name. `name` may be what the ghost builds (`fast-inserter`); a tile ghost under it (platform
   foundation) never takes its place as the target.
+- `configure {position, priority_targets, ignore_unprioritised}` sets a turret's priority list and its Ignore
+  unprioritised targets checkbox, as the turret GUI does (Astra, shift12 15:02: Sunward's rocket turrets on big
+  metallic, carbonic and oxide asteroids only, to save rockets). `priority_targets` is entity names in priority order
+  (`["big-metallic-asteroid","big-carbonic-asteroid","big-oxide-asteroid"]`, `["medium-biter","big-biter"]`) and
+  replaces the list; `[]` or `false` clears it; at most 64. `ignore_unprioritised: true` makes the turret fire at the
+  listed kinds only. Either may come alone; nothing else may come with them (no recipe or filters).
+  - It works on gun, rocket, railgun, laser, tesla and flamethrower turrets and their ghosts, in reach, by remote view,
+    on another planet with `surface` and on a platform with `platform`, as configure does. Artillery turrets have no
+    priority list (2.0.77: `Entity is not turret`).
+  - `positions` (1..64) sets several turrets alike in one call: `turrets` has a row each (one that fails says why),
+    with `configured` and `failed`.
+  - The reply reads both back: `priority_targets`, `ignore_unprioritised` and `targeting` (`priority targets:
+    big-metallic-asteroid, big-carbonic-asteroid, big-oxide-asteroid (in this order); ignore unprioritised targets:
+    on`). `inspect` on a turret or its ghost shows the same three.
+  - An unknown name is refused with names like it: `unknown entity big-asteroid in priority_targets; names like it:
+    big-carbonic-asteroid, big-metallic-asteroid, big-oxide-asteroid, big-promethium-asteroid`. The engine itself takes
+    any entity name.
+  - Blueprints carry both (the blueprint entity's `priority-list` and `ignore-unprioritised`): `copy` and `paste`,
+    `blueprint_save` and `blueprint_place`, and a game blueprint place ghosts that keep them, and the turret a ghost
+    becomes keeps them (2.0.77, on a copy of world n). A paste over a built turret does not list them in
+    `settings_differ`.
 - `flush {position, fluid?, index?, platform?}` is the fluid GUI's flush: it empties the fluid segment (the connected
   pipes, tanks, pumps and machine fluidboxes) the entity at `position` belongs to, every fluid or only `fluid`.
   An entity with several segments holding fluid (a chemical plant's input and output) needs `fluid` or `index`; the

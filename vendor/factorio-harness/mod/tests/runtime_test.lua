@@ -1057,6 +1057,69 @@ plate_stack.name,plate_stack.count,plate_stack.valid_for_read='iron-plate',4,tru
 fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel'}) end,'remote recipe change: the machine at (3,0) holds items')
 p.can_reach_entity=function() return true end
 eq(call('configure',{position=am.position,recipe='iron-gear-wheel'}).remote,nil)
+-- A turret's priority targets and Ignore unprioritised targets (Astra, shift12 15:02: Sunward's rocket turrets on big
+-- asteroids only), built and ghost. The fake keeps slots as 2.0.77 does: a set past the end appends; a cleared slot
+-- leaves a gap that get_priority_target reads as nil and priority_targets skips; trailing gaps shrink the list.
+do
+  local saved_find,saved_entity,saved_filtered=p.surface.find_entities_filtered,prototypes.entity,prototypes.get_entity_filtered
+  local enemies={['big-metallic-asteroid']={type='asteroid'},['big-carbonic-asteroid']={type='asteroid'},['big-oxide-asteroid']={type='asteroid'},
+    ['medium-biter']={type='unit'}}
+  prototypes.entity=setmetatable({},{__index=function(_,k) return enemies[k] or (saved_entity and saved_entity[k]) end})
+  prototypes.get_entity_filtered=function(f) local out={}; for name,e in pairs(enemies) do if e.type==f[1].type then out[name]=e end end; return out end
+  local function turret(name,type_,pos,ghost)
+    local slots,n={},0
+    local t={valid=true,name=ghost and 'entity-ghost' or name,type=ghost and 'entity-ghost' or type_,ghost_name=ghost and name or nil,
+      ghost_type=ghost and type_ or nil,position=pos,force=p.force,ignore_unprioritised_targets=false,health=100,max_health=100,
+      get_fluid_contents=function() return {} end}
+    t.get_priority_target=function(i) if i<1 or i>n then error('Index out of bounds.') end; return slots[i] and {name=slots[i]} or nil end
+    t.set_priority_target=function(i,nm)
+      if nm==nil then
+        if i<=n then slots[i]=nil; while n>0 and slots[n]==nil do n=n-1 end end
+        return
+      end
+      if i>n then n=n+1; slots[n]=nm else slots[i]=nm end
+    end
+    t.length=function() return n end
+    return setmetatable(t,{__index=function(_,k)
+      if k=='priority_targets' then local l={}; for i=1,n do if slots[i] then l[#l+1]={name=slots[i]} end end; return l end
+    end})
+  end
+  local rocket=turret('rocket-turret','ammo-turret',{x=6,y=0})
+  local ghost=turret('gun-turret','ammo-turret',{x=9,y=0},true)
+  local box={valid=true,name='iron-chest',type='container',position={x=12,y=0},force=p.force}
+  local at={[6]=rocket,[9]=ghost,[12]=box}
+  p.surface.find_entities_filtered=function(f) local x=f.position and math.floor(f.position.x+0.5); return x and at[x] and {at[x]} or {} end
+  local r=call('configure',{position={x=6,y=0},priority_targets={'big-metallic-asteroid','big-carbonic-asteroid','big-oxide-asteroid'},ignore_unprioritised=true})
+  eq(#r.priority_targets,3); eq(r.priority_targets[3],'big-oxide-asteroid'); eq(r.ignore_unprioritised,true); eq(rocket.ignore_unprioritised_targets,true)
+  eq(r.targeting,'priority targets: big-metallic-asteroid, big-carbonic-asteroid, big-oxide-asteroid (in this order); ignore unprioritised targets: on')
+  -- A gap left by the game's own clearing: the list is written whole from slot 1.
+  rocket.set_priority_target(2,nil); eq(rocket.length(),3)
+  r=call('configure',{position={x=6,y=0},priority_targets={'big-oxide-asteroid'}})
+  eq(rocket.length(),1); eq(r.priority_targets[1],'big-oxide-asteroid'); eq(r.ignore_unprioritised,true,'left as it was')
+  r=call('configure',{position={x=6,y=0},priority_targets={},ignore_unprioritised=false})
+  eq(rocket.length(),0); eq(#r.priority_targets,0); eq(r.targeting,'priority targets: none; ignore unprioritised targets: off')
+  eq(#call('configure',{position={x=6,y=0},priority_targets=false}).priority_targets,0)
+  -- A ghost takes them as its turret would.
+  r=call('configure',{position={x=9,y=0},priority_targets={'medium-biter'},ignore_unprioritised=true})
+  eq(r.ghost,true); eq(r.name,'gun-turret'); eq(r.priority_targets[1],'medium-biter'); eq(ghost.ignore_unprioritised_targets,true)
+  -- inspect reads them back.
+  local seen=call('inspect',{position={x=9,y=0}})
+  eq(seen.priority_targets[1],'medium-biter'); eq(seen.ignore_unprioritised,true)
+  eq(seen.targeting,'priority targets: medium-biter (in this order); ignore unprioritised targets: on')
+  -- An unknown name, something else than a turret, and a recipe beside them are refused, nothing changed.
+  fails(function() call('configure',{position={x=9,y=0},priority_targets={'big-asteroid'}}) end,
+    'unknown entity big-asteroid in priority_targets; names like it: big-carbonic-asteroid, big-metallic-asteroid, big-oxide-asteroid')
+  eq(ghost.length(),1)
+  fails(function() call('configure',{position={x=12,y=0},priority_targets={'medium-biter'}}) end,'iron-chest (type container) has no priority targets')
+  fails(function() call('configure',{position={x=6,y=0},priority_targets={'medium-biter'},recipe='iron-gear-wheel'}) end,'go alone')
+  fails(function() call('configure',{position={x=6,y=0},ignore_unprioritised='yes'}) end,'ignore_unprioritised must be true or false')
+  -- Several at once: a row per turret, the one that fails with its error.
+  r=call('configure',{positions={{x=6,y=0},{x=9,y=0},{x=12,y=0}},priority_targets={'big-metallic-asteroid'},ignore_unprioritised=true})
+  eq(r.configured,2); eq(r.failed,1); eq(r.turrets[1].priority_targets[1],'big-metallic-asteroid'); eq(r.turrets[2].ghost,true)
+  assert(r.turrets[3].error:find('has no priority targets',1,true),r.turrets[3].error)
+  fails(function() call('configure',{positions={{x=6,y=0}},recipe='iron-gear-wheel'}) end,'positions goes with priority_targets')
+  p.surface.find_entities_filtered,prototypes.entity,prototypes.get_entity_filtered=saved_find,saved_entity,saved_filtered
+end
 -- A refused configure stops nothing (Astra 11:01, twice: configure with surface=nauvis, her own surface, failed and
 -- paused her queue): its target and checks run before the queue would stop; surface naming the character's own surface
 -- is the same as none (out of reach: remote view, the queue goes on).
