@@ -347,4 +347,37 @@ assert(craft_calls<=12,'crafting_count calls over 60 waiting ticks: '..craft_cal
 -- The pipes arrive: all 255 are built, nearest first.
 inventory.pipe=255;pipes_crafting=0
 eq(run_timed(pipeline),'constructed');eq(pipeline.built,255);eq(inventory.pipe,0)
+-- A pole ghost over a landfill tile ghost (pole_route on Gleba wetland, Sol shift09): the landfill goes down first,
+-- and the pole waits for it instead of spending a try on the wetland; with no landfill it fails on the tile.
+do
+  local tile_ghost={valid=true,type='tile-ghost',ghost_name='landfill',position={x=600.5,y=.5},quality={name='normal'},
+    ghost_prototype={items_to_place_this={{name='landfill',count=1}}}}
+  local pole=ghost(600.5,'medium-electric-pole')
+  pole.type='entity-ghost'; pole.direction=0
+  pole.ghost_prototype.collision_box={left_top={x=-0.15,y=-0.15},right_bottom={x=0.15,y=0.15}}
+  local tries={}
+  C=dofile('mod/agent-harness_0.1.0/construction.lua'){
+    position=function(v)return {x=v.x,y=v.y}end,distance=distance,integer=integer,visible=function()return true end,
+    directions={north=0,east=4,south=8,west=12},known=function()return true end,reason=function(e)return tostring(e) end,
+    hand_mining_ticks=function() return 30 end,crafting_count=function() return 0 end,
+    request_path=function(_,nav) nav.requested=true end,
+    navigate=function(_,nav) p.position={x=nav.position.x,y=nav.position.y}; return 'arrived' end,
+    build=function(_,a)
+      tries[#tries+1]=a.item
+      assert((inventory[a.item] or 0)>0,'item is not in main inventory')
+      assert(a.item=='landfill' or not tile_ghost.valid,'placement blocked by tiles: wetland-blue-slime (needs landfill, or a shore position)')
+      inventory[a.item]=inventory[a.item]-1
+      if a.item=='landfill' then tile_ghost.valid=false else pole.valid=false end
+      return {consumed=1}
+    end,
+  }
+  ghosts={pole,tile_ghost}; inventory['medium-electric-pole']=1; inventory.landfill=1; p.position={x=602.5,y=2.5}
+  local site=C.plan_ghosts(p,{},{})
+  eq(run_timed(site),'constructed'); eq(site.built,2); eq(#tries,2); eq(tries[1],'landfill'); eq(tries[2],'medium-electric-pole')
+  -- no landfill: the tile ghost is missing, and the pole then fails on the tile it stands on
+  tile_ghost.valid=true; pole.valid=true; tries={}; ghosts={pole,tile_ghost}; inventory['medium-electric-pole']=1; inventory.landfill=0
+  site=C.plan_ghosts(p,{},{})
+  eq(run_timed(site),'incomplete'); eq(site.missing.landfill,1); eq(site.missing['medium-electric-pole'],nil); eq(#tries,2)
+  assert(site.failed[1] and site.failed[1].error:find('placement blocked by tiles: wetland-blue-slime',1,true),site.failed[1] and site.failed[1].error)
+end
 print('continuous construction tests passed')

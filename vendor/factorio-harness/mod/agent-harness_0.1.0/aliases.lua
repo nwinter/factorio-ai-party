@@ -32,6 +32,9 @@ return function(api)
     launch = {planet='surface'},
     silo = {planet='surface'},
     rotate = {target='position'},
+    -- pole_route and pipe_route call their points waypoints.
+    rail_route = {waypoints='via', start='from', ['end']='to', dryrun='dry_run', ['dry-run']='dry_run'},
+    train_stop = {station_name='name', target='position'},
   }
   -- A project's changes (board.lua board_update).
   local PROJECT_CHANGES = {'step', 'done', 'undone', 'remove_step', 'goal', 'handoff', 'areas'}

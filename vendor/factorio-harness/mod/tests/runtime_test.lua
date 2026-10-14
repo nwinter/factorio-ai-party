@@ -380,7 +380,20 @@ p.character.type=nil; p.character.position=nil
 eq(wood.count,3); eq(p.cursor_stack.valid_for_read,false)
 footprint={}; tiles={{name='water',prototype={collision_mask={layers={water_tile=true}}}},{name='water',prototype={collision_mask={layers={water_tile=true}}}}}
 fails(function() call('build',{item='wooden-chest',position={x=2,y=0}}) end,'placement blocked by tiles: water (needs landfill')
-tiles={{name='grass-1',prototype={collision_mask={layers={ground_tile=true}}}}}
+-- Sol, shift09 01:38: a build over its own ghost on tiles it cannot stand on (Gleba wetland) names the tiles, never
+-- the ghost it would revive ("placement blocked by ghost medium-electric-pole" at the pole's own position).
+wood.prototype.place_result.name='wooden-chest'
+footprint={{valid=true,type='entity-ghost',ghost_name='wooden-chest',position={x=2,y=0}},{valid=true,type='tile-ghost',ghost_name='landfill',position={x=2.5,y=0.5}}}
+tiles={{name='wetland-blue-slime',prototype={collision_mask={layers={water_tile=true,floor=true,resource=true}}}}}
+do
+  local ok,err=pcall(call,'build',{item='wooden-chest',position={x=2,y=0}})
+  assert(not ok and tostring(err):find('placement blocked by tiles: wetland-blue-slime (needs landfill',1,true) and not tostring(err):find('ghost',1,true),tostring(err))
+end
+-- Another entity's ghost on the footprint still blocks, and is named.
+footprint={{valid=true,type='entity-ghost',ghost_name='iron-chest',position={x=2,y=0}}}
+fails(function() call('build',{item='wooden-chest',position={x=2,y=0}}) end,'placement blocked by ghost iron-chest (2,0)')
+wood.prototype.place_result.name=nil
+footprint={}; tiles={{name='grass-1',prototype={collision_mask={layers={ground_tile=true}}}}}
 fails(function() call('build',{item='wooden-chest',position={x=2,y=0}}) end,'placement blocked (nothing found in the footprint')
 p.surface.find_tiles_filtered=nil
 p.can_build_from_cursor=function() return true end
@@ -458,6 +471,22 @@ local paused_build=call('build',{item='wooden-chest',position={x=8,y=0}})
 eq(paused_build.consumed,1); eq(paused_build.entity.position.x,8); eq(wood.count,1); eq(p.cursor_stack.valid_for_read,false)
 fails(function() call('build',{item='wooden-chest',position={x=9,y=0}}) end,'placement blocked')
 eq(wood.count,1)
+-- A rail planner's curve takes 3 rails, as the game charges it (2.0's items_to_place_this); with fewer held it is refused.
+do
+local saved_prototypes=prototypes
+prototypes={entity={['curved-rail-a']={name='curved-rail-a',type='curved-rail-a',items_to_place_this={{name='rail',count=3}},
+  collision_box={left_top={x=-0.7,y=-2.5},right_bottom={x=0.7,y=2.5}}}},item={}}
+local rail=stack('rail',4); rail.prototype={rails={{name='straight-rail'},{name='curved-rail-a'}}}
+local saved_main=main
+main={rail}; main.find_item_stack=function() return rail end
+main.get_item_count=function(f) return f.name=='rail' and rail.count or 0 end
+main.remove=function(f) eq(f.name,'rail'); rail.count=rail.count-f.count; return f.count end
+local r3=call('build',{item='rail',entity='curved-rail-a',position={x=1,y=0},direction='north'})
+eq(r3.consumed,3); eq(rail.count,1)
+fails(function() call('build',{item='rail',entity='curved-rail-a',position={x=5,y=0},direction='north'}) end,'curved-rail-a takes 3 rail; you hold 1')
+eq(rail.count,1)
+main=saved_main; prototypes=saved_prototypes
+end
 game.tick_paused=false; p.surface.can_place_entity=nil; p.surface.create_entity=nil
 wood.prototype.place_result.name=nil; wood.count=1
 p.build_from_cursor=function() p.cursor_stack.count=0; p.cursor_stack.valid_for_read=false end
@@ -1895,6 +1924,69 @@ eq(laid.placed,5); eq(#ghosts,5); eq(ghosts[1],'small-electric-pole'); assert(la
 fails(function() call('pole_route',{from={x=0,y=0},to={x=1,y=0},item='gun-turret'}) end,'must place an electric pole')
 fails(function() call('pole_route',{from={x=0,y=0},to={x=1,y=0},spacing=9}) end,'beyond the wire reach')
 end
+-- Sol, shift09 01:38: 5 of 16 medium poles on Gleba wetland. The forced ghost check takes a pole there once the force
+-- has landfill (a player's forced placement lays landfill under it), and a lone script ghost was never built. pole_route
+-- now takes a dry spot within 2 tiles first, else lays the landfill tile ghost under the pole and says so.
+do
+local WET={layers={water_tile=true,floor=true,resource=true}}
+prototypes.tile=prototypes.tile or {}
+prototypes.tile['wetland-blue-slime']={name='wetland-blue-slime',collision_mask=WET}
+prototypes.tile['grass-1']={name='grass-1',collision_mask={layers={ground_tile=true}}}
+prototypes.tile['landfill']={name='landfill',collision_mask={layers={ground_tile=true}}}
+prototypes.entity['medium-electric-pole']={name='medium-electric-pole',type='electric-pole',items_to_place_this={{name='medium-electric-pole',count=1}},
+  max_wire_distance=9,collision_box={left_top={x=-0.15,y=-0.15},right_bottom={x=0.15,y=0.15}},
+  collision_mask={layers={water_tile=true,object=true,item=true,player=true}}}
+prototypes.item['medium-electric-pole']={place_result=prototypes.entity['medium-electric-pole']}
+prototypes.item['landfill']={place_as_tile_result={result=prototypes.tile['landfill'],condition={layers={ground_tile=true}}}}
+-- Wetland: a 1x3 patch at x 8 (y -1..1) a 2-tile shift avoids, and a band at x 16..20 it cannot.
+local function wet(x,y) return (x==8 and y>=-1 and y<=1) or (x>=16 and x<=20) end
+local made={}
+p.surface.get_tile=function(x,y)
+  local name=wet(math.floor(x),math.floor(y)) and 'wetland-blue-slime' or 'grass-1'
+  for _,m in ipairs(made) do if m.name=='tile-ghost' and m.laid and math.floor(m.position.x)==math.floor(x) and math.floor(m.position.y)==math.floor(y) then name='landfill' end end
+  return {valid=true,name=name,prototype=prototypes.tile[name]}
+end
+p.surface.find_entities_filtered=function(f)
+  local out={}
+  for _,m in ipairs(made) do
+    if f.type=='tile-ghost' and m.name=='tile-ghost' and f.position and math.abs(m.position.x-f.position.x)<0.2 and math.abs(m.position.y-f.position.y)<0.2 then
+      out[#out+1]={valid=true,type='tile-ghost',ghost_name=m.inner_name,position=m.position}
+    end
+  end
+  return out
+end
+p.surface.can_place_entity=function() return true end -- the forced ghost check, with landfill unlocked, takes all of it
+p.surface.create_entity=function(a) made[#made+1]=a; return {valid=true,position=a.position,type=a.name,ghost_type='electric-pole',ghost_name=a.inner_name,destroy=function() end} end
+p.get_main_inventory=function() return {get_item_count=function(n) return n=='medium-electric-pole' and 10 or 0 end} end
+local plan=call('pole_route',{from={x=0.5,y=0.5},to={x=24.5,y=0.5},item='medium-electric-pole',dry_run=true})
+eq(plan.spacing,8); eq(plan.poles,4)
+eq(plan.positions[2].x,8.5); eq(plan.positions[2].y,2.5) -- the patch: shifted 2 tiles to a dry spot
+eq(plan.positions[3].x,16.5); eq(plan.positions[3].y,0.5) -- the band: no dry spot within 2 tiles
+eq(plan.tiles_under.landfill,1); eq(plan.tiles_short.landfill,1); eq(#made,0)
+eq(plan.tiles_note,'1 pole with no dry spot within 2 tiles stands on wetland-blue-slime: 1 landfill under it, which the real call lays as tile ghosts for construct to build first')
+local laid=call('pole_route',{from={x=0.5,y=0.5},to={x=24.5,y=0.5},item='medium-electric-pole'})
+eq(laid.placed,4)
+local tile_ghosts={}
+for i,m in ipairs(made) do if m.name=='tile-ghost' then tile_ghosts[#tile_ghosts+1]={i=i,m=m} end end
+eq(#tile_ghosts,1); eq(tile_ghosts[1].m.inner_name,'landfill'); eq(tile_ghosts[1].m.position.x,16.5); eq(tile_ghosts[1].m.position.y,0.5)
+-- the landfill ghost goes down before the pole ghost on it
+local pole_i
+for i,m in ipairs(made) do if m.name=='entity-ghost' and m.position.x==16.5 then pole_i=i end end
+assert(pole_i and tile_ghosts[1].i<pole_i)
+-- place_ghosts the same way: a pole on the band gets its landfill ghost and a note
+made={}
+local pg=call('place_ghosts',{entities={{name='medium-electric-pole',position={x=18.5,y=4.5}}}})
+eq(pg.placed,1); eq(pg.tiles_laid.landfill,1)
+eq(pg.tiles_note,'1 ghost stands on wetland-blue-slime: 1 landfill tile ghost laid under it, which construct builds first (it takes the items from your inventory)')
+-- with landfill not researched the ghost is refused, naming the tile (a tree on the spot let the check through)
+local recipes=p.force.recipes
+p.force.recipes={landfill={enabled=false}}
+made={}
+pg=call('place_ghosts',{entities={{name='medium-electric-pole',position={x=18.5,y=4.5}}}})
+eq(pg.placed,0); eq(pg.failed[1].error,'placement blocked by tiles: wetland-blue-slime at (18.5,4.5) (needs landfill (not researched))'); eq(#made,0)
+p.force.recipes=recipes
+p.surface.get_tile=nil
+end
 -- belt_route plans around obstacles and places the line as ghosts, with
 -- underground ends typed; dry_run only plans; missing items are counted.
 prototypes.entity['transport-belt']={name='transport-belt',type='transport-belt',items_to_place_this={{name='transport-belt',count=1}},
@@ -2299,12 +2391,12 @@ end)()
   -- Out of reach: how far, the reach, and a free spot that reaches it; nothing walks.
   p.surface.find_non_colliding_position=function(_,pos) return {x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5} end
   fails(function() call('transfer',{position=far.position,item='iron-plate',count=1,direction='to_entity'}) end,
-    'entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away, reach 10; in reach from (11.5,0.5)')
+    'entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away (to its edge), reach 10; in reach from (10.5,0.5)')
   eq(call('status').active,false)
   -- Several targets, one failing: the tally names the moved total, the targets touched and the failure.
   local spread=call('transfer',{positions={req.position,big.position,far.position},item='iron-plate',count=5,direction='to_entity'})
   eq(spread.transferred,10)
-  eq(spread.tally,'moved 10 iron-plate; 2 of 3 targets touched; short: 1 failed (entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away, reach 10; in reach from (11.5,0.5))')
+  eq(spread.tally,'moved 10 iron-plate; 2 of 3 targets touched; short: 1 failed (entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away (to its edge), reach 10; in reach from (10.5,0.5))')
   -- One target: no tally.
   eq(call('transfer',{position=req.position,item='iron-plate',count=1,direction='to_entity'}).tally,nil)
   -- The tally's other shorts.
@@ -2386,5 +2478,78 @@ end)()
   eq(call('transfer',{position=chest.position,item='iron-plate',direction='to_player',count=10}).trash,nil)
   p.surface.find_entities_filtered,p.get_main_inventory,p.can_reach_entity,p.position=find,getmain,reach,at
   p.character.get_requester_point,p.character.get_inventory=get_rp,get_inv
+end)()
+-- area on feed, collect and transfer (Muse 02:03: "I hand-feed the same 5 ADV + 2 cable machines every few minutes all
+-- shift"): the machines with their centre in the area become the positions; inspect shows how full each output is.
+;(function()
+  local find,getmain,reach,at=p.surface.find_entities_filtered,p.get_main_inventory,p.can_reach_entity,p.position
+  local recipes,items,status=prototypes.recipe,prototypes.item,defines.entity_status
+  prototypes.recipe={['advanced-circuit']={name='advanced-circuit',ingredients={{type='item',name='copper-cable',amount=4}}},
+    ['copper-cable']={name='copper-cable',ingredients={{type='item',name='copper-plate',amount=1}}}}
+  prototypes.item={['copper-cable']={name='copper-cable',stack_size=200},['copper-plate']={name='copper-plate',stack_size=100},
+    ['advanced-circuit']={name='advanced-circuit',stack_size=200},['iron-plate']={name='iron-plate',stack_size=100}}
+  defines.entity_status={working=1,full_output=29}
+  local IN,OUT=defines.inventory.assembling_machine_input,defines.inventory.assembling_machine_output
+  local machines={}
+  local function machine(x,y,recipe,product,count)
+    local input,output=inv(stack(nil,0),stack(nil,0)),inv(stack(product,count or 0))
+    output[1].prototype={stack_size=prototypes.item[product].stack_size}
+    input.can_insert=function() return true end
+    for _,t in ipairs({input,output}) do
+      t.get_contents=function() local list={}; for _,s in ipairs(t) do if s.valid_for_read then list[#list+1]={name=s.name,count=s.count,quality='normal'} end end; return list end
+    end
+    local m={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=x,y=y},force=p.force,unit_number=900+#machines,
+      status=1,crafting_progress=0.5,get_fluid_contents=function() return {} end,input=input,output=output}
+    m.get_inventory=function(i) if i==IN then return input end if i==OUT then return output end end
+    m.get_output_inventory=function() return output end
+    m.get_recipe=function() return {name=recipe} end
+    machines[#machines+1]=m
+    return m
+  end
+  for i=1,5 do machine(2*i+0.5,0.5,'advanced-circuit','advanced-circuit',3) end
+  local cable1,cable2=machine(2.5,4.5,'copper-cable','copper-cable',180),machine(4.5,4.5,'copper-cable','copper-cable',200)
+  cable2.status=29
+  local outside=machine(40.5,0.5,'advanced-circuit','advanced-circuit',3)
+  p.surface.find_entities_filtered=function(f)
+    local out={}
+    for _,m in ipairs(machines) do
+      local inside
+      if f.area then
+        inside=m.position.x+1.5>=f.area.left_top.x and m.position.x-1.5<=f.area.right_bottom.x and m.position.y+1.5>=f.area.left_top.y and m.position.y-1.5<=f.area.right_bottom.y
+      elseif f.position then inside=math.abs(m.position.x-f.position.x)<0.3 and math.abs(m.position.y-f.position.y)<0.3 end
+      if inside and (not f.unit_number or f.unit_number==m.unit_number) then out[#out+1]=m end
+    end
+    return out
+  end
+  local bag=inv(stack('copper-cable',100),stack('iron-plate',50))
+  for i=3,12 do bag[i]=stack(nil,0) end
+  p.get_main_inventory=function() return bag end
+  p.can_reach_entity=function(e) return e.position.x<20 end
+  p.position={x=0,y=0}
+  local area={left_top={x=0,y=-1},right_bottom={x=12,y=6}}
+  -- feed with a recipe: the 5 ADV machines get 8 cable each; the 2 cable machines are counted apart; the one outside
+  -- the area is untouched.
+  local fed=call('feed',{area=area,recipe='advanced-circuit',crafts=2})
+  eq(fed.area_targets,7); eq(fed.transferred,40); eq(fed.other_recipe,2); eq(#fed.entities,5); eq(fed.items['copper-cable'],40)
+  eq(machines[1].input[1].count,8); eq(outside.input[1].valid_for_read,false); eq(bag[1].count,60)
+  -- collect: every output in the area; the tally closes it.
+  local took=call('collect',{area=area})
+  eq(took.area_targets,7); eq(took.transferred,15+180+200)
+  assert(took.tally:find('7 of 7 targets touched',1,true),took.tally)
+  eq(outside.output[1].count,3)
+  -- transfer by area with types: iron plate into each.
+  machines[1].input[2]=stack(nil,0)
+  local put=call('transfer',{area={left_top={x=0,y=3},right_bottom={x=6,y=6}},types={'assembling-machine'},item='iron-plate',count=5,direction='to_entity',inventory='assembling_machine_input'})
+  eq(put.area_targets,2); eq(put.transferred,10)
+  -- Refusals: area with positions, an empty area, too big, more than 64.
+  fails(function() call('feed',{area=area,positions={{x=2.5,y=0.5}}}) end,'give area, positions, position or radius: one of them')
+  fails(function() call('collect',{area={left_top={x=100,y=100},right_bottom={x=110,y=110}}}) end,'no furnace, assembling-machine of ours with its centre in (100,100)-(110,110)')
+  fails(function() call('collect',{area={left_top={x=0,y=0},right_bottom={x=200,y=10}}}) end,'at most 128x128')
+  -- inspect: output fullness per product, full when the machine stopped for it.
+  cable1.output[1].count,cable1.output[1].valid_for_read=180,true; cable2.output[1].count,cable2.output[1].valid_for_read=200,true
+  local rows=call('inspect',{positions={cable1.position,cable2.position,machines[1].position}}).entities
+  eq(rows[1].output_fill,'copper-cable 180/200 (90%)'); eq(rows[2].output_fill,'copper-cable 200/200 (100%), full'); eq(rows[3].output_fill,'empty')
+  p.surface.find_entities_filtered,p.get_main_inventory,p.can_reach_entity,p.position=find,getmain,reach,at
+  prototypes.recipe,prototypes.item,defines.entity_status=recipes,items,status
 end)()
 print('runtime: '..assertions..' assertions passed')

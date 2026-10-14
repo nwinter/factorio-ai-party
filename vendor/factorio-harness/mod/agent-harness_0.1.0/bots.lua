@@ -511,10 +511,24 @@ return function(api)
       end
     end
     assert(#tiles > 0, 'no tile was placed (blocked or already there)')
+    -- A tile ghost of this tile is what the build fulfils, as a player's
+    -- does; left in place it aborts set_tiles (2.0.77: construct never laid
+    -- the landfill ghost under a pole on wetland). Put back where no tile went.
+    local fulfilled = {}
+    for _, t in ipairs(tiles) do
+      for _, g in pairs(surface.find_entities_filtered{position={t.position[1] + 0.5, t.position[2] + 0.5}, radius=0.1, type='tile-ghost'}) do
+        if g.valid and g.ghost_name == tile.name then fulfilled[#fulfilled+1] = {position=g.position, force=g.force}; g.destroy() end
+      end
+    end
     surface.set_tiles(tiles, true, 'abort_on_collision', true, true)
     local placed = 0
     for _, t in ipairs(tiles) do
       if surface.get_tile(t.position[1], t.position[2]).name == tile.name then placed = placed + 1 end
+    end
+    for _, g in ipairs(fulfilled) do
+      if surface.get_tile(g.position.x, g.position.y).name ~= tile.name then
+        pcall(surface.create_entity, {name='tile-ghost', inner_name=tile.name, position=g.position, force=g.force})
+      end
     end
     for _, h in ipairs(hidden) do pcall(surface.set_hidden_tile, h.pos, h.name) end
     assert(placed > 0, 'no tile was placed (blocked or already there)')

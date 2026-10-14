@@ -482,6 +482,32 @@ test('a compact wait that ends badly still ends with the error line and exits no
     assert.match(stdout,/\nerror: action_interrupted: Control ended: blocked\n$/);
   });
 });
+test('kite --wait waits for the fight to end and reports it like move_to',async()=>{
+  // Sol, shift09: kite --wait returned at once while the kite still ran.
+  for (const end of [
+    {last:{kind:'kite',outcome:'clear',why:'no enemies left within the scan radius',kills:7,enemies_left:0,ammo_used:24,ammo_left:16}, code:0},
+    {last:{kind:'kite',outcome:'timed_out',why:'time up',kills:2,enemies_left:5,ammo_used:10,ammo_left:30}, code:0},
+    {last:{kind:'kite',outcome:'low_health',why:'health 38% fell below min_health 40%',kills:1,enemies_left:9,ammo_used:20,ammo_left:20}, code:1},
+  ]) {
+    let polls=0;
+    await engine(request=>{
+      if(request.action==='kite')return {ok:true,result:{until_tick:180,ammo:40,equipped:true}};
+      if(request.action==='observe')return {ok:true,result:{player:{position:{x:3,y:4},health:250,max_health:250,inventory:[]},clock:'c'}};
+      polls++;
+      return {ok:true,result:polls<3?{active:{kind:'kite',until_tick:180},combat:false}:{active:false,combat:false,last:end.last}};
+    },async port=>{
+      const {code,stdout}=await compact(port,['call','kite','--args','{"radius":30}','--wait']);
+      assert.equal(code,end.code,stdout);
+      assert.ok(polls>=3,'it polled until the kite ended');
+      const second=stdout.slice(stdout.indexOf('\ntick:',1)+1);
+      // A kite that stopped early is a failed wait: the same fields under error_result.
+      assert.match(second,new RegExp(`outcome: ${end.last.outcome}\\n\\s*action: kite\\n`));
+      for (const key of ['kills','enemies_left','ammo_used','ammo_left'] as const) assert.match(second,new RegExp(`\\n\\s*${key}: ${end.last[key]}\\n`));
+      assert.match(second,new RegExp(`\\n\\s*why: "${end.last.why}"\\n`));
+      if (end.code) assert.match(stdout,/\nerror: action_interrupted: Control ended: low_health: health 38% fell below min_health 40%\n$/);
+    });
+  }
+});
 test('a walk that gave up says why on the error line',async()=>{
   await engine(request=>{
     if(request.action==='move_to')return {ok:true,result:{until_tick:60}};

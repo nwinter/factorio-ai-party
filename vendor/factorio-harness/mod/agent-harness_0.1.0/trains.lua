@@ -8,29 +8,177 @@ return function(api)
     passenger_present=true, passenger_not_present=true, fuel_item_count_all=true, fuel_item_count_any=true,
     robots_inactive=true, specific_destination_full=true, specific_destination_not_full=true}
   local ROLLING = {locomotive=true, ['cargo-wagon']=true, ['fluid-wagon']=true, ['artillery-wagon']=true}
+  local TRAIN_NAMES
   M.schema = {
-    train = {position='{x,y} of a train stop, or of a locomotive or wagon of the train (in reach)',
+    train = {position='{x,y} of a train stop, or of a locomotive or wagon of the train (in sight, or by remote view in a visible chunk)',
       station='train stop: its station name (what schedules name)', limit='train stop: train limit 0..1000, or false to clear it',
       schedule='train: array of 0..32 {station, wait=[{type=time|inactivity|full|empty|item_count|fluid_count|circuit|passenger_present|..., ticks? (time, inactivity), compare? and|or, condition? {signal, comparator, value}}]}; [] clears',
       current='train: 1-based schedule entry to head for (default 1)',
       automatic='train: true runs the schedule, false is manual mode',
-      returns='stop: name, limit, trains_count; train: schedule (one line per stop), current, automatic, state'},
+      returns='stop: name, limit, trains_count, rail (the rail it is beside, or none); train: schedule (one line per stop), current, automatic, state (on_the_path, wait_station, wait_signal, arrive_signal, arrive_station, no_path, destination_full, no_schedule, manual_control, manual_control_stop), why (what it waits for: the stop and its wait conditions, the signal ahead and its state, the stops of the destination name and their limits and trains, or that no stop has that name), at_stop, heading_to {stop, position, tiles_left}, speed_kmh, carriages, cargo, fluids, fuel (per locomotive)'},
   }
-  local function stop_view(e)
-    local out = {stop=e.backer_name, position=e.position}
-    pcall(function() out.limit = e.trains_limit; out.trains_count = e.trains_count end)
-    return out
+  local function at(pos) return string.format('(%g,%g)', math.floor(pos.x * 10 + 0.5) / 10, math.floor(pos.y * 10 + 0.5) / 10) end
+  -- A schedule entry's wait conditions as the GUI lists them.
+  local function wait_text(r)
+    local waits = {}
+    for _, w in ipairs(r and r.wait_conditions or {}) do
+      local t = w.type .. (w.ticks and ' ' .. math.floor(w.ticks / 60) .. 's' or '')
+      if w.condition and w.condition.first_signal then
+        local c = w.condition
+        t = t .. ' ' .. c.first_signal.name .. ' ' .. (c.comparator or '<') .. ' ' .. tostring(c.constant or 0)
+      end
+      waits[#waits+1] = (#waits > 0 and (w.compare_type or 'and') .. ' ' or '') .. t
+    end
+    return #waits > 0 and table.concat(waits, ' ') or 'no wait condition'
   end
   local function records_text(sch)
     local lines = {}
     for i, r in ipairs(sch and sch.records or {}) do
-      local waits = {}
-      for _, w in ipairs(r.wait_conditions or {}) do
-        waits[#waits+1] = w.type .. (w.ticks and ' ' .. math.floor(w.ticks / 60) .. 's' or '')
-      end
-      lines[i] = (r.station or '?') .. (#waits > 0 and ': ' .. table.concat(waits, ', ') or '')
+      lines[i] = (r.station or '?') .. ': ' .. wait_text(r)
     end
     return lines
+  end
+  local function stop_view(e)
+    local out = {stop=e.backer_name, position=e.position}
+    pcall(function() out.limit = e.trains_limit; out.trains_count = e.trains_count end)
+    pcall(function()
+      local r = e.connected_rail
+      out.rail = r and r.name .. ' ' .. at(r.position) or 'none: no straight rail beside it on the side that serves its direction'
+    end)
+    return out
+  end
+  local STATE
+  local function state_name(v)
+    if not STATE then
+      STATE = {}
+      for k, n in pairs(defines.train_state or {}) do STATE[n] = k end
+    end
+    return STATE[v] or v
+  end
+  local SIGNAL_STATE
+  local function signal_state(e)
+    local ok, v = pcall(function() return e.signal_state end)
+    if not ok or v == nil then return nil end
+    if not SIGNAL_STATE then
+      SIGNAL_STATE = {}
+      for k, n in pairs(defines.signal_state or {}) do SIGNAL_STATE[n] = k end
+    end
+    return SIGNAL_STATE[v] or v
+  end
+  -- The stops named name on the train's surface: where, limit, trains.
+  local function stops_named(train, name)
+    local list = {}
+    pcall(function()
+      local surface = train.front_stock and train.front_stock.surface
+      for _, st in pairs(game.train_manager.get_train_stops{station_name=name, force=train.front_stock.force, surface=surface}) do
+        list[#list+1] = st
+      end
+    end)
+    return list
+  end
+  -- What a train is doing and why it waits, as the locomotive GUI and the
+  -- map show it.
+  function M.train_view(train)
+    local out = {automatic=not train.manual_mode}
+    local sch
+    pcall(function()
+      sch = train.schedule
+      out.schedule = records_text(sch); out.current = sch and sch.current
+    end)
+    local state = state_name(train.state)
+    out.state = state
+    pcall(function() out.speed_kmh = math.floor(math.abs(train.speed) * 60 * 3.6 + 0.5) end)
+    local current = sch and sch.records and sch.records[sch.current]
+    local stop = train.station
+    if stop and stop.valid then out.at_stop = {stop=stop.backer_name, position=stop.position} end
+    pcall(function()
+      local dest = train.path_end_stop
+      if dest and dest.valid then
+        out.heading_to = {stop=dest.backer_name, position=dest.position}
+        local path = train.path
+        if path and path.valid then out.heading_to.tiles_left = math.floor(path.total_distance - path.travelled_distance + 0.5) end
+      end
+    end)
+    local why
+    if state == 'wait_station' then
+      why = string.format('at stop %s%s: waits for %s', stop and stop.valid and stop.backer_name or (current and current.station or '?'),
+        stop and stop.valid and ' ' .. at(stop.position) or '', wait_text(current))
+    elseif state == 'wait_signal' or state == 'arrive_signal' then
+      local sig = train.signal
+      if sig and sig.valid then
+        local st = signal_state(sig)
+        why = string.format('%s %s %s%s', state == 'wait_signal' and 'stopped at' or 'braking for', sig.name, at(sig.position), st and ' (' .. st .. ')' or '')
+      else
+        why = state == 'wait_signal' and 'stopped at a signal' or 'braking for a signal'
+      end
+    elseif state == 'destination_full' or state == 'no_path' then
+      local name = current and current.station
+      if not name then why = 'no schedule entry to head for'
+      else
+        local list = stops_named(train, name)
+        if #list == 0 then why = 'no train stop is named ' .. name
+        else
+          local parts = {}
+          for i, st in ipairs(list) do
+            if i > 6 then break end
+            local p = at(st.position)
+            pcall(function()
+              local lim = st.trains_limit
+              p = p .. string.format(' %d train%s', st.trains_count, st.trains_count == 1 and '' or 's')
+                .. ((lim and lim < 4294967295) and string.format(', limit %d', lim) or ', no limit')
+              if not st.connected_rail then p = p .. ', no rail beside it' end
+            end)
+            parts[#parts+1] = p
+          end
+          why = string.format(state == 'no_path' and 'no path to any stop named %s (%d: %s%s)' or 'every stop named %s is at its train limit (%d: %s%s)',
+            name, #list, table.concat(parts, '; '), #list > 6 and ' ...' or '')
+          -- A train whose locomotives all face one way drives forward only.
+          pcall(function()
+            if state == 'no_path' and #(train.locomotives.back_movers or {}) == 0 then
+              why = why .. '; its locomotives all face its front, so it drives forward only'
+            end
+          end)
+        end
+      end
+    elseif state == 'no_schedule' then why = 'no schedule'
+    elseif state == 'manual_control' or state == 'manual_control_stop' then why = 'manual mode'
+    elseif state == 'arrive_station' then
+      why = 'braking for ' .. (out.heading_to and out.heading_to.stop or (current and current.station) or 'its stop')
+    end
+    -- Carriages, cargo and fuel, as the train's GUI lists them.
+    local burning = false
+    pcall(function()
+      local locos = (train.locomotives.front_movers and #train.locomotives.front_movers or 0) + (train.locomotives.back_movers and #train.locomotives.back_movers or 0)
+      out.carriages = string.format('%d locomotive%s, %d wagon%s', locos, locos == 1 and '' or 's', #train.carriages - locos, #train.carriages - locos == 1 and '' or 's')
+      local fuel = {}
+      for _, group in pairs({train.locomotives.front_movers or {}, train.locomotives.back_movers or {}}) do
+        for _, l in ipairs(group) do
+          local inv = l.get_fuel_inventory()
+          local parts = {}
+          for _, it in ipairs(inv and inv.get_contents() or {}) do parts[#parts+1] = it.name .. ' ' .. it.count end
+          local b = l.burner
+          if #parts > 0 or (b and b.remaining_burning_fuel > 0) then burning = true end
+          fuel[#fuel+1] = at(l.position) .. ': ' .. (#parts > 0 and table.concat(parts, ', ') or (b and b.remaining_burning_fuel > 0 and 'burning its last fuel' or 'no fuel'))
+        end
+      end
+      out.fuel = fuel
+    end)
+    -- A train on its way that stands still with no fuel anywhere.
+    if not why and (state == 'on_the_path' or state == 'arrive_signal' or state == 'arrive_station') and out.speed_kmh == 0 and not burning and out.fuel then
+      why = 'stands still: no fuel in its locomotives'
+    end
+    out.why = why
+    pcall(function()
+      local items = train.get_contents()
+      table.sort(items, function(a, b) return a.count > b.count end)
+      local parts = {}
+      for i, it in ipairs(items) do if i <= 8 then parts[#parts+1] = it.name .. ' ' .. it.count end end
+      out.cargo = #parts > 0 and table.concat(parts, ', ') or 'empty'
+      local fl = {}
+      for name, amount in pairs(train.get_fluid_contents()) do fl[#fl+1] = name .. ' ' .. math.floor(amount + 0.5) end
+      if #fl > 0 then out.fluids = table.concat(fl, ', ') end
+    end)
+    return out
   end
   local function condition(c, what)
     if c == nil then return nil end
@@ -41,8 +189,34 @@ return function(api)
   function M.handlers.train(p, a)
     -- The target by position only: entity() reads `name` as an entity-name
     -- filter, which is why a stop's name is `station` (live check: name
-    -- "LC-East" failed as "Unknown entity name").
-    local e = api.entity(p, {position=a.position}); api.friendly(p, e)
+    -- "LC-East" failed as "Unknown entity name"). In sight, else by remote
+    -- view (ours, in a visible chunk), as the map opens a train's or stop's
+    -- GUI.
+    -- Stops and rolling stock first: a train's position is also over rails.
+    -- Then anything there, so the refusal says what it is.
+    if not TRAIN_NAMES then
+      TRAIN_NAMES = {}
+      for name, proto in pairs(prototypes and prototypes.entity or {}) do
+        if ROLLING[proto.type] or proto.type == 'train-stop' then TRAIN_NAMES[#TRAIN_NAMES+1] = name end
+      end
+    end
+    -- A read (no setting given) needs the target in sight, not in reach.
+    local read = a.station == nil and a.limit == nil and a.schedule == nil and a.current == nil and a.automatic == nil
+    local function lookup(names)
+      local ok, e = pcall(api.entity, p, {position=a.position, name=names}, read)
+      if ok then return e end
+      local ok2, far = pcall(api.remote_entity, p, {position=a.position, name=names})
+      if ok2 then return far end
+      return nil, e
+    end
+    local e, err
+    if #TRAIN_NAMES > 0 then e, err = lookup(TRAIN_NAMES) end
+    if not e then
+      local first = err
+      e, err = lookup(nil)
+      if not e then error(tostring(first or err):gsub('^[^:]*:%d+: ', ''), 0) end
+    end
+    api.friendly(p, e)
     if e.type == 'train-stop' then
       assert(a.schedule == nil and a.automatic == nil and a.current == nil, 'schedule, current and automatic are for a train: give a locomotive or wagon position')
       if a.station ~= nil then
@@ -89,13 +263,7 @@ return function(api)
       assert(type(a.automatic) == 'boolean', 'automatic must be boolean')
       train.manual_mode = not a.automatic
     end
-    local out = {automatic=not train.manual_mode}
-    pcall(function()
-      local sch = train.schedule
-      out.schedule = records_text(sch); out.current = sch and sch.current
-    end)
-    pcall(function() out.state = api.train_state and api.train_state(train.state) or train.state end)
-    return out
+    return M.train_view(train)
   end
   return M
 end
