@@ -11,7 +11,7 @@ import basemap_log
 import hauling
 import operator_inbox
 from harness import Harness
-from model import SPARK_ITEMS, notes_job
+from model import SCIENCE, SPARK_ITEMS, notes_job
 from work import WorkFeed
 
 PLAN_KEYS = ("kind", "until_tick", "total", "next_index", "placed", "built", "remaining", "bounds", "to", "stuck_s")
@@ -187,10 +187,12 @@ class LiveSource:
             score = self.h.score()
             obs["tick"], obs["paused"] = score["tick"], score.get("paused")
             obs["produced"] = score.get("produced") or {}
+            obs["consumed"] = score.get("consumed") or {}  # science packs the labs used: science per minute
             obs["entities"] = score.get("entities") or {}  # building counts, for the hosts' unused_unlocks
             obs["entities_counted"] = score.get("entities_counted") or []  # which buildings the score counts at all
             done = score.get("research_done") or []
-            obs["research"] = {"current": score.get("current_research"), "done": done if isinstance(done, list) else []}
+            obs["research"] = {"current": score.get("current_research"), "done": done if isinstance(done, list) else [],
+                               "packs": score.get("current_packs") or []}
             obs["space"] = {"rockets": score.get("rockets") or 0, "planets": score.get("planets") or [],
                             "platforms": score.get("platforms") or []}
         except Exception as e:
@@ -211,6 +213,10 @@ class LiveSource:
                 obs["flows"] = self.h.flows(SPARK_ITEMS)
             except Exception as e:
                 errors["flows"] = str(e)
+            try:  # the labs' use of each pack over the last hour: the science per minute series (3.1 ms on world n)
+                obs["used_flows"] = self.h.used_flows(SCIENCE)
+            except Exception as e:
+                errors["used_flows"] = str(e)
         if time.time() >= self.next_basemap:
             self.next_basemap = time.time() + self.basemap_every
             ore = time.time() >= self.next_ore

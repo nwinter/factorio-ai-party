@@ -263,6 +263,11 @@ class ReplayGame:
             before = (prev10.get("produced") or {}).get(n, 0)
             m10 = (total - before) * (10 / span) if span >= 1 else 0
             items[n] = {"total": total, "m10": m10, "m1": m10 / 10, "h1": None, "used10": None}
+        # the labs' use of science packs (score logs since Space Age carry consumed)
+        for n, total in (r.get("consumed") or {}).items():
+            before = (prev10.get("consumed") or {}).get(n, 0)
+            it = items.setdefault(n, {"total": 0, "m10": 0, "m1": 0, "h1": None, "used10": None})
+            it["used10"] = (total - before) * (10 / span) if span >= 1 else 0
         return {"tick": r["tick"], "paused": r.get("paused"), "research": r.get("current_research"), "progress": None,
                 "queue": [], "done": r.get("research_done") or [], "items": items, "fluids": {},
                 "entities": r.get("entities") or {}, "rockets": r.get("rockets", 0), "replay": os.path.basename(self.run_dir.rstrip("/"))}
@@ -292,8 +297,31 @@ class ReplayGame:
 
 
 # ---- text for the analyst --------------------------------------------------------------------------------------
-def spm(snap, window="m10"):
-    """Science packs made per minute, all colours summed, over the 10-minute window (or m1)."""
+# Science per minute as players say it (operator 15:51, viewer joonazan): research units a minute, the labs' use of
+# packs in sets. Every 2.0 technology takes one of each of its packs per unit and one runs at a time, so the units are
+# the count of the pack the labs used most; the agricultural pack spoils and its count runs ahead (stream model.py).
+SPOILING_PACKS = {"agricultural-science-pack"}
+
+
+def research_units(used):
+    """Research units from the packs the labs used ({pack: count or rate}): the most-used pack that does not spoil."""
+    vals = [v or 0 for k, v in used.items() if k not in SPOILING_PACKS]
+    best = max(vals, default=0)
+    return best if best > 0 else max((v or 0 for v in used.values()), default=0)
+
+
+def spm(snap):
+    """Science per minute (SPM): research units a minute over the 10-minute window, and the labs' use of each pack per
+    minute; (None, {}) when the snapshot has no consumption counts (an old score log)."""
+    items = snap.get("items") or {}
+    if not any((items.get(p) or {}).get("used10") is not None for p in PACKS):
+        return None, {}
+    per = {p: items[p]["used10"] / 10 for p in PACKS if (items.get(p) or {}).get("used10")}
+    return research_units(per), per
+
+
+def made_per_min(snap, window="m10"):
+    """Science packs made per minute, all colours summed, over the 10-minute window (or m1), and per pack."""
     per = {}
     for p in PACKS:
         it = (snap.get("items") or {}).get(p)
@@ -306,8 +334,12 @@ def snapshot_text(snap, kb=None):
     t = snap["tick"]
     lines = [f"game time {game_time(t)} (tick {t})" + (" PAUSED" if snap.get("paused") else "")
              + (f", replay of {snap['replay']}" if snap.get("replay") else "")]
-    total, per = spm(snap)
-    lines.append(f"science per minute (10-min average): {total:.1f}" + (
+    units, used = spm(snap)
+    if units is not None:
+        lines.append(f"science per minute (SPM: research units a minute, the labs' use of packs in sets, 10-min average): {units:.1f}"
+                     + ("; labs used per minute: " + ", ".join(f"{p.replace('-science-pack', '')} {v:.1f}" for p, v in used.items()) if used else ""))
+    total, per = made_per_min(snap)
+    lines.append(f"science packs made per minute (all colours summed, 10-min average): {total:.1f}" + (
         " = " + ", ".join(f"{p.replace('-science-pack', '')} {v:.1f}" for p, v in per.items()) if per else ""))
     if snap.get("research"):
         prog = snap.get("progress")

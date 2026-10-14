@@ -1099,11 +1099,20 @@ check("urgent beats stay on Kimi when the main writer changes", caster.URGENT_MO
 # Round 6 (shake5 P1 item 4): stage 3 is "Oil & blue science", and the stage fact says which packs are made
 import model  # noqa: E402
 check("stage 3 label names blue science", model.STAGE_LABELS[3] == "Oil & blue science")
-stf = caster.context_facts({"science": {"stage": 3, "stage_label": model.STAGE_LABELS[3], "spm": 40, "packs": [
+stf = caster.context_facts({"science": {"stage": 3, "stage_label": model.STAGE_LABELS[3], "spm": 8, "packs": [
+    {"item": "automation-science-pack", "rate": 8, "running": True}, {"item": "logistic-science-pack", "rate": 8, "running": True},
+    {"item": "chemical-science-pack", "rate": 0, "running": True}],
+    "made": {"per_min": 40, "packs": [
     {"item": "automation-science-pack", "rate": 20, "total": 900}, {"item": "logistic-science-pack", "rate": 12,
-    "total": 700}, {"item": "chemical-science-pack", "rate": 8, "total": 566}]}})
+    "total": 700}, {"item": "chemical-science-pack", "rate": 8, "total": 566}]}}})
 check("the stage fact comes with the packs being made", stf["stage"] == "Oil & blue science" and
       stf["science_packs_made"] == ["red (automation)", "green (logistic)", "blue (chemical)"], str(stf))
+# science per minute as players say it (operator 15:51, viewer joonazan): research units a minute, what it is, the
+# labs' use per pack, packs made (all colours) apart
+check("science per minute is research units a minute", stf["science_per_minute"] == 8
+      and stf["science_per_minute_is"].startswith("research units a minute")
+      and stf["science_packs_used_per_minute"] == {"red (automation)": 8, "green (logistic)": 8, "blue (chemical)": 0}
+      and stf["science_packs_made_per_minute_all_colours"] == 40 and "science_packs_per_minute" not in stf, str(stf))
 
 # ---- hosts by audience (task-hosts5 item 1): YouTube's "watching now" picks the main writer's model ----
 H, L = "anthropic/claude-opus-5.5", "anthropic/claude-haiku-5.5"

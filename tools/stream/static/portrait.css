@@ -32,7 +32,8 @@ html body.portrait .card.main { box-shadow: 0 0 0 3px var(--agent-ink, #fff), va
 
 /* science strip */
 html body.portrait #prod { height: 76px; padding: 0 20px; justify-content: center; }
-html body.portrait #sci { height: 52px; gap: 14px; }
+html body.portrait #sci { height: 44px; gap: 14px; }
+html body.portrait #sci-sub { height: 20px; font-size: 16px; line-height: 20px; }
 html body.portrait #sci .panel-title { font-size: 24px; }
 html body.portrait #spm { font-size: 44px; }
 html body.portrait .unit { font-size: 20px; }

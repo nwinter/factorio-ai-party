@@ -11,6 +11,7 @@ import harness  # noqa: E402
 from director import Director  # noqa: E402
 from live import LiveSource  # noqa: E402
 from model import Model  # noqa: E402
+import model  # noqa: E402
 
 
 # board.lua (eng/board) event shape: the item's kind/owner/requester/status after the change
@@ -52,6 +53,9 @@ class FakeHarness:
 
     def flows(self, items):
         return {"iron-plate": [10] * 30}
+
+    def used_flows(self, items):
+        return {"automation-science-pack": [4] * 30}
 
     def basemap(self, ore=False):
         m = {"tick": self.tick, "cell": 4, "x0": -8, "y0": -4, "w": 3, "h": 2, "rows": ["SBA", ".D"], "nests": [],
@@ -478,12 +482,39 @@ def main():
     assert deaths[-1]["facts"]["where"] == "Nauvis", deaths
 
     # production: science per minute headline, items ranked by the stage the factory has reached
+    # science per minute as players say it (operator 15:51): research units a minute, the labs' use of packs in sets
+    # (the most-used pack that does not spoil); the labs' use per pack beside it; packs made per minute apart
     m4 = Model({})
-    m4.ingest({"tick": 0, "game_seconds": 0, "produced": {"iron-plate": 0, "automation-science-pack": 0}})
+    m4.ingest({"tick": 0, "game_seconds": 0, "produced": {"iron-plate": 0, "automation-science-pack": 0},
+               "consumed": {"automation-science-pack": 100, "logistic-science-pack": 100, "agricultural-science-pack": 10},
+               "research": {"current": "advanced-asteroid-processing", "done": [],
+                            "packs": ["automation-science-pack", "logistic-science-pack", "chemical-science-pack",
+                                      "agricultural-science-pack"]}})
     m4.ingest({"tick": 7200, "game_seconds": 120, "produced": {"iron-plate": 600, "copper-plate": 300, "iron-ore": 900,
-               "advanced-circuit": 20, "automation-science-pack": 60, "chemical-science-pack": 30}})
+               "advanced-circuit": 20, "automation-science-pack": 60, "chemical-science-pack": 30},
+               "consumed": {"automation-science-pack": 140, "logistic-science-pack": 140, "agricultural-science-pack": 90}})
     sci = m4.science(time.time())
-    assert sci["spm"] == 45.0 and sci["stage"] == 3 and len(sci["packs"]) == 2, sci
+    assert sci["spm"] == 20.0 and sci["stage"] == 3, sci  # 40 red and green sets in 2 min; agricultural's 40/min left out
+    assert sci["made"]["per_min"] == 45.0 and len(sci["made"]["packs"]) == 2, sci
+    by = {p["item"]: p for p in sci["packs"]}
+    assert [p["item"] for p in sci["packs"]] == ["automation-science-pack", "logistic-science-pack", "chemical-science-pack",
+                                                  "agricultural-science-pack"], sci["packs"]
+    assert by["automation-science-pack"]["rate"] == 20.0 and by["agricultural-science-pack"]["rate"] == 40.0, by
+    assert by["chemical-science-pack"]["rate"] == 0.0 and by["chemical-science-pack"]["running"], by  # starved: shown, 0
+    assert model.research_units({"agricultural-science-pack": 7}) == 7  # nothing else used: that count
+    assert model.research_units({}) == 0
+    # the hour's series from the flows: per 2-minute bucket, the most-used pack that does not spoil, per minute
+    m4.used_flows = {"automation-science-pack": [10, 20, 0], "chemical-science-pack": [10, 0, 0],
+                     "space-science-pack": [0, 0, 30], "agricultural-science-pack": [50, 50, 50]}
+    assert m4.science(time.time())["series"] == [5.0, 10.0, 15.0], m4.science(time.time())["series"]
+    # no consumption read at all (an old score): no headline, packs made still there
+    m6 = Model({})
+    m6.ingest({"tick": 0, "game_seconds": 0, "produced": {"automation-science-pack": 0}})
+    m6.ingest({"tick": 7200, "game_seconds": 120, "produced": {"automation-science-pack": 60}})
+    s6 = m6.science(time.time())
+    assert s6["spm"] is None and s6["made"]["per_min"] == 30.0 and s6["packs"] == [], s6
+    # the space widget counts packs made
+    assert m4.space_snapshot(dict(sci, made={"per_min": 5, "packs": [{"item": "space-science-pack", "rate": 5, "total": 900}]}))["science"][0]["total"] == 900
     names = [r["item"] for r in m4.production(time.time())]
     assert names == ["iron-plate", "copper-plate", "advanced-circuit", "iron-ore"], names  # ore is stage 0: last
 
@@ -495,8 +526,9 @@ def main():
     m5 = Model({"agents": {"astra": {}, "luna": {}}})
     m5.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "active": "build"},
                           {"name": "luna", "position": {"x": 300, "y": 40}, "active": "mine"}], "tick": 0, "game_seconds": 0,
-               "produced": {"iron-plate": 0}})
-    m5.ingest({"tick": 7200, "game_seconds": 120, "produced": {"iron-plate": 600, "automation-science-pack": 60}})
+               "produced": {"iron-plate": 0}, "consumed": {"automation-science-pack": 0}})
+    m5.ingest({"tick": 7200, "game_seconds": 120, "produced": {"iron-plate": 600, "automation-science-pack": 60},
+               "consumed": {"automation-science-pack": 60}})
     m5.agents["astra"].interest = 10
     t5 = time.time()
     s5 = m5.snapshot(t5)

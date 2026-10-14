@@ -288,9 +288,23 @@ class MockSource:
                 progress = max(0.0, min(0.99, (tick - start) / (end - start)))
             else:
                 progress = 0.89
-        research = {"current": cur, "progress": progress, "done": a["research_done"],
+        # what the labs used: the rows' consumed (Space Age score logs), else, as labs use the same count of each pack
+        # the research takes, four fifths of the scarcest of the base packs made, of each of them
+        if a.get("consumed") or b.get("consumed"):
+            ca, cb = a.get("consumed") or {}, b.get("consumed") or {}
+            consumed = {k: int(ca.get(k, 0) + (cb.get(k, 0) - ca.get(k, 0)) * f) for k in set(ca) | set(cb)}
+        else:
+            base = [k for k in ("automation-science-pack", "logistic-science-pack", "chemical-science-pack",
+                                "production-science-pack", "utility-science-pack") if produced.get(k)]
+            n = int(min(produced[k] for k in base) * 0.8) if base else 0
+            consumed = {k: n for k in base}
+        # the running technology's packs: the rows' current_packs, else the packs the labs used between the two rows
+        moving = [k for k in consumed if (b.get("consumed") or {}).get(k, 0) > (a.get("consumed") or {}).get(k, 0)] \
+            if (a.get("consumed") or b.get("consumed")) else [k for k in consumed if consumed[k]]
+        packs = a.get("current_packs") or (moving if cur else [])
+        research = {"current": cur, "progress": progress, "done": a["research_done"], "packs": packs,
                     "top_done": [t for t in self.order if t in a["research_done"]][-4:][::-1]}
-        return {"tick": int(tick), "produced": produced}, research
+        return {"tick": int(tick), "produced": produced, "consumed": consumed}, research
 
     # ---- agents ----------------------------------------------------------------------------------------------
     def step_agent(self, a, now, gsec):
@@ -581,12 +595,17 @@ class MockSource:
                 1 for it in items if it["kind"] == "request" and it["status"] == "open" and not it["owner"])}
         if score:
             obs["produced"] = score["produced"]
+            obs["consumed"] = score["consumed"]
             obs["research"] = research
             if now >= self.next_flow:  # like the live source: last hour in 2-minute buckets
                 self.next_flow = now + 20
-                totals = [self.score_at(max(0, gsec - k * 120))[0]["produced"] for k in range(30, -1, -1)]
+                then = [self.score_at(max(0, gsec - k * 120))[0] for k in range(30, -1, -1)]
+                totals = [x["produced"] for x in then]
                 obs["flows"] = {n: [max(0, totals[i + 1].get(n, 0) - totals[i].get(n, 0)) for i in range(30)]
                                 for n in score["produced"]}
+                used = [x["consumed"] for x in then]
+                obs["used_flows"] = {n: [max(0, used[i + 1].get(n, 0) - used[i].get(n, 0)) for i in range(30)]
+                                     for n in score["consumed"]}
         if not getattr(self, "basemap_sent", False):  # the site's demo base, once: the mock has no buildings of its own
             self.basemap_sent = True
             try:

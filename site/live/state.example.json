@@ -232,53 +232,74 @@
   }
  ],
  "science": {
-  "spm": 49.5,
+  "spm": 18.6,
   "series": [
    0.0,
    0.0,
-   2.5,
-   2.5,
+   0.9,
+   0.9,
    0.0,
    0.0,
-   2.5,
-   15.0,
-   19.5,
-   19.5,
-   13.0,
-   10.0,
-   13.0,
-   4.0,
-   20.5,
-   18.0,
-   17.0,
-   12.0,
-   10.0,
-   8.0,
-   9.5,
-   29.0,
-   36.0,
-   31.5,
-   33.0,
-   40.5,
-   40.5,
-   39.5,
-   39.5,
-   50.5
+   0.9,
+   5.6,
+   7.3,
+   7.3,
+   4.9,
+   3.8,
+   4.9,
+   1.5,
+   7.7,
+   6.8,
+   6.4,
+   4.5,
+   3.8,
+   3.0,
+   3.6,
+   10.9,
+   13.6,
+   11.9,
+   12.4,
+   15.3,
+   15.3,
+   14.9,
+   14.9,
+   19.0
   ],
   "stage": 2,
   "stage_label": "Steel & logistics",
   "packs": [
    {
     "item": "automation-science-pack",
-    "rate": 26.2,
-    "total": 676
+    "rate": 18.6,
+    "running": true,
+    "used_total": 332
    },
    {
     "item": "logistic-science-pack",
-    "rate": 23.3,
-    "total": 415
+    "rate": 18.6,
+    "running": true,
+    "used_total": 332
    }
-  ]
+  ],
+  "running": [
+   "automation-science-pack",
+   "logistic-science-pack"
+  ],
+  "made": {
+   "per_min": 49.5,
+   "packs": [
+    {
+     "item": "automation-science-pack",
+     "rate": 26.2,
+     "total": 676
+    },
+    {
+     "item": "logistic-science-pack",
+     "rate": 23.3,
+     "total": 415
+    }
+   ]
+  }
  },
  "alerts": [
   {

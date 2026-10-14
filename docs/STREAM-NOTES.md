@@ -1040,6 +1040,29 @@ with the director service moving cam3 is the fair one. If the saving holds, rest
 config.ini on every start, so nothing on the box needs editing by hand. To go back: `git revert` the
 start-client.ps1 commit and restart the client.
 
+## Science per minute (2026-10-14, eng/spm)
+
+Viewer joonazan (15:49): the sidebar's "science per minute" was packs made per minute, all colours summed (168/min at
+15:50, 62 of it space science); players mean research throughput. The headline is now SPM as players say it:
+research units a minute, the labs' use of packs in sets (`model.research_units`). Every 2.0 technology takes one of
+each of its packs per unit (243 of 243 with units in the 2.0.77 data) and one runs at a time, so the units are the
+count of the pack the labs used most. The agricultural pack is left out of that count: it spoils, and the labs'
+agricultural count rose 3942 over shift12 while red rose 2149.
+
+- Rates: the score's `consumed` (packs the labs used, all surfaces; `tools/pog.py`) over ~2.5 game minutes, as made
+  rates come from `produced`. The series: `harness.USED_FLOW_LUA`, the consumption side of the production statistics
+  in 30 two-minute buckets (the ten-hour precision's 2-minute samples, one read a bucket; 3.1 ms on world n, against
+  16.5 ms for ten one-hour samples a bucket).
+- Beside it: one chip per pack the labs used lately or the running technology takes (`current_packs` in the score),
+  with the labs' use a minute; a running pack the labs did not use is dimmed. Under it: "research units/min · made
+  168/min, all colours".
+- shift12 in 10-game-minute windows: mean 11.9 SPM against 142.2 packs made a minute; the busiest, 72 SPM against
+  177.4 made (game minute 2687, advanced asteroid processing).
+- The same number for the hosts (`science_per_minute`, with `science_per_minute_is`, `science_packs_used_per_minute`
+  and `science_packs_made_per_minute_all_colours`), the production card, the analyst (`game.spm`, `history.py`), the
+  site's long run (SPM per shift and in 10-minute windows from the score logs' `consumed`; logs without it show none)
+  and `/live/`.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the

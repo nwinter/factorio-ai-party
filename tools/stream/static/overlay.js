@@ -335,13 +335,18 @@
     return { line, area: line + ` L ${w} ${h} L 0 ${h} Z` };
   }
   const fmtRate = (v) => (v == null ? "–" : v === 0 ? "0" : v >= 1000 ? (v / 1000).toFixed(1) + "k" : v >= 100 ? Math.round(v) : v >= 10 ? v.toFixed(0) : v.toFixed(1));
-  // production: science per minute (all packs) as the headline, then four item cells. The model ranks items by the
+  // production: science per minute as players say it (SPM: research units a minute, the labs' use of packs in sets;
+  // operator 15:51) as the headline, the labs' use of each pack beside it (a pack the running research takes and the
+  // labs did not use, dimmed), packs made on a line under it; then four item cells. The model ranks items by the
   // stage the factory has reached; the top two stay put and the other two cells page through the rest.
   function renderProduction(s) {
     const sci = s.science || {};
     const spm = $("spm");
     const has = sci.spm != null;
     setText(spm, has ? fmtRate(sci.spm) : "none yet");
+    const made = (sci.made || {}).per_min;
+    setText($("sci-sub"), [has ? "research units/min" : "", made != null ? "made " + fmtRate(made) + "/min, all colours" : ""]
+      .filter(Boolean).join(" · "));
     spm.classList.toggle("none", !has);
     spm.nextElementSibling.style.display = has ? "" : "none";
     const sp = sparkPath(sci.series, 120, 26);
@@ -355,8 +360,8 @@
       packs.textContent = "";
       for (const p of sci.packs || []) {
         const [plabel, color] = itemInfo(p.item);
-        const chip = el("span", "pack");
-        chip.title = SHORT_PACK[p.item] || plabel;
+        const chip = el("span", "pack" + (p.running && !p.rate ? " idle" : ""));
+        chip.title = (SHORT_PACK[p.item] || plabel) + ": used by the labs, per minute";
         let swatch = itemIcon(p.item, 16);
         if (!swatch) { swatch = el("i"); swatch.style.setProperty("--c", color); }
         chip.append(swatch, document.createTextNode(fmtRate(p.rate)));
@@ -1209,7 +1214,7 @@
       }
       body.append(t);
       if (f.science_per_min != null)
-        body.append(el("div", "snote", fmtRate(f.science_per_min) + " science / min" + (f.stage ? " · " + f.stage + " stage" : "")));
+        body.append(el("div", "snote", fmtRate(f.science_per_min) + " SPM (research)" + (f.stage ? " · " + f.stage + " stage" : "")));
     } else if (seg.type === "research") {
       body.append(el("div", "shead big", f.current || "No research queued"));
       const bar = el("div", "bar sbar");
