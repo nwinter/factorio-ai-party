@@ -311,6 +311,9 @@ already targets your character.
   `scan` rows (`filters: whitelist: iron-plate`, `off`, `set by circuit`); `configure {position, filters, filter_mode
   | mode, use_filters}` and `circuit_set {settings: {filters, filter_mode}}` set them. An unknown argument's refusal
   names the closest valid name, and on `configure` and `circuit_set` what that entity takes.
+- Turret targeting: `configure {position | positions, platform?, priority_targets: ["big-metallic-asteroid", ...],
+  ignore_unprioritised: true}` sets a turret's (or ghost's) priority list as its GUI does; inspect reads it back;
+  blueprints keep it.
 - The team blueprint library, kept in the save across shifts: `blueprint_save {name, area | positions, description,
   anchor}` stores what the team built; `blueprint_list` lists entries (author, size, counts, last used);
   `blueprint_place {name, position, direction, dry_run}` pastes one; `blueprint_rename` and `blueprint_delete {name}`:
