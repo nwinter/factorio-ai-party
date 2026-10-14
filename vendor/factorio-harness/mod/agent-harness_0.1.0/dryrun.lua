@@ -583,6 +583,9 @@ return function(api)
     local occupied = {} -- tile key -> planned recs whose footprint covers it
     local needed, need_list = {}, {} -- tile key -> {x, y, item, why}
     local counts = {ok=0, after_tiles=0, after_rails=0, needs_tiles=0, blocked=0, exists=0}
+    -- Cliffs under placeable entries (Sol 12:20: a belt_route dry run said 55 placeable, 6 of them over cliffs, with
+    -- no cliff explosives held): a ghost over a cliff marks it, and each cliff takes one of its explosive item.
+    local cliffs, over_cliffs = {}, 0
     local function need(x, y, item, why)
       local k = key(x, y)
       if needed[k] then return end
@@ -630,6 +633,7 @@ return function(api)
           -- join it (the game's check decides), characters walk over it, and
           -- the rest counts where its turned box reaches.
           local blockers, marked, ghosts, same, mine = {}, {}, {}, nil, false
+          local under_cliffs = {}
           local shape = rec.shape
           local function here(o)
             if not shape then return true end
@@ -669,7 +673,8 @@ return function(api)
                     local own = o.force == force and o.minable
                     if (obstacle and marks_obstacles) or (own and marks_own) then
                       if #marked < 4 then marked[#marked+1] = o.name..' '..at(o.position) end
-                    elseif #blockers < 4 then
+                    elseif #blockers < 4 or t == 'cliff' then
+                      if t == 'cliff' then under_cliffs[#under_cliffs+1] = o end
                       local name = o.name
                       if t == 'cliff' then name = name..' (cliff explosives clear it)' end
                       if o.force and o.force ~= force and not neutral then name = name..' of force '..o.force.name end
@@ -753,9 +758,16 @@ return function(api)
           -- Tiles count whatever the engine says now: on a platform it takes
           -- an entity ghost over empty space, which nothing builds until
           -- foundation is there.
+          if engine == true and not same and #under_cliffs > 0 then
+            over_cliffs = over_cliffs + 1
+            for _, c in ipairs(under_cliffs) do
+              local k = (try(function() return c.unit_number end)) or (c.position.x..','..c.position.y)
+              cliffs[k] = cliffs[k] or {e=c, item=try(function() return c.prototype.cliff_explosive_prototype end) or 'cliff-explosives'}
+            end
+          end
           if engine == true and not same then
-            if #blockers > 0 then rec.note = 'replaces '..table.concat(blockers, ', ') end
-          elseif #blockers > 0 then reasons[#reasons+1] = 'blocked by '..table.concat(blockers, ', ') end
+            if #blockers > 0 then rec.note = 'replaces '..table.concat(blockers, ', ', 1, math.min(4, #blockers)) end
+          elseif #blockers > 0 then reasons[#reasons+1] = 'blocked by '..table.concat(blockers, ', ', 1, math.min(4, #blockers)) end
           if broken then reasons[#reasons+1] = broken end
           if #tile_bad > 0 then reasons[#reasons+1] = 'tiles: '..table.concat(tile_bad, ', ', 1, math.min(4, #tile_bad)) end
           if same and #reasons == 0 then
@@ -1375,6 +1387,9 @@ return function(api)
       end
     end
     for _, n in ipairs(need_list) do add(n.item:match('^(%S+)'), 1) end
+    -- One explosive item per cliff the plan marks (cliff-explosives on every planet's cliffs).
+    local ncliffs, by_item = 0, {}
+    for _, c in pairs(cliffs) do ncliffs = ncliffs + 1; by_item[c.item] = (by_item[c.item] or 0) + 1; add(c.item, 1) end
     for _, t in pairs(planned) do
       local proto = prototypes.tile[t.name]
       add(t.item or try(function() return proto.items_to_place_this[1].name end), 1)
@@ -1397,6 +1412,17 @@ return function(api)
         end
         out.missing = missing
         out.missing_from = missing and (on_platform and 'the hub' or 'your inventory'..(manual and ' and hand-craft queue' or '')) or nil
+      end
+      if ncliffs > 0 then
+        local parts = {}
+        for item, n in pairs(by_item) do
+          local have = inv and try(function() return inv.get_item_count(item) end) or 0
+          parts[#parts+1] = string.format('%s %d, you hold %d', item, n, have)
+        end
+        table.sort(parts)
+        out.cliffs = string.format('%d placeable entr%s stand%s over %d cliff%s: placing marks %s, and a marked cliff goes only with one explosive (construction robots bring it): %s',
+          over_cliffs, over_cliffs == 1 and 'y' or 'ies', over_cliffs == 1 and 's' or '', ncliffs, ncliffs == 1 and '' or 's',
+          ncliffs == 1 and 'it' or 'them', table.concat(parts, '; '))
       end
     end
 
@@ -1561,7 +1587,7 @@ return function(api)
       if farn > 0 then parts[#parts+1] = farn..' out of reach from here' end
     end
     out.checked = n
-    out.summary = n > 0 and (table.concat(parts, ', ')..' (of '..n..')') or nil
+    out.summary = n > 0 and (table.concat(parts, ', ')..' (of '..n..')'..(over_cliffs > 0 and string.format('; %d over cliffs', over_cliffs) or '')) or nil
     return out, recs, counts
   end
   return M

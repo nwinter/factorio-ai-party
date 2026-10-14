@@ -262,8 +262,10 @@ fh call status
   - It never uses a tile one of our belts holds or outputs into. Turns cost a little; an underground pair costs more
     and hops anything but lava and empty space, never over one of the same kind on its axis.
   - Trees, rocks and wild plants are passed over at a small cost: the ghosts mark them for removal and `construct`
-    mines them (`over_trees_or_plants` counts the tiles). A force's own plants (Gleba farms), cliffs and buildings
-    never.
+    mines them (`over_trees_or_plants` counts the tiles). Cliffs are passed over the same way: the ghost marks the
+    cliff, which goes only with one cliff-explosives (construction robots bring it); the reply's `cliffs_marked` and
+    `cliffs_note`, and a dry run's `cliffs`, count them against what you hold (Sol 12:20). A force's own plants (Gleba
+    farms) and buildings never.
   - Water and Gleba wetland are used only with `landfill: true`, where a tile item makes them buildable; the tile
     ghosts are laid under the belts and counted in `landfill` and `items`. Without it they are gone round or hopped.
   - `return: true` lays a second line back beside it, from beside its last belt to beside its first, the other way:
@@ -389,7 +391,10 @@ fh call status
   move safety check and `wait_until no_enemies`. Gleba's spawners (`gleba-spawner`, `gleba-spawner-small`) are
   `unit-spawner`s and show where nests do (status `enemies`, the `defense` read).
 - `configure {position, recipe, quality}` sets a recipe at a quality (the machine and quality must be unlocked); a
-  change of quality alone is a change.
+  change of quality alone is a change. An entity ghost takes a recipe, inserter or collector filters, and (by
+  `circuit_set`) circuit settings, as the entity would (Astra 12:20: a 75-ghost Starling layout); the reply says
+  `ghost` and its name. `name` may be what the ghost builds (`fast-inserter`); a tile ghost under it (platform
+  foundation) never takes its place as the target.
 - `flush {position, fluid?, index?, platform?}` is the fluid GUI's flush: it empties the fluid segment (the connected
   pipes, tanks, pumps and machine fluidboxes) the entity at `position` belongs to, every fluid or only `fluid`.
   An entity with several segments holding fluid (a chemical plant's input and output) needs `fluid` or `index`; the
@@ -1339,6 +1344,10 @@ fh sleep 900 --until researched                       # ...or until the research
   a read: the running action and queue go on, and a failed dry run stops nothing; a queue step with `dry_run` gets the
   same check. Astra (ship refits: a gun route needed 20 more foundation tiles, found by a flood fill after staging),
   Sol (a batch failed on its last, far entry after the first ones were built) and Gemini asked for it. The reply:
+  - `cliffs` when placeable entries stand over cliffs (placing marks each; one cliff-explosives each, counted in
+    `items` and `missing`): `3 placeable entries stand over 1 cliff: placing marks it, and a marked cliff goes only
+    with one explosive (construction robots bring it): cliff-explosives 1, you hold 0`; the summary adds `; 3 over
+    cliffs`.
   - `summary` (`9 placeable, 2 need tiles first, 1 blocked (of 12)`), `checked`, and `entities` rows `{index,
     name, position, direction, status, why, reach}` for every entry that is not plainly placeable (`details: true`:
     every entry, with `footprint` tiles `x0,y0..x1,y1`); `index` is `copy.index` under `repeat`; `asked` when the
@@ -1580,8 +1589,12 @@ fh sleep 900 --until researched                       # ...or until the research
     `takers` (the inserters on the way taking from that lane: status, filter, held, into what; `picks only the left
     lane` for one that skips it), `stop` (`belt ends at transport-belt (x,y): left lane empty, right lane 4
     oxide-asteroid-chunk (full); the front of the lane is oxide-asteroid-chunk, which no inserter on this route takes`,
-    `joins route N at ...`, `goes out of sight at (x,y)` where radar coverage ends, the cap) and `nobody_takes` (items
-    the lane carries that no inserter on it takes). An inserter dropping onto nothing says `onto the ground` (on a
+    `joins route N at ...`, the cap) and `nobody_takes` (items the lane carries that no inserter on it takes). Past
+    radar coverage on charted ground (Grok 12:20: a copper line walked in three hops) the walk goes on by the layout the
+    map draws, marked in `path` as `out of sight from (x,y) (no radar coverage): layout as last seen, contents unknown`
+    (`back in sight at (x,y)` where coverage returns): no lane contents, inserter states or splitter filters there; it
+    stops at `the layout ends at <belt> (x,y), out of sight: nothing on the map at (x,y) after it`, or at `reaches
+    uncharted ground at (x,y)`. An inserter dropping onto nothing says `onto the ground` (on a
     platform over empty space `overboard`).
   - `{"position":{x,y},"forward":true}` on a belt tile (Opus, 06:26: ore fed into a plate bus): `belt`, `lanes` (what
     each lane holds on that tile) and `routes` from that tile, one per lane carrying something now (both when both are

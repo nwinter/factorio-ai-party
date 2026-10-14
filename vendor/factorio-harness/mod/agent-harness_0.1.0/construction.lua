@@ -431,7 +431,11 @@ return function(api)
   -- whose collision box only met a belt ghost's edge were missed by a search
   -- inside the footprint, and construct ended with the ghost still blocked).
   -- margin widens that (a build that failed looks a little further).
-  -- Returns every marked obstacle and how many were newly marked.
+  -- Cliffs under it get the mark too, as a player's ghost placement gives them
+  -- once cliff explosives are researched (Sol 12:20: 6 belts over cliffs that
+  -- nothing would ever clear); a marked cliff goes only with one explosive.
+  -- Returns every marked obstacle, how many were newly marked, and the cliffs
+  -- under it that carry the mark.
   function M.mark_obstacles(p,g,margin)
     margin=margin or 0.01
     local found,marked={},0
@@ -448,7 +452,17 @@ return function(api)
         if e.to_be_deconstructed() then found[#found+1]=e end
       end
     end
-    return found,marked
+    local cliffs={}
+    local tech=p.force.technologies and p.force.technologies['cliff-explosives']
+    if tech and tech.researched then
+      for _,e in pairs(p.surface.find_entities_filtered{area=area,type='cliff'}) do
+        if e.valid and touches(e,box,margin) and (not turned or meets_turned(turned,e,margin)) then
+          if not e.to_be_deconstructed() then pcall(e.order_deconstruction,p.force,api.real(p)) end
+          if e.to_be_deconstructed() then cliffs[#cliffs+1]=e end
+        end
+      end
+    end
+    return found,marked,cliffs
   end
   -- Trees and rocks a tile ghost cannot go under (Sol, shift10: a slipstack on
   -- Gleba wetland kept landfill out). 2.0.77: Gleba's slipstack, cuttlepop,
