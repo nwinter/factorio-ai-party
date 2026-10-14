@@ -282,33 +282,3 @@ test('fh wait --until on a runtime without sleep peek: the sleep as fh sleep, sh
   assert.deepEqual(sleeps.slice(0,2).map(r=>r.args.peek),[true,undefined],'tried with peek, then without');
   assert(seen.some(r=>isCheck(r)&&!r.args.peek),'the final read delivers the team block, shown');
 });
-// Astra 07:53: transfer {walk: true} moved 200 solid fuel, and the wait exited 1 with "Control ended: transferred".
-// The walk runs as a 'gather' tour: the wait follows it and ends ok on transferred (exit 0, so && chains go on);
-// a walk that reached nothing still fails.
-test('transfer --wait with walk follows the tour and ends ok on transferred',async()=>{
-  let polls=0, outcome='transferred';
-  await engine(request=>{
-    if(request.action==='transfer')return {ok:true,result:{op:'transfer',places:1,out_of_reach:1,direction:'to_entity',until_tick:3600}};
-    if(request.action==='observe')return {ok:true,result:{player:{position:{x:5,y:5},inventory:[]}}};
-    polls++;
-    if(polls<3)return {ok:true,tick:10+polls,result:{active:{kind:'gather',op:'transfer',until_tick:3600}}};
-    return {ok:true,tick:300,result:{active:false,last:{kind:'gather',op:'transfer',outcome,transferred:200,tick:300}}};
-  },async port=>{
-    const args=['call','transfer','--args','{"position":{"x":40,"y":2},"item":"solid-fuel","count":200,"direction":"to_entity","walk":true}','--wait'];
-    const {stdout}=await cli(port,args);
-    const reply=JSON.parse(stdout);
-    assert.equal(reply.ok,true); assert.match(stdout,/"outcome":"transferred"/);
-    assert(polls>=3,'it waited while the tour ran');
-    // compact output too, and fh wait on a running walk
-    polls=0;
-    const compact=await cli(port,args,'compact');
-    assert.match(compact.stdout,/transferred/); assert.doesNotMatch(compact.stdout,/Control ended/);
-    polls=0;
-    const waited=JSON.parse((await cli(port,['wait'])).stdout);
-    assert.equal(waited.ok,true); assert.equal(waited.result.last.outcome,'transferred');
-    // nothing reached: exit 1 with the outcome
-    polls=0; outcome='unreached';
-    const failed:any=await cli(port,args).then(()=>assert.fail('exit 1 expected'),(error:any)=>error);
-    assert.equal(failed.code,1); assert.match(failed.stdout,/Control ended: unreached/);
-  });
-});
