@@ -313,6 +313,8 @@ return function(api)
   end
   -- The shift block for agent p, once per shift; last_call is the tick of its
   -- previous request (before this one), nil for an agent new to the world.
+  -- plan (board.plan_for: goals, the agent's line, the open projects) may be
+  -- a function, called only for the block.
   function M.shift_block(p, last_call, plan)
     local s = api.state()
     local shift = s.shift
@@ -320,9 +322,12 @@ return function(api)
     s.shift_seen = s.shift_seen or {}
     if s.shift_seen[p.index] == shift.seq then return nil end
     s.shift_seen[p.index] = shift.seq
+    if type(plan) == 'function' then plan = plan() end
     local out = {}
     if plan and plan.goals then out.plan_goals = plan.goals end
     if plan and plan.mine then out.your_plan_line = plan.mine end
+    -- Open projects, the agent's own first: "#12 nuclear plant: 3 of 7 steps; owner sol (...); next 4. ...; handoff: ...".
+    if plan and plan.projects then out.projects = plan.projects end
     local since = last_call or shift.prev_tick or 0
     local names = finished_since(s, p.force, since)
     if #names > 0 then

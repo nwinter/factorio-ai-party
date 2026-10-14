@@ -411,6 +411,12 @@ body:not(.portrait) #prod, body:not(.portrait) #board, body:not(.portrait) #spac
 .claim span { overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
 .claim + .claim::before { content: "·"; color: var(--faint); margin-right: 3px; }
 #board-claims .more { flex: none; color: var(--faint); }
+/* a project's progress (board kind project): a short bar and "3/7", on its event rows and its chip in the bottom row */
+.prog { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.prog .bar { width: 42px; height: 8px; padding: 1px; }
+.prog .bar > i { background: linear-gradient(180deg, rgba(255, 255, 255, 0.45) 0, rgba(255, 255, 255, 0.12) 40%, rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.22) 100%), var(--acting); }
+.claim.proj span:not(.prog):not(.n) { max-width: 170px; }
+.claim.proj .prog { margin-left: 3px; }
 
 /* ---- chat: the biggest panel; messages sit in a deep well ---- */
 /* lanes, top to bottom: talk (banter, strategy, emotion, aloud, confessionals; big), viewers (while any are recent),

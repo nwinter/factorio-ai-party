@@ -78,7 +78,10 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
     "science": {"spm": 10.0, "series": [/* per minute */], "stage": 2, "stage_label": "Steel & logistics",
                 "packs": [{"item": "automation-science-pack", "rate": 0.0, "total": 277}]},
     "alerts": [{"kind": "attack|death|low_power|research", "text": "...", "agent": "grok", "position": {"x": 0, "y": 0}}],
-    "board": {"available": true, "open_unowned": 1, "in_progress": 2, "claims": [...], "events": [...]},
+    "board": {"available": true, "open_unowned": 1, "in_progress": 2, "claims": [...], "events": [...],
+              "projects": [{"id": 4, "title": "Nuclear power plant", "owner": "opus", "agent": "opus", "status": "claimed",
+                            "progress": "3 of 6 steps", "done": 3, "total": 6}],   // open, latest changed first; at most 4
+              "projects_total": 1},   // a project event row also has progress, steps_done, steps_total (verb step: step)
     "basemap": {"tick": 230400, "cell": 4, "x0": -112, "y0": -72, "w": 56, "h": 41, "buildings": 659,
                 "rows": ["..DDDDDD", "....S.BB"],   // one string per cell row from y0; one letter per cell from x0
                 "nests": [[150, 40, "s"], [140, 30, "w"]],  // enemy spawners (s) and worms (w) near the base

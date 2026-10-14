@@ -1,6 +1,6 @@
--- Team board (shared tasks, requests, claims and notes kept in the save), its
--- event log for the stream overlay, the per-agent `team` hint block pushed on
--- replies, agents' requests for harness tools, and saved queue plans.
+-- Team board (shared tasks, requests, claims, notes and projects kept in the
+-- save), its event log for the stream overlay, the per-agent `team` hint block
+-- pushed on replies, agents' requests for harness tools, and saved queue plans.
 -- Nothing here runs per tick: hints are computed when an agent's reply is
 -- built, bounded by the board size and the chat/event logs.
 return function(api)
@@ -9,7 +9,7 @@ return function(api)
   local TITLE, NOTE, LONG = 120, 200, 1000
   local UNOWNED_AGE, REMIND_EVERY, FIRST_ALERTS = 7200, 3600, 3600
   local MAX_BOARD_LINES, MAX_ALERT_LINES, REPEAT_ATTACK = 5, 8, 7200
-  local KINDS = {task=true, request=true, claim=true, note=true, harness=true, plan=true}
+  local KINDS = {task=true, request=true, claim=true, note=true, harness=true, plan=true, project=true}
   -- The team plan: one living item (kind plan) with goals and a line per agent.
   local PLAN_GOALS, PLAN_LINE, PLAN_LINES, PLAN_HISTORY = 600, 160, 24, 10
   local STATUSES = {open=true, claimed=true, doing=true, done=true, blocked=true, dropped=true}
@@ -19,6 +19,16 @@ return function(api)
   -- can be taken by anyone (shift07: #284 power held "doing" for two shifts).
   local QUIET = 20 * 3600
   local MAX_ALLOW = 8
+  -- Projects (operator 00:50): long jobs that outlive an agent's context and
+  -- its shift (a rail line, a nuclear plant, a robot mall). A goal, steps
+  -- anyone adds and marks done (who did each), areas, notes, and a handoff
+  -- text. The owner edits the goal, handoff and areas; anyone may when the
+  -- project has no owner or its owner has made no request for 30 min, and
+  -- may then take it. Open projects are never pruned.
+  local PROJECT_QUIET, MAX_PROJECTS, MAX_STEPS, STEP, MAX_AREAS, MAX_PROJECT_NOTES, MAX_PROJECT_LINES = 30 * 3600, 30, 40, 160, 8, 20, 8
+  local PROJECT_ARGS = {'step', 'done', 'undone', 'remove_step', 'goal', 'handoff', 'areas'}
+  -- Step changes by others reach a project's owner as news: they wake nobody.
+  local STEP_CHANGES = {step_added=true, step_done=true, step_undone=true, step_removed=true}
 
   local function store()
     local s = api.state()
@@ -111,10 +121,10 @@ return function(api)
     if sl and sl.until_tick and sl.until_tick > game.tick and sl.start_tick then return 'asleep ' .. ago(game.tick - sl.start_tick) end
     return since and 'last request ' .. ago(since) .. ' ago' or 'no request yet'
   end
-  local function quiet(name)
+  local function quiet(name, ticks)
     if name == OPERATOR then return false end
     local since = since_request(name)
-    return not since or since >= QUIET
+    return not since or since >= (ticks or QUIET)
   end
   -- `allow` on a claim: names (array, or one string split on commas and
   -- spaces) or everyone/team/all; empty clears it.
@@ -138,25 +148,45 @@ return function(api)
     return out
   end
 
+  -- A project's steps are {n, text, by, tick, done_by?, done_tick?}; a step
+  -- keeps its number n when another is removed.
+  local function step_counts(i)
+    local done = 0
+    for _, s in ipairs(i.steps) do if s.done_by then done = done + 1 end end
+    return done, #i.steps
+  end
+  local function progress(i)
+    local done, total = step_counts(i)
+    return total > 0 and string.format('%d of %d step%s', done, total, total == 1 and '' or 's') or 'no steps yet'
+  end
+  local function step_text(s)
+    if not s.done_by then return string.format('[ ] %d. %s', s.n, s.text) end
+    return string.format('[x] %d. %s (done by %s, %s ago)', s.n, s.text, s.done_by, ago(game.tick - s.done_tick))
+  end
   -- extra: prev_owner (an owner who lost the item in this change) and
-  -- overlaps (owner -> their claim id, for a claim posted over theirs).
+  -- overlaps (owner -> their claim id, for a claim posted over theirs). A
+  -- project's events carry its progress (steps_done of steps_total).
   local function event(by, item, change, text, extra)
     local b = store()
     b.aged = nil
     b.seq = b.seq + 1
+    local done, total
+    if item.kind == 'project' and item.steps then done, total = step_counts(item) end
     b.events[#b.events+1] = {seq=b.seq, tick=game.tick, by=by, id=item.id, change=change, title=item.title,
       kind=item.kind, owner=item.owner, requested_by=item.requested_by, status=item.status, text=text,
-      prev_owner=extra and extra.prev_owner, overlaps=extra and extra.overlaps}
+      prev_owner=extra and extra.prev_owner, overlaps=extra and extra.overlaps,
+      progress=total and progress(item) or nil, steps_done=done, steps_total=total}
     while #b.events > MAX_EVENTS do table.remove(b.events, 1) end
   end
   -- Over the cap, finished items go first (oldest update first), then notes,
-  -- then the oldest of anything.
+  -- then the oldest of anything but open projects (at most MAX_PROJECTS).
   local function prune()
     local b = store()
     while b.count > MAX_ITEMS do
       local victim
       for _, pass in ipairs{function(i) return i.status == 'done' or i.status == 'dropped' end,
-          function(i) return i.kind == 'note' end, function(i) return i.kind ~= 'plan' end} do
+          function(i) return i.kind == 'note' end, function(i) return i.kind ~= 'plan' and not (i.kind == 'project' and ACTIVE[i.status]) end,
+          function(i) return i.kind ~= 'plan' end} do
         for _, i in pairs(b.items) do
           if pass(i) and (not victim or i.updated_tick < victim.updated_tick or (i.updated_tick == victim.updated_tick and i.id < victim.id)) then victim = i end
         end
@@ -277,6 +307,51 @@ return function(api)
     for _, t in ipairs(v) do assert(type(t) == 'string', 'tags must be strings'); out[#out+1] = clip(t, 24) end
     return out
   end
+  -- A project's areas: `area` (one) and/or `areas` (an array; [] clears).
+  local function areas_arg(list, one)
+    local out = {}
+    if one ~= nil then out[1] = area_arg(one) end
+    if type(list) == 'table' and list.left_top then list = {list} end
+    if list ~= nil then
+      assert(type(list) == 'table' and (#list > 0 or next(list) == nil), 'areas is an array of {left_top={x,y}, right_bottom={x,y}} ([] clears them)')
+      for _, a in ipairs(list) do out[#out+1] = area_arg(a) end
+    end
+    assert(#out <= MAX_AREAS, 'a project takes at most ' .. MAX_AREAS .. ' areas')
+    return out
+  end
+  -- Step texts: one text or an array of them.
+  local function steps_arg(v, name)
+    if type(v) == 'string' then v = {v} end
+    assert(type(v) == 'table' and #v >= 1, name .. ' is a text or an array of texts, each 1..' .. STEP .. ' characters')
+    local out = {}
+    for _, t in ipairs(v) do out[#out+1] = required_text(t, name, STEP) end
+    return out
+  end
+  local function add_steps(item, texts, by)
+    local added = {}
+    for _, text in ipairs(texts) do
+      item.steps[#item.steps+1] = {n=item.next_step, text=text, by=by, tick=game.tick}
+      added[#added+1] = item.next_step .. '. ' .. text
+      item.next_step = item.next_step + 1
+    end
+    return added
+  end
+  -- Steps of project `item` by number: a number or an array of them.
+  local function step_numbers(v, name, item)
+    if type(v) == 'number' then v = {v} end
+    assert(type(v) == 'table' and #v >= 1, name .. ' takes step numbers: a number or an array of them'
+      .. (name == 'done' and ' (status "done" finishes the project)' or ''))
+    local out, have = {}, {}
+    for _, s in ipairs(item.steps) do have[#have+1] = s.n end
+    for _, n in ipairs(v) do
+      local found
+      for _, s in ipairs(item.steps) do if s.n == n then found = s end end
+      assert(found, string.format('project #%d has no step %s; its steps: %s', item.id, tostring(n),
+        #have > 0 and table.concat(have, ', ') or 'none yet (add some with step)'))
+      out[#out+1] = found
+    end
+    return out
+  end
   local function overlaps(a, b)
     return a.left_top.x < b.right_bottom.x and b.left_top.x < a.right_bottom.x and a.left_top.y < b.right_bottom.y and b.left_top.y < a.right_bottom.y
   end
@@ -285,7 +360,64 @@ return function(api)
   local function where_for(by)
     return by ~= OPERATOR and api.where_from and api.where_from(by) or nil
   end
+  local function edited(by, tick) return by and string.format('by %s, %s ago', by, ago(game.tick - tick)) or nil end
+  -- A project as read: progress, the goal, its steps ([x] done, by whom and
+  -- when; [ ] not yet), areas and the handoff. A list row has the first 3
+  -- steps not done (next_steps) and the goal and handoff cut to 160.
+  local function project_view(i, full)
+    local notes = i.notes
+    if not full and #notes > 2 then notes = {notes[#notes-1], notes[#notes]} end
+    local steps = {}
+    for _, s in ipairs(i.steps) do
+      if full then steps[#steps+1] = step_text(s)
+      elseif not s.done_by and #steps < 3 then steps[#steps+1] = step_text(s) end
+    end
+    local function cut(text) return text and not full and clip(text, 160) or text end
+    return {id=i.id, kind=i.kind, title=i.title, owner=i.owner, owner_state=ACTIVE[i.status] and i.owner and M.owner_state(i.owner) or nil,
+      requested_by=i.requested_by, status=i.status, progress=progress(i),
+      goal=cut(i.goal), goal_edited=full and i.goal and edited(i.goal_by, i.goal_tick) or nil,
+      steps=full and #steps > 0 and steps or nil, next_steps=not full and #steps > 0 and steps or nil,
+      areas=#i.areas > 0 and i.areas or nil,
+      handoff=cut(i.handoff), handoff_edited=i.handoff and edited(i.handoff_by, i.handoff_tick) or nil,
+      needs=i.needs, tags=i.tags, notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil,
+      created_tick=i.created_tick, updated_tick=i.updated_tick}
+  end
+  -- One line per open project (the shift block, board reads): progress, its
+  -- owner and that agent's last request, the first step not done, and the
+  -- handoff cut to 140.
+  local function project_line(i)
+    local st = i.owner and M.owner_state(i.owner)
+    local parts = {string.format('#%d %s%s: %s', i.id, i.title, i.status == 'blocked' and ' (blocked)' or '', progress(i)),
+      i.owner and 'owner ' .. i.owner .. (st and ' (' .. st .. ')' or '') or 'no owner'}
+    for _, s in ipairs(i.steps) do
+      if not s.done_by then parts[#parts+1] = string.format('next %d. %s', s.n, clip(s.text, 80)); break end
+    end
+    if i.handoff then parts[#parts+1] = 'handoff: ' .. clip(i.handoff, 140) end
+    return table.concat(parts, '; ')
+  end
+  local function open_projects()
+    local list = {}
+    for _, i in pairs(store().items) do if i.kind == 'project' and ACTIVE[i.status] then list[#list+1] = i end end
+    return list
+  end
+  -- Open projects as lines, those agent `me` owns first, then the newest;
+  -- nil when there is none.
+  function M.project_lines(me, max)
+    max = max or MAX_PROJECT_LINES
+    local list = open_projects()
+    table.sort(list, function(x, y)
+      if (x.owner == me) ~= (y.owner == me) then return x.owner == me end
+      return x.updated_tick > y.updated_tick or (x.updated_tick == y.updated_tick and x.id > y.id)
+    end)
+    local out = {}
+    for k, i in ipairs(list) do
+      if k > max then out[#out+1] = string.format('+%d more: board {kind: "project"}', #list - max); break end
+      out[k] = project_line(i)
+    end
+    return #out > 0 and out or nil
+  end
   local function view(i, full, where)
+    if i.kind == 'project' then return project_view(i, full) end
     local notes = i.notes
     if not full and #notes > 2 then notes = {notes[#notes-1], notes[#notes]} end
     local claim = i.kind == 'claim' and ACTIVE[i.status]
@@ -311,10 +443,12 @@ return function(api)
 
   local function post(by, a)
     local kind = a.kind
-    assert(type(kind) == 'string' and KINDS[kind], 'kind must be task, request, claim or note')
+    assert(type(kind) == 'string' and KINDS[kind], 'kind must be task, request, claim, note or project')
     assert(kind ~= 'harness', 'ask for a harness tool with harness_request')
     assert(kind ~= 'plan', 'the team plan is one item: edit it with board_plan {goals} or {doing}')
     assert(a.allow == nil or kind == 'claim', 'allow is for a claim: who may remove or rebuild in its area without telling its owner first')
+    assert(kind == 'project' or (a.goal == nil and a.steps == nil and a.areas == nil and a.handoff == nil),
+      'goal, steps, areas and handoff are for kind project')
     expire()
     local item = {kind=kind, title=required_text(a.title, 'title', TITLE), requested_by=by, area=area_arg(a.area),
       needs=needs_arg(a.needs), tags=tags_arg(a.tags), notes={}, created_tick=game.tick, updated_tick=game.tick}
@@ -322,6 +456,18 @@ return function(api)
       item.active_tick = game.tick
       local allow = allow_arg(a.allow)
       item.allow = allow and #allow > 0 and allow or nil
+    elseif kind == 'project' then
+      assert(#open_projects() < MAX_PROJECTS, string.format('the board holds at most %d open projects; one closes with status done or dropped', MAX_PROJECTS))
+      item.areas = areas_arg(a.areas, a.area)
+      item.area = nil
+      local goal = optional_text(a.goal, 'goal', PLAN_GOALS)
+      if goal and goal:find('%S') then item.goal, item.goal_by, item.goal_tick = goal, by, game.tick end
+      local texts = a.steps ~= nil and steps_arg(a.steps, 'steps') or {}
+      assert(#texts <= MAX_STEPS, 'a project holds at most ' .. MAX_STEPS .. ' steps')
+      item.steps, item.next_step = {}, 1
+      add_steps(item, texts, by)
+      local handoff = optional_text(a.handoff, 'handoff', LONG)
+      if handoff and handoff:find('%S') then item.handoff, item.handoff_by, item.handoff_tick = handoff, by, game.tick end
     end
     -- A first note (shake4: agents carried update's note over to posts).
     if a.note ~= nil then item.notes[1] = {tick=game.tick, by=by, text=required_text(a.note, 'note', NOTE)} end
@@ -363,7 +509,14 @@ return function(api)
     assert(type(a.id) == 'number', 'id is required (a board item number)')
     local item = store().items[a.id]
     assert(item, 'no board item #' .. tostring(a.id) .. ' (pruned or never posted)')
-    assert(a.status ~= nil or a.owner ~= nil or a.note ~= nil or a.allow ~= nil, 'give status, owner, note or allow')
+    local project = item.kind == 'project'
+    local given = a.status ~= nil or a.owner ~= nil or a.note ~= nil or a.allow ~= nil
+    for _, k in ipairs(PROJECT_ARGS) do
+      assert(project or a[k] == nil, k .. ' is for a project (#' .. item.id .. ' is a ' .. item.kind .. ')'
+        .. (k == 'done' and '; status "done" finishes an item' or ''))
+      given = given or a[k] ~= nil
+    end
+    assert(given, 'give status, owner, note or allow' .. (project and '; for a project also step, done, undone, remove_step, goal, handoff or areas' or ''))
     expire()
     -- Check every argument before changing anything.
     assert(a.status == nil or (type(a.status) == 'string' and STATUSES[a.status]), 'status must be open, claimed, doing, done, blocked or dropped')
@@ -377,6 +530,34 @@ return function(api)
       assert(boss, string.format('only the owner (%s) can change who claim #%d allows', tostring(item.owner), item.id))
       allow = allow_arg(a.allow)
     end
+    -- A project: anyone adds steps and marks them done or undone; its owner
+    -- (anyone when it has none, or its owner has made no request for 30 min)
+    -- edits the goal, handoff and areas; a step goes with its owner's or its
+    -- adder's word.
+    local pj = {}
+    if project then
+      local lead = by == OPERATOR or by == item.owner or not item.owner or quiet(item.owner, PROJECT_QUIET)
+      local function owner_only(what)
+        if lead then return end
+        local st = M.owner_state(item.owner)
+        error(string.format('%s until its owner has made no request for 30 min; #%d is owned by %s (%s)', what, item.id, item.owner, st or 'quiet'), 0)
+      end
+      if a.step ~= nil then pj.add = steps_arg(a.step, 'step') end
+      if a.done ~= nil then pj.done = step_numbers(a.done, 'done', item) end
+      if a.undone ~= nil then pj.undone = step_numbers(a.undone, 'undone', item) end
+      if a.remove_step ~= nil then
+        pj.remove = step_numbers(a.remove_step, 'remove_step', item)
+        for _, s in ipairs(pj.remove) do
+          if s.by ~= by then owner_only(string.format('step %d of #%d was added by %s: only %s or the owner removes it', s.n, item.id, s.by, s.by)) end
+        end
+      end
+      assert(#item.steps + (pj.add and #pj.add or 0) - (pj.remove and #pj.remove or 0) <= MAX_STEPS,
+        string.format('a project holds at most %d steps; #%d has %d', MAX_STEPS, item.id, #item.steps))
+      if a.goal ~= nil or a.handoff ~= nil or a.areas ~= nil then owner_only('only the owner edits the goal, handoff and areas of #' .. item.id) end
+      if a.goal ~= nil then pj.goal = optional_text(a.goal, 'goal', PLAN_GOALS) end
+      if a.handoff ~= nil then pj.handoff = optional_text(a.handoff, 'handoff', LONG) end
+      if a.areas ~= nil then pj.areas = areas_arg(a.areas) end
+    end
     if a.owner ~= nil then
       assert(item.kind ~= 'claim' and item.kind ~= 'note' and item.kind ~= 'harness', 'a ' .. item.kind .. ' stays with its poster'
         .. (item.kind == 'claim' and '; a stale claim needs no notice, and one with no activity for 2h closes by itself' or ''))
@@ -386,12 +567,12 @@ return function(api)
       else
         local owner = resolve(a.owner)
         local taking = owner == by and not item.owner and item.status == 'open'
-        -- An owner quiet for 20 min loses an active item to whoever takes it.
-        local from_quiet = owner == by and item.owner and item.owner ~= by and ACTIVE[item.status] and quiet(item.owner)
+        -- An owner quiet for 20 min (a project's for 30) loses an active item to whoever takes it.
+        local from_quiet = owner == by and item.owner and item.owner ~= by and ACTIVE[item.status] and quiet(item.owner, project and PROJECT_QUIET or nil)
         if not (boss or taking or from_quiet) then
           local st = item.owner and M.owner_state(item.owner)
-          error(string.format('#%d is %s%s; only its owner or requester can reassign it (anyone can take an open unowned item, or one whose owner has made no request for 20 min)',
-            item.id, item.owner and 'owned by ' .. item.owner or item.status, st and ' (' .. st .. ')' or ''), 0)
+          error(string.format('#%d is %s%s; only its owner or requester can reassign it (anyone can take an open unowned item, or one whose owner has made no request for %d min)',
+            item.id, item.owner and 'owned by ' .. item.owner or item.status, st and ' (' .. st .. ')' or '', (project and PROJECT_QUIET or QUIET) / 3600), 0)
         end
         if owner ~= item.owner then
           if from_quiet then
@@ -421,14 +602,51 @@ return function(api)
         changes[#changes+1] = a.status
       end
     end
+    -- A project's own changes, each an event with what changed and the progress.
+    local done_changes, gone = {}, {}
+    local function changed(change, what) done_changes[#done_changes+1] = {change=change, text=clip(what, NOTE)} end
+    if pj.remove then
+      local names = {}
+      for _, s in ipairs(pj.remove) do gone[s] = true; names[#names+1] = s.n .. '. ' .. s.text end
+      local keep = {}
+      for _, s in ipairs(item.steps) do if not gone[s] then keep[#keep+1] = s end end
+      item.steps = keep
+      changed('step_removed', table.concat(names, '; '))
+    end
+    if pj.add then changed('step_added', table.concat(add_steps(item, pj.add, by), '; ')) end
+    for _, mark in ipairs{{list=pj.done, done=true, change='step_done'}, {list=pj.undone, done=false, change='step_undone'}} do
+      local names = {}
+      for _, s in ipairs(mark.list or {}) do
+        if not gone[s] and (s.done_by ~= nil) ~= mark.done then
+          if mark.done then s.done_by, s.done_tick = by, game.tick else s.done_by, s.done_tick = nil, nil end
+          names[#names+1] = s.n .. '. ' .. s.text
+        end
+      end
+      if #names > 0 then changed(mark.change, table.concat(names, '; ')) end
+    end
+    if a.goal ~= nil and (pj.goal:find('%S') and pj.goal or nil) ~= item.goal then
+      item.goal = pj.goal:find('%S') and pj.goal or nil
+      item.goal_by, item.goal_tick = item.goal and by, item.goal and game.tick
+      changed('goal', item.goal or 'goal cleared')
+    end
+    if a.handoff ~= nil and (pj.handoff:find('%S') and pj.handoff or nil) ~= item.handoff then
+      item.handoff = pj.handoff:find('%S') and pj.handoff or nil
+      item.handoff_by, item.handoff_tick = item.handoff and by, item.handoff and game.tick
+      changed('handoff', item.handoff or 'handoff cleared')
+    end
+    if pj.areas then
+      item.areas = pj.areas
+      changed('areas', #pj.areas > 0 and #pj.areas .. ' area' .. (#pj.areas == 1 and '' or 's') or 'areas cleared')
+    end
     if text then
       item.notes[#item.notes+1] = {tick=game.tick, by=by, text=text}
-      while #item.notes > MAX_NOTES do table.remove(item.notes, 1) end
+      while #item.notes > (project and MAX_PROJECT_NOTES or MAX_NOTES) do table.remove(item.notes, 1) end
     end
     item.updated_tick = game.tick
     local extra = was and was ~= item.owner and {prev_owner=was} or nil
     for _, change in ipairs(changes) do event(by, item, change, text, extra) end
-    if text and #changes == 0 then event(by, item, 'note', text) end
+    for _, c in ipairs(done_changes) do event(by, item, c.change, c.text); changes[#changes+1] = c.change end
+    if text and #changes == #done_changes then event(by, item, 'note', text) end
     return {item=view(item, true, where_for(by)), changed=#changes > 0 and changes or nil}
   end
 
@@ -461,12 +679,19 @@ return function(api)
         if s == 'active' then for k in pairs(ACTIVE) do want[k] = true end else want[s] = true end
       end
     end
-    assert(a.kind == nil or KINDS[a.kind], 'kind must be task, request, claim, note or harness')
+    assert(a.kind == nil or KINDS[a.kind], 'kind must be task, request, claim, note, project, harness or plan')
     assert(a.since_tick == nil or type(a.since_tick) == 'number', 'since_tick must be a tick')
+    -- An agent's plain listing (no filter, no limit): about 3 KB, newest
+    -- first, each item with its last note; the plan's goals and the reader's
+    -- own line, and a line per open project (agent-minds study: the median
+    -- board read was 18 KB, and Codex drops the middle of long output).
+    -- full=true, a limit or a filter list them as before.
+    local brief = by ~= OPERATOR and a.full ~= true and a.limit == nil and a.kind == nil and a.mine == nil and a.status == nil and a.since_tick == nil
     local list = {}
     for _, i in pairs(b.items) do
-      -- The plan is shown on its own (plan below), not as a row.
-      if i.kind ~= 'plan' and (not want or want[i.status]) and (not a.kind or i.kind == a.kind) and (not a.since_tick or i.updated_tick > a.since_tick)
+      -- The plan is shown on its own (plan below), not as a row; so are open projects in the plain listing.
+      if i.kind ~= 'plan' and not (brief and i.kind == 'project' and ACTIVE[i.status])
+          and (not want or want[i.status]) and (not a.kind or i.kind == a.kind) and (not a.since_tick or i.updated_tick > a.since_tick)
           and (a.mine ~= true or i.owner == by or i.requested_by == by) then
         list[#list+1] = i
       end
@@ -475,12 +700,6 @@ return function(api)
     local out, where = {}, where_for(by)
     local unowned = open_unowned()
     local plan = (a.kind == nil or a.kind == 'plan') and a.mine ~= true and M.plan_view() or nil
-    -- An agent's plain listing (no filter, no limit): about 3 KB, newest
-    -- first, each item with its last note; the plan's goals and the reader's
-    -- own line (agent-minds study: the median board read was 18 KB, and Codex
-    -- drops the middle of long output). full=true, a limit or a filter list
-    -- them as before.
-    local brief = by ~= OPERATOR and a.full ~= true and a.limit == nil and a.kind == nil and a.mine == nil and a.status == nil and a.since_tick == nil
     if brief then
       local used = 0
       if plan then
@@ -490,6 +709,8 @@ return function(api)
           more='board_plan shows the plan in full'}
         used = size(plan)
       end
+      local projects = M.project_lines(by)
+      if projects then used = used + size(projects) end
       for n = 1, math.min(limit, #list) do
         local row = view(list[n], false, where)
         if row.notes and #row.notes > 1 then row.note_count = row.note_count or #list[n].notes; row.notes = {row.notes[#row.notes]} end
@@ -499,7 +720,7 @@ return function(api)
         out[n] = row; used = used + s
       end
       local more = #list - #out
-      return {plan=plan, items=out, matched=#list, open_unowned=unowned, tick=game.tick,
+      return {plan=plan, projects=projects, items=out, matched=#list, open_unowned=unowned, tick=game.tick,
         more=more > 0 and string.format('%d more: board {full=true}, or narrow with kind, mine, status, since_tick; {id} shows one item in full', more) or nil}
     end
     for n = 1, math.min(limit, #list) do out[n] = view(list[n], false, where) end
@@ -522,13 +743,15 @@ return function(api)
     return {id=i.id, goals=i.goals, doing=#lines > 0 and lines or nil,
       edited=i.edited_by and string.format('by %s, %s ago', i.edited_by, ago(game.tick - i.updated_tick)) or nil}
   end
-  -- The plan's goals and agent `name`'s own line (the shift block), or nil.
+  -- The plan's goals, agent `name`'s own line and the open projects (the
+  -- shift block), or nil.
   function M.plan_for(name)
     local i = plan_item()
-    if not i then return nil end
+    local projects = M.project_lines(name)
+    if not i and not projects then return nil end
     local mine
-    for _, l in ipairs(i.lines) do if l.agent == name then mine = l.text end end
-    return {goals=i.goals, mine=mine}
+    for _, l in ipairs(i and i.lines or {}) do if l.agent == name then mine = l.text end end
+    return {goals=i and i.goals, mine=mine, projects=projects}
   end
   local function plan_edit(by, a)
     assert(a.agent == nil or a.doing ~= nil, 'agent goes with doing: board_plan {agent, doing}')
@@ -676,23 +899,30 @@ return function(api)
   M.schema = {
     board = {full='boolean: the plain listing in full (by default it is about 3 KB: the newest items with their last note, the plan\'s goals and your line, and more: how many were left out)',
       mine='boolean: items I own or requested', status='active|open|claimed|doing|done|blocked|dropped or an array of them',
-      kind='task|request|claim|note|harness|plan', since_tick='items updated after this tick', limit='1..100 (default 30), newest first',
-      id='one item in full (all notes)', returns='plan (the team plan: goals, doing lines, last edit), items, matched, open_unowned (open task/request items nobody owns); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus"); an open claim has owner_active (when its owner last posted, updated it, or made a request standing in it or acting on a position in it), stale=true after 30 min of that (anyone may remove or rebuild there without notice) and allow (who may do that while it is fresh); after 2 h with no such activity the harness closes it (dropped)'},
+      kind='task|request|claim|note|project|harness|plan', since_tick='items updated after this tick', limit='1..100 (default 30), newest first',
+      id='one item in full (all notes; a project with all its steps)', returns='plan (the team plan: goals, doing lines, last edit), projects (the plain listing: one line per open project, yours first: progress, owner, next step, handoff; the rows leave them out), items, matched, open_unowned (open task/request items nobody owns); a project row has progress ("3 of 7 steps"), goal, next_steps, areas, handoff and owner_state (its owner\'s last request); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus"); an open claim has owner_active (when its owner last posted, updated it, or made a request standing in it or acting on a position in it), stale=true after 30 min of that (anyone may remove or rebuild there without notice) and allow (who may do that while it is fresh); after 2 h with no such activity the harness closes it (dropped)'},
     board_plan = {goals='the team goals, 1..600 characters, replace the current ones ("" clears them)',
       doing='one line of what an agent is on, 1..160 characters ("" removes the line)', agent='whose line doing sets (default you)',
       returns='the team plan: goals, doing (one line per agent, "(set by NAME)" when someone else wrote it), edited; with no arguments it only reads'},
-    board_post = {kind='task|request|claim|note', title='1..120 characters (longer is cut)',
-      owner='agent name or display name (task/request; a request without owner is shown to everyone until taken)',
+    board_post = {kind='task|request|claim|note|project', title='1..120 characters (longer is cut)',
+      owner='agent name or display name (task/request/project; a request without owner is shown to everyone until taken; a project may have none)',
       area='{left_top={x,y}, right_bottom={x,y}}: required for a claim (owner is you)', needs='text, array of item names/{name,count}, or {item: count}',
       tags='up to 8 short strings', note='optional first note, 1..200 characters',
       allow='claim only: agents who may remove or rebuild in the area without telling you first (array or "luna,sol"), or "everyone"',
+      goal='project only: what it is for, 1..600 characters', steps='project only: its checklist, an array of texts (1..160 characters each, at most 40)',
+      areas='project only: up to 8 areas {left_top, right_bottom} (area takes one)', handoff='project only: where it stands for whoever goes on with it, 1..1000 characters',
       returns='the item; warnings for overlapping claims (with where the owner is when not with you: claim #128 by sol (on Vulcanus), its age, owner activity and state, stale) or an unowned request'},
     board_update = {id='item number', status='open|claimed|doing|done|blocked|dropped (owner or requester only)',
-      owner='your name takes an open unowned item, or an active task/request whose owner has made no request for 20 min; another name reassigns (owner or requester only); "" releases it',
-      note='1..200 characters, anyone may add (last 10 kept)',
-      allow='claim owner only: who may remove or rebuild in the area without telling you first (names or "everyone"; [] or "" clears it)'},
+      owner='your name takes an open unowned item, or an active task/request whose owner has made no request for 20 min (a project: 30 min); another name reassigns (owner or requester only); "" releases it',
+      note='1..200 characters, anyone may add (last 10 kept; 20 on a project)',
+      allow='claim owner only: who may remove or rebuild in the area without telling you first (names or "everyone"; [] or "" clears it)',
+      step='project: add steps, a text or an array of texts (anyone)', done='project: mark steps done by number, a number or an array (anyone; done_by is you)',
+      undone='project: mark steps not done (anyone)', remove_step='project: remove steps by number (the agent who added one, or the owner)',
+      goal='project: replace the goal ("" clears it)', handoff='project: replace the handoff text, 1..1000 characters ("" clears it)',
+      areas='project: replace its areas (array; [] clears them)',
+      returns='the item in full and changed; on a project the goal, handoff and areas are its owner\'s to edit, and anyone\'s when it has no owner or its owner has made no request for 30 min (who may then also take it with owner)'},
     board_events = {since_seq='return events after this sequence number (default 0)', limit='1..200 (default 100), oldest first',
-      returns='events {seq,tick,by,id,change,title,kind,owner,requested_by,status,text} and cursor (pass it back as since_seq)'},
+      returns='events {seq,tick,by,id,change,title,kind,owner,requested_by,status,text; a project\'s also progress, steps_done, steps_total} and cursor (pass it back as since_seq)'},
     harness_request = {title='1..120 characters', problem='what you tried and what went wrong (1..1000)', proposal='optional: the tool or change you want',
       returns='a board item (kind harness, owner operator); answers come as notes on it'},
     plan_save = {name='1..32 letters, digits, _ - .', steps='queue plan steps (same schema as queue_submit)', guards='optional queue guards',
@@ -898,18 +1128,26 @@ return function(api)
       -- Everyone hears of a plan edit once; a line written for me is mine.
       return string.format('team plan edited by %s: %s (board_plan shows it)', e.by, e.text or ''), e.owner ~= me
     end
+    -- A project's change says what changed and its progress after it; a step change by
+    -- someone else is news for its owner and requester: it wakes nobody.
+    local change, step = e.change:gsub('_', ' '), STEP_CHANGES[e.change] or nil
+    if e.progress and e.change ~= 'note' then tail = tail .. ' (' .. e.progress .. ')' end
     if e.overlaps and e.overlaps[me] then
       return string.format('#%d claim by %s overlaps your claim #%d: %s', e.id, e.by, e.overlaps[me], e.title)
     elseif (e.change == 'posted' or e.change == 'assigned') and e.owner == me and e.kind ~= 'claim' and e.kind ~= 'note' then
-      return string.format('#%d assigned to you by %s: %s%s', e.id, e.by, e.title, tail)
+      return string.format('#%d %sassigned to you by %s: %s%s', e.id, e.kind == 'project' and 'project ' or '', e.by, e.title, tail)
     elseif e.requested_by == me and e.change ~= 'posted' then
       return e.change == 'note' and string.format('#%d (your %s) note by %s: %s', e.id, e.kind, e.by, e.text)
-        or string.format('#%d (your %s) %s by %s: %s%s', e.id, e.kind, e.change, e.by, e.title, tail)
+        or string.format('#%d (your %s) %s by %s: %s%s', e.id, e.kind, change, e.by, e.title, tail), step
     elseif e.owner == me and e.change ~= 'posted' then
       return e.change == 'note' and string.format('#%d (yours) note by %s: %s', e.id, e.by, e.text)
-        or string.format('#%d (yours) %s by %s: %s%s', e.id, e.change, e.by, e.title, tail)
+        or string.format('#%d (yours) %s by %s: %s%s', e.id, change, e.by, e.title, tail), step
     elseif e.prev_owner == me then
-      return string.format('#%d (was yours) %s by %s%s: %s%s', e.id, e.change, e.by, e.owner and ' to ' .. e.owner or '', e.title, tail)
+      return string.format('#%d (was yours) %s by %s%s: %s%s', e.id, change, e.by, e.owner and ' to ' .. e.owner or '', e.title, tail)
+    elseif e.change == 'posted' and e.kind == 'project' then
+      -- Everyone hears of a new project once; it wakes nobody.
+      return string.format('#%d new project by %s: %s (%s; %s)%s', e.id, e.by, e.title, e.owner and 'owner ' .. e.owner or 'no owner',
+        e.progress or 'no steps yet', e.text and ' - ' .. e.text or ''), true
     elseif e.change == 'posted' and not e.owner and (e.kind == 'request' or e.kind == 'task') then
       -- Everyone hears of a new unowned request once; it wakes nobody.
       return string.format('#%d new unowned %s by %s: %s%s; take it with board_update {id, owner: "%s"}', e.id, e.kind, e.by, e.title, tail, me), true

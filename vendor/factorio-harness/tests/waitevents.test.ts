@@ -1,5 +1,6 @@
 // Agent-minds study fixes in the CLI (eng/minds-waits): the OPERATOR: line (fix 1), waits a tell or mention ends
-// (fix 5), and one blocking wait on an event with one line out (fh wait --until, fix 5).
+// (fix 5), and one blocking wait on an event with one line out (fh wait --until, fix 5). Also the open board projects
+// fh files for the post-compaction brief (eng/projects).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Socket } from 'node:net';
@@ -42,7 +43,7 @@ async function engine(reply: (request:any)=>any, run:(port:number)=>Promise<void
   try { await run(address.port); }
   finally {for(const socket of sockets)socket.destroy();await new Promise<void>(resolve=>server.close(()=>resolve()));}
 }
-const env={...process.env,FACTORIO_RCON_PASSWORD:'test-only',FH_OPERATOR_FILE:''};
+const env={...process.env,FACTORIO_RCON_PASSWORD:'test-only',FH_OPERATOR_FILE:'',FH_PROJECTS_FILE:''};
 function cli(port:number,args:string[],format:'json'|'compact'='json',extra:Record<string,string>={}) {
   return exec(process.execPath,['dist/host/cli.js','--format',format,'--port',String(port),...args],{env:{...env,...extra}});
 }
@@ -64,6 +65,39 @@ test('an operator tell prints an OPERATOR: line on stderr and first on stdout, a
     const {stdout,stderr}=await cli(port,['call','status']);
     assert.deepEqual(JSON.parse(stdout).result.operator,[OPERATOR]); assert.match(stderr,/OPERATOR:/);
   });
+});
+test('open projects from the shift block, board reads and project items are filed for the post-compaction brief',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'fh-projects-'));
+  const lines=['#12 nuclear plant: 1 of 4 steps; owner astra (last request 0s ago); next 2. centrifuges','#15 robot mall: 0 of 1 step; owner grok (last request 3m00s ago); next 1. roboports'];
+  const replies:Record<string,any>={
+    status:{team:{shift:{shift:'shift 3, started 0s ago',projects:lines}}},
+    board_update:{item:{id:12,kind:'project',title:'nuclear plant',status:'claimed',owner:'astra',progress:'2 of 4 steps',
+      steps:['[x] 1. mine uranium (done by astra, 1m00s ago)','[x] 2. centrifuges (done by sol, 0s ago)','[ ] 3. reactor','[ ] 4. turbines'],handoff:'centrifuges run; reactor next at (130,120)'}},
+    board_post:{item:{id:15,kind:'project',title:'robot mall',status:'done',owner:'grok',progress:'1 of 1 step'}},
+    board:{items:[{id:20,kind:'project',title:'rail to iron',status:'open',progress:'no steps yet'},{id:21,kind:'task',title:'x',status:'open'}]},
+  };
+  await engine(request=>({ok:true,result:{clock:'game 1s',...(replies[request.action]??{})}}),async port=>{
+    const journal=['--journal',join(dir,'journal.jsonl')];
+    const read=async()=>JSON.parse(await readFile(join(dir,'.projects.json'),'utf8'));
+    await cli(port,['call','status',...journal]);
+    assert.deepEqual((await read()).lines,lines);
+    await cli(port,['call','board_update','--args','{"id":12,"done":2}',...journal]);
+    assert.equal((await read()).lines[0],'#12 nuclear plant: 2 of 4 steps; owner astra; next 3. reactor; handoff: centrifuges run; reactor next at (130,120)');
+    await cli(port,['call','board_post','--args','{"kind":"project","title":"robot mall"}',...journal]);
+    await cli(port,['board','projects',...journal]);
+    const filed=await read();
+    assert.deepEqual(filed.lines.map((l:string)=>l.split(':')[0]),['#12 nuclear plant','#20 rail to iron'],'done ones leave; a row read adds');
+    assert.equal(filed.lines[1],'#20 rail to iron: no steps yet; no owner');
+    assert.match(filed.at,/^\d{4}-\d\d-\d\dT/);
+  });
+});
+test('fh board projects reads the open projects',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{seen.push(request);return {ok:true,result:{items:[]}};},async port=>{
+    await cli(port,['board','projects']);
+    await cli(port,['board','projects','--args','{"id":12}']);
+  });
+  assert.deepEqual(seen.map(r=>[r.action,r.args]),[['board',{kind:'project',status:'active'}],['board',{id:12}]]);
 });
 test('an OPERATOR: line seen on a --wait poll leads the reply',async()=>{
   let polls=0;

@@ -20,7 +20,8 @@ return function(api)
     paste = {dryrun='dry_run', ['dry-run']='dry_run'},
     blueprint_place = {dryrun='dry_run', ['dry-run']='dry_run'},
     ports = {entity='name', machine='name', facing='direction'},
-    board_post = {text='title', name='title'},
+    board_post = {text='title', name='title', step='steps'},
+    board_update = {steps='step'},
     recipes = {search='prefix', name='prefix', recipe='prefix', filter='prefix'},
     technologies = {search='prefix', name='prefix', filter='prefix', technology='prefix'},
     mine = {entity='name'},
@@ -29,6 +30,8 @@ return function(api)
     configure = {target='position'},
     rotate = {target='position'},
   }
+  -- A project's changes (board.lua board_update).
+  local PROJECT_CHANGES = {'step', 'done', 'undone', 'remove_step', 'goal', 'handoff', 'areas'}
   -- A one-name list given where a name is taken: its name.
   local SINGLE = {prefix=true}
   -- Actions whose positions is a list of targets of the same move or read.
@@ -75,9 +78,12 @@ return function(api)
     for k, v in pairs(args) do out[k] = v end
     -- board with an item id and a change is an update; with a title, a post.
     -- (A read with an id shows that one item; a status filter means nothing there.)
-    if action == 'board' and out.id ~= nil and (out.note ~= nil or out.owner ~= nil or (type(out.status) == 'string' and out.status ~= 'active')) then
+    local changes = out.note ~= nil or out.owner ~= nil or (type(out.status) == 'string' and out.status ~= 'active')
+    for _, k in ipairs(PROJECT_CHANGES) do changes = changes or out[k] ~= nil end
+    if action == 'board' and out.id ~= nil and changes then
       local kept = {}
       for _, k in ipairs{'id', 'status', 'note', 'owner'} do kept[k] = out[k] end
+      for _, k in ipairs(PROJECT_CHANGES) do kept[k] = out[k] end
       notes[#notes+1] = 'board with an id and a change is board_update'
       action, out = 'board_update', kept
     elseif action == 'board' and out.title ~= nil then

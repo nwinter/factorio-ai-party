@@ -917,6 +917,9 @@ fh board post --args '{"kind":"request","title":"10 red science assemblers at 0,
 fh board post --args '{"kind":"claim","title":"iron smelting","area":{"left_top":{"x":-60,"y":-30},"right_bottom":{"x":-40,"y":-20}}}'
 fh board update --args '{"id":4,"owner":"astra"}'           # take an open unowned item (your own name)
 fh board update --args '{"id":4,"status":"done","note":"6 assemblers running"}'
+fh board post --args '{"kind":"project","title":"nuclear plant","goal":"...","steps":["mine uranium","centrifuges"]}'
+fh board update --args '{"id":12,"done":[1,2],"step":"turbines"}'   # anyone: steps done, a step added
+fh board projects                                           # open projects as rows; --args '{"id":12}' one in full
 fh board request --args '{"title":"...","problem":"...","proposal":"..."}'   # harness_request
 fh board plan                                               # the team plan (board_plan): goals and who is on what
 fh board plan goals "robots by hour 3; oil next"            # replace the goals ("" clears them)
@@ -925,8 +928,8 @@ fh board plan for luna "scouting south"                     # another agent's li
 fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 ```
 
-- Items: `task`, `request`, `claim` (needs `area`; owner is the poster), `note`; `harness` items come from
-  `harness_request`. Status `open|claimed|doing|done|blocked|dropped`; naming an owner makes an open item `claimed`.
+- Items: `task`, `request`, `claim` (needs `area`; owner is the poster), `note`, `project` (below); `harness` items
+  come from `harness_request`. Status `open|claimed|doing|done|blocked|dropped`; naming an owner makes an open item `claimed`.
 - `owner` takes an agent name, display name or player name without `pog-`, any case; an unknown name fails with the
   roster. Anyone may take an open unowned item or add a note; only the owner or requester changes status, reassigns or
   releases (`owner: ""`). Titles are cut at 120 bytes and notes at 200 instead of failing; the last 10 notes are kept.
@@ -942,14 +945,41 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   notes on it but no status or owner. Each edit is a board event (`kind:"plan"`, `change:"edited"`, `text` what
   changed, `owner` the agent whose line changed) and a `board` hint line for every other agent (`team plan edited by
   NAME: ...`); a line written for you counts as yours (it wakes you from `sleep`), other edits as news.
+- Projects (`kind: "project"`, operator 00:50): a long job that outlives an agent's context and its shift (a rail
+  line, a nuclear plant, a robot mall). `board_post {kind:"project", title, owner?, goal?, steps?, area?, areas?,
+  handoff?, note?}`: `steps` is the checklist (texts, at most 40, each cut at 160 bytes), `areas` up to 8, `goal` up to
+  600 characters, `handoff` up to 1000; it may have no owner. `board_update {id, ...}`: anyone adds steps (`step`, a
+  text or an array), marks steps done or not done (`done`, `undone`: step numbers; a done step keeps who did it and
+  when) and adds notes (the last 20 kept); the agent who added a step, or the owner, removes it (`remove_step`; the
+  other steps keep their numbers); the owner replaces the `goal`, the `handoff` text and the `areas` (`""` or `[]`
+  clears), and so may anyone when the project has no owner or its owner has made no request for 30 minutes, who may
+  then also take it with `owner` (a quiet task's 20 minutes are 30 for a project). Status and reassigning are as for
+  a task. `board {id}` shows it in full: `progress` (`3 of 7 steps`, `no steps yet`), `goal` and `goal_edited`,
+  `steps` (`[x] 1. mine uranium (done by astra, 1h02m ago)`, `[ ] 2. centrifuges`), `areas`, `handoff` and
+  `handoff_edited`, `owner_state` (its owner's last request) and the notes; a list row has `next_steps` (the first 3
+  not done) and the goal and handoff cut to 160. An agent's plain `board` read lists the open projects apart, one line
+  each, its own first (`projects: ["#12 nuclear plant: 3 of 7 steps; owner sol (last request 4m00s ago); next 4.
+  turbines; handoff: ..."]`, at most 8 and `+N more`), and leaves them out of `items`; `fh board projects` reads
+  `{kind:"project", status:"active"}`. Board aliases: `board` with an `id` and `step`, `done`, `undone`,
+  `remove_step`, `goal`, `handoff` or `areas` is `board_update`; `steps` there is `step`, and `step` in a post is
+  `steps`. Open projects are never pruned; at most 30 are open at once (a post past that fails).
+- A project's events (`board_events`): `step_added`, `step_done`, `step_undone`, `step_removed`, `goal`, `handoff`,
+  `areas`, each with `text` (the steps or what changed), and every project event carries the project's `progress`,
+  `steps_done` and `steps_total` after the change. Its owner and poster hear of others' changes in `team.board`
+  (`#12 (yours) step done by astra: nuclear plant - 4. turbines (4 of 7 steps)`); step changes are news there and wake
+  nobody, a goal, handoff, areas, status or owner change by someone else wakes as any change to their item. Everyone
+  else hears of a new project once (`#12 new project by sol: nuclear plant (no owner; 0 of 3 steps)`, news). The first
+  reply of a shift lists the open projects (`team.shift.projects`, the same lines), and fh keeps the last such list and
+  the project items its replies carried in `.projects.json` next to the journal (`FH_PROJECTS_FILE`), which the
+  post-compaction brief shows (pog `tools/context.py`). The shift retro's `open board items` leaves projects out.
 - A claim overlapping another agent's active claim is posted with a warning. At most 300 items are kept (finished
-  ones pruned first, then notes, then the oldest).
+  ones pruned first, then notes, then the oldest that is not an open project).
 - A claim whose owner is now somewhere other than you says so: `owner_away: "on Vulcanus"` on board items, the overlap
   warning (`overlaps claim #128 by sol (on Vulcanus): ...`), and the claim in `collect`'s `skipped_claims` and
   `claimed` (`(claim by sol, on Vulcanus)`).
 - `board_events {since_seq, limit}` (for overlays) returns `{seq,tick,by,id,change,title,kind,owner,requested_by,status,text}`
-  oldest first and a `cursor`. `change`: `posted`, `taken`, `assigned`, `released`, a status name, `note`, or `edited`
-  (the plan). A finished technology is an event with no item: `by:"research"`, `kind:"research"`, `title` the
+  oldest first and a `cursor`. `change`: `posted`, `taken`, `assigned`, `released`, a status name, `note`, `edited`
+  (the plan), or a project's changes (above). A finished technology is an event with no item: `by:"research"`, `kind:"research"`, `title` the
   technology, `change:"done"`, `text` `unlocks: ...`; it gives nobody a `board` hint line (the `research` lines do that).
   `board` and `board_events` work for any player, including directors without a character.
 - Board actions never stop the character when they fail (like `say`), and work while a bot is dead.
@@ -1102,7 +1132,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   at most 8. Read the surface from the row, never from the text.
 - `shift`: on a resumed world, the operator's `shift_start` (tools/start-team.sh) begins a numbered shift, and each
   agent's first reply of it (any action, not a peek) carries `team.shift` once: `shift` (`shift N, started <age>
-  ago`), `plan_goals` and `your_plan_line` (the team plan), `research_since_your_last_shift` (technologies finished
+  ago`), `plan_goals` and `your_plan_line` (the team plan), `projects` (the open projects, one line each, the agent's
+  own first: `#12 nuclear plant: 3 of 7 steps; owner sol (last request 3h10m ago); next 4. turbines; handoff: ...`),
+  `research_since_your_last_shift` (technologies finished
   after the agent's last request before this shift, the last 12 and a count of earlier ones: the research news, plus
   what `force.technologies` shows researched since the snapshot taken at the start of the agent's previous shift (and
   at the runtime's first sample), so no research event is needed; nothing before the first snapshot is known) and

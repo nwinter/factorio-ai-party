@@ -476,7 +476,12 @@ class LiveSource:
             try:
                 res, _ = self.read("board", {"limit": 60}, **self.reader())
                 claims, _ = self.read("board", {"kind": "claim", "limit": 30}, **self.reader())
-                items = {it.get("id"): it for it in (res.get("items") or []) + (claims.get("items") or [])}
+                try:  # open projects outlive the newest 60 items (eng/projects; an older runtime refuses the kind)
+                    projects, _ = self.read("board", {"kind": "project", "status": "active", "limit": 12}, **self.reader())
+                except Exception:
+                    projects = {}
+                items = {it.get("id"): it for it in (res.get("items") or []) + (claims.get("items") or [])
+                         + (projects.get("items") or [])}
                 obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned"),
                                 "plan": res.get("plan")}  # the team plan (board_plan; absent on older runtimes)
             except Exception as e:
