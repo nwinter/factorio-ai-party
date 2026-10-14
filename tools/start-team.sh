@@ -45,6 +45,7 @@ if [ -n "$resume" ]; then
   # A run whose agents never launched has no notes (shake9: its start failed after the save copy, and shake10's agents
   # began with empty notes). The save still comes from POG_RESUME; the notes come from the newest run up its
   # resumed-from chain that has any.
+  carry_from=$prev_dir   # tools/full_tools.py carry walks the same chain for each agent's tools/ and team-tools/
   hops=0
   while ! ls "$prev_dir"/*/notes.md >/dev/null 2>&1 && [ -f "$prev_dir/resumed-from" ] && [ $hops -lt 5 ]; do
     up=$(head -1 "$prev_dir/resumed-from"); [ -d "$(dirname "$prev_dir")/$up" ] || break
@@ -80,6 +81,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
       echo "3. bot $name: created; fresh notes.md"
     fi
   done
+  [ -n "$resume" ] && python3 tools/full_tools.py carry --dry-run "runs/$run" "$carry_from" $members | sed 's/^/3b. /' || true
   echo "4. stream service, chat log, shot sync$([ "${POG_CASTER:-1}" != 0 ] && echo ', casters')$([ "${POG_ANALYST:-1}" != 0 ] && echo ', analyst')$([ "${POG_PLAYERS:-0}" = 1 ] && echo ', player votes'), recording$([ "$stream" = --stream ] && echo ', stream')"
   if [ "$stream" = --stream ] && [ "${POG_OBS:-1}" != 0 ]; then
     if [ "${POG_OBS_RESTART:-1}" = 0 ]; then echo "4c. OBS: no restart (POG_OBS_RESTART=0)"
@@ -304,6 +306,14 @@ if [ "${POG_BROKER:-0}" = 1 ]; then
   for i in $(seq 1 20); do [ -S "$rundir/.sock/$last.sock" ] && break; sleep 0.5; done
   if [ -S "$rundir/.sock/$last.sock" ]; then log "broker: pid $broker_pid, sockets for $(echo $members)"
   else log "broker FAILED: $(tail -2 "$rundir/broker.err" | tr '\n' ' ' | cut -c1-200)"; exit 1; fi
+fi
+
+# A later shift: each agent's tools/ and the shared team-tools/ as the previous shift left them (up its resumed-from
+# chain to the newest run that has them; files over 5 MB, caches, dotfiles and symlinks stay behind). The file list is
+# in carried-tools.txt. Opus, 2026-10-13: they were copied by hand every shift.
+if [ -n "$resume" ]; then
+  python3 tools/full_tools.py carry "$rundir" "$carry_from" $members 2>&1 | while read -r line; do log "$line"; done || true
+  [ -f "$rundir/carried-tools.txt" ] && log "carry: file list in $rundir/carried-tools.txt"
 fi
 
 # POG_FULL_TOOLS=1: Muse's team-tools is a folder of its own, mirrored with the shared one (tools/full_tools.py).

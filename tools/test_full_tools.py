@@ -87,6 +87,84 @@ def workspace():
     print("workspace: ok")
 
 
+def carry():
+    """A later shift's tools/ and team-tools/ from the previous runs: shift01 had them, shift02's agents never
+    launched (no folders), shift03 resumes shift02, and the new shift04 resumes shift03."""
+    tmp = tempfile.mkdtemp()
+    try:
+        runs = os.path.join(tmp, "runs")
+
+        def put(rel, text="x\n", mode=None):
+            p = os.path.join(runs, rel)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            open(p, "w").write(text)
+            if mode:
+                os.chmod(p, mode)
+            return p
+
+        put("shift01/opus/tools/deploy.py", "print('deploy')\n", 0o755)
+        put("shift01/opus/tools/plans/east.md", "east\n")
+        put("shift01/opus/tools/__pycache__/deploy.cpython-314.pyc")
+        put("shift01/opus/tools/plans/old.pyc")
+        put("shift01/opus/tools/.cache/x")
+        put("shift01/opus/tools/.env")
+        with open(put("shift01/opus/tools/big.jsonl"), "wb") as f:   # over 5 MB (sparse)
+            f.truncate(full_tools.CARRY_MAX_BYTES + 1)
+        put("shift01/opus/tools/small.jsonl", "y" * 100)
+        os.symlink("../../luna/tools", os.path.join(runs, "shift01/opus/tools/luna"))
+        os.symlink("/etc/hosts", os.path.join(runs, "shift01/opus/tools/hosts"))
+        os.makedirs(os.path.join(runs, "shift01/luna/tools"))   # an agent with an empty tools/
+        put("shift01/team-tools/belt.py", "print('belt')\n")
+        put("shift01/muse/team-tools/muse-only.py", "print('m')\n")   # Muse's mirror, not yet shared
+        put("shift01/muse/team-tools/belt.py", "print('older')\n")
+        put("shift02/resumed-from", "shift01\n")
+        put("shift02/opus/notes.md")   # a run whose launch failed: notes, no tools/
+        put("shift03/resumed-from", "shift02\n")
+        os.makedirs(os.path.join(runs, "shift03"), exist_ok=True)
+        new = os.path.join(runs, "shift04")
+        put("shift04/opus/tools/deploy.py", "mine\n")   # a relaunch: the new shift's file stays
+
+        names = ["opus", "luna", "sol"]
+        lines, files = full_tools.carry(new, os.path.join(runs, "shift03"), names, dry=True)
+        assert not os.path.exists(os.path.join(new, "team-tools")), "the dry run copied"
+        lines, files = full_tools.carry(new, os.path.join(runs, "shift03"), names)
+        text = "\n".join(lines)
+        assert lines[0].startswith("carry opus tools/: 2 files (0.0 MB) from shift01; "), lines
+        for want in ("skipped 1 already there: deploy.py", "skipped 1 over 5 MB: big.jsonl (5.0 MB)",
+                     "skipped 4 cache: .cache/, __pycache__/, .env, plans/old.pyc", "skipped 2 symlink: luna/, hosts"):
+            assert want in lines[0], (want, lines[0])
+        assert lines[1] == "carry luna tools/: 0 files (0.0 MB) from shift01", lines
+        assert lines[2] == "carry sol tools/: none in shift03, shift02, shift01", lines
+        assert lines[3] == "carry team-tools/: 2 files (0.0 MB) from shift01", text
+        o = os.path.join(new, "opus", "tools")
+        assert sorted(os.path.relpath(os.path.join(b, f), o) for b, _, fs in os.walk(o) for f in fs) == \
+            ["deploy.py", "plans/east.md", "small.jsonl"]
+        assert open(os.path.join(o, "deploy.py")).read() == "mine\n"
+        assert open(os.path.join(o, "plans", "east.md")).read() == "east\n"
+        assert open(os.path.join(new, "team-tools", "belt.py")).read() == "print('belt')\n"   # the shared copy first
+        assert open(os.path.join(new, "team-tools", "muse-only.py")).read() == "print('m')\n"
+        assert "opus tools/\tshift01\tplans/east.md" in files and "team-tools/\tshift01/muse\tmuse-only.py" in files
+        # the executable bit stays: a fresh copy of shift01's deploy.py into an empty workspace
+        lines, _ = full_tools.carry(os.path.join(runs, "shift05"), os.path.join(runs, "shift01"), ["opus"])
+        assert os.access(os.path.join(runs, "shift05", "opus", "tools", "deploy.py"), os.X_OK), lines
+        # the command line: start.log lines on stdout, the file list in RUN/carried-tools.txt
+        r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "full_tools.py"), "carry",
+                            os.path.join(runs, "shift06"), os.path.join(runs, "shift03"), "opus", "sol"],
+                           capture_output=True, text=True, check=True)
+        assert r.stdout.splitlines()[0].startswith("carry opus tools/: 3 files"), r.stdout
+        listed = open(os.path.join(runs, "shift06", "carried-tools.txt")).read().splitlines()
+        assert len(listed) == 5 and "opus tools/\tshift01\tdeploy.py" in listed, listed
+        # a resumed-from loop or a missing run ends the walk
+        put("shift07/resumed-from", "shift08\n")
+        put("shift08/resumed-from", "shift07\n")
+        assert [os.path.basename(r) for r in full_tools.chain(os.path.join(runs, "shift07"))] == ["shift07", "shift08"]
+        put("shift09/resumed-from", "gone\n")
+        assert full_tools.chain(os.path.join(runs, "shift09")) == [os.path.join(runs, "shift09")]
+    finally:
+        shutil.rmtree(tmp)
+    print("carry: ok")
+
+
 def paragraphs():
     for kind in ("claude", "codex", "grok", "agy", "muse"):
         p = full_tools.paragraph(kind)
@@ -229,6 +307,7 @@ def flags():
 
 if __name__ == "__main__":
     workspace()
+    carry()
     paragraphs()
     claude()
     codex_and_grok()
