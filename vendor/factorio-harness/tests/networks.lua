@@ -345,6 +345,20 @@ do
   run4(30)
   g=boiler_groups()
   eq(#g,1); has(g[1].line,'boiler (-22,41) 1 min, down from 4 min 160 s before')
+  -- A slow drain (shift10: boiler (-15,42) from 6 min at 03:38 to 3 at 03:47): boiler 3 gets a third of its burn.
+  -- Under 80% over 2 min, but 25% or more over 4 min (18 coal of 55 burnt): told at 240 s. Boiler 2's 60-to-56
+  -- swing is not.
+  st4.networks.boiler_own={}
+  for _,b in ipairs(boilers) do b.burner.inventory[1].count=60 end
+  eq(#boiler_groups(),0)
+  for _,c in ipairs({55,51,46}) do
+    run4(60); boilers[3].burner.inventory[1].count=c
+    eq(#boiler_groups(),0,'not over 4 min yet')
+  end
+  run4(60); boilers[3].burner.inventory[1].count=42; boilers[2].burner.inventory[1].count=56
+  g=boiler_groups()
+  eq(#g,1); eq(g[1].n,1)
+  has(g[1].line,'boiler (-16,41) 3 min, down from 4 min 240 s before: inserter (-16,39) from transport-belt (-9,36) (with 8 belt tiles up to it holding 48 coal)')
   game.surfaces=saved
 end
 -- Boilers that hold no fuel at all: the usual fuels are looked for, and the line says so.
