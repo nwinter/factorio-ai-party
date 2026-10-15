@@ -1562,6 +1562,19 @@ fh sleep 900 --until researched                       # ...or until the research
 - Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
   `revision`, `paused`, `active`, `pending` (the next 5 as `id action [label]`), `pending_count`, `recent` (the last 2
   results), `last_failure`.
+- A step whose action runs over time waits for that action's end before the next step starts: `walk`, `move_to`,
+  `build_path`, `construct`, `kite`, `mine`, `pickup`, `repair`, `rearm`, `refuel`, `transfer`, `collect`, `feed`,
+  `build`, `load_silo`, `recover`, `wait_until`, `wait_ticks`, `clear_cliffs`, `use_item` with cliff explosives,
+  `vehicle` (a drive or a drive's dry run), and `shoot` and `drop`. Its outcome decides the step (`cliffs_destroyed`
+  and `previewed` count as done).
+  - Before, a `clear_cliffs` step began and ended in the same tick (Sol 22:45: job 17309 at tick 10668307, its
+    `until_tick` 10675507), and the next step, a `move_to`, stopped the throw: no cliff went.
+  - tests/queuetimed.lua lists every such action and reads the mod's sources for every kind of timed action; one the
+    scheduler does not know fails it.
+  - A `vehicle` step runs with the character seated, as a direct `vehicle` call does. Any other step needs the
+    character on foot: while it is seated the plan pauses, so a plan that drives gets out first
+    (`[{"action":"vehicle","args":{"position":..., "enter":true}}, {"action":"vehicle","args":{"drive":...}},
+    {"action":"vehicle","args":{"exit":true}}, ...]`).
 - `queue_status` (Sol 10:50: a repeating courier plan's long done history hid its stalled step) shows `active` (the
   running step in full, with `running_s`: how long it has run), `pending` (the next step), `history` (the newest 3),
   `pending_count`, `history_total`, `last_failure`, `waiting`, `guards`, `repeating`, `cycle`. `history` and `pending`
