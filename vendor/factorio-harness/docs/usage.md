@@ -2462,6 +2462,22 @@ fh sleep 900 --until researched                       # ...or until the research
   `(rate of the last 2m: none in the last 1m)`. `fh research done` (`research_done {limit?}`): technologies your force finished lately, newest first, with
   `ago`, `unlocks` and `queued_by`. `unlocks` names recipes, `travel to PLACE`, `QUALITY quality`, given items, and
   bonuses as `modifier-type +10%` (fractions) or `+N`.
+- `fh progress` (pog's `bin/fh`, `tools/progress.py`; viewers Alex and Foobator) prints the run so far by shift from
+  the recorded data on the host (no game call): each shift's score log, `agent-stats.json`, `efficiency.jsonl` and
+  `tokens.json`, through the site's long-run reading (`site/longrun.py`).
+  - One line a shift: clock and game time, technologies (`+N` of its own, total), SPM, packs made a minute,
+    plates and circuits a minute, rockets, deaths, loss alerts, machines running, items made by machines and moved
+    by hand. Then a run line (game time, technologies, rockets, packs made, platforms, planets, deaths, loss alerts) and
+    the last 3 shifts side by side.
+  - SPM is research units a minute: the labs' use of packs in sets (the most-used pack that does not spoil); `-`
+    where a score log has no lab counts. A shift's own changes run from its first score row to its last. A shift that
+    began from an earlier save says so: `began from an earlier save (41h41m; the shift before ended at 44h58m)`.
+  - Moved by hand before shift10 is counted from the journals' direct calls (`(journals)`); since then it is the
+    game's count. Made by machines, machines and running are recorded since shift13.
+  - `--full`: each shift's technologies, the labs' use and packs made per pack, platforms (built, lost, where), the
+    team's tokens and model calls; the run's packs per pack and the measures. `--last N`: the last N shifts (the run
+    line and the trend still cover the run). `--format json`: all of it as JSON. Team numbers only: no agent is listed.
+  - `fh progress --last 2`
 - Editing the queue as the research GUI does: `research {remove: NAME}` (or an array; `cancel` is the same) takes it
   out, with queued technologies that need it (`also_removed`); progress stays with the technology. `research {move:
   NAME, to: N}` puts it at position N (1 is researched now); a move ahead of a queued prerequisite or behind a queued
@@ -3186,6 +3202,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   stone-wall); largest: #11 ...`, `failed (team): 6 (transfer: no coal in inventory x5 (astra 4, sol 1); ...)` (the
   top 3, with who; failures are kept 12 hours), `open board items: 3 (1 harness, 1 request, 1 task); oldest: #21 task
   "rail to the north ore" (sol, doing, 3h00m old); ...` (tasks, requests and harness requests open now, not claims).
+  Then the last 3 shifts' team numbers from the recorded data, the same measures as `fh progress`: `progress shift13:
+  SPM 9.8 | packs 192/min | techs +4 (171) | rockets +66 (250) | plates 2045/min, circuits 599/min | deaths 6 | began
+  from an earlier save`, one line a shift. pog's `tools/start-team.sh` passes them to `shift_start` (operator:
+  `remote.call("agent_harness","shift_start",N,"line ~ line ~ line")`, at most 3 lines of 300 characters); a shift
+  with no previous one on record gets the progress lines alone.
 - The look-ahead (lookahead.lua, Nick 12:35): `lookahead` (read, `fh call lookahead`) and, about every 45 real
   minutes per agent, once in a reply as `lookahead` (fh: the real clock, which holds when the game runs slow; never in
   the first 20 minutes after the workspace's first call; offset by the agent's name so agents do not all get it at
@@ -3393,6 +3414,20 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   `surface, force, tick, pollutant {name, color {r,g,b,a}} (none on Vulcanus and Fulgora), cells [[cx, cy, amount]]`
   (every charted chunk with pollution, spores on Gleba, at its centre; 32-tile chunks; at most 6000), `chunks, max,
   total` and `reached [{tick, position, spawners}]` (the pollution_reached_nest news), and `tick`. Agents cannot call it.
+- Operator census (census.lua; operator 22:00, task-slowreads: the host services' periodic reads counted with one find
+  over every surface in a tick, 32 to 169 ms on world n): `census {part, ore?}` (read; part `extras`, `snapshot`,
+  `machines` or `basemap`) gives the last complete background pass (every surface walked in bands of at most 32 chunks
+  by the harness tick, a slice of 200 entities a step, a pass about every 30 s): `extras` `electric_machines, starved`
+  (assembling machines, labs, drills, furnaces and inserters with an electric source; low or no power), `snapshot`
+  `entities {name: count}` (the force's engine counts of the analyst's building types) and `surfaces_with_buildings`,
+  `machines {name|recipe: {status: count}}`, `basemap` (the site's live map as tools/stream/harness.py BASEMAP_LUA draws
+  it at cell 4, 128 cells, core 160: rows, core, nests, turrets, buildings; with `ore: true` its ore grid when one was
+  read in the last 5 minutes, else `ore_pending` and the next pass reads it). Each reply has `ready`, `part`, `as_of`
+  (the tick its pass started) and `pass_ticks`; before the first pass `ready: false`. Robots and vehicles move during a
+  pass, so a surface's count may hold one twice or not at all. tools/pog.py CENSUS_FN asks it first in the stream's
+  extras and live map reads and the analyst's snapshot and machines reads, and counts as before when it has no pass.
+  `describe` lists it under `operator_reads`; agents cannot call it. The items-on-the-ground watch behind status alerts
+  and reply hints (ground.lua) is a background pass of the same kind (31 ms in one reply every 30 s before).
 - Operator hand hauling (hauling.lua; viewer Joonazan, 05:00): `hauling {top?}` (read; top 0..50, default 10) gives
   per agent since the save began `name, items, calls, direct_items, direct_calls, queue_items, queue_calls,
   order_items, order_calls, carry_tiles, since_tick, hauls` and `tick`. Counted: every hand transfer that moved items

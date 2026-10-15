@@ -372,10 +372,21 @@ return function(api)
   local ACTIVE_ITEM = {open=true, claimed=true, doing=true, blocked=true}
   -- Open projects are long-lived by design: the shift block lists them apart (board.lua project_lines).
   local NOT_ITEMS = {plan=true, note=true, claim=true, project=true}
+  -- The last shifts' team numbers from the recorded data (shift_start's progress: tools/progress.py, fh progress's
+  -- measures), after the previous shift's lines.
+  local function progress(shift)
+    local out = {}
+    for _, line in ipairs(shift.progress or {}) do out[#out+1] = 'progress ' .. line end
+    return out
+  end
   function M.retro(p)
     local s = api.state()
     local shift = s.shift
-    if not (shift and shift.prev_tick) then return nil end
+    if not shift then return nil end
+    if not shift.prev_tick then
+      local only = progress(shift)
+      return #only > 0 and only or nil
+    end
     if s.retro and s.retro.seq == shift.seq and s.retro.force == p.force.name then return s.retro.lines end
     local from, to = shift.prev_tick, shift.tick
     local lines = {}
@@ -436,6 +447,7 @@ return function(api)
       end
       lines[#lines+1] = string.format('open board items: %d (%s); oldest: %s', #items, table.concat(k, ', '), table.concat(old, '; '))
     end
+    for _, line in ipairs(progress(shift)) do lines[#lines+1] = line end
     s.retro = {seq=shift.seq, force=p.force.name, lines=lines}
     return lines
   end

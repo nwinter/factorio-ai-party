@@ -26,8 +26,10 @@ OPERATOR_DRAWS = {"highlights"}
 
 # Extra operator reads for the overlay (same privilege level as `pog.py score`): research progress, the costliest
 # finished technologies (to seed "recent milestones" on start), machines starved of power, and how dark it is
-# (LuaSurface.darkness, 0 at noon; drives the night lift on the camera captures, nightlift.py).
-STREAM_LUA = r"""
+# (LuaSurface.darkness, 0 at noon; drives the night lift on the camera captures, nightlift.py). The machine counts come
+# from the harness census when it has a pass (pog.CENSUS_FN; the find over every surface was 25-27 ms of this read's
+# 32 ms on world n, 2026-10-14 22:00, every 3 s), else from that find.
+STREAM_LUA = pog.CENSUS_FN + r"""
 local f = game.forces.player
 local cur = f.current_research
 local done = {}
@@ -40,12 +42,16 @@ table.sort(done, function(a, b) return a.cost > b.cost end)
 local top = {}
 for i = 1, math.min(4, #done) do top[i] = done[i].name end
 local machines, starved = 0, 0
-for _, s in pairs(game.surfaces) do
-  for _, e in pairs(s.find_entities_filtered{force = f, type = {"assembling-machine", "lab", "mining-drill", "furnace", "inserter"}}) do
-    if e.prototype.electric_energy_source_prototype then
-      machines = machines + 1
-      local st = e.status
-      if st == defines.entity_status.low_power or st == defines.entity_status.no_power then starved = starved + 1 end
+local counted = census("extras")
+if counted then machines, starved = counted.electric_machines, counted.starved
+else
+  for _, s in pairs(game.surfaces) do
+    for _, e in pairs(s.find_entities_filtered{force = f, type = {"assembling-machine", "lab", "mining-drill", "furnace", "inserter"}}) do
+      if e.prototype.electric_energy_source_prototype then
+        machines = machines + 1
+        local st = e.status
+        if st == defines.entity_status.low_power or st == defines.entity_status.no_power then starved = starved + 1 end
+      end
     end
   end
 end
@@ -116,8 +122,17 @@ rcon.print(helpers.table_to_json(out))
 # out: the site's turret-range layer), and with ore the resource under and around it. Read once a minute
 # (live.py), no per-tick work (time it on a world with tools/stream/basemap_time.py). Types the game does not know
 # (no Space Age or Elevated Rails) make the read fall back to the base list. No comments inside: one_line() joins
-# the lines.
-BASEMAP_LUA = r"""
+# the lines. With the stream's sizes (cell 4, 128 cells, core 160) the harness census's last pass answers instead
+# (pog.CENSUS_FN; this read took 134 ms on world n, 169 ms with ore, 2026-10-14 22:00): the same map, its tick the
+# pass's; asked with ore before the census has an ore grid, it comes without ore (the census reads it next pass).
+BASEMAP_LUA = pog.CENSUS_FN + r"""
+if CELL == 4 and MAXCELLS == 128 and CMAX == 160 then
+  local counted = census("basemap", WITHORE)
+  if counted and type(counted.basemap) == "table" then
+    rcon.print(helpers.table_to_json(counted.basemap))
+    return
+  end
+end
 local s = game.surfaces.nauvis
 local f = game.forces.player
 local CAT = {["ammo-turret"]="D",["electric-turret"]="D",["fluid-turret"]="D",["artillery-turret"]="D",["wall"]="D",["gate"]="D",
