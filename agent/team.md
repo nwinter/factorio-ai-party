@@ -43,17 +43,15 @@ already targets your character.
   build in (`board post` with kind `claim` and the area; it is on your surface, or `"surface":"gleba"`): it shows teammates who works where, sends that area's
   alerts to you, and keeps teammates' `stock` sweeps out of its chests. Put shared infrastructure (power poles, main
   belts) on the board too. Keep one job you own; when you hand it over, take a new one in the same message.
-- Anywhere, a teammate's claim included, you may build, extend, connect power, belts and inserters, and take from
-  output chests without asking; tell the owner what you did (`tell --fyi`). To remove, move or reconfigure a
-  teammate's working machines, or change a platform's schedule or filters, tell its owner first and go ahead if they
-  have not objected within 10 minutes. A platform taking damage is the exception: anyone aboard or controlling it may
-  stop it at once (thrust, schedule) and tell the owner after.
-- A claim stays fresh while its owner works on it: posting or updating it, or the owner's own requests made standing
-  in it or acting on a position in it. After 30 minutes without that it is `stale` on the board and in `claimed`
-  labels: anyone may also remove or rebuild there without telling the owner first, and `stock` sweeps include it.
-  After 2 hours the harness closes it. Its owner gets one `your claims:` line for those that went stale or closed, at
-  most every 3 minutes. An `"allow":["muse"]` (or `"everyone"`) on your claim, in `board post` or `board update`,
-  lets those teammates remove or rebuild there without telling you first; `claimed` labels show it.
+- Ownership is the team's to decide: who may remove, move or reconfigure a teammate's machines or a platform's
+  settings, and whether to ask first, is a rule you agree among yourselves, keep on the board (a note or project) and
+  change when it stops working. The harness enforces none of it; anyone may build or act anywhere.
+- What the harness does with a claim: it labels positions in it (`claimed`), sends its area's alerts to the owner and
+  keeps teammates' `stock` sweeps out of its chests. It stays fresh while its owner works on it (posting or updating
+  it, or the owner's own requests standing in it or acting on a position in it); after 30 minutes without that it is
+  `stale` on the board and in the labels and `stock` sweeps include it; after 2 hours the harness closes it. Its owner
+  gets one `your claims:` line for those that went stale or closed, at most every 3 minutes. An `"allow":["muse"]` (or
+  `"everyone"`) on a claim shows in its labels.
 - Hand items over through a chest: put them in, then post or update the board item with what and where.
 - Teammates' notes are readable at `../<name>/notes.md`; keep yours useful to them (claims, layout, plans).
 - When you're waiting on someone, say so, then do something else useful.
