@@ -276,7 +276,7 @@ function wakeLine(reply: Reply): string {
     // (round1950a: and where the character walks away to when hit with nothing walking it)
     ?? (r.woke === 'damaged' ? `health ${r.health}${r.by ? `, hit by ${r.by}` : ''}${r.fled ? `; ${r.fled}` : ''}` : undefined) ?? r.note;
   const more = r.full ? '' : ['told','mentioned','board','eggs','alert','damaged'].includes(r.woke) ? '; your next reply\'s team block has the rest' : '';
-  return `woke: ${r.woke ?? 'nothing'} after ${r.slept_s ?? 0} s${detail !== undefined ? ` (${said(detail)})` : ''}${more}`;
+  return `woke: ${r.woke ?? 'nothing'} after ${r.slept_s ?? 0} s${detail !== undefined ? ` (${said(detail)})` : ''}${r.wait_line ? `; ${said(r.wait_line)}` : ''}${more}`;
 }
 function deployingCommand(command: string): boolean { return command === 'deploy' || command === 'watch'; }
 function integer(value: string | undefined, fallback: number): number {
@@ -989,6 +989,7 @@ async function main() {
       outcome: last?.outcome ?? (status.result?.active ? 'running' : 'idle'),
       action: shot ? 'shoot' : last?.kind === 'feed' && typeof last?.handler === 'string' ? last.handler : last?.walking_for ?? last?.kind,
       waited_s: Math.round((Date.now()-started)/100)/10,
+      wait_estimates: last?.wait_estimates, idle_s: last?.idle_s, wait_line: last?.wait_line,
       position: player?.position ?? status.result?.position,
       health: player && player.health < player.max_health ? `${Math.round(player.health)}/${Math.round(player.max_health)}` : undefined,
       inventory: before !== undefined && player ? inventoryChange(before, carried(player)) : undefined,
@@ -1250,6 +1251,7 @@ async function main() {
     if (started.result?.repeat === true) waitedOut = undefined;
     // What keeps going, at once (a shell that returns early, as Codex's, shows it before the wake).
     if (!quiet && outputFormat === 'compact' && typeof started.result?.while_asleep === 'string') process.stdout.write(`${operatorHead()}while_asleep: ${started.result.while_asleep}\n`);
+    if (!quiet && outputFormat === 'compact' && typeof started.result?.wait_line === 'string') process.stdout.write(`${operatorHead()}wait: ${started.result.wait_line}\n`);
     // The sleep's real-time end: its game time at 60 ticks/s plus a margin; past it, it goes on while the game still
     // advances but runs slow (Luna, Astra, Sol, 13:41: 12 game s in 85 real s ended timed_out), up to 3 x SECONDS +
     // 60 s, and ends paused once no tick passed for STALL_MS.
@@ -1440,7 +1442,8 @@ async function main() {
       // Compact: the brief completion only (the acceptance was printed already when onAccepted is set).
       if (compactWaits && completion.error?.code !== undefined && completion.error.code !== 'action_interrupted'
         && !(completion.error.code === 'timed_out' && completion.result?.silo_wait)) {
-        return {...reply, ok:false, result:{accepted:reply.result}, error:completion.error};
+        return {...reply, tick:completion.tick ?? reply.tick, ok:false,
+          result:{accepted:reply.result, ...(action === 'wait_until' ? completion.result : {})}, error:completion.error};
       }
       if (compactWaits) return {...reply, tick:completion.tick ?? reply.tick, ok:completion.ok,
         result:onAccepted ? completion.result : {accepted:reply.result, ...completion.result}, ...(completion.ok ? {} : {error:completion.error})};

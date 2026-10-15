@@ -1394,6 +1394,33 @@ fh sleep 900 --until researched                       # ...or until the research
 - `fh call wait_until` also accepts the word form used by `fh sleep --until`, for example `{"until":"item_count yumako>=40","timeout_ticks":600}` or `{"until":"platform_arrived Sunward gleba","ticks":3600}`. The CLI expands it before sending the request, including waits in queue steps, guards and `queue_repeat.condition`. `ticks` and `timeout_ticks` are aliases of `timeout` for `wait_until`; conflicting timeout values or condition fields fail before submission. The runtime request uses the structured condition shown by `describe`.
 - Queue validation errors name the 1-based step path, action and label (when present), plus the failing argument or policy. Nested guard errors include `guards[N]` and the failing condition or step; repeat stop-condition errors name `condition`. A label is at most 64 bytes. Invalid steps are refused before they are appended or replace pending steps.
 - `wait_until --wait` takes its timeout from `--wait-timeout MS` (up to 900000, 15 minutes) unless `args.timeout` (ticks, up to 54000) is given; without either it is 3600 ticks. The condition is checked every 10 ticks. Not met in time: exit 1, `error.code` `timed_out`, with the condition and what it last saw.
+- Conditional `sleep`, direct `wait_until`, and queue wait steps report `wait_estimates` and a one-line `wait_line`.
+  Each estimate names its condition, `as_of_tick`, and either `eta_s` with its `basis` or `no_estimate` with the
+  reason. Seconds are game time, rounded up; these are projections at the stated rate, not deadlines. A condition
+  that holds has ETA 0. `sleep_check` refreshes every condition's estimate, including on a message/damage wake and
+  the final read; `any` reports all members. Direct waits expose these fields in active status and the final
+  result; queue status exposes them in `waiting` and `active`, then in the step's history result. A queue step's
+  first observation is on the tick after it starts, so it initially says `first condition observation pending`.
+  `fh sleep` prints the starting estimate immediately in compact output; `fh wait --until` keeps its one-line
+  wake reply, with the latest estimate appended. JSON includes the same fields.
+  - Research: remaining lab work through the target in the current queue (up to 128 technologies), divided by
+    the existing measured research throughput. The basis names its sample window and assumes unchanged throughput
+    and pack supply. No measured rate, disabled/stalled research, or a target outside the queue gives no estimate.
+  - Rocket parts: remaining crafts at the silo's current speed, including productivity and part progress, while
+    it is crafting. `rocket_ready` reports the separate `parts_eta_s`/`parts_basis`; its full ETA is unknown until
+    ready because the final rocket-raising animation has no measured duration.
+  - Items: net count change in this wait at the same inventory, named platform hub, or set of positions. Two
+    observations at least one game second apart establish the rate; zero change or movement away from the
+    threshold gives no estimate. Strict `below` uses the next integer below the threshold. Starting a new wait
+    starts a new sample pair. The predicate's count supplies the sample, with no second inventory/entity scan.
+  - Platform arrival: distance left on the current flight leg divided by current speed, assuming unchanged speed.
+    A stopped/paused platform, zero speed, or a leg to another destination gives no estimate for a pending arrival.
+    Hand crafting uses the remaining queue at the current hand-crafting speed. Event conditions without a rate
+    (including alerts and platform departure) say no estimate.
+  `idle_s` is the character's cumulative idle game seconds in this wait, also printed in `wait_line`. Body actions
+  continuing during sleep do not count; direct waits and a queue's wait step do, including repeating plans.
+  There is no character idle time while dead or aboard. Status reads do not reset it, and it stops at the first
+  observed wake or the sleep's time limit. The existing idle tick counts it without entity scans.
 - `wait_ticks {ticks: 1..54000}` holds the character idle (outcome `duration_elapsed`); like any character action it replaces the current one.
 - `wait_until {until: "rocket_ready", position}` (Luna, shift10 06:20: an `item_count` wait for the item `rocket` stayed 0 at a silo whose rocket was ready; that item is ammunition) is met when the rocket silo on that tile (any tile of it) has its rocket built and ready to launch, the GUI's rocket state. `saw`: `rocket-silo (65.5,14.5): rocket built (50/50 parts) and ready to launch, not launched, cargo agricultural-science-pack*45; parts for the rocket after it 0/50`; no silo of ours there fails the wait. It works as a queue step, a sleep condition and an order's `when` too.
 - `wait_until {until: "rocket_parts", at_least: N, position}` (Sonnet, shift14 22:50) is met when the rocket being built
