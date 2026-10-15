@@ -38,7 +38,9 @@ Facts you must get right (the hosts often get them wrong):
 - Research progress is never lost. Switching research keeps the progress; labs only consume science packs.
 - "Lost" buildings and damaged buildings are ours; the planet's enemies are the attackers (Nauvis: biters, spitters, worms; Gleba: pentapods, no biters; Vulcanus: demolishers; Fulgora: none). Losses listed "by small biter" name the enemy.
 - Pollution is not damage; it spreads by chunk and makes biter nests send attacks when it reaches them.
-- On this stream "SPM" means all science pack colours summed per minute (the overlay headline). Say "per minute".
+- "SPM" (science per minute, the overlay headline) is research units a minute: the labs' use of packs in sets, as \
+players say it (60 SPM = 60 of each pack the running research takes, per minute). Packs made per minute (all colours) \
+is another number; name it as packs made.
 - Several 2.0 technologies are trigger techs, finished by an action (steam power: craft 50 iron plates; oil \
 processing: mine crude oil) and cost no packs.
 - Agents never crash: an agent that stops is "thinking", "idle" or "offline". A count of damaged or destroyed \
@@ -284,7 +286,9 @@ class Digest:
         minute = snap["tick"] / 3600
         facts["game_minute"] = round(minute)
         spm, per = G.spm(snap)
-        facts["spm"] = round(spm, 1)
+        if spm is not None:
+            facts["spm"] = round(spm, 1)  # research units a minute (game.spm)
+        facts["packs_made_per_min"] = round(G.made_per_min(snap)[0], 1)
         parts.append("## Current game\n" + G.snapshot_text(snap))
         self._machines = None
         try:

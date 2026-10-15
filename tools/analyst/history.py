@@ -170,6 +170,37 @@ def rate(rows, minute, items, window=10):
     return (tot(end) - tot(start)) / span
 
 
+SPOILING_PACKS = {"agricultural-science-pack"}
+
+
+def research_spm(rows, minute, window=10):
+    """Science per minute as players say it (game.py spm): research units a minute over the window ending at minute,
+    the most-used pack that does not spoil in the labs' use (score's consumed). None when the log has no lab counts
+    (score logs before the consumed field) or the window is short; a row without consumed then used none yet."""
+    if not any(r.get("consumed") for r in rows):
+        return None
+    end, start = row_at(rows, minute), row_at(rows, minute - window)
+    if not end or not start or end is start:
+        return None
+    span = (end["tick"] - start["tick"]) / 3600
+    if span < 2:
+        return None
+    e, s = end.get("consumed") or {}, start.get("consumed") or {}
+    used = {p: max(0, e.get(p, 0) - s.get(p, 0)) / span for p in PACKS}
+    vals = [v for p, v in used.items() if p not in SPOILING_PACKS]
+    best = max(vals, default=0)
+    return best if best > 0 else max(used.values(), default=0)
+
+
+def spm_text(rows, minute, prefix=""):
+    """", SPM 12.3" (research units a minute), else ", packs made 27.0/min (all colours; no lab counts in this log)"."""
+    s = research_spm(rows, minute)
+    if s is not None:
+        return f", {prefix}SPM {s:.1f}"
+    m = rate(rows, minute, PACKS)
+    return f", {prefix}packs made {m:.1f}/min (all colours; no lab counts in this log)" if m is not None else ""
+
+
 def milestones(rows):
     first = {}
     for r in rows:
@@ -182,18 +213,18 @@ def milestones(rows):
 
 
 def at_text(series, minute):
-    lines = [f"past runs at game minute {minute:g} (SPM = all science packs per minute over the previous 10 min):"]
+    lines = [f"past runs at game minute {minute:g} (SPM = research units a minute, the labs' use of packs in sets, over "
+             "the previous 10 min; runs whose log has no lab counts show packs made instead):"]
     for name, rows in series.items():
         r = row_at(rows, minute)
         last = rows[-1]["tick"] / 3600
         if not r or last < minute - 3:
             lines.append(f"- {label(name)}:{SP}run ended at minute {last:.0f}")
             continue
-        s = rate(rows, minute, PACKS)
         fe = rate(rows, minute, ["iron-plate"])
         done = r.get("research_done") or []
         lines.append(f"- {label(name)}:{SP}{len(done)} techs" + (f", researching {r['current_research']}" if r.get("current_research") else "")
-                     + (f", SPM {s:.1f}" if s is not None else "") + (f", iron plates {fe:.0f}/min" if fe is not None else "")
+                     + spm_text(rows, minute) + (f", iron plates {fe:.0f}/min" if fe is not None else "")
                      + f", labs {(r.get('entities') or {}).get('lab', 0)}, assemblers "
                      f"{sum(v for k, v in (r.get('entities') or {}).items() if k.startswith('assembling'))}")
     return "\n".join(lines)
@@ -203,9 +234,9 @@ def runs_text(series):
     lines = []
     for name, rows in series.items():
         last = rows[-1]
-        s = rate(rows, last["tick"] / 3600, PACKS)
-        lines.append(f"- {label(name)}:{SP}{len(rows)} snapshots to game {last['tick'] / 3600:.0f} min; {len(last.get('research_done') or [])} techs; "
-                     f"final SPM {s:.1f}" if s is not None else f"- {label(name)}:{SP}{len(rows)} snapshots to game {last['tick'] / 3600:.0f} min")
+        s = spm_text(rows, last["tick"] / 3600, "final ")
+        lines.append(f"- {label(name)}:{SP}{len(rows)} snapshots to game {last['tick'] / 3600:.0f} min; {len(last.get('research_done') or [])} techs"
+                     + s if s else f"- {label(name)}:{SP}{len(rows)} snapshots to game {last['tick'] / 3600:.0f} min")
     return "\n".join(lines)
 
 
@@ -256,9 +287,13 @@ def world_text(run, series=None):
         if firsts:
             lines.append("First science pack of each colour: " + ", ".join(firsts))
         pts = [f"minute {m}: {r:.1f}" for m in range(30, int(rows[-1]["tick"] / 3600) + 1, 30)
-               for r in [rate(rows, m, PACKS)] if r is not None]
+               for r in [research_spm(rows, m)] if r is not None]
         if pts:
-            lines.append("This world's science per minute (all packs, 10-minute window): " + ", ".join(pts))
+            lines.append("This world's science per minute (SPM: research units a minute, 10-minute window): " + ", ".join(pts))
+        made = [f"minute {m}: {r:.1f}" for m in range(30, int(rows[-1]["tick"] / 3600) + 1, 30)
+                for r in [rate(rows, m, PACKS)] if r is not None]
+        if made:
+            lines.append("This world's science packs made per minute (all colours, 10-minute window): " + ", ".join(made))
     return "\n".join(lines)
 
 

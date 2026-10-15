@@ -19,12 +19,12 @@ sys.path.insert(0, str(SITE))
 import longrun  # noqa: E402
 
 
-def score(t, tick, done, science, rockets=0, platforms=(), planets=("nauvis",), space=None, at=None):
+def score(t, tick, done, science, rockets=0, platforms=(), planets=("nauvis",), space=None, at=None, used=None):
     produced = {"automation-science-pack": science, "iron-plate": 999}
     if space is not None:
         produced["space-science-pack"] = space
     return json.dumps({"t": t, "world": "n", "score": {"tick": tick, "research_done": list(done), "rockets": rockets,
-                       "produced": produced, "planets": list(planets),
+                       "produced": produced, "planets": list(planets), **({"consumed": used} if used else {}),
                        "platforms": [{"name": p, "hub": True, **({"at": at} if at else {})} for p in platforms]}})
 
 
@@ -60,13 +60,16 @@ def make(root):
     shift("s2", "s1", [], start="18:40:48 quota codex_account_b (astra) Weekly\n18:43:16 bot opus kept\n")
     # s3: a platform leaves Nauvis and reaches Vulcanus; its space science counter falls (the platform's counts went
     # with a lost one): never a negative rate
-    shift("s3", "s2", [score("2026-10-11T05:00:00", 3600 * 62, ["automation", "oil-processing"], 610),
+    # the labs' use (consumed): 400 red sets each 20 minutes; the agricultural count runs ahead (it spoils)
+    use = lambda k: {"automation-science-pack": 300 + 400 * k, "agricultural-science-pack": 1000 * k}  # noqa: E731
+    shift("s3", "s2", [score("2026-10-11T05:00:00", 3600 * 62, ["automation", "oil-processing"], 610, used=use(0)),
                        score("2026-10-11T05:20:00", 3600 * 82, ["automation", "oil-processing"], 1010, space=100,
-                             platforms=["Solstice"], at="nauvis"),
+                             platforms=["Solstice"], at="nauvis", used=use(1)),
                        score("2026-10-11T05:40:00", 3600 * 102, ["automation", "oil-processing", "rocket-silo"], 1410,
-                             space=40, rockets=1, platforms=["Solstice"], at="in transit"),
+                             space=40, rockets=1, platforms=["Solstice"], at="in transit", used=use(2)),
                        score("2026-10-11T06:00:00", 3600 * 122, ["automation", "oil-processing", "rocket-silo"], 1810,
-                             rockets=2, platforms=["Solstice"], at="vulcanus", planets=("nauvis", "vulcanus"), space=60)],
+                             rockets=2, platforms=["Solstice"], at="vulcanus", planets=("nauvis", "vulcanus"), space=60,
+                             used=use(3))],
           caster="05:30:00 [Vale] (space_moment, or:x, 1s) Platform's named. Solstice.\n"
                  "05:31:00 [Rook] (camera, or:x, 1s) Nothing to see.\n")
     shift("old", None, [score("2026-10-09T01:00:00", 100, [], 0)])  # an unrelated run: not in the chain
@@ -85,9 +88,14 @@ def main():
         s1, s2, s3 = lr["shifts"]
         assert (s1["n"], s2["n"], s3["n"]) == (1, None, 2) and s2.get("empty") and s2["resumed_as"] == "s3"
         assert (s1["deaths"], s1["losses"]) == (2, 3), s1  # three loss alerts, not fifteen buildings or four lines
-        assert s1["spm"] == 10.0 and s1["research_new"] == 1 and s1["moments"] == ["researched oil processing"], s1
-        assert s3["research_new"] == 1 and s3["rockets_new"] == 2 and s3["spm"] == 22.0, s3  # (1200 red + 120 space: 100, a fall to 40 as 0, 20) / 60
-        assert min(v for _, v in lr["spm"]) >= 0 and all(v >= 0 for pts in lr["spm_packs"].values() for _, v in pts)
+        # SPM: research units a minute from the labs' use; a log without it has none; packs made a minute apart
+        assert s1["spm"] is None and s1["made_per_min"] == 10.0, s1
+        assert s1["research_new"] == 1 and s1["moments"] == ["researched oil processing"], s1
+        assert s3["research_new"] == 1 and s3["rockets_new"] == 2 and s3["made_per_min"] == 22.0, s3  # (1200 red + 120 space: 100, a fall to 40 as 0, 20) / 60
+        assert s3["spm"] == 20.0, s3  # 1200 red sets in 60 min; agricultural's 50 a minute left out
+        assert lr["spm"] == [(82.0, 20.0), (102.0, 20.0), (122.0, 20.0)], lr["spm"]  # s3's 20-minute windows only
+        assert [v for _, v in lr["spm_packs"]["agricultural-science-pack"]] == [50.0, 50.0, 50.0], lr["spm_packs"]
+        assert min(v for _, v in lr["made_spm"]) >= 0 and all(v >= 0 for pts in lr["spm_packs"].values() for _, v in pts)
         assert lr["made"] == {"automation-science-pack": 1810, "space-science-pack": 120}, lr["made"]
         assert s3["moments"] == ["researched the rocket silo", "first rocket launched", "platform Solstice built",
                                  "reached Vulcanus", "Platform's named. Solstice."], s3["moments"]

@@ -53,7 +53,8 @@ class Rcon:
 
 
 # Totals cover every surface (Space Age: planets and platforms; the base game has only nauvis). Names missing from
-# the loaded mods are skipped. Space Age fields: consumed (science packs used by labs, all surfaces), infinite
+# the loaded mods are skipped. current_packs: the running technology's science packs (the stream's science per
+# minute shows the labs' use of each). Space Age fields: consumed (science packs used by labs, all surfaces), infinite
 # (infinite levels completed per technology), planets (surfaces with our entities), platforms.
 # SCORE_LUA is sent as one line, so it must hold no "--" comments (one cut the score in shake8).
 # A platform row's hub is false while its record waits for a starter pack (the New platform button).
@@ -115,8 +116,11 @@ for _, p in pairs(f.platforms or {}) do
   end
 end
 local cur = f.current_research
+local cur_packs = {}
+if cur then for _, i in ipairs(cur.research_unit_ingredients or {}) do cur_packs[#cur_packs+1] = i.name end end
 rcon.print(helpers.table_to_json{tick = game.tick, ticks_played = game.ticks_played, paused = game.tick_paused,
   rockets = f.rockets_launched, research_done = done, current_research = cur and cur.name or nil,
+  current_packs = #cur_packs > 0 and cur_packs or nil,
   produced = items, consumed = next(consumed) and consumed or nil, infinite = next(infinite) and infinite or nil, entities = counts, entities_counted = counted,
   planets = #planets > 0 and planets or nil, platforms = #platforms > 0 and platforms or nil})
 """

@@ -791,11 +791,21 @@ def context_facts(s, baseline=None, deadline=None, clock=True, shift=None):
     if sc.get("stage_label"):
         f["stage"] = sc["stage_label"]
         # what is being made, so the stage reads as progress (shake5: "Oil" aired as "oil stage choking")
-        made = [PACK_NAMES.get(p["item"], p["item"].replace("-", " ")) for p in sc.get("packs") or [] if p.get("total")]
+        made = [PACK_NAMES.get(p["item"], p["item"].replace("-", " ")) for p in (sc.get("made") or {}).get("packs") or []
+                if p.get("total")]
         if made:
             f["science_packs_made"] = made
-    if sc.get("spm"):
-        f["science_packs_per_minute"] = round(sc["spm"])
+    # science per minute as players say it (operator 15:51, viewer joonazan): research units a minute, the labs' use of
+    # packs in sets; the labs' use per pack beside it, and packs made (all colours) apart
+    if sc.get("spm") is not None:
+        f["science_per_minute"] = round(sc["spm"])
+        f["science_per_minute_is"] = "research units a minute: the labs use one of each pack the running research takes per unit"
+        used = {PACK_NAMES.get(p["item"], p["item"].replace("-", " ")): round(p["rate"] or 0)
+                for p in sc.get("packs") or [] if p.get("rate") is not None}
+        if used:
+            f["science_packs_used_per_minute"] = used
+    if (sc.get("made") or {}).get("per_min"):
+        f["science_packs_made_per_minute_all_colours"] = round(sc["made"]["per_min"])
     res = s.get("research") or {}
     if baseline and s.get("tick"):
         produced = {p["item"]: p.get("total") for p in s.get("production") or [] if p.get("total")}
@@ -1047,7 +1057,8 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
     return f
 
 
-BACKGROUND = ("team_size", "game_minutes", "stage", "science_packs_made", "science_packs_per_minute", "researching",
+BACKGROUND = ("team_size", "game_minutes", "stage", "science_packs_made", "science_per_minute", "science_per_minute_is",
+              "science_packs_used_per_minute", "science_packs_made_per_minute_all_colours", "researching",
               "technologies_done", "latest_research", "production_per_minute")
 STORY_KINDS = ("open", "research", "research_start", "lull", "power")
 STORY_ANGLES = ("pace", "explain", "production", "research")

@@ -239,6 +239,8 @@ already targets your character.
   remote view while your character stays put; its guns do not fire that way.
 - `equipment {"vehicle":311799,"operation":"insert","item":"energy-shield-equipment"}` works a tank's (6x8) or spidertron's
   (10x6) equipment grid in reach or seated; `"operation":"list"` shows it, also by remote view; `inspect` on it too.
+- `clear_cliffs {"positions":[{"x":82,"y":38.5}]}` throws cliff explosives you hold at those cliffs, walking into their 10-tile
+  range (`use_item {"item":"cliff-explosives","position":...}` too); `last.destroyed` names the cliffs gone, `last.left` the rest.
 - `vehicle {drive}` follows the engine's path for the vehicle around cliffs and water, backs off once when stuck, pushes
   through units (`last.rammed`), backs there rear first with `"reverse":true`, and takes `avoid_enemies` as `move_to` does.
   It keeps its turning room clear of our buildings and brakes before any of ours (`last.spared`). With no room near the
@@ -280,6 +282,9 @@ already targets your character.
   builds the landfill first, and a build refused there names the tile.
 - `deconstruct --args '{"area":...,"tiles":["landfill"]}'` also removes our landfill tile ghosts there
   (`tile_ghosts_removed`), and marks built landfill.
+- `./fh call mine --args '{"tiles":true,"position":{"x":194,"y":58}}' --wait` mines a laid tile (landfill, concrete,
+  stone path, artificial soil) by hand: the tile under it goes back and the item to you; `positions`, `area`, `"walk":true`,
+  `"dry_run":true`; a tile anything stands on is refused, naming it. `construct` mines tiles marked for deconstruction too.
 - Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, repairs,
   ghosts. `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":
   "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[{"action":"rearm","args":{"radius":20}}]}'`
@@ -329,6 +334,9 @@ already targets your character.
   `scan` rows (`filters: whitelist: iron-plate`, `off`, `set by circuit`); `configure {position, filters, filter_mode
   | mode, use_filters}` and `circuit_set {settings: {filters, filter_mode}}` set them. An unknown argument's refusal
   names the closest valid name, and on `configure` and `circuit_set` what that entity takes.
+- Modules: `configure {position | positions, modules: ["speed-module-2","speed-module-2"], by?}` sets a machine's module
+  slots (past the list: empty); in reach by hand (old ones to your inventory), else (remote, `surface`, `platform`, or
+  `by: "robots"`) an item request robots or the platform hub carry out; on a ghost its requests. `inspect` reads them back.
 - Turret targeting: `configure {position | positions, platform?, priority_targets: ["big-metallic-asteroid", ...],
   ignore_unprioritised: true}` sets a turret's (or ghost's) priority list as its GUI does; inspect reads it back;
   blueprints keep it.
