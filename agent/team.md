@@ -413,6 +413,8 @@ already targets your character.
   last gap out when the plan would close you in where you stand; a build reply says `closed_in` after it.
   Dry runs and build replies also name logistic chests no roboport covers (`outside_logistic_coverage`) and inserters
   or belts feeding an underground entrance from the side, with the lane that gets nothing (`underground_side_feed`).
+  Rail ramp dry runs list every physical collision in `collisions`, including rotated cliffs and deconstruction
+  marks that are still present; failed `place_ghosts` replies name the same complete footprint list.
   Dry runs list each cliff the placement marks (`cliffs_under`). `conflicts {name, position}` (a read) says what
   building there takes away: everything in the way, the fluid segments that split and the poles cut off.
 - A burner whose burnt-result slot is full and that burns nothing reads `burnt_result_full` in scan, supply,
@@ -556,3 +558,6 @@ already targets your character.
 
 - `preflight {position,items,from}` reads source chest stock and shorts; `manifest` checks combined kg/slots including existing cargo. `from` is one chest position or up to 16; nothing moves.
 - Full `status` rechecks nearby recorded egg sites: enemies visible now, future/elapsed timer, and gun range coverage with ammo. An old timer alone is not a live hatch.
+
+- `configure {platform | surface, position, recipe}` changes an empty idle machine remotely; a remote refusal never walks the body. Aboard, `configure {position, recipe}` uses the current platform. `belt_route` follows an existing belt chain from `from` to its open end and names blocked connection tiles.
+- Numeric `move_to {avoid_enemies:N}` keeps a hard margin; `no_safe_route` adds `last.smaller_margins` with the largest smaller integer margin whose engine route was verified, its closest nest pass, or the check's failure/budget reason. The check leaves the character stationary.

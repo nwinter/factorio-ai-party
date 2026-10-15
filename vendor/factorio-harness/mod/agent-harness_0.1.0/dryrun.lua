@@ -48,6 +48,7 @@ return function(api)
   -- Where the engine puts an entity asked for at pos: odd sizes on tile
   -- centres, even ones on tile corners (rails keep their own grid).
   function M.snap(proto, pos, dir)
+    if proto.type == 'rail-ramp' then return api.placewhy.ramp_position(pos, dir) end
     if RAILS[proto.type] then return {x=pos.x, y=pos.y} end
     local w, h = proto.tile_width or 1, proto.tile_height or 1
     if (dir or 0) % 8 == 4 then w, h = h, w end
@@ -773,6 +774,8 @@ return function(api)
         rec.proto = proto
         rec.mask = layers(proto.collision_mask)
         rec.pos = M.snap(proto, e.position, rec.dir)
+        local ramp = proto.type == 'rail-ramp'
+        if ramp then rec.dir = math.floor(rec.dir / 4) * 4 end
         if math.abs(rec.pos.x-e.position.x) > 0.01 or math.abs(rec.pos.y-e.position.y) > 0.01 then rec.asked = e.position end
         rec.box, rec.shape = M.footprint(proto, rec.pos, rec.dir)
         local mask = rec.mask
@@ -823,10 +826,13 @@ return function(api)
             return api.rail_overlaps(shape, b.left_top.x, b.left_top.y, b.right_bottom.x, b.right_bottom.y)
           end
           local function same_dir(d)
+            if ramp then return math.floor((d or 0) / 4) * 4 == rec.dir end
             if not shape then return true end
             return (proto.type == 'curved-rail-a' or proto.type == 'curved-rail-b') and d == rec.dir or d % 8 == rec.dir % 8
           end
-          for _, o in pairs(s.find_entities_filtered{area=rec.box}) do
+          local _, ramp_rows, ramp_text, _, ramp_nearby = api.placewhy.ramp_collisions(s, force, proto, rec.pos, rec.dir)
+          rec.collisions = ramp_rows and #ramp_rows > 0 and ramp_rows or nil
+          for _, o in pairs(ramp_nearby or s.find_entities_filtered{area=rec.box}) do
             if o.valid then
               local t = o.type
               if group and t ~= 'entity-ghost' and o.force == force and try(function() return o.prototype.fast_replaceable_group end) == group
@@ -837,7 +843,7 @@ return function(api)
                 if o.ghost_name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 and same_dir(o.direction) then same = same or o
                 elseif shape and RAILS[o.ghost_type] then -- crossing or joining
                 elseif overlap(o.bounding_box or rec.box, rec.box) and here(o) then ghosts[#ghosts+1] = 'ghost '..o.ghost_name..' '..at(o.position) end
-              elseif rail and RAILS[t] then
+              elseif rail and RAILS[t] and not ramp then
                 -- Another rail crosses or joins it; the same rail there is the same.
                 if o.name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 and same_dir(o.direction) then same = o end
               elseif shape and t == 'character' then -- a character on the track
@@ -848,10 +854,10 @@ return function(api)
                   local who = api.character_owner and api.character_owner(o)
                   blockers[#blockers+1] = string.format('%s at (%.1f,%.1f)', who and who.."'s character" or 'a character', o.position.x, o.position.y)
                 end
-              elseif not IGNORED[t] and not (rail and RAILS[t]) then
+              elseif not IGNORED[t] and not (rail and RAILS[t] and not ramp) then
                 local om = try(function() return o.prototype.collision_mask end)
                 if collide(mask, layers(om)) then
-                  if o.name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 then same = o
+                  if o.name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 and (not ramp or same_dir(o.direction)) then same = o
                   else
                     local neutral = o.force == nil or o.force.name == 'neutral'
                     local obstacle = OBSTACLE[t] and o.minable and neutral
@@ -859,10 +865,11 @@ return function(api)
                     if (obstacle and marks_obstacles) or (own and marks_own) then
                       if #marked < 4 then marked[#marked+1] = o.name..' '..at(o.position) end
                     elseif manual and not protected(o) then soft[#soft+1] = o
-                    elseif #blockers < 4 or t == 'cliff' then
+                    elseif ramp or #blockers < 4 or t == 'cliff' then
                       if t == 'cliff' then under_cliffs[#under_cliffs+1] = o end
                       local name = o.name
                       if t == 'cliff' then name = name..' (cliff explosives clear it)' end
+                      if ramp and try(function() return o.to_be_deconstructed(force) end) then name = name..' (marked for deconstruction; still present)' end
                       if o.force and o.force ~= force and not neutral then name = name..' of force '..o.force.name end
                       blockers[#blockers+1] = name..' '..at(o.position)
                     end
@@ -949,6 +956,7 @@ return function(api)
           -- whatever stands there now (an upgrade over a machine of the same
           -- kind, rail and pumpjack rules); the reasons above say why not.
           local engine = try(function()
+            if kind == 'ghosts' and api.ghost_placeable then return api.ghost_placeable(p, proto, rec.pos, rec.dir) end
             return s.can_place_entity{name=e.name, position=rec.pos, direction=rec.dir, force=force, build_check_type=check_type, forced=forced}
           end)
           rec.engine = engine
@@ -977,6 +985,9 @@ return function(api)
           if #offset > 0 then
             reasons[#reasons+1] = string.format('blocked by %s: on these tiles, not on the same centre; a build replaces one of its kind only on its own centre and of its size: mine it first',
               table.concat(offset, ', ', 1, math.min(3, #offset)))
+          elseif ramp and ramp_text ~= '' and not same then
+            if engine then rec.note = 'ramp footprint contains '..ramp_text..'; these entities are still present'
+            else reasons[#reasons+1] = 'the game refuses it here; ramp footprint contains '..ramp_text end
           elseif engine == true and not same then
             if #blockers > 0 then rec.note = 'replaces '..table.concat(blockers, ', ', 1, math.min(4, #blockers)) end
           elseif #blockers > 0 then reasons[#reasons+1] = 'blocked by '..table.concat(blockers, ', ', 1, math.min(4, #blockers)) end
@@ -1017,7 +1028,7 @@ return function(api)
               rec.late = last_tile
               rec.note = rec.note..string.format('; entry #%d of this batch lays one of them, after this one', last_tile)
             end
-          elseif #marked > 0 then rec.status = 'ok'
+          elseif #marked > 0 and not ramp then rec.status = 'ok'
           elseif mine and manual then rec.status = 'ok'
           elseif RAIL_BOUND[proto.type] and has_rails then
             rec.status = 'after_rails'; rec.note = 'goes with the plan\'s rails: the game checks its rail rules once they stand'
@@ -1680,12 +1691,12 @@ return function(api)
     local rows = {}
     for _, r in ipairs(recs) do
       -- A paste lays its tiles and entities together; the other calls go in order.
-      local problem = r.status == 'blocked' or r.status == 'needs_tiles' or r.reach ~= nil
+      local problem = r.status == 'blocked' or r.status == 'needs_tiles' or r.reach ~= nil or r.collisions ~= nil
         or ((r.status == 'exists' or r.status == 'after_tiles') and kind ~= 'paste')
       if problem then nproblems = nproblems + 1 end
       if (problem or plan.details) and #rows < (plan.details and 256 or MAX_ROWS) then
         local row = {index=r.copy and (r.copy..'.'..r.index) or r.index, name=r.name, position=r.pos or nil,
-          direction=r.dir ~= 0 and NAMES[r.dir] or nil, status=r.status, why=r.why or r.note, reach=r.reach}
+          direction=r.dir ~= 0 and NAMES[r.dir] or nil, status=r.status, why=r.why or r.note, reach=r.reach, collisions=r.collisions}
         if r.why and r.note then row.note = r.note end
         if plan.details and r.box then
           local x0, y0, x1, y1 = span(r.box)

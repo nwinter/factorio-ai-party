@@ -10,6 +10,7 @@ defines={events={on_script_path_request_finished=10,on_entity_died=11},shooting=
 local p={index=1,valid=true,connected=true,controller_type=1,physical_controller_type=1,character={valid=true},position={x=0,y=0},cheat_mode=false,driving=false}
 p.force={name='player',is_chunk_visible=function() return true end,is_chunk_charted=function() return true end,get_spawn_position=function() return {x=0,y=0} end}
 p.surface={name='nauvis'}
+p.character.surface=p.surface
 p.character.prototype={collision_mask={layers={player=true}}}
 local path_requests={}
 p.surface.request_path=function(args) path_requests[#path_requests+1]=args; return #path_requests end
@@ -1082,7 +1083,7 @@ local gear_stack=stack('iron-gear-wheel',3)
 plate_stack.clear=function() plate_stack.count=0; plate_stack.valid_for_read=false end
 gear_stack.clear=function() gear_stack.count=0; gear_stack.valid_for_read=false end
 local current_recipe={name='iron-gear-wheel'}
-local am={valid=true,name='assembling-machine-1',type='assembling-machine',position={x=3,y=0},force=p.force,fluidbox={},
+local am={surface=p.surface,valid=true,name='assembling-machine-1',type='assembling-machine',position={x=3,y=0},force=p.force,fluidbox={},
   prototype={crafting_categories={crafting=true}}}
 local am_slots={[5]=inv(plate_stack),[6]=inv(gear_stack)}
 am.get_inventory=function(i) return am_slots[i] end
@@ -1113,7 +1114,7 @@ local remote_change=call('configure',{position=am.position,recipe='copper-cable'
 eq(remote_change.recipe,'copper-cable'); eq(remote_change.remote,true)
 eq(call('queue_status').paused,false); eq(call('queue_status').active.action,'wait_ticks')
 plate_stack.name,plate_stack.count,plate_stack.valid_for_read='iron-plate',4,true
-fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel',walk=false}) end,'remote recipe change: the machine at (3,0) holds items')
+fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel',walk=false}) end,'assembling_machine_input holds items')
 -- By default the character walks into reach first and changes it there (autowalk.lua): the call is character work.
 ;(function()
   am.bounding_box={left_top={x=1.5,y=-1.5},right_bottom={x=4.5,y=1.5}}
@@ -3041,6 +3042,58 @@ do
   prototypes.entity['gun-turret']=plain_turret
   prototypes.item['gun-turret']=turret_item
 end
+-- Rail ramp refusals list the same entire footprint as the dry run, including
+-- entries after the old four-blocker/16-search-result limits.
+;(function()
+  local surface, old_proto = p.surface, prototypes.entity['rail-ramp']
+  local find,can,get,create = surface.find_entities_filtered,surface.can_place_entity,surface.get_tile,surface.create_entity
+  local ramp={name='rail-ramp',type='rail-ramp',items_to_place_this={{name='rail-ramp',count=1}},
+    collision_box={left_top={x=-1.59765625,y=-7.59765625},right_bottom={x=1.59765625,y=7.59765625}},
+    collision_mask={layers={object=true,is_object=true,rail=true}}}
+  prototypes.entity['rail-ramp']=ramp
+  local collisions={}
+  for i=1,20 do collisions[#collisions+1]={valid=true,name='iron-ore',type='resource',position={x=-43,y=106}} end
+  for i=1,6 do
+    local e={valid=true,name=i==6 and 'medium-electric-pole' or 'accumulator',type=i==6 and 'electric-pole' or 'accumulator',
+      position={x=-43.5,y=97.5+i},force=p.force,prototype={collision_mask={layers={object=true}}}}
+    e.to_be_deconstructed=function() return i==1 end
+    collisions[#collisions+1]=e
+  end
+  collisions[#collisions+1]={valid=true,name='cliff-fulgora',type='cliff',position={x=-38,y=102.5},
+    prototype={collision_mask={layers={is_object=true}}}}
+  surface.find_entities_filtered=function(f)
+    if f.type then return {} end
+    if f.area then
+      eq(f.limit,nil,'ramp footprint search is complete')
+      return collisions
+    end
+    return {}
+  end
+  local gate_calls=0
+  surface.can_place_entity=function(a)
+    gate_calls=gate_calls+1
+    eq(a.name,'rail-ramp');eq(a.position.x,-43);eq(a.position.y,106);eq(a.direction,8)
+    eq(a.forced,true);eq(a.build_check_type,defines.build_check_type.manual_ghost)
+    return false
+  end
+  surface.get_tile=function() return {name='grass-1',prototype={collision_mask={layers={ground_tile=true}}}} end
+  surface.create_entity=function() error('refused ramp must not place anything') end
+  local args={entities={{name='rail-ramp',position={x=-44,y=105},direction=11}}}
+  local preview=call('dry_run',{action='place_ghosts',args=args})
+  eq(preview.entities[1].status,'blocked');eq(#preview.entities[1].collisions,7)
+  eq(preview.entities[1].asked.x,-44);eq(preview.entities[1].direction,'south')
+  local result=call('place_ghosts',args)
+  eq(result.placed,0)
+  local message=result.failed[1].error
+  for _,text in ipairs({'medium-electric-pole (-43.5,103.5)','cliff-fulgora (-38,102.5)','marked for deconstruction; still present'}) do
+    assert(message:find(text,1,true),message)
+    assert(preview.entities[1].why:find(text,1,true),preview.entities[1].why)
+  end
+  assert(not message:find('iron-ore',1,true),message)
+  eq(gate_calls,2,'preview and placement use the same gate')
+  surface.find_entities_filtered,surface.can_place_entity,surface.get_tile,surface.create_entity=find,can,get,create
+  prototypes.entity['rail-ramp']=old_proto
+end)()
 -- pole_route lays pole ghosts from A to B within wire reach, shifting a
 -- blocked spot sideways, reusing a pole already on the line, and counting
 -- what is held; dry_run only plans.

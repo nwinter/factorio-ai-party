@@ -24,6 +24,51 @@ return function(api)
     return {left_top={x=pos.x+math.min(x1, x2), y=pos.y+math.min(y1, y2)},
       right_bottom={x=pos.x+math.max(x1, x2), y=pos.y+math.max(y1, y2)}}
   end
+  -- Factorio 2.0.77 ramps use cardinal directions and their own two-tile grid.
+  -- The runtime prototype supplies the generated collision box (not the data
+  -- stage's smoke box). Keep diagnostics on the same centre as create_entity.
+  function M.ramp_position(pos, dir)
+    dir = math.floor((dir or 0) / 4) * 4
+    local east = dir == 4 or dir == 12
+    local function snap(v, odd) return math.floor((v + (odd and 0 or 1)) / 2) * 2 + (odd and 1 or 0) end
+    return {x=snap(pos.x, not east), y=snap(pos.y, east)}, dir
+  end
+  -- All physical collisions in a ramp's footprint, without a row or search
+  -- limit. The engine's area query handles rotated cliff boxes; testing their
+  -- unrotated bounding_box again would introduce false positives. A mark is
+  -- reported, never treated as an entity having disappeared.
+  function M.ramp_collisions(surface, force, proto, pos, dir)
+    if proto.type ~= 'rail-ramp' then return nil end
+    pos, dir = M.ramp_position(pos, dir)
+    local box = M.box_at(proto.collision_box, pos, dir)
+    local mask = proto.collision_mask.layers
+    local ignored = {resource=true, corpse=true, ['item-entity']=true, ['entity-ghost']=true, ['tile-ghost']=true,
+      ['deconstructible-tile-proxy']=true, ['highlight-box']=true}
+    local entities, rows, texts = {}, {}, {}
+    local nearby = surface.find_entities_filtered{area=box}
+    for _, e in pairs(nearby) do
+      if e.valid and not ignored[e.type] then
+        local other = try(function() return e.prototype.collision_mask end)
+        local hits = false
+        if other and not other.colliding_with_tiles_only then
+          for layer in pairs(mask) do if other.layers[layer] then hits = true; break end end
+        end
+        if hits then entities[#entities+1] = e end
+      end
+    end
+    table.sort(entities, function(a, b)
+      if a.position.y ~= b.position.y then return a.position.y < b.position.y end
+      if a.position.x ~= b.position.x then return a.position.x < b.position.x end
+      return a.name < b.name
+    end)
+    for _, e in ipairs(entities) do
+      local marked = try(function() return e.to_be_deconstructed(force) end) == true
+      rows[#rows+1] = {name=e.name, type=e.type, position={x=e.position.x, y=e.position.y}, marked_for_deconstruction=marked}
+      texts[#texts+1] = string.format('%s (%g,%g)%s%s', e.name, e.position.x, e.position.y,
+        marked and ' (marked for deconstruction; still present)' or '', e.type == 'cliff' and ' (cliff explosives clear it)' or '')
+    end
+    return entities, rows, table.concat(texts, ', '), box, nearby
+  end
   local function layers(mask)
     local out = {}
     for k in pairs(mask and mask.layers or {}) do out[#out+1] = k end
