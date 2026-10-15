@@ -453,16 +453,8 @@
       var o = byName[c.agent] || {};
       return '<li>' + avatar(o.name ? o : { name: c.agent || c.owner }, 24) + '<span><b>' + esc(o.display_name || c.owner || '?') + '</b> ' + esc(c.title) + '</span></li>';
     }).join('');
-    // open projects (board kind project): owner, title and progress ("3 of 7 steps") with a bar
-    var projects = (board.projects || []).map(function (p) {
-      var o = byName[p.agent] || {}, pct = p.total ? Math.round(100 * p.done / p.total) : 0;
-      return '<li>' + avatar(o.name ? o : { name: p.agent || p.owner || '?' }, 24) + '<div><span><b>' + esc(p.title) + '</b> ' +
-        '<span class="fx-muted">' + esc(p.owner ? (o.display_name || p.owner) : 'no owner') + (p.status === 'blocked' ? ', blocked' : '') + '</span></span>' +
-        '<div class="project-progress"><div class="fx-progress fx-progress--health fx-progress--thin" role="progressbar" aria-valuenow="' + pct +
-        '" aria-valuemin="0" aria-valuemax="100" aria-label="' + esc(p.title) + ' progress" style="--fx-value:' + pct + '%"></div>' +
-        '<span class="small">' + esc(p.progress || '') + '</span></div></div></li>';
-    }).join('');
-    var moreProjects = (board.projects_total || 0) - (board.projects || []).length;
+    // open projects (board kind project): owner, title and progress ("3 of 7 steps") with a bar; each opens to its steps
+    var projects = projectsHtml(board, byName, 'board', false);
     // the jobs behind the counts (viewer joonazan, d15 08:19: "I can't see the open jobs"): open tasks and requests
     // nobody owns, and those an agent claimed or is doing (state.board.open_items / doing_items, newest change first)
     function who(name) { var o = byName[name] || {}; return o.display_name || name || ''; }
@@ -490,8 +482,7 @@
     var boardHtml = board.available === false ? '<p class="fx-muted">The board is not running in this world.</p>' :
       '<p class="board-counts"><span class="fx-chip fx-chip--orange">' + esc(board.in_progress || 0) + ' in progress</span> ' +
       '<span class="fx-chip fx-chip--grey">' + esc(board.open_unowned || 0) + ' open</span></p>' + jobsHtml +
-      (projects ? '<h4>Projects</h4><ul class="board-projects">' + projects + '</ul>' +
-        (moreProjects > 0 ? '<p class="fx-muted small">+' + esc(moreProjects) + ' more</p>' : '') : '') +
+      (projects ? '<h4>Projects</h4>' + projects : '') +
       (claims ? '<h4>Who owns what</h4><ul class="board-claims">' + claims + '</ul>' : '') +
       (events ? '<h4>Recent</h4><ul class="board-events">' + events + '</ul>' : '');
 
@@ -576,6 +567,74 @@
     ((plan && plan.doing) || []).forEach(function (l) { if (l.agent === name || (!l.agent && l.name === name)) hit = l; });
     return hit;
   }
+  // Projects on the Board and Team plan cards (viewer Foobator, d15 08:31: "the site lists projects, but we cant see the
+  // individual steps. there is also no way to browse hidden projects"). Each project opens to its steps (done with who
+  // and when, the next one marked, the rest open), what it needs, its handoff and who asked for it; which ones are open
+  // survives the refresh. "Show all" adds the projects the card hides and the last finished ones (state.board
+  // projects_more, projects_done), remembered per browser.
+  var openProjects = {}, showAllProjects = store('projectsAll') === '1';
+  function stepsHtml(p) {
+    var steps = (p.steps || []).map(function (st) {
+      var mark = st.done ? '✓' : st.next ? '→' : '○', cls = st.done ? 'done' : st.next ? 'next' : 'todo';
+      return '<li class="step step-' + cls + '"><span class="step-mark" aria-hidden="true">' + mark + '</span> ' +
+        (st.n != null ? '<span class="fx-muted">' + esc(st.n) + '.</span> ' : '') + esc(st.text) +
+        (st.done && st.by ? ' <span class="fx-muted small">done by ' + esc((team[st.by] || {}).display_name || st.by) + (st.ago ? ', ' + esc(st.ago) + ' ago' : '') + '</span>' : '') +
+        (st.next ? ' <span class="fx-chip fx-chip--orange step-tag">next</span>' : '') + '</li>';
+    }).join('');
+    var needs = p.needs ? Object.keys(p.needs).map(function (k) { return esc(p.needs[k]) + ' ' + esc(label(k)); }).join(', ') : '';
+    var who = p.requested_by ? ((team[p.requested_by] || {}).display_name || p.requested_by) : '';
+    var body = (steps ? '<ol class="project-steps">' + steps + '</ol>' : p.steps_cut ? '' : '<p class="fx-muted small">No steps yet.</p>') +
+      (p.steps_cut ? '<p class="fx-muted small">' + (steps ? 'Only its open steps are shown here' : 'Its steps are left out here') + ' to keep the page small.</p>'
+        : p.steps_partial ? '<p class="fx-muted small">The next open steps; the whole list comes with a later refresh.</p>' : '') +
+      (p.status === 'blocked' ? '<p class="small"><span class="fx-chip fx-chip--grey">blocked</span></p>' : '') +
+      (needs ? '<p class="small"><span class="fx-muted">Needs:</span> ' + needs + '</p>' : '') +
+      (p.handoff ? '<p class="small"><span class="fx-muted">Handoff:</span> ' + esc(p.handoff) + '</p>' : '') +
+      (who ? '<p class="small fx-muted">Asked by ' + esc(who) + '</p>' : '');
+    return body;
+  }
+  function projectItem(p, byName, card, withNext) {
+    var o = byName[p.agent] || {}, pct = p.total ? Math.round(100 * p.done / p.total) : 0, key = card + ':' + p.id;
+    var head = avatar(o.name ? o : { name: p.agent || p.owner || '?' }, 24) + '<span class="project-head"><span><b>' + esc(p.title) + '</b> ' +
+      '<span class="fx-muted">' + esc(p.owner ? (o.display_name || p.owner) : 'no owner') + (p.status === 'blocked' ? ', blocked' : '') +
+      (p.status === 'done' ? ', finished' : '') + '</span></span>' +
+      '<span class="project-progress"><span class="fx-progress fx-progress--health fx-progress--thin" role="progressbar" aria-valuenow="' + pct +
+      '" aria-valuemin="0" aria-valuemax="100" aria-label="' + esc(p.title) + ' progress" style="--fx-value:' + pct + '%"></span>' +
+      '<span class="small">' + esc(p.progress || '') + '</span></span>' +
+      (withNext && p.next && p.status !== 'done' ? '<span class="small plan-next"><span class="fx-muted">Next:</span> ' + esc(p.next) + '</span>' : '') + '</span>';
+    return '<li><details class="project" data-project="' + esc(key) + '"' + (openProjects[key] ? ' open' : '') + '><summary>' + head +
+      '</summary><div class="project-body">' + stepsHtml(p) + '</div></details></li>';
+  }
+  function projectsHtml(board, byName, card, withNext) {
+    var shown = (board.projects || []).map(function (p) { return projectItem(p, byName, card, withNext); }).join('');
+    var more = (board.projects_more || []).map(function (p) { return projectItem(p, byName, card, withNext); }).join('');
+    var done = (board.projects_done || []).map(function (p) { return projectItem(p, byName, card, withNext); }).join('');
+    var hidden = Math.max(0, (board.projects_total || 0) - (board.projects || []).length);
+    if (!shown && !more && !done) return '';
+    var n = (board.projects || []).length + (board.projects_more || []).length + (board.projects_done || []).length;
+    var extra = more || done ? '<button type="button" class="fx-btn fx-btn--small projects-all" data-action="projects-all" aria-expanded="' +
+        (showAllProjects ? 'true' : 'false') + '">' + (showAllProjects ? 'Show fewer projects' : 'Show all ' + n + ' projects') + '</button>' +
+        '<div class="projects-more"' + (showAllProjects ? '' : ' hidden') + '>' + (more ? '<ul class="board-projects">' + more + '</ul>' : '') +
+        (done ? '<h5>Finished</h5><ul class="board-projects">' + done + '</ul>' : '') + '</div>'
+      : (hidden > 0 ? '<p class="fx-muted small">+' + esc(hidden) + ' more</p>' : '');
+    return (shown ? '<ul class="board-projects">' + shown + '</ul>' : '') + extra;
+  }
+  // A project opened or closed by the reader stays so on the next refresh; the "show all" button flips every card.
+  app.addEventListener('toggle', function (ev) {
+    var d = ev.target;
+    if (d && d.dataset && d.dataset.project) openProjects[d.dataset.project] = !!d.open;
+  }, true);
+  app.addEventListener('click', function (ev) {
+    var b = ev.target && ev.target.closest ? ev.target.closest('[data-action="projects-all"]') : null;
+    if (!b) return;
+    showAllProjects = !showAllProjects;
+    store('projectsAll', showAllProjects ? '1' : '0');
+    Array.prototype.forEach.call(app.querySelectorAll('.projects-more'), function (el) { el.hidden = !showAllProjects; });
+    Array.prototype.forEach.call(app.querySelectorAll('[data-action="projects-all"]'), function (el) {
+      var n = (lastState && lastState.board) ? ((lastState.board.projects || []).length + (lastState.board.projects_more || []).length + (lastState.board.projects_done || []).length) : '';
+      el.textContent = showAllProjects ? 'Show fewer projects' : 'Show all ' + n + ' projects';
+      el.setAttribute('aria-expanded', showAllProjects ? 'true' : 'false');
+    });
+  });
   function planHtml(s, byName) {
     var board = s.board || {}, plan = board.plan || null;
     if (board.available === false) return '<p class="fx-muted">The board is not running in this world.</p>';
@@ -595,18 +654,8 @@
     var without = Object.keys(byName).filter(function (n) { return !planLine(plan, n); }).map(function (n) { return byName[n].display_name || n; });
     html += '<h4>Who is on what</h4>' + (lines ? '<ul class="plan-lines">' + lines + '</ul>' : '<p class="fx-muted">No agent has a line on the plan yet.</p>') +
       (without.length && lines ? '<p class="fx-muted small">No line: ' + esc(without.join(', ')) + '</p>' : '');
-    var projects = (board.projects || []).map(function (p) {
-      var o = byName[p.agent] || {}, pct = p.total ? Math.round(100 * p.done / p.total) : 0;
-      return '<li>' + avatar(o.name ? o : { name: p.agent || p.owner || '?' }, 24) + '<div><span><b>' + esc(p.title) + '</b> ' +
-        '<span class="fx-muted">' + esc(p.owner ? (o.display_name || p.owner) : 'no owner') + (p.status === 'blocked' ? ', blocked' : '') + '</span></span>' +
-        '<div class="project-progress"><div class="fx-progress fx-progress--health fx-progress--thin" role="progressbar" aria-valuenow="' + pct +
-        '" aria-valuemin="0" aria-valuemax="100" aria-label="' + esc(p.title) + ' progress" style="--fx-value:' + pct + '%"></div>' +
-        '<span class="small">' + esc(p.progress || '') + '</span></div>' +
-        (p.next ? '<p class="small plan-next"><span class="fx-muted">Next:</span> ' + esc(p.next) + '</p>' : '') + '</div></li>';
-    }).join('');
-    var more = (board.projects_total || 0) - (board.projects || []).length;
-    html += '<h4>Open projects</h4>' + (projects ? '<ul class="board-projects">' + projects + '</ul>' +
-      (more > 0 ? '<p class="fx-muted small">+' + esc(more) + ' more</p>' : '') : '<p class="fx-muted">None open.</p>');
+    var projects = projectsHtml(board, byName, 'plan', true);
+    html += '<h4>Open projects</h4>' + (projects || '<p class="fx-muted">None open.</p>');
     html += '<h4>Requests</h4><p class="board-counts"><span class="fx-chip fx-chip--grey">' + esc(board.open_unowned || 0) + ' open, nobody on them</span> ' +
       '<span class="fx-chip fx-chip--orange">' + esc(board.in_progress || 0) + ' in progress</span></p>';
     if (plan && plan.edited) html += '<p class="fx-muted small">Plan last edited ' + esc(plan.edited) + '.</p>';

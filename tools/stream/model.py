@@ -130,6 +130,29 @@ def project_next(steps):
     return clean_text(re.sub(r"^\[[ x]\]\s*", "", str(steps[0]))) or None
 
 
+STEP_RE = re.compile(r"^\[(x| )\]\s*(?:(\d+)\.\s*)?(.*?)(?:\s+\(done by ([^,()]+), ([^()]+?) ago\))?\s*$", re.S)
+STEPS_MAX, STEP_TEXT = 30, 200
+
+
+def parse_steps(steps):
+    """A project's steps as the board shows them ("[x] 3. Lay the belt (done by sol, 5m00s ago)", "[ ] 4. Feed coal") ->
+    [{n, text, done, by, ago}], at most STEPS_MAX, each text cut to STEP_TEXT; the first not done is next."""
+    out = []
+    for s in (steps if isinstance(steps, list) else [])[:STEPS_MAX]:
+        m = STEP_RE.match(str(s))
+        if not m:
+            continue
+        text = clean_text(m.group(3)).strip()  # (after the match: clean_text takes "[x]" for a rich-text tag)
+        row = {"n": int(m.group(2)) if m.group(2) else None, "text": text[:STEP_TEXT], "done": m.group(1) == "x"}
+        if m.group(4):
+            row["by"], row["ago"] = m.group(4).strip(), m.group(5).strip()
+        out.append(row)
+    nxt = next((r for r in out if not r["done"]), None)
+    if nxt:
+        nxt["next"] = True
+    return out
+
+
 def project_steps(progress, done=None, total=None):
     """A project's steps done and in all, from an event's numbers or its progress text ("3 of 7 steps", "no steps
     yet": 0, 0); None, None when neither says."""
@@ -1179,6 +1202,9 @@ class Model:
             "plan": self.plan_snapshot(),
             "projects": projects[:4],
             "projects_total": len(projects),
+            # the projects the card hides, and the last finished ones (Foobator 08:31: "no way to browse hidden projects")
+            "projects_more": projects[4:30],
+            "projects_done": self.done_projects_snapshot(),
             # the jobs behind the two counts (viewer joonazan, d15 08:19): open tasks and requests nobody owns, and those
             # claimed or being done, the latest changed first, JOBS_MAX each; absent until an active read listed them
             **({"open_items": open_items[:self.JOBS_MAX], "open_items_total": len(open_items),
@@ -1208,18 +1234,43 @@ class Model:
     def projects_snapshot(self):
         """Open projects (board kind project) for the board widget and the site, the latest changed first: title,
         owner, progress ("3 of 7 steps") and its numbers for a bar."""
-        rows = [it for it in self.board["items"].values()
-                if it.get("kind") == "project" and it.get("status") in ("open", "claimed", "doing", "blocked")]
+        return [self.project_row(it) for it in self._projects(("open", "claimed", "doing", "blocked"))]
+
+    def done_projects_snapshot(self):
+        """Finished projects (status done) the last board read listed, the latest first: the live page's "show all"."""
+        return [self.project_row(it) for it in self._projects(("done",))][:10]
+
+    def _projects(self, statuses):
+        rows = [it for it in self.board["items"].values() if it.get("kind") == "project" and it.get("status") in statuses]
         rows.sort(key=lambda it: -(it.get("updated_tick") or 0))
-        out = []
-        for it in rows:
-            done, total = project_steps(it.get("progress"))
-            out.append({"id": it.get("id"), "title": clean_text(it.get("title") or ""), "owner": it.get("owner"),
-                        "agent": self._who(it.get("owner")), "status": it.get("status"),
-                        "progress": it.get("progress") or "", "done": done, "total": total,
-                        # its next step and goal for the site's Team plan (viewer Alex 22:12; a list row's next_steps)
-                        "next": project_next(it.get("next_steps")), "goal": clean_text(it.get("goal") or "") or None})
-        return out
+        return rows
+
+    def project_row(self, it):
+        """One project for the board widget and the site: title, owner, status, progress and its numbers, next step, goal;
+        and when present its steps (all of them once live.py read the project in full; else the next open ones, with
+        steps_partial), what it needs, its handoff and who asked for it when not its owner (viewer Foobator, d15 08:31:
+        "we cant see the individual steps")."""
+        done, total = project_steps(it.get("progress"))
+        full = isinstance(it.get("steps"), list)
+        steps = parse_steps(it.get("steps") if full else it.get("next_steps"))
+        nxt = [f"[ ] {s['text']}" for s in steps if s.get("next")]
+        row = {"id": it.get("id"), "title": clean_text(it.get("title") or ""), "owner": it.get("owner"),
+               "agent": self._who(it.get("owner")), "status": it.get("status"),
+               "progress": it.get("progress") or "", "done": done, "total": total,
+               # its next step and goal for the site's Team plan (viewer Alex 22:12; a list row's next_steps)
+               "next": project_next(nxt or it.get("next_steps")), "goal": clean_text(it.get("goal") or "") or None}
+        if steps:
+            row["steps"] = steps
+            if not full:
+                row["steps_partial"] = True
+        needs = it.get("needs")
+        if isinstance(needs, dict) and needs:
+            row["needs"] = {str(k): v for k, v in needs.items() if isinstance(v, (int, float))}
+        if it.get("handoff"):
+            row["handoff"] = clean_text(str(it["handoff"]))[:300]
+        if it.get("requested_by") and it.get("requested_by") != it.get("owner"):
+            row["requested_by"] = it["requested_by"]
+        return row
 
     def plan_snapshot(self):
         """The team plan for the board widget and the site's Team plan: goals, each agent's line (agent name matched to

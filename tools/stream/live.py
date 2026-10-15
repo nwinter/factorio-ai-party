@@ -54,6 +54,32 @@ def attacker_label(by):
 
 
 class LiveSource:
+    STEP_READS = 8  # project reads (board {id}) at most per board refresh: changed projects first, the rest next time
+
+    def full_steps(self, items):
+        """Put each project's full step list on its row (`steps`, as board {id} gives it: "[x] 1. text (done by sol, 5m
+        ago)" / "[ ] 2. text"); a list read only has its first three open steps (next_steps). Read again only when the
+        project's updated_tick changed, STEP_READS at most a call; a project not read yet keeps next_steps only."""
+        reads = 0
+        for it in items:
+            pid, tick = it.get("id"), it.get("updated_tick")
+            if pid is None:
+                continue
+            have = self.project_steps.get(pid)
+            if (not have or have[0] != tick) and reads < self.STEP_READS:
+                reads += 1
+                try:
+                    res, _ = self.read("board", {"id": pid}, **self.reader())
+                    have = (tick, list((res.get("item") or {}).get("steps") or []))
+                    self.project_steps[pid] = have
+                except Exception:
+                    pass
+            if have:
+                it["steps"] = have[1]
+        keep = {it.get("id") for it in items}
+        for pid in [k for k in self.project_steps if k not in keep]:
+            del self.project_steps[pid]
+
     def __init__(self, world, run, profiles="auto", flow_every=30.0, harness=None, status_share=3, journals=None):
         self.name = f"live:{world}"
         self.world = world
@@ -89,6 +115,9 @@ class LiveSource:
         self.inbox_path = operator_inbox.path_for(journals)
         self.journals = journals
         self.plan_ticks_ok = None  # the runtime takes board {plan_ticks} (None: not asked yet)
+        # each project's steps in full (board {id}), read again only when it changed (viewer Foobator, d15 08:31: "we cant
+        # see the individual steps"): id -> (updated_tick, steps)
+        self.project_steps = {}
         # hand hauling (hauling.lua `hauling`), every few minutes: runs/RUN/hauling.jsonl, and the shift's numbers
         self.has_hauling = False
         self.next_hauling = 0
@@ -634,7 +663,11 @@ class LiveSource:
                     res, _ = self.read("board", {"limit": 60}, **self.reader())
                 claims, _ = self.read("board", {"kind": "claim", "limit": 30}, **self.reader())
                 try:  # open projects outlive the newest 60 items (eng/projects; an older runtime refuses the kind)
-                    projects, _ = self.read("board", {"kind": "project", "status": "active", "limit": 12}, **self.reader())
+                    projects, _ = self.read("board", {"kind": "project", "status": "active", "limit": 30}, **self.reader())
+                    # the last finished ones too, for the live page's "show all" (Foobator 08:31: "no way to browse hidden projects")
+                    done, _ = self.read("board", {"kind": "project", "status": "done", "limit": 10}, **self.reader())
+                    projects = {"items": (projects.get("items") or []) + (done.get("items") or [])}
+                    self.full_steps(projects["items"])
                 except Exception:
                     projects = {}
                 # every active item, for the live page's open and in-progress lists (viewer joonazan, d15 08:19: "I can't
