@@ -1724,6 +1724,56 @@ return function(api)
       out.inserters = #list > 0 and list or nil
       out.inserters_without_target = without > 0 and without or nil
     end
+    -- Each planned belt, underground exit and splitter: the tile its items move to and what stands there (Grok,
+    -- shift13: three belts of a batch faced south, +y, and the plates ran away from the drop belt): a belt planned in
+    -- this call, one built or a ghost (and which way it faces), or nothing, where they stop at its end.
+    do
+      local VEC = {[0]={0,-1}, [4]={1,0}, [8]={0,1}, [12]={-1,0}}
+      local BELTS = {['transport-belt']=true, ['underground-belt']=true, splitter=true}
+      local function rid(r) return r.copy and (r.copy..'.'..r.index) or r.index end
+      local function planned_at(pos)
+        for _, o in ipairs(occupied[key(math.floor(pos.x), math.floor(pos.y))] or {}) do
+          local b = o.box
+          if b and pos.x >= b.left_top.x and pos.x <= b.right_bottom.x and pos.y >= b.left_top.y and pos.y <= b.right_bottom.y then return o end
+        end
+      end
+      local function there(pos)
+        local o = planned_at(pos)
+        if o then
+          return string.format('planned #%s %s%s', rid(o), o.name, BELTS[o.proto.type] and VEC[o.dir] and ' facing '..NAMES[o.dir] or ' (no belt takes them there: they stop at its end)')
+        end
+        local box = {{pos.x-0.4, pos.y-0.4}, {pos.x+0.4, pos.y+0.4}}
+        for _, e in pairs(try(function() return s.find_entities_filtered{area=box} end) or {}) do
+          local t = e.valid and (e.type == 'entity-ghost' and e.ghost_type or e.type)
+          if t and BELTS[t] then
+            local d = try(function() return e.direction end) or 0
+            return string.format('%s%s (%g,%g) facing %s', e.type == 'entity-ghost' and e.ghost_name or e.name, e.type == 'entity-ghost' and ' ghost' or '',
+              e.position.x, e.position.y, NAMES[d] or tostring(d))
+          end
+        end
+        return 'nothing there (no belt takes them there: they stop at its end)'
+      end
+      local list = {}
+      for _, r in ipairs(recs) do
+        local t = r.proto and r.pos and r.proto.type
+        local v = t and BELTS[t] and VEC[r.dir]
+        -- (an underground entrance moves its items underground; its exit, given as an output, moves them on)
+        if v and not (t == 'underground-belt' and r.ug_type ~= 'output') and #list < (plan.details and 256 or MAX_INSERTERS) then
+          local from = {r.pos}
+          if t == 'splitter' then
+            local sx, sy = -v[2], v[1]
+            from = {{x=r.pos.x-sx*0.5, y=r.pos.y-sy*0.5}, {x=r.pos.x+sx*0.5, y=r.pos.y+sy*0.5}}
+          end
+          local parts = {}
+          for i, f in ipairs(from) do
+            local to = {x=f.x+v[1], y=f.y+v[2]}
+            parts[i] = string.format('(%g,%g): %s', to.x, to.y, there(to))
+          end
+          list[#list+1] = {index=rid(r), name=r.name, position=r.pos, moves='moves items '..NAMES[r.dir]..' to '..table.concat(parts, ' and ')}
+        end
+      end
+      out.belts = #list > 0 and list or nil
+    end
     local function idx(r) return r.copy and (r.copy..'.'..r.index) or r.index end
     -- Fluid and heat connections of the plan (Sol, shift13 16:50: Gleba's heat power planned by footprints, the
     -- joins unknown until it was built): for each planned boiler, heat exchanger, turbine, reactor, heating tower,

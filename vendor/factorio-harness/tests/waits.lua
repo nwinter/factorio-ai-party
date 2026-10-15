@@ -137,6 +137,40 @@ s.idle_fled={[1]={tick=11301,from={x=151.2,y=-26},to={x=127,y=-26},by='big-spitt
 game.tick=11302; r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'damaged'); eq(r.fled,'hit by big-spitter at (151.2,-26.0): walking away to (127,-26)')
 s.idle_fled=nil; s.char_hits=nil
 mode='realtime'
+-- Several conditions (Muse, 21:20: whichever of two or three chests fills first; Grok: alert|platform_arrived NAME):
+-- until=any, or a list; whichever holds first wakes it and the wake names which.
+do
+  local chests={a=0,b=0}
+  local Wa=dofile('mod/agent-harness_0.1.0/waits.lua'){state=function() return s end,integer=integer,replace=function() end,
+    advance=function() end,clock_mode=function() return 'realtime' end,
+    validate_condition=function(c) assert(c['until']=='item_count' or c['until']=='platform_arrived','unknown condition '..c['until']) end,
+    condition=function(_,c)
+      if c['until']=='platform_arrived' then return false,c.platform..' flying' end
+      local n=chests[c.at]; return n>=c.at_least,c.item..' '..n end}
+  p.character={valid=true,health=250}
+  game.tick=12000; s.alert_seq=20
+  r=Wa.handlers.sleep(p,{seconds=300,condition={['until']='any',conditions={{['until']='item_count',item='coal',at_least=50,at='a'},
+    {['until']='item_count',item='iron-plate',at_least=100,at='b'},{['until']='alert'}}}})
+  eq(r.condition,'item_count coal | item_count iron-plate | alert'); eq(r.saw[1],'coal 0'); eq(r.saw[2],'iron-plate 0')
+  assert(r.wakes_on:find('any of the conditions, a new alert',1,true),r.wakes_on)
+  game.tick=12060; r=Wa.handlers.sleep_check(p,{peek=true}); eq(r.woke,nil); eq(r.saw[2],'iron-plate 0')
+  chests.b=120; game.tick=12120
+  r=Wa.handlers.sleep_check(p,{peek=true}); eq(r.woke,'condition'); eq(r.met,'item_count iron-plate'); eq(r.saw,'iron-plate 120')
+  -- An alert member wakes as alert; a list works as until=any.
+  chests.b=0; game.tick=12800
+  r=Wa.handlers.sleep(p,{seconds=300,condition={{['until']='alert'},{['until']='platform_arrived',platform='Sunward',location='gleba'}}})
+  eq(r.condition,'alert | platform_arrived Sunward'); eq(r.saw,'Sunward flying')
+  s.alert_seq=21; game.tick=12860; eq(Wa.handlers.sleep_check(p,{peek=true}).woke,'alert')
+  -- Met at the start: woken at once, naming which.
+  chests.a=60; game.tick=13500
+  r=Wa.handlers.sleep(p,{seconds=300,condition={['until']='any',conditions={{['until']='item_count',item='iron-plate',at_least=100,at='b'},
+    {['until']='item_count',item='coal',at_least=50,at='a'}}}})
+  eq(r.already_met,true); r=Wa.handlers.sleep_check(p,{peek=true}); eq(r.woke,'condition'); eq(r.met,'item_count coal')
+  fails(function() Wa.handlers.sleep(p,{seconds=60,condition={['until']='any',conditions={}}}) end,'until=any takes conditions: 1..8')
+  fails(function() Wa.handlers.sleep(p,{seconds=60,condition={['until']='any',conditions={{['until']='nope'}}}}) end,'unknown condition nope')
+  fails(function() Wa.handlers.sleep(p,{seconds=60,condition={['until']='any',conditions={{['until']='any',conditions={}}}}}) end,'not another any')
+  s.alert_seq=nil
+end
 -- In turns mode the clock is asked to run for the sleep (advance caps at 36000).
 p.character={valid=true,health=250}; mode='turns'
 W.handlers.sleep(p,{seconds=900}); eq(advanced,36000)

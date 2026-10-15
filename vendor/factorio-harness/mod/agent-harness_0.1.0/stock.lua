@@ -451,6 +451,9 @@ return function(api)
     if action.got==0 and errors+unreached>0 and errors>=action.visited then
       return errors>0 and 'failed' or 'unreached'
     end
+    -- load_silo {walk} (rocketload.lua): its silo stop ends it (loaded, launched, short, no_rocket); the stops ran out
+    -- before that when the silo was not reached or its load failed.
+    if action.op=='load_silo' then return action.final or (unreached>0 and 'unreached') or (errors>0 and 'failed') or 'short' end
     -- transfer {walk=true}: what moved, or nothing to take, or nothing the targets wanted
     if action.op=='transfer' then
       -- collect {walk=true} names its outcome as a collect does.
