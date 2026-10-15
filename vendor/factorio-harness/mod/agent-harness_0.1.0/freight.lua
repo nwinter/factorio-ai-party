@@ -612,7 +612,13 @@ return function(api)
       local d = c1[name]; local b = (c0 or {})[name] or {made=0, used=0}
       if d.made - b.made > 0 or d.used - b.used > 0 then want(name) end
     end
-    local stats = not c0 and try(function() return pl.force.get_item_production_statistics(pl.surface) end)
+    local stats = try(function() return pl.force.get_item_production_statistics(pl.surface) end)
+    -- The last 1 and 5 minutes too (Astra, shift17 10:50: parked over Aquilo the line kept the finished flight's average;
+    -- "leg average obscures whether orbit is sustainable"): the game's own counts for the platform surface.
+    local function flow(name, category, precision)
+      return stats and precision and try(function() return stats.get_flow_count{name=name, category=category, precision_index=precision, count=true} end) or 0
+    end
+    local P = defines.flow_precision_index or {}
     local l = flying and M.leg(pl)
     local rows = {}
     table.sort(names)
@@ -622,12 +628,21 @@ return function(api)
         local a, b = (c0[name] or {made=0, used=0}), (c1[name] or {made=0, used=0})
         made, used = b.made - a.made, b.used - a.used
       else
-        made = stats and try(function() return stats.get_flow_count{name=name, category='input', precision_index=defines.flow_precision_index.ten_minutes, count=true} end) or 0
-        used = stats and try(function() return stats.get_flow_count{name=name, category='output', precision_index=defines.flow_precision_index.ten_minutes, count=true} end) or 0
+        made, used = flow(name, 'input', P.ten_minutes), flow(name, 'output', P.ten_minutes)
       end
       local stock = (hub[name] or 0) + (turrets[name] or 0)
       local text = string.format('%s: made %s/min, used %s/min over %s; hub %d, turrets %d', name, per_min(made, minutes), per_min(used, minutes), window,
         hub[name] or 0, turrets[name] or 0)
+      local m1, u1 = flow(name, 'input', P.one_minute), flow(name, 'output', P.one_minute)
+      local m5, u5 = flow(name, 'input', P.five_minutes), flow(name, 'output', P.five_minutes)
+      if stats and P.one_minute and P.five_minutes then
+        text = text .. string.format('; last 1 min: made %s/min, used %s/min; last 5 min: made %s/min, used %s/min', per_min(m1, 1), per_min(u1, 1),
+          per_min(m5, 5), per_min(u5, 5))
+        -- Stopped (no arrival to count to): how long the stock lasts at the last 5 minutes' rate when it falls.
+        if not flying and u5 > m5 then
+          text = text .. string.format('; at the last 5 min rate the %d in the hub and turrets last %s', stock, secs((stock / ((u5 - m5) / 5)) * 3600))
+        end
+      end
       if l and l.eta_ticks and minutes > 0 then
         local net = (made - used) / minutes
         local eta_min = l.eta_ticks / 3600

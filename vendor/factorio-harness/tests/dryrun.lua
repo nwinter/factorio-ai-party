@@ -420,8 +420,25 @@ do
     {index=4, name='transport-belt', position={x=24.5, y=27.5}, direction=0}}})
   eq(#b.belts, 4)
   eq(b.belts[1].index, 1); eq(b.belts[1].moves, 'moves items south to (20.5,28.5): planned #2 transport-belt facing south')
-  eq(b.belts[3].moves, 'moves items south to (20.5,30.5): transport-belt (20.5,30.5) facing west')
+  -- (nothing feeds the west-facing belt from behind: it turns into a curve, both lanes go on)
+  eq(b.belts[3].moves, 'moves items south to (20.5,30.5): transport-belt (20.5,30.5) facing west: no belt feeds it from behind, so it turns into a curve and both lanes go on')
   eq(b.belts[4].moves, 'moves items north to (24.5,26.5): nothing there (no belt takes them there: they stop at its end)')
+  -- A side-load (Grok, shift17 10:50: he nearly joined an ice belt into the magazine line): the west-facing belt is fed
+  -- from behind, so the south-moving feeder from its north side fills its right lane, named with what it carries now.
+  local lines = {[1]={get_contents=function() return {{name='firearm-magazine',count=6}} end},
+    [2]={get_contents=function() return {{name='ice',count=4}} end}}
+  local side = world(planet, {{name='transport-belt', type='transport-belt', position={x=40.5, y=30.5}, direction=12,
+      get_transport_line=function(i) return lines[i] end},
+    {name='transport-belt', type='transport-belt', position={x=41.5, y=30.5}, direction=12}})
+  local sb = dr.check({surface=side, force=force, position={x=40, y=25}}, {kind='build', entities={
+    {index=1, name='transport-belt', position={x=40.5, y=29.5}, direction=8},
+    {index=2, name='transport-belt', position={x=40.5, y=31.5}, direction=0}}})
+  eq(sb.belts[1].moves, 'moves items south to (40.5,30.5): transport-belt (40.5,30.5) facing west: side-load onto its right lane (that lane now: ice*4)')
+  eq(sb.belts[2].moves, 'moves items north to (40.5,30.5): transport-belt (40.5,30.5) facing west: side-load onto its left lane (that lane now: firearm-magazine*6)')
+  -- Facing it head-on: they do not go on.
+  local face = dr.check({surface=side, force=force, position={x=40, y=25}}, {kind='build', entities={
+    {index=1, name='transport-belt', position={x=39.5, y=30.5}, direction=4}}})
+  eq(face.belts[1].moves, 'moves items east to (40.5,30.5): transport-belt (40.5,30.5) facing west: it faces them; they do not go on')
 end
 eq(dryrun.placeable_on('landfill', 'water'), true); eq(dryrun.placeable_on('landfill', 'grass-1'), false)
 eq(dryrun.placeable_on('space-platform-foundation', 'empty-space'), true); eq(dryrun.placeable_on('space-platform-foundation', 'grass-1'), false)

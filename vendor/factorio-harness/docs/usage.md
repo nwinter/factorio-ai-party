@@ -157,7 +157,12 @@ fh call status
   run lists each planned belt, underground exit and splitter in `belts` `{index, name, position, moves}`: the tile its
   items move to and what stands there: `moves items south to (20.5,28.5): planned #2 transport-belt facing south`,
   `...: transport-belt (20.5,30.5) facing west` (built; a ghost says `ghost`), `...: nothing there (no belt takes them
-  there: they stop at its end)`.
+  there: they stop at its end)`. Into a transport belt's side (Grok, shift17 10:50: he nearly joined an ice belt into the
+  magazine line) it names the lane and what it carries now: `...: transport-belt (40.5,30.5) facing west: side-load onto
+  its right lane (that lane now: ice*4)` (the lane on the side the items come from; a ghost or a planned belt has no
+  items yet); a belt nothing feeds from behind or from its other side turns into a curve: `...: no belt feeds it from
+  behind, so it turns into a curve and both lanes go on`; one facing them: `...: it faces them; they do not go on`.
+  The same goes for `place_ghosts` with `dry_run`.
 - An inserter's `direction` names the side it picks up from; it drops to the opposite side. Built at (10.5,5.5) with
   `direction: east` it picks up at (11.5,5.5) and drops at (9.5,5.5) (items move west); with `direction: west` it picks
   up at (9.5,5.5) and drops at (11.5,5.5) (items move east). A long-handed inserter reaches 2 tiles each way. Belts,
@@ -1711,6 +1716,27 @@ source must be an own chest readable when the call starts. Each take is at most 
 at most 64 source attempts, at its tick limit (default 36,000), or when it completes or cannot obtain more fuel.
 Unspent fuel stays in the character inventory. A short tour ends `out_of_items` with the remaining stop count.
 
+`pipe_gaps {from,to,via?}` (Muse, shift17 10:50: 15 minutes locating a cut crude line by chaining supply and inspect
+by hand) reads a pipe line the same way, live, in sight or by remote view on your surface (512 tiles, 16 corners, one
+small area query a tile): `segments` are runs of tiles whose fluid entities (pipes, pipes-to-ground, tanks, pumps, any
+with a fluidbox) join by a pipe connection, each with the engine's fluid segment there (`segment_id`, `fluid`,
+`amount`, `extent`) and the tiles a pipe-to-ground pair covers (`underground`); `cuts` say where the line breaks: `pipe
+(3.5,0.5) and pipe (4.5,0.5) do not join`, `pipe (5.5,0.5): nothing of ours with a fluidbox at (6.5,0.5)`, `...: a ghost
+of pipe at (14.5,0.5), not built yet`; `empty` runs, `ghosts`, and `unknown` runs (chunks our force does not see now,
+not read); `line` sums it up in one line.
+
+`danger {position, radius?, surface?}` (Opus, shift17 10:51: died twice walking to sites next to nests) reads what the
+map and the character show about a destination, facts only, no verdict: its distance from you; the worms and
+spawners on charted chunks within `radius` (default 64, 8..128) by name, each kind's reach (a worm's range, a
+spawner's units' sight) and the nearest; enemy units seen now within it (chunks our force sees now; how many of the
+chunks are not in sight); attacks on our structures, buildings lost and enemy groups heading there in the last 10
+minutes; deaths of ours within it; the worms and spawners whose reach the straight line from you passes (not the
+walk's path, which `move_to` checks itself); and you: health, armor and its shield. `line` and `lines`, plus
+`spawners`, `worms`, `units` ({name=count}), `distance`, `you`. On a private 2.0.77 server at a nest the 25 chunks of
+worms and spawners took 6.9 ms and the unit query 0.4 ms; chunk reads are kept a minute (as `move_to`'s), at most 64 a
+call. `pipe_gaps` queries once a straight leg (0.2 ms for 512 tiles) and reads each entity's connections once (about
+5 ms for 512 pipes).
+
 `belt_gaps {from,to,via?,surface?}` reads a tile line with horizontal/vertical legs, up to 512 tiles and 16 corners.
 It returns `missing`, `ghosts`, and `unknown`, each with its position and observation tick where known, plus counts
 of built belts and observed underground spans. `missing` means no surface belt was present at that observation;
@@ -1976,6 +2002,10 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
       count, as `count` does. `items` lists up to 16 items to look for
       (`item` too); the item picked is the one taken (`count`, `up_to`, `keep` as in a plain take). The take walks
       there when out of reach (as `walk`).
+      Robot-reserved stock (Haiku, shift17 10:50: walked, then "holds no X now"): what robots are on their way to pick
+      up at a logistic chest is read before any walk; a place whose stock is all reserved is skipped (`why: all of it
+      reserved for robot pickup`), the picked line says `holds 12 yumako-seed, 4 of them reserved for robot pickup`,
+      `most_stock` compares what is not reserved, and with none left the note says so.
     - Empty places are skipped: `skipped` counts them and `skipped_places` lists up to 8 (`holds: 0`, or the
       `error` reading one); they are never short. When none holds any, the reply is `moved: 0`, `picked: "none"` and a
       `note` (`none of the 2 listed places holds yumako-seed now: nothing taken, nothing walked`); nothing starts, and
@@ -2365,7 +2395,10 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     `firearm-magazine: made 54/min, used 35/min over this leg nauvis->gleba (3m46s so far); hub 751, turrets 194; at
     the arrival at gleba in 2m09s about 985 at that rate`, `...; runs out in 4m09s at that rate, before the arrival at
     gleba in 75m00s`. A leg that began before the runtime kept these counts reads the game's last 10 minutes (`over
-    the last 10 min`).
+    the last 10 min`). Every line then adds the game's last 1 and 5 minutes for the platform surface (Astra, shift17
+    10:50: parked over Aquilo the leg average hid whether the orbit keeps up): `; last 1 min: made 3.0/min, used
+    12/min; last 5 min: made 4.0/min, used 12/min`, and while stopped, when it uses more than it makes, `; at the last
+    5 min rate the 540 in the hub and turrets last 67m30s`.
   - `incoming` and `incoming_cargo`: rockets launched to its hub whose cargo pod has not arrived yet, with their cargo
     (`1 rocket on the way: firearm-magazine*20`; per rocket `a rocket from nauvis launched 3s ago: firearm-magazine*20
     (rising over nauvis)`, then `(coming down onto the platform)`). On 2.0.77 a pod rose over the planet for about 25
@@ -3957,7 +3990,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     never rose between the networks view's looks of that time (one a minute; told only once the looks cover 5 minutes),
     no robot is on the way to it with a fuel, and no inserter dropping into it holds a fuel: `boiler (-1,41): its feed
     chest requester-chest (10,39) holds 12 coal, nothing put into it for 5+ min (feeder inserter (-1,39))`; told again
-    under 10 and when empty (`holds no fuel`);
+    under 10 and when empty (`holds no fuel`); a chest inside someone's claim adds `; the chest is in opus's claim #31`,
+    and that claim's owner hears it as well as the boiler's (Haiku, shift17 10:50: "so the fuel owner is told directly");
     `robots_busy`, a logistic network with no idle logistic robot in every 30-second look for 10 minutes (`logistic
     #3: no idle logistic robot for 11 min (147 robots; 1 requests unfilled 60+ s)`). A network with machines on low
     power (satisfaction under 100%) shows as the `low power` groups above.

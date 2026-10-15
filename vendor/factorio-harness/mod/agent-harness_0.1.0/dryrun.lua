@@ -1804,19 +1804,56 @@ return function(api)
           if b and pos.x >= b.left_top.x and pos.x <= b.right_bottom.x and pos.y >= b.left_top.y and pos.y <= b.right_bottom.y then return o end
         end
       end
-      local function there(pos)
+      -- A belt (built, ghost or planned) at pos: {kind, dir, entity?, planned?}.
+      local function belt_at(pos)
         local o = planned_at(pos)
-        if o then
-          return string.format('planned #%s %s%s', rid(o), o.name, BELTS[o.proto.type] and VEC[o.dir] and ' facing '..NAMES[o.dir] or ' (no belt takes them there: they stop at its end)')
-        end
+        if o then return BELTS[o.proto.type] and {kind=o.proto.type, dir=o.dir, planned=o} or nil end
         local box = {{pos.x-0.4, pos.y-0.4}, {pos.x+0.4, pos.y+0.4}}
         for _, e in pairs(try(function() return s.find_entities_filtered{area=box} end) or {}) do
           local t = e.valid and (e.type == 'entity-ghost' and e.ghost_type or e.type)
-          if t and BELTS[t] then
-            local d = try(function() return e.direction end) or 0
-            return string.format('%s%s (%g,%g) facing %s', e.type == 'entity-ghost' and e.ghost_name or e.name, e.type == 'entity-ghost' and ' ghost' or '',
-              e.position.x, e.position.y, NAMES[d] or tostring(d))
-          end
+          if t and BELTS[t] then return {kind=t, dir=try(function() return e.direction end) or 0, entity=e, ghost=e.type == 'entity-ghost'} end
+        end
+      end
+      local function items_text(list)
+        local parts = {}
+        for i, st in ipairs(list or {}) do if i <= 3 then parts[#parts+1] = st.name..'*'..st.count end end
+        return #parts > 0 and table.concat(parts, ' ')..(#list > 3 and ' ...' or '') or 'empty'
+      end
+      -- Items moving by v into the transport belt b at pos from its side (Grok, shift17 10:50: "place_ghosts dry_run
+      -- should name which belt lane a sideload fills. I nearly joined an ice belt into the magazine line"): the lane on
+      -- the side they come from (the game's side-loading), and what that lane carries now; but a belt with no input
+      -- from behind and none from its other side turns into a curve, and both lanes go on.
+      local function side_lane(pos, b, v)
+        local w = VEC[b.dir]
+        if not w or b.kind ~= 'transport-belt' then return '' end
+        if v[1] == w[1] and v[2] == w[2] then return '' end
+        if v[1] == -w[1] and v[2] == -w[2] then return ': it faces them; they do not go on' end
+        local right = {-w[2], w[1]}
+        local lane = (v[1] == right[1] and v[2] == right[2]) and 'left' or 'right'
+        local behind = belt_at({x=pos.x-w[1], y=pos.y-w[2]})
+        local other = belt_at({x=pos.x+v[1], y=pos.y+v[2]})
+        local fed_behind = behind and behind.dir == b.dir
+        local fed_other = other and VEC[other.dir] and VEC[other.dir][1] == -v[1] and VEC[other.dir][2] == -v[2]
+        if not fed_behind and not fed_other then
+          return ': no belt feeds it from behind, so it turns into a curve and both lanes go on'
+        end
+        local now = ''
+        if b.entity and not b.ghost then
+          local line = try(function() return b.entity.get_transport_line(lane == 'left' and 1 or 2) end)
+          now = line and (' (that lane now: '..items_text(try(function() return line.get_contents() end))..')') or ''
+        end
+        return string.format(': side-load onto its %s lane%s', lane, now)
+      end
+      local function there(pos, v)
+        local b = belt_at(pos)
+        local o = b and b.planned or planned_at(pos)
+        if o then
+          return string.format('planned #%s %s%s', rid(o), o.name, BELTS[o.proto.type] and VEC[o.dir] and ' facing '..NAMES[o.dir]..side_lane(pos, b, v) or ' (no belt takes them there: they stop at its end)')
+        end
+        if b then
+          local e = b.entity
+          return string.format('%s%s (%g,%g) facing %s%s', b.ghost and e.ghost_name or e.name, b.ghost and ' ghost' or '',
+            e.position.x, e.position.y, NAMES[b.dir] or tostring(b.dir), side_lane(pos, b, v))
         end
         return 'nothing there (no belt takes them there: they stop at its end)'
       end
@@ -1834,7 +1871,7 @@ return function(api)
           local parts = {}
           for i, f in ipairs(from) do
             local to = {x=f.x+v[1], y=f.y+v[2]}
-            parts[i] = string.format('(%g,%g): %s', to.x, to.y, there(to))
+            parts[i] = string.format('(%g,%g): %s', to.x, to.y, there(to, v))
           end
           list[#list+1] = {index=rid(r), name=r.name, position=r.pos, moves='moves items '..NAMES[r.dir]..' to '..table.concat(parts, ' and ')}
         end

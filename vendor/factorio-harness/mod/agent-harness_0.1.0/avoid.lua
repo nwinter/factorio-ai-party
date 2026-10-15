@@ -203,6 +203,20 @@ return function(api)
     end
     return #pending == 0
   end
+  -- The worms and spawners of a list of chunks (danger.lua): read those not read in the last TTL, at most budget, and
+  -- return {list (each {x, y, name, spawner?}), uncharted (chunks), unread (chunks over the budget)}.
+  function M.structures(surface, force, chunks, budget)
+    local pending = M.missing(surface, chunks)
+    local over = math.max(0, #pending - budget)
+    M.scan(surface, force, pending, budget)
+    local c, out, uncharted = cache(surface), {}, 0
+    for _, ch in ipairs(chunks) do
+      local rec = c[ch[3]]
+      if rec and rec.uncharted then uncharted = uncharted + 1 end
+      for _, s in ipairs(rec and rec.list or {}) do out[#out+1] = s end
+    end
+    return {list=out, uncharted=uncharted, unread=over}
+  end
   -- Old records go: at most one sweep of the cache per TTL.
   function M.prune()
     local st = api.state()
