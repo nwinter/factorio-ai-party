@@ -71,6 +71,9 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
                 "active": "construct", "position": {"x": -64.8, "y": -23.6}, "location": "iron smelting",
                 "last_said": {"text": "...", "tick": 144700}, "camera": "main|cam2|cam3|null", "combat": false,
                 "died_at": null, "kind": "bot", "profile_set": true,
+                "job": "nuclear power plant: reactor", "job_from": "plan|notes",  // its team-plan line, else its
+                    // notes.md "## Now" (null: neither); the live page's portrait tip shows it
+                    // (viewer syndesis 22:13: hover or tap a portrait for its plan line and job)
                 // what it carries, wears and builds (the harness's loadout read; absent while dead or before the read)
                 "loadout": {"health": {"now": 250, "max": 350}, "vehicle": null, "selected_gun": 1,
                             "guns": [{"name": "submachine-gun", "count": 1}, false], "ammo": [{"name": "piercing-rounds-magazine", "count": 187}, false],
@@ -88,8 +91,17 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
     "alerts": [{"kind": "attack|death|low_power|research", "text": "...", "agent": "grok", "position": {"x": 0, "y": 0}}],
     "board": {"available": true, "open_unowned": 1, "in_progress": 2, "claims": [...], "events": [...],
               "projects": [{"id": 4, "title": "Nuclear power plant", "owner": "opus", "agent": "opus", "status": "claimed",
-                            "progress": "3 of 6 steps", "done": 3, "total": 6}],   // open, latest changed first; at most 4
-              "projects_total": 1},   // a project event row also has progress, steps_done, steps_total (verb step: step)
+                            "progress": "3 of 6 steps", "done": 3, "total": 6,
+                            "next": "Reactor and heat exchangers", "goal": "40 MW"}],   // open, latest changed first; at
+                            // most 4; next: its first step not done (null: none), goal (null: none)
+              "projects_total": 1,    // a project event row also has progress, steps_done, steps_total (verb step: step)
+              // the team plan (the harness's board_plan; the live page's Team plan; viewer Alex 22:12), null when it has
+              // neither goals nor lines. Ticks are game ticks (60 a second): the page says "set N min ago" from the
+              // state's tick. A line's tick and by, and goals_tick and updated_tick, come from runtimes with the board
+              // read's plan_ticks; by: who set the line when not the agent itself.
+              "plan": {"goals": "Blue science at 60/min, then the silo", "goals_tick": 220420,
+                       "doing": [{"agent": "sol", "name": "sol", "text": "blue circuits at (40,-20)", "tick": 209620, "by": "astra"}],
+                       "edited": "by astra, 6m ago", "updated_tick": 209620}},
     "basemap": {"tick": 230400, "cell": 4, "x0": -112, "y0": -72, "w": 56, "h": 41, "buildings": 659,
                 "rows": ["..DDDDDD", "....S.BB"],   // one string per cell row from y0; one letter per cell from x0
                 "nests": [[150, 40, "s"], [140, 30, "w"]],  // enemy spawners (s) and worms (w) near the base

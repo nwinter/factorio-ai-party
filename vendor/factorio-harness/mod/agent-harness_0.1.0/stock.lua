@@ -202,7 +202,9 @@ return function(api)
     local action={kind='gather',item=a.item,quality=a.quality,want=want,got=0,visited=0,
       targets=route(p.position,s.places),index=1,until_tick=game.tick+ticks,avoid_enemies=a.avoid_enemies,unsafe_goal=a.unsafe_goal}
     M.guard(action)
+    local left=M.screen_action(p,action,'every place holding '..a.item..' there')
     local out={item=a.item,want=want,stock=s.total,places=#action.targets,skipped_claims=skipped}
+    M.left_out_into(out,left)
     if not chests and not a.types then
       -- Say how much sits in chests that this trip leaves alone.
       local all=M.scan(p,a.item,{radius=radius,quality=a.quality})
@@ -424,10 +426,59 @@ return function(api)
       for i=1,math.min(#places,MAX_TOUR) do targets[i]=places[i] end
     else targets=route(p.position,places,MAX_TOUR) end
     local action={kind='gather',op=op,got=0,visited=0,want=math.huge,targets=targets,index=1,until_tick=game.tick+ticks}
-    for k,v in pairs(fields or {}) do if k~='ordered' then action[k]=v end end
+    for k,v in pairs(fields or {}) do if k~='ordered' and k~='screened' then action[k]=v end end
     M.guard(action)
-    return action,{op=op,item=action.item,places=#action.targets,skipped=#entities>MAX_TOUR and #entities-MAX_TOUR or nil,
+    -- (screened: the caller checked its places itself: rearm's clusters, recover's corpses)
+    local left=not (fields and fields.screened) and M.screen_action(p,action,'every place of this tour') or nil
+    local out={op=op,item=action.item,places=#action.targets,skipped=#entities>MAX_TOUR and #entities-MAX_TOUR or nil,
       avoid_enemies=action.avoid_mode and api.describe_avoid and api.describe_avoid(action.avoid_mode) or nil}
+    M.left_out_into(out,left)
+    return action,out
+  end
+  -- round2120a (Haiku, shift14 03:58: rearm surface=true walked into a big worm's range, the character and 50
+  -- explosives lost): every stop is checked at the call too, as each leg is (M.tick). One inside a worm's range,
+  -- within 40 tiles of a spawner or in an area under attack now is left out and named, unless unsafe_goal; the first
+  -- SCREEN stops of the walk, the rest when the walk comes to them. places: {position, entity?, name?}; returns the
+  -- kept places in their order and {lines (the first 8), count}, or nil when none is left out.
+  local SCREEN=64
+  function M.screen(p,places,mode,unsafe)
+    if not mode or unsafe or not api.goal_inside then return places,nil end
+    local drop,lines,n={},{},0
+    for i=1,math.min(SCREEN,#places) do
+      local pl=places[i]
+      local ok,c=pcall(api.goal_inside,p,pl.position,mode)
+      if ok and c then
+        drop[i]=true; n=n+1
+        if #lines<8 then
+          local e=pl.entity
+          local name=(e and e.valid and e.name) or pl.name or 'place'
+          lines[#lines+1]=api.goal_text(name,pl.position,c)
+        end
+      end
+    end
+    if n==0 then return places,nil end
+    local kept={}
+    for i,pl in ipairs(places) do if not drop[i] then kept[#kept+1]=pl end end
+    return kept,{lines=lines,count=n}
+  end
+  -- An action's targets screened in place; none left: refused, naming them (what: 'every turret under 5 rounds there').
+  function M.screen_action(p,action,what)
+    local had=#action.targets
+    local kept,left=M.screen(p,action.targets,action.avoid_mode,action.unsafe_goal)
+    if not left then return nil end
+    if #kept==0 and had>0 then
+      error(string.format('%s lies in enemy reach the map shows: %s%s: unsafe_goal: true to go anyway, avoid_enemies: false for no check',
+        what,table.concat(left.lines,'; '),left.count>#left.lines and string.format('; +%d more',left.count-#left.lines) or ''),0)
+    end
+    action.targets=kept
+    action.left_out=left.lines; action.left_out_count=left.count
+    return left
+  end
+  function M.left_out_into(out,left)
+    if not left then return end
+    out.left_out=left.lines
+    out.left_out_more=left.count>#left.lines and left.count-#left.lines or nil
+    out.left_out_note='left out of the walk: inside the enemy reach the map shows (unsafe_goal: true walks there too)'
   end
   -- Every tour walks with the enemy check (round1950a, Haiku 45h02m: a rearm tour walked past a nest into an attack
   -- and died): avoid_enemies as move_to's (default worms, spawners within 40 tiles and the areas under attack now;
@@ -442,6 +493,12 @@ return function(api)
     local action={kind='gather',op='transfer',got=0,visited=0,want=math.huge,targets=places,index=1,until_tick=game.tick+ticks}
     for k,v in pairs(fields or {}) do action[k]=v end
     M.guard(action)
+    -- A courier goes to both places or to none (round2120a): either inside the enemy reach refuses it.
+    local _,left=M.screen(p,places,action.avoid_mode,action.unsafe_goal)
+    if left then
+      error(string.format('%s of this courier lie%s in enemy reach the map shows: %s: unsafe_goal: true to go anyway, avoid_enemies: false for no check',
+        left.count==1 and 'a place' or 'both places',left.count==1 and 's' or '',table.concat(left.lines,'; ')),0)
+    end
     return action
   end
   local function done(action)
