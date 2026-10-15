@@ -50,7 +50,14 @@ turn() {
   case "\$q" in ""|stop) ;; *) woke=\$(python3 '$root/tools/agy-quota.py' --woke '$dir') ;; esac
 }
 woke=""
-turn -p "\$(cat '$prompt')"
+# What agy prints is kept (.agy-last.txt, the loop's output from here on), and each turn's prompt ends with notes.md and
+# how the last turn ended (d15 trajectory analysis: every turn of Gemini's began with no memory of the one before;
+# tools/agy_rules.py digest reads the file's end).
+exec > >(tee .agy-last.txt) 2>&1
+mem() { python3 '$root/tools/agy_rules.py' digest '$dir' 2>/dev/null; }
+turn -p "\$(cat '$prompt')
+
+\$(mem)"
 ${POG_ONE_TURN:+exit 0  # POG_ONE_TURN: smoke tests run the first turn only}
 while [ "\$(date +%s)" -lt "\$((deadline - 20))" ]; do
   # (POG_AGY_TOKENS_CMD: tools/test_quota.py's stand-in for the context size)
@@ -60,16 +67,26 @@ while [ "\$(date +%s)" -lt "\$((deadline - 20))" ]; do
   # No fresh start in the last 2 minutes: it costs a re-read of notes.md (shake3: Grok's compaction 39 s before its
   # deadline ended its play).
   if [ "\$started" = 0 ]; then
-    turn -p "\$(cat '$prompt') \${pre}The deadline is \$left minutes away."
+    turn -p "\$(cat '$prompt') \${pre}The deadline is \$left minutes away.
+
+\$(mem)"
   elif [ "$limit" -gt 0 ] && [ "\$tokens" -ge "$limit" ] && [ "\$((deadline - \$(date +%s)))" -gt 120 ]; then
     echo "{\"time\": \"\$(date '+%Y-%m-%d %H:%M:%S')\", \"event\": \"agy-fresh\", \"tokens\": \$tokens}" >> context.log
-    turn -p "\$(cat '$prompt') \${pre}This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat. The deadline is \$left minutes away."
+    turn -p "\$(cat '$prompt') \${pre}This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat. The deadline is \$left minutes away.
+
+\$(mem)"
   elif [ -n "\$pre" ]; then
-    turn -c -p "\${pre}The deadline is \$left minutes away (deadline.txt; the clock: line shows it), the only stop condition."
+    turn -c -p "\${pre}The deadline is \$left minutes away (deadline.txt; the clock: line shows it), the only stop condition.
+
+\$(mem)"
   elif [ "\$timed_out" = 1 ]; then
-    turn -c -p "Continue where you were: the harness paused this turn to check your context size; nothing else changed. The deadline is \$left minutes away."
+    turn -c -p "Continue where you were: the harness paused this turn to check your context size; nothing else changed. The deadline is \$left minutes away.
+
+\$(mem)"
   else
-    turn -c -p "Continue: the deadline in deadline.txt is \$left minutes away (the clock: line shows it) and it is the only stop condition. Re-read notes.md, check ./fh call status, ./fh call chat and ./fh board, and keep playing until the deadline has passed."
+    turn -c -p "Continue: the deadline in deadline.txt is \$left minutes away (the clock: line shows it) and it is the only stop condition. Re-read notes.md, check ./fh call status, ./fh call chat and ./fh board, and keep playing until the deadline has passed.
+
+\$(mem)"
   fi
 done
 EOL
@@ -97,6 +114,9 @@ fi
 # own settings follow in its case below.
 full=${POG_FULL_TOOLS:-0}
 [ "$full" = 1 ] && python3 "$root/tools/full_tools.py" workspace "$dir" "$kind"
+# agy reads only the first 24000 bytes of AGENTS.md (d15 trajectory analysis: Gemini never saw the action reference):
+# over that, the full text goes to AGENTS-full.md and AGENTS.md becomes a compact one (tools/agy_rules.py rules).
+[ "$kind" = agy ] && python3 "$root/tools/agy_rules.py" rules "$dir" >/dev/null
 prompt="$root/runs/$run/prompt.md"
 if [ ! -f "$prompt" ]; then
   cat > "$prompt" <<'EOP'
