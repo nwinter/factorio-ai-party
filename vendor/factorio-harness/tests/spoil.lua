@@ -45,6 +45,21 @@ eq(lines[1],'chest: pentapod-egg*15: the first hatches in 4m00s into big-wriggle
 eq(lines[2],'chest: yumako*20: the first spoils in 30m00s (50% spoiled)')
 eq(S.warning(acc),'15 pentapod-egg hatch into enemies (big-wriggler-pentapod-premature, one each): the first in 4m00s, 10 within 5 min')
 eq(S.warning(S.inventory(inv{stack('yumako',3,60,0.9)},{})),nil)
+-- The spread (Sol, 22:25: a chest of 1846 agricultural packs showed the oldest at 91% while hundreds were at
+-- 15-30%): least and most spoiled, the count-weighted share, the four shares, and how many spoil within 10/30/60 min.
+do
+  local packs=inv{stack('agricultural-science-pack',200,5*3600,0.91),stack('agricultural-science-pack',200,20*3600,0.6),
+    stack('agricultural-science-pack',200,40*3600,0.3),stack('agricultural-science-pack',200,50*3600,0.15),stack('agricultural-science-pack',46,55*3600,0.15)}
+  local a=S.inventory(packs,{},'chest')
+  local r=a['agricultural-science-pack']
+  eq(S.spread_text(r),'agricultural-science-pack*846: spoiled 15-91%, 47% by count; under 25% 246, 25-50% 200, 50-75% 200, 75%+ 200; '
+    ..'spoil within 10 min 200, 30 min 400, 60 min 846')
+  local s=S.spread(r); eq(s.mean,47); eq(s.buckets['75+'],200); eq(s.within['10min'],200)
+  -- Merged over two places.
+  local all={}
+  S.merge(all,r); S.merge(all,S.inventory(inv{stack('agricultural-science-pack',100,59*3600,0.05)},{})['agricultural-science-pack'])
+  eq(all[1].count,946); eq(S.spread(all[1]).min,5); eq(S.spread(all[1]).max,91); eq(all[1].buckets[1],346)
+end
 -- A belt's lanes carry stacks with their spoilage.
 local belt={get_max_transport_line_index=function() return 2 end,get_transport_line=function(i)
   return {get_detailed_contents=function() return i==1 and {{stack=stack('jelly',1,600,0.95)},{stack=stack('jelly',1,1200,0.9)}} or {} end} end}
