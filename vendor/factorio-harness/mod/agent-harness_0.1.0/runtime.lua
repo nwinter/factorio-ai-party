@@ -10151,7 +10151,8 @@ M.waits=require('waits'){state=state,integer=integer,
   -- chosen alert kinds (Luna, 19:50): the push alert groups of those kinds for p, and machines starving in its claims
   alert_levels=function(p,kinds) return M.pushalerts.levels(p,kinds) end,starved=function(p) return M.pushalerts.starved(p) end,
   -- urgent alerts wake every sleep and direct wait (urgent.lua); until=alert names its alert, filtered by area and size
-  urgent_base=function(p) return M.urgent.base(p) end,urgent=function(p,base) return M.urgent.check(p,base) end,
+  urgent_base=function(p,radius) return M.urgent.base(p,radius) end,urgent=function(p,base) return M.urgent.check(p,base) end,
+  urgent_option=function(v) return M.urgent.option(v) end,
   alert_line=function(p,from,filter) return M.urgent.alert(p,from,filter) end,alert_filter=function(m,p) return M.urgent.filter(m,p) end,
   alert_filter_text=function(f) return M.urgent.filter_text(f) end,
   -- what is open for the sleeper (open.lua), on the sleep's first and last replies
@@ -10374,10 +10375,10 @@ function handlers.cameras() return M.cameras.list() end
 function handlers.wait_until(p,a)
   assert(a.wake_on_viewers==nil or type(a.wake_on_viewers)=='boolean','wake_on_viewers must be true or false')
   assert(a.wake_on_messages==nil or type(a.wake_on_messages)=='boolean','wake_on_messages must be true or false')
-  assert(a.wake_on_urgent==nil or type(a.wake_on_urgent)=='boolean','wake_on_urgent must be true or false')
+  local urgent_on,urgent_radius=M.urgent.option(a.wake_on_urgent)
   local viewers=a.wake_on_viewers==true or nil
   local messages=a.wake_on_messages
-  local urgent=a.wake_on_urgent~=false and M.urgent.base(p) or nil
+  local urgent=urgent_on and M.urgent.base(p,urgent_radius) or nil
   if a.pause_queue~=nil or a.wake_on_viewers~=nil or messages~=nil or a.wake_on_urgent~=nil then
     local copy={}
     for k,v in pairs(a) do if k~='pause_queue' and k~='wake_on_viewers' and k~='wake_on_messages' and k~='wake_on_urgent' then copy[k]=v end end

@@ -628,6 +628,32 @@ test('urgent alerts (d15): --until alert takes an area and size filter, --no-urg
     [600,{until:'alert',min_size:3},undefined]]);
   assert.equal(seen.find(r=>r.action==='wait_ticks').args.wake_on_urgent,false);
 });
+test('urgent radius (Grok, d15 14:07): --urgent-radius N sends wake_on_urgent {radius}; an older runtime runs with 40 and says so',async()=>{
+  const seen:any[]=[];
+  let old=false;
+  await engine(request=>{
+    seen.push(request);
+    const r=request.args?.wake_on_urgent;
+    if(old&&r!==undefined&&typeof r!=='boolean')return {ok:false,error:{message:'wake_on_urgent must be true or false'}};
+    if(request.action==='sleep')return {ok:true,result:{while_asleep:'no queue and no action',sleeping_s:request.args.seconds}};
+    if(request.action==='wait_ticks')return {ok:true,result:{until_tick:100}};
+    return {ok:true,result:{slept_s:3,woke:'elapsed'}};
+  },async port=>{
+    await cli(port,['sleep','60','--urgent-radius','12'],'compact');
+    await cli(port,['call','wait_ticks','--args','{"ticks":60}','--urgent-radius','12'],'compact');
+    await cli(port,['sleep','60','--urgent-radius','12','--no-urgent'],'compact');
+    await assert.rejects(cli(port,['sleep','60','--urgent-radius','500']),(error:any)=>/--urgent-radius takes 1..200 tiles/.test(error.stdout+error.stderr));
+    old=true;
+    const {stderr}=await cli(port,['sleep','60','--urgent-radius','12'],'compact');
+    assert.match(stderr,/no urgent radius yet .* urgent wakes use 40 tiles/);
+    const direct=await cli(port,['call','wait_ticks','--args','{"ticks":60}','--urgent-radius','12'],'compact');
+    assert.match(direct.stderr,/no urgent radius yet/);
+  });
+  const sleeps=seen.filter(r=>r.action==='sleep').map(r=>r.args.wake_on_urgent);
+  assert.deepEqual(sleeps,[{radius:12},false,{radius:12},undefined]);
+  const waits=seen.filter(r=>r.action==='wait_ticks').map(r=>r.args.wake_on_urgent);
+  assert.deepEqual(waits,[{radius:12},{radius:12},undefined]);
+});
 test('d15 H3/H4: fh wait prints the cap and what is open for the agent last',async()=>{
   await engine(request=>{
     if(request.action==='sleep')return {ok:true,result:{while_asleep:'no queue and no action: your character stands idle for up to 300 s',sleeping_s:300,capped:'capped at 300 s: no queue, action or condition'}};

@@ -21,7 +21,7 @@ return function(api)
   end
   local MOVING = {walk=true, move_to=true, build_path=true, kite=true, collect=true, feed=true, rearm=true, refuel=true}
   local WAKE_VIEWERS = 'optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too; without it a viewer\'s @mention waits for your next reply (team block) and wakes nothing'
-  local WAKE_URGENT = 'boolean default true (fh --no-urgent: false): an urgent alert ends it (woke=urgent, urgent=the alert): our structures attacked within 40 tiles of you, an enemy group heading for a spot within 40 tiles of you, buildings destroyed by enemies in your fresh claims or within 40 tiles of you, a platform you hear about losing a building or its hub taking damage, a teammate dying on your surface, an electric network on your surface with 20+ machines half on low or no power; each wakes you once (again after 5 min if it grew)'
+  local WAKE_URGENT = 'true (default), false (fh --no-urgent) or {radius: 1..200} (fh --urgent-radius N: attacks, enemy groups, losses, in your claims too, and teammates\' deaths count only within N tiles of you; platform and power wakes as before): an urgent alert ends it (woke=urgent, urgent=the alert): our structures attacked within 40 tiles of you, an enemy group heading for a spot within 40 tiles of you, buildings destroyed by enemies in your fresh claims or within 40 tiles of you, a platform you hear about losing a building or its hub taking damage, a teammate dying on your surface, an electric network on your surface with 20+ machines half on low or no power that had power within the last 10 minutes; each wakes you once (again after 5 min if it grew)'
   M.schema = {
     wait_ticks = {ticks='1..54000 simulation ticks: the character stands idle that long (a direct timed action, outcome duration_elapsed, or told|mentioned when a tell or a teammate\'s mention ends it early, urgent when an urgent alert does (last.why names it); use --wait), or a queue step', wake_on_viewers=WAKE_VIEWERS, wake_on_urgent=WAKE_URGENT, wake_on_messages='boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply', pause_queue='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'},
     sleep = {seconds='1..900; with no queue running, no action running and no condition it is capped at 300 (capped: "capped at 300 s: no queue, action or condition")', condition='optional wait_until condition {until=researched|item_count|rocket_ready|rocket_parts|crafting_done|..., ...}: the sleep also ends when it holds (woke=condition, saw); researched without technology means the research running now; item_count may take positions (chests); {until=alert}: a new attack, enemy group or enemy base alert (woke=alert, alert=which); {until=alert, area={left_top,right_bottom}|near={x,y} radius=R (default 100), surface=S (default yours), min_size=N}: only one in that area (an attack\'s position, a group\'s target or gathering point, a nest) and/or by N+ enemies (an attack by N+ attackers or a group of N+; nest news has no size); {until=alert, kinds=[low_power, no_power, no_fuel, ..., starved]}: a new or grown alert group of those kinds addressed to you, or (starved) a machine in your claims newly lacking ingredients (woke=alert, alert=its text); {until=any, conditions=[...]} (or a list): 1..8 conditions, alerts among them, whichever holds first wakes it (met names it)',
@@ -43,16 +43,22 @@ return function(api)
   local function running(q)
     return q ~= nil and not q.paused and (q.current ~= nil or #q.pending > 0 or q.loop ~= nil)
   end
+  -- wake_on_urgent: true, false or {radius} (urgent.lua M.option).
+  local function urgent_option(v)
+    if api.urgent_option then return api.urgent_option(v) end
+    assert(v == nil or type(v) == 'boolean', 'wake_on_urgent must be true or false')
+    return v ~= false, nil
+  end
   function M.handlers.wait_ticks(p, a)
     local ticks = api.integer(a.ticks, nil, 1, MAX_TICKS, 'ticks (1..54000)')
     assert(a.wake_on_viewers == nil or type(a.wake_on_viewers) == 'boolean', 'wake_on_viewers must be true or false')
     assert(a.wake_on_messages == nil or type(a.wake_on_messages) == 'boolean', 'wake_on_messages must be true or false')
-    assert(a.wake_on_urgent == nil or type(a.wake_on_urgent) == 'boolean', 'wake_on_urgent must be true or false')
+    local urgent_on, urgent_radius = urgent_option(a.wake_on_urgent)
     api.replace(p)
     local until_tick = game.tick + ticks
     -- A tell or mention ends it early (runtime.lua tick: outcome told|mentioned); a viewer's @mention only with wake_on_viewers.
     api.state().active[p.index] = {kind='wait_ticks', until_tick=until_tick, start_tick=game.tick, wake_viewers=a.wake_on_viewers == true or nil,
-      wake_messages=a.wake_on_messages, urgent=a.wake_on_urgent ~= false and api.urgent_base and api.urgent_base(p) or nil}
+      wake_messages=a.wake_on_messages, urgent=urgent_on and api.urgent_base and api.urgent_base(p, urgent_radius) or nil}
     return {until_tick=until_tick, wake_on_messages=a.wake_on_messages, wake_on_urgent=a.wake_on_urgent}
   end
   -- What keeps going while the agent sleeps, in one line (the reply's first).
@@ -206,7 +212,7 @@ return function(api)
     end
     local condition = #conditions > 0
     assert(a.wake_on_viewers == nil or type(a.wake_on_viewers) == 'boolean', 'wake_on_viewers must be true or false')
-    assert(a.wake_on_urgent == nil or type(a.wake_on_urgent) == 'boolean', 'wake_on_urgent must be true or false')
+    local urgent_on, urgent_radius = urgent_option(a.wake_on_urgent)
     local c = p.character
     local record = {start_tick=game.tick, until_tick=game.tick + seconds * 60, health=c and c.valid and c.health or nil,
       conditions=condition and conditions or nil, wake_viewers=a.wake_on_viewers == true or nil,wait_alert=alert}
@@ -231,7 +237,7 @@ return function(api)
     end
     if plain then record.alert_seq = api.state().alert_seq or 0; record.alert_filter = filter end
     -- Urgent alerts wake every sleep unless it opts out (Nick, d15 06:17; urgent.lua).
-    if a.wake_on_urgent ~= false and api.urgent_base then record.urgent = api.urgent_base(p) end
+    if urgent_on and api.urgent_base then record.urgent = api.urgent_base(p, urgent_radius) end
     if kinds then
       local starved, rest = false, {}
       for _, k in ipairs(kinds) do if k == 'starved' then starved = true else rest[#rest+1] = k end end
@@ -277,7 +283,7 @@ return function(api)
       out.wakes_on = 'damage, death, ' .. mentions .. ', a tell, a board item of yours' ..
         (record.queue and ', your queue finishing or stalling' or '') .. (condition and (#conditions > 1 and ', any of the conditions' or ', the condition') or '')
         .. (alert and (filter and ', a new alert ' .. api.alert_filter_text(filter) or ', a new alert') or '')
-        .. (record.urgent and ', an urgent alert (attack or enemy group near you, losses in your claims, platform hits, a teammate\'s death, power collapse)' or '')
+        .. (record.urgent and (', an urgent alert (attack or enemy group near you, losses in your claims, platform hits, a teammate\'s death, power collapse' .. (record.urgent.radius and string.format('; within %g tiles of you', record.urgent.radius) or '') .. ')') or '')
     end
     return out
   end

@@ -530,7 +530,7 @@ already targets your character.
 - Every sleep and wait ends on an urgent alert (`woke: urgent`, naming it): our structures attacked within 40 tiles of
   you, an enemy group heading within 40 tiles of you, enemies destroying buildings in your fresh claims or near you, a
   platform you hear about losing a building or its hub hit, a teammate dying on your surface, a network on your surface
-  half on low or no power; `--no-urgent` opts out. `--until "alert near=X,Y radius=R min_size=N"` (or `area=X1,Y1,X2,Y2`)
+  half on low or no power; `--no-urgent` opts out; `--urgent-radius N` (1..200) counts attacks, groups, losses and deaths only within N tiles of you. `--until "alert near=X,Y radius=R min_size=N"` (or `area=X1,Y1,X2,Y2`)
   wakes only on an attack, group or nest there and that big; `woke: alert` names the alert.
 - A sleep ends when the plan you submitted to your queue finishes or stalls (`queue_done`, `queue_stalled`); a
   standing order's rounds do not end it (`--wake-on-orders` makes them).

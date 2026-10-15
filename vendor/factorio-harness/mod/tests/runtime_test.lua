@@ -5090,10 +5090,18 @@ end)()
   -- the other arguments the d15 batch added, each through the same check
   for _,c in ipairs({{'load_silo',{up_to=true}},{'refuel',{from_radius=128}},{'queue_edit',{id='job-1',to=1}},{'circuit_set',{set_requests=true}},
       {'requests',{remove={'coal'},force=true}},{'board',{projects='compact'}},{'board_post',{blocked_by={1},parent=1,open_steps=true}},
-      {'board_update',{take_step=1,release_step=1,open_steps=true,blocked_by={},parent=false}},{'fuel_budget',{surface='nauvis'}},{'platform_endurance',{platform='Wayfarer',route={'nauvis'}}},{'artillery',{position={x=1,y=1},radius=300,surface='nauvis'}},{'configure',{position={x=1,y=1},auto_targeting=false}},
+      {'board_update',{take_step=1,release_step=1,open_steps=true,blocked_by={},parent=false}},{'fuel_budget',{surface='nauvis'}},{'platform_endurance',{platform='Wayfarer',route={'nauvis'}}},{'artillery',{position={x=1,y=1},radius=300,surface='nauvis'}},{'sleep',{seconds=5,wake_on_urgent={radius=12}}},{'wait_ticks',{ticks=60,wake_on_urgent={radius=12}}},{'configure',{position={x=1,y=1},auto_targeting=false}},
       {'mine',{count=5}},{'feed',{position={x=1,y=1},radius=5}},{'queue_submit',{mode='pending'}},{'pickup',{belt=true,to={x=1,y=1}}},{'refuel',{feed_chests=true}},{'placements',{platform='Starling',name='cargo-bay'}},{'build',{check_inserters=true}},{'place_ghosts',{check_inserters=true}}}) do
     no_unknown(function() runtime.check_args(c[1],c[2]) end,'check_args '..c[1])
   end
+end)()
+;(function()
+  -- An urgent radius rides on a direct wait (Grok, d15 14:07).
+  local r=call('wait_ticks',{ticks=60,wake_on_urgent={radius=12}})
+  eq(storage.agent_harness.active[1].urgent.radius,12)
+  call('stop',{})
+  local ok,err=pcall(call,'wait_ticks',{ticks=60,wake_on_urgent={radius=500}})
+  assert(not ok and tostring(err):find('radius is 1..200',1,true),tostring(err))
 end)()
 ;(function()
   -- The way walked, offered back to a refused walk (Haiku, d15 07:50).

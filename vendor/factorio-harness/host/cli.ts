@@ -94,6 +94,7 @@ Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT),
          --wait-through-tells (a tell or mention does not end the wait; told_during_wait lists them at the end)
          --wake-on-viewers (fh sleep, fh wait, --wait: a viewer's @mention ends it too; by default it waits for your next reply)
          --no-urgent (fh sleep, fh wait --until, direct wait_ticks/wait_until: an urgent alert does not end it; by default it does)
+         --urgent-radius N (the same waits: attacks, enemy groups, losses and teammates' deaths wake it only within N tiles of you, 1..200; default 40)
          --wake-on-orders (fh sleep, fh wait --until: a standing order's round finishing or stalling ends it; by default only your own plan's does)
          --operator-repeat (FH_OPERATOR_REPEAT=1: print an operator message on every reply that carries it; by default once)
          Exit codes: 0 done, 1 failed, 3 the wait ended while the action still runs (a tell or mention, or the wait timeout)
@@ -566,7 +567,7 @@ async function main() {
     format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
     host:{type:'string'}, port:{type:'string'}, timeout:{type:'string'}, id:{type:'string'},
     file:{type:'string'}, out:{type:'string'}, mods:{type:'string'}, journal:{type:'string'},
-    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'wake-on-orders':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
+    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'urgent-radius':{type:'string'}, 'wake-on-orders':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
@@ -1264,6 +1265,14 @@ async function main() {
   // stay unread) about once a second, then read it once more normally so the
   // reply carries the team block with whatever woke the agent. A sleep never
   // runs past the workspace deadline: it is cut to the time left and ends there.
+  // --urgent-radius N: 1..200 tiles, or undefined when not given.
+  function urgentRadius(): number | undefined {
+    const raw = values['urgent-radius'];
+    if (raw === undefined) return undefined;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 1 || n > 200) throw new Error(`--urgent-radius takes 1..200 tiles, not ${String(raw)}`);
+    return n;
+  }
   async function sleep(seconds: number, condition?: Record<string,unknown>, quiet = false): Promise<Reply> {
     const left = deadline === undefined ? undefined : deadline-Date.now();
     if (left !== undefined && left <= 1000) {
@@ -1276,9 +1285,17 @@ async function main() {
     let viewers = wakeViewers;
     // --no-urgent: an urgent alert does not end it (urgent.lua; a runtime from before urgent wakes takes no wake_on_urgent).
     let noUrgent = values['no-urgent'] === true;
+    // --urgent-radius N (Grok, d15 14:07): urgent wakes only within N tiles of you; a runtime from before it says
+    // wake_on_urgent must be true or false, and the sleep runs with the default 40 (said on stderr).
+    let radius = noUrgent ? undefined : urgentRadius();
     const sleepArgs = (peek: boolean) => ({seconds, ...(condition ? {condition} : {}), ...(peek ? {peek:true} : {}), ...(viewers ? {wake_on_viewers:true} : {}),
-      ...(noUrgent ? {wake_on_urgent:false} : {}), ...(values['wake-on-orders'] === true ? {wake_on_orders:true} : {})});
+      ...(noUrgent ? {wake_on_urgent:false} : radius !== undefined ? {wake_on_urgent:{radius}} : {}), ...(values['wake-on-orders'] === true ? {wake_on_orders:true} : {})});
     let started = await harness.request('sleep',sleepArgs(quiet));
+    if (!started.ok && radius !== undefined && /wake_on_urgent must be true or false/.test(String(started.error?.message ?? ''))) {
+      radius = undefined;
+      process.stderr.write('--urgent-radius: this runtime has no urgent radius yet (it comes with the next harness deploy); urgent wakes use 40 tiles\n');
+      started = await harness.request('sleep',sleepArgs(quiet));
+    }
     if (!started.ok && noUrgent && /unknown argument wake_on_urgent/.test(String(started.error?.message ?? ''))) {
       noUrgent = false;
       started = await harness.request('sleep',sleepArgs(quiet));
@@ -1461,9 +1478,18 @@ async function main() {
     if (viewersArg) args = {...args, wake_on_viewers:true};
     // --no-urgent: an urgent alert does not end a direct wait (by default it ends it, outcome urgent, last.why naming it).
     if (values['no-urgent'] === true && (action === 'wait_ticks' || action === 'wait_until') && args.wake_on_urgent === undefined) args = {...args, wake_on_urgent:false};
+    // --urgent-radius N: urgent wakes only within N tiles of you.
+    const radiusArg = values['no-urgent'] !== true && (action === 'wait_ticks' || action === 'wait_until') && args.wake_on_urgent === undefined ? urgentRadius() : undefined;
+    if (radiusArg !== undefined) args = {...args, wake_on_urgent:{radius:radiusArg}};
     let reply: Reply;
     try {
       reply = await harness.request(action,args,requestId);
+      if (radiusArg !== undefined && !reply.ok && /wake_on_urgent must be true or false/.test(String(reply.error?.message ?? ''))) {
+        const {wake_on_urgent: _dropped, ...rest} = args;
+        args = rest;
+        process.stderr.write('--urgent-radius: this runtime has no urgent radius yet (it comes with the next harness deploy); urgent wakes use 40 tiles\n');
+        reply = await harness.request(action,args,randomUUID());
+      }
       // A runtime from before it ends a direct wait on a viewer's @mention anyway.
       if (viewersArg && !reply.ok && /unknown argument wake_on_viewers/.test(String(reply.error?.message ?? ''))) {
         const {wake_on_viewers: _ignored, ...rest} = args;

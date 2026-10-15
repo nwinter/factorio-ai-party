@@ -99,9 +99,22 @@ return function(api)
     end
     return out
   end
-  -- What a sleep or wait remembers at its start: the hub damage per platform (hits before it do not wake it).
-  function M.base(p)
-    local base = {tick=game.tick, hub={}}
+  -- wake_on_urgent: true or nil (on), false (off), or {radius=N} (Grok, d15 14:07: a wait at the artillery was ended
+  -- by attacks 40 tiles away): on, with attacks, groups, losses and deaths counted within N tiles of the character
+  -- (1..200) instead of NEAR and GROUP_NEAR, and a loss in a claim only within N too. Returns on, radius.
+  M.MAX_RADIUS = 200
+  function M.option(v)
+    if v == nil or v == true then return true, nil end
+    if v == false then return false, nil end
+    assert(type(v) == 'table', 'wake_on_urgent is true, false or {radius: N} (1..' .. M.MAX_RADIUS .. ' tiles)')
+    for k in pairs(v) do assert(k == 'radius', 'wake_on_urgent takes radius only (unknown: ' .. tostring(k) .. ')') end
+    assert(type(v.radius) == 'number' and v.radius >= 1 and v.radius <= M.MAX_RADIUS, 'wake_on_urgent radius is 1..' .. M.MAX_RADIUS .. ' tiles')
+    return true, v.radius
+  end
+  -- What a sleep or wait remembers at its start: the hub damage per platform (hits before it do not wake it), and the
+  -- radius when one was given.
+  function M.base(p, radius)
+    local base = {tick=game.tick, hub={}, radius=radius}
     local by = try(function() return api.state().platform_alerts.by end)
     for index, r in pairs(by or {}) do
       base.hub[index] = r.total and r.total.entities and r.total.entities['space-platform-hub'] or 0
@@ -115,13 +128,14 @@ return function(api)
     local told = told_of(p.index)
     local since = base.tick
     local me = api.who and api.who(p) or p.name
+    local near, group_near = base.radius or M.NEAR, base.radius or M.GROUP_NEAR
     -- Attacks on our structures near the character.
     if pos then
       for _, v in pairs(s.damage or {}) do
         if v.id and v.at and (v.damage or 0) > 0 and v.last >= since and (v.surface or 'nauvis') == surface then
           local d = dist(v.at, pos)
           local key = 'attack|' .. v.id
-          if d <= M.NEAR and news(told, key, v.hits or 0) then
+          if d <= near and news(told, key, v.hits or 0) then
             tell(told, key, v.hits or 0)
             local line = api.attack_line and api.attack_line(v, false, surface) or string.format('attack at (%d,%d)', v.at.x, v.at.y)
             return string.format('attack on our structures %d tiles from you: %s', round(d), line)
@@ -134,7 +148,7 @@ return function(api)
         if g.target and (g.surface or 'nauvis') == surface then
           local d = dist(g.target, pos)
           local key = 'group|' .. tostring(g.seq)
-          if d <= M.GROUP_NEAR and news(told, key, g.size or 0) then
+          if d <= group_near and news(told, key, g.size or 0) then
             tell(told, key, g.size or 0)
             return string.format('enemy group of %d%s gathered at (%d,%d), %d tiles from you, heading for (%d,%d), %d tiles from you',
               g.size or 0, g.kinds and ' (' .. g.kinds .. ')' or '', g.position.x, g.position.y, round(dist(g.position, pos)),
@@ -154,8 +168,9 @@ return function(api)
             if api.platform_hears and api.platform_hears(p, i.platform) then why = 'platform ' .. i.platform .. ' lost buildings' end
           elseif i.surface == surface then
             local claim = my_claim(p, surface, i.box)
+            if claim and base.radius and not (pos and box_dist(i.box, pos) <= base.radius) then claim = nil end
             if claim then why = string.format('buildings destroyed in your claim #%s "%s"', tostring(claim.id), tostring(claim.title or ''))
-            elseif pos and box_dist(i.box, pos) <= M.NEAR then why = string.format('buildings destroyed %d tiles from you', round(box_dist(i.box, pos))) end
+            elseif pos and box_dist(i.box, pos) <= near then why = string.format('buildings destroyed %d tiles from you', round(box_dist(i.box, pos))) end
           end
           if why then
             tell(told, key, i.total or 0)
@@ -192,7 +207,8 @@ return function(api)
     for k = #(c and c.events or {}), 1, -1 do
       local e = c.events[k]
       if (e.tick or 0) < since then break end
-      if e.kind == 'death' and e.agent ~= me and e.surface == surface then
+      if e.kind == 'death' and e.agent ~= me and e.surface == surface
+        and not (base.radius and not (pos and e.position and dist(e.position, pos) <= base.radius)) then
         local key = 'death|' .. tostring(e.id)
         if news(told, key, 1) then
           tell(told, key, 1)
