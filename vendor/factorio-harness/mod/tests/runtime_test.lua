@@ -10,6 +10,7 @@ defines={events={on_script_path_request_finished=10,on_entity_died=11},shooting=
 local p={index=1,valid=true,connected=true,controller_type=1,physical_controller_type=1,character={valid=true},position={x=0,y=0},cheat_mode=false,driving=false}
 p.force={name='player',is_chunk_visible=function() return true end,is_chunk_charted=function() return true end,get_spawn_position=function() return {x=0,y=0} end}
 p.surface={name='nauvis'}
+p.character.surface=p.surface
 p.character.prototype={collision_mask={layers={player=true}}}
 local path_requests={}
 p.surface.request_path=function(args) path_requests[#path_requests+1]=args; return #path_requests end
@@ -1082,7 +1083,7 @@ local gear_stack=stack('iron-gear-wheel',3)
 plate_stack.clear=function() plate_stack.count=0; plate_stack.valid_for_read=false end
 gear_stack.clear=function() gear_stack.count=0; gear_stack.valid_for_read=false end
 local current_recipe={name='iron-gear-wheel'}
-local am={valid=true,name='assembling-machine-1',type='assembling-machine',position={x=3,y=0},force=p.force,fluidbox={},
+local am={surface=p.surface,valid=true,name='assembling-machine-1',type='assembling-machine',position={x=3,y=0},force=p.force,fluidbox={},
   prototype={crafting_categories={crafting=true}}}
 local am_slots={[5]=inv(plate_stack),[6]=inv(gear_stack)}
 am.get_inventory=function(i) return am_slots[i] end
@@ -1113,7 +1114,7 @@ local remote_change=call('configure',{position=am.position,recipe='copper-cable'
 eq(remote_change.recipe,'copper-cable'); eq(remote_change.remote,true)
 eq(call('queue_status').paused,false); eq(call('queue_status').active.action,'wait_ticks')
 plate_stack.name,plate_stack.count,plate_stack.valid_for_read='iron-plate',4,true
-fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel',walk=false}) end,'remote recipe change: the machine at (3,0) holds items')
+fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel',walk=false}) end,'assembling_machine_input holds items')
 -- By default the character walks into reach first and changes it there (autowalk.lua): the call is character work.
 ;(function()
   am.bounding_box={left_top={x=1.5,y=-1.5},right_bottom={x=4.5,y=1.5}}

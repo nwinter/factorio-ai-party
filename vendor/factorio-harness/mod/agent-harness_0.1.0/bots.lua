@@ -417,6 +417,7 @@ return function(api)
     if action == 'dry_run' and type(args.args) == 'table' then return M.check_action(index, args.action, args.args) end
     if ON_PLATFORM[action] and args.platform ~= nil then return end
     if ON_SURFACE[action] and args.surface ~= nil then return end
+    if action == 'configure' then return end
     if action == 'requests' and (args.platform ~= nil or args.position ~= nil) then return end
     if action == 'observe' and VIEWS[args.scope] then return end
     if api.read_only and api.read_only(action) and not BODY_READS[action] and not (action == 'observe' and BODY_READS[args.scope]) then return end
