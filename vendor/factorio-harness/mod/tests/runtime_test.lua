@@ -1602,6 +1602,26 @@ do
   main,p.surface.find_entities_filtered=was_main,was_find
   b1.fuel[1].count,b3.fuel[1].count=n1,n3
 end
+-- Area feed uses one tour across successive reach groups, without another feed call.
+;(function()
+  local was_reach,was_main,was_pos=p.can_reach_entity,main,p.position
+  local x2,x3=b2.position.x,b3.position.x
+  b2.position.x,b3.position.x=24,48; p.position={x=0,y=3}
+  local old={b1.fuel[1].count,b2.fuel[1].count,b3.fuel[1].count}
+  main=inv(stack('coal',60)); for _,b in ipairs({b1,b2,b3}) do b.fuel[1].count=1 end
+  local group=1
+  p.can_reach_entity=function(e) return e==b1 or (group>=2 and e==b2) or (group>=3 and e==b3) end
+  local r=call('feed',{area={left_top={x=0,y=2},right_bottom={x=50,y=4}},types={'boiler'},fuel='coal',walk=true,ticks=600})
+  eq(r.area_targets,3); eq(r.places,3); eq(r.out_of_reach,2); eq(r.until_tick,game.tick+600)
+  advance(1); eq(b1.fuel[1].count,10); eq(b2.fuel[1].count,1); eq(call('status').active.kind,'gather')
+  group=2; p.position={x=24,y=3}; advance(1); eq(b2.fuel[1].count,10); eq(b3.fuel[1].count,1); eq(call('status').active.kind,'gather')
+  group=3; p.position={x=48,y=3}; advance(1)
+  local last=call('status').last
+  eq(last.outcome,'topped_up'); eq(last.visited,3); eq(last.moved,27); eq(#last.entities,3); eq(b3.fuel[1].count,10)
+  p.can_reach_entity,main,p.position=was_reach,was_main,was_pos
+  b2.position.x,b3.position.x=x2,x3
+  for i,b in ipairs({b1,b2,b3}) do b.fuel[1].count=old[i] end
+end)()
 -- A rejected submit leaves the repeating job running even after bootstrap failure cleanup.
 do
   call('queue_repeat',{name='plate-haul',steps={{action='wait_until',args={['until']='item_count',item='iron-plate',at_least=10000}}}})
@@ -3292,6 +3312,31 @@ eq(call('inspect',{position=ins.position}).fluid_connections,nil)
   eq(call('inspect',{position={x=30.5,y=6.5}}).logistic_network.none,'in no logistic network: no roboport\'s logistic area covers it')
   eq(call('inspect',{position={x=24.5,y=0.5}}).logistic_network,nil,'not on other entities')
   p.surface.find_entities_filtered=find
+end)()
+-- Hub stock gates direct waits, sleeping, queued waits and guards through the same condition.
+;(function()
+  call('queue_cancel',{})
+  local platforms,hub_id=p.force.platforms,defines.inventory.hub_main
+  defines.inventory.hub_main=987
+  local landed=0
+  p.force.platforms={{valid=true,name='Freight',hub={valid=true,get_inventory=function(id)
+    eq(id,987); return {get_item_count=function(item) eq(item,'coal'); return landed end}
+  end}}}
+  local c={['until']='item_count',platform='Freight',item='coal',at_least=50}
+  call('wait_until',c); advance(10); eq(call('status').active.kind,'wait_until')
+  landed=50; advance(10); eq(call('status').last.outcome,'met')
+  landed=0; call('sleep',{seconds=60,condition=c}); eq(call('sleep_check',{}).woke,nil)
+  landed=50; eq(call('sleep_check',{}).woke,'condition')
+  landed=0
+  call('queue_submit',{mode='replace',steps={{action='wait_until',args=c}}})
+  advance(10); eq(call('queue_status').active.action,'wait_until')
+  landed=50; advance(10); eq(call('queue_status').active,false)
+  landed=0
+  call('queue_submit',{mode='replace',steps={{action='wait_ticks',args={ticks=600}}},guards={{when=c}}})
+  advance(10); eq(call('queue_status').paused,false)
+  landed=50; advance(10); eq(call('queue_status').paused,true)
+  call('queue_cancel',{})
+  p.force.platforms,defines.inventory.hub_main=platforms,hub_id
 end)()
 -- wait_until as a direct call: met at once returns met; otherwise a timed
 -- action that ends met (checked every 10 ticks) or timed_out.

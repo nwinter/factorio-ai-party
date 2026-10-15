@@ -105,7 +105,7 @@ return function(api)
       local ch=p.character; local r=ch.health/ch.max_health
       return r>c.fraction,string.format('health %d%%',math.floor(r*100))
     end,
-    -- In the character's main inventory, or summed over our entities on the
+    -- In a named platform hub's main inventory, the character's main inventory, or summed over our entities on the
     -- given tiles (chests, machines: every inventory they have; a rocket
     -- silo's rocket cargo too, which the game counts with the silo's own; each
     -- silo's rocket state and cargo follow in saw).
@@ -114,7 +114,17 @@ return function(api)
       -- One position counts as positions={position} (Haiku, 12:20: item_count coal below 20 at a chest; a lone position
       -- was ignored and the character's inventory counted).
       local positions=c.positions or (c.position and {c.position})
-      if positions then
+      if c.platform then
+        local pl
+        for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each; break end end
+        assert(pl,'no platform of ours named '..c.platform)
+        local hub=pl.hub
+        assert(hub and hub.valid,'platform '..c.platform..' has no hub')
+        local inv=hub.get_inventory(defines.inventory.hub_main)
+        assert(inv,'platform '..c.platform..' has no hub inventory')
+        n=inv.get_item_count(c.item)
+        where=' in '..c.platform..' hub (landed stock; excludes incoming cargo and hub trash)'
+      elseif positions then
         local seen,silos=0,{}
         for _,raw in ipairs(positions) do
           for _,e in pairs(p.surface.find_entities_filtered{position=api.position(raw),radius=0.3,force=p.force}) do
@@ -236,6 +246,10 @@ return function(api)
     if kind=='health_below' or kind=='health_above' then number(c.fraction,0,1,'fraction') end
     if kind=='item_count' then
       assert(type(c.item)=='string' and prototypes.item[c.item],'item_count requires a known item')
+      if c.platform~=nil then
+        assert(type(c.platform)=='string' and #c.platform>0,'item_count platform requires a platform name')
+        assert(c.position==nil and c.positions==nil and c.surface==nil,'item_count platform counts the hub; no position, positions or surface')
+      end
       assert(c.at_least~=nil or c.below~=nil,'item_count requires at_least or below')
       if c.at_least~=nil then number(c.at_least,0,1e9,'at_least') end
       if c.below~=nil then number(c.below,1,1e9,'below') end

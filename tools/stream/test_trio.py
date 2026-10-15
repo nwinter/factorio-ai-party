@@ -163,7 +163,21 @@ def hint_bars():
     assert 32 / trio["cam2"][3] >= share and 32 / trio["cam3"][3] >= share and 26 / inset[3] >= share
 
 
+def departure_leaves():
+    """01:55 shift15: a platform departure took the camera away in trio mode, leave_trio cleared the trio, and the
+    same step then read it in tiles() (TypeError: 'NoneType' object is not subscriptable)."""
+    d, _ = world(trio=True)
+    a = team()
+    d.started = 1000
+    start = until_trio(d, a, 1000 + int(d.cfg["trio_gap"]) - 1, 1000 + int(d.cfg["trio_gap"]) + 20)
+    assert start is not None, d.layouts
+    d.maybe_departure = lambda scores, now, segment: d.leave_trio("platform departure", now)
+    d.step(snap(a), start + 1)
+    assert d.mode == "onecam" and d.trio is None, d.layouts
+
+
 def main():
+    departure_leaves()
     see_through()
     hint_bars()
     busy()

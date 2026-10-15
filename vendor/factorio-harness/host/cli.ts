@@ -1494,7 +1494,7 @@ async function main() {
       if (bridged) throw new Error('sleep needs the harness mod (not a bridge session)');
       const seconds = Number(positionals[1]);
       if (!Number.isSafeInteger(seconds) || seconds < 1 || seconds > 900) throw new Error('sleep requires SECONDS 1..900');
-      const reply = await sleep(seconds, values.until === undefined ? undefined : parseUntil(values.until));
+      const reply = await sleep(seconds, untilEvent(values.until));
       output(reply);
       if (!reply.ok) process.exitCode=1;
     } else if (command === 'wait' && (values.until === undefined || /^\s*idle\s*$/.test(values.until)) && values.max !== undefined) {

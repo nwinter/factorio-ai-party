@@ -64,6 +64,18 @@ test('raw wait_until word form and timeout aliases normalize before direct and q
     assert.equal(seen.length,count,'conflicts send no game request');
   });
 });
+test('named hub item_count passes through direct waits, queue steps and guards',async()=>{
+  const seen:any[]=[];
+  const condition={until:'item_count',item:'agricultural-science-pack',at_least:1000,platform:'Big Ship'};
+  await engine(request=>{seen.push(request); return {ok:true,result:{}};},async port=>{
+    await cli(port,['call','wait_until','--args',JSON.stringify(condition)]);
+    await cli(port,['call','queue_submit','--args',JSON.stringify({steps:[{action:'wait_until',args:condition}],
+      guards:[{when:condition}]})]);
+  });
+  assert.deepEqual(seen[0].args,condition);
+  assert.deepEqual(seen[1].args.steps[0].args,condition);
+  assert.deepEqual(seen[1].args.guards[0].when,condition);
+});
 test('move_to ending arrived_near is a success (exit 0)',async()=>{
   let polls=0;
   await engine(request=>{
