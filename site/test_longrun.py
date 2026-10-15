@@ -72,12 +72,40 @@ def make(root):
                              used=use(3), iron=1600)],
           caster="05:30:00 [Vale] (space_moment, or:x, 1s) Platform's named. Solstice.\n"
                  "05:31:00 [Rook] (camera, or:x, 1s) Nothing to see.\n")
+    # the run's chronicle s3 left (tools/stream/chronicle_log.py; viewers Alex and syndesis 22:24): an agent's entry,
+    # one naming the owner (left out by keep), and the harness's record: a platform built and lost with where it flew,
+    # what destroyed it and its cargo, a rocket
+    rows = [{"type": "entry", "seq": 1, "tick": 3600 * 90, "game_time": "1h30m", "agent": "sonnet", "title": "The silo rises",
+             "text": "We poured the silo's foundation under a red sky.", "planet": "nauvis",
+             "refs": [{"id": 1, "kind": "research", "tick": 3600 * 88, "line": "research finished: rocket-silo"}]},
+            {"type": "entry", "seq": 2, "tick": 3600 * 91, "agent": "opus", "text": "nick said hi", "planet": "nauvis"},
+            {"type": "event", "id": 2, "kind": "platform_created", "tick": 3600 * 95, "platform": "Comet", "at": "nauvis", "by": "luna"},
+            {"type": "event", "id": 3, "kind": "rocket", "tick": 3600 * 101, "surface": "nauvis", "to": "platform Comet", "cargo": "empty"},
+            {"type": "event", "id": 4, "kind": "platform_lost", "tick": 3600 * 110, "platform": "Comet",
+             "where": "flying nauvis->vulcanus 40%", "by": "medium-metallic-asteroid",
+             "hit_by": [{"name": "medium-metallic-asteroid", "count": 40}], "cargo": [{"name": "iron-plate", "count": 450}],
+             "cargo_items": 450, "cargo_kinds": 1},
+            {"type": "event", "id": 5, "kind": "research", "tick": 3600 * 88, "name": "rocket-silo"}]
+    (root / "s3" / "chronicle.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     shift("old", None, [score("2026-10-09T01:00:00", 100, [], 0)])  # an unrelated run: not in the chain
     (root / "s1-retry").mkdir()
     (root / "s1-retry" / "resumed-from").write_text("s1\n")  # a shorter branch: the longest chain wins
 
 
+def platform_table_details():
+    """The long-run page's platform table gives a lost platform's details when the chronicle has them."""
+    sys.path.insert(0, str(SITE))
+    import build
+    rows = [{"name": "Comet", "built": "2026-10-11T05:00:00", "built_tick": 3600 * 95, "built_shift": 2, "places": ["nauvis"],
+             "lost": "2026-10-11T05:30:00", "lost_tick": 3600 * 110, "lost_shift": 2, "at": None}]
+    html = build.platforms_table(rows, {"Comet": "Platform Comet lost flying nauvis->vulcanus 40%, destroyed by x; cargo lost: 450 iron plate"})
+    assert "Platform Comet lost flying nauvis-&gt;vulcanus 40%, destroyed by x; cargo lost: 450 iron plate" in html, html
+    assert "the cargo lost as the harness read them" in html and 'href="/chronicle/"' in html, html
+    assert "450 iron plate" not in build.platforms_table(rows), "no details without the chronicle"
+
+
 def main():
+    platform_table_details()
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / "runs"
         root.mkdir()
@@ -149,6 +177,23 @@ def main():
         assert '">on now</span>' not in page  # no "on now" chip from the build: a built page goes stale
         sp2 = (out / "runs" / "long" / "shift-2" / "index.html").read_text()
         assert 'content="Shift 2: Oct 11, 05:00 to 06:00 Pacific · +1 technologies · +2 rockets' in sp2
+        # the Chronicle (viewers Alex and syndesis): shift 2's entry with its title, where and what it is filed beside; the
+        # harness's record beside it (Comet built, a rocket, Comet lost with where, what destroyed it and its cargo); the
+        # owner's line and research left out; linked from the nav and the shift page; on the timeline with details
+        ch = (out / "chronicle" / "index.html").read_text()
+        assert "<h1>Chronicle</h1>" in ch and 'id="shift-2"' in ch and 'id="shift-1"' not in ch, ch[:500]
+        assert "The silo rises" in ch and "We poured the silo&#x27;s foundation under a red sky." in ch and "Beside: research finished: rocket-silo" in ch, ch
+        assert "nick said hi" not in ch and "Platform Comet built at Nauvis by luna" in ch and "Rocket launched from Nauvis to platform Comet" in ch, ch
+        assert ("Platform Comet lost flying nauvis-&gt;vulcanus 40%, destroyed by medium metallic asteroid; hit most by medium metallic "
+                "asteroid; cargo lost: 450 iron plate") in ch, ch
+        assert ch.index("The silo rises") < ch.index("Platform Comet built") < ch.index("Platform Comet lost"), "game-time order"
+        assert "The agents' entries (1)" in ch and "The harness's record (3)" in ch, ch
+        assert 'href="/chronicle/"' in page  # the long run's platform table links it (the nav does outside the archive)
+        sp2c = (out / "runs" / "long" / "shift-2" / "index.html").read_text()
+        assert 'href="/chronicle/#shift-2"' in sp2c and 'href="/chronicle/#shift-' not in sp, "only a shift with a chronicle links it"
+        tl = (out / "timeline" / "index.html").read_text()
+        assert "Platform Comet built at Nauvis by luna" in tl and "Platform Comet lost flying nauvis-&gt;vulcanus 40%" in tl, tl
+        assert "Platform Solstice built" in tl, "a platform the chronicle does not cover: from the score rows"
         # a line that ends at 0 (space science on shift 1's page: none made yet) has no end label
         assert not re.search(r'class="dlabel"[^>]*>[^<]*<tspan class="dval">0</tspan>', page + sp)
         # a shift's own link-preview card: og_card.py --shifts writes its HTML (no browser here); the build uses a
