@@ -4683,10 +4683,14 @@ end)()
     eq(stl.active,false); eq(stl.last.outcome,'timed_out','no new part for 60 ticks')
     silo.rocket_parts=0; rocket_there=true; main[1]=stack(nil,0)
   end
-  -- With launch: the launch's refusal after loading says the cargo stays.
+  -- With launch to a platform that does not exist: refused before anything is loaded (the platform is read first;
+  -- Sonnet, shift17 19:15).
   main[1]=stack('agricultural-science-pack',10)
+  local aboard_before=cargo[1].valid_for_read and cargo[1].count or 0
   fails(function() call('load_silo',{position=silo.position,items={['agricultural-science-pack']=100},to_total=true,chests=false,launch=true,platform='Nowhere'}) end,
-    'loaded, then the launch was refused: no platform named Nowhere')
+    'no platform named Nowhere')
+  eq(cargo[1].valid_for_read and cargo[1].count or 0,aboard_before,'nothing loaded'); eq(main[1].count,10)
+  call('load_silo',{position=silo.position,items={['agricultural-science-pack']=100},to_total=true,chests=false})
   eq(cargo[1].count,100)
   -- Astra 18:33 (tick 9965693) and 23:53, Gemini 18:21: with the game's item stacks (quality a LuaQualityPrototype,
   -- userdata) load_silo matched nothing and said held 0. Your own inventory (chests=false), as a queue step (Astra's

@@ -2719,8 +2719,20 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     `slots` (used/total), `chests`, `complete`, `short`.
   - `launch: true` with `platform` (or `orbit: true`) launches in the same tick, once every count is aboard;
     `min_cargo` and `arrived` are checked as `launch` checks them. Any count short: `not launched: ...; what was loaded
-    stays in the rocket (it holds ..., 600/1000 kg)`. A launch refused after loading: `loaded, then the launch was
-    refused: ...; the cargo stays in the rocket`.
+    stays in the rocket (it holds ..., 600/1000 kg); launch it as it is: launch {"position":{...},"platform":"..."}, or
+    load the rest (to_total=true counts what is aboard)`. A launch refused after loading: `loaded, then the launch was
+    refused: ...; the cargo stays in the rocket ...; launch it as it is: ...`. With cargo aboard, a walking load that
+    has nothing to do says so with the same `launch it as it is` line (`nothing to load: the rocket holds the list
+    already (...)`, and `nothing walked: ... none of it fits under its lift (it holds metallurgic-science-pack*1000,
+    1000/1000 kg) (items adds to what is aboard; to_total=true counts what is aboard)`; Sonnet, shift17 19:16).
+  - The platform is read before anything is loaded (Sonnet, shift17 19:15: 500 packs for Kestrel, still flying, stayed
+    in a rocket): in orbit of the silo's planet, the load and launch go ahead; flying here (its current leg ends here,
+    or its next scheduled stop is here and it is not paused), the call waits as for a rocket, nothing loaded (`waiting
+    {why: "platform Kestrel is flying fulgora->vulcanus 80%, headed to vulcanus (about 95s at its speed now): nothing is
+    loaded until it is in orbit there ..."}`; the wait goes on while it flies here, at most to `gives_up_tick`); a walking
+    load holds at the silo the same way; anywhere else: refused, nothing loaded (`platform Kestrel is at gleba, not
+    headed to vulcanus (next stop ...): a launch needs it in orbit of vulcanus; nothing loaded`). An unknown platform is
+    refused before loading too.
   - `up_to: true` (Sonnet, d15 07:50: a launch stayed unlaunched when weight ran short, about 5 retries a shift) loads
     what fits (weight, slots) and what you and the chests hold. A short row goes to `up_to_short` (not `short`), the
     call does not fail, and a launch goes with what is aboard; none of the list aboard: `not launched (up_to): none of
