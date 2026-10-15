@@ -5,7 +5,7 @@ Talks RCON directly (one persistent connection) and sends the same
 costs one round trip instead of a node process. Only whitelisted read actions
 can be dispatched: a failed non-read call stops that player's current action.
 """
-import json, os, sys, threading, uuid
+import json, os, sys, threading, time, uuid
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.dont_write_bytecode = True  # tools/__pycache__ is tracked in git; do not rewrite it
@@ -362,6 +362,9 @@ def one_line(lua):
     return " ".join(l.strip() for l in lua.strip().splitlines() if l.strip())
 
 
+SLOW_RCON_S = float(os.environ.get("POG_SLOW_RCON_S", 0.4))  # log game calls slower than this (stderr)
+
+
 class Harness:
     def __init__(self, world):
         self.world = world
@@ -376,7 +379,12 @@ class Harness:
                 try:
                     if self.rcon is None:
                         self.rcon = pog.Rcon("127.0.0.1", self.port, self.password, timeout=10)
-                    return self.rcon.command(cmd)
+                    t0 = time.monotonic()
+                    out = self.rcon.command(cmd)
+                    took = time.monotonic() - t0
+                    if took > SLOW_RCON_S:  # 21:40 2026-10-14: the game stalled ~450 ms every 3 s while this service ran
+                        print(f"[slow-rcon] {took:.2f}s {len(out)} B: {cmd[:160]}", file=sys.stderr, flush=True)
+                    return out
                 except (OSError, ConnectionError):
                     self.rcon = None
                     if attempt:
