@@ -1943,6 +1943,8 @@ class OneCam(Director):
     def tiles(self, by_name, scores, now):
         """In a trio: the big tile keeps its story (zoom follows), the small tiles their agents; over at `until`, or at
         once when an agent in it is gone."""
+        if not self.trio:  # maybe_departure left the trio earlier in this step (01:55: TypeError on None)
+            return
         cur = self.state.get(self.onair)
         gone = (not cur or cur.get("subject") not in scores) or any(a not in scores for a in self.trio["agents"])
         if gone or now >= self.trio["until"]:
