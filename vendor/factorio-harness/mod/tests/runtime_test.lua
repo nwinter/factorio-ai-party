@@ -3642,6 +3642,21 @@ end)()
   last=call('status').last
   eq(last.outcome,'timed_out'); eq(last.target.x,10); eq(last.legs[1].outcome,'timed_out'); eq(last.legs[1].to.x,3)
   eq(last.legs[2].outcome,'not walked'); eq(last.legs[3].outcome,'not walked'); eq(last.legs[3].to.x,10)
+  -- The limit (round1820a, Opus: 400-tile via trips timed out at the fixed 3600 ticks four times while walking fine):
+  -- ticks as given, else scaled to the planned route, said in limit and in the why of a timeout.
+  eq(last.limit,'5 ticks (0s), as given')
+  assert(last.why:find('time ran out at (9.8,0), 0.2 tiles from the target: its limit, 5 ticks (0s), as given, ran out on leg 1 of 3 (to (3,0))',1,true),last.why)
+  p.position={x=0,y=0}
+  local kept_speed=p.character_running_speed
+  p.character_running_speed=0.15
+  r=call('move_to',{position={x=400,y=0},via={{x=200,y=100},{x=300,y=-100}},pathfind=false})
+  -- 223.6 + 223.6 + 141.4 = 588.6 tiles; at 0.15 tiles a tick, 1.5 times that and 600 ticks more: 6487.
+  eq(r.limit,'6487 ticks (1m48s) for the planned route, 589 tiles in straight lines through the via points at 0.15 tiles a tick')
+  eq(r.until_tick-game.tick,6487)
+  call('stop',{})
+  r=call('move_to',{position={x=10,y=0},pathfind=false})
+  eq(r.limit,'3600 ticks (1m00s)'); call('stop',{})
+  p.character_running_speed=kept_speed
   fails(function() call('move_to',{position={x=10,y=0},via={}}) end,'via takes 1..16 points')
   fails(function() call('move_to',{position={x=10,y=0},via={{x=600,y=0}}}) end,'via point 1 (600,0) must be within 512 tiles of the point before it')
   -- waypoints is read as via.

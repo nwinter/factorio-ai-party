@@ -270,6 +270,7 @@ already targets your character.
   to its centre, as `build` measures it); in reach, at once. `{"position":{x,y},"reach":"build"}` does the same for a point.
 - `move_to --args '{"position":{"x":40,"y":5},"via":[{"x":10,"y":30},{"x":30,"y":30}]}'` walks the via points in order
   in one call, each leg pathfound and checked for enemies like a single `move_to`; `last.legs` gives each leg's outcome.
+  Without `ticks` its time limit scales with the route's length (the reply's `limit` says it).
 - `move_to` keeps out of the range of the worms the map shows, plus 4 tiles; `"avoid_enemies":true` also keeps out of
   spawners' units' sight, 8 tiles more, walking legs around a nest (`last.avoided_enemies`); no way round: `no_safe_route`.
   A goal inside such a range is refused, naming the worm and the nearest safe spot toward it; `"unsafe_goal":true` goes anyway.

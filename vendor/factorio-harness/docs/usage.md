@@ -704,6 +704,13 @@ fh call status
   - A via point counts as reached within 1 tile (or `within` when larger), and only the last leg steps off a belt.
   - `ticks` covers the whole walk; the reply says `via: 2, legs: 3`; `status` shows `active.leg: 2 of 3` and
     `active.to`, the leg's goal.
+  - Without `ticks` the limit scales with the planned route (round1820a, Opus: 400-tile via trips timed out at the
+    fixed 3600 ticks four times in shift13 while walking fine): straight lines from you through the via points to
+    `position`, at your speed, 1.5 times that and 10 s more, at least 3600 and at most 36000 ticks. Any `move_to`
+    reply says it: `limit: 6487 ticks (1m48s) for the planned route, 589 tiles in straight lines through the via points
+    at 0.15 tiles a tick` (`3600 ticks (1m00s)` for a short walk, `..., as given` with `ticks`). A walk that runs out
+    names the limit and the leg in `why`: `time ran out at (265.4,-251.7), 160.2 tiles from the target: its limit,
+    3600 ticks (1m00s), ran out on leg 4 of 7 (to (300,-260))`, and `last.limit`.
   - A leg that does not arrive ends the walk with its outcome, and `last.why` (and `build_spot`) describe that leg.
   - `last.legs` lists each leg, `{to, outcome, s, why, avoided_enemies}`, then the legs `not walked`; `last.target`
     is `position`.
