@@ -313,6 +313,8 @@ fh call status
     space-platform-hub (0,0), box (-4,-4)-(4,4), 4 tiles from its edge`, or, when it touches one and the game still
     refuses, that it touches it and that a bay joins only where its connection points line up. `build`, `place_ghosts`
     and their dry runs give it.
+  - `placements {platform, name: "cargo-bay", near?}` lists where it fits on that platform by the game's own build
+    check, which knows the hub and bay attachment (near in platform coordinates, default the hub).
   - `check_inserters: true` on `build` or `place_ghosts` (Luna, d15: misaligned and blocked seed-feeder inserters took many
     round trips) runs the call's dry run first. Each planned inserter's pickup and drop (what stands there: built,
     planned in this call, a ghost), power (a pole's supply area, built or planned; a build only) and filters (one that

@@ -218,7 +218,7 @@ return function(api)
   -- with surface=nauvis, and its dry run, were refused as no-body while a player aboard places ghosts on a planet by
   -- remote view); the refusal lists them from here.
   M.PLATFORM_ACTIONS = {'place_ghosts', 'deconstruct', 'cancel_deconstruction', 'paste', 'blueprint_place', 'grid', 'scan', 'inspect',
-    'configure', 'flush', 'circuit_set', 'circuit', 'wire', 'ports', 'cargo', 'trace', 'power', 'conflicts'}
+    'configure', 'flush', 'circuit_set', 'circuit', 'wire', 'ports', 'cargo', 'trace', 'power', 'conflicts', 'placements'}
   M.SURFACE_ACTIONS = {'inspect', 'circuit_set', 'circuit', 'wire', 'ores', 'launch', 'configure', 'silo', 'preflight', 'requests',
     'place_ghosts', 'scan', 'conflicts', 'deconstruct', 'cancel_deconstruction', 'trace'}
   M.ABOARD_NOTE = 'every read (status, scan, inspect, science, supply, networks, platforms, map, ...: of the platform, or of a planet with surface=) but inventory and craftable; '

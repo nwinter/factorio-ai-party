@@ -536,7 +536,7 @@ return function(api)
   end
 
   M.schema = {
-    placements={name='entity or item name (an item: the entity it places)',
+    placements={platform='optional platform name: spots on that space platform (Astra, d15 07:50: where a cargo bay fits, by the game\'s own build check, which knows the hub and bay attachment), near in platform coordinates (default its hub)',name='entity or item name (an item: the entity it places)',
       near='optional {x,y} centre (default you): in sight, or by remote view in a chunk our force sees now',position='the same as near',
       radius='optional 1..24 (default 12 for an offshore-pump, else 10; past 24 searched at 24, said in note)',limit='optional 1..50 positions (default 10; past 50: 50)',
       direction='optional compass name or 0, 4, 8, 12: only this direction (default north, east, south, west; a building that does not turn has none)',

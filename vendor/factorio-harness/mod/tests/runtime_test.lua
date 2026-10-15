@@ -5071,7 +5071,7 @@ end)()
   for _,c in ipairs({{'load_silo',{up_to=true}},{'refuel',{from_radius=128}},{'queue_edit',{id='job-1',to=1}},{'circuit_set',{set_requests=true}},
       {'requests',{remove={'coal'},force=true}},{'board',{projects='compact'}},{'board_post',{blocked_by={1},parent=1,open_steps=true}},
       {'board_update',{take_step=1,release_step=1,open_steps=true,blocked_by={},parent=false}},{'fuel_budget',{surface='nauvis'}},
-      {'mine',{count=5}},{'feed',{position={x=1,y=1},radius=5}},{'queue_submit',{mode='pending'}},{'pickup',{belt=true,to={x=1,y=1}}},{'refuel',{feed_chests=true}},{'build',{check_inserters=true}},{'place_ghosts',{check_inserters=true}}}) do
+      {'mine',{count=5}},{'feed',{position={x=1,y=1},radius=5}},{'queue_submit',{mode='pending'}},{'pickup',{belt=true,to={x=1,y=1}}},{'refuel',{feed_chests=true}},{'placements',{platform='Starling',name='cargo-bay'}},{'build',{check_inserters=true}},{'place_ghosts',{check_inserters=true}}}) do
     no_unknown(function() runtime.check_args(c[1],c[2]) end,'check_args '..c[1])
   end
 end)()
