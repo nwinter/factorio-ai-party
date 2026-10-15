@@ -218,7 +218,8 @@ already targets your character.
   in these calls (`corrected` says how it ran). A repeating queue (`queue_repeat`, optional `name`) puts a `queue:`
   line in the team block when a round's short steps differ from the round before; steps with `up_to: true` or
   `"on_short": "skip"` are left out of it. `queue_repeat` takes `times` (rounds) and `for_ticks` (no round starts
-  after that); the loop then ends with one `queue:` line (`done after N rounds: ...`) and `loop_done` in `queue_status`. `transfer` is `{position, direction: "to_entity"|"to_player", item, count,
+  after that); the loop then ends with one `queue:` line (`done after N rounds: ...`) and `loop_done` in `queue_status`;
+  its `orders` says which standing orders may run between its rounds (triggered ones by default). `transfer` is `{position, direction: "to_entity"|"to_player", item, count,
   inventory?}` on any container (`./fh help transfer` shows calls that work; an argument refusal ends with one built
   from your call, `launch`'s with the silos there); out of reach, it says the distance, your
   reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
@@ -322,7 +323,8 @@ already targets your character.
   runs its queue steps whenever
   its `when` holds (any `wait_until` condition, plus `ghosts_waiting`, `damaged`, `fuel_below` and `platform_arrived`); one order without
   `when` is your default routine, run every `interval_ticks` while no trigger holds. Up to 6 orders of 32 steps. They
-  run only while your character is free (no action, your queue empty), 20 s after your own last action; your own
+  run only while your character is free (no action, your queue empty, or a repeating queue between its rounds:
+  triggered orders by default, `queue_repeat {"orders":"all"}` the default routine too, `"none"` none), 20 s after your own last action; your own
   action or queue call stops a running order at once and it resumes after. Every reply's `orders:` line says which
   runs and why. `./fh call orders` lists them; `order_remove`, `orders_pause`, `orders_resume`.
 - A harness update keeps waits, timed collects, tours, mining, building, repairs, queues and orders running with their end
@@ -439,7 +441,11 @@ already targets your character.
   takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first and the landing pad's room
   (`pad_room`: free slots, what takes the rest, `spill`: what would land on the ground).
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods, to
-  the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it).
+  the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it). Pods still in
+  the air from our platforms are `where_is`'s `in_flight` and in a platform's arrival alert.
+- `./fh call construction_robots` (or `{"network":N}`) reads the construction robots of the network you stand in: each
+  in the air with its charge, cargo, orders and what holds it up (no storage for what it holds, target out of the
+  area, waiting to charge).
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
 

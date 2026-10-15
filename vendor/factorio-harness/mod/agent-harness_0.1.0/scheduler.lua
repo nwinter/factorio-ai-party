@@ -112,7 +112,7 @@ return function(api)
       history_total=history~=q.history and #q.history or nil,
       waiting=q.current and q.current.action=='wait_until' and {condition=q.current.args,saw=q.current.saw,until_tick=q.current.until_tick} or nil,
       guards=q.guards and #q.guards>0 and q.guards or nil,last_failure=failure,after_direct=q.after_direct,
-      repeating=q.loop~=nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,
+      repeating=q.loop~=nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.loop and (q.orders or 'triggers') or nil,
       times=q.loop and q.times or nil,rounds_left=q.loop and q.times and math.max(0,q.times-(q.cycle or 1)) or nil,
       stops_tick=q.loop and q.stop_tick or nil,loop_done=q.loop_done,
       limits={pending=MAX_PENDING,history=MAX_HISTORY,instant_per_tick=MAX_INSTANT,argument_bytes=MAX_BYTES}}
@@ -175,7 +175,8 @@ return function(api)
     q.round_news=q.round_news or {}
     q.round_news[#q.round_news+1]=string.format('queue %sdone after %d round%s: %s',q.name and q.name..' ' or '',q.cycle or 1,(q.cycle or 1)==1 and '' or 's',why)
     while #q.round_news>3 do table.remove(q.round_news,1) end
-    q.loop=nil; q.next_cycle_tick=nil; q.times=nil; q.stop_tick=nil; q.for_ticks=nil
+    -- With the loop its orders setting goes: the queue is free again, and every order may run as at any free time.
+    q.loop=nil; q.next_cycle_tick=nil; q.times=nil; q.stop_tick=nil; q.for_ticks=nil; q.orders=nil
     q.revision=q.revision+1
   end
   -- The round lines not yet shown to the agent (the reply's team block).
@@ -294,9 +295,25 @@ return function(api)
     local q=(api.state().queues or {})[index]
     return not q or (not q.current and #q.pending==0 and not q.loop)
   end
+  -- Between the rounds of a repeating plan (Opus, shift13: orders never ran while Opus's queue repeated, so turret rearm
+  -- and boiler fuel orders never fired): resting, not paused, no order in it. since: the tick its last round ended;
+  -- next: when the next round is due (it waits for an order that runs then); orders: which may run (queue_repeat
+  -- orders: triggers, the default; all; none).
+  function M.resting(index)
+    local q=(api.state().queues or {})[index]
+    if not (q and q.loop and not q.paused and not q.current and #q.pending==0 and not q.order) then return nil end
+    local next_tick=q.next_cycle_tick or game.tick+(q.interval or 0)
+    return {since=next_tick-(q.interval or 0),next=next_tick,orders=q.orders or 'triggers'}
+  end
+  -- A repeating plan that is not paused: which orders may run between its rounds (orders.lua's line).
+  function M.loop_orders(index)
+    local q=(api.state().queues or {})[index]
+    return q and q.loop and not q.paused and (q.orders or 'triggers') or nil
+  end
   function M.run_order(index,name,items,reason)
     local q=queue(index)
-    assert(M.free(index),'the queue is busy')
+    local rest=M.resting(index)
+    assert(M.free(index) or (rest and rest.orders~='none'),'the queue is busy')
     items=copy_steps(items); assign(q,items)
     for _,step in ipairs(items) do step.order=name end
     q.pending=items; q.paused=false
@@ -403,7 +420,7 @@ return function(api)
     assert((a.mode=='replace' and 0 or total(q.pending))+total(items)<=MAX_BYTES,'queue argument byte budget exceeded')
     -- Replace affects pending work only; active cancellation is always explicit.
     assign(q,items)
-    if a.mode=='replace' then q.pending={}; q.loop=nil; q.next_cycle_tick=nil; q.guards={}; q.times=nil; q.stop_tick=nil end
+    if a.mode=='replace' then q.pending={}; q.loop=nil; q.next_cycle_tick=nil; q.guards={}; q.times=nil; q.stop_tick=nil; q.orders=nil end
     for _,step in ipairs(items) do q.pending[#q.pending+1]=step end
     q.guards=q.guards or {}
     assert(#q.guards+#new_guards<=MAX_GUARDS,'at most '..MAX_GUARDS..' guards')
@@ -424,10 +441,13 @@ return function(api)
     assert(times==nil or (type(times)=='number' and times==math.floor(times) and times>=1 and times<=10000),'times must be 1..10000 rounds')
     assert(for_ticks==nil or (type(for_ticks)=='number' and for_ticks==math.floor(for_ticks) and for_ticks>=60 and for_ticks<=432000),
       'for_ticks must be 60..432000 ticks (2 hours)')
+    local orders=a.orders
+    if orders==true then orders='all' elseif orders==false then orders='none' end
+    assert(orders==nil or orders=='triggers' or orders=='all' or orders=='none','orders must be triggers, all or none')
     preempt(p,q)
     api.stop(p)
     M.pause(p.index)
-    q.loop=copy_steps(items); q.interval=interval; q.next_cycle_tick=nil; q.cycle=1
+    q.loop=copy_steps(items); q.interval=interval; q.next_cycle_tick=nil; q.cycle=1; q.orders=orders
     q.name=a.name; q.round={counts={},keys={},n=0}; q.round_sig=nil; q.round_news=nil
     q.times=times; q.for_ticks=for_ticks; q.stop_tick=for_ticks and game.tick+for_ticks or nil; q.loop_done=nil
     assign(q,items); q.pending=items; q.paused=false; q.revision=q.revision+1
@@ -458,7 +478,7 @@ return function(api)
     preempt(p,q)
     api.stop(p)
     M.pause(p.index)
-    if a.clear~=false then q.pending={}; q.loop=nil; q.next_cycle_tick=nil; q.guards={}; q.times=nil; q.stop_tick=nil end
+    if a.clear~=false then q.pending={}; q.loop=nil; q.next_cycle_tick=nil; q.guards={}; q.times=nil; q.stop_tick=nil; q.orders=nil end
     return snapshot(q,RECENT)
   end
   function M.handlers.queue_resume(p,a)
@@ -505,11 +525,16 @@ return function(api)
               if success then moved(p,step,result); record(q,step,true,result) else fail(q,p,step,result) end
             end
           end
-          if not q.paused and not q.current and #q.pending==0 and q.loop then
+          -- An order running between rounds finishes first; the next round loads after it.
+          if not q.paused and not q.current and #q.pending==0 and q.loop and not q.order then
             if not q.next_cycle_tick then
               round_done(q)
               local why=loop_over(q)
               if why then end_loop(q,why) else q.next_cycle_tick=game.tick+q.interval end
+            end
+            -- An order between rounds can hold the next round back to or past for_ticks' end: no round starts then.
+            if q.loop and q.stop_tick and game.tick>=q.next_cycle_tick and game.tick>=q.stop_tick then
+              end_loop(q,string.format('no round starts at or after tick %d (for_ticks %d)',q.stop_tick,q.for_ticks))
             end
             if q.loop and game.tick>=q.next_cycle_tick then
               q.pending=copy_steps(q.loop); assign(q,q.pending)
@@ -563,6 +588,7 @@ return function(api)
     queue_status={history='optional count 0..64 or "all": newest history entries (default 3)',pending='optional count 0..128 or "all": next pending steps (default 1)',
       returns='active (the running step in full, running_s: how long it has run), pending (the next step), history (the newest 3), pending_count, history_total, last_failure, waiting, guards, repeating, cycle; a loop with an end: times, rounds_left (after this round), stops_tick; loop_done {name, rounds, reason, tick} once one ended'},
     queue_repeat={steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional',
+      orders='which standing orders may run in the pause between rounds: triggers (default: orders with when, as they would while you are free), all (the default routine too) or none; an order that runs then finishes before the next round loads (the round waits for it, up to its max_ticks); its hold counts from your own last request, not the round\'s last step; queue_status says orders_between_rounds',
       name='optional 1..32 characters: names the loop in its round lines',
       times='optional 1..10000: the number of rounds; after the last one the loop ends',
       for_ticks='optional 60..432000: from this call, no round starts at or after that many ticks (a round under way finishes); with times, whichever comes first ends the loop',

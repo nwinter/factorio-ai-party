@@ -247,8 +247,10 @@ return function(api)
     local out = {}
     for _, e in ipairs(ev.list) do
       if e.seq > since and e.at == planet and e.force == force and game.tick - e.tick <= EVENT_TICKS then
+        -- An arrival names its cargo pods still in the air toward this planet (pods.lua; Grok, shift13).
+        local pods = e.kind == 'arrived' and api.pods and try(function() return api.pods.line(force, e.at, e.platform) end)
         out[#out+1] = e.kind == 'arrived'
-          and string.format('platform %s stopped at %s, your planet, %s ago', e.platform, e.at, secs(game.tick - e.tick))
+          and string.format('platform %s stopped at %s, your planet, %s ago%s', e.platform, e.at, secs(game.tick - e.tick), pods and '; ' .. pods or '')
           or string.format('platform %s left %s, your planet, %s ago%s', e.platform, e.at, secs(game.tick - e.tick), e.to and ', flying to ' .. e.to or '')
       end
     end
