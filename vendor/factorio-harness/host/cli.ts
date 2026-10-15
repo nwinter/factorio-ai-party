@@ -94,6 +94,7 @@ Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT),
          --wait-through-tells (a tell or mention does not end the wait; told_during_wait lists them at the end)
          --wake-on-viewers (fh sleep, fh wait, --wait: a viewer's @mention ends it too; by default it waits for your next reply)
          --no-urgent (fh sleep, fh wait --until, direct wait_ticks/wait_until: an urgent alert does not end it; by default it does)
+         --wake-on-orders (fh sleep, fh wait --until: a standing order's round finishing or stalling ends it; by default only your own plan's does)
          --operator-repeat (FH_OPERATOR_REPEAT=1: print an operator message on every reply that carries it; by default once)
          Exit codes: 0 done, 1 failed, 3 the wait ended while the action still runs (a tell or mention, or the wait timeout)
          --full (after --wait: the whole status instead of outcome, position and inventory change)
@@ -565,7 +566,7 @@ async function main() {
     format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
     host:{type:'string'}, port:{type:'string'}, timeout:{type:'string'}, id:{type:'string'},
     file:{type:'string'}, out:{type:'string'}, mods:{type:'string'}, journal:{type:'string'},
-    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
+    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'wake-on-orders':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
@@ -669,7 +670,11 @@ async function main() {
       }
       const words = positionals.slice(part === 'for' ? 4 : 3);
       const text = words.length === 1 && words[0] === '-' ? (await readStdin()).trim() : words.join(' ');
-      args[part === 'goals' ? 'goals' : 'doing'] = text;
+      // No words (or empty stdin) is not a clear: the goals go as "" without clear, which the mod refuses naming the
+      // current goals; an explicit "" clears them (clear: true). For doing, no words is refused here.
+      if (part !== 'goals' && words.length === 0) throw new Error(`board plan ${part === 'for' ? 'for NAME' : 'doing'} needs the text ("" removes the line)`);
+      if (part === 'goals' && words.length === 1 && words[0]?.trim() === '') args.clear = true;
+      else args[part === 'goals' ? 'goals' : 'doing'] = text;
     }
     values.args = JSON.stringify(args);
     positionals.splice(0, positionals.length, 'call', 'board_plan');
@@ -1272,7 +1277,7 @@ async function main() {
     // --no-urgent: an urgent alert does not end it (urgent.lua; a runtime from before urgent wakes takes no wake_on_urgent).
     let noUrgent = values['no-urgent'] === true;
     const sleepArgs = (peek: boolean) => ({seconds, ...(condition ? {condition} : {}), ...(peek ? {peek:true} : {}), ...(viewers ? {wake_on_viewers:true} : {}),
-      ...(noUrgent ? {wake_on_urgent:false} : {})});
+      ...(noUrgent ? {wake_on_urgent:false} : {}), ...(values['wake-on-orders'] === true ? {wake_on_orders:true} : {})});
     let started = await harness.request('sleep',sleepArgs(quiet));
     if (!started.ok && noUrgent && /unknown argument wake_on_urgent/.test(String(started.error?.message ?? ''))) {
       noUrgent = false;

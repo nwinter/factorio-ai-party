@@ -530,6 +530,8 @@ already targets your character.
   platform you hear about losing a building or its hub hit, a teammate dying on your surface, a network on your surface
   half on low or no power; `--no-urgent` opts out. `--until "alert near=X,Y radius=R min_size=N"` (or `area=X1,Y1,X2,Y2`)
   wakes only on an attack, group or nest there and that big; `woke: alert` names the alert.
+- A sleep ends when the plan you submitted to your queue finishes or stalls (`queue_done`, `queue_stalled`); a
+  standing order's rounds do not end it (`--wake-on-orders` makes them).
 - `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the
   patches on the charted map nearest first: amount left (oil: yield), distance from you and from our nearest building,
   enemy spawners and worms within 50 tiles, and how many of our drills are on it.
