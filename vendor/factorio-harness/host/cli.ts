@@ -126,7 +126,7 @@ function parseUntil(text: string): Record<string, unknown> {
   const trimmed = text.trim();
   if (trimmed.startsWith('{')) return object(JSON.parse(trimmed),'--until');
   const [kind = '', ...rest] = trimmed.split(/\s+/);
-  const usage = '--until takes researched [TECH], crafting_done, item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, platform_arrived PLATFORM [PLANET], or a wait_until condition as JSON';
+  const usage = '--until takes researched [TECH], crafting_done, item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, platform_arrived PLATFORM [PLANET], platform_left PLATFORM [PLANET], or a wait_until condition as JSON';
   if (kind === 'researched' || kind === 'research') {
     if (rest.length > 1) throw new Error(usage);
     return rest[0] ? {until:'researched', technology:rest[0]} : {until:'researched'};
@@ -138,9 +138,14 @@ function parseUntil(text: string): Record<string, unknown> {
     if (!xy) throw new Error('--until rocket_ready takes the silo position: rocket_ready X,Y');
     return {until:'rocket_ready', position:{x:Number(xy[1]), y:Number(xy[2])}};
   }
-  // Gemini, shift10: wait for a platform's arrival in orbit (any stop, or the planet named).
-  if (kind === 'platform_arrived' && rest.length >= 1 && rest.length <= 2 && !rest.some(word => word.includes('='))) {
-    return rest[1] ? {until:'platform_arrived', platform:rest[0], location:rest[1]} : {until:'platform_arrived', platform:rest[0]};
+  // Gemini, shift10: wait for a platform's arrival in orbit (any stop, or the planet named); 16:50: its departure
+  // (platform_left, or platform_departed). The name may be quoted ("Big Ship"); "at" or "from" before the planet.
+  if ((kind === 'platform_arrived' || kind === 'platform_left' || kind === 'platform_departed') && !rest.some(word => word.includes('='))) {
+    const m = trimmed.slice(kind.length).trim().match(/^(?:"([^"]+)"|'([^']+)'|(\S+))(?:\s+(?:(?:at|from)\s+)?(\S+))?$/);
+    if (!m) throw new Error(`--until ${kind} takes a platform name (quoted if it has spaces) and an optional planet: ${kind} Sunward gleba`);
+    const until = kind === 'platform_arrived' ? 'platform_arrived' : 'platform_left';
+    const platform = m[1] ?? m[2] ?? m[3];
+    return m[4] ? {until, platform, location:m[4]} : {until, platform};
   }
   const value = (v: string): unknown => /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v;
   // A level reached or fallen under (Haiku, 12:20: wait until a chest's coal is below 20, then feed): ITEM>=N, ITEM>N,

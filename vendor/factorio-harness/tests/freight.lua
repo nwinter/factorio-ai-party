@@ -79,6 +79,17 @@ eq(fr[1].items[1].left,595); eq(fr[1].items[1].spoiled,200); eq(fr[1].items[1].e
 eq(fr[2].line,'leg gleba->nauvis (2m00s, 30s ago): agricultural-science-pack 995 aboard at departure, 200 spoiled on the way (into spoilage), 795 at arrival')
 eq(fr[3].line,'stop at gleba (32s, 2m30s ago; under way when first seen): agricultural-science-pack: came aboard 995; iron-plate: came aboard 50; '
   ..'rockets launched to it: 1, cargo iron-plate*50')
+-- Arrivals and departures (Gemini, 16:50): it left gleba for nauvis and stopped at nauvis (the first look's stop is
+-- no arrival); an agent on that planet is told once.
+local ev=st.platform_events.list
+eq(#ev,2); eq(ev[1].kind,'left'); eq(ev[1].at,'gleba'); eq(ev[1].to,'nauvis'); eq(ev[2].kind,'arrived'); eq(ev[2].at,'nauvis')
+local onn,hn={surface={planet={name='nauvis'}},force=force},{}
+local said=F.event_lines(onn,hn)
+eq(#said,1); eq(said[1],'platform Sunward stopped at nauvis, your planet, 30s ago')
+eq(F.event_lines(onn,hn),nil,'once')
+eq(F.event_lines({surface={planet={name='gleba'}},force=force},{})[1],'platform Sunward left gleba, your planet, 2m30s ago, flying to nauvis')
+eq(F.event_lines({surface={name='platform-1'},force=force},{}),nil,'not on a planet')
+eq(F.event_lines({surface={planet={name='nauvis'}},force={name='enemy'}},{}),nil,'another force')
 -- The trash counts as aboard: moved from the main inventory to the trash is no change.
 main['firearm-magazine']=600; trash['firearm-magazine']=100
 second()
@@ -109,10 +120,18 @@ eq(met,false); eq(saw,'Sunward at gleba, on its path (not stopped)')
 sunward.state=6
 met,saw=C.check(p,{['until']='platform_arrived',platform='Sunward',location='gleba'})
 eq(met,true); eq(saw,'Sunward at gleba')
+-- Departure (Gemini, 16:50): met while it is not stopped there (or at no stop).
+eq(C.check(p,{['until']='platform_left',platform='Sunward',location='gleba'}),false)
+eq(C.check(p,{['until']='platform_left',platform='Sunward',location='nauvis'}),true)
+eq(C.check(p,{['until']='platform_left',platform='Sunward'}),false)
+C.validate({['until']='platform_left',platform='Sunward',location='nauvis'})
+assert(not pcall(C.validate,{['until']='platform_left'}),'needs platform')
 sunward.space_location=nil; sunward.state=3; sunward.space_connection={from={name='nauvis'},to={name='gleba'},length=15000}; sunward.distance=0.25
 sunward.schedule={records={{station='nauvis'}},current=1}
 met,saw=C.check(p,{['until']='platform_arrived',platform='Sunward',location='nauvis'})
 eq(met,false); eq(saw,'Sunward flying gleba->nauvis 75%')
+met,saw=C.check(p,{['until']='platform_left',platform='Sunward'})
+eq(met,true); eq(saw,'Sunward flying gleba->nauvis 75%')
 -- A platform gone: its record goes.
 force.platforms={}
 second()
