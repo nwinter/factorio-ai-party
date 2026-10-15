@@ -9641,6 +9641,7 @@ end
 M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,
   where_from=function(me) return M.where.from(me) end}
 for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
+M.factory_digest=require('factory_digest'){state=state}
 -- Idle characters for the operator's nudge (idle.lua): idle_report, and the
 -- standing clock idle_tick keeps.
 M.idle=require('idle'){state=state,agents=function() return M.board.agents() end,
@@ -10262,7 +10263,7 @@ function M.dispatch_inner(request)
   if request.operator==true then
     local ok,result=pcall(function()
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
-      local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
+      local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.factory_digest.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.bplibrary_operator[request.action]
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
@@ -10621,7 +10622,7 @@ function handlers.supply(p,a) return M.supply.supply(p,a) end
 -- throughput's inserters against recipes (craftrate.feed; Sol, 19:50)
 M.supply.feed=function(e,into,from) return M.craftrate.feed(e,into,from) end
 -- trace: a machine's feeders and their sources, its output followed to where it ends, an item's routes (trace.lua).
-M.trace=require('trace'){supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
+M.trace=require('trace'){end_seen=M.factory_digest.end_seen,supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
 -- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,supply=M.supply,spoil=M.spoil}

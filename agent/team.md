@@ -562,3 +562,5 @@ already targets your character.
 
 - `configure {platform | surface, position, recipe}` changes an empty idle machine remotely; a remote refusal never walks the body. Aboard, `configure {position, recipe}` uses the current platform. `belt_route` follows an existing belt chain from `from` to its open end and names blocked connection tiles.
 - Numeric `move_to {avoid_enemies:N}` keeps a hard margin; `no_safe_route` adds `last.smaller_margins` with the largest smaller integer margin whose engine route was verified, its closest nest pass, or the check's failure/budget reason. The check leaves the character stationary.
+
+- The operator factory digest arrives by `tell` at deadline minus 2 hours, or on operator request: cached planetary machine/fuel counts and sampled belt ends, with observation ages; missing data is unknown.

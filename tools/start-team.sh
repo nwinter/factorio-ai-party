@@ -399,7 +399,8 @@ while read -r name pane kind; do
 done < "$rundir/panes.txt"
 log "supervisors running"
 # A fact-only operator tell to an agent whose character has stood 10 minutes (tools/idle_nudge.py; at most every 20
-# minutes per agent, not in the first 5): runs/RUN/nudges.jsonl. POG_IDLE_NUDGE=0 turns it off.
+# minutes per agent, not in the first 5): runs/RUN/nudges.jsonl. Also sends the halfway cached factory digest.
+# POG_IDLE_NUDGE=0 turns off this supervisor, including the digest.
 if [ "${POG_IDLE_NUDGE:-1}" = 1 ]; then
   nohup python3 tools/idle_nudge.py --run "$rundir" --world "$world" --port "$rcon" >"$rundir/idle-nudge.log" 2>&1 &
   echo $! >> "$rundir/supervisors.pid"

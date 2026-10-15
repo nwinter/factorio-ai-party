@@ -116,7 +116,8 @@ local function lookup(p,a)
   error('entity not found at ('..a.position.x..','..a.position.y..')',0)
 end
 local supply=require('supply'){status_name=function(e) return e.status end,position=function(v) return v end,integer=function(v,d) return v or d end}
-local trace=require('trace'){supply=supply,entity=lookup,remote_entity=lookup,status_name=function(e) return e.status end,
+local remembered={}
+local trace=require('trace'){end_seen=function(f,s,pos,lanes) remembered[#remembered+1]={force=f,surface=s,position=pos,lanes=lanes} end,supply=supply,entity=lookup,remote_entity=lookup,status_name=function(e) return e.status end,
   position=function(v) return {x=v.x,y=v.y} end,integer=function(v,d) return v or d end}
 force.is_chunk_visible=function() return true end
 local p={surface=surface,force=force,position={x=0,y=0}}
@@ -192,6 +193,7 @@ local route=r.routes[1]
 eq(route.path,'transport-belt (3.5,20.5) to (4.5,20.5) right lane (2 tiles) -> underground-belt (5.5,20.5) right lane -> underground-belt (9.5,20.5) right lane -> transport-belt (10.5,20.5) right lane')
 eq(route.carries,'4 oxide-asteroid-chunk, 2 metallic-asteroid-chunk')
 has(route.stop,'belt ends at transport-belt (10.5,20.5): left lane empty, right lane 4 oxide-asteroid-chunk (full)')
+eq(remembered[#remembered].position.x,10.5);eq(remembered[#remembered].lanes.right_full,true);eq(remembered[#remembered].lanes.left_empty,true)
 has(route.stop,'the front of the lane is oxide-asteroid-chunk, which no inserter on this route takes')
 eq(route.nobody_takes,'oxide-asteroid-chunk')
 has(route.takers[1],'inserter (3.5,21.5) waiting_for_space_in_destination filter iron-ore, holding 1 iron-ore -> iron-chest (3.5,22.5) (full) (holding what it cannot drop)')
@@ -208,7 +210,9 @@ local B5=belt(41.5,20.5,{})
 link(B3,B4); feeds(B3,B4); link(B4,B5); feeds(B4,B5)
 force.is_chunk_visible=function(_,c) return c.x~=1 end
 force.is_chunk_charted=function() return true end
+remembered={}
 r=trace.trace(p,{position={x=0.5,y=20.5},forward=true})
+eq(#remembered,0,'no endpoint contents remembered out of sight')
 has(r.routes[1].path,'out of sight from (40.5,20.5) (no radar coverage): layout as last seen, contents unknown -> transport-belt (40.5,20.5) to (41.5,20.5)')
 eq(r.routes[1].stop,'the layout ends at transport-belt (41.5,20.5), out of sight: nothing on the map at (42.5,20.5) after it (layout as last seen, contents unknown)')
 eq(r.routes[1].carries:find('3 iron-ore',1,true),nil,'no contents out of sight')

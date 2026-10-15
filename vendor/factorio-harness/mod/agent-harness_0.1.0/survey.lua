@@ -232,7 +232,7 @@ return function(api)
         local status=api.status_name(e) or 'unknown'
         if MACHINE_TYPES[e.type] then
           local m=machines[e.name]
-          if not m then m={total=0,counts={},positions={}}; machines[e.name]=m; order[#order+1]=e.name end
+          if not m then m={type=e.type,total=0,counts={},positions={}}; machines[e.name]=m; order[#order+1]=e.name end
           m.total=m.total+1; m.counts[status]=(m.counts[status] or 0)+1
           if status~='working' then
             local list=m.positions[status] or {}; m.positions[status]=list
@@ -242,7 +242,7 @@ return function(api)
         local burner=e.burner
         if burner and burner.inventory then
           local f=fuel[e.name]
-          if not f then f={total=0,empty=0,low=0}; fuel[e.name]=f; fuel_order[#fuel_order+1]=e.name end
+          if not f then f={type=e.type,total=0,empty=0,low=0}; fuel[e.name]=f; fuel_order[#fuel_order+1]=e.name end
           f.total=f.total+1
           if e.status==status_ids.no_fuel then f.empty=f.empty+1
           elseif burner.inventory.is_empty() and (burner.remaining_burning_fuel or 0)>0 then f.low=f.low+1 end
@@ -389,7 +389,8 @@ return function(api)
       plates=#plates>0 and table.concat(plates,', ')..' /min (1m|10m)' or nil,
       hand=hand_line(stats)}
     if end_positions and #end_positions>0 then detail.belt_ends=end_positions end
-    return {tick=game.tick,surface=surface.index,factory=factory,machines=summary,positions=detail,warnings=warnings}
+    return {tick=game.tick,surface=surface.index,factory=factory,machines=summary,positions=detail,warnings=warnings,
+      digest={tick=game.tick,machines=machines,fuel=fuel,belts={ends=#b.ends,unpaired=#b.unpaired,misdirected=#b.stuck}}}
   end
   -- All at once (machines=true, a surface's first survey, tests without the job).
   local function survey(p)
@@ -466,6 +467,7 @@ return function(api)
     elseif job.done then
       local entry2=acc_done(job.a,job.b,force,surface)
       entry2.tick=job.start
+      entry2.digest.tick=job.start
       cache[key]=entry2
       st.survey_steps[key]=job.steps
       st.survey_jobs[key]=nil
