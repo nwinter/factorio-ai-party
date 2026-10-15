@@ -14,6 +14,12 @@
 -- launched to it with their cargo (on_rocket_launch_ordered). Spoiled: a
 -- spoilable item's fall matched, in the same second, to the rise of what it
 -- spoils into. The last KEEP segments are kept per platform.
+-- Cargo pods (Astra, 21:20: left the hub is not delivered; she reconciled late pods at five stops): while a platform is
+-- at a stop, the cargo pods leaving its hub (pods.lua's look at its surface once a second; without pods.lua, a look of
+-- our own) are each followed (its surface, place and cargo) while it exists, as drops.lua follows a drop's pod. Gone after reaching the planet's surface: received by
+-- the landing pad it was sent to, or landed as a cargo pod container where none was; gone before leaving the
+-- platform: said so. A stop then says how many pods went down with what, what each pad received, and the pods still
+-- in flight (their unit numbers and cargo).
 return function(api)
   local M = {}
   M.KEEP, M.SHOW, M.ITEMS = 8, 6, 6
@@ -24,6 +30,8 @@ return function(api)
     return s .. 's'
   end
   M.secs = secs
+  local POD_TICKS, POD_PENDING = 60, 64
+  local function xy(pos) return {x=math.floor(pos.x * 10 + 0.5) / 10, y=math.floor(pos.y * 10 + 0.5) / 10} end
 
   -- Where a platform is ------------------------------------------------------
   local function on_path(pl)
@@ -283,6 +291,108 @@ return function(api)
     add_contents(seg.rockets.cargo, inv and try(function() return inv.get_contents() end))
   end
 
+  -- Cargo pods from the hub ----------------------------------------------------
+  local function pod_cargo(pod)
+    local inv = defines.inventory.cargo_unit and try(function() return pod.get_inventory(defines.inventory.cargo_unit) end)
+    return add_contents({}, inv and try(function() return inv.get_contents() end))
+  end
+  -- Where a pod is sent: {pad, position, surface} for a landing pad, else {surface}.
+  local function pod_dest(pod)
+    local d = try(function() return pod.cargo_pod_destination end)
+    if not d then return nil end
+    local st = d.station
+    if st and try(function() return st.valid end) then
+      return {pad=st.name, position=xy(st.position), surface=try(function() return st.surface.name end)}
+    end
+    local s = d.surface and try(function() return d.surface.name end)
+    return s and {surface=s} or nil
+  end
+  local function tally(t, key, cargo, extra)
+    t[key] = t[key] or {n=0, cargo={}}
+    local r = t[key]
+    r.n = r.n + 1
+    for name, n in pairs(cargo or {}) do r.cargo[name] = (r.cargo[name] or 0) + n end
+    if extra then
+      r.at = r.at or {}
+      local found = false
+      for _, a in ipairs(r.at) do if a == extra then found = true end end
+      if not found and #r.at < 4 then r.at[#r.at+1] = extra end
+    end
+  end
+  local function seg_at(rec, start)
+    for _, seg in ipairs(rec.segs) do if seg.start == start then return seg end end
+  end
+  -- One pod gone: what it carried, counted on its stop by where it went.
+  local function pod_done(rec, p, tick)
+    local seg = seg_at(rec, p.seg)
+    if not seg then return end
+    seg.pods = seg.pods or {}
+    local here = p.last and p.last.surface
+    if here and here ~= p.from then
+      if p.dest and p.dest.pad then
+        tally(seg.pods, 'received', p.cargo, string.format('%s (%g,%g) on %s', p.dest.pad, p.dest.position.x, p.dest.position.y, p.dest.surface or here))
+      else
+        tally(seg.pods, 'landed', p.cargo, string.format('(%d,%d) on %s', math.floor(p.last.position.x + 0.5), math.floor(p.last.position.y + 0.5), here))
+      end
+      seg.pods.last_tick = tick
+    else
+      tally(seg.pods, 'gone', p.cargo)
+    end
+  end
+  local function is_mine(pod, pl, hub)
+    local origin = try(function() return pod.cargo_pod_origin end)
+    if origin then return try(function() return origin == hub end) == true end
+    -- No origin read: one sent off the platform counts (a rocket's pod comes down onto it).
+    local d = pod_dest(pod)
+    return d ~= nil and d.surface ~= nil and d.surface ~= try(function() return pl.surface.name end)
+  end
+  function M.pod_watch(pl, tick)
+    local rec = store()[pl.index]
+    if not rec then return end
+    -- The pods followed: where they are, and the ones gone.
+    local keep = {}
+    for _, p in ipairs(rec.pods or {}) do
+      if try(function() return p.pod.valid end) then
+        local where = try(function() return {surface=p.pod.surface.name, position=xy(p.pod.position)} end)
+        if where then p.last = where end
+        if where and where.surface == p.from then p.cargo = pod_cargo(p.pod) end
+        p.dest = pod_dest(p.pod) or p.dest
+        keep[#keep+1] = p
+      else
+        p.pod = nil
+        pod_done(rec, p, tick)
+      end
+    end
+    rec.pods = keep
+    -- New pods leaving the hub while it is at a stop.
+    local seg = rec.segs[#rec.segs]
+    if not (seg and seg.kind == 'stop' and not seg['end']) then return end
+    local s, hub = try(function() return pl.surface end), try(function() return pl.hub end)
+    if not (s and hub) then return end
+    local found
+    if api.pods and api.pods.from then found = try(function() return api.pods.from(pl.force.name, pl.name) end)
+    else found = try(function() return s.find_entities_filtered{type='cargo-pod'} end) end
+    for _, pod in ipairs(found or {}) do
+      local known = false
+      for _, p in ipairs(rec.pods) do if try(function() return p.pod == pod end) then known = true; break end end
+      if not known and #rec.pods < POD_PENDING and is_mine(pod, pl, hub) then
+        rec.pods[#rec.pods+1] = {pod=pod, unit=try(function() return pod.unit_number end), seg=seg.start, at=seg.at, tick=tick,
+          from=s.name, cargo=pod_cargo(pod), dest=pod_dest(pod), last={surface=s.name, position=xy(pod.position)}}
+      end
+    end
+  end
+  -- Every POD_TICKS: the platforms at a stop, or with pods still followed.
+  function M.pod_tick(tick)
+    if tick % POD_TICKS ~= 0 then return end
+    local all = store()
+    for _, f in pairs(game.forces) do
+      for _, pl in pairs(try(function() return f.platforms end) or {}) do
+        local rec = pl.valid and all[pl.index]
+        if rec then pcall(M.pod_watch, pl, tick) end
+      end
+    end
+  end
+
   -- Reading ------------------------------------------------------------------
   local function items_text(t, limit)
     local list = {}
@@ -298,7 +408,41 @@ return function(api)
     return seg.partial and text .. '; under way when first seen' or text
   end
   -- One stop or leg in words, with its numbers: {line, kind, at|from+to, start, end, items={...}}.
-  function M.segment(seg, now, counts_now)
+  -- A stop's pods: those gone (received, landed without a pad, gone before leaving) and those still followed.
+  local function pods_text(seg, flying, now)
+    local d = seg.pods or {}
+    local sent = {n=0, cargo={}}
+    for _, k in ipairs({'received', 'landed', 'gone'}) do
+      local r = d[k]
+      if r then sent.n = sent.n + r.n; for name, n in pairs(r.cargo) do sent.cargo[name] = (sent.cargo[name] or 0) + n end end
+    end
+    local fly = {n=0, cargo={}, units={}}
+    for _, p in ipairs(flying or {}) do
+      sent.n, fly.n = sent.n + 1, fly.n + 1
+      for name, n in pairs(p.cargo or {}) do
+        sent.cargo[name] = (sent.cargo[name] or 0) + n
+        fly.cargo[name] = (fly.cargo[name] or 0) + n
+      end
+      if #fly.units < 8 then
+        fly.units[#fly.units+1] = string.format('%s%s %s', p.unit and '#' .. p.unit or 'a pod', p.dest and p.dest.pad and ' to ' .. p.dest.pad or '',
+          (p.last and p.last.surface ~= p.from) and 'descending on ' .. p.last.surface or 'leaving the platform')
+          .. string.format(' (left the hub %s ago)', secs(now - p.tick))
+      end
+    end
+    if sent.n == 0 then return nil end
+    local function part(r, words)
+      return string.format('%s %d (%s)%s', words, r.n, items_text(r.cargo) or 'empty', r.at and ' at ' .. table.concat(r.at, ', ') or '')
+    end
+    local bits = {string.format('cargo pods sent down %d (%s)', sent.n, items_text(sent.cargo) or 'empty')}
+    if d.received then bits[#bits+1] = part(d.received, 'received by landing pads') end
+    if d.landed then bits[#bits+1] = part(d.landed, 'landed as cargo pod containers (no landing pad)') end
+    if d.gone then bits[#bits+1] = part(d.gone, 'gone before leaving the platform') end
+    if fly.n > 0 then bits[#bits+1] = string.format('in flight %d (%s): %s', fly.n, items_text(fly.cargo) or 'empty', table.concat(fly.units, ', ')) end
+    return table.concat(bits, ', '), {sent=sent.n, sent_items=sent.cargo, received=d.received and d.received.n or 0,
+      received_items=d.received and d.received.cargo or nil, landed=d.landed and d.landed.n or nil, gone=d.gone and d.gone.n or nil,
+      in_flight=fly.n, in_flight_items=fly.n > 0 and fly.cargo or nil, in_flight_pods=fly.n > 0 and fly.units or nil}
+  end
+  function M.segment(seg, now, counts_now, flying)
     local last = seg.last or counts_now or {}
     local rows = {}
     if seg.kind == 'stop' then
@@ -334,8 +478,10 @@ return function(api)
       local text = string.format('stop at %s (%s)', seg.at, when(seg, game.tick))
       if #shown > 0 then text = text .. ': ' .. table.concat(shown, '; ') .. (#parts > M.ITEMS and string.format(' (+%d more items)', #parts - M.ITEMS) or '') end
       if seg.rockets then text = text .. string.format('; rockets launched to it: %d, cargo %s', seg.rockets.n, items_text(seg.rockets.cargo) or 'none') end
-      if #shown == 0 and not seg.rockets then text = text .. ': nothing expected down or up, no rocket, nothing spoiled' end
-      return {line=text, kind='stop', at=seg.at, start=seg.start, ['end']=seg['end'], items=rows}
+      local ptext, pods = pods_text(seg, flying, now)
+      if ptext then text = text .. '; ' .. ptext end
+      if #shown == 0 and not seg.rockets and not ptext then text = text .. ': nothing expected down or up, no rocket, nothing spoiled' end
+      return {line=text, kind='stop', at=seg.at, start=seg.start, ['end']=seg['end'], items=rows, pods=pods}
     end
     -- A leg: the spoilable items aboard at departure, what spoiled on the way.
     local parts = {}
@@ -359,7 +505,11 @@ return function(api)
     if not rec or #rec.segs == 0 then return nil end
     local out = {}
     local now = M.hub_counts(pl)
-    for i = #rec.segs, math.max(1, #rec.segs - M.SHOW + 1), -1 do out[#out+1] = M.segment(rec.segs[i], game.tick, now) end
+    local flying = {}
+    for _, p in ipairs(rec.pods or {}) do flying[p.seg] = flying[p.seg] or {}; table.insert(flying[p.seg], p) end
+    for i = #rec.segs, math.max(1, #rec.segs - M.SHOW + 1), -1 do
+      out[#out+1] = M.segment(rec.segs[i], game.tick, now, flying[rec.segs[i].start])
+    end
     return out
   end
   -- The hub's spoilable items now (spoil.lua's rows: the first stack to spoil,
