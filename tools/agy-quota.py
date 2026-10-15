@@ -2,6 +2,7 @@
 """After an agy turn: did it end on a quota error? For the loop in .agy-loop.sh (tools/launch-agent.sh).
 
   tools/agy-quota.py DIR STAMP DEADLINE_EPOCH
+  tools/agy-quota.py --woke DIR      (after the loop's sleep: the line for the next turn, and the rest is over)
 
 Looks through agy's logs written since STAMP's mtime (agy writes one ~/.gemini/antigravity-cli/log/cli-*.log per run,
 naming its workspace) for "RESOURCE_EXHAUSTED (code 429) ... Resets in 1h7m24s" from this workspace. If there is one,
@@ -57,6 +58,41 @@ PACE = os.path.expanduser(os.environ.get("POG_AGY_PACE_FILE", "~/.cache/pog/agy-
 PACE_CAP = float(os.environ.get("POG_AGY_PACE_CAP", 97))        # % of the weekly window to reach at its reset
 FULL_RATE = float(os.environ.get("POG_AGY_FULL_RATE", 1.75))    # %/h of the weekly window at full play (shift10-12)
 MAX_SLEEP = int(os.environ.get("POG_AGY_PACE_MAX", 3 * 3600))
+
+
+# The rest the loop is in, for the stream service and the supervisor (operator 17:17: "resting until 18:17 · pacing its
+# weekly quota", not idle or offline): DIR/resting.json {since, until, reason (pace|quota), sleep_s, used?, resets?},
+# written before the loop sleeps; --woke moves it to DIR/resting-last.json when the next turn starts.
+REST = "resting.json"
+
+
+def rest(d, wait, reason, **extra):
+    now = time.time()
+    row = dict({"since": round(now), "until": round(now + wait), "reason": reason, "sleep_s": int(wait)},
+               **{k: v for k, v in extra.items() if v is not None})
+    tmp = os.path.join(d, REST + ".tmp")
+    with open(tmp, "w") as f:
+        json.dump(row, f)
+    os.replace(tmp, os.path.join(d, REST))
+
+
+def woke(d, now=None):
+    """The sentence the turn after a rest starts with (the agent slept through the world going on), or "" with no rest
+    on record. The rest ends here: resting.json becomes resting-last.json."""
+    path = os.path.join(d, REST)
+    try:
+        row = json.load(open(path))
+    except (OSError, ValueError):
+        return ""
+    now = now or time.time()
+    mins = max(1, round((min(now, row.get("until") or now) - (row.get("since") or now)) / 60))
+    os.replace(path, os.path.join(d, "resting-last.json"))
+    if row.get("reason") == "quota":
+        return (f"You waited {mins} min for your quota to reset; the game went on meanwhile: check what changed "
+                f"(./fh call status, chat, board) before acting.")
+    when = f" (it resets {row['resets']})" if row.get("resets") else ""
+    return (f"You rested {mins} min to pace your weekly quota{when}; the game went on meanwhile: check what changed "
+            f"(./fh call status, chat, board) before acting.")
 
 
 def weekly():
@@ -121,10 +157,17 @@ def pace(d, since, deadline):
              "sleep": 0 if stop else wait, "resets": time.strftime("%a %H:%M", time.localtime(reset))}
     with open(os.path.join(d, "context.log"), "a") as f:
         f.write(json.dumps(event) + "\n")
+    if not stop:
+        rest(d, wait, "pace", used=used, resets=event["resets"])
     return "stop" if stop else wait
 
 
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--woke":
+        line = woke(sys.argv[2])
+        if line:
+            print(line)
+        return
     d, stamp, deadline = sys.argv[1], sys.argv[2], int(sys.argv[3])
     try:
         since = os.path.getmtime(stamp if os.path.isabs(stamp) else os.path.join(d, stamp)) - 1
@@ -145,6 +188,8 @@ def main():
              "resets": time.strftime("%H:%M:%S", time.localtime(until)), "sleep": 0 if stop else wait, "error": msg}
     with open(os.path.join(d, "context.log"), "a") as f:
         f.write(json.dumps(event) + "\n")
+    if not stop:
+        rest(d, wait, "quota", resets=event["resets"])
     print("stop" if stop else wait)
 
 

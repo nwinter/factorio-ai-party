@@ -27,7 +27,7 @@ def iso(seconds_ago):
     return t.strftime("%Y-%m-%dT%H:%M:%S.") + "%03dZ" % (t.microsecond // 1000)
 
 
-def run(last_request_ago, kind=None, deadline_in=240):
+def run(last_request_ago, kind=None, deadline_in=240, resting_for=None):
     """Supervise for a few seconds against a journal whose last request is that old; return supervisor.log."""
     tmp = tempfile.mkdtemp()
     bindir, ws = os.path.join(tmp, "bin"), os.path.join(tmp, "ws")
@@ -40,6 +40,9 @@ def run(last_request_ago, kind=None, deadline_in=240):
         time.strftime("%Y-%m-%d %H:%M %Z", time.localtime(time.time() + deadline_in)) + "\n")
     if kind:
         open(os.path.join(ws, ".context-hooks"), "w").write(kind + " 0 0 0\n")
+    if resting_for is not None:  # the agy loop's rest (tools/agy-quota.py resting.json)
+        open(os.path.join(ws, "resting.json"), "w").write(
+            '{"since": %d, "until": %d, "reason": "pace", "sleep_s": 4500}' % (time.time() - 60, time.time() + resting_for))
     with open(os.path.join(ws, "journal.jsonl"), "w") as j:
         if last_request_ago is not None:
             j.write('{"at":"%s","event":"request","request":{"id":"a","action":"status","bot":"grok","args":{}}}\n'
@@ -53,7 +56,7 @@ def run(last_request_ago, kind=None, deadline_in=240):
     proc.terminate()
     proc.wait()
     log = open(os.path.join(ws, "supervisor.log")).read() if os.path.exists(os.path.join(ws, "supervisor.log")) else ""
-    calls = open(os.path.join(tmp, "herdr.log")).read()
+    calls = open(os.path.join(tmp, "herdr.log")).read() if os.path.exists(os.path.join(tmp, "herdr.log")) else ""
     return log, calls
 
 
@@ -75,6 +78,13 @@ def main():
     assert "nudge 1" not in log and "after the deadline (status idle): asking for the final summary" in log, log
     assert calls.count("agent prompt") == 1, calls
     print("after the deadline, turn ended: asked once for the final summary")
+    log, calls = run(300, resting_for=3600)
+    assert "nudge 1" not in log and "agent prompt" not in calls and "skip nudges: resting until" in log, (log, calls)
+    assert log.count("skip nudges") == 1, log  # logged once per rest
+    print("resting agent (pacing its quota): not nudged")
+    log, calls = run(300, resting_for=-30)
+    assert "nudge 1 (status idle" in log, log
+    print("a rest that has ended: nudged as before")
 
 
 if __name__ == "__main__":
