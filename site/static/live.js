@@ -351,9 +351,26 @@
   // viewer is made once and kept across refreshes (its zoom, layers, follow and full screen with it).
   var CAM_SHORT = { main: 'MAIN', cam2: 'CAM 2', cam3: 'CAM 3' };
   var mapView = null;
+  // The other planets' coarse maps (viewers craigNZ830 and Foobator, d15 07:05): state.planet_map brings one planet a
+  // push (push_live.py), kept here by surface until state.planets stops listing it; a local state's planet_maps has
+  // them all.
+  var planetMaps = {};
+  function keepPlanets(s) {
+    var listed = Array.isArray(s.planets) ? s.planets.map(function (p) { return p && p.surface; }) : null;
+    function take(m) {
+      if (!m || typeof m.surface !== 'string' || !Array.isArray(m.rows)) return;
+      var old = planetMaps[m.surface];
+      if (!old || !(old.tick > m.tick)) planetMaps[m.surface] = m;
+    }
+    take(s.planet_map);
+    if (s.planet_maps && typeof s.planet_maps === 'object') Object.keys(s.planet_maps).forEach(function (k) { take(Object.assign({ surface: k }, s.planet_maps[k])); });
+    if (listed) Object.keys(planetMaps).forEach(function (k) { if (listed.indexOf(k) < 0) delete planetMaps[k]; });
+    return planetMaps;
+  }
   function mapData(s) {
     var bm = s.basemap || {};
     return { base: bm, core: bm.core, ore: bm.ore, ground: bm.terrain_grid, nests: bm.nests, turrets: bm.turrets, terrain: bm.terrain,
+      planets: keepPlanets(s),
       agents: s.agents || [], fights: s.fights || [], pins: s.alerts || [], cams: s.cameras || {},
       clouds: s.clouds || [] };  // pollution and spores per chunk (tools/stream/clouds.py), a layer and a surface switch
   }

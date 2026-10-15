@@ -11,8 +11,9 @@
 // [x0, y0, w, h] (a fixed frame instead of the framing on the base's core), clouds [{surface, label, pollutant, color
 // {r, g, b, a}, cells [[cx, cy, amount]], max, reached [{x, y}]}] (the stream's pollution and spore layer per surface,
 // tools/stream/clouds.py: 32-tile chunks, drawn in the game's map colour, the amount on hover), surface (the surface
-// shown, default nauvis). The map is Nauvis, with its base; a switch shows another surface with a cloud (Gleba's
-// spores) and only what is known there: the cloud, the nests it reached, the agents on it. An agent elsewhere (another
+// shown, default nauvis), planets {surface: grid} (another planet's coarse map, the census's; push_live sends one a
+// push and live.js keeps them). The map is Nauvis, with its base; a switch shows another planet with a map or a cloud
+// (Gleba's spores) and only what is known there: its buildings, the cloud, the nests it reached, the agents on it. An agent elsewhere (another
 // planet, aboard a platform or in a cargo pod) is listed in the map's corner ("Sol · Vulcanus"), never drawn.
 (function (root) {
   'use strict';
@@ -133,7 +134,9 @@
   function prepare(data) {
     data = data || {};
     var surface = data.surface || 'nauvis', home = surface === 'nauvis';
-    var base = home && validGrid(data.base) && data.base.rows.length ? data.base : null;
+    // another planet: its coarse map (data.planets, the census's grid; no core, ore or terrain there)
+    var away = !home && data.planets && data.planets[surface];
+    var base = home ? (validGrid(data.base) && data.base.rows.length ? data.base : null) : (validGrid(away) && away.rows.length ? away : null);
     var core = home && validGrid(data.core) && data.core.w > 0 ? data.core : null;
     var d = { surface: surface, base: base, fine: core, ore: home && validGrid(data.ore) ? data.ore : null,
       ground: home && validGrid(data.ground) ? data.ground : null };
@@ -142,6 +145,8 @@
       return c && c.surface && Array.isArray(c.cells) && c.cells.length && c.cells.every(function (x) { return x && isFinite(x[0]) && isFinite(x[1]) && x[2] > 0; });
     });
     d.cloud = d.clouds.filter(function (c) { return c.surface === surface; })[0] || null;
+    // the planets with a map (the switch)
+    d.planets = Object.keys(data.planets || {}).filter(function (k) { return k !== 'nauvis' && validGrid(data.planets[k]) && data.planets[k].rows.length; }).sort();
     d.cloudAt = {};
     if (d.cloud) d.cloud.cells.forEach(function (x) { d.cloudAt[x[0] + ',' + x[1]] = x[2]; });
     d.away = (data.agents || []).filter(function (a) { return a && elsewhere(a, surface); });
@@ -538,8 +543,9 @@
   }
   Viewer.prototype.set = function (data) {
     this.data = data || {};
-    var self = this, has = (this.data.clouds || []).some(function (c) { return c && c.surface === self.surface; });
-    if (this.surface !== 'nauvis' && !has) this.surface = 'nauvis';  // its cloud is gone: back to the base
+    var self = this, has = (this.data.clouds || []).some(function (c) { return c && c.surface === self.surface; }) ||
+      !!(this.data.planets && this.data.planets[this.surface]);
+    if (this.surface !== 'nauvis' && !has) this.surface = 'nauvis';  // its cloud and map are gone: back to the base
     this.d = prepare(this.surface === 'nauvis' ? data : Object.assign({}, data, { surface: this.surface }));
     this.renderLayers();
     this.renderLegend();
@@ -597,9 +603,11 @@
   };
   Viewer.prototype.renderLayers = function () {
     var self = this, box = this.root.querySelector('.mapview-layers');
-    // other surfaces with a cloud: a switch between them and Nauvis
-    var others = this.d.clouds.filter(function (c) { return c.surface !== 'nauvis'; });
-    var surfaces = others.length ? [{ surface: 'nauvis', text: 'Nauvis' }].concat(others.map(function (c) { return { surface: c.surface, text: c.label || cap(c.surface) }; })) : [];
+    // other surfaces with a map (another planet's buildings) or a cloud: a switch between them and Nauvis
+    var others = [], seenS = {};
+    this.d.planets.forEach(function (k) { seenS[k] = 1; others.push({ surface: k, text: cap(k) }); });
+    this.d.clouds.forEach(function (c) { if (c.surface !== 'nauvis' && !seenS[c.surface]) { seenS[c.surface] = 1; others.push({ surface: c.surface, text: c.label || cap(c.surface) }); } });
+    var surfaces = others.length ? [{ surface: 'nauvis', text: 'Nauvis' }].concat(others) : [];
     var sig = LAYERS.map(function (l) { return has(self.d, l[0]) ? l[0] + (self.on[l[0]] ? 1 : 0) : ''; }).join(',') + '|' +
       surfaces.map(function (x) { return x.surface + x.text; }).join(',') + '|' + this.surface;
     if (box.dataset.sig === sig) return;

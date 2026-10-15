@@ -553,6 +553,12 @@ fh call status
   machine counts/names, pole count and the last five-second supply sample; zero supplied says no generation in that
   sample. These groups use the existing background network scan and push-alert routing to claims/builders/nearest
   agents. Recovery removes the group; a later outage is news again. Machines without any network remain `unconnected`.
+- The operator read `census` also has each other planet's coarse map (viewers craigNZ830 and Foobator, d15 07:05: the
+  live map showed Nauvis only): `census {part: "planets"}` lists them (`name`, `buildings`, `cell`, `w`, `h`), and
+  `census {part: "basemap", surface: "vulcanus"}` gives one: every building of ours there (poles left out), each cell
+  its most telling category, the cell 4 tiles doubled until the planet fits 128 cells a side, at most 60000 buildings
+  a planet (`capped`). The same background pass collects them; each grid is made in steps after the walk (800
+  buildings a step). Both reads answer from storage.
 - `agriculture {surface?}` lists crop towers from the background census: current visible towers (`state: built`,
   position, status, seeds), visible tower ghosts (`state: ghost`), and recorded tower deaths (`state: destroyed`,
   position, `lost_tick`, cause). A ghost at a recorded loss position includes the loss tick; a visible rebuilt tower

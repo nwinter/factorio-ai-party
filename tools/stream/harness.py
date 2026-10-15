@@ -353,6 +353,29 @@ end
 rcon.print(helpers.table_to_json{platforms = out})
 """
 
+# The other planets' coarse maps (viewers craigNZ830 and Foobator, d15 07:05: the live map showed Nauvis only): the
+# harness census's last pass (census.lua: every planet but Nauvis, each building's centre and category, a grid made in
+# steps after the walk), read as an operator census read: part planets lists them (name, buildings, cell, size), part
+# basemap with surface gives one. Both answer from storage, no find; nil (no harness, no census yet) prints {}.
+PLANET_READ_LUA = r"""
+local ok, r = pcall(function()
+  local i = remote.interfaces.agent_harness
+  if not (i and i.dispatch) then return nil end
+  local req = helpers.table_to_json{id = "census-planet-" .. game.tick .. "-" .. math.random(1, 1000000000), operator = true,
+    action = "census", args = ARGS}
+  return helpers.json_to_table(remote.call("agent_harness", "dispatch", req))
+end)
+if ok and type(r) == "table" and r.ok and type(r.result) == "table" and r.result.ready then rcon.print(helpers.table_to_json(r.result))
+else rcon.print("{}") end
+"""
+
+
+def planet_read_lua(surface=None):
+    """PLANET_READ_LUA asking for the list (surface None) or one planet's map."""
+    args = '{part = "planets"}' if surface is None else '{part = "basemap", surface = ' + lua_string(str(surface)) + '}'
+    return PLANET_READ_LUA.replace("ARGS", args)
+
+
 PROBE_LUA = r"""
 local i = remote.interfaces.agent_harness
 rcon.print(helpers.table_to_json{harness = i ~= nil, camera = (i and i.camera) ~= nil, cameras = (i and i.cameras) ~= nil})
@@ -471,6 +494,21 @@ class Harness:
             if isinstance(m.get(key), dict) and not isinstance(m[key].get("rows"), list):
                 m[key]["rows"] = []
         return m
+
+    def planets(self):
+        """[{name, buildings, cell, w, h}] of the other planets the census has a coarse map of ([] before its first pass)."""
+        r = self.lua(planet_read_lua())
+        return r.get("planets") if isinstance(r, dict) and isinstance(r.get("planets"), list) else []
+
+    def planet_map(self, surface):
+        """One other planet's coarse map {tick, cell, x0, y0, w, h, rows, buildings}, or None."""
+        r = self.lua(planet_read_lua(surface))
+        m = r.get("basemap") if isinstance(r, dict) else None
+        if not isinstance(m, dict):
+            return None
+        if not isinstance(m.get("rows"), list):  # table_to_json writes an empty table as {}
+            m["rows"] = []
+        return dict(m, surface=surface)
 
     def probe(self):
         return self.lua(PROBE_LUA)
