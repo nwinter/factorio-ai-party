@@ -524,6 +524,23 @@ local function finish(index, outcome)
     last.first_error=action.first_error; last.error=last.error or (outcome=='failed' and action.first_error) or nil
     -- The first place not reached and why (stock.lua: a walk that ended unreachable, no_safe_route, blocked ...).
     last.first_unreached=action.first_unreached; last.why=last.why or (outcome=='unreached' and action.first_unreached) or nil
+    -- An end that moved nothing says why on its error line (round1650d: Luna's courier ended "nothing_collected" with the
+    -- reason only in status; Sol's walking give ended "nothing_to_do" at a full chest): the first place's error, else
+    -- the places that were full or held none.
+    if (outcome=='nothing_collected' or outcome=='nothing_to_do') and not last.why then
+      if action.first_error then last.why=action.first_error
+      else
+        local parts={}
+        for _,r in ipairs(action.rows or {}) do
+          if (r.moved or 0)==0 and #parts<3 and r.position then
+            local dir=r.direction or (action.transfer and action.transfer.direction)
+            parts[#parts+1]=string.format('%s (%g,%g) %s',r.name or 'a place',r.position.x,r.position.y,
+              r.full and (dir=='to_player' and 'gave nothing: your inventory is full' or 'is full') or (dir=='to_player' and 'held none' or 'took none'))
+          end
+        end
+        if #parts>0 then last.why=table.concat(parts,'; ') end
+      end
+    end
     -- Waiting at a machine: what it took against what the machine made and its inserters took (stock.lua).
     if action.wait then
       local r=stock.wait_report(action)
@@ -4062,7 +4079,7 @@ function handlers.inspect(p,a)
   -- A silo's rocket in words, parts and rocket_ready side by side, and its last launch (silo.lua M.rocket; Astra 10:50).
   if e.type=='rocket-silo' then
     local okr,rk=pcall(M.silo.rocket,e)
-    if okr then out.parts=rk.parts; out.rocket_ready=rk.rocket_ready; out.rocket=rk.rocket; out.last_launch=rk.last_launch end
+    if okr then out.parts=rk.parts; out.next_parts=rk.next_parts; out.rocket_ready=rk.rocket_ready; out.rocket=rk.rocket; out.last_launch=rk.last_launch end
     -- Its inventories by transfer name, alias, what each holds and is for, and a call for each (Luna 12:20).
     local oki,rows=pcall(M.silo.inventories,e,M.aliases.encode)
     out.silo_inventories=oki and rows or nil
@@ -4866,8 +4883,9 @@ local function transfer_one(p,a,pos,e)
           local key=p.index..'/'..a.item..'@'..quality
           if c[key]==nil then
             local ok,near=pcall(M.nearest_holding,p,a.item,quality,32,e)
-            c[key]=ok and near and string.format('; the nearest holding %s: %s at (%g,%g), %.1f tiles from you, holds %d%s (transfer from: "nearest")',
-              label,near.entity.name,near.entity.position.x,near.entity.position.y,near.distance,near.count,M.reserved_text(near.reserved)) or false
+            c[key]=ok and near and string.format('; the nearest holding %s: %s at (%g,%g), %.1f tiles from you, holds %d%s%s',
+              label,near.entity.name,near.entity.position.x,near.entity.position.y,near.distance,near.count,M.reserved_text(near.reserved),
+              near.feeds and ' ('..near.feeds..'; transfer from: "nearest" with feeding: true)' or ' (transfer from: "nearest")') or false
           end
           if c[key] then out.nothing_moved=out.nothing_moved..c[key] end
         end
@@ -5939,6 +5957,27 @@ function M.transfer_walk(p,a)
     if args.partial then return {transferred=0,moved=0,direction='to_entity',short={asked=args.count or 1,moved=0,reason='none_held'}} end
     error(string.format('no %s in inventory; nothing to give at %d place%s',args.item,#entities,#entities>1 and 's' or ''),0)
   end
+  -- A walking take from chests that hold none of the item now (round1650d: Sonnet walked 66 tiles to an empty provider
+  -- chest, Muse 44 tiles to an empty iron chest, each ending nothing_collected): refused before the walk, naming the
+  -- nearest chest holding it. Machines are walked to: they may make it meanwhile.
+  if args.direction=='to_player' and args.item and not fill then
+    local any,chests=false,true
+    for _,e in ipairs(entities) do
+      if entity_holds(e,args.item,args.quality)>0 then any=true end
+      if e.type~='container' and e.type~='logistic-container' and e.type~='linked-container' then chests=false end
+    end
+    if not any and chests then
+      local e=entities[1]
+      local okn,near=pcall(M.nearest_holding,p,args.item,args.quality,32,nil)
+      local text=string.format('%s no %s now: nothing walked%s%s',#entities==1 and string.format('%s at (%g,%g) holds',e.name,e.position.x,e.position.y)
+        or string.format('the %d places hold',#entities),args.item,#entities==1 and (M.stock_then(e,args.item) or '') or '',
+        okn and near and string.format('; the nearest holding it: %s at (%g,%g), %.1f tiles from you, holds %d%s%s',
+          near.entity.name,near.entity.position.x,near.entity.position.y,near.distance,near.count,M.reserved_text(near.reserved),
+          near.feeds and ' ('..near.feeds..'; transfer from: "nearest" with feeding: true)' or ' (transfer from: "nearest")') or '; none within 32 tiles of you holds any')
+      if args.partial then return {transferred=0,moved=0,direction='to_player',short={asked=args.count or 'all',moved=0,reason='source_empty'},note=text} end
+      error(text,0)
+    end
+  end
   local avoid=args.avoid
   args.positions=nil; args.position=nil; args.fill=nil; args.avoid=nil
   -- What each source holds as the walk starts, and what robots have reserved there (Grok, 15:20: a provider emptied by
@@ -6207,6 +6246,23 @@ function M.pick_source(p,a,verb)
       #skipped,#skipped==1 and '' or 's')}
   local take={direction='to_player',item=best.item,quality=a.quality,count=a.count,keep=a.keep,keep_max=a.keep_max,inventory=a.inventory,
     up_to=a.up_to==true and true or nil,ticks=a.ticks}
+  -- With to, inventory goes with the place that has it (round1650d: Luna's and Grok's rocket_silo_rocket was tried on the
+  -- chest taken from, "inventory is not applicable", and the courier ended nothing_collected): the give's for a silo or
+  -- a machine at to, the take's for the picked place; refused when neither has it.
+  local give_inventory
+  if dest and a.inventory~=nil then
+    local to=dest(best.item)
+    local okt=pcall(inventory,e,a.inventory)
+    local okd,there=pcall(entity,p,{position=to},true)
+    local okg=okd and pcall(inventory,there,a.inventory)
+    if okg then give_inventory=a.inventory end
+    if not okt then take.inventory=nil end
+    if not okt and okd and not okg then
+      error(string.format('inventory %s is neither on %s at (%g,%g), the place taken from, nor on %s at (%g,%g), the place given to',
+        tostring(a.inventory),e.name,e.position.x,e.position.y,there.name,there.position.x,there.position.y),0)
+    end
+    if not okt and not okd then give_inventory=a.inventory end
+  end
   local out
   if not dest then
     take.positions={{x=e.position.x,y=e.position.y,unit_number=e.unit_number}}; take.walk=true
@@ -6218,7 +6274,7 @@ function M.pick_source(p,a,verb)
     assert(not (math.abs(to.x-e.position.x)<0.01 and math.abs(to.y-e.position.y)<0.01),'to is the picked place itself')
     take.ticks=nil
     if take.up_to then take.up_to=nil; take.partial=true end
-    local give={direction='to_entity',item=best.item,quality=a.quality,partial=true,give_taken=true}
+    local give={direction='to_entity',item=best.item,quality=a.quality,partial=true,give_taken=true,inventory=give_inventory}
     local found=pcall(entity,p,{position=to},true)
     local places={{entity=e,position=e.position},{position=to,find=not found or nil}}
     if found then places[2].entity=entity(p,{position=to},true) end

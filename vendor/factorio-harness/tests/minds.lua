@@ -261,4 +261,35 @@ eq(#r.pending,5); eq(r.pending_count,7); assert(r.pending[1]:find('wait_ticks [w
 eq(r.note,'queue_status: the active step, the next one and the last 3 in full (history, pending: a count or "all")')
 eq(#sol('queue_status').pending,1); eq(sol('queue_status').pending_count,7); eq(#sol('queue_status',{pending='all'}).pending,7)
 eq(sol('queue_cancel').pending_count,0)
+-- round1650d near-misses (Opus, Sonnet, Sol, Astra, Gemini): the form each meant, in corrected.
+do
+  local A=dofile('mod/agent-harness_0.1.0/aliases.lua')({})
+  local T={observe={position=true,radius=true,scope=true},tell={to=true,text=true},inspect={position=true,name=true,area=true},
+    recipes={prefix=true},stock={item=true},scan={name=true,position=true,radius=true,fields=true,area=true},
+    wait_until={['until']=true,item=true,at_least=true,below=true,count=true},circuit_set={position=true,settings=true},
+    status={brief=true,alerts=true,inventory=true,machines=true}}
+  local takes=function(action,k) return (T[action] or {})[k]==true end
+  local _,f,n=A.fix('observe',{center={x=410,y=-270},radius=25},takes)
+  eq(f.position.x,410); eq(f.center,nil); eq(n.notes[1],'center is position')
+  _,f,n=A.fix('observe',{area={left_top={x=0,y=0},right_bottom={x=30,y=20}}},takes)
+  eq(f.position.x,15); eq(f.position.y,10); eq(f.radius,15); eq(f.area,nil); eq(n.notes[1],'area is position (its centre) and radius (half its longer side)')
+  _,f=A.fix('observe',{scope='scan',area={left_top={x=0,y=0},right_bottom={x=30,y=20}}},takes)
+  eq(f.position,nil,'scan takes area')
+  _,f,n=A.fix('tell',{to='astra',message='Understood'},takes)
+  eq(f.text,'Understood'); eq(f.message,nil); eq(n.notes[1],'message is text')
+  _,f=A.fix('inspect',{area={left_top={x=0,y=0},right_bottom={x=9,y=9}},names={'chemical-plant'}},takes)
+  eq(f.name,'chemical-plant')
+  _,f=A.fix('recipes',{names={'lightning-rod'}},takes); eq(f.prefix,'lightning-rod')
+  _,f=A.fix('stock',{names={'heat-exchanger'}},takes); eq(f.item,'heat-exchanger')
+  _,f=A.fix('observe',{scope='scan',entities={'chemical-plant'},position={x=1,y=2}},takes); eq(f.name,'chemical-plant')
+  _,f,n=A.fix('wait_until',{['until']='item_count',item='nutrients',count=250},takes)
+  eq(f.at_least,250); eq(f.count,nil); eq(n.notes[1],'count is at_least for item_count')
+  _,f=A.fix('wait_until',{['until']='item_count',item='nutrients',count=250,below=10},takes); eq(f.count,250,'below given: left alone')
+  _,f,n=A.fix('circuit_set',{position={x=1,y=2},settings={circuit_mode_of_operation='set_requests'}},takes)
+  eq(f.settings.circuit_exclusive_mode_of_operation,'set_requests'); eq(f.settings.circuit_mode_of_operation,nil)
+  eq(n.notes[1],'settings.circuit_mode_of_operation is circuit_exclusive_mode_of_operation')
+  _,f,n=A.fix('status',{inventory=true,machines=false,alerts=false},takes)
+  eq(f.brief,true); eq(n.notes[1],'alerts goes with brief: brief=true')
+  _,f,n=A.fix('status',{brief=true,alerts=true},takes); eq(n,nil)
+end
 print('minds: ok')

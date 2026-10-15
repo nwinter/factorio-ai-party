@@ -41,20 +41,22 @@ return function(api)
   end
   local function silo_line(e)
     local state,ready=rocket_state(e)
-    local parts=''
+    local parts,after='',''
     pcall(function() parts=string.format(', parts %d/%d',e.rocket_parts,e.prototype.rocket_parts_required) end)
-    -- A built rocket said plainly: its parts are consumed and it is not launched (Astra 10:50).
+    -- A built rocket said plainly: ready to launch, not launched (Astra 10:50); the parts counted then are the next
+    -- rocket's, said last (round1650d: Grok read "parts consumed (13/50)" beside a ready rocket as one being built).
     if ready then
-      state='rocket built and ready'
-      pcall(function() parts=string.format(': parts consumed (%d/%d), not launched',e.rocket_parts,e.prototype.rocket_parts_required) end)
+      state='rocket ready to launch, not launched'
+      pcall(function() after=string.format('; the next rocket\'s parts %d/%d',e.rocket_parts,e.prototype.rocket_parts_required) end)
+      parts=''
     end
     local cargo={}
     local ok,inv=pcall(e.get_inventory,defines.inventory.rocket_silo_rocket)
     if ok and inv then
       for _,c in ipairs(inv.get_contents()) do cargo[#cargo+1]=c.name..'*'..c.count end
     end
-    return string.format('rocket-silo (%g,%g): %s%s, cargo %s',e.position.x,e.position.y,state,parts,
-      #cargo>0 and table.concat(cargo,' ') or 'none'),ready
+    return string.format('rocket-silo (%g,%g): %s%s, cargo %s%s',e.position.x,e.position.y,state,parts,
+      #cargo>0 and table.concat(cargo,' ') or 'none',after),ready
   end
   -- Our rocket silo on the tile c.position (any tile of its footprint).
   local function silo_at(p,c)
