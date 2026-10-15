@@ -288,8 +288,72 @@ has(astra('queue_status').order.reason,'health 40%')
 for _=1,120 do if sol('queue_status').order then break end; advance(1) end
 eq(sol('queue_status').order.name,'courier'); eq(sol('queue_status').order.reason,'default routine')
 body.health=250
+
+-- Orders between the rounds of a repeating plan (Opus, shift13: "orders never run while my queue repeats, so turret
+-- rearm and boiler fuel orders never fire"): a triggered order runs in the pause between rounds, its hold counted from
+-- the agent's own last request; the next round waits for it; the default routine waits for orders=all; orders=none
+-- keeps them all out.
+;(function()
+runtime.operator.bot_create('opus')
+local opus=as('opus')
+local obody=runtime.bots.lookup(runtime.bots.index_of('opus')).character
+local function oq() return opus('queue_status',{peek=true}) end
+local function until_order(name,n)
+  for _=1,n do local o=oq().order; if o and o.name==name then return end; advance(1) end
+  error('order '..name..' never ran')
+end
+opus('order_set',{name='mend',when={['until']='health_below',fraction=0.5},steps={wait(120)},cooldown_ticks=300})
+opus('order_set',{name='tidy',steps={wait(30)},interval_ticks=36000})
+obody.health=100
+local t0=tick
+local q=opus('queue_repeat',{steps={wait(600)},interval_ticks=1800})
+eq(q.orders_between_rounds,'triggers')
+-- In a round nothing starts, and the line says why.
+advance(400)
+eq(oq().order,nil); eq(oq().cycle,1)
+has(opus('status').orders,"waiting for your repeating plan's round (orders run between its rounds: triggered ones)")
+-- Between rounds the trigger runs once the hold (20 s from the queue_repeat call) is over, before the next round.
+until_order('mend',2000)
+assert(tick>=t0+1200 and tick<t0+2400,'started at '..(tick-t0))
+eq(oq().repeating,true); eq(oq().cycle,1)
+has(opus('status').orders,'mend running (health 40%)')
+-- The default routine is not one of the triggered ones: it stays out between rounds.
+for _=1,t0+2390-tick do advance(1); local o=oq().order; assert(not o or o.name=='mend','tidy ran between rounds') end
+-- mend ran again after each 300-tick cooldown while it held; tidy never.
+local list=opus('orders',{peek=true}).list
+eq(list[1].runs,3); eq(list[2].runs,0)
+for _=1,30 do if oq().cycle==2 then break end; advance(1) end
+eq(oq().cycle,2)
+-- A round due while an order runs waits for it: rounds of 100 ticks with 60 between.
+opus('queue_repeat',{steps={wait(100)},interval_ticks=60})
+until_order('mend',4000)
+local c,due=oq().cycle,oq().next_cycle_tick
+assert(due and due<=tick+60,'the next round is due within the rest')
+advance(80)
+assert(tick>due,'past the round\'s time')
+eq(oq().cycle,c); eq(oq().order.name,'mend')
+for _=1,200 do if not oq().order then break end; advance(1) end
+eq(oq().order,nil)
+advance(2)
+eq(oq().cycle,c+1)
+-- orders=none: nothing runs between rounds.
+opus('queue_repeat',{steps={wait(100)},interval_ticks=600,orders='none'})
+eq(oq().orders_between_rounds,'none')
+local runs=opus('orders',{peek=true}).list[1].runs
+for _=1,2500 do advance(1); eq(oq().order,nil) end
+eq(opus('orders',{peek=true}).list[1].runs,runs)
+has(opus('status').orders,'your repeating plan (orders: none)')
+-- orders=all: the default routine runs between rounds too.
+obody.health=250
+opus('queue_repeat',{steps={wait(100)},interval_ticks=1800,orders='all'})
+until_order('tidy',2000)
+eq(oq().repeating,true)
+fails(function() opus('queue_repeat',{steps={wait(5)},orders='some'}) end,'orders must be triggers, all or none')
+opus('queue_cancel',{})
+end)()
 -- describe documents the calls (argument checks come from it)
 local actions=astra('describe').actions
+assert(actions.queue_repeat.orders,'queue_repeat orders')
 assert(actions.order_set and actions.order_remove and actions.orders and actions.orders_pause and actions.orders_resume)
 has(actions.wait_until['until'],'ghosts_waiting|damaged|fuel_below')
 print('orders: ok')
