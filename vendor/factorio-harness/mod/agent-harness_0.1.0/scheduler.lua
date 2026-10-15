@@ -248,9 +248,12 @@ return function(api)
           r.movers,r.movers==1 and '' or 's',q.empty_rounds,q.empty_rounds==1 and '' or 's')
         q.history[#q.history+1]={action='round',ok=true,result={round=q.cycle or 1,moved=0,line=line},finished_tick=game.tick,plan=q.plan_seq}
         if #q.history>MAX_HISTORY then table.remove(q.history,1) end
-        q.round_news=q.round_news or {}
-        q.round_news[#q.round_news+1]=line
-        while #q.round_news>3 do table.remove(q.round_news,1) end
+        -- once a streak, in the team block (a round whose steps ran short has its own line below, naming them)
+        if (r.n or 0)==0 and q.empty_rounds==1 then
+          q.round_news=q.round_news or {}
+          q.round_news[#q.round_news+1]=line
+          while #q.round_news>3 do table.remove(q.round_news,1) end
+        end
       else q.empty_rounds=nil end
     end
     local parts={}

@@ -2317,10 +2317,14 @@ do
   result[1].name,result[1].count,result[1].valid_for_read='iron-plate',3,true
   call('queue_repeat',{name='sweep2',interval_ticks=60,steps={{action='collect',args={radius=20,up_to=true}}}})
   advance(5); eq(result[1].valid_for_read,false)
-  advance(140)
+  advance(70)
+  -- (its first round that moved nothing says so once, d15: the shorts it allowed for are no line of their own)
+  eq((call('status').team or {}).queue[1],'queue sweep2 round 2 moved nothing (1 item-moving step; 1 round in a row)')
+  advance(70)
   eq((call('status').team or {}).queue,nil)
   local h=call('queue_status',{}).history
-  eq(h[#h].ok,true); eq(h[#h].result.short,true)
+  local last_step=h[#h].action=='round' and h[#h-1] or h[#h]
+  eq(last_step.ok,true); eq(last_step.result.short,true)
   call('queue_cancel',{})
   gear_machine.get_output_inventory=gear_output
 end

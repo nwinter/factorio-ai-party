@@ -266,6 +266,7 @@ advance(5)
 local q=luna('queue_status')
 eq(q.paused,false)
 local h=q.history[#q.history]
+if h.action=='round' then h=q.history[#q.history-1] end  -- (the round that moved nothing says so, d15)
 eq(h.ok,true); eq(h.result.picked,'none'); eq(h.short,nil)
 luna('queue_cancel',{})
 
