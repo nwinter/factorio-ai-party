@@ -74,13 +74,20 @@ def stop_save(rcon, run, world, now=win_now, info=save_info, sleep=time.sleep, w
     rec["tick"] = int(m.group(1)) if m else None
     if not m:
         rec["note"] = f"game.server_save gave no tick: {out.strip()[:200]}"
-    last, waited = None, 0
+    last, waited, sent = None, 0, 1
     while m and waited <= wait_s:
         got = info(world, run)
         if got and got[0] >= t0 and last and got == last:
             rec.update(save=f"{run}.zip", save_utc=iso(got[0]), save_bytes=got[1], via="game.server_save")
+            if sent > 1:
+                rec["note"] = "game.server_save sent twice (the first wrote nothing within 30 s: another save running?)"
             return rec
         last = got if got and got[0] >= t0 else None
+        # (a save asked for while another one is written fails: on 2.0.77 /save NAME said "Failed to save the map"
+        # right after another save; once more after 30 s)
+        if not last and waited >= 30 and sent == 1:
+            rcon.command(f"/silent-command game.server_save('{run}')")
+            sent = 2
         sleep(2)
         waited += 2
     # The named save did not appear: the old way, into the loaded save.

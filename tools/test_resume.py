@@ -198,6 +198,12 @@ def stop_save_record():
                               sleep=lambda s: None, wait_s=6)
     assert r.sent[-1] == "/server-save" and rec["save"] is None and rec["via"] == "server-save", rec
     assert rec["tick"] == 9800000 and "shift13.zip not written within 6 s" in rec["note"], rec
+    # Nothing written within 30 s (an autosave running): sent once more, then written.
+    looks = iter([None] * 17 + [(s3 + datetime.timedelta(seconds=40), 10232571)] * 2)
+    r = SaveRcon()
+    rec = stop_save.stop_save(r, "shift13", "n", now=lambda: t0, info=lambda w, n: next(looks), sleep=lambda s: None)
+    assert r.sent[1] == "/silent-command game.server_save('shift13')" and len(r.sent) == 2, r.sent
+    assert rec["save"] == "shift13.zip" and "sent twice" in rec["note"], rec
     # The box's clock unreadable: the Mac's, a minute back.
     def boom():
         raise OSError("ssh: no route")
