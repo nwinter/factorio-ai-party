@@ -50,6 +50,14 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   - an agent's platform action (snapshot `work` on a platform: place_ghosts, paste, deconstruct, inspect, configure,
     launch, drop... with platform=; the character stands on Nauvis): the platform instead of the character, labelled
     "Astra · working on Starling", for `work_hold`, longer while its requests keep coming; then back to the agent.
+  - a platform in danger (viewer joonazan, d15 10:45: "show the ship only when something happens, e.g. ammo running
+    dry"; maybe_danger): its card's danger (model.platform_danger: a hub hit in the last minute or buildings lost on it
+    in the last 2 minutes, from status alerts' platform_hits and loss events; else an ammo type that runs out before the
+    arrival, from the platforms read's ammo_rates), labelled with the reason ("Wayfarer under fire: 3 buildings lost",
+    "Wayfarer ammo for 2 min"); under fire it holds `danger_hold` (20 s) after the latest hit or loss, at most
+    `danger_max` (120 s); ammo holds `ammo_hold` (15 s); the same platform again after `danger_gap` (5 min) unless it got
+    worse. It takes the camera from a visit, work or departure (a departure comes back after), never from an operator
+    hold or follow, a battle, an incoming group, an urgent attack shot, a segment or a replay;
   - POST /platform holds a whole ship for the operator's requested time (platformcam.py persists it). It overrides
     an agent follow; other urgent events are insets. A followed agent aboard also gets this whole-ship view.
     In flight it widens ahead of the ship for asteroids; held shots refresh when the bounds or flight state change.
@@ -174,6 +182,12 @@ ONECAM = {
     "platform_every": 720.0,  # a platform visit about this often while a platform has a surface (0: never)
     "platform_first": 420.0,  # the first one this long after the start (the base map's comes at 300 s)
     "platform_hold": 20.0,    # seconds on a visit
+    # A platform in danger (viewer joonazan, d15 10:45: "show the ship only when something happens, e.g. ammo running
+    # dry"): its card's danger (model.platform_danger: hub hit or buildings lost lately, or ammo out before arrival)
+    "danger_hold": 20.0,      # under fire: on it until this long after the latest hit or loss
+    "danger_max": 120.0,      # ... at most this long in one go
+    "danger_gap": 300.0,      # the same platform's danger again after this long, sooner only if it got worse
+    "ammo_hold": 15.0,        # running out of ammo: on it this long
     "depart_hold": 60.0,      # a platform leaving for another planet: on it this long (Sol for awoo3391, 21:23)
     "depart_late": 30.0,      # a departure seen this long ago (a replay, an urgent shot in the way) is not shown
     "work_hold": 25.0,        # an agent's platform action shows the platform this long ...
@@ -386,6 +400,7 @@ class OneCam(Director):
         self.last_platform = None  # when the last visit went on air (None: platform_first after the start)
         self.departure = None  # {"name", "t", "label"}: a departure seen, not on air yet
         self.work_shown = {}   # (agent, platform) -> when its work went on air
+        self.danger_seen = {}  # platform -> (when its danger shot went on air or was last held, its level then)
         self.platforms = []    # (t, name, why): platform shots ("visit", "departure", "work")
         self.follow = None     # an operator follow: {agent, until, label, by, since} (set_follow)
         self.fol = None        # the agent it pins on air at this step, or None
@@ -923,9 +938,11 @@ class OneCam(Director):
                 if self.battle:  # contact: the battle hold from this step on
                     self.battle_direct(by_name, scores, now)
         elif self.mode == "trio":
+            self.maybe_danger(scores, now, segment)
             self.maybe_departure(scores, now, segment)
             self.tiles(by_name, scores, now)
         else:
+            self.maybe_danger(scores, now, segment)
             self.maybe_departure(scores, now, segment)
             self.direct(by_name, scores, ranked, now)
             self.maybe_work(snapshot, by_name, scores, now, segment)
@@ -1871,6 +1888,58 @@ class OneCam(Director):
         return bool(self.hold_layout or self.pending or self.trio_pending or segment or
                     (cur and cur.get("subject") in HOLDS and now < cur.get("until", 0)) or
                     (cur and now < cur.get("hold_until", 0)))  # an agent in the fight an urgent cut went to
+
+    def maybe_danger(self, scores, now, segment=None):
+        """A platform in danger (its card's danger, model.platform_danger) gets the whole-platform view, labelled with the
+        reason ("Wayfarer under fire: 3 buildings lost", "Wayfarer ammo for 2 min"). Under fire it holds until
+        danger_hold after the latest hit or loss (at most danger_max), then the story comes back; ammo running out holds
+        ammo_hold. It takes the camera from a platform visit, work or departure, not from an operator hold or follow, a
+        battle or incoming group (step: pinned), an urgent attack shot, a segment, a replay or a cut being framed; the
+        same platform again after danger_gap, sooner when its danger got worse (more lost, a hurt hub, less ammo time)."""
+        cfg = self.cfg
+        cur = self.state.get(self.onair)
+        cp = (cur or {}).get("platform") or {}
+        rows = {n: p for n, p in self.plat_rows.items() if p.get("danger") and (p.get("view") or {}).get("surface")}
+        if cp.get("why") == "danger" and now < cur.get("until", 0):
+            d = (rows.get(cp["name"]) or {}).get("danger")
+            if d and d.get("kind") == "fire" and cp.get("kind") == "fire":
+                cur["until"] = max(cur["until"], min(d["last"] + cfg["danger_hold"], cur.get("since", now) + cfg["danger_max"]))
+            if d:
+                cp["label"] = d["reason"]
+                self.danger_seen[cp["name"]] = (now, d.get("level", 0))
+            return
+        if not rows or len(self.slots) < 2:
+            return
+        busy = bool(self.hold_layout or self.pending or self.trio_pending or segment or
+                    (cur and now < cur.get("hold_until", 0)) or
+                    (cur and cur.get("subject") in HOLDS and now < cur.get("until", 0) and
+                     not (cur.get("subject") == "@platform" and cp.get("why") in ("visit", "work", "departure", "cue"))))
+        if busy:
+            return
+        def live(n):
+            d = rows[n]["danger"]
+            return d.get("kind") != "fire" or now - d.get("last", 0) <= cfg["danger_hold"]
+        def fresh(n):
+            seen = self.danger_seen.get(n)
+            d = rows[n]["danger"]
+            return not seen or now - seen[0] >= cfg["danger_gap"] or d.get("level", 0) > seen[1]
+        pick = sorted((n for n in rows if live(n) and fresh(n)),
+                      key=lambda n: (rows[n]["danger"].get("kind") != "fire", -rows[n]["danger"].get("level", 0), n))
+        if not pick:
+            return
+        name = pick[0]
+        d = rows[name]["danger"]
+        hold = cfg["danger_hold"] if d["kind"] == "fire" else cfg["ammo_hold"]
+        t = self.platform_target(name, "danger", now + cfg["ready_s"] + hold, label=d["reason"])
+        if not t:
+            return
+        t["platform"]["kind"] = d["kind"]
+        self.danger_seen[name] = (now, d.get("level", 0))
+        if cp.get("why") == "departure" and now < cur.get("until", 0):
+            # the departure comes back after (urgent's rule for an urgent shot), for what is left of it
+            self.departure = {"name": cp["name"], "t": now, "label": cp["label"], "until": cur["until"]}
+        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} platform danger: {d['reason']}", flush=True)
+        self.show_platform(t, scores, now)
 
     def maybe_departure(self, scores, now, segment=None):
         d = self.departure
