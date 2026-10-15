@@ -204,8 +204,9 @@ already targets your character.
   open board items) and the last 3 shifts' team numbers (`progress shift13: SPM ... | packs .../min | techs ... |
   rockets ... | plates, circuits .../min | deaths ...`, as `./fh progress` counts them). `projects` lists the open projects, one line each with progress, next step and handoff.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
-  `./fh queue status` shows the active step (`running_s`), the next one and the last 3 results; `--args
-  '{"history":"all","pending":10}'` shows more.
+  `./fh queue status` shows the active step (`running_s`), the next one, and the plan you last submitted (`plan`: steps
+  done, ok, failed; `history`: its own results); `./fh queue status orders` lists the standing orders' steps too;
+  `--args '{"history":"all","pending":10}'` shows more.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` (and `feed` or `collect {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one
@@ -330,6 +331,10 @@ already targets your character.
   builds the landfill first, and a build refused there names the tile.
 - `deconstruct --args '{"area":...,"tiles":["landfill"]}'` also removes our landfill tile ghosts there
   (`tile_ghosts_removed`), and marks built landfill.
+- On a platform the hub removes a marked foundation tile only beside empty space (a north, east, south or west
+  neighbour), and never one that would join separate empty space; marked from the edge in, a row goes one tile at a
+  time. deconstruct's reply says `tiles_go` (in order) and `waiting` with why for every marked tile there;
+  `"dry_run":true` marks nothing; `platforms {platform}` shows `tile_removals`.
 - `./fh call mine --args '{"tiles":true,"position":{"x":194,"y":58}}' --wait` mines a laid tile (landfill, concrete,
   stone path, artificial soil) by hand: the tile under it goes back and the item to you; `positions`, `area`, `"walk":true`,
   `"dry_run":true`; a tile anything stands on is refused, naming it. `construct` mines tiles marked for deconstruction too.
@@ -429,7 +434,11 @@ already targets your character.
   the silo cargo before each launch step. `load_silo` with `"walk": true` and `from` (chests anywhere on the silo's
   surface) walks between them and the silo as many trips as the load takes, in one timed call (outcomes `loaded`,
   `launched`, `short`, `no_rocket`; `last.trips`, `last.stops`). A silo's `rocket_ready` is true only for a built
-  rocket (`built_parts` 50/50); `next_parts` counts parts for the rocket after it.
+  rocket (`built_parts` 50/50); `next_parts` counts parts for the rocket after it. A `load_silo` waiting for its rocket
+  waits while the silo makes parts (`ticks`: the time with no new part). A spoiling item goes in fresh first (the least
+  spoiled stacks of you and the chests; `"fresh_first": false` for the old order).
+- A drop's landing line gives the container's exact position and the other cargo pod containers within 8 tiles with
+  what each holds; `scan` lists a cargo pod container with `holds`.
 - `./fh platform NAME` also shows `freight` (per stop what was expected down and up, what left the hub, came aboard
   and spoiled, the rockets sent to it, the cargo pods sent down with what each landing pad received and the pods still
   in flight; per leg what spoiled on the way), `spoiling` (when its spoilable items spoil, against the arrival) and
@@ -438,6 +447,8 @@ already targets your character.
   `from` is not given.
 - `./fh sleep 600 --until "rocket_ready 65.5,14.5"` (or `wait_until {"until":"rocket_ready","position":...}`) waits for
   that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
+  `--until "rocket_parts>=40 at 65.5,14.5"` (or `{"until":"rocket_parts","at_least":40,"position":...}`, also a queue
+  guard's `when`) waits for the rocket being built to have 40 parts.
   `./fh wait --until "item_count coal below 20 at 10,39"` wakes when that chest's coal falls under 20 (also `>=`, `<`,
   `above`; several `X,Y` are summed). `./fh wait --until "alert low_power starved"` wakes on a new or grown alert
   group of those kinds addressed to you (`low_power`, `no_power`, `no_fuel`, ... as `game_alerts` names them), or

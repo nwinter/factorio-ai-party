@@ -62,7 +62,8 @@ pod.valid=false; step(15)
 local r=storage.drops.list[1]
 eq(r.state,'landed'); eq(r.at.x,0); eq(r.at.y,129); eq(r.container,mine)
 l=D.lines(astra,ha); eq(#l,1)
-eq(l[1],'drop #1 landed at (0,129) on vulcanus: cargo-pod-container with processing-unit*50 roboport*3 logistic-robot*50 (take them with transfer; it vanishes when empty)')
+eq(l[1],'drop #1 landed at (0,129) on vulcanus: cargo-pod-container with processing-unit*50 roboport*3 logistic-robot*50 (take them with transfer; it vanishes when empty)'
+  ..'; other cargo pod containers within 8 tiles: (5,131) holds water-barrel*20')
 eq(#D.lines(sol,hs),1,'Sol is told too'); eq(#D.lines(sol,hs),0); eq(#D.lines(astra,ha),0)
 
 -- 4. A second drop into the landing pad; a third whose container cannot be
@@ -89,9 +90,26 @@ assert(D.read(sol,{limit=3}).drops[3].container.gone:find('vanishes when empty',
 eq(#D.read(sol,{limit=1}).drops,1)
 fails(function() D.read(sol,{limit=99}) end,'limit out of range')
 
+-- 5b. Sonnet, shift14 22:50: "landed at (12,153)" sent a transfer to (12.5,153.5); the container stood at
+-- (11.5,152.5) and another at (13.5,153.5). Positions as they stand, the other containers near it named.
+do
+  local p2={valid=true,surface={name='vulcanus'},position={x=11,y=150}}
+  D.record(sol,{pod=p2,platform='Sunward',surface='vulcanus',near={x=12,y=150},sent={'advanced-circuit*2000'}})
+  step(15)
+  container(13.5,153.5,{{name='advanced-circuit',count=55,quality='normal'}})
+  container(11.5,152.5,{{name='advanced-circuit',count=1945,quality='normal'}})
+  p2.valid=false; step(15)
+  local got
+  for _,line in ipairs(D.lines(sol,hs)) do if line:find('advanced%-circuit%*1945') then got=line end end
+  eq(got,'drop #4 landed at (11.5,152.5) on vulcanus: cargo-pod-container with advanced-circuit*1945 (take them with transfer; it vanishes when empty)'
+    ..'; other cargo pod containers within 8 tiles: (13.5,153.5) holds advanced-circuit*55')
+  local row=D.read(sol,{limit=1}).drops[1]
+  eq(row.at.x,11.5); eq(row.nearby[1].position.x,13.5); eq(row.nearby[1].holds[1],'advanced-circuit*55')
+end
+
 -- 6. Only the last 20 are kept, and a reader's told marks follow them.
 for _=1,25 do D.record(luna,{pod={valid=false},platform='Sunward',surface='vulcanus',pad={x=9,y=9},sent={'coal*1'}}) end
-eq(#storage.drops.list,20); eq(storage.drops.list[1].id,9)
+eq(#storage.drops.list,20); eq(storage.drops.list[1].id,10)
 step(15)
 for _=1,5 do eq(#D.lines(luna,hl),4,'four a reply; the rest wait for the next') end
 eq(#D.lines(luna,hl),0)

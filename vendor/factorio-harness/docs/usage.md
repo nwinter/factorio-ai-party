@@ -1188,6 +1188,11 @@ fh sleep 900 --until researched                       # ...or until the research
 - `wait_until --wait` takes its timeout from `--wait-timeout MS` (up to 900000, 15 minutes) unless `args.timeout` (ticks, up to 54000) is given; without either it is 3600 ticks. The condition is checked every 10 ticks. Not met in time: exit 1, `error.code` `timed_out`, with the condition and what it last saw.
 - `wait_ticks {ticks: 1..54000}` holds the character idle (outcome `duration_elapsed`); like any character action it replaces the current one.
 - `wait_until {until: "rocket_ready", position}` (Luna, shift10 06:20: an `item_count` wait for the item `rocket` stayed 0 at a silo whose rocket was ready; that item is ammunition) is met when the rocket silo on that tile (any tile of it) has its rocket built and ready to launch, the GUI's rocket state. `saw`: `rocket-silo (65.5,14.5): rocket built (50/50 parts) and ready to launch, not launched, cargo agricultural-science-pack*45; parts for the rocket after it 0/50`; no silo of ours there fails the wait. It works as a queue step, a sleep condition and an order's `when` too.
+- `wait_until {until: "rocket_parts", at_least: N, position}` (Sonnet, shift14 22:50) is met when the rocket being built
+  at that silo has at least N parts; a built rocket (rising into place or ready) has all of them, and while one
+  launches the count is the next one's. `saw`: `rocket parts 35/50 (at least 40); rocket-silo (65.5,14.5):
+  building_rocket, parts 35/50, cargo none`. A queue step, a guard's `when`, a sleep condition and an order's `when`
+  take it; `fh sleep 600 --until "rocket_parts>=40 at 65.5,14.5"` (`>39` is the same).
 - `item_count` with `positions` on a rocket silo counts its rocket cargo (the game counts it with the silo's inventories), and `saw` adds the silo's line: `agricultural-science-pack 45 in 1 entities; rocket-silo (65.5,14.5): rocket built (50/50 parts) and ready to launch, not launched, cargo agricultural-science-pack*45; parts for the rocket after it 0/50`.
 - A direct `wait_ticks` or `wait_until` while the queue runs is refused (it would pause the queue: "wait_ticks would pause your queue (8 steps, repeating): ..."); `pause_queue: true` pauses it for the wait as before. A paused or empty queue is no reason to refuse. Queue steps are unchanged.
 - A tell or a teammate's mention that arrives during a direct `wait_ticks` or `wait_until` ends it (outcome `told` or `mentioned`, `last.why` `told by astra`; within 30 ticks); one pending from before the wait does not, nor an fyi tell, nor a viewer's `@mention` unless the wait was started with `wake_on_viewers: true`. `--wait` on any other action, and `fh wait`, end early the same way while the action keeps going: outcome `told` or `mentioned`, `from`, `still_running` and a note. The peek `status` polls carry the newest undelivered tell or teammate's mention as `inbox {tick, woke, from}` and the newest viewer's `@mention` as `inbox_viewer` (the CLI ends a wait on it only with `--wake-on-viewers`).
@@ -1588,9 +1593,16 @@ fh sleep 900 --until researched                       # ...or until the research
     (`[{"action":"vehicle","args":{"position":..., "enter":true}}, {"action":"vehicle","args":{"drive":...}},
     {"action":"vehicle","args":{"exit":true}}, ...]`).
 - `queue_status` (Sol 10:50: a repeating courier plan's long done history hid its stalled step) shows `active` (the
-  running step in full, with `running_s`: how long it has run), `pending` (the next step), `history` (the newest 3),
+  running step in full, with `running_s`: how long it has run), `pending` (the next step), `plan`, `history`,
   `pending_count`, `history_total`, `last_failure`, `waiting`, `guards`, `repeating`, `cycle`. `history` and `pending`
   take a count or `"all"`: `fh queue status --args '{"history":"all","pending":10}'`.
+  - The plan last submitted (Grok, shift14 22:50: hours of standing-order history buried a finished pickup plan, and an
+    order's interrupted transfer read as its failure): `plan {id, kind (submit or repeat), name, submitted_s_ago,
+    steps, done, ok, failed, pending, running}`, `history` its own entries (the newest 16; a repeating plan's rounds,
+    its edits and its guards' steps count as its own), `last_failure` its own, and `orders_history: 47 entries from
+    standing orders left out`.
+  - `fh queue status orders` (`{"orders": true}`): every entry in the order it ran, the standing orders' too, the
+    newest 3 by default, as before plans. An empty `queue_submit` (`start: false` to hold the queue) starts no plan.
 - A repeating plan (`queue_repeat`, optional `name` up to 32 characters) whose round had steps that ran short (the
   outcomes `out_of_items`, `nothing_collected`, `inventory_full`, a give with none held, or a reply's `short`) puts one
   grouped line in the team block under `queue`: `queue loop3 round 4: 3 of 9 steps short: transfer iron-plate
@@ -1686,10 +1698,17 @@ fh sleep 900 --until researched                       # ...or until the research
   ghost on it, and on the hub `hub_slots` (`0 of 65 free`). `platforms` shows `hub_slots` per platform, and with
   `platform` set, `construction_blocked`: `hub full: 0 of 65 slots free; 1 marked for deconstruction wait for room
   (removed entities and their contents go to the hub)`, `ghosts wait for items the hub lacks: inserter (ghosts need 1, hub has 0)`.
-  Items count at the ghost's quality. Tile ghosts the game's foundation rules hold back get one line each: a tile
-  that would enclose empty space no ghost covers (`tile ghost (-7.5,8.5) space-platform-foundation: building it would
-  enclose 6 empty tiles with no ghost: (-6.5,8.5), ...`), one with no foundation or tile ghost beside it, one more than
-  200 tiles north of the hub, one in the 82 tiles south of a thruster. `inspect` on a tile ghost shows the same. Every
+  Items count at the ghost's quality. Tile ghosts the game's foundation rules hold back get one line each, by the rules
+  a copy of world n showed (platformtiles2): the hub builds one tile at a time and looks at its 8 neighbours only.
+  A run is the empty side neighbours (north, east, south, west) joined through the empty corners between them.
+  A ghost with two runs would split the empty space beside it and stays, even when each side stays open to space
+  (`tile ghost (-2.5,13.5) space-platform-foundation: building it would split the empty space beside it: (-2.5,12.5)
+  and (-2.5,14.5) meet only through it (...); on one side a hole of 3 empty tiles with no ghost: (-2.5,11.5), ...`:
+  Astra's three ghosts at (-3,12..14) on Sunward, shift14). With the hole's tiles ghosted too, the hub fills it from
+  the far end in (on the copy six ghosts in about 8 s), and such a ghost is not named. An enclosed one-tile hole fills,
+  and foundation at a corner is enough. Also named: one with no foundation among the 8 tiles round it, one more than
+  200 tiles north of the hub, one in the 82 tiles south of a thruster. Each check plays the ghosts out in turn, so a
+  ghost beside one that gets built is not named. `inspect` on a tile ghost shows the same (`tile_wait`). Every
   tile ghost on the platform counts, also past the 64 the check reads and under an entity ghost (Astra, shift12
   12:41: Starling had 336 tile ghosts, and the tile ghost at (-7.5,-0.5) under a belt ghost was named a hole); the
   dry run's hole count looks past the box it reads the same way.
@@ -1835,8 +1854,13 @@ fh sleep 900 --until researched                       # ...or until the research
   reply:
   - while it is still descending: `drop #3 from Sunward to vulcanus: still descending (12s ago, aimed near
     (14,134))`;
-  - once it has landed: `drop #3 landed at (0,129) on vulcanus: cargo-pod-container with processing-unit*50
-    roboport*3 (take them with transfer; it vanishes when empty)`, or `landed in the landing pad at (x,y)`;
+  - once it has landed: `drop #3 landed at (11.5,152.5) on vulcanus: cargo-pod-container with processing-unit*50
+    roboport*3 (take them with transfer; it vanishes when empty); other cargo pod containers within 8 tiles:
+    (13.5,153.5) holds advanced-circuit*55`, or `landed in the landing pad at (x,y)`. Positions are where the
+    container stands (Sonnet, shift14 22:50: a rounded (12,153) sent a transfer a tile off; another container stood
+    beside it); the other containers near it come nearest first, at most 4. The platform's freight line says the
+    same: `landed as cargo pod containers (no landing pad) 1 (iron-plate*50) at cargo-pod-container (-3.5,7.5) on
+    nauvis`. `scan` lists a cargo pod container with `holds` unasked;
   - if no container is found within 24 tiles of where the pod was last seen, 10 s after it went: that, and what it
     held.
 
@@ -1998,6 +2022,9 @@ fh sleep 900 --until researched                       # ...or until the research
     `{x,y}` or up to 16) reads only those after your inventory; `chests: false` your inventory only. (Gemini, shift13
     18:21: before the fix of 2026-10-15 no stack matched in the game, held or in a chest: an item stack's quality is a
     LuaQualityPrototype, and only a table's name was read.)
+  - An item that spoils (agricultural science, bioflux, ...; Luna, shift14 22:50) is taken fresh first: every stack of
+    it you and those chests hold, least spoiled first, each moved whole (its spoilage goes with it); the row says
+    `order: fresh first` and `from` sums per source. `fresh_first: false` keeps the order above (you, then the chests).
   - Only what fits under the 1000 kg lift and in the rocket's 20 cargo slots goes in. A silo with automatic requests
     on is refused (the game takes no cargo by hand then).
   - Reply: `loaded [{item, asked, aboard_before, loaded, aboard, from ("you 300, iron-chest (61.5,10.5) 400"), short,
@@ -2011,7 +2038,10 @@ fh sleep 900 --until researched                       # ...or until the research
   - No rocket yet, or `launch: true` before the rocket is ready: a timed action (`waiting {why, rocket}`,
     `until_tick`; `ticks` 1..36000, default 3600) that runs the whole call in the tick the rocket is there (ready, for
     a launch); outcome `fed` (`last.result` holds the reply), `failed` (`last.error`) or `timed_out`. `--wait` follows
-    it.
+    it. The wait goes on while the silo makes parts (Sonnet, shift14 22:50: re-issued 3 times through one build):
+    `ticks` is the time allowed with no new part and no change in the rocket's state, and `gives_up_tick` (1 game hour
+    on) ends it in all (`waiting.note: waits while the silo makes parts: it ends after 60s with no new part, at the
+    latest at tick N`).
   - `fh call load_silo --args '{"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","position":{"x":65.5,"y":14.5},"to_total":true}'`
   - `walk: true` with `from` (Luna, shift14 21:20: 930 agricultural science packs from a provider 64 tiles from the
     silo took four walks and several calls): the chests anywhere on the silo's surface, in sight or on the map. One
@@ -2711,6 +2741,32 @@ Some actions work at a distance, the way a player can through remote view:
   tiles under an entity that is not marked: robots take a tile once what stands on it is gone). With `tiles`, entities
   are marked only when `entity_names` or `entity_types` name them. `cancel_deconstruction {area, tiles}` clears tile
   marks (`tiles_cancelled`).
+- On a platform the hub removes a marked foundation tile only with exactly one run (as for tile ghosts, above). With
+  none, all four side neighbours foundation, it would open a new hole. With two it would join separate empty space.
+  A diagonal neighbour alone is not enough, and two holes joined far round still count as two (the copy's C-shaped
+  hole). The hub also needs room for the item it returns, and nothing may stand on the tile. Whether the rest of the
+  foundation stays joined is not looked at: a tile holding a one-tile peninsula on went, leaving it apart. Docked or
+  in flight is the same. A marked tile waits until its neighbours change: a chain marked from the edge in goes one
+  tile at a time (on the copy (-4,10), (-4,9), (-4,8), (-3,8) and Astra's (-2,8) in about 2 s). So deconstruct's
+  reply plays out every marked tile on the platform:
+  - `tiles_go`: `9 marked tiles on the platform go, one at a time, each once a side neighbour is empty space, in
+    this order: (-9.5,8.5), ...`;
+  - `tiles_waiting` and `waiting`, the first 8, each with why:
+    - `(-1.5,8.5): none of its four side neighbours (north, east, south, west) is empty space: the hub removes a
+      foundation tile only beside empty space`;
+    - `its empty side neighbours (5.5,-4.5) and (3.5,-4.5) do not meet through the tiles round it: removing it would
+      join separate empty space, which the hub does not do`;
+    - `the hub has no room for space-platform-foundation`;
+    - `fast-inserter (10.5,5.5) stands on it`;
+    - `; the marked tile beside it at (x,y) waits too`.
+  `platforms {platform}` shows the same as `tile_removals` (`marked`, `go`, `waiting`), and `inspect` of a marked
+  tile, its `deconstructible-tile-proxy`, says `tile_wait` (`marked for removal: nothing holds it; the hub removes it
+  next`, `... it goes once a tile beside it has gone (8 before it ...)`, or `... waits: ...`).
+- `deconstruct {..., dry_run: true}` marks nothing:
+  - with `tiles`: `tiles_would_mark` (not marked yet, nothing standing on them; `refused: {under_entity}` for the
+    rest, which the game refuses: an edge tile under an inserter on the copy) and `tile_ghosts_would_go`; on a
+    platform also `tiles_go` and `waiting` as if they were marked;
+  - entities: `would_mark` and `would_mark_by_name`.
 - The same call removes our tile ghosts of those tiles, as a planner over them does: `tiles: ["landfill"]` takes away
   landfill planned over water before robots build it (`tile_ghosts_removed`; Grok, shift10 06:20: it marked 0 there,
   and only an unfiltered deconstruct removed the 41 ghosts). Built landfill is minable in 2.0 and is marked like any
