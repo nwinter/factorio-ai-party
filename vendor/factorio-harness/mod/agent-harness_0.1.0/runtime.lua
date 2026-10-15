@@ -10693,13 +10693,14 @@ M.operator={
   end,
   cameras=function() return M.cameras.list() end,
   -- A resumed world's later shift: its losses start fresh incidents.
-  -- n: the shift's number in the world (tools/start-team.sh, from the resumed-from chain).
-  shift_start=function(n)
+  -- n: the shift's number in the world (tools/start-team.sh, from the resumed-from chain); progress: the last shifts'
+  -- team numbers (tools/progress.py --shift-lines, joined by " ~ "), for each agent's shift retro.
+  shift_start=function(n,progress)
     local closed=0
     for _,i in ipairs(state().losses or {}) do if not i.closed then i.closed='shift'; closed=closed+1 end end
     -- Each agent's first reply of the shift carries a shift block (research.lua).
-    local shift=M.research.shift_start(n)
-    return {ok=true,tick=game.tick,incidents_closed=closed,shift=shift.number}
+    local shift=M.research.shift_start(n,progress)
+    return {ok=true,tick=game.tick,incidents_closed=closed,shift=shift.number,progress_lines=shift.progress and #shift.progress or 0}
   end}
 local MAX_ALERTS=64
 function M.on_event(event)

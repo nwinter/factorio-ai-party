@@ -230,12 +230,23 @@ return function(api)
   end
   -- n: the shift's number in the world, as tools/start-team.sh counts it from the resumed-from chain (the stream hosts'
   -- count); without it, one more than this save's last. seq numbers the starts for the once-per-shift check.
-  function M.shift_start(n)
+  -- progress: the last shifts' team numbers from the recorded data (tools/progress.py --shift-lines: lines joined by
+  -- " ~ "), kept with the shift for each agent's retro (selfview.lua); at most 3 lines of 300 characters.
+  local function progress_lines(v)
+    if type(v) ~= 'string' then return nil end
+    local out = {}
+    for part in v:gmatch('[^~]+') do
+      local line = part:gsub('^%s+', ''):gsub('%s+$', '')
+      if line ~= '' and #out < 3 then out[#out+1] = line:sub(1, 300) end
+    end
+    return #out > 0 and out or nil
+  end
+  function M.shift_start(n, progress)
     local s = api.state()
     local old = s.shift
     n = tonumber(n)
     if not (n and n >= 1 and n == math.floor(n)) then n = (old and (old.number or old.seq) or 0) + 1 end
-    s.shift = {seq=(old and old.seq or 0) + 1, number=n, tick=game.tick, prev_tick=old and old.tick}
+    s.shift = {seq=(old and old.seq or 0) + 1, number=n, tick=game.tick, prev_tick=old and old.tick, progress=progress_lines(progress)}
     snapshot(s, game.tick)
     return s.shift
   end

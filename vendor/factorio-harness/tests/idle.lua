@@ -258,4 +258,25 @@ advance(600); runtime.operator.shift_start()
 local retro=sol('status').team.shift.retro
 assert(retro and retro[1]:find('^retro: previous shift %(10s of game time%): research done: '),retro and retro[1])
 assert(has(retro,'failed (team): '),'the team failures line'); assert(has(retro,'open board items: '))
+-- The last shifts' team numbers from the recorded data (tools/progress.py --shift-lines, passed by start-team.sh):
+-- after the previous shift's lines, "progress " each; at most 3, trimmed.
+advance(600)
+local started=runtime.operator.shift_start(15,'shift12: SPM 11.2 | packs 147/min | techs +2 (169) | rockets +47 (231) | plates 1794/min, circuits 614/min | deaths 4 ~ '
+  ..'shift13: SPM 9.8 | deaths 6 | began from an earlier save ~  shift14: SPM 4.4 | deaths 0  ~ shift15: extra')
+eq(started.progress_lines,3)
+retro=sol('status').team.shift.retro
+assert(retro[1]:find('^retro: previous shift'),retro[1])
+eq(retro[#retro-2],'progress shift12: SPM 11.2 | packs 147/min | techs +2 (169) | rockets +47 (231) | plates 1794/min, circuits 614/min | deaths 4')
+eq(retro[#retro-1],'progress shift13: SPM 9.8 | deaths 6 | began from an earlier save')
+eq(retro[#retro],'progress shift14: SPM 4.4 | deaths 0')
+-- No previous shift on record: the progress lines alone. No progress argument: none.
+advance(600)
+runtime.operator.shift_start(16,'shift15: SPM 5 | deaths 1')
+storage.agent_harness.shift.prev_tick=nil
+retro=sol('status').team.shift.retro
+eq(#retro,1); eq(retro[1],'progress shift15: SPM 5 | deaths 1')
+advance(600)
+eq(runtime.operator.shift_start(17).progress_lines,0)
+retro=sol('status').team.shift.retro
+for _,line in ipairs(retro or {}) do assert(not line:find('^progress '),line) end
 print('idle: ok')
