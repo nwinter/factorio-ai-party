@@ -17,6 +17,7 @@ import pacing
 from harness import Harness
 from model import SCIENCE, SPARK_ITEMS, notes_job
 from work import WorkFeed
+from waitcard import WaitFeed
 
 PLAN_KEYS = ("kind", "until_tick", "total", "next_index", "placed", "built", "remaining", "bounds", "to", "stuck_s")
 COMBAT_KEYS = ("auto", "position", "radius", "until_tick", "target", "fired_tick", "kills_10s", "hurt", "vehicle")
@@ -125,6 +126,7 @@ class LiveSource:
         self.platform_views = {}
         # work away from the body (remote platform builds, far ghosts): the agents' fh journals beside stream.json
         self.work = WorkFeed(journals, list(self.agents_cfg)) if journals else None
+        self.waits = self.work.waits if self.work else WaitFeed()
         self.probe()
 
     def probe(self):
@@ -261,6 +263,7 @@ class LiveSource:
             try:
                 st = self.agent_status(name, self.agents_cfg.get(name, {}))
                 self.status_cache[name] = st
+                self.waits.status(name, st, st.get("tick", obs.get("tick")), time.time())
                 if hits is None:
                     hits = []  # a status (with alerts) was read: no platform_hits rows means none hit lately
                 if not alerts_seen and st.get("alerts"):
@@ -324,6 +327,9 @@ class LiveSource:
             obs["work"] = self.observe_work(obs["agents"], errors)
             # where each agent is paying attention (attention.py): its latest request with a position, area or list
             obs["attention"] = self.work.take_attention()
+
+        for a in obs["agents"]:
+            a["wait"] = self.waits.current(a["name"], obs.get("tick") or 0, time.time())
 
         try:
             res, _ = self.h.dispatch("chat", {"since": self.chat_since, "limit": 30, "peek": True}, **self.reader())

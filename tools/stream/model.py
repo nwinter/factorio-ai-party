@@ -18,6 +18,7 @@ from collections import deque
 
 import attention
 import pacing
+import waitcard
 import clouds as clouds_mod
 import loadout as loadouts_mod
 import efficiency as efficiency_mod
@@ -459,6 +460,7 @@ class Agent:
         self.avatar = None  # profile.avatar: parts for avatar.js (docs/ART-NOTES.md); None draws the name default
         self.surface = None   # Space Age (status): the surface the body is on, and the platform's name when on one
         self.platform = None
+        self.wait = None  # latest measured sleep/body/queue wait from existing status and journal reads
         self.notes_job = None  # its notes.md "## Now" job line (live.py, notes_job), for the card
         self.attention = None  # its latest request with a place (attention.py), with t: when it came in
 
@@ -791,6 +793,8 @@ class Model:
                 setattr(ag, key, a[key])
         if "avatar" in a:
             ag.avatar = a["avatar"] if isinstance(a["avatar"], dict) else None
+        if "wait" in a:
+            ag.wait = a["wait"]
         if "notes_job" in a:
             ag.notes_job = a["notes_job"]
         if "resting" in a:  # the agy loop sleeps between turns (pacing.py); said once to the hosts as a fact
@@ -1763,7 +1767,10 @@ class Model:
             ag.decay(now)
             job, job_from = (plan_lines[ag.name], "plan") if ag.name in plan_lines else \
                 (ag.notes_job, "notes") if ag.notes_job else (None, None)
+            wait_line = waitcard.line(ag.wait, self.tick, now)
             agents.append({
+                "wait_line": wait_line,
+                "wait_reason": waitcard.reason(self.chat, ag.name, self.tick, now) if wait_line else None,
                 "job": job, "job_from": job_from,
                 "name": ag.name, "kind": ag.kind, "display_name": ag.display_name, "color": ag.color,
                 "glyph": ag.glyph, "motto": ag.motto, "profile_set": ag.profile_set, "model": ag.cfg.get("model"), "harness": ag.cfg.get("harness"),

@@ -236,6 +236,23 @@ body.portrait .cam-fill .tag, body.portrait .cam-fill .pace { font-size: 17px; l
   white-space: nowrap; max-width: 92px; overflow: hidden; text-overflow: ellipsis;
 }
 .card.squeezed .harness { display: none; }
+/* The wait uses the existing activity row. Give it the location's space on a squeezed card. */
+.card.waiting .doing .where { display: none; }
+.card.squeezed.waiting .doing .txt { flex: 1 1 0; }
+/* A wait spans the card's full width below its portrait and identity, in the same fixed-height cell. */
+body[data-density] .card.waiting { display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 8px; row-gap: 0; align-content: center; }
+body[data-density] .card.waiting .body { display: contents; }
+body[data-density] .card.waiting .avatar { grid-column: 1; grid-row: 1 / 3; width: 40px !important; height: 40px !important; }
+body[data-density] .card.waiting .row1, body[data-density] .card.waiting .model { grid-column: 2; }
+body[data-density] .card.waiting .doing { grid-column: 1 / -1; font-size: 13px; }
+body[data-density="3"] .card.waiting .avatar { width: 30px !important; height: 30px !important; }
+body[data-density="3"] .card.waiting { grid-template-columns: 30px minmax(0, 1fr); }
+html body.portrait[data-density] .card.waiting { grid-template-columns: 48px minmax(0, 1fr); }
+html body.portrait[data-density] .card.waiting .avatar { width: 48px !important; height: 48px !important; }
+html body.portrait[data-density] .card.waiting .doing { font-size: 14px; }
+.card.waiting .doing .txt { display: flex; flex: 1 1 0; }
+.card .wait-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.card .wait-time { flex: none; }
 .card .tok {
   flex: none; font-size: 12px; font-weight: 600; color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums;
 }

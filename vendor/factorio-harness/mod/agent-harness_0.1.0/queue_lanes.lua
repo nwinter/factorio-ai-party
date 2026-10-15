@@ -46,7 +46,11 @@ return function(api)
   end
   local function brief(q)
     if not q then return {paused=true,pending=0,active=false} end
-    return {revision=q.revision,paused=q.paused,pending=#q.pending,repeating=q.loop~=nil,
+    local step=q.current
+    local waiting=not q.paused and step and (step.action=='wait_until' or step.action=='wait_ticks') and
+      {kind=step.action,condition=step.action=='wait_until' and step.args or nil,until_tick=step.until_tick} or nil
+    if waiting and api.base.wait_info then api.base.wait_info(waiting,step) end
+    return {revision=q.revision,paused=q.paused,pending=#q.pending,repeating=q.loop~=nil,waiting=waiting,
       active=q.current and {id=q.current.id,action=q.current.action,started_tick=q.current.started_tick} or false,
       after_direct=q.after_direct}
   end

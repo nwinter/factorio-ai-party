@@ -346,6 +346,8 @@
         // its current job: its team-plan line, else its notes.md "## Now" (tools/stream/model.py job)
         (a.job ? '<p class="agent-job">' + esc(a.job) + '</p>' : '') +
         '<p class="agent-doing">' + esc(a.action || (act === 'thinking' ? 'thinking…' : '–')) + (a.location ? ' <span class="fx-muted">at ' + esc(a.location) + '</span>' : '') + '</p>' +
+        (a.wait_line ? '<p class="agent-wait">' + esc(a.wait_line) + '</p>' +
+          (a.wait_reason ? '<p class="agent-wait-reason">“' + esc(a.wait_reason) + '”</p>' : '') : '') +
         (said ? '<ul class="agent-said">' + said + '</ul>' : '') + '</article>';
     }).join('');
 

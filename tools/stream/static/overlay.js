@@ -250,6 +250,8 @@
         const doing = el("div", "doing");
         c.dot = el("span", "dot");
         c.txt = el("span", "txt");
+        c.waitLabel = el("span", "wait-label");
+        c.waitTime = el("span", "wait-time");
         c.where = el("span", "where");
         doing.append(c.dot, c.txt, c.where);
         body.append(r1, c.model, doing);
@@ -283,7 +285,16 @@
       let doing = a.action || "";
       if (a.activity === "thinking" && !a.active) doing = "thinking…";
       if (a.activity === "idle" && !doing) doing = "idle";
-      setText(c.txt, humanItem(doing));
+      if (a.wait_line) {
+        // Only the condition may ellipsize: ETA and measured idle remain visible in a narrow card.
+        const split = a.wait_line.lastIndexOf(", ");
+        setText(c.waitLabel, split < 0 ? a.wait_line : a.wait_line.slice(0, split));
+        setText(c.waitTime, split < 0 ? "" : a.wait_line.slice(split));
+        c.txt.textContent = "";
+        c.txt.append(c.waitLabel, c.waitTime);
+      } else setText(c.txt, humanItem(doing));
+      c.txt.title = a.wait_line || "";
+      c.root.classList.toggle("waiting", !!a.wait_line);
       // Space Age: which planet or platform the body is on, once more than Nauvis is in play
       const world = space.active && a.where ? a.where : "";
       setText(c.world, world);

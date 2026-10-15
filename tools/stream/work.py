@@ -6,6 +6,7 @@ journals nothing about who placed a ghost, but the agent's own fh journal does: 
 fh append each request (action and args) to runs/RUN/AGENT/journal.jsonl, beside the run's stream.json. WorkFeed
 tails those files from where they end when the service starts (the past is not replayed), reads only new bytes each
 poll, and keeps the requests that place or remove things. live.py then decides which ones land away from the body.
+The same rows feed waitcard.py; a bounded tail at startup recovers current waits only, without replaying work.
 Every request with a position, area or list also becomes an attention point (attention.py), taken by live.py with
 take_attention().
 
@@ -14,6 +15,7 @@ take_attention().
 import json, os
 
 import attention
+from waitcard import WaitFeed
 
 # Actions whose target can be away from the body: the runtime runs these against a platform's surface when they
 # carry platform=NAME (vendor/factorio-harness runtime.lua on_platform), else at the given positions on the body's
@@ -54,6 +56,7 @@ class WorkFeed:
         self.agents = list(agents)
         self.offsets = {}  # agent -> byte offset already read (set to the file's end when first seen)
         self.partial = {}  # agent -> an unfinished last line
+        self.waits = WaitFeed()
         self.attention = []  # every request with an attention point (attention.py) since take_attention()
 
     def take_attention(self):
@@ -72,27 +75,33 @@ class WorkFeed:
                 size = os.path.getsize(p)
             except OSError:
                 continue
-            if agent not in self.offsets or size < self.offsets[agent]:  # first sight, or the file was replaced
-                self.offsets[agent], self.partial[agent] = size, ""
-                continue
+            bootstrap = agent not in self.offsets or size < self.offsets[agent]
+            if bootstrap:  # recover current waits after restart, without replaying old work/attention
+                self.waits.reset(agent)
+                self.offsets[agent], self.partial[agent] = max(0, size - MAX_READ), ""
             if size == self.offsets[agent]:
                 continue
             with open(p, "rb") as f:
                 f.seek(self.offsets[agent])
                 data = f.read(MAX_READ)
-            self.offsets[agent] += len(data)
+            if bootstrap and self.offsets[agent]:
+                data = data.split(b"\n", 1)[-1]  # discard the bounded tail's partial first row
+                self.offsets[agent] = size
+            else:
+                self.offsets[agent] += len(data)
             text = self.partial.get(agent, "") + data.decode("utf-8", "replace")
             lines = text.split("\n")
             self.partial[agent] = lines.pop()  # "" when the chunk ended on a newline
             for line in lines:
-                if '"request"' not in line:
-                    continue  # replies and transport errors: most of the bytes
                 try:
                     r = json.loads(line)
                 except ValueError:
                     continue
+                self.waits.ingest(agent, r)
+                if not isinstance(r, dict):
+                    continue
                 q = r.get("request") or {}
-                if r.get("event") != "request":
+                if bootstrap or r.get("event") != "request":
                     continue
                 args = q.get("args") if isinstance(q.get("args"), dict) else {}
                 att = attention.point(q.get("action"), args)
