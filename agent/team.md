@@ -388,6 +388,9 @@ already targets your character.
   (`"section":N,"active":true` switches it on), and each request shows the planet it imports from.
 - `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without
   a planet); it is also a `wait_until` condition, a queue guard and an order's `when`.
+  `platform_left Sunward [nauvis]` waits for its departure; the team alerts say when a platform stops at or leaves
+  your planet. `./fh call freight_audit --args '{"item":"agricultural-science-pack"}'` shows one item across every
+  planet and platform: stock, spoil times, silo room, unmet lab and requester demand.
 - `./fh call networks --args '{"platform":"Starling"}'` gives a platform's electric network line (capacity, draw, solar
   power where it is and its panels' output, accumulators, machines on low power); `power` takes `platform` too, and
   `inspect` on a machine, solar panel or accumulator shows its maximum under `electricity`.

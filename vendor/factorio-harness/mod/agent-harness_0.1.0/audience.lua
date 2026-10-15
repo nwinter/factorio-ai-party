@@ -14,7 +14,8 @@ return function(api)
   local M = {handlers={}, operator={}}
   local MAX_LOG, MAX_LEN = 200, 300
   local CONFESS_GAP = 15 * 60
-  local VIEWER_LEN, VIEWER_NAME = 200, 24
+  -- A viewer line: the viewer's 200 characters with the relay's @names in front (Astra 17:17: they were cut at 120).
+  local VIEWER_LEN, VIEWER_NAME, PART_TICKS = 300, 24, 600
   local VIEWER_GAP, VIEWER_WINDOW, VIEWER_MAX = 20 * 60, 60 * 60, 6
   local function store()
     local s = api.state()
@@ -113,16 +114,22 @@ return function(api)
     local key = name:lower()
     local muted = store().muted[key]
     if muted then return {posted=false, dropped='muted', reason=muted.reason, limit='muted by the agents\' vote for the rest of the run'} end
-    if v.by_name[key] then
-      return {posted=false, dropped='viewer_rate', retry_after_s=seconds(VIEWER_GAP - (now - v.by_name[key])),
-        limit='one line per viewer every ' .. seconds(VIEWER_GAP) .. ' s'}
+    -- A long message in parts (Astra 17:17: the relay cut long viewer requests): part 2..9 of the line this viewer
+    -- posted within the last 10 s is no new line, so the rate limits leave it alone.
+    assert(a.part == nil or (type(a.part) == 'number' and a.part >= 1 and a.part <= 9), 'part must be 1..9')
+    local continuation = a.part ~= nil and a.part > 1 and v.by_name[key] ~= nil and now - v.by_name[key] <= PART_TICKS
+    if not continuation then
+      if v.by_name[key] then
+        return {posted=false, dropped='viewer_rate', retry_after_s=seconds(VIEWER_GAP - (now - v.by_name[key])),
+          limit='one line per viewer every ' .. seconds(VIEWER_GAP) .. ' s'}
+      end
+      if #recent >= VIEWER_MAX then
+        return {posted=false, dropped='global_rate', retry_after_s=seconds(VIEWER_WINDOW - (now - recent[1])),
+          limit=VIEWER_MAX .. ' viewer lines per ' .. seconds(VIEWER_WINDOW) .. ' s'}
+      end
+      recent[#recent+1] = now
+      v.by_name[key] = now
     end
-    if #recent >= VIEWER_MAX then
-      return {posted=false, dropped='global_rate', retry_after_s=seconds(VIEWER_WINDOW - (now - recent[1])),
-        limit=VIEWER_MAX .. ' viewer lines per ' .. seconds(VIEWER_WINDOW) .. ' s'}
-    end
-    recent[#recent+1] = now
-    v.by_name[key] = now
     -- source: where the viewer wrote (youtube or site), shown with the line (Luna 13:54)
     assert(a.source == nil or type(a.source) == 'string', 'source must be youtube or site')
     local seq = api.post_viewer(name, text, a.source)
