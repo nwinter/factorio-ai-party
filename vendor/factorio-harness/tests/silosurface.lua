@@ -9,7 +9,7 @@ package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 storage={agent_harness={active={}}}
 defines={events={on_script_path_request_finished=10,on_entity_died=11,on_entity_damaged=12,on_console_chat=13,on_unit_group_finished_gathering=14},
   shooting={not_shooting=0,shooting_enemies=1},controllers={character=1,remote=27,spectator=2},direction={north=0},
-  inventory={chest=1,rocket_silo_rocket=11,rocket_silo_trash=12},build_mode={normal=1},build_check_type={manual=1},
+  inventory={chest=1,assembling_machine_input=21,assembling_machine_output=22,assembling_machine_modules=23,rocket_silo_rocket=11,rocket_silo_trash=12},build_mode={normal=1},build_check_type={manual=1},
   flow_precision_index={five_seconds=0,one_minute=1},rocket_silo_status={building_rocket=0,create_rocket=1,rocket_ready=7,launch_started=14},
   cargo_destination={invalid=0,orbit=1,station=2,surface=3,space_platform=4},space_platform_state={waiting_for_starter_pack=0,on_the_path=4,waiting_at_station=5}}
 local drawn={}
@@ -213,6 +213,47 @@ do
 end
 
 print('silosurface: ok')
+-- Explicit remote calls never ask character reach across surfaces or enter autowalk.
+do
+  local b=runtime.bots.record(runtime.bots.index_of('astra'))
+  local saved=b.character
+  local old_reach,old_insert=saved.can_reach_entity,saved.insert
+  saved.can_reach_entity=function(e) assert(e.surface==saved.surface,'LuaEntity belongs to another surface'); return old_reach(e) end
+  saved.insert=function() error('remote recipe touched the body inventory') end
+  local old_find=sunward.surface.find_entities_filtered
+  sunward.surface.find_entities_filtered=function() return {assembler} end
+  local old_surface,old_pos=assembler.surface,assembler.position
+  assembler.surface=sunward.surface; assembler.position={x=4.5,y=6.5}
+  local active={kind='walk',direction=4,until_tick=game.tick+500}
+  storage.agent_harness.active[b.index]=active
+  recipe_now=nil
+  local r=astra('configure',{platform='Sunward',position=assembler.position,recipe='rocket-fuel',walk=true})
+  eq(r.remote,true); eq(r.recipe,'rocket-fuel'); eq(storage.agent_harness.active[b.index],active)
+  recipe_now=nil; assembler.crafting_progress=0.4
+  fails(function() astra('configure',{platform='Sunward',position=assembler.position,recipe='rocket-fuel',walk=true}) end,'crafting progress is 0.4')
+  eq(storage.agent_harness.active[b.index],active); eq(recipe_now,nil)
+  assembler.crafting_progress=0
+  local items=true
+  local modules=false
+  assembler.get_inventory=function(i) return {valid=true,is_empty=function() return not (i==23 and modules or i~=23 and items) end} end
+  fails(function() astra('configure',{platform='Sunward',position=assembler.position,recipe='rocket-fuel'}) end,'assembling_machine_input holds items')
+  eq(storage.agent_harness.active[b.index],active); items=false; modules=true
+  fails(function() astra('configure',{platform='Sunward',position=assembler.position,recipe='rocket-fuel'}) end,'assembling_machine_modules holds items')
+  eq(recipe_now,nil); modules=false
+  b.character=nil; b.surface='platform-1'; b.position={x=0,y=0}
+  b.travel={state='aboard',platform='Sunward',platform_index=1}
+  r=astra('configure',{position=assembler.position,recipe='rocket-fuel'})
+  eq(r.remote,true); eq(recipe_now,'rocket-fuel')
+  recipe_now=nil; assembler.surface=old_surface; assembler.position=old_pos
+  r=astra('configure',{surface='vulcanus',position=assembler.position,recipe='rocket-fuel'})
+  eq(r.remote,true); eq(recipe_now,'rocket-fuel')
+  recipe_now=nil; items=true
+  fails(function() astra('configure',{surface='vulcanus',position=assembler.position,recipe='rocket-fuel',walk=true}) end,'assembling_machine_input holds items')
+  b.character=saved; b.travel=nil; b.surface='nauvis'
+  saved.can_reach_entity=old_reach; saved.insert=old_insert
+  assembler.get_inventory=nil; sunward.surface.find_entities_filtered=old_find
+  storage.agent_harness.active[b.index]=nil
+end
 
 -- Preflight's platform is the destination even with a remote planet; no-position discovery uses the census index.
 local old_find=vulcanus.find_entities_filtered
