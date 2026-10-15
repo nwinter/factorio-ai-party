@@ -91,7 +91,7 @@ def aboard():
     d.set_follow("sol", 1200, "Sol's trip", "nick", 1000)
     row = advance(d, a, [plat()], 1000, 1004)
     assert row["agents"] == ["sol"] and not row.get("platform")  # a planet body is not remote platform work
-    a[1].update(surface="platform-1", on_platform=True, position={"x": 0, "y": 0})
+    a[1].update(surface="platform-1", on_platform=True, travel="aboard", position={"x": 0, "y": 0})
     p = plat(at="nauvis->vulcanus 30%")
     row = advance(d, a, [p], 1004, 1008)
     assert row["platform"]["why"] == "follow" and row["agents"] == ["sol"]
@@ -105,17 +105,34 @@ def aboard():
            "position": {"x": 0, "y": 0, "surface": "platform-1"}}
     d.step(snap(a, [p], alerts=[hit]), 1008)
     assert d.onair == on and d.inset is None and main_row(d, 1008).get("platform")
-    a[1].update(surface="vulcanus", on_platform=False, position={"x": 200, "y": 0})
+    a[1].update(surface="vulcanus", on_platform=False, travel=None, position={"x": 200, "y": 0})
     row = advance(d, a, [plat(at="vulcanus")], 1010, 1015)
     assert row["agents"] == ["sol"] and not row.get("platform") and row["frame"]["follow"] == "sol", row
     # Missing view falls back to the character; it returns to the full ship when the view arrives.
-    a[1].update(surface="platform-1", on_platform=True)
+    a[1].update(surface="platform-1", on_platform=True, travel="aboard")
     advance(d, a, [plat(view=None)], 1015, 1018)
     row = advance(d, a, [p], 1018, 1022)
     assert row.get("platform"), row
     d.set_follow(None, 0)
     row = advance(d, a, [p], 1022, 1027)
     assert not row.get("platform"), row
+    # Real model snapshots: bots have no body aboard and retain travel="aboard" until landing.
+    from model import Model
+    m = Model({"agents": {"sol": {}}, "space_age": True})
+    m.ingest({"agents": [{"name": "sol", "surface": "platform-1", "platform": "Starling", "travel": "aboard",
+                          "position": None, "alive": False}],
+              "space": {"platforms": [{"name": "Starling", "at": "nauvis->vulcanus 30%", "view": VIEW,
+                                       "state": "on_the_path", "speed": 1.2}]}}, 1000)
+    d, _ = world(platform_every=0, map_every=0)
+    d.set_follow("sol", 1200, now=1000)
+    for t in range(1000, 1004):
+        d.step(m.snapshot(t), t)
+    assert main_row(d, 1003)["platform"]["why"] == "follow"
+    m.ingest({"agents": [{"name": "sol", "surface": "platform-1", "platform": "Starling", "travel": "descending",
+                          "position": {"x": 0, "y": 0}, "alive": False}]}, 1004)
+    for t in range(1004, 1008):
+        d.step(m.snapshot(t), t)
+    assert not main_row(d, 1007).get("platform")  # a pod in transit is not an agent aboard the ship
 
 
 def lifecycle():
@@ -163,7 +180,8 @@ def lifecycle():
     d = OneCam([{"slot": "main", "player": 3}], lambda b: {"ok": True}, None)
     d.step(snap([], [plat()]), 1000)
     PlatformControl(d).request({"name": "Starling"}, 1000)
-    assert advance(d, [], [plat()], 1001, 1003)["platform"]["name"] == "Starling"
+    row = advance(d, [], [plat()], 1001, 1003)
+    assert row["platform"]["name"] == "Starling" and row["since"] == 1001
 
 
 def http_and_hosts():

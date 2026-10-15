@@ -1814,7 +1814,7 @@ class OneCam(Director):
             return t
         a = by_name.get(self.fol) or {}
         f = self.follow
-        if not f or now >= f["until"] or not a or a.get("travel"):
+        if not f or now >= f["until"] or not a or a.get("travel") in ("ascending", "descending"):
             return None
         name = next((n for n, p in self.plat_rows.items()
                      if (p.get("view") or {}).get("surface") == surface_of(a)), None)
@@ -1848,6 +1848,8 @@ class OneCam(Director):
             t = self.state.get(slot["slot"])
         if not self.same_platform(t, shot):
             self.frame_on(slot, shot, f"standby: {shot['platform']['label']}", scores, now)
+            if slot["slot"] == self.onair:
+                self.onair_since, self.resume = now, None
         else:
             changed = any(t.get(k) != shot.get(k) for k in ("position", "zoom", "surface"))
             t.update(shot)
