@@ -781,4 +781,157 @@ do
   r = dryrun.check(cp2, {kind='build', entities={{index=1, name='transport-belt', position={x=20.5, y=20.5}, direction=4, item='transport-belt'}}})
   eq(r.cliffs, nil); eq(r.entities[1].status, 'blocked')
 end
+-- Astra, shift13 16:43: a build dry run read a splitter at (-6.5,554) over the belt at (-6.5,554.5) placeable; the build
+-- refused it ("already on these tiles, not on the same centre") until the belt was mined. 2.0.77's manual check takes
+-- the splitter there (a fast-replace); a hand build replaces one of its group only on its own centre and of its size
+-- (runtime.lua build_direct). The dry run says the same; a belt over a belt on its centre is still a replacement.
+;(function()
+  prototypes.entity['transport-belt'].fast_replaceable_group = 'transport-belt'
+  prototypes.entity['fast-transport-belt'] = {name='fast-transport-belt', type='transport-belt', tile_width=1, tile_height=1, collision_box=box(0.4),
+    collision_mask=mask('object', 'transport_belt', 'water_tile'), fast_replaceable_group='transport-belt', items_to_place_this={{name='fast-transport-belt', count=1}}}
+  prototypes.entity.splitter = {name='splitter', type='splitter', tile_width=2, tile_height=1,
+    collision_box={left_top={x=-0.9, y=-0.4}, right_bottom={x=0.9, y=0.4}}, collision_mask=mask('object', 'transport_belt', 'water_tile'),
+    fast_replaceable_group='transport-belt', items_to_place_this={{name='splitter', count=1}}}
+  local belt = {name='transport-belt', type='transport-belt', position={x=-6.5, y=554.5}, direction=12}
+  local bw = world(function() return 'grass-1' end, {belt}, {replaces={['transport-belt']='splitter'}})
+  local bp = {surface=bw, force={name='player', recipes={}, is_chunk_charted=function() return true end}, position={x=-11.5, y=555.4}, build_distance=10,
+    get_main_inventory=function() return {get_item_count=function() return 9 end} end}
+  belt.force = bp.force
+  local r = dryrun.check(bp, {kind='build', entities={{index=1, name='splitter', position={x=-6.5, y=554}, direction=12, item='splitter'}}})
+  eq(r.entities[1].status, 'blocked')
+  eq(r.entities[1].why, 'blocked by transport-belt (-6.5,554.5): on these tiles, not on the same centre; a build replaces one of its kind only on its own centre and of its size: mine it first')
+  -- place_ghosts goes over it (robots replace it): no such refusal.
+  eq(dryrun.check(bp, {kind='ghosts', entities={{index=1, name='splitter', position={x=-6.5, y=554}, direction=12}}}).entities, nil)
+  -- On its centre, of its size: a replacement.
+  local bw2 = world(function() return 'grass-1' end, {belt}, {replaces={['transport-belt']='fast-transport-belt'}})
+  bp.surface = bw2
+  r = dryrun.check(bp, {kind='build', details=true, entities={{index=1, name='fast-transport-belt', position={x=-6.5, y=554.5}, direction=12, item='fast-transport-belt'}}})
+  eq(r.entities[1].status, 'ok'); eq(r.entities[1].why, 'replaces transport-belt (-6.5,554.5)')
+end)()
+-- Sol, shift13 16:50: Gleba's heat power planned by footprints, the joins unknown until built. Each fluid and heat
+-- connection of the plan: the tile it joins and what is there. 2.0.77 on a copy of world n: this layout built by script
+-- joined as read (the exchanger's water to the pipe, its steam to the turbine; heat tower 62 C, pipe 61, exchanger 59).
+;(function()
+  local pipes = dofile('mod/agent-harness_0.1.0/pipes.lua'){}
+  local ports = dofile('mod/agent-harness_0.1.0/ports.lua'){boxes=pipes.boxes, defined=pipes.defined}
+  local api2 = {}
+  for k, v in pairs(api) do api2[k] = v end
+  api2.fluid_rows = function(e, recipe) return (ports.rows(e, recipe and ports.recipe(e.prototype, recipe) or nil)) end
+  api2.fluid_connections = function(o) return pipes.connections(o) end
+  local dr = dofile('mod/agent-harness_0.1.0/dryrun.lua')(api2)
+  -- Connections as 2.0.77 gives them: a position for each of the four directions (turned), facing turned too.
+  local function turn(x, y, d) if d == 4 then return -y, x elseif d == 8 then return -x, -y elseif d == 12 then return y, -x end return x, y end
+  local function conn(x, y, dir, flow, kind, reach)
+    local positions = {}
+    for i, d in ipairs({0, 4, 8, 12}) do local px, py = turn(x, y, d); positions[i] = {x=px, y=py} end
+    return {positions=positions, direction=dir, flow_direction=flow or 'input-output', connection_type=kind or 'normal', max_underground_distance=reach}
+  end
+  local function heat(list) local out = {} for _, c in ipairs(list) do out[#out+1] = {position={x=c[1], y=c[2]}, direction=c[3]} end return {connections=out} end
+  local BLD = mask('object', 'water_tile', 'player', 'item')
+  prototypes.entity['heating-tower'] = {name='heating-tower', type='reactor', tile_width=3, tile_height=3, collision_box=box(1.4), collision_mask=BLD,
+    heat_buffer_prototype=heat({{0, -1, 0}, {1, 0, 4}, {0, 1, 8}, {-1, 0, 12}}), items_to_place_this={{name='heating-tower', count=1}}}
+  prototypes.entity['heat-pipe'] = {name='heat-pipe', type='heat-pipe', tile_width=1, tile_height=1, collision_box=box(0.4), collision_mask=BLD,
+    heat_buffer_prototype=heat({{0, 0, 0}, {0, 0, 4}, {0, 0, 8}, {0, 0, 12}}), items_to_place_this={{name='heat-pipe', count=1}}}
+  prototypes.entity['heat-exchanger'] = {name='heat-exchanger', type='boiler', tile_width=3, tile_height=2,
+    collision_box={left_top={x=-1.3, y=-0.8}, right_bottom={x=1.3, y=0.8}}, collision_mask=BLD, heat_buffer_prototype=heat({{0, 0.5, 8}}),
+    fluidbox_prototypes={{production_type='input-output', filter={name='water'}, pipe_connections={conn(-1, 0.5, 12), conn(1, 0.5, 4)}},
+      {production_type='output', filter={name='steam'}, pipe_connections={conn(0, -0.5, 0, 'output')}}}, items_to_place_this={{name='heat-exchanger', count=1}}}
+  prototypes.entity['steam-turbine'] = {name='steam-turbine', type='generator', tile_width=3, tile_height=5,
+    collision_box={left_top={x=-1.3, y=-2.3}, right_bottom={x=1.3, y=2.3}}, collision_mask=BLD,
+    fluidbox_prototypes={{production_type='input', filter={name='steam'}, pipe_connections={conn(0, -2, 0, 'input'), conn(0, 2, 8, 'input')}}},
+    items_to_place_this={{name='steam-turbine', count=1}}}
+  prototypes.entity.pipe = {name='pipe', type='pipe', tile_width=1, tile_height=1, collision_box=box(0.3), collision_mask=BLD,
+    fluidbox_prototypes={{pipe_connections={conn(0, 0, 0), conn(0, 0, 4), conn(0, 0, 8), conn(0, 0, 12)}}}, items_to_place_this={{name='pipe', count=1}}}
+  prototypes.entity['pipe-to-ground'] = {name='pipe-to-ground', type='pipe-to-ground', tile_width=1, tile_height=1, collision_box=box(0.3), collision_mask=BLD,
+    fluidbox_prototypes={{pipe_connections={conn(0, 0, 0), conn(0, 0, 8, nil, 'underground', 10)}}}, items_to_place_this={{name='pipe-to-ground', count=1}}}
+  -- Heat connections turn with the entity: an exchanger's heat input is on its back.
+  local hp = dr.heat_points(prototypes.entity['heat-exchanger'], {x=624, y=600.5}, 4)
+  eq(#hp, 1); eq(hp[1].x, 623); eq(hp[1].y, 600); eq(hp[1].dir, 12); eq(hp[1].tx, 622); eq(hp[1].ty, 600)
+  hp = dr.heat_points(prototypes.entity['heat-exchanger'], {x=636.5, y=600}, 8)
+  eq(hp[1].x, 636); eq(hp[1].y, 599); eq(hp[1].tx, 636); eq(hp[1].ty, 598)
+  -- A built pipe east of the planned exchanger's east water point; the rest planned, the turbine first one tile short.
+  local built = {name='pipe', type='pipe', position={x=130.5, y=40.5}, direction=0}
+  local cw = world(function() return 'grass-1' end, {built})
+  local cp = {surface=cw, force={name='player', recipes={}, is_chunk_charted=function() return true end}, position={x=128, y=45}, build_distance=10,
+    get_main_inventory=function() return {get_item_count=function() return 9 end} end}
+  built.force = cp.force
+  local function plan(turbine_y)
+    return {kind='build', entities={
+      {index=1, name='heating-tower', position={x=128.5, y=43.5}, direction=0, item='heating-tower'},
+      {index=2, name='heat-pipe', position={x=128.5, y=41.5}, direction=0, item='heat-pipe'},
+      {index=3, name='heat-exchanger', position={x=128.5, y=40}, direction=0, item='heat-exchanger'},
+      {index=4, name='steam-turbine', position={x=128.5, y=turbine_y}, direction=0, item='steam-turbine'},
+      {index=5, name='pipe', position={x=126.5, y=40.5}, direction=0, item='pipe'}}}
+  end
+  local function rows(r) local out = {} for _, x in ipairs(r.connections or {}) do out[x.index] = x end return out end
+  local c = rows(dr.check(cp, plan(35.5)))
+  eq(c[3].fluid[3], 'output steam north at (128.5,38.5): nothing there', 'a tile short: no join')
+  eq(c[4].fluid[2], 'input steam south at (128.5,38.5): nothing there')
+  local out = dr.check(cp, plan(36.5))
+  c = rows(out)
+  eq(c[1].heat[1], 'heat north at (128.5,41.5): planned #2 heat-pipe'); eq(c[1].heat[2], 'heat east at (130.5,43.5): nothing there')
+  eq(c[3].fluid[1], 'input-output water west at (126.5,40.5): planned #5 pipe')
+  eq(c[3].fluid[2], 'input-output water east at (130.5,40.5): pipe (130.5,40.5)', 'the built pipe joins')
+  eq(c[3].fluid[3], 'output steam north at (128.5,38.5): planned #4 steam-turbine')
+  eq(c[3].heat[1], 'heat south at (128.5,41.5): planned #2 heat-pipe')
+  eq(c[4].fluid[1], 'input steam north at (128.5,33.5): nothing there'); eq(c[4].fluid[2], 'input steam south at (128.5,39.5): planned #3 heat-exchanger')
+  eq(c[2], nil, 'a heat pipe joining only the plan: no row'); eq(c[5], nil, 'a pipe joining only the plan: no row')
+  eq(out.connections_open, 4)   -- the tower's east, south and west, the turbine's north
+  -- A pipe-to-ground's underground side faces the turbine: no join.
+  c = rows(dr.check(cp, {kind='build', entities={
+    {index=1, name='steam-turbine', position={x=160.5, y=40.5}, direction=0, item='steam-turbine'},
+    {index=2, name='pipe-to-ground', position={x=160.5, y=43.5}, direction=8, item='pipe-to-ground'}}}))
+  eq(c[1].fluid[2], 'input steam south at (160.5,43.5): faces planned #2 pipe-to-ground (no connection back)')
+  -- A flipped paste: not read (the game turns a storage tank its own way).
+  local fp = plan(36.5); fp.kind = 'paste'; fp.flipped = true
+  local fo = dr.check(cp, fp)
+  eq(fo.connections, nil); eq(fo.connections_note, 'not read for a flipped paste')
+  -- Each planned pipe-to-ground (Sol 18:21: four built reversed, seen only by inspect after building): what its mouth
+  -- joins, and whether it pairs and with which. 2.0.77 on a copy of world n: 10 apart pair, 11 apart do not; the first
+  -- pipe-to-ground on the line decides (facing the same way, it pairs on beyond and the one behind gets none).
+  local function p2g(i, x, y, d) return {index=i, name='pipe-to-ground', position={x=x, y=y}, direction=d, item='pipe-to-ground'} end
+  local u = dr.check(cp, {kind='build', entities={p2g(1, 200.5, 40.5, 0), p2g(2, 200.5, 46.5, 8),
+    {index=3, name='pipe', position={x=200.5, y=39.5}, direction=0, item='pipe'}, p2g(4, 210.5, 40.5, 0)}})
+  c = rows(u)
+  eq(c[1].fluid[1], 'mouth north at (200.5,39.5): planned #3 pipe')
+  eq(c[1].fluid[2], 'underground south: pairs with planned #2 pipe-to-ground (200.5,46.5), 6 tiles')
+  eq(c[2].fluid[1], 'mouth south at (200.5,47.5): nothing there')
+  eq(c[2].fluid[2], 'underground north: pairs with planned #1 pipe-to-ground (200.5,40.5), 6 tiles')
+  eq(c[3], nil, 'a pipe joining only the plan: no row')
+  eq(c[4].fluid[1], 'mouth north at (210.5,39.5): nothing there')
+  eq(c[4].fluid[2], 'underground south: unpaired: no pipe-to-ground facing back within 10 tiles')
+  eq(u.connections_open, 3)   -- #2's mouth, #4's mouth and its underground end
+  c = rows(dr.check(cp, {kind='ghosts', entities={p2g(1, 220.5, 30.5, 0), p2g(2, 220.5, 40.5, 8), p2g(3, 222.5, 30.5, 0), p2g(4, 222.5, 41.5, 8),
+    p2g(5, 224.5, 30.5, 0), p2g(6, 224.5, 34.5, 0), p2g(7, 224.5, 38.5, 8)}}))
+  eq(c[1].fluid[2], 'underground south: pairs with planned #2 pipe-to-ground (220.5,40.5), 10 tiles')
+  eq(c[3].fluid[2], 'underground south: unpaired: no pipe-to-ground facing back within 10 tiles', '11 apart')
+  eq(c[4].fluid[2], 'underground north: unpaired: no pipe-to-ground facing back within 10 tiles')
+  eq(c[5].fluid[2], 'underground south: unpaired: the first on its line, planned #6 pipe-to-ground (224.5,34.5), faces the same way')
+  eq(c[6].fluid[2], 'underground south: pairs with planned #7 pipe-to-ground (224.5,38.5), 4 tiles')
+  -- A built one facing back pairs, and the reply says what it pairs with now (the engine's view of it).
+  local P = {name='pipe-to-ground', type='pipe-to-ground', position={x=230.5, y=36.5}, direction=0, valid=true, unit_number=71}
+  local B = {name='pipe-to-ground', type='pipe-to-ground', position={x=230.5, y=46.5}, direction=8, valid=true, unit_number=72}
+  B.fluidbox = setmetatable({get_locked_fluid=function() return nil end, get_pipe_connections=function() return {
+    {connection_type='normal', flow_direction='input-output', position={x=230.5, y=46.5}, target_position={x=230.5, y=47.5}},
+    {connection_type='underground', flow_direction='input-output', position={x=230.5, y=46.5}, target_position={x=230.5, y=36.5},
+      target={object_name='LuaFluidBox', owner=P}}} end}, {__len=function() return 1 end})
+  P.force, B.force = cp.force, cp.force
+  local dp = {surface=world(function() return 'grass-1' end, {P, B}), force=cp.force, position={x=230, y=42}, build_distance=10,
+    get_main_inventory=function() return {get_item_count=function() return 9 end} end}
+  c = rows(dr.check(dp, {kind='build', entities={p2g(1, 230.5, 40.5, 0)}}))
+  eq(c[1].fluid[2], 'underground south: pairs with pipe-to-ground (230.5,46.5), 6 tiles (it pairs with pipe-to-ground (230.5,36.5) now)')
+  c = rows(dr.check(dp, {kind='build', entities={p2g(1, 230.5, 32.5, 0)}}))
+  eq(c[1].fluid[2], 'underground south: unpaired: the first on its line, pipe-to-ground (230.5,36.5), faces the same way')
+  -- Past 64 rows (256 with details) the rest are only counted.
+  local many = {}
+  for i = 1, 70 do many[i] = p2g(i, 300.5 + 3 * i, 300.5, 0) end
+  local mo = dr.check(cp, {kind='ghosts', entities=many})
+  eq(#mo.connections, 64); eq(mo.connections_open, 140)
+  eq(mo.connections[64].fluid[2], 'underground south: unpaired: no pipe-to-ground facing back within 10 tiles')
+  eq(#dr.check(cp, {kind='ghosts', details=true, entities=many}).connections, 70)
+  -- Reversed: the mouth faces away from the pipe it was meant for, the underground side faces it.
+  c = rows(dr.check(dp, {kind='build', entities={p2g(1, 236.5, 40.5, 8), {index=2, name='pipe', position={x=236.5, y=39.5}, direction=0, item='pipe'}}}))
+  eq(c[1].fluid[1], 'mouth south at (236.5,41.5): nothing there')
+  eq(c[1].fluid[2], 'underground north: unpaired: no pipe-to-ground facing back within 10 tiles')
+end)()
 print('dryrun: ok')

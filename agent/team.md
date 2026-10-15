@@ -326,8 +326,11 @@ already targets your character.
   fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
   new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that
   reach every placement, and what each planned inserter picks up from and drops into (`missing: no drop target`);
-  `inspect` and build replies flag a built inserter with no pickup or drop target. `closes_in` names the entry that
-  fills the last gap out when the plan would close you in where you stand; a build reply says `closed_in` after it.
+  `inspect` and build replies flag a built inserter with no pickup or drop target. `connections` gives each planned
+  boiler's, turbine's, reactor's, pump's or pipe's fluid and heat connection points and what joins each (`planned #5
+  pipe`, `nothing there`), and for each pipe-to-ground what its mouth joins and whether it pairs, with which;
+  `inspect` of a heat entity shows its heat connections and temperature. `closes_in` names the entry that fills the
+  last gap out when the plan would close you in where you stand; a build reply says `closed_in` after it.
   Dry runs and build replies also name logistic chests no roboport covers (`outside_logistic_coverage`) and inserters
   or belts feeding an underground entrance from the side, with the lane that gets nothing (`underground_side_feed`).
 - `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}}}'` lists every chest's
