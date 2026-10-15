@@ -106,6 +106,10 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
                             "next": "Reactor and heat exchangers", "goal": "40 MW"}],   // open, latest changed first; at
                             // most 4; next: its first step not done (null: none), goal (null: none)
               "projects_total": 1,    // a project event row also has progress, steps_done, steps_total (verb step: step)
+              // the jobs behind the counts (d15, viewer joonazan 08:19), from an active read of tasks and requests,
+              // newest change first, 20 each; absent before such a read: open tasks/requests nobody owns, and those
+              // claimed or being done; each {id, title, kind, owner, agent, status, requested_by}
+              "open_items": [...], "open_items_total": 3, "doing_items": [...], "doing_items_total": 2,
               // the team plan (the harness's board_plan; the live page's Team plan; viewer Alex 22:12), null when it has
               // neither goals nor lines. Ticks are game ticks (60 a second): the page says "set N min ago" from the
               // state's tick. A line's tick and by, and goals_tick and updated_tick, come from runtimes with the board

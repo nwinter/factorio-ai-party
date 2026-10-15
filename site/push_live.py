@@ -133,7 +133,7 @@ REPLY_MAX = 40  # agents' replies to viewers in the state (newest kept); the liv
 def public_replies(rows, hidden=None):
     """The agents' and the Operator's lines that answer a viewer or speak to the viewers (model.py viewer_replies,
     tools/stream/viewer_replies.py), oldest first, the newest REPLY_MAX: {seq, t, tick, by, text, kind, to, answers?}.
-    A reply to a line the site hides keeps its own words; the hidden line's words are left out."""
+    A reply to a line the site hides keeps its own words; that line and its viewer's name are left out."""
     out = []
     for r in rows or []:
         if not isinstance(r, dict) or not r.get("text") or not r.get("by") or not isinstance(r.get("t"), (int, float)):
@@ -142,9 +142,10 @@ def public_replies(rows, hidden=None):
                "kind": r.get("kind") or "reply", "to": [str(n) for n in r.get("to") or []]}
         a = r.get("answers")
         if isinstance(a, dict) and a.get("name"):
-            row["answers"] = {"name": str(a["name"]), "t": a.get("t"), "source": a.get("source")}
-            if not (hidden and hidden.hides(a.get("name"), a.get("text"))):
-                row["answers"]["text"] = str(a.get("text") or "")
+            if hidden and hidden.hides(a.get("name"), a.get("text")):
+                row["to"] = [n for n in row["to"] if n.lower() != str(a["name"]).lower()]
+            else:
+                row["answers"] = {"name": str(a["name"]), "text": str(a.get("text") or ""), "t": a.get("t"), "source": a.get("source")}
         out.append(row)
     out.sort(key=lambda r: r["t"])
     return out[-REPLY_MAX:]

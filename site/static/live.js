@@ -463,6 +463,22 @@
         '<span class="small">' + esc(p.progress || '') + '</span></div></div></li>';
     }).join('');
     var moreProjects = (board.projects_total || 0) - (board.projects || []).length;
+    // the jobs behind the counts (viewer joonazan, d15 08:19: "I can't see the open jobs"): open tasks and requests
+    // nobody owns, and those an agent claimed or is doing (state.board.open_items / doing_items, newest change first)
+    function who(name) { var o = byName[name] || {}; return o.display_name || name || ''; }
+    var openJobs = (board.open_items || []).map(function (j) {
+      return '<li><span class="fx-chip fx-chip--grey">' + esc(j.kind || 'task') + '</span> <b>' + esc(j.title) + '</b>' +
+        (j.requested_by ? ' <span class="fx-muted">asked by ' + esc(who(j.requested_by)) + '</span>' : '') + '</li>';
+    }).join('');
+    var doingJobs = (board.doing_items || []).map(function (j) {
+      var o = byName[j.agent] || {};
+      return '<li>' + avatar(o.name ? o : { name: j.agent || j.owner || '?' }, 24) + '<span><b>' + esc(o.display_name || j.owner || '?') + '</b> ' +
+        esc(j.title) + ' <span class="fx-chip fx-chip--grey">' + esc(j.kind || 'task') + '</span>' +
+        (j.status === 'claimed' ? ' <span class="fx-muted">claimed</span>' : '') + '</span></li>';
+    }).join('');
+    function more(total, shown) { return total > shown ? '<p class="fx-muted small">+' + esc(total - shown) + ' more</p>' : ''; }
+    var jobsHtml = (openJobs ? '<h4>Open jobs</h4><ul class="board-jobs">' + openJobs + '</ul>' + more(board.open_items_total || 0, (board.open_items || []).length) : '') +
+      (doingJobs ? '<h4>In progress</h4><ul class="board-claims board-doing">' + doingJobs + '</ul>' + more(board.doing_items_total || 0, (board.doing_items || []).length) : '');
     var events = (board.events || []).slice(-8).reverse().map(function (e) {
       var o = byName[e.agent] || {};
       var verb = e.verb === 'step' ? 'finished a step of' : e.verb;
@@ -473,7 +489,7 @@
     }).join('');
     var boardHtml = board.available === false ? '<p class="fx-muted">The board is not running in this world.</p>' :
       '<p class="board-counts"><span class="fx-chip fx-chip--orange">' + esc(board.in_progress || 0) + ' in progress</span> ' +
-      '<span class="fx-chip fx-chip--grey">' + esc(board.open_unowned || 0) + ' open</span></p>' +
+      '<span class="fx-chip fx-chip--grey">' + esc(board.open_unowned || 0) + ' open</span></p>' + jobsHtml +
       (projects ? '<h4>Projects</h4><ul class="board-projects">' + projects + '</ul>' +
         (moreProjects > 0 ? '<p class="fx-muted small">+' + esc(moreProjects) + ' more</p>' : '') : '') +
       (claims ? '<h4>Who owns what</h4><ul class="board-claims">' + claims + '</ul>' : '') +

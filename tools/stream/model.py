@@ -1041,6 +1041,8 @@ class Model:
             board["open_unowned"] = b["open_unowned"]
         if isinstance(b, dict) and "plan" in b:  # the team plan (board_plan): goals and who is on what
             board["plan"] = b["plan"] or None
+        if isinstance(b, dict) and "active_ids" in b:  # the ids an active read listed (live.py): the open and doing lists
+            board["active_ids"] = set(b["active_ids"]) if b["active_ids"] is not None else None
         for it in items:
             if it.get("id") is not None:
                 board["items"][it["id"]] = it
@@ -1164,6 +1166,7 @@ class Model:
                           and not it.get("owner"))
         doing = sum(1 for it in items if it.get("kind") in ("task", "request") and it.get("status") in ("claimed", "doing"))
         projects = self.projects_snapshot()
+        open_items, doing_items = self.jobs_snapshot()
         return {
             "available": b["available"],
             "events": list(b["events"])[-8:],
@@ -1176,7 +1179,31 @@ class Model:
             "plan": self.plan_snapshot(),
             "projects": projects[:4],
             "projects_total": len(projects),
+            # the jobs behind the two counts (viewer joonazan, d15 08:19): open tasks and requests nobody owns, and those
+            # claimed or being done, the latest changed first, JOBS_MAX each; absent until an active read listed them
+            **({"open_items": open_items[:self.JOBS_MAX], "open_items_total": len(open_items),
+                "doing_items": doing_items[:self.JOBS_MAX], "doing_items_total": len(doing_items)}
+               if open_items is not None else {}),
         }
+
+    JOBS_MAX = 20
+
+    def jobs_snapshot(self):
+        """(open, doing): tasks and requests from the last active board read (board.active_ids), open with no owner, and
+        claimed or doing; each {id, title, kind, owner, agent, status, requested_by}, the latest changed first. (None,
+        None) before an active read (an older service, or the read failed)."""
+        ids = self.board.get("active_ids")
+        if ids is None:
+            return None, None
+        rows = [it for i, it in self.board["items"].items() if i in ids and it.get("kind") in ("task", "request")]
+        rows.sort(key=lambda it: -(it.get("updated_tick") or 0))
+        def row(it):
+            return {"id": it.get("id"), "title": clean_text(it.get("title") or ""), "kind": it.get("kind"),
+                    "owner": it.get("owner"), "agent": self._who(it.get("owner")), "status": it.get("status"),
+                    "requested_by": it.get("requested_by")}
+        open_ = [row(it) for it in rows if it.get("status") == "open" and not it.get("owner")]
+        doing = [row(it) for it in rows if it.get("status") in ("claimed", "doing")]
+        return open_, doing
 
     def projects_snapshot(self):
         """Open projects (board kind project) for the board widget and the site, the latest changed first: title,

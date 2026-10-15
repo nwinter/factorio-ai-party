@@ -30,7 +30,7 @@ def payload_tests():
     rows.append({"seq": 100, "t": None, "by": "grok", "text": "no time"})
     out = push_live.public_replies(rows, Hide())
     assert len(out) == push_live.REPLY_MAX and out[0]["seq"] == 6 and out[-1]["seq"] == 99, [r["seq"] for r in out]
-    assert out[-1]["answers"] == {"name": "Troll42", "t": 1999.0, "source": "site"}, out[-1]  # the hidden line's words left out
+    assert "answers" not in out[-1] and out[-1]["to"] == [] and out[-1]["text"] == "@Troll42 Operator: no", out[-1]  # the hidden line and name left out
     assert out[-2]["answers"]["text"] == "q"
     s = json.load(open(os.path.join(SITE, "live", "state.example.json")))
     s["viewer_replies"] = rows[:2]
@@ -118,6 +118,7 @@ setTimeout(() => {
   out.hidden_html = kids['#vchat'].innerHTML;
   out.stored = stored;
   out.posts = posts; out.maxInflight = maxInflight; out.gets = gets;
+  out.board = (kids['#cb-board'] || {}).innerHTML;
   process.stdout.write(JSON.stringify(out), () => process.exit(0));
 }, 600);
 """
@@ -139,6 +140,11 @@ def live_tests():
          "answers": {"name": "Foobator", "text": "why is steel stopped?", "t": now - 100, "source": "YouTube"}},
         {"seq": 11, "t": now - 20, "by": "haiku", "text": "Viewers, fair point.", "kind": "to_viewers", "to": []},
         {"seq": 12, "t": now - 10, "by": "operator", "text": "@joonazan Operator: thanks", "kind": "reply", "to": ["joonazan"]}]
+    s["board"] = dict(s.get("board") or {}, available=True, open_unowned=2, in_progress=1,
+                      open_items=[{"id": 1, "title": "Laser turrets for the east wall", "kind": "request", "owner": None, "status": "open", "requested_by": "haiku"}],
+                      open_items_total=2,
+                      doing_items=[{"id": 2, "title": "Rebuild NW coal", "kind": "task", "owner": "grok", "agent": "grok", "status": "doing"}],
+                      doing_items_total=1)
     with tempfile.TemporaryDirectory() as d:
         js, path = os.path.join(d, "chat.js"), os.path.join(d, "state.json")
         open(js, "w").write(LIVE_CHAT_JS)
@@ -168,6 +174,10 @@ def live_tests():
     assert "TO VIEWERS" in texts[i_v][1] and "c-thread" not in texts[i_v][0], texts[i_v]
     i_op = next(i for i, (_, t) in enumerate(texts) if "Operator: thanks" in t)
     assert "Operator" in texts[i_op][1] and i_op > i_v, texts  # its line ("nice base") is not the one it answers: time order
+    # the Board card lists the jobs behind its counts (joonazan 08:19), "+1 more" when the list was cut
+    board = o["board"]
+    assert "<h4>Open jobs</h4>" in board and "Laser turrets for the east wall" in board and "asked by" in board, board
+    assert "<h4>In progress</h4>" in board and "Rebuild NW coal" in board and "Grok" in board and "+1 more" in board, board
     # the box hides them, and the choice is kept
     assert "c-agent" not in o["hidden_html"] and "first message" in o["hidden_html"]
     assert o["stored"].get("chatReplies") == "0", o["stored"]

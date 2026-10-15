@@ -607,6 +607,8 @@ ul.platforms .fx-progress { margin-top: 3px; }
 .board-events li { overflow-wrap: anywhere; }
 .board-events .fx-chip { font-size: .8rem; padding: 0 5px; }
 .board-projects { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: .9rem; }
+.board-jobs { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: .9rem; overflow-wrap: anywhere; }
+.board-jobs b { color: var(--fx-heading); }
 .board-projects li { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; overflow-wrap: anywhere; }
 .board-projects b { color: var(--fx-heading); }
 .project-progress { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin-top: 3px; }

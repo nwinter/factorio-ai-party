@@ -599,7 +599,7 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
         chat = [c for c in chat_lines(d / "chat.jsonl") if lo <= c["tick"] <= hi and c.get("seq") not in seen_seq]
         for c in chat:
             seen_seq.add(c.get("seq"))
-        qa, viewers = [], {}
+        qa, viewers, shown_names = [], {}, set()
         for c in chat:
             who = str(c.get("from", ""))
             if not keep(c["text"]) or not keep(who):
@@ -613,6 +613,7 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
                        and c["tick"] - q["tick"] < 5 * 3600 for q in qa[-6:]):
                     continue  # the same line again (a resend, or the relay's retry)
                 qa.append({"kind": "viewer", "who": clean(vname), "text": clean(c["text"]), "tick": c["tick"], "seq": c.get("seq")})
+                shown_names.add(vname.lower())
         if viewers:  # any viewer spoke (shown or hidden): the agents' and the Operator's answers, and the hosts'
             # (viewer_replies.py: a line naming a viewer who wrote in the last 15 minutes, @name or as a vocative, or
             # one that speaks to the viewers; the live page's site chat uses the same rule)
@@ -622,7 +623,8 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
                     continue
                 ans = vr.get("answers")
                 qa.append({"kind": "operator" if who == "operator" else "agent", "who": "Operator" if who == "operator" else who,
-                           "text": clean(c["text"]), "tick": c["tick"], "to": [clean(n) for n in vr["to"]],
+                           # "↩ name" only for viewers whose lines are shown (a deleted or hidden one is not named)
+                           "text": clean(c["text"]), "tick": c["tick"], "to": [clean(n) for n in vr["to"] if n.lower() in shown_names],
                            "re": (ans.get("seq"), ans.get("tick")) if ans else None})
             for w, host, text in host_replies(d / "caster.log", ta):
                 raw = tick_at(w)
