@@ -200,6 +200,47 @@ function parseUntil(text: string): Record<string, unknown> {
   }
   return condition;
 }
+// Word-form waits in raw calls and plans use the same grammar as fh sleep --until.
+// Conflicting structured fields are refused before anything is sent to the game.
+function normalizeWaitArgs(action: string, args: Record<string, unknown>, path = 'args', depth = 0): Record<string, unknown> {
+  if (depth > 32) throw new Error(`${path}: queue arguments exceed maximum nesting depth`);
+  if (action === 'wait_until') {
+    const out = {...args};
+    for (const alias of ['ticks', 'timeout_ticks']) {
+      if (out[alias] === undefined) continue;
+      if (out.timeout !== undefined && out.timeout !== out[alias]) throw new Error(`${path}.${alias} conflicts with timeout`);
+      out.timeout = out[alias];
+      delete out[alias];
+    }
+    if (typeof out.until === 'string' && /\s|[<>=]/.test(out.until.trim())) {
+      const parsed = parseUntil(out.until);
+      for (const [key, value] of Object.entries(parsed)) {
+        if (key !== 'until' && out[key] !== undefined && JSON.stringify(out[key]) !== JSON.stringify(value)) {
+          throw new Error(`${path}.${key} conflicts with the word-form until`);
+        }
+        out[key] = value;
+      }
+      if (out.below !== undefined && out.at_least !== undefined) throw new Error(`${path}: below and at_least are mutually exclusive`);
+      if (out.position !== undefined && out.positions !== undefined) throw new Error(`${path}: position and positions are mutually exclusive`);
+    }
+    return out;
+  }
+  if (!['queue_submit', 'queue_repeat', 'queue_edit'].includes(action)) return args;
+  const out = {...args};
+  if (action === 'queue_repeat' && out.condition && typeof out.condition === 'object' && !Array.isArray(out.condition)) {
+    out.condition = normalizeWaitArgs('wait_until', out.condition as Record<string, unknown>, `${path}.condition`, depth + 1);
+  }
+  if (Array.isArray(out.steps)) out.steps = out.steps.map((step, i) => {
+    if (!step || typeof step !== 'object' || typeof step.action !== 'string' || !step.args || typeof step.args !== 'object') return step;
+    return {...step, args:normalizeWaitArgs(step.action, step.args, `${path}.steps[${i + 1}].args`, depth + 1)};
+  });
+  if (Array.isArray(out.guards)) out.guards = out.guards.map((guard, i) => {
+    if (!guard || typeof guard !== 'object') return guard;
+    return {...normalizeWaitArgs('queue_submit', guard, `${path}.guards[${i + 1}]`, depth + 1),
+      ...(guard.when && typeof guard.when === 'object' ? {when:normalizeWaitArgs('wait_until', guard.when, `${path}.guards[${i + 1}].when`, depth + 1)} : {})};
+  });
+  return out;
+}
 /** The parts of an --until joined by | (outside quotes), trimmed, empty ones dropped. */
 function splitAlternatives(text: string): string[] {
   const parts: string[] = [];
@@ -1302,6 +1343,7 @@ async function main() {
     return timedOut(status.result?.active?.kind ?? 'the action', status, Date.now()-started, pacer, explicit && ending === 'cap' ? 'end' : ending);
   }
   async function execute(action: string, args: Record<string,unknown>, id?: string, wait = false, onAccepted?: (reply: Reply) => void): Promise<Reply> {
+    args = normalizeWaitArgs(action, args);
     const requestId = id ?? randomUUID();
     // `fh call sleep` (with or without --wait) blocks like fh sleep: the raw
     // action only starts a sleep (shake4-6: Luna's 103 sleeps that never waited).

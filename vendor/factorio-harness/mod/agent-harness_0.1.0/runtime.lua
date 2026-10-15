@@ -638,6 +638,7 @@ local function finish(index, outcome)
     if action.op=='transfer' then
       last.given=nil; last.transferred=action.got; last.direction=action.transfer.direction
       last.items=next(action.items) and action.items or nil; last.unreached=action.unreached
+      if action.entries then last.entries=action.entries; last.short=action.short end
     end
     if action.op=='load_silo' then M.rocketload.walk_last(action,last) end
   end
@@ -1413,7 +1414,7 @@ function handlers.describe()
         walk=WALK..'; transfer walks as true does: targets out of reach are walked to first, nearest first, then the same transfer is made at each (one timed call, as feed and collect tours; returns places and until_tick, legs (the route: each stop with walk tiles and in_reach), then last {op: transfer, transferred, items, entities, left}: transferred | nothing_to_do | out_of_items (nothing left to give) | nothing_collected (nothing to take) | inventory_full | unreached (no place reached) | timed_out); all in reach: the transfer at once',
         ticks='with walk: 1..36000 (default 3600); with pick and to: 1..36000 (default 18000)',
         pick='first_with_stock|most_stock, with positions and item or items: every listed place is read (in sight or by remote view) and the take is made at one: the first in list order holding a listed item now, or the one holding the most; empty places are skipped (skipped, skipped_places; never short); none holding any: moved 0, picked none, nothing walked. The take walks there when out of reach (as walk). Returns picked {position, name, item, holds, rule, line}',
-        items='with pick: 1..16 item names to look for (item too); the item picked is the one taken',
+        items='without pick: map of 1..32 item names to counts (1..10000 each), with one position and explicit direction; exclusive with item/count/total; walk moves all items at one stop; entries report requested/transferred/missing or error per item, short totals the shortage. With pick: 1..16 item names to look for (item too); the item picked is the one taken',
         to='with pick: {x,y}, or {item: {x,y}} by the item picked: the same timed call then walks there and gives what it took (inventory inferred as a give; a destination out of sight is found on arrival); last: picked, taken, delivered, moved (delivered), entities (a row per leg), short when delivered < taken {asked (taken), moved (delivered), reason target_full|target_short|not_delivered, why (the destination full: what fills its slots), kept (what you still carry)}; outcomes transferred | nothing_collected (the take got nothing: no walk on) | unreached | timed_out',
         area='or {left_top, right_bottom} up to 128x128: our entities of types (default chests, machines, labs, silos, boilers, drills, turrets, wagons, vehicles, landing pads, roboports, agricultural towers) with their centre inside, as positions (at most 64; area_targets counts them)',types='with area: entity types to take (1..16)',inventory='chest|fuel|furnace_source|furnace_result|assembling_machine_input|assembling_machine_output|lab_input|rocket_silo_rocket|rocket_silo_trash|cargo_landing_pad_main|hub_main|asteroid_collector_output|... (*_trash: take-only, what the game moved out); a rocket silo has two to put into: assembling_machine_input (alias parts), the rocket-part recipe\'s ingredients, e.g. {"position":{"x":65.5,"y":14.5},"direction":"to_entity","item":"low-density-structure","count":50,"inventory":"parts"}, and rocket_silo_rocket (alias cargo), the rocket\'s cargo that goes up with it at launch, e.g. {"position":{"x":65.5,"y":14.5},"direction":"to_entity","item":"space-platform-foundation","count":10,"inventory":"cargo"}; inspect of a silo lists them (silo_inventories); inferred when omitted (a module used by the current recipe->recipe input, even when full; explicit *_modules installs it; to_player takes from non-empty trash slots first; fuel items->burner fuel, else the first inventory accepting the item, e.g. silo ingredients then rocket cargo; to_player->output or inventory holding item)',item='name; omit with to_player to take everything',quality='default normal',count='1..10000 per entity (default: to_entity 1, or total; to_player all of the item; unlimited when item omitted)',total='optional cap across positions, filled in order; echoed',returns='moved (transferred: its alias for a shift), inv (the inventory line after: free slots, what you hold of the items moved); freshness (spoilable items moved: per item the batch\'s spread, count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; a science pack the running research takes: how many a unit it takes and the units left; a timed transfer or collect: last.freshness); delivery_note on requester/buffer gives: nearby inserters and their drop targets, trash-unrequested toggle and current robot pickup reservations (destinations not scanned); rows moved per target; tally with 2+ positions: one line, moved per item, targets touched of the total, short (full, holding none, failed with the first reason); a target out of reach within 32 tiles is walked to first (walk); with walk: false it fails at once: entity is out of reach: NAME at (x,y) is D tiles away, reach R; in reach from (x,y) (a free spot); inventory_full|entity_full {requested,got,blocked_item} when space ran out; to_entity gives from the main inventory, then (ammo) the gun ammo slots; holding none fails; short of items the hand-craft queue will deliver, it waits for them (awaiting_craft, outcome fed | failed | timed_out); into rocket_silo_rocket only what fits under the rocket\'s 1000 kg lift (rocket_weight held/lift kg; weight_limited {requested,fits,note} when fewer fit; fails when none fits)',direction='to_entity|to_player (from_player, give, put, insert, to_chest, to_container, to_machine, to_building = to_entity; from_entity, take, from_chest, from_container, from_machine, from_building = to_player, for every entity kind; to_entity=true, from_entity=true, or to_entity={x,y} / from_entity={x,y} as the target, noted in corrected); any container: chests, logistic chests, car and spider trunks, cargo wagons, landing pads, hubs; inferred when omitted (echoed as direction): no item -> to_player; an item only the character holds or is hand-crafting -> to_entity; one only the targets hold -> to_player; both or neither -> error',keep='optional source reserve count',keep_max='true (to_player): refuse a take that would put you over your personal request max (the game moves what is over it to your trash slots); nothing is taken; up_to=true stops at that max instead (left_at_max); every take over it says so in trash',up_to='a number: the target total cap (tops the target up to it); true: move what there is, min(count, held or in the source, room), never failing on a short or empty source: moved, short {asked, moved, reason: none_held|source_short|target_full, why (selected inventory, its contents or empty, and recipe ingredients; an empty slot may reject an item)}; as a queue step it never pauses the plan for that. Without up_to, a give the target could not take all of (it is full) also returns short {asked, moved, reason=target_full, why}, the reply\'s warning line'},
       feed={avoid_enemies='walking: as move_to\'s (default: worms, range + 4; spawners, 40 tiles + 4; the areas under attack now, 24 tiles + 4; true: + 8; false: no check): each leg goes round them, and a place inside one is left out: at the call (left_out names the first 8, left_out_more counts the rest, also in last.left_out; every place inside one: refused, naming them), and on the way (last.danger counts them, last.dangers names the first 8, last.first_unreached the first)',unsafe_goal='optional true: walk to such a place anyway',area='or {left_top, right_bottom} up to 128x128: our machines of types (default as in reach; with recipe assemblers and furnaces) with their centre inside, as positions (at most 64; those on another recipe are counted in other_recipe; area_targets counts them)',note='hand-feeds machines from inventory, nothing taken out: an assembler/furnace gets its recipe\'s item ingredients (an idle furnace its last recipe\'s; a furnace with no recipe yet the items or item named that it smelts), a lab its science packs, a burner (furnace, drill, boiler, burner inserter) fuel when its fuel slots are empty (or with fuel=true, fuel=NAME, or a fuel named in items); each item up to count per machine, keeping keep in inventory. In reach by default; positions or radius (a walking tour, timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, items, entities)',
@@ -2628,8 +2629,11 @@ function handlers.observe(p,a)
       for _,name in ipairs(a[key]) do assert(type(name)=='string',key..' requires strings') end
     end
   end
-  local out={player={index=p.index, position=p.position, surface=p.surface.name, health=p.character.health, max_health=p.character.max_health, selected_gun_slot=p.character.selected_gun_index,
-    inventory=contents(p.get_main_inventory()), guns=contents(p.get_inventory(defines.inventory.character_guns)), ammo=contents(p.get_inventory(defines.inventory.character_ammo)), armor=contents(p.get_inventory(defines.inventory.character_armor)), crafting_queue=p.crafting_queue or {}}, entities={}, tiles={}, truncated=false,
+  local ch=p.character
+  local out={player={index=p.index, position=p.position, surface=p.surface.name, health=ch and ch.health, max_health=ch and ch.max_health, selected_gun_slot=ch and ch.selected_gun_index,
+    inventory=ch and contents(p.get_main_inventory()) or nil, guns=ch and contents(p.get_inventory(defines.inventory.character_guns)) or nil,
+    ammo=ch and contents(p.get_inventory(defines.inventory.character_ammo)) or nil, armor=ch and contents(p.get_inventory(defines.inventory.character_armor)) or nil,
+    crafting_queue=ch and (p.crafting_queue or {}) or nil,body=not ch and 'none' or nil}, entities={}, tiles={}, truncated=false,
     active=active(p.index)}
   if a.group then out.entities=nil; out.groups={} end
   local origin=center(p,a)
@@ -2668,8 +2672,8 @@ function handlers.observe(p,a)
     end
   end
   -- Equipment rows are opt-in; the default is a compact name->count summary.
-  local grid=p.character.grid
-  out.player.equipment={}
+  local grid=ch and ch.grid
+  out.player.equipment=ch and {} or nil
   if grid then
     for _,e in pairs(grid.equipment) do
       if a.equipment then
@@ -7152,11 +7156,71 @@ function M.pick_source(p,a,verb)
   if verb=='collect' then out.direction=nil end
   return out
 end
+-- Several items at one entity use one reach check and, when needed, one walk.
+-- Validate the entire map before moving anything; each item reports its own shortfall.
+function M.transfer_items_one(p,a,e)
+  local rows,items,total,asked,fresh,errors={},{},0,0,nil,0
+  local names={}
+  for name in pairs(a.items) do names[#names+1]=name end
+  table.sort(names)
+  for _,name in ipairs(names) do
+    local args={}
+    for k,v in pairs(a) do args[k]=v end
+    args.items=nil; args.item=name; args.count=a.items[name]
+    if args.up_to==true then args.up_to=nil; args.partial=true end
+    local ok,out=pcall(transfer_one,p,args,nil,e)
+    local moved=ok and out.transferred or 0
+    local row={item=name,requested=args.count,transferred=moved}
+    if ok then
+      for k,v in pairs(out) do if k~='transferred' and k~='fresh' then row[k]=v end end
+      if out.fresh then fresh=M.fresh_merge(fresh or {},out.fresh) end
+    else row.error=reason(out); errors=errors+1 end
+    if moved<args.count then row.missing=args.count-moved end
+    rows[#rows+1]=row; total=total+moved; asked=asked+args.count
+    if moved>0 then items[#items+1]={name=name,count=moved,quality=a.quality} end
+  end
+  if errors==#rows then error(string.format('all %d items failed, nothing moved; first %s: %s',errors,rows[1].item,rows[1].error),0) end
+  return {transferred=total,requested=asked,items=items,entries=rows,direction=a.direction,fresh=M.fresh_list(fresh),
+    short=total<asked and {asked=asked,moved=total,missing=asked-total,reason='items_short'} or nil}
+end
+function M.transfer_items(p,a)
+  assert(type(a.items)=='table','items must be an item-to-count map')
+  assert(a.item==nil and a.count==nil and a.total==nil,'items supplies each item and count; item, count and total are exclusive with items')
+  assert(a.position~=nil and a.positions==nil and a.to==nil,'items without pick requires one position')
+  assert(a.direction=='to_entity' or a.direction=='to_player','items requires direction to_entity or to_player')
+  assert(a.walk==nil or type(a.walk)=='boolean','walk must be true or false')
+  assert(a.ticks==nil or a.walk==true,'ticks applies with walk')
+  assert(a.up_to==nil or a.up_to==true or type(a.up_to)=='number','up_to must be a number (target cap) or true (move what there is)')
+  if type(a.up_to)=='number' then integer(a.up_to,1,1,100000,'up_to') end
+  if a.keep~=nil then integer(a.keep,0,0,100000,'keep') end
+  assert(a.keep_max==nil or type(a.keep_max)=='boolean','keep_max must be true or false')
+  assert(a.quality==nil or (type(a.quality)=='string' and prototypes.quality[a.quality]),'unknown quality')
+  local n=0
+  for name,count in pairs(a.items) do
+    assert(type(name)=='string' and prototypes.item[name],'items keys must be item names: '..tostring(name))
+    integer(count,1,1,10000,'items.'..name); n=n+1
+  end
+  assert(n>=1 and n<=32,'items requires 1..32 item counts')
+  local e=entity(p,a,a.walk==true)
+  friendly(p,e)
+  if a.walk~=true or p.can_reach_entity(e) then return M.transfer_items_one(p,a,e) end
+  local args={}
+  for k,v in pairs(a) do args[k]=v end
+  args.walk=nil; args.ticks=nil; args.position=nil
+  local action,out=stock.start_tour(p,'transfer',{e},integer(a.ticks,3600,1,36000,'ticks'),
+    {transfer=args,rows={},items={},avoid_mode=a.avoid,avoid_enemies=a.avoid_enemies,unsafe_goal=a.unsafe_goal})
+  if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
+  state().active[p.index]=action
+  out.until_tick=action.until_tick; out.direction=a.direction; out.item_count=n
+  out.legs,out.legs_more=M.legs(p,action.targets)
+  return out
+end
 local transfer_directed
 function handlers.transfer(p,a)
   if a.pick~=nil then return M.pick_source(p,a,'transfer') end
   if a.from~=nil then return M.from_nearest(p,a) end
   assert(a.radius==nil,'radius goes with from: "nearest"')
+  if a.items~=nil then return M.transfer_items(p,a) end
   -- to on the entity position names, at another of its tiles (a 9x9 silo): the one entity named twice, a give there.
   if a.items==nil and a.to~=nil and a.position~=nil and a.positions==nil and (a.direction==nil or a.direction=='to_entity') then
     local ok,e,there=pcall(function()
@@ -7175,8 +7239,8 @@ function handlers.transfer(p,a)
     end
   end
   -- (Muse, shift11 17:18: to beside position, four times in a rocket load)
-  if a.items~=nil or a.to~=nil then
-    error('items and to go with pick (pick + positions + item or items + to: take at the first listed place holding it, give at to); for this call: '
+  if a.to~=nil then
+    error('to goes with pick (pick + positions + item or items + to: take at the first listed place holding it, give at to); for this call: '
       ..M.transfer_example(a),0)
   end
   assert(a.walk==nil or type(a.walk)=='boolean','walk must be true or false')
@@ -9301,6 +9365,7 @@ local conditions=conditions_module{known=known,position=position,passing=functio
   platform_where=function(pl) return M.freight and M.freight.where(pl) end}
 scheduler=scheduler_module{
   state=state,player=player,handlers=handlers,timed=M.timed,
+  check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
   condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) return check_args(action,args) end,validate_condition=function(c) return conditions.validate(c) end,
   fix_args=function(action,args) return M.aliases.fix(action,args,M.takes) end,
   simulate=function(p,items) return M.rocketload.simulate(p,items) end,
@@ -10649,7 +10714,8 @@ stock=stock_module{distance=distance,integer=integer,position=position,claims=M.
       end
       -- Read before the take: a corpse emptied by it is gone after (recover).
       local epos,ename=e.position,e.name
-      local out=transfer_one(p,t,nil,e)
+      local out=t.items and M.transfer_items_one(p,t,e) or transfer_one(p,t,nil,e)
+      if t.items then action.entries=out.entries; action.short=out.short end
       -- The moved batch's spoilage over the tour (the courier's take leg only: its give moves the same items).
       if out.fresh and not (action.legs and action.index>1) then action.fresh=M.fresh_merge(action.fresh or {},out.fresh) end
       local moved=t.item and {{name=t.item,count=out.transferred,quality=t.quality}} or out.items or {}
@@ -10667,7 +10733,7 @@ stock=stock_module{distance=distance,integer=integer,position=position,claims=M.
         return {transferred=out.transferred,stop=out.transferred==0 and 'nothing_collected' or nil}
       end
       local stop
-      if t.direction=='to_entity' and held(p,t.item,t.quality)==0 and crafting_count(p,t.item)==0 and action.targets[action.index+1] then stop='out_of_items' end
+      if t.item and t.direction=='to_entity' and held(p,t.item,t.quality)==0 and crafting_count(p,t.item)==0 and action.targets[action.index+1] then stop='out_of_items' end
       return {transferred=out.transferred,inventory_full=t.direction=='to_player' and out.inventory_full or nil,stop=stop}
     end
     local args={direction='to_entity',item=action.item,quality=action.quality,count=action.count,up_to=action.count,

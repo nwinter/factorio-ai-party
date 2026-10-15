@@ -220,7 +220,7 @@ return function(api)
   M.PLATFORM_ACTIONS = {'place_ghosts', 'deconstruct', 'cancel_deconstruction', 'paste', 'blueprint_place', 'grid', 'scan', 'inspect',
     'configure', 'flush', 'circuit_set', 'circuit', 'wire', 'ports', 'cargo', 'trace', 'power', 'conflicts'}
   M.SURFACE_ACTIONS = {'inspect', 'circuit_set', 'circuit', 'wire', 'ores', 'launch', 'configure', 'silo', 'preflight', 'requests',
-    'place_ghosts', 'scan', 'conflicts', 'deconstruct', 'cancel_deconstruction'}
+    'place_ghosts', 'scan', 'conflicts', 'deconstruct', 'cancel_deconstruction', 'trace'}
   M.ABOARD_NOTE = 'every read (status, scan, inspect, science, supply, networks, platforms, map, ...: of the platform, or of a planet with surface=) but inventory and craftable; '
     .. 'tell, chat, say, operator, board and votes; research; platform_schedule, platform_create, requests (platform= or position=), drop (hub items down to the planet) and land; '
     .. 'by remote view with platform=NAME: ' .. table.concat(M.PLATFORM_ACTIONS, ', ') .. '; with surface=NAME (a planet): ' .. table.concat(M.SURFACE_ACTIONS, ', ')
@@ -391,7 +391,7 @@ return function(api)
   -- Aboard, the bot does what a player in the hub can: remote view.
   local ABOARD = {status=true, describe=true, platforms=true, platform_create=true, platform_schedule=true, land=true, drop=true, drops=true, game_alerts=true,
     review=true, networks=true, boilers=true, research=true, research_next=true, technologies=true, recipes=true, say=true, chat=true, confess=true, confessions=true, chronicle=true,
-    profile=true, clock=true, advance=true, sleep=true, sleep_check=true, wait_ticks=true, queue_status=true, queue_cancel=true,
+    profile=true, clock=true, advance=true, sleep=true, sleep_check=true, wait_ticks=true, queue_status=true, queue_cancel=true, queue_submit=true, queue_repeat=true, queue_edit=true, queue_resume=true,
     blueprint_import=true, blueprint_list=true, blueprint_export=true, blueprint_delete=true, cameras=true, profiles=true, ports=true, cargo=true}
   local ON_PLATFORM, ON_SURFACE = {}, {}
   for _, name in ipairs(M.PLATFORM_ACTIONS) do ON_PLATFORM[name] = true end
@@ -417,8 +417,6 @@ return function(api)
     if action == 'dry_run' and type(args.args) == 'table' then return M.check_action(index, args.action, args.args) end
     if ON_PLATFORM[action] and args.platform ~= nil then return end
     if ON_SURFACE[action] and args.surface ~= nil then return end
-    -- trace reads another surface with surface= (an item's routes there).
-    if action == 'trace' and args.surface ~= nil then return end
     if action == 'requests' and (args.platform ~= nil or args.position ~= nil) then return end
     if action == 'observe' and VIEWS[args.scope] then return end
     if api.read_only and api.read_only(action) and not BODY_READS[action] and not (action == 'observe' and BODY_READS[args.scope]) then return end

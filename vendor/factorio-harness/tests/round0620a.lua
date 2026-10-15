@@ -378,6 +378,10 @@ do
   eq(r.moved,0); eq(mods.get_item_count('productivity-module'),1)
   assert(r.short.why:find('assembling_machine_input refused productivity-module',1,true),r.short.why)
   assert(r.short.why:find('productivity-module 50',1,true),r.short.why)
+  r=astra('transfer',{position=e.position,items={['productivity-module']=1,['copper-plate']=1},direction='to_entity'})
+  eq(r.transferred,0); eq(mods.get_item_count('productivity-module'),1)
+  eq(r.entries[2].inventory,'assembling_machine_input')
+  assert(r.entries[2].entity_full.slots:find('assembling_machine_input refused productivity-module',1,true),r.entries[2].entity_full.slots)
   -- An empty biochamber input that rejects seeds must not be described as physically full.
   e.name='biochamber'; recipe={name='jellynut-processing',ingredients={{type='item',name='jellynut'}}}
   input=inventory(1); input.can_insert=function() return false end
@@ -400,5 +404,10 @@ do
   assert(r.delivery_note:find('trash unrequested on',1,true),r.delivery_note)
   assert(r.delivery_note:find('3 iron-plate reserved',1,true),r.delivery_note)
   assert(r.delivery_note:find('rocket-silo (1,8)',1,true),r.delivery_note)
+  fill(main,'iron-plate',2)
+  r=astra('transfer',{position=req.position,items={['iron-plate']=2,['copper-plate']=1},direction='to_entity'})
+  eq(r.transferred,3)
+  assert(r.entries[2].delivery_note:find('3 iron-plate reserved',1,true),r.entries[2].delivery_note)
+  assert(r.entries[1].delivery_note:find('rocket-silo (1,8)',1,true),r.entries[1].delivery_note)
 end
 print('round0620a: ok')

@@ -290,7 +290,7 @@ bodies[2]=nil
 hubinv=inv({})
 eq(supply_read(p,{item=AC,surface='vulcanus'}).where,'none on vulcanus')
 -- Checks.
-local ok,err=pcall(S.supply,p,{item='advanced-circuitt'}); assert(not ok and tostring(err):find('item must be an item name',1,true),err)
+local ok,err=pcall(S.supply,p,{item='advanced-circuitt'}); assert(not ok and tostring(err):find('item must be an item or fluid name',1,true),err)
 -- radius alone looks around you (round1650d: Grok's supply {item, radius: 120} was refused twice in shift13);
 -- on another surface it still needs near.
 ok,err=pcall(S.supply,p,{item=AC,radius=10}); assert(ok and type(err)=='table' and err.item==AC,tostring(err))
@@ -387,6 +387,37 @@ do
   assert(table.concat(t.networks,' '):find('no idle robots',1,true))
   c18.valid=false
 end
+-- friction6: fluids count whole connected segments once, use fluid statistics,
+-- keep current reads to visible chunks, and expose bounded search coverage.
+do
+  prototypes.fluid=prototypes.fluid or {}; prototypes.fluid.water={}
+  local visible_calls,stats_calls=0,0
+  local f={name='player',is_chunk_visible=function(_,c) visible_calls=visible_calls+1; return c.x==0 end,
+    get_fluid_production_statistics=function() stats_calls=stats_calls+1; return {get_flow_count=function(a) return a.category=='input' and 300.5 or 100.25 end} end}
+  local function pipe(x,id,amount)
+    local b={{name='water',amount=amount}}
+    b.get_fluid_segment_id=function() return id end
+    b.get_fluid_segment_contents=function() return {water=amount} end
+    b.get_capacity=function() return 1000 end
+    return {type='pipe',name='pipe',position={x=x,y=0},fluidbox=b,status='working'}
+  end
+  local first,shared,hidden=pipe(0,1,300.5),pipe(1,1,300.5),pipe(64,2,900)
+  local maker=pipe(2,1,300.5); maker.type='assembling-machine'; maker.name='chemical-plant'
+  maker.get_recipe=function() return {products={{type='fluid',name='water'}},ingredients={}} end
+  local user=pipe(3,3,50); user.type='boiler'; user.name='boiler'; user.status='no_fuel'
+  user.prototype={fluidbox_prototypes={{filter={name='water'},production_type='input'}}}
+  local filter
+  local s={name='fluid-surface',find_entities_filtered=function(q) filter=q; return {first,shared,hidden,maker,user} end}
+  local S=dofile('mod/agent-harness_0.1.0/supply.lua'){status_name=function(e) return e.status end}
+  local r=S.supply_fresh(s,f,'water',{position={x=0,y=0},radius=10})
+  eq(r.stored,350.5); eq(r.capacity,2000); eq(r.segments_count,2); eq(r.segments[1].amount,300.5)
+  eq(r.made_10min,300.5); eq(r.used_10min,100.25); eq(stats_calls,1)
+  eq(r.makers.count,1); eq(r.users.count,1); eq(r.users.states.no_fuel,1)
+  eq(r.counted.visible,4); eq(r.counted.found,5); eq(visible_calls,2); eq(filter.limit,2048); eq(filter.radius,10)
+  assert(r.scope:find('including parts outside',1,true)); eq(r.unit,'fluid units')
+end
+
+
 -- The spread (Sol, 22:25: a chest of 1846 agricultural packs showed the oldest at 91% while hundreds were at
 -- 15-30%): over every place read, and each of the largest chests' own.
 do

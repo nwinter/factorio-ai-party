@@ -50,10 +50,10 @@ has(r.groups[1],'feeders: 3 inserters (1 lab-to-lab)')
 has(r.groups[1],'1 idle: source transport-belt (0,-3) has nothing the lab needs')
 has(r.groups[1],'no logistic on their 1 belts/chests')
 has(r.groups[1],'sources hold automation 12')
-has(r.groups[2],'labs (60,60)-(60,60): 0/1 working, 1 no_power, lack automation (1), logistic (1); feeders: no inserters feed these labs')
+has(r.groups[2],'labs (60,60)-(60,60): 0/1 working, 1 no_power, lack automation (1), logistic (1); feeders: no visible inserters feed these labs')
 -- Nothing researching, nothing working.
 force.current_research=nil
-eq(L.view(p,{}).research,'none: nothing queued (fh call research technology=NAME)')
+eq(L.view(p,{}).research,'none: nothing queued')
 force.current_research=tech; a1.status=2
 has(L.view(p,{}).research,'stalled: no lab is working')
 
@@ -224,4 +224,26 @@ do
   local c4=S2.chain({crafters={},miners={pump}},force,surface,'water')
   has(c4.line,'water: 1 offshore-pump (1 working),')
 end
+-- friction6: surface-only scans have no caller-centred radius; current inventory reads need visibility.
+do
+  local searched
+  local remote_surface={name='remote-labs',find_entities_filtered=function(f) searched=f; return f.type=='lab' and {a1,b1} or {} end}
+  game.get_surface=function(name) return name=='remote-labs' and remote_surface end
+  force.is_chunk_visible=function(s,c) assert(s==remote_surface); return c.x==0 end
+  local L=dofile('mod/agent-harness_0.1.0/labs.lua'){
+    center=function(p,a) assert(p.surface==remote_surface); return a.position or p.position end,
+    integer=function(v,d) return v or d end,status_name=function(e) return names[e.status] end}
+  local r=L.view(p,{surface='remote-labs'})
+  eq(r.surface,'remote-labs'); eq(r.position,nil); eq(r.radius,nil); eq(r.labs,'1 in 1 groups')
+  r=L.view(p,{surface='remote-labs',position={x=0,y=0},radius=8})
+  eq(r.position.x,0); eq(r.radius,8)
+  local ok,err=pcall(L.view,p,{surface='remote-labs',radius=8})
+  assert(not ok and tostring(err):find('requires position',1,true),tostring(err))
+  ok,err=pcall(L.view,p,{surface='absent'}); assert(not ok and tostring(err):find('no surface absent',1,true))
+  local hidden=belt(64,0,{{name=green,count=9}})
+  local feeder=inserter(1,0,3,hidden,a1)
+  remote_surface.find_entities_filtered=function(f) return f.type=='lab' and {a1} or {feeder} end
+  has(L.view(p,{surface='remote-labs'}).groups[1],'pickup target outside visible chunks')
+end
+
 print('labs: ok')

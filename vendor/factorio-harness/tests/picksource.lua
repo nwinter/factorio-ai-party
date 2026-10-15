@@ -274,7 +274,7 @@ fails(function() luna('transfer',{item='yumako-seed',pick='first_with_stock'}) e
 fails(function() luna('transfer',{positions={yumako.position},pick='first_with_stock'}) end,'pick needs item or items')
 fails(function() luna('transfer',{positions={yumako.position},item='yumako-seed',pick='nearest'}) end,'pick is first_with_stock or most_stock')
 fails(function() luna('transfer',{positions={yumako.position},items={'yumako-seed','iron-plate'},pick='most_stock',to=to}) end,'to has no destination {x,y} for iron-plate')
-fails(function() luna('transfer',{positions={yumako.position},item='yumako-seed',to=to}) end,'items and to go with pick')
+fails(function() luna('transfer',{positions={yumako.position},item='yumako-seed',to=to}) end,'to goes with pick')
 fails(function() luna('transfer',{positions={yumako.position},item='yumako-seed',direction='to_entity',pick='most_stock'}) end,'direction to_player')
 -- 9. Operator 08:01 (Muse: the moved/inventory line only partly there): queue steps and standing orders (both run
 -- in the queue) carry moved and inv in their history entries, a step done at once and a timed one when it ends.
@@ -384,6 +384,42 @@ advance(3)
 last=luna('status').last
 eq(last.outcome,'transferred'); eq(fuel_inv.get_item_count('coal'),10); eq(coal_chest.inv.get_item_count('coal'),10)
 
+-- friction6: two item counts, one target; validate before any move, then report each result.
+do
+  body.position={x=50,y=32}
+  local target=chest({x=50.5,y=32.5},{['iron-plate']=7,coal=3})
+  target.get_fuel_inventory=function() return nil end
+  local before=main.get_item_count('iron-plate')
+  fails(function() luna('transfer',{position=target.position,direction='to_player',items={['iron-plate']=4,coal=-1}}) end,'items.coal')
+  eq(main.get_item_count('iron-plate'),before)
+  fails(function() luna('transfer',{position=target.position,items={coal=1}}) end,'items requires direction')
+  fails(function() luna('transfer',{position=target.position,direction='to_player',item='coal',items={coal=1}}) end,'exclusive with items')
+  local r=luna('transfer',{position=target.position,direction='to_player',items={['iron-plate']=5,coal=8},up_to=true})
+  eq(r.transferred,8); eq(r.requested,13); eq(#r.entries,2); eq(r.entries[1].item,'coal'); eq(r.entries[1].missing,5)
+  eq(r.entries[2].transferred,5); eq(r.short.missing,5)
+  local give=luna('transfer',{position=target.position,direction='to_entity',items={['iron-plate']=2,coal=2}})
+  eq(give.transferred,4); eq(target.inv.get_item_count('iron-plate'),4); eq(target.inv.get_item_count('coal'),2)
+  -- One walk, also in a queue, without replacing the following step.
+  body.position={x=0,y=32}
+  luna('queue_submit',{mode='replace',steps={{action='transfer',args={position=target.position,direction='to_player',items={['iron-plate']=4,coal=2},walk=true}},
+    {action='wait_ticks',args={ticks=10}}}})
+  advance(1)
+  eq(luna('status').active.kind,'gather')
+  body.position={x=50,y=32}; advance(3)
+  local last=luna('status').last
+  eq(last.transferred,6); eq(#last.entries,2); eq(last.items.coal,2); eq(last.items['iron-plate'],4)
+  eq(luna('queue_status').active.action,'wait_ticks')
+  luna('queue_cancel',{})
+  -- Full inventory and per-item inventory errors are explicit; nothing disappears.
+  target.inv.insert{name='wood',count=1600}
+  r=luna('transfer',{position=target.position,direction='to_entity',items={['iron-plate']=1,coal=1}})
+  eq(r.transferred,0); eq(r.short.missing,2); assert(r.entries[1].entity_full)
+  eq(r.entries[1].entity_full.inventory,'chest')
+  assert(r.entries[1].entity_full.slots:find('chest refused coal;',1,true),r.entries[1].entity_full.slots)
+  fails(function() luna('transfer',{position=target.position,direction='to_entity',inventory='rocket_silo_rocket',items={['iron-plate']=1,coal=1}}) end,
+    'all 2 items failed, nothing moved; first coal:')
+end
+
 -- The moved batch's spoilage (Sol, 22:25: choosing 2000 fresh agricultural packs for Aquilo): the spread of what moved,
 -- and for a pack the running research takes, how many a unit it takes and its units left. A take, then a courier tour.
 do
@@ -416,6 +452,18 @@ do
   eq(fl[1]:match('^[^;]*'),'agricultural-science-pack*100: spoiled 40%, 40% by count')
   assert(fl[1]:find('the running research agricultural-science-pack-research takes 1 a unit',1,true),fl[1])
   eq(runtime.fresh_inv(force,packs.inv,{coal=true}),nil,'none of the named items')
+  -- friction6 batches preserve the merged freshness reply, directly and after one walk.
+  local batch=luna('transfer',{position=packs.position,direction='to_player',items={[A]=100,coal=1},up_to=true})
+  eq(batch.transferred,100); eq(batch.entries[1].fresh,nil)
+  assert(batch.freshness[1]:find(A..'*100: spoiled 40%',1,true),batch.freshness[1])
+  main.remove{name=A,count=100}; put(1,40,0.2,90*3600)
+  body.position={x=0,y=32}
+  luna('transfer',{position=packs.position,direction='to_player',items={[A]=40,coal=1},up_to=true,walk=true})
+  body.position={x=50,y=32}; advance(3)
+  last=luna('status').last
+  eq(last.transferred,40)
+  assert(last.freshness[1]:find(A..'*40: spoiled 20%',1,true),last.freshness[1])
+  main.remove{name=A,count=40}
   packs.inv[2].clear()
   force.current_research=nil
   yfarm.inv.remove{name=A,count=50}

@@ -1260,13 +1260,13 @@ return function(api)
   M.helpers = {inventory=inventory, count=count, input_of=input_of, output_of=output_of, recipe_of=recipe_of, kind_of=kind_of,
     main=function(e) return inventory(e, MAIN[e.type] or 'chest') end}
 
-  M.schema = {supply = {item='item name', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole',
+  M.schema = {supply = {item='item or fluid name; fluids return 10-minute flow, connected segment stock/capacity, makers and users by status', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole; fluid segments touching it include their whole connected stock',
     radius='with near: 1..512 tiles (default 64); alone: that far around you, on your surface',
     returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); chests (largest 5; what a requester or buffer chest asks for); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); freshness (its spread over every place read: count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; chests adds each one\'s least and most spoiled and count-weighted %); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
 
   function M.supply(p, a)
     local item = a.item
-    assert(type(item) == 'string' and prototypes.item[item], 'item must be an item name (advanced-circuit, electronic-circuit, ...)')
+    assert(type(item) == 'string' and (prototypes.item[item] or (prototypes.fluid and prototypes.fluid[item])), 'item must be an item or fluid name')
     local surface = p.surface
     if a.surface ~= nil then
       assert(type(a.surface) == 'string', 'surface must be a surface name')
@@ -1287,6 +1287,7 @@ return function(api)
     return M.reuse(key, function() return M.supply_fresh(surface, force, item, area) end)
   end
   function M.supply_fresh(surface, force, item, area)
+    if prototypes.fluid and prototypes.fluid[item] then return M.fluid_supply(surface,force,item,area) end
     local packs = packs_of(force)
     local scan = M.scan(surface, force, {[item]=true}, {area=area, packs=packs})
     local t = scan.items[item]
@@ -1322,6 +1323,96 @@ return function(api)
     local spread = t.spread and t.spread[1]
     if spread and api.spoil and api.spoil.spread_text then out.freshness = api.spoil.spread_text(spread) end
     return out
+  end
+  -- The fluid GUI shows the whole connected segment. Count it once even when
+  -- several pipes, tanks or machine ports in the search belong to that segment.
+  function M.fluid_supply(surface,force,fluid,area)
+    local cap=2048
+    local found=surface.find_entities_filtered{force=force,position=area and area.position,radius=area and area.radius,
+      type={'pipe','pipe-to-ground','storage-tank','pump','offshore-pump','assembling-machine','furnace','rocket-silo',
+        'mining-drill','boiler','generator','fluid-wagon','thruster','fusion-reactor','fusion-generator'},limit=cap}
+    local seen,visible,segments={},{},{}
+    local makers,users={count=0,states={},examples={}},{count=0,states={},examples={}}
+    local total,capacity,read,n=0,0,0,0
+    local platform=surface.platform
+    local own_platform=platform and platform.force==force
+    local function in_view(pos)
+      if own_platform then return true end
+      local cx,cy=math.floor(pos.x/32),math.floor(pos.y/32)
+      visible[cx]=visible[cx] or {}
+      if visible[cx][cy]==nil then visible[cx][cy]=force.is_chunk_visible(surface,{x=cx,y=cy}) end
+      return visible[cx][cy]
+    end
+    local function before(a,b)
+      if a.amount~=b.amount then return a.amount>b.amount end
+      if a.id and b.id then return a.id<b.id end
+      if a.at.position.x~=b.at.position.x then return a.at.position.x<b.at.position.x end
+      return a.at.position.y<b.at.position.y
+    end
+    local function add(role,e)
+      role.count=role.count+1
+      local status=api.status_name(e) or 'unknown'
+      role.states[status]=(role.states[status] or 0)+1
+      if #role.examples<5 then role.examples[#role.examples+1]={name=e.name,position=e.position,status=status} end
+    end
+    for _,e in ipairs(found) do
+      local pos,kind=e.position,e.type
+      if in_view(pos) then
+        read=read+1
+        local boxes=e.fluidbox
+        for i=1,boxes and #boxes or 0 do
+          local id=boxes.get_fluid_segment_id(i)
+          local key=id or tostring(e.unit_number or at(pos))..':'..i
+          if not seen[key] then
+            seen[key]=true
+            local contents=boxes.get_fluid_segment_contents(i)
+            local f=not contents and boxes[i]
+            local amount=contents and contents[fluid] or (f and f.name==fluid and f.amount) or 0
+            if amount>0 then
+              local volume=boxes.get_capacity(i)
+              total=total+amount; capacity=capacity+volume
+              n=n+1
+              local row={id=id,amount=amount,capacity=volume,at={position=pos}}
+              if #segments<8 or before(row,segments[#segments]) then
+                row.at.name=e.name
+                segments[#segments+1]=row
+                table.sort(segments,before)
+                if #segments>8 then table.remove(segments) end
+              end
+            end
+          end
+        end
+        local makes,uses=false,false
+        local recipe=(kind=='assembling-machine' or kind=='furnace' or kind=='rocket-silo') and recipe_of(e)
+        if recipe then
+          for _,v in ipairs(recipe.products or {}) do if v.type=='fluid' and v.name==fluid then makes=true end end
+          for _,v in ipairs(recipe.ingredients or {}) do if v.type=='fluid' and v.name==fluid then uses=true end end
+        elseif kind=='mining-drill' or kind=='offshore-pump' then
+          local products,required=miner_products(e)
+          for _,name in ipairs(products) do if name==fluid then makes=true end end
+          uses=required==fluid
+        elseif kind~='pipe' and kind~='pipe-to-ground' and kind~='pump' and kind~='storage-tank' and kind~='fluid-wagon' then
+          for _,box in ipairs(try(function() return e.prototype.fluidbox_prototypes end) or {}) do
+            local filter=box.filter
+            if filter and filter.name==fluid then
+              makes=makes or box.production_type=='output'; uses=uses or box.production_type=='input'
+            end
+          end
+        end
+        if makes then add(makers,e) end
+        if uses then add(users,e) end
+      end
+    end
+    local stats=force.get_fluid_production_statistics(surface)
+    local function flow(category)
+      return stats.get_flow_count{name=fluid,category=category,precision_index=defines.flow_precision_index.ten_minutes,count=true}
+    end
+    local made,used=flow('input'),flow('output')
+    return {item=fluid,fluid=fluid,surface=surface.name,unit='fluid units',area=area,
+      made_10min=made,used_10min=used,flow=string.format('made %g, used %g in the last 10 min on %s',made,used,surface.name),
+      stored=total,capacity=capacity,segments_count=n,segments=segments,makers=makers,users=users,
+      scope='whole connected segments containing this fluid at visible entities in the search; each segment counted once, including parts outside the search area; at most 8 largest segments shown',
+      counted={found=#found,visible=read,limit=cap,limited=#found>=cap}}
   end
   return M
 end

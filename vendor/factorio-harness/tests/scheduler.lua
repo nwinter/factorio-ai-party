@@ -306,6 +306,34 @@ do
   check(rounds==2 and s.plan.kind=='repeat' and s.history[#s.history].action=='loop_done')
   h.queue_cancel(p,{})
 end
+-- friction6: validation identifies the step/action/label and nested guard path, without changing the queue.
+do
+  local state={}
+  local s=factory{state=function() return state end,handlers=handlers,stop=function() end,
+    check_args=function(_,a) assert(not (a and a.on_short),'unknown argument on_short') end,
+    validate_condition=function(c) assert(c and c['until']=='ready','until must be ready') end,
+    fix_args=function(action,a) if a and a.ticks_alias then return action,{ticks=a.ticks_alias},nil end return action,a end}
+  local h=s.handlers
+  h.queue_submit(p,{steps={{action='craft'}},start=false})
+  local before=h.queue_status(p).revision
+  local function bad(a,needle)
+    local ok,err=pcall(h.queue_submit,p,a)
+    assert(not ok and tostring(err):find(needle,1,true),tostring(err))
+    assert(h.queue_status(p).revision==before and h.queue_status(p).pending_count==1)
+  end
+  bad({steps={{action='craft'},{action='inspect',label='checkpoint'}}},'steps[2] (inspect, label "checkpoint"): action is not queueable')
+  bad({steps={{action='craft',args={on_short='skip'}}}},'steps[1] (craft): args: unknown argument on_short')
+  bad({steps={{action='craft',label=string.rep('x',65)}}},'label must be a string of at most 64 bytes')
+  bad({steps={{action='craft',label=string.rep('箱',22)}}},'label 66 bytes')
+  bad({steps={},guards={{when={['until']='bad'}}}},'guards[1]: when: until must be ready')
+  bad({steps={},guards={{when={['until']='ready'},steps={{action='inspect'}}}}},'guards[1]: steps[1] (inspect)')
+  local ok,err=pcall(h.queue_repeat,p,{condition={['until']='bad'},steps={{action='craft'}}})
+  assert(not ok and tostring(err):find('condition: until must be ready',1,true),tostring(err))
+  assert(h.queue_status(p).revision==before and h.queue_status(p).pending_count==1)
+  local q=h.queue_submit(p,{steps={{action='wait_ticks',args={ticks_alias=5}}}})
+  assert(q.pending[2].args.ticks==5,'validation uses the normalized args')
+end
+
 -- Round 00:20: explicit queue precedence and condition-ended carry rounds.
 do
   h.queue_repeat(p,{name='plate-haul',interval_ticks=60,steps={{action='wait_until',args={['until']='stock',timeout=500}},{action='craft'}}})
