@@ -164,13 +164,14 @@ return function(api)
         local list = n.samples[id] or {}
         n.samples[id] = list
         -- What the network's accumulators hold at this sample (Astra, shift14 22:50: a series over a Fulgora day took
-        -- ~15 single reads): the ones the last view found, read now.
+        -- ~15 single reads): the ones the last view found, read now (plain reads of valid accumulators: 0.09 ms for
+        -- Fulgora's 203 on a copy of world n, 0.2-0.6 ms with a pcall each).
         local refs = n.acc_refs and n.acc_refs[id]
         local acc_j, acc_buf
         if refs then
           acc_j, acc_buf = 0, 0
           for _, e in ipairs(refs) do
-            if e.valid then acc_j, acc_buf = acc_j + (try(function() return e.energy end) or 0), acc_buf + (try(function() return e.electric_buffer_size end) or 0) end
+            if e.valid then acc_j, acc_buf = acc_j + e.energy, acc_buf + e.electric_buffer_size end
           end
         end
         list[#list+1] = {tick=game.tick, kw=kw, by=by, acc=acc, acc_j=acc_j, acc_buf=acc_buf}
@@ -340,7 +341,7 @@ return function(api)
     if not list or #list == 0 then return r.acc_j end
     local j, k = 0, 0
     for _, e in ipairs(list) do
-      if e.valid then j, k = j + (try(function() return e.energy end) or 0), k + 1 end
+      if e.valid then j, k = j + e.energy, k + 1 end
     end
     if k == 0 then return r.acc_j end
     return k < r.acc and j * r.acc / k or j
