@@ -248,12 +248,22 @@ eq(b.plan.goals,'Robots by hour 3; oil next'); eq(#b.plan.doing,2)
 for _,i in ipairs(b.items) do assert(i.kind~='plan') end
 eq(astra('board',{mine=true}).plan,nil)
 eq(astra('board',{kind='plan'}).plan.id,b.plan.id)
--- Clearing: "" removes a line or the goals.
+-- Clearing: "" removes a line; clear: true the goals.
 r=sol('board_plan',{doing=''})
 eq(#r.plan.doing,1); eq(r.plan.doing[1],'astra: roboports along the bus (set by sol)')
-r=sol('board_plan',{goals=''})
+-- Empty goals without clear: true are refused, naming them (Opus, shift17 12:20).
+local ok,err=pcall(sol,'board_plan',{goals=''})
+assert(not ok and err:find('goals is empty and clear: true is not set: nothing changed. The goals are "Robots by hour 3; oil next" (set by',1,true)
+  and err:find('board_plan {clear: true} (fh board plan goals "") clears them',1,true),tostring(err))
+eq(sol('board_plan',{}).plan.goals,'Robots by hour 3; oil next')
+fails(function() sol('board_plan',{goals='   '}) end,'goals is empty')
+fails(function() sol('board_plan',{goals='x',clear=true}) end,'it does not go with goals text')
+fails(function() sol('board_plan',{clear='yes'}) end,'clear must be true or false')
+r=sol('board_plan',{clear=true})
 eq(r.plan.goals,nil)
-eq(sol('board_plan',{goals=''}).changed,false)
+eq(sol('board_plan',{goals='',clear=true}).changed,false)
+ok,err=pcall(sol,'board_plan',{goals=''})
+assert(not ok and err:find('The plan has no goals',1,true),tostring(err))
 -- One plan: never posted, no status or owner changes, notes fine.
 fails(function() sol('board_post',{kind='plan',title='x'}) end,'the team plan is one item')
 fails(function() sol('board_update',{id=b.plan.id,status='done'}) end,'the team plan changes with board_plan')

@@ -91,4 +91,29 @@ eq(W.handlers.sleep(p,{seconds=900}).sleeping_s,900); s.remote_queues=nil
 -- A paused queue does not count as running.
 s.queues={[1]={paused=true,pending={{action='mine'}},history={}}}
 r=W.handlers.sleep(p,{seconds=900}); eq(r.sleeping_s,300); has(r.while_asleep,'your queue is paused with 1 steps pending'); s.queues=nil
+-- A standing order's rounds (Opus, shift17 12:20: about 30 sleeps woke on copper-fuel rounds): a sleep begun while one
+-- runs is not ended when the round finishes, and it is not capped (the character works); wake_on_orders ends it; the
+-- agent's own plan still does.
+game.tick=game.tick+5000
+s.queues={[1]={pending={{action='refuel'}},history={},order={name='copper-fuel'}}}
+r=W.handlers.sleep(p,{seconds=900})
+eq(r.sleeping_s,900); eq(r.capped,nil)
+eq(r.while_asleep,'your standing order copper-fuel runs in your queue (1 steps pending); its rounds do not end this sleep (wake_on_orders: true ends it on them)')
+assert(not r.wakes_on:find('queue',1,true),r.wakes_on)
+s.queues[1].pending={}; s.queues[1].order=nil
+game.tick=game.tick+60
+eq(W.handlers.sleep_check(p,{peek=true}).woke,nil,'the round finished: still asleep')
+s.queues={[1]={pending={{action='refuel'}},history={},order={name='copper-fuel'}}}
+r=W.handlers.sleep(p,{seconds=900,wake_on_orders=true})
+s.queues[1].pending={}; s.queues[1].order=nil
+game.tick=game.tick+60
+eq(W.handlers.sleep_check(p,{peek=true}).woke,'queue_done')
+-- the agent's own plan: ends it as before
+game.tick=game.tick+1000
+s.queues={[1]={pending={{action='mine'}},history={}}}
+W.handlers.sleep(p,{seconds=900})
+s.queues[1].pending={}
+game.tick=game.tick+60
+eq(W.handlers.sleep_check(p,{peek=true}).woke,'queue_done')
+s.queues=nil
 print('open: ok')

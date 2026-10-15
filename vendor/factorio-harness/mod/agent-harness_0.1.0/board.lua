@@ -1047,11 +1047,21 @@ return function(api)
   end
   local function plan_edit(by, a)
     assert(a.agent == nil or a.doing ~= nil, 'agent goes with doing: board_plan {agent, doing}')
-    if a.goals == nil and a.doing == nil then
+    assert(a.clear == nil or type(a.clear) == 'boolean', 'clear must be true or false')
+    if a.goals == nil and a.doing == nil and a.clear ~= true then
       return {plan=M.plan_view() or false, note=not plan_item() and 'no team plan yet: board_plan {goals} starts it' or nil}
     end
     local goals = a.goals ~= nil and optional_text(a.goals, 'goals', PLAN_GOALS) or nil
-    local clear_goals = goals ~= nil and not goals:find('%S')
+    -- Empty goals clear them only with clear: true (Opus, shift17 12:20: `fh board plan goals` with no text wiped them).
+    local clear_goals = a.clear == true or (goals ~= nil and not goals:find('%S'))
+    assert(not (a.clear == true and goals and goals:find('%S')), 'clear: true clears the goals; it does not go with goals text')
+    if clear_goals and a.clear ~= true then
+      local cur = plan_item()
+      assert(false, 'goals is empty and clear: true is not set: nothing changed. '
+        .. (cur and cur.goals and ('The goals are "' .. cur.goals .. '" (set by ' .. tostring(cur.edited_by) .. ', '
+          .. ago(game.tick - (cur.goals_tick or cur.updated_tick or game.tick)) .. ' ago)') or 'The plan has no goals')
+        .. '; board_plan {clear: true} (fh board plan goals "") clears them')
+    end
     if clear_goals then goals = nil end
     local doing = a.doing ~= nil and optional_text(a.doing, 'doing', PLAN_LINE) or nil
     local agent = a.agent ~= nil and resolve(a.agent) or by
@@ -1197,7 +1207,8 @@ return function(api)
       plan_ticks='boolean: the plan also as lines [{agent, text, by, tick}] (the tick each line was set), goals_tick and updated_tick',
       projects='compact | full: the open projects\' lines in the plain listing; default full while they take at most 1200 bytes, else compact (projects_form says which): "#476 Aquilo landing [sol] 2/5; next 3. Ride the rocket | 4. Drop the kit @luna; blocked by #497 Starling retrofit (claimed, 1 of 4); part of #400 Aquilo; steps open to all". The listing also has open_steps: steps of projects with open_steps or no owner that nobody owns, and how to take one',
       returns='the plain read (no filter, no limit) lists active items only (open, claimed, doing, blocked) and says how many finished ones it left out (finished_left_out); plan (the team plan: goals, doing lines, last edit), projects (the plain listing: one line per open project, yours first: progress, owner, next step, handoff; the rows leave them out), items, matched, open_unowned (open task/request items nobody owns); a project row has progress ("3 of 7 steps"), goal, next_steps, areas, handoff and owner_state (its owner\'s last request); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus"); an open claim has owner_active (when its owner last posted, updated it, or made a request standing in it or acting on a position in it), stale=true after 30 min of that (labelled stale; teammates\' stock sweeps include its chests) and allow (agents its labels name as allowed; their stock sweeps include it while it is fresh); the harness enforces no other rule on a claim (who may remove or rebuild what is the team\'s own); after 2 h with no such activity the harness closes it (dropped)'},
-    board_plan = {goals='the team goals, 1..600 characters, replace the current ones ("" clears them)',
+    board_plan = {goals='the team goals, 1..600 characters, replace the current ones (empty is refused, naming the current goals; clear: true clears them)',
+      clear='boolean: true clears the goals (fh board plan goals "")',
       doing='one line of what an agent is on, 1..160 characters ("" removes the line)', agent='whose line doing sets (default you)',
       returns='the team plan: goals, doing (one line per agent, "(set by NAME)" when someone else wrote it), edited; with no arguments it only reads'},
     board_post = {kind='task|request|claim|note|project', title='1..120 characters (longer is cut)',
