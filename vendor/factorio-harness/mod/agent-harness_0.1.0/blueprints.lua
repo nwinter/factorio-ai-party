@@ -867,7 +867,11 @@ return function(api)
     end
     -- With tiles, entities are taken only when entity filters name them;
     -- they go first, so a tile under one marked now is not counted blocked.
-    if out.tiles and not (filters.entity_types or filters.entity_names) then deconstruct_tiles(p,a,box,cancel,out,dry); return out end
+    -- (a tiles-only dry run changes nothing and counts no entities)
+    if out.tiles and not (filters.entity_types or filters.entity_names) then
+      if dry then out.changed=nil end
+      deconstruct_tiles(p,a,box,cancel,out,dry); return out
+    end
     local list=candidates(p,box)
     local changed,by=0,{}
     for _, e in ipairs(list) do
