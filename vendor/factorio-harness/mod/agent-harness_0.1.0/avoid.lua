@@ -253,17 +253,23 @@ return function(api)
     end
     return blobs
   end
-  -- "3 big-worm-turret, 2 biter-spawner around (83,163)".
-  function M.name(b)
+  -- "3 big-worm-turret, 2 biter-spawner around (83,163)". structures: the worms and spawners alone, round their own
+  -- middle (recover dry_run's nests; an area under attack beside them is said apart).
+  function M.name(b, structures)
     local counts, names = {}, {}
+    local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
     for _, m in ipairs(b.members) do
-      if not counts[m.name] then names[#names+1] = m.name end
-      counts[m.name] = (counts[m.name] or 0) + 1
+      if not (structures and m.attack) then
+        if not counts[m.name] then names[#names+1] = m.name end
+        counts[m.name] = (counts[m.name] or 0) + 1
+        x0, y0, x1, y1 = math.min(x0, m.x), math.min(y0, m.y), math.max(x1, m.x), math.max(y1, m.y)
+      end
     end
+    if #names == 0 then return nil end
     table.sort(names)
     local parts = {}
     for i, n in ipairs(names) do parts[i] = counts[n] .. ' ' .. n end
-    return table.concat(parts, ', ') .. ' around ' .. at(b)
+    return table.concat(parts, ', ') .. ' around ' .. at(structures and {x=(x0 + x1) / 2, y=(y0 + y1) / 2} or b)
   end
   -- Whether the polyline passes through a member's reach (the blob is only
   -- the outline): the deepest pass (nearest to the weapon's own range) over
@@ -581,27 +587,57 @@ return function(api)
   -- its reach), d, spot (the nearest safe spot toward the goal from `from`,
   -- outside every disc: reach + margin), nest}. The chunks round the spot
   -- are read too, up to three rounds, so the spot clears what lies past them.
-  function M.goal_check(p, from, goal, mode)
-    if not mode or p.surface.platform ~= nil then return nil end
-    local surface, force = p.surface, p.force
-    local discs, have = {}, {}
-    local function read(point)
-      local chunks = M.chunks_near({point}, max_reach(mode))
-      local need = M.missing(surface, chunks)
-      if #need > 0 then M.scan(surface, force, need, #need) end
-      for _, bl in ipairs(M.blobs(surface, chunks, mode)) do
-        for _, m in ipairs(bl.members) do
-          local k = member_key(m)
-          if not have[k] then have[k] = true; m.blob = bl; discs[#discs+1] = m end
-        end
+  -- The weapons whose discs lie round point (chunks within R + the farthest reach), read now, into discs (each
+  -- member once: have holds their keys).
+  local function read_discs(p, mode, point, discs, have, R)
+    local chunks = M.chunks_near({point}, R or max_reach(mode))
+    local need = M.missing(p.surface, chunks)
+    if #need > 0 then M.scan(p.surface, p.force, need, #need) end
+    for _, bl in ipairs(M.blobs(p.surface, chunks, mode)) do
+      for _, m in ipairs(bl.members) do
+        local k = member_key(m)
+        if not have[k] then have[k] = true; m.blob = bl; discs[#discs+1] = m end
       end
     end
-    read(goal)
+  end
+  -- The weapon whose own reach holds goal deepest: {m, d}, nil when none.
+  local function deepest(discs, goal)
     local inside
     for _, m in ipairs(discs) do
       local d = dist(m, goal)
       if d < m.range and (not inside or d - m.range < inside.d - inside.m.range) then inside = {m=m, d=d} end
     end
+    return inside
+  end
+  -- goal_check's first step alone (round2120a: a tour checks each of its stops at the call): the weapon whose own
+  -- reach holds goal, {m, d, nest}, or nil; no safe spot is worked out.
+  function M.inside(p, goal, mode)
+    if not mode or p.surface.platform ~= nil then return nil end
+    local discs = {}
+    read_discs(p, mode, goal, discs, {})
+    local c = deepest(discs, goal)
+    return c and {m=c.m, d=c.d, nest=M.name(c.m.blob)} or nil
+  end
+  -- Every worm, spawner and area under attack now (as mode counts them) whose own reach comes within R tiles of
+  -- point, on the chunks the map draws, read now (recover dry_run, round2120a: the danger round a corpse):
+  -- {m, d (tiles from point), inside (point lies in its reach)}, the deepest first.
+  function M.near(p, point, mode, R)
+    if not mode or p.surface.platform ~= nil then return {} end
+    local discs, out = {}, {}
+    read_discs(p, mode, point, discs, {}, R + 48)
+    for _, m in ipairs(discs) do
+      local d = dist(m, point)
+      if d - m.range <= R then out[#out+1] = {m=m, d=d, inside=d < m.range} end
+    end
+    table.sort(out, function(x, y) return x.d - x.m.range < y.d - y.m.range end)
+    return out
+  end
+  function M.goal_check(p, from, goal, mode)
+    if not mode or p.surface.platform ~= nil then return nil end
+    local discs, have = {}, {}
+    local function read(point) read_discs(p, mode, point, discs, have) end
+    read(goal)
+    local inside = deepest(discs, goal)
     if not inside then return nil end
     local spot
     for _ = 1, 3 do

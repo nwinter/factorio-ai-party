@@ -758,6 +758,15 @@ fh call status
     `last.dangers` (the first 8), `last.first_unreached`: `(-114,-100): place (-114,-100) is within 24 tiles of
     attack #1696 at (-114,-98), an area under attack now (last hit 0s ago) (2.0 tiles from it) (unsafe_goal: true walks
     there)`; a tour that reached none ends `unreached` with it. The start reply says `avoid_enemies`.
+  - The tours check every stop at the call too (round2120a, Haiku, shift14 03:58: `rearm {surface: true}` walked her
+    into a big worm's range, the character and 50 explosives lost). A stop inside a worm's range, within 40 tiles of a
+    spawner or in an area under attack now is left out of the walk and named in the reply: `left_out` (the first 8,
+    `gun-turret (100,0) is inside big-worm-turret (120,0) range 38 (20.0 tiles from it)`), `left_out_more`, also in
+    `last.left_out`. rearm leaves them out before its clusters and its time. With every stop inside one the call is
+    refused, naming them: `every turret under 5 rounds of firearm-magazine there lies in enemy reach the map shows:
+    ...: unsafe_goal: true to go anyway, avoid_enemies: false for no check`. A courier (`transfer` or `collect` with
+    `pick`) with either place inside one is refused. The first 64 stops of a tour are checked at the call, the rest
+    when the walk comes to them.
   - `mine` of an entity inside a worm's range, within 40 tiles of a spawner or in an area under attack now is refused
     unless `unsafe_goal` (`the mining spot (50,50) is within 40 tiles of biter-spawner (50,20), its units' reach (30.0
     tiles from it): unsafe_goal: true to mine anyway; ...`).
@@ -1305,6 +1314,11 @@ fh sleep 900 --until researched                       # ...or until the research
 - An electric machine no pole reaches reads `status_name: unpowered` in `observe` and `scan` rows (whatever the
   engine's status, often `low_power`), with `power: "unpowered: no pole reaches it; nearest pole medium-electric-pole
   at (17,10), 7 tiles"` in `inspect` and in build replies.
+- A pole's electric network and wires (round2120a, Opus: a cut found only by walking 400 tiles of poles): `scan`
+  rows of our poles carry `network` (the electric network id) and `wires` (their copper neighbours' positions,
+  `(78.5,-176.5) (78.5,-188.5)`, or `none`), unasked; poles next to each other on different networks, or a pole with
+  one wire where a line goes on, show a break. `inspect` gives `electric_network_id` and, under `circuit.wires`, every
+  wire's far end (`copper`, `red`, `green`).
 - A burner whose burnt-result slot is full and that burns nothing reads `burnt_result_full`, whatever the engine's
   status (Sol, shift14 03:54: two agricultural science biochambers read working through repeated checks and made
   nothing, spoilage*200 in that slot). It shows in `scan` and `observe` rows (`status_name`, the `status` field, with
@@ -1805,7 +1819,7 @@ fh sleep 900 --until researched                       # ...or until the research
   drops newest first: `{id, by, to, platform, surface, items, ago, state, aimed_near, at, landed_in, container
   {name, position, holds} or {gone}, note}`.
 - `transfer {position, direction: "to_player"}` takes items from a character corpse (inventory `character_corpse`); an emptied corpse is removed. It never mines the corpse (mining a corpse as a bot crashes the server; the harness takes the items instead).
-- `recover {ticks?, avoid_enemies?, unsafe_goal?}` (Opus, shift12 15:20) walks to your own character corpses on your
+- `recover {ticks?, avoid_enemies?, unsafe_goal?, dry_run?}` (Opus, shift12 15:20) walks to your own character corpses on your
   surface, nearest first, and takes everything from each; an emptied corpse is removed. A corpse keeps everything the
   character carried (armor and guns too, which come back into the main inventory) and does not expire.
   - A bot's corpses are the ones its deaths left: the game names no player on a bot's corpse, so the harness finds it
@@ -1822,6 +1836,15 @@ fh sleep 900 --until researched                       # ...or until the research
     `avoid_enemies`). A corpse inside a worm's range (with `avoid_enemies: true`, a spawner's units' sight too) is left
     out (`left_out`: the corpse, the weapon and the nearest safe spot toward it); when that leaves none, the call is
     refused with the same text. `unsafe_goal: true` walks there anyway (`unsafe_goal` names it).
+  - `dry_run: true` walks nowhere (round2120a, Haiku: "recover needs a dry_run so I can see the corpse's danger before
+    walking"). A read: the running action and queue go on. Each corpse in `corpses`: `position`, `distance`, `died`,
+    `items`, `holds` (`explosives*50, firearm-magazine*19`), `walk` (`recover walks to it: ...`, or `left out by
+    recover: the corpse (110,0) is inside big-worm-turret (120,0) range 38 (10.0 tiles from it); the nearest safe spot
+    toward it: ...`), `danger` and `nests`. `danger` lists the worms whose range comes within 16 tiles of it and the
+    spawners whose units' reach does (`big-worm-turret (120,0): 10.0 tiles from it, range 38: the corpse lies inside
+    it`), then the attacks on our entities within 48 tiles of it in the last 10 minutes (`attack #1687 at (112,2): 2.8
+    tiles from it, 1 attacker seen (1 big-worm-turret), last hit 1s ago (under attack now)`); `none the map shows`
+    without any. `elsewhere` holds corpses on other surfaces.
 - Trash slots: a rocket silo, cargo landing pad and platform hub have one (`rocket_silo_trash`, `cargo_landing_pad_trash`,
   `hub_trash`) where the game puts items the entity will not use. `inspect` lists them in `inventories` and as one line
   (`trash: "40 space-platform-foundation, 7 solar-panel (in rocket_silo_trash, ...)"`); `platforms` shows a silo's `trash`.
@@ -2978,7 +3001,19 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   once a game minute while it grows (`losses #7 in ... continue: 40 destroyed (+28 since you were told): ...`);
   `on vulcanus` or `on platform Starling` when not on your surface; with what destroyed them: enemy kinds first, then
   our own force's entities with where they stand as `friendly fire: 2 flamethrower-turret at (80,90)` (`unknown
-  source` when the cause is gone and the killing force is ours); at most 8 lines; these replace the old top-level `losses` field; full landing pads spilling and piles of items on the ground
+  source` when the cause is gone and the killing force is ours); at most 8 lines; these replace the old top-level `losses` field; then up to 3
+  power cuts (powercut.lua, round2120a; Opus, shift14: a small pole at (78.5,-182.5) cut 20 drills and the uranium
+  line twice, found only by tracing): a pole of ours destroyed whose loss split its electric network or left machines
+  no other pole reaches, 5.5 s on (a 5 s power window wholly after it), told once to every agent and in `status
+  alerts` as `power_cuts`: `power cut #1: small-electric-pole (-193,-200) destroyed by big-biter 5s ago: split
+  electric network #57 in 2: #57 has power (120 kW); #212 has no power (31 poles, (60,-260)-(95,-185)): 20
+  electric-mining-drill, 6 inserter; no ghost of the pole there`. A part's power is its network's production over
+  the last 5 s; a part with none is traced along copper wires (up to 600 poles: `over 600 poles`) and its machines
+  counted from the traced poles' supply areas. `2 machines no other pole reaches have no power (x,y)-(x,y): ...` when
+  the pole alone reached them. The poles one raid kills next to each other count as one gap (`(with ...)`). The end
+  says `a ghost of the pole stands there`, `no ghost of the pole there`, or `joined again since (rebuilt or wired)`. A
+  split with power on every side, or with no machine on a side without, is no alert, nor is a pole whose network made
+  no power in the 5 s before (a part cut off already); full landing pads spilling and piles of items on the ground
   near our buildings, once each and again when grown by half; then up to 6 platform lines, below) and `reminders`
   (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
   request leaves the hints for later.

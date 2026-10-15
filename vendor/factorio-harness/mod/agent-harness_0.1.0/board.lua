@@ -1406,6 +1406,11 @@ return function(api)
     end
     for _, line in ipairs(losses or {}) do lines[#lines+1] = line end
     while #lines > MAX_ALERT_LINES do table.remove(lines) end
+    -- A pole's death that cut power (powercut.lua): each cut once, at most 3 lines.
+    if api.power_lines then
+      local ok, list = pcall(api.power_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     -- Our platforms (platalerts.lua), with their own cap of 6 lines.
     if api.platform_lines then
       local ok, list = pcall(api.platform_lines, p, h)
