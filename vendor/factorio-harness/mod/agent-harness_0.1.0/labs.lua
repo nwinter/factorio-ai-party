@@ -259,6 +259,9 @@ return function(api)
       if needed[name] then line = line .. string.format(' (%d of %d labs have none)', lacking, labs)
       else line = line .. ' (the current research does not use it)' end
       if carried[name] then line = line .. '; carried: ' .. table.concat(carried[name], ', ') end
+      -- on our platforms stopped over this planet (d15 trajectory analysis: stock in orbit was never counted)
+      local orbit = api.supply.orbit_stock and api.supply.orbit_stock(surface, force, name)
+      if orbit then line = line .. '; ' .. orbit.line end
       if #largest > 0 then line = line .. '; largest holders: ' .. table.concat(largest, ', ') end
       -- Value comes from the same stack reads as the spoil spread, including
       -- labs' partially consumed packs. The surface scan's scope stays explicit.

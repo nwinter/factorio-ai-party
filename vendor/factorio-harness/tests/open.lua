@@ -116,4 +116,27 @@ s.queues[1].pending={}
 game.tick=game.tick+60
 eq(W.handlers.sleep_check(p,{peek=true}).woke,'queue_done')
 s.queues=nil
+-- d15 trajectory analysis: stale items counted apart; no claims: idle machines near the agent; unowned items and steps.
+do
+  local kept_board,kept_cache=s.board,s.survey_cache
+  s.board={items={
+    {id=425,kind='task',owner='sonnet',status='doing',title='purple science',updated_tick=game.tick-3*3600*60},
+    {id=449,kind='task',owner='sonnet',status='doing',title='plastic',updated_tick=game.tick-600},
+    {id=700,kind='request',status='open',title='belts to the mall',updated_tick=game.tick-600},
+    {id=701,kind='task',status='open',title='an old job',updated_tick=game.tick-5*3600*60}}}
+  s.survey_cache={['player/3']={positions={['assembling-machine-3']={item_ingredient_shortage={{x=10.5,y=10.5},{x=300.5,y=10.5}},no_power={{x=50.5,y=0.5}}}}}}
+  local O2=dofile('mod/agent-harness_0.1.0/open.lua'){state=function() return s end,claim_surface=function(i) return i.surface or 'nauvis' end,
+    claim_stale=function() return false end,open_steps=function() return {'#9 step 2: lay the belt (no owner; take it with board_update {id: 9, take_step: 2})'} end}
+  local l=O2.line('sonnet',force,{surface='vulcanus',position={x=0,y=0}})
+  has(l,'1 board item of yours (#449 plastic [doing]), 1 more of yours unchanged for 2h+ left out')
+  has(l,'2 machines idle or starved near you (you hold no fresh claim) (assembling-machine-3 (10.5,10.5) ingredient shortage, 15 tiles; assembling-machine-3 (50.5,0.5) no power, 51 tiles)')
+  has(l,'1 unowned board item open to take (#700 request belts to the mall)')
+  has(l,'project steps open to take: #9 step 2: lay the belt')
+  assert(not l:find('an old job',1,true) and not l:find('purple science',1,true),l)
+  -- a fresh claim with a starved machine and no alert group: the machine is listed (the loop stopped at the empty part)
+  s.board={items={{id=800,kind='claim',owner='sonnet',status='doing',title='core',surface='vulcanus',area={left_top={x=0,y=0},right_bottom={x=20,y=20}}}}}
+  l=O2.line('sonnet',force,{surface='vulcanus',position={x=0,y=0}})
+  has(l,'1 machine idle or starved in your claims (assembling-machine-3 (10.5,10.5) ingredient shortage)')
+  s.board,s.survey_cache=kept_board,kept_cache
+end
 print('open: ok')

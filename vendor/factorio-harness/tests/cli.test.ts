@@ -363,10 +363,13 @@ test('tell takes recipients then text like say; tells reads with --since',async(
     await cli(port,['tells','--since','2','--bot','astra']);
     await cli(port,['call','tell','sol','call','form','--bot','astra']);
     await cli(port,['call','tell','--args','{"to":"sol","text":"json form"}','--bot','astra']);
+    await cli(port,['tell','sonnet','freight','needs','you','--wake','--bot','astra']);
+    const wakeSay=await compact(port,['say','x','--wake','--bot','astra']);
+    assert.equal(wakeSay.code,1); assert.match(wakeSay.stdout,/--wake applies to tell/);
   });
   assert.deepEqual(seen.map(r=>[r.action,r.args]),[['tell',{to:'sol',text:'29 plates in the chest at (-18.5,-34.5)'}],
     ['tell',{to:'luna,sol',text:"it's in the mall chest"}],['tell',{to:'team',text:'north belt is down'}],['tells',{since:2}],
-    ['tell',{to:'sol',text:'call form'}],['tell',{to:'sol',text:'json form'}]]);
+    ['tell',{to:'sol',text:'call form'}],['tell',{to:'sol',text:'json form'}],['tell',{to:'sonnet',text:'freight needs you',wake:true}]]);
 });
 test('fh platform NAME reads one platform (the platforms read); without a name, all',async()=>{
   const seen:any[]=[];

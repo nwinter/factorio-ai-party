@@ -64,7 +64,7 @@ FAKE_AGY = r'''#!/usr/bin/env python3
 import os, sys, time
 calls = os.path.join(os.environ["FAKE_DIR"], "calls.log")
 n = sum(1 for _ in open(calls)) + 1 if os.path.exists(calls) else 1
-open(calls, "a").write(" ".join(sys.argv[1:3]) + "\n")
+open(calls, "a").write(" ".join(sys.argv[1:3]).replace("\n", "\\n") + "\n")
 def quota(reset):
     t = time.localtime()
     stamp = time.strftime("%m%d %H:%M:%S", t)
@@ -103,10 +103,13 @@ def agy_loop():
         calls = open(os.path.join(d, "calls.log")).read().splitlines()
         # The first prompt again after the quota wait (no conversation began), saying it waited (eng/pacing), then
         # Continue; the last 429 stops it.
+        # each prompt ends with the digest (tools/agy_rules.py: notes.md and how the last turn ended; none yet here)
+        calls = [c.split("\\n\\n", 1)[0] for c in calls]
         assert len(calls) == 3 and calls[0] == "-p Play." and calls[2] == "-c -p", calls
         assert calls[1].startswith("-p Play. You waited 1 min for your quota to reset; the game went on meanwhile") \
             and calls[1].endswith("The deadline is 30 minutes away.") or \
             calls[1].endswith("The deadline is 29 minutes away."), calls
+        assert "You have no notes.md yet." in open(os.path.join(d, "calls.log")).read().splitlines()[0]
         # the rest was on record while it slept, and over once the next turn began (resting.json -> resting-last.json)
         last = json.load(open(os.path.join(ws, "resting-last.json")))
         assert last["reason"] == "quota" and last["until"] >= last["since"] and not os.path.exists(os.path.join(ws, "resting.json")), last
@@ -128,7 +131,7 @@ n = sum(1 for _ in open(calls)) + 1 if os.path.exists(calls) else 1
 args = sys.argv[1:]
 timeout = args[args.index("--print-timeout") + 1] if "--print-timeout" in args else "-"
 prompt = args[args.index("-p") + 1]
-open(calls, "a").write(("-c " if "-c" in args else "") + " ".join(prompt.split()[:4]) + " | " + timeout + "\n")
+open(calls, "a").write(("-c " if "-c" in args else "") + " ".join(prompt.split("\n\n")[0].split()[:4]) + " | " + timeout + "\n")
 tok = os.path.join(d, "tokens")
 cur = int(open(tok).read()) if os.path.exists(tok) else 0
 open(tok, "w").write(str(30000 if "-c" not in args else cur + 30000))

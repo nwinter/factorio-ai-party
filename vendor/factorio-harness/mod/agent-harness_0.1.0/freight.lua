@@ -231,6 +231,8 @@ return function(api)
       end
     end
   end
+  -- The platform's segments on record, oldest first (endurance.lua reads the last finished leg's time).
+  function M.segments(pl) local rec = store()[pl.index]; return rec and rec.segs or {} end
   function M.track(pl, tick)
     local counts = M.hub_counts(pl)
     if not counts then return end

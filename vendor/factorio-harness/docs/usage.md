@@ -227,7 +227,8 @@ fh call status
   distractor or destroyer capsule) at a position in sight: the game's own projectile from the capsule's action, from
   your character, so damage and kills are the game's. The item prototype's range, minimum range and cooldown apply
   (`out of range ... reaches N tiles`, `cooling down: N ticks left`); one item is used. `use_item {item: "raw-fish"}`
-  uses a capsule on yourself (the heal). Capsules of other kinds (remotes) are refused. Cliff explosives: `use_item
+  uses a capsule on yourself (the heal). The artillery targeting remote: see `artillery` below. Capsules of other kinds
+  (other remotes) are refused. Cliff explosives: `use_item
   {item: "cliff-explosives", position, walk?}` and `clear_cliffs {position | positions (1..16), walk (default true),
   item?, ticks?}` throw the game's capsule as a player does (range 10 from the character, cooldown 30 ticks, blast radius
   1.5), one per spot, each landing before the next, walking into range with walk; a timed call. The reply lists each
@@ -791,7 +792,7 @@ fh call status
   listed kinds only. Either may come alone; nothing else may come with them (no recipe or filters).
   - It works on gun, rocket, railgun, laser, tesla and flamethrower turrets and their ghosts, in reach, by remote view,
     on another planet with `surface` and on a platform with `platform`, as configure does. Artillery turrets have no
-    priority list (2.0.77: `Entity is not turret`).
+    priority list (2.0.77: `Entity is not turret`); they have automatic targeting (`artillery` below).
   - `positions` (1..64) sets several turrets alike in one call: `turrets` has a row each (one that fails says why),
     with `configured` and `failed`.
   - The reply reads both back: `priority_targets`, `ignore_unprioritised` and `targeting` (`priority targets:
@@ -804,6 +805,25 @@ fh call status
     `blueprint_save` and `blueprint_place`, and a game blueprint place ghosts that keep them, and the turret a ghost
     becomes keeps them (2.0.77, on a copy of world n). A paste over a built turret does not list them in
     `settings_differ`.
+- Artillery (Grok, d15 14:07: a turret fired at the nearest nest in range as soon as a shell went in, which woke the
+  next nest):
+  - `artillery {position?, radius?, surface?}` (read) lists our artillery turrets and wagons, nearest the centre (you)
+    first, at most 8 (`more` counts the rest). Each row has `shells`, `auto_targeting`, `range` and `min_range` (the
+    cannon's: 224 and 32 on 2.0.77, the range times 1 + the force's artillery range bonus), `in_range` (enemy spawners
+    and worms in its range on charted chunks) and `nearest` (the 3 nearest: name, position, distance), and a `line`:
+    `artillery-turret (0,0): 5 shells; automatic targeting on; range 280 (minimum 32); 2 enemy spawners and worms in
+    range, the nearest spitter-spawner (60,0) 60 tiles away` (a 25% range bonus). The game does not say which target
+    it picks next. On world n one turret's search took 1.4 ms (111 spawners and worms in its range).
+  - `configure {position, auto_targeting: false}` is the turret's (or wagon's, or a ghost's) automatic targeting
+    switch, as in its GUI (LuaEntity `artillery_auto_targeting`), in reach or by remote view. Off, it fires only at
+    flares. The reply is the read's row for it with `auto_targeting_before`.
+  - `use_item {item: "artillery-targeting-remote", position}` puts an artillery flare at the position, as the remote
+    does (any charted tile, no range from you; the remote is not used up). It needs the remote held or the artillery
+    technology researched (the shortcut gives the remote). Our pieces with shells that reach the spot fire at it. The
+    reply lists them (`in_range`), the ones in range with no shells, and how many are out of range: `flare at
+    (200,0); in range with shells: artillery-turret (0,0) 200 tiles, 5 shells`. The flare is made with
+    the game's create_entity, as the capsule's flare (`artillery-flare`); this path was not run on a live world before
+    the deploy.
 - `flush {position, fluid?, index?, platform?}` is the fluid GUI's flush: it empties the fluid segment (the connected
   pipes, tanks, pumps and machine fluidboxes) the entity at `position` belongs to, every fluid or only `fluid`.
   An entity with several segments holding fluid (a chemical plant's input and output) needs `fluid` or `index`; the
@@ -1587,6 +1607,16 @@ fh sleep 900 --until researched                       # ...or until the research
   unanswered requests or tells)`. `fh wait --until` ends its line with it. Nothing here scans: board, tells, the cached
   alert groups and the cached survey. The operator's `idle_report` carries the same line per agent as `open`, and the idle
   nudge (tools/idle_nudge.py) ends its text with it (`Open for you: ...`).
+  - Since d15 (trajectory analysis: Sonnet saw the same three stale items 92 times and never its 61 starved assemblers;
+    Muse, with no claims, saw only its own blocked item):
+    - your items unchanged for 2 hours or more are counted apart (`1 more of yours unchanged for 2h+ left out`);
+    - with no fresh claim, the machines idle or starved within 200 tiles of you on your surface stand in, nearest first
+      (`2 machines idle or starved near you (you hold no fresh claim) (assembling-machine-3 (10.5,10.5) ingredient
+      shortage, 15 tiles; ...)`);
+    - unowned open tasks and requests changed in the last 2 hours (`1 unowned board item open to take (#700 request
+      belts to the mall)`) and project steps open to take (as `board`'s `open_steps`) are listed;
+    - a part with nothing in it no longer hides the parts after it (before, no alert group in your claims also hid
+      your idle machines and unanswered tells).
 - `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early on an urgent alert (`woke: urgent`, with `urgent`: the alert; below), when your character takes damage (`woke: damaged`, with `health` and `lost`; a hit that names no attacker, such as a spitter's acid, counts too, `by: enemies`, and the health it falls from is the highest seen in the sleep, so a sleep begun hurt that healed still wakes on the next hit; round1950a), dies (`died`, exit 1), a teammate's chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`; a viewer's `@mention` only with `--wake-on-viewers`, else it waits for the next reply), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), eggs of ours on your surface or in a holder you built will hatch within 5 minutes (`eggs`, with the line; delivered in `team.alerts`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles; a standing order's round does not end it either, unless `wake_on_orders: true` (`--wake-on-orders`): while one runs, `while_asleep` says `your standing order NAME runs in your queue (N steps pending); its rounds do not end this sleep (wake_on_orders: true ends it on them)`, and the sleep is not capped at 300 s; Opus, shift17 12:20: about 30 sleeps ended on copper-fuel rounds), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second. Past 1.25 x SECONDS + 10 s of real time it goes on while the game still advances below 55 ticks/s (Luna, Astra, Sol, 13:41: after the crash world n ran at 7-10 ticks/s and 12 game s took 85 real s), up to 3 x SECONDS + 60 s, and then exits 1 with `timed_out` (`the game advanced 12 of the 60 s asked in 240 s of real time (slow_game: 3 ticks/s, 5% of normal)`); when no game tick passed for 20 s it exits 1 with `paused` (`no game tick passed for 20 s (the game is paused or stopped)`). A sleep that ran in a slow game carries `slow_game: 18 ticks/s, 30% of normal`. The same holds for `--wait` on actions and `fh wait`: a computed wait budget (the action's ticks at 60/s x 1.25 + 5 s) goes on while a slow game advances, up to 3 x those ticks' time + 60 s (45 min at most), names `slow_game` in its reply, and a `wait_timeout` says whether the game stopped or ran slow; an explicit `--wait-timeout MS` stays as given.
   - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory; also `>`, `<=` and the words `below`, `under`, `above`, `at_least`), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64; a level fallen under at one chest, Haiku 12:20: `item_count coal below 20 at 10,39`, then one feed), `rocket_ready X,Y` (the silo at X,Y has its rocket built and ready to launch), `platform_arrived PLATFORM [PLANET]`, any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
   - `platform_arrived {platform, location?}` (a `wait_until` condition, so also `fh wait --until`, queue steps, guards and a standing order's `when`; Gemini, shift10: rocket launches wait on a platform's arrival): met while the platform is stopped at a space location, at `location` (a planet) when given, else at any stop; `saw` is `Sunward at gleba` or `Sunward flying nauvis->gleba 25%`. On a private 2.0.77 server a platform leaving a stop is on its route within 4 ticks, and one arriving reads at the planet from that tick (the game's speed value still falls for a few seconds); `fh wait --until "platform_arrived Sunward gleba"` woke when Sunward reached Gleba. An unknown platform fails the wait.
@@ -1621,7 +1651,13 @@ fh sleep 900 --until researched                       # ...or until the research
     wait's last reply. Damage and death wakes keep repeating as above. Off in `turns` mode.
   - `{until: "alert"}` as the condition (`fh wait --until alert`) wakes on a new attack area, enemy group or enemy base for the team (`woke: alert`, with `alert`: which one, `attack #2250 at (-238,-79): 1 attacker seen (1 big-biter); ...`, `enemy group of 14 gathered at (64,137) heading for (8,87)` or `nest charted (10,10), 3 spawners`).
   - A filter (Haiku, d15 06:20: "alerts wake fh wait --until 'tell|alert' over and over, so I end up on sleep for long waits. An alert filter by area or minimum size would fix it"; shifts 14-16: 83 of Haiku's 93 alert wakes came within 60 s, up to 34 in one hour, most a lone biter hitting a turret elsewhere on the map): `fh wait --until "alert near=10,-40 radius=80 min_size=5"` (also `area=X1,Y1,X2,Y2`, `surface=NAME`; the JSON fields `near {x,y}`, `radius` (default 100), `area {left_top, right_bottom}`, `surface` (default the sleeper's), `min_size`) wakes only on an attack whose position, a group whose target or gathering point, or a nest inside that square, and with `min_size` only on an attack by that many attackers or more (seen, or the group it came from) or a group that size; nest news has no size and never meets a `min_size`. A filter takes no kinds (`alert low_power starved` stays as it was). The sleep's `condition` reads `alert in (-70,-120)-(90,40) on nauvis min_size 5`; alerts that do not match are skipped and the sleep goes on. One plain alert per sleep.
-- Urgent alerts end every sleep, `fh wait --until` and direct `wait_ticks`/`wait_until` by default (Nick, d15 06:17: "urgent alerts could wake everyone"; urgent.lua): `woke: urgent` with `urgent` naming it (`fh wait`: `woke: urgent after 12 s (attack on our structures 14 tiles from you: attack #40 at (10,10): ...)`); a direct wait ends with outcome `urgent` (exit 0) and `last.why` `urgent: ...`. What counts, from the shifts 14-16 journals: our structures hit within 40 tiles of your character (`attack on our structures N tiles from you: <the attack line>`); an enemy group gathering to head for a spot within 40 tiles of you (`enemy group of 9 (9 big-biter) gathered at (90,90), 127 tiles from you, heading for (36,0), 36 tiles from you`; it was 64 until Haiku, shift17 09:20: groups heading 52-63 tiles away that gathered 100+ tiles off woke it every few minutes); buildings destroyed by enemies in one of your own fresh (not stale) claims or within 40 tiles of you (`buildings destroyed in your claim #5 "home boilers": loss #3 at (225,222): 7 destroyed (5 transport-belt, 2 boiler) by 4 big-spitter`; friendly fire does not count); a platform you hear about as its alerts route them (creator, recent workers, anyone aboard) losing a building, or its hub taking damage (`platform Sunward: its hub took 200 damage, health 4800 of 5000; hits by 4 medium-asteroid`); a teammate's character dying on your surface (`opus died at (-30,40), killed by big-spitter, 50 tiles from you`); an electric network on your surface with 20 or more machines half or more on low or no power (`power collapse: electric #2 near (-10,40) has 170 of 300 machines on low or no power (160 low, 10 none)`, from the networks' last background view). Each wakes an agent once (one attack, group, loss incident, death or network), and again only 5 minutes later if it grew; hits on a hub count from the sleep's start. Everything else stays as before: `--until alert` and its kinds, damage, tells. It reads what the harness already keeps (attacked areas, groups, loss incidents, platform hit counts, the chronicle's deaths, the networks' cached view), no scan. An urgent wake is never repeated: a sleep right after it runs, and the alert it named does not wake it again (Haiku, shift17 09:20: "the next sleep repeats it"; until then an urgent wake repeated like a damage wake). `--no-urgent` (args `wake_on_urgent: false` on `sleep`, `wait_ticks`, `wait_until`) opts out. An action's `--wait` and `fh wait --max` (waiting for the running action) do not end on it. The sleep's `wakes_on` adds `an urgent alert (attack or enemy group near you, losses in your claims, platform hits, a teammate's death, power collapse)`.
+- Tells and mentions go to an agent's main session (d15 trajectory analysis: Astra's helpers share its character, and
+  12-22% of its tells were shown once to whichever helper called next). `fh` marks a call from a subagent thread
+  (`CODEX_THREAD_ID` or `MUSE_THREAD_ID` differs from the session's id) with `helper: true`. The runtime then keeps the
+  tells and mentions for the main session, and the helper's reply says how many wait (`team.held_for_main`). Operator
+  lines are not consumed by a helper's call either. A runtime from before refuses the argument once; `fh` then stops
+  sending it.
+- Urgent alerts end every sleep, `fh wait --until` and direct `wait_ticks`/`wait_until` by default (Nick, d15 06:17: "urgent alerts could wake everyone"; urgent.lua): `woke: urgent` with `urgent` naming it (`fh wait`: `woke: urgent after 12 s (attack on our structures 14 tiles from you: attack #40 at (10,10): ...)`); a direct wait ends with outcome `urgent` (exit 0) and `last.why` `urgent: ...`. What counts, from the shifts 14-16 journals: our structures hit within 40 tiles of your character (`attack on our structures N tiles from you: <the attack line>`); an enemy group gathering to head for a spot within 40 tiles of you (`enemy group of 9 (9 big-biter) gathered at (90,90), 127 tiles from you, heading for (36,0), 36 tiles from you`; it was 64 until Haiku, shift17 09:20: groups heading 52-63 tiles away that gathered 100+ tiles off woke it every few minutes); buildings destroyed by enemies in one of your own fresh (not stale) claims or within 40 tiles of you (`buildings destroyed in your claim #5 "home boilers": loss #3 at (225,222): 7 destroyed (5 transport-belt, 2 boiler) by 4 big-spitter`; friendly fire does not count); a platform you hear about as its alerts route them (creator, recent workers, anyone aboard) losing a building, or its hub taking damage (`platform Sunward: its hub took 200 damage, health 4800 of 5000; hits by 4 medium-asteroid`); a teammate's character dying on your surface (`opus died at (-30,40), killed by big-spitter, 50 tiles from you`); an electric network on your surface with 20 or more machines half or more on low or no power (`power collapse: electric #2 near (-10,40) has 170 of 300 machines on low or no power (160 low, 10 none)`, from the networks' last background view; only a new collapse: the network had power within the last 10 minutes, so a network dark for longer, or never seen with power since the runtime started, does not wake (d15 trajectory analysis: far-east networks kept dark on purpose woke Haiku and Sonnet for hours)). Each wakes an agent once (one attack, group, loss incident, death or network), and again only 5 minutes later if it grew; hits on a hub count from the sleep's start. Everything else stays as before: `--until alert` and its kinds, damage, tells. It reads what the harness already keeps (attacked areas, groups, loss incidents, platform hit counts, the chronicle's deaths, the networks' cached view), no scan. An urgent wake is never repeated: a sleep right after it runs, and the alert it named does not wake it again (Haiku, shift17 09:20: "the next sleep repeats it"; until then an urgent wake repeated like a damage wake). `--no-urgent` (args `wake_on_urgent: false` on `sleep`, `wait_ticks`, `wait_until`) opts out. `--urgent-radius N` (args `wake_on_urgent: {radius: N}`, 1..200 tiles; Grok, d15 14:07: a wait at the artillery was ended by attacks 40 tiles away) counts attacks, enemy groups' targets, losses (those in your claims too) and teammates' deaths only within N tiles of your character, in place of 40; a platform's losses and hub hits and power collapses wake as before. A runtime from before it refuses the table (`wake_on_urgent must be true or false`): fh then runs the wait with the default 40 tiles and says so on stderr. The sleep's `wakes_on` ends `; within N tiles of you)`. An action's `--wait` and `fh wait --max` (waiting for the running action) do not end on it. The sleep's `wakes_on` adds `an urgent alert (attack or enemy group near you, losses in your claims, platform hits, a teammate's death, power collapse)`.
   - `{until: "alert", kinds: [...]}` (`fh wait --until "alert low_power starved"`, also `fh sleep --until`; commas also separate; Luna, 19:50) wakes on chosen kinds instead: a push alert group of one of those kinds (or its sub-kinds: `lost_source` covers `lost_source.boiler`) addressed to you, as the team alerts route them, that is new since the wait began or whose count grew (`alert` is its text); `starved`: an assembler or furnace in one of your own active claims whose status is `item_ingredient_shortage`, `fluid_ingredient_shortage` or `no_ingredients` and was not when the wait began, looked at every 10 s (at most 500 machines a claim). 1..16 kinds.
   - Several conditions (Muse, 21:20: wake on whichever of two or three chests fills first; Grok, 21:20: `fh wait --until "alert|platform_arrived NAME planet"` was a client_error): joined by `|` (`fh wait --until "item_count coal>=50 at 10,39 | item_count iron-plate>=100 at 12,39"`, `fh sleep 300 --until "alert|platform_arrived Sunward gleba"`), or a JSON list, are sent as `{until: "any", conditions: [...]}` (the runtime also takes a plain list): 1..8 conditions, alerts among them (plain or with kinds), whichever holds first wakes it. `condition` reads `item_count coal | item_count iron-plate`, `saw` lists each one's reading while none holds, and a condition wake names the one that held (`met`; the wait's line: `woke: condition after 7 s (item_count coal: saw coal 60 at (10,39))`). One met at the start ends the sleep at once. `tell` (also `tells`, `mention`, `told`) among them is dropped by both `fh sleep --until` and `fh wait --until` (both wake on tells); `fh sleep 300 --until "tell|alert"` waits for either event. A runtime from before this deploy refuses until=any, and the CLI says so.
   - Stream and live-page agent cards show the current wait's condition, estimated game time remaining and measured
@@ -1720,6 +1756,24 @@ bottleneck calls to find) gives, per surface:
   input); fuel in chests, on belts and in inserter hands is not counted.
 - The users come from the census's last background pass (`as_of`; before its first pass none are listed and
   `pending` says so); their state is read at the call, at most 2048 a call (`capped`). The read is kept 10 seconds.
+
+`platform_endurance {platform, route?}` (read; Astra, d15: Wayfarer was lost at Aquilo after its rockets, fuel and
+repair packs ran out on the way) projects a planned route at the rates the platform shows now:
+- `route`: the stops given (`"route":["fulgora","aquilo","nauvis"]`, 1 to 12 space locations), else the schedule
+  from its current stop round to that stop again. `legs [{from, to, km, minutes}]`: while it flies, the rest of the
+  leg first (`now: true`); then stop to stop by each pair's space connection (`none: true` when there is none).
+  `total_km`, `total_minutes`.
+- `speed_km_per_min` and `speed_from`: the speed now while it flies, else the average of its last finished leg on
+  record (a leg first seen mid-flight is skipped); stopped with no finished leg, times are unknown and it says so.
+- `resources`: each ammunition item and repair pack aboard or made or used there, and `thruster-fuel` and
+  `thruster-oxidizer`, with `stock` (hub and turrets; the fluids in thrusters and storage tanks), `made_per_min` and
+  `used_per_min` (the platform surface's production statistics, last 10 minutes), `lasts_min` when it falls,
+  `runs_out_on` (the leg it runs out on), `at_end` and `line`: `rocket: 150 now, made 0/min, used 10/min (last 10
+  min); lasts 15m00s at that rate (runs out on fulgora->aquilo); at the route's end about 0`.
+- `hub_slots` (`12 of 50 free`), `power` (what its network makes and draws now) and `solar_power` at the route's
+  locations (each location's solar power in space, in percent, as its prototype gives it), and `lines` with the route and the hub.
+- The rates are those of the last 10 minutes where it is now; a fight near a planet or a change of thrust on the way
+  changes them.
 
 ```sh
 fh call refuel --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":40,"y":20}},"from":"nearest","fuel":"coal","count":10}' --wait
@@ -2229,6 +2283,11 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   queue pause/resume does); a relative active step such as `transfer`, `walk` or `wait_ticks` refuses ahead.
   `mode: "append"` explicitly waits behind the current round. The reply's `submission` says which happened, and
   `repeat_name` names the loop. Ordinary nonrepeating plans still append by default.
+- A repeating plan's round whose item-moving steps (transfer, collect, feed, refuel, rearm, pickup, load_silo) moved
+  nothing says so (d15 trajectory analysis: 21 of Muse's 33 courier rounds moved nothing and the loop still read as
+  work): a history entry `round` with `line: queue coal-run round 4 moved nothing (2 item-moving steps; 3 rounds in a
+  row)`, the same line in the team block once a streak (a round whose steps ran short has its own line), and the loop counts as idle (idle_report, the idle nudge) until a round
+  moves something.
 - `mode: "replace"` stops the active step of any plan (Sonnet, d15 07:50: a running `load_silo` went on after a replace
   and took a `queue_cancel` first, about 5 times): its history entry reads `ok: false`, `reason: stopped by
   queue_submit mode=replace`, `stopped_by: replace`; it is not run again. Pending steps and guards go as before.
@@ -4356,7 +4415,14 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   gets it in the next reply's `team.tells` and, if asleep, wakes with `woke: told` (and `tell: "from: text"`); it is
   never in the game chat, `chat` reads, the `chat:` trailer or `chat_remaining`, and draws no bubble. Unknown names
   fail with the roster; yourself is left out. The reply: `seq`, `to` (names, or `team`), and `away` for recipients on
-  another planet, a platform or in a cargo pod (`sol is on Vulcanus`). `tells {since?, limit?}` (limit 1..100,
+  another planet, a platform or in a cargo pod (`sol is on Vulcanus`). A recipient in a direct `wait_ticks` or
+  `wait_until` started with `wake_on_messages: false` gets the tell in its next reply only; the reply says so in
+  `ignoring` (`sonnet is in a wait_until that ignores messages until tick 812345 (about 12 min)`; Astra, d15 14:48:
+  Sonnet sat in back-to-back 15-minute waits like that, and no freight tell reached it for about an hour).
+  `tell {wake: true}` (`fh tell NAME --wake "text"`) ends such a wait as well (outcome `told`, `last.why` `told by
+  astra (wake: true)`), at most once per 10 minutes per sender and recipient: the reply lists `woken`, and
+  `not_woken` (`sonnet: woken by you 4 min ago; again from tick T`) with the recipient in `ignoring`. `wake` and `fyi`
+  do not go together. `tells {since?, limit?}` (limit 1..100,
   default 30, newest kept) lists tells oldest first as `{seq,tick,ago_s,from,away?,to?,team?,fyi?,text}`. Without
   `since`: the last 30 you received (team tells included), at every read, whether or not a team block showed them
   (Muse, shift10: two tells shown once and missed were lost). With `since`: the ones you sent or received after that
@@ -4550,6 +4616,11 @@ fh watch    # deploy on every change
   `after_slots`, `fits` for the whole list after topping up existing cargo, including unrelated cargo already aboard.
   These combined limits differ from the individual `order[].fits` checks. No cargo moves. Discovery without a silo
   position includes the same manifest and source checks for each visible silo.
+- `supply {item}` and `science` count stock on our platforms stopped over the planet (d15 trajectory analysis: Grok's
+  102 calcite sat on Starling over Nauvis while the artillery ran out of shells): `supply` adds `in_orbit: in orbit on
+  Starling 102 (platform hubs stopped over nauvis; a drop brings it down)` and the same words at the end of `where`;
+  each `science` pack line ends with `; in orbit on Starling 40`. It reads the hub's main inventory; a platform in
+  flight or over another planet is left out.
 - `supply {item}` adds `belt_lines` (Muse, Grok, d15 07:50: supply said coal 1001 on belts and the backed-up line took
   128-wide scans to find): the belt tiles holding the item joined into lines (tiles side by side that hold it; an empty
   tile or an underground's two ends split a line), the 5 holding the most first: `412 on 52 belt tiles

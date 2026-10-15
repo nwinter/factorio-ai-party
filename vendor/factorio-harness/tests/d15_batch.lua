@@ -233,3 +233,139 @@ do
 end
 print('d15_batch queue_edit id: ok')
 
+
+-- Blockers 7 (d15 trajectory analysis): a courier round that moves nothing says so and counts as idle. ---------------
+do
+  game={tick=0}
+  local state,active={},{}
+  local players={[1]={index=1}}
+  local moved=0
+  local s=require('scheduler'){state=function() return state end,player=function(i) return players[i] end,
+    handlers={transfer=function() return {transferred=moved} end},
+    busy=function() return false end,stop=function() end,stop_index=function() end,
+    condition=function() return false end,validate_condition=function() end}
+  local function tick(n) for _=1,n or 1 do game.tick=game.tick+1; s.tick() end end
+  s.handlers.queue_repeat(players[1],{name='coal-run',interval_ticks=60,steps={{action='transfer',args={}}}})
+  tick(3)
+  local q=state.queues[1]
+  eq(q.empty_rounds,1)
+  local h=q.history[#q.history]
+  eq(h.action,'round'); eq(h.result.line,'queue coal-run round 1 moved nothing (1 item-moving step; 1 round in a row)')
+  eq(s.round_news(1)[1],'queue coal-run round 1 moved nothing (1 item-moving step; 1 round in a row)')
+  local I=require('idle'){state=function() return state end}
+  eq((I.busy(state,1)),false,'the loop counts as idle')
+  moved=5; tick(70)
+  eq(q.empty_rounds,nil); eq((I.busy(state,1)),true,'a round that moved something: busy again')
+end
+print('d15_batch empty rounds: ok')
+
+-- Ship endurance (Astra, d15: Wayfarer was lost at Aquilo after its rockets, fuel and repair packs ran out): a route's
+-- legs at the platform's speed and each resource's stock, rates and when it runs out. ----------------------------------
+do
+  defines={flow_precision_index={ten_minutes=2,five_seconds=0},inventory={hub_main=1,turret_ammo=1}}
+  local function loc(sp) return {solar_power_in_space=sp} end
+  prototypes={item={rocket={type='ammo'},['firearm-magazine']={type='ammo'},['repair-pack']={type='repair-tool'},['iron-plate']={type='item'}},
+    fluid={['thruster-fuel']={},['thruster-oxidizer']={}},
+    space_location={nauvis=loc(100),fulgora=loc(120),aquilo=loc(60)},
+    space_connection={a={from={name='nauvis'},to={name='fulgora'},length=15000},b={from={name='fulgora'},to={name='aquilo'},length=30000}}}
+  -- per minute: made, used (the statistics give 10-minute counts)
+  local items={rocket={0,10},['firearm-magazine']={20,5},['repair-pack']={0,1}}
+  local fluids={['thruster-fuel']={400,500}}
+  local function stats(t) return {get_flow_count=function(a) local r=t[a.name]; assert(a.count and a.precision_index==2); return r and (a.category=='input' and r[1] or r[2])*10 or 0 end} end
+  local hub=setmetatable({get_contents=function() return {{name='rocket',count=120},{name='firearm-magazine',count=50},{name='repair-pack',count=40},{name='iron-plate',count=9}} end,
+    count_empty_stacks=function() return 12 end},{__len=function() return 50 end})
+  local turret={get_inventory=function() return {get_contents=function() return {{name='rocket',count=30}} end} end}
+  local thruster={fluidbox={{name='thruster-fuel',amount=10000},{name='thruster-oxidizer',amount=8000}}}
+  local pole={electric_network_statistics={output_counts={['solar-panel']=1},input_counts={thruster=1,['ammo-turret']=1},
+    get_flow_count=function(a) return a.category=='output' and 1000 or 500 end}}
+  local force={get_item_production_statistics=function() return stats(items) end,get_fluid_production_statistics=function() return stats(fluids) end}
+  local surface={find_entities_filtered=function(f)
+    if f.type=='ammo-turret' then return {turret} elseif f.type=='electric-pole' then return {pole} elseif type(f.type)=='table' then return {thruster} end
+    return {} end}
+  local pl={name='Wayfarer',surface=surface,force=force,hub={get_inventory=function() return hub end},space_location={name='nauvis'},speed=0,
+    schedule={current=1,records={{station='nauvis'},{station='fulgora'},{station='aquilo'}}}}
+  local leg,segs=nil,{{kind='leg',from='fulgora',to='nauvis',start=0,['end']=36000},{kind='stop',at='nauvis',start=36000}}
+  local E=require('endurance'){platform=function() return pl end,leg=function() return leg end,segments=function() return segs end}
+  local r=E.read({},{platform='Wayfarer'})
+  eq(r.route,'schedule'); eq(r.speed_km_per_min,1500); has(r.speed_from,'the last leg fulgora->nauvis')
+  eq(#r.legs,3); eq(r.legs[1].minutes,10); eq(r.legs[2].minutes,20); eq(r.legs[3].none,true,'aquilo->nauvis has no connection')
+  eq(r.total_minutes,30)
+  has(r.lines[1],'nauvis->fulgora 15000 km, 10m00s; fulgora->aquilo 30000 km, 20m00s; aquilo->nauvis ? km, time unknown (no space connection between them); in all 30m00s')
+  local by={}; for _,x in ipairs(r.resources) do by[x.name]=x end
+  eq(by['iron-plate'],nil,'only ammunition, repair packs and thruster fluids')
+  eq(by.rocket.stock,150,'hub and turrets'); eq(by.rocket.lasts_min,15); eq(by.rocket.runs_out_on,'fulgora->aquilo')
+  has(by.rocket.line,'rocket: 150 now, made 0/min, used 10/min (last 10 min); lasts 15m00s at that rate (runs out on fulgora->aquilo); at the route\'s end about 0')
+  eq(by['firearm-magazine'].lasts_min,nil); eq(by['firearm-magazine'].at_end,500)
+  eq(by['repair-pack'].runs_out_on,nil); has(by['repair-pack'].line,'lasts 40m00s at that rate (past the route\'s end)')
+  eq(by['thruster-fuel'].stock,10000); eq(by['thruster-fuel'].lasts_min,100); eq(by['thruster-fuel'].at_end,7000)
+  eq(by['thruster-oxidizer'].stock,8000); eq(by['thruster-oxidizer'].lasts_min,nil)
+  eq(r.hub_slots,'12 of 50 free'); eq(r.power,'makes 60 kW, draws 60 kW now'); eq(r.solar_power,'nauvis 100%, fulgora 120%, aquilo 60%')
+  -- flying: the rest of the leg first, at the speed now; the schedule from its current stop round to it
+  leg={from='nauvis',to='fulgora',left_km=6000}
+  pl.space_location,pl.speed,pl.space_connection,pl.schedule.current=nil,25/60,{},2
+  r=E.read({},{platform='Wayfarer'})
+  eq(r.speed_from,'now'); eq(r.legs[1].now,true); eq(r.legs[1].minutes,4)
+  eq(r.legs[2].from,'fulgora'); eq(r.legs[2].to,'aquilo'); eq(r.legs[4].to,'fulgora'); eq(#r.legs,4)
+  -- a given route; an unknown place is refused; stopped with no finished leg: times unknown
+  leg,pl.speed,pl.space_connection,pl.space_location,segs=nil,0,nil,{name='nauvis'},{}
+  r=E.read({},{platform='Wayfarer',route={'fulgora','nauvis'}})
+  eq(r.route,'given'); eq(#r.legs,2); eq(r.total_minutes,nil); has(r.speed_from,'unknown'); has(r.lines[1],'time unknown')
+  eq(by.rocket.lasts_min,15)
+  local ok,err=pcall(E.read,{},{platform='Wayfarer',route={'mars'}})
+  assert(not ok and tostring(err):find('unknown space location mars',1,true),err)
+  prototypes,defines=nil,nil
+end
+print('d15_batch endurance: ok')
+
+-- Artillery (Grok, d15 14:07): the spawners and worms in range nearest first, the automatic targeting switch, and the
+-- targeting remote's flare. ---------------------------------------------------------------------------------------
+do
+  defines={inventory={artillery_turret_ammo=1,artillery_wagon_ammo=2}}
+  local cannon={attack_parameters={range=224,min_range=32}}
+  local force={artillery_range_modifier=0.25,technologies={artillery={researched=false}},is_chunk_charted=function(s,c) return c.x<20 end}
+  local made={}
+  local enemies={{name='biter-spawner',position={x=100,y=0}},{name='small-worm-turret',position={x=10,y=0}},{name='spitter-spawner',position={x=60,y=0}},
+    {name='biter-spawner',position={x=800,y=0}}}
+  local surface
+  local function piece(x,shells,auto)
+    return {valid=true,name='artillery-turret',type='artillery-turret',position={x=x,y=0},force=force,artillery_auto_targeting=auto,prototype={guns={c=cannon}},
+      get_inventory=function() return {get_contents=function() return shells>0 and {{name='artillery-shell',count=shells}} or {} end} end,
+      surface=nil}
+  end
+  local a1,a2=piece(0,5,true),piece(1000,0,true)
+  surface={name='nauvis',find_entities_filtered=function(f)
+    if f.force=='enemy' then
+      local out={}
+      for _,e in ipairs(enemies) do if math.sqrt((e.position.x-f.position.x)^2+(e.position.y-f.position.y)^2)<=f.radius then out[#out+1]=e end end
+      return out
+    end
+    return {a2,a1}
+  end,create_entity=function(spec) made[#made+1]=spec; return {valid=true} end}
+  a1.surface,a2.surface=surface,surface
+  local held=0
+  local A=require('artillery'){position=function(v) return v end,held=function() return held end}
+  local p={surface=surface,position={x=0,y=0},force=force}
+  local r=A.read(p,{})
+  eq(r.count,2); eq(r.artillery[1].position.x,0,'nearest you first'); eq(r.artillery[1].range,280,'224 with a 25% bonus')
+  eq(r.artillery[1].in_range,2,'the worm inside the minimum range and the spawner past the range are left out')
+  eq(r.artillery[1].nearest[1].name,'spitter-spawner'); eq(r.artillery[1].nearest[1].distance,60)
+  has(r.lines[1],'artillery-turret (0,0): 5 shells; automatic targeting on; range 280 (minimum 32); 2 enemy spawners and worms in range, the nearest spitter-spawner (60,0) 60 tiles away')
+  eq(r.artillery[2].in_range,0,'a spawner on an uncharted chunk is left out'); has(r.lines[2],'no shells')
+  -- the switch, read back
+  local c=A.configure(a1,false)
+  eq(a1.artillery_auto_targeting,false); eq(c.auto_targeting,false); eq(c.auto_targeting_before,true); has(c.line,'automatic targeting off')
+  local ok,err=pcall(A.configure,{type='ammo-turret',name='gun-turret',position={x=1,y=1}},false)
+  assert(not ok and err:find('is a ammo-turret',1,true),err)
+  -- the remote: neither held nor researched, refused; researched, a flare and the pieces that reach it
+  ok,err=pcall(A.remote,p,{item='artillery-targeting-remote',position={x=200,y=0}},{type='artillery-remote',flare='artillery-flare'})
+  assert(not ok and err:find('not researched',1,true),err); eq(#made,0)
+  force.technologies.artillery.researched=true
+  local u=A.remote(p,{item='artillery-targeting-remote',position={x=200,y=0}},{type='artillery-remote',flare='artillery-flare'})
+  eq(#made,1); eq(made[1].name,'artillery-flare'); eq(made[1].position.x,200)
+  eq(#u.in_range,1); has(u.line,'flare at (200,0); in range with shells: artillery-turret (0,0) 200 tiles, 5 shells')
+  eq(u.out_of_range,1); eq(u.by,'shortcut (artillery researched)')
+  ok,err=pcall(A.remote,p,{item='artillery-targeting-remote',position={x=900,y=0}},{type='artillery-remote',flare='artillery-flare'})
+  assert(not ok and err:find('not charted',1,true),err)
+  defines=nil
+end
+print('d15_batch artillery: ok')

@@ -709,6 +709,27 @@ return function(api)
     return lines
   end
 
+  -- Stock on our platforms stopped over this planet (d15 trajectory analysis: Grok's 102 calcite sat on Starling over
+  -- Nauvis while the artillery ran out of shells): {total, rows [{platform, n}], line "in orbit on Starling 102"}, or nil.
+  -- The hub's main inventory, as the platform GUI shows it; a platform in flight or over another planet is left out.
+  function M.orbit_stock(surface, force, item)
+    if not (surface and force and item) then return nil end
+    local planet = try(function() return surface.planet and surface.planet.name end) or (not try(function() return surface.platform end) and surface.name or nil)
+    if not planet then return nil end
+    local rows, total = {}, 0
+    for _, pl in pairs(try(function() return force.platforms end) or {}) do
+      if try(function() return pl.valid and pl.space_location and pl.space_location.name end) == planet then
+        local inv = try(function() return pl.hub and pl.hub.valid and pl.hub.get_inventory(defines.inventory.hub_main) end)
+        local n = inv and try(function() return inv.get_item_count(item) end) or 0
+        if n > 0 then rows[#rows+1] = {platform=pl.name, n=n}; total = total + n end
+      end
+    end
+    if total == 0 then return nil end
+    table.sort(rows, function(a, b) if a.n ~= b.n then return a.n > b.n end return a.platform < b.platform end)
+    local parts = {}
+    for i, r in ipairs(rows) do parts[i] = r.platform .. ' ' .. r.n end
+    return {total=total, rows=rows, line='in orbit on ' .. table.concat(parts, ', ')}
+  end
   -- Where the item sits: the total and each kind of place that holds it.
   function M.where(t)
     local parts, total = {}, 0
@@ -1384,6 +1405,11 @@ return function(api)
       flow=string.format('made %d, used %d in the last 10 min on %s', flow('input'), flow('output'), surface.name),
       where=total > 0 and (total .. ': ' .. table.concat(parts, ', ')) or ('none on ' .. surface.name .. (area and ' in this area' or '')),
       chests=#t.chests > 0 and M.top_chests(t) or nil, surplus_chest=M.surplus_chest(t), belt_lines=t.belts > 0 and M.belt_lines(t) or nil}
+    local orbit = M.orbit_stock(surface, force, item)
+    if orbit then
+      out.in_orbit = orbit.line .. ' (platform hubs stopped over ' .. tostring(try(function() return surface.planet.name end) or surface.name) .. '; a drop brings it down)'
+      out.where = out.where .. '; ' .. orbit.line
+    end
     local lines = M.network_lines(t, scan)
     if #lines > 0 then out.networks = lines end
     out.makers, out.makers_worst = M.machines(t, t.makers, 'makers', scan, packs)

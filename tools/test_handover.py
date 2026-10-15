@@ -80,6 +80,13 @@ def stats():
         # since: the last 5 minutes only
         st5 = handover.journal_stats(path, since=t0 + 800)
         assert st5["reads"] == 1 and st5["talk"] == 1 and st5["actions"] == 0, st5
+        # gzipped by tools/stop-team.sh, journal.jsonl removed (d15: every carried notes.md said "no requests"): the .gz
+        import gzip
+        with open(path, "rb") as src, gzip.open(path + ".gz", "wb") as g:
+            g.write(src.read())
+        os.remove(path)
+        stz = handover.journal_stats(path)
+        assert stz and stz["actions"] == 3 and stz["reads"] == 5 and stz["queue_jobs"] == 40, stz
         print("stats: ok")
     finally:
         shutil.rmtree(d)

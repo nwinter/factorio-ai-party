@@ -45,6 +45,9 @@ return function(api)
     local q = s.queues and s.queues[index]
     if not q or q.paused or waiting then return false end
     if q.order then return true, true end  -- a standing order running (orders.lua), its waits included
+    -- A loop whose last round moved nothing is idle (scheduler.lua round_done; d15: Muse's empty courier rounds read as
+    -- work, 0 nudges) until a round moves something.
+    if q.loop and (q.empty_rounds or 0) >= 1 then return false end
     local step = q.current
     if step then return not WAITS[step.action] or q.loop ~= nil end  -- a repeating plan's own wait is the plan
     return q.loop ~= nil or #q.pending > 0

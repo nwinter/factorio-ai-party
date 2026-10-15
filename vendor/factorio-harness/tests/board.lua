@@ -697,6 +697,9 @@ fails(function() grok('tell',{to='sol',text='x',fyi='yes'}) end,'fyi must be tru
 local row
 for _,a in ipairs(op('mention_counts',{}).agents) do if a.name=='sol' then row=a end end
 eq(row.fyi,1); eq(row.tells,nil); eq(row.unread_mentions,0); eq(row.oldest_tick,nil)
+-- a subagent's call (helper=true; d15: 12-22% of Astra's tells went to its helpers): the tell waits for the main session
+local hs=sol('status',{helper=true})
+assert(not (hs.team and hs.team.tells),'not shown to a helper'); eq(hs.team.held_for_main,'1 tell or mention wait for your main session (shown to it, not to a helper)')
 assert(has(sol('status').team.tells,'grok (fyi), 0s ago: belts done'))
 sol('sleep',{seconds=30})
 grok('tell',{to='sol',text='routine: belts still fine',fyi=true})

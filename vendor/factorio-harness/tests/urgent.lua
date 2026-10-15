@@ -99,10 +99,19 @@ s.chronicle=nil
 eq(U.check(p,base),nil)
 view={surfaces={{name='nauvis',electric={{id=2,machines=300,low=100,none=10,center={x=-10,y=40}},{id=9,machines=10,low=10,none=0}}},
   {name='vulcanus',electric={{id=3,machines=100,low=90,none=0}}}}}
-eq(U.check(p,base),nil,'110 of 300 is under half')
+eq(U.check(p,base),nil,'110 of 300 is under half (seen with power)')
 view.surfaces[1].electric[1].low=160
 eq(U.check(p,base),'power collapse: electric #2 near (-10,40) has 170 of 300 machines on low or no power (160 low, 10 none)')
 eq(U.check(p,base),nil)
+-- A network dark for longer than NEW_COLLAPSE (d15: far-east networks kept dark on purpose woke sleeps for hours), or
+-- never seen with power, does not wake; one that had power a minute ago does.
+view.surfaces[1].electric[2]={id=11,machines=50,low=50,none=0}
+eq(U.check(p,base),nil,'never seen with power')
+game.tick=game.tick+U.NEW_COLLAPSE+60; view.surfaces[1].electric[1].low=200
+eq(U.check(p,base),nil,'#2 dark too long: no longer new')
+view.surfaces[1].electric[2].low=0; U.check(p,base)
+game.tick=game.tick+3600; view.surfaces[1].electric[2].low=40
+has(U.check(p,base),'power collapse: electric #11')
 view=nil
 
 -- No character (aboard, in a pod): the near kinds are skipped, the rest still read.
@@ -185,4 +194,31 @@ W.handlers.sleep(p,{seconds=600,wake_on_urgent=false,condition={['until']='alert
 s.alert_seq=71; s.damage={a={id=60,seq=71,at={x=900,y=0},surface='nauvis',damage=30,hits=1,last=64010}}
 game.tick=64020; r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'alert'); eq(r.alert,'attack #60 at (900,0)')
 fails(function() W.handlers.sleep(p,{seconds=60,condition={['until']='any',conditions={{['until']='alert'},{['until']='alert',min_size=3}}}}) end,'one plain alert condition per sleep')
+-- A radius (Grok, d15 14:07: a wait at the artillery ended by attacks 40 tiles away): attacks, groups, losses (in a
+-- claim too) and deaths count only within it; true, false and nil as before; anything else refused.
+do
+  eq(select(1,U.option(nil)),true); eq(select(1,U.option(false)),false); eq(select(2,U.option({radius=12})),12)
+  fails(function() U.option({radius=0}) end,'radius is 1..200'); fails(function() U.option({near=5}) end,'radius only'); fails(function() U.option('x') end,'true, false or {radius')
+  game.tick=90000
+  local b12=U.base(p,12); local b40=U.base(p)
+  eq(b12.radius,12)
+  s.damage={r={id=70,at={x=30,y=0},surface='nauvis',damage=30,hits=1,last=90010}}
+  game.tick=90020
+  eq(U.check(p,b12),nil,'30 tiles is outside a 12-tile radius')
+  s.damage.r2={id=71,at={x=8,y=0},surface='nauvis',damage=5,hits=1,last=90020}
+  has(U.check(p,b12),'attack on our structures 8 tiles from you')
+  s.damage=nil
+  s.attack_groups={{seq=90,tick=90030,size=9,position={x=90,y=0},target={x=30,y=0},surface='nauvis'}}
+  game.tick=90040
+  eq(U.check(p,b12),nil,'a group heading 30 tiles away'); s.attack_groups=nil
+  s.board={items={{id=9,kind='claim',owner='haiku',status='doing',title='far',area={left_top={x=200,y=200},right_bottom={x=260,y=260}}}}}
+  s.losses={{id=90,surface='nauvis',box={220,220,221,221},first=90050,last=90050,names={boiler=1},causes={['big-biter']=1},total=1}}
+  game.tick=90060
+  eq(U.check(p,b12),nil,'a loss in a claim 300 tiles away'); s.losses=nil; s.board=nil
+  -- with a bigger radius than 40, farther events wake
+  local b100=U.base(p,100)
+  s.damage={f={id=72,at={x=90,y=0},surface='nauvis',damage=5,hits=1,last=90070}}
+  game.tick=90080
+  has(U.check(p,b100),'90 tiles from you'); s.damage=nil
+end
 print('urgent: ok')

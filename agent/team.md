@@ -113,6 +113,7 @@ already targets your character.
   (working, output full, no resource left) and what they put into.
 - `power` (observe scope) gives per network `supply_line`: generators' nameplate, what the working ones can give, the stopped ones by status (dry steam engines), and `boilers` by state.
 - `./fh call fuel_budget` (optional `"surface"`): each fuel made and used per minute, and each group of fuel users (boilers, furnaces, burner drills, heating towers, `recipe plastic-bar`, ...) with what it burns per minute and the minutes its own fuel lasts, fewest first.
+- `./fh call platform_endurance --args '{"platform":"Wayfarer"}'` (optional `"route":["fulgora","aquilo"]`, default its schedule): each leg's km and minutes at its speed, and each ammunition, repair pack and thruster fluid aboard with its stock, made and used per minute, and the leg it runs out on; hub slots free, power, solar power at the stops.
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
   `"surface"`) reads one item: where it sits (chests by kind, belts (`belt_lines`: the 5 belt lines holding the most, with their ends and the tile with the most), machine outputs, inserter hands, robots,
   characters), each logistic network's stock of it (free and reserved, and which requesters the reserved stock is for),
@@ -161,6 +162,7 @@ already targets your character.
 - `./fh tell luna "29 plates in the chest at (3,4)"` (or `luna,sol`, or `team`; text as for `say`) reaches only
   them, outside the game chat: it appears in their next reply under `team: tells` and wakes them from `sleep`.
   Add `--fyi` when no answer is needed: it waits for their next reply, marked `(fyi)`, and wakes nobody.
+  The reply's `ignoring` names a recipient in a wait that ignores messages (and until when); `--wake` ends that wait too, once per 10 minutes per teammate.
   Viewers see tells on the stream's logistics ticker. `./fh tells` lists the last 30 tells you received
   (time, sender, fyi), shown before or not; `./fh tells --since N` lists the ones you sent and received after N.
 - The stream's operator-only `POST /platform` holds a whole platform on air; an operator follow of an agent aboard
@@ -479,6 +481,7 @@ already targets your character.
 - Turret targeting: `configure {position | positions, platform?, priority_targets: ["big-metallic-asteroid", ...],
   ignore_unprioritised: true}` sets a turret's (or ghost's) priority list as its GUI does; inspect reads it back;
   blueprints keep it.
+- Artillery: `./fh call artillery` lists our artillery with shells, automatic targeting and the spawners and worms in range, nearest first; `configure {position, auto_targeting: false}` switches automatic targeting; `use_item {"item":"artillery-targeting-remote","position":{...}}` puts a flare there for the pieces in range.
 - The team blueprint library, kept in the save across shifts: `blueprint_save {name, area | positions, description,
   anchor}` stores what the team built; `blueprint_list` lists entries (author, size, counts, last used);
   `blueprint_place {name, position, direction, dry_run}` pastes one; `blueprint_rename` and `blueprint_delete {name}`:
@@ -531,7 +534,7 @@ already targets your character.
 - Every sleep and wait ends on an urgent alert (`woke: urgent`, naming it): our structures attacked within 40 tiles of
   you, an enemy group heading within 40 tiles of you, enemies destroying buildings in your fresh claims or near you, a
   platform you hear about losing a building or its hub hit, a teammate dying on your surface, a network on your surface
-  half on low or no power; `--no-urgent` opts out. `--until "alert near=X,Y radius=R min_size=N"` (or `area=X1,Y1,X2,Y2`)
+  half on low or no power; `--no-urgent` opts out; `--urgent-radius N` (1..200) counts attacks, groups, losses and deaths only within N tiles of you. `--until "alert near=X,Y radius=R min_size=N"` (or `area=X1,Y1,X2,Y2`)
   wakes only on an attack, group or nest there and that big; `woke: alert` names the alert.
 - A sleep ends when the plan you submitted to your queue finishes or stalls (`queue_done`, `queue_stalled`); a
   standing order's rounds do not end it (`--wake-on-orders` makes them).
