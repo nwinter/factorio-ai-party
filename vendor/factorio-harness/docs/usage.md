@@ -1332,6 +1332,15 @@ fh sleep 900 --until researched                       # ...or until the research
   building_rocket, parts 35/50, cargo none`. A queue step, a guard's `when`, a sleep condition and an order's `when`
   take it; `fh sleep 600 --until "rocket_parts>=40 at 65.5,14.5"` (`>39` is the same).
 - `item_count` with `positions` on a rocket silo counts its rocket cargo (the game counts it with the silo's inventories), and `saw` adds the silo's line: `agricultural-science-pack 45 in 1 entities; rocket-silo (65.5,14.5): rocket built (50/50 parts) and ready to launch, not launched, cargo agricultural-science-pack*45; parts for the rocket after it 0/50`.
+- `item_count` with `platform: "Sunward"` counts that platform hub's main inventory by name, from any planet or
+  while aboard. It uses the same `item`, `at_least` / `below` thresholds in direct `wait_until`, queue steps,
+  guards, repeat conditions and sleep. It excludes cargo still incoming and the hub's trash inventory; `saw` names
+  the hub and its landed count. An unknown platform or missing hub fails the check. `platform` replaces
+  `position` / `positions` / `surface` for this condition. This is a stock threshold, not a receipt for a particular
+  rocket: existing stock counts, and items removed or consumed after arrival no longer count.
+  `fh call wait_until --args '{"until":"item_count","platform":"Sunward","item":"agricultural-science-pack","at_least":1000}' --wait`
+  and `fh sleep 600 --until "item_count item=agricultural-science-pack at_least=1000 platform=Sunward"` use it.
+  JSON accepts platform names containing spaces.
 - A direct `wait_ticks` or `wait_until` while the queue runs is refused (it would pause the queue: "wait_ticks would pause your queue (8 steps, repeating): ..."); `pause_queue: true` pauses it for the wait as before. A paused or empty queue is no reason to refuse. Queue steps are unchanged.
 - Direct `wait_ticks` and `wait_until` accept `wake_on_messages: false`: tells and mentions stay pending for the
   next reply while the wait runs to its duration, condition, or timeout. This overrides `wake_on_viewers`.
@@ -1382,7 +1391,7 @@ fh sleep 900 --until researched                       # ...or until the research
     wait's last reply. Damage and death wakes keep repeating as above. Off in `turns` mode.
   - `{until: "alert"}` as the condition (`fh wait --until alert`) wakes on a new attack area, enemy group or enemy base for the team (`woke: alert`).
   - `{until: "alert", kinds: [...]}` (`fh wait --until "alert low_power starved"`, also `fh sleep --until`; commas also separate; Luna, 19:50) wakes on chosen kinds instead: a push alert group of one of those kinds (or its sub-kinds: `lost_source` covers `lost_source.boiler`) addressed to you, as the team alerts route them, that is new since the wait began or whose count grew (`alert` is its text); `starved`: an assembler or furnace in one of your own active claims whose status is `item_ingredient_shortage`, `fluid_ingredient_shortage` or `no_ingredients` and was not when the wait began, looked at every 10 s (at most 500 machines a claim). 1..16 kinds.
-  - Several conditions (Muse, 21:20: wake on whichever of two or three chests fills first; Grok, 21:20: `fh wait --until "alert|platform_arrived NAME planet"` was a client_error): joined by `|` (`fh wait --until "item_count coal>=50 at 10,39 | item_count iron-plate>=100 at 12,39"`, `fh sleep 300 --until "alert|platform_arrived Sunward gleba"`), or a JSON list, are sent as `{until: "any", conditions: [...]}` (the runtime also takes a plain list): 1..8 conditions, alerts among them (plain or with kinds), whichever holds first wakes it. `condition` reads `item_count coal | item_count iron-plate`, `saw` lists each one's reading while none holds, and a condition wake names the one that held (`met`; the wait's line: `woke: condition after 7 s (item_count coal: saw coal 60 at (10,39))`). One met at the start ends the sleep at once. `tell` among them is dropped (every wait ends on a tell). A runtime from before this deploy refuses until=any, and the CLI says so.
+  - Several conditions (Muse, 21:20: wake on whichever of two or three chests fills first; Grok, 21:20: `fh wait --until "alert|platform_arrived NAME planet"` was a client_error): joined by `|` (`fh wait --until "item_count coal>=50 at 10,39 | item_count iron-plate>=100 at 12,39"`, `fh sleep 300 --until "alert|platform_arrived Sunward gleba"`), or a JSON list, are sent as `{until: "any", conditions: [...]}` (the runtime also takes a plain list): 1..8 conditions, alerts among them (plain or with kinds), whichever holds first wakes it. `condition` reads `item_count coal | item_count iron-plate`, `saw` lists each one's reading while none holds, and a condition wake names the one that held (`met`; the wait's line: `woke: condition after 7 s (item_count coal: saw coal 60 at (10,39))`). One met at the start ends the sleep at once. `tell` (also `tells`, `mention`, `told`) among them is dropped by both `fh sleep --until` and `fh wait --until` (both wake on tells); `fh sleep 300 --until "tell|alert"` waits for either event. A runtime from before this deploy refuses until=any, and the CLI says so.
   - `fh call sleep --args '{"seconds":N}'` (with or without `--wait`, also in `fh run` and `fh stream`) is the same blocking wait; the raw action only starts a sleep.
   - Claude Code agents get a 20-minute Bash timeout (tools/clean-profile.py in the pog repo), above the longest sleep. Codex agents' `yield_time_ms` returns earlier and leaves the sleep running in the background.
 - A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works. A wait that ends `failed` names the call (`action: build`) and puts its error on the error line (Sol, shift09: the silo build hit trees after its craft and read only `Control ended: failed`): `error: action_interrupted: Control ended: failed: placement blocked by stingfrond (63.9375,11.375), stingfrond (68.125,12.4375); it needs the trees mined first (mine them, or place_ghosts marks them and construct clears them)`. A refused build names what is in the way the same way, direct or after a craft: trees and rocks need mining first, and a cliff takes cliff explosives (a character cannot mine one).
@@ -1751,6 +1760,14 @@ fh sleep 900 --until researched                       # ...or until the research
     roboports and agricultural towers, or `types` on any of the three. A target out of reach is a row with the reach
     line. Not with `positions`, `position` or `radius`; an area with none of them fails with what it looked for.
     `feed {"area": {...}, "recipe": "advanced-circuit", "crafts": 5}` loads every advanced circuit assembler in it.
+    With `walk: true`, area feed already makes one nearest-first tour through the targets, including successive
+    groups out of reach; `ticks` is the budget for the whole tour (default 3600, maximum 36000), with the usual
+    enemy checks. `out_of_reach` counts targets outside reach at submission, not targets omitted from the tour.
+    `last.visited` / `last.entities` report the stops reached. The tour ends early with `out_of_items` when no
+    carried item above `keep` can fill the remaining shortages, or `topped_up` when nothing else wants what is
+    carried. A fuel slot holding coal cannot also hold solid fuel; a solid-fuel feed leaves that slot alone, even
+    if it empties after its stop. `feed {"area": {...}, "types": ["boiler"], "fuel": true, "fuel_count": 10, "walk": true,
+    "ticks": 3600}` tours boilers and tops up the fuel they hold when carried (otherwise the burner's default fuel).
   - `inspect {"positions": [...]}` (1..32 entries, each may carry `name` or `unit_number`): one inspect per entry in one
     call, `entities` in order and `count`; an entry that fails is `{position, error}`.
   - `compact: true` with `position`, `positions` or `area` (Muse, shift13: about 10 inspects over positions read as
@@ -1954,7 +1971,7 @@ fh sleep 900 --until researched                       # ...or until the research
   `conflicts`, `deconstruct`, `cancel_deconstruction`), and their dry runs (Sol, 23:13: `place_ghosts surface=nauvis`
   was refused aboard; one list in bots.lua decides both what runtime.lua runs by remote view and what works aboard);
   `deconstruct` and `cancel_deconstruction` take `surface=` everywhere now; `sleep`; and `wait_until` on `platform_arrived`,
-  `platform_left`, `researched`, `rocket_ready` or `item_count` at positions. Anything that needs a body (walking,
+  `platform_left`, `researched`, `rocket_ready` or `item_count` at positions or a named platform hub. Anything that needs a body (walking,
   mining, building or crafting by hand, the inventory) is refused with that list.
 - Aboard, `configure {platform, ...}` and `configure {surface, ...}` use remote view. `queue_submit`, `queue_repeat` and `queue_edit` accept plans whose steps, guards and repeat stop conditions are allowed aboard, including `wait_until {until:"platform_arrived", platform:"Sunward", location:"gleba"}` followed by `drop`. Each step's permission is checked again when it starts. `observe` without a scope returns the platform surroundings and `player.body:"none"`; health, character inventories and equipment are absent while there is no character.
 - `platforms` shows each platform's `defense`: `hub_health` (`637/1000`), `turrets` (`5 gun-turrets: 4 empty, 0 low
