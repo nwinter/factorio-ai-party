@@ -24,6 +24,7 @@ return function(api)
   local M = {}
   local CELL, SCAN_TICKS, DIGEST_TICKS, MAX_LINES, MAX_SCAN = 64, 1800, 9000, 5, 20000
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  local slots = require('slots')()
   local TYPES = {'assembling-machine', 'furnace', 'mining-drill', 'lab', 'inserter', 'beacon', 'radar', 'roboport',
     'pump', 'electric-turret', 'ammo-turret', 'fluid-turret', 'boiler', 'rocket-silo', 'agricultural-tower',
     'asteroid-collector', 'lamp', 'loader', 'loader-1x1', 'cargo-landing-pad', 'car', 'spider-vehicle', 'reactor'}
@@ -36,7 +37,9 @@ return function(api)
     no_storage='robots have no storage for what they carry', no_roboport_storage='no roboport storage',
     train_out_of_fuel='train out of fuel', train_no_path='train has no path', unclaimed_cargo='unclaimed cargo',
     collector_path_blocked='asteroid collector path blocked', pipeline_overextended='pipeline overextended (flow stops)',
-    no_platform_storage='platform hub storage full', platform_tile_building_blocked='platform tile building blocked'}
+    no_platform_storage='platform hub storage full', platform_tile_building_blocked='platform tile building blocked',
+    input_spoilage='short of ingredients with spoilage in their input (their recipes do not take it)',
+    requester_full='requester chests with every slot taken while a request is short'}
   local HINT = {no_power='fh call power', unconnected='fh call power', low_power='more power: fh call power', no_fuel='refuel',
     no_ammo='rearm', flamer_dry='fh call flamers', no_material_for_construction='craft or bring the items for the ghosts',
     not_enough_construction_robots='more construction robots in the roboports', not_enough_repair_packs='repair packs into a roboport or storage chest',
@@ -237,6 +240,11 @@ return function(api)
     if tick - game.tick < ROT_SOON then r.soon = r.soon + 1 end
     if not r.tick or tick < r.tick then r.tick, r.item, r.at = tick, item, {x=e.position.x, y=e.position.y} end
   end
+  local STARVED = {}
+  for _, k in ipairs({'item_ingredient_shortage', 'no_ingredients'}) do
+    local v = defines.entity_status and defines.entity_status[k]
+    if v then STARVED[v] = true end
+  end
   local function read_list(groups, s, list, from, to, mem, tmem, mining, dmem)
     local st = statuses()
     for i = from or 1, to or #list do
@@ -268,6 +276,10 @@ return function(api)
           -- all it holds, its own buffer too (flameroil.lua; fluidbox[1] alone reads empty once the pipe drains)
           local amount = try(function() return (flameroil.read(e)) end)
           if amount and amount < 1 then kind = 'flamer_dry' end
+        elseif not kind and (e.type == 'assembling-machine' or e.type == 'furnace') and STARVED[e.status] then
+          -- Spoilage its recipe does not take, in the input of a machine short of ingredients (Sol, 22:08; Gleba).
+          local sp = try(function() return slots.input_spoilage(e) end)
+          if sp then kind, detail = 'input_spoilage', string.format('%s %s: %s', e.name, at_text(e.position), sp.text) end
         end
         if kind then add(groups, kind, s.name, e, e.position, e.name, builder(e), detail) end
       end
@@ -682,6 +694,12 @@ return function(api)
         g.ore == 'unknown' and 'ore not seen' or g.ore, g.still or 0,
         u and string.format('; nearest untapped %s (%d,%d) %d tiles, about %s ore', g.ore, u.x, u.y, u.d, amount) or '')
     end
+    if g.kind == 'input_spoilage' then
+      -- '2 biochamber short of ingredients with spoilage in their input near (40,12): biochamber (40,12): input holds spoilage 50 in 1 of its 3 slots (...); ...'
+      return string.format('%s short of ingredients with spoilage in their input near (%d,%d)%s%s: %s%s', what(g), g.center.x, g.center.y,
+        g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
+        table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '')
+    end
     if g.kind == 'burnt_full' then
       -- '2 biochamber stopped by a full burnt-result slot near (57,61): biochamber (45.5,72.5): burnt-result slot spoilage*200; fuel slot spoilage*3 (not a fuel it burns: it burns nutrients); ...'
       return string.format('%s stopped by a full burnt-result slot near (%d,%d)%s%s: %s%s', what(g), g.center.x, g.center.y,
@@ -847,7 +865,7 @@ return function(api)
       note=#rows == 0 and 'no alerts or warnings' or nil}
   end
   M.schema = {
-    game_alerts = {surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel (its line adds the spoiling fuel of burners of those names around it: how many burn it, how many within 60 s, the first to spoil and when), burnt_full (burners stopped by a full burnt-result slot whatever their status reads, a biochamber whose spoiled nutrients fill it: each with what fills that slot and its fuel slot), no_ammo, flamer_dry; out_of_ore (mining drills whose patch under them is used up, by ore: out_of_ore.iron-ore, ...; each with ore, still_mining (our drills still mining that ore in the area) and untapped (the nearest patch of it no drill of ours is on, from the ores read\'s last survey: x, y, d tiles, amount));rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), feed_chest_low (a boiler\'s feed chest under 20 of its fuel with nothing put into it for 5 min: boiler, chest, count, feeder); robots_busy (no idle logistic robot for 10 min); accumulators_draining (a network\'s accumulators empty within 10 min at their net flow of the last 30 s, again under 5 and 2 min; kept 10 min after, so a Fulgora storm between lulls is not news; on Fulgora with the time to the next storm or to dawn); construction_wait (ghosts in a network\'s construction area waiting 5+ min since first seen while their items are in the network, with the construction robots and whether busy); deliveries_wait (requests unfilled 5+ min while providers or storage hold the item free, with what the logistic robots are doing);science_idle (a pack the research needs whose makers on the science surface all stood still at two science-line builds 5+ min apart, with their states and the chain\'s first short step); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
+    game_alerts = {surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel (its line adds the spoiling fuel of burners of those names around it: how many burn it, how many within 60 s, the first to spoil and when), burnt_full (burners stopped by a full burnt-result slot whatever their status reads, a biochamber whose spoiled nutrients fill it: each with what fills that slot and its fuel slot), no_ammo, flamer_dry; out_of_ore (mining drills whose patch under them is used up, by ore: out_of_ore.iron-ore, ...; each with ore, still_mining (our drills still mining that ore in the area) and untapped (the nearest patch of it no drill of ours is on, from the ores read\'s last survey: x, y, d tiles, amount));rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), feed_chest_low (a boiler\'s feed chest under 20 of its fuel with nothing put into it for 5 min: boiler, chest, count, feeder); robots_busy (no idle logistic robot for 10 min); accumulators_draining (a network\'s accumulators empty within 10 min at their net flow of the last 30 s, again under 5 and 2 min; kept 10 min after, so a Fulgora storm between lulls is not news; on Fulgora with the time to the next storm or to dawn); construction_wait (ghosts in a network\'s construction area waiting 5+ min since first seen while their items are in the network, with the construction robots and whether busy); deliveries_wait (requests unfilled 5+ min while providers or storage hold the item free, with what the logistic robots are doing); requester_full (requester chests with every slot taken while a request has been short 60+ s: per network, each chest, the item it asks and what fills its slots, spoilage counted); input_spoilage (assemblers and furnaces short of ingredients with spoilage their recipe does not take in their input: each machine, how much in how many slots);science_idle (a pack the research needs whose makers on the science surface all stood still at two science-line builds 5+ min apart, with their states and the chain\'s first short step); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
       returns='groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest)}; scanned (the scan is at most 30 s old). What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
   }
   return M

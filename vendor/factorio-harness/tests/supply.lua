@@ -363,4 +363,28 @@ do
   eq(#t.throughput,2); eq(t.throughput[1],'assembling-machine-2 short'); eq(t.throughput[2],'assembling-machine-3 short')
   eq(r.throughput,nil,'without feed')
 end
+-- Every slot taken (Sol, 22:08: requester (48.5,34.5) on Gleba, 48 slots, 494 spoilage among them, read as "no idle
+-- robots"): inventory full, what fills it, before any robot reason (network 12 has no idle robots).
+do
+  local function full_inv(stacks)
+    local inv={}
+    for i,s in ipairs(stacks) do inv[i]={valid_for_read=true,name=s[1],count=s[2]} end
+    inv.count_empty_stacks=function() return 0 end
+    inv.can_insert=function() return false end
+    inv.get_item_count=function(name) local n=0 for _,s in ipairs(stacks) do if s[1]==name then n=n+s[2] end end return n end
+    inv.get_contents=function() local out={} for _,s in ipairs(stacks) do out[#out+1]={name=s[1],count=s[2],quality='normal'} end return out end
+    inv.is_empty=function() return false end
+    return inv
+  end
+  local c18=chest(216,2,'requester-chest','requester',{},N12,20)
+  local held=full_inv({{'spoilage',100},{'spoilage',100},{'spoilage',94},{'nutrients',50}})
+  c18.get_inventory=function(id) if id==defines.inventory.chest then return held end end
+  local t=supply_read(p,{item=AC})
+  local found
+  for _,l in ipairs(t.networks or {}) do if l:find('(216,2)',1,true) then found=l end end
+  assert(found and found:find('(216,2) requester-chest 0/20: inventory full: all 4 slots taken (spoilage 294 in 3 slots, nutrients 50 in 1 slot)',1,true),tostring(found))
+  -- (200,0) in the same network still reads no idle robots.
+  assert(table.concat(t.networks,' '):find('no idle robots',1,true))
+  c18.valid=false
+end
 print('supply: ok')
