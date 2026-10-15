@@ -87,6 +87,10 @@ def feed():
         feed.waits.ingest("astra", req("status"))
         feed.waits.ingest("astra", reply({"active": dict(facts(), kind="wait_until")}, tick=TICK))
         assert feed.waits.current("astra", TICK + 3, NOW) is None  # older journal cannot resurrect a completed wait
+        feed.waits.status("astra", {"active": False}, TICK + 3, NOW + 1)
+        feed.waits.ingest("astra", req("status"))
+        feed.waits.ingest("astra", reply({"active": dict(facts(), kind="wait_until")}, tick=TICK + 3))
+        assert feed.waits.current("astra", TICK + 3, NOW + 1) is None  # paused: same tick, older receipt time
         for i in range(200):
             feed.waits.ingest("astra", req("inspect", id=str(i)))
         assert len(feed.waits.requests["astra"]) == 128

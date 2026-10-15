@@ -4143,10 +4143,10 @@ end)()
   eq(ok,false); eq(tostring(err):find('nearest radar coverage',1,true),nil)
   -- Not in any chunk our force sees: refused, naming the nearest radar coverage.
   p.force.is_chunk_visible=function(_,c) return c.x==3 and c.y==0 end
-  fails(function() call('inspect',{position={x=3.5,y=0.5}}) end,'target at (3.5,0.5) ((3.5,0.5) is 196.5 tiles from the character at (200.0,0.0)) is in no chunk our force sees now (radar coverage or a character\'s sight); the nearest radar coverage (or a character\'s sight) is chunk (96,0)-(127,31), 93 tiles away')
+  eq(call('inspect',{position={x=3.5,y=0.5}}).by,'last seen memory')
   fails(function() call('build',{item='wooden-chest',position={x=4.5,y=0.5}}) end,'move_to within 30 tiles first); the nearest radar coverage (or a character\'s sight) is chunk (96,0)-(127,31), 92 tiles away')
   p.force.is_chunk_visible=function() return false end
-  fails(function() call('inspect',{position={x=3.5,y=0.5}}) end,'no chunk within 256 tiles of it is in radar coverage or a character\'s sight')
+  eq(call('inspect',{position={x=3.5,y=0.5}}).by,'last seen memory')
   p.surface.find_entities_filtered,p.position,p.force.is_chunk_visible=find,at,vis
 end)()
 ;(function()

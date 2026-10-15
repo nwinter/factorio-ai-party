@@ -99,6 +99,15 @@ return function(api)
       g = {key=key, kind=kind, surface=surface, n=0, names={}, sx=0, sy=0, at={}, by={}}
       groups[key] = g
     end
+    g.observed_tick=game.tick
+    if e and kind:match('^out_of_ore%.') and not g.drill then
+      g.drill={position={x=pos.x,y=pos.y},name=name,unit_number=e.unit_number}
+    end
+    if e and (kind=='no_power' or kind=='unconnected' or kind=='low_power' or kind=='no_fuel') then
+      g.status_entities=g.status_entities or {}
+      if #g.status_entities<128 then g.status_entities[#g.status_entities+1]={entity=e,position={x=pos.x,y=pos.y},name=name}
+      else g.status_capped=true end
+    end
     g.n = g.n + 1
     g.sx, g.sy = g.sx + pos.x, g.sy + pos.y
     if name then g.names[name] = (g.names[name] or 0) + 1 end
@@ -354,6 +363,7 @@ return function(api)
       local h = groups[nk]
       if not h then g.kind, g.key = kind, nk; groups[nk] = g
       else
+        h.drill=h.drill or g.drill
         h.n, h.sx, h.sy = h.n + g.n, h.sx + g.sx, h.sy + g.sy
         for n, v in pairs(g.names) do h.names[n] = (h.names[n] or 0) + v end
         for n, v in pairs(g.by) do h.by[n] = (h.by[n] or 0) + v end
@@ -405,6 +415,15 @@ return function(api)
               local mk = surface .. '|' .. (c[1] + dx) .. ',' .. (c[2] + dy)
               if not near[mk] then near[mk] = true; area.still = area.still + (((mining or {})[mk] or {})[ore] or 0) end
             end end
+          end
+          area.drill=area.drill or part.drill
+          area.observed_tick=math.min(area.observed_tick or game.tick,part.observed_tick or game.tick)
+          if part.status_entities then
+            area.status_entities=area.status_entities or {}
+            for _,r in ipairs(part.status_entities) do
+              if #area.status_entities<128 then area.status_entities[#area.status_entities+1]=r else area.status_capped=true end
+            end
+            area.status_capped=area.status_capped or part.status_capped
           end
           area.n, area.sx, area.sy = area.n + part.n, area.sx + part.sx, area.sy + part.sy
           if part.units then
@@ -510,6 +529,7 @@ return function(api)
         stages[#stages+1] = {step='alerts'}
         stages[#stages+1] = {step='networks'}
         stages[#stages+1] = {step='merge'}
+        stages[#stages+1] = {step='drill_sites'}
         s.push_steps = s.push_steps or {}
         job = {start=tick, stages=stages, i=1, groups={}, mining={}, budget=MAX_SCAN, steps=0,
           every=walk.every(s.push_steps[force.name], SCAN_TICKS)}
@@ -556,8 +576,22 @@ return function(api)
         local done, out = api.network_step(job.net, NET_SLICE)
         if done then job.extra, job.net = out, nil; job.i = job.i + 1 end
       else job.i = job.i + 1; job.extra = network_groups(force) end
+    elseif stage.step=='merge' then
+      job.result={tick=job.start,groups=merge(job.groups,job.extra,job.mining,force)}
+      job.i=job.i+1;job.site_index=1
+      job.stages[job.i]=job.stages[job.i] or {step='drill_sites'}
     else
-      s.push_alerts[force.name] = {tick=job.start, groups=merge(job.groups, job.extra, job.mining, force)}
+      -- At most one depleted group lookup in a background step. Never in a
+      -- reply; drill_sites caches both a free site and a bounded miss.
+      local groups=job.result.groups
+      while job.site_index<=#groups do
+        local g=groups[job.site_index];job.site_index=job.site_index+1
+        if api.drill_site and g.drill and g.ore~='unknown' then
+          g.drill_site=try(function() return api.drill_site(force,g) end)
+          return
+        end
+      end
+      s.push_alerts[force.name]=job.result
       s.push_steps[force.name] = job.steps
       s.push_jobs[force.name] = nil
     end
@@ -571,14 +605,21 @@ return function(api)
   end
   -- The last finished read; with the background job running it never reads
   -- in a reply, except a force's very first (and tests without the job).
+  local function with_belts(c,force)
+    if not api.belt_groups then return c end
+    local out={tick=c.tick,groups={}}
+    for _,g in ipairs(c.groups) do out.groups[#out.groups+1]=g end
+    for _,g in ipairs(api.belt_groups(force)) do out.groups[#out.groups+1]=g end
+    return out
+  end
   local function current(force)
     local s = api.state()
     s.push_alerts = s.push_alerts or {}
     local c = s.push_alerts[force.name]
-    if c and (s.push_bg or game.tick - c.tick < SCAN_TICKS) then return c end
+    if c and (s.push_bg or game.tick - c.tick < SCAN_TICKS) then return with_belts(c,force) end
     c = {tick=game.tick, groups=scan(force)}
     s.push_alerts[force.name] = c
-    return c
+    return with_belts(c,force)
   end
 
   -- Who hears a group: the owners of active board claims over its centre (on its surface),
@@ -634,6 +675,30 @@ return function(api)
     return inv ~= nil and inv.get_item_count() == 0
   end
   function M.recheck(g, force)
+    if g.status_entities then
+      local keep,names,at,unknown={}, {}, {}, false
+      local surface=game.surfaces[g.surface]
+      if not surface then for _,v in pairs(game.surfaces) do if v.name==g.surface then surface=v;break end end end
+      for _,r in ipairs(g.status_entities) do
+        local visible=surface and (not force.is_chunk_visible or force.is_chunk_visible(surface,{x=math.floor(r.position.x/32),y=math.floor(r.position.y/32)}))
+        local active=true
+        if visible then
+          local e=r.entity
+          active=e.valid and ((g.kind=='unconnected' and not e.electric_network_id and
+            (e.status==defines.entity_status.no_power or e.status==defines.entity_status.low_power)) or
+            (g.kind~='unconnected' and statuses()[e.status]==g.kind))
+        else unknown=true end
+        if active then
+          keep[#keep+1]=r;names[r.name]=(names[r.name] or 0)+1
+          if #at<4 then at[#at+1]=r.position end
+        end
+      end
+      if #keep==0 and not g.status_capped then return nil end
+      local c={};for k,v in pairs(g) do c[k]=v end
+      c.n=#keep+math.max(0,g.n-#g.status_entities);c.names=names;c.at=at
+      c.stale=unknown or g.status_capped;c.checked_tick=game.tick
+      return c
+    end
     if not (RECHECK[g.kind] and g.units and g.cells) then return g end
     local surface
     for _, x in pairs(game.surfaces) do if x.name == g.surface then surface = x end end
@@ -692,10 +757,14 @@ return function(api)
       -- '6 electric-mining-drill out of ore near (40,-60): iron-ore; 4 still mining there; nearest untapped iron-ore (180,-20) 145 tiles, about 1.2M ore'
       local u = g.untapped
       local amount = u and u.amount and (u.amount >= 1e6 and string.format('%.1fM', u.amount / 1e6) or u.amount >= 1e4 and string.format('%dk', math.floor(u.amount / 1e3 + 0.5)) or tostring(math.floor(u.amount)))
+      local site=g.drill_site
+      local site_text=site and (site.site and string.format('; nearest checked %s site with room for %s (%g,%g), %.1f tiles from drill (%g,%g), %g ore; checked tick %d within %d tiles',
+        g.ore,site.drill,site.site.position.x,site.site.position.y,site.site.distance,site.origin.x,site.origin.y,site.site.amount,site.tick,site.radius)
+        or string.format('; no checked free %s site within %d tiles of drill (%g,%g); checked tick %d%s',g.ore,site.radius,site.origin.x,site.origin.y,site.tick,site.truncated and '; lookup capped' or '')) or ''
       return string.format('%s out of ore near (%d,%d)%s%s: %s; %d still mining there%s', what(g), g.center.x, g.center.y,
         g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         g.ore == 'unknown' and 'ore not seen' or g.ore, g.still or 0,
-        u and string.format('; nearest untapped %s (%d,%d) %d tiles, about %s ore', g.ore, u.x, u.y, u.d, amount) or '')
+        (u and string.format('; nearest untapped %s (%d,%d) %d tiles, about %s ore', g.ore, u.x, u.y, u.d, amount) or '')..site_text)
     end
     if g.kind == 'input_spoilage' then
       -- '2 biochamber short of ingredients with spoilage in their input near (40,12): biochamber (40,12): input holds spoilage 50 in 1 of its 3 slots (...); ...'
@@ -730,7 +799,7 @@ return function(api)
     end
     return string.format('%s %s near (%d,%d)%s%s%s%s', what(g), LABEL[g.kind] or g.kind:gsub('_', ' '), g.center.x, g.center.y,
       g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '', hint and '; ' .. hint or '',
-      #rot > 0 and '; ' .. table.concat(rot, '; ') or '')
+      (#rot > 0 and '; ' .. table.concat(rot, '; ') or '')..(g.stale and '; last observed tick '..(g.observed_tick or 0)..'; current state partly unknown' or ''))
   end
 
   -- Team block lines for p: at most one digest every DIGEST_TICKS, groups
@@ -861,14 +930,14 @@ return function(api)
         for name, why in pairs(owners(g, who)) do to[#to+1] = name .. ' (' .. why .. ')' end
         table.sort(to)
         rows[#rows+1] = {kind=g.kind, surface=g.surface, count=g.n, center=g.center, names=g.names, at=g.at, lost=g.lost,
-          ore=g.ore, still_mining=g.still, untapped=g.untapped, line=M.text(g, here), to=#to > 0 and to or nil}
+          ore=g.ore, still_mining=g.still, untapped=g.untapped, drill_site=g.drill_site, observed_tick=g.observed_tick, checked_tick=g.checked_tick, stale=g.stale, line=M.text(g, here), to=#to > 0 and to or nil}
       end
     end
     return {groups=rows, scanned=string.format('%ds ago', math.floor((game.tick - c.tick) / 60)),
       note=#rows == 0 and 'no alerts or warnings' or nil}
   end
   M.schema = {
-    game_alerts = {surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel (its line adds the spoiling fuel of burners of those names around it: how many burn it, how many within 60 s, the first to spoil and when), burnt_full (burners stopped by a full burnt-result slot whatever their status reads, a biochamber whose spoiled nutrients fill it: each with what fills that slot and its fuel slot), no_ammo, flamer_dry; out_of_ore (mining drills whose patch under them is used up, by ore: out_of_ore.iron-ore, ...; each with ore, still_mining (our drills still mining that ore in the area) and untapped (the nearest patch of it no drill of ours is on, from the ores read\'s last survey: x, y, d tiles, amount));rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: no_power.network (machines reporting no_power, grouped by electric network including small isolated networks, with its latest 5 s supply sample); power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), feed_chest_low (a boiler\'s feed chest under 20 of its fuel with nothing put into it for 5 min: boiler, chest, count, feeder); robots_busy (no idle logistic robot for 10 min); accumulators_draining (a network\'s accumulators empty within 10 min at their net flow of the last 30 s, again under 5 and 2 min; kept 10 min after, so a Fulgora storm between lulls is not news; on Fulgora with the time to the next storm or to dawn); construction_wait (ghosts in a network\'s construction area waiting 5+ min since first seen while their items are in the network, with the construction robots and whether busy); deliveries_wait (requests unfilled 5+ min while providers or storage hold the item free, with what the logistic robots are doing); requester_full (requester chests with every slot taken while a request has been short 60+ s: per network, each chest, the item it asks and what fills its slots, spoilage counted); input_spoilage (assemblers and furnaces short of ingredients with spoilage their recipe does not take in their input: each machine, how much in how many slots);science_idle (a pack the research needs whose makers on the science surface all stood still at two science-line builds 5+ min apart, with their states and the chain\'s first short step); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
+    game_alerts = {freshness='power/fuel entity groups recheck up to 128 recorded entities; hidden/capped observations are dated; belt_cut names missing formerly carrying tiles, cleared by observed replacements; out_of_ore includes drill_site, one representative drill placement cached 60 s and computed in background',surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel (its line adds the spoiling fuel of burners of those names around it: how many burn it, how many within 60 s, the first to spoil and when), burnt_full (burners stopped by a full burnt-result slot whatever their status reads, a biochamber whose spoiled nutrients fill it: each with what fills that slot and its fuel slot), no_ammo, flamer_dry; out_of_ore (mining drills whose patch under them is used up, by ore: out_of_ore.iron-ore, ...; each with ore, still_mining (our drills still mining that ore in the area) and untapped (the nearest patch of it no drill of ours is on, from the ores read\'s last survey: x, y, d tiles, amount));rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: no_power.network (machines reporting no_power, grouped by electric network including small isolated networks, with its latest 5 s supply sample); power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), feed_chest_low (a boiler\'s feed chest under 20 of its fuel with nothing put into it for 5 min: boiler, chest, count, feeder); robots_busy (no idle logistic robot for 10 min); accumulators_draining (a network\'s accumulators empty within 10 min at their net flow of the last 30 s, again under 5 and 2 min; kept 10 min after, so a Fulgora storm between lulls is not news; on Fulgora with the time to the next storm or to dawn); construction_wait (ghosts in a network\'s construction area waiting 5+ min since first seen while their items are in the network, with the construction robots and whether busy); deliveries_wait (requests unfilled 5+ min while providers or storage hold the item free, with what the logistic robots are doing); requester_full (requester chests with every slot taken while a request has been short 60+ s: per network, each chest, the item it asks and what fills its slots, spoilage counted); input_spoilage (assemblers and furnaces short of ingredients with spoilage their recipe does not take in their input: each machine, how much in how many slots);science_idle (a pack the research needs whose makers on the science surface all stood still at two science-line builds 5+ min apart, with their states and the chain\'s first short step); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
       returns='groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest)}; scanned (the scan is at most 30 s old). What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
   }
   return M

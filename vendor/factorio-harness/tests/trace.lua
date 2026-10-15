@@ -212,7 +212,7 @@ r=trace.trace(p,{position={x=0.5,y=20.5},forward=true})
 has(table.concat(r.routes[1].takers,' | '),'fast-inserter (4.5,21.5) working, picks only the left lane -> crusher (10.5,23.5)')
 wrong.valid=false
 -- Out of sight on charted ground (Grok 12:20: each trace stopped at the radar edge): the walk goes on by the layout
--- the map draws, with no contents there, and names where the layout ends; uncharted ground stops it.
+-- recorded observations supply. Without a recorded layout it stops; charted alone does not expose live buildings.
 local B4=belt(40.5,20.5,{{['iron-ore']=3}})
 local B5=belt(41.5,20.5,{})
 link(B3,B4); feeds(B3,B4); link(B4,B5); feeds(B4,B5)
@@ -221,12 +221,11 @@ force.is_chunk_charted=function() return true end
 remembered={}
 r=trace.trace(p,{position={x=0.5,y=20.5},forward=true})
 eq(#remembered,0,'no endpoint contents remembered out of sight')
-has(r.routes[1].path,'out of sight from (40.5,20.5) (no radar coverage): layout as last seen, contents unknown -> transport-belt (40.5,20.5) to (41.5,20.5)')
-eq(r.routes[1].stop,'the layout ends at transport-belt (41.5,20.5), out of sight: nothing on the map at (42.5,20.5) after it (layout as last seen, contents unknown)')
+eq(r.routes[1].stop,'out of sight at (40.5,20.5); current route unknown')
 eq(r.routes[1].carries:find('3 iron-ore',1,true),nil,'no contents out of sight')
 force.is_chunk_charted=function(_,c) return c.x~=1 end
 r=trace.trace(p,{position={x=0.5,y=20.5},forward=true})
-eq(r.routes[1].stop,'reaches uncharted ground at (40.5,20.5)')
+eq(r.routes[1].stop,'out of sight at (40.5,20.5); current route unknown')
 force.is_chunk_visible=function() return true end; force.is_chunk_charted=nil
 B4.valid=false; B5.valid=false; B3.belt_neighbours.outputs={}; for k=1,2 do B3.lines[k].output_lines={} end
 -- Nothing takes from a lone machine.

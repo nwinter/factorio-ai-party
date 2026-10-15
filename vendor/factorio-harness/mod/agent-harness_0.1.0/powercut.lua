@@ -277,24 +277,29 @@ return function(api)
       for i = 2, #c.poles do more[#more+1] = c.poles[i].name .. ' ' .. at(c.poles[i].position) end
       head = head .. ' (with ' .. table.concat(more, ', ') .. ')'
     end
+    if joined(c) then
+      c.fixed_tick=c.fixed_tick or game.tick
+      return head .. '; fixed at tick ' .. c.fixed_tick .. ' (networks joined; remaining recorded machines connected)'
+    end
+    c.fixed_tick=nil
     local parts = {}
     if #c.parts >= 2 then
       local bits = {}
       for _, part in ipairs(c.parts) do
         if part.cut then
           local where = box_text(part.box)
-          bits[#bits+1] = string.format('#%d has no power (%s%d pole%s%s)%s', part.id, part.capped and 'over ' or '', part.poles, part.poles == 1 and '' or 's',
+          bits[#bits+1] = string.format('#%d had no power at tick '..c.checked..' (%s%d pole%s%s)%s', part.id, part.capped and 'over ' or '', part.poles, part.poles == 1 and '' or 's',
             where and ', ' .. where or '', part.total > 0 and ': ' .. counted(part.machines, 5) or ': no machines')
         else
-          bits[#bits+1] = string.format('#%d has power (%s)', part.id, part.kw >= 1000 and string.format('%.1f MW', part.kw / 1000) or string.format('%d kW', math.floor(part.kw + 0.5)))
+          bits[#bits+1] = string.format('#%d had power at tick '..c.checked..' (%s)', part.id, part.kw >= 1000 and string.format('%.1f MW', part.kw / 1000) or string.format('%d kW', math.floor(part.kw + 0.5)))
         end
       end
       parts[#parts+1] = string.format('split electric network #%s in %d: %s', tostring(c.net or '?'), #c.parts, table.concat(bits, '; '))
     end
     if (c.orphan_total or 0) > 0 then
       local where = box_text(c.orphan_box)
-      parts[#parts+1] = string.format('%d machine%s no other pole reaches %s no power%s: %s', c.orphan_total, c.orphan_total == 1 and '' or 's',
-        c.orphan_total == 1 and 'has' or 'have', where and ' ' .. where or '', counted(c.orphans, 5))
+      parts[#parts+1] = string.format('%d machine%s no other pole reached %s no power at tick '..c.checked..'%s: %s', c.orphan_total, c.orphan_total == 1 and '' or 's',
+        c.orphan_total == 1 and 'had' or 'had', where and ' ' .. where or '', counted(c.orphans, 5))
     end
     local now = joined(c) and 'joined again since (rebuilt or wired)' or (c.ghost and 'a ghost of the pole stands there' or 'no ghost of the pole there')
     return head .. ': ' .. table.concat(parts, '; ') .. '; ' .. now

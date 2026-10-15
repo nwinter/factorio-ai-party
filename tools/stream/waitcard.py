@@ -106,23 +106,25 @@ class WaitFeed:
         # body/queue observation when WorkFeed first opens or truncates a journal.
         self.waits.get(agent, {}).pop("sleep", None)
 
-    def put(self, agent, channel, value, tick):
+    def put(self, agent, channel, value, tick, at):
         if not number(tick):
             return
         slots = self.waits.setdefault(agent, {})
-        if tick >= slots.get(channel, (-1, None))[0]:
-            slots[channel] = (tick, value)
+        # Multiple actions can occur at the same game tick while paused. Receipt
+        # time breaks that tie so a bootstrap row cannot undo a newer status.
+        if (tick, at) >= slots.get(channel, (-1, 0, None))[:2]:
+            slots[channel] = (tick, at, value)
 
     def status(self, agent, result, tick, at):
         active = result.get("active")
         wait = record(active, tick, at, active.get("kind")) if isinstance(active, dict) and active.get("kind") in ("wait_until", "wait_ticks") else None
-        self.put(agent, "body", wait, tick)
+        self.put(agent, "body", wait, tick, at)
         for lane, q in (result.get("queues") or {}).items():
             if lane not in ("body", "remote") or not isinstance(q, dict):
                 continue
             channel = "queue" if lane == "body" else "remote"
             if "waiting" in q or q.get("paused") or not q.get("active") or q["active"].get("action") not in ("wait_until", "wait_ticks"):
-                self.put(agent, channel, record(q.get("waiting"), tick, at, "wait_until") if not q.get("paused") else None, tick)
+                self.put(agent, channel, record(q.get("waiting"), tick, at, "wait_until") if not q.get("paused") else None, tick, at)
 
     def ingest(self, agent, row):
         if not isinstance(row, dict):
@@ -147,24 +149,24 @@ class WaitFeed:
         result, tick = response["result"], response.get("tick")
         action, args = q.get("action"), q.get("args") or {}
         if "sleeping_s" in result or "slept_s" in result or action == "sleep_check" or action == "observe" and args.get("scope") == "sleep_check":
-            self.put(agent, "sleep", record(result, tick, at, "sleep"), tick)
+            self.put(agent, "sleep", record(result, tick, at, "sleep"), tick, at)
         elif action == "status" or "active" in result and "position" in result:
             self.status(agent, result, tick, at)
         elif action == "queue_status":
             channel = "remote" if args.get("lane") == "remote" else "queue"
             wait = result.get("waiting") if not result.get("paused") else None
-            self.put(agent, channel, record(wait, tick, at, "wait_until"), tick)
+            self.put(agent, channel, record(wait, tick, at, "wait_until"), tick, at)
         elif action in ("wait_until", "wait_ticks"):
             value = dict(result)
             if action == "wait_until":
                 value.setdefault("condition", args)
-            self.put(agent, "body", record(value, tick, at, action), tick)
+            self.put(agent, "body", record(value, tick, at, action), tick, at)
         elif action == "stop":
-            self.put(agent, "body", None, tick)
-            self.put(agent, "queue", None, tick)
+            self.put(agent, "body", None, tick, at)
+            self.put(agent, "queue", None, tick, at)
 
     def current(self, agent, tick, now):
         slots = self.waits.get(agent, {})
-        available = [v for _, v in slots.values() if line(v, tick, now)]
+        available = [v for _, _, v in slots.values() if line(v, tick, now)]
         # A condition says more than an unconditional sleep while that same queue waits.
         return max(available, key=lambda v: (bool(v["estimates"] or v["condition"]), v["tick"]), default=None)

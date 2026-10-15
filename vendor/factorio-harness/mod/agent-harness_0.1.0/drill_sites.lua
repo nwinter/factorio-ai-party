@@ -77,36 +77,46 @@ return function(api)
     if #found>MAX_ORE then out.truncated=true; out.line='resource read reached its 1024-tile limit; no sites evaluated'; return out end
     -- Sparse tile map; summed-area tables make every candidate's amount a
     -- constant-time read, including large drills over dense patches.
-    local x0,y0=math.floor(origin.x-search-r-1),math.floor(origin.y-search-r-1)
-    local x1,y1=math.ceil(origin.x+search+r+1),math.ceil(origin.y+search+r+1)
+    local x0,y0,x1,y1=math.huge,math.huge,-math.huge,-math.huge
     local amounts,counts={},{}
     for _,o in ipairs(found) do
       local x,y=math.floor(o.position.x),math.floor(o.position.y)
+      x0,y0,x1,y1=math.min(x0,x),math.min(y0,y),math.max(x1,x),math.max(y1,y)
       amounts[y]=amounts[y] or {}; counts[y]=counts[y] or {}
       amounts[y][x]=(amounts[y][x] or 0)+o.entity.amount; counts[y][x]=(counts[y][x] or 0)+1
     end
-    local function at(t,x,y) return t[y] and t[y][x] or 0 end
+    -- Crop the prefix tables and candidate bounds to the observed ore. Sparse
+    -- patches need no empty 60x60 table or visibility checks for empty centres.
+    if #found==0 then
+      out.checks=0;out.line='no observed '..resource..' in the searched area';return out
+    end
     for y=y0,y1 do
-      amounts[y]=amounts[y] or {}; counts[y]=counts[y] or {}
+      local ar,cr=amounts[y] or {},counts[y] or {}
+      local ap,cp=amounts[y-1] or {},counts[y-1] or {}
+      amounts[y],counts[y]=ar,cr
+      local asum,csum=0,0
       for x=x0,x1 do
-        for _,t in ipairs{amounts,counts} do t[y][x]=at(t,x,y)+at(t,x-1,y)+at(t,x,y-1)-at(t,x-1,y-1) end
+        asum,csum=asum+(ar[x] or 0),csum+(cr[x] or 0)
+        ar[x],cr[x]=asum+(ap[x] or 0),csum+(cp[x] or 0)
       end
     end
     local function under(t,x,y)
-      local l,top=math.ceil(x-r-0.5),math.ceil(y-r-0.5)
-      local right,bottom=math.floor(x+r-0.5),math.floor(y+r-0.5)
-      return at(t,right,bottom)-at(t,l-1,bottom)-at(t,right,top-1)+at(t,l-1,top-1)
+      local l,top=math.max(x0,math.ceil(x-r-0.5)),math.max(y0,math.ceil(y-r-0.5))
+      local right,bottom=math.min(x1,math.floor(x+r-0.5)),math.min(y1,math.floor(y+r-0.5))
+      if l>right or top>bottom then return 0 end
+      local last,above=t[bottom] or {},t[top-1] or {}
+      return (last[right] or 0)-(last[l-1] or 0)-(above[right] or 0)+(above[l-1] or 0)
     end
     local candidates={}
     local fx,fy=w%2/2,h%2/2
     local visible_radius=math.max(r,w/2,h/2)
-    for x=math.ceil(origin.x-search-fx),math.floor(origin.x+search-fx) do
-      for y=math.ceil(origin.y-search-fy),math.floor(origin.y+search-fy) do
+    for x=math.max(math.ceil(origin.x-search-fx),math.ceil(x0+.5-r-fx)),math.min(math.floor(origin.x+search-fx),math.floor(x1+.5+r-fx)) do
+      for y=math.max(math.ceil(origin.y-search-fy),math.ceil(y0+.5-r-fy)),math.min(math.floor(origin.y+search-fy),math.floor(y1+.5+r-fy)) do
         local px,py=x+fx,y+fy
         local d=((px-origin.x)^2+(py-origin.y)^2)^0.5
-        if d<=search and visible_box(px,py,visible_radius) then
+        if d<=search then
           local amount=under(amounts,px,py)
-          if amount>0 then candidates[#candidates+1]={position={x=px,y=py},distance=d,amount=amount,tiles=under(counts,px,py)} end
+          if amount>0 and visible_box(px,py,visible_radius) then candidates[#candidates+1]={position={x=px,y=py},distance=d,amount=amount,tiles=under(counts,px,py)} end
         end
       end
     end
@@ -115,20 +125,47 @@ return function(api)
       if a.position.x~=b.position.x then return a.position.x<b.position.x end
       return a.position.y<b.position.y
     end)
-    local checks=0
+    local checks,examined=0,0
+    local box=e.bounding_box
+    local bw,bh=box and box.right_bottom.x-box.left_top.x,box and box.right_bottom.y-box.left_top.y
     for _,c in ipairs(candidates) do
       if checks>=MAX_CHECKS or #out.sites>=limit then break end
-      checks=checks+1
-      if surface.can_place_entity{name=e.name,position=c.position,direction=e.direction,quality=e.quality,force=p.force,
-          build_check_type=defines.build_check_type.manual} then
-        out.sites[#out.sites+1]=c
+      examined=examined+1
+      -- Same drill and facing: translating its actual collision box into itself
+      -- is already an occupied placement. Avoid repeated expensive engine checks
+      -- of the drill's own footprint before the nearest free candidate.
+      local overlaps=bw and bh and math.abs(c.position.x-origin.x)<bw and math.abs(c.position.y-origin.y)<bh
+      if not overlaps then
+        checks=checks+1
+        if surface.can_place_entity{name=e.name,position=c.position,direction=e.direction,quality=e.quality,force=p.force,
+            build_check_type=defines.build_check_type.manual} then out.sites[#out.sites+1]=c end
       end
     end
     out.checks=checks
-    out.truncated=checks<#candidates and #out.sites<limit or nil
+    out.truncated=examined<#candidates and #out.sites<limit or nil
     out.line=string.format('%s (%g,%g): %d %s sites within %d tiles; amounts in the %.1f-tile mining radius; nearest first%s',
       e.name,origin.x,origin.y,#out.sites,resource,search,r,out.truncated and '; placement check limit reached' or '')
     return out
+  end
+  function M.group(force,g)
+    if not g.drill or not g.ore or g.ore=='unknown' then return nil end
+    local surface=game.surfaces[g.surface];if not surface then return nil end
+    local q=g.drill.position
+    if not force.is_chunk_visible(surface,{x=math.floor(q.x/32),y=math.floor(q.y/32)}) then return nil end
+    local st=api.state();st.drill_site_cache=st.drill_site_cache or {entries={},order={}}
+    local cache=st.drill_site_cache
+    local key=force.name..'|'..g.key..'|'..tostring(g.drill.unit_number)..'|'..g.ore
+    local old=cache.entries[key]
+    if old and game.tick-old.tick<3600 then return old end
+    local p={force=force,surface=surface,position=q,__remote=true}
+    local result=M.read(p,{position=q,name=g.drill.name,unit_number=g.drill.unit_number,resource=g.ore,radius=24,limit=1})
+    local out={tick=game.tick,drill=result.drill,origin=result.position,radius=result.searched_radius or result.radius,
+      site=result.sites[1],truncated=result.truncated,radius_reduced=result.radius_reduced}
+    if not cache.entries[key] then
+      if #cache.order>=128 then cache.entries[table.remove(cache.order,1)]=nil end
+      cache.order[#cache.order+1]=key
+    end
+    cache.entries[key]=out;return out
   end
   M.schema={position='required: depleted mining drill of ours',surface='optional surface name (default yours)',
     resource='optional resource entity name when the last mining target was not recorded; a recorded target must match',
