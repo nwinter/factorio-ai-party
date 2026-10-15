@@ -262,6 +262,24 @@ fh call status
   The reply: `color`, `connected` (`already` when it was there) or `disconnected` (copper: `split` when the two poles
   are on different networks after), `by`, `from` and `to` `{entity, position, side, wires}` (that connector's far ends
   after the change), `network`. It leaves a running action and queue alone.
+- Settings in the placing call (Sol, shift13 19:50: a bio cell took about 10 `configure`, `circuit_set` and `wire`
+  calls after its `build`): a `place_ghosts` entry, a `build` `builds` entry and a single `build` take `configure`,
+  `requests` and `circuit` (the arguments of `configure`, `requests` and `circuit_set`, without `position`) and
+  `wires: [{to, color, from_side, to_side}]` (from the entry; at most 16). The call places every entry, then sets them
+  in entry order (configure, requests, circuit), then the wires, on the call's platform or surface. A ghost holds the
+  settings and the building it becomes keeps them.
+  `fh call place_ghosts --args '{"entities":[{"name":"decider-combinator","position":{"x":47.5,"y":43},"direction":"north","circuit":{"decider":{"first":"pentapod-egg","comparator":">","constant":20,"output":"pentapod-egg"}},"wires":[{"to":{"x":43.5,"y":48.5},"color":"green","from_side":"output"}]},{"name":"requester-chest","position":{"x":43.5,"y":48.5},"circuit":{"settings":{"circuit_exclusive_mode_of_operation":"set_requests"}}}]}'`
+  - Argument names and shapes are checked before anything is placed (`unknown argument bogus for circuit_set`,
+    `entry 1: configure takes the entry's position`, `entry 2 wire 1: {to {x,y}, color red|green, from_side?,
+    to_side?} (from is the entry)`); `requests` on a `platform` entry is refused (the hub's requests are `requests`
+    with `platform`).
+  - The reply adds `settings` `[{index, name, position, configure, requests, circuit, wires}]` (each `set`, or the
+    game's refusal) and `settings_line`: `settings: 4 set, 1 refused: entry 2 configure: recipe incompatible with
+    machine`. A refused setting leaves its entry placed. An entry that failed to place gets no settings.
+  - `dry_run` makes the same check and adds `settings_planned` `[{index, name, position, would_set}]`
+    (`would_set: "circuit (decider); 1 wire"`).
+  - A `build` that waits (`awaiting_craft`, `stepping_aside`) sets the entries built so far; the rest are set when
+    built (`settings_note`).
 - `inspect` (and `circuit_set`) read back an entity's circuit side under `circuit`, for an entity with circuit settings
   or wires: `enable` and `logistic` as text (`"ice < 300"`, the same form `enable` takes) with `enable_met` and
   `logistic_met` (whether the condition holds now: `false` too, which the reply used to drop) and `disabled` (the entity
