@@ -1811,6 +1811,14 @@ return function(api)
       at(g.center.x, g.center.y), r.id, #r.boilers, #r.boilers == 1 and '' or 's',
       r.fed and string.format('%d with fuel at their feeders', r.fed) or 'no draw',
       table.concat(which, '; '), #low > 3 and string.format('; +%d more', #low - 3) or '', fuel_text)
+    local least
+    for _,b in ipairs(r.boilers) do
+      local c=b.chest
+      if c and c.e and c.e.valid and (not least or c.count<least.count) then least=c end
+    end
+    if least then
+      g.line=g.line..string.format('; least-stocked feed chest %s %s: %s (%d fuel items)',least.e.name,at(least.e.position.x,least.e.position.y),least.held or 'no fuel',least.count)
+    end
     return g
   end
   -- Push alert groups (pushalerts.lua scan): plain data, worst first there.

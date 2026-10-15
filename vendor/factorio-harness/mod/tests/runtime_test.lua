@@ -1543,6 +1543,32 @@ do
   s2.name,s2.count,s2.valid_for_read=kept_s2[1],kept_s2[2],kept_s2[3]
   b1.fuel[1].count,b3.fuel[1].count,main=kept_b1,kept_b3,kept_main
 end
+-- Round 00:20: up_to survives feed completion for CLI --wait / wait; strict feeds still run short.
+do
+  local was_main,was_find=main,p.surface.find_entities_filtered
+  local n1,n3=b1.fuel[1].count,b3.fuel[1].count
+  for _,allowed in ipairs({true,false}) do
+    main=inv(stack('coal',1)); b1.fuel[1].count=1; b3.fuel[1].count=1
+    p.surface.find_entities_filtered=function() return {b1,b3} end
+    call('feed',{radius=20,types={'boiler'},item='coal',up_to=allowed and true or nil})
+    advance(3)
+    local last=call('status').last
+    eq(last.outcome,'out_of_items'); eq(last.moved,1); eq(last.short_allowed,allowed and true or nil)
+  end
+  main,p.surface.find_entities_filtered=was_main,was_find
+  b1.fuel[1].count,b3.fuel[1].count=n1,n3
+end
+-- A rejected submit leaves the repeating job running even after bootstrap failure cleanup.
+do
+  call('queue_repeat',{name='plate-haul',steps={{action='wait_until',args={['until']='item_count',item='iron-plate',at_least=10000}}}})
+  advance(1)
+  local before=call('queue_status')
+  fails(function() call('queue_submit',{steps={{action='wait_ticks',args={ticks=1}}}}) end,'repeating job "plate-haul"')
+  runtime.stop_player(1)
+  local after=call('queue_status')
+  eq(after.revision,before.revision); eq(after.paused,false); eq(after.active.id,before.active.id)
+  call('queue_cancel',{})
+end
 -- transfer {walk=true} (Haiku, 06:20: solid fuel into a boiler out of reach, in one call): the call walks into reach
 -- first (a tour, as feed and collect), then transfers; all in reach, it transfers at once.
 do
