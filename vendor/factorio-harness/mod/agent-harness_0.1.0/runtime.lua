@@ -108,10 +108,12 @@ M.claims=require('claims'){state=state,where_from=function(me) return M.where.fr
     return out
   end}
 M.belt=require('belt')()
+-- A background job's step timed as its own part while the operator profile runs (profile.lua part); else just the call.
+M.timed=function(label,fn,...) if M.profile then return M.profile.part(label,fn,...) end return fn(...) end
 -- Waits, queues and actions carried over a hot install (carry.lua: notes them while this loads).
 M.carry=require('carry'){state=state,restart=function(index,call,until_tick) return M.restart_call(index,call,until_tick) end,
   resume=function(index,action) return M.resume_carried(index,action) end}
-M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,crafting=M.crafting,
+M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,crafting=M.crafting,timed=M.timed,
   -- aboard a platform every read works (bots.lua check_action; Astra, 18:16)
   read_only=function(action) return M.reads~=nil and M.reads[action]==true end,
   -- Whether a hand-laid tile goes on a tile, what blocks it and what it takes away (dryrun.lua hand_tile).
@@ -3995,9 +3997,10 @@ function handlers.construct(p,a)
   if #action.pending==0 then finish(p.index,'nothing_to_do'); return {total=0,built=0,outcome='nothing_to_do'} end
   return {until_tick=action.until_tick,total=#action.pending}
 end
+-- Its parts are profile parts inspect.<part> (operator 18:33: inspect 70 ms on average, one call 287 ms).
 function handlers.inspect(p,a)
-  local e,by=entity(p,a,true)
-  local out=summary(e); out.inventories={}
+  local e,by=M.timed('inspect.entity',entity,p,a,true)
+  local out=M.timed('inspect.summary',summary,e); out.inventories={}
   out.by=by
   -- A vehicle's equipment grid (a tank's, a spidertron's), as its GUI shows it (grids.lua).
   local okg,grid=pcall(function() return e.grid end)
@@ -4018,7 +4021,7 @@ function handlers.inspect(p,a)
   out.electric_network_id=e.electric_network_id
   -- A producer's or consumer's maximum and its network's now (networks.lua; Astra, 13:10). (power is summary's
   -- "unpowered: ..." line.)
-  local okp,pw=pcall(M.networks.entity_power,e)
+  local okp,pw=pcall(M.timed,'inspect.power',M.networks.entity_power,e)
   out.electricity=okp and pw or nil
   -- Inserters: the exact pickup/drop points, the tiles they are on, and what
   -- stands there (the same view as scan fields=io).
@@ -4033,7 +4036,7 @@ function handlers.inspect(p,a)
   end
   -- Fluid connections: where each one is, the neighbouring tile it joins,
   -- its flow, and what is connected there (in scan fields=fluids form too).
-  local okc,conns=pcall(pipes.connections,e)
+  local okc,conns=pcall(M.timed,'inspect.fluids',pipes.connections,e)
   if okc and conns and #conns>0 then
     out.fluid_connections={}
     for i,c in ipairs(conns) do
@@ -4042,7 +4045,7 @@ function handlers.inspect(p,a)
         at={x=c.x+0.5,y=c.y+0.5},joins={x=c.tx+0.5,y=c.ty+0.5},direction=compass_names[c.dir],
         connected_to=target and target.valid and target.name or nil,underground_reach=c.reach}
     end
-    local okf,text=pcall(pipes.fluids,e)
+    local okf,text=pcall(M.timed,'inspect.fluids',pipes.fluids,e)
     if okf and text then out.fluids_summary=text end
   end
   -- A ghost with a recipe: the ports that recipe opens, each with its fluid
@@ -4092,9 +4095,9 @@ function handlers.inspect(p,a)
     local ok,inv=pcall(inventory,e,name)
     if ok then
       out.inventories[name]=contents(inv)
-      local acc=M.spoil.inventory(inv,{},name)
+      local acc=M.timed('inspect.spoil',M.spoil.inventory,inv,{},name)
       for _,line in ipairs(M.spoil.lines(acc,8,name..': ')) do spoiling[#spoiling+1]=line end
-      M.spoil.inventory(inv,all,name)
+      M.timed('inspect.spoil',M.spoil.inventory,inv,all,name)
     end
   end
   do
@@ -4109,7 +4112,7 @@ function handlers.inspect(p,a)
   out.hatch_warning=M.spoil.warning(all)
   -- What its next products start at: the inherited spoilage (spoil.lua).
   if e.type=='assembling-machine' or e.type=='furnace' then
-    local okr,line=pcall(M.spoil.recipe_output,e)
+    local okr,line=pcall(M.timed,'inspect.spoil',M.spoil.recipe_output,e)
     out.output_spoil=okr and line or nil
   end
   -- An agricultural tower: state, seeds, output, its cells and plants (farm.lua).
@@ -4149,7 +4152,7 @@ function handlers.inspect(p,a)
   out.modules=okm and mods or nil
   -- Filters, held stack, pickup/drop targets, marks, ghosts on the footprint
   -- (details.lua); on a platform, the hub's slots and what holds up its building.
-  if M.details then M.details.inspect(e,out) end
+  if M.details then M.timed('inspect.details',M.details.inspect,e,out) end
   -- An inserter ghost: what stands on its pickup and drop points, as a
   -- built one would have them (targets.lua).
   if e.type=='entity-ghost' and e.ghost_type=='inserter' then
@@ -4157,10 +4160,10 @@ function handlers.inspect(p,a)
     if okt and t then out.pickup_target=t.pickup; out.drop_target=t.drop; out.io_warning=t.missing end
   end
   -- Circuit network: settings, each wire's far end, the signals now (circuits.lua).
-  if M.circuits then local okc,c=pcall(M.circuits.read,e); if okc and c then out.circuit=c end end
+  if M.circuits then local okc,c=pcall(M.timed,'inspect.circuits',M.circuits.read,e); if okc and c then out.circuit=c end end
   -- A roboport or logistic chest: its logistic network's id, areas and robots, or that it has none; a roboport's own cell (networks.lua).
   if M.networks and (e.type=='roboport' or e.type=='logistic-container') then
-    local okn,ln=pcall(M.networks.of_entity,e); if okn and ln then out.logistic_network=ln end
+    local okn,ln=pcall(M.timed,'inspect.logistic',M.networks.of_entity,e); if okn and ln then out.logistic_network=ln end
   end
   local okp,pl=pcall(function() return e.surface.platform end)
   if okp and pl and space then
@@ -4190,12 +4193,12 @@ function handlers.inspect(p,a)
     local recipe=e.get_recipe(); out.recipe=recipe and recipe.name or false
     out.crafting_progress=e.crafting_progress
     -- Crafts and output per minute at its speed and productivity now (craftrate.lua; Sol, 15:20).
-    local okr,rate=pcall(M.craftrate.machine,e)
+    local okr,rate=pcall(M.timed,'inspect.craftrate',M.craftrate.machine,e)
     out.rate=okr and rate or nil
     local okf,fill=pcall(M.output_fill,e)
     out.output_fill=okf and fill or nil
     -- An ingredient short of a craft while another is stacked, and who feeds the machine (inputs.lua; Grok, shift11).
-    local oki,bal=pcall(M.inputs.check,e,out.status_name)
+    local oki,bal=pcall(M.timed,'inspect.inputs',M.inputs.check,e,out.status_name)
     if oki and bal then out.input_imbalance,out.feeders,out.feeders_count=bal.input_imbalance,bal.feeders,bal.feeders_count end
   end
   return out
@@ -8422,7 +8425,7 @@ local conditions=conditions_module{known=known,position=position,passing=functio
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end}
 scheduler=scheduler_module{
-  state=state,player=player,handlers=handlers,
+  state=state,player=player,handlers=handlers,timed=M.timed,
   condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) return check_args(action,args) end,validate_condition=function(c) return conditions.validate(c) end,
   fix_args=function(action,args) return M.aliases.fix(action,args,M.takes) end,
   simulate=function(p,items) return M.rocketload.simulate(p,items) end,
@@ -9512,10 +9515,10 @@ local function waypoint_goal(p,action,goal)
 end
 kite=kite_module{position=position,distance=distance,integer=integer,visible=visible,directions=directions}
 threat=threat_module{state=state,known=known,distance=distance,on_character_hit=function(event) M.board.on_character_hit(event) end}
-survey=survey_module{state=state,status_name=function(e) return entity_status_names[e.status] end,
+survey=survey_module{state=state,timed=M.timed,status_name=function(e) return entity_status_names[e.status] end,
   research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
-M.supply=require('supply'){integer=integer,position=position,status_name=function(e) return entity_status_names[e.status] end,spoil=M.spoil,
+M.supply=require('supply'){timed=M.timed,integer=integer,position=position,status_name=function(e) return entity_status_names[e.status] end,spoil=M.spoil,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 function handlers.supply(p,a) return M.supply.supply(p,a) end
 -- trace: a machine's feeders and their sources, its output followed to where it ends, an item's routes (trace.lua).
@@ -9547,7 +9550,7 @@ function M.one_planet(force)
   s.one_planet[force.name]={tick=game.tick,yes=yes}
   return yes
 end
-M.networks=require('networks'){state=state,one_planet=function(f) return M.one_planet(f) end,
+M.networks=require('networks'){state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
   sky=function(surface) return M.lightning and M.lightning.sky(surface) end}
 -- One item across every planet and platform (packaudit.lua; Luna, 16:50).
 M.packaudit=require('packaudit'){reuse=function(key,fn) return M.supply.reuse(key,fn) end,spoil=M.spoil,
@@ -9568,7 +9571,7 @@ M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.netw
 -- The game's alerts and key warnings, pushed to the agents they concern (pushalerts.lua).
 -- Lightning attractors on Fulgora whose catches have nowhere to go, and full accumulators beside them (lightning.lua).
 M.lightning=require('lightning'){}
-M.pushalerts=require('pushalerts'){state=state,agents=function() return M.board.agents() end,who=M.board.who,
+M.pushalerts=require('pushalerts'){state=state,timed=M.timed,agents=function() return M.board.agents() end,who=M.board.who,
   first_spoil=function(inv) return survey.first_spoil(inv) end,
   claim_surface=function(i) return M.claims.surface_of(i) end,
   place=function(index) return M.where.place(index) end,targets=M.targets,
@@ -9581,6 +9584,24 @@ M.pushalerts=require('pushalerts'){state=state,agents=function() return M.board.
     local oks,idle=pcall(M.scienceline.alert_groups,force)
     if oks then for _,g in ipairs(idle) do out[#out+1]=g end end
     return out
+  end,
+  -- The same in steps for the background read: max networks a step, then lightning, then science (networks.alert_step).
+  network_cursor=function(force) return {nets=M.networks.alert_cursor(force),phase='nets'} end,
+  network_step=function(cur,max)
+    local out=cur.nets.out
+    if cur.phase=='nets' then
+      if M.networks.alert_step(cur.nets,max) then cur.phase='lightning' end
+      return false
+    elseif cur.phase=='lightning' then
+      cur.phase='science'
+      local ok,more=pcall(M.lightning.alert_groups,game.forces[cur.nets.force])
+      if ok then for _,g in ipairs(more) do out[#out+1]=g end
+      else local s=state(); s.lightning_errors={count=((s.lightning_errors or {}).count or 0)+1,last=tostring(more),tick=game.tick} end
+      return false
+    end
+    local oks,idle=pcall(M.scienceline.alert_groups,game.forces[cur.nets.force])
+    if oks then for _,g in ipairs(idle) do out[#out+1]=g end end
+    return true,out
   end,
   -- an agent player's alert panel (camera players have theirs switched off: cameras.lua)
   alert_reader=function(force)
@@ -10473,6 +10494,10 @@ M.profile=require('profile')()
   for _,part in ipairs{{M.idle,'request','idle.request'},{M.tells,'operator_lines','tells.operator_lines'},{M.orders,'line','orders.line'},{M.platalerts,'note','platalerts.note'},{M.visuals,'worked','visuals.worked'},{M.claims,'worked','claims.worked'},{M.carry,'carry','carry.carry'},{M.supply,'scan','supply.scan'},{M.supply,'chain','supply.chain'},{M.networks,'read','networks.read'}} do parts[#parts+1]=part end
   for _,part in ipairs{{M.pushalerts,'tick','pushalerts.tick'},{survey,'tick','survey.tick'},{threat,'tick','threat.tick'}} do parts[#parts+1]=part end
   for _,part in ipairs{{M.scienceline,'tick','scienceline.tick'},{M.scienceline,'lines','scienceline.lines'},{M.networks,'view_tick','networks.view_tick'}} do parts[#parts+1]=part end
+  -- Inside the tick, so its unprofiled share has names (operator 18:12: tick totals 300 ms over their parts at 17:53);
+  -- the background jobs' steps are parts by kind through M.timed.
+  for _,part in ipairs{{M.networks,'alert_step','networks.alert_step'},{M.bots,'travel_tick','bots.travel_tick'},{M.drops,'tick','drops.tick'},{M,'drop_jobs_tick','drop_jobs_tick'},{M.ores,'tick','ores.tick'},{M.spoil,'tick','spoil.tick'},{M,'tick_action','tick_action'}} do parts[#parts+1]=part end
+  if M.crafting and M.crafting.tick then parts[#parts+1]={M.crafting,'tick','crafting.tick'} end
   M.profile.wrap(M,parts)
 end)()
 return M

@@ -274,6 +274,7 @@ return function(api)
   -- a game second): one band of a planet (walk.lua) or SLICE of the entities it found, one step every few ticks so
   -- a read spreads over its 30 s.
   local SLICE = 150
+  local NET_SLICE = 2   -- networks whose alert groups one step of the background read makes
   local walk = api.walk or require('walk'){state=api.state}
   local function planets()
     local out = {}
@@ -455,6 +456,12 @@ return function(api)
     table.sort(out, function(a, b) return a.name < b.name end)
     return out
   end
+  -- A call timed as its own profile part while the operator profile runs (runtime M.timed); else just the call.
+  local function timed(label, fn, ...)
+    if api.timed then return api.timed(label, fn, ...) end
+    return fn(...)
+  end
+  local step_do
   function M.tick(tick)
     local s = api.state()
     s.push_alerts = s.push_alerts or {}
@@ -490,33 +497,46 @@ return function(api)
       elseif job and walk.due(job, tick, SCAN_TICKS) then
         job.steps = job.steps + 1
         local stage = job.stages[job.i]
-        if stage.surface then
-          -- A planet: a band found in one step (walk.lua), then read SLICE a step.
-          local surface
-          for _, x in ipairs(planets()) do if x.name == stage.surface then surface = x end end
-          if not surface or job.budget <= 0 then job.i = job.i + 1; job.walk, job.list = nil, nil
-          elseif not job.list then
-            job.walk = job.walk or walk.start(surface)
-            local list = walk.band(job.walk, surface, {force=force, type=TYPES, limit=job.budget})
-            if list then job.list, job.at = list, 1; job.budget = job.budget - #list
-            else job.walk = nil; job.i = job.i + 1 end
-          else
-            local last = math.min(#job.list, job.at + SLICE - 1)
-            read_list(job.groups, surface, job.list, job.at, last, inserter_memory(force), turret_memory(force), job.mining, drill_memory(force))
-            job.at = last + 1
-            if job.at > #job.list then job.list, job.at = nil, nil end
-          end
-        elseif stage.step == 'alerts' then
-          job.i = job.i + 1; game_alerts(job.groups, force); forget_unseen(inserter_memory(force))
-          local tmem = turret_memory(force)
-          turrets_read(tmem, job.budget > 0 and job.tgen == tmem.gen)
-        elseif stage.step == 'networks' then job.i = job.i + 1; job.extra = network_groups(force)
-        else
-          s.push_alerts[force.name] = {tick=job.start, groups=merge(job.groups, job.extra, job.mining, force)}
-          s.push_steps[force.name] = job.steps
-          s.push_jobs[force.name] = nil
-        end
+        -- (each kind of step its own profile part, pushalerts.<kind>: operator 18:12, pushalerts.tick 487 ms in one
+        -- game second at 17:53)
+        local kind = stage.surface and (job.list and 'slice' or 'band') or stage.step
+        timed('pushalerts.' .. kind, step_do, s, force, tick, job, stage)
       end
+    end
+  end
+  step_do = function(s, force, tick, job, stage)
+    if stage.surface then
+      -- A planet: a band found in one step (walk.lua), then read SLICE a step.
+      local surface
+      for _, x in ipairs(planets()) do if x.name == stage.surface then surface = x end end
+      if not surface or job.budget <= 0 then job.i = job.i + 1; job.walk, job.list = nil, nil
+      elseif not job.list then
+        job.walk = job.walk or walk.start(surface)
+        local list = walk.band(job.walk, surface, {force=force, type=TYPES, limit=job.budget})
+        if list then job.list, job.at = list, 1; job.budget = job.budget - #list
+        else job.walk = nil; job.i = job.i + 1 end
+      else
+        local last = math.min(#job.list, job.at + SLICE - 1)
+        read_list(job.groups, surface, job.list, job.at, last, inserter_memory(force), turret_memory(force), job.mining, drill_memory(force))
+        job.at = last + 1
+        if job.at > #job.list then job.list, job.at = nil, nil end
+      end
+    elseif stage.step == 'alerts' then
+      job.i = job.i + 1; game_alerts(job.groups, force); forget_unseen(inserter_memory(force))
+      local tmem = turret_memory(force)
+      turrets_read(tmem, job.budget > 0 and job.tgen == tmem.gen)
+    elseif stage.step == 'networks' then
+      -- NET_SLICE networks a step, then the lightning and science groups each a step (operator 18:12: all of them in
+      -- one tick took 58-60 ms on world n); without the stepped api, all at once as before.
+      if api.network_cursor then
+        job.net = job.net or api.network_cursor(force)
+        local done, out = api.network_step(job.net, NET_SLICE)
+        if done then job.extra, job.net = out, nil; job.i = job.i + 1 end
+      else job.i = job.i + 1; job.extra = network_groups(force) end
+    else
+      s.push_alerts[force.name] = {tick=job.start, groups=merge(job.groups, job.extra, job.mining, force)}
+      s.push_steps[force.name] = job.steps
+      s.push_jobs[force.name] = nil
     end
   end
   -- One of our turrets died (the runtime's on_entity_died): marked built since, for when its ghost is built again.

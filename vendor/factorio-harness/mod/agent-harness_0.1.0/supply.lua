@@ -74,6 +74,20 @@ return function(api)
     local name = last and (type(last.name) == 'string' and last.name or last.name and last.name.name)
     return name and prototypes.recipe and prototypes.recipe[name] or nil
   end
+  -- A recipe's product and ingredient names, read once per recipe while the mod is loaded (prototype data; operator
+  -- 18:33: a scan read both lists anew, as fresh tables, for every crafter on the surface).
+  local recipe_io = {}
+  local function io_of(recipe)
+    local name = recipe.name
+    local c = name and recipe_io[name]
+    if not c then
+      c = {products={}, ingredients={}}
+      for _, x in ipairs(recipe.products or {}) do c.products[#c.products+1] = {name=x.name} end
+      for _, x in ipairs(recipe.ingredients or {}) do c.ingredients[#c.ingredients+1] = {name=x.name} end
+      if name then recipe_io[name] = c end
+    end
+    return c
+  end
   local function input_of(e)
     if e.type == 'lab' then return inventory(e, 'lab_input') end
     return inventory(e, 'crafter_input') or inventory(e, 'assembling_machine_input') or inventory(e, 'furnace_source')
@@ -162,6 +176,12 @@ return function(api)
     return out
   end
   function M.forget() replies = {} end
+  -- A call timed as its own profile part while the operator profile runs (runtime M.timed); else just the call.
+  local function timed(label, fn, ...)
+    if api.timed then return api.timed(label, fn, ...) end
+    return fn(...)
+  end
+  -- Its parts are profile parts supply.<part> (operator 18:33: observe/supply 106 ms, supply.scan 79 ms).
   function M.scan(surface, force, names, opts)
     opts = opts or {}
     local area, packs = opts.area, opts.packs or {}
@@ -207,7 +227,7 @@ return function(api)
     local types = {}
     for t, group in pairs(GROUP) do if (group ~= 'labs' and group ~= 'miners' or any_pack or (group == 'miners' and opts.miners)) and (group ~= 'robots' or not area) then types[#types+1] = t end end
     table.sort(types)
-    local found = surface.find_entities_filtered(filter{type=types, limit=MAX_FOUND})
+    local found = timed('supply.find', surface.find_entities_filtered, filter{type=types, limit=MAX_FOUND})
     local lists, seen = {crafters={}, labs={}, chests={}, belts={}, inserters={}, robots={}, miners={}}, {}
     for _, e in ipairs(found) do
       local group = GROUP[e.type]
@@ -223,14 +243,16 @@ return function(api)
     -- Crafters: makers and users by recipe, and what their outputs hold.
     local crafters = lists.crafters
     counted.crafters = #crafters
+    timed('supply.crafters', function()
     for _, e in ipairs(crafters) do
       local recipe = recipe_of(e)
       if recipe then
-        for _, prod in ipairs(recipe.products or {}) do
+        local io = io_of(recipe)
+        for _, prod in ipairs(io.products) do
           local t = T[prod.name]
           if t and not t.maker_of[e.unit_number] then t.maker_of[e.unit_number] = true; t.makers[#t.makers+1] = {e=e, recipe=recipe} end
         end
-        for _, ing in ipairs(recipe.ingredients or {}) do
+        for _, ing in ipairs(io.ingredients) do
           local t = T[ing.name]
           if t and not t.user_of[e.unit_number] then
             local u = {e=e, recipe=recipe, has=count(input_of(e), ing.name), feeders={}}
@@ -251,6 +273,7 @@ return function(api)
         if r > 0 then t.rockets = t.rockets + r end
       end
     end
+    end)
     -- Labs: what they hold; those whose research needs a pack use it.
     if any_pack then
       local labs = lists.labs
@@ -299,6 +322,7 @@ return function(api)
       return f.name == item and (f.quality == nil or f.quality == 'normal') and (f.count or 0) > 0
     end
     local networks = {}
+    timed('supply.requesters', function()
     for _, n in ipairs(nets) do
       local net
       local function this()
@@ -336,9 +360,11 @@ return function(api)
       if area and not net and try(function() return n.find_cell_closest_to(area.position).is_in_logistic_range(area.position) end) then this() end
       if net then net.in_requesters = held_in end
     end
+    end)
     -- Each network that matters: its stock of the items (the engine's free
     -- counts are net of pickups robots have reserved), reservations, robots.
     local payload = (try(function() return prototypes.entity['logistic-robot'].max_payload_size end) or 1) + (force.worker_robots_storage_bonus or 0)
+    timed('supply.stock', function()
     for _, net in ipairs(networks) do
       local n = net.n
       for name in pairs(T) do
@@ -410,12 +436,14 @@ return function(api)
         charging=charging, waiting=waiting, payload=payload}
       net.roboports, net.box, net.mobile = roboports, box, mobile
     end
+    end)
     local by_id = {}
     for _, net in ipairs(networks) do by_id[net.id] = net end
     -- Chests: by kind; requesters' stock robots never take; requests outside
     -- every network.
     local chests = lists.chests
     counted.chests = #chests
+    timed('supply.chests', function()
     for _, e in ipairs(chests) do
       local kind = kind_of(e)
       local main = inventory(e, MAIN[e.type] or 'chest')
@@ -443,15 +471,18 @@ return function(api)
         end
       end
     end
+    end)
     -- Belts.
     local belts = lists.belts
     counted.belts = #belts
     counted.belts_total = seen.belts or #belts
+    timed('supply.belts', function()
     for _, e in ipairs(belts) do
       local held = {}
       belt_counts(e, names, single, held)
       for name, n in pairs(held) do local t = T[name]; t.belts = t.belts + n; spot(t, e, n, 'belt'); spoil_at(t, e, 'belt', function(acc) sp.belt(e, acc) end) end
     end
+    end)
     -- Inserters: what their hands hold, the ones feeding users and taking
     -- from makers.
     local want_targets = false
@@ -494,10 +525,11 @@ return function(api)
         end
       end
     end
-    for _, e in ipairs(inserters) do pcall(visit, e) end
+    timed('supply.inserters', function() for _, e in ipairs(inserters) do pcall(visit, e) end end)
     -- Robots carrying the items; per network what is in flight.
     local robots = lists.robots
     counted.robots = #robots
+    timed('supply.robots', function()
     for _, r in ipairs(robots) do
       local inv = inventory(r, 'robot_cargo')
       if inv and not try(function() return inv.is_empty() end) then
@@ -512,6 +544,7 @@ return function(api)
         end
       end
     end
+    end)
     -- The team's characters.
     for _, ch in ipairs(characters) do
       if inside(ch.c.position) then
