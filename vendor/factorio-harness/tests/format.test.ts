@@ -54,6 +54,13 @@ test('circuit_set: an entity a condition keeps off ends on the warning line (fri
     condition_ignored:'fast-inserter (-65.5,95.5): its circuit condition electromagnetic-science-pack < 0 is ignored: no red or green wire connects it, and the game counts a circuit condition only with a circuit connection'}};
   assert.match(formatCompact(ignored), /\nwarning: condition ignored: fast-inserter \(-65\.5,95\.5\): its circuit condition .* is ignored: no red or green wire connects it/);
 });
+test('a count of 0 is no warning line: a tile deconstruct that refused nothing (platformtiles2)', () => {
+  const none = {ok:true,id:'x',result:{mode:'mark',tiles:true,tiles_marked:1,tiles_refused:0}};
+  assert.doesNotMatch(formatCompact(none), /warning:/);
+  assert.match(formatCompact(none), /tiles_refused: 0/);
+  const some = {ok:true,id:'x',result:{mode:'mark',tiles:true,tiles_marked:1,tiles_refused:2}};
+  assert.equal(finalLine(some), 'warning: tiles refused: 2');
+});
 test('a build or ghosts that close the character in end on the warning line (friction2: Gemini)', () => {
   const built = {ok:true,id:'x',result:{built:2,closed_in:'the character is closed in now where it stands (-57,71.5): the last gap out was where accumulator (-60,71) now stands'}};
   assert.match(formatCompact(built), /\nwarning: closed in: the character is closed in now where it stands \(-57,71\.5\)/);

@@ -34,6 +34,8 @@ return function(api)
   -- (Luna, shift10 06:20: an item_count wait for the item rocket stayed 0 at a
   -- silo whose rocket was ready; the rocket is no item, the item rocket is ammunition).
   local silo_states
+  -- A built rocket rising into place (silo.lua's RISING): its parts are all made.
+  local ROCKET_UP={create_rocket=true,lights_blinking_open=true,doors_opening=true,doors_opened=true,rocket_rising=true,arms_advance=true}
   local function rocket_state(e)
     if not silo_states then silo_states={}; for k,v in pairs(defines.rocket_silo_status) do silo_states[v]=k end end
     local ok,st=pcall(function() return e.rocket_silo_status end)
@@ -65,7 +67,7 @@ return function(api)
   end
   -- Our rocket silo on the tile c.position (any tile of its footprint).
   local function silo_at(p,c)
-    assert(c.position,'rocket_ready requires position (a rocket silo\'s, any tile of it)')
+    assert(c.position,tostring(c['until'] or 'rocket_ready')..' requires position (a rocket silo\'s, any tile of it)')
     local pos=api.position(c.position)
     -- An area search meets the footprint (a position and radius only the silo's centre, read on a copy of world n).
     for _,e in pairs(p.surface.find_entities_filtered{area={{pos.x-0.01,pos.y-0.01},{pos.x+0.01,pos.y+0.01}},type='rocket-silo',force=p.force}) do
@@ -138,6 +140,16 @@ return function(api)
     rocket_ready=function(p,c)
       local line,ready=silo_line(silo_at(p,c))
       return ready,line
+    end,
+    -- The rocket being built has at least at_least parts (Sonnet, shift14 22:50: a wait on the build's progress). A
+    -- built rocket (rising into place or ready) has all of its parts; while one launches, the count is the next one's.
+    rocket_parts=function(p,c)
+      local e=silo_at(p,c)
+      local state,ready=rocket_state(e)
+      local required=e.prototype.rocket_parts_required
+      local n=(ready or ROCKET_UP[state]) and required or e.rocket_parts
+      local line=silo_line(e)
+      return n>=c.at_least,string.format('rocket parts %d/%d (at least %d); %s',n,required,c.at_least,line)
     end,
     crafting_done=function(p)
       local n=p.crafting_queue_size; return n==0,n..' crafts queued'
@@ -213,7 +225,7 @@ return function(api)
       return n>0,n..' burners below '..c.count..' fuel'..(near and string.format(' (nearest %s at %d,%d)',near.name,math.floor(near.position.x),math.floor(near.position.y)) or '')
     end,
   }
-  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left'
+  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left'
   -- Argument checks run when a plan is submitted, not when it first fires.
   function M.validate(c)
     assert(type(c)=='table' and checks[c['until']],'until must be one of '..NAMES)
@@ -234,6 +246,11 @@ return function(api)
     end
     if kind=='researched' then assert(type(c.technology)=='string','researched requires technology') end
     if kind=='rocket_ready' then assert(c.position~=nil,'rocket_ready requires position (a rocket silo\'s, any tile of it)') end
+    if kind=='rocket_parts' then
+      assert(c.position~=nil,'rocket_parts requires position (a rocket silo\'s, any tile of it)')
+      assert(c.at_least~=nil,'rocket_parts requires at_least (parts of the rocket being built, 1..required)')
+      number(c.at_least,1,1000,'at_least')
+    end
     if kind=='ghosts_waiting' and c.at_least~=nil then number(c.at_least,1,100000,'at_least') end
     if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
     if kind=='fuel_below' then number(c.count,1,1000,'count') end

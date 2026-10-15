@@ -69,10 +69,16 @@
   let current = null;       // {clip, rank, src, gain, cut}
   let lastExchange = null;  // the exchange of the last host line, to keep Rook and Vale together
 
-  function report(id, state) {
+  // extra: {played, duration} in seconds as this page measured them (the audio clock), so the service can tell a clip
+  // that ended early (viewer syndesis, shift14 23:04: "spoken lines cut off abruptly") from one that played whole.
+  function report(id, state, extra) {
     fetch("/audio/played", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, state }) }).catch(() => {});
+      body: JSON.stringify(Object.assign({ id, state }, extra || {})) }).catch(() => {});
   }
+  // The page (re)loaded: a clip the service thinks is playing ended here (an OBS refresh, a page-file reload).
+  report(null, "load");
+  // Whether a clip is playing or loading now (overlay.js waits for it before reloading the page).
+  window.pogVoiceBusy = () => current != null;
 
   const rankOf = (clip) => (clip.rank in RANK ? RANK[clip.rank] : clip.channel === "agent" ? RANK.agent : RANK.banter);
   const expired = (clip) => clip.expires && Date.now() / 1000 > clip.expires;
@@ -180,7 +186,7 @@
     const clip = pick();
     if (!clip) return;
     const cur = current = { clip, rank: rankOf(clip), cut: false };
-    let cap = null, state = "end";
+    let cap = null, state = "end", t0 = null, length = null;
     try {
       const c = audioCtx();
       if (c.state === "suspended") { await c.resume().catch(() => {}); if (c.state === "suspended") unlockButton(); }
@@ -197,16 +203,19 @@
       cur.src = src;
       cur.gain = g;
       cap = caption(clip);
-      report(clip.id, "start");
+      length = buf.duration;
+      report(clip.id, "start", { duration: Math.round(length * 100) / 100 });
       // an urgent line does not reset it, so an exchange it interrupted can still finish together
       if (clip.channel === "caster" && cur.rank < RANK.urgent) lastExchange = clip.exchange != null ? clip.exchange : null;
-      await new Promise((done) => { src.onended = done; src.start(); });
+      await new Promise((done) => { src.onended = done; t0 = c.currentTime; src.start(); });
       if (cur.cut) state = "cut";
     } catch (err) {
       console.error("voice clip failed", clip.id, err);
       state = "error";
     } finally {
-      report(clip.id, state);
+      const extra = t0 != null && ctx ? { played: Math.round((ctx.currentTime - t0) * 100) / 100,
+        duration: length != null ? Math.round(length * 100) / 100 : undefined } : undefined;
+      report(clip.id, state, extra);
       if (cap) { cap.classList.remove("on"); setTimeout(() => cap.remove(), 400); }
       current = null;
       setTimeout(playNext, cur.cut ? 60 : 300);

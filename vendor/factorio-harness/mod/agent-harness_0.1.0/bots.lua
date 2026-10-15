@@ -224,7 +224,7 @@ return function(api)
   M.ABOARD_NOTE = 'every read (status, scan, inspect, science, supply, networks, platforms, map, ...: of the platform, or of a planet with surface=) but inventory and craftable; '
     .. 'tell, chat, say, operator, board and votes; research; platform_schedule, platform_create, requests (platform= or position=), drop (hub items down to the planet) and land; '
     .. 'by remote view with platform=NAME: ' .. table.concat(M.PLATFORM_ACTIONS, ', ') .. '; with surface=NAME (a planet): ' .. table.concat(M.SURFACE_ACTIONS, ', ')
-    .. ' (requests there with position); sleep, and wait_until on platform_arrived, platform_left, researched, rocket_ready or item_count at positions. '
+    .. ' (requests there with position); sleep, and wait_until on platform_arrived, platform_left, researched, rocket_ready, rocket_parts or item_count at positions. '
     .. 'Nothing that needs a body: walking, mining, building or crafting by hand, your inventory'
   -- A ride never ends sooner than MIN_*: should the engine replace a pod
   -- entity on its way (unverified), the ride still takes its time.
@@ -403,7 +403,7 @@ return function(api)
   local TEAM = {tell=true, tells=true, operator=true, board=true, board_post=true, board_update=true, board_plan=true, board_events=true,
     vote=true, votes=true, lookahead=true}
   local BODY_READS = {inventory=true, craftable=true}
-  local BODYLESS_WAITS = {platform_arrived=true, platform_left=true, researched=true, rocket_ready=true}
+  local BODYLESS_WAITS = {platform_arrived=true, platform_left=true, researched=true, rocket_ready=true, rocket_parts=true}
   function M.check_action(index, action, args)
     local b = bots().by_index[index]
     if not (b and b.travel) then return end

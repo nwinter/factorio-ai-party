@@ -217,12 +217,15 @@ test('fh sleep --until sends a wait_until condition: words or JSON',async()=>{
       'item_count coal > 9','item_count coal above 9',
       // Gemini, 16:50: departure, a quoted name with spaces, at/from before the planet.
       'platform_left Sunward','platform_departed Sunward from nauvis','platform_arrived "Big Ship" at gleba',
-      "platform_left 'Big Ship'"]) {
+      "platform_left 'Big Ship'",
+      // Sonnet, shift14 22:50: the rocket being built has N parts.
+      'rocket_parts>=40 at 15.5,59.5','rocket_parts >= 40 (15.5,59.5)','rocket_parts>39 15.5,59.5']) {
       assert.equal(JSON.parse((await cli(port,['sleep','30','--until',until])).stdout).result.woke,'condition');
     }
     await assert.rejects(cli(port,['sleep','30','--until','item_count iron-plate']),(error:any)=>/--until takes/.test(error.stdout));
     await assert.rejects(cli(port,['sleep','30','--until','item_count iron-plate>=5 at north']),(error:any)=>/X,Y pairs/.test(error.stdout));
     await assert.rejects(cli(port,['sleep','30','--until','rocket_ready']),(error:any)=>/rocket_ready X,Y/.test(error.stdout));
+    await assert.rejects(cli(port,['sleep','30','--until','rocket_parts 40']),(error:any)=>/rocket_parts>=40 at X,Y/.test(error.stdout));
   });
   assert.deepEqual(seen.filter(r=>r.action==='sleep').map(r=>r.args.condition),[
     {until:'researched'},{until:'researched',technology:'automation-2'},{until:'crafting_done'},
@@ -235,7 +238,9 @@ test('fh sleep --until sends a wait_until condition: words or JSON',async()=>{
     {until:'item_count',item:'coal',below:20,positions:[{x:10,y:39}]},
     {until:'item_count',item:'coal',at_least:10},{until:'item_count',item:'coal',at_least:10},
     {until:'platform_left',platform:'Sunward'},{until:'platform_left',platform:'Sunward',location:'nauvis'},
-    {until:'platform_arrived',platform:'Big Ship',location:'gleba'},{until:'platform_left',platform:'Big Ship'}]);
+    {until:'platform_arrived',platform:'Big Ship',location:'gleba'},{until:'platform_left',platform:'Big Ship'},
+    {until:'rocket_parts',at_least:40,position:{x:15.5,y:59.5}},{until:'rocket_parts',at_least:40,position:{x:15.5,y:59.5}},
+    {until:'rocket_parts',at_least:40,position:{x:15.5,y:59.5}}]);
   assert.equal(seen.filter(r=>r.action==='sleep')[0].args.seconds,30);
 });
 test('fh sleep keeps the team hints the sleep request carried, and prints what keeps going first (compact)',async()=>{

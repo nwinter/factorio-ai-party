@@ -244,13 +244,14 @@ function lift(result: unknown): { body: unknown; notes: string[] } {
   const notes: string[] = [];
   const body: Json = {};
   for (const [key, entry] of Object.entries(result)) {
-    if (NOTES[key] && !empty(entry)) notes.push(`${NOTES[key]}: ${oneLine(entry)}`);
+    // (a count of 0 is no warning: deconstruct's tiles_refused 0 was a 'warning:' line on every tile call)
+    if (NOTES[key] && !empty(entry) && entry !== 0) notes.push(`${NOTES[key]}: ${oneLine(entry)}`);
     else body[key] = entry;
   }
   for (const nested of [result.accepted, result.completion]) {
     if (!record(nested)) continue;
     for (const [key, entry] of Object.entries(nested)) {
-      if (NOTES[key] && !empty(entry)) notes.push(`${NOTES[key]}: ${oneLine(entry)}`);
+      if (NOTES[key] && !empty(entry) && entry !== 0) notes.push(`${NOTES[key]}: ${oneLine(entry)}`);
     }
   }
   return { body, notes };

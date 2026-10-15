@@ -72,6 +72,17 @@ def make(root):
                              used=use(3), iron=1600)],
           caster="05:30:00 [Vale] (space_moment, or:x, 1s) Platform's named. Solstice.\n"
                  "05:31:00 [Rook] (camera, or:x, 1s) Nothing to see.\n")
+    # the team plan s3 left (tools/stream/planlog.py; viewer Alex 22:12): goals, lines, a project with its next step;
+    # a line naming the owner is left out by keep, as any other text
+    (root / "s3" / "plan.json").write_text(json.dumps({
+        "goals": "Rocket silo, then Vulcanus", "goals_tick": 3600 * 70,
+        "lines": [{"agent": "sonnet", "text": "rocket silo at (40,-30)", "by": "sonnet", "tick": 3600 * 100},
+                  {"agent": "opus", "text": "fuel for the Solstice run", "by": "astra", "tick": 3600 * 110},
+                  {"agent": "astra", "text": "ask nick for more quota", "by": "astra", "tick": 3600 * 111}],
+        "edited": "by astra, 2m ago", "updated_tick": 3600 * 111,
+        "projects": [{"id": 9, "title": "Rocket silo", "owner": "sonnet", "status": "doing", "progress": "4 of 5 steps",
+                      "next": "Load the rocket", "goal": None}],
+        "open_unowned": 3, "in_progress": 2, "tick": 3600 * 121, "t": 1791702000.0}))
     shift("old", None, [score("2026-10-09T01:00:00", 100, [], 0)])  # an unrelated run: not in the chain
     (root / "s1-retry").mkdir()
     (root / "s1-retry" / "resumed-from").write_text("s1\n")  # a shorter branch: the longest chain wins
@@ -115,6 +126,13 @@ def main():
         assert [(q["kind"], q["who"]) for q in qa] == [("viewer", "fan_1"), ("agent", "sonnet"), ("host", "Rook")], qa
         assert s1["viewer_lines"] == 1 and firsts["viewer"]["tick"] == 3600 * 20  # owner lines left out
         assert lr["research"][0] == (1.0, 1) and lr["research"][-1] == (122.0, 3), lr["research"]
+        plan = s3["plan"]  # the plan the shift left: game times on the run's clock, the owner's line left out
+        assert plan["goals"] == "Rocket silo, then Vulcanus" and plan["goals_game"] == "1h10m", plan
+        assert [(l["agent"], l["game"], l["by"]) for l in plan["lines"]] == [("sonnet", "1h40m", None), ("opus", "1h50m", "astra")], plan
+        assert plan["projects"] == [{"title": "Rocket silo", "owner": "sonnet", "status": "doing", "progress": "4 of 5 steps",
+                                     "next": "Load the rocket"}], plan
+        assert (plan["open_unowned"], plan["in_progress"], plan["read_game"]) == (3, 2, "2h01m"), plan
+        assert s1["plan"] is None, s1  # no file: no plan
         out = Path(d) / "dist"
         # with the archive (run ids shown, the Runs list) and no run_start: the longest chain
         content = json.loads((SITE / "content" / "site.json").read_text())
@@ -149,6 +167,10 @@ def main():
         assert '">on now</span>' not in page  # no "on now" chip from the build: a built page goes stale
         sp2 = (out / "runs" / "long" / "shift-2" / "index.html").read_text()
         assert 'content="Shift 2: Oct 11, 05:00 to 06:00 Pacific · +1 technologies · +2 rockets' in sp2
+        assert "The team plan at the end of the shift" in sp2 and "Rocket silo, then Vulcanus" in sp2 and "set at 1h10m" in sp2
+        assert "rocket silo at (40,-30)" in sp2 and "fuel for the Solstice run" in sp2 and "set at 1h50m by astra" in sp2
+        assert "Load the rocket" in sp2 and "3 open requests nobody was on · 2 in progress" in sp2 and "quota" not in sp2
+        assert "The team plan at the end" not in sp  # shift 1 left no plan file
         # a line that ends at 0 (space science on shift 1's page: none made yet) has no end label
         assert not re.search(r'class="dlabel"[^>]*>[^<]*<tspan class="dval">0</tspan>', page + sp)
         # a shift's own link-preview card: og_card.py --shifts writes its HTML (no browser here); the build uses a
