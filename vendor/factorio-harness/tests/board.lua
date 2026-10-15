@@ -150,7 +150,11 @@ eq(ev.cursor,ev.latest); eq(ev.team,nil)
 local after=request{action='board_events',args={since_seq=ev.cursor-1},player=2}
 eq(#after.events,1); eq(after.events[1].change,'done'); eq(after.events[1].by,'sol')
 eq(#request{action='board_events',args={since_seq=0,limit=3},player=2}.events,3)
-eq(request{action='board',args={},player=2}.matched,6)
+-- The plain read lists active items only and counts the finished (Foobator, d15 09:46).
+local plain=request{action='board',args={},player=2}
+eq(plain.matched,5); eq(plain.finished_left_out,'1 finished (done or dropped) left out: board {"status": "done"} (or "dropped", or {"full": true}) lists them')
+for _,row in ipairs(plain.items) do assert(row.status~='done' and row.status~='dropped',row.status) end
+eq(request{action='board',args={full=true},player=2}.matched,6)
 fails(function() request{action='board_post',args={kind='note',title='x'},player=2} end,'directors do not post')
 
 -- Team hints: assignment, requester updates, notes on my items; each shown once.

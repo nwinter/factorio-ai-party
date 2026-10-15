@@ -927,10 +927,13 @@ return function(api)
     -- board read was 18 KB, and Codex drops the middle of long output).
     -- full=true, a limit or a filter list them as before.
     local brief = by ~= OPERATOR and a.full ~= true and a.limit == nil and a.kind == nil and a.mine == nil and a.status == nil and a.since_tick == nil
-    local list = {}
+    local list, finished = {}, 0
     for _, i in pairs(b.items) do
+      -- The plain listing holds active items only (Foobator, d15 09:46: done and dropped ones filled it); the finished
+      -- ones are counted.
+      if brief and i.kind ~= 'plan' and not ACTIVE[i.status] then finished = finished + 1
       -- The plan is shown on its own (plan below), not as a row; so are open projects in the plain listing.
-      if i.kind ~= 'plan' and not (brief and i.kind == 'project' and ACTIVE[i.status])
+      elseif i.kind ~= 'plan' and not (brief and i.kind == 'project' and ACTIVE[i.status])
           and (not want or want[i.status]) and (not a.kind or i.kind == a.kind) and (not a.since_tick or i.updated_tick > a.since_tick)
           and (a.mine ~= true or i.owner == by or i.requested_by == by) then
         list[#list+1] = i
@@ -965,6 +968,7 @@ return function(api)
       local more = #list - #out
       return {plan=plan, projects=projects, projects_form=form and (form == 'compact' and 'compact (board {projects: "full"} for the full lines)' or 'full') or nil,
         open_steps=steps_open, items=out, matched=#list, open_unowned=unowned, tick=game.tick,
+        finished_left_out=finished > 0 and string.format('%d finished (done or dropped) left out: board {"status": "done"} (or "dropped", or {"full": true}) lists them', finished) or nil,
         more=more > 0 and string.format('%d more: board {full=true}, or narrow with kind, mine, status, since_tick; {id} shows one item in full', more) or nil}
     end
     for n = 1, math.min(limit, #list) do out[n] = view(list[n], false, where) end
@@ -1172,7 +1176,7 @@ return function(api)
       id='one item in full (all notes; a project with all its steps)',
       plan_ticks='boolean: the plan also as lines [{agent, text, by, tick}] (the tick each line was set), goals_tick and updated_tick',
       projects='compact | full: the open projects\' lines in the plain listing; default full while they take at most 1200 bytes, else compact (projects_form says which): "#476 Aquilo landing [sol] 2/5; next 3. Ride the rocket | 4. Drop the kit @luna; blocked by #497 Starling retrofit (claimed, 1 of 4); part of #400 Aquilo; steps open to all". The listing also has open_steps: steps of projects with open_steps or no owner that nobody owns, and how to take one',
-      returns='plan (the team plan: goals, doing lines, last edit), projects (the plain listing: one line per open project, yours first: progress, owner, next step, handoff; the rows leave them out), items, matched, open_unowned (open task/request items nobody owns); a project row has progress ("3 of 7 steps"), goal, next_steps, areas, handoff and owner_state (its owner\'s last request); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus"); an open claim has owner_active (when its owner last posted, updated it, or made a request standing in it or acting on a position in it), stale=true after 30 min of that (labelled stale; teammates\' stock sweeps include its chests) and allow (agents its labels name as allowed; their stock sweeps include it while it is fresh); the harness enforces no other rule on a claim (who may remove or rebuild what is the team\'s own); after 2 h with no such activity the harness closes it (dropped)'},
+      returns='the plain read (no filter, no limit) lists active items only (open, claimed, doing, blocked) and says how many finished ones it left out (finished_left_out); plan (the team plan: goals, doing lines, last edit), projects (the plain listing: one line per open project, yours first: progress, owner, next step, handoff; the rows leave them out), items, matched, open_unowned (open task/request items nobody owns); a project row has progress ("3 of 7 steps"), goal, next_steps, areas, handoff and owner_state (its owner\'s last request); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus"); an open claim has owner_active (when its owner last posted, updated it, or made a request standing in it or acting on a position in it), stale=true after 30 min of that (labelled stale; teammates\' stock sweeps include its chests) and allow (agents its labels name as allowed; their stock sweeps include it while it is fresh); the harness enforces no other rule on a claim (who may remove or rebuild what is the team\'s own); after 2 h with no such activity the harness closes it (dropped)'},
     board_plan = {goals='the team goals, 1..600 characters, replace the current ones ("" clears them)',
       doing='one line of what an agent is on, 1..160 characters ("" removes the line)', agent='whose line doing sets (default you)',
       returns='the team plan: goals, doing (one line per agent, "(set by NAME)" when someone else wrote it), edited; with no arguments it only reads'},

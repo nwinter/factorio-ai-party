@@ -73,7 +73,7 @@ already targets your character.
   rockets, deaths, loss alerts, machines running, made by machines and moved by hand), a run line and the last 3
   shifts; `--full` for each shift's technologies and packs, `--format json`.
 
-- The board is the team's shared list in the game save: `./fh board` (add `--args '{"mine":true}'` or
+- The board is the team's shared list in the game save: `./fh board` (active items; `{"status":"done"}` for finished ones; add `--args '{"mine":true}'` or
   `'{"status":"active"}'`). Post with `./fh board post --args '{"kind":"request","title":"...","owner":"grok"}'`; kinds
   are `task`, `request`, `claim` (with `"area":{"left_top":{x,y},"right_bottom":{x,y}}`), `note` and `project`. A post
   may add `"needs":{"iron-plate":200}` and a first `"note":"..."`.

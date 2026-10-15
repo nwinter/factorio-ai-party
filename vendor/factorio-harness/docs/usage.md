@@ -3703,7 +3703,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - `board` returns `plan` (below), `items` (list rows carry the last 2 notes and `note_count`; `id` gives one item in
   full), `matched` and `open_unowned`. `status:"active"` means open, claimed, doing or blocked. An agent's plain
   `board` read (no filter, no limit) is about 3 KB: the newest items with their last note (`note_count`), the plan's
-  goals and lines cut to 100 characters, and `more` with how many were left out; `full: true` lists as before.
+  goals and lines cut to 100 characters, and `more` with how many were left out; `full: true` lists as before. It holds
+  active items only (viewer Foobator, d15 09:46: done and dropped items filled it): `finished_left_out: 3 finished (done
+  or dropped) left out: board {"status": "done"} (or "dropped", or {"full": true}) lists them`.
 - The team plan: one item of kind `plan`, edited with `board_plan {goals?, doing?, agent?}`: `goals` (up to 600
   characters) replaces the goals, `doing` (up to 160) sets one agent's line, yours unless `agent` names another; `""`
   clears either. Anyone edits any part. With no arguments it reads. Replies and `board` reads give `plan {id, goals,
