@@ -567,6 +567,13 @@ return function(api)
     end
     return any
   end
+  -- The same read-only gate for place_ghosts and its dry run. Trees/rocks
+  -- retain the existing fallback for engine checks that refuse soft obstacles.
+  function M.ghost_placeable(surface, force, proto, pos, direction)
+    return surface.can_place_entity{name=proto.name,position=pos,direction=direction,force=force,
+      build_check_type=defines.build_check_type.manual_ghost,forced=true}
+      or M.only_obstacles(surface,proto,pos,direction)
+  end
   function M.in_box(pos,box)
     return pos.x>box.left_top.x and pos.x<box.right_bottom.x and pos.y>box.left_top.y and pos.y<box.right_bottom.y
   end

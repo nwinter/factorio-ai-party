@@ -2600,6 +2600,14 @@ fh sleep 900 --until researched                       # ...or until the research
     at (-6.5,554.5) read placeable): `blocked by transport-belt (-6.5,554.5): on these tiles, not on the same centre; a
     build replaces one of its kind only on its own centre and of its size: mine it first`. On its centre and of its
     size (a fast belt over a belt) it reads `ok` with `replaces transport-belt (-6.5,554.5)`.
+  - Rail ramps use the same ghost-placement check and snapped centre as `place_ghosts`. Each ramp's `collisions`
+    lists every physical entity intersecting its runtime collision footprint, with `{name, type, position,
+    marked_for_deconstruction}`; `why` and a failed placement name the complete list too, without the four-entity
+    cutoff. The engine's area query includes rotated cliffs that reach into the footprint even when their centres
+    lie outside it. Ore, remnants, dropped items and ghosts are excluded from this physical collision list.
+    Marked entities remain listed as `marked for deconstruction; still present`. `ok` means the ghost is accepted
+    now; buildings marked for deconstruction and cliffs can still occupy the space needed to build it. A ramp with
+    collisions has a row even without `details: true`. A later call checks the world again at that call's tick.
   - `tiles`: `needed {item: n}` (the unlocked tile item that makes each tile buildable for that entity: landfill on
     water, foundation on lava, space-platform-foundation on empty space), `under_entities`, `positions` (up to 200
     tile centres, then `more`), and the plan's own tiles: `planned`, `already`, `refused` with `refused_rows`. Each

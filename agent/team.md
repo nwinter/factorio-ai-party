@@ -411,6 +411,8 @@ already targets your character.
   last gap out when the plan would close you in where you stand; a build reply says `closed_in` after it.
   Dry runs and build replies also name logistic chests no roboport covers (`outside_logistic_coverage`) and inserters
   or belts feeding an underground entrance from the side, with the lane that gets nothing (`underground_side_feed`).
+  Rail ramp dry runs list every physical collision in `collisions`, including rotated cliffs and deconstruction
+  marks that are still present; failed `place_ghosts` replies name the same complete footprint list.
   Dry runs list each cliff the placement marks (`cliffs_under`). `conflicts {name, position}` (a read) says what
   building there takes away: everything in the way, the fluid segments that split and the poles cut off.
 - A burner whose burnt-result slot is full and that burns nothing reads `burnt_result_full` in scan, supply,
