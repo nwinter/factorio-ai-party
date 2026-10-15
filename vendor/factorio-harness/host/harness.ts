@@ -56,7 +56,8 @@ const OBSERVE_SCOPES = new Set(['danger','pipe_gaps','belt_gaps','drill_sites','
  * to whichever helper called next): Codex and Muse give each thread its id and the session's, equal for the main
  * thread. The request then carries helper=true and the runtime leaves the tells and mentions for the main session. */
 export function helperThread(env: NodeJS.ProcessEnv = process.env): boolean {
-  for (const [thread, session] of [['CODEX_THREAD_ID', 'CODEX_SESSION_ID'], ['MUSE_THREAD_ID', 'MUSE_SESSION_ID']]) {
+  const pairs: Array<[string, string]> = [['CODEX_THREAD_ID', 'CODEX_SESSION_ID'], ['MUSE_THREAD_ID', 'MUSE_SESSION_ID']];
+  for (const [thread, session] of pairs) {
     const t = env[thread], s = env[session];
     if (t && s && t !== s) return true;
   }
