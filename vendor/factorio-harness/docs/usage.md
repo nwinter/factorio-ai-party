@@ -2223,6 +2223,17 @@ fh sleep 900 --until researched                       # ...or until the research
   item_ingredient_shortage (lacks advanced-circuit)`), `steps` (every step of the tree: made and used per minute,
   makers, working, states, what they lack; miners with their states and where they put their output). Kept 10 s like
   supply. Without `item`, `bottleneck` is the area read it was.
+  - `per_min` (Sonnet, shift13 18:20: the rate each step needs, rebuilt by hand over about 20 supply calls): `target
+    {per_min, line, steps}`: per step of the item's tree, the rate it needs for `per_min` of the item (an item two
+    steps need adds up), what it made a minute over the last 10 minutes, the recipe most of its makers run, their
+    crafts a minute each at their own speed (modules and beacons in it) and productivity (theirs plus the recipe's
+    research; a product marked ignored_by_productivity gets none), the machines that rate takes and what the makers
+    there make at full speed: `electronic-circuit: need 60/min, made 22/min; 4 assembling-machine-2 on
+    electronic-circuit, 90/min each: 0.7 for the target, 360/min at full speed`. Mining drills by their mining speed
+    on the resource (mining productivity in it), offshore pumps by pumping speed; a pumpjack's yield is not counted.
+    A step no maker on the surface makes is followed through the recipe of that name (`no maker on the surface
+    (recipe copper-plate)`).
+  - `fh call bottleneck --args '{"item":"electronic-circuit","per_min":60}'`
 - `fh call trace` (a read; remote view: a machine in a visible chunk, the whole of a platform with `platform`):
   - `{"position":{x,y}}` on a machine or lab: `crafting` (its recipe, or the research a lab runs); per ingredient it
     lacks for its next craft (`"all":true`: every one) a line `stone-brick: has 0 of 5; long-handed-inserter (12,42)
@@ -2436,6 +2447,22 @@ Items on the ground:
   area holds none. Outcomes `picked_up` (none left), `inventory_full`, `blocked` (stacks it could not walk to,
   `last.skipped`; it stops after 8), `timed_out`; `last.picked {item: count}` and `last.left` (stacks still in the
   area). `pickup {}` still takes only what is in reach where you stand.
+  A `pickup` step that ends `picked_up` is a success in a queue or a standing order (it counted as a failed step).
+- `pickup {belt: true, item (or items), count?, position?, radius?, area?, ticks?}` (beltpick.lua; Grok, shift13
+  18:20: the iron for a green circuit plant sat on a full belt at (90.5,-11.5) and `pickup` found "no items on the
+  ground" three times, which turned the standing order off) takes items off the lanes of our belts (transport belts,
+  undergrounds, splitters, loaders) in the area, as the pickup key does: from belts within your pickup distance
+  (1 tile), about one item a tick, walking to the nearest belt in the area that carries one. Each item keeps its
+  spoilage; only the items named are taken.
+  - `count` 1..10000 in all (default 100); the area as for the ground pickup (position and radius, default you and 8;
+    or `area` up to 64x64).
+  - Refused when no belt there carries one, naming what they carry: `no iron-plate on our belts in (87.5,-14.5)-
+    (93.5,-8.5): they carry coal*11 stone-brick*2` (or `no belt of ours there`). Reply: `belt_tiles`, `on_belts`,
+    `count`, `rate`.
+  - Outcomes: `picked_up` (the count taken; or what it took when no belt in the area has carried one for 3 s),
+    `nothing_on_belts` (none by then), `inventory_full`, `blocked` (belts it could not walk to), `timed_out`;
+    `last.picked {item: count}`, `last.belt {taken, count}`. `item` and `count` go with `belt: true`.
+  - `fh call pickup --args '{"belt":true,"item":"iron-plate","count":200,"position":{"x":90.5,"y":-11.5},"radius":8}' --wait`
 
 Not supported yet: elevated rails and rail ramps, the selector combinator, and fluid transfers by hand. See docs/HARNESS-COVERAGE.md in the pog
 repo for the feature-by-feature list.
