@@ -64,6 +64,9 @@ eq(find('agent-harness profile second','key=tick time='),'agent-harness profile 
 -- 10+8+1(encode observe)*2+40+1+7+0+29.5
 eq(find('agent-harness profile second','key=*'),'agent-harness profile second tick=600 n=68 key=* time=97.5ms')
 eq(lines('agent-harness profile total')[1],nil)
+-- The Lua heap that second, read once a tick: KB now, grown and fallen.
+local heap=find('agent-harness profile heap','tick=600 kb=')
+assert(heap and heap:match('^agent%-harness profile heap tick=600 kb=%d+ grew_kb=%d+ fell_kb=%d+$'),tostring(heap))
 -- At until_tick: the last second's lines, then totals per key and a done line; afterwards idle again.
 for _=1,60 do tick() end
 assert(not profile.running())
