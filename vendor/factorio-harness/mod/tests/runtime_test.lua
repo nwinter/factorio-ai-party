@@ -1162,8 +1162,14 @@ do
     filter_slot_count=5,use_filters=false}
   ig.set_filter=function(i,name) filters_set[i]=name end
   ig.get_filter=function(i) return filters_set[i] and {name=filters_set[i],quality='normal'} or nil end
-  setmetatable(ig,{__index=function(_,k) if k=='inserter_filter_mode' then return mode end end,
-    __newindex=function(t,k,v) if k=='inserter_filter_mode' then mode=v else rawset(t,k,v) end end})
+  -- (its spoil priority takes only the underscore spelling here: the call tries fresh-first, then fresh_first)
+  local spoil='none'
+  setmetatable(ig,{__index=function(_,k) if k=='inserter_filter_mode' then return mode elseif k=='inserter_spoil_priority' then return spoil end end,
+    __newindex=function(t,k,v)
+      if k=='inserter_filter_mode' then mode=v
+      elseif k=='inserter_spoil_priority' then if v:find('-',1,true) then error('Unknown spoil priority: '..v) end spoil=v
+      else rawset(t,k,v) end
+    end})
   local saved_find=p.surface.find_entities_filtered
   p.surface.find_entities_filtered=function(f)
     local out={}
@@ -1183,6 +1189,10 @@ do
   prototypes.item['iron-plate']=had_plate or {name='iron-plate',type='item'}
   r=call('configure',{position={x=8.5,y=0.5},name='fast-inserter',filters={'iron-plate'}})
   eq(r.ghost,'fast-inserter'); eq(filters_set[1],'iron-plate'); eq(ig.use_filters,true)
+  -- Spoil priority on an inserter ghost (Sol, 18:15): read back as the game stores it.
+  r=call('configure',{position={x=8.5,y=0.5},name='fast-inserter',spoil_priority='fresh_first'})
+  eq(r.spoil_priority,'fresh_first'); eq(r.spoil_priority_before,'none'); eq(r.ghost,'fast-inserter')
+  fails(function() call('configure',{position={x=6,y=0},spoil_priority='fresh_first'}) end,'spoil_priority applies to inserters')
   prototypes.item['iron-plate']=had_plate
   -- By remote view too (out of reach): the ghost, not the tile ghost under it.
   p.can_reach_entity=function() return false end
@@ -1202,6 +1212,13 @@ local filtered=call('configure',{position=fi.position,filters={'stone-brick'},fi
 eq(filtered.filters[1],'stone-brick'); eq(set_filters[1],'stone-brick'); eq(set_filters[2],false); eq(fi.use_filters,true)
 fails(function() call('configure',{position=fi.position,filters={'not-an-item'}}) end,'unknown item')
 fails(function() call('configure',{position=fi.position,filters={'stone-brick'},recipe='sulfur'}) end,'not both')
+-- A built inserter's spoil priority, with its filters in the same call; an unknown value is refused.
+do
+  fi.inserter_spoil_priority='none'
+  local sp=call('configure',{position=fi.position,spoil_priority='spoiled-first',filters={'stone-brick'}})
+  eq(sp.spoil_priority,'spoiled-first'); eq(sp.spoil_priority_before,'none'); eq(sp.filters[1],'stone-brick')
+  fails(function() call('configure',{position=fi.position,spoil_priority='freshest'}) end,'spoil_priority is none, fresh_first or spoiled_first')
+end
 fi.filter_slot_count=0
 fails(function() call('configure',{position=fi.position,filters={'stone-brick'}}) end,'no filter slots')
 -- refuel tops every reachable burner up to count; collect empties outputs.

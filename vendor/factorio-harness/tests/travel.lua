@@ -57,7 +57,9 @@ game={tick=0,forces={player=force},planets=planets,players={},
   get_surface=function(n) return surfaces[n] end,
   create_inventory=function(n) local inv=inventory(n); kits[#kits+1]=inv; return inv end}
 local stopped={}
-local bots=dofile('mod/agent-harness_0.1.0/bots.lua'){state=function() return storage.agent_harness end,
+-- (the runtime's read-only list, as M.reads; a part of it)
+local READS={scan=true,science=true,supply=true,observe=true,inspect=true,status=true,inventory=true,craftable=true,networks=true}
+local bots=dofile('mod/agent-harness_0.1.0/bots.lua'){state=function() return storage.agent_harness end,read_only=function(a) return READS[a]==true end,
   stop=function(index,outcome) stopped[#stopped+1]=outcome end}
 local cameras=dofile('mod/agent-harness_0.1.0/cameras.lua'){state=function() return storage.agent_harness end,
   bot=function(name) return bots.named(name) end,controlled=function() return false end}
@@ -118,9 +120,21 @@ eq(proxy.surface,platform_surface); eq(proxy.character,nil); eq(proxy.force,forc
 fails(function() return proxy.get_main_inventory() end,'aboard platform alpha with no body')
 for _,ok in ipairs({{'platforms',{}},{'platform_schedule',{platform='alpha'}},{'land',{}},{'research',{}},{'requests',{platform='alpha'}},
   {'place_ghosts',{platform='alpha'}},{'observe',{scope='platforms'}},{'chat',{}}}) do bots.check_action(b.index,ok[1],ok[2]) end
-for _,no in ipairs({{'move_to',{}},{'craft',{}},{'requests',{}},{'place_ghosts',{}},{'build',{}},{'observe',{scope='scan'}}}) do
+for _,no in ipairs({{'move_to',{}},{'craft',{}},{'requests',{}},{'place_ghosts',{}},{'build',{}},{'inventory',{}},{'craftable',{}},
+  {'wait_until',{['until']='crafting_done'}},{'wait_until',{['until']='item_count',item='coal',at_least=5}},{'collect',{}}}) do
   fails(function() bots.check_action(b.index,no[1],no[2]) end,'remote view only')
 end
+-- Astra, 18:16: the team's calls, every read, scan with platform or surface, and waits needing no body work aboard.
+for _,ok in ipairs({{'tell',{to='sol',text='x'}},{'operator',{text='x'}},{'board',{}},{'board_post',{}},{'votes',{}},
+  {'science',{}},{'supply',{item='coal'}},{'scan',{platform='alpha'}},{'scan',{surface='nauvis'}},{'scan',{}},{'observe',{scope='scan'}},
+  {'networks',{}},{'inspect',{surface='nauvis',position={x=0,y=0}}},
+  {'wait_until',{['until']='platform_arrived',platform='alpha'}},{'wait_until',{['until']='platform_left',platform='alpha'}},
+  {'wait_until',{['until']='researched'}},{'wait_until',{['until']='item_count',item='coal',at_least=5,positions={{x=0,y=0}}}},
+  {'dry_run',{action='scan',args={}}}}) do bots.check_action(b.index,ok[1],ok[2]) end
+-- The refusal names what works.
+local ok,err=pcall(bots.check_action,b.index,'move_to',{})
+assert(not ok and tostring(err):find('every read',1,true) and tostring(err):find('tell, chat, say, operator, board',1,true)
+  and tostring(err):find('wait_until on platform_arrived, platform_left',1,true),tostring(err))
 -- Landing needs the platform stopped at a planet.
 platform.space_location=nil
 fails(function() bots.land(b) end,'not stopped at a planet')

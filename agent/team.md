@@ -339,7 +339,11 @@ already targets your character.
   circuit settings, a chest's limit and requests (`replaced.kept`, `not_kept`). Inserter and loader filters show in
   `scan` rows (`filters: whitelist: iron-plate`, `off`, `set by circuit`); `configure {position, filters, filter_mode
   | mode, use_filters}` and `circuit_set {settings: {filters, filter_mode}}` set them. An unknown argument's refusal
-  names the closest valid name, and on `configure` and `circuit_set` what that entity takes.
+  names the closest valid name, and on `configure` and `circuit_set` what that entity takes. `configure {position,
+  spoil_priority: fresh_first | spoiled_first | none}` sets an inserter's Spoil priority (built or ghost; `inspect`
+  shows it).
+- Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`), and
+  so do tell, chat, say, operator, the board, research, platform calls and waits on `platform_arrived`/`platform_left`.
 - Modules: `configure {position | positions, modules: ["speed-module-2","speed-module-2"], by?}` sets a machine's module
   slots (past the list: empty); in reach by hand (old ones to your inventory), else (remote, `surface`, `platform`, or
   `by: "robots"`) an item request robots or the platform hub carry out; on a ghost its requests. `inspect` reads them back.

@@ -1349,6 +1349,13 @@ fh sleep 900 --until researched                       # ...or until the research
     `use_filters: false` keeps the items, unused. `filter` runs as `filters`. The reply reads back `filters`,
     `filter_mode`, `use_filters`, `line` and `before` (the line before the change). `circuit_set {position, settings:
     {filters, filter_mode, use_filters}}` sets them the same way and returns the line in `filters`.
+  - Spoil priority (Sol, 18:15, from viewer Foobator): `configure {position, spoil_priority: fresh_first |
+    spoiled_first | none}` sets the inserter GUI's Spoil priority, which spoilable stack an inserter takes first, on a
+    built inserter or its ghost, alone or with its filters in the same call. 2.0.77 has it as
+    `LuaEntity.inserter_spoil_priority`; the call tries `fresh-first` then `fresh_first` and reads the value back as
+    the game stores it (`spoil_priority`, with `spoil_priority_before`). `inspect` on an inserter or its ghost shows
+    `spoil_priority`. The game has no freshness threshold for inserters (no filter by spoil percent), and circuits
+    read item counts only, not how spoiled they are.
 - `inspect` on a roboport or a logistic chest shows `logistic_network`: its `id`, `roboports`, `logistic_area` and
   `construction_area`, `logistic_robots` and `construction_robots` `{total, idle, working, charging, waiting}` and a
   `line` (the networks read's words), or `none: in no logistic network: no roboport's logistic area covers it`. On a
@@ -1397,6 +1404,14 @@ fh sleep 900 --until researched                       # ...or until the research
 - `fh platform NAME` (Gemini, 07:55) is `fh call platforms --args '{"platform":"NAME"}'`: the one platform with its
   full hub inventory (`hub_items`), `hub_slots` free, `speed_kms`, `next_stop`, `eta_min` and the rest of its row; a
   name with spaces may be given unquoted; `fh platform` alone lists every platform.
+- A bot aboard a platform has no body and acts by remote view (Astra, 18:16: tell, operator, scan with platform,
+  science and wait_until platform_arrived were refused while the refusal said scan works). Aboard work: every read
+  (status, scan, inspect, science, supply, networks, platforms, map and the rest: of the platform, or of a planet with
+  `surface=`) except `inventory` and `craftable`; `tell`, `chat`, `say`, `operator`, the board and votes; research;
+  `platform_schedule`, `platform_create`, `requests` (`platform=` or `position=`), `drop` and `land`; ghost tools,
+  `grid`/`scan`, `circuit_set` and `wire` with `platform=`; `sleep`; and `wait_until` on `platform_arrived`,
+  `platform_left`, `researched`, `rocket_ready` or `item_count` at positions. Anything that needs a body (walking,
+  mining, building or crafting by hand, the inventory) is refused with that list.
 - `platforms` shows each platform's `defense`: `hub_health` (`637/1000`), `turrets` (`5 gun-turrets: 4 empty, 0 low
   (under 10 rounds)`) and `ammo`, the ammo flow (`turrets hold 6 rounds, the hub firearm-magazine 920`).
 - Flight, on every `platforms` row and in `inspect` of a hub under `flight`: `speed_kms` (the hub GUI's km/s; the game's
