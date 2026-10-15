@@ -447,6 +447,17 @@ do
   eq(t.chests[1],'(300,300) steel-chest 600 (spoiled 15-91%, 45% by count)'); eq(t.chests[2],'(310,300) wooden-chest 100 (spoiled 50%, 50% by count)')
   big.valid=false; small.valid=false
 end
+-- Stock on our platforms stopped over the planet (d15: Starling's calcite over Nauvis was never counted).
+do
+  defines.inventory=defines.inventory or {}; defines.inventory.hub_main=defines.inventory.hub_main or 1
+  local function plat(name,loc,n)
+    return {valid=true,name=name,space_location=loc and {name=loc} or nil,hub={valid=true,get_inventory=function() return {get_item_count=function(i) return i=='calcite' and n or 0 end} end}}
+  end
+  local f={platforms={plat('Starling','nauvis',102),plat('Wayfarer',nil,500),plat('Sunward','vulcanus',40)}}
+  local o=S.orbit_stock({name='nauvis',planet={name='nauvis'}},f,'calcite')
+  eq(o.total,102); eq(o.line,'in orbit on Starling 102')
+  eq(S.orbit_stock({name='nauvis',planet={name='nauvis'}},f,'coal'),nil)
+end
 print('supply: ok')
 
 -- The extra stock chest cannot be crowded out by full requesters or buffers.

@@ -4529,6 +4529,11 @@ fh watch    # deploy on every change
   `after_slots`, `fits` for the whole list after topping up existing cargo, including unrelated cargo already aboard.
   These combined limits differ from the individual `order[].fits` checks. No cargo moves. Discovery without a silo
   position includes the same manifest and source checks for each visible silo.
+- `supply {item}` and `science` count stock on our platforms stopped over the planet (d15 trajectory analysis: Grok's
+  102 calcite sat on Starling over Nauvis while the artillery ran out of shells): `supply` adds `in_orbit: in orbit on
+  Starling 102 (platform hubs stopped over nauvis; a drop brings it down)` and the same words at the end of `where`;
+  each `science` pack line ends with `; in orbit on Starling 40`. It reads the hub's main inventory; a platform in
+  flight or over another planet is left out.
 - `supply {item}` adds `belt_lines` (Muse, Grok, d15 07:50: supply said coal 1001 on belts and the backed-up line took
   128-wide scans to find): the belt tiles holding the item joined into lines (tiles side by side that hold it; an empty
   tile or an underground's two ends split a line), the 5 holding the most first: `412 on 52 belt tiles
