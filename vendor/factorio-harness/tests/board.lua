@@ -150,7 +150,11 @@ eq(ev.cursor,ev.latest); eq(ev.team,nil)
 local after=request{action='board_events',args={since_seq=ev.cursor-1},player=2}
 eq(#after.events,1); eq(after.events[1].change,'done'); eq(after.events[1].by,'sol')
 eq(#request{action='board_events',args={since_seq=0,limit=3},player=2}.events,3)
-eq(request{action='board',args={},player=2}.matched,6)
+-- The plain read lists active items only and counts the finished (Foobator, d15 09:46).
+local plain=request{action='board',args={},player=2}
+eq(plain.matched,5); eq(plain.finished_left_out,'1 finished (done or dropped) left out: board {"status": "done"} (or "dropped", or {"full": true}) lists them')
+for _,row in ipairs(plain.items) do assert(row.status~='done' and row.status~='dropped',row.status) end
+eq(request{action='board',args={full=true},player=2}.matched,6)
 fails(function() request{action='board_post',args={kind='note',title='x'},player=2} end,'directors do not post')
 
 -- Team hints: assignment, requester updates, notes on my items; each shown once.
@@ -818,6 +822,13 @@ do
   fails(function() sol('board_update',{id=p3.id,blocked_by={p3.id}}) end,'does not wait for itself')
   eq(sol('board_update',{id=p3.id,blocked_by={}}).item.blocked_by,nil)
   sol('board_update',{id=p3.id,status='dropped'})
+  -- open steps nearest the reader first, with the distance to the project's area (joonazan, d15 08:16)
+  local far=sol('board_post',{kind='project',title='far job',open_steps=true,steps={'far step'},areas={{left_top={x=900,y=900},right_bottom={x=910,y=910}}}}).item
+  local near=sol('board_post',{kind='project',title='near job',open_steps=true,steps={'near step'},areas={{left_top={x=-5,y=-5},right_bottom={x=5,y=5}}}}).item
+  local os_=grok('board',{}).open_steps
+  assert(os_[1]:find('#'..near.id..' step 1: near step',1,true) and os_[1]:find('tiles from you',1,true),os_[1])
+  assert(os_[2]:find('#'..far.id..' step 1: far step',1,true),os_[2])
+  sol('board_update',{id=far.id,status='dropped'}); sol('board_update',{id=near.id,status='dropped'})
 end
 -- a finished project leaves the lines; the board keeps at most 30 open projects
 r=astra('board_update',{id=pj.id,status='done',note='4 reactors running'})

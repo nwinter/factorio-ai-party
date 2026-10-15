@@ -318,6 +318,8 @@ fh call status
     space-platform-hub (0,0), box (-4,-4)-(4,4), 4 tiles from its edge`, or, when it touches one and the game still
     refuses, that it touches it and that a bay joins only where its connection points line up. `build`, `place_ghosts`
     and their dry runs give it.
+  - `placements {platform, name: "cargo-bay", near?}` lists where it fits on that platform by the game's own build
+    check, which knows the hub and bay attachment (near in platform coordinates, default the hub).
   - `check_inserters: true` on `build` or `place_ghosts` (Luna, d15: misaligned and blocked seed-feeder inserters took many
     round trips) runs the call's dry run first. Each planned inserter's pickup and drop (what stands there: built,
     planned in this call, a ghost), power (a pole's supply area, built or planned; a build only) and filters (one that
@@ -902,6 +904,12 @@ fh call status
     now (24 tiles)`). The reply says what is checked
     (`avoid_enemies: worms (range + 4), spawners (40 tiles + 4) and areas under attack now (24 tiles + 4)`). Worms
     keep to their range: they do not move, and a path 34 tiles from a medium worm is out of its reach.
+  - A walk refused `no_safe_route` that starts within 16 tiles of where one of your last 4 walks (30 minutes) ended, and
+    goes within 16 tiles of where it started, gets `last.walked_back` (Haiku, d15 07:50: return walks were refused after
+    the walk out): `{tick, ago_s, from, to, via, line}`, the way you walked (a point every 8 tiles) reversed as at most
+    12 via points. A `move_to` with them walks it, each leg checked again with the margins it is given. In Haiku's
+    shift-16 case the return went to a different end, (82.5,-4.5) instead of (84,77), past the spawner at (219,-239),
+    so no stored way would have matched it.
   - An attack that starts after the plan, near the way on (the straight line on passes nearer its first hit than the
     character is), plans the walk again round it, once each, every half second: `last.replanned: attack #1711 at
     (-110,-91) started on the way: planned again round it`. A zone round the character itself keeps to just short of
@@ -1669,6 +1677,10 @@ a radius tour; `last.fuel_taken` and `sources` give each source, taken count, ou
 `from_radius` (1..128, default 64; Haiku, d15 06:20: boilers starved when no coal lay within 64 tiles) is how far
 round each refill stop the nearest chest or belt holding the fuel is looked for (`from: "nearest"` only; at most 256
 read each time).
+`feed_chests: true` (with `area` or `radius`; Haiku, d15 06:20: "a one-call fill of every boiler feed chest from the
+nearest coal source") tops up the chests that inserters take from to feed those burners, each to `count`, instead of
+the burners; the reply's `feed_chests` says how many (`3 chests that inserters feed those burners from, each topped up
+to 50 coal`). It is the same fuel round: carried fuel first, then the nearest source within `from_radius`.
 
 A rearm or refuel tour that runs out of the item with stops left ends `out_of_items` only while one of those stops
 still holds less than the tour's count; if none does, it ends `topped_up` (Haiku, d15 07:50: tours whose remaining
@@ -3040,7 +3052,9 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     character. `closed_in` instead: `the character is closed in already where it stands ...` (nothing blamed on the
     plan). A build reply says the same after the fact: `closed_in: the character is closed in now where it stands
     (0.5,78.5): the last gap out was where pipe (-1.5,78.5) now stands; ...`. About 1 ms a check on a private 2.0.77
-    server (no way out within 16 tiles counts as closed in).
+    server (no way out within 16 tiles counts as closed in). It ends with the call that opens it (Gemini, d15 07:54:
+    twice closed in by accumulators, each time one mine and one move_to): `; mine {"position":{"x":-1.5,"y":78.5}}
+    takes pipe back and opens a way out`.
   - `build` dry runs also report `pockets` away from the character: up to four newly enclosed walkable areas, their
     `area`, approximate `walkable_tiles`, and `planned_boundary` entries (`index`, `name`, `position`, `tiles`, the
     inclusive tile-coordinate footprint). Existing closed pockets are excluded; ground made walkable by this plan
@@ -3744,7 +3758,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - `board` returns `plan` (below), `items` (list rows carry the last 2 notes and `note_count`; `id` gives one item in
   full), `matched` and `open_unowned`. `status:"active"` means open, claimed, doing or blocked. An agent's plain
   `board` read (no filter, no limit) is about 3 KB: the newest items with their last note (`note_count`), the plan's
-  goals and lines cut to 100 characters, and `more` with how many were left out; `full: true` lists as before.
+  goals and lines cut to 100 characters, and `more` with how many were left out; `full: true` lists as before. It holds
+  active items only (viewer Foobator, d15 09:46: done and dropped items filled it): `finished_left_out: 3 finished (done
+  or dropped) left out: board {"status": "done"} (or "dropped", or {"full": true}) lists them`.
 - The team plan: one item of kind `plan`, edited with `board_plan {goals?, doing?, agent?}`: `goals` (up to 600
   characters) replaces the goals, `doing` (up to 160) sets one agent's line, yours unless `agent` names another; `""`
   removes a line. Empty `goals` is refused unless `clear: true` (Opus, shift17 12:20: `fh board plan goals` with no
@@ -3791,7 +3807,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     picks one. Measured on shift16: the plain board read's `projects` was 1.46 KB at the median (35 reads, lines up
     to about 330 bytes with the handoff); the whole reply 3.7 KB at the median, 23 KB at most.
   - `open_steps` in the plain listing: up to 5 steps of projects with `open_steps` (or no owner) that nobody owns,
-    with the call that takes one.
+    with the call that takes one; steps of projects with `areas` first, nearest you first, each with `its area N tiles
+    from you`.
 - A project's events (`board_events`): `step_added`, `step_done`, `step_undone`, `step_removed`, `goal`, `handoff`,
   `areas`, each with `text` (the steps or what changed), and every project event carries the project's `progress`,
   `steps_done` and `steps_total` after the change. Its owner and poster hear of others' changes in `team.board`

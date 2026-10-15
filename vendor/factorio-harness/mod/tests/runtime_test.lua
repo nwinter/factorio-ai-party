@@ -505,7 +505,8 @@ eq(wood.count,2); eq(p.cursor_stack.valid_for_read,false); eq(built.closed_in,ni
   placed=nil
   local walled=call('build',{item='wooden-chest',position={x=2,y=0}})
   eq(walled.closed_in,'the character is closed in now where it stands (0,0): the last gap out was where wooden-chest (2.5,0.5) now stands; '..
-    'the area (1,1)-(3,3) (about 10 tiles) has no gap the character (0.4 tiles wide) fits through; around it: wooden-chest')
+    'the area (1,1)-(3,3) (about 10 tiles) has no gap the character (0.4 tiles wide) fits through; around it: wooden-chest; '..
+    'mine {"position":{"x":2.5,"y":0.5}} takes wooden-chest back and opens a way out')
   runtime.pathing.closed_by=closed_by
   wood.count=2
 end)()
@@ -5070,9 +5071,25 @@ end)()
   for _,c in ipairs({{'load_silo',{up_to=true}},{'refuel',{from_radius=128}},{'queue_edit',{id='job-1',to=1}},{'circuit_set',{set_requests=true}},
       {'requests',{remove={'coal'},force=true}},{'board',{projects='compact'}},{'board_post',{blocked_by={1},parent=1,open_steps=true}},
       {'board_update',{take_step=1,release_step=1,open_steps=true,blocked_by={},parent=false}},{'fuel_budget',{surface='nauvis'}},
-      {'mine',{count=5}},{'feed',{position={x=1,y=1},radius=5}},{'queue_submit',{mode='pending'}},{'pickup',{belt=true,to={x=1,y=1}}},{'build',{check_inserters=true}},{'place_ghosts',{check_inserters=true}}}) do
+      {'mine',{count=5}},{'feed',{position={x=1,y=1},radius=5}},{'queue_submit',{mode='pending'}},{'pickup',{belt=true,to={x=1,y=1}}},{'refuel',{feed_chests=true}},{'placements',{platform='Starling',name='cargo-bay'}},{'build',{check_inserters=true}},{'place_ghosts',{check_inserters=true}}}) do
     no_unknown(function() runtime.check_args(c[1],c[2]) end,'check_args '..c[1])
   end
+end)()
+;(function()
+  -- The way walked, offered back to a refused walk (Haiku, d15 07:50).
+  local kept=p.position
+  local act={trail_pts={{x=0,y=0}},surface_name=p.surface.name}
+  for i=1,10 do runtime.trail_point(act,{x=i*10,y=0}) end
+  eq(#act.trail_pts,11)
+  p.position={x=100,y=0}
+  runtime.walked_record(1,act,'arrived')
+  local back=runtime.walked_back(1,{x=98,y=1},{x=2,y=0},p.surface.name)
+  assert(back and back.via[1].x==90 and back.via[#back.via].x==10,'reversed points')
+  assert(back.line:find('you walked from (0,0) to (100,0)',1,true),back.line)
+  eq(runtime.walked_back(1,{x=50,y=40},{x=2,y=0},p.surface.name),nil,'not where it ended')
+  eq(runtime.walked_back(1,{x=98,y=1},{x=60,y=60},p.surface.name),nil,'not toward where it started')
+  runtime.walked_record(1,{trail_pts={{x=0,y=0}},surface_name='x'},'blocked')
+  p.position=kept
 end)()
 ;(function()
   -- Cargo bay attachment and the tile grid (Astra, d15 07:50: "nothing found" for a bay that fit its cleared footprint).
