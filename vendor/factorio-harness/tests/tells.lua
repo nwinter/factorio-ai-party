@@ -212,7 +212,21 @@ for _=1,9 do jump(3600); astra('operator',{text='more'}) end
 jump(3600)
 fails(function() astra('operator',{text='eleventh'}) end,'10 operator requests an hour; next in')
 jump(3600*50); eq(astra('operator',{text='after the hour'}).seq>0,true) -- the first one left the hour
-r1=grok('operator',{text=string.rep('x',600)}); eq(r1.cut.length,600); eq(r1.cut.kept,500)
+-- Shift14: a clipped second issue forced Astra to resend and hit the one-minute limit.
+local long=string.rep('x',1995)..' tail'
+r1=grok('operator',{text=long}); eq(r1.cut,nil)
+eq(op('operator_requests',{since=r1.seq-1}).requests[1].text,long)
+jump(3600)
+local cursor=op('operator_requests',{}).cursor
+fails(function() grok('operator',{text=string.rep('x',2001)}) end,'no request filed')
+eq(op('operator_requests',{}).cursor,cursor)
+-- UTF-8 is bounded by bytes, with no partial code point filed.
+fails(function() grok('operator',{text=string.rep('é',1001)}) end,'exceeds 2000 bytes')
+r1=grok('operator',{text='whole after refusal'}); eq(r1.seq,cursor+1)
+fails(function() grok('operator',{text='too soon'}) end,'one operator request a minute')
+-- Teammate tells retain their existing 500-byte limit.
+local clipped=astra('tell',{to='sol',text=string.rep('x',600)})
+eq(clipped.cut.length,600); eq(clipped.cut.kept,500)
 fails(function() grok('operator',{text='  '}) end,'text is required')
 eq(#op('operator_requests',{since=before,limit=2}).requests,2)
 assert(runtime.dispatch{action='describe',args={},player=1}.actions.operator.text:find('server:',1,true))

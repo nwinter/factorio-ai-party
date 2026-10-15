@@ -198,4 +198,62 @@ end
 force.platforms={}
 second()
 eq(st.freight[1],nil)
+-- Ammo over the last leg and rockets on their way up (Astra, shift14 22:50: reconciled by hand every flight). The
+-- surface's item statistics as 2.0.77 keeps them (made: crafted; used: a turret's shots), snapshot when a leg opens.
+do
+  prototypes.item['firearm-magazine'].type='ammo'
+  prototypes.item.rocket={type='ammo',get_spoil_ticks=function() return 0 end}
+  defines.inventory.turret_ammo=9
+  defines.flow_precision_index={ten_minutes=2}
+  local made,used={['firearm-magazine']=1000,rocket=50},{['firearm-magazine']=900,rocket=10}
+  local stats={get_input_count=function(n) return made[n] or 0 end,get_output_count=function(n) return used[n] or 0 end,
+    get_flow_count=function(f) if f.category=='input' then return f.name=='firearm-magazine' and 300 or 0 end return f.name=='firearm-magazine' and 200 or 0 end}
+  local tinv=inv({['firearm-magazine']=40})
+  local turret={get_inventory=function(id) assert(id==9); return tinv end}
+  local surf={name='platform-7',find_entities_filtered=function(f) if f.type=='ammo-turret' then return {turret} end return {} end}
+  local pf={name='player'}
+  pf.get_item_production_statistics=function(s) assert(s==surf); return stats end
+  local pl={valid=true,index=7,name='Skylark',hub=hub,state=6,space_location={name='nauvis'},surface=surf,force=pf,schedule={records={{station='gleba'}},current=1}}
+  local st2={}
+  local F2=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return st2 end}
+  main,trash={['firearm-magazine']=500},{['firearm-magazine']=999}
+  F2.track(pl,game.tick)
+  -- Off to Gleba: the leg opens with the statistics now; 2 min later 100 made and 60 used.
+  pl.state=3; pl.space_location=nil; pl.space_connection={from={name='nauvis'},to={name='gleba'},length=15000}; pl.distance=0.1; pl.speed=0.05
+  game.tick=game.tick+60; F2.track(pl,game.tick)
+  game.tick=game.tick+7200
+  made['firearm-magazine'],used['firearm-magazine']=1100,960
+  local a=F2.ammo(pl)
+  eq(a[1],'firearm-magazine: made 50/min, used 30/min over this leg nauvis->gleba (2m00s so far); hub 500, turrets 40; at the arrival at gleba in 75m00s about 2040 at that rate')
+  eq(a[2],nil,'no rocket held, made or used over the leg: not listed')
+  -- Used faster than made: when it runs out, before the arrival.
+  game.tick=game.tick+7200
+  used['firearm-magazine']=1520
+  eq(F2.ammo(pl)[1],'firearm-magazine: made 25/min, used 155/min over this leg nauvis->gleba (4m00s so far); hub 500, turrets 40; runs out in 4m09s at that rate, before the arrival at gleba in 75m00s')
+  -- Stopped at Gleba: the leg just flown, no arrival to come.
+  pl.space_connection=nil; pl.space_location={name='gleba'}; pl.state=6
+  game.tick=game.tick+60; F2.track(pl,game.tick)
+  eq(F2.ammo(pl)[1],'firearm-magazine: made 25/min, used 154/min over the last leg nauvis->gleba (4m01s); hub 500, turrets 40')
+  -- A leg seen first before the counts were kept (a runtime update): the game's last 10 minutes.
+  for _,seg in ipairs(st2.freight[7].segs) do seg.ammo0=nil end
+  eq(F2.ammo(pl)[1],'firearm-magazine: made 30/min, used 20/min over the last 10 min; hub 500, turrets 40')
+  -- A rocket launched to its hub: on the way until its pod is gone (2.0.77: about 35 s).
+  local pod={valid=true,cargo_pod_destination={station={surface={platform=pl}}},surface={name='nauvis'},
+    get_inventory=function() return inv({['firearm-magazine']=20}) end}
+  F2.on_launch({rocket={attached_cargo_pod=pod},rocket_silo={surface={name='nauvis'}}})
+  local inc=F2.incoming(pl)
+  eq(inc.rockets,1); eq(inc.cargo,'firearm-magazine*20'); eq(inc.lines[1],'a rocket from nauvis launched 0s ago: firearm-magazine*20 (rising over nauvis)')
+  game.tick=game.tick+1800; pod.surface=surf
+  eq(F2.incoming(pl).lines[1],'a rocket from nauvis launched 30s ago: firearm-magazine*20 (coming down onto the platform)')
+  pod.valid=false
+  eq(F2.incoming(pl),nil,'delivered: the pod is gone')
+  -- A pod kept past a minute (the game lost it some other way) is no longer counted.
+  pod.valid=true
+  F2.on_launch({rocket={attached_cargo_pod=pod},rocket_silo={surface={name='nauvis'}}})
+  game.tick=game.tick+3599
+  eq(F2.incoming(pl).rockets,1)
+  game.tick=game.tick+1
+  eq(F2.incoming(pl),nil,'kept a minute at most')
+  trash={}
+end
 print('freight: ok')

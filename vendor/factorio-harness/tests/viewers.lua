@@ -107,6 +107,40 @@ eq(sol('status',{peek=true,brief=true}).active.kind,'wait_ticks')
 r=grok('status',{peek=true,brief=true}); eq(r.active,false); eq(r.last.outcome,'mentioned'); eq(r.last.why,'mentioned by viewer newfan')
 sol('wait_ticks',{ticks=1}); advance(2); sol('status',{}); grok('status',{})
 
+-- Shift14: Luna repeatedly restarted the same wait after routine tells.
+-- Opting out defers every message without consuming it; the default still wakes.
+prototypes={item={['iron-plate']={}}}
+local sol_index=runtime.bots.index_of('sol')
+local sol_character=runtime.bots.record(sol_index).character
+sol_character.items['iron-plate']=0
+r=sol('wait_until',{['until']='item_count',item='iron-plate',at_least=1,timeout=600,wake_on_messages=false,wake_on_viewers=true})
+eq(r.wake_on_messages,false)
+advance(1)
+astra('tell',{to='sol',text='routine cargo update'})
+astra('say',{text='@sol another routine update'})
+op('viewer_say',{name='waitfan',text='@sol still waiting?'})
+advance(30)
+eq(sol('status',{peek=true,brief=true}).active.kind,'wait_until')
+-- Fulfilling the condition still ends the wait.
+sol_character.items['iron-plate']=1
+advance(10)
+r=sol('status',{peek=true,brief=true}); eq(r.active,false); eq(r.last.outcome,'met')
+r=sol('status',{})
+assert(has(r.team and r.team.tells,'routine cargo update'),'tell retained through wait')
+assert(has(r.team and r.team.mentions,'another routine update'),'teammate mention retained')
+assert(has(r.team and r.team.mentions,'still waiting?'),'viewer mention retained')
+sol('wait_ticks',{ticks=40,wake_on_messages=false})
+advance(1); astra('tell',{to='sol',text='second update'}); advance(30)
+eq(sol('status',{peek=true,brief=true}).active.kind,'wait_ticks')
+advance(10); eq(sol('status',{}).last.outcome,'duration_elapsed')
+sol('wait_until',{['until']='item_count',item='iron-plate',at_least=2,timeout=40,wake_on_messages=false})
+advance(41); eq(sol('status',{}).last.outcome,'timed_out')
+sol('wait_until',{['until']='item_count',item='iron-plate',at_least=2,timeout=600})
+advance(1); astra('tell',{to='sol',text='default wake'}); advance(30)
+eq(sol('status',{}).last.outcome,'told')
+fails(function() sol('wait_ticks',{ticks=40,wake_on_messages='false'}) end,'wake_on_messages must be true or false')
+fails(function() sol('wait_until',{['until']='item_count',item='iron-plate',at_least=2,wake_on_messages=0}) end,'wake_on_messages must be true or false')
+
 -- Voting: a majority of the agents active in the last 10 minutes (3 here: 2).
 r=astra('vote',{kind='mute',viewer='viewer Troll42',reason='slurs in chat'})
 eq(r.viewer,'Troll42'); eq(r.votes,1); eq(r.needed,2); eq(r.active,3); eq(r.result,nil)

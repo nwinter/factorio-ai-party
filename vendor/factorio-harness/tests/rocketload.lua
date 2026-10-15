@@ -8,7 +8,7 @@ local function fails(fn,text)
   assert(not ok,'expected a failure: '..text)
   assert(tostring(err):find(text,1,true),'expected "'..text..'" in: '..tostring(err))
 end
-defines={inventory={rocket_silo_rocket=21,chest=1,assembling_machine_input=2},rocket_silo_status={building_rocket=0,rocket_ready=7}}
+defines={inventory={rocket_silo_rocket=21,chest=1,assembling_machine_input=2,hub_main=3,hub_trash=4},rocket_silo_status={building_rocket=0,rocket_ready=7}}
 prototypes={item={['agricultural-science-pack']={weight=1000,stack_size=200},['space-platform-foundation']={weight=20000,stack_size=50},
   ['processing-unit']={weight=1000,stack_size=100},['iron-plate']={weight=1000,stack_size=100},['rocket-fuel']={weight=10000,stack_size=20}}}
 game={tick=100}
@@ -209,7 +209,8 @@ main.counts={}; main.order={}; main.add('agricultural-science-pack',120)
 pl.hub={get_logistic_sections=function() return {sections_count=2,get_section=function(i)
   if i==1 then return {active=true,filters={{value={name='agricultural-science-pack',quality='normal'},min=1000,import_from={name='nauvis'}},
     {value='iron-plate',min=200,import_from='nauvis'},{value='processing-unit',min=50,import_from='vulcanus'}}} end
-  return {active=false,filters={{value='rocket-fuel',min=100,import_from='nauvis'}}} end} end}
+  return {active=false,filters={{value='rocket-fuel',min=100,import_from='nauvis'}}} end} end,
+  get_inventory=function(id) if id==3 then return Inv(20,{{'agricultural-science-pack',150}}) end end}
 local f=R.preflight(p,{position={x=65.5,y=14.5},items={['agricultural-science-pack']=1000,['iron-plate']=10},platform='Sunward'})
 eq(f.silo,'rocket-silo at (65.5,14.5) on nauvis'); eq(f.rocket_ready,true); eq(f.auto_requests,false)
 eq(f.cargo.items,'agricultural-science-pack*600 space-platform-foundation*10'); eq(f.cargo.kg,800); eq(f.cargo.free_kg,200); eq(f.cargo.slots,'4/20'); eq(f.cargo.free_slots,16)
@@ -221,7 +222,7 @@ eq(f.platform.requests[1].item,'agricultural-science-pack'); eq(f.platform.reque
 eq(f.platform.requests[2].item,'iron-plate'); eq(f.platform.requests[2].lacks_after,200)
 eq(f.platform.not_requested,'space-platform-foundation*10')
 eq(f.launch_now,'ok')
-eq(f.line,'rocket-silo at (65.5,14.5) on nauvis: cargo agricultural-science-pack*600 space-platform-foundation*10, 800/1000 kg, 4/20 slots; the list lacks agricultural-science-pack 400 (200 fit), iron-plate 10 (10 fit); platform Sunward at nauvis; after this rocket its requests from nauvis lack agricultural-science-pack 250, iron-plate 200; launch now: ok')
+eq(f.line,'rocket-silo at (65.5,14.5) on nauvis: rocket built and ready; cargo agricultural-science-pack*600 space-platform-foundation*10, 800/1000 kg, 4/20 slots; the list lacks agricultural-science-pack 400 (200 fit), iron-plate 10 (10 fit); platform Sunward at nauvis; arrived; requests from nauvis: agricultural-science-pack lacks 850 (rocket 600, lacks_after 250), iron-plate lacks 200 (rocket 0, lacks_after 200); launch now: ok')
 -- Not ready, over the lift, the platform on its path: what launch would refuse now.
 silo.rocket_silo_status=0; cargo.add('space-platform-foundation',20); pl.stopped=false
 f=R.preflight(p,{position={x=65.5,y=14.5},platform='Sunward'})
@@ -233,6 +234,115 @@ silo.no_rocket=true
 f=R.preflight(p,{position={x=65.5,y=14.5}})
 eq(f.cargo.items,'no rocket to load yet'); eq(f.cargo.slots,'0/20')
 silo.no_rocket=nil
+-- Rockets on their way to the platform, its ammo over the last leg and the hub slots chunks take (Astra, shift14 22:50:
+-- reconciled by hand before each launch).
+api.incoming=function(x) assert(x==pl); return {rockets=2,cargo='firearm-magazine*40',lines={'a rocket from nauvis launched 3s ago: firearm-magazine*20 (rising over nauvis)','a rocket from nauvis launched 20s ago: firearm-magazine*20 (coming down onto the platform)'}} end
+api.ammo=function() return {'firearm-magazine: made 42/min, used 38/min over the last 10 min; hub 544, turrets 191'} end
+api.hub_chunks=function() return 'asteroid chunks take 22 of 99 slots (carbonic 9, metallic 9, oxide 4)' end
+f=R.preflight(p,{position={x=65.5,y=14.5},platform='Sunward'})
+eq(f.platform.incoming_cargo,'2 rockets on the way: firearm-magazine*40'); eq(#f.platform.incoming,2)
+eq(f.platform.ammo_rates[1],'firearm-magazine: made 42/min, used 38/min over the last 10 min; hub 544, turrets 191')
+eq(f.platform.hub_chunks,'asteroid chunks take 22 of 99 slots (carbonic 9, metallic 9, oxide 4)')
+assert(f.line:find('platform Sunward at nauvis; arrived; requests from nauvis:',1,true),f.line)
+assert(f.line:find('2 rockets on the way: firearm-magazine*40',1,true),f.line)
+eq(f.platform.requests[1].lacks_after,250, 'incoming cargo remains separate from this rocket')
+api.incoming=function() return {rockets=1,cargo='empty',lines={'a rocket from nauvis launched 3s ago: empty (rising over nauvis)'}} end
+eq(R.preflight(p,{position={x=65.5,y=14.5},platform='Sunward'}).platform.incoming_cargo,'1 rocket on the way: empty')
+api.incoming=function() return nil end; api.ammo=function() error('no stats') end
+f=R.preflight(p,{position={x=65.5,y=14.5},platform='Sunward'})
+eq(f.platform.incoming,nil); eq(f.platform.ammo_rates,nil,'a failing read is left out')
+assert(not f.line:find('on the way',1,true),f.line)
+api.incoming,api.ammo,api.hub_chunks=nil,nil,nil
+
+-- 6b. Dispatch: route direction, current-speed ETA, a departure not yet timed, and requests before arrival.
+local saved_where, saved_force = api.where, p.force
+local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return {} end}
+api.where=F.where
+defines.space_platform_state={on_the_path=3}
+pl.space_connection={from={name='nauvis'},to={name='gleba'},length=15000}
+pl.distance=0.27; pl.speed=0.05; pl.schedule={current=1,records={{station='nauvis'}}}; pl.state=3
+api.incoming=function() return {rockets=1,cargo='agricultural-science-pack*1000',lines={'a rocket from nauvis: agricultural-science-pack*1000'}} end
+api.ammo=function() return {'firearm-magazine: made 42/min, used 38/min'} end
+api.hub_chunks=function() return 'asteroid chunks take 22 of 99 slots' end
+f=R.preflight(p,{position=silo.position,platform='Sunward'})
+eq(f.platform.eta_s,1350); eq(f.platform.eta_to,'nauvis'); eq(f.platform.from,'gleba'); eq(f.platform.to,'nauvis')
+eq(f.platform.headed_here,true); eq(f.platform.arrived,false); eq(math.floor(f.platform.distance_left_km+0.5),4050)
+eq(f.platform.speed_km_s,3); assert(f.platform.eta_basis:find('60 ticks',1,true))
+eq(f.platform.requests[1].lacks_after,250,'same shortfall while approaching, incoming cargo reported separately')
+eq(f.platform.incoming_cargo,'1 rocket on the way: agricultural-science-pack*1000')
+assert(f.platform.ammo_rates[1]:find('made 42/min',1,true)); assert(f.platform.hub_chunks:find('22 of 99',1,true))
+assert(f.line:find('ETA to nauvis',1,true) and f.line:find('1 rocket on the way:',1,true),f.line)
+api.incoming,api.ammo,api.hub_chunks=nil,nil,nil
+pl.schedule.records[1].station='gleba'
+f=R.preflight(p,{position=silo.position,platform='Sunward'})
+eq(f.platform.eta_s,3650); eq(f.platform.eta_to,'gleba'); eq(f.platform.headed_here,false)
+assert(f.platform.arrival_unknown:find('nauvis',1,true),'other endpoint ETA is not arrival here')
+pl.speed=0
+f=R.preflight(p,{position=silo.position,platform='Sunward'})
+eq(f.platform.eta_s,nil); assert(f.platform.eta_unknown:find('zero',1,true))
+pl.space_connection=nil; pl.space_location={name='gleba'}; pl.state=5
+pl.schedule={current=1,records={{station='gleba'},{station='nauvis'}}}
+f=R.preflight(p,{position=silo.position,platform='Sunward'})
+eq(f.platform.next_stop,'nauvis'); eq(f.platform.eta_s,nil); eq(f.platform.headed_here,true)
+assert(f.platform.eta_unknown:find('departure time',1,true))
+-- No platform: arrived first, then the incoming ship; unrelated and paused departures excluded.
+local arrived={valid=true,name='Arrived',space_location={name='nauvis'},hub=pl.hub}
+local unrelated={valid=true,name='Elsewhere',space_location={name='vulcanus'}}
+p.force={platforms={pl,unrelated,arrived}}
+f=R.preflight(p,{position=silo.position})
+eq(#f.platforms,2); eq(f.platforms[1].name,'Arrived'); eq(f.platforms[1].eta_s,0); eq(f.platforms[2].name,'Sunward')
+eq(f.platforms[1].requests[1].lacks,850); eq(f.platforms[1].requests[1].lacks_after,250)
+pl.paused=true
+f=R.preflight(p,{position=silo.position}); eq(#f.platforms,1)
+pl.paused=false
+-- Qualities, section multipliers, fulfilled requests and the hub trash inventory.
+local old_hub=pl.hub
+local hubmain=Inv(20,{{'agricultural-science-pack',1000},{'iron-plate',2,'rare'}})
+local hubtrash=Inv(20,{{'iron-plate',3,'rare'}})
+pl.hub={get_inventory=function(id) return id==3 and hubmain or hubtrash end,
+  get_logistic_sections=function() return {sections_count=3,get_section=function(i)
+    if i==1 then return {multiplier=2,filters={{value={name='iron-plate',quality='rare'},min=10,import_from='nauvis'}}} end
+    if i==2 then return {filters={{value={name='agricultural-science-pack'},min=1000,import_from='nauvis'}}} end
+    return {multiplier=0,filters={{value='processing-unit',min=100,import_from='nauvis'}}}
+  end} end}
+cargo.add('iron-plate',4); cargo.add('iron-plate',6,'rare')
+f=R.preflight(p,{position=silo.position})
+local asks=f.platforms[2].requests
+eq(#asks,1,'fulfilled and disabled requests omitted'); eq(asks[1].min,20); eq(asks[1].hub,5)
+eq(asks[1].aboard,6); eq(asks[1].lacks_after,9)
+assert(f.platforms[2].not_requested:find('iron-plate*4',1,true),'normal cargo does not cover rare request')
+pl.name='Sunward\nSecond line'
+f=R.preflight(p,{position=silo.position}); assert(not f.line:find('[\r\n]')); assert(not f.platforms[2].line:find('[\r\n]'))
+pl.name='Sunward'; pl.hub=old_hub; cargo.add('iron-plate',-4); cargo.add('iron-plate',-6,'rare')
+-- No position: all indexed visible silos, nearest first, current contents, no discovery scan.
+local old_remote, old_rocket = api.remote_entity, api.rocket
+local far=setmetatable({position={x=150,y=150},unit_number=10},{__index=silo})
+local hidden=setmetatable({position={x=400,y=400},unit_number=11},{__index=silo})
+api.silos=function() return {far,hidden,silo},80 end
+p.force.is_chunk_visible=function(_,c) return c.x<10 end
+api.remote_entity=function(_,a) for _,e in ipairs({silo,far,hidden}) do if a.position==e.position then return e end end end
+api.rocket=function(e) return {rocket='rocket built and ready',built_parts='50/50',next_parts='10/50'} end
+local extra_reads={incoming=0,ammo=0,chunks=0}
+api.incoming=function() extra_reads.incoming=extra_reads.incoming+1; return {rockets=1,cargo='agricultural-science-pack*1000',lines={'incoming rocket'}} end
+api.ammo=function() extra_reads.ammo=extra_reads.ammo+1; return {'ammo rate'} end
+api.hub_chunks=function() extra_reads.chunks=extra_reads.chunks+1; return 'chunk slots' end
+f=R.preflight(p,{platform='Sunward'})
+eq(#f.silos,2); eq(f.silos[1].position.x,65.5); eq(f.silos[2].position.x,150)
+eq(f.silos[1].rocket_ready,true); eq(f.silos[1].built_parts,'50/50'); eq(f.silos[1].next_parts,'10/50')
+eq(f.silos[1].cargo.kg,800); eq(f.silos[1].platform.requests[1].lacks_after,250); eq(f.silos_as_of,80)
+eq(extra_reads.incoming,1); eq(extra_reads.ammo,1); eq(extra_reads.chunks,1)
+for _,row in ipairs(f.silos) do eq(row.platform.incoming_cargo,'1 rocket on the way: agricultural-science-pack*1000'); eq(row.platform.ammo_rates[1],'ammo rate'); eq(row.platform.hub_chunks,'chunk slots') end
+f=R.preflight(p,{})
+eq(#f.silos[1].platforms,2); eq(extra_reads.ammo,1,'platform discovery does not read named diagnostics')
+eq(f.silos[1].platforms[1].incoming,nil)
+api.incoming,api.ammo,api.hub_chunks=nil,nil,nil
+api.silos=function() return {} end
+f=R.preflight(p,{})
+eq(f.silos_pending,true); eq(#f.silos,0); eq(#f.platforms,2); assert(f.line:find('discovery pending',1,true))
+api.silos=function() return {},90 end
+f=R.preflight(p,{}); eq(f.silos_pending,nil); eq(f.silos_as_of,90)
+api.remote_entity=old_remote; api.rocket=old_rocket; api.where=saved_where; p.force=saved_force
+pl.space_location=nil; pl.schedule=nil; pl.state=nil; pl.paused=nil
 
 -- 7. A queue dry run's silo cargo (Luna's race): a rocket_ready wait, then the launch with min_cargo, the top-up
 -- after it: the launch would be refused; the top-up before it: it would go, and the cargo is the one it leaves.
