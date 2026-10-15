@@ -1149,13 +1149,14 @@ return function(api)
   -- to 64 makers and 64 users looked at.
   local FEED_MACHINES, FEED_LINES = 64, 5
   function M.throughput(t)
-    if not api.feed then return nil end
+    local feed = M.feed or api.feed
+    if not feed then return nil end
     local lines, looked, seen = {}, 0, {}
     local function check(e, into, from)
       if #lines >= FEED_LINES or seen[e.unit_number] or not e.valid then return end
       seen[e.unit_number] = true
       looked = looked + 1
-      local fd = try(function() return api.feed(e, into, from) end)
+      local fd = try(function() return feed(e, into, from) end)
       if fd then lines[#lines+1] = fd.line end
     end
     for k, m in ipairs(t.makers) do if k > FEED_MACHINES then break end check(m.e, m.into, m.from) end

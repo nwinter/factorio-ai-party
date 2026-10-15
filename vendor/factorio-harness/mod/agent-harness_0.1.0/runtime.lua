@@ -9470,9 +9470,11 @@ threat=threat_module{state=state,known=known,distance=distance,on_character_hit=
 survey=survey_module{state=state,status_name=function(e) return entity_status_names[e.status] end,
   research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
-M.supply=require('supply'){feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,integer=integer,position=position,status_name=function(e) return entity_status_names[e.status] end,spoil=M.spoil,
+M.supply=require('supply'){integer=integer,position=position,status_name=function(e) return entity_status_names[e.status] end,spoil=M.spoil,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 function handlers.supply(p,a) return M.supply.supply(p,a) end
+-- throughput's inserters against recipes (craftrate.feed; Sol, 19:50)
+M.supply.feed=function(e,into,from) return M.craftrate.feed(e,into,from) end
 -- trace: a machine's feeders and their sources, its output followed to where it ends, an item's routes (trace.lua).
 M.trace=require('trace'){supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return entity_status_names[e.status] end}
 -- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
@@ -9524,9 +9526,9 @@ M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.netw
 -- Lightning attractors on Fulgora whose catches have nowhere to go, and full accumulators beside them (lightning.lua).
 M.lightning=require('lightning'){}
 M.pushalerts=require('pushalerts'){state=state,agents=function() return M.board.agents() end,who=M.board.who,
-  status_name=function(e) return entity_status_names[e.status] end,
   first_spoil=function(inv) return survey.first_spoil(inv) end,
   claim_surface=function(i) return M.claims.surface_of(i) end,
+  status_name=function(e) return entity_status_names[e.status] end,
   place=function(index) return M.where.place(index) end,targets=M.targets,
   network_groups=function(force)
     local out=M.networks.alert_groups(force)
