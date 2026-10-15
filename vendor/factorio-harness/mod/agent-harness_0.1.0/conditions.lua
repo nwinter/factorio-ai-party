@@ -178,6 +178,19 @@ return function(api)
       local where=loc and ('at '..loc) or conn and string.format('flying %s->%s %d%%',conn.from.name,conn.to.name,math.floor((pl.distance or 0)*100+0.5)) or 'nowhere'
       return loc~=nil and (c.location==nil or loc==c.location),c.platform..' '..where
     end,
+    -- Its departure (Gemini, 16:50): met while it is not stopped at `location` (a planet), else at no stop (flying, or
+    -- still at a location but on its path). The same rule as platform_arrived and the platforms row.
+    platform_left=function(p,c)
+      local pl
+      for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each end end
+      if not pl then error('no platform of ours named '..tostring(c.platform),0) end
+      local w=api.platform_where and api.platform_where(pl)
+      if not w then
+        local loc=pl.space_location and pl.space_location.name
+        w={at=loc,stopped=loc~=nil,text=loc and ('at '..loc) or 'not at a stop'}
+      end
+      return not (w.stopped==true and (c.location==nil or w.at==c.location)),c.platform..' '..w.text
+    end,
     -- Our burner machines (furnaces, drills, boilers, burner inserters...) holding under count fuel items.
     fuel_below=function(p,c)
       local centre,radius=area(p,c)
@@ -193,7 +206,7 @@ return function(api)
       return n>0,n..' burners below '..c.count..' fuel'..(near and string.format(' (nearest %s at %d,%d)',near.name,math.floor(near.position.x),math.floor(near.position.y)) or '')
     end,
   }
-  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived'
+  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left'
   -- Argument checks run when a plan is submitted, not when it first fires.
   function M.validate(c)
     assert(type(c)=='table' and checks[c['until']],'until must be one of '..NAMES)
@@ -217,8 +230,8 @@ return function(api)
     if kind=='ghosts_waiting' and c.at_least~=nil then number(c.at_least,1,100000,'at_least') end
     if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
     if kind=='fuel_below' then number(c.count,1,1000,'count') end
-    if kind=='platform_arrived' then
-      assert(type(c.platform)=='string' and #c.platform>0,'platform_arrived requires platform (a platform name)')
+    if kind=='platform_arrived' or kind=='platform_left' then
+      assert(type(c.platform)=='string' and #c.platform>0,kind..' requires platform (a platform name)')
       assert(c.location==nil or (type(c.location)=='string' and prototypes.space_location[c.location]),'location must be a space location (a planet name)')
     end
     return c

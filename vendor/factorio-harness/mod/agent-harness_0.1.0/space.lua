@@ -182,9 +182,17 @@ return function(api)
         end
         local name,quality=item_name(r.item),r.quality or 'normal'
         local min=api.integer(r.min,0,0,1000000000,'min')
-        assert(r.max==nil or (type(r.max)=='number' and r.max>=min),'max must be at least min')
         local i,found=slot_of(sec,name,quality)
         local old=found and sec.get_slot(i) or nil
+        -- The max: the one named ("inf" for none), else the one the slot already has while it is at least min, as the
+        -- GUI keeps it when only min is edited (friction3: Grok's map sets turned copper-cable 200..400 into 40..inf).
+        local max,max_note=r.max,''
+        if max=='inf' then max=nil
+        elseif max==nil and old and type(old.max)=='number' then
+          if old.max>=min then max=old.max; max_note=' (max kept: not named in this edit)'
+          else max_note=string.format(' (max %d dropped: under min %d)',old.max,min) end
+        end
+        assert(max==nil or (type(max)=='number' and max>=min),'max must be at least min ("inf" for none)')
         -- The import planet: the one named, else the one the slot already has (Luna, shift12 19:30: an edit of min
         -- and max without from turned three requests from vulcanus into from nauvis).
         local from,kept=r.from,false
@@ -199,9 +207,9 @@ return function(api)
           kept=from~=nil
         end
         local was=old and filter_text(old,is_hub)
-        sec.set_slot(i,{value={type='item',name=name,quality=quality,comparator='='},min=min,max=r.max,import_from=from}); changed=true
+        sec.set_slot(i,{value={type='item',name=name,quality=quality,comparator='='},min=min,max=max,import_from=from}); changed=true
         local now=filter_text(sec.get_slot(i),is_hub) or name
-        stored[#stored+1]=now..(kept and is_hub and ' (import planet kept: not named in this edit)' or '')..(was and was~=now and ' (was '..was..')' or '')
+        stored[#stored+1]=now..max_note..(kept and is_hub and ' (import planet kept: not named in this edit)' or '')..(was and was~=now and ' (was '..was..')' or '')
       end
     end
     local out={target=label,sections=list_sections(secs,a.platform~=nil or (chest and chest.type=='space-platform-hub')),from_buffers=buffers}
@@ -1187,7 +1195,7 @@ return function(api)
   end
   M.schema={
     requests={surface='optional planet name, with position: a requester or buffer chest or landing pad there by remote view, where our force sees the chunk (the reply\'s target says on which surface)',target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
-      set='array of {item,min,max?,quality?,from? (planet to import from, platform hubs; omitted: the planet the slot already has is kept)} (a map {item: min} runs as that list, said in corrected); replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
+      set='array of {item,min,max? (omitted: the slot\'s max is kept while at least min; "inf": none),quality?,from? (planet to import from, platform hubs; omitted: the planet the slot already has is kept)} (a map {item: min} runs as that list); replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       active='boolean: switch the section on or off (the GUI\'s checkbox; a section that is off requests nothing)',
       construction_requests='platform hub: boolean, the hub\'s Request missing construction materials (on: the game keeps a section requesting what the platform\'s ghosts need; a paste of a hub blueprint that has it off switches it off, and paste switches it back on)',
       returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"]}], changed_section (only when a slot was set or cleared or the section switched; else unchanged), stored (each item this call set or cleared, as read back from its slot: "processing-unit 0..400 from vulcanus (import planet kept: not named in this edit) (was 0..200 from vulcanus)", "coal: cleared (was coal=500 from vulcanus)"), note (sections that are off but hold requests); on a platform hub: construction_requests (on: its controlled section lists what the ghosts need), construction_overlap (items a manual section requests too: the hub requests the sum), over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); call with no set/clear/active to just read'},

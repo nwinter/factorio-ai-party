@@ -318,6 +318,8 @@ return function(api)
         else seen.hub = nil end
       end
     end
+    -- Platforms that stopped at or left this agent's planet (freight.lua; Gemini, 16:50).
+    for _, line in ipairs(api.platform_events and api.platform_events(p, h) or {}) do lines[#lines+1] = line end
     -- Platforms gone: forget them.
     for index in pairs(h.platforms) do
       local ok = false

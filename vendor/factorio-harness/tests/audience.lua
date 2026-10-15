@@ -47,9 +47,18 @@ eq(aud.operator.viewer_say({name='[x]] Ann [',text='hi'}).from,'viewer Ann')
 fails(function() aud.operator.viewer_say({name='[color=red][/color]',text='x'}) end,'name is required')
 fails(function() aud.operator.viewer_say({name='  ',text='x'}) end,'name is required')
 fails(function() aud.operator.viewer_say({name='a',text=''}) end,'text is required')
-r=aud.operator.viewer_say({name=string.rep('n',40),text=string.rep('t',300)}); eq(#r.text,200); eq(r.from,'viewer '..string.rep('n',24))
+-- A viewer line holds the viewer's 200 characters with the relay's @names in front (Astra 17:17: cut at 120): 300.
+r=aud.operator.viewer_say({name=string.rep('n',40),text=string.rep('t',400)}); eq(#r.text,300); eq(r.from,'viewer '..string.rep('n',24))
 -- One line per viewer every 20 s (names compared case-blind); dropped lines are not errors.
 r=aud.operator.viewer_say({name='bob_42',text='again'}); eq(r.posted,false); eq(r.dropped,'viewer_rate'); eq(r.retry_after_s,20)
+-- The rest of a long message in parts: a continuation within 10 s of the viewer's line is no new line; a first part,
+-- or a part 2 long after, is.
+eq(aud.operator.viewer_say({name='bob_42',text='second half (2/2)',part=2,parts=2}).posted,true)
+eq(aud.operator.viewer_say({name='bob_42',text='again (1/2)',part=1,parts=2}).dropped,'viewer_rate')
+fails(function() aud.operator.viewer_say({name='bob_42',text='x',part=12}) end,'part must be 1..9')
+game.tick=game.tick+11*60
+eq(aud.operator.viewer_say({name='bob_42',text='late (2/2)',part=2,parts=2}).dropped,'viewer_rate')
+game.tick=game.tick-11*60
 -- At most 6 viewer lines a minute in all.
 for i=1,2 do eq(aud.operator.viewer_say({name='v'..i,text='hi'}).posted,true) end
 r=aud.operator.viewer_say({name='v9',text='hi'}); eq(r.posted,false); eq(r.dropped,'global_rate'); eq(r.retry_after_s,60)
