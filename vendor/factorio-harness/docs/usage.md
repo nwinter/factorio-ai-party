@@ -1148,7 +1148,13 @@ fh sleep 900 --until researched                       # ...or until the research
     outcome `transferred`, `nothing_to_do` (the targets wanted none), `out_of_items` (nothing left to give),
     `nothing_collected` (nothing to take), `inventory_full`, `unreached` (no place reached) or `timed_out`. All targets
     in reach: the plain transfer at once. Giving with none held (and none in the hand-craft queue) is refused before
-    walking; with `up_to: true` it is a short (`none_held`). Not with `total`. As a queue step it runs until the tour
+    walking; with `up_to: true` it is a short (`none_held`). Taking from chests that hold none of the item now is
+    refused before walking too, naming the nearest chest holding it (round1650d: Sonnet walked 66 tiles to an empty
+    provider chest): `wooden-chest at (95.5,32.5) holds no yumako-seed now: nothing walked; the nearest holding it:
+    wooden-chest at (55.5,36.5), 7.1 tiles from you, holds 76 (transfer from: "nearest")`; with `up_to: true` a short
+    (`source_empty`). Machines are walked to (they may make it meanwhile). An end that moved nothing says why in
+    `last.why`, which the CLI puts on the error line: the first place's error, else the places that were full or held
+    none (`Control ended: nothing_to_do: wooden-chest (95.5,32.5) is full`). Not with `total`. As a queue step it runs until the tour
     ends; `transferred` counts as done. The reply's `legs` lists the route (Opus 10:50): each stop in the order it
     walks them with `position`, `name`, `walk` (tiles from the stop before, or from you) and `in_reach` (now); the
     first 16, `legs_more` past them.
@@ -1219,7 +1225,12 @@ fh sleep 900 --until researched                       # ...or until the research
       it): the same timed call (`ticks` default 18000) takes at the picked place, then walks to the destination of the
       item picked and gives what it took there (the inventory inferred as a give). A destination out of sight now is
       found on arrival (`to_line` says so). A take that gets nothing ends the call there (`nothing_collected`), with no
-      walk on. `last`: `picked`, `taken`, `delivered`, `moved` (delivered), `entities` (one row per leg, with
+      walk on; a take that fails ends it `failed`, with the reason (round1650d: Luna's walked on to the give).
+      `inventory` goes with the leg whose place has it: a silo's `rocket_silo_rocket` (or `cargo`), a furnace's `fuel`
+      at `to` is the give's, a chest's own inventory stays the take's (round1650d: Luna's and Grok's
+      `rocket_silo_rocket` was tried on the chest taken from, `inventory is not applicable`, and the courier ended
+      `nothing_collected`). Neither place having it is refused at once: `inventory fuel is neither on wooden-chest at
+      (47.5,33.5), the place taken from, nor on wooden-chest at (55.5,36.5), the place given to`. `last`: `picked`, `taken`, `delivered`, `moved` (delivered), `entities` (one row per leg, with
       `direction` and `moved`); outcome `transferred`, `nothing_collected`, `unreached` or `timed_out`. `--wait` waits
       for it and shows `picked`, `taken`, `delivered`.
   - Personal logistics (trash.lua; Astra, 01:53: two cargo hauls lost to auto-trash). The game moves what you hold over

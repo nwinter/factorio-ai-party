@@ -496,6 +496,8 @@ return function(api)
         else
           action.errors=(action.errors or 0)+1
           action.first_error=action.first_error or string.format('(%g,%g): %s',t.position.x,t.position.y,(tostring(out):gsub('^[^:]*:%d+: ','')))
+          -- A courier whose take failed goes no further (round1650d: Luna's walked on to the give).
+          if action.legs and action.index==2 then return 'failed' end
         end
       else
         break

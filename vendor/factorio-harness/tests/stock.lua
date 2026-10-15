@@ -126,6 +126,17 @@ visits={}
 tour=stock.start_tour(p,'refuel',{t1,t2,t3},600,{item='coal',count=5,stop_at_two=true})
 eq(stock.tick(p,tour),'out_of_items'); eq(#visits,2)
 eq(stock.tick(p,stock.start_tour(p,'refuel',{},600,{item='coal'})),'nothing_to_do')
+-- A courier whose take fails goes no further (round1650d: Luna's walked on to the give): failed, with the first error.
+do
+  local kept=api.visit
+  local given=0
+  api.visit=function(_,action,e) if action.index==1 then error('inventory is not applicable to this entity type') end given=given+1; return {transferred=5} end
+  local legs=stock.start_legs(p,{{entity=t1,position=t1.position},{entity=t2,position=t2.position}},600,{transfer={direction='to_player'},legs={{},{}},item='coal',rows={},items={}})
+  legs.op='transfer'
+  eq(stock.tick(p,legs),'failed'); eq(given,0,'no give'); eq(legs.index,2)
+  assert(legs.first_error:find('inventory is not applicable',1,true),legs.first_error)
+  api.visit=kept
+end
 -- Waiting at a machine (Muse, operator 09:31: a collect from a machine's output lost to its output inserters about
 -- four times): take each product the tick it is in the output, for up to wait ticks or count; the report weighs
 -- what was taken against what the machine made and its inserters took.
