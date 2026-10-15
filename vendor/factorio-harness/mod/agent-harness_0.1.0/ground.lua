@@ -106,11 +106,15 @@ return function(api)
       end
     end
   end
+  -- With the background pass running (M.watch_tick) the watch is its last complete pass; before it has one (and in tests
+  -- without it) it is made here at once.
   function M.watch(force)
     local s = api.state()
     s.ground_watch = s.ground_watch or {}
+    s.ground_forces = s.ground_forces or {}
+    s.ground_forces[force.name] = true
     local w = s.ground_watch[force.name]
-    if w and game.tick - w.tick < WATCH_EVERY and game.tick >= w.tick then return w end
+    if w and (s.ground_bg or (game.tick - w.tick < WATCH_EVERY and game.tick >= w.tick)) then return w end
     w = {tick=game.tick, pads={}, piles={}}
     for _, surface in pairs(game.surfaces) do
       local ok, err = pcall(scan_surface, surface, force, w)
@@ -119,6 +123,116 @@ return function(api)
     table.sort(w.piles, function(x, y) return x.stacks > y.stacks end)
     s.ground_watch[force.name] = w
     return w
+  end
+  -- The background pass (operator 22:00, task-slowreads: the watch counted and found every item on the ground on
+  -- every surface in one tick, 31 ms on world n, every 30 s, inside whichever reply came then): per force asked for,
+  -- each surface walked in bands (walk.lua) for items on the ground and landing pads, the items binned in PILE_CELL
+  -- cells as they come; then one full pad or one pile cell a step, as scan_surface reads them; the pass replaces the
+  -- watch when it ends, one every WATCH_EVERY ticks.
+  local walk = api.walk or require('walk'){state=api.state}
+  local function watch_step(s, force, tick)
+    s.ground_jobs = s.ground_jobs or {}
+    s.ground_steps = s.ground_steps or {}
+    local job = s.ground_jobs[force.name]
+    if not job then
+      local w = s.ground_watch and s.ground_watch[force.name]
+      if w and tick - w.tick < WATCH_EVERY then return end
+      local list = {}
+      for _, surface in pairs(game.surfaces) do list[#list+1] = surface.index end
+      table.sort(list)
+      s.ground_jobs[force.name] = {start=tick, surfaces=list, si=1, w={tick=tick, pads={}, piles={}}, steps=0,
+        every=walk.every(s.ground_steps[force.name], WATCH_EVERY)}
+      return
+    end
+    if not walk.due(job, tick, WATCH_EVERY) then return end
+    job.steps = job.steps + 1
+    if job.todo then
+      local x = table.remove(job.todo, 1)
+      local surface = x and game.get_surface(x.surface)
+      if surface and x.kind == 'pad' then
+        local pad = x.pad
+        local inv = pad.valid and pad_inventory(pad)
+        if inv and inv.count_empty_stacks() == 0 then
+          local stacks = surface.count_entities_filtered{position=pad.position, radius=PAD_RADIUS, type='item-entity'}
+          if stacks > 0 then
+            local sum = M.summary(surface.find_entities_filtered{position=pad.position, radius=PAD_RADIUS, type='item-entity', limit=SAMPLE}, 8)
+            job.w.pads[#job.w.pads+1] = {key='pad:' .. surface.name .. xy(pad.position), surface=surface.name, position=pad.position,
+              slots=#inv, stacks=stacks, items=sum, sampled=stacks > SAMPLE and SAMPLE or nil}
+            job.near[#job.near+1] = pad.position
+          end
+        end
+      elseif surface and x.kind == 'pile' then
+        local cx, cy = x.cx * PILE_CELL, x.cy * PILE_CELL
+        local area = {left_top={x=cx, y=cy}, right_bottom={x=cx + PILE_CELL, y=cy + PILE_CELL}}
+        local mid = {x=cx + PILE_CELL / 2, y=cy + PILE_CELL / 2}
+        local by_pad = false
+        for _, pp in ipairs(job.near) do if api.distance(pp, mid) < PAD_RADIUS + PILE_CELL / 2 then by_pad = true end end
+        if not by_pad and ours(surface, force, area) then
+          local stacks = surface.count_entities_filtered{area=area, type='item-entity'}
+          local sum = M.summary(surface.find_entities_filtered{area=area, type='item-entity', limit=SAMPLE}, 8)
+          job.w.piles[#job.w.piles+1] = {key='pile:' .. surface.name .. ':' .. x.cx .. ',' .. x.cy, surface=surface.name, area=area,
+            stacks=stacks, items=sum, sampled=stacks > SAMPLE and SAMPLE or nil}
+        end
+      end
+      if #job.todo == 0 then job.todo = nil; job.si = job.si + 1 end
+      return
+    end
+    local surface = job.surfaces[job.si] and game.get_surface(job.surfaces[job.si])
+    if not job.surfaces[job.si] then
+      table.sort(job.w.piles, function(x, y) return x.stacks > y.stacks end)
+      s.ground_watch = s.ground_watch or {}
+      s.ground_watch[force.name] = job.w
+      s.ground_steps[force.name] = job.steps
+      s.ground_jobs[force.name] = nil
+      return
+    end
+    if not surface then job.si = job.si + 1; job.walk = nil; return end
+    job.walk = job.walk or walk.start(surface)
+    job.cells, job.pads = job.cells or {}, job.pads or {}
+    local list = walk.band(job.walk, surface, {type={'item-entity', 'cargo-landing-pad'}})
+    if list then
+      for _, e in ipairs(list) do
+        if e.valid and e.type == 'item-entity' then
+          local pos = e.position
+          local k = math.floor(pos.x / PILE_CELL) .. ',' .. math.floor(pos.y / PILE_CELL)
+          job.cells[k] = (job.cells[k] or 0) + 1
+          job.items = (job.items or 0) + 1
+        elseif e.valid and e.force == force then job.pads[#job.pads+1] = e end
+      end
+      return
+    end
+    -- The surface is walked: its full pads first (the piles beside them are the pads'), then its pile cells.
+    local todo = {}
+    if (job.items or 0) > 0 then
+      for _, pad in ipairs(job.pads) do todo[#todo+1] = {kind='pad', surface=surface.index, pad=pad} end
+      local keys = {}
+      for k, n in pairs(job.cells) do if n >= PILE_MIN then keys[#keys+1] = k end end
+      table.sort(keys)
+      for _, k in ipairs(keys) do
+        local cx, cy = k:match('^(-?%d+),(-?%d+)$')
+        todo[#todo+1] = {kind='pile', surface=surface.index, cx=tonumber(cx), cy=tonumber(cy)}
+      end
+    end
+    job.walk, job.cells, job.pads, job.items, job.near = nil, nil, nil, nil, {}
+    if #todo > 0 then job.todo = todo else job.si = job.si + 1 end
+  end
+  function M.watch_tick(tick)
+    local s = api.state()
+    s.ground_bg = true
+    local names = {}
+    for name in pairs(s.ground_forces or {player=true}) do names[#names+1] = name end
+    table.sort(names)
+    for _, name in ipairs(names) do
+      local force = game.forces[name]
+      if force then
+        local ok, err = pcall(watch_step, s, force, tick)
+        if not ok then
+          if s.ground_jobs then s.ground_jobs[name] = nil end
+          s.ground_errors = {count=((s.ground_errors or {}).count or 0) + 1, last=tostring(err), tick=tick}
+          if s.ground_watch and s.ground_watch[name] then s.ground_watch[name].tick = tick end
+        end
+      end
+    end
   end
   local function pad_line(pad)
     return string.format('cargo landing pad at %s on %s is full (%d/%d slots) and pods spill: %d item stacks on the ground within %d tiles%s: %s',

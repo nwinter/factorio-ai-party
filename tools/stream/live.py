@@ -229,7 +229,7 @@ class LiveSource:
             ore = time.time() >= self.next_ore
             try:
                 obs["basemap"] = self.h.basemap(ore=ore)
-                if ore:
+                if ore and obs["basemap"].get("ore") is not None:  # (the harness census reads ore on its next pass)
                     self.next_ore = time.time() + self.ore_every
                 try:  # the site's time-lapse: a snapshot per 10 game minutes in runs/RUN/basemap/
                     basemap_log.save(self.journals, obs["basemap"])

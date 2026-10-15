@@ -3413,6 +3413,20 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   `surface, force, tick, pollutant {name, color {r,g,b,a}} (none on Vulcanus and Fulgora), cells [[cx, cy, amount]]`
   (every charted chunk with pollution, spores on Gleba, at its centre; 32-tile chunks; at most 6000), `chunks, max,
   total` and `reached [{tick, position, spawners}]` (the pollution_reached_nest news), and `tick`. Agents cannot call it.
+- Operator census (census.lua; operator 22:00, task-slowreads: the host services' periodic reads counted with one find
+  over every surface in a tick, 32 to 169 ms on world n): `census {part, ore?}` (read; part `extras`, `snapshot`,
+  `machines` or `basemap`) gives the last complete background pass (every surface walked in bands of at most 32 chunks
+  by the harness tick, a slice of 200 entities a step, a pass about every 30 s): `extras` `electric_machines, starved`
+  (assembling machines, labs, drills, furnaces and inserters with an electric source; low or no power), `snapshot`
+  `entities {name: count}` (the force's engine counts of the analyst's building types) and `surfaces_with_buildings`,
+  `machines {name|recipe: {status: count}}`, `basemap` (the site's live map as tools/stream/harness.py BASEMAP_LUA draws
+  it at cell 4, 128 cells, core 160: rows, core, nests, turrets, buildings; with `ore: true` its ore grid when one was
+  read in the last 5 minutes, else `ore_pending` and the next pass reads it). Each reply has `ready`, `part`, `as_of`
+  (the tick its pass started) and `pass_ticks`; before the first pass `ready: false`. Robots and vehicles move during a
+  pass, so a surface's count may hold one twice or not at all. tools/pog.py CENSUS_FN asks it first in the stream's
+  extras and live map reads and the analyst's snapshot and machines reads, and counts as before when it has no pass.
+  `describe` lists it under `operator_reads`; agents cannot call it. The items-on-the-ground watch behind status alerts
+  and reply hints (ground.lua) is a background pass of the same kind (31 ms in one reply every 30 s before).
 - Operator hand hauling (hauling.lua; viewer Joonazan, 05:00): `hauling {top?}` (read; top 0..50, default 10) gives
   per agent since the save began `name, items, calls, direct_items, direct_calls, queue_items, queue_calls,
   order_items, order_calls, carry_tiles, since_tick, hauls` and `tick`. Counted: every hand transfer that moved items

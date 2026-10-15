@@ -76,18 +76,18 @@ def labels():
     want = ["operator", "operator", "operator", "operator", "operator", "server", "deploy", "UNKNOWN", "UNKNOWN"]
     assert got == want, got
     # The stream service's flow Lua with an item list, and the analyst's snapshot with its surface, are operator too.
+    consts = dict(ca.lua_constants())
+    text = ca.one_line(consts["FLOW_LUA"].replace("ITEMS", '{"iron-plate","copper-plate","electronic-circuit"}'))
+    assert ca.label({"command": "silent-command", "shape": ca.shape("silent-command", text)}, known) == "operator"
+    text = ca.one_line(consts["SNAPSHOT_LUA"].replace("SURFACE", json.dumps("nauvis")))
+    assert ca.label({"command": "silent-command", "shape": ca.shape("silent-command", text)}, known) == "operator"
+    # The reads that ask the harness census first (pog.CENSUS_FN + their Lua, task-slowreads) are operator too, as sent.
     sys.path.insert(0, os.path.join(ROOT, "tools", "stream"))
-    import ast
-    tree = ast.parse(open(os.path.join(ROOT, "tools", "stream", "harness.py")).read())
-    flow = next(n.value.value for n in ast.walk(tree) if isinstance(n, ast.Assign)
-                and any(getattr(t, "id", "") == "FLOW_LUA" for t in n.targets))
-    text = ca.one_line(flow.replace("ITEMS", '{"iron-plate","copper-plate","electronic-circuit"}'))
-    assert ca.label({"command": "silent-command", "shape": ca.shape("silent-command", text)}, known) == "operator"
-    tree = ast.parse(open(os.path.join(ROOT, "tools", "analyst", "game.py")).read())
-    snap = next(n.value.value for n in ast.walk(tree) if isinstance(n, ast.Assign)
-                and any(getattr(t, "id", "") == "SNAPSHOT_LUA" for t in n.targets))
-    text = ca.one_line(snap.replace("SURFACE", json.dumps("nauvis")))
-    assert ca.label({"command": "silent-command", "shape": ca.shape("silent-command", text)}, known) == "operator"
+    import harness as stream_harness
+    assert consts["STREAM_LUA"] == stream_harness.STREAM_LUA and consts["STREAM_LUA"].startswith(pog.CENSUS_FN)
+    for sent in (stream_harness.STREAM_LUA, stream_harness.basemap_lua(), stream_harness.basemap_lua(ore=True)):
+        text = ca.one_line(sent)
+        assert ca.label({"command": "silent-command", "shape": ca.shape("silent-command", text)}, known) == "operator", text[300:420]
     # tools/players.py's /kick and /ban for a carried vote: moderation, listed one by one.
     assert ca.label({"command": "kick", "first_text": "nick mined the bus"}, known) == "moderation"
     assert ca.label({"command": "ban", "first_text": "nick x"}, known) == "moderation"
