@@ -329,6 +329,10 @@ already targets your character.
   builds the landfill first, and a build refused there names the tile.
 - `deconstruct --args '{"area":...,"tiles":["landfill"]}'` also removes our landfill tile ghosts there
   (`tile_ghosts_removed`), and marks built landfill.
+- On a platform the hub removes a marked foundation tile only beside empty space (a north, east, south or west
+  neighbour), and never one that would join separate empty space; marked from the edge in, a row goes one tile at a
+  time. deconstruct's reply says `tiles_go` (in order) and `waiting` with why for every marked tile there;
+  `"dry_run":true` marks nothing; `platforms {platform}` shows `tile_removals`.
 - `./fh call mine --args '{"tiles":true,"position":{"x":194,"y":58}}' --wait` mines a laid tile (landfill, concrete,
   stone path, artificial soil) by hand: the tile under it goes back and the item to you; `positions`, `area`, `"walk":true`,
   `"dry_run":true`; a tile anything stands on is refused, naming it. `construct` mines tiles marked for deconstruction too.
