@@ -40,7 +40,10 @@ already targets your character.
 - Conditional `sleep`, `wait_until`, and queue waits report `wait_estimates` (ETA and rate basis, or no estimate) and
   `idle_s` in this wait; `sleep_check` and wake replies refresh them, and `fh wait --until` includes them on its line.
 - An idle sleep makes nothing: your character stands still, and the clock line and your stream card count it as idle.
-  Queues, standing orders and `queue_repeat` keep your character working through a sleep.
+  Queues, standing orders and `queue_repeat` keep your character working through a sleep. A sleep with no queue, no
+  action and no condition lasts at most 300 s (`capped`); a running queue, an action or `--until` allows up to 900 s.
+  A sleep's first and last replies (and the operator's idle nudge) carry `open for you: ...`: your board items, alert
+  groups and idle or starved machines in your fresh claims, and requests and tells to you unanswered.
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Post a claim for the area you
   build in (`board post` with kind `claim` and the area; it is on your surface, or `"surface":"gleba"`): it shows teammates who works where, sends that area's
   alerts to you, and keeps teammates' `stock` sweeps out of its chests. Put shared infrastructure (power poles, main

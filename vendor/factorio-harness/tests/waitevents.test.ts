@@ -612,3 +612,16 @@ test('urgent alerts (d15): --until alert takes an area and size filter, --no-urg
     [600,{until:'alert',min_size:3},undefined]]);
   assert.equal(seen.find(r=>r.action==='wait_ticks').args.wake_on_urgent,false);
 });
+test('d15 H3/H4: fh wait prints the cap and what is open for the agent last',async()=>{
+  await engine(request=>{
+    if(request.action==='sleep')return {ok:true,result:{while_asleep:'no queue and no action: your character stands idle for up to 300 s',sleeping_s:300,capped:'capped at 300 s: no queue, action or condition'}};
+    return {ok:true,result:{slept_s:300,woke:'elapsed',capped:'capped at 300 s: no queue, action or condition',
+      open:'open for you: 1 board item of yours (#425 purple science [doing])'}};
+  },async port=>{
+    const {stdout}=await cli(port,['wait','--until','tell','--max','900'],'compact');
+    assert.equal(stdout,'woke: elapsed after 300 s (capped at 300 s: no queue, action or condition); open for you: 1 board item of yours (#425 purple science [doing])\n');
+    const out=(await cli(port,['sleep','900'],'compact')).stdout;
+    assert.match(out,/^capped: "?capped at 300 s: no queue, action or condition"?$/m);
+    assert.match(out,/^open: "?open for you: 1 board item of yours/m);
+  });
+});
