@@ -255,6 +255,9 @@ local cp=place('chemical-plant',30.5,0.5,0,{fluidbox={get_capacity=function() re
   get_filter=function(i) return i==1 and {name='water'} or nil end,get_pipe_connections=function() return {} end}})
 setmetatable(cp.fluidbox,{__len=function() return 2 end})
 eq(P.fluids(cp),'empty (water only)/100 | empty/100')
+-- An empty segment says the fluid it is set to (Grok, d15 09:20: only the capacity before).
+cp.fluidbox.get_locked_fluid=function(i) return i==2 and 'sulfuric-acid' or nil end
+eq(P.fluids(cp),'empty (water only)/100 | empty (segment set to sulfuric-acid)/100')
 -- A full flamer on a long oil line: the box's own volume (get_capacity is the whole segment's in 2.0: Astra read
 -- "fluid 19.9/21100" and a full flamer read 99.4/66700), the segment's apart.
 local fl=place('flamethrower-turret',40.5,0.5,0,{fluidbox={{name='light-oil',amount=99.4},get_capacity=function() return 66700 end,

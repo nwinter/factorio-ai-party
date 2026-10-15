@@ -58,7 +58,18 @@ return function(api)
       local r = api.integer(a.radius, 8, 1, 32, 'radius')
       box = {left_top={x=c.x - r, y=c.y - r}, right_bottom={x=c.x + r, y=c.y + r}}
     end
-    api.assert_visible(p, {x=(box.left_top.x + box.right_bottom.x) / 2, y=(box.left_top.y + box.right_bottom.y) / 2}, 'pickup area')
+    -- In sight, or on the map in a chunk our force sees now (Luna, d15 09:20: belts past the 32-tile sight were refused,
+    -- though the map shows them; the walk brings them into reach).
+    local centre = {x=(box.left_top.x + box.right_bottom.x) / 2, y=(box.left_top.y + box.right_bottom.y) / 2}
+    local seen = try(function() return p.force.is_chunk_visible(p.surface, {x=math.floor(centre.x / 32), y=math.floor(centre.y / 32)}) end)
+    if not seen then api.assert_visible(p, centre, 'pickup area') end
+    -- to: a chest the items go into at the end, in the same walk (Luna, d15 09:20: a belt-to-chest move).
+    local to
+    if a.to ~= nil then
+      local pos = api.position(a.to)
+      to = api.chest and api.chest(p, pos)
+      assert(to, 'to: no chest of ours at ' .. at(pos))
+    end
     local count = api.integer(a.count, 100, 1, 10000, 'count')
     local ticks = api.integer(a.ticks, 3600, 1, 36000, 'ticks')
     local belts = belts_in(p.surface, p.force, box)
@@ -81,9 +92,10 @@ return function(api)
     local ch = p.character
     local reach = ch and ch.valid and ch.prototype and ch.prototype.item_pickup_distance or 1
     local action = {kind='pickup', belt=true, area=box, items=names, count=count, reach=reach, until_tick=game.tick + ticks,
-      skips={}, skipped=0, taken=0, idle_since=game.tick}
+      skips={}, skipped=0, taken=0, idle_since=game.tick, to=to, to_position=to and {x=to.position.x, y=to.position.y} or nil}
     api.start(p, action)
     return {until_tick=action.until_tick, area=box, belt_tiles=tiles, on_belts=on, count=count,
+      to=to and string.format('%s %s: what is taken goes in there at the end, in the same walk', to.name, at(to.position)) or nil,
       rate='about one item a tick, from belts within your pickup distance (' .. reach .. ' tiles)'}
   end
 
@@ -146,7 +158,50 @@ return function(api)
     end
     return best
   end
+  -- The delivery leg of pickup {to}: walk into reach of the chest and put in what was taken.
+  local function deliver(p, action, done)
+    local c = action.to
+    if not (c and c.valid) then action.why = 'the chest at ' .. at(action.to_position) .. ' is gone; what was taken stays with you'; return 'failed' end
+    if try(function() return p.can_reach_entity(c) end) then
+      if action.nav then api.stop_walking(p); action.nav = nil end
+      action.delivered = action.delivered or {}
+      local short = false
+      for name, n in pairs(action.picked or {}) do
+        local out = api.give and api.give(p, c, name, n) or {transferred=0}
+        action.delivered[name] = (action.delivered[name] or 0) + (out.transferred or 0)
+        if (out.transferred or 0) < n then short = true end
+      end
+      if short then action.why = 'the chest took less than was taken (full, or a filter); the rest stays with you' end
+      return done
+    end
+    if not action.nav then
+      action.nav = {position=c.position, tolerance=math.max(1, (p.reach_distance or 10) - 2), max_stalls=6, replans=0, stalled=0, last_position=p.position}
+      api.request_path(p, action.nav)
+    end
+    local outcome = api.navigate(p, action.nav)
+    if outcome then
+      api.stop_walking(p); action.nav = nil
+      if outcome ~= 'arrived' and outcome ~= 'arrived_near' and not try(function() return p.can_reach_entity(c) end) then
+        action.why = 'the walk to the chest at ' .. at(c.position) .. ' ended ' .. outcome .. '; what was taken stays with you'
+        return 'blocked'
+      end
+    end
+    return nil
+  end
   function M.tick(p, action, tick)
+    if action.delivering then return deliver(p, action, action.delivering) end
+    if action.to then
+      local result = M.pick_tick(p, action, tick)
+      if result == 'picked_up' or (result == 'nothing_on_belts' and action.taken > 0) or (result == 'inventory_full' and action.taken > 0) then
+        action.delivering = 'transferred'
+        if action.nav then api.stop_walking(p); action.nav = nil end
+        return deliver(p, action, action.delivering)
+      end
+      return result
+    end
+    return M.pick_tick(p, action, tick)
+  end
+  function M.pick_tick(p, action, tick)
     if action.taken >= action.count then return 'picked_up' end
     local here = in_reach(p, action)
     if #here > 0 then
