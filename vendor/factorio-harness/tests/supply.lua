@@ -339,8 +339,28 @@ eq(bn.root,'processing-unit: 1 of 3 working (1 item_ingredient_shortage, 1 no_po
 eq(bn.not_working[1],'processing-unit: assembling-machine-3 (20,0) item_ingredient_shortage (lacks advanced-circuit); '
   ..'assembling-machine-3 (28,0) no_power (lacks electronic-circuit, advanced-circuit, sulfuric-acid)')
 assert(#bn.steps>=3,'the tree below it')
+-- fixes (Luna, 19:50): the nearest chest within 64 tiles holding what a starved maker lacks (robots' reservations left
+-- out: c1's 3 are all reserved), and one transfer carrying about 10 crafts' worth, at most what it holds.
+eq(#bn.fixes,1,'the no_power maker gets none')
+eq(bn.fixes[1],'assembling-machine-3 (20,0) lacks advanced-circuit: requester-chest (24,3) holds 10, 5 tiles away; '
+  ..'fh call transfer --args \'{"item":"advanced-circuit","pick":"first_with_stock","positions":[{"x":24,"y":3}],"to":{"x":20,"y":0},"count":10}\'')
 game.tick=game.tick+600
 bn=S.bottleneck_item(p,{item=AC})
 eq(bn.not_working[1],'advanced-circuit: assembling-machine-2 (4,0) item_ingredient_shortage (lacks electronic-circuit); assembling-machine-2 (8,0) full_output')
+eq(bn.fixes[1],'assembling-machine-2 (4,0) lacks electronic-circuit: no chest within 64 tiles holds it')
 assert(not pcall(S.bottleneck_item,p,{item='nope'}),'an unknown item is refused')
+-- throughput (Sol, 19:50): each maker's inserters in and out and each user's feeders go to craftrate.feed
+-- (tests/craftrate.lua); the machines it finds short are listed.
+do
+  local calls={}
+  local S2=dofile('mod/agent-harness_0.1.0/supply.lua'){status_name=function(e) return e.status end,position=function(v) return v end,
+    integer=function(v,d) return v==nil and d or v end,
+    feed=function(e,into,from) calls[e]={into=into and #into or 'none',from=from and #from or 'none'}
+      if e==m3 or e==u2 then return {line=e.name..' short'} end end}
+  game.tick=game.tick+600
+  local t=S2.supply(p,{item=AC})
+  eq(calls[m1].from,1); eq(calls[m3].from,1); eq(calls[m2].from,0); eq(calls[u2].into,1); eq(calls[u2].from,'none'); eq(calls[u4].into,1)
+  eq(#t.throughput,2); eq(t.throughput[1],'assembling-machine-2 short'); eq(t.throughput[2],'assembling-machine-3 short')
+  eq(r.throughput,nil,'without feed')
+end
 print('supply: ok')

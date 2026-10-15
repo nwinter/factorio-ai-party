@@ -228,7 +228,10 @@ return function(api)
       if recipe then
         for _, prod in ipairs(recipe.products or {}) do
           local t = T[prod.name]
-          if t and not t.maker_of[e.unit_number] then t.maker_of[e.unit_number] = true; t.makers[#t.makers+1] = {e=e, recipe=recipe} end
+          if t and not t.maker_of[e.unit_number] then
+            local m = {e=e, recipe=recipe, into={}, from={}}
+            t.maker_of[e.unit_number] = m; t.makers[#t.makers+1] = m
+          end
         end
         for _, ing in ipairs(recipe.ingredients or {}) do
           local t = T[ing.name]
@@ -486,6 +489,11 @@ return function(api)
           end
           u.feeders[#u.feeders+1] = {e=e, source=pick, has=has, status=status}
         end
+        -- A maker's inserters in and out, for throughput.
+        local m = drop_unit and t.maker_of[drop_unit]
+        if m and m.into then m.into[#m.into+1] = e end
+        m = pick_unit and t.maker_of[pick_unit]
+        if m and m.from then m.from[#m.from+1] = e end
         if pick_unit and t.maker_of[pick_unit] then
           status = status or api.status_name(e) or 'unknown'
           local k = t.takers
@@ -1055,6 +1063,35 @@ return function(api)
   -- ingredient most of a step's makers lack down to its root, and on each step of that line up to 3 makers that are
   -- not working, with position, state and what they lack. Kept 10 s like supply.
   -- per_min (Sonnet, shift13 18:20): the rate each step needs for that many of the item a minute (ratechain.lua).
+  -- fixes (Luna, 19:50): for each such maker lacking an item, the nearest chest within 64 tiles holding it (what robots
+  -- have reserved there left out) and one transfer that carries about 10 crafts' worth there; at most 6 fixes.
+  local FIX_RADIUS, FIX_CHESTS, FIX_MAX, FIX_CRAFTS = 64, 200, 6, 10
+  local FIX_TYPES = {'container', 'logistic-container'}
+  local function fix_line(surface, force, m, ing)
+    local e = m.e
+    local per = 1
+    for _, i in ipairs(m.recipe and m.recipe.ingredients or {}) do if i.name == ing then per = i.amount end end
+    if prototypes.fluid and prototypes.fluid[ing] then
+      return string.format('%s %s lacks %s: a fluid, it comes by pipe', e.name, at(e.position), ing)
+    end
+    local best, bd, held
+    for _, c in ipairs(try(function()
+      return surface.find_entities_filtered{position=e.position, radius=FIX_RADIUS, type=FIX_TYPES, force=force, limit=FIX_CHESTS}
+    end) or {}) do
+      local n = count(inventory(c, 'chest'), ing) - M.reserved(c, ing)
+      if n > 0 then
+        local d = (c.position.x - e.position.x) ^ 2 + (c.position.y - e.position.y) ^ 2
+        if not bd or d < bd then best, bd, held = c, d, n end
+      end
+    end
+    if not best then
+      return string.format('%s %s lacks %s: no chest within %d tiles holds it', e.name, at(e.position), ing, FIX_RADIUS)
+    end
+    local n = math.max(1, math.min(held, math.ceil(per * FIX_CRAFTS)))
+    return string.format('%s %s lacks %s: %s %s holds %d, %d tiles away; fh call transfer --args \'{"item":"%s","pick":"first_with_stock","positions":[{"x":%g,"y":%g}],"to":{"x":%g,"y":%g},"count":%d}\'',
+      e.name, at(e.position), ing, best.name, at(best.position), held, math.floor(math.sqrt(bd) + 0.5),
+      ing, best.position.x, best.position.y, e.position.x, e.position.y, n)
+  end
   local ratechain
   function M.bottleneck_item(p, a)
     local item = a.item
@@ -1074,7 +1111,7 @@ return function(api)
       local names = prototypes.item[item] and {[item]=true} or {}
       local scan = M.scan(surface, force, names, {packs=M.packs_of(force), miners=true})
       local chain = M.chain(scan, force, surface, item)
-      local where = {}
+      local where, fixes = {}, {}
       for _, name in ipairs(chain.path or {}) do
         local rows = {}
         for _, m in ipairs(scan.by_product and scan.by_product[name] or {}) do
@@ -1083,6 +1120,9 @@ return function(api)
           if state and state ~= 'working' then
             local lack = (not m.miner) and missing(m.e, m, nil) or {}
             rows[#rows+1] = string.format('%s %s %s%s', m.e.name, at(m.e.position), state, #lack > 0 and ' (lacks ' .. table.concat(lack, ', ') .. ')' or '')
+            for _, ing in ipairs(SHORT[state] and lack or {}) do
+              if #fixes < FIX_MAX then fixes[#fixes+1] = fix_line(surface, force, m, ing) end
+            end
           end
         end
         if #rows > 0 then where[#where+1] = name .. ': ' .. table.concat(rows, '; ') end
@@ -1095,7 +1135,7 @@ return function(api)
         target = ratechain.plan(scan.by_product or {}, item, a.per_min, force, function(name) return made[name] end)
       end
       return {item=item, surface=surface.name, line=chain.line, path=chain.path, root=chain.last, not_working=#where > 0 and where or nil,
-        steps=chain.tree, cut=chain.cut, target=target}
+        fixes=#fixes > 0 and fixes or nil, steps=chain.tree, cut=chain.cut, target=target}
     end)
   end
   local function packs_of(force)
@@ -1104,13 +1144,39 @@ return function(api)
     return packs
   end
   M.packs_of = packs_of
+  -- throughput (Sol, 19:50: a standard inserter capped green circuits at 37.5/min): the makers' inserters in and out
+  -- and the users' feeders against each machine's recipe at full speed (craftrate.feed); the first 5 short of it, of up
+  -- to 64 makers and 64 users looked at.
+  local FEED_MACHINES, FEED_LINES = 64, 5
+  function M.throughput(t)
+    if not api.feed then return nil end
+    local lines, looked, seen = {}, 0, {}
+    local function check(e, into, from)
+      if #lines >= FEED_LINES or seen[e.unit_number] or not e.valid then return end
+      seen[e.unit_number] = true
+      looked = looked + 1
+      local fd = try(function() return api.feed(e, into, from) end)
+      if fd then lines[#lines+1] = fd.line end
+    end
+    for k, m in ipairs(t.makers) do if k > FEED_MACHINES then break end check(m.e, m.into, m.from) end
+    for k, u in ipairs(t.users) do
+      if k > FEED_MACHINES then break end
+      if not u.lab then
+        local into = {}
+        for _, f in ipairs(u.feeders) do into[#into+1] = f.e end
+        check(u.e, into, nil)
+      end
+    end
+    if #lines == 0 then return nil end
+    return lines
+  end
   -- For trace.lua: the same inventory reads.
   M.helpers = {inventory=inventory, count=count, input_of=input_of, output_of=output_of, recipe_of=recipe_of, kind_of=kind_of,
     main=function(e) return inventory(e, MAIN[e.type] or 'chest') end}
 
   M.schema = {supply = {item='item name', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole',
     radius='with near: 1..512 tiles (default 64); alone: that far around you, on your surface',
-    returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); chests (largest 5; what a requester or buffer chest asks for); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
+    returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); chests (largest 5; what a requester or buffer chest asks for); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
 
   function M.supply(p, a)
     local item = a.item
@@ -1156,6 +1222,7 @@ return function(api)
     if out.users_worst and #out.users_worst == 0 then out.users_worst = nil end
     out.feeders = M.feeders(t)
     out.takers = M.takers(t)
+    out.throughput = M.throughput(t)
     out.counted = M.counted(scan)
     -- Spoilage: the first to spoil, or for an item that hatches into enemies (pentapod-egg) the first to hatch.
     local f = t.spoil_first
