@@ -678,11 +678,15 @@ return function(api)
       end
     end
     if a.read ~= nil then
-      if type(a.read) ~= 'table' then error('read is {switch: boolean}', 0) end
       local aliases, short = READ_ALIASES[kind] or {}, {}
       for k in pairs(aliases) do short[#short+1] = k end
       for _, n in ipairs(names(props)) do if props[n] == 'bool' then short[#short+1] = n end end
       if #short == 0 then refuse('read', 'has no read switches') end
+      -- read: true names no switch (round1650d: Sol's script stopped at "read is {switch: boolean}"): the ones it has.
+      if type(a.read) ~= 'table' then
+        table.sort(short)
+        error(string.format('read is {switch: boolean}: %s has %s, e.g. read: {"%s": true}', e.name, table.concat(short, ', '), short[1]), 0)
+      end
       out.read = {}
       for k, v in pairs(a.read) do
         local prop

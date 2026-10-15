@@ -369,8 +369,20 @@ function exitCode(reply: Reply): number {
   if (ends.some(r => r && typeof r === 'object' && r.still_running !== undefined && r.still_running !== false)) return STILL_RUNNING_EXIT;
   return reply.ok ? 0 : 1;
 }
+// fh ACTION run as fh call ACTION (round1650d: Haiku's fh transfer, Luna's fh move_to): said once, in corrected (or on
+// the error).
+let cliCorrected: string | undefined;
+function withCliNote(value: unknown): unknown {
+  if (!cliCorrected || !value || typeof value !== 'object') return value;
+  const note = cliCorrected;
+  cliCorrected = undefined;
+  const reply = value as Reply;
+  if (!reply.ok && reply.error) return {...reply, error:{...reply.error, message:`${reply.error.message} [${note}]`}};
+  const result = reply.result && typeof reply.result === 'object' ? reply.result as Record<string, unknown> : {};
+  return {...reply, result:{...result, corrected:typeof result.corrected === 'string' ? `${note}; ${result.corrected}` : note}};
+}
 function output(value: unknown) {
-  value = withPace(withDeadline(value));
+  value = withPace(withDeadline(withCliNote(value)));
   if (outputFormat === 'compact') writePaged(operatorHead() + formatCompact(withoutOperator(value)));
   else process.stdout.write(JSON.stringify(value) + '\n');
   // JSON stays one document on stdout; the error:/warning: line goes to stderr
@@ -661,6 +673,11 @@ async function main() {
     values.args = JSON.stringify(args);
   }
   const known = new Set(['doctor','describe','observe','call','view','deploy','watch','stream','run','wait','sleep','help']);
+  if (!known.has(command) && /^[a-z][a-z0-9_]*$/.test(command)) {
+    cliCorrected = `fh ${command} runs as fh call ${command}`;
+    positionals.splice(0, 1, 'call', command);
+    command = 'call';
+  }
   if (!known.has(command)) throw new Error(`Unknown command ${command}; use fh help`);
   // A bot is a script-driven character addressed by name (FH_BOT for wrappers).
   const bot = values.bot ?? (values.player ? undefined : process.env.FH_BOT || undefined);

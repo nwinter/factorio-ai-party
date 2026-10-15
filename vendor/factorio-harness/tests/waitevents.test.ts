@@ -280,6 +280,20 @@ test('fh wait with nothing running: the last action ended before the previous ca
     assert.equal(json.ok,true); assert.equal(json.result.last.outcome,'arrived'); assert.equal(json.result.nothing_running,undefined);
   });
 });
+test('fh ACTION runs as fh call ACTION, said in corrected (round1650d: Haiku\'s fh transfer, Luna\'s fh move_to)',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{seen.push(request); return request.action==='mine' ? {ok:false,error:{code:'action_failed',message:'nothing to mine'}} : {ok:true,result:{moved:5}};},async port=>{
+    const json=JSON.parse((await cli(port,['transfer','--args','{"position":{"x":1,"y":2},"item":"coal","count":5}'])).stdout);
+    assert.equal(json.ok,true); assert.equal(json.result.corrected,'fh transfer runs as fh call transfer');
+    assert(seen.some(r=>r.action==='transfer' && r.args.item==='coal'),'sent as the transfer action');
+    const {stdout}=await cli(port,['transfer','--args','{"position":{"x":1,"y":2},"item":"coal","count":5}'],'compact');
+    assert.match(stdout,/corrected: fh transfer runs as fh call transfer/);
+    await assert.rejects(cli(port,['mine','--args','{"position":{"x":1,"y":2}}']),(error:any)=>{
+      assert.match(JSON.parse(error.stdout).error.message,/nothing to mine \[fh mine runs as fh call mine\]/); return true;
+    });
+  });
+  await assert.rejects(cli(1,['Transfer']),(error:any)=>/Unknown command Transfer/.test(error.stderr+error.stdout));
+});
 test('a sleep replaced by a newer one ends (woke replaced) without reading the other sleep\'s wake',async()=>{
   // shift08 20:07: Sol's Codex shell returned at 30 s, it slept again; the first call polled the new sleep and
   // ended timed_out ("advanced 16 game seconds in 48 real seconds").
