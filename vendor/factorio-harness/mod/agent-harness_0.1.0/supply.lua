@@ -749,7 +749,7 @@ return function(api)
         for _, name in ipairs(lacks) do bump(short, 'missing ' .. name) end
         local lacks_it = false
         for _, name in ipairs(lacks) do if name == t.item then lacks_it = true end end
-        local rank = status == 'no_power' and 1 or (SHORT[status] and lacks_it) and 2 or SHORT[status] and 3 or FULL[status] and 4 or status == 'low_power' and 5 or 6
+        local rank = (status == 'no_power' or status == 'burnt_result_full') and 1 or (SHORT[status] and lacks_it) and 2 or SHORT[status] and 3 or FULL[status] and 4 or status == 'low_power' and 5 or 6
         ranked[#ranked+1] = {u=u, e=e, status=status, lacks=lacks, rank=rank}
       end
     end
@@ -781,6 +781,7 @@ return function(api)
       local w = ranked[i]
       local text = at(w.e.position) .. ' ' .. w.e.name .. ' ' .. w.status
       if #w.lacks > 0 then text = text .. ' (missing ' .. table.concat(w.lacks, ', ') .. ')' end
+      if w.status == 'burnt_result_full' and api.burnt_line then text = text .. ' (' .. (try(api.burnt_line, w.e) or '') .. ')' end
       if role ~= 'makers' then
         text = text .. '; holds ' .. (w.u.has or 0)
         -- The feeder that carries this item: its source asks for it or
@@ -1152,7 +1153,9 @@ return function(api)
           local state = m.e.valid and (api.status_name(m.e) or 'unknown')
           if state and state ~= 'working' then
             local lack = (not m.miner) and missing(m.e, m, nil) or {}
-            rows[#rows+1] = string.format('%s %s %s%s', m.e.name, at(m.e.position), state, #lack > 0 and ' (lacks ' .. table.concat(lack, ', ') .. ')' or '')
+            local burnt = state == 'burnt_result_full' and api.burnt_line and try(api.burnt_line, m.e)
+            rows[#rows+1] = string.format('%s %s %s%s%s', m.e.name, at(m.e.position), state, #lack > 0 and ' (lacks ' .. table.concat(lack, ', ') .. ')' or '',
+              burnt and ' (' .. burnt .. ')' or '')
             for _, ing in ipairs(SHORT[state] and lack or {}) do
               if #fixes < FIX_MAX then fixes[#fixes+1] = fix_line(surface, force, m, ing) end
             end

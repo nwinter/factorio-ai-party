@@ -349,6 +349,30 @@ opus('queue_repeat',{steps={wait(100)},interval_ticks=1800,orders='all'})
 until_order('tidy',2000)
 eq(oq().repeating,true)
 fails(function() opus('queue_repeat',{steps={wait(5)},orders='some'}) end,'orders must be triggers, all or none')
+-- One model of repeats with an end (round2120e: times, for_ticks). A loop of 2 rounds: the trigger runs between them;
+-- after round 2 the loop ends, its orders setting with it, and the free queue takes the default routine again.
+obody.health=100
+opus('queue_repeat',{steps={wait(100)},interval_ticks=1800,times=2})
+until_order('mend',2500)
+eq(oq().cycle,1); eq(oq().times,2); eq(oq().rounds_left,1); eq(oq().orders_between_rounds,'triggers')
+for _=1,4000 do if oq().loop_done then break end; advance(1) end
+eq(oq().loop_done.rounds,2); eq(oq().repeating,false); eq(oq().orders_between_rounds,nil)
+obody.health=250
+until_order('tidy',2000)
+-- for_ticks: an order between rounds that holds the next round to or past the end; that round does not start and the
+-- loop ends there (no round starts at or after the end, as pZ's rule says).
+opus('orders_resume',{hold_s=0})
+opus('order_set',{name='mend',when={['until']='health_below',fraction=0.5},steps={wait(400)},cooldown_ticks=300})
+obody.health=100
+opus('queue_repeat',{steps={wait(100)},interval_ticks=200,for_ticks=310})
+local stop=oq().stops_tick
+until_order('mend',400)
+eq(oq().cycle,1)
+for _=1,600 do if oq().loop_done then break end; advance(1) end
+assert(tick>=stop,'ended before the end tick')
+eq(oq().loop_done.rounds,1); has(oq().loop_done.reason,'no round starts at or after tick '..stop..' (for_ticks 310)')
+eq(oq().cycle,1); eq(oq().repeating,false)
+obody.health=250
 opus('queue_cancel',{})
 end)()
 -- describe documents the calls (argument checks come from it)

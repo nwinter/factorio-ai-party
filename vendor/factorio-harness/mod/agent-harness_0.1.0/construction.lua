@@ -202,8 +202,14 @@ return function(api)
     -- clears marks without robots; contents go to the inventory.
     -- (a tile's deconstruction mark, a deconstructible-tile-proxy, is mined as its tile below: Sol 15:38, mined as an
     -- entity it ended the construct inventory_full with 73 free slots)
+    -- A marked cliff goes only with cliff explosives (no hand can mine one; Sol, shift14 21:18: construct failed on 4
+    -- marked cliffs, "the engine would not mine cliff-gleba (98,14.5) by hand"): left, and named in last.cliffs.
     for _,e in pairs(p.surface.find_entities_filtered{area=box,to_be_deconstructed=true}) do
-      if e.valid and e.type~='entity-ghost' and e.type~='deconstructible-tile-proxy' and (e.force==p.force or e.force.name=='neutral') and e.minable and api.known(p,e) then
+      if e.valid and e.type=='cliff' then
+        action.cliffs=action.cliffs or {}
+        if #action.cliffs<16 then action.cliffs[#action.cliffs+1]={name=e.name,position={x=e.position.x,y=e.position.y}} end
+        action.ncliffs=(action.ncliffs or 0)+1
+      elseif e.valid and e.type~='entity-ghost' and e.type~='deconstructible-tile-proxy' and (e.force==p.force or e.force.name=='neutral') and e.minable and api.known(p,e) then
         add(e)
       end
     end
@@ -473,14 +479,28 @@ return function(api)
     local cliffs={}
     local tech=p.force.technologies and p.force.technologies['cliff-explosives']
     if tech and tech.researched then
-      for _,e in pairs(p.surface.find_entities_filtered{area=area,type='cliff'}) do
-        if e.valid and touches(e,box,margin) and (not turned or meets_turned(turned,e,margin)) then
-          if not e.to_be_deconstructed() then pcall(e.order_deconstruction,p.force,api.real(p)) end
-          if e.to_be_deconstructed() then cliffs[#cliffs+1]=e end
-        end
+      for _,e in ipairs(M.cliffs_under(p.surface,g,box,turned,margin)) do
+        if not e.to_be_deconstructed() then pcall(e.order_deconstruction,p.force,api.real(p)) end
+        if e.to_be_deconstructed() then cliffs[#cliffs+1]=e end
       end
     end
     return found,marked,cliffs
+  end
+  -- The cliffs a ghost stands over: the ones the engine finds in its own box whose collision mask meets the ghost's, as
+  -- the dry run counts them (dryrun.lua). A cliff's box is turned (orientation 0.125 on Gleba's diagonals); read as
+  -- square, the box of one that no ghost touched met a belt's, and placements marked cliffs the dry run had not listed
+  -- (Sol, shift14 21:17: a belt_route marked (98,14.5), a place_ghosts (94,26.5) and (94,34.5); on a copy of world n a
+  -- hand build fit on every tile next to them with them standing, and the engine found none in any ghost's box).
+  function M.cliffs_under(surface,g,box,turned,margin)
+    local mask=(pcall(function() return g.ghost_prototype.collision_mask.layers end)) and g.ghost_prototype.collision_mask.layers or nil
+    local out={}
+    for _,e in pairs(surface.find_entities_filtered{area=box,type='cliff'}) do
+      local okm,el=pcall(function() return e.prototype.collision_mask.layers end)
+      local meets=not mask or not okm
+      if not meets then for layer in pairs(el) do if mask[layer] then meets=true; break end end end
+      if e.valid and meets and (not turned or meets_turned(turned,e,margin or 0.01)) then out[#out+1]=e end
+    end
+    return out
   end
   -- Trees and rocks a tile ghost cannot go under (Sol, shift10: a slipstack on
   -- Gleba wetland kept landfill out). 2.0.77: Gleba's slipstack, cuttlepop,

@@ -2,6 +2,12 @@
 # fh against a pog world. POG_WORLD selects the instance (default live); RCON reaches it through the SSH tunnel.
 # Agent workspaces under the RCON broker (POG_BROKER=1, tools/fh_broker.py) pass POG_FH_SOCKET instead: the broker
 # holds the password and forwards only that bot's harness requests.
+# fh progress (tools/progress.py; viewers Alex and Foobator): the run so far by shift, read from the recorded data on
+# this Mac (scores, agent stats, efficiency, tokens); no game call, no password.
+if [ "${1:-}" = progress ]; then
+  shift
+  exec env -u FACTORIO_RCON_PASSWORD -u FACTORIO_RCON_PASSWORD_FILE python3 "$(dirname "$0")/../tools/progress.py" "$@"
+fi
 if [ -n "${POG_FH_SOCKET:-}" ]; then
   exec env -u FACTORIO_RCON_PASSWORD -u FACTORIO_RCON_PASSWORD_FILE FH_SOCKET="$POG_FH_SOCKET" \
     node "$(dirname "$0")/../vendor/factorio-harness/dist/host/cli.js" "$@"
