@@ -179,6 +179,20 @@ return function(api)
     return built(e, d, k, ours)
   end
 
+  -- "NAME (x,y): line" for every belt of a list of entities (a build batch, placed ghosts; Grok, shift13: three belts of
+  -- a batch faced south and only the last one was read), the first `limit` (default 16), and how many more.
+  function M.lines(ents, limit)
+    local out, more = {}, 0
+    for _, e in ipairs(ents or {}) do
+      local line = e and e.valid and M.line(e)
+      if line then
+        if #out < (limit or 16) then
+          out[#out+1] = string.format('%s (%g,%g): %s', e.type == 'entity-ghost' and e.ghost_name or e.name, e.position.x, e.position.y, line)
+        else more = more + 1 end
+      end
+    end
+    return out, more
+  end
   -- "NAME (x,y): line" for the last belt of a list of entities (a build batch, placed ghosts), or nil.
   function M.last(ents)
     for i = #ents, 1, -1 do

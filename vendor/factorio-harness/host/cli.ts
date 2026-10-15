@@ -793,7 +793,9 @@ async function main() {
   // transferred' after moving 200 solid fuel); unreached and nothing_collected still fail.
   const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear','dropped','transferred','previewed',
     // clear_cliffs (use_item cliff-explosives): the explosives destroyed cliffs (Sol 17:21/17:32: fh wait exited 1 on it)
-    'cliffs_destroyed'];
+    'cliffs_destroyed',
+    // load_silo walk (Luna, shift14 21:20): the list aboard, and launched; short and no_rocket still fail.
+    'loaded','launched'];
   // How long to wait: an explicit --wait-timeout, else until the action's own
   // end tick (at 60 ticks/s plus a margin), never less than 30 s nor more than 15 min.
   // ownEnd: the action's end tick already reflects --wait-timeout (wait_until), so

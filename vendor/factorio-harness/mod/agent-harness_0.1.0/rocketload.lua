@@ -185,9 +185,14 @@ return function(api)
   local LAUNCH_ARGS = {platform=true, orbit=true, min_cargo=true, arrived=true}
   function M.check(a)
     M.items(a.items, 'items')
-    for _, k in ipairs({'to_total', 'launch', 'chests'}) do
+    for _, k in ipairs({'to_total', 'launch', 'chests', 'walk'}) do
       assert(a[k] == nil or type(a[k]) == 'boolean', k .. ' must be true or false')
     end
+    if a.walk == true then
+      assert(a.from ~= nil, 'walk goes with from: the chests to take from ({x,y} or a list), on this surface, in sight or on the map')
+      assert(a.chests == nil, 'walk takes from the chests in from (chests does not go with it)')
+    end
+    for _, k in ipairs({'avoid_enemies', 'unsafe_goal'}) do assert(a[k] == nil or a.walk == true, k .. ' goes with walk=true') end
     if a.launch then
       assert(a.platform ~= nil or a.orbit == true, 'launch needs platform=<name> (or orbit=true)')
     else
@@ -288,6 +293,220 @@ return function(api)
     if not (silo and silo.valid and silo.type == 'rocket-silo') then return true end
     if not M.rocket_inventory(silo) then return false end
     return not w.launch or ready(silo)
+  end
+
+  -- load_silo {walk: true, from} ------------------------------------------------------
+  -- Luna, shift14 21:20: 930 agricultural science packs from a provider 64 tiles from the silo took four walks and
+  -- several calls. One timed call (a tour, op load_silo) walks between the chests in from and the silo as a player
+  -- carries a load: at each chest it takes what the rocket still needs less what you hold, at the silo it loads what
+  -- you hold of the list; another trip while the rocket still needs some, a chest in from still holds it and the trip
+  -- loaded any. The chests anywhere on the silo's surface, in sight or on the map; taken from in reach, as by hand.
+  local MAX_TRIPS = 20
+  local function dist(a, b) return math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) end
+  local function held_of(p, r)
+    local n = 0
+    for _, source in ipairs(api.give_sources(p, r.name)) do
+      n = n + (try(function() return source.get_item_count{name=r.name, quality=r.quality} end) or 0)
+    end
+    return n
+  end
+  -- Each goal still short in the rocket: {goal, need (to load), held (you), take (from the chests: no more than fits
+  -- under the rocket's lift now, less what you hold)}.
+  local function needs(p, action)
+    local inv = M.rocket_inventory(action.silo)
+    local out = {}
+    for _, g in ipairs(action.goals) do
+      local need = math.max(0, g.target - aboard(inv, g))
+      if need > 0 then
+        local h = held_of(p, g)
+        local room = inv and try(function() return api.rocket_room(action.silo, g.name) end) or need
+        out[#out+1] = {goal=g, need=need, held=h, take=math.max(0, math.min(need, room) - h)}
+      end
+    end
+    return out
+  end
+  -- The chests holding what the next trip takes, nearest first from `from` (each one from the one before).
+  local function trip(p, action, from, rows)
+    local left, todo = {}, false
+    for _, c in ipairs(action.chests) do
+      if c.valid then
+        for _, n in ipairs(rows) do
+          if n.take > 0 and (try(function() return chest_inventory(c).get_item_count{name=n.goal.name, quality=n.goal.quality} end) or 0) > 0 then
+            left[#left+1] = c; todo = true; break
+          end
+        end
+      end
+    end
+    local out, at_ = {}, from
+    while #left > 0 do
+      local best, bi = nil, nil
+      for i, c in ipairs(left) do if not best or dist(at_, c.position) < dist(at_, best.position) then best, bi = c, i end end
+      out[#out+1] = best; at_ = best.position; table.remove(left, bi)
+    end
+    return out, todo
+  end
+  local function need_text(rows)
+    local parts = {}
+    for _, n in ipairs(rows) do parts[#parts+1] = string.format('%s %d (you hold %d)', label(n.goal), n.need, n.held) end
+    return table.concat(parts, ', ')
+  end
+  local function chests_text(action, rows)
+    local parts = {}
+    for i, c in ipairs(action.chests) do
+      if i > 4 then parts[#parts+1] = string.format('%d more', #action.chests - 4); break end
+      local held = {}
+      for _, n in ipairs(rows) do
+        held[#held+1] = string.format('%d %s', try(function() return chest_inventory(c).get_item_count{name=n.goal.name, quality=n.goal.quality} end) or 0, label(n.goal))
+      end
+      parts[#parts+1] = string.format('%s %s holds %s', c.name, at(c.position), table.concat(held, ', '))
+    end
+    return table.concat(parts, '; ')
+  end
+  -- Before walking: the silo, the chests and the goals. Returns nil when the silo and every chest are in reach (the
+  -- load as without walk), else {entities (the first trip, the silo last), fields (the tour's), reply}.
+  function M.walk_start(p, a)
+    M.check(a)
+    local silo = api.sight_entity(p, a.position)
+    assert(silo.type == 'rocket-silo', silo.name .. ' at ' .. at(silo.position) .. ' is not a rocket silo')
+    if try(function() return silo.use_transitional_requests end) then
+      error('the silo at ' .. at(silo.position) .. ' has automatic requests on: the game fills its rocket for the platforms\' requests and takes no cargo by hand; launch {position, auto_requests=false} turns them off', 0)
+    end
+    local chests, far = {}, try(function() return p.can_reach_entity(silo) end) ~= true
+    for _, pos in ipairs(from_list(a.from)) do
+      local c = api.sight_entity(p, pos)
+      assert(c.force == p.force, 'from: ' .. c.name .. ' at ' .. at(c.position) .. ' is not ours')
+      assert(chest_inventory(c), 'from: ' .. c.name .. ' at ' .. at(c.position) .. ' has no chest inventory')
+      assert(c.surface == silo.surface, 'from: ' .. c.name .. ' at ' .. at(c.position) .. ' is not on the silo\'s surface')
+      chests[#chests+1] = c
+      if try(function() return p.can_reach_entity(c) end) ~= true then far = true end
+    end
+    if not far then return nil end
+    local inv = M.rocket_inventory(silo)
+    local goals = {}
+    for _, r in ipairs(M.items(a.items, 'items')) do
+      local before = aboard(inv, r)
+      goals[#goals+1] = {name=r.name, quality=r.quality, count=r.count, before=before, target=a.to_total and r.count or before + r.count}
+    end
+    local load = {}
+    for k, v in pairs(a) do load[k] = v end
+    load.walk = nil; load.ticks = nil; load.from = nil; load.avoid_enemies = nil; load.unsafe_goal = nil
+    local action = {silo=silo, chests=chests, goals=goals}
+    local rows = needs(p, action)
+    if #rows == 0 then
+      error(string.format('nothing to load: the rocket holds the list already (%s); nothing walked', list_text(contents(inv))), 0)
+    end
+    local first, todo = trip(p, action, p.position, rows)
+    local taking, held_any = false, false
+    for _, n in ipairs(rows) do
+      if n.take > 0 then taking = true end
+      if n.held > 0 then held_any = true end
+    end
+    if not taking and not held_any then
+      error(string.format('nothing walked: the rocket still needs %s and none of it fits under its lift (it holds %s)', need_text(rows), api.rocket_weight(silo)), 0)
+    end
+    if taking and not todo and not held_any then
+      error(string.format('nothing walked: the rocket still needs %s and the chests in from hold none of it (%s)', need_text(rows), chests_text(action, rows)), 0)
+    end
+    local entities = {}
+    for i, c in ipairs(first) do entities[i] = c end
+    entities[#entities+1] = silo
+    local fields = {ordered=true, load=load, silo=silo, chests=chests, goals=goals, trips=1, taken=0, loaded=0, rows={}, items={},
+      avoid_enemies=a.avoid_enemies, unsafe_goal=a.unsafe_goal}
+    local rk = api.rocket and try(function() return api.rocket(silo) end)
+    local reply = {op='load_silo', walk=true, silo=string.format('%s at %s', silo.name, at(silo.position)), needs=need_text(rows),
+      chests=chests_text(action, rows), trip=#first .. ' chest' .. (#first == 1 and '' or 's') .. ', then the silo', rocket=rk and rk.rocket or nil,
+      note=a.launch and 'launch: at the last silo stop, when the rocket is ready then' or nil}
+    return {entities=entities, fields=fields, reply=reply}
+  end
+  -- One stop of the tour: a chest (take) or the silo (load, then another trip, the end, or the launch).
+  -- Returns {transferred, stop} as the tour's visits do.
+  function M.walk_visit(p, action, e)
+    local rows = needs(p, action)
+    if e ~= action.silo then
+      local n, full, notes = 0, false, {}
+      for _, r in ipairs(rows) do
+        if r.take > 0 then
+          local out = api.take(p, e, r.goal.name, r.goal.quality, r.take)
+          n = n + (out.transferred or 0)
+          if out.transferred and out.transferred > 0 then
+            local k = label(r.goal)
+            action.items[k] = (action.items[k] or 0) + out.transferred
+          end
+          if out.inventory_full then full = true end
+          if out.left_at_max then notes[#notes+1] = out.left_at_max end
+        end
+      end
+      action.taken = action.taken + n
+      action.rows[#action.rows+1] = {position=e.position, name=e.name, trip=action.trips, taken=n, full=full or nil,
+        note=#notes > 0 and table.concat(notes, '; ') or nil}
+      return {transferred=n}
+    end
+    local inv = M.rocket_inventory(e)
+    local rk = api.rocket and try(function() return api.rocket(e) end)
+    if not inv then
+      action.final = 'no_rocket'
+      action.why = string.format('no rocket to load at the silo (%s); what you took stays with you: %s', rk and rk.rocket_now or 'none', need_text(rows))
+      action.rows[#action.rows+1] = {position=e.position, name=e.name, trip=action.trips, loaded=0, why='no rocket to load yet'}
+      return {transferred=0, stop='no_rocket'}
+    end
+    local list = {}
+    for _, r in ipairs(rows) do
+      if r.held > 0 then list[#list+1] = {item=r.goal.name, quality=r.goal.quality, count=math.min(r.need, r.held)} end
+    end
+    local n, full_rocket = 0, nil
+    if #list > 0 then
+      local out = M.load(p, {position=e.position, items=list, chests=false})
+      for _, row in ipairs(out.loaded or {}) do
+        n = n + (row.loaded or 0)
+        if row.why and (row.why:find('^weight') or row.why:find('cargo slots are full', 1, true)) then full_rocket = row.why end
+      end
+      action.cargo = out.cargo; action.rocket_weight = out.rocket_weight
+    end
+    action.loaded = action.loaded + n
+    action.rows[#action.rows+1] = {position=e.position, name=e.name, trip=action.trips, loaded=n, cargo=action.cargo}
+    rows = needs(p, action)
+    if #rows == 0 then
+      if not action.load.launch then action.final = 'loaded'; return {transferred=n, stop='loaded'} end
+      if not ready(e) then
+        action.final = 'loaded'
+        action.why = string.format('loaded, not launched: %s (load_silo {launch: true} without walk waits for it)', rk and rk.rocket_now or 'the rocket is not ready')
+        return {transferred=n, stop='loaded'}
+      end
+      local a = action.load
+      local ok, launched = pcall(api.launch, p, {position=e.position, platform=a.platform, orbit=a.orbit, min_cargo=a.min_cargo, arrived=a.arrived})
+      if ok then action.final = 'launched'; action.launch = launched; return {transferred=n, stop='launched'} end
+      action.final = 'loaded'
+      action.why = string.format('loaded, then the launch was refused: %s; the cargo stays in the rocket', api.reason and api.reason(launched) or tostring(launched))
+      return {transferred=n, stop='loaded'}
+    end
+    local function short(why)
+      action.final = 'short'
+      action.why = string.format('the rocket still needs %s: %s', need_text(rows), why)
+      return {transferred=n, stop='short'}
+    end
+    if full_rocket then return short(full_rocket) end
+    local taking, held_any = false, false
+    for _, r in ipairs(rows) do
+      if r.take > 0 then taking = true end
+      if r.held > 0 then held_any = true end
+    end
+    if not taking and not held_any then return short('none of it fits under the rocket\'s lift (it holds ' .. api.rocket_weight(e) .. ')') end
+    if n == 0 then return short('this trip loaded none (' .. chests_text(action, rows) .. ')') end
+    if action.trips >= MAX_TRIPS then return short(MAX_TRIPS .. ' trips made') end
+    local next_trip, todo = trip(p, action, e.position, rows)
+    if taking and not todo then return short('the chests in from hold no more of it (' .. chests_text(action, rows) .. ')') end
+    action.trips = action.trips + 1
+    for _, c in ipairs(next_trip) do action.targets[#action.targets+1] = {entity=c, position=c.position} end
+    action.targets[#action.targets+1] = {entity=e, position=e.position}
+    return {transferred=n}
+  end
+  -- The tour's end on last: trips, taken, loaded, the stops, the cargo, the launch, and why it ended short.
+  function M.walk_last(action, last)
+    last.given = nil; last.items = nil
+    last.trips = action.trips; last.taken = action.taken; last.loaded = action.loaded; last.stops = action.rows
+    last.cargo = action.cargo; last.rocket_weight = action.rocket_weight; last.launch = action.launch
+    last.taken_items = next(action.items) and action.items or nil
+    last.why = last.why or action.why
   end
 
   -- preflight ---------------------------------------------------------------------
@@ -566,12 +785,15 @@ return function(api)
     load_silo = {position='the rocket silo {x,y} (any tile of it), within reach',
       items='the cargo to load: {"item-name": count} or [{"item", "count", "quality"}], 1..20 items',
       to_total='true: each count is what the rocket should hold in all (only the rest is loaded); default: each count is loaded on top of what it holds',
-      from='optional chest {x,y} or 1..16 of them, within reach: take from these (after your inventory); default: your inventory, then our chests within reach, nearest first (at most 16): every chest kind (chests, logistic chests, linked and infinity chests) and a cargo landing pad',
+      from='optional chest {x,y} or 1..16 of them, within reach: take from these (after your inventory); default: your inventory, then our chests within reach, nearest first (at most 16): every chest kind (chests, logistic chests, linked and infinity chests) and a cargo landing pad. With walk: anywhere on the silo\'s surface, in sight or on the map',
       chests='false: your inventory only',
+      walk='true, with from: one timed call that walks between the chests in from and the silo, as many trips as it takes (at most 20): at each chest it takes what the rocket still needs less what you hold (up to your request max), at the silo it loads what you hold of the list; another trip while the rocket still needs some, a chest in from holds it and the trip loaded any. With launch: launched at the last silo stop when the rocket is ready then; otherwise it ends loaded, not launched, naming the rocket\'s state. The silo and every chest in reach: the load at once, as without walk. Nothing in the chests and nothing held of what the rocket needs: refused, nothing walked. Outcomes loaded | launched | short (last.why: weight, slots, the chests empty, a trip that loaded none) | no_rocket (none at the silo when you got there: what you took stays with you) | unreached | timed_out; last: trips, taken, taken_items, loaded, stops [{position, name, trip, taken | loaded, full, note}], cargo, rocket_weight, launch',
+      avoid_enemies='with walk: as move_to\'s; each leg goes round the worms, spawners and attacks the map shows, and a stop inside one is left out',
+      unsafe_goal='with walk: true walks to such a stop anyway',
       launch='true: launch once the rocket is ready, in the tick the cargo is loaded; needs platform (or orbit=true); refused (not launched, an error) when any count fell short; min_cargo and arrived are checked as launch checks them',
       platform='with launch: the platform in orbit to send it to', orbit='with launch: true for no platform',
       min_cargo='with launch: as launch min_cargo', arrived='with launch: as launch arrived',
-      ticks='1..36000 (default 3600): how long to wait for the rocket (no rocket yet, or not ready for a launch)',
+      ticks='1..36000 (default 3600): how long to wait for the rocket (no rocket yet, or not ready for a launch); with walk, the whole tour (default 18000)',
       returns='silo, loaded [{item, asked, aboard_before, loaded, aboard, from (you N, iron-chest (x,y) N), short, why (weight, slots, or what you and the chests held)}], cargo, rocket_weight, slots (used/total), chests (how many were read), complete, short; launch (the launch reply) with launch=true. No rocket yet, or launch=true before the rocket is ready: a timed action (until_tick, waiting {why, rocket}; outcome fed | failed | timed_out; last.result holds the reply). Into the rocket only what fits under its 1000 kg lift and in its cargo slots; a silo with automatic requests on is refused'},
     preflight = {position='the rocket silo {x,y} (any tile of it), in a visible chunk (remote view)', surface='optional planet name: the silo there by remote view',
       items='optional item list (as load_silo items): what it still lacks against the cargo aboard, and how much of that fits',

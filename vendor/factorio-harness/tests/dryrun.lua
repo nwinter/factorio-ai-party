@@ -410,6 +410,18 @@ do
   local deck = world(function(x, y) return (x >= 0 and x <= 3) and 'space-platform-foundation' or 'empty-space' end, {}, {platform={name='deck'}})
   local d = dr.check({surface=deck, force=force, position={x=0, y=0}}, {kind='ghosts', entities={{index=1, name='inserter', position={x=3.5, y=0.5}, direction=4}}})
   eq(d.inserters[1].pickup, 'none: empty space at (4.5,0.5)'); eq(d.inserters[1].drop, 'none: the ground at (2.5,0.5)')
+  -- Each planned belt: the tile its items move to and what stands there (Grok, shift13: three belts of a batch faced
+  -- south, +y, away from the drop belt). A planned belt there, a built one, or nothing.
+  local lane = world(planet, {{name='transport-belt', type='transport-belt', position={x=20.5, y=30.5}, direction=12}})
+  local b = dr.check({surface=lane, force=force, position={x=20, y=25}}, {kind='build', entities={
+    {index=1, name='transport-belt', position={x=20.5, y=27.5}, direction=8},
+    {index=2, name='transport-belt', position={x=20.5, y=28.5}, direction=8},
+    {index=3, name='transport-belt', position={x=20.5, y=29.5}, direction=8},
+    {index=4, name='transport-belt', position={x=24.5, y=27.5}, direction=0}}})
+  eq(#b.belts, 4)
+  eq(b.belts[1].index, 1); eq(b.belts[1].moves, 'moves items south to (20.5,28.5): planned #2 transport-belt facing south')
+  eq(b.belts[3].moves, 'moves items south to (20.5,30.5): transport-belt (20.5,30.5) facing west')
+  eq(b.belts[4].moves, 'moves items north to (24.5,26.5): nothing there (no belt takes them there: they stop at its end)')
 end
 eq(dryrun.placeable_on('landfill', 'water'), true); eq(dryrun.placeable_on('landfill', 'grass-1'), false)
 eq(dryrun.placeable_on('space-platform-foundation', 'empty-space'), true); eq(dryrun.placeable_on('space-platform-foundation', 'grass-1'), false)
