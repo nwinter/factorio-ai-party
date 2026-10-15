@@ -421,6 +421,10 @@ test('board plan takes goals, doing and for NAME as words; research [done] maps 
     await cli(port,['board','plan','for','luna','scout','south','--bot','astra']);
     assert.equal((await compact(port,['board','plan','goals','-','--bot','astra'],{},"it's the plan\n")).code,0);
     await cli(port,['board','plan','doing','','--bot','astra']);
+    await cli(port,['board','plan','goals','--bot','astra']);
+    await cli(port,['board','plan','goals','','--bot','astra']);
+    assert.match((await compact(port,['board','plan','doing','--bot','astra'])).stdout,/board plan doing needs the text \("" removes the line\)/);
+    assert.match((await compact(port,['board','plan','for','luna','--bot','astra'])).stdout,/board plan for NAME needs the text/);
     await cli(port,['research','--bot','astra']);
     await cli(port,['research','done','--bot','astra']);
     assert.match((await compact(port,['board','plan','why','--bot','astra'])).stdout,/board plan takes goals "text", doing "text" or for NAME "text"/);
@@ -429,7 +433,7 @@ test('board plan takes goals, doing and for NAME as words; research [done] maps 
   });
   assert.deepEqual(seen.map(r=>[r.action,r.args]),[['board_plan',{}],['board_plan',{goals:'robots by hour 3'}],
     ['board_plan',{doing:'oil at the north field'}],['board_plan',{agent:'luna',doing:'scout south'}],['board_plan',{goals:"it's the plan"}],
-    ['board_plan',{doing:''}],['research',{}],['research_done',{}]]);
+    ['board_plan',{doing:''}],['board_plan',{goals:''}],['board_plan',{clear:true}],['research',{}],['research_done',{}]]);
 });
 test('fh call say with words sends them as text (it used to send {})',async()=>{
   const seen:any[]=[];

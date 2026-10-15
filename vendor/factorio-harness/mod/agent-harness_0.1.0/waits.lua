@@ -27,6 +27,7 @@ return function(api)
     sleep = {seconds='1..900; with no queue running, no action running and no condition it is capped at 300 (capped: "capped at 300 s: no queue, action or condition")', condition='optional wait_until condition {until=researched|item_count|rocket_ready|rocket_parts|crafting_done|..., ...}: the sleep also ends when it holds (woke=condition, saw); researched without technology means the research running now; item_count may take positions (chests); {until=alert}: a new attack, enemy group or enemy base alert (woke=alert, alert=which); {until=alert, area={left_top,right_bottom}|near={x,y} radius=R (default 100), surface=S (default yours), min_size=N}: only one in that area (an attack\'s position, a group\'s target or gathering point, a nest) and/or by N+ enemies (an attack by N+ attackers or a group of N+; nest news has no size); {until=alert, kinds=[low_power, no_power, no_fuel, ..., starved]}: a new or grown alert group of those kinds addressed to you, or (starved) a machine in your claims newly lacking ingredients (woke=alert, alert=its text); {until=any, conditions=[...]} (or a list): 1..8 conditions, alerts among them, whichever holds first wakes it (met names it)',
       returns='open: one line of what is open for you (your board items, alert groups and idle or starved machines in your fresh claims, requests and tells to you unanswered; counts and up to 3 examples), also on the reply that reads the wake; capped when cut to 300 s; wait_estimates: each condition ETA in game seconds with rate basis, or no_estimate reason; idle_s: character idle seconds in this wait; wait_line: one-line summary',
       peek='boolean: the reply leaves the team block for your next reply (fh wait --until)', wake_on_viewers=WAKE_VIEWERS, wake_on_urgent=WAKE_URGENT,
+      wake_on_orders='boolean default false: a standing order\'s round finishing or stalling ends the sleep too (by default only your own plan\'s does; the order keeps running)',
       note='fh sleep SECONDS [--until ...]: waits while the game runs (in turns mode it advances the game); your current action and queue keep going, and the reply says first which (while_asleep). Returns early when your character takes damage or dies, a teammate\'s message mentions you (a viewer\'s @mention waits for your next reply unless wake_on_viewers), a teammate tells you something (tell), a board item of yours is assigned or changed by someone else, eggs of ours on your surface or built by you will hatch within 5 minutes (eggs), an urgent alert (urgent, see wake_on_urgent), your running queue finishes or stalls (a step fails, or a walking step has not moved you for 30 s), or the condition holds; a dead bot sleeps until it respawns. sleep_check reports woke=damaged|died|respawned|urgent|mentioned|told|board|eggs|alert|queue_done|queue_stalled|condition|elapsed'},
     sleep_check = {peek='boolean: leave mentions unread (the CLI polls with peek, then reads once)', returns='woke (nil while sleeping), slept_s, health/lost when damaged, urgent (the urgent alert), alert (the alert that woke an until=alert sleep), mention, tell, board, eggs, queue (what finished or stalled), saw (the condition), queue_steps (steps your queue finished during the sleep), wait_estimates (current ETA/rate basis or no_estimate for each condition), idle_s (character idle seconds in this wait), wait_line (one line)'},
   }
@@ -58,6 +59,10 @@ return function(api)
   local function body_asleep_line(p, record, seconds)
     if record.dead_until then return 'dead: you respawn at tick ' .. record.dead_until end
     local q = queue_of(p.index)
+    if running(q) and q.order and not record.queue then
+      return string.format('your standing order %s runs in your queue (%d steps pending); its rounds do not end this sleep (wake_on_orders: true ends it on them)',
+        tostring(q.order.name), #q.pending)
+    end
     if running(q) then
       local now = q.current and q.current.action .. ' running, ' or ''
       return string.format('your queue keeps running (%s%d steps pending%s); this sleep ends when it finishes or stalls',
@@ -210,10 +215,14 @@ return function(api)
     record.board_seq = api.board_seq and api.board_seq() or nil
     record.egg_seq = api.egg_seq and api.egg_seq() or nil
     local q = queue_of(p.index)
-    if running(q) then record.queue = true end
+    -- A standing order's round is routine (Opus, shift17 12:20: about 30 sleeps a shift woke on copper-fuel rounds,
+    -- queue_done): only the agent's own plan, or wake_on_orders, ends a sleep when it finishes or stalls.
+    assert(a.wake_on_orders == nil or type(a.wake_on_orders) == 'boolean', 'wake_on_orders must be true or false')
+    if running(q) and (not q.order or a.wake_on_orders == true) then record.queue = true end
+    if running(q) and q.order and not record.queue then record.order = q.order.name end
     if running(queue_of(p.index,true)) then record.remote_queue=true end
     local capped
-    if not condition and not alert and not record.queue and not record.remote_queue and not record.dead_until
+    if not condition and not alert and not record.queue and not record.order and not record.remote_queue and not record.dead_until
       and not api.state().active[p.index] and seconds > IDLE_CAP then
       seconds = IDLE_CAP
       record.until_tick = game.tick + seconds * 60
