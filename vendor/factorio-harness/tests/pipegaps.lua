@@ -9,6 +9,7 @@ game={tick=500}
 local at={}
 local function pipe(x,y,name,typ,seg,fluid)
   local e={valid=true,name=name or 'pipe',type=typ or 'pipe',position={x=x+0.5,y=y+0.5},conns={},
+    bounding_box={left_top={x=x+0.1,y=y+0.1},right_bottom={x=x+0.9,y=y+0.9}},
     fluidbox=setmetatable({get_fluid_segment_id=function() return seg end,get_fluid_segment_contents=function() return fluid and {[fluid]=1000} or {} end},
       {__len=function() return 1 end})}
   at[x..','..y]=e
@@ -23,17 +24,25 @@ local p4,p5=pipe(4,0,nil,nil,9,'crude-oil'),pipe(5,0,nil,nil,9,'crude-oil'); joi
 local u9,u12=pipe(9,0,'pipe-to-ground','pipe-to-ground',11,'water'),pipe(12,0,'pipe-to-ground','pipe-to-ground',11,'water')
 join(u9,u12,'underground')
 local p13=pipe(13,0,nil,nil,11,'water'); join(u12,p13)
-local g14={valid=true,type='entity-ghost',ghost_name='pipe',position={x=14.5,y=0.5},ghost_prototype={fluidbox_prototypes={{}}}}
+local g14={valid=true,type='entity-ghost',ghost_name='pipe',position={x=14.5,y=0.5},ghost_prototype={fluidbox_prototypes={{}}},
+  bounding_box={left_top={x=14.1,y=0.1},right_bottom={x=14.9,y=0.9}}}
+-- an unseen pipe at x 15 (its chunk is not visible): never used
+pipe(15,0,nil,nil,13,'water')
+local queries=0
 local surface={name='nauvis',find_entities_filtered=function(f)
-  local x,y=math.floor(f.area[1][1]),math.floor(f.area[1][2])
-  if x==14 then return {g14} end
-  return at[x..','..y] and {at[x..','..y]} or {} end}
+  queries=queries+1
+  local out={g14}
+  for _,e in pairs(at) do
+    local b=e.bounding_box
+    if b.left_top.x>=f.area[1][1]-1 and b.right_bottom.x<=f.area[2][1]+1 and b.left_top.y>=f.area[1][2]-1 and b.right_bottom.y<=f.area[2][2]+1 then out[#out+1]=e end
+  end
+  return out end}
 local p={force={name='player'},surface=surface}
 local G=dofile('mod/agent-harness_0.1.0/pipegaps.lua'){position=function(v) return {x=v.x,y=v.y} end,
   connections=function(e) return e.conns end,segment_box=function(e) return e.fluidbox.get_fluid_segment_id()==7 and {0,0,3,0} or nil end,
   visible=function(_,pos) return pos.x<15 end}
 local r=G.read(p,{from={x=0.5,y=0.5},to={x=16.5,y=0.5}})
-eq(r.tiles,17); eq(#r.segments,3)
+eq(r.tiles,17); eq(#r.segments,3); eq(queries,1,'one area query for the straight leg')
 eq(r.segments[1].from,'(0.5,0.5)'); eq(r.segments[1].to,'(3.5,0.5)'); eq(r.segments[1].fluid,'crude-oil'); eq(r.segments[1].segment_id,7); eq(r.segments[1].extent,'(0,0)-(3,0)')
 eq(r.segments[2].from,'(4.5,0.5)'); eq(r.segments[2].to,'(5.5,0.5)'); eq(r.segments[2].segment_id,9)
 eq(r.segments[3].from,'(9.5,0.5)'); eq(r.segments[3].to,'(13.5,0.5)'); eq(r.segments[3].underground,2); eq(r.segments[3].fluid,'water')

@@ -1713,6 +1713,18 @@ with a fluidbox) join by a pipe connection, each with the engine's fluid segment
 of pipe at (14.5,0.5), not built yet`; `empty` runs, `ghosts`, and `unknown` runs (chunks our force does not see now,
 not read); `line` sums it up in one line.
 
+`danger {position, radius?, surface?}` (Opus, shift17 10:51: died twice walking to sites next to nests) reads what the
+map and the character show about a destination, facts only, no verdict: its distance from you; the worms and
+spawners on charted chunks within `radius` (default 64, 8..128) by name, each kind's reach (a worm's range, a
+spawner's units' sight) and the nearest; enemy units seen now within it (chunks our force sees now; how many of the
+chunks are not in sight); attacks on our structures, buildings lost and enemy groups heading there in the last 10
+minutes; deaths of ours within it; the worms and spawners whose reach the straight line from you passes (not the
+walk's path, which `move_to` checks itself); and you: health, armor and its shield. `line` and `lines`, plus
+`spawners`, `worms`, `units` ({name=count}), `distance`, `you`. On a private 2.0.77 server at a nest the 25 chunks of
+worms and spawners took 6.9 ms and the unit query 0.4 ms; chunk reads are kept a minute (as `move_to`'s), at most 64 a
+call. `pipe_gaps` queries once a straight leg (0.2 ms for 512 tiles) and reads each entity's connections once (about
+5 ms for 512 pipes).
+
 `belt_gaps {from,to,via?,surface?}` reads a tile line with horizontal/vertical legs, up to 512 tiles and 16 corners.
 It returns `missing`, `ghosts`, and `unknown`, each with its position and observation tick where known, plus counts
 of built belts and observed underground spans. `missing` means no surface belt was present at that observation;

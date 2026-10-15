@@ -8,7 +8,8 @@
 --   cuts: two neighbouring entities on the line that do not join, and where the line stops at a tile with nothing;
 --   empty: runs of tiles with no fluid entity and no underground pair over them; ghosts on the line; and unknown: tiles
 --   in chunks our force does not see now (never read).
--- Read only, bounded: at most 512 tiles, one small area query a tile, in sight or by remote view.
+-- Read only, bounded: at most 512 tiles, one area query a straight leg, each entity's connections read once, in sight
+-- or by remote view; tiles in chunks our force does not see now are not used.
 return function(api)
   local M = {}
   local MAX_TILES = 512
@@ -21,10 +22,11 @@ return function(api)
       for _, q in ipairs(a.via) do points[#points+1] = api.position(q) end
     end
     points[#points+1] = api.position(a.to)
-    local tiles, seen = {}, {}
+    local tiles, seen, boxes = {}, {}, {}
     for i = 2, #points do
       local x, y = math.floor(points[i-1].x), math.floor(points[i-1].y)
       local tx, ty = math.floor(points[i].x), math.floor(points[i].y)
+      boxes[#boxes+1] = {{math.min(x, tx) + 0.1, math.min(y, ty) + 0.1}, {math.max(x, tx) + 0.9, math.max(y, ty) + 0.9}}
       assert(x == tx or y == ty, 'each pipe line leg must be horizontal or vertical; via supplies corner positions')
       local dx, dy = tx > x and 1 or tx < x and -1 or 0, ty > y and 1 or ty < y and -1 or 0
       while true do
@@ -34,17 +36,25 @@ return function(api)
         x, y = x + dx, y + dy
       end
     end
-    return tiles
+    return tiles, boxes
   end
   local function has_fluidbox(e)
     return (try(function() return #e.fluidbox end) or 0) > 0
   end
   local function at(t) return string.format('(%g,%g)', t.x + 0.5, t.y + 0.5) end
   local function label(e) return string.format('%s (%g,%g)', e.name, e.position.x, e.position.y) end
+  -- Each entity's connections, read once a call (on a private 2.0.77 server 512 pipes' connections took about 5 ms, the
+  -- one area query a leg 0.2 ms, against 10 ms for a query a tile).
+  local conns_of = {}
+  local function conns(e)
+    local c = conns_of[e]
+    if not c then c = try(function() return api.connections(e) end) or {}; conns_of[e] = c end
+    return c
+  end
   -- Whether a and b are joined: a pipe connection of a whose target is b (the engine's view; a ghost has none).
   local function joined(a, b)
     if a == b then return true end
-    for _, c in ipairs(try(function() return api.connections(a) end) or {}) do
+    for _, c in ipairs(conns(a)) do
       if c.target and c.target == b then return true end
     end
     return false
@@ -60,26 +70,38 @@ return function(api)
     return rows
   end
   function M.read(p, a)
-    local tiles = line(a)
+    conns_of = {}
+    local tiles, boxes = line(a)
     local f, s = p.force, p.surface
     local ents, ghost, unknown = {}, {}, {}
+    local index, seen_tile = {}, {}
     for i, t in ipairs(tiles) do
-      if not api.visible(p, {x=t.x + 0.5, y=t.y + 0.5}) then unknown[#unknown+1] = t
-      else
-        for _, e in ipairs(try(function() return s.find_entities_filtered{area={{t.x + 0.1, t.y + 0.1}, {t.x + 0.9, t.y + 0.9}}, force=f, limit=8} end) or {}) do
-          if e.valid and e.type == 'entity-ghost' then
-            if not ghost[i] and (try(function() return #e.ghost_prototype.fluidbox_prototypes end) or 0) > 0 then ghost[i] = e end
-          elseif e.valid and not ents[i] and has_fluidbox(e) then ents[i] = e end
+      index[key(t.x, t.y)] = i
+      if api.visible(p, {x=t.x + 0.5, y=t.y + 0.5}) then seen_tile[i] = true else unknown[#unknown+1] = t end
+    end
+    -- One area query a leg; each entity marks the line's tiles under its box.
+    for _, box in ipairs(boxes) do
+      for _, e in ipairs(try(function() return s.find_entities_filtered{area=box, force=f, limit=2048} end) or {}) do
+        local isghost = e.valid and e.type == 'entity-ghost'
+        local fluid = e.valid and (isghost and (try(function() return #e.ghost_prototype.fluidbox_prototypes end) or 0) > 0 or (not isghost and has_fluidbox(e)))
+        if fluid then
+          local b = e.bounding_box
+          for x = math.floor(b.left_top.x + 0.01), math.ceil(b.right_bottom.x - 0.01) - 1 do
+            for y = math.floor(b.left_top.y + 0.01), math.ceil(b.right_bottom.y - 0.01) - 1 do
+              local i = index[key(x, y)]
+              if i and seen_tile[i] then
+                if isghost then ghost[i] = ghost[i] or e else ents[i] = ents[i] or e end
+              end
+            end
+          end
         end
       end
     end
     -- Underground pairs on the line: the tiles between a pipe-to-ground and the one its underground connection reaches.
     local covered = {}
-    local index = {}
-    for i, t in ipairs(tiles) do index[key(t.x, t.y)] = i end
     for i, e in pairs(ents) do
       if e.type == 'pipe-to-ground' then
-        for _, c in ipairs(try(function() return api.connections(e) end) or {}) do
+        for _, c in ipairs(conns(e)) do
           if c.kind == 'underground' and c.target and c.target.valid then
             local tx, ty = math.floor(c.target.position.x), math.floor(c.target.position.y)
             local j = index[key(tx, ty)]
