@@ -38,6 +38,32 @@ async function engine(reply: (request:any)=>any, run:(port:number)=>Promise<void
 function cli(port:number,args:string[]) {
   return exec(process.execPath,['dist/host/cli.js','--format','json','--port',String(port),...args],{env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}});
 }
+test('raw wait_until word form and timeout aliases normalize before direct and queued calls',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{seen.push(request); return {ok:true,result:{}};},async port=>{
+    await cli(port,['call','wait_until','--args',JSON.stringify({until:'item_count yumako>=40',ticks:90})]);
+    await cli(port,['call','queue_submit','--args',JSON.stringify({steps:[{action:'wait_until',args:{until:'platform_arrived "Big Ship" gleba',timeout_ticks:600}},
+      {action:'wait_until',args:{until:'item_count coal below 20 at 10,39',timeout:30}}],guards:[{when:{until:'researched logistics'},steps:[{action:'wait_until',args:{until:'rocket_ready 2,3',ticks:50}}]}]})]);
+    assert.deepEqual(seen[0].args,{until:'item_count',item:'yumako',at_least:40,timeout:90});
+    const plan=seen[1].args;
+    assert.deepEqual(plan.steps[0].args,{until:'platform_arrived',platform:'Big Ship',location:'gleba',timeout:600});
+    assert.deepEqual(plan.steps[1].args,{until:'item_count',item:'coal',below:20,positions:[{x:10,y:39}],timeout:30});
+    assert.deepEqual(plan.guards[0].when,{until:'researched',technology:'logistics'});
+    assert.deepEqual(plan.guards[0].steps[0].args,{until:'rocket_ready',position:{x:2,y:3},timeout:50});
+    await cli(port,['call','queue_repeat','--args',JSON.stringify({condition:{until:'item_count coal>=50'},
+      steps:[{action:'wait_until',args:{until:'platform_arrived "Big Ship" gleba',ticks:600}}]})]);
+    assert.deepEqual(seen[2].args.condition,{until:'item_count',item:'coal',at_least:50});
+    assert.deepEqual(seen[2].args.steps[0].args,{until:'platform_arrived',platform:'Big Ship',location:'gleba',timeout:600});
+    const count=seen.length;
+    for (const args of [{until:'item_count coal>=5',item:'iron-plate'},{until:'crafting_done',ticks:5,timeout:6},
+      {until:'item_count coal>=5',below:10}]) {
+      await assert.rejects(cli(port,['call','wait_until','--args',JSON.stringify(args)]));
+    }
+    await assert.rejects(cli(port,['call','queue_repeat','--args',JSON.stringify({condition:{until:'item_count coal>=50',item:'iron-plate'},
+      steps:[{action:'wait_ticks',args:{ticks:60}}]})]),/args\.condition\.item conflicts/);
+    assert.equal(seen.length,count,'conflicts send no game request');
+  });
+});
 test('move_to ending arrived_near is a success (exit 0)',async()=>{
   let polls=0;
   await engine(request=>{

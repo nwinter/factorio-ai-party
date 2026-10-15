@@ -265,7 +265,7 @@ return function(api)
       local want = a.to_total and math.max(0, r.count - before) or r.count
       local room = api.rocket_room(silo, r.name)
       local goal = math.min(want, room)
-      local moved, from = 0, {}
+      local moved, from, fresh = 0, {}, nil
       local function match(s) return s.name == r.name and quality_of(s) == r.quality end
       -- what each source held of it before the move, for a shortfall's why
       local function count(source) return source and try(function() return source.get_item_count{name=r.name, quality=r.quality} end) or 0 end
@@ -279,8 +279,9 @@ return function(api)
       if #chests == 0 then held[#held+1] = a.chests == false and 'chests not read (chests=false)' or 'no chest of ours in reach' end
       local function take(source, name)
         if moved >= goal or not source then return end
-        local n = api.move_stacks(source, inv, match, goal - moved)
+        local n, _, fr = api.move_stacks(source, inv, match, goal - moved)
         if n > 0 then moved = moved + n; from[#from+1] = name .. ' ' .. n end
+        if fr and api.merge_fresh then fresh = api.merge_fresh(fresh or {}, fr) end
       end
       local fresh_first = a.fresh_first ~= false and spoils(r.name)
       if fresh_first then
@@ -295,6 +296,11 @@ return function(api)
       end
       local row = {item=label(r), asked=r.count, aboard_before=before, loaded=moved, aboard=before + moved,
         from=#from > 0 and table.concat(from, ', ') or nil}
+      -- The loaded batch's spoilage (Sol, 22:25): its spread, and for a pack the running research takes, its units.
+      if fresh and api.fresh_lines then
+        local ok, lines = pcall(api.fresh_lines, p, fresh)
+        if ok and lines[1] then row.freshness = lines[1] end
+      end
       if moved < want then
         row.short = want - moved
         if room < want and moved >= room then
@@ -637,6 +643,9 @@ return function(api)
       timing = timing .. '; arrival at ' .. here .. ' unknown'
     end
     if route_only then return plat end
+    local hub_inv = try(function() return pl.hub.get_inventory(defines.inventory.hub_main) end)
+    local hub_trash = defines.inventory.hub_trash and try(function() return pl.hub.get_inventory(defines.inventory.hub_trash) end)
+    plat.freshness = api.fresh_inv and api.fresh_inv(pl.force, hub_inv, nil, l and l.eta_ticks, hub_trash) or nil
     -- Keep qualities separate, including cargo moved to the hub's trash inventory.
     local hub = {}
     for _, id in ipairs({'hub_main', 'hub_trash'}) do
@@ -665,6 +674,7 @@ return function(api)
     plat.not_requested = #extra > 0 and table.concat(extra, ' ') or nil
     plat.line = one_line(string.format('platform %s %s; %s; requests from %s: %s', pl.name, w.text, timing, here,
       #lacking > 0 and table.concat(lacking, ', ') or (unmet_only and 'none unmet' or 'none')))
+    if plat.freshness then plat.line = plat.line .. '; hub cargo: ' .. table.concat(plat.freshness, '; ') end
     return plat
   end
   local function platforms(p, a, here, inv, held, extra_cache)
@@ -759,6 +769,8 @@ return function(api)
     out.cargo = {items=inv and list_text(held) or 'no rocket to load yet', rows=#rows > 0 and rows or nil, kg=kg(g), lift_kg=kg(lift),
       free_kg=kg(math.max(0, lift - g)), over_kg=g > lift and kg(g - lift) or nil, slots=used .. '/' .. slots, free_slots=math.max(0, slots - used)}
     local words = {string.format('%s: %s; cargo %s, %g/%g kg, %d/%d slots', out.silo, out.rocket or 'rocket state unknown', out.cargo.items, kg(g), kg(lift), used, slots)}
+    out.cargo.freshness = api.fresh_inv and api.fresh_inv(p.force, inv) or nil
+    if out.cargo.freshness then words[#words+1] = 'rocket cargo: ' .. table.concat(out.cargo.freshness, '; ') end
     -- How many more of an item the rocket takes: by weight, and by slots (a part stack's room counted).
     local function fits(r)
       local each = weight(r.name)
@@ -978,12 +990,12 @@ return function(api)
       platform='with launch: the platform in orbit to send it to', orbit='with launch: true for no platform',
       min_cargo='with launch: as launch min_cargo', arrived='with launch: as launch arrived',
       ticks='1..36000 (default 3600): how long to wait for the rocket (no rocket yet, or not ready for a launch) with no new rocket part: the wait goes on while the silo makes parts (or the rocket moves on to ready), 1 game hour at most in all (gives_up_tick); with walk, the whole tour (default 18000)',
-      returns='silo, loaded [{item, asked, aboard_before, loaded, aboard, from (you N, iron-chest (x,y) N), short, why (weight, slots, or what you and the chests held)}], cargo, rocket_weight, slots (used/total), chests (how many were read), complete, short; launch (the launch reply) with launch=true. No rocket yet, or launch=true before the rocket is ready: a timed action (until_tick, waiting {why, rocket}; outcome fed | failed | timed_out; last.result holds the reply). Into the rocket only what fits under its 1000 kg lift and in its cargo slots; a silo with automatic requests on is refused'},
+      returns='silo, loaded [{item, asked, aboard_before, loaded, aboard, from (you N, iron-chest (x,y) N), freshness (a spoilable item: the loaded batch\'s spread and, for a pack the running research takes, how many a unit the running research takes and its units left), short, why (weight, slots, or what you and the chests held)}], cargo, rocket_weight, slots (used/total), chests (how many were read), complete, short; launch (the launch reply) with launch=true. No rocket yet, or launch=true before the rocket is ready: a timed action (until_tick, waiting {why, rocket}; outcome fed | failed | timed_out; last.result holds the reply). Into the rocket only what fits under its 1000 kg lift and in its cargo slots; a silo with automatic requests on is refused'},
     preflight = {position='optional rocket silo {x,y} (any tile of it), in a visible chunk (remote view); omitted: all visible silos in the background census index, nearest your coordinates first',
       surface='optional planet name (default yours); platform remains the rocket destination',
       items='optional item list (as load_silo items): what each rocket still lacks against the cargo aboard, and how much of that fits',
       platform='optional platform name: location, arrival/next stop, current-connection ETA and its calculation, requests importing from this planet less its hub and this rocket, incoming rockets, ammo per type over the last leg, and hub slots asteroid chunks take; omitted: our platforms stopped here or flying/scheduled next here (paused departures excluded), with unmet requests from here',
-      returns='position, silo, rocket, rocket_ready, parts (building), built_parts (ready/rising), next_parts, auto_requests, cargo {items, rows [{item, count, each_kg, kg, stacks}], kg, lift_kg, free_kg, over_kg, slots, free_slots}, '
+      returns='position, silo, rocket, rocket_ready, parts (building), built_parts (ready/rising), next_parts, auto_requests, cargo {items, freshness (spoil spread and effective research units for spoilable packs now, before lab bonuses), rows [{item, count, each_kg, kg, stacks}], kg, lift_kg, free_kg, over_kg, slots, free_slots}, '
         .. 'order [{item, want, aboard, lacks, fits, you_hold}], platform (named) or platforms (discovery) [{name, where, at, arrived, headed_here, next_stop, from, to, distance_left_km, connection_length_km, flown_fraction, speed_km_s, eta_to, eta_s (game seconds at current speed), eta_basis, eta_unknown, arrival_unknown (current leg does not end here), requests [{item, min, hub, aboard, lacks, lacks_after}], not_requested, line}], '
         .. 'With named platform: incoming (rockets launched to its hub not arrived yet), incoming_cargo, ammo_rates (per ammo type: made and used per minute over the last leg, current hub/turret stock and reserve at arrival), hub_chunks (slots asteroid chunks take); incoming cargo is separate from lacks_after. '
         .. 'launch_now (ok, or refused: what launch would refuse now), line (one line). No position: surface, silos [the same per-silo views, nearest first], silos_as_of (discovery tick; rocket/cargo read now), silos_pending (before first census); no visible silos: platform(s) still returned. Read only'},

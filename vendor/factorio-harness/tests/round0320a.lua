@@ -128,7 +128,11 @@ grok('stop',{})
 
 -- 3. Nothing in reach: the reach refusal names the nearest tile and a spot; nothing left: says so.
 b.valid=false; c.valid=false
-fails(function() grok('mine',{position={x=73.5,y=-54.5}}) end,'stone at (73.5,-54.5) is mined out; the nearest stone within 8 tiles is out of reach: entity is out of reach: stone at (79.5,-54.5)')
+fails(function() grok('mine',{position={x=73.5,y=-54.5},walk=false}) end,'stone at (73.5,-54.5) is mined out; the nearest stone within 8 tiles is out of reach: entity is out of reach: stone at (79.5,-54.5)')
+-- By default (autowalk.lua) the call walks into reach of that tile first; made there, it mines the nearest tile left.
+r=grok('mine',{position={x=73.5,y=-54.5}})
+eq(r.walking_for,'mine'); assert(r.walking:find('stone at (73.5,-54.5) is mined out; the nearest: stone (79.5,-54.5) is ',1,true),r.walking)
+grok('stop',{})
 fails(function() grok('mine',{position={x=73.5,y=-54.5},radius=4}) end,'stone at (73.5,-54.5) is mined out and no stone is left within 4 tiles of it')
 fails(function() grok('mine',{position={x=73.5,y=-54.5},radius=40}) end,'radius')
 -- radius widens the search: within it, a tile in reach is taken first.

@@ -439,8 +439,34 @@ p.build_from_cursor=function()
   p.cursor_stack.count=p.cursor_stack.count-1
   placed={valid=true,name='wooden-chest',type='container',position={x=2.5,y=0.5},force=p.force}
 end
-fails(function() call('build',{item='wooden-chest',position={x=20,y=0}}) end,'position is out of build reach: (20,0) is 20.0 tiles from the character at (0.0,0.0), build reach 10')
-fails(function() call('build',{item='wooden-chest',position={x=40,y=0}}) end,'position is outside local visible area: (40,0) is 40.0 tiles from the character')
+fails(function() call('build',{item='wooden-chest',position={x=20,y=0},walk=false}) end,'position is out of build reach: (20,0) is 20.0 tiles from the character at (0.0,0.0), build reach 10')
+fails(function() call('build',{item='wooden-chest',position={x=40,y=0},walk=false}) end,'position is outside local visible area: (40,0) is 40.0 tiles from the character')
+-- Out of reach by default (autowalk.lua): within 32 tiles a walk into build reach first; past them refused, naming the
+-- call that walks.
+;(function()
+  local r=call('build',{item='wooden-chest',position={x=20,y=0}})
+  eq(r.walking_for,'build'); eq(r.walking,'(20,0) is 20.0 tiles from you, build reach 10: walking into reach first (walk: false refuses instead)')
+  eq(call('status').active.kind,'move_to'); eq(call('status').active.walking_for,'build'); call('stop',{})
+  eq(call('status').last.not_made,'build was not made: the walk into reach of (20,0) ended stopped')
+  -- The walk arrives within build reach: the build is made there; last names the walk and holds the build's reply.
+  call('build',{item='wooden-chest',position={x=20,y=0}})
+  p.position={x=12,y=0}; advance(2)
+  local last=call('status').last
+  eq(call('status').active,false); eq(last.kind,'build'); eq(last.outcome,'done'); eq(last.result.consumed,1)
+  eq(last.walked,'walked from (0,0) to (12,0) first, into reach of (20,0)')
+  wood.count=wood.count+1; p.position={x=0,y=0}; placed=nil
+  -- As a queue step the step waits for the walk and the build, then the plan goes on.
+  call('queue_submit',{steps={{action='build',args={item='wooden-chest',position={x=20,y=0}}},{action='wait_ticks',args={ticks=1}}}})
+  advance(2)
+  local q=call('queue_status',{history=2})
+  eq(q.active.action,'build'); eq(call('status').active.walking_for,'build')
+  p.position={x=12,y=0}; advance(4)
+  q=call('queue_status',{history=2})
+  eq(q.pending_count,0); eq(q.history[#q.history].action,'wait_ticks'); eq(q.history[#q.history-1].action,'build'); eq(q.history[#q.history-1].ok,true)
+  wood.count=wood.count+1; p.position={x=0,y=0}; placed=nil
+  fails(function() call('build',{item='wooden-chest',position={x=40,y=0}}) end,
+    'position is outside local visible area: (40,0) is 40.0 tiles from the character at (0.0,0.0) (limit 32 tiles, in a visible chunk; move_to within 30 tiles first); 40.0 tiles is past the 32 a call walks by default: build {"item":"wooden-chest","position":{"x":40,"y":0},"walk":true} walks there first')
+end)()
 local built=call('build',{item='wooden-chest',position={x=2,y=0}})
 eq(built.consumed,1); eq(built.entity.position.x,2.5); eq(built.entity.position.y,0.5)
 eq(wood.count,2); eq(p.cursor_stack.valid_for_read,false); eq(built.closed_in,nil)
@@ -927,6 +953,11 @@ do
   local seen=call('inspect',{position={x=3,y=0}})
   eq(seen.trash,'40 space-platform-foundation, 7 solar-panel, 1 inserter (in rocket_silo_trash, put there by the game; take: transfer {position, direction=to_player, inventory=rocket_silo_trash}, item= for one kind)')
   eq(seen.inventories.rocket_silo_trash[1].count,40)
+  -- Each spoilable item's spread, per inventory (Sol, 22:25).
+  silo_trash[1].spoil_tick=game.tick+600; silo_trash[1].spoil_percent=0.5
+  eq(call('inspect',{position={x=3,y=0}}).freshness[1],'rocket_silo_trash: space-platform-foundation*40: spoiled 50%, 50% by count; '
+    ..'under 25% 0, 25-50% 0, 50-75% 40, 75%+ 0; spoil within 10 min 40, 30 min 40, 60 min 40')
+  silo_trash[1].spoil_tick=nil
   local kept=main
   main=inv(stack(nil,0),stack(nil,0),stack(nil,0),stack(nil,0))
   local took=call('transfer',{position={x=3,y=0},item='solar-panel'})
@@ -1077,12 +1108,30 @@ eq(call('configure',{position=am.position,recipe='iron-gear-wheel',force=true}).
 am.fluidbox={}
 p.can_reach_entity=function() return false end
 for _,slots in pairs(am_slots) do slots.is_empty=function() return not slots[1].valid_for_read end end
+call('queue_cancel',{}); call('queue_submit',{steps={{action='wait_ticks',args={ticks=1000}}}}); advance(1)
 local remote_change=call('configure',{position=am.position,recipe='copper-cable'})
 eq(remote_change.recipe,'copper-cable'); eq(remote_change.remote,true)
+eq(call('queue_status').paused,false); eq(call('queue_status').active.action,'wait_ticks')
 plate_stack.name,plate_stack.count,plate_stack.valid_for_read='iron-plate',4,true
-fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel'}) end,'remote recipe change: the machine at (3,0) holds items')
+fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel',walk=false}) end,'remote recipe change: the machine at (3,0) holds items')
+-- By default the character walks into reach first and changes it there (autowalk.lua): the call is character work.
+;(function()
+  am.bounding_box={left_top={x=1.5,y=-1.5},right_bottom={x=4.5,y=1.5}}
+  local r=call('configure',{position=am.position,recipe='iron-gear-wheel'})
+  eq(r.walking_for,'configure'); eq(call('queue_status').paused,true)
+  assert(r.walking:find('the machine holds items or is mid-craft, which come back to you only in reach: assembling-machine-1 (3,0) is ',1,true),r.walking)
+  eq(call('status').active.walking_for,'configure'); call('stop',{})
+  am.bounding_box=nil
+end)()
 p.can_reach_entity=function() return true end
 eq(call('configure',{position=am.position,recipe='iron-gear-wheel'}).remote,nil)
+-- Freshness/autowalk merge: an aboard proxy throws on body reads, yet configure remains remote.
+do
+  local nobody=setmetatable({surface=p.surface,force=p.force},{__index=function() error('aboard with no body',0) end})
+  eq(runtime.remote(nobody,'configure',{surface=p.surface.name,position=am.position,modules={'productivity-module'}}),true)
+  eq(runtime.remote(nobody,'configure',{platform='Sunward',position=am.position,modules={'productivity-module'}}),true)
+end
+
 -- A turret's priority targets and Ignore unprioritised targets (Astra, shift12 15:02: Sunward's rocket turrets on big
 -- asteroids only), built and ghost. The fake keeps slots as 2.0.77 does: a set past the end appends; a cleared slot
 -- leaves a gap that get_priority_target reads as nil and priority_targets skips; trailing gaps shrink the list.
@@ -1537,6 +1586,32 @@ do
   eq(call('status').last.given,6)
   s2.name,s2.count,s2.valid_for_read=kept_s2[1],kept_s2[2],kept_s2[3]
   b1.fuel[1].count,b3.fuel[1].count,main=kept_b1,kept_b3,kept_main
+end
+-- Round 00:20: up_to survives feed completion for CLI --wait / wait; strict feeds still run short.
+do
+  local was_main,was_find=main,p.surface.find_entities_filtered
+  local n1,n3=b1.fuel[1].count,b3.fuel[1].count
+  for _,allowed in ipairs({true,false}) do
+    main=inv(stack('coal',1)); b1.fuel[1].count=1; b3.fuel[1].count=1
+    p.surface.find_entities_filtered=function() return {b1,b3} end
+    call('feed',{radius=20,types={'boiler'},item='coal',up_to=allowed and true or nil})
+    advance(3)
+    local last=call('status').last
+    eq(last.outcome,'out_of_items'); eq(last.moved,1); eq(last.short_allowed,allowed and true or nil)
+  end
+  main,p.surface.find_entities_filtered=was_main,was_find
+  b1.fuel[1].count,b3.fuel[1].count=n1,n3
+end
+-- A rejected submit leaves the repeating job running even after bootstrap failure cleanup.
+do
+  call('queue_repeat',{name='plate-haul',steps={{action='wait_until',args={['until']='item_count',item='iron-plate',at_least=10000}}}})
+  advance(1)
+  local before=call('queue_status')
+  fails(function() call('queue_submit',{steps={{action='wait_ticks',args={ticks=1}}}}) end,'repeating job "plate-haul"')
+  runtime.stop_player(1)
+  local after=call('queue_status')
+  eq(after.revision,before.revision); eq(after.paused,false); eq(after.active.id,before.active.id)
+  call('queue_cancel',{})
 end
 -- transfer {walk=true} (Haiku, 06:20: solid fuel into a boiler out of reach, in one call): the call walks into reach
 -- first (a tour, as feed and collect), then transfers; all in reach, it transfers at once.
@@ -2072,7 +2147,7 @@ end
 -- radius alone: around the character (round1650d: Grok, twice in shift13).
 eq(call('observe',{scope='supply',item='transport-belt',radius=5}).item,'transport-belt')
 fails(function() call('observe',{scope='supply',item='transport-belt',pack='x'}) end,'unknown argument pack for supply; valid: item, near, radius, surface')
-fails(function() call('observe',{scope='supply',item='nope'}) end,'item must be an item name')
+fails(function() call('observe',{scope='supply',item='nope'}) end,'item must be an item or fluid name')
 -- nearest sorts by distance, skips fogged chunks and the character itself.
 p.position={x=0,y=0}
 p.force.is_chunk_visible=function(_,chunk) return chunk.x<1 end
@@ -2739,6 +2814,13 @@ end)()
   eq(sc.entities[2].name,'cargo-pod-container'); eq(sc.entities[2].position.x,6.5); eq(sc.entities[2].holds,'advanced-circuit*1945')
   standing[2]=nil
   fails(function() call('scan',{surface='vulcanus'}) end,'scan with surface needs position, area or positions there')
+  -- deconstruct marks there too (Sol, 23:13: marks on a planet from a platform).
+  standing[1].minable=true; standing[1].order_deconstruction=function() standing[1].marked=true; return true end
+  local find=vulcanus.find_entities_filtered
+  vulcanus.find_entities_filtered=function(f) if f.invert then return standing end return find(f) end
+  local dc=call('deconstruct',{surface='vulcanus',area={left_top={x=0,y=0},right_bottom={x=10,y=10}}})
+  eq(dc.changed,1); eq(standing[1].marked,true)
+  vulcanus.find_entities_filtered=find
   prototypes.entity,game.get_surface,p.force.platforms,p.force.is_chunk_charted=entity_protos,get_surface,platforms,charted
 end)()
 -- A ghost goes over trees and rocks and marks them, though the engine's check
@@ -3241,7 +3323,11 @@ advance(6); eq(call('status').active,false); eq(call('status').last.outcome,'dur
 -- inspect is a read: anything in sight, no reach needed; in_reach says so.
 p.can_reach_entity=function() return false end
 local far=call('inspect',{position=ins.position}); eq(far.in_reach,false); eq(far.io,'2.5,-0.5 (no pickup target) -> 2.5,1.7 transport-belt')
-fails(function() call('rotate',{position=ins.position}) end,'out of reach')
+fails(function() call('rotate',{position=ins.position,walk=false}) end,'out of reach')
+-- By default it walks into reach first (autowalk.lua).
+ins.bounding_box={left_top={x=2.15,y=-0.35},right_bottom={x=2.85,y=0.35}}
+local turn=call('rotate',{position=ins.position}); eq(turn.walking_for,'rotate'); call('stop',{})
+ins.bounding_box=nil
 p.can_reach_entity=function() return true end
 -- build short of an item the hand-craft queue is making waits for it, then builds.
 p.force.recipes={lab={products={{name='lab',amount=1}},energy=2}}
@@ -3463,13 +3549,21 @@ end)()
   eq(call('transfer',{position=car.position,item='iron-plate',count=2,direction='from_player'}).transferred,2); eq(car.slots[1].name,'iron-plate')
   eq(call('transfer',{position=car.position,item='iron-plate',count=2,direction='to_entity',to_entity=true}).transferred,2)
   eq(call('transfer',{position=car.position,item='iron-plate',direction='take'}).transferred,4)
-  -- Out of reach: how far, the reach, and a free spot that reaches it; nothing walks.
+  -- Out of reach with walk: false: how far, the reach, and a free spot that reaches it; nothing walks.
   p.surface.find_non_colliding_position=function(_,pos) return {x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5} end
-  fails(function() call('transfer',{position=far.position,item='iron-plate',count=1,direction='to_entity'}) end,
+  fails(function() call('transfer',{position=far.position,item='iron-plate',count=1,direction='to_entity',walk=false}) end,
     'entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away (to its edge), reach 10; in reach from (10.5,0.5)')
   eq(call('status').active,false)
+  -- By default (autowalk.lua) it walks there first, as walk: true does, and says so.
+  local walking=call('transfer',{position=far.position,item='iron-plate',count=1,direction='to_entity'})
+  eq(walking.op,'transfer'); eq(walking.out_of_reach,1)
+  eq(walking.walking,'wooden-chest (20,0) is 20.0 tiles away (to its edge), reach 10: walking into reach first (walk: false refuses instead)')
+  eq(call('status').active.kind,'gather'); call('stop',{})
+  local several=call('transfer',{positions={req.position,far.position},item='iron-plate',count=5,direction='to_entity'})
+  eq(several.walking,'1 of 2 places are out of reach (the farthest: wooden-chest (20,0) is 20.0 tiles away (to its edge), reach 10): walking to them first, nearest first (walk: false refuses instead)')
+  call('stop',{})
   -- Several targets, one failing: the tally names the moved total, the targets touched and the failure.
-  local spread=call('transfer',{positions={req.position,big.position,far.position},item='iron-plate',count=5,direction='to_entity'})
+  local spread=call('transfer',{positions={req.position,big.position,far.position},item='iron-plate',count=5,direction='to_entity',walk=false})
   eq(spread.transferred,10)
   eq(spread.tally,'moved 10 iron-plate; 2 of 3 targets touched; short: 1 failed (entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away (to its edge), reach 10; in reach from (10.5,0.5))')
   -- One target: no tally.
@@ -4136,7 +4230,7 @@ end)()
   -- to on another entity than position's (Muse 17:18:55 named the silo twice; on its own tiles the call runs as a
   -- give there): a move between the two, which pick makes.
   fails(function() call('transfer',{position={x=15.5,y=59.5},item='rocket-fuel',count=50,direction='to_entity',to={x=30.5,y=60.5},inventory='rocket_silo_rocket'}) end,
-    [[items and to go with pick (pick + positions + item or items + to: take at the first listed place holding it, give at to); for this call: fh call transfer --args '{"count":50,"item":"rocket-fuel","pick":"first_with_stock","positions":[{"x":15.5,"y":59.5}],"to":{"x":30.5,"y":60.5}}']])
+    [[to goes with pick (pick + positions + item or items + to: take at the first listed place holding it, give at to); for this call: fh call transfer --args '{"count":50,"item":"rocket-fuel","pick":"first_with_stock","positions":[{"x":15.5,"y":59.5}],"to":{"x":30.5,"y":60.5}}']])
   -- items: one item a call.
   fails(function() call('transfer',{position={x=35.5,y=35.5},direction='to_player',items={pipe=16,['small-electric-pole']=8}}) end,
     [[for this call: fh call transfer --args '{"count":16,"direction":"to_player","item":"pipe","position":{"x":35.5,"y":35.5}}' (transfer moves one item a call: 2 named, one call each; or pick with items, the first a place holds)]])
@@ -4336,17 +4430,19 @@ end)()
     for i=1,3 do cargo[i]=stack(nil,0) end
     local kept_spoil=ag.get_spoil_ticks
     ag.get_spoil_ticks=function() return 3600*60 end
-    local function aged(n,pct) local s=stack('agricultural-science-pack',n); s.spoil_percent=pct; return s end
+    local function aged(n,pct) local s=stack('agricultural-science-pack',n); s.spoil_percent=pct; s.spoil_tick=game.tick+(1-pct)*3600*60; return s end
     main=inv(aged(50,0.6),stack(nil,0))
     main.get_contents=function() local out={}; for _,s in ipairs(main) do if s.valid_for_read then out[#out+1]={name=s.name,count=s.count,quality='normal'} end end; return out end
     held_inv[1]=aged(50,0.3); held_inv[2]=aged(50,0.1)
     r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=80},from={x=40.5,y=5.5}})
     eq(r.loaded[1].loaded,80); eq(r.loaded[1].order,'fresh first'); eq(r.loaded[1].from,'iron-chest (40.5,5.5) 80')
+    eq(r.loaded[1].freshness:match('^[^;]*'),'agricultural-science-pack*80: spoiled 10-30%, 18% by count')
     eq(held_inv[2].count,0,'the 10% stack first'); eq(held_inv[1].count,20,'then 30 of the 30% one'); eq(main[1].count,50,'yours (60%) stays')
     -- fresh_first=false: you first
     for i=1,3 do cargo[i]=stack(nil,0) end
     r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=60},from={x=40.5,y=5.5},fresh_first=false})
     eq(r.loaded[1].order,nil); eq(r.loaded[1].from,'you 50, iron-chest (40.5,5.5) 10'); eq(main[1].count,0)
+    eq(r.loaded[1].freshness:match('^[^;]*'),'agricultural-science-pack*60: spoiled 30-60%, 55% by count')
     ag.get_spoil_ticks=kept_spoil
     held_inv[1]=stack(nil,0); held_inv[2]=stack(nil,0)
   end
@@ -4412,5 +4508,42 @@ end)()
   eq(last.action,'pickup'); eq(last.ok,true,'picked_up is a success'); eq(last.result.outcome,'picked_up')
   eq(call('status',{}).last.belt.taken,5)
   runtime.beltpick.pickup,runtime.beltpick.tick=kept_pick,kept_tick
+end)()
+-- Shift14: default equip hit a loaded pistol slot twice before index=2 worked.
+;(function()
+  local old_get,old_main=p.get_inventory,p.get_main_inventory
+  local old_gun,old_ammo,old_armor=defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor
+  defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor=2,3,4
+  local gun_slots={stack('pistol',1),stack(nil,0),stack(nil,0)}
+  local ammo_slots={stack('firearm-magazine',10),stack(nil,0),stack(nil,0)}
+  local armor_slots={stack('light-armor',1)}
+  local source=stack('rocket-launcher',1)
+  p.get_inventory=function(id) return id==2 and gun_slots or id==3 and ammo_slots or armor_slots end
+  p.get_main_inventory=function() return {find_item_stack=function(name) return source.valid_for_read and source.name==name and source or nil end} end
+  local occupied_attempts=0
+  gun_slots[1].swap_stack=function() occupied_attempts=occupied_attempts+1; return false end
+  local r=call('equip',{slot='gun',item='rocket-launcher'})
+  eq(r.index,2); eq(gun_slots[1].name,'pistol'); eq(gun_slots[2].name,'rocket-launcher'); eq(occupied_attempts,0)
+  source=stack('rocket',20)
+  local ammo_swap=ammo_slots[2].swap_stack
+  ammo_slots[2].swap_stack=function(other) return gun_slots[2].name=='rocket-launcher' and ammo_swap(other) end
+  r=call('equip',{slot='ammo',item='rocket'}); eq(r.index,2); eq(ammo_slots[1].name,'firearm-magazine')
+  -- Empty incompatible slots are skipped, without changing either stack.
+  source=stack('piercing-rounds-magazine',10)
+  ammo_slots[2]=stack(nil,0); ammo_slots[2].swap_stack=function() return false end
+  r=call('equip',{slot='ammo',item='piercing-rounds-magazine'}); eq(r.index,3); eq(ammo_slots[2].valid_for_read,false)
+  -- An explicit index never redirects to another slot.
+  source=stack('rocket-launcher',1)
+  fails(function() call('equip',{slot='gun',item='rocket-launcher',index=1}) end,'gun slot 1 (holds pistol)')
+  eq(occupied_attempts,1); eq(source.name,'rocket-launcher'); eq(source.count,1); eq(gun_slots[3].valid_for_read,false)
+  fails(function() call('equip',{slot='gun',item='rocket-launcher',index=4}) end,'index')
+  -- No empty compatible slot: preserve the historical slot-1 swap fallback.
+  gun_slots[3].swap_stack=function() return false end
+  fails(function() call('equip',{slot='gun',item='rocket-launcher'}) end,'nothing moved')
+  eq(source.count,1)
+  source=stack('heavy-armor',1)
+  r=call('equip',{slot='armor',item='heavy-armor'}); eq(r.index,1); eq(source.name,'light-armor')
+  p.get_inventory,p.get_main_inventory=old_get,old_main
+  defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor=old_gun,old_ammo,old_armor
 end)()
 print('runtime: '..assertions..' assertions passed')

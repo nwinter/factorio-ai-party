@@ -97,9 +97,13 @@ end
 -- Before: "is 3.8 tiles away, reach 10; in reach from (-61.1,-115.7)", a spot 8.5 tiles off, farther than the character.
 local tree=thing('tree-04','tree',-69.5625,-115.063,0.4)
 body.position={x=-65.7734375,y=-115.36328125}
-local ok,err=pcall(grok,'mine',{position={x=-69.5625,y=-115.063},ticks=120})
+local ok,err=pcall(grok,'mine',{position={x=-69.5625,y=-115.063},ticks=120,walk=false})
 eq(ok,false)
 assert(tostring(err):find('entity is out of reach: tree-04 at (-69.5625,-115.063) is 3.4 tiles away (to its edge), reach 2.7 (ore, trees and rocks)',1,true),tostring(err))
+-- By default (autowalk.lua) the call walks into reach first and mines on arrival.
+local walking=grok('mine',{position={x=-69.5625,y=-115.063},ticks=120})
+eq(walking.walking_for,'mine'); eq(walking.walking,'tree-04 (-69.5625,-115.063) is 3.4 tiles away (to its edge), reach 2.7 (ore, trees and rocks): walking into reach first (walk: false refuses instead)')
+eq(grok('status').active.kind,'move_to'); grok('stop',{})
 local spot=spot_of(tostring(err)); assert(spot,'a spot is named: '..tostring(err))
 assert(box_distance(spot,tree)<=2.7,'the spot reaches the tree: '..box_distance(spot,tree))
 body.position=spot
@@ -115,7 +119,7 @@ tree.valid=false
 -- 2. Grok's stone ore at (72.5,-54.5), 3.8 tiles off (08:21:00): reach 2.7; the spot reaches it.
 local ore=thing('stone','resource',72.5,-54.5,0.1)
 body.position={x=76.3,y=-54.5}
-ok,err=pcall(grok,'mine',{position={x=72.5,y=-54.5}})
+ok,err=pcall(grok,'mine',{position={x=72.5,y=-54.5},walk=false})
 eq(ok,false); assert(tostring(err):find('stone at (72.5,-54.5) is 3.7 tiles away (to its edge), reach 2.7',1,true),tostring(err))
 spot=spot_of(tostring(err)); assert(spot and box_distance(spot,ore)<=2.7,tostring(err))
 ore.valid=false
@@ -126,14 +130,14 @@ local asm=thing('assembling-machine-2','assembling-machine',11.4,0,1.4,{rotate=f
 body.position={x=0,y=0}
 eq(grok('rotate',{position={x=11.4,y=0}}).rotated,false)
 asm.position.x=11.8; asm.bounding_box={left_top={x=10.4,y=-1.4},right_bottom={x=13.2,y=1.4}}
-ok,err=pcall(grok,'rotate',{position={x=11.8,y=0}})
+ok,err=pcall(grok,'rotate',{position={x=11.8,y=0},walk=false})
 eq(ok,false); assert(tostring(err):find('assembling-machine-2 at (11.8,0) is 10.4 tiles away (to its edge), reach 10;',1,true),tostring(err))
 spot=spot_of(tostring(err)); assert(spot and box_distance(spot,asm)<=10,tostring(err))
 asm.valid=false
 -- A target the engine refuses inside the long reach gets the short one (a rock, say).
 local rock=thing('big-rock','simple-entity',4,0,0.9)
 body.can_reach_entity=function(e) return box_distance(body.position,e)<=(SHORT[e.type] and 2.7 or e.type=='simple-entity' and 2.7 or 10) end
-ok,err=pcall(grok,'mine',{position={x=4,y=0}})
+ok,err=pcall(grok,'mine',{position={x=4,y=0},walk=false})
 eq(ok,false); assert(tostring(err):find('big-rock at (4,0) is 3.1 tiles away (to its edge), reach 2.7 (ore, trees and rocks)',1,true),tostring(err))
 rock.valid=false
 

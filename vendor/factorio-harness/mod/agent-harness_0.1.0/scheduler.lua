@@ -7,7 +7,9 @@ return function(api)
     -- load_silo walk (Luna, shift14 21:20): the list aboard, and launched
     loaded=true,launched=true,
     -- clear_cliffs and use_item with cliff explosives (Sol 22:45), and a vehicle drive's dry run
-    cliffs_destroyed=true,previewed=true}
+    cliffs_destroyed=true,previewed=true,
+    -- a call made after its walk into reach (autowalk.lua)
+    done=true}
   -- construct's 'incomplete' (ghosts left for lack of items, or failures) is a failure.
   local forbidden = {attach=true, detach=true, recipes=true, technologies=true, inspect=true, blueprint_export=true, blueprint_list=true, stop=true, describe=true, status=true, observe=true, screenshot=true, map=true, nearest=true, craftable=true, scan=true, power=true, grid=true, rates=true, bottleneck=true, stock=true, platforms=true,
     order_set=true, order_remove=true, orders=true, orders_pause=true, orders_resume=true}
@@ -20,39 +22,53 @@ return function(api)
   local function revision(q,a)
     if a.expected_revision~=nil then assert(a.expected_revision==q.revision,'queue revision conflict; inspect queue_status') end
   end
-  local function steps(a)
+  local function checked(path, fn)
+    local ok, result = pcall(fn)
+    if not ok then error(path..': '..tostring(result):gsub('^[^:]*:%d+: ', ''), 0) end
+    return result
+  end
+  local function steps(a,p,path)
+    path=path or 'steps'
     assert(type(a.steps)=='table' and #a.steps<=MAX_PENDING,'steps must be an array of at most 128 entries')
     local out,corrected={},{}
     for i,step in ipairs(a.steps) do
-      assert(type(step)=='table' and type(step.action)=='string','each step needs an action')
-      -- Wrong argument names and position/positions mix-ups run as a direct call would (aliases.lua).
-      local action,args=step.action,step.args
-      if api.fix_args and type(args)=='table' then
-        local ok,fixed_action,fixed_args,fix=pcall(api.fix_args,action,args)
-        if ok and fix then
-          action,args=fixed_action,fixed_args
-          if not fix.quiet then corrected[#corrected+1]='step '..i..': '..fix.call..' ('..table.concat(fix.notes,'; ')..')' end
-        elseif ok and fixed_args~=args then action,args=fixed_action,fixed_args end
+      local where=path..'['..i..']'
+      if type(step)=='table' then
+        local label=type(step.label)=='string' and (#step.label<=64 and string.format('%q',step.label) or #step.label..' bytes')
+        where=where..' ('..tostring(step.action)..(label and ', label '..label or '')..')'
       end
-      assert(not action:match('^queue_') and not forbidden[action],'action is not queueable')
-      assert(action=='wait_ticks' or action=='wait_until' or api.handlers[action],'unknown action in plan')
-      assert(args==nil or type(args)=='table','step args must be an object')
-      if api.check_args then api.check_args(action,args) end
-      assert(step.wait==nil or type(step.wait)=='boolean','step wait must be boolean')
-      assert(step.label==nil or (type(step.label)=='string' and #step.label<=64),'step label must be a short string')
-      local on_fail=step.on_fail
-      assert(step.on_short==nil or step.on_short=='skip','on_short must be skip')
-      assert(on_fail==nil or on_fail=='abort' or on_fail=='skip' or (type(on_fail)=='string' and on_fail:match('^goto:.+')),'on_fail must be abort, skip or goto:<label>')
-      if step.action=='wait_ticks' then
-        local ticks=step.args and step.args.ticks
-        assert(type(ticks)=='number' and ticks==math.floor(ticks) and ticks>=1 and ticks<=54000,'wait_ticks requires ticks 1..54000')
-      end
-      if step.action=='wait_until' then
-        local timeout=step.args and step.args.timeout
-        assert(timeout==nil or (type(timeout)=='number' and timeout==math.floor(timeout) and timeout>=1 and timeout<=54000),'wait_until timeout must be 1..54000 ticks')
-        api.validate_condition(step.args)
-      end
-      out[#out+1]={action=action,args=args or {},wait=step.wait~=false,label=step.label,on_fail=on_fail,on_short=step.on_short}
+      checked(where,function()
+        assert(type(step)=='table' and type(step.action)=='string','each step needs an action')
+        -- Wrong argument names and position/positions mix-ups run as a direct call would (aliases.lua).
+        local action,args=step.action,step.args
+        if api.fix_args and type(args)=='table' then
+          local ok,fixed_action,fixed_args,fix=pcall(api.fix_args,action,args)
+          if ok and fix then
+            action,args=fixed_action,fixed_args
+            if not fix.quiet then corrected[#corrected+1]='step '..i..': '..fix.call..' ('..table.concat(fix.notes,'; ')..')' end
+          elseif ok and fixed_args~=args then action,args=fixed_action,fixed_args end
+        end
+        assert(not action:match('^queue_') and not forbidden[action],'action is not queueable')
+        assert(action=='wait_ticks' or action=='wait_until' or api.handlers[action],'unknown action in plan')
+        assert(args==nil or type(args)=='table','step args must be an object')
+        if api.check_args then checked('args',function() api.check_args(action,args) end) end
+        if p and api.check_action then api.check_action(p.index,action,args) end
+        assert(step.wait==nil or type(step.wait)=='boolean','step wait must be boolean')
+        assert(step.label==nil or (type(step.label)=='string' and #step.label<=64),'label must be a string of at most 64 bytes')
+        local on_fail=step.on_fail
+        assert(step.on_short==nil or step.on_short=='skip','on_short must be skip')
+        assert(on_fail==nil or on_fail=='abort' or on_fail=='skip' or (type(on_fail)=='string' and on_fail:match('^goto:.+')),'on_fail must be abort, skip or goto:<label>')
+        if action=='wait_ticks' then
+          local ticks=args and args.ticks
+          assert(type(ticks)=='number' and ticks==math.floor(ticks) and ticks>=1 and ticks<=54000,'wait_ticks requires ticks 1..54000')
+        end
+        if action=='wait_until' then
+          local timeout=args and args.timeout
+          assert(timeout==nil or (type(timeout)=='number' and timeout==math.floor(timeout) and timeout>=1 and timeout<=54000),'wait_until timeout must be 1..54000 ticks')
+          checked('args',function() api.validate_condition(args) end)
+        end
+        out[#out+1]={action=action,args=args or {},wait=step.wait~=false,label=step.label,on_fail=on_fail,on_short=step.on_short}
+      end)
     end
     return out,#corrected>0 and corrected or nil
   end
@@ -95,16 +111,19 @@ return function(api)
     for _,step in ipairs(items) do step.plan=q.plan_seq end
   end
   -- Guards: {when=<condition>, goto='label' | steps=[...] | neither (abort)}.
-  local function guards(a)
+  local function guards(a,p)
     if a.guards==nil then return {} end
     assert(type(a.guards)=='table' and #a.guards<=MAX_GUARDS,'guards must be an array of at most '..MAX_GUARDS)
     local out={}
-    for _,g in ipairs(a.guards) do
-      assert(type(g)=='table','each guard is {when, goto|steps}')
-      api.validate_condition(g.when)
-      assert(g['goto']==nil or type(g['goto'])=='string','guard goto must be a label')
-      assert(not (g['goto'] and g.steps),'a guard takes goto or steps, not both')
-      out[#out+1]={when=g.when,['goto']=g['goto'],steps=g.steps and steps({steps=g.steps}) or nil}
+    for i,g in ipairs(a.guards) do
+      checked('guards['..i..']',function()
+        assert(type(g)=='table','each guard is {when, goto|steps}')
+        checked('when',function() api.validate_condition(g.when) end)
+        if p and api.check_action then api.check_action(p.index,'wait_until',g.when) end
+        assert(g['goto']==nil or type(g['goto'])=='string','guard goto must be a label')
+        assert(not (g['goto'] and g.steps),'a guard takes goto or steps, not both')
+        out[#out+1]={when=g.when,['goto']=g['goto'],steps=g.steps and steps({steps=g.steps},p) or nil}
+      end)
     end
     return out
   end
@@ -153,7 +172,7 @@ return function(api)
       guards=q.guards and #q.guards>0 and q.guards or nil,last_failure=failure,after_direct=q.after_direct,
       repeating=q.loop~=nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.loop and (q.orders or 'triggers') or nil,
       times=q.loop and q.times or nil,rounds_left=q.loop and q.times and math.max(0,q.times-(q.cycle or 1)) or nil,
-      stops_tick=q.loop and q.stop_tick or nil,loop_done=q.loop_done,
+      stops_tick=q.loop and q.stop_tick or nil,loop_done=q.loop_done,repeat_name=q.loop and q.name or nil,condition=q.loop and q.condition or nil,condition_error=q.condition_error,submission=q.submission,
       limits={pending=MAX_PENDING,history=MAX_HISTORY,instant_per_tick=MAX_INSTANT,argument_bytes=MAX_BYTES}}
   end
   -- A repeating plan's round tallies its steps that ran short (Opus, after short steps were skipped): action, item and
@@ -215,7 +234,7 @@ return function(api)
     q.round_news[#q.round_news+1]=string.format('queue %sdone after %d round%s: %s',q.name and q.name..' ' or '',q.cycle or 1,(q.cycle or 1)==1 and '' or 's',why)
     while #q.round_news>3 do table.remove(q.round_news,1) end
     -- With the loop its orders setting goes: the queue is free again, and every order may run as at any free time.
-    q.loop=nil; q.next_cycle_tick=nil; q.times=nil; q.stop_tick=nil; q.for_ticks=nil; q.orders=nil
+    q.loop=nil; q.next_cycle_tick=nil; q.times=nil; q.stop_tick=nil; q.for_ticks=nil; q.orders=nil; q.condition=nil
     q.revision=q.revision+1
   end
   -- The round lines not yet shown to the agent (the reply's team block).
@@ -319,7 +338,7 @@ return function(api)
         rest.via=#left>0 and left or nil
         args=rest
       end
-      if again then table.insert(q.pending,1,{id=step.id,action=step.action,args=args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short}) end
+      if again then table.insert(q.pending,1,{id=step.id,action=step.action,args=args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,plan=step.plan}) end
     end
     q.paused=true; q.revision=q.revision+1
     -- A standing order stopped by anything else (the agent's own request, a
@@ -444,8 +463,8 @@ return function(api)
     -- cargo its steps would leave before each launch (rocketload.lua M.simulate).
     assert(a.dry_run==nil or type(a.dry_run)=='boolean','dry_run must be true or false')
     if a.dry_run then
-      local items,corrected=steps(a)
-      guards(a)
+      local items,corrected=steps(a,p)
+      guards(a,p)
       assert(#items<=MAX_PENDING,'queue capacity exceeded')
       local out={dry_run=true,queued=false,steps=#items}
       if api.simulate then
@@ -455,18 +474,33 @@ return function(api)
       return with(out,corrected)
     end
     local q=queue(p.index); revision(q,a)
-    local items,corrected=steps(a)
-    local new_guards=guards(a)
+    local items,corrected=steps(a,p)
+    local new_guards=guards(a,p)
+    assert(a.mode==nil or a.mode=='append' or a.mode=='replace' or a.mode=='ahead','mode must be append, replace or ahead')
+    local loop=q.loop and (q.name or 'unnamed repeating plan')
+    local active=q.current and (q.current.id..' '..q.current.action) or 'between rounds'
+    if loop and #items>0 and a.mode==nil then
+      error('queue_submit queued nothing: repeating job "'..loop..'" ('..active..'); mode="replace" stops its active step and removes the loop; mode="ahead" runs before its remaining steps (restarts an active absolute-goal step); mode="append" waits behind the current round',0)
+    end
+    if a.mode=='ahead' and q.current then
+      assert(RESTARTABLE[q.current.action],'mode="ahead" cannot restart active '..q.current.action..'; mode="replace" stops it and replaces the repeating plan')
+    end
+    local replacing=a.mode=='replace'
+    local extra=a.mode=='ahead' and q.current and 1 or 0
+    assert((replacing and 0 or #q.pending)+#items+extra<=MAX_PENDING,'queue capacity exceeded')
+    assert((replacing and 0 or total(q.pending))+total(items)+(extra>0 and bytes(q.current,0) or 0)<=MAX_BYTES,'queue argument byte budget exceeded')
+    assert((replacing and 0 or #(q.guards or {}))+#new_guards<=MAX_GUARDS,'at most '..MAX_GUARDS..' guards')
     preempt(p,q)
-    assert(a.mode==nil or a.mode=='append' or a.mode=='replace','mode must be append or replace')
-    assert((a.mode=='replace' and 0 or #q.pending)+#items<=MAX_PENDING,'queue capacity exceeded')
-    assert((a.mode=='replace' and 0 or total(q.pending))+total(items)<=MAX_BYTES,'queue argument byte budget exceeded')
-    -- Replace affects pending work only; active cancellation is always explicit.
+    if (replacing and loop) or a.mode=='ahead' then api.stop(p); M.pause(p.index) end
     assign(q,items)
-    -- (an empty submit, e.g. start=false to hold the queue, starts no plan)
     if #items>0 then new_plan(q,items,'submit') end
-    if a.mode=='replace' then q.pending={}; q.loop=nil; q.next_cycle_tick=nil; q.guards={}; q.times=nil; q.stop_tick=nil; q.orders=nil end
-    for _,step in ipairs(items) do q.pending[#q.pending+1]=step end
+    if replacing then q.pending={}; q.loop=nil; q.next_cycle_tick=nil; q.guards={}; q.times=nil; q.stop_tick=nil; q.orders=nil; q.condition=nil; q.condition_error=nil end
+    q.submission=loop and ('repeating job "'..loop..'": '..(a.mode=='replace' and 'stopped and replaced' or a.mode=='ahead' and 'new steps run first; interrupted absolute-goal step restarts afterward' or 'new steps wait behind the current round ('..active..')')) or nil
+    if a.mode=='ahead' then
+      for i=#items,1,-1 do table.insert(q.pending,1,items[i]) end
+    else
+      for _,step in ipairs(items) do q.pending[#q.pending+1]=step end
+    end
     q.guards=q.guards or {}
     assert(#q.guards+#new_guards<=MAX_GUARDS,'at most '..MAX_GUARDS..' guards')
     for _,g in ipairs(new_guards) do q.guards[#q.guards+1]=g end
@@ -476,7 +510,7 @@ return function(api)
   end
   function M.handlers.queue_repeat(p,a)
     local q=queue(p.index); revision(q,a)
-    local items,corrected=steps(a)
+    local items,corrected=steps(a,p)
     assert(#items>0,'repeating plan must not be empty')
     assert(total(items)<=MAX_BYTES,'queue argument byte budget exceeded')
     local interval=a.interval_ticks or 1800
@@ -486,6 +520,14 @@ return function(api)
     assert(times==nil or (type(times)=='number' and times==math.floor(times) and times>=1 and times<=10000),'times must be 1..10000 rounds')
     assert(for_ticks==nil or (type(for_ticks)=='number' and for_ticks==math.floor(for_ticks) and for_ticks>=60 and for_ticks<=432000),
       'for_ticks must be 60..432000 ticks (2 hours)')
+    if a.condition~=nil then
+      checked('condition',function()
+        api.validate_condition(a.condition)
+        if api.check_action then api.check_action(p.index,'wait_until',a.condition) end
+      end)
+    end
+    local met,saw
+    if a.condition then met,saw=api.condition(p,a.condition) end
     local orders=a.orders
     if orders==true then orders='all' elseif orders==false then orders='none' end
     assert(orders==nil or orders=='triggers' or orders=='all' or orders=='none','orders must be triggers, all or none')
@@ -495,8 +537,9 @@ return function(api)
     new_plan(q,items,'repeat',a.name)
     q.loop=copy_steps(items); q.interval=interval; q.next_cycle_tick=nil; q.cycle=1; q.orders=orders
     q.name=a.name; q.round={counts={},keys={},n=0}; q.round_sig=nil; q.round_news=nil
-    q.times=times; q.for_ticks=for_ticks; q.stop_tick=for_ticks and game.tick+for_ticks or nil; q.loop_done=nil
+    q.times=times; q.for_ticks=for_ticks; q.stop_tick=for_ticks and game.tick+for_ticks or nil; q.loop_done=nil; q.condition=a.condition; q.condition_error=nil; q.submission=nil
     assign(q,items); q.pending=items; q.paused=false; q.revision=q.revision+1
+    if met then q.pending={}; q.cycle=0; end_loop(q,"condition met: "..tostring(saw or a.condition["until"])) end
     return with(snapshot(q,RECENT),corrected)
   end
   function M.handlers.queue_edit(p,a)
@@ -508,7 +551,7 @@ return function(api)
     assert(type(index)=='number' and index==math.floor(index) and index>=1 and index<=#q.pending+1,'index outside pending queue (1-based)')
     local remove=a.remove or 0
     assert(type(remove)=='number' and remove==math.floor(remove) and remove>=0 and remove<=#q.pending-index+1,'invalid remove count')
-    local items,corrected=steps(a)
+    local items,corrected=steps(a,p)
     assert(#q.pending-remove+#items<=MAX_PENDING,'queue capacity exceeded')
     local size=total(q.pending)+total(items)
     for n=index,index+remove-1 do size=size-bytes(q.pending[n],0) end
@@ -525,7 +568,7 @@ return function(api)
     preempt(p,q)
     api.stop(p)
     M.pause(p.index)
-    if a.clear~=false then q.pending={}; q.loop=nil; q.next_cycle_tick=nil; q.guards={}; q.times=nil; q.stop_tick=nil; q.orders=nil end
+    if a.clear~=false then q.pending={}; q.loop=nil; q.next_cycle_tick=nil; q.guards={}; q.times=nil; q.stop_tick=nil; q.orders=nil; q.condition=nil; q.condition_error=nil end
     return snapshot(q,RECENT)
   end
   function M.handlers.queue_resume(p,a)
@@ -581,13 +624,23 @@ return function(api)
             if not q.next_cycle_tick then
               round_done(q)
               local why=loop_over(q)
+              if q.condition then
+                local ok,met,saw=pcall(api.condition,p,q.condition)
+                if not ok then q.paused=true; q.condition_error=tostring(met)
+                elseif met then why='condition met: '..tostring(saw or q.condition['until']) end
+              end
               if why then end_loop(q,why) else q.next_cycle_tick=game.tick+q.interval end
             end
             -- An order between rounds can hold the next round back to or past for_ticks' end: no round starts then.
             if q.loop and q.stop_tick and game.tick>=q.next_cycle_tick and game.tick>=q.stop_tick then
               end_loop(q,string.format('no round starts at or after tick %d (for_ticks %d)',q.stop_tick,q.for_ticks))
             end
-            if q.loop and game.tick>=q.next_cycle_tick then
+            if q.loop and not q.paused and game.tick>=q.next_cycle_tick and q.condition then
+              local ok,met,saw=pcall(api.condition,p,q.condition)
+              if not ok then q.paused=true; q.condition_error=tostring(met)
+              elseif met then end_loop(q,'condition met: '..tostring(saw or q.condition['until'])) end
+            end
+            if q.loop and not q.paused and game.tick>=q.next_cycle_tick then
               q.pending=copy_steps(q.loop); assign(q,q.pending)
               q.next_cycle_tick=nil; q.cycle=q.cycle+1; q.revision=q.revision+1
             end
@@ -603,7 +656,11 @@ return function(api)
             q.revision=q.revision+1
             -- Every step started counts as the agent's (selfview.lua my_hour).
             if api.on_step then pcall(api.on_step,index,step.action) end
-            if step.action=='wait_ticks' then
+            local allowed,why=true,nil
+            if api.check_action then allowed,why=pcall(api.check_action,index,step.action,step.args) end
+            if not allowed then
+              fail(q,p,step,{reason=api.reason and api.reason(why) or tostring(why)})
+            elseif step.action=='wait_ticks' then
               step.until_tick=game.tick+step.args.ticks
               q.current=step
             elseif step.action=='wait_until' then
@@ -642,21 +699,24 @@ return function(api)
     queue_repeat={steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional',
       orders='which standing orders may run in the pause between rounds: triggers (default: orders with when, as they would while you are free), all (the default routine too) or none; an order that runs then finishes before the next round loads (the round waits for it, up to its max_ticks); its hold counts from your own last request, not the round\'s last step; queue_status says orders_between_rounds',
       name='optional 1..32 characters: names the loop in its round lines',
+      condition='optional wait_until condition object: checked before the first round, after each round and before the next; a met condition ends the loop successfully, without starting another round',
       times='optional 1..10000: the number of rounds; after the last one the loop ends',
       for_ticks='optional 60..432000: from this call, no round starts at or after that many ticks (a round under way finishes); with times, whichever comes first ends the loop',
       note='a loop that ends (times, for_ticks) leaves the queue empty: history entry loop_done {rounds, reason}, queue_status loop_done, and one team block line under queue ("queue NAME done after N rounds: ...");a round whose steps ran short (out_of_items, nothing_collected, inventory_full, none held, or a short reply) puts one line in the team block (queue: "queue NAME round N: K of M steps short: transfer iron-plate inventory_full x2, ..."), only when it differs from the last round\'s; a step with up_to=true or on_short=skip is left out of it (its history entry says short=true)'},
-    queue_submit={steps='array of {action,args,wait?,label?,on_fail?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace pending only',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
+    queue_submit={steps='array of {action,args,wait?,label?,on_fail?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace|ahead: omitted refuses nonempty submits into a repeating plan, naming it; replace stops an active repeating step and removes the loop (ordinary plans: pending only); ahead interrupts and restarts an absolute-goal step after the new steps, preserving the loop (other active steps refuse); append explicitly waits behind the current round',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
       dry_run='true: check the plan as a submit does and queue nothing (the queue is left as it is); returns steps, corrected, and the silo cargo the steps would leave: launches [{step, label, silo, cargo (before that launch), kg, min_cargo (lines), platform_now, would_refuse}], silos_after, notes (steps whose item moves are not counted); counted from what you, the chests and the silos hold now through transfer, load_silo and launch steps'},
     queue_edit={expected_revision='required from queue_status',index='1-based pending index',remove='count to remove',steps='replacement steps'},
     queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses',expected_revision='optional'},
     queue_resume={expected_revision='optional'},
     wait_ticks={ticks='1..54000 simulation ticks: a queue step, or a direct timed action (fh call wait_ticks --wait)',pause_queue=PAUSE_QUEUE,
-      wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or a teammate\'s mention always does)'},
+      wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
+      wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
     wait_until={['until']='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left; a queue step, a standing order\'s when, a queue guard\'s when, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw',
       position='area predicates: centre (default character); rocket_ready: the rocket silo (any tile of it), met when its rocket is built and ready to launch (saw: rocket state, parts, cargo); rocket_parts: the silo, met when the rocket being built has at_least parts (a built rocket, rising or ready, has all of them; while one launches, the next one\'s count; saw: rocket parts N/50 and the silo line)',radius='1..128 (default 32)',count='ammo_below: per-turret ammo items; fuel_below: fuel items per burner machine (furnaces, drills, boilers, burner inserters, ...)',fraction='health_*: 0..1; damaged: our buildings under this health fraction (default 1: any damage)',
       item='item_count',at_least='item_count; rocket_parts: parts 1..required; ghosts_waiting: ghosts (entity and tile) in the area (default 1)',below='item_count',positions='item_count: 1..64 {x,y} of our entities (chests, machines) to count in, summed over all their inventories (a rocket silo\'s rocket cargo too; saw adds each silo\'s rocket state and cargo: the rocket is no item, the item rocket is ammunition); default the character\'s inventory',technology='researched',platform='platform_arrived, platform_left: a platform of ours by name; platform_arrived is met while it is stopped at a space location (the platform list shows it there, not on its path or a route); platform_left while it is not (Gemini, 16:50: departure)',location='platform_arrived, platform_left: optional planet name; default any stop',timeout='ticks 1..54000 (default 3600; fh call wait_until --wait takes it from --wait-timeout); timing out fails the step (timed_out)',
       checked='every 10 ticks; enemies count only if known from the chart (units only in visible chunks)',pause_queue=PAUSE_QUEUE,
-      wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or a teammate\'s mention always does)'},
+      wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
+      wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
     step_options={label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it)',on_short='skip: a step that runs short (out_of_items, nothing_collected, inventory_full, or no item held to give) counts as done (history: short=true) and the plan goes on; up_to=true in a transfer, collect or feed step does the same'},
     guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the plan runs; each fires once, stops the running step',max=MAX_GUARDS}
   }

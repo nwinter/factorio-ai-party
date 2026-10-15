@@ -1011,7 +1011,7 @@ return function(api)
       assert(a.position == nil and a.forward == nil and a.all == nil, 'item traces the item\'s routes: give item, or position (with forward or all)')
       return M.items(p, a)
     end
-    assert(a.surface == nil and a.near == nil and a.radius == nil, 'surface, near and radius go with item; platform= traces on a platform')
+    assert(a.near == nil and a.radius == nil, 'near and radius go with item')
     assert(a.position ~= nil, 'trace takes position (a machine or lab; forward=true for its output) or item')
     if a.forward then
       assert(a.all == nil, 'all goes with a backward trace (no forward)')
@@ -1032,7 +1032,7 @@ return function(api)
     all='boolean: every ingredient, not only those it lacks for its next craft',
     forward='boolean: follow its output instead: the inserters taking from it and the belts they load, lane by lane, to where they end; on a belt tile, that belt\'s lanes from there (those carrying something now, else both); every walk names where other items join its lanes (merges)',
     item='an item instead of position: the routes from every machine making it (and every mining drill on a resource that gives it, from where it drops) to the labs, machines and chests taking it',
-    surface='with item: a surface name (default yours)',
+    surface='optional surface name for position or item (default yours); exclusive with platform',
     near='with item: optional {x,y}: makers and labs in this area only (cheaper than the whole surface)', radius='with near: 1..512 tiles (default 64)',
     platform='optional platform name: trace on that platform (platform coordinates, hub at 0,0)',
     returns='position: per ingredient it lacks (has/needs) each feeding inserter (status, filter, held), its pickup target (a chest, a machine\'s output, a belt tile with each lane) and what that holds, and the nearest container within 10 tiles holding it that no inserter reads; feeders; throughput (a crafting machine whose inserters in or out carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, and how many like its fastest it takes). forward: takers (a belt tile: belt, lanes); merges (every route\'s, once); routes [{from, path (belt runs, undergrounds, splitters with filters, as flown), carries, merges (where other items join the lane: the belt it joins carrying them, a belt side-loading them onto it, a splitter\'s other input, an inserter putting them onto it; each with what the lane carried up to there), takers (status, filter, held, into), stop (belt end with each lane and full, the front item, joins another route, the cap), nobody_takes}]. item: makers, routes, direct, reaches, labs_short and labs (each short lab: the route reaching it, else its own inserters and what they read, and the nearest route tile). cost'},

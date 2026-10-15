@@ -131,10 +131,25 @@ for _,ok in ipairs({{'tell',{to='sol',text='x'}},{'operator',{text='x'}},{'board
   {'wait_until',{['until']='platform_arrived',platform='alpha'}},{'wait_until',{['until']='platform_left',platform='alpha'}},
   {'wait_until',{['until']='researched'}},{'wait_until',{['until']='item_count',item='coal',at_least=5,positions={{x=0,y=0}}}},
   {'dry_run',{action='scan',args={}}}}) do bots.check_action(b.index,ok[1],ok[2]) end
--- The refusal names what works.
+-- Sol, 23:13: every remote-view call with platform= or surface= works aboard (place_ghosts with surface=nauvis and its
+-- dry run were refused), as runtime.lua wraps them; without either, it is refused.
+for _,name in ipairs(bots.PLATFORM_ACTIONS) do bots.check_action(b.index,name,{platform='alpha'}) end
+for _,name in ipairs(bots.SURFACE_ACTIONS) do bots.check_action(b.index,name,{surface='nauvis',position={x=0,y=0}}) end
+for _,ok in ipairs({{'place_ghosts',{surface='nauvis'}},{'dry_run',{action='place_ghosts',args={surface='nauvis'}}},{'deconstruct',{surface='nauvis'}},
+  {'cancel_deconstruction',{surface='nauvis'}},{'configure',{surface='nauvis'}},{'circuit_set',{surface='nauvis'}},{'trace',{surface='nauvis',item='coal'}},
+  -- Sol, 23:20: modules into a lab on Nauvis from Sunward (an item request: robots bring them).
+  {'configure',{surface='nauvis',positions={{x=37.5,y=44.5}},modules={'productivity-module','productivity-module'}}}}) do
+  bots.check_action(b.index,ok[1],ok[2])
+end
+for _,no in ipairs({{'deconstruct',{}},{'configure',{}},{'circuit_set',{}},{'place_ghosts',{}}}) do
+  fails(function() bots.check_action(b.index,no[1],no[2]) end,'remote view only')
+end
+-- The refusal names what works, from the same lists.
 local ok,err=pcall(bots.check_action,b.index,'move_to',{})
 assert(not ok and tostring(err):find('every read',1,true) and tostring(err):find('tell, chat, say, operator, board',1,true)
   and tostring(err):find('wait_until on platform_arrived, platform_left',1,true),tostring(err))
+assert(tostring(err):find('by remote view with platform=NAME: '..table.concat(bots.PLATFORM_ACTIONS,', '),1,true),tostring(err))
+assert(tostring(err):find('with surface=NAME (a planet): '..table.concat(bots.SURFACE_ACTIONS,', '),1,true),tostring(err))
 -- Landing needs the platform stopped at a planet.
 platform.space_location=nil
 fails(function() bots.land(b) end,'not stopped at a planet')
@@ -224,6 +239,58 @@ eq(b.travel.state,'aboard')
 cameras.set{player=2,position={x=5,y=5},surface='vulcanus',smooth=false}
 eq(director.surface,surfaces.vulcanus); eq(cameras.describe(2).surface,'vulcanus')
 fails(function() cameras.set{player=2,position={x=5,y=5},surface='moon'} end,'no surface named moon')
+-- friction6: aboard plans accept bodyless steps, reject body actions before queuing,
+-- and check again at execution if the agent's travel state changes.
+do
+  local before=b.travel
+  b.travel={state='aboard',platform='alpha-2'}
+  bots.check_action(b.index,'configure',{platform='alpha-2'})
+  bots.check_action(b.index,'configure',{surface='nauvis'})
+  bots.check_action(b.index,'queue_submit',{})
+  fails(function() bots.check_action(b.index,'configure',{}) end,'remote view only')
+  local state,dropped,departed={},0,false
+  local s=dofile('mod/agent-harness_0.1.0/scheduler.lua'){
+    state=function() return state end,player=function() return {index=b.index} end,
+    handlers={drop=function() dropped=dropped+1; return {} end,craft=function() error('body action ran') end},
+    check_action=bots.check_action,validate_condition=function() end,
+    condition=function(_,a) if a['until']=='platform_left' then return departed end return true end,
+    stop=function() end,busy=function() return false end}
+  local p={index=b.index}
+  local steps={{action='wait_until',args={['until']='platform_arrived',platform='alpha-2'}},{action='drop',args={platform='alpha-2'}}}
+  s.handlers.queue_submit(p,{steps=steps})
+  s.tick(); game.tick=game.tick+1; s.tick()
+  eq(dropped,1)
+  local rev=s.handlers.queue_status(p).revision
+  fails(function() s.handlers.queue_submit(p,{steps={steps[1],{action='craft',args={recipe='iron-gear-wheel'}}}}) end,'steps[2] (craft)')
+  eq(s.handlers.queue_status(p).revision,rev)
+  fails(function() s.handlers.queue_submit(p,{steps={},guards={{when={['until']='crafting_done'}}}}) end,'guards[1]')
+  -- Repeat modes keep the aboard checks and contextual errors before any preemption.
+  s.handlers.queue_repeat(p,{name='aboard-loop',steps=steps,interval_ticks=60,
+    condition={['until']='platform_left',platform='alpha-2'}})
+  s.tick()
+  rev=s.handlers.queue_status(p).revision
+  fails(function() s.handlers.queue_submit(p,{steps={{action='drop'}}}) end,'repeating job "aboard-loop"')
+  fails(function() s.handlers.queue_submit(p,{mode='replace',steps={{action='craft'}}}) end,'steps[1] (craft)')
+  fails(function() s.handlers.queue_submit(p,{mode='ahead',steps={},guards={{when={['until']='crafting_done'}}}}) end,'guards[1]')
+  fails(function() s.handlers.queue_repeat(p,{condition={['until']='crafting_done'},steps=steps}) end,'condition:')
+  eq(s.handlers.queue_status(p).revision,rev)
+  eq(s.handlers.queue_status(p).active.action,'wait_until')
+  local ahead=s.handlers.queue_submit(p,{mode='ahead',steps={{action='drop',label='urgent'}}})
+  eq(ahead.repeating,true); eq(ahead.pending[1].label,'urgent'); eq(ahead.pending[2].action,'wait_until')
+  s.tick(); eq(dropped,2)
+  game.tick=game.tick+1; s.tick(); eq(dropped,3)
+  game.tick=game.tick+1; s.tick()
+  departed=true; game.tick=game.tick+60; s.tick()
+  eq(s.handlers.queue_status(p).repeating,false); eq(s.handlers.queue_status(p).loop_done.rounds,1)
+  departed=false
+  s.handlers.queue_repeat(p,{steps=steps})
+  local replacement=s.handlers.queue_submit(p,{mode='replace',steps={{action='drop'}}})
+  eq(replacement.repeating,false); eq(#replacement.pending,1)
+  b.travel.state='descending'; game.tick=game.tick+1; s.tick()
+  eq(dropped,3); eq(s.handlers.queue_status(p).paused,true)
+  b.travel=before
+end
+
 -- Removing a bot in transit drops its kit.
 bots.remove('astra'); eq(kits[#kits].valid,false)
 print('travel: ok')

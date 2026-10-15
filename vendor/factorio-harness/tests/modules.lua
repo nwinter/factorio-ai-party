@@ -260,4 +260,14 @@ eq(r.before,'speed-module*3'); eq(r.requested,'speed-module*2 efficiency-module*
 eq(r.by_slot[1],'1 speed-module (requested)'); eq(r.by_slot[2],'2 efficiency-module (requested)'); eq(r.by_slot[3],'3 speed-module (requested)')
 r=M.set(p,g2,M.parse({'efficiency-module','speed-module'}),true)
 eq(r.requested,'speed-module*1 efficiency-module*1'); eq(r.by_slot[1],'1 speed-module (requested)'); eq(r.by_slot[3],'3 empty')
+-- Sol, 23:20 (aboard a platform): configure surface=nauvis modules productivity-module x2 into a lab, by remote view.
+-- A caller with no body (any read of a body errors, as bots.lua's proxy aboard) gets an item request; robots bring them.
+do
+  local lab={name='lab',type='lab',allowed_effects=ALL,module_inventory_size=2}
+  local l=machine(lab,37.5,nil)
+  local nobody=setmetatable({surface=surface,force=force},{__index=function(_,k) error('bot sol is aboard platform Sunward with no body',0) end})
+  local row=M.set(nobody,l,M.parse({'productivity-module','productivity-module'}),false)
+  eq(row.by,'robots'); eq(row.requested,'productivity-module*2'); eq(l.item_request_proxy.insert_plan[1].id.name,'productivity-module')
+  fails(function() M.set(nobody,l,M.parse({'productivity-module'}),false,'hand') end,'out of reach')
+end
 print('modules: ok')

@@ -92,7 +92,9 @@ already targets your character.
   finish at the current lab throughput (or which pack it waits for). `./fh research done` lists what finished lately
   and what each unlocked. `./fh call science` (or `--args '{"pack":"logistic-science-pack"}'`) counts each pack the
   research needs over your whole surface, the same for everyone wherever they stand: made and used in 10 minutes,
-  the assemblers set to it and their states, packs in chests, on belts, in labs and carried, and the largest chests;
+  the assemblers set to it and their states, packs in chests, in landing pads and hubs, on belts, in labs and carried,
+  and the largest holders (landing pads included); spoilable packs add effective research units from freshness and remaining durability, before lab bonuses.
+  `platforms` and `preflight` cargo freshness give the same value, plus the current leg's arrival value when its ETA is known;
   its `reach` line says where else each pack sits (inserter hands, robots) and why it does not reach the labs; its
   `chain` line walks the pack's recipe tree down, each step with its makers and made and used per minute, following
   the ingredient most makers lack (`chemical-science-pack: 9 of 14 makers lack advanced-circuit, ...; plastic-bar:
@@ -149,7 +151,8 @@ already targets your character.
   (time, sender, fyi), shown before or not; `./fh tells --since N` lists the ones you sent and received after N.
 - `./fh operator "..."` sends a request to the operator, the people running the harness and the stream: a tool that
   fails or is missing, or something viewers asked for that you can't do yourselves. The operator may answer in the
-  game chat as `server:`. It is not for help with the game. Viewers see it on the ticker.
+  game chat as `server:`. It is not for help with the game. Viewers see it on the ticker. Up to 2000 bytes, filed whole;
+  longer text is refused without consuming a rate-limit slot.
 - Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, power cuts
@@ -213,6 +216,14 @@ already targets your character.
   `./fh queue status` shows the active step (`running_s`), the next one, and the plan you last submitted (`plan`: steps
   done, ok, failed; `history`: its own results); `./fh queue status orders` lists the standing orders' steps too;
   `--args '{"history":"all","pending":10}'` shows more.
+  `queue_submit` into a repeat requires explicit `mode`: `replace` stops it, `ahead` interrupts/restarts an absolute-goal step, `append` waits behind this round; refusal names the job.
+  `queue_repeat {condition: {until: ...}}` ends at a round boundary when met (before round one too); `feed up_to:true` ending `out_of_items` exits 0 from `--wait`/`fh wait`, with moved and stops left.
+- `transfer {position, direction, items:{"iron-plate":50,"coal":10}, walk?}` moves multiple items at one target, with per-item `entries`; `trace {surface, position}` and `labs {surface, position?, radius?}` read that surface; `supply {item:"lubricant"}` reads fluid stock/flow and makers/users.
+- Raw `fh call wait_until` accepts word-form `until` and `ticks`/`timeout_ticks` aliases; queue errors name the step path. Aboard, queues accept allowed remote steps, `configure {platform}` works, and `observe` reports surroundings with `player.body:"none"`.
+- Out of reach within 32 tiles, `transfer`, `collect`, `feed`, `rearm`, `refuel`, `mine`, `build`, `rotate` and
+  `configure` (modules by hand, a recipe change on a stocked machine) walk into reach first and then act, the reply's
+  `walking` line saying so; past 32 tiles the refusal names the same call with `"walk": true`; `"walk": false` refuses.
+  The destination is checked for enemies again when the call starts; a new worm in a previously clear area is included.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` (and `feed` or `collect {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one
@@ -267,13 +278,18 @@ already targets your character.
 - Gleba: `inspect` on an agricultural tower shows its `tower` state, seeds, output, which cells have soil for which
   seeds, and its plants with time to harvest; `transfer`, `feed` and `collect` work on its seeds and harvest.
 - Spoilage: `inspect`, `supply` and `stock` give the first stack to spoil and when; pentapod eggs say when they hatch
-  into enemies (`hatch_warning`, `hatch`); `output_spoil` is what a machine's next products start at. Eggs of ours
+  into enemies (`hatch_warning`, `hatch`); `output_spoil` is what a machine's next products start at; `freshness`
+  gives each item's spread (least and most spoiled, the share by count, the counts under 25/50/75%, how many spoil
+  within 10/30/60 min) in `inspect`, `supply` and every `platforms` row (the hub; `drop` dry_run for the items to drop,
+  `launch` for the rocket's cargo), and the moved batch's in `transfer`, `collect` and `load_silo` (a
+  science pack: how many a unit the running research takes, and its units left). Eggs of ours
   hatching within 5 minutes on your surface top `team.alerts` (`eggs hatching: ...`) and wake `fh sleep` (`woke: eggs`).
 - In a tank, car or spidertron you drive, `shoot` fires its gun: `--args '{"position":{"x":294,"y":-135},"gun":"tank-cannon"}'`
   (or `"ammo":"explosive-cannon-shell"`, `"auto":true`), loading the slot from your inventory; `vehicle {drive}` goes on meanwhile.
   `vehicle {"drive":{...},"combat":true}` keeps the guns on auto for the whole drive (`last.shots`, `last.kills`).
 - `vehicle {"drive":{"x":-40,"y":-200},"remote":true,"vehicle":311799}` drives one of our cars or tanks in radar coverage by
   remote view while your character stays put; its guns do not fire that way.
+- `equip {slot,item,index?}` tries compatible empty gun/ammo slots before slot 1 when index is omitted; an explicit index selects only that slot.
 - `equipment {"vehicle":311799,"operation":"insert","item":"energy-shield-equipment"}` works a tank's (6x8) or spidertron's
   (10x6) equipment grid in reach or seated; `"operation":"list"` shows it, also by remote view; `inspect` on it too.
 - `clear_cliffs {"positions":[{"x":82,"y":38.5}]}` throws cliff explosives you hold at those cliffs, walking into their 10-tile
@@ -405,7 +421,9 @@ already targets your character.
   spoil_priority: fresh_first | spoiled_first | none}` sets an inserter's Spoil priority (built or ghost; `inspect`
   shows it).
 - Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`), and
-  so do tell, chat, say, operator, the board, research, platform calls and waits on `platform_arrived`/`platform_left`.
+  so do tell, chat, say, operator, the board, research, platform calls and waits on `platform_arrived`/`platform_left`,
+  and every remote-view call with `platform=` or `surface=` (place_ghosts, deconstruct, configure, circuit_set,
+  requests with position, ...; the refusal lists them).
 - Modules: `configure {position | positions, modules: ["speed-module-2","speed-module-2"], by?}` sets a machine's module
   slots: the modules it already holds that the list names stay in their slots, the rest go into the other slots (past
   the list: empty); `["keep","efficiency-module","empty"]` goes slot by slot and `{"2":"efficiency-module"}` changes
@@ -451,6 +469,7 @@ already targets your character.
   `engine` (the last 60 and 180 s: mean, lowest and highest speed, thruster fuel and oxidizer used and made, the
   thrusters' tanks at start and end, the pumps' share of time working). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when
   `from` is not given.
+- Direct `wait_until` and `wait_ticks` accept `wake_on_messages:false`: tells and mentions remain for the next reply while the wait continues; default true wakes on messages.
 - `./fh sleep 600 --until "rocket_ready 65.5,14.5"` (or `wait_until {"until":"rocket_ready","position":...}`) waits for
   that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
   `--until "rocket_parts>=40 at 65.5,14.5"` (or `{"until":"rocket_parts","at_least":40,"position":...}`, also a queue

@@ -681,8 +681,14 @@ return function(api)
   -- member once: have holds their keys).
   local function read_discs(p, mode, point, discs, have, R)
     local chunks = M.chunks_near({point}, R or max_reach(mode))
-    local need = M.missing(p.surface, chunks)
-    if #need > 0 then M.scan(p.surface, p.force, need, #need) end
+    -- Destination checks need the enemies the map shows now. The path cache can be a minute old: on the private
+    -- 2.0.77 check a new worm inside a cached empty area let an autowalk start into its range. Refresh only the
+    -- chunks around this destination; overlapping stops in the same tick share that read. Path scans keep TTL.
+    local c = cache(p.surface)
+    for _, ch in ipairs(chunks) do
+      local rec = c[ch[3]]
+      if not rec or rec.t ~= game.tick then c[ch[3]] = M.read_chunk(p.surface, p.force, ch[1], ch[2]) end
+    end
     for _, bl in ipairs(M.blobs(p.surface, chunks, mode)) do
       for _, m in ipairs(bl.members) do
         local k = member_key(m)

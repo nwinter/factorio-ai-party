@@ -200,6 +200,47 @@ function parseUntil(text: string): Record<string, unknown> {
   }
   return condition;
 }
+// Word-form waits in raw calls and plans use the same grammar as fh sleep --until.
+// Conflicting structured fields are refused before anything is sent to the game.
+function normalizeWaitArgs(action: string, args: Record<string, unknown>, path = 'args', depth = 0): Record<string, unknown> {
+  if (depth > 32) throw new Error(`${path}: queue arguments exceed maximum nesting depth`);
+  if (action === 'wait_until') {
+    const out = {...args};
+    for (const alias of ['ticks', 'timeout_ticks']) {
+      if (out[alias] === undefined) continue;
+      if (out.timeout !== undefined && out.timeout !== out[alias]) throw new Error(`${path}.${alias} conflicts with timeout`);
+      out.timeout = out[alias];
+      delete out[alias];
+    }
+    if (typeof out.until === 'string' && /\s|[<>=]/.test(out.until.trim())) {
+      const parsed = parseUntil(out.until);
+      for (const [key, value] of Object.entries(parsed)) {
+        if (key !== 'until' && out[key] !== undefined && JSON.stringify(out[key]) !== JSON.stringify(value)) {
+          throw new Error(`${path}.${key} conflicts with the word-form until`);
+        }
+        out[key] = value;
+      }
+      if (out.below !== undefined && out.at_least !== undefined) throw new Error(`${path}: below and at_least are mutually exclusive`);
+      if (out.position !== undefined && out.positions !== undefined) throw new Error(`${path}: position and positions are mutually exclusive`);
+    }
+    return out;
+  }
+  if (!['queue_submit', 'queue_repeat', 'queue_edit'].includes(action)) return args;
+  const out = {...args};
+  if (action === 'queue_repeat' && out.condition && typeof out.condition === 'object' && !Array.isArray(out.condition)) {
+    out.condition = normalizeWaitArgs('wait_until', out.condition as Record<string, unknown>, `${path}.condition`, depth + 1);
+  }
+  if (Array.isArray(out.steps)) out.steps = out.steps.map((step, i) => {
+    if (!step || typeof step !== 'object' || typeof step.action !== 'string' || !step.args || typeof step.args !== 'object') return step;
+    return {...step, args:normalizeWaitArgs(step.action, step.args, `${path}.steps[${i + 1}].args`, depth + 1)};
+  });
+  if (Array.isArray(out.guards)) out.guards = out.guards.map((guard, i) => {
+    if (!guard || typeof guard !== 'object') return guard;
+    return {...normalizeWaitArgs('queue_submit', guard, `${path}.guards[${i + 1}]`, depth + 1),
+      ...(guard.when && typeof guard.when === 'object' ? {when:normalizeWaitArgs('wait_until', guard.when, `${path}.guards[${i + 1}].when`, depth + 1)} : {})};
+  });
+  return out;
+}
 /** The parts of an --until joined by | (outside quotes), trimmed, empty ones dropped. */
 function splitAlternatives(text: string): string[] {
   const parts: string[] = [];
@@ -840,7 +881,9 @@ async function main() {
     // clear_cliffs (use_item cliff-explosives): the explosives destroyed cliffs (Sol 17:21/17:32: fh wait exited 1 on it)
     'cliffs_destroyed',
     // load_silo walk (Luna, shift14 21:20): the list aboard, and launched; short and no_rocket still fail.
-    'loaded','launched'];
+    'loaded','launched',
+    // a call made after its walk into reach (autowalk.lua)
+    'done'];
   // How long to wait: an explicit --wait-timeout, else until the action's own
   // end tick (at 60 ticks/s plus a margin), never less than 30 s nor more than 15 min.
   // ownEnd: the action's end tick already reflects --wait-timeout (wait_until), so
@@ -936,7 +979,7 @@ async function main() {
     const result: Record<string, unknown> = {
       // A feed is the call that waited for a hand craft (build, transfer, rearm, refuel): named as that call.
       outcome: last?.outcome ?? (status.result?.active ? 'running' : 'idle'),
-      action: shot ? 'shoot' : last?.kind === 'feed' && typeof last?.handler === 'string' ? last.handler : last?.kind,
+      action: shot ? 'shoot' : last?.kind === 'feed' && typeof last?.handler === 'string' ? last.handler : last?.walking_for ?? last?.kind,
       waited_s: Math.round((Date.now()-started)/100)/10,
       position: player?.position ?? status.result?.position,
       health: player && player.health < player.max_health ? `${Math.round(player.health)}/${Math.round(player.max_health)}` : undefined,
@@ -978,6 +1021,8 @@ async function main() {
       ...(last?.kind === 'move_to' || last?.kind === 'drive' ? {avoided_enemies: last.avoided_enemies,
         enemies_at_start_or_goal: last.enemies_at_start_or_goal, passed_within_margin: last.passed_within_margin} : {}),
       why: last?.why, note: status.result?.note,
+      // a call made after its walk into reach, or not made when the walk did not get there (autowalk.lua)
+      walked: last?.walked, not_made: last?.not_made,
       // a tour's places left out for an enemy (round1950a)
       danger: last?.danger, dangers: last?.dangers,
       // waits short of rails a moving train was about to pass, on any walk, and a walk ending on rails (round1520d)
@@ -994,6 +1039,12 @@ async function main() {
         crafts: last.crafts, waited_s: last.waited_s, counted_from: last.counted_from} : {}),
       // An item move that ran over time: what it moved and the inventory line after (Muse 06:27).
       moved: last?.moved, inv: last?.inv,
+      // A short feed still says how many stops remain when up_to makes its exit successful.
+      ...(last?.kind === 'gather' ? {left:last.left, short_allowed:last.short_allowed, short:last.short} : {}),
+      // Transfer tours retain the inventory selected and local delivery/refusal facts in compact waits too.
+      ...(last?.op === 'transfer' && Array.isArray(last.entities) ? {
+        transfers:last.entities.slice(0,8), transfers_more:last.entities.length>8?last.entities.length-8:undefined,
+      } : {}),
       // A courier (transfer or collect with pick and to): where it took from, what it took and what arrived.
       picked: last?.picked, taken: last?.taken, delivered: last?.delivered,
       team: carrier.result?.team, clock: carrier.result?.clock, orders: carrier.result?.orders, chat: carrier.result?.chat,
@@ -1037,7 +1088,8 @@ async function main() {
       // runs as 'gather' too.
       const kinds = action === 'collect' || action === 'feed' || action === 'recover' ? ['gather'] : ['rearm','refuel','transfer'].includes(action) ? ['gather','feed'] : action === 'build' || action === 'load_silo' ? ['feed']
         : action === 'vehicle' ? ['drive'] : action === 'use_item' ? ['clear_cliffs'] : [action];
-      const stillRunning = active && (action === 'shoot' || action === 'drop' || kinds.includes(active.kind));
+      // A walk into reach that the call makes first (autowalk.lua) runs as a move_to naming the call (walking_for).
+      const stillRunning = active && (action === 'shoot' || action === 'drop' || kinds.includes(active.kind) || active.walking_for === action);
       if (status.ok && stillRunning && told(status, acceptedTick) && action !== 'wait_ticks' && action !== 'wait_until') {
         if (!throughTells) return {...status, result:{...status.result, interrupted:{inbox:wakeInbox(status, acceptedTick), active}}};
         noteTell(wakeInbox(status, acceptedTick));
@@ -1052,7 +1104,7 @@ async function main() {
             note:`${action} is not running and recorded no result of its own (the last result, ${last.kind} ${last.outcome} at tick ${last.tick}, predates it)`}};
         }
         // A kite that ran its ticks out kited for as long as it was asked: done, as shoot's duration_elapsed is.
-        if (status.ok && last?.outcome && !successfulOutcomes.includes(last.outcome) && !(action === 'kite' && last.outcome === 'timed_out')) {
+        if (status.ok && last?.outcome && !successfulOutcomes.includes(last.outcome) && !(last.op === 'feed' && last.outcome === 'out_of_items' && last.short_allowed === true) && !(action === 'kite' && last.outcome === 'timed_out')) {
           return {...status,ok:false,error:endedError(action,last)};
         }
         return status;
@@ -1268,7 +1320,7 @@ async function main() {
           return withSlow(withTells({...full, result:{idle:true, nothing_running:true, note, last, last_combat:status.result?.last_combat,
             waited_ms:Date.now()-started, team:full.result?.team, clock:full.result?.clock, orders:full.result?.orders, chat:full.result?.chat}}));
         }
-        const ok = !last?.outcome || successfulOutcomes.includes(last.outcome);
+        const ok = !last?.outcome || successfulOutcomes.includes(last.outcome) || (last.op === 'feed' && last.outcome === 'out_of_items' && last.short_allowed === true);
         const ended = {...status, ok, ...(ok ? {} : {error:endedError(last.kind ?? 'the action',last)})};
         if (compactWaits) return withSlow(withTells(await brief(ended, started)));
         const full = await finalReply(ended);
@@ -1291,6 +1343,7 @@ async function main() {
     return timedOut(status.result?.active?.kind ?? 'the action', status, Date.now()-started, pacer, explicit && ending === 'cap' ? 'end' : ending);
   }
   async function execute(action: string, args: Record<string,unknown>, id?: string, wait = false, onAccepted?: (reply: Reply) => void): Promise<Reply> {
+    args = normalizeWaitArgs(action, args);
     const requestId = id ?? randomUUID();
     // `fh call sleep` (with or without --wait) blocks like fh sleep: the raw
     // action only starts a sleep (shake4-6: Luna's 103 sleeps that never waited).
@@ -1356,7 +1409,10 @@ async function main() {
         // cliff explosives thrown by hand: each lands before the next (clear_cliffs; use_item cliff-explosives runs it;
         // Sol 17:21/17:32: --wait returned at once with until_tick)
         || (['clear_cliffs','use_item'].includes(action) && reply.result?.until_tick !== undefined);
-    if (wait && reply.ok && waits) {
+    // A call out of reach that walks first by default (autowalk.lua; the reply's walking line): waited for as --wait does,
+    // since the same call in reach would have been done at once.
+    const walked = reply.ok && reply.result?.walking !== undefined && reply.result?.until_tick !== undefined;
+    if ((wait || walked) && reply.ok && (waits || walked)) {
       onAccepted?.(reply);
       const completion = await waitForAction(action, reply.result?.until_tick, reply.tick, before);
       if (completion.error?.code === 'wait_timeout') return {...reply, ok:false, result:{accepted:reply.result, ...completion.result}, error:completion.error};

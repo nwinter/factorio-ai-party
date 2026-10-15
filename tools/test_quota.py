@@ -219,7 +219,7 @@ def agy_pace():
             assert m.pace(d, since, now + 600) == "stop"   # the sleep would pass the deadline
             # a stop rests until the shift's deadline, so the stream card says resting instead of idle (operator 23:30)
             rs = json.load(open(os.path.join(d, "resting.json")))
-            assert rs["reason"] == "pace" and 590 <= rs["until"] - now <= 600, rs
+            assert rs["reason"] == "pace" and 589 <= rs["until"] - now <= 601, rs  # (until is rounded to the second)
             os.environ["POG_AGY_PACE"] = "off"
             assert m.pace(d, since, now + 4 * 3600) is None
             events = [json.loads(l)["event"] for l in open(os.path.join(d, "context.log"))]

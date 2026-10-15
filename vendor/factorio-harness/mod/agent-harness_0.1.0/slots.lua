@@ -42,6 +42,23 @@ return function()
       text=string.format('all %d slots taken (%s)%s', size, table.concat(parts, ', '),
         sp and not shown and string.format('; %s among them', slot_text(sp)) or '')}
   end
+  -- A refusal is not proof of fullness: empty recipe, fuel and module slots can reject an item.
+  function M.refusal(inv, item, name, e, full)
+    local order=tally(inv,#inv)
+    local parts={}
+    for i=1,math.min(SHOW,#order) do parts[#parts+1]=slot_text(order[i]) end
+    if #order>SHOW then parts[#parts+1]='+'..(#order-SHOW)..' more items' end
+    local detail=full or (#parts>0 and 'holds '..table.concat(parts,', ') or 'empty')
+    local text=string.format('%s refused %s; %s',name or 'inventory',item,detail)
+    if not full then text=text..'; free slots do not imply this inventory accepts that item' end
+    local recipe=try(function() return e.get_recipe() end)
+    if recipe then
+      local ingredients={}
+      for _,ing in ipairs(recipe.ingredients) do if ing.type~='fluid' then ingredients[#ingredients+1]=ing.name end end
+      text=text..'; recipe '..recipe.name..' takes '..(#ingredients>0 and table.concat(ingredients,', ') or 'no item ingredients')
+    end
+    return text
+  end
   -- The inventory an entity takes items into: a chest's, a character's main, a vehicle's trunk, a wagon's, a crafting
   -- machine's input, a lab's.
   local INV = {container='chest', ['logistic-container']='chest', ['temporary-container']='chest', character='character_main',

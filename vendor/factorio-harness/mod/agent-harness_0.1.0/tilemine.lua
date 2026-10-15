@@ -156,20 +156,54 @@ return function(api)
     end
     if a.dry_run then
       local list, more = rows()
+      local farthest = 0
+      for _, t in ipairs(targets) do if t.distance > M.reach(p) then farthest = math.max(farthest, t.distance) end end
+      local range = api.autowalk and api.autowalk.RANGE or 32
       return {dry_run=true, note='nothing was mined', tiles=list, more=more, count=#targets, items=next(items) and items or nil,
         seconds=ticks / 60, out_of_reach=far > 0 and far or nil, reach=M.reach(p), skipped=#skipped > 0 and skipped or nil,
         natural=natural > 0 and natural or nil,
-        walk=far > 0 and (a.walk and 'walk: true walks into reach of each' or 'walk: true walks into reach of those') or nil}
+        walk=far > 0 and (a.walk == true and 'walk: true walks into reach of each' or a.walk == false and 'walk: false refuses those'
+          or farthest <= range and string.format('the call walks into reach of those first (all within %d tiles; walk: false refuses)', range)
+          or string.format('the farthest is %.1f tiles off, past the %d a call walks by default: walk: true walks there', farthest, range)) or nil}
     end
     if #targets == 0 then
       if #skipped > 0 then error(skipped[1].why..(#skipped > 1 and string.format(' (and %d more refused)', #skipped - 1) or ''), 0) end
       error(spec.x0 and string.format('no tile laid by a player in the area (%d natural tiles)', natural) or 'nothing to mine', 0)
     end
-    if far > 0 and not a.walk then
-      local t
-      for _, q in ipairs(targets) do if q.distance > M.reach(p) then t = q; break end end
-      error(string.format('%s at %s is out of reach: %.1f tiles from the character at (%.1f,%.1f) to its edge, reach %g (walk: true walks into reach)',
-        t.name, at(t.x, t.y), t.distance, p.position.x, p.position.y, M.reach(p)), 0)
+    -- Out of reach: walked into reach of each by default when every one lies within the 32 tiles a call walks
+    -- (autowalk.lua), the reply saying so (walking); walk: true at any distance; walk: false refuses, as past 32 tiles.
+    local walk, walking = a.walk == true, nil
+    if far > 0 and a.walk ~= true then
+      local t, worst
+      for _, q in ipairs(targets) do
+        if q.distance > M.reach(p) then t = t or q; if not worst or q.distance > worst.distance then worst = q end end
+      end
+      local range = api.autowalk and api.autowalk.RANGE or 32
+      if a.walk == nil and not a.walked and worst.distance <= range then
+        walk = true
+        walking = #targets == 1 and string.format('%s at %s is %.1f tiles away (to its edge), reach %g: walking into reach first (walk: false refuses instead)',
+            worst.name, at(worst.x, worst.y), worst.distance, M.reach(p))
+          or string.format('%d of %d tiles are out of reach (the farthest: %s at %s, %.1f tiles to its edge, reach %g): walking into reach of each first (walk: false refuses instead)',
+            far, #targets, worst.name, at(worst.x, worst.y), worst.distance, M.reach(p))
+      else
+        error(string.format('%s at %s is out of reach: %.1f tiles from the character at (%.1f,%.1f) to its edge, reach %g%s',
+          t.name, at(t.x, t.y), t.distance, p.position.x, p.position.y, M.reach(p),
+          a.walk == false and '' or string.format('; %.1f tiles is past the %d a call walks by default: %s walks there first', worst.distance, range,
+            api.autowalk and api.autowalk.call_text('mine', a) or 'walk: true')), 0)
+      end
+    end
+    -- A tile out of reach inside the enemy reach the map shows is not walked to (round1950a's check, as a tour's
+    -- places), unless unsafe_goal: skipped, named.
+    local mode = walk and not a.unsafe_goal and api.avoid_mode and api.avoid_mode(a.avoid_enemies) or nil
+    if mode and api.goal_inside then
+      local kept = {}
+      for _, t in ipairs(targets) do
+        local c = t.distance > M.reach(p) and try(function() return api.goal_inside(p, {x=t.x + 0.5, y=t.y + 0.5}, mode) end)
+        if c then skipped[#skipped+1] = {position={x=t.x, y=t.y}, why=api.goal_text(t.name..' tile', {x=t.x, y=t.y}, c)..' (unsafe_goal: true walks there)'}
+        else kept[#kept+1] = t end
+      end
+      if #kept == 0 then error(skipped[#skipped].why..(#skipped > 1 and string.format(' (and %d more refused)', #skipped - 1) or ''), 0) end
+      targets = kept
     end
     local inv = p.get_main_inventory()
     for name, n in pairs(items) do
@@ -194,11 +228,11 @@ return function(api)
     -- now, so last.moved and last.inv say what it gained, as an entity's mining does.
     local held = {}
     for name in pairs(items) do held[name] = try(function() return p.get_item_count(name) end) or 0 end
-    local action = {kind='mine', tiles=true, targets=order, index=1, walk=a.walk == true or nil, done={}, skipped=skipped, items={},
-      held_before=held, until_tick=game.tick + budget, started=game.tick}
+    local action = {kind='mine', tiles=true, targets=order, index=1, walk=walk or nil, done={}, skipped=skipped, items={},
+      held_before=held, until_tick=game.tick + budget, started=game.tick, avoid_mode=walk and api.avoid_mode and api.avoid_mode(a.avoid_enemies) or nil}
     local list, more = rows()
     return {until_tick=action.until_tick, tiles=list, more=more, count=#targets, items=items, seconds=ticks / 60,
-      out_of_reach=far > 0 and far or nil, skipped=#skipped > 0 and skipped or nil, natural=natural > 0 and natural or nil}, action
+      out_of_reach=far > 0 and far or nil, skipped=#skipped > 0 and skipped or nil, natural=natural > 0 and natural or nil, walking=walking}, action
   end
   -- One tick of the timed action: the outcome when it ends.
   function M.tick(p, action)
@@ -236,10 +270,13 @@ return function(api)
         if not action.nav then
           -- (within 8.5 of its centre: mining reaches 10 to its edge, and a tile out in water needs the shore)
           action.nav = {position={x=t.x + 0.5, y=t.y + 0.5}, tolerance=math.max(1, M.reach(p) - 1.5), max_stalls=6, replans=0, stalled=0,
-            last_position=p.position}
+            last_position=p.position, avoid_mode=action.avoid_mode}
+          if action.avoid_mode and api.avoid_start then api.avoid_start(p, action.nav, action.avoid_mode) end
           api.request_path(p, action.nav)
         end
         local outcome = api.navigate(p, action.nav)
+        -- A leg round a nest ended: the next one starts (avoid.lua, as a tour's).
+        if outcome and action.nav.foes and api.leg_done and api.leg_done(p, action.nav, outcome) then outcome = nil end
         if not outcome then return end
         action.nav = nil
         api.stop_walking(p)

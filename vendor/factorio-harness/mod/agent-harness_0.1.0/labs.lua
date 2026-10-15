@@ -5,7 +5,8 @@
 return function(api)
   local M = {}
   local MAX_LABS, MAX_GROUPS, NEAR = 256, 8, 5.5
-  M.schema = {labs = {position='optional charted centre (default character)', radius='1..256 (default 96)',
+  M.schema = {labs = {surface='optional surface name: visible labs there, up to 256; position limits the read to an area',
+    position='optional charted centre (default character without surface; with surface, all visible labs there)', radius='1..256 (default 96); on another surface requires position',
     returns='research line (name, progress, eta at the working labs) and per lab group: labs working, packs missing (labs lacking each), feeders idle/starved and why, what their belts/chests hold'}}
   local function short(name) return (name:gsub('%-science%-pack$', '')) end
   local function fmt(s)
@@ -30,24 +31,55 @@ return function(api)
   end
   local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
   function M.view(p, a)
-    local centre = api.center(p, a)
-    local radius = api.integer(a.radius, 96, 1, 256, 'radius')
     local force, surface = p.force, p.surface
+    if a.surface~=nil then
+      assert(type(a.surface)=='string','surface must be a surface name')
+      surface=game.get_surface(a.surface)
+      assert(surface,'no surface '..a.surface)
+    end
+    local centre
+    if a.position~=nil or a.surface==nil or a.radius~=nil then
+      assert(surface==p.surface or a.position~=nil,'radius on another surface requires position')
+      local view=setmetatable({surface=surface},{__index=p})
+      centre=api.center(view,a)
+    end
+    local radius = api.integer(a.radius, 96, 1, 256, 'radius')
     local tech = force.current_research
     local packs = {}
     for _, ing in ipairs(tech and tech.research_unit_ingredients or {}) do packs[#packs+1] = ing.name end
-    local labs = surface.find_entities_filtered{position=centre, radius=radius, type='lab', force=force, limit=MAX_LABS}
+    local found = surface.find_entities_filtered{position=centre, radius=centre and radius or nil, type='lab', force=force, limit=MAX_LABS}
+    local labs, visible = {}, {}
+    local platform=surface.platform
+    local own_platform=platform and platform.force==force
+    local function seen(e)
+      if a.surface==nil or own_platform then return true end
+      local cx,cy=math.floor(e.position.x/32),math.floor(e.position.y/32)
+      visible[cx]=visible[cx] or {}
+      if visible[cx][cy]==nil then visible[cx][cy]=force.is_chunk_visible(surface,{x=cx,y=cy}) end
+      return visible[cx][cy]
+    end
+    for _,e in ipairs(found) do if seen(e) then labs[#labs+1]=e end end
     -- Groups: labs within NEAR tiles of one another (chains of adjacent labs).
-    local group_of, groups = {}, {}
+    local group_of, groups, cells, positions = {}, {}, {}, {}
+    for i,e in ipairs(labs) do
+      local pos=e.position; positions[i]=pos
+      local cx,cy=math.floor(pos.x/NEAR),math.floor(pos.y/NEAR)
+      cells[cx]=cells[cx] or {}; cells[cx][cy]=cells[cx][cy] or {}
+      local cell=cells[cx][cy]; cell[#cell+1]=i
+    end
     for i, e in ipairs(labs) do
       if not group_of[i] then
         local g = {i}; group_of[i] = g; groups[#groups+1] = g
         local k = 1
         while k <= #g do
-          local x = labs[g[k]].position
-          for j, f in ipairs(labs) do
-            if not group_of[j] and math.abs(f.position.x - x.x) <= NEAR and math.abs(f.position.y - x.y) <= NEAR then group_of[j] = g; g[#g+1] = j end
-          end
+          local x = positions[g[k]]
+          local cx,cy=math.floor(x.x/NEAR),math.floor(x.y/NEAR)
+          for dy=-1,1 do for dx=-1,1 do
+            for _,j in ipairs(cells[cx+dx] and cells[cx+dx][cy+dy] or {}) do
+              local pos=positions[j]
+              if not group_of[j] and math.abs(pos.x-x.x)<=NEAR and math.abs(pos.y-x.y)<=NEAR then group_of[j]=g; g[#g+1]=j end
+            end
+          end end
           k = k + 1
         end
       end
@@ -77,16 +109,19 @@ return function(api)
         local feeders, idle, sources, chained = 0, {}, {}, 0
         for _, ins in pairs(surface.find_entities_filtered{area=box, type='inserter', force=force, limit=128}) do
           local ok, target = pcall(function() return ins.drop_target end)
-          if ok and target and target.type == 'lab' and member[target.unit_number] then
+          if ok and target and target.type == 'lab' and member[target.unit_number] and seen(ins) then
             feeders = feeders + 1
             local src = ins.pickup_target
+            local hidden=src and not seen(src)
+            if hidden then src=nil end
             if src and src.type == 'lab' then chained = chained + 1
             elseif src and not sources[src.unit_number or at(src.position)] then
               sources[src.unit_number or at(src.position)] = src; sources[#sources+1] = src
             end
             local status = api.status_name(ins) or 'unknown'
             if status ~= 'working' and status ~= 'waiting_for_target_to_be_built' and not (ins.held_stack and ins.held_stack.valid_for_read) then
-              local why = status == 'waiting_for_source_items' and (src and 'source ' .. src.name .. ' ' .. at(src.position) .. ' has nothing the lab needs' or 'nothing to pick up from') or status
+              local why = status == 'waiting_for_source_items' and (hidden and 'pickup target outside visible chunks'
+                or src and 'source ' .. src.name .. ' ' .. at(src.position) .. ' has nothing the lab needs' or 'nothing to pick up from') or status
               idle[why] = (idle[why] or 0) + 1
             end
           end
@@ -100,14 +135,14 @@ return function(api)
         for _, name in ipairs(packs) do
           if (seen[name] or 0) > 0 then carried[#carried+1] = short(name) .. ' ' .. seen[name] else absent[#absent+1] = short(name) end
         end
-        if feeders == 0 then feed[1] = 'no inserters feed these labs (hand feed: feed radius=R)'
+        if feeders == 0 then feed[1] = 'no visible inserters feed these labs'
         elseif #absent > 0 and #sources > 0 then feed[#feed+1] = 'no ' .. table.concat(absent, ', ') .. ' on their ' .. #sources .. ' belts/chests' end
         if #carried > 0 then feed[#feed+1] = 'sources hold ' .. table.concat(carried, ', ') end
         lines[#lines+1] = table.concat(parts, ', ') .. '; feeders: ' .. table.concat(feed, '; ')
       end
     end
     local research
-    if not tech then research = 'none: nothing queued (fh call research technology=NAME)'
+    if not tech then research = 'none: nothing queued'
     else
       local progress = force.research_progress or 0
       local names = {}
@@ -120,7 +155,9 @@ return function(api)
         research = research .. string.format(', eta %s at %d working labs', fmt(math.ceil(left)), working)
       else research = research .. ', stalled: no lab is working' end
     end
-    return {research=research, labs=#labs .. (#labs >= MAX_LABS and '+' or '') .. ' in ' .. #groups .. ' groups' .. (#groups > MAX_GROUPS and ' (largest ' .. MAX_GROUPS .. ' shown)' or ''), groups=lines}
+    return {surface=surface.name,position=centre,radius=centre and radius or nil,research=research,
+      labs=#labs .. ' in ' .. #groups .. ' groups' .. (#groups > MAX_GROUPS and ' (largest ' .. MAX_GROUPS .. ' shown)' or ''), groups=lines,
+      limited=#found>=MAX_LABS and 'lab search reached 256 entities; counts cover the visible labs among those found' or nil}
   end
 
   -- science: one science pack's flow over the whole surface, counted the same
@@ -132,7 +169,7 @@ return function(api)
   -- inserter hands): where else it sits and why it does not reach the labs.
   -- One pass for all packs through supply's scan (supply.lua: its bounds).
   M.schema.science = {pack='optional item: a science pack (default: each pack the current research needs)', surface='optional surface name (default yours)',
-    returns='research and per pack one line and its numbers, for the whole surface, the same for everyone: made and used in the last 10 min (the game\'s statistics), makers (crafters of any type set to it, Space Age ones too, by name: working and the other states; packs waiting in their output), held in chests, on belts and in labs (labs lacking it of those that need it), carried by agents, the largest chests with positions; reach: chests by kind, inserter hands, robots carrying it, the inserters taking from its makers and feeding the labs (by status, what the waiting ones\' sources hold), the logistic requesters for it per network (met, on the way, unmet with reasons), and the worst lab (position, what it lacks, its feeder\'s source, the nearest stock); chain: the pack\'s recipe tree from the step down, '
+    returns='research and per pack one line and its numbers, for the whole surface, the same for everyone: made and used in the last 10 min (the game\'s statistics), makers (crafters of any type set to it, Space Age ones too, by name: working and the other states; packs waiting in their output), held in chests, in landing pads and platform hubs, on belts and in labs (labs lacking it of those that need it), carried by agents, the largest holders with positions (chests, landing pads, hubs); reach: chests by kind, inserter hands, robots carrying it, the inserters taking from its makers and feeding the labs (by status, what the waiting ones\' sources hold), the logistic requesters for it per network (met, on the way, unmet with reasons), and the worst lab (position, what it lacks, its feeder\'s source, the nearest stock); chain: the pack\'s recipe tree from the step down, '
       .. 'following the ingredient most of a step\'s makers lack while most of them lack one and ending at the first step whose makers mostly do '
       .. 'not, each step with its makers and made and used per minute (10 min statistics) ("chemical-science-pack: 9 of 14 makers lack '
       .. 'advanced-circuit, made 12/min, used 30/min; advanced-circuit: ...; plastic-bar: 4 of 4 working, made 30/min, used 52/min"); '
@@ -140,7 +177,7 @@ return function(api)
       .. 'and what they put into ("stone: 7 electric-mining-drill (5 working, 2 output full) into 6 transport-belt, 1 wooden-chest"), a resource\'s '
       .. 'required fluid the step below it; '
       .. 'chain_tree: every step down to what nothing makes {item, depth, made_per_min, used_per_min, makers, '
-      .. 'working, states, lacking {ingredient: makers}, miners, miner_states, outputs} (40 steps at most, chain_cut); counted (what the scan read)'}
+      .. 'working, states, lacking {ingredient: makers}, miners, miner_states, outputs} (40 steps at most, chain_cut); counted (what the scan read); effective_research_units (spoilable packs, by quality: observed count, now, packs_per_unit, technology when used by the current research; remaining durability times fresh share, before productivity and lab drain bonuses)'}
   function M.science(p, a)
     local surface = p.surface
     if a.surface ~= nil then
@@ -167,7 +204,7 @@ return function(api)
   function M.science_fresh(surface, force, tech, needed, packs)
     local names = {}
     for _, name in ipairs(packs) do names[name] = true end
-    local scan = api.supply.scan(surface, force, names, {packs=needed})
+    local scan = api.supply.scan(surface, force, names, {packs=needed, science_value=true})
     local stats = force.get_item_production_statistics(surface)
     local function flow(name, category)
       local ok, n = pcall(stats.get_flow_count, {name=name, category=category, precision_index=defines.flow_precision_index.ten_minutes, count=true})
@@ -202,26 +239,45 @@ return function(api)
       for name, n in pairs(by_name) do names[#names+1] = {name=name, n=n} end
       table.sort(names, function(x, y) if x.n ~= y.n then return x.n > y.n end return x.name < y.name end)
       for i, x in ipairs(names) do names[i] = x.n .. ' ' .. x.name end
-      local chests, rows = 0, {}
+      -- Landing pads and platform hubs beside the chests, and among the largest holders (Sol, 23:03: chests 185 and
+      -- the largest chests left out the landing pad's 766; Muse read it as 170 agricultural packs left).
+      local chests, pads, hubs, rows = 0, 0, 0, {}
       for _, c in ipairs(t.chests) do
-        if c.kind ~= 'pad' and c.kind ~= 'hub' and c.kind ~= 'vehicle' then chests = chests + c.n; rows[#rows+1] = c end
+        if c.kind == 'pad' then pads = pads + c.n; rows[#rows+1] = c
+        elseif c.kind == 'hub' then hubs = hubs + c.n; rows[#rows+1] = c
+        elseif c.kind ~= 'vehicle' then chests = chests + c.n; rows[#rows+1] = c end
       end
       table.sort(rows, function(x, y) if x.n ~= y.n then return x.n > y.n end return x.e.position.x < y.e.position.x end)
       local largest = {}
       for i = 1, math.min(3, #rows) do largest[i] = string.format('%s %s %d', at(rows[i].e.position), rows[i].e.name, rows[i].n) end
       local lacking = 0
       for _, u in ipairs(t.users) do if u.lab and u.has == 0 then lacking = lacking + 1 end end
-      local line = string.format('%s: made %d, used %d in 10 min; makers %d (%s%d working%s%s); chests %d, belts %d, labs %d',
+      local line = string.format('%s: made %d, used %d in 10 min; makers %d (%s%d working%s%s); chests %d%s%s, belts %d, labs %d',
         short(name), made, used, #t.makers, #names > 0 and table.concat(names, ', ') .. '; ' or '', working, #list > 0 and ', ' .. table.concat(list, ', ') or '',
-        t.outputs > 0 and '; ' .. t.outputs .. ' in their output' or '', chests, t.belts, t.labs)
+        t.outputs > 0 and '; ' .. t.outputs .. ' in their output' or '', chests, pads > 0 and ', landing pads ' .. pads or '',
+        hubs > 0 and ', platform hubs ' .. hubs or '', t.belts, t.labs)
       if needed[name] then line = line .. string.format(' (%d of %d labs have none)', lacking, labs)
       else line = line .. ' (the current research does not use it)' end
       if carried[name] then line = line .. '; carried: ' .. table.concat(carried[name], ', ') end
-      if #largest > 0 then line = line .. '; largest chests: ' .. table.concat(largest, ', ') end
+      if #largest > 0 then line = line .. '; largest holders: ' .. table.concat(largest, ', ') end
+      -- Value comes from the same stack reads as the spoil spread, including
+      -- labs' partially consumed packs. The surface scan's scope stays explicit.
+      local values, freshness = {}, {}
+      for _, r in ipairs(t.spread or {}) do
+        local value = api.spoil and api.spoil.research_value(r, force)
+        if value then
+          value.item, value.count = r.key, r.count
+          values[#values+1] = value
+          freshness[#freshness+1] = r.key .. '*' .. r.count .. ': ' .. api.spoil.research_text(r, force)
+        end
+      end
+      table.sort(values, function(x, y) return x.item < y.item end)
+      table.sort(freshness)
+      if #freshness > 0 then line = line .. '; observed stacks on ' .. surface.name .. ': ' .. table.concat(freshness, '; ') end
       -- The pack's recipe tree from the scan's crafters (supply.lua chain).
       local okc, chain = pcall(api.supply.chain, scan, force, surface, name)
-      out[#out+1] = {pack=name, made_10min=made, used_10min=used, makers=#t.makers, makers_working=working, makers_states=#list > 0 and list or nil,
-        in_makers=t.outputs, chests=chests, belts=t.belts, labs=t.labs, labs_lacking=needed[name] and lacking or nil,
+      out[#out+1] = {pack=name, effective_research_units=#values > 0 and values or nil, made_10min=made, used_10min=used, makers=#t.makers, makers_working=working, makers_states=#list > 0 and list or nil,
+        in_makers=t.outputs, chests=chests, landing_pads=pads > 0 and pads or nil, hubs=hubs > 0 and hubs or nil, belts=t.belts, labs=t.labs, labs_lacking=needed[name] and lacking or nil,
         carried=carried[name], largest=#largest > 0 and largest or nil, line=line, reach=api.supply.reach(t, scan, needed),
         chain=okc and chain and chain.line or nil, chain_tree=okc and chain and chain.tree or nil, chain_cut=okc and chain and chain.cut or nil}
     end

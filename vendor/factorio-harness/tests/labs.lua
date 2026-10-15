@@ -50,10 +50,10 @@ has(r.groups[1],'feeders: 3 inserters (1 lab-to-lab)')
 has(r.groups[1],'1 idle: source transport-belt (0,-3) has nothing the lab needs')
 has(r.groups[1],'no logistic on their 1 belts/chests')
 has(r.groups[1],'sources hold automation 12')
-has(r.groups[2],'labs (60,60)-(60,60): 0/1 working, 1 no_power, lack automation (1), logistic (1); feeders: no inserters feed these labs')
+has(r.groups[2],'labs (60,60)-(60,60): 0/1 working, 1 no_power, lack automation (1), logistic (1); feeders: no visible inserters feed these labs')
 -- Nothing researching, nothing working.
 force.current_research=nil
-eq(L.view(p,{}).research,'none: nothing queued (fh call research technology=NAME)')
+eq(L.view(p,{}).research,'none: nothing queued')
 force.current_research=tech; a1.status=2
 has(L.view(p,{}).research,'stalled: no lab is working')
 
@@ -106,8 +106,8 @@ eq(s.surface,'nauvis'); eq(s.research,'logistics 25%'); eq(#s.packs,2)
 local g=s.packs[2]
 eq(g.pack,green); eq(g.made_10min,120); eq(g.used_10min,90); eq(g.makers,2); eq(g.makers_working,1); eq(g.makers_states[1],'1 full_output')
 eq(g.in_makers,7); eq(g.chests,212); eq(g.belts,6); eq(g.labs,2); eq(g.labs_lacking,3); eq(g.carried[1],'grok 40')
-eq(g.line,'logistic: made 120, used 90 in 10 min; makers 2 (2 assembling-machine-2; 1 working, 1 full_output; 7 in their output); chests 212, belts 6, labs 2 (3 of 4 labs have none); carried: grok 40; largest chests: (40,0) steel-chest 200, (44,0) steel-chest 12')
-eq(s.packs[1].line,'automation: made 0, used 0 in 10 min; makers 1 (1 assembling-machine-2; 1 working); chests 3, belts 12, labs 11 (1 of 4 labs have none); largest chests: (44,0) steel-chest 3')
+eq(g.line,'logistic: made 120, used 90 in 10 min; makers 2 (2 assembling-machine-2; 1 working, 1 full_output; 7 in their output); chests 212, belts 6, labs 2 (3 of 4 labs have none); carried: grok 40; largest holders: (40,0) steel-chest 200, (44,0) steel-chest 12')
+eq(s.packs[1].line,'automation: made 0, used 0 in 10 min; makers 1 (1 assembling-machine-2; 1 working); chests 3, belts 12, labs 11 (1 of 4 labs have none); largest holders: (44,0) steel-chest 3')
 eq(s.counted,'4 crafters, 4 labs, 3 chests, 2 of 2 belts, 3 inserters, 0 robots, 0 logistic networks')
 -- reach: where else the pack sits and why it does not reach the labs.
 has(g.reach,'in other chests 212')
@@ -133,6 +133,18 @@ eq(science(p,{pack=green}).research,'none')
 force.current_research=tech
 -- The science reply carries each pack's chain too (here: its makers' recipe has no ingredients).
 eq(science(p,{}).packs[2].chain,'chain: logistic-science-pack: 1 of 2 working (1 full_output), made 12/min, used 9/min')
+-- A landing pad beside the chests and among the largest holders (Sol, 23:03: chests 185 and the largest chests left
+-- out the pad's 766; Muse read it as 170 agricultural packs left).
+do
+  defines.inventory.cargo_landing_pad_main=defines.inventory.cargo_landing_pad_main or 42
+  local pad=chest(70,0,{[green]=766}); pad.name='cargo-landing-pad'; pad.type='cargo-landing-pad'
+  everything[#everything+1]=pad
+  local gp=science(p,{}).packs[2]
+  eq(gp.chests,212); eq(gp.landing_pads,766)
+  has(gp.line,'chests 212, landing pads 766, belts 6')
+  has(gp.line,'largest holders: (70,0) cargo-landing-pad 766, (40,0) steel-chest 200, (44,0) steel-chest 12')
+  everything[#everything]=nil
+end
 
 -- chain (Sonnet, shift09: "I spend most cycles diagnosing that by hand"): the pack's recipe tree from the scan's
 -- crafters, made and used per minute at each step, following what most makers lack down to the first step whose
@@ -212,4 +224,26 @@ do
   local c4=S2.chain({crafters={},miners={pump}},force,surface,'water')
   has(c4.line,'water: 1 offshore-pump (1 working),')
 end
+-- friction6: surface-only scans have no caller-centred radius; current inventory reads need visibility.
+do
+  local searched
+  local remote_surface={name='remote-labs',find_entities_filtered=function(f) searched=f; return f.type=='lab' and {a1,b1} or {} end}
+  game.get_surface=function(name) return name=='remote-labs' and remote_surface end
+  force.is_chunk_visible=function(s,c) assert(s==remote_surface); return c.x==0 end
+  local L=dofile('mod/agent-harness_0.1.0/labs.lua'){
+    center=function(p,a) assert(p.surface==remote_surface); return a.position or p.position end,
+    integer=function(v,d) return v or d end,status_name=function(e) return names[e.status] end}
+  local r=L.view(p,{surface='remote-labs'})
+  eq(r.surface,'remote-labs'); eq(r.position,nil); eq(r.radius,nil); eq(r.labs,'1 in 1 groups')
+  r=L.view(p,{surface='remote-labs',position={x=0,y=0},radius=8})
+  eq(r.position.x,0); eq(r.radius,8)
+  local ok,err=pcall(L.view,p,{surface='remote-labs',radius=8})
+  assert(not ok and tostring(err):find('requires position',1,true),tostring(err))
+  ok,err=pcall(L.view,p,{surface='absent'}); assert(not ok and tostring(err):find('no surface absent',1,true))
+  local hidden=belt(64,0,{{name=green,count=9}})
+  local feeder=inserter(1,0,3,hidden,a1)
+  remote_surface.find_entities_filtered=function(f) return f.type=='lab' and {a1} or {feeder} end
+  has(L.view(p,{surface='remote-labs'}).groups[1],'pickup target outside visible chunks')
+end
+
 print('labs: ok')

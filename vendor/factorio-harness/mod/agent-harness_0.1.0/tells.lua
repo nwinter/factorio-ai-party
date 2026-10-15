@@ -14,13 +14,14 @@ return function(api)
     s.tells = s.tells or {seq=0, log={}}
     return s.tells
   end
-  local function one_line(text)
+  local function one_line(text, limit)
     assert(type(text) == 'string', 'text must be a string')
     text = text:gsub('[%c]+', ' '):gsub('^%s+', ''):gsub('%s+$', '')
     assert(#text > 0, 'text is required: fh tell NAME "text" (NAME,NAME or team for several)')
     -- Cut, and the reply says so (shift01: 324 characters cut to 300 unseen).
-    local cut = #text > MAX_LEN and {length=#text, kept=MAX_LEN} or nil
-    if cut then text = text:sub(1, MAX_LEN) end
+    limit = limit or MAX_LEN
+    local cut = #text > limit and {length=#text, kept=limit} or nil
+    if cut then text = text:sub(1, limit) end
     return text, cut
   end
   -- `to` as names (array, or one string split on commas and spaces), any
@@ -167,11 +168,12 @@ return function(api)
     s.operator_requests = s.operator_requests or {seq=0, log={}, sent={}}
     return s.operator_requests
   end
-  M.schema.operator = {text='1..500 characters, one line (longer is cut to 500; the reply says so): a request to the operator, the people running the harness and the stream: a harness bug, a tool you need, something viewers asked for that the team cannot do. The operator may answer in the game chat as server: (an @name there reaches you like a mention). Not for help with the game',
-    returns='seq (cut {length, kept} when the text was cut); at most one a minute and 10 an hour'}
+  M.schema.operator = {text='1..2000 bytes, one line; longer is refused without filing or using a rate-limit slot: a request to the operator, the people running the harness and the stream: a harness bug, a tool you need, something viewers asked for that the team cannot do. The operator may answer in the game chat as server: (an @name there reaches you like a mention). Not for help with the game',
+    returns='seq; the full normalized line is filed; at most one a minute and 10 an hour'}
   function M.handlers.operator(p, a)
     local me = api.who(p)
-    local text, cut = one_line(a.text)
+    local text, cut = one_line(a.text, 2000)
+    assert(not cut, 'operator text exceeds 2000 bytes; no request filed and no rate-limit slot used')
     local r = requests()
     local mine = r.sent[me] or {}
     local keep = {}
@@ -188,7 +190,7 @@ return function(api)
     r.seq = r.seq + 1
     r.log[#r.log+1] = {seq=r.seq, tick=game.tick, from=me, text=text}
     while #r.log > OP_LOG do table.remove(r.log, 1) end
-    return {seq=r.seq, cut=cut, note='filed for the operator; an answer comes in the game chat as server:'}
+    return {seq=r.seq, note='filed for the operator; an answer comes in the game chat as server:'}
   end
   -- Operator read: {seq, tick, from, text} after `since`, oldest first, and cursor.
   function M.operator.operator_requests(a)

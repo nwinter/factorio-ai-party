@@ -316,7 +316,7 @@ r=trace.trace(p,{item='chemical-science-pack',near={x=60,y=60},radius=5})
 eq(r.makers,'nothing on nauvis makes chemical-science-pack'); eq(r.area,'(60,60) radius 5'); eq(r.labs_short,'1 of 1 labs hold none of it')
 -- Arguments.
 fails(function() trace.trace(p,{item='chemical-science-pack',position={x=1,y=1}}) end,'give item, or position')
-fails(function() trace.trace(p,{position={x=0.5,y=0.5},near={x=1,y=1}}) end,'surface, near and radius go with item')
+fails(function() trace.trace(p,{position={x=0.5,y=0.5},near={x=1,y=1}}) end,'near and radius go with item')
 fails(function() trace.trace(p,{position={x=0.5,y=0.5},forward=true,all=true}) end,'all goes with a backward trace')
 fails(function() trace.trace(p,{item='unobtainium'}) end,'item must be an item name')
 fails(function() trace.trace(p,{}) end,'trace takes position')
