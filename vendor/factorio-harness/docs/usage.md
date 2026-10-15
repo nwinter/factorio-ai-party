@@ -727,7 +727,9 @@ fh call status
     reply says it: `limit: 6487 ticks (1m48s) for the planned route, 589 tiles in straight lines through the via points
     at 0.15 tiles a tick` (`3600 ticks (1m00s)` for a short walk, `..., as given` with `ticks`). A walk that runs out
     names the limit and the leg in `why`: `time ran out at (265.4,-251.7), 160.2 tiles from the target: its limit,
-    3600 ticks (1m00s), ran out on leg 4 of 7 (to (300,-260))`, and `last.limit`.
+    3600 ticks (1m00s), ran out on leg 4 of 7 (to (300,-260))`, and `last.limit`; `--wait`'s error line ends with
+    that why (`move_to timed_out at its own tick limit: time ran out at ...`), as it does for any timed action that
+    says one.
   - A leg that does not arrive ends the walk with its outcome, and `last.why` (and `build_spot`) describe that leg.
   - `last.legs` lists each leg, `{to, outcome, s, why, avoided_enemies}`, then the legs `not walked`; `last.target`
     is `position`.

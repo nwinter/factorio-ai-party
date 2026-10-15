@@ -1053,7 +1053,9 @@ async function main() {
     const why = typeof last.why === 'string' ? last.why : typeof last.error === 'string' ? last.error : undefined;
     if (last.outcome !== 'timed_out') return {code:'action_interrupted',message:`Control ended: ${last.outcome}${why !== undefined ? `: ${why}` : ''}`};
     const what = action === 'wait_until' ? `wait_until timed_out: ${last.condition ?? 'condition'} not met${last.saw !== undefined ? ` (saw ${JSON.stringify(last.saw)})` : ''}; `+
-      `the timeout comes from --wait-timeout MS (up to 900000) or args.timeout ticks (up to 54000)` : `${action} timed_out at its own tick limit`;
+      `the timeout comes from --wait-timeout MS (up to 900000) or args.timeout ticks (up to 54000)`
+      // and why, when the action says it (round1820a: a move_to's limit and the leg it ran out on)
+      : `${action} timed_out at its own tick limit${why !== undefined ? `: ${why}` : ''}`;
     return {code:'timed_out',message:what};
   }
   // The sleep request's own reply carries the team hints pending when it
