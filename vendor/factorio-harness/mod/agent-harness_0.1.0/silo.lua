@@ -167,6 +167,15 @@ return function(api)
     rows[2] = {inventory='rocket_silo_rocket', alias='cargo', holds=rocket_inv and held(rocket_inv) or 'no rocket to load yet',
       what=string.format("the rocket's cargo: it goes up with the rocket at launch (lift %g kg); not used for parts", api.cargo.kg(lift)),
       example=call{position=pos, direction='to_entity', item=loaded[1] and loaded[1].name or 'space-platform-foundation', count=10, inventory='rocket_silo_rocket'}}
+    -- Cargo comes out again by hand, as the silo's GUI allows, without a launch (Luna, shift17 10:50: 447 spoilage in
+    -- Gleba's rocket "and no way to clear it"; her transfer to_player from it at 11:46 moved 648 iron plates out).
+    local spoiled = 0
+    for _, s in ipairs(loaded) do if s.name == 'spoilage' then spoiled = spoiled + s.count end end
+    if rocket_inv and #loaded > 0 then
+      rows[2].take_example = call{position=pos, direction='to_player', item=spoiled > 0 and 'spoilage' or loaded[1].name, inventory='rocket_silo_rocket'}
+      rows[2].what = rows[2].what .. '; it comes out by hand without a launch (take_example)'
+    end
+    if spoiled > 0 then rows[2].spoilage = spoiled end
     local trash = defines.inventory.rocket_silo_trash and try(function() return e.get_inventory(defines.inventory.rocket_silo_trash) end)
     if trash then
       rows[3] = {inventory='rocket_silo_trash', holds=held(trash),

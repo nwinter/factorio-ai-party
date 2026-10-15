@@ -1950,6 +1950,11 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     (`reserved_note: robots have 20 copper-cable reserved to take at it now: they may empty it before you arrive`), and
     a take that finds none at a chest named to you in the last 10 minutes says what it held then: `...; it held 30
     copper-cable 41s ago when named to you, 5 of it then reserved for robots to take`.
+  - `transfer`, `collect`, `feed`, `refuel`, `rearm` and `pickup` take no `surface` (Grok, shift17 10:50, a requester on
+    Vulcanus and an empty silo chest): items move by hand only where the character stands, within its reach; remote
+    view has no hands, as in the game. The refusal says so and names what moves items on another surface: robots
+    between chests of a logistic network there (requests), inserters and belts between entities, rockets and space
+    platforms between surfaces.
   - `transfer` or `collect {positions, item | items, pick, to}` (Luna 07:57: a repeating seed courier walked 300+ tile
     laps from empty seed chests):
     - `pick: "first_with_stock"` reads every listed place as `inspect` does (in sight, or by remote view where our
@@ -2519,7 +2524,10 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   - `rocket_silo_trash`: take-only, as above.
 
   `inspect` of a silo lists them as `silo_inventories [{inventory, alias, holds, what, example}]` (the example is a
-  transfer call for that silo). An alias works on a silo only; the reply's `inventory` names the inventory it stands
+  transfer call for that silo). The cargo row also has `take_example` while the rocket holds anything: the rocket's
+  cargo comes out by hand without a launch, as the silo's GUI allows (`transfer {position, direction: "to_player",
+  inventory: "rocket_silo_rocket", item}`; Luna, shift17: 447 spoilage in Gleba's rocket, "no way to clear it"; the
+  same call moved 648 iron plates out at 11:46), spoilage first, and `spoilage` counts the spoilage aboard. An alias works on a silo only; the reply's `inventory` names the inventory it stands
   for. A rocket-part ingredient put into the cargo says so: `cargo_note: "50 processing-unit went into
   rocket_silo_rocket (cargo), which goes up with the rocket; processing-unit is a rocket-part ingredient, and the
   rocket-part recipe takes its ingredients from assembling_machine_input (parts)"`. An inventory name the entity does
