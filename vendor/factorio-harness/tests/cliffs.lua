@@ -128,6 +128,13 @@ c3.valid=false
 advance(40)
 last=astra('status',{}).last
 eq(last.outcome,'cliffs_destroyed'); eq(#last.destroyed,1); eq(#last.skipped,1); eq(last.skipped[1].why,'no cliff left in the blast'); eq(last.left,2)
+-- a spot whose cliff went before the throw (robots, a teammate): nothing thrown, nothing_to_do (a success for fh --wait)
+local c4=cliff(79,40)
+astra('clear_cliffs',{position={x=79,y=40}})
+c4.valid=false
+advance(2)
+last=astra('status',{}).last
+eq(last.outcome,'nothing_to_do'); eq(last.thrown,0); eq(last.left,2)
 -- refusals: no cliff in the blast (the nearest named), out of range without walk, not held, a grenade still throws
 fails(function() astra('use_item',{item='cliff-explosives',position={x=90,y=30}}) end,'no cliff within the blast (radius 1.5) of (90,30); nearest cliff: cliff-gleba at (100,38), 12.8 tiles away')
 fails(function() astra('use_item',{item='cliff-explosives',position={x=100,y=38}}) end,'out of range: (100,38) is 25.0 tiles away; cliff-explosives reaches 10 tiles (walk: true walks into range first)')
