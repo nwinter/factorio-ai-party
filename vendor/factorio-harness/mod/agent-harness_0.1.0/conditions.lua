@@ -44,10 +44,15 @@ return function(api)
     local parts,after='',''
     pcall(function() parts=string.format(', parts %d/%d',e.rocket_parts,e.prototype.rocket_parts_required) end)
     -- A built rocket said plainly: ready to launch, not launched (Astra 10:50); the parts counted then are the next
-    -- rocket's, said last (round1650d: Grok read "parts consumed (13/50)" beside a ready rocket as one being built).
+    -- rocket's, said last (round1650d: Grok read "parts consumed (13/50)" beside a ready rocket as one being built), and
+    -- the built rocket's own parts with it (shift14 21:20: Grok read a ready rocket beside 6/50 as one with 6 parts).
     if ready then
-      state='rocket ready to launch, not launched'
-      pcall(function() after=string.format('; the next rocket\'s parts %d/%d',e.rocket_parts,e.prototype.rocket_parts_required) end)
+      state='rocket built and ready to launch, not launched'
+      pcall(function()
+        local n=e.prototype.rocket_parts_required
+        state=string.format('rocket built (%d/%d parts) and ready to launch, not launched',n,n)
+        after=string.format('; parts for the rocket after it %d/%d',e.rocket_parts,n)
+      end)
       parts=''
     end
     local cargo={}

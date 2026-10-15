@@ -113,10 +113,10 @@ fs.productivity_bonus=0
 -- since teammates read 0/50 as launched or as a missing kit; nothing is "left" to make for it.
 local n=S.read(p,{surface='nauvis'}).silos[1]
 eq(n.parts,nil); eq(n.next_parts,'0/50'); eq(n.rocket_ready,true); eq(n.crafting,nil); eq(n.lacks,nil)
-eq(n.rocket,"rocket ready to launch, not launched; the next rocket's parts 0/50; no launch seen")
+eq(n.rocket,"rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 0/50; no launch seen")
 eq(n.cargo.kg,933.3); eq(n.cargo.stacks,2); eq(n.cargo.items,'processing-unit*100 space-platform-foundation*30'); eq(n.cargo.over_kg,nil)
 eq(n.platforms_above[1],'Nest (waiting for its starter pack)'); eq(n.platforms_above[2],'Sunward'); eq(#n.platforms_above,2)
-assert(n.line:find("rocket-silo (15.5,59.5) on nauvis: rocket ready to launch, not launched; the next rocket's parts 0/50; cargo 933.3/1000 kg, 2/20 slots: processing-unit*100 space-platform-foundation*30; automatic requests off; our platforms above: Nest (waiting for its starter pack), Sunward; no launch seen",1,true),n.line)
+assert(n.line:find("rocket-silo (15.5,59.5) on nauvis: rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 0/50; cargo 933.3/1000 kg, 2/20 slots: processing-unit*100 space-platform-foundation*30; automatic requests off; our platforms above: Nest (waiting for its starter pack), Sunward; no launch seen",1,true),n.line)
 assert(not n.line:find('parts left',1,true),n.line)
 
 -- 4. A launch: the game's order event (cargo and destination), then the agent's call the same tick (who).
@@ -134,22 +134,29 @@ assert(n.line:find('last launch 12m05s ago to platform Sunward by sol, cargo pro
 S.on_launch_ordered({rocket_silo=ns,rocket={attached_cargo_pod={get_inventory=function() return inv({}) end,cargo_pod_destination={type=1}}}})
 n=S.read(p,{surface='nauvis'}).silos[1]
 eq(n.last_launch.to,'orbit'); eq(n.last_launch.by,nil); eq(n.last_launch.cargo,'empty'); eq(n.last_launch.ago,'0s')
-eq(n.rocket,"rocket ready to launch, not launched; the next rocket's parts 0/50; last launch 0s ago to orbit")
+eq(n.rocket,"rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 0/50; last launch 0s ago to orbit")
 -- A ready rocket while the silo makes the next one's parts (round1650d: Grok read "parts consumed (13/50)" as a rocket
 -- still being built): the parts are the next rocket's.
 ns.rocket_parts=13
-eq(S.rocket(ns).rocket_now,"rocket ready to launch, not launched; the next rocket's parts 13/50"); eq(S.rocket(ns).parts,nil)
+eq(S.rocket(ns).rocket_now,"rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 13/50"); eq(S.rocket(ns).parts,nil)
+-- Grok, shift14 04:19 UTC: 27 s after a launch the silo read rocket_ready with next_parts 6/50, read as a rocket with 6
+-- of its parts; it was the rocket whose 50 parts the silo made while the one before waited (it launched at 04:21).
+-- The built rocket's own parts are said with it.
+ns.rocket_parts=6
+local g=S.rocket(ns)
+eq(g.rocket_ready,true); eq(g.built_parts,'50/50'); eq(g.next_parts,'6/50'); eq(g.parts,nil)
+eq(g.rocket_now,"rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 6/50")
 ns.rocket_parts=0
 -- Rising into place (not launched), launching (the parts are the next rocket's), and the read-back.
 ns.rocket_silo_status=1
-eq(S.read(p,{surface='nauvis'}).silos[1].rocket,"rocket built, rising into place (create rocket), not launched; the next rocket's parts 0/50; last launch 0s ago to orbit")
+eq(S.read(p,{surface='nauvis'}).silos[1].rocket,"rocket built (50/50 parts), rising into place (create rocket), not launched; parts for the rocket after it 0/50; last launch 0s ago to orbit")
 eq(S.read(p,{surface='nauvis'}).silos[1].rocket_ready,false)
 ns.rocket_silo_status=14; ns.rocket_parts=3
-eq(S.rocket(ns).rocket_now,"rocket launching (launch started); the next rocket's parts 3/50")
+eq(S.rocket(ns).rocket_now,"rocket launching (launch started); parts for the rocket after it 3/50")
 local st=S.settings(ns)
 eq(st.parts,nil); eq(st.next_parts,'3/50'); eq(st.rocket_ready,false); eq(st.state,'launch_started'); eq(st.rocket,S.rocket(ns).rocket)
 ns.rocket_silo_status=0; ns.rocket_parts=20
-eq(S.rocket(ns).rocket_now,'building the rocket: parts 20/50'); eq(S.rocket(ns).parts,'20/50'); eq(S.rocket(ns).next_parts,nil)
+eq(S.rocket(ns).rocket_now,'building the rocket: parts 20/50'); eq(S.rocket(ns).parts,'20/50'); eq(S.rocket(ns).next_parts,nil); eq(S.rocket(ns).built_parts,nil)
 ns.rocket_silo_status=14; ns.rocket_parts=3
 ns.rocket_silo_status=7; ns.rocket_parts=0
 
