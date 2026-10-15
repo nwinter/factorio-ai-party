@@ -55,7 +55,11 @@ return function(api)
     for _,t in ipairs(action.targets) do
       t.needed=math.max(0,count-api.fuel_inventory(t.entity).get_item_count{name=fuel,quality=action.quality})
     end
-    action.fuel_round={from=from,nearest=a.from=='nearest',sources={},tried={},taken=0,attempts=0}
+    -- from_radius (Haiku, d15 06:20: boilers starved when no coal lay within 64 tiles): how far round each refill stop
+    -- the nearest source is looked for, 1..128 (default 64).
+    assert(a.from_radius==nil or a.from=='nearest','from_radius goes with from: nearest')
+    local from_radius=api.integer(a.from_radius,64,1,128,'from_radius')
+    action.fuel_round={from=from,nearest=a.from=='nearest',radius=from_radius,sources={},tried={},taken=0,attempts=0}
     out.from=a.from;out.types_note=note;out.entities_not_in_sight=hidden>0 and hidden or nil
     out.until_tick=action.until_tick;out.needed=need(action);out.held=api.held(p,fuel,action.quality)
     api.start(p,action)
@@ -81,7 +85,7 @@ return function(api)
   end
   local function source(p,action)
     local r=action.fuel_round
-    local list=r.from and {r.from} or r.nearest and p.surface.find_entities_filtered{position=p.position,radius=64,force=p.force,type=SOURCES,limit=257} or {}
+    local list=r.from and {r.from} or r.nearest and p.surface.find_entities_filtered{position=p.position,radius=r.radius or 64,force=p.force,type=SOURCES,limit=257} or {}
     r.source_read_capped=#list==257 or r.source_read_capped
     local places={}
     for i=1,math.min(256,#list) do
@@ -125,7 +129,7 @@ return function(api)
     end
     if api.held(p,action.item,action.quality)==0 and need(action)>0 then
       if r.attempts>=64 or not source(p,action) then
-        action.why=r.attempts>=64 and 'fuel round reached 64 source attempts' or ('no eligible '..action.item..' found in the selected source'..(r.nearest and 's within 64 tiles' or '')..(r.source_read_capped and ' (source read capped at 256)' or ''))
+        action.why=r.attempts>=64 and 'fuel round reached 64 source attempts' or ('no eligible '..action.item..' found in the selected source'..(r.nearest and 's within '..(r.radius or 64)..' tiles' or '')..(r.source_read_capped and ' (source read capped at 256)' or ''))
         return 'out_of_items'
       end
       return nil

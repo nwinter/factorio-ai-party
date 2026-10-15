@@ -128,6 +128,21 @@ eq(counts[1].entities['rocket-silo'],1); eq(count_tick,5000)
 localstate.census.done.start=7000 -- failed retry can postpone scheduling, never change the count observation age
 eq(select(2,C.buildings(force)),5000)
 eq(C.buildings(neutral),nil,'player census is not a different force census')
+-- Fuel users (fuelbudget.lua): a burner registers on the same pass and is published with it.
+do
+  prototypes.entity=prototypes.entity or {}
+  prototypes.entity.boiler={burner_prototype={effectivity=1}}
+  local b={valid=true,type='boiler',name='boiler',unit_number=43,position={x=4,y=4},surface=surface,force=force,status=0}
+  local ls,once={},true
+  local C2=dofile('mod/agent-harness_0.1.0/census.lua'){state=function() return ls end,
+    walk={every=function() return 1 end,due=function() return true end,start=function() return {} end,
+      band=function() if once then once=false return {b} end end}}
+  eq(C2.fuel_users(surface),nil)
+  C2.tick(5000); C2.tick(5001); C2.tick(5002)
+  ls.census.job.stage='done'; ls.census.job.base.x={}; C2.tick(5003)
+  local users,as_of=C2.fuel_users(surface); eq(#users,1); eq(users[1],b); eq(as_of,5000)
+end
+print('census fuel users: ok')
 list[1]=nil
 list=C.silos{surface=surface,force=force}; eq(#list,1,'caller sorting cannot change the index')
 target.valid=false; list=C.silos{surface=surface,force=force}; eq(#list,0)

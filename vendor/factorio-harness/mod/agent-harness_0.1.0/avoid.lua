@@ -48,11 +48,23 @@ return function(api)
     if v == false then return nil end
     if v == nil then return {spawners=true, attacks=true, pad=M.WORM_PAD} end
     if v == true then return {spawners=true, attacks=true, pad=M.PAD} end
-    assert(type(v) == 'number' and v >= 0 and v <= 32, 'avoid_enemies must be true, false or a margin 0..32 tiles')
+    -- {distance: N} (Opus, d15 07:50: avoid_enemies false walked him through a nest, death 32; the default kept him off
+    -- outposts): every worm and spawner the map shows is avoided by N tiles from the structure, its own reach not
+    -- counted (a worm's range can be more than N); areas under attack now as by default.
+    if type(v) == 'table' then
+      local n = v.distance
+      assert(type(n) == 'number' and n >= 4 and n <= 64 and next(v, next(v)) == nil,
+        'avoid_enemies {distance: N}: N 4..64 tiles kept from every worm and spawner the map shows (their reach not counted)')
+      return {spawners=true, attacks=true, pad=0, distance=n}
+    end
+    assert(type(v) == 'number' and v >= 0 and v <= 32, 'avoid_enemies must be true, false, a margin 0..32 tiles or {distance: N}')
     return {spawners=true, attacks=true, pad=v, strict=true}
   end
   function M.describe(mode)
     if not mode then return nil end
+    if mode.distance then
+      return string.format('worms and spawners (%g tiles from each; their reach not counted) and areas under attack now (%d tiles)', mode.distance, M.ATTACK_R)
+    end
     return string.format('worms (range + %g), spawners (%d tiles + %g) and areas under attack now (%d tiles + %g)', mode.pad, M.SPAWNER_REACH, mode.pad,
       M.ATTACK_R, mode.pad)
   end
@@ -77,7 +89,7 @@ return function(api)
     return r
   end
   -- The farthest a disc can reach: behemoth worms 48, spawners 40 (M.SPAWNER_REACH).
-  local function max_reach(mode) return 48 + mode.pad end
+  local function max_reach(mode) return (mode.distance and math.max(mode.distance, 24) or 48) + mode.pad end
   -- The areas under attack now on a surface (threat.lua's incidents, hit within M.ATTACK_ACTIVE), as discs within the
   -- box {x0, y0, x1, y1} (nil: all of them): {x, y, r, range, name ('attack #ID'), attack=true, id, ago (s), size}.
   function M.attack_discs(surface, mode, box)
@@ -214,6 +226,7 @@ return function(api)
         if mode.spawners or not e.spawner then
           local range = M.reach(e.name, e.spawner)
           if e.spawner then range = math.max(range, M.SPAWNER_REACH) end
+          if mode.distance then range = mode.distance end
           discs[#discs+1] = {x=e.x, y=e.y, r=range + mode.pad, range=range, name=e.name, spawner=e.spawner}
         end
       end
@@ -829,7 +842,7 @@ return function(api)
     local mode=nav.foes and nav.foes.mode or nav.avoid_mode
     if not (mode and mode.strict) or p.surface.platform then return true end
     local pts={p.position,to}
-    local near=M.chunks_near(pts,48+mode.pad)
+    local near=M.chunks_near(pts,max_reach(mode))
     -- A path supplies the cache; direct steering waits for the same bounded reads.
     local need=M.missing(p.surface,near)
     if #need>0 then M.scan(p.surface,p.force,need,M.CHUNKS_PER_TICK); return false end

@@ -109,6 +109,7 @@ already targets your character.
   the ingredient most makers lack (`chemical-science-pack: 9 of 14 makers lack advanced-circuit, ...; plastic-bar:
   4 of 4 working, made 30/min, used 52/min`), and `chain_tree` lists every step down to ores and fluids; a mined or pumped step names its drills or pumps, their states
   (working, output full, no resource left) and what they put into.
+- `./fh call fuel_budget` (optional `"surface"`): each fuel made and used per minute, and each group of fuel users (boilers, furnaces, burner drills, heating towers, `recipe plastic-bar`, ...) with what it burns per minute and the minutes its own fuel lasts, fewest first.
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
   `"surface"`) reads one item: where it sits (chests by kind, belts (`belt_lines`: the 5 belt lines holding the most, with their ends and the tile with the most), machine outputs, inserter hands, robots,
   characters), each logistic network's stock of it (free and reserved, and which requesters the reserved stock is for),
@@ -386,6 +387,7 @@ already targets your character.
   `"dry_run":true`; a tile anything stands on is refused, naming it. `construct` mines tiles marked for deconstruction too.
   Entity `mine` takes one `position` per call or queue step; its `positions`/`area` require `tiles: true`.
   `mine {position, count: 200}` on ore, coal or stone mines 200 units in one call (outcome `mined`), going on to the next tile in reach.
+  `move_to {avoid_enemies: {distance: 12}}` keeps every worm and spawner 12 tiles off, their reach not counted. `feed` takes `position` with `radius` (its centre); `feed {area}` over 64 machines walks one tour; `refuel {from: "nearest", from_radius: 128}` looks farther for fuel.
 - `build {item: "rail-ramp", position, direction}` and `construct` on a ramp ghost build it by hand from one held ramp;
   the centre snaps to the ramp grid, with the same collision and reach checks.
 - A `craft` stock refusal names stocking chests and queue-step `on_fail`: `abort` pauses, `skip` continues,

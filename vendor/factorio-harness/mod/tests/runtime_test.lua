@@ -1562,6 +1562,35 @@ eq(tour.places,1); eq(call('status').active.kind,'gather'); advance(1)
 local toured=call('status').last
 eq(toured.outcome,'topped_up'); eq(toured.op,'feed'); eq(toured.given,5); eq(toured.items['iron-ore'],5); eq(f1.slots[3][1].count,5)
 eq(call('feed',{radius=20,items={'iron-ore'}}).places,0); advance(1); eq(call('status').last.outcome,'nothing_to_do')
+-- position + radius: the radius's centre, as rearm and refuel take it (Muse, d15 06:28: feed refused it).
+do
+  local kf,centre=p.surface.find_entities_filtered,nil
+  p.surface.find_entities_filtered=function(f) if f.radius and f.radius>=1 and not centre then centre=f.position end return kf(f) end
+  eq(call('feed',{position={x=50,y=60},radius=20,items={'iron-ore'}}).places,0); eq(centre.x,50); eq(centre.y,60); advance(1)
+  centre=nil; call('refuel',{position={x=40,y=30},radius=20,count=1}); eq(centre.x,40); advance(1)
+  p.surface.find_entities_filtered=kf
+end
+-- feed over an area with more than 64 machines: one walking tour (Opus, d15 06:20: refused 3 times that day).
+do
+  local kf=p.surface.find_entities_filtered
+  local many={}
+  for i=1,65 do many[i]={valid=true,name='lab',type='lab',position={x=i,y=40},force=p.force,unit_number=5000+i,prototype={lab_inputs={'automation-science-pack'}},
+    get_inventory=function() return inv(stack(nil,0)) end} end
+  p.surface.find_entities_filtered=function(f) if f.area then return many end return kf(f) end
+  local r=call('feed',{area={left_top={x=0,y=30},right_bottom={x=70,y=50}},items={'iron-ore'}})
+  eq(r.area_targets,65); eq(r.area_tour,'65 machines in the area (over 64): fed as one walking tour, as radius does')
+  eq(r.nothing,'nothing in the area wants what you hold (65 machines of those kinds there)'); eq(r.places,0)
+  advance(1); eq(call('status').last.outcome,'nothing_to_do')
+  p.surface.find_entities_filtered=kf
+end
+-- A rearm/refuel tour out of it with stops left ends out_of_items only while one of them still wants it (Haiku, d15
+-- 07:50); else topped_up (runtime.tour_wants).
+do
+  local full=inv(stack('coal',10)); local low=inv(stack('coal',2))
+  local function burner(i) return {valid=true,get_fuel_inventory=function() return i end,get_inventory=function(k) return k==defines.inventory.fuel and i or nil end} end
+  eq(runtime.tour_wants(burner(full),{op='refuel',item='coal',count=5}),false)
+  eq(runtime.tour_wants(burner(low),{op='refuel',item='coal',count=5}),true)
+end
 -- Round 03:20. Fakes: furnaces at (3,0) and (4,0), boilers at (1..3,3); a point finds what stands there.
 local function boiler(x,count)
   local fuel=inv(stack('coal',count))

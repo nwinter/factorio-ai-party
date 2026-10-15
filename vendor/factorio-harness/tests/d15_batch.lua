@@ -154,3 +154,39 @@ do
   eq(E.normalize({{name='inserter',position={x=1,y=1}}}),0)
 end
 print('d15_batch settings: ok')
+
+-- 4, 15 (Opus): fuel_budget: made/used per minute, groups with their burn and minutes left. ------------------------
+do
+  defines={entity_status={working=1,no_fuel=2,low_power=3},inventory={assembling_machine_input=2},flow_precision_index={ten_minutes=2}}
+  prototypes={item={coal={fuel_value=4e6},['solid-fuel']={fuel_value=12e6},['petroleum-gas']={},['plastic-bar']={}},
+    recipe={['plastic-bar']={name='plastic-bar',energy=1,ingredients={{type='item',name='coal',amount=1},{type='fluid',name='petroleum-gas',amount=20}}}}}
+  local function inv(t) return {get_contents=function() local o={} for k,v in pairs(t) do o[#o+1]={name=k,count=v} end return o end} end
+  -- a boiler: 1.8 MW = 30000 J/tick; coal 4 MJ: 27 coal/min working, effectivity 1
+  local function boiler(coal,status)
+    return {valid=true,type='boiler',name='boiler',status=status,burner={},prototype={max_energy_usage=30000,burner_prototype={effectivity=1}},
+      get_fuel_inventory=function() return inv(coal>0 and {coal=coal} or {}) end}
+  end
+  local furnace={valid=true,type='furnace',name='stone-furnace',status=1,burner={},prototype={max_energy_usage=1500,burner_prototype={effectivity=1}},
+    get_fuel_inventory=function() return inv({coal=5}) end}
+  local plant={valid=true,type='assembling-machine',name='chemical-plant',status=1,crafting_speed=1,get_recipe=function() return {name='plastic-bar'} end,
+    get_inventory=function() return inv({coal=6}) end}
+  local users={boiler(54,1),boiler(27,1),boiler(0,2),furnace,plant}
+  local F=require('fuelbudget'){fuel_users=function() return users,500 end,status_name=function(e) return e.status==1 and 'working' or 'no_fuel' end}
+  local stats={get_flow_count=function(f) if f.name=='coal' then return f.category=='input' and 300 or 600 end return 0 end}
+  game={tick=1000,get_surface=function() return nil end}
+  local p={surface={index=1,name='nauvis'},force={name='player',get_item_production_statistics=function() return stats end}}
+  local r=F.read(p,{})
+  eq(r.as_of,500); eq(r.read,5)
+  eq(r.items[1].item,'coal'); eq(r.items[1].made_per_min,30); eq(r.items[1].used_per_min,60)
+  local by={}; for _,g in ipairs(r.groups) do by[g.group]=g end
+  local b=by.boilers
+  eq(b.machines,3); eq(b.working,2); eq(b.fuel[1].burn_per_min,54); eq(b.fuel[1].held,81); eq(b.fuel[1].minutes_left,1.5); eq(b.empty_fuel,1)
+  has(b.line,'boilers: 3 (2 working, 1 no_fuel); coal: burns about 54/min, holds 81 (about 1.5 min at that rate); 1 with empty fuel slots')
+  eq(by.furnaces.fuel[1].burn_per_min,1.4)
+  local pl=by['recipe plastic-bar']; eq(pl.fuel[1].burn_per_min,60); eq(pl.fuel[1].held,6); eq(pl.fuel[1].minutes_left,0.1)
+  eq(r.groups[1].group,'recipe plastic-bar','fewest minutes first')
+  has(r.items[1].line,'the groups below burn about 115.4/min')
+  -- kept 10 s
+  users[1].valid=false; eq(F.read(p,{}).read,5)
+end
+print('d15_batch fuel_budget: ok')
