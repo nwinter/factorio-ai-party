@@ -5005,5 +5005,12 @@ end)()
     no_unknown(function() call('wait_until',step) end,'direct '..i)
     call('queue_cancel',{})
   end
+  -- the other arguments the d15 batch added, each through the same check
+  for _,c in ipairs({{'load_silo',{up_to=true}},{'refuel',{from_radius=128}},{'queue_edit',{id='job-1',to=1}},{'circuit_set',{set_requests=true}},
+      {'requests',{remove={'coal'},force=true}},{'board',{projects='compact'}},{'board_post',{blocked_by={1},parent=1,open_steps=true}},
+      {'board_update',{take_step=1,release_step=1,open_steps=true,blocked_by={},parent=false}},{'fuel_budget',{surface='nauvis'}},
+      {'mine',{count=5}},{'feed',{position={x=1,y=1},radius=5}},{'queue_submit',{mode='pending'}}}) do
+    no_unknown(function() runtime.check_args(c[1],c[2]) end,'check_args '..c[1])
+  end
 end)()
 print('runtime: '..assertions..' assertions passed')
