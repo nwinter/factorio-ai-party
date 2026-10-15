@@ -740,7 +740,30 @@ return function(api)
     local b,x,y=e.bounding_box,t.position.x,t.position.y
     return b and b.left_top.x<x+1 and b.right_bottom.x>x and b.left_top.y<y+1 and b.right_bottom.y>y
   end
-  local function deconstruct_tiles(p,a,box,cancel,out)
+  -- On a platform (platformtiles2, Astra 21:55: a marked foundation tile at (-2,8) on Sunward stayed for minutes):
+  -- every marked tile there played out by the game's rule (tilecheck.lua): which the hub removes, one at a time and
+  -- in what order, and which wait and why. extra: tiles a dry run would mark, counted as marked.
+  -- (loaded on first use: only a platform needs it)
+  local tilecheck
+  local function platform_plan(p,out,extra)
+    local ok,pl=pcall(function() return p.surface.platform end)
+    if not (ok and pl) then return end
+    if tilecheck==nil then
+      local okr,m=pcall(require,'tilecheck')
+      tilecheck=okr and m() or false
+    end
+    if not tilecheck then return end
+    local marked=tilecheck.marked(p.surface)
+    local seen={}
+    for _,t in ipairs(marked) do seen[tilecheck.key(t[1],t[2])]=true end
+    for _,t in ipairs(extra or {}) do if not seen[tilecheck.key(t[1],t[2])] then marked[#marked+1]=t end end
+    if #marked==0 then return end
+    local plan=tilecheck.plan_removals(p.surface,marked,pl.hub,{})
+    local lines=tilecheck.removal_lines(plan,'marked','on the platform')
+    out.tiles_go=lines.go; out.tiles_waiting=#plan.waiting>0 and #plan.waiting or nil
+    out.waiting=lines.waiting; out.waiting_more=lines.more
+  end
+  local function deconstruct_tiles(p,a,box,cancel,out,dry)
     local names,mine=tile_names(a.tiles)
     if #names==0 then return end
     -- Our tile ghosts of those tiles go, as a planner in tile mode removes
@@ -755,11 +778,14 @@ return function(api)
       assert(#ghosts<=MAX_TILES,'area tile ghost limit exceeded ('..MAX_TILES..'); select a smaller area')
       for _,g in ipairs(ghosts) do
         if g.valid and wanted[g.ghost_name] then
-          local ok,res=pcall(g.order_deconstruction,p.force,real(p))
-          if ok and (res or not g.valid) then removed=removed+1 end
+          if dry then removed=removed+1
+          else
+            local ok,res=pcall(g.order_deconstruction,p.force,real(p))
+            if ok and (res or not g.valid) then removed=removed+1 end
+          end
         end
       end
-      out.tile_ghosts_removed=removed
+      if dry then out.tile_ghosts_would_go=removed else out.tile_ghosts_removed=removed end
     end
     local list=p.surface.find_tiles_filtered{area=box,name=names,limit=MAX_TILES+1}
     assert(#list<=MAX_TILES,'area tile limit exceeded ('..MAX_TILES..' tiles); select a smaller area')
@@ -777,10 +803,14 @@ return function(api)
       return
     end
     local marked,already,refused,blocked,blockers=0,0,{},0,{}
+    local would={}
     local function refuse(why) refused[why]=(refused[why] or 0)+1 end
     for _,t in ipairs(list) do
       if not mine[t.name] then refuse('not_minable')
       elseif t.to_be_deconstructed(p.force) then already=already+1
+      elseif dry then
+        -- The game refuses a mark under what stands there (on a copy of world n: an edge tile under an inserter).
+        if under(t) then refuse('under_entity') else marked=marked+1; would[#would+1]={math.floor(t.position.x),math.floor(t.position.y)} end
       else
         local ok,res=pcall(t.order_deconstruction,p.force,real(p))
         if not ok then refuse('error')
@@ -798,6 +828,7 @@ return function(api)
     local total=0
     for _,n in pairs(refused) do total=total+n end
     out.tiles_marked,out.tiles_already,out.tiles_refused=marked,already,total
+    if dry then out.tiles_marked=nil; out.tiles_would_mark=marked end
     out.refused=next(refused) and refused or nil
     out.tiles_blocked=blocked
     if blocked>0 then
@@ -807,9 +838,12 @@ return function(api)
       out.note=string.format('%d marked tile(s) lie under entities not marked for deconstruction (%s): robots take a tile once what stands on it is gone; mark those too (entity_names)',
         blocked,table.concat(list2,', '))
     end
+    platform_plan(p,out,dry and would or nil)
   end
   local function deconstruct(p,a,cancel)
     permission(p,cancel and 'cancel_deconstruct' or 'deconstruct')
+    assert(a.dry_run==nil or type(a.dry_run)=='boolean','dry_run must be true or false')
+    local dry=a.dry_run==true
     local filters={}
     for _,key in ipairs({'entity_types','entity_names'}) do
       if a[key] then
@@ -819,33 +853,45 @@ return function(api)
       end
     end
     local box=area(p,a)
-    local out={changed=0,mode=cancel and 'cancel' or 'mark',tiles=a.tiles~=nil and a.tiles~=false}
+    local out={changed=0,mode=cancel and 'cancel' or (dry and 'dry_run' or 'mark'),tiles=a.tiles~=nil and a.tiles~=false,dry_run=dry or nil}
     -- Items on the ground, as a planner marks them (robots take them to
     -- storage); other entities then only with entity filters.
     if a.items_on_ground~=nil then
       assert(a.items_on_ground==true or a.items_on_ground==false,'items_on_ground must be boolean')
       assert(not out.tiles,'items_on_ground and tiles are separate calls')
     end
+    assert(not (dry and a.items_on_ground),'dry_run goes with entities and tiles, not items_on_ground')
     if a.items_on_ground then
       api.ground_mark(p,box,cancel,out)
       if not (filters.entity_types or filters.entity_names) then return out end
     end
     -- With tiles, entities are taken only when entity filters name them;
     -- they go first, so a tile under one marked now is not counted blocked.
-    if out.tiles and not (filters.entity_types or filters.entity_names) then deconstruct_tiles(p,a,box,cancel,out); return out end
+    if out.tiles and not (filters.entity_types or filters.entity_names) then deconstruct_tiles(p,a,box,cancel,out,dry); return out end
     local list=candidates(p,box)
-    local changed=0
+    local changed,by=0,{}
     for _, e in ipairs(list) do
       if e.valid and (e.force==p.force or e.force.name=='neutral') and e.type~='character' and e.minable
         and (not filters.entity_types or filters.entity_types[e.type])
         and (not filters.entity_names or filters.entity_names[e.name]) then
         if cancel then
           if e.to_be_deconstructed(p.force) then e.cancel_deconstruction(p.force,real(p)); changed=changed+1 end
+        elseif dry then
+          -- (a dry run: what is not marked yet; ghosts would be removed, as a planner removes them)
+          if not e.to_be_deconstructed(p.force) then changed=changed+1; by[e.name]=(by[e.name] or 0)+1 end
         elseif e.order_deconstruction(p.force,real(p)) then changed=changed+1 end
       end
     end
     out.changed=changed
-    if out.tiles then deconstruct_tiles(p,a,box,cancel,out) end
+    if dry then
+      out.changed=nil; out.would_mark=changed
+      local names={}
+      for n,c in pairs(by) do names[#names+1]={n,c} end
+      table.sort(names,function(x,y) return x[2]>y[2] or x[2]==y[2] and x[1]<y[1] end)
+      for i,v in ipairs(names) do names[i]=v[2]..' '..v[1] end
+      out.would_mark_by_name=#names>0 and table.concat(names,', ') or nil
+    end
+    if out.tiles then deconstruct_tiles(p,a,box,cancel,out,dry) end
     return out
   end
   function H.deconstruct(p,a) return deconstruct(p,a,false) end
