@@ -204,7 +204,7 @@ return function(api)
   -- The name an action goes by in a note: the call that started it.
   function M.called(action)
     if action.kind=='gather' then
-      if action.op=='transfer' then return action.collect and 'collect' or 'transfer' end
+      if action.op=='transfer' then return action.recover and 'recover' or action.collect and 'collect' or 'transfer' end
       return action.op or 'collect'
     end
     if action.kind=='feed' then return type(action.handler)=='string' and action.handler or 'feed' end

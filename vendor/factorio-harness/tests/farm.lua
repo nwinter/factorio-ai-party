@@ -42,6 +42,19 @@ eq(t.plantable_now,1,'one free yumako cell for the yumako seeds it holds')
 eq(t.planted_10min,2)
 eq(t.plants[1],'jellystem (3.6,3.4) grown, waiting for harvest'); eq(t.plants[2],'yumako-tree (-2.4,0.6) grown in 10s')
 eq(t.harvest_made_10min,'yumako 100 on gleba')
+-- Each cell with soil and no plant, nearest first, where and why (Sol, 15:20: yumako cells stayed empty).
+eq(#t.empty_cells,4)
+eq(t.empty_cells[1],'(3.5,0.5) free, soil for jellynut-seed; the tower holds no jellynut-seed (it holds yumako-seed)')
+eq(t.empty_cells[2],'(-2.5,-2.5) soil for yumako-seed, blocked by medium-electric-pole (-2.5,-2.5)')
+eq(t.empty_cells[3],'(-2.5,3.5) free, soil for yumako-seed and the tower holds it: not planted yet (tower: waiting for plants to grow)')
+eq(t.empty_cells[4],'(3.5,-2.5) free, soil for jellynut-seed; the tower holds no jellynut-seed (it holds yumako-seed)')
+-- A cell whose centre is soil while tiles round it are not: the game refuses the plant with no entity there.
+surface.get_tile=function(x,y) if y>2 and x>-2 and x<0 then return {name='midland-cracked-lichen'} end return {name=tile(x)} end
+local place=surface.can_place_entity
+surface.can_place_entity=function(a) if a.position.x==-2.5 and a.position.y==3.5 then return false end return place(a) end
+t=F.tower(tower,{status_name=function() return 'working' end})
+eq(t.empty_cells[3],'(-2.5,3.5) soil for yumako-seed at its centre, but 3 of the 9 tiles round it are not (3 midland-cracked-lichen): the game refuses the plant')
+surface.get_tile=function(x,y) return {name=tile(x)} end; surface.can_place_entity=place
 eq(F.STATE.item_ingredient_shortage,'no seeds in its input'); eq(F.STATE.no_spot_seedable_by_inputs,'no free cell with soil for its seeds')
 eq(F.STATE.not_enough_space_in_output,'output full')
 -- Fuel: a biochamber burns nutrients; chemical burners default to coal; asked fuel of another category is refused.

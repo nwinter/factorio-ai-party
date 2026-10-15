@@ -97,6 +97,10 @@ already targets your character.
   characters), each logistic network's stock of it (free and reserved, and which requesters the reserved stock is for),
   its robots, every unmet requester with the reason, the machines that make and use it by status (the worst 3 with
   positions), and the inserters feeding them.
+- `./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
+  starts, naming each step's makers, their states and what they lack. `inspect` on a machine gives its `rate` (crafts
+  and output per minute, net of what goes back in), on an agricultural tower its `empty_cells` and why; a take from
+  a chest names what robots have reserved there.
 - `./fh call turrets` (optional `"surface"` or `"area"`) lists every turret by front: its ammo (a flamer's oil with
   its buffer), health, and what feeds it (an inserter and its belt or chest, robots, a pipe, power, or nothing:
   hand-fed); the hand-fed and low ones first.
@@ -250,7 +254,7 @@ already targets your character.
   hit under it, the action ends `retreated` and you walk back (guns on auto) or the vehicle is driven back at once
   (`last.retreated`: why, from, health). `./fh call retreat_guard --args '{"to":{"x":260,"y":-60},"health_below":0.5}'`
   sets it for every one of them until `{"clear":true}`.
-- `move_to` never ends on a belt (it steps to the nearest free tile without one, `last.off_belt`). With no route for
+- `move_to` never ends on a belt or a rail (it steps to the nearest free tile without one, `last.off_belt`). With no route for
   your character it ends at once as `unreachable`, with `last.why` (closed in: the area and what closes it in) and
   `last.nearest_reachable`, plus `last.build_spot`: a spot you can reach within build reach of the target
   (`build_spot_note`; in a gap, `build_spot_squeeze` and the `"squeeze":true` call). A position nothing leads to (inside a
@@ -265,6 +269,10 @@ already targets your character.
 - `move_to` keeps out of the range of the worms the map shows, plus 4 tiles; `"avoid_enemies":true` also keeps out of
   spawners' units' sight, 8 tiles more, walking legs around a nest (`last.avoided_enemies`); no way round: `no_safe_route`.
   A goal inside such a range is refused, naming the worm and the nearest safe spot toward it; `"unsafe_goal":true` goes anyway.
+- A walk stops short of rails that a moving train will cross within 6 s and goes on once it has passed (status
+  `train_wait`, then `last.train_waits`).
+- `./fh call recover --wait` walks to your own corpses on your surface, nearest first, and takes everything from each; a
+  corpse keeps what you carried when you died and does not expire. One inside a worm's range is left out (`left_out`).
 - A target in a narrow gap no path leads into ends the walk `arrived_near` before it (`last.pocket`; `"squeeze":true`
   walks in). Squeezed in, the walk gets out along the gaps first (`last.escaped`); closed in, `last.mine_to_get_out`
   names everything to mine to open ground (chests, accumulators, walls, trees and rocks before poles and machines). A
