@@ -377,4 +377,34 @@ eq(way.goal,true); eq(way.from.x,0); eq(way.cost,2)
 assert((way.to.x-12)^2+(way.to.y)^2<=1.5^2,'ends within 1.5 of the goal: '..way.to.x..','..way.to.y)
 eq(P.corridor(walker,{x=0,y=0},{x=2,y=0},1.5),nil,'a free way: nothing to mine')
 eq(P.corridor(walker,{x=0,y=0},{x=70,y=0},1.5),nil,'past the window')
+-- friction4 (Gemini, shift14 23:13: told to mine a rocket silo holding a ready rocket and 1000 packs): a silo, landing
+-- pad or platform hub is never named to mine. A wall of accumulators 4 deep, the silo 3 wide through it: without the
+-- rule the silo alone (3) is cheapest; with it, the 4 accumulators.
+local wall={}
+for _,x in ipairs({4,6,8,10}) do for y=-20,18,2 do if y<-2 or y>0 then wall[#wall+1]={x,y,x+2,y+2,'accumulator','accumulator'} end end end
+wall[#wall+1]={4,-2,12,2,'rocket-silo','rocket-silo'}
+local ws=box_surface(wall)
+local w2={index=12,position={x=0,y=0},surface=ws,force='ours',character=sol.character}
+local w=P.corridor(w2,{x=0,y=0},{x=15,y=0},1.5)
+assert(w,'a way')
+for _,m in ipairs(w.mine) do assert(m.name~='rocket-silo','the silo is not named') end
+eq(#w.mine,4); eq(w.mine[1].name,'accumulator')
+-- A goal inside an entity, with near past its edge (runtime.lua: an unreachable walk to a building): the way ends at
+-- the edge and does not name the building.
+local plant={{4,-20,6,20,'accumulator','accumulator'},{10,-2,14,2,'electromagnetic-plant','assembling-machine'}}
+local ps=box_surface(plant)
+local w3={index=13,position={x=0,y=0},surface=ps,force='ours',character=sol.character}
+local e=P.corridor(w3,{x=0,y=0},{x=12,y=0},3)
+assert(e,'a way')
+for _,m in ipairs(e.mine) do assert(m.name~='electromagnetic-plant','the plant is not named') end
+-- An unreachable goal with walkable water round the way: the why says the requests took it as ground.
+local wet_area
+local P2=dofile('mod/agent-harness_0.1.0/pathing.lua'){paths=function() return paths end,
+  walkable_water=function(_,area) wet_area=area; return {'oil-ocean-deep','oil-ocean-shallow'} end}
+boxes={}; p.position={x=3,y=5}
+asked={}
+nav={position={x=60,y=5},tolerance=0.5}
+P2.give_up(p,nav); P2.on_finished(p,nav,{id=100+#asked})
+eq(nav.why,'no path request found a way for the character to (60,5), nor to anywhere within 42 tiles of it (the path requests take oil-ocean-deep, oil-ocean-shallow as ground, as the character walks it: it was not what blocked the way)')
+eq(wet_area[1][1],-4,'the box is cut to 64 tiles round the goal'); eq(wet_area[2][1],68); eq(wet_area[1][2],-3)
 print('pathing: ok')

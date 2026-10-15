@@ -405,13 +405,19 @@ local function finish(index, outcome)
     local goal=nw and nw.goal or action.position
     local way_from=nw and here or outcome=='unreachable' and action.reachable or here
     if (outcome=='unreachable' or outcome=='blocked' or nw) and not action.dig and here and goal and way_from then
-      local inside=false
-      if nw then
-        local okf,list=pcall(function() return pb.surface.find_entities_filtered{area={{goal.x-0.05,goal.y-0.05},{goal.x+0.05,goal.y+0.05}},collision_mask='player'} end)
-        for _,e in ipairs(okf and list or {}) do if e.valid and e.type~='character' then inside=true; break end end
+      local okf,list=pcall(function() return pb.surface.find_entities_filtered{area={{goal.x-0.05,goal.y-0.05},{goal.x+0.05,goal.y+0.05}},collision_mask='player'} end)
+      local held
+      for _,e in ipairs(okf and list or {}) do if e.valid and e.type~='character' then held=e; break end end
+      local inside=nw and held~=nil
+      local near=(nw and 0.5 or action.tolerance or 0.5)+1
+      -- An unreachable goal inside an entity: the way to its edge, not through it (friction4: Gemini's walk to an
+      -- electromagnetic plant was told to mine the plant).
+      if held and not nw then
+        local okb,b=pcall(function() return held.bounding_box end)
+        if okb and b then near=math.max(near,math.max(b.right_bottom.x-b.left_top.x,b.right_bottom.y-b.left_top.y)/2+1) end
       end
       local okc,c=false,nil
-      if not inside then okc,c=pcall(M.pathing.corridor,pb,way_from,goal,(nw and 0.5 or action.tolerance or 0.5)+1) end
+      if not inside then okc,c=pcall(M.pathing.corridor,pb,way_from,goal,near) end
       if okc and c then
         local names={}
         for i,e in ipairs(c.mine) do names[i]=e.name..' '..at(e.position) end
@@ -2625,7 +2631,18 @@ end
 -- nearest reachable point. The shared path cache is skipped: it can hand back
 -- routes planned for other units.
 M.pathing=require('pathing'){paths=function() state().paths=state().paths or {}; return state().paths end,
-  accept=function(p,nav,path,avoided) return M.avoid.accept(p,nav,path,avoided) end}
+  accept=function(p,nav,path,avoided) return M.avoid.accept(p,nav,path,avoided) end,
+  -- The walkable water in an area (M.water_kind): names, for an unreachable walk's why (friction4: Gemini read a walk
+  -- into its packed island as the oil ocean being impassable).
+  walkable_water=function(surface,area)
+    local names,seen={},{}
+    for _,t in pairs(surface.find_tiles_filtered{area=area,collision_mask='water_tile',limit=1024}) do
+      local n=t.name
+      if not seen[n] then seen[n]=true; if M.water_kind(n)=='walkable' then names[#names+1]=n end end
+    end
+    table.sort(names)
+    return names
+  end}
 request_path=function(p,nav) return M.pathing.request(p,nav) end
 -- Walks and drives around the enemy worms and spawners the map shows (avoid.lua): a
 -- found path through one's reach becomes legs around it, each leg the engine's path.

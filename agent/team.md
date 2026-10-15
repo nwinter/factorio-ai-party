@@ -310,7 +310,9 @@ already targets your character.
 - A target in a narrow gap no path leads into ends the walk `arrived_near` before it (`last.pocket`; `"squeeze":true`
   walks in). Squeezed in, the walk gets out along the gaps first (`last.escaped`); closed in, `last.mine_to_get_out`
   names everything to mine to open ground (chests, accumulators, walls, trees and rocks before poles and machines); not
-  closed in but with no way to the target, `last.mine_for_a_way` names the fewest to mine for one. A
+  closed in but with no way to the target, `last.mine_for_a_way` names the fewest to mine for one (never a rocket
+  silo, landing pad or platform hub; for a goal inside a building, the way to its edge). `move_to` walks over
+  shallow water, wetland and Fulgora's oil ocean, deep too. A
   `build` batch that fails part way, and a real `place_ghosts`, say on the `warning:` line when what they place closes
   you in. A `build` batch with `"all": true` builds every entry it can and lists the rest in `failed` with why.
   `circuit_set` says `stays disabled` there when one of the entity's conditions is not met after the call (a circuit

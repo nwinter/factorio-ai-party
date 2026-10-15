@@ -719,6 +719,18 @@ fh call status
     search spans both points and 8 tiles round them, at most 48 a side (a goal farther off is left alone): on a copy of
     world n's Fulgora island 1.4 to 2.3 ms for Gemini's accumulators, 9 ms at 41 by 46 tiles, once as the walk ends. On
     the copy, mining the 4 accumulators one answer named let the same walk arrive.
+  - friction4 (Gemini, shift14 23:13 and 23:15, walking into its packed island base on Fulgora: told to mine a rocket
+    silo holding a ready rocket, and the electromagnetic plant it walked to; it took the failure for the oil ocean
+    round the island being impassable):
+    - `mine_for_a_way` and `mine_to_get_out` never name a rocket silo, cargo landing pad or platform hub.
+    - When the goal point lies inside an entity, the way ends at that entity's edge (its half-size + 1 from the goal),
+      and the entity is not named.
+    - A walk no path request found a way for adds to its `why` the walkable water in the box from the character to the
+      goal (cut to 64 tiles round the goal): `... nor to anywhere within 15 tiles of it (the path requests take
+      oil-ocean-deep, oil-ocean-shallow as ground, as the character walks it: it was not what blocked the way)`. The
+      path requests walk over shallow water, wetland and both oil oceans: on a copy of world n, `move_to` crossed
+      `oil-ocean-shallow` and went into `oil-ocean-deep`. The read takes 0.3 to 3 ms (emulated copy), once as the walk
+      ends.
   - A `build` batch that fails after some entries stand says what those entries closed in its refusal
     (`build 9/9 failed after 8 built: ...; the character is closed in now where it stands (50.5,108.5): ...`; Gemini's
     19:25 batch failed after 2 built, and those 2 had closed the last gap out). A real `place_ghosts` says
