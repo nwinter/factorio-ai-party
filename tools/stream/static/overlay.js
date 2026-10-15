@@ -898,7 +898,7 @@
         label.classList.add("on");
         continue;
       }
-      if (cam && cam.platform && !agents.length) { // a space platform: a visit or a departure (onecam.py)
+      if (cam && cam.platform && (!agents.length || cam.platform.why === "follow")) { // whole ship, including an agent aboard
         const psig = "plat|" + cam.platform.label;
         if (label.dataset.sig !== psig) {
           label.dataset.sig = psig;

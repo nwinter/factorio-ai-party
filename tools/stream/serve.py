@@ -242,7 +242,8 @@ class AudioHub:
         return out
 
 
-def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None, director=None):
+def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None, director=None,
+                 platform=None):
     audio = audio or AudioHub()
     segments = segments or Segments()
     analyst = analyst or AnalystBoard()
@@ -340,9 +341,17 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                     return self.send(409, b'{"error": "follow needs the onecam director"}', "application/json")
                 code, reply = follow.request(body)
                 return self.send(code, json.dumps(reply).encode(), "application/json")
+            if path == "/platform":
+                if not platform:
+                    return self.send(409, b'{"error": "platform needs the onecam director"}', "application/json")
+                code, reply = platform.request(body)
+                return self.send(code, json.dumps(reply).encode(), "application/json")
             self.send(404, b"not found", "text/plain")
 
         def do_DELETE(self):
+            if self.path.split("?", 1)[0] == "/platform" and platform:
+                code, reply = platform.clear()
+                return self.send(code, json.dumps(reply).encode(), "application/json")
             if self.path.split("?", 1)[0] == "/follow" and follow:
                 code, reply = follow.clear()
                 return self.send(code, json.dumps(reply).encode(), "application/json")
@@ -544,11 +553,14 @@ def main():
     # the voice clips; the director reads which agent line is playing (say look= cues). The page's playback reports go
     # to audio-played.jsonl beside stream.json (the clips that ended early, and why)
     audio = AudioHub(os.path.join(os.path.dirname(os.path.abspath(a.run)), "audio-played.jsonl") if a.run and not a.mock else None)
-    follow = None
+    follow = platform = None
     if mode == "onecam":  # an operator follow, kept beside stream.json so a restart keeps it (follow.py)
         from follow import FollowControl
+        from platformcam import PlatformControl
         follow = FollowControl(director, os.path.join(os.path.dirname(os.path.abspath(a.run)), "director-follow.json")
                                if a.run and not a.mock else None, roster)
+        platform = PlatformControl(director, os.path.join(os.path.dirname(os.path.abspath(a.run)), "director-platform.json")
+                                   if a.run and not a.mock else None)
     lock = threading.Lock()
     source_info = {"source": getattr(source, "name", "mock"), "poll_ok": None, "poll_error": None}
 
@@ -583,21 +595,25 @@ def main():
                         cur and cur["type"] == "attack_replay" and cur["state"] in ("starting", "live"))
                 if follow:
                     follow.sync(now)
+                if platform:
+                    platform.sync(now)
                 with audio.cond:  # agent lines playing now (the page's start reports): onecam cues their looks
                     snap["voiced"] = [dict(v, id=k) for k, v in audio.playing.items() if v.get("channel") == "agent"]
                 snap["voice"] = audio.early(now)  # clips that ended early in the last hour, and why (operator read)
                 cams = director.step(snap, now, segments.camera())
                 if follow:
                     snap["follow"] = director.follow_info(now)  # the hosts: who the operator pinned on air, and why
+                if platform:
+                    snap["platform_hold"] = director.platform_info(now)
                 if hasattr(director, "battle_info"):
                     snap["battle"] = director.battle_info(now)  # a key battle held on air (replays.py covers it)
                 if director.last_attack_cut == now:  # main just cut to a fight or death: the segment gives way
                     segments.attack_cut(now)
                     snap["segment"] = segments.public()
-                    if replays and not getattr(director, "fol", None):  # (no replay cuts away from a followed fight)
+                    if replays and not (getattr(director, "fol", None) or getattr(director, "plat", None)):
                         replays.on_attack_cut(director.last_attack_alert, snap, now, director.last_attack_framed)
                 if replays:
-                    replays.hold = bool(getattr(director, "fol", None))  # no replay over an operator follow
+                    replays.hold = bool(getattr(director, "fol", None) or getattr(director, "plat", None))
                     replays.tick(snap, cams, now)
                     snap["replay"] = replays.public()
                 if night:
@@ -645,7 +661,7 @@ def main():
     try:
         server = ThreadingHTTPServer((a.host, a.port), make_handler(hub, decisions, segments=segments, replays=replays,
                                                                     analyst=analyst, follow=follow, audio=audio,
-                                                                    director=director))
+                                                                    director=director, platform=platform))
     except OSError as e:
         sys.exit(f"cannot listen on {a.host}:{a.port}: {e}. Pick another --port and point the reverse tunnel at it: "
                  f"ssh -N -R 8787:127.0.0.1:PORT pogwin")

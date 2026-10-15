@@ -50,6 +50,9 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   - an agent's platform action (snapshot `work` on a platform: place_ghosts, paste, deconstruct, inspect, configure,
     launch, drop... with platform=; the character stands on Nauvis): the platform instead of the character, labelled
     "Astra · working on Starling", for `work_hold`, longer while its requests keep coming; then back to the agent.
+  - POST /platform holds a whole ship for the operator's requested time (platformcam.py persists it). It overrides
+    an agent follow; other urgent events are insets. A followed agent aboard also gets this whole-ship view.
+    In flight it widens ahead of the ship for asteroids; held shots refresh when the bounds or flight state change.
   The hosts read snapshot onair.platform.
 - Cloud (viewer Joonazan, 13:00: "can you show a shot of Gleba's spore cloud?"): Factorio's map of one surface's
   pollution or spore cloud (clouds.py frames every polluted chunk and the nests it reached; the overlay draws the
@@ -311,9 +314,11 @@ def onair_info(snap, cams):
     agents = main.get("agents") or []
     name = agents[0] if len(agents) == 1 and not main.get("attack") else None
     a = next((a for a in snap.get("agents") or [] if a["name"] == name), {}) if name else {}
-    plat = main.get("platform")  # a space platform on air: {name, why (visit, departure, work), label, agent?}
+    plat = main.get("platform")  # {name, why (visit, departure, work, operator, follow), label, agent?}
     doing = main.get("follow") or ("in battle" if main.get("battle") and name else "") or (f"working on {plat['name']}" if plat and name else
                                    onair_doing(snap, name) if name else "")
+    if plat and plat.get("why") == "follow":
+        doing = " · ".join(x for x in (main.get("follow"), f"aboard {plat['name']}") if x)
     return {"agent": name, "display_name": a.get("display_name") or name, "doing": doing, "platform": plat,
             "since": main.get("since"), "client": main.get("client"), "attack": main.get("attack"),
             "follow": main.get("follow"),  # an operator follow's label on air ("Sol vs the Demolisher"), for the hosts
@@ -384,6 +389,8 @@ class OneCam(Director):
         self.platforms = []    # (t, name, why): platform shots ("visit", "departure", "work")
         self.follow = None     # an operator follow: {agent, until, label, by, since} (set_follow)
         self.fol = None        # the agent it pins on air at this step, or None
+        self.platform_follow = None  # POST /platform: {name, until, label, by}; kept by PlatformControl
+        self.plat = None       # the operator's platform available to pin this step (takes priority over fol)
         self.battle = None     # a key battle held on air (watch_battle): {key, why, label, position, surface, ...}
         self.battles = []      # (t, key, why, label): key battles seen
         self.last_battle_end = -1e9
@@ -505,7 +512,9 @@ class OneCam(Director):
         if not cur:
             return False
         if cur.get("platform"):
-            return False  # a platform shot: its agent's character is on Nauvis, out of the picture
+            a = by_name.get(subject) or {}
+            point = dict(a["position"], surface=surface_of(a)) if a.get("position") else position
+            return in_frame(frame_of(cur, self.onair_frac()), point, by_name, self.cfg["onair_edge"])
         if subject and subject in (cur.get("agents") or []):
             return True
         return bool(position) and in_frame(frame_of(cur, self.onair_frac()), position, by_name,
@@ -529,7 +538,7 @@ class OneCam(Director):
                 target.update(zoom=self.fight_zoom(position.get("extent")), exact_zoom=True)
         target.update(label=al["text"], kind=al["kind"], attack_t=now, fight=al.get("key"))
         big = al["kind"] == "death" or (al["kind"] == "loss" and not minor_loss(al["text"]))
-        if self.fol and subject != self.fol:
+        if self.plat or (self.fol and subject != self.fol):
             big = False  # an operator follow: other agents' urgent events are insets or toasts, never cuts
         elif self.battle and not self.fol and not (subject and subject == self.battle.get("agent")) and \
                 not self.in_battle(position):
@@ -852,6 +861,16 @@ class OneCam(Director):
         ranked = sorted(scores, key=lambda n: -scores[n])
         if not self.slots:
             return {}
+        self.watch_platforms(snapshot, now)
+        self.plat = self.platform_following(now)
+        self.fol = self.following(by_name, now)
+        held = self.operator_platform_target(by_name, now)
+        for t in self.state.values():
+            if t and (t.get("platform") or {}).get("why") in ("operator", "follow"):
+                t["until"] = held["until"] if self.same_platform(t, held) else 0
+        if self.pending and (self.plat or (self.fol and
+                (self.state.get(self.pending["slot"]) or {}).get("subject") != self.fol)):
+            self.pending = None
         if self.pending and self.ready(self.pending["slot"], now):
             self.cut(self.pending["slot"], self.pending["reason"], now)
         if self.inset and now >= self.inset["until"]:
@@ -864,7 +883,7 @@ class OneCam(Director):
         fol = self.fol = self.following(by_name, now)
         self.watch_incoming(snapshot, by_name, scores, now, segment)
         # an operator follow, a key battle, or a group followed on its way: nothing else takes the camera
-        pinned = fol or self.battle or self.incoming
+        pinned = self.plat or fol or self.battle or self.incoming
         attack = self.attack_target(snapshot, by_name, scores, now)
         if attack:
             self.on_alert(attack, by_name, scores, now)
@@ -887,14 +906,15 @@ class OneCam(Director):
                     self.urgent(target, f"segment: {segment['label']}", scores, now)
         elif cur and cur.get("subject") == "@segment" and (not segment or cur.get("seg") != segment["id"]):
             cur["until"] = 0  # the segment ended or was cut: back to normal directing
-        self.watch_platforms(snapshot, now)
         if not pinned:
             self.cloud_operator(scores, now, segment)
         if pinned:  # an operator follow, or a key battle: on air, nothing else takes the camera
-            self.leave_trio(f"follow {fol}" if fol else f"battle: {self.battle['label']}" if self.battle
+            self.leave_trio(f"platform {self.plat}" if self.plat else f"follow {fol}" if fol else f"battle: {self.battle['label']}" if self.battle
                             else f"incoming: {self.incoming['label']}", now)
             self.trio_pending = None
-            if fol:
+            if self.plat:
+                self.platform_direct(self.operator_platform_target(by_name, now), scores, now)
+            elif fol:
                 self.follow_direct(fol, by_name, scores, now)
             elif self.battle:
                 self.battle_direct(by_name, scores, now)
@@ -969,8 +989,13 @@ class OneCam(Director):
                 "battle": f.get("battle"), "ended_by": f.get("ended_by")}
     def follow_direct(self, name, by_name, scores, now):
         """An operator follow: the camera on air stays on `name` (zoom follows its activity); if it is elsewhere, a
-        standby is framed on the agent and the program cuts to it. No rotation, trio, base map, platform shot,
+        standby is framed on the agent and the program cuts to it. Aboard, its whole platform is framed instead.
+        No rotation, trio, base map, unrelated platform shot,
         attention inset or segment meanwhile; other agents' urgent events are insets (on_alert)."""
+        ship = self.operator_platform_target(by_name, now)
+        if ship:
+            self.platform_direct(ship, scores, now)
+            return
         cur = self.state.get(self.onair) or {}
         if self.pending:
             if (self.state.get(self.pending["slot"]) or {}).get("subject") == name:
@@ -1191,7 +1216,7 @@ class OneCam(Director):
             blocked = None
             if not cfg["incoming"]:
                 blocked = "incoming follow off"
-            elif self.fol or self.battle or self.incoming:
+            elif self.plat or self.fol or self.battle or self.incoming:
                 blocked = "the camera is held (a follow, a battle or another group)"
             elif self.hold_layout or self.pending or segment or \
                     (cur.get("subject") in HOLDS and now < cur.get("until", 0)):
@@ -1433,7 +1458,7 @@ class OneCam(Director):
             return "drop", f"spacing: the last cue {int(now - self.last_cue)} s ago"
         if self.hold_layout or self.mode == "trio":
             return "drop", "a replay or a trio is on air"
-        busy = ("an operator follow" if self.fol else "a battle" if self.battle else "an incoming group" if self.incoming
+        busy = ("an operator platform hold" if self.plat else "an operator follow" if self.fol else "a battle" if self.battle else "an incoming group" if self.incoming
                 else "a segment" if segment else "an urgent shot" if self.pending or
                 (cur.get("subject") in HOLDS and now < cur.get("until", 0)) else None)
         subj = cur.get("subject")
@@ -1643,6 +1668,9 @@ class OneCam(Director):
         """The operator's cloud shot (serve.py POST /cloud) -> (http code, reply). It goes on air at the next step
         with nothing pinned on air (a segment, a key battle or a followed group: it waits, up to cloud_late)."""
         now = now or time.time()
+        p = self.platform_info(now)
+        if p:
+            return 409, {"error": f"an operator platform hold of {p['name']} is active (DELETE /platform first)"}
         f = self.follow
         if f and now < f["until"]:
             return 409, {"error": f"an operator follow of {f['agent']} is on air (DELETE /follow first)"}
@@ -1750,14 +1778,86 @@ class OneCam(Director):
 
     def platform_target(self, name, why, until, agent=None, label=None):
         from model import platform_shot
-        view = (self.plat_rows.get(name) or {}).get("view")
+        row = self.plat_rows.get(name) or {}
+        view = row.get("view")
         if not view or not view.get("surface"):
             return None
-        t = dict(platform_shot(view), agents=[agent] if agent else [], subject="@platform", until=until,
+        t = dict(platform_shot(view, travelling=self.travelling(row), frac=self.cfg["view_frac"]),
+                 agents=[agent] if agent else [], subject="@platform", until=until,
                  platform={"name": name, "why": why, "label": label or self.platform_label(name, why)})
         if agent:
             t["platform"]["agent"] = agent
         return t
+
+    def platform_following(self, now):
+        p = self.platform_follow
+        if p and now < p["until"]:
+            return next((n for n, r in self.plat_rows.items() if n.casefold() == p["name"].casefold()
+                         and (r.get("view") or {}).get("surface")), None)
+        return None
+
+    def platform_info(self, now):
+        p = self.platform_follow
+        return dict(p, remaining_s=max(0, int(p["until"] - now)), available=bool(self.platform_following(now))) \
+            if p and now < p["until"] else None
+
+    def operator_platform_target(self, by_name, now):
+        """The platform explicitly held, or the ship the followed agent is actually aboard (not remote work)."""
+        p = self.platform_follow
+        if self.plat and p and now < p["until"]:
+            label = self.platform_label(self.plat)
+            if p.get("label"):
+                label += f" · {p['label']}"
+            t = self.platform_target(self.plat, "operator", p["until"], label=label)
+            if t:
+                t["platform"].update(by=p["by"], requested_label=p.get("label"))
+            return t
+        a = by_name.get(self.fol) or {}
+        f = self.follow
+        if not f or now >= f["until"] or not a or a.get("travel") in ("ascending", "descending"):
+            return None
+        name = next((n for n, p in self.plat_rows.items()
+                     if (p.get("view") or {}).get("surface") == surface_of(a)), None)
+        if name:
+            label = f"{a.get('display_name') or self.fol} · aboard {self.platform_label(name)}"
+            if f.get("label"):
+                label += f" · {f['label']}"
+            return self.platform_target(name, "follow", f["until"], agent=self.fol, label=label)
+        return None
+
+    @staticmethod
+    def same_platform(a, b):
+        ap, bp = (a or {}).get("platform") or {}, (b or {}).get("platform") or {}
+        return bool(ap and bp) and all(ap.get(k) == bp.get(k) for k in ("name", "why", "agent")) and \
+            a.get("surface") == b.get("surface")
+
+    def platform_direct(self, shot, scores, now):
+        """Hold a whole-ship view; refresh its bounds and flight framing without repeated cuts or commands."""
+        if not shot:
+            return
+        name = shot["platform"]["name"]
+        if self.departure and self.departure["name"] == name:
+            self.departure = None  # this departure is already being shown, not another visit after the hold
+        self.plat_shown[name] = self.last_platform = now
+        self.pending = None
+        cur = self.state.get(self.onair)
+        if self.same_platform(cur, shot):
+            slot, t = self.slot(self.onair), cur
+        else:
+            slot = self.next_slot() or self.slot(self.onair)
+            t = self.state.get(slot["slot"])
+        if not self.same_platform(t, shot):
+            self.frame_on(slot, shot, f"standby: {shot['platform']['label']}", scores, now)
+            if slot["slot"] == self.onair:
+                self.onair_since, self.resume = now, None
+        else:
+            changed = any(t.get(k) != shot.get(k) for k in ("position", "zoom", "surface"))
+            t.update(shot)
+            if changed:
+                self.apply(slot, dict(t, jump=slot["slot"] != self.onair), "reframe", scores, now, quiet=True)
+        if slot["slot"] != self.onair and self.ready(slot["slot"], now):
+            self.cut(slot["slot"], f"platform {shot['platform']['why']}: {shot['platform']['label']}", now)
+            self.resume = None
 
     def show_platform(self, t, scores, now):
         p = t["platform"]
