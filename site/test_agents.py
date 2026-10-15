@@ -14,7 +14,7 @@
   table for the run with bars by shift, the latest ended shift's context sizes and compactions, each card's tokens and
   tokens per game action.
 """
-import gzip, json, os, subprocess, sys, tempfile, time
+import gzip, json, os, re, subprocess, sys, tempfile, time
 from pathlib import Path
 
 SITE = Path(__file__).resolve().parent
@@ -355,7 +355,7 @@ def main():
                                                                                     "tick": 390000, "w": 1600, "h": 900}, ter
         assert (out / lapse["terrain"][0]["src"].lstrip("/")).is_file()
         run_page = (out / "runs" / "long" / "index.html").read_text()
-        assert 'id="timelapse"' in run_page and 'data-src="/runs/long/timelapse.json"' in run_page and '<script src="/static/mapview.js">' in run_page
+        assert 'id="timelapse"' in run_page and 'data-src="/runs/long/timelapse.json"' in run_page and re.search(r'<script src="/static/mapview\.js(\?v=[0-9a-f]{10})?">', run_page)
         assert '<option value="2" label="Shift 2">' in run_page and "3 snapshots" in run_page
         assert run_page.index('id="timelapse"') < run_page.index("</main>")
         sp = (out / "search" / "index.html").read_text()

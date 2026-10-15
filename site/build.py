@@ -1771,6 +1771,31 @@ FAVICON = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect w
 <circle cx="16" cy="17.5" r="4" fill="#e39827"/></svg>"""
 
 
+ASSET_REF = re.compile(r'((?:src|href)=")(/static/[\w./-]+\.(?:js|css))(")')
+
+
+def version_assets(out):
+    """Stamp every page's local script and stylesheet links with a hash of the built file (`/static/live.js?v=1a2b3c4d5e`).
+    The host serves /static/ with a 4-hour browser cache, so after a deploy a plain reload kept the old live.js (viewer
+    joonazan, 2026-10-15 09:17: the double-post fix had not reached him); a new hash is a new URL."""
+    import hashlib
+    stamps = {}
+
+    def stamp(m):
+        path = m.group(2)
+        if path not in stamps:
+            f = out / path.lstrip("/")
+            stamps[path] = hashlib.sha1(f.read_bytes()).hexdigest()[:10] if f.is_file() else None
+        v = stamps[path]
+        return m.group(1) + (f"{path}?v={v}" if v else path) + m.group(3)
+
+    for p in out.rglob("*.html"):
+        t = p.read_text()
+        n = ASSET_REF.sub(stamp, t)
+        if n != t:
+            p.write_text(n)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(SITE / "dist"))
@@ -1883,6 +1908,7 @@ def main():
     write("_headers", "/*\n" + ("" if PUBLIC else "  X-Robots-Tag: noindex, nofollow\n")
                       + "  Referrer-Policy: strict-origin-when-cross-origin\n"
                       "  X-Content-Type-Options: nosniff\n/live/status.json\n  Cache-Control: no-store\n")
+    version_assets(out)
 
     # final privacy check over everything written
     bad = []

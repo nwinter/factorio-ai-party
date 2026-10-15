@@ -104,7 +104,14 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
               "projects": [{"id": 4, "title": "Nuclear power plant", "owner": "opus", "agent": "opus", "status": "claimed",
                             "progress": "3 of 6 steps", "done": 3, "total": 6,
                             "next": "Reactor and heat exchangers", "goal": "40 MW"}],   // open, latest changed first; at
-                            // most 4; next: its first step not done (null: none), goal (null: none)
+                            // most 4; next: its first step not done (null: none), goal (null: none). When present
+                            // (d15, viewer Foobator 08:31): steps [{n, text, done, by?, ago?, next?}] (all of them once
+                            // the stream service read the project in full, board {id}, again only when it changed;
+                            // steps_partial: only a list read's next open steps so far; steps_cut: push_live trimmed
+                            // them to keep the board under 48 KB), needs {item: count}, handoff, requested_by (not
+                            // the owner). projects_more: the open projects after the first 4 (up to 26 more);
+                            // projects_done: the last 10 finished. The live page opens each project to its steps and
+                            // shows projects_more and projects_done behind "Show all N projects" (kept per browser).
               "projects_total": 1,    // a project event row also has progress, steps_done, steps_total (verb step: step)
               // the jobs behind the counts (d15, viewer joonazan 08:19), from an active read of tasks and requests,
               // newest change first, 20 each; absent before such a read: open tasks/requests nobody owns, and those
