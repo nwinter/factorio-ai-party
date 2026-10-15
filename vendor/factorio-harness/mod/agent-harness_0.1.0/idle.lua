@@ -116,7 +116,7 @@ return function(api)
     end
   end
   -- Requests that are neither game actions nor waits.
-  local TALK = {say=true, chat=true, tell=true, tells=true, operator=true, confess=true, confessions=true, vote=true, votes=true,
+  local TALK = {say=true, chat=true, tell=true, tells=true, operator=true, confess=true, confessions=true, chronicle=true, vote=true, votes=true,
     clock=true, advance=true, requests=true, profile=true, flush=true, harness_request=true}
   M.TALK = TALK
   -- Requests that only start or stop the agent's own control: not counted.

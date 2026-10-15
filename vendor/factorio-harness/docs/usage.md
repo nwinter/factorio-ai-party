@@ -1022,6 +1022,30 @@ fh call confessions --since 3                  # your own confessions
   `confessions [{seq,tick,from,text}]` oldest first and `cursor`; poll with `since` = the last cursor.
 - `efficiency` (operator only, the same `operator: true` dispatch; efficiency.lua; Nick 15:50): production credited
   to the agent who built the machine.
+
+### The chronicle
+
+```sh
+fh chronicle "Starling fell to the rocks halfway to Vulcanus." --title "Starling"   # text as for say
+```
+
+- `chronicle {text, title?}` (chronicle.lua; viewer Alex 22:24): an entry in the run's chronicle in the agent's own
+  words, `text` 1..600 characters, `title` 1..80, at most one every 60 s of game time per agent (passive: it never
+  drives the character). Stamped with the game tick and time, the agent, its planet or platform and position, and
+  `refs`: the harness events of the last 15 game minutes on its planet or platform (research: anywhere), or anywhere
+  when there are none there, at most 3, newest first. The reply: `seq, game_time, where, linked` (those events as
+  lines). The pog site shows the chronicle by shift (/chronicle/) and on the live page; the stream's hosts may read a
+  new entry.
+- The events (viewer syndesis 22:24): research finished, a rocket launched, a platform stopped at or left a planet,
+  a platform made (a new one in the force's list; `by`: who made it with `platform_create`), a platform lost (its hub
+  died: `where` it was or the leg it flew, `from`, `to`, `flown` %, `by` what killed the hub, `hit_by` the asteroid
+  kinds that hit it most, `cargo` the top 8 of its hub's items, `cargo_items`, `cargo_kinds`, `creator`), a platform
+  deleted (gone from the list with no hub death), an agent's death (`agent`, where, `by`). Lists are polled once a
+  second; deaths come with on_entity_died. Kept: the last 300 entries and 300 events.
+- The operator reads them with `{"operator":true,"action":"chronicle","args":{"since":0,"events_since":0,"limit":50}}`:
+  `entries` and `events` after their cursors, oldest first, at most `limit` (1..200) of each, each event with its
+  `line`, and `cursor`, `events_cursor`; describe lists it under `operator_reads`. The stream service appends them to
+  runs/RUN/chronicle.jsonl (tools/stream/chronicle_log.py).
   - Who built it: `LuaEntity.last_user` is nil for the agents' builds (bots have no player; every machine read on
     world n on 2026-10-14 had none), so the harness logs it. A machine built by hand (`build`, and `construct`'s
     revives) by its unit number and spot; a ghost an agent places (`place_ghosts`, the routes, `paste`,

@@ -633,11 +633,16 @@ DEFS = [("Game actions", "requests that change the game: moves, builds, crafts, 
 
 # ---------------------------------------------------------------- timeline
 
-def timeline_events(long, runs_dir, keys, techs, data):
-    """[(game tick, shift n, kind, text, agent key or None)] in order: research finished, rockets, platforms built,
-    planets reached (from the score logs), deaths (from the agents' stats)."""
+def timeline_events(long, runs_dir, keys, techs, data, platforms=None):
+    """[(game tick, shift n, kind, text, agent key or None)] in order: research finished, rockets, platforms built and
+    lost, planets reached (from the score logs), deaths (from the agents' stats). platforms: (rows, covered) from
+    site/chronicle.py timeline_rows (viewer syndesis 22:24): the harness's platform events with where, what destroyed
+    a platform and its cargo; the score rows then leave out the platforms those cover in each shift."""
     runs_dir = Path(runs_dir)
     out = []
+    p_rows, covered = platforms or ([], {})
+    for t, n, kind, text in p_rows:
+        out.append((t, n, kind, text, None))
     prev = None
     for s in long["shifts"]:
         if s.get("empty"):
@@ -664,8 +669,13 @@ def timeline_events(long, runs_dir, keys, techs, data):
                 if row["rockets"] > prev["rockets"]:
                     a, b = prev["rockets"] + 1, row["rockets"]
                     out.append((t, s["n"], "rocket", f"Rocket {a}" if a == b else f"Rockets {a} to {b}", None))
+                cov = covered.get(s["id"]) or set()
                 for pf in sorted(row["platforms"] - prev["platforms"]):
-                    out.append((t, s["n"], "platform", f"Platform {pf} built", None))
+                    if ("built", pf) not in cov:
+                        out.append((t, s["n"], "platform", f"Platform {pf} built", None))
+                for pf in sorted(prev["platforms"] - row["platforms"]):
+                    if ("lost", pf) not in cov:
+                        out.append((t, s["n"], "platform", f"Platform {pf} lost (gone from the platform list)", None))
                 for pl in sorted(row["planets"] - prev["planets"]):
                     out.append((t, s["n"], "planet", f"Reached {pl.capitalize()}", None))
             prev = row
