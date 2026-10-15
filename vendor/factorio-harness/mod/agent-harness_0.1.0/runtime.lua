@@ -266,7 +266,7 @@ local function finish(index, outcome)
   -- A direct timed action that ended other than done counts for the review (selfview.lua; queue steps: scheduler fail).
   if action and not action.queued and M.selfview then pcall(M.selfview.ended,index,action.kind,outcome,action.error) end
   if action and action.blocked_item then s.last[index].blocked_item=action.blocked_item end
-  if action and action.kind=='mine' and action.mined then s.last[index].mined=action.mined end
+  if action and action.kind=='mine' and action.mined then s.last[index].mined=action.mined; s.last[index].count=action.count; s.last[index].why=s.last[index].why or action.why end
   if action and action.kind=='mine' and action.instead then s.last[index].instead=action.instead.line end
   if action and action.kind=='pickup' then
     s.last[index].picked=action.picked
@@ -843,7 +843,7 @@ local function active(index)
     built=action.built,remaining=action.kind=='construct' and construction.remaining(action) or nil,
     missing=action.missing and next(action.missing) and action.missing or nil,
     awaiting_craft=action.awaiting_craft,got=action.got,
-    silo_wait=action.await_silo and M.rocketload.wait_report(action) or nil,
+    silo_wait=action.await_silo and M.rocketload.wait_report(action) or action.silo_hold and M.rocketload.wait_report({await_silo=action.silo_hold}) or nil,
     condition=action.kind=='wait_until' and action.condition['until'] or nil,saw=action.kind=='wait_until' and action.saw or nil,
     stuck_s=action.watch and game.tick-action.watch.since>=STUCK_TICKS and math.floor((game.tick-action.watch.since)/60) or nil,
     -- Waiting short of rails a moving train will pass (M.train_guard).
@@ -1403,7 +1403,7 @@ function handlers.describe()
         positions='or 1..64 {x,y} (each may carry name or unit_number): every damaged one, nearest first, walking to each (a timed action; outcomes repair_completed | timed_out | repair_tool_exhausted; last: repaired, already_full, unreached, lost, left, tally)',
         area='or {left_top, right_bottom} up to 128x128: every entity of ours with health in it, as positions (at most 64 damaged)',
         returns='an undamaged target (or none damaged among positions/area): ok with unchanged "not damaged", nothing started, no repair tool needed, last outcome nothing_to_do (a queue step goes on); with positions/area: targets, damaged, already_full, failed and first_error (positions that name no entity), until_tick; a damaged target with no repair tool held fails (no repair tool in inventory)',platform='refused: the game repairs platform entities itself, one at a time, with repair packs from the hub; platforms {platform} and inspect of the hub list damaged and repair_packs'},
-      mine={unsafe_goal='optional true: mine where the enemy check refuses: an entity inside a worm\'s range, within 40 tiles of a spawner or in an area under attack now (24 tiles round its first hit, hit within the last 30 s) on the chunks the map shows',avoid_enemies='as move_to\'s (false: no check)',position='{x,y}', ticks='1..600 (with tiles: 1..36000, default the mining time plus 10 s a tile out of reach, at least 10 s)', name='optional (with tiles: a tile name: only that tile in an area)',
+      mine={unsafe_goal='optional true: mine where the enemy check refuses: an entity inside a worm\'s range, within 40 tiles of a spawner or in an area under attack now (24 tiles round its first hit, hit within the last 30 s) on the chunks the map shows',avoid_enemies='as move_to\'s (false: no check)',position='{x,y}', ticks='1..600 (with tiles: 1..36000, default the mining time plus 10 s a tile out of reach, at least 10 s)',count='a resource (ore, coal, stone): 1..2000 units to mine in one call, instead of ticks (Grok, d15 06:20: 200 coal took a 50-round queue); a tile mined out goes on with the nearest tile of the same resource in reach; ends mined (count reached; last.mined, last.count) or target_mined (none of it left in reach: last.mined short of last.count, last.why)', name='optional (with tiles: a tile name: only that tile in an area)',
         tiles='true: mine the tiles laid by a player at position, positions (1..64) or area (up to 32x32: the minable laid tiles there), by hand as a player mines them: within reach (reach_distance to the tile\'s edge), the tile\'s mining time at your mining speed (landfill and artificial soil 0.5 s at mining speed 1, concrete and stone path 0.1 s; dry_run says the seconds), the product to your inventory, the tile under it put back (landfill on wetland: wetland). A natural tile and a tile anything stands on are refused or skipped, naming it (mine it first); a timed action, nearest first: outcomes target_mined | inventory_full | out_of_reach | failed | timed_out; last.mined, last.tiles [{position, tile, restored, items}], last.skipped [{position, why}], last.items, last.moved. Tiles by the game\'s tile coordinates (the top-left corner, as grid shows them)',
         positions='only with tiles: true: 1..64 laid tiles; entities take one position per call or queue step',area='only with tiles: true: {left_top, right_bottom} up to 32x32 laid tiles; no entity area mining',walk=WALK..'; mine walks as move_to {target, reach} does, then mines on arrival (last.walked); with tiles: each tile out of reach walked to in turn, tiles inside a weapon\'s reach left out (skipped)',
         dry_run='with tiles: mine nothing; each tile: tile, restores, seconds, in_reach, distance; items, seconds, skipped (why), natural (natural tiles in the area)',
@@ -3110,6 +3110,13 @@ function handlers.mine(p,a)
   end
   hand_minable(p,e)
   local ticks=integer(a.ticks,60,1,MAX_TICKS,'ticks')
+  -- count (Grok, d15 06:20): units of a resource in one call; the time is what that many hand-mining cycles take.
+  local count
+  if a.count~=nil then
+    assert(a.ticks==nil,'count and ticks: one or the other (count: units of a resource)')
+    assert(e.type=='resource','count goes with a resource (ore, coal, stone); '..e.name..' is mined whole')
+    count=integer(a.count,1,1,2000,'count')
+  end
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   local action={kind='mine',entity=e,until_tick=game.tick+ticks,products={},started=game.tick}
   -- What the character holds of the products now: last.moved is what it holds more of when the mining ends.
@@ -3134,6 +3141,10 @@ function handlers.mine(p,a)
     action.cycle=hand_mining_ticks(p,e)
     action.next_mine=game.tick+action.cycle
     action.mined=0
+    if count then
+      action.count=count
+      action.until_tick=game.tick+math.min(216000,math.ceil(count*action.cycle*1.1)+120)
+    end
     -- The step's position names this resource from now on, also once its tile is gone.
     remember_mined(p,position(a.position),e)
     if instead then remember_mined(p,e.position,e) end
@@ -3149,8 +3160,20 @@ function handlers.mine(p,a)
   action.instead=instead
   state().active[p.index]=action
   -- LuaEntity cannot be serialized to JSON; only tick is returned (and the tile taken for a mined-out one).
-  return {until_tick=action.until_tick,instead=instead}
+  return {until_tick=action.until_tick,instead=instead,count=action.count,cycle_ticks=action.count and action.cycle or nil}
 end
+end
+-- mine count: the nearest tile of a resource the character reaches now.
+function M.mine_count_next(p,name)
+  local reach=(p.resource_reach_distance or p.reach_distance or 10)+2
+  local best,bd
+  for _,t in ipairs(p.surface.find_entities_filtered{position=p.position,radius=reach,name=name,type='resource',limit=32}) do
+    if t.valid and p.can_reach_entity(t) then
+      local d=distance(p.position,t.position)
+      if not bd or d<bd then best,bd=t,d end
+    end
+  end
+  return best
 end
 -- Items on the ground within the character's pickup distance. shake5: a bot's
 -- pickup returned ok and the plate stayed (a bot's character does not pick up
@@ -9430,6 +9453,7 @@ M.entryset=require('entryset'){check=function(action,args) return check_args(act
 do
   local place=handlers.place_ghosts
   handlers.place_ghosts=function(p,a)
+    local aliased=type(a)=='table' and M.entryset.normalize(a.entities) or 0
     if type(a)~='table' or not M.entryset.any(a.entities) then return place(p,a) end
     local ctx={platform=a.platform,surface=a.surface}
     M.entryset.check(a.entities,ctx)
@@ -9438,19 +9462,24 @@ do
     local skip={}
     for _,f in ipairs(out.failed or {}) do if f.index then skip[f.index]=true end end
     out.settings,out.settings_line=M.entryset.apply(p,a.entities,ctx,skip)
+    if aliased>0 then out.settings_alias=aliased..' entries\' settings read as configure/requests/circuit/wires' end
     return out
   end
   local build=handlers.build
   handlers.build=function(p,a)
+    local aliased=type(a)=='table' and type(a.builds)=='table' and M.entryset.normalize(a.builds,'builds entry') or 0
     local entries=type(a)=='table' and (a.builds or {a}) or {}
     if M.entryset.any(entries) then M.entryset.check(entries,{}) end
-    return build(p,a)
+    local out=build(p,a)
+    if aliased>0 and type(out)=='table' then out.settings_alias=aliased..' entries\' settings read as configure/requests/circuit/wires' end
+    return out
   end
   -- A dry run (the dispatcher's dry_run action, a queue step's): the same check, and what each entry would set.
   local dry=handlers.dry_run
   handlers.dry_run=function(p,a)
     local args=type(a)=='table' and type(a.args)=='table' and a.args or nil
     local entries=args and (a.action=='place_ghosts' and args.entities or a.action=='build' and (args.builds or {args})) or nil
+    if entries and (a.action=='place_ghosts' or args.builds) then M.entryset.normalize(entries) end
     if not entries or not M.entryset.any(entries) then return dry(p,a) end
     M.entryset.check(entries,a.action=='place_ghosts' and {platform=args.platform,surface=args.surface} or {})
     local out=dry(p,a)
@@ -9483,7 +9512,7 @@ end
 local conditions=conditions_module{known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end}
-M.waiteta=require('waiteta'){state=state,check=function(p,c) return conditions.check(p,c,true) end,
+M.waiteta=require('waiteta'){state=state,check=function(p,c,record) return conditions.check(p,c,true,record) end,
   research_rate=function(name) return M.research.rate(name) end,crafting_left=crafting_left,
   busy=function(s,index) return M.idle.busy(s,index) end,
   has_body=function(index) local p=M.lookup(index); return p and p.valid and p.character and p.character.valid end}
@@ -11490,9 +11519,21 @@ function M.tick_action(index,action,event)
       -- mine_entity on a resource takes one unit and returns false while
       -- the tile has ore left, so judge success by the amount.
       local before=e.amount
+      local name=e.name
       p.mine_entity(e,false)
-      if not e.valid then action.mined=action.mined+1; finish(index,'target_mined')
-      elseif e.amount<before then action.mined=action.mined+1; action.next_mine=event.tick+action.cycle
+      if not e.valid then
+        action.mined=action.mined+1
+        -- count: the next tile of the same resource in reach, nearest first (mine_count_next).
+        local nxt=action.count and action.mined<action.count and M.mine_count_next(p,name)
+        if action.count and action.mined>=action.count then finish(index,'mined')
+        elseif nxt then action.entity=nxt; action.next_mine=event.tick+action.cycle
+        else
+          if action.count then action.why=string.format('mined %d of %d: no %s left in reach',action.mined,action.count,name) end
+          finish(index,'target_mined')
+        end
+      elseif e.amount<before then
+        action.mined=action.mined+1; action.next_mine=event.tick+action.cycle
+        if action.count and action.mined>=action.count then finish(index,'mined') end
       else action.blocked_item=blocked_product(p,action); finish(index,'inventory_full') end
     end
   end

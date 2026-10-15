@@ -4,7 +4,7 @@ return function(api)
   local QUEUES=api.queue_key or 'queues'
   local MAX_PENDING, MAX_HISTORY, MAX_INSTANT, MAX_BYTES, MAX_GUARDS, CHECK_TICKS = 128, 64, 4, 1048576, 8, 10
   -- Outcomes of timed actions that count as the step succeeding.
-  local SUCCESS={duration_elapsed=true,target_mined=true,repair_completed=true,arrived=true,arrived_near=true,path_built=true,constructed=true,nothing_to_do=true,clear=true,fed=true,collected=true,topped_up=true,target_destroyed=true,dropped=true,transferred=true,picked_up=true,
+  local SUCCESS={duration_elapsed=true,target_mined=true,mined=true,repair_completed=true,arrived=true,arrived_near=true,path_built=true,constructed=true,nothing_to_do=true,clear=true,fed=true,collected=true,topped_up=true,target_destroyed=true,dropped=true,transferred=true,picked_up=true,
     -- load_silo walk (Luna, shift14 21:20): the list aboard, and launched
     loaded=true,launched=true,
     -- clear_cliffs and use_item with cliff explosives (Sol 22:45), and a vehicle drive's dry run
@@ -305,6 +305,27 @@ return function(api)
     result.minimum_failed=true
     return false
   end
+  -- A batch step with entries that failed (Astra 07:50: queues read all ok while place_ghosts had failed entries, and
+  -- key belts were never placed): place_ghosts and build (all=true lists the entries it could not build) report
+  -- failed [{index, ..., error}]; such a step fails, so on_fail and the plan's outcome see it. A timed build (walking,
+  -- stepping aside, awaiting a craft) keeps the batch's result in its completion. Tile areas' tiles_refused stay out
+  -- (a tile already laid there is refused too).
+  local ENTRY_STEPS={place_ghosts=true,build=true}
+  local function entries_failed(step,result)
+    if not ENTRY_STEPS[step.action] or type(result)~='table' then return nil end
+    local r=result
+    if type(r.completion)=='table' then r=type(r.completion.result)=='table' and r.completion.result or r.completion end
+    local list=type(r.failed)=='table' and r.failed or nil
+    if not list or #list==0 then return nil end
+    local f=list[1]
+    local what=type(f)=='table' and (f.name or f.item) or nil
+    local pos=type(f)=='table' and type(f.position)=='table' and f.position or nil
+    local at=pos and string.format(' (%g,%g)',pos.x or pos[1] or 0,pos.y or pos[2] or 0) or ''
+    local placed=type(r.placed)=='number' and r.placed or type(r.built)=='number' and r.built or nil
+    return string.format('%s: %d entr%s failed%s; first: #%s %s%s: %s',step.action,#list,#list==1 and 'y' or 'ies',
+      placed and string.format(' (%d %s)',placed,step.action=='build' and 'built' or 'placed') or '',tostring(type(f)=='table' and f.index or '?'),tostring(what or '?'),at,
+      tostring(type(f)=='table' and f.error or f)),#list
+  end
   local function fail(q,p,step,result)
     minimum(step,result)
     moved(p,step,result)
@@ -519,7 +540,14 @@ return function(api)
     assert((replacing and 0 or total(q.pending))+total(items)+(extra>0 and bytes(q.current,0) or 0)<=MAX_BYTES,'queue argument byte budget exceeded')
     assert((replacing and 0 or #(q.guards or {}))+#new_guards<=MAX_GUARDS,'at most '..MAX_GUARDS..' guards')
     preempt(p,q)
-    if (replacing and loop) or a.mode=='ahead' then api.stop(p); M.pause(p.index) end
+    if (replacing and loop) or a.mode=='ahead' then api.stop(p); M.pause(p.index)
+    elseif replacing and q.current then
+      -- replace stops the plan's active step too (Sonnet 07:50: a running load_silo went on after mode replace and
+      -- took a queue_cancel first, about 5 times); its history entry says so, and it is not run again.
+      local step=q.current
+      api.stop(p); q.current=nil
+      record(q,step,false,{reason='stopped by queue_submit mode=replace',stopped_by='replace'})
+    end
     assign(q,items)
     if #items>0 then new_plan(q,items,'submit') end
     if replacing then q.pending={}; q.loop=nil; q.next_cycle_tick=nil; q.guards={}; q.times=nil; q.stop_tick=nil; q.orders=nil; q.condition=nil; q.condition_error=nil end
@@ -646,7 +674,9 @@ return function(api)
               local success=not outcome or SUCCESS[outcome]==true
               local result={accepted=step.result,outcome=outcome or 'completed',completion=api.completion and api.completion(p,step.action)}
               q.current=nil
-              if success and minimum(step,result) then moved(p,step,result); record(q,step,true,result) else fail(q,p,step,result) end
+              local partial,nfailed=entries_failed(step,result)
+              if partial then result.reason=partial; result.entries_failed=nfailed end
+              if success and not partial and minimum(step,result) then moved(p,step,result); record(q,step,true,result) else fail(q,p,step,result) end
             end
           end
           -- An order running between rounds finishes first; the next round loads after it.
@@ -715,6 +745,9 @@ return function(api)
                 fail(q,p,step,{reason=api.reason and api.reason(result) or tostring(result)})
               elseif step.wait and api.busy(p,step.action) then
                 step.result=result; q.current=step
+              elseif entries_failed(step,result) then
+                result.reason,result.entries_failed=entries_failed(step,result)
+                fail(q,p,step,result)
               elseif minimum(step,result) then moved(p,step,result); record(q,step,true,result)
               else fail(q,p,step,result) end
             end
@@ -740,7 +773,7 @@ return function(api)
       times='optional 1..10000: the number of rounds; after the last one the loop ends',
       for_ticks='optional 60..432000: from this call, no round starts at or after that many ticks (a round under way finishes); with times, whichever comes first ends the loop',
       note='a loop that ends (times, for_ticks) leaves the queue empty: history entry loop_done {rounds, reason}, queue_status loop_done, and one team block line under queue ("queue NAME done after N rounds: ...");a round whose steps ran short (out_of_items, nothing_collected, inventory_full, none held, or a short reply) puts one line in the team block (queue: "queue NAME round N: K of M steps short: transfer iron-plate inventory_full x2, ..."), only when it differs from the last round\'s; a step with up_to=true or on_short=skip is left out of it (its history entry says short=true)'},
-    queue_submit={steps='array of {action,args,wait?,label?,on_fail?,min_moved?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace|ahead: omitted refuses nonempty submits into a repeating plan, naming it; replace stops an active repeating step and removes the loop (ordinary plans: pending only); ahead interrupts and restarts an absolute-goal step after the new steps, preserving the loop (other active steps refuse); append explicitly waits behind the current round',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
+    queue_submit={steps='array of {action,args,wait?,label?,on_fail?,min_moved?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace|ahead: omitted refuses nonempty submits into a repeating plan, naming it; replace stops the active step (its history entry: stopped by queue_submit mode=replace; not run again), drops pending steps and guards, and removes a loop; ahead interrupts and restarts an absolute-goal step after the new steps, preserving the loop (other active steps refuse); append explicitly waits behind the current round',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
       dry_run='true: check the plan as a submit does and queue nothing (the queue is left as it is); returns steps, corrected, and the silo cargo the steps would leave: launches [{step, label, silo, cargo (before that launch), kg, min_cargo (lines), platform_now, would_refuse}], silos_after, notes (steps whose item moves are not counted); counted from what you, the chests and the silos hold now through transfer, load_silo and launch steps'},
     queue_edit={expected_revision='required from queue_status',index='1-based pending index',remove='count to remove',steps='replacement steps'},
     queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses',expected_revision='optional'},
@@ -748,13 +781,13 @@ return function(api)
     wait_ticks={ticks='1..54000 simulation ticks: a queue step, or a direct timed action (fh call wait_ticks --wait)',pause_queue=PAUSE_QUEUE,
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
       wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
-    wait_until={['until']='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left; a queue step, a standing order\'s when, a queue guard\'s when, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw, wait_estimates (ETA/rate basis or no_estimate), idle_s (character idle seconds in this wait), wait_line (one line)',
+    wait_until={['until']='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced; a queue step, a standing order\'s when, a queue guard\'s when, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw, wait_estimates (ETA/rate basis or no_estimate), idle_s (character idle seconds in this wait), wait_line (one line)',
       position='area predicates: centre (default character); rocket_ready: the rocket silo (any tile of it), met when its rocket is built and ready to launch (saw: rocket state, parts, cargo); rocket_parts: the silo, met when the rocket being built has at_least parts (a built rocket, rising or ready, has all of them; while one launches, the next one\'s count; saw: rocket parts N/50 and the silo line)',area='ammo_below/fuel_below: {left_top,right_bottom} up to 256x256, excludes position/radius',radius='1..256 (default 32)',count='ammo_below: per-turret ammo items; fuel_below: fuel items per burner machine (furnaces, drills, boilers, burner inserters, ...)',fraction='health_*: 0..1; damaged: our buildings under this health fraction (default 1: any damage)',
-      item='item_count',at_least='item_count; rocket_parts: parts 1..required; ghosts_waiting: ghosts (entity and tile) in the area (default 1)',below='item_count',positions='item_count: 1..64 {x,y} of our entities (chests, machines) to count in, summed over all their inventories (a rocket silo\'s rocket cargo too; saw adds each silo\'s rocket state and cargo: the rocket is no item, the item rocket is ammunition); default the character\'s inventory',technology='researched',platform='item_count: count landed items in the named platform hub main inventory (not incoming cargo or hub trash); no positions or surface; platform_arrived, platform_left: a platform of ours by name; platform_arrived is met while it is stopped at a space location (the platform list shows it there, not on its path or a route); platform_left while it is not (Gemini, 16:50: departure)',location='platform_arrived, platform_left: optional planet name; default any stop',timeout='ticks 1..54000 (default 3600; fh call wait_until --wait takes it from --wait-timeout); timing out fails the step (timed_out)',
+      item='item_count; produced (optional)',produced='positions (or position): 1..64 machines of ours; met when they made at_least items of item (crafts times what the recipe makes of it per craft; without item: crafts) since the wait began, by the products-finished counter each machine\'s GUI shows; a wait_until step or a direct wait only (a guard, an order\'s when or a loop condition refuses); saw: made N item (K crafts) in M machines since the wait began',at_least='item_count; produced; rocket_parts: parts 1..required; ghosts_waiting: ghosts (entity and tile) in the area (default 1)',below='item_count',positions='item_count: 1..64 {x,y} of our entities (chests, machines) to count in, summed over all their inventories (a rocket silo\'s rocket cargo too; saw adds each silo\'s rocket state and cargo: the rocket is no item, the item rocket is ammunition); default the character\'s inventory',technology='researched',platform='item_count: count landed items in the named platform hub main inventory (not incoming cargo or hub trash); no positions or surface; platform_arrived, platform_left: a platform of ours by name; platform_arrived is met while it is stopped at a space location (the platform list shows it there, not on its path or a route); platform_left while it is not (Gemini, 16:50: departure)',location='platform_arrived, platform_left: optional planet name; default any stop',timeout='ticks 1..54000 (default 3600; fh call wait_until --wait takes it from --wait-timeout); timing out fails the step (timed_out)',
       checked='every 10 ticks; enemies count only if known from the chart (units only in visible chunks)',pause_queue=PAUSE_QUEUE,
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
       wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
-    step_options={min_moved='transfer steps only, integer 1..10000, wait=true: require at least this many reported items moved after completion; otherwise on_fail applies, even with up_to=true or on_short=skip; missing moved count is unknown and fails; no rollback',label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it)',on_short='skip: a step that runs short (out_of_items, nothing_collected, inventory_full, or no item held to give) counts as done (history: short=true) and the plan goes on; up_to=true in a transfer, collect or feed step does the same'},
+    step_options={min_moved='transfer steps only, integer 1..10000, wait=true: require at least this many reported items moved after completion; otherwise on_fail applies, even with up_to=true or on_short=skip; missing moved count is unknown and fails; no rollback',label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it); a place_ghosts or build step with failed entries (build all=true) fails: reason "place_ghosts: N entries failed (K placed); first: #i NAME (x,y): why", entries_failed N, the entries placed stay',on_short='skip: a step that runs short (out_of_items, nothing_collected, inventory_full, or no item held to give) counts as done (history: short=true) and the plan goes on; up_to=true in a transfer, collect or feed step does the same'},
     guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the plan runs; each fires once, stops the running step',max=MAX_GUARDS}
   }
   return M

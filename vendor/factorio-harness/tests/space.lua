@@ -744,4 +744,32 @@ do
   row=space4.platforms(p,{}).platforms[1]
   eq(row.ammo_rates,nil,'details only for one named platform'); eq(row.incoming_cargo,nil)
 end
+-- A set without section edits the item's slot in the manual section that holds it (Grok, d15 06:20: a hub's set of
+-- underground-belt 4 added a section and the hub requested 2+4): a grouped section too, said; a second holder named.
+do
+  prototypes.item['underground-belt']={}
+  local grouped=section(true,'ship parts'); grouped.index=1
+  grouped.set_slot(1,{value={type='item',name='underground-belt',quality='normal',comparator='='},min=2})
+  local list={grouped}
+  local hub2=sections(list)
+  local pl2={valid=true,name='beta2',index=2,state=7,space_location={name='nauvis'},surface={name='platform-2'},
+    hub={valid=true,type='space-platform-hub',position={x=0,y=0},get_logistic_sections=function() return hub2 end,get_inventory=function() return hub_inv end}}
+  table.insert(p.force.platforms,pl2)
+  local r2=space.requests(p,{platform='beta2',set={{item='underground-belt',min=4}}})
+  eq(hub2.sections_count,1,'no section added'); eq(grouped.get_slot(1).min,4)
+  eq(r2.changed_section,1); eq(r2.stored[1],'underground-belt 4..inf (was underground-belt 2..inf)')
+  eq(r2.sections_note[1],'underground-belt: section 1 is the logistic group "ship parts": every entity in the group gets the change, as in the GUI')
+  -- an item not requested anywhere goes to the default section (added: the only manual one is grouped)
+  r2=space.requests(p,{platform='beta2',set={{item='coal',min=1}}})
+  eq(hub2.sections_count,2); eq(r2.changed_section,2)
+  -- held in two sections: the first is edited, the other named
+  list[2].set_slot(2,{value={type='item',name='underground-belt',quality='normal',comparator='='},min=3})
+  r2=space.requests(p,{platform='beta2',set={{item='underground-belt',min=6}}})
+  eq(grouped.get_slot(1).min,6); eq(list[2].get_slot(2).min,3)
+  eq(r2.sections_note[1],'underground-belt is requested in section 2 too (the hub requests the sum; requests {section, clear} removes one)')
+  -- clear without section finds the holder
+  r2=space.requests(p,{platform='beta2',clear={'coal'}})
+  eq(r2.stored[1]:sub(1,13),'coal: cleared')
+  table.remove(p.force.platforms)
+end
 print('space: ok')

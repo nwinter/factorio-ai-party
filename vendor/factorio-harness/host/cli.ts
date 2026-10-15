@@ -138,7 +138,7 @@ function parseUntil(text: string): Record<string, unknown> {
   const alternatives = splitAlternatives(trimmed);
   if (alternatives.length > 1) return {until:'any', conditions:alternatives.map(part => parseUntil(part))};
   const [kind = '', ...rest] = trimmed.split(/\s+/);
-  const usage = '--until takes researched [TECH], crafting_done, alert [KIND ...], item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, rocket_parts>=N at X,Y, platform_arrived PLATFORM [PLANET], platform_left PLATFORM [PLANET], or a wait_until condition as JSON; several joined by | (or a JSON list) wake on whichever holds first';
+  const usage = '--until takes researched [TECH], crafting_done, alert [KIND ...], item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, rocket_parts>=N at X,Y, produced [ITEM]>=N at X,Y [X,Y ...], platform_arrived PLATFORM [PLANET], platform_left PLATFORM [PLANET], or a wait_until condition as JSON; several joined by | (or a JSON list) wake on whichever holds first';
   if (kind === 'researched' || kind === 'research') {
     if (rest.length > 1) throw new Error(usage);
     return rest[0] ? {until:'researched', technology:rest[0]} : {until:'researched'};
@@ -179,6 +179,20 @@ function parseUntil(text: string): Record<string, unknown> {
     if (!m) throw new Error('--until rocket_parts takes a count and the silo position: rocket_parts>=40 at X,Y');
     const n = Number(m[2]) + (m[1] === '>' ? 1 : 0);
     return {until:'rocket_parts', at_least:n, position:{x:Number(m[3]), y:Number(m[4])}};
+  }
+  // What machines made since the wait began (Grok 07:50: robots empty the provider, so item_count never rises):
+  // produced ITEM>=N at X,Y [X,Y ...] (items), or produced>=N at X,Y (crafts).
+  if (/^produced\b/.test(trimmed)) {
+    const m = trimmed.match(/^produced\s*(?:([a-z][\w-]*)\s*)?(>=|>)\s*(\d+)\s+(?:at|in)\s+(.+)$/);
+    if (!m) throw new Error('--until produced takes an optional item, a count and the machines: produced iron-gear-wheel>=50 at X,Y [X,Y ...] (produced>=N: crafts)');
+    const positions = (m[4] ?? '').split(/[\s;]+/).filter(Boolean).map(pair => {
+      const xy = pair.match(/^\(?(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\)?$/);
+      if (!xy) throw new Error(`--until produced positions are X,Y pairs separated by spaces: ${pair}`);
+      return {x:Number(xy[1]), y:Number(xy[2])};
+    });
+    const condition: Record<string, unknown> = {until:'produced', at_least:Number(m[3]) + (m[2] === '>' ? 1 : 0), positions};
+    if (m[1]) condition.item = m[1];
+    return condition;
   }
   // A silo's rocket built and ready to launch (Luna, shift10: the rocket is no item to count).
   if (kind === 'rocket_ready') {
@@ -903,7 +917,7 @@ async function main() {
   // target_destroyed: a shoot at an entity ended because it is gone.
   // transferred: a transfer that walked (walk, pick, a courier's to) moved items (Astra 07:53: exit 1 'Control ended:
   // transferred' after moving 200 solid fuel); unreached and nothing_collected still fail.
-  const successfulOutcomes = ['told','mentioned','urgent','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear','dropped','transferred','previewed',
+  const successfulOutcomes = ['told','mentioned','urgent','duration_elapsed','target_mined','mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear','dropped','transferred','previewed',
     // clear_cliffs (use_item cliff-explosives): the explosives destroyed cliffs (Sol 17:21/17:32: fh wait exited 1 on it)
     'cliffs_destroyed',
     // load_silo walk (Luna, shift14 21:20): the list aboard, and launched; short and no_rocket still fail.
@@ -1123,7 +1137,7 @@ async function main() {
       // an active 'feed'; the radius tours run as 'gather'; vehicle drive runs
       // as 'drive' (request #5: the wait returned the previous action's result). A transfer that walks (walk, pick)
       // runs as 'gather' too.
-      const kinds = action === 'collect' || action === 'feed' || action === 'recover' ? ['gather'] : ['rearm','refuel','transfer'].includes(action) ? ['gather','feed'] : action === 'build' || action === 'load_silo' ? ['feed']
+      const kinds = action === 'collect' || action === 'feed' || action === 'recover' ? ['gather'] : ['rearm','refuel','transfer'].includes(action) ? ['gather','feed'] : action === 'build' ? ['feed'] : action === 'load_silo' ? ['feed','gather']
         : action === 'vehicle' ? ['drive'] : action === 'use_item' ? ['clear_cliffs'] : [action];
       // A walk into reach that the call makes first (autowalk.lua) runs as a move_to naming the call (walking_for).
       const stillRunning = active && (action === 'shoot' || action === 'drop' || kinds.includes(active.kind) || active.walking_for === action);
@@ -1451,8 +1465,9 @@ async function main() {
         || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined)
         // build stepping off its own footprint, then placing the rest (Sol 11:18: --wait returned at "built 1 of 5")
         || (action === 'build' && reply.result?.stepping_aside !== undefined)
-        // load_silo waiting for its rocket (no rocket yet, or launch=true before it is ready), then loading (shift12 15:20)
-        || (action === 'load_silo' && reply.result?.waiting !== undefined)
+        // load_silo waiting for its rocket (no rocket yet, or launch=true before it is ready), then loading (shift12 15:20);
+        // a walking load (op load_silo, until_tick) is a tour (Sol 07:50: --wait returned the acceptance)
+        || (action === 'load_silo' && (reply.result?.waiting !== undefined || reply.result?.until_tick !== undefined))
         // A transfer or collect that walks (walk, pick, pick with to) runs as a timed tour.
         || (['transfer','collect'].includes(action) && reply.result?.op === 'transfer' && reply.result?.until_tick !== undefined)
         // feed over positions with walk: a tour when any was out of reach (Opus 10:50).

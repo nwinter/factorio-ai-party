@@ -158,6 +158,16 @@ main.add('agricultural-science-pack',300)
 fails(function() R.load(p,{position={x=65.5,y=14.5},items={['agricultural-science-pack']=1000},launch=true,platform='Sunward'}) end,
   'not launched: agricultural-science-pack 700 short (you held 300; iron-chest (61.5,10.5) held 0; iron-chest (60.5,10.5) held 0); what was loaded stays in the rocket (it holds agricultural-science-pack*300, 300/1000 kg)')
 eq(launched,nil); eq(cargo.counts['agricultural-science-pack@normal'],300)
+-- up_to (Sonnet 07:50): what is aboard goes; the short row is listed, not an error. None of the list aboard: refused.
+r=R.load(p,{position={x=65.5,y=14.5},items={['agricultural-science-pack']=1000},to_total=true,up_to=true,launch=true,platform='Sunward'})
+eq(r.launch.launched,true); eq(r.short,nil); eq(r.complete,false)
+eq(r.up_to_short[1],'agricultural-science-pack 700 short (you held 0; iron-chest (61.5,10.5) held 0; iron-chest (60.5,10.5) held 0)')
+cargo.counts={}; cargo.order={}; launched=nil
+fails(function() R.load(p,{position={x=65.5,y=14.5},items={['agricultural-science-pack']=10},up_to=true,launch=true,platform='Sunward'}) end,
+  'not launched (up_to): none of the list is aboard')
+eq(launched,nil)
+fails(function() R.load(p,{position={x=65.5,y=14.5},items={['agricultural-science-pack']=10},up_to='yes'}) end,'up_to must be true or false')
+cargo.add('agricultural-science-pack',300)
 -- The launch refused after loading: said, the cargo stays.
 local real_launch=api.launch
 api.launch=function() error('launch refused at tick 100, nothing launched: platform Sunward has not arrived at nauvis',0) end
@@ -442,16 +452,21 @@ p.surface.find_entities_filtered=kept_find
 -- 9. walk with from (Luna, shift14 21:20: 930 agricultural science packs from a provider 64 tiles from the silo took
 -- four walks and several calls): one tour between the chest and the silo, as many trips as the load takes. The
 -- tour is replayed here stop by stop as stock.lua walks it (each stop in reach on arrival).
-local function tour(w)
+-- A stop that holds (out.wait: the tour waits at the silo) is visited again 30 ticks later; on_wait(action, n) may
+-- change the world, and returning true ends the replay with 'holding'.
+local function tour(w,on_wait)
   local action=w.fields
   action.targets={}
   for i,e in ipairs(w.entities) do action.targets[i]={entity=e,position=e.position} end
-  local i,stops=1,{}
+  local i,stops,waits=1,{},0
   while action.targets[i] do
     local e=action.targets[i].entity
     stops[#stops+1]=e.name
     local out=R.walk_visit(p,action,e)
-    i=i+1
+    if out.wait then
+      waits=waits+1; game.tick=game.tick+30; stops[#stops]=nil
+      if not on_wait or on_wait(action,waits) or waits>50 then return 'holding',action,stops end
+    else i=i+1 end
     if out.stop then return out.stop,action,stops end
   end
   return 'ran out',action,stops
@@ -495,13 +510,20 @@ eq(outcome,'loaded'); eq(takes[1],150); eq(cargo.counts['agricultural-science-pa
 cargo.counts={}; cargo.order={}; main=Inv(4,{{'agricultural-science-pack',100}})
 w=R.walk_start(p,{position=S,items={['agricultural-science-pack']=100},from={x=129.5,y=14.5},walk=true})
 eq(#w.entities,1); eq(w.entities[1],silo)
--- Launch with the rocket not ready at the last stop: loaded, not launched, the rocket's state named.
+-- Launch with the rocket not ready at the silo (Astra 06:23: the walking load put cargo in a rocket not yet ready, and
+-- the silo's automatic requests took it out): the tour holds at the silo and loads nothing; once the rocket is ready
+-- it loads and launches in that tick.
 cargo.counts={}; cargo.order={}; main=Inv(4,{}); launched=nil
 silo.rocket_silo_status=0
 w=R.walk_start(p,{position=S,items={['agricultural-science-pack']=100},from={x=129.5,y=14.5},walk=true,launch=true,platform='Sunward'})
-outcome,act=tour(w)
-eq(outcome,'loaded'); eq(launched,nil)
-eq(act.why,'loaded, not launched: building the rocket: parts 20/50 (load_silo {launch: true} without walk waits for it)')
+outcome,act=tour(w,function(action,n) return n>=3 end)
+eq(outcome,'holding'); eq(launched,nil); eq(cargo.counts['agricultural-science-pack@normal'],nil,'nothing loaded before ready')
+eq(main.counts['agricultural-science-pack@normal'],100)
+eq(act.why,'waiting at the silo for the rocket to be ready (building the rocket: parts 20/50); nothing loaded yet')
+eq(act.rows[#act.rows].why,'the rocket is not ready to launch yet: waiting at the silo, nothing loaded')
+local hold_last={}; R.walk_last(act,hold_last); assert(hold_last.silo_wait and hold_last.silo_wait.gives_up_tick,'last.silo_wait while holding')
+outcome,act=tour(w,function(action,n) if n==2 then silo.rocket_silo_status=7 end end)
+eq(outcome,'launched'); eq(launched.platform,'Sunward'); eq(cargo.counts['agricultural-science-pack@normal'],100); eq(act.why,nil)
 silo.rocket_silo_status=7
 -- The chest runs out: short, naming what the rocket still needs and what the chest holds.
 cargo.counts={}; cargo.order={}; main=Inv(4,{})
@@ -524,12 +546,21 @@ eq(act.why,'the rocket still needs agricultural-science-pack 400 (you hold 0): n
 fails(function() R.walk_start(p,{position=S,items={['agricultural-science-pack']=5},from={x=129.5,y=14.5},walk=true}) end,
   'nothing walked: the rocket still needs agricultural-science-pack 5 (you hold 0) and none of it fits under its lift (it holds 1000/1000 kg)')
 provinv.counts={}; provinv.order={}
--- No rocket at the silo on arrival: what was taken stays with you.
+-- No rocket at the silo on arrival: the tour waits there for one, as the load without walk does; what was taken stays
+-- with you meanwhile.
 cargo.counts={}; cargo.order={}; main=Inv(4,{}); silo.no_rocket=true; provinv.add('agricultural-science-pack',50)
 w=R.walk_start(p,{position=S,items={['agricultural-science-pack']=50},from={x=129.5,y=14.5},walk=true})
-outcome,act=tour(w)
-eq(outcome,'no_rocket'); eq(main.counts['agricultural-science-pack@normal'],50)
+outcome,act=tour(w,function(action,n) if n==2 then silo.no_rocket=nil end end)
+eq(outcome,'loaded'); eq(cargo.counts['agricultural-science-pack@normal'],50)
 silo.no_rocket=nil
+-- up_to (Sonnet 07:50): short by weight, the walking load ends loaded and launches with what is aboard.
+cargo.counts={}; cargo.order={}; cargo.add('space-platform-foundation',45); main=Inv(10,{}); takes={}; launched=nil
+provinv.counts={}; provinv.order={}; provinv.add('agricultural-science-pack',500)
+w=R.walk_start(p,{position=S,items={['agricultural-science-pack']=500},from={x=129.5,y=14.5},walk=true,up_to=true,launch=true,platform='Sunward'})
+outcome,act=tour(w)
+eq(outcome,'launched'); eq(act.loaded,100); eq(launched.platform,'Sunward')
+eq(act.why,'up_to: the rocket still lacks agricultural-science-pack 400 (you hold 0): none of it fits under the rocket\'s lift (it holds 1000/1000 kg)')
+provinv.counts={}; provinv.order={}
 -- All in reach: nil (the load as without walk). The arguments.
 p.can_reach_entity=kept_can
 eq(R.walk_start(p,{position=S,items={['agricultural-science-pack']=1},from={x=129.5,y=14.5},walk=true}),nil)

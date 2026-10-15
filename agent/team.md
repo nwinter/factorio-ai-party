@@ -110,7 +110,7 @@ already targets your character.
   4 of 4 working, made 30/min, used 52/min`), and `chain_tree` lists every step down to ores and fluids; a mined or pumped step names its drills or pumps, their states
   (working, output full, no resource left) and what they put into.
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
-  `"surface"`) reads one item: where it sits (chests by kind, belts, machine outputs, inserter hands, robots,
+  `"surface"`) reads one item: where it sits (chests by kind, belts (`belt_lines`: the 5 belt lines holding the most, with their ends and the tile with the most), machine outputs, inserter hands, robots,
   characters), each logistic network's stock of it (free and reserved, and which requesters the reserved stock is for),
   its robots, every unmet requester with the reason (`inventory full: all 48 slots taken (spoilage 494 in 10 slots,
   ...)` first when its slots are all taken; `inspect` of the chest shows `slots_full` and `requests_blocked`), the
@@ -229,6 +229,7 @@ already targets your character.
   done, ok, failed; `history`: its own results); `./fh queue status orders` lists the standing orders' steps too;
   `--args '{"history":"all","pending":10}'` shows more.
   `queue_submit` into a repeat requires explicit `mode`: `replace` stops it, `ahead` interrupts/restarts an absolute-goal step, `append` waits behind this round; refusal names the job.
+  `mode: "replace"` stops the active step of any plan (a running `load_silo` too). A `place_ghosts` or `build` step with failed entries fails (`reason: place_ghosts: 3 entries failed (37 placed); first: ...`) and its `on_fail` applies.
   `queue_repeat {condition: {until: ...}}` ends at a round boundary when met (before round one too); `feed up_to:true` ending `out_of_items` exits 0 from `--wait`/`fh wait`, with moved and stops left.
 - `transfer {position, direction, items:{"iron-plate":50,"coal":10}, walk?}` moves multiple items at one target, with per-item `entries`; `trace {surface, position}` and `labs {surface, position?, radius?}` read that surface; `supply {item:"lubricant"}` reads fluid stock/flow and makers/users.
 - Raw `fh call wait_until` accepts word-form `until` and `ticks`/`timeout_ticks` aliases; queue errors name the step path. Aboard, queues accept allowed remote steps, `configure {platform}` works, and `observe` reports surroundings with `player.body:"none"`.
@@ -367,7 +368,8 @@ already targets your character.
 - `place_ghosts` entries, `build` `builds` entries and a single `build` take `configure`, `requests`, `circuit` (the
   arguments of `configure`, `requests`, `circuit_set`, without `position`) and `wires: [{to, color, from_side,
   to_side}]`: set after every entry is placed, then the wires; the reply's `settings` and `settings_line` say what was
-  set or refused (a refused setting leaves the entry placed); `dry_run` gives `settings_planned`.
+  set or refused (a refused setting leaves the entry placed); `dry_run` gives `settings_planned`. An entry's
+  `settings: {...}` is read as those keys (`settings_alias`); a setting key such as `modules` at the entry's top level is refused with the shape.
 - Turret ghosts from `place_ghosts` and `paste` request ammo, so the robots that build them bring it (`ammo`: a name,
   `{name, count}` or false; default 10 of what the logistic network there holds most of); so do the ghosts of turrets that died.
 - Water and Gleba wetland: `pole_route` shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost under
@@ -383,6 +385,7 @@ already targets your character.
   stone path, artificial soil) by hand: the tile under it goes back and the item to you; `positions`, `area`, `"walk":true`,
   `"dry_run":true`; a tile anything stands on is refused, naming it. `construct` mines tiles marked for deconstruction too.
   Entity `mine` takes one `position` per call or queue step; its `positions`/`area` require `tiles: true`.
+  `mine {position, count: 200}` on ore, coal or stone mines 200 units in one call (outcome `mined`), going on to the next tile in reach.
 - `build {item: "rail-ramp", position, direction}` and `construct` on a ramp ghost build it by hand from one held ramp;
   the centre snaps to the ramp grid, with the same collision and reach checks.
 - A `craft` stock refusal names stocking chests and queue-step `on_fail`: `abort` pauses, `skip` continues,
@@ -488,7 +491,8 @@ already targets your character.
   read in the tick it launches; `fh queue submit --file plan.json --args '{"dry_run":true}'` queues nothing and shows
   the silo cargo before each launch step. `load_silo` with `"walk": true` and `from` (chests anywhere on the silo's
   surface) walks between them and the silo as many trips as the load takes, in one timed call (outcomes `loaded`,
-  `launched`, `short`, `no_rocket`; `last.trips`, `last.stops`). A silo's `rocket_ready` is true only for a built
+  `launched`, `short`; `last.trips`, `last.stops`; `--wait` follows it); at the silo it waits for a rocket (with `launch`, a ready one)
+  before it loads anything. `"up_to": true` loads what fits and what is held, and launches with what is aboard (short rows in `up_to_short`). A silo's `rocket_ready` is true only for a built
   rocket (`built_parts` 50/50); `next_parts` counts parts for the rocket after it. A `load_silo` waiting for its rocket
   waits while the silo makes parts (`ticks`: initial idle window, grown to 3 times the longest observed interval to
   a part increase, capped at `gives_up_tick`); `silo_wait` reports the observed parts/minute and idle window.
@@ -507,6 +511,7 @@ already targets your character.
   that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
   `--until "rocket_parts>=40 at 65.5,14.5"` (or `{"until":"rocket_parts","at_least":40,"position":...}`, also a queue
   guard's `when`) waits for the rocket being built to have 40 parts.
+  `--until "produced iron-gear-wheel>=50 at 10.5,20.5"` (or `{"until":"produced","item":...,"at_least":50,"positions":[...]}`, a wait or queue step) waits until those machines made 50 since the wait began (their products-finished counter).
   `./fh wait --until "item_count coal below 20 at 10,39"` wakes when that chest's coal falls under 20 (also `>=`, `<`,
   `above`; several `X,Y` are summed). `./fh wait --until "alert low_power starved"` wakes on a new or grown alert
   group of those kinds addressed to you (`low_power`, `no_power`, `no_fuel`, ... as `game_alerts` names them), or
@@ -529,7 +534,8 @@ already targets your character.
   thruster input it lacks and the pumps, plants, crushers and chunks behind it (`platforms {platform}`:
   `thrust_inputs`).
 - `./fh call requests --args '{"platform":"NAME"}'` shows each hub section; `off: true` means it requests nothing
-  (`"section":N,"active":true` switches it on), and each request shows the planet it imports from.
+  (`"section":N,"active":true` switches it on), and each request shows the planet it imports from. A `set` without
+  `section` edits the slot of the section that already requests the item (`sections_note` names a shared group or a second section).
 - `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without
   a planet); it is also a `wait_until` condition, a queue guard and an order's `when`.
   `platform_left Sunward [nauvis]` waits for its departure; the team alerts say when a platform stops at or leaves

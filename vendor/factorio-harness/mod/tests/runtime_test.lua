@@ -343,6 +343,28 @@ do
   p.get_item_count=item_count
   p.mine_entity=function(e) e.amount=e.amount-1; if e.amount==0 then e.valid=false end; return false end
 end
+-- mine {count} (Grok, d15 06:20: 200 coal took a 50-round queue at 600 ticks a call): units of a resource in one call;
+-- a tile mined out goes on with the nearest tile of it in reach; the count reached ends it mined.
+do
+  local ore2={valid=true,name='iron-ore',type='resource',position={x=2,y=0},force={name='neutral'},minable=true,amount=10,
+    prototype=ore.prototype}
+  ore.valid=true; ore.amount=2
+  local kept_find=p.surface.find_entities_filtered
+  p.surface.find_entities_filtered=function(f) if f.type=='resource' and f.name then local out={} for _,o in ipairs({ore,ore2}) do if o.valid then out[#out+1]=o end end return out end return {ore} end
+  local r=call('mine',{position=ore.position,count=4})
+  eq(r.count,4); eq(r.cycle_ticks,120); assert(r.until_tick>=tick+4*120,'time for the count')
+  advance(240); eq(ore.valid,false); eq(call('status').active.kind,'mine')
+  advance(240); eq(ore2.amount,8)
+  last=call('status').last; eq(last.outcome,'mined'); eq(last.mined,4); eq(last.count,4)
+  -- none of it left in reach: target_mined, short
+  ore.valid=true; ore.amount=1; ore2.valid=false
+  call('mine',{position=ore.position,count=3}); advance(120)
+  last=call('status').last; eq(last.outcome,'target_mined'); eq(last.mined,1); eq(last.why,'mined 1 of 3: no iron-ore left in reach')
+  ore.valid=true; ore.amount=3
+  fails(function() call('mine',{position=ore.position,count=3,ticks=60}) end,'count and ticks')
+  p.surface.find_entities_filtered=kept_find
+  ore.valid=true; ore.amount=3
+end
 -- Resource mining idles silently when the product has no room; say so.
 ore.valid=true; ore.amount=5; call('mine',{position=ore.position,ticks=10}); advance(1); room=false; advance(1)
 last=call('status').last; eq(last.outcome,'inventory_full'); eq(last.blocked_item,'iron-ore'); room=true

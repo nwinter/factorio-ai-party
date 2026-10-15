@@ -199,7 +199,7 @@ return function(api)
     local T = {}
     for name in pairs(names) do
       T[name] = {item=name, kinds={}, chests={}, belts=0, outputs=0, inputs=0, rockets=0, labs=0, hands=0, robots=0, characters={}, carried=0,
-        makers={}, users={}, user_of={}, maker_of={}, spots={}, rows={}, orphans={}, request_of={},
+        makers={}, users={}, user_of={}, maker_of={}, spots={}, belt_spots={}, rows={}, orphans={}, request_of={},
         feeders={n=0, states={}, without={}, with=0}, takers={n=0, states={}, into={}}}
     end
     local counted = {}
@@ -516,7 +516,11 @@ return function(api)
     for _, e in ipairs(belts) do
       local held = {}
       belt_counts(e, names, single, held, opts.science_value and spoils[single])
-      for name, n in pairs(held) do local t = T[name]; t.belts = t.belts + n; spot(t, e, n, 'belt'); spoil_at(t, e, 'belt', function(acc) sp.belt(e, acc) end) end
+      for name, n in pairs(held) do
+        local t = T[name]; t.belts = t.belts + n; spot(t, e, n, 'belt'); spoil_at(t, e, 'belt', function(acc) sp.belt(e, acc) end)
+        -- each belt tile holding it, for the belt lines (M.belt_lines)
+        if n > 0 and #t.belt_spots < MAX_SPOTS then t.belt_spots[#t.belt_spots+1] = {e.position.x, e.position.y, n, e.direction or 0, e.type} end
+      end
     end
     end)
     -- Inserters: what their hands hold, the ones feeding users and taking
@@ -719,6 +723,69 @@ return function(api)
     add('robots', t.robots)
     if t.carried > 0 then parts[#parts+1] = 'characters ' .. t.carried .. ' (' .. table.concat(t.characters, ', ') .. ')'; total = total + t.carried end
     return total, parts
+  end
+  -- Where the item sits on belts (Muse, Grok 07:50: supply said coal 1001 on belts and nobody could find the backed-up
+  -- line): the belt tiles holding it joined into lines (tiles side by side that hold it; an underground's two ends and
+  -- an empty tile split a line), the lines with the most first: items, tiles, the box, the tile holding the most, and
+  -- each line's ends (out: no belt of the line on the tile its items move to; in: none feeding it from behind), with
+  -- what each holds. Up to `limit` lines (default 5); the rest counted.
+  local DIRV = {[0]={0,-1}, [4]={1,0}, [8]={0,1}, [12]={-1,0}}
+  function M.belt_lines(t, limit)
+    local spots = t.belt_spots or {}
+    if #spots == 0 then return nil end
+    local idx, parent = {}, {}
+    local function k(x, y) return math.floor(x) .. ',' .. math.floor(y) end
+    for i, s_ in ipairs(spots) do idx[k(s_[1], s_[2])] = i; parent[i] = i end
+    local function root(i) while parent[i] ~= i do parent[i] = parent[parent[i]]; i = parent[i] end return i end
+    for i, s_ in ipairs(spots) do
+      for _, d in ipairs({{1,0},{0,1}}) do
+        local j = idx[k(s_[1] + d[1], s_[2] + d[2])]
+        if j then local a, b = root(i), root(j); if a ~= b then parent[a] = b end end
+      end
+    end
+    local lines, by = {}, {}
+    for i, s_ in ipairs(spots) do
+      local r = root(i)
+      local L = by[r]
+      if not L then L = {items=0, tiles=0, members={}, l=s_[1], t=s_[2], r=s_[1], b=s_[2]}; by[r] = L; lines[#lines+1] = L end
+      L.items = L.items + s_[3]; L.tiles = L.tiles + 1; L.members[#L.members+1] = i
+      L.l = math.min(L.l, s_[1]); L.t = math.min(L.t, s_[2]); L.r = math.max(L.r, s_[1]); L.b = math.max(L.b, s_[2])
+      if not L.most or s_[3] > spots[L.most][3] then L.most = i end
+    end
+    table.sort(lines, function(x, y) if x.items ~= y.items then return x.items > y.items end return x.l < y.l end)
+    local out = {}
+    for n = 1, math.min(limit or 5, #lines) do
+      local L = lines[n]
+      local ends = {}
+      for _, i in ipairs(L.members) do
+        local s_ = spots[i]
+        local d = DIRV[s_[4]]
+        if d and s_[5] ~= 'splitter' then
+          local ahead = idx[k(s_[1] + d[1], s_[2] + d[2])]
+          local behind = idx[k(s_[1] - d[1], s_[2] - d[2])]
+          if not (ahead and root(ahead) == root(i)) then ends[#ends+1] = {'out', i} end
+          if not (behind and root(behind) == root(i)) and L.tiles > 1 then ends[#ends+1] = {'in', i} end
+        end
+      end
+      table.sort(ends, function(x, y) if spots[x[2]][3] ~= spots[y[2]][3] then return spots[x[2]][3] > spots[y[2]][3] end return x[1] > y[1] end)
+      local ends_text = {}
+      for e_ = 1, math.min(4, #ends) do
+        local s_ = spots[ends[e_][2]]
+        ends_text[#ends_text+1] = string.format('%s end %s %d', ends[e_][1], at({x=s_[1], y=s_[2]}), s_[3])
+      end
+      if #ends > 4 then ends_text[#ends_text+1] = (#ends - 4) .. ' more ends' end
+      local m = spots[L.most]
+      out[#out+1] = string.format('%d on %d belt tile%s %s-%s; most %d at %s%s', L.items, L.tiles, L.tiles == 1 and '' or 's',
+        at({x=L.l, y=L.t}), at({x=L.r, y=L.b}), m[3], at({x=m[1], y=m[2]}), #ends_text > 0 and '; ' .. table.concat(ends_text, ', ') or '')
+    end
+    local shown = #out
+    if #lines > shown then
+      local rest = 0
+      for n = shown + 1, #lines do rest = rest + lines[n].items end
+      out[#out+1] = string.format('%d more belt line%s %d', #lines - shown, #lines - shown == 1 and ' holds' or 's hold', rest)
+    end
+    if #spots >= MAX_SPOTS then out[#out+1] = 'belt tiles listed up to ' .. MAX_SPOTS .. '; the belts total counts every one' end
+    return out
   end
   -- The largest chests, with what a requester or buffer chest asks for.
   function M.top_chests(t, limit)
@@ -1278,7 +1345,7 @@ return function(api)
 
   M.schema = {supply = {item='item or fluid name; fluids return 10-minute flow, connected segment stock/capacity, makers and users by status', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole; fluid segments touching it include their whole connected stock',
     radius='with near: 1..512 tiles (default 64); alone: that far around you, on your surface',
-    returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); surplus_chest (the largest unreserved stock outside requester/buffer chests, with held and robot-pickup reservations); chests (largest 5; what a requester or buffer chest asks for); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); freshness (its spread over every place read: count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; chests adds each one\'s least and most spoiled and count-weighted %); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
+    returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); surplus_chest (the largest unreserved stock outside requester/buffer chests, with held and robot-pickup reservations); belt_lines (where it sits on belts: the belt tiles holding it joined into lines (side by side; an empty tile or an underground splits one), the 5 holding the most: "N on K belt tiles (x1,y1)-(x2,y2); most M at (x,y); out end (x,y) n, in end (x,y) n" (out: its items move on to no belt of the line; in: nothing of the line feeds it), then how many more lines hold how many); chests (largest 5; what a requester or buffer chest asks for); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); freshness (its spread over every place read: count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; chests adds each one\'s least and most spoiled and count-weighted %); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
 
   function M.supply(p, a)
     local item = a.item
@@ -1316,7 +1383,7 @@ return function(api)
     local out = {item=item, surface=surface.name, area=area and (at(area.position) .. ' radius ' .. area.radius) or nil,
       flow=string.format('made %d, used %d in the last 10 min on %s', flow('input'), flow('output'), surface.name),
       where=total > 0 and (total .. ': ' .. table.concat(parts, ', ')) or ('none on ' .. surface.name .. (area and ' in this area' or '')),
-      chests=#t.chests > 0 and M.top_chests(t) or nil, surplus_chest=M.surplus_chest(t)}
+      chests=#t.chests > 0 and M.top_chests(t) or nil, surplus_chest=M.surplus_chest(t), belt_lines=t.belts > 0 and M.belt_lines(t) or nil}
     local lines = M.network_lines(t, scan)
     if #lines > 0 then out.networks = lines end
     out.makers, out.makers_worst = M.machines(t, t.makers, 'makers', scan, packs)

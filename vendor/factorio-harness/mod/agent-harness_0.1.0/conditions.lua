@@ -156,6 +156,49 @@ return function(api)
       local met=(c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
       return met,c.item..' '..n..where,estimate and {value=n,scope=table.concat(scope,':')} or nil
     end,
+    -- What machines made since the wait began (Grok 07:50: item_count on a provider that robots empty never rises, so a
+    -- machine that makes things looks stopped): the products-finished counter each machine's GUI shows, on the given
+    -- tiles (crafting machines: assemblers, furnaces, chemical plants, ...), counted from its value at the wait's first
+    -- check. With item: crafts times what the machine's recipe makes of it per craft; without: crafts. Needs the wait's
+    -- record (a wait_until step or a direct wait), where the starting counts are kept.
+    produced=function(p,c,estimate,record)
+      assert(record,'produced counts from the start of a wait: a wait_until step or a direct wait_until (not a guard, an order\'s when or a loop condition)')
+      local base=record.produced_base or {}
+      record.produced_base=base
+      local crafts,items,seen,machines=0,0,0,0
+      local positions=c.positions or {c.position}
+      local scope={tostring(p.surface.index or p.surface.name or '')}
+      for _,raw in ipairs(positions) do
+        local pos=api.position(raw)
+        scope[#scope+1]=pos.x..','..pos.y
+        for _,e in pairs(p.surface.find_entities_filtered{position=pos,radius=0.3,force=p.force}) do
+          local ok,pf=pcall(function() return e.products_finished end)
+          seen=seen+1
+          if ok and type(pf)=='number' then
+            machines=machines+1
+            local key=e.unit_number or (e.position.x..','..e.position.y)
+            if base[key]==nil or pf<base[key] then base[key]=pf end
+            local made=pf-base[key]
+            crafts=crafts+made
+            if c.item then
+              local per=0
+              local okr,recipe=pcall(function() return e.get_recipe() or (e.type=='furnace' and e.previous_recipe) end)
+              if okr and recipe and recipe.name then recipe=prototypes.recipe[recipe.name] or recipe end
+              for _,prod in ipairs(okr and recipe and recipe.products or {}) do
+                if prod.name==c.item then per=per+(prod.amount or ((prod.amount_min or 0)+(prod.amount_max or 0))/2)*(prod.probability or 1) end
+              end
+              items=items+made*per
+            end
+          end
+        end
+      end
+      local n=c.item and math.floor(items+0.5) or crafts
+      local what=c.item and string.format('made %d %s (%d crafts)',n,c.item,crafts) or string.format('made %d crafts',crafts)
+      local saw=string.format('%s in %d machine%s since the wait began (at least %d)%s',what,machines,machines==1 and '' or 's',c.at_least,
+        seen>machines and string.format('; %d other entities on the tiles have no products counter',seen-machines) or '')
+      if machines==0 then saw='no machine with a products counter on the given tiles' end
+      return machines>0 and n>=c.at_least,saw,estimate and {value=n,scope='produced:'..table.concat(scope,':')} or nil
+    end,
     -- A silo's rocket built and ready to launch (the GUI's rocket state).
     rocket_ready=function(p,c,estimate)
       local e=silo_at(p,c)
@@ -250,7 +293,7 @@ return function(api)
       return n>0,n..' burners below '..c.count..' fuel'..(near and string.format(' (nearest %s at %d,%d)',near.name,math.floor(near.position.x),math.floor(near.position.y)) or '')
     end,
   }
-  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left'
+  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced'
   -- Argument checks run when a plan is submitted, not when it first fires.
   function M.validate(c)
     assert(type(c)=='table' and checks[c['until']],'until must be one of '..NAMES)
@@ -279,6 +322,16 @@ return function(api)
         for _,pos in ipairs(c.positions) do api.position(pos) end
       end
     end
+    if kind=='produced' then
+      assert(c.item==nil or (type(c.item)=='string' and prototypes.item[c.item]),'produced item must be a known item')
+      assert(c.position~=nil or c.positions~=nil,'produced requires position or positions (the machines, 1..64 {x,y})')
+      if c.positions~=nil then
+        assert(type(c.positions)=='table' and #c.positions>=1 and #c.positions<=64,'produced positions takes 1..64 {x,y} (machines)')
+        for _,pos in ipairs(c.positions) do api.position(pos) end
+      end
+      assert(c.at_least~=nil,'produced requires at_least (items made since the wait began; crafts without item)')
+      number(c.at_least,1,1e9,'at_least')
+    end
     if kind=='researched' then assert(type(c.technology)=='string','researched requires technology') end
     if kind=='rocket_ready' then assert(c.position~=nil,'rocket_ready requires position (a rocket silo\'s, any tile of it)') end
     if kind=='rocket_parts' then
@@ -295,9 +348,9 @@ return function(api)
     end
     return c
   end
-  function M.check(p,c,estimate)
+  function M.check(p,c,estimate,record)
     if c['until']=='researched' then assert(p.force.technologies[c.technology],'unknown technology') end
-    return checks[c['until']](p,c,estimate)
+    return checks[c['until']](p,c,estimate,record)
   end
   M.names=NAMES
   return M

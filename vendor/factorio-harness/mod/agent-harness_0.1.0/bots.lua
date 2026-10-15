@@ -403,7 +403,7 @@ return function(api)
   local TEAM = {tell=true, tells=true, operator=true, board=true, board_post=true, board_update=true, board_plan=true, board_events=true,
     vote=true, votes=true, lookahead=true}
   local BODY_READS = {inventory=true, craftable=true}
-  local BODYLESS_WAITS = {platform_arrived=true, platform_left=true, researched=true, rocket_ready=true, rocket_parts=true}
+  local BODYLESS_WAITS = {platform_arrived=true, platform_left=true, researched=true, rocket_ready=true, rocket_parts=true, produced=true}
   function M.check_action(index, action, args)
     local b = bots().by_index[index]
     if not (b and b.travel) then return end

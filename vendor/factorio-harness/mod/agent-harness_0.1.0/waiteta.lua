@@ -109,7 +109,7 @@ return function(api)
     -- A predicate error must not leave a previous ETA attached to a failed wait.
     record.wait_estimates={{condition=label(c),as_of_tick=game.tick,no_estimate='condition is unavailable',
       line=label(c)..': no estimate (condition is unavailable)'}}
-    local met,saw,o=api.check(p,c)
+    local met,saw,o=api.check(p,c,record)
     local ok,row=pcall(M.estimate,p,c,met,o,record)
     if not ok then row={condition=label(c),as_of_tick=game.tick,no_estimate='estimate data unavailable',
       line=label(c)..': no estimate (estimate data unavailable)'} end
