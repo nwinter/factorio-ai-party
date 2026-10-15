@@ -317,8 +317,12 @@ do
   game.get_surface=function(i) return i==9 and surf or nil end
   game.players={}
   game.tick=game.tick+3600
-  for _=1,5 do game.tick=game.tick+1; T3.tick(game.tick) end
+  -- (spread: the box's 19x11 chunk positions at 16 a tick, the least; operator 18:12: 2000 a tick put a big surface's
+  -- sweep in a few ticks, threat.tick 83 ms in one game second)
+  local ticks=0
+  repeat game.tick=game.tick+1; T3.tick(game.tick); ticks=ticks+1 until not next(st3.chart_jobs or {}) and ticks>1 or ticks>100
   eq(st3.chart_jobs and next(st3.chart_jobs),nil,'the sweep is done')
+  eq(ticks,1+math.ceil(19*11/16),'the job starts, then 16 positions a tick')
   local swept=T3.summary(a).chart
   eq(walked,1,'no walk over every chunk in a status')
   eq(swept.charted_chunks,first.charted_chunks); eq(swept.visible_chunks,first.visible_chunks); eq(swept.extent,first.extent)

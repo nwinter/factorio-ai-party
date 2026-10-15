@@ -301,7 +301,9 @@ return function(api)
   -- when a surface's chart is CHART_TICKS old, it sweeps the box of generated
   -- chunks the last chart saw, grown by SWEEP_MARGIN and to every player on
   -- the surface, SWEEP chunk positions a tick; its state is in storage.
-  local SWEEP,SWEEP_MARGIN=2000,4
+  -- Operator 18:12 (threat.tick 83 ms in one game second at 17:53): SWEEP a tick finished a big surface's sweep in a
+  -- few ticks; now the box's chunk positions spread over SWEEP_TICKS, at least SWEEP_MIN and at most SWEEP a tick.
+  local SWEEP,SWEEP_MARGIN,SWEEP_TICKS,SWEEP_MIN=2000,4,1800,16
   function M.tick(tick)
     local st=api.state()
     st.chart_bg=true
@@ -334,14 +336,16 @@ return function(api)
             local ok,here=pcall(function() return pl.surface.index==s.index and pl.position end)
             if ok and here then grow(b,math.floor(here.x/32)-SWEEP_MARGIN,math.floor(here.y/32)-SWEEP_MARGIN); grow(b,math.floor(here.x/32)+SWEEP_MARGIN,math.floor(here.y/32)+SWEEP_MARGIN) end
           end
-          if b.left then st.chart_jobs[key]={start=tick,left=b.left,right=b.right,top=b.top,bottom=b.bottom,x=b.left,y=b.top}
+          if b.left then
+            local per=math.min(SWEEP,math.max(SWEEP_MIN,math.ceil((b.right-b.left+1)*(b.bottom-b.top+1)/SWEEP_TICKS)))
+            st.chart_jobs[key]={start=tick,left=b.left,right=b.right,top=b.top,bottom=b.bottom,x=b.left,y=b.top,per=per}
           else e.chart.tick=tick end  -- no generated chunk and nobody there: nothing to sweep
         end
       elseif not (force and s) then st.chart_jobs[key]=nil
       else
         job.t=job.t or chart_new(s,force)
         local n=0
-        while n<SWEEP and job.y<=job.bottom do
+        while n<(job.per or SWEEP) and job.y<=job.bottom do
           local c={x=job.x,y=job.y}
           if s.is_chunk_generated(c) then chart_chunk(job.t,s,force,c) end
           n=n+1; job.x=job.x+1
