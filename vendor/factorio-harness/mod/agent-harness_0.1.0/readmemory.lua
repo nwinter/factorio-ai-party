@@ -70,6 +70,11 @@ return function(api)
     end
     out.by='last seen memory';out.observed_tick=best.tick;out.age_ticks=game.tick-best.tick;out.age_s=(game.tick-best.tick)/60
     out.current=false;out.in_reach=nil
+    -- A sighting keeps no contents (Muse, shift18 12:46: a chest read "only basic info"): say why there is no holds.
+    if best.kind=='summary' and action~='trace' then
+      out.holds='unknown: its chunk is not in sight now (no radar or character of ours sees it), and the game shows an '..
+        'entity\'s contents only in sight (remote view there shows the map as last charted); this is what was seen of it, with no inspect recorded'
+    end
     out.memory='all fields are from the recorded observation; current state is unknown'
     return out
   end

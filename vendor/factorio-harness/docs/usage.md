@@ -1635,7 +1635,10 @@ fh sleep 900 --until researched                       # ...or until the research
 coverage they return a matching recorded reply with `by: "last seen memory"`, `observed_tick`, `age_ticks`,
 `age_s`, and `current: false`. Every field in that reply is historical, including inventory counts and
 machine status. Inspect's `positions` and `compact` forms use the same memory. Visible entity sightings
-also retain a basic summary; seeing a belt records its layout. A trace with no saved route can return that
+also retain a basic summary (name, type, status; `detail: "last observed entity summary"`), with `holds: "unknown:
+its chunk is not in sight now (no radar or character of ours sees it), and the game shows an entity's contents only
+in sight ..."` (Muse, shift18 12:46: a chest read "only basic info"); in sight, by remote view, a chest's `holds` and
+`inventories` are its contents now. Seeing a belt records its layout. A trace with no saved route can return that
 remembered belt layout, with each tile's age, direction and last item count. It stops at an unknown tile,
 a splitter/linked belt whose lane routing was not recorded, or 512 tiles. A live trace reaching fog stops its
 current route there and attaches available remembered layout. Unrecorded entities remain unknown. Memory
