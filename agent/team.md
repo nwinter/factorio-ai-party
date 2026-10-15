@@ -144,8 +144,8 @@ already targets your character.
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, power cuts
   (`power cut #1: small-electric-pole (x,y) destroyed by big-biter ...: split electric network #57 in 2: #212 has no
-  power (31 poles, ...): 20 electric-mining-drill, ...`; `scan` rows of poles give `network` and `wires`, `inspect`
-  gives `wires`), and the
+  power (31 poles, ...): 20 electric-mining-drill, ...`; `scan` rows of poles give `network` and `wires`; `inspect`
+  gives `electric_network_id` and `circuit.wires`), and the
   game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
   (125,40)`, `12 gun-turret out of ammo near (67,-170)`, turrets rebuilt empty (built with no ammo, still empty 60 s later, named), ghosts waiting for materials, inserters that lost their pickup or drop target (by
   what they feed, with what each read and puts into), an electric network drawing 85%

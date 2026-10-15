@@ -4055,9 +4055,6 @@ function handlers.inspect(p,a)
   out.energy=e.energy
   out.fluids=e.get_fluid_contents()
   out.electric_network_id=e.electric_network_id
-  -- Its wires (round2120a): a pole's copper neighbours, and the red and green circuit neighbours of anything wired.
-  local okw,wires=pcall(M.powercut.wires,e)
-  out.wires=okw and wires or nil
   -- A producer's or consumer's maximum and its network's now (networks.lua; Astra, 13:10). (power is summary's
   -- "unpowered: ..." line.)
   local okp,pw=pcall(M.timed,'inspect.power',M.networks.entity_power,e)
@@ -9927,7 +9924,7 @@ M.pushalerts=require('pushalerts'){state=state,timed=M.timed,agents=function() r
 function handlers.game_alerts(p,a) return M.pushalerts.read(p,a) end
 -- Where drops landed (drops.lua): their pods followed down, told in the team block, the drops read.
 M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.board.resolve}
--- A pole's death that cut power (powercut.lua, round2120a): team.alerts and status alerts; scan and inspect wires.
+-- A pole's death that cut power (powercut.lua, round2120a): team.alerts and status alerts; scan rows' pole wires.
 M.powercut=require('powercut'){state=state}
 function handlers.drops(p,a) return M.drops.read(p,a) end
 -- What each platform carried stop by stop and leg by leg, and where it is (freight.lua; Luna, shift12 12:47).

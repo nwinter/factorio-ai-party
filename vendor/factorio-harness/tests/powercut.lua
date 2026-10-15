@@ -148,10 +148,8 @@ S.powercut.jobs[1].neighbours={'not an entity'}
 run(340)
 eq(#S.powercut.jobs,0); eq(S.powercut.errors.count,1)
 
--- The wires of a pole, as scan and inspect give them.
+-- A pole's copper neighbours, as scan rows give them.
 local w1,w2,w3=pole(600,0,99),pole(607,0,99),pole(600,7,99)
 wire(w1,w2); wire(w1,w3); wire(w1,w2,defines.wire_connector_id.circuit_red)
-local w=pc.wires(w1)
-eq(#w.copper,2); eq(w.copper[1],'small-electric-pole (607,0)'); eq(w.red[1],'small-electric-pole (607,0)'); eq(w.green,nil)
 eq(pc.copper_line(w1),'(607,0) (600,7)'); eq(pc.copper_line(pole(700,0,100)),'none')
 print('powercut: ok')

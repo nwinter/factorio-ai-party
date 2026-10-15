@@ -322,27 +322,8 @@ return function(api)
     return #out > 0 and out or nil
   end
 
-  -- A pole's wires, as the map draws them (scan and inspect, round2120a: Opus traced a break over 400 tiles): its
-  -- copper neighbours and its red and green circuit neighbours, "name (x,y)", the first 8 of each.
-  function M.wires(e)
-    if not (e and e.valid) then return nil end
-    local out = {}
-    for key, id in pairs({copper=defines.wire_connector_id.pole_copper, red=defines.wire_connector_id.circuit_red, green=defines.wire_connector_id.circuit_green}) do
-      local con = try(function() return e.get_wire_connector(id, false) end)
-      local list, n = {}, 0
-      for _, c in ipairs(con and try(function() return con.connections end) or {}) do
-        local o = c.target and c.target.owner
-        if o and o.valid and o ~= e then
-          n = n + 1
-          if n <= 8 then list[#list+1] = o.name .. ' ' .. at(o.position) end
-        end
-      end
-      if n > 8 then list[#list+1] = string.format('+%d more', n - 8) end
-      if n > 0 then out[key] = list end
-    end
-    return next(out) and out or nil
-  end
-  -- A scan row's short form: the copper neighbours' positions.
+  -- A scan row's pole wires (round2120a, Opus: a break traced over 400 tiles): its copper neighbours' positions.
+  -- (inspect lists every wire's far end under circuit.wires: circuits.lua)
   function M.copper_line(e)
     local con = copper(e)
     local list = {}

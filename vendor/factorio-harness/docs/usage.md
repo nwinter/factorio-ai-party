@@ -1291,11 +1291,11 @@ fh sleep 900 --until researched                       # ...or until the research
 - An electric machine no pole reaches reads `status_name: unpowered` in `observe` and `scan` rows (whatever the
   engine's status, often `low_power`), with `power: "unpowered: no pole reaches it; nearest pole medium-electric-pole
   at (17,10), 7 tiles"` in `inspect` and in build replies.
-- `inspect` gives `electric_network_id` and `wires` (round2120a, Opus): a pole's copper neighbours, and the red and
-  green circuit neighbours of anything wired, `name (x,y)`, the first 8 of each (`wires: {copper: ["small-electric-pole
-  (78.5,-176.5)", ...], red: [...]}`). `scan` rows of our poles carry `network` (the electric network id) and `wires`
-  (their copper neighbours' positions, `(78.5,-176.5) (78.5,-188.5)`, or `none`), unasked: poles next to each other
-  on different networks, or a pole with one wire where a line goes on, show a break.
+- A pole's electric network and wires (round2120a, Opus: a cut found only by walking 400 tiles of poles): `scan`
+  rows of our poles carry `network` (the electric network id) and `wires` (their copper neighbours' positions,
+  `(78.5,-176.5) (78.5,-188.5)`, or `none`), unasked; poles next to each other on different networks, or a pole with
+  one wire where a line goes on, show a break. `inspect` gives `electric_network_id` and, under `circuit.wires`, every
+  wire's far end (`copper`, `red`, `green`).
 - `inspect` gives the engine's status as a number (`status`) with its `defines.entity_status` name beside it
   (`status_name`), always the pair (Muse, shift10: `--format json` gave 14, 26, 27 to look up); an unpowered machine
   says so in `power`.
