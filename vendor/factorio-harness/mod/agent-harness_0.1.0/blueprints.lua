@@ -571,6 +571,8 @@ return function(api)
             end
             out.count=out.count+1
             out.by_name[e.ghost_name]=(out.by_name[e.ghost_name] or 0)+1
+            -- The build log (efficiency.lua): a planned machine is its planner's.
+            if api.placed and e.type=='entity-ghost' then pcall(api.placed,p,e) end
             local x,y=e.position.x,e.position.y
             if out.bounds then
               local b=out.bounds

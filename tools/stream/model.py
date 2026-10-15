@@ -19,6 +19,7 @@ from collections import deque
 import attention
 import clouds as clouds_mod
 import loadout as loadouts_mod
+import efficiency as efficiency_mod
 import tokens
 
 FIGHT_EPISODE_GAP = 45.0  # seconds without a report: the next report at the same key is a new fight
@@ -494,6 +495,10 @@ class Model:
         self.incoming = {}  # id -> an enemy group on its way (attack_groups_live), as last read
         self.big = {}  # id -> a demolisher near our buildings (big_enemies_live), as last read
         self.hauling = None  # hand hauling this shift (live.py observe_hauling): {rows, since, t}
+        # production credited to who built the machine (live.py observe_efficiency): the last read, and the reads of the
+        # last hour for a notable change (efficiency.notable)
+        self.efficiency = None
+        self.efficiency_hist = deque(maxlen=24)
         self.loadouts = loadouts_mod.Loadouts()  # what each agent carries, wears and builds (live.py observe_loadout)
         self.tokens, self.tokens_from = None, None  # token use this shift (tokens.py TokenFeed, brief): {t, since, rows}
         self.fights = {}  # key -> fight still reported (attacked chunk, loss, agent in combat), for replays.py
@@ -584,6 +589,9 @@ class Model:
             self._ingest_big(obs["big_enemies"], now)
         if obs.get("hauling") is not None:  # hand hauling this shift (live.py observe_hauling), for the segment card
             self.hauling = obs["hauling"]
+        if obs.get("efficiency") is not None:  # machines' output by builder (live.py observe_efficiency)
+            self.efficiency = obs["efficiency"]
+            self.efficiency_hist.append((now, obs["efficiency"]))
         if obs.get("loadout") is not None:  # guns, armor, items, crafting, building per agent (live.py observe_loadout)
             team = self.run.get("agents") or {}
             self.loadouts.ingest([r for r in obs["loadout"] if not team or r.get("name") in team], now)
@@ -1482,6 +1490,15 @@ class Model:
 
     LOST_SHOW_S = 120  # a lost platform stays in the widget this long, marked lost, with its cause
 
+    def efficiency_news(self, now):
+        """A notable change in the team's machines against the read about 30 minutes ago (efficiency.notable), for
+        the hosts as a fact; None most of the time."""
+        then = None
+        for t, v in self.efficiency_hist:
+            if now - t >= efficiency_mod.NEWS_WINDOW:
+                then = v
+        return efficiency_mod.notable(then, self.efficiency)
+
     def space_in_play(self):
         """Space beyond Nauvis (the space widget's active, without the science packs): a rocket, a platform, another
         planet with our entities, or an agent away from Nauvis."""
@@ -1699,6 +1716,8 @@ class Model:
             "incoming": self.incoming_snapshot(now),
             "big_enemies": self.big_snapshot(now),
             "hauling": self.hauling,
+            "efficiency": self.efficiency,
+            "efficiency_news": self.efficiency_news(now),
             "loadouts": loadouts,
             "tokens": self.tokens,
             "alerts": [a for a in self.alerts if a["until"] > now][-3:],

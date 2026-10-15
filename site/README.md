@@ -47,7 +47,11 @@ harness, the stream voice, its numbers across the shifts), records and a sortabl
 operator inbox. Its "Hand hauling" table (items moved by hand, calls, direct / queue step / standing order, tiles
 carried, top repeated haul; and items by shift) takes a shift from `runs/RUN/hauling.jsonl`, the stream's reads of the
 harness's `hauling` counters, last less first; a shift without that file counts the journal's direct hand moves whose
-reply says what moved, with no queue or standing order numbers. It caches each shift as `runs/RUN/agent-stats.json` (git-ignored; `build.py --stats-cache DIR` puts the
+reply says what moved, with no queue or standing order numbers. Its "Machines built" section (Nick 15:50: production
+credited to the agent who built the machine, the harness's `efficiency` read) takes a shift from
+`runs/RUN/efficiency.jsonl`'s last row (the runtime counts the shift itself): per agent the items made, the share moved
+by machines (items made over items made plus items hauled by hand in the same shifts), machines and working as of the
+last such shift; and the team by shift. Shifts without the file have no row. It caches each shift as `runs/RUN/agent-stats.json` (git-ignored; `build.py --stats-cache DIR` puts the
 caches elsewhere) and counts a shift again only when one of its sources changed: about a second per ended shift, a few
 for the live one. `python3 tools/agent_stats.py RUN --print` shows one shift's table. Its "Tokens" table (operator 08:55, from Nick:
 tokens, input, the share read from cache, output, turns, tokens per game action, peak context, context resets, and

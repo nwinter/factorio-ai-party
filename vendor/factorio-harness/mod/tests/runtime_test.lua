@@ -3979,4 +3979,31 @@ end)()
   p.surface.find_entities_filtered,main,defines.rocket_silo_status,p.position,p.force.platforms=kept_find,kept_main,kept_rss,kept_pos,kept_platforms
   ag.weight,ag.stack_size=kept_w,kept_s; p.get_main_inventory=kept_gmi
 end)()
+-- Nick 15:50 (efficiency.lua): production credited to who built the machine. An operator read listed in describe and
+-- an operator seed; a machine the agent builds is in the log under its name; the review shows the line.
+;(function()
+  local reads=runtime.dispatch{action='describe',args={},player=1}.operator_reads
+  local listed=false
+  for _,r in ipairs(reads) do listed=listed or r=='efficiency' end
+  assert(listed,'efficiency is an operator read')
+  local kept_ts=table_size
+  table_size=table_size or function(t) local n=0; for _ in pairs(t) do n=n+1 end; return n end
+  prototypes.entity['assembling-machine-2']=prototypes.entity['assembling-machine-2'] or {}
+  local kept_type=prototypes.entity['assembling-machine-2'].type
+  prototypes.entity['assembling-machine-2'].type='assembling-machine'
+  local e={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=8.5,y=8.5},surface=p.surface,unit_number=4242}
+  local before=runtime.dispatch{action='efficiency',args={},operator=true}.logged
+  runtime.efficiency.built(runtime.board.who(p),e)
+  local r=runtime.dispatch{action='efficiency',args={},operator=true}
+  eq(r.logged.units,before.units+1); eq(r.logged.spots,before.spots+1); assert(r.team and r.agents and r.walk,'team, agents, walk')
+  local seed=runtime.dispatch{action='efficiency_seed',args={rows={{unit=77,by='opus',tick=1}}},operator=true}
+  eq(seed.units,1)
+  -- the review carries the agent's line once its machines have a record
+  local lines=runtime.selfview.review(p)
+  local found=false
+  for _,l in ipairs(lines) do found=found or l:find('^machines you built made %d+ items this shift')~=nil end
+  assert(found,table.concat(lines,' | '))
+  prototypes.entity['assembling-machine-2'].type=kept_type
+  table_size=kept_ts
+end)()
 print('runtime: '..assertions..' assertions passed')

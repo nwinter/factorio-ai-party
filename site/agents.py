@@ -87,6 +87,18 @@ def collect(long, runs_dir, keys, cache_dir=None, names=()):
     for t in totals.values():
         t["active"] = 100 * t["active_min"] / t["minutes"] if t["minutes"] else None
         t["fail_rate"] = 100 * t["failed"] / t["requests"] if t["requests"] else None
+    # machines each agent built (efficiency.lua, where the stream kept the reads): items made summed over those
+    # shifts, the share against hand hauling in the same shifts, machines and working as of the last such shift
+    for k, t in totals.items():
+        rows = [a for _, a in per.get(k, []) if a.get("made_items") is not None]
+        if not rows:
+            t["made_items"] = t["made_share"] = t["machines"] = t["machines_working"] = None
+            continue
+        made = sum(a["made_items"] or 0 for a in rows)
+        hand = sum(a.get("haul_items") or 0 for a in rows)
+        t["made_items"] = made
+        t["made_share"] = 100 * made / (made + hand) if made + hand else None
+        t["machines"], t["machines_working"] = rows[-1].get("machines"), rows[-1].get("machines_working")
     survival = {}
     for k in totals:
         start, best, best_n, prev = None, 0, None, None
@@ -468,6 +480,46 @@ def hauling_table(data, agent, avatar, esc):
     return f'<p class="small muted">{esc(note)}</p>{run}{by_shift}'
 
 
+MACHINE_COLS = [("made_items", "Items made", "n"), ("made_share", "Moved by machines", "pct"),
+                ("machines", "Machines", "n"), ("machines_working", "Working", "n")]
+
+
+def machines_section(data, agent, avatar, esc):
+    """Machines each agent built (efficiency.lua): items they made, the share moved by machines against hand hauling,
+    machines and working; the team by shift. Empty without a shift that kept the reads."""
+    totals = {k: t for k, t in data["totals"].items() if t.get("made_items") is not None}
+    team = [(n, st.get("machines_team")) for n, _, st in data["shifts"] if st.get("machines_team")]
+    if not totals and not team:
+        return ""
+    tops = {f: max((t.get(f) or 0 for t in totals.values()), default=0) for f, _, _ in MACHINE_COLS}
+    head = '<th scope="col">Agent</th>' + "".join(
+        f'<th scope="col"><button type="button">{esc(label)}</button></th>' for _, label, _ in MACHINE_COLS)
+    body = []
+    for k, t in sorted(totals.items(), key=lambda kv: kv[0]):
+        a = agent(k)
+        cells = []
+        for f, _, kind in MACHINE_COLS:
+            v = t.get(f)
+            w = round(100 * (v or 0) / tops[f]) if tops[f] else 0
+            shown = fmt(round(v) if v is not None else None, kind)
+            cells.append(f'<td data-v="{v if v is not None else ""}">{shown}<span class="bar"><i style="width:{w}%"></i></span></td>')
+        body.append(f'<tr style="--ac:{esc(ac(a.get("color")))}"><th scope="row">'
+                    f'<a class="chip" href="#{esc(k)}">{avatar(k, "sm")}{esc(a["name"])}</a></th>{"".join(cells)}</tr>')
+    run = (f'<div class="table-wrap"><table class="compare machines"><thead><tr>{head}</tr></thead>'
+           f'<tbody>{"".join(body)}</tbody></table></div>') if body else ""
+    trows = "".join(
+        f'<tr><th scope="row">{n}</th><td data-v="{m.get("made_items") or 0}">{fmt(m.get("made_items"))}</td>'
+        f'<td data-v="{m.get("made_share_pct") if m.get("made_share_pct") is not None else ""}">{fmt(m.get("made_share_pct"), "pct")}</td>'
+        f'<td data-v="{m.get("machines") or 0}">{fmt(m.get("machines"))}</td>'
+        f'<td data-v="{m.get("machines_working") or 0}">{fmt(m.get("machines_working"))}</td></tr>'
+        for n, m in team)
+    by_shift = (f'<h3 id="machines-shifts">Team by shift</h3><div class="table-wrap"><table class="compare machines-shifts">'
+                f'<thead><tr><th scope="col">Shift</th><th scope="col">Items made</th><th scope="col">Moved by machines</th>'
+                f'<th scope="col">Machines</th><th scope="col">Working</th></tr></thead><tbody>{trows}</tbody></table></div>'
+                ) if trows else ""
+    return f'<h2 id="machines">Machines built</h2>{run}{by_shift}'
+
+
 MAKER_COLS = ["actions", "built", "walked", "deaths", "research", "rockets", "say", "voiced"]
 
 
@@ -537,6 +589,7 @@ def build_agents(data, agent, avatar, esc, api=None):
             f'<h2 id="compare">Comparison</h2>{compare_table(data, agent, avatar, esc)}'
             f'<h2 id="makers">By maker</h2>{maker_table(data, agent, avatar, esc)}'
             f'<h2 id="hauling">Hand hauling</h2>{hauling_table(data, agent, avatar, esc)}'
+            f'{machines_section(data, agent, avatar, esc)}'
             f'{tokens_section(data, agent, avatar, esc)}'
             # each card's "Now" (guns, armor, inventory, crafting, building) comes from the live API (site.js)
             f'<h2 id="cards">The team</h2><div class="agent-grid"{f" data-api={chr(34)}{esc(api)}{chr(34)}" if api else ""}>{cards}</div>'
@@ -560,6 +613,12 @@ DEFS = [("Game actions", "requests that change the game: moves, builds, crafts, 
         ("Tiles carried", "straight lines from where an item was taken or last put to where it is put; legs over "
                           "400 tiles left out"),
         ("Top repeated haul", "puts of one item from one 10-tile area to another, most often"),
+        ("Items made (machines built)", "crafts of the assemblers, furnaces and silos the agent built, or planned as ghosts "
+                                        "that robots or teammates built, times the recipe's items, in the shifts with "
+                                        "the stream's machine reads"),
+        ("Moved by machines", "items made, of items made plus items hauled by hand, in the same shifts"),
+        ("Machines, working", "the agent's assemblers, furnaces, silos, drills and labs in the last such shift, and those "
+                              "working when last read"),
         ("Longest survival", "game time between deaths, or since the last one"),
         ("Tokens", "tokens the agent's model read and wrote: input (every prompt token, the cached ones too) plus "
                    "output, summed over its model calls, from its CLI's own session log; a CLI's compaction summaries "

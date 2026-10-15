@@ -1163,7 +1163,7 @@ M.EXAMPLES={
 function handlers.describe()
   local description = {protocol=1, version='0.1.0', max_action_ticks=MAX_TICKS, deduplication_window=256, deduplication_bytes=8*1024*1024,
     -- operator-only reads this runtime answers (dispatch with operator=true; callers check here before asking)
-    operator_reads={'attack_groups_live','big_enemies_live','hauling','loadout','clouds'},
+    operator_reads={'attack_groups_live','big_enemies_live','hauling','loadout','clouds','efficiency'},
     target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (inspect and cargo weigh: sight, or by remote view anywhere on your surface in a chunk our force sees now, by: remote view); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, reach and visibility come from its position',
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
@@ -3473,6 +3473,8 @@ local function build_direct(p,stack,pos,direction,quality,kind,place)
     local ok=pcall(e.set_recipe,replaced.recipe,replaced.recipe_quality)
     replaced.recipe_kept=ok or nil
   end
+  -- The build log (efficiency.lua): a machine built by hand is this agent's; one revived from a ghost, its planner's.
+  pcall(M.efficiency.built,M.board.who(p),e,ghost~=nil)
   return e,picked,replaced,need
 end
 local function build_reach(p,pos,what)
@@ -6501,6 +6503,7 @@ M.beltflow=require('beltflow'){try=function(fn) local ok,v=pcall(fn); if ok then
 M.sidefeed=require('sidefeed'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end}
 local blueprint_handlers=blueprint_module{position=position,visible=visible,distance=distance,entity=entity,friendly=friendly,integer=integer,real=real,own_platform=own_platform,targets=M.targets,keep=M.keep,turretammo=M.turretammo,
   build_notes=function(p,ents) return M.build_notes(p,ents) end,
+  placed=function(p,e) return M.efficiency.built(M.board.who(p),e) end,
   ground_mark=function(p,box,cancel,out) return M.ground.mark(p,box,cancel,out) end,
   placewhy=M.placewhy,blocked=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
   who=function(p) return M.board.who(p) end}
@@ -6888,6 +6891,8 @@ local function place_ghost(p,spec)
     error('placement blocked',0)
   end
   local _,marked,cliffs=construction.mark_obstacles(p,ghost)
+  -- The build log (efficiency.lua): a planned machine is its planner's when robots or a hand build it.
+  pcall(M.efficiency.built,M.board.who(p),ghost)
   return ghost,marked,fixes and laid or nil,fixes and fixes[1].tile or nil,tile_marked,cliffs
 end
 local function place_ghost_list(p,list,ammo)
@@ -8034,7 +8039,22 @@ M.hauling=require('hauling'){state=state,
   name=function(index) local ok,p=pcall(M.lookup,index); return ok and p and p.valid and M.board.who(p) or tostring(index) end,
   active=function(index) return state().active and state().active[index] end,
   order_step=function(index) local q=(state().queues or {})[index]; return q and q.current and q.current.order end}
+-- Production credited to who built the machine, read a block at a time (efficiency.lua; Nick 15:50): the operator
+-- read efficiency, its seed, and one line in the agent's 2-hour review. Hand items: the hauling counts.
+M.efficiency=require('efficiency'){state=state,force=function() return game.forces.player end,
+  agent_names=function()
+    local out={}
+    for index in pairs(state().hauling or {}) do local ok,p=pcall(M.lookup,index); if ok and p and p.valid then out[#out+1]=M.board.who(p) end end
+    return out
+  end,
+  hand_items=function(name)
+    for index,r in pairs(state().hauling or {}) do
+      local ok,p=pcall(M.lookup,index)
+      if ok and p and p.valid and M.board.who(p)==name then return r.items end
+    end
+  end}
 M.selfview=require('selfview'){state=state,is_read=function(action) return M.is_read(action) end,
+  efficiency_line=function(name) return M.efficiency.review_line(name) end,
   talk=function(action) return M.idle.TALK[action]~=nil or M.board.handlers[action]~=nil or M.players.handlers[action]~=nil or M.votes.handlers[action]~=nil end,
   waiting=function(s,index) return M.idle.waiting(s,index) end,
   has_body=function(index)
@@ -8593,7 +8613,7 @@ function M.dispatch_inner(request)
   if request.operator==true then
     local ok,result=pcall(function()
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
-      local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action]
+      local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.bplibrary_operator[request.action]
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
@@ -9603,6 +9623,9 @@ function M.tick_body(event)
   M.orders.tick()
   clock.tick()
   M.cameras.tick()
+  -- Production credit (efficiency.lua): a block every other tick; like the camera drawing, its faults are counted.
+  local oke,erre=pcall(M.efficiency.tick,event.tick)
+  if not oke then local s=state(); s.efficiency_errors={count=((s.efficiency_errors or {}).count or 0)+1,last=tostring(erre),tick=game.tick} end
   -- Camera-only drawing must never quarantine the runtime: its faults are counted.
   local okv,errv=pcall(M.visuals.tick,event.tick)
   if not okv then local s=state(); s.visual_errors={count=((s.visual_errors or {}).count or 0)+1,last=tostring(errv),tick=game.tick} end

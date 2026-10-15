@@ -486,6 +486,22 @@ class MockSource:
             if len(names) > 2 and a["name"] == names[2] and 90 <= t < 200:  # one agent rides Orbital One
                 a["surface"], a["platform"] = "platform-1", "Orbital One"
 
+    def efficiency_view(self, now):
+        """The machines card's data (efficiency.view) for the mock: each agent's machines made a few items a second
+        since the session started, against a few hand items."""
+        import efficiency
+        mins = (now - self.t0) / 60
+        agents = []
+        for i, name in enumerate(sorted(self.agents)):
+            made, hand = int(mins * 60 * (i + 1)), int(mins * 15)
+            agents.append({"name": name, "machines": 6 + 3 * i, "running": 4 + 2 * i, "items_shift": made,
+                           "hand_items_shift": hand, "machine_share_pct": round(100 * made / (made + hand)) if made + hand else None})
+        team = {"machines": sum(a["machines"] for a in agents), "running": sum(a["running"] for a in agents),
+                "items_shift": sum(a["items_shift"] for a in agents), "ore_about": int(mins * 500)}
+        hand = sum(a["hand_items_shift"] for a in agents)
+        team["machine_share_pct"] = round(100 * team["items_shift"] / (team["items_shift"] + hand)) if team["items_shift"] + hand else None
+        return efficiency.view({"t": now, "tick": 0, "team": team, "agents": agents})
+
     def observe(self):
         now = time.time()
         gsec = self.game_seconds(now)
@@ -606,6 +622,7 @@ class MockSource:
                 used = [x["consumed"] for x in then]
                 obs["used_flows"] = {n: [max(0, used[i + 1].get(n, 0) - used[i].get(n, 0)) for i in range(30)]
                                      for n in score["consumed"]}
+                obs["efficiency"] = self.efficiency_view(now)
         if not getattr(self, "basemap_sent", False):  # the site's demo base, once: the mock has no buildings of its own
             self.basemap_sent = True
             try:
