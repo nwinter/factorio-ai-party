@@ -26,7 +26,10 @@ PACKS = ["automation-science-pack", "logistic-science-pack", "military-science-p
          "production-science-pack", "utility-science-pack", "space-science-pack", "metallurgic-science-pack",
          "electromagnetic-science-pack", "agricultural-science-pack", "cryogenic-science-pack", "promethium-science-pack"]
 
-SNAPSHOT_LUA = r"""
+# The building counts and the surfaces with buildings come from the harness census when the read is for every surface
+# and it has a pass (pog.CENSUS_FN; the find over every surface was ~75 ms of this read's 96 ms on world n, 2026-10-14
+# 22:00, every 90 s), else from that find.
+SNAPSHOT_LUA = pog.CENSUS_FN + r"""
 local f = game.forces.player
 local want = SURFACE
 local surfaces = {}
@@ -66,17 +69,21 @@ for name, t in pairs(f.technologies) do
 end
 local counts, where = {}, {}
 local killed, lost, lost10 = {}, {}, {}
+local counted = want == "all" and census("snapshot") or nil
+if counted then counts, where = counted.entities or {}, counted.surfaces_with_buildings or {} end
 for _, x in ipairs(surfaces) do
   local n = 0
-  for _, e in pairs(x.find_entities_filtered{force=f, type={"assembling-machine","furnace","mining-drill","lab","boiler",
-    "generator","solar-panel","accumulator","reactor","offshore-pump","rocket-silo","roboport","ammo-turret",
-    "electric-turret","fluid-turret","artillery-turret","radar","inserter","transport-belt","wall","electric-pole",
-    "construction-robot","logistic-robot","beacon","car","locomotive","cargo-wagon","asteroid-collector","thruster",
-    "space-platform-hub","agricultural-tower","cargo-landing-pad"}}) do
-    counts[e.name] = (counts[e.name] or 0) + 1
-    n = n + 1
+  if not counted then
+    for _, e in pairs(x.find_entities_filtered{force=f, type={"assembling-machine","furnace","mining-drill","lab","boiler",
+      "generator","solar-panel","accumulator","reactor","offshore-pump","rocket-silo","roboport","ammo-turret",
+      "electric-turret","fluid-turret","artillery-turret","radar","inserter","transport-belt","wall","electric-pole",
+      "construction-robot","logistic-robot","beacon","car","locomotive","cargo-wagon","asteroid-collector","thruster",
+      "space-platform-hub","agricultural-tower","cargo-landing-pad"}}) do
+      counts[e.name] = (counts[e.name] or 0) + 1
+      n = n + 1
+    end
+    if n > 0 then where[x.name] = n end
   end
-  if n > 0 then where[x.name] = n end
   local kst = f.get_kill_count_statistics(x)
   for k, c in pairs(kst.input_counts) do killed[k] = (killed[k] or 0) + c end
   for k, c in pairs(kst.output_counts) do
@@ -95,7 +102,10 @@ rcon.print(helpers.table_to_json{tick=game.tick, paused=game.tick_paused, surfac
   peaceful=s.peaceful_mode, players=players})
 """
 
-MACHINES_LUA = r"""
+# For every surface, the harness census's last pass when it has one (pog.CENSUS_FN; 36 ms on world n, 2026-10-14 22:00).
+MACHINES_LUA = pog.CENSUS_FN + r"""
+local counted = SURFACE == "all" and census("machines") or nil
+if counted and type(counted.machines) == "table" then rcon.print(helpers.table_to_json(counted.machines)) return end
 local f = game.forces.player
 local surfaces = {}
 if SURFACE == "all" then for _, x in pairs(game.surfaces) do surfaces[#surfaces+1] = x end

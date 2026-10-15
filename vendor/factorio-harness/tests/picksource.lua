@@ -217,6 +217,39 @@ eq(r.picked.item,'yumako-seed'); eq(r.direction,nil)
 advance(3)
 last=luna('status').last
 eq(last.outcome,'transferred'); eq(last.delivered,40); eq(yfarm.inv.get_item_count('yumako-seed'),40)
+eq(last.short,nil,'all delivered')
+
+-- 5b. Sol, 22:08 (taken 40, delivered 0, and the call said ok): the farm chest's other slots full, spoilage among
+-- them; 40 taken, 10 fit on its yumako stack: a short line naming what fills it, the 30 carried by you.
+do
+  prototypes.item.spoilage={name='spoilage',type='item',stack_size=50}
+  local filler={}
+  for i=1,#yfarm.inv do
+    local s=yfarm.inv[i]
+    if not s.valid_for_read then
+      s.valid_for_read=true; s.name=#filler%2==0 and 'spoilage' or 'iron-plate'; s.quality={name='normal'}; s.count=50; filler[#filler+1]=s
+    end
+  end
+  yfarm.inv.can_insert=function(x)
+    for i=1,#yfarm.inv do local s=yfarm.inv[i]; if not s.valid_for_read or (s.name==x.name and s.count<50) then return true end end
+    return false
+  end
+  yumako.inv.insert{name='yumako-seed',count=40}
+  luna('transfer',{positions={yumako.position},item='yumako-seed',pick='first_with_stock',to=to})
+  advance(3)
+  last=luna('status').last
+  eq(last.outcome,'transferred'); eq(last.taken,40); eq(last.delivered,10)
+  eq(last.short.asked,40); eq(last.short.moved,10); eq(last.short.reason,'target_full')
+  assert(last.short.why:find('is full: all '..#yfarm.inv..' slots taken (',1,true) and last.short.why:find('spoilage',1,true),last.short.why)
+  eq(last.short.kept,'30 yumako-seed not delivered, carried by you'); eq(main.get_item_count('yumako-seed'),30)
+  -- A plain give into it: moved 0 of 30 is a short line (the reply's warning), with what fills it.
+  local g=luna('transfer',{position=yfarm.position,item='yumako-seed',count=30,direction='to_entity'})
+  eq(g.transferred,0); eq(g.short.asked,30); eq(g.short.moved,0); eq(g.short.reason,'target_full')
+  eq(g.short.why,'all 16 slots taken (spoilage 400 in 8 slots, iron-plate 350 in 7 slots, yumako-seed 50 in 1 slot)')
+  for _,s in ipairs(filler) do s.clear() end
+  yfarm.inv.can_insert=nil
+  main.remove{name='yumako-seed',count=30}; yfarm.inv.remove{name='yumako-seed',count=10}
+end
 
 -- 6. The take gets nothing (the stock went between the call and the tick): it ends there, no walk to the farm.
 jelly.inv.insert{name='jellynut-seed',count=10}

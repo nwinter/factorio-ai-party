@@ -58,6 +58,7 @@ return function(api)
     'electric-turret', 'rocket-silo', 'agricultural-tower', 'asteroid-collector', 'lamp', 'loader', 'loader-1x1', 'offshore-pump'}
   local TURRETS = {'ammo-turret', 'electric-turret', 'fluid-turret', 'artillery-turret'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  local slots = require('slots')()
   local ACC_NAMES
   local function acc_names()
     if not ACC_NAMES then
@@ -194,7 +195,7 @@ return function(api)
           if type(coming[name]) == 'number' then on_way = coming[name]
           else for _, c in pairs(coming) do if type(c) == 'table' and c.name == name then on_way = on_way + (c.count or 0) end end end
           local missing = f.count - have - on_way
-          if missing > 0 then out[#out+1] = {key=unit .. '|' .. name .. '|' .. quality, name=name, missing=missing} end
+          if missing > 0 then out[#out+1] = {key=unit .. '|' .. name .. '|' .. quality, name=name, missing=missing, e=owner} end
         end
       end
     end
@@ -913,6 +914,25 @@ return function(api)
       k.oldest_min or 0, k.cause and '; cause: ' .. k.cause or '')
   end
   local DELIVERY_WAIT = 18000
+  -- Requester chests with every slot taken while a request of theirs has been short 60+ s (Sol, 22:08: (48.5,34.5)
+  -- on Gleba, 48 slots, 494 spoilage among them; robots could not deliver bioflux). At most FULL_LOOK looked at.
+  local FULL_LOOK, FULL_SHOW = 32, 3
+  local function full_requesters(n, short)
+    local out, seen, looked = {}, {}, 0
+    for _, x in ipairs(short) do
+      local since = n.unfilled[x.key]
+      local e = x.e
+      if since and game.tick - since >= UNFILLED_TICKS and e and looked < FULL_LOOK and not seen[x.key:match('^[^|]+')] then
+        seen[x.key:match('^[^|]+')] = true
+        looked = looked + 1
+        local ok, f = pcall(slots.full_of, e, x.name)
+        if ok and f and e.valid then
+          out[#out+1] = {e=e, item=x.name, text=f.text, spoilage=f.spoilage}
+        end
+      end
+    end
+    return #out > 0 and out or nil
+  end
   local function deliveries(n, ln, v, short)
     local stuck, items = 0, {}
     for _, x in ipairs(short) do
@@ -1037,6 +1057,7 @@ return function(api)
           r.ghosts = r.backlog.ghosts
         end
         r.deliveries = deliveries(n, ln, v, short)
+        r.full = full_requesters(n, short)
         return r
   end
   local function logistic_done(surface, rows)
@@ -1839,6 +1860,22 @@ return function(api)
             names={}, by={}, at={}, center=center,
             line=string.format('deliveries waiting on robots: %s unfilled 5+ min in network %d near (%d,%d) while providers or storage hold the item free (%s%s): %s',
               plural(d.stuck, 'request'), r.id, center.x, center.y, list, kinds > 3 and ', ...' or '', d.cause)}
+        end
+        -- Requester chests with every slot taken while a request is short (full_requesters).
+        if r.full and #r.full > 0 then
+          local parts, sp = {}, 0
+          for i, x in ipairs(r.full) do
+            sp = sp + (x.spoilage or 0)
+            if i <= FULL_SHOW then
+              parts[#parts+1] = string.format('%s (%g,%g) asks %s: %s', x.e.name, x.e.position.x, x.e.position.y, x.item, x.text)
+            end
+          end
+          local first = r.full[1].e.position
+          out[#out+1] = {key='requester_full|' .. s.name .. '|' .. r.id, kind='requester_full', surface=s.name, n=#r.full,
+            names={}, by={}, at={{x=first.x, y=first.y}}, center={x=math.floor(first.x + 0.5), y=math.floor(first.y + 0.5)},
+            line=string.format('requester chests with every slot taken while a request is short 60+ s: %d in network %d%s: %s%s',
+              #r.full, r.id, sp > 0 and string.format(' (spoilage %d among their slots)', sp) or '', table.concat(parts, '; '),
+              #r.full > FULL_SHOW and string.format('; +%d more', #r.full - FULL_SHOW) or '')}
         end
         if r.busy_since and game.tick - r.busy_since >= BUSY_TICKS and r.center then
           out[#out+1] = {key='robots_busy|' .. s.name .. '|' .. r.id, kind='robots_busy', surface=s.name, n=1, names={}, by={}, at={},
