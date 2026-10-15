@@ -2709,6 +2709,25 @@ do
   fails(function() call('observe',{scope='power',area={left_top={x=-1,y=-5},right_bottom={x=40,y=5}},fresh='yes'}) end,'fresh must be true or false')
   while #world>n do table.remove(world) end
 end
+-- Generators by state and boilers (Sol, d15 09:20: a 94 MW grid gave about 40 MW, its boilers dry).
+do
+  local n=#world
+  local function engine(x,status)
+    world[#world+1]={valid=true,type='generator',name='steam-engine',position={x=x,y=3},force=p.force,electric_network_id=1,status=status,
+      prototype={electric_energy_source_prototype={},get_max_power_output=function() return 15000 end}}
+  end
+  engine(11,defines.entity_status.working); engine(12,defines.entity_status.working); engine(13,defines.entity_status.no_input_fluid or 77)
+  world[#world+1]={valid=true,type='boiler',name='boiler',position={x=14,y=3},force=p.force,status=defines.entity_status.no_fuel or 78,prototype={}}
+  local kept=runtime.machine_status
+  runtime.machine_status=function(e) if e.type=='boiler' then return 'no_fuel' end return e.status==defines.entity_status.working and 'working' or 'no_input_fluid' end
+  local r=call('observe',{scope='power',area={left_top={x=-1,y=-5},right_bottom={x=40,y=5}}})
+  local g=r.networks[1].generators
+  eq(g.count,3); eq(g.nameplate_kw,2700); eq(g.working_kw,1800); eq(g.stopped_kw,900); eq(g.stopped[1],'1 steam-engine no_input_fluid')
+  assert(r.networks[1].supply_line:find('nameplate 2.7 MW; working now 1.8 MW',1,true),r.networks[1].supply_line)
+  eq(r.boilers,'boilers in the area: 1 (1 no_fuel)')
+  runtime.machine_status=kept
+  while #world>n do table.remove(world) end
+end
 -- On a platform by name or index (Astra, 13:10): its surface, 64 tiles round its hub unless an area is given.
 do
   local kept=p.force.platforms
@@ -5051,7 +5070,7 @@ end)()
   for _,c in ipairs({{'load_silo',{up_to=true}},{'refuel',{from_radius=128}},{'queue_edit',{id='job-1',to=1}},{'circuit_set',{set_requests=true}},
       {'requests',{remove={'coal'},force=true}},{'board',{projects='compact'}},{'board_post',{blocked_by={1},parent=1,open_steps=true}},
       {'board_update',{take_step=1,release_step=1,open_steps=true,blocked_by={},parent=false}},{'fuel_budget',{surface='nauvis'}},
-      {'mine',{count=5}},{'feed',{position={x=1,y=1},radius=5}},{'queue_submit',{mode='pending'}}}) do
+      {'mine',{count=5}},{'feed',{position={x=1,y=1},radius=5}},{'queue_submit',{mode='pending'}},{'pickup',{belt=true,to={x=1,y=1}}},{'build',{check_inserters=true}},{'place_ghosts',{check_inserters=true}}}) do
     no_unknown(function() runtime.check_args(c[1],c[2]) end,'check_args '..c[1])
   end
 end)()
