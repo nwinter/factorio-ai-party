@@ -3062,6 +3062,58 @@ do
   prototypes.entity['gun-turret']=plain_turret
   prototypes.item['gun-turret']=turret_item
 end
+-- Rail ramp refusals list the same entire footprint as the dry run, including
+-- entries after the old four-blocker/16-search-result limits.
+;(function()
+  local surface, old_proto = p.surface, prototypes.entity['rail-ramp']
+  local find,can,get,create = surface.find_entities_filtered,surface.can_place_entity,surface.get_tile,surface.create_entity
+  local ramp={name='rail-ramp',type='rail-ramp',items_to_place_this={{name='rail-ramp',count=1}},
+    collision_box={left_top={x=-1.59765625,y=-7.59765625},right_bottom={x=1.59765625,y=7.59765625}},
+    collision_mask={layers={object=true,is_object=true,rail=true}}}
+  prototypes.entity['rail-ramp']=ramp
+  local collisions={}
+  for i=1,20 do collisions[#collisions+1]={valid=true,name='iron-ore',type='resource',position={x=-43,y=106}} end
+  for i=1,6 do
+    local e={valid=true,name=i==6 and 'medium-electric-pole' or 'accumulator',type=i==6 and 'electric-pole' or 'accumulator',
+      position={x=-43.5,y=97.5+i},force=p.force,prototype={collision_mask={layers={object=true}}}}
+    e.to_be_deconstructed=function() return i==1 end
+    collisions[#collisions+1]=e
+  end
+  collisions[#collisions+1]={valid=true,name='cliff-fulgora',type='cliff',position={x=-38,y=102.5},
+    prototype={collision_mask={layers={is_object=true}}}}
+  surface.find_entities_filtered=function(f)
+    if f.type then return {} end
+    if f.area then
+      eq(f.limit,nil,'ramp footprint search is complete')
+      return collisions
+    end
+    return {}
+  end
+  local gate_calls=0
+  surface.can_place_entity=function(a)
+    gate_calls=gate_calls+1
+    eq(a.name,'rail-ramp');eq(a.position.x,-43);eq(a.position.y,106);eq(a.direction,8)
+    eq(a.forced,true);eq(a.build_check_type,defines.build_check_type.manual_ghost)
+    return false
+  end
+  surface.get_tile=function() return {name='grass-1',prototype={collision_mask={layers={ground_tile=true}}}} end
+  surface.create_entity=function() error('refused ramp must not place anything') end
+  local args={entities={{name='rail-ramp',position={x=-44,y=105},direction=11}}}
+  local preview=call('dry_run',{action='place_ghosts',args=args})
+  eq(preview.entities[1].status,'blocked');eq(#preview.entities[1].collisions,7)
+  eq(preview.entities[1].asked.x,-44);eq(preview.entities[1].direction,'south')
+  local result=call('place_ghosts',args)
+  eq(result.placed,0)
+  local message=result.failed[1].error
+  for _,text in ipairs({'medium-electric-pole (-43.5,103.5)','cliff-fulgora (-38,102.5)','marked for deconstruction; still present'}) do
+    assert(message:find(text,1,true),message)
+    assert(preview.entities[1].why:find(text,1,true),preview.entities[1].why)
+  end
+  assert(not message:find('iron-ore',1,true),message)
+  eq(gate_calls,2,'preview and placement use the same gate')
+  surface.find_entities_filtered,surface.can_place_entity,surface.get_tile,surface.create_entity=find,can,get,create
+  prototypes.entity['rail-ramp']=old_proto
+end)()
 -- pole_route lays pole ghosts from A to B within wire reach, shifting a
 -- blocked spot sideways, reusing a pole already on the line, and counting
 -- what is held; dry_run only plans.

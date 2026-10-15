@@ -964,4 +964,68 @@ end)()
   eq(c[1].fluid[1], 'mouth south at (236.5,41.5): nothing there')
   eq(c[1].fluid[2], 'underground north: unpaired: no pipe-to-ground facing back within 10 tiles')
 end)()
+-- Astra 03:00: the old four-entry cap hid the fifth accumulator, a pole and
+-- cliffs. Marking the first four is not the same as clearing this footprint.
+;(function()
+  local ramp = {name='rail-ramp', type='rail-ramp', collision_mask=mask('object', 'rail', 'is_object'),
+    collision_box={left_top={x=-1.59765625,y=-7.59765625},right_bottom={x=1.59765625,y=7.59765625}},
+    items_to_place_this={{name='rail-ramp',count=1}}}
+  prototypes.entity['rail-ramp'] = ramp
+  prototypes.entity.accumulator = {name='accumulator',type='accumulator',collision_mask=BUILDING,collision_box=box(0.8984375)}
+  local things = {}
+  for _, pos in ipairs({{-44,98},{-42,98},{-44,100},{-42,100},{-44,102}}) do
+    things[#things+1] = {name='accumulator',type='accumulator',position={x=pos[1],y=pos[2]},minable=true}
+  end
+  things[#things+1] = {name='small-electric-pole',type='electric-pole',position={x=-43.5,y=103.5}}
+  things[#things+1] = {name='cliff',type='cliff',position={x=-42,y=106.5}}
+  for _, e in ipairs(things) do e.to_be_deconstructed = function() return e.marked == true end end
+  local surface = world(function() return 'grass-1' end, things)
+  local engine_calls = 0
+  surface.can_place_entity = function(a)
+    engine_calls = engine_calls + 1
+    eq(a.name,'rail-ramp'); eq(a.position.x,-43); eq(a.position.y,106); eq(a.direction,8)
+    eq(a.forced,true); eq(a.build_check_type,defines.build_check_type.manual_ghost)
+    for _,e in ipairs(things) do if e.type ~= 'cliff' and not e.marked then return false end end
+    return true
+  end
+  local construction = dofile('mod/agent-harness_0.1.0/construction.lua'){directions={}}
+  local rap = setmetatable({ghost_placeable=function(p,proto,pos,dir)
+    return construction.ghost_placeable(p.surface,p.force,proto,pos,dir)
+  end},{__index=api})
+  local dr = dofile('mod/agent-harness_0.1.0/dryrun.lua')(rap)
+  local rp = {surface=surface,force=force,position={x=-43,y=120},get_main_inventory=p.get_main_inventory}
+  local plan = {kind='ghosts',standing=false,entities={{index=1,name='rail-ramp',position={x=-43,y=106},direction=8}}}
+  local function check()
+    local out = dr.check(rp,plan)
+    eq(#out.entities,1)
+    local row = out.entities[1]
+    eq(#row.collisions,7)
+    has(row.why,'accumulator (-44,102)'); has(row.why,'small-electric-pole (-43.5,103.5)')
+    has(row.why,'cliff (-42,106.5)')
+    return row
+  end
+  eq(check().status,'blocked')
+  for i=1,4 do things[i].marked=true end
+  local row=check(); eq(row.status,'blocked'); eq(row.collisions[1].marked_for_deconstruction,true)
+  has(row.why,'marked for deconstruction; still present')
+  for i=5,6 do things[i].marked=true end
+  eq(check().status,'ok','ghost accepted over marks; all physical collisions still listed without details')
+  eq(engine_calls,3,'one shared engine verdict per dry run')
+  -- The footprint is centred where the engine actually puts the ramp, with
+  -- cardinal orientation, for positive and negative off-grid requests.
+  local q,d = placewhy.ramp_position({x=-44,y=105},11)
+  eq(q.x,-43);eq(q.y,106);eq(d,8)
+  q,d = placewhy.ramp_position({x=1,y=0},7)
+  eq(q.x,2);eq(q.y,1);eq(d,4)
+  local _,_,_,b = placewhy.ramp_collisions(surface,force,ramp,q,d)
+  eq(b.left_top.x,2-7.59765625);eq(b.right_bottom.y,1+1.59765625)
+  local existing={name='entity-ghost',type='entity-ghost',ghost_name='rail-ramp',ghost_type='rail-ramp',
+    position={x=-43,y=106},direction=8}
+  local gs=world(function() return 'grass-1' end,{existing})
+  gs.can_place_entity=function() return false end
+  rp.surface=gs
+  local row=dr.check(rp,plan).entities[1]
+  eq(row.status,'exists','existing ramp ghosts are still recognized')
+  eq(row.collisions,nil,'ghosts are not physical collisions')
+end)()
 print('dryrun: ok')
