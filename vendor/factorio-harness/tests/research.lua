@@ -21,7 +21,8 @@ remote={interfaces={}}
 helpers={json_to_table=function(t) return t end}
 -- Science packs made per name in the last 10 minutes (category input).
 local made={['automation-science-pack']=300,['logistic-science-pack']=200}
-local stats={get_flow_count=function(a) assert(a.category=='input' and a.count==true); return made[a.name] or 0 end}
+local used={}
+local stats={get_flow_count=function(a) assert(a.count==true); if a.category=='output' then return used[a.name] or 0 end; assert(a.category=='input'); return made[a.name] or 0 end}
 local force={name='player',chart=function() end,is_chunk_visible=function() return true end,is_chunk_charted=function() return true end,
   get_spawn_position=function() return {x=0,y=0} end,get_item_production_statistics=function() return stats end}
 local surface={name='nauvis',index=1}
@@ -151,8 +152,18 @@ eq(astra('research').entries[2].done_in,'10m40s')
 -- An entry that needs a pack the current research does not use, and that nobody made in 10 minutes, stops the clock.
 force.research_queue[#force.research_queue+1]=techs['sulfur-processing']
 q=astra('research')
-eq(q.entries[4].waits_for,'chemical-science-pack (none made in 10 min)'); eq(q.entries[4].done_in,nil)
-eq(q.clock_stops_at,'sulfur-processing')
+eq(q.entries[4].waits_for,'chemical-science-pack (none made in 10 min, none in our labs or logistic networks: the labs cannot run it)'); eq(q.entries[4].done_in,nil)
+eq(q.clock_stops_at,'sulfur-processing'); eq(q.entries[4].not_made_recently,nil)
+-- None made, but some in stock (Grok, shift17 20:40: 5571 in chests while the labs used them): not a stop; the stock named.
+local lab_inv={get_item_count=function(n) return n=='chemical-science-pack' and 120 or 0 end}
+local real_find=surface.find_entities_filtered
+surface.find_entities_filtered=function(f) if f.type=='lab' then return {{get_inventory=function() return lab_inv end}} end; return real_find and real_find(f) or {} end
+force.logistic_networks={nauvis={{get_item_count=function(n) return n=='chemical-science-pack' and 5451 or 0 end}}}
+used['chemical-science-pack']=340
+q=astra('research')
+eq(q.entries[4].waits_for,nil); eq(q.clock_stops_at,nil); assert(q.entries[4].done_in)
+eq(q.entries[4].not_made_recently,'chemical-science-pack: none made in 10 min; 5571 in stock (labs 120, logistic networks 5451); labs used 340 in 10 min')
+surface.find_entities_filtered=real_find; force.logistic_networks=nil; used['chemical-science-pack']=nil
 made['chemical-science-pack']=40
 q=astra('research'); eq(q.entries[4].waits_for,nil); eq(q.clock_stops_at,nil); assert(q.entries[4].done_in)
 table.remove(force.research_queue)

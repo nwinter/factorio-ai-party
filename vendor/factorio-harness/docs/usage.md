@@ -1649,7 +1649,10 @@ fh sleep 900 --until researched                       # ...or until the research
 coverage they return a matching recorded reply with `by: "last seen memory"`, `observed_tick`, `age_ticks`,
 `age_s`, and `current: false`. Every field in that reply is historical, including inventory counts and
 machine status. Inspect's `positions` and `compact` forms use the same memory. Visible entity sightings
-also retain a basic summary; seeing a belt records its layout. A trace with no saved route can return that
+also retain a basic summary (name, type, status; `detail: "last observed entity summary"`), with `holds: "unknown:
+its chunk is not in sight now (no radar or character of ours sees it), and the game shows an entity's contents only
+in sight ..."` (Muse, shift18 12:46: a chest read "only basic info"); in sight, by remote view, a chest's `holds` and
+`inventories` are its contents now. Seeing a belt records its layout. A trace with no saved route can return that
 remembered belt layout, with each tile's age, direction and last item count. It stops at an unknown tile,
 a splitter/linked belt whose lane routing was not recorded, or 512 tiles. A live trace reaching fog stops its
 current route there and attaches available remembered layout. Unrecorded entities remain unknown. Memory
@@ -2060,6 +2063,16 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
       machines took nothing with spoilage their recipe does not take in their input says so on their rows (`spoilage`)
       and in `last.short` (`reason: input_spoilage`). `--wait` waits
       for it and shows `picked`, `taken`, `delivered`.
+    - A destination that is a crafting machine (Muse, shift18 12:46: productivity modules collected from one machine's
+      output piled up in the character, 78 and growing, because the next took no more): what its input takes by hand
+      now is read before the take. Measured on 2.0.77: an assembler's, chemical plant's or furnace's input takes up to
+      one stack plus 64 of each ingredient (50 -> 114, 100 -> 164, 200 -> 264), whatever the machine. None: nothing taken,
+      nothing walked (`refused: "assembling-machine-2 at (75.5,0.5): its input holds 114 productivity-module, as much as
+      a hand puts in (one stack and 64)"`, or `its recipe iron-gear-wheel does not use yumako-seed`); else the take is at
+      most that and `to_takes` says so (`... takes 14 productivity-module now (its input holds 100 of 114 ...)`), the rest
+      staying in the source. One step from a machine's output into the next machine: `collect {pick:
+      "first_with_stock", positions: [machine A], item, outputs_only: true, to: machine B}`, queueable. A module the
+      recipe does not use goes into the module slots, as the game puts it, with no input cap read.
   - Personal logistics (trash.lua; Astra, 01:53: two cargo hauls lost to auto-trash). The game moves what you hold over
     a personal request's max (and, with "trash unrequested" on, any item you do not request) from your inventory to
     your trash slots within a few ticks, logistic network or not. A `transfer` to you, `collect`, `pickup` and
@@ -2480,7 +2493,19 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   thruster tanks 2000 -> 1410; 2 pumps working 50% of the time`. Used and made are the statistics' change over the
   window; the tanks are the sum over its thrusters at the window's first and last second; the pumps' share is
   pump-seconds working of all pump-seconds. With less history, `last 42 s (sampled that long)` and no 180 s line.
-  The thrusters and pumps are found again every minute. `spoiling`: the hub's spoilable items (`agricultural-science-pack*795:
+  The thrusters and pumps are found again every minute. `after_pumps` (thrust.lua; Grok, shift17 20:40: an oxidizer
+  pump cut at V < 15 and the leg peaked at 51 km/s): per thruster fluid, what stays with the thrusters when their pumps
+  stop (their own tanks, and the pipes and tanks between them and the pumps; the walk stops at a pump) and how long
+  that burns: `thruster-oxidizer: if its pumps stop, 2 thrusters hold 2000 and the pipes and tanks between them and
+  the pumps 160 (1080 a thruster): about 11 s of full thrust, 20.7 s until 10%, then 0.1 a tick until empty at
+  37.4 s; pump (3.5,7): off by its circuit condition ...`. `thruster_burn`, the game's rule as measured on 2.0.77 (the
+  thruster prototype's min_performance and max_performance): a thruster burns 2 fuel and 2 oxidizer a tick while its
+  tanks (1000 each) are 80% full or more, linearly less to 0.1 a tick at 10%, and 0.1 a tick below; its thrust falls
+  with it to about a tenth (use x effectivity, 0.51 at 80%, 1 at 10%). From full tanks with no supply: 1.7 s at full
+  thrust, 20.1 s until 10%, about 10.3 s of full thrust in all. With no thrust (or a tenth of it) a platform slows,
+  then drifts backward at up to 10 km/s. A 170 t, 21-tile-wide test platform with 1 thruster went from 0 to 86 km/s
+  in 6 s on one full tank with no supply; how far a platform's speed goes on what is left depends on its weight,
+  width and thrusters. `spoiling`: the hub's spoilable items (`agricultural-science-pack*795:
   the first spoils in 1m10s (95% spoiled); all within 5 min`), and in flight `; arrival at nauvis in 3m30s: 200 spoil
   before it, 595 arrive, the next spoils 2m05s after arrival`.
 - `stops` on every `platforms` row (operator 10:53, Gemini): each stop of the schedule with its wait conditions in
@@ -3304,8 +3329,10 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   had it before the harness kept track), `packs`, `done_in` (time until it finishes, counting the entries ahead of it,
   at the lab throughput measured from the running research's progress over the last minute, sampled every 10 s; a
   minute with no research progress falls back to the last 2 minutes, then to every sample kept, about 5 minutes),
-  `waits_for` (a pack the running research does not use and nobody made in the last 10 minutes; the clock stops there,
-  `clock_stops_at`), `waiting` for pending ones; and `throughput` (`the last minute's rate: measured over the last
+  `waits_for` (a pack the running research does not use, nobody made in the last 10 minutes, and none of it in our labs
+  or logistic networks: the labs cannot run it; the clock stops there, `clock_stops_at`), `not_made_recently` (such a
+  pack with some in stock: `chemical-science-pack: none made in 10 min; 5571 in stock (labs 120, logistic networks
+  5451); labs used 340 in 10 min`; not a stop; Grok, shift17 20:40: a shortage that was not there), `waiting` for pending ones; and `throughput` (`the last minute's rate: measured over the last
   <time>`, `measured over the last <time> (no research progress in the last minute)`, or not measured yet). The
   `status` factory line's research `eta` uses the same rate and names it: `eta 38m (rate of the last 1m)`, or
   `(rate of the last 2m: none in the last 1m)`. `fh research done` (`research_done {limit?}`): technologies your force finished lately, newest first, with

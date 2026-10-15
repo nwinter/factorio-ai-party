@@ -69,6 +69,16 @@ eq(r.lines[1],'thruster-fuel: thruster (0,11.5) 30%; pump (-3,9.5): off by its c
   'crusher (-11,1.5) carbonic-asteroid-crushing: short of an item ingredient (holds carbonic-asteroid-chunk 0); '..
   'hub carbonic-asteroid-chunk 0; 4 asteroid collectors')
 eq(T.lowest_text(r),'thruster-fuel 30%, thruster-oxidizer 90%')
+-- What stays with the thrusters when their pumps stop (Grok, shift17 20:40): own tanks and the pipes before the pump;
+-- the burn from that (measured on 2.0.77: from full, 1.7 s at full thrust, 20.1 s to 10%, about 10.3 s of full thrust).
+local b=T.burn(1000); eq(b.full_s,1.7); eq(b.to_10_s,20.1); eq(b.equiv_s,10.3); eq(b.empty_s,36.7)
+b=T.burn(100); eq(b.to_10_s,0); eq(b.empty_s,16.7)
+local ap=T.after_pumps(pl)
+eq(ap.lines[1],'thruster-fuel: if its pumps stop, 1 thruster holds 300 and the pipes and tanks between them and the pumps 0 (300 a thruster): '..
+  'about 3 s of full thrust, 11.4 s until 10%, then 0.1 a tick until empty at 28.1 s; pump (-3,9.5): off by its circuit condition signal-B = 1 (signal-B 9 on its wires)')
+eq(ap.lines[2],'thruster-oxidizer: if its pumps stop, 1 thruster holds 900 and the pipes and tanks between them and the pumps 0 (900 a thruster): '..
+  'about 9.5 s of full thrust, 19.2 s until 10%, then 0.1 a tick until empty at 35.9 s; no pump between them and the rest of the line')
+assert(ap.rule:find('2 fuel and 2 oxidizer a tick while its tanks are 80% full or more',1,true))
 -- A pump pushing away from the thruster feeds nothing: the walk stops there.
 pbox.get_pipe_connections=function() return {{flow_direction='input',target=tbox,target_fluidbox_index=1},{flow_direction='output',target=xbox,target_fluidbox_index=1}} end
 eq(T.read(pl).lines[1],'thruster-fuel: thruster (0,11.5) 30%; no machine making thruster-fuel is connected to it')

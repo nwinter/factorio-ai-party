@@ -730,6 +730,10 @@ return function(api)
           -- Its flight over the last 60 and 180 s (engine.lua; Astra, 21:20).
           local en=api.engine and try(function() return api.engine(pl) end)
           row.engine=en and en.lines or nil
+          -- What its thrusters keep burning when their pumps stop, and the thruster's burn as the game runs it
+          -- (thrust.lua; Grok, shift17 20:40: a pump cut at V >= 15 and the leg peaked at 51 km/s).
+          local ap=api.thrust_after and try(function() return api.thrust_after(pl) end)
+          if ap then row.after_pumps=ap.lines; row.thruster_burn=ap.rule end
         end
         out.platforms[#out.platforms+1]=row
       end
