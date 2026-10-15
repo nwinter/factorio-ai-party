@@ -1965,14 +1965,14 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     - `pick: "first_with_stock"` reads every listed place as `inspect` does (in sight, or by remote view where our
       force sees the chunk) and takes at the first in list order that holds a listed item now (its first listed item
       it holds); `pick: "most_stock"` takes at the place holding the most. `items` as a map `{"bioflux": 5}` (Luna,
-      Robot-reserved stock (Haiku, shift17 10:50: walked, then "holds no X now"): what robots are on their way to pick
-      up at a logistic chest is read before any walk; a place whose stock is all reserved is skipped (`why: all of it
-      reserved for robot pickup`), the picked line says `holds 12 yumako-seed, 4 of them reserved for robot pickup`,
-      `most_stock` compares what is not reserved, and with none left the note says so.
       shift17 10:50: that form was refused, and a list then moved the whole stack) caps the take at the picked item's
       count, as `count` does. `items` lists up to 16 items to look for
       (`item` too); the item picked is the one taken (`count`, `up_to`, `keep` as in a plain take). The take walks
       there when out of reach (as `walk`).
+      Robot-reserved stock (Haiku, shift17 10:50: walked, then "holds no X now"): what robots are on their way to pick
+      up at a logistic chest is read before any walk; a place whose stock is all reserved is skipped (`why: all of it
+      reserved for robot pickup`), the picked line says `holds 12 yumako-seed, 4 of them reserved for robot pickup`,
+      `most_stock` compares what is not reserved, and with none left the note says so.
     - Empty places are skipped: `skipped` counts them and `skipped_places` lists up to 8 (`holds: 0`, or the
       `error` reading one); they are never short. When none holds any, the reply is `moved: 0`, `picked: "none"` and a
       `note` (`none of the 2 listed places holds yumako-seed now: nothing taken, nothing walked`); nothing starts, and
