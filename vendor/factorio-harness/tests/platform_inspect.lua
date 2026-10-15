@@ -166,8 +166,10 @@ eq(bot('platforms',{}).platforms[1].hub_slots,'1 of 2 free')
 -- Tile ghosts the foundation rules hold back (request #3): foundation fills
 -- x -8..3, y 0..12 but for an empty channel along y=8 (x -8..-2) open to the
 -- west and a pocket at (-8,3),(-7,3). A ghost at the channel's mouth would
--- enclose the rest, which has no ghosts: it stays unbuilt. A pocket all under
--- ghosts, a ghost on the open edge: fine. A ghost with nothing beside it: not.
+-- split the empty space round it (platformtiles2: the hub looks at a tile's 8
+-- neighbours), the channel left a hole with no ghosts: it stays unbuilt. A
+-- pocket all under ghosts, a ghost on the open edge: fine. A ghost with no
+-- foundation round it: not.
 local empty={}
 for x=-8,-2 do empty[x..',8']=true end
 empty['-8,3']=true; empty['-7,3']=true
@@ -187,12 +189,13 @@ hub_inv[2]=stack('space-platform-foundation',9)
 local blocked=bot('platforms',{platform='Starling'}).platforms[1].construction_blocked
 eq(#blocked,3,'hub full and two tile ghosts')
 eq(blocked[1],'hub full: 0 of 2 slots free; 1 marked for deconstruction wait for room (removed entities and their contents go to the hub)')
-eq(blocked[2],'tile ghost (-7.5,8.5) space-platform-foundation: building it would enclose 6 empty tiles with no ghost: (-6.5,8.5), (-5.5,8.5), (-4.5,8.5), (-3.5,8.5), ... (the game builds no foundation that leaves a hole of empty space; those tiles need foundation ghosts too, or this ghost stays unbuilt)')
-eq(blocked[3],'tile ghost (20.5,20.5) space-platform-foundation: no foundation or tile ghost beside it (the foundation must stay one connected area)')
+eq(blocked[2],'tile ghost (-7.5,8.5) space-platform-foundation: building it would split the empty space beside it: (-6.5,8.5) and (-8.5,8.5) meet only through it (the hub builds no foundation that splits empty space, even when each side stays open); on one side a hole of 6 empty tiles with no ghost: (-6.5,8.5), (-5.5,8.5), (-4.5,8.5), (-3.5,8.5), ...')
+eq(blocked[3],'tile ghost (20.5,20.5) space-platform-foundation: no foundation among the 8 tiles round it')
 assert(gets<4000,gets)
 -- inspect on the tile ghost says the same.
 local tg=bot('inspect',{platform='Starling',position={x=-7.5,y=8.5}})
 eq(tg.ghost_name,'space-platform-foundation'); eq(tg.construction_blocked[2],blocked[2])
+eq(tg.tile_wait,'waits: '..blocked[2])
 -- Ghosts on the rest of the channel: nothing is held back by it.
 for x=-7,-2 do on_platform[#on_platform+1]=tile_ghost(x,8) end
 hub_inv[2]=stack('space-platform-foundation',20)
