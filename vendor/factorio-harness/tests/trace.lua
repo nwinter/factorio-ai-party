@@ -117,7 +117,7 @@ local function lookup(p,a)
 end
 local supply=require('supply'){status_name=function(e) return e.status end,position=function(v) return v end,integer=function(v,d) return v or d end}
 local remembered={}
-local trace=require('trace'){end_seen=function(f,s,pos,lanes) remembered[#remembered+1]={force=f,surface=s,position=pos,lanes=lanes} end,supply=supply,entity=lookup,remote_entity=lookup,status_name=function(e) return e.status end,
+local trace=require('trace'){held_blocked=require('details'){}.held_blocked,end_seen=function(f,s,pos,lanes) remembered[#remembered+1]={force=f,surface=s,position=pos,lanes=lanes} end,supply=supply,entity=lookup,remote_entity=lookup,status_name=function(e) return e.status end,
   position=function(v) return {x=v.x,y=v.y} end,integer=function(v,d) return v or d end}
 force.is_chunk_visible=function() return true end
 local p={surface=surface,force=force,position={x=0,y=0}}
@@ -132,6 +132,14 @@ local r=trace.trace(p,{position={x=0.5,y=0.5}})
 eq(r.entity,'assembling-machine-2'); eq(r.crafting,'recipe stone-wall'); eq(#r.ingredients,1)
 eq(r.ingredients[1].text,'stone-brick: has 0 of 5; long-handed-inserter (0.5,2.5) waiting_for_source_items takes from iron-chest (0.5,4.5) holding 0; 200 in iron-chest (1.5,4.5), read by nothing')
 eq(r.ingredients[1].unread.holds,200); eq(r.feeders[1].from,'iron-chest (0.5,4.5) holding 10 iron-plate')
+-- A recipe mismatch held by its feeder is visible in the trace, not just inspect.
+local feeder=world[#world]
+feeder.held_stack={valid_for_read=true,name='iron-plate',count=1,quality='normal'}
+A.can_insert=function() return false end
+r=trace.trace(p,{position={x=0.5,y=0.5}})
+has(r.feeders[1].held_blocked,'iron-plate@normal');has(r.feeders[1].held_blocked,'assembling-machine-2 (0.5,0.5) cannot accept one now')
+feeder.held_stack={valid_for_read=false};A.can_insert=nil
+
 -- A chest some inserter reads is not "read by nothing".
 local reader=inserter(2.5,4.5,'inserter',C2,nil)
 r=trace.trace(p,{position={x=0.5,y=0.5}})

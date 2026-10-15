@@ -5,8 +5,8 @@
 --   requests  {set, clear, ...}                                          as requests takes them (a chest, a pad)
 --   circuit   {enable, read, settings, decider, arithmetic, signals, ...} as circuit_set takes them
 --   wires     [{to {x,y}, color red|green, from_side?, to_side?}]         as wire takes them, from this entry
--- each without a position (the entry's). The call places every entry first, then sets them in entry order (configure,
--- requests, circuit), then the wires; the same platform or surface as the call. A ghost takes the settings and the
+-- each without a position (the entry's). Hand builds set each entry immediately after placement. Ghost calls set
+-- them after all placements. Wires follow the complete batch; the same platform or surface as the call. A ghost takes the settings and the
 -- building it becomes keeps them. The argument names are checked before anything is placed; a setting the game
 -- refuses is a row's error and leaves the placement in place.
 return function(api)
@@ -78,7 +78,7 @@ return function(api)
   end
   -- After placing: the entries not skipped (failed, or still to be built) set in order, then the wires.
   -- Returns rows [{index, name, position, configure, requests, circuit, wires}] ('set' or the refusal) and a line.
-  function M.apply(p, entries, ctx, skip)
+  function M.apply(p, entries, ctx, skip, settings_only)
     local rows, set_n, failed = {}, 0, {}
     local by_index = {}
     for i, e in ipairs(entries) do
@@ -101,7 +101,7 @@ return function(api)
       end
     end
     for i, e in ipairs(entries) do
-      if has(e) and not skip[i] and e.wires then
+      if has(e) and not skip[i] and e.wires and not settings_only then
         local row = by_index[i]
         row.wires = {}
         for j, w in ipairs(e.wires) do
@@ -124,11 +124,39 @@ return function(api)
     end
     local line = string.format('settings: %d set', set_n) .. (#failed > 0 and string.format(', %d refused: %s', #failed,
       table.concat(failed, '; ', 1, math.min(4, #failed)) .. (#failed > 4 and '; ...' or '')) or '')
-    return rows, line
+    return rows, line, {set=set_n,failed=failed}
+  end
+  -- Hand builds configure each placed entry in the same tick, before attempting
+  -- the next placement. Only wires wait for their potentially later endpoints.
+  function M.built(p, entry, index, batch)
+    local rows,_,stats=M.apply(p,{entry},{},{},true)
+    if rows[1] then
+      rows[1].index=index
+      batch.rows[#batch.rows+1]=rows[1]
+      batch.set=batch.set+stats.set
+      for _,why in ipairs(stats.failed) do batch.failed[#batch.failed+1]=why:gsub('entry 1 ', 'entry '..index..' ',1) end
+      if entry.wires then batch.wires[#batch.wires+1]={entry=entry,row=rows[1]} end
+    end
+  end
+  function M.built_result(p,batch,out,complete)
+    if complete then
+      for _,w in ipairs(batch.wires) do
+        local e=w.entry
+        local rows,_,stats=M.apply(p,{{position=e.position,wires=e.wires}},{},{})
+        w.row.wires=rows[1].wires;batch.set=batch.set+stats.set
+        for _,why in ipairs(stats.failed) do batch.failed[#batch.failed+1]=why:gsub('entry 1 ', 'entry '..w.row.index..' ',1) end
+      end
+      batch.wires={}
+    end
+    if #batch.rows>0 then
+      out.settings=batch.rows
+      out.settings_line='settings: '..batch.set..' set'..(#batch.failed>0 and ', '..#batch.failed..' refused: '..table.concat(batch.failed,'; ',1,math.min(4,#batch.failed)) or '')
+      if not complete and #batch.wires>0 then out.settings_note=#batch.wires..' entries have wires pending until the batch finishes' end
+    end
+    return out
   end
   M.schema_text = 'configure {recipe, filters, filter_mode, modules, ...} as configure takes them; requests {set, clear, ...} '
     .. 'as requests takes them; circuit {enable, read, settings, decider, arithmetic, signals, ...} as circuit_set takes them; '
-    .. 'wires [{to {x,y}, color, from_side, to_side}] as wire takes them, from this entry; each without a position: set after '
-    .. 'every entry is placed, in entry order, then the wires; a refusal is that row\'s and leaves the placement (settings rows, settings_line)'
+    .. 'wires [{to {x,y}, color, from_side, to_side}] as wire takes them, from this entry; each without a position: hand builds set each entry as placed; ghosts set after all placements; wires after the batch; a refusal is that row\'s and leaves the placement (settings rows, settings_line)'
   return M
 end
