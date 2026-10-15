@@ -6,6 +6,8 @@ return function(api)
   local SUCCESS={duration_elapsed=true,target_mined=true,repair_completed=true,arrived=true,arrived_near=true,path_built=true,constructed=true,nothing_to_do=true,clear=true,fed=true,collected=true,topped_up=true,target_destroyed=true,dropped=true,transferred=true,picked_up=true,
     -- load_silo walk (Luna, shift14 21:20): the list aboard, and launched
     loaded=true,launched=true,
+    -- clear_cliffs and use_item with cliff explosives (Sol 22:45), and a vehicle drive's dry run
+    cliffs_destroyed=true,previewed=true,
     -- a call made after its walk into reach (autowalk.lua)
     done=true}
   -- construct's 'incomplete' (ghosts left for lack of items, or failures) is a failure.
@@ -83,8 +85,16 @@ return function(api)
   end
   local function copy_steps(items)
     local out={}
-    for _,step in ipairs(items) do out[#out+1]={action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short} end
+    for _,step in ipairs(items) do out[#out+1]={action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,plan=step.plan} end
     return out
+  end
+  -- Plans (Grok, shift14 22:50: queue status showed hours of standing-order history, and a finished pickup plan read
+  -- as a failure): each queue_submit and queue_repeat starts a plan; its steps, the rounds of a repeating one, its
+  -- edits and its guards' steps carry the plan's number into the history.
+  local function new_plan(q,items,kind,name)
+    q.plan_seq=(q.plan_seq or 0)+1
+    q.plan={id=q.plan_seq,kind=kind,name=name,tick=game.tick,steps=#items}
+    for _,step in ipairs(items) do step.plan=q.plan_seq end
   end
   -- Guards: {when=<condition>, goto='label' | steps=[...] | neither (abort)}.
   local function guards(a)
@@ -102,17 +112,44 @@ return function(api)
   end
   -- recent: keep only the newest entries of the history (the changing calls;
   -- shake3: Opus's queue cancel printed 60+ entries); queue_status takes a count.
-  local RECENT=3
-  local function snapshot(q,recent)
+  local RECENT,PLAN_RECENT=3,16
+  -- The plan's entries (the last plan submitted; before plans were numbered, every entry not from an order).
+  local function in_plan(q,e)
+    if e.order then return false end
+    if q.plan_seq==nil or e.plan==nil then return q.plan_seq==nil end
+    return e.plan==q.plan_seq
+  end
+  -- orders: true lists the standing orders' entries too (every entry, as before plans); else the plan's own entries,
+  -- the orders' counted.
+  local function snapshot(q,recent,orders)
+    local list,from_orders=q.history,0
+    if not orders then
+      list={}
+      for _,e in ipairs(q.history) do
+        if in_plan(q,e) then list[#list+1]=e elseif e.order then from_orders=from_orders+1 end
+      end
+    end
     local failure
-    for i=#q.history,1,-1 do if not q.history[i].ok then failure=q.history[i]; break end end
-    local history=q.history
+    for i=#list,1,-1 do if not list[i].ok then failure=list[i]; break end end
+    local history=list
     if recent and #history>recent then
       history={}
-      for i=#q.history-recent+1,#q.history do history[#history+1]=q.history[i] end
+      for i=#list-recent+1,#list do history[#history+1]=list[i] end
     end
-    return {revision=q.revision,paused=q.paused,pending=q.pending,active=q.current or false,history=history,
+    local plan
+    if q.plan then
+      local done,ok_n,failed=0,0,0
+      for _,e in ipairs(q.history) do
+        if not e.order and e.plan==q.plan.id and e.id then done=done+1; if e.ok then ok_n=ok_n+1 else failed=failed+1 end end
+      end
+      local left=0
+      for _,step in ipairs(q.pending) do if step.plan==q.plan.id then left=left+1 end end
+      plan={id=q.plan.id,kind=q.plan.kind,name=q.plan.name,submitted_s_ago=math.floor((game.tick-q.plan.tick)/60),steps=q.plan.steps,
+        done=done,ok=ok_n,failed=failed,pending=left,running=q.current and q.current.plan==q.plan.id or nil}
+    end
+    return {revision=q.revision,paused=q.paused,pending=q.pending,active=q.current or false,history=history,plan=plan,
       order=q.order and {name=q.order.name,reason=q.order.reason,steps=q.order.total} or nil,
+      orders_history=from_orders>0 and string.format('%d entries from standing orders left out (queue_status {"orders": true} lists them)',from_orders) or nil,
       history_total=history~=q.history and #q.history or nil,
       waiting=q.current and q.current.action=='wait_until' and {condition=q.current.args,saw=q.current.saw,until_tick=q.current.until_tick} or nil,
       guards=q.guards and #q.guards>0 and q.guards or nil,last_failure=failure,after_direct=q.after_direct,
@@ -174,7 +211,7 @@ return function(api)
   end
   local function end_loop(q,why)
     q.loop_done={name=q.name,rounds=q.cycle or 1,reason=why,tick=game.tick}
-    q.history[#q.history+1]={action='loop_done',ok=true,result={rounds=q.cycle or 1,reason=why,name=q.name},finished_tick=game.tick}
+    q.history[#q.history+1]={action='loop_done',ok=true,result={rounds=q.cycle or 1,reason=why,name=q.name},finished_tick=game.tick,plan=q.plan_seq}
     if #q.history>MAX_HISTORY then table.remove(q.history,1) end
     q.round_news=q.round_news or {}
     q.round_news[#q.round_news+1]=string.format('queue %sdone after %d round%s: %s',q.name and q.name..' ' or '',q.cycle or 1,(q.cycle or 1)==1 and '' or 's',why)
@@ -192,7 +229,8 @@ return function(api)
   end
   local function record(q,step,ok,result)
     tally(q,step,result)
-    q.history[#q.history+1]={id=step.id,action=step.action,label=step.label,ok=ok,result=result,started_tick=step.started_tick,finished_tick=game.tick,order=step.order}
+    q.history[#q.history+1]={id=step.id,action=step.action,label=step.label,ok=ok,result=result,started_tick=step.started_tick,finished_tick=game.tick,order=step.order,
+      plan=not step.order and (step.plan or q.plan_seq) or nil}
     if #q.history>MAX_HISTORY then table.remove(q.history,1) end
     q.revision=q.revision+1
   end
@@ -251,10 +289,11 @@ return function(api)
         table.remove(q.guards,i)
         if q.current then record(q,q.current,false,{reason='guard',condition=g.when['until'],saw=saw}); q.current=nil end
         api.stop(p)
-        q.history[#q.history+1]={action='guard',ok=true,result={condition=g.when['until'],saw=saw},finished_tick=game.tick}
+        q.history[#q.history+1]={action='guard',ok=true,result={condition=g.when['until'],saw=saw},finished_tick=game.tick,plan=q.plan_seq}
         if #q.history>MAX_HISTORY then table.remove(q.history,1) end
         if g.steps then
           local items=copy_steps(g.steps); assign(q,items); q.pending=items
+          for _,step in ipairs(items) do step.plan=q.plan_seq end
         elseif not (g['goto'] and jump(q,g['goto'])) then q.paused=true end
         q.revision=q.revision+1
         return
@@ -371,7 +410,9 @@ return function(api)
   function M.handlers.queue_status(p,a)
     a=a or {}
     local q=queue(p.index)
-    local s=snapshot(q,count_arg(a.history,RECENT,MAX_HISTORY,'history'))
+    assert(a.orders==nil or type(a.orders)=='boolean','orders must be true or false')
+    -- The plan's entries: up to 16 by default (its steps and outcomes); with orders, the newest 3 of all as before.
+    local s=snapshot(q,count_arg(a.history,a.orders and RECENT or PLAN_RECENT,MAX_HISTORY,'history'),a.orders==true)
     local np=count_arg(a.pending,1,MAX_PENDING,'pending')
     if #q.pending>np then
       local some={}
@@ -424,6 +465,8 @@ return function(api)
     assert((a.mode=='replace' and 0 or total(q.pending))+total(items)<=MAX_BYTES,'queue argument byte budget exceeded')
     -- Replace affects pending work only; active cancellation is always explicit.
     assign(q,items)
+    -- (an empty submit, e.g. start=false to hold the queue, starts no plan)
+    if #items>0 then new_plan(q,items,'submit') end
     if a.mode=='replace' then q.pending={}; q.loop=nil; q.next_cycle_tick=nil; q.guards={}; q.times=nil; q.stop_tick=nil; q.orders=nil end
     for _,step in ipairs(items) do q.pending[#q.pending+1]=step end
     q.guards=q.guards or {}
@@ -451,6 +494,7 @@ return function(api)
     preempt(p,q)
     api.stop(p)
     M.pause(p.index)
+    new_plan(q,items,'repeat',a.name)
     q.loop=copy_steps(items); q.interval=interval; q.next_cycle_tick=nil; q.cycle=1; q.orders=orders
     q.name=a.name; q.round={counts={},keys={},n=0}; q.round_sig=nil; q.round_news=nil
     q.times=times; q.for_ticks=for_ticks; q.stop_tick=for_ticks and game.tick+for_ticks or nil; q.loop_done=nil
@@ -472,6 +516,7 @@ return function(api)
     for n=index,index+remove-1 do size=size-bytes(q.pending[n],0) end
     assert(size<=MAX_BYTES,'queue argument byte budget exceeded')
     assign(q,items)
+    for _,step in ipairs(items) do step.plan=q.plan_seq end
     for _=1,remove do table.remove(q.pending,index) end
     for n=#items,1,-1 do table.insert(q.pending,index,items[n]) end
     q.revision=q.revision+1
@@ -499,7 +544,11 @@ return function(api)
   function M.tick()
     for index,q in pairs(api.state().queues or {}) do
       if not q.paused then
-        local valid,p=pcall(api.player,index)
+        -- A vehicle step (a drive, getting in or out) runs with the character seated, as a direct vehicle call does;
+        -- any other step needs it on foot: the lookup refuses a seated one and the plan pauses, as before
+        -- (eng/queuecliffs: a queued drive paused its plan the tick after it began).
+        local nxt=q.current or (not q.current and q.pending[1]) or nil
+        local valid,p=pcall(api.player,index,nxt and nxt.action=='vehicle' or nil)
         if not valid then
           api.stop_index(index); M.pause(index)
         else
@@ -589,8 +638,9 @@ return function(api)
   -- A direct wait while the queue runs would pause it (runtime.lua dispatch_request refuses it).
   local PAUSE_QUEUE='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'
   M.schema={
-    queue_status={history='optional count 0..64 or "all": newest history entries (default 3)',pending='optional count 0..128 or "all": next pending steps (default 1)',
-      returns='active (the running step in full, running_s: how long it has run), pending (the next step), history (the newest 3), pending_count, history_total, last_failure, waiting, guards, repeating, cycle; a loop with an end: times, rounds_left (after this round), stops_tick; loop_done {name, rounds, reason, tick} once one ended'},
+    queue_status={history='optional count 0..64 or "all": newest history entries of the plan (default 16; with orders, of all entries, default 3)',pending='optional count 0..128 or "all": next pending steps (default 1)',
+      orders='true: the standing orders\' history entries too, every entry in order as it ran (default: the plan last submitted only, the orders\' entries counted in orders_history)',
+      returns='active (the running step in full, running_s: how long it has run), pending (the next step), plan {id, kind submit|repeat, name, submitted_s_ago, steps, done, ok, failed, pending, running}: the plan last submitted (queue_submit or queue_repeat), history (its entries, the newest 16), orders_history (how many entries standing orders left, not listed), pending_count, history_total, last_failure (the plan\'s), waiting, guards, repeating, cycle; a loop with an end: times, rounds_left (after this round), stops_tick; loop_done {name, rounds, reason, tick} once one ended'},
     queue_repeat={steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional',
       orders='which standing orders may run in the pause between rounds: triggers (default: orders with when, as they would while you are free), all (the default routine too) or none; an order that runs then finishes before the next round loads (the round waits for it, up to its max_ticks); its hold counts from your own last request, not the round\'s last step; queue_status says orders_between_rounds',
       name='optional 1..32 characters: names the loop in its round lines',
@@ -604,9 +654,9 @@ return function(api)
     queue_resume={expected_revision='optional'},
     wait_ticks={ticks='1..54000 simulation ticks: a queue step, or a direct timed action (fh call wait_ticks --wait)',pause_queue=PAUSE_QUEUE,
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or a teammate\'s mention always does)'},
-    wait_until={['until']='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left; a queue step, a standing order\'s when, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw',
-      position='area predicates: centre (default character); rocket_ready: the rocket silo (any tile of it), met when its rocket is built and ready to launch (saw: rocket state, parts, cargo)',radius='1..128 (default 32)',count='ammo_below: per-turret ammo items; fuel_below: fuel items per burner machine (furnaces, drills, boilers, burner inserters, ...)',fraction='health_*: 0..1; damaged: our buildings under this health fraction (default 1: any damage)',
-      item='item_count',at_least='item_count; ghosts_waiting: ghosts (entity and tile) in the area (default 1)',below='item_count',positions='item_count: 1..64 {x,y} of our entities (chests, machines) to count in, summed over all their inventories (a rocket silo\'s rocket cargo too; saw adds each silo\'s rocket state and cargo: the rocket is no item, the item rocket is ammunition); default the character\'s inventory',technology='researched',platform='platform_arrived, platform_left: a platform of ours by name; platform_arrived is met while it is stopped at a space location (the platform list shows it there, not on its path or a route); platform_left while it is not (Gemini, 16:50: departure)',location='platform_arrived, platform_left: optional planet name; default any stop',timeout='ticks 1..54000 (default 3600; fh call wait_until --wait takes it from --wait-timeout); timing out fails the step (timed_out)',
+    wait_until={['until']='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left; a queue step, a standing order\'s when, a queue guard\'s when, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw',
+      position='area predicates: centre (default character); rocket_ready: the rocket silo (any tile of it), met when its rocket is built and ready to launch (saw: rocket state, parts, cargo); rocket_parts: the silo, met when the rocket being built has at_least parts (a built rocket, rising or ready, has all of them; while one launches, the next one\'s count; saw: rocket parts N/50 and the silo line)',radius='1..128 (default 32)',count='ammo_below: per-turret ammo items; fuel_below: fuel items per burner machine (furnaces, drills, boilers, burner inserters, ...)',fraction='health_*: 0..1; damaged: our buildings under this health fraction (default 1: any damage)',
+      item='item_count',at_least='item_count; rocket_parts: parts 1..required; ghosts_waiting: ghosts (entity and tile) in the area (default 1)',below='item_count',positions='item_count: 1..64 {x,y} of our entities (chests, machines) to count in, summed over all their inventories (a rocket silo\'s rocket cargo too; saw adds each silo\'s rocket state and cargo: the rocket is no item, the item rocket is ammunition); default the character\'s inventory',technology='researched',platform='platform_arrived, platform_left: a platform of ours by name; platform_arrived is met while it is stopped at a space location (the platform list shows it there, not on its path or a route); platform_left while it is not (Gemini, 16:50: departure)',location='platform_arrived, platform_left: optional planet name; default any stop',timeout='ticks 1..54000 (default 3600; fh call wait_until --wait takes it from --wait-timeout); timing out fails the step (timed_out)',
       checked='every 10 ticks; enemies count only if known from the chart (units only in visible chunks)',pause_queue=PAUSE_QUEUE,
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or a teammate\'s mention always does)'},
     step_options={label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it)',on_short='skip: a step that runs short (out_of_items, nothing_collected, inventory_full, or no item held to give) counts as done (history: short=true) and the plan goes on; up_to=true in a transfer, collect or feed step does the same'},

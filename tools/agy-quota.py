@@ -143,7 +143,9 @@ def pace(d, since, deadline):
     duty = min(max(allowed / FULL_RATE, 0.03), 1.0)
     took = max(now - since - 1, 30)
     wait = took * (1 / duty - 1)
-    ahead = used - line
+    # The window reads in whole percent, so a turn can show up to 1 point ahead of the line from rounding alone
+    # (20:12: 88 against 87.35 gave a 3 h sleep): only what is beyond that point counts as ahead.
+    ahead = used - line - 1.0
     if ahead > 0:
         wait += ahead / max(allowed, 0.01) * 3600 * 0.5   # catch half the excess back this sleep
     elif ahead < -1:
@@ -157,8 +159,8 @@ def pace(d, since, deadline):
              "sleep": 0 if stop else wait, "resets": time.strftime("%a %H:%M", time.localtime(reset))}
     with open(os.path.join(d, "context.log"), "a") as f:
         f.write(json.dumps(event) + "\n")
-    if not stop:
-        rest(d, wait, "pace", used=used, resets=event["resets"])
+    # A stop rests until the shift's end, so the card says so instead of idle (23:17: the loop ended 50 min early).
+    rest(d, max(deadline - now, 60) if stop else wait, "pace", used=used, resets=event["resets"])
     return "stop" if stop else wait
 
 
