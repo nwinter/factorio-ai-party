@@ -76,6 +76,8 @@ already targets your character.
   20 minutes can be taken the same way; the owner hears it.
 - `./fh board update --args '{"id":N,"title":"...","needs":{"iron-plate":300}}'` corrects an item's title and what it
   asks for (its poster or owner; anyone after the same 20 quiet minutes); `board {id}` keeps the change in `history`.
+- `queue_submit {lane:"remote",steps:[...]}` runs platform waits, drops, schedules, platform configuration and body-independent reads alongside body work; queue controls accept the same lane, and status shows both.
+- `drill_sites {position,surface?}` lists nearest visible same-resource placements for one depleted drill, with mining-area amounts and placement checks; `resource` supplies the name if no previous mining target was recorded.
 - `./fh view platform=Sunward --out sunward.png` shows platform foundation and structure footprints; `agriculture {surface:"gleba"}` lists towers, ghosts and recorded tower-loss positions.
 - `game_alerts {kind:"no_power"}` groups connected machines without power by electric network, including isolated drill networks; `move_to` reports narrow-corridor margin crossings in `last.passed_within_margin`.
 - `inspect` reads any entity on your surface in a chunk our radars see, by remote view (`by: remote view`); out of

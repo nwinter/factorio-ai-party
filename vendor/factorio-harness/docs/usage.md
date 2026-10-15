@@ -1256,6 +1256,42 @@ fh restore NAME [--args '{"minutes":30}']      # cancel their pending orders; gh
   and a manual ghost fits; counts `cancelled`, `ghosts`, `already` (rebuilt or ghosted), `blocked`. No items are
   created; each removal is restored once.
 
+## Remote queue lane
+
+`queue_submit`, `queue_repeat`, `queue_edit`, `queue_status`, `queue_cancel` and
+`queue_resume` accept `lane:"remote"`. Omitting `lane` selects the existing body
+queue; `lane:"body"` names it explicitly. Each lane has its own steps, history,
+revision, guards, repeat rounds and failure state. Body walks, transfers, local
+queue calls and `stop` leave the remote lane running. Remote submissions, failures
+and cancellations leave the body action and body queue running. Standing orders
+run only in the body lane; remote repeats accept only `orders:"none"` (the default
+for that lane).
+
+```sh
+fh queue submit --args '{"lane":"remote","steps":[{"action":"wait_until","args":{"until":"platform_arrived","platform":"Sunward","location":"gleba","timeout":36000}},{"action":"circuit_set","args":{"platform":"Sunward","position":{"x":-10,"y":9.5},"enable":"signal-B < 0"}},{"action":"drop","args":{"platform":"Sunward","items":[{"item":"iron-plate","count":100}],"full":true}}]}'
+fh queue status --args '{"lane":"remote"}'
+fh queue cancel --args '{"lane":"remote"}'
+```
+
+The remote lane accepts `wait_ticks`; `wait_until` with `platform_arrived`,
+`platform_left` or `researched`, or `item_count` with an explicit platform hub; `drop`, `platform_schedule`, `configure`,
+`circuit_set`, `circuit`, `wire`, `requests` and `flush` with an explicit `platform`;
+and read actions that need no body. `observe` requires `platform` or a scope other
+than `craftable` or `sleep_check`. `inventory`, `craftable`, `sleep_check`,
+`dry_run`, `screenshot`, body conditions and body actions are refused. Validation
+names the step or guard path and checks the entire submitted plan before changing
+the selected queue. `queue_edit` revisions refer to the selected lane.
+
+A full `drop` waits on the existing pod-dispatch channel. A competing drop finishes
+before the next queued remote drop starts. Already-started full drops continue
+sending their remaining pods after queue cancellation, as in the body lane.
+`queue_status` returns the selected lane in full and `lanes.body`/`lanes.remote`
+summaries; `status`, including `brief`, returns both under `queues`. `sleep` wakes
+when either running lane finishes or stalls; a remote wake has
+`queue_lane:"remote"` and `remote_queue_steps`. The turn clock stays running for
+either lane. Losing the actor or a runtime replacement pauses the remote lane;
+its pending steps remain available to `queue_resume {lane:"remote"}`.
+
 ## The in-game queue
 
 A queue plan runs inside the game, with no CLI round trip between steps:
@@ -2858,6 +2894,19 @@ fh sleep 900 --until researched                       # ...or until the research
   - `charging_queues`: roboports with robots waiting to charge (`roboport (9,55): 3 waiting, 4 charging`).
   - Robots in roboports are counts only (the engine lists only those in the air). It costs about as much as a plain
     read (about 2 ms a call with its dispatch, 4-5 ms with 38 in the air, on a copy of world n).
+- `drill_sites {position, surface?, resource?, radius?, limit?}` reads one depleted mining drill
+  (`no_minable_resources`, no mining target). It lists nearest visible centres where the same drill,
+  direction and quality pass the engine's manual placement check, with existing entities still present.
+  Each site has `position`, `distance`, `amount` and `tiles` for the same resource inside the drill's mining
+  area. The response includes the drill's `footprint`, `mining_radius`, `resource_source` and a one-line
+  summary. Sites are alternatives and may overlap each other; no entities are moved, marked or built.
+  The resource comes from the drill's last mining target recorded by the out-of-ore alert scan. If none
+  was recorded, the reply says so and returns no sites unless `resource` is supplied; an existing memory
+  must match it. `radius` is 2..24 (default 16), `limit` 1..8 (default 3). Dense areas reduce the search
+  radius until the read fits within 1024 resource tiles (`searched_radius`, `radius_reduced`); at most
+  128 placement checks run (`truncated` when that prevents completing the result). Every returned
+  mining area must be currently visible. Example:
+  `fh call drill_sites --args '{"surface":"vulcanus","position":{"x":69.5,"y":-89.5},"resource":"coal"}'`.
 - `fh call ores --args '{"resource":"iron-ore"}'` (read; optional `resource`: a name or a list, default every
   resource; `surface`: a planet; `position`: measure from there; `min_amount`; `limit` 1..100, default 20): every
   resource patch on the charted chunks of the surface, nearest first, the same for everyone apart from distances. A

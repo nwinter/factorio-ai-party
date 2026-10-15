@@ -3381,6 +3381,18 @@ end)()
   advance(10); eq(call('queue_status').paused,false)
   landed=50; advance(10); eq(call('queue_status').paused,true)
   call('queue_cancel',{})
+  landed=0
+  call('queue_submit',{lane='remote',steps={{action='wait_until',args=c}}})
+  call('walk',{direction='east',ticks=100})
+  advance(12)
+  local body_action=storage.agent_harness.active[1]
+  eq(body_action.kind,'walk');eq(call('queue_status',{lane='remote'}).active.action,'wait_until')
+  landed=50;advance(10)
+  local rq=call('queue_status',{lane='remote'})
+  eq(rq.active,false);eq(rq.history[#rq.history].result.outcome,'met')
+  eq(storage.agent_harness.active[1],body_action)
+  fails(function() call('queue_submit',{lane='remote',steps={{action='wait_until',args={['until']='item_count',item='coal',at_least=1}}}}) end,'steps[1]')
+  call('stop',{});call('queue_cancel',{lane='remote'})
   p.force.platforms,defines.inventory.hub_main=platforms,hub_id
 end)()
 -- wait_until as a direct call: met at once returns met; otherwise a timed
@@ -4635,5 +4647,29 @@ end)()
   r=call('equip',{slot='armor',item='heavy-armor'}); eq(r.index,1); eq(source.name,'light-armor')
   p.get_inventory,p.get_main_inventory=old_get,old_main
   defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor=old_gun,old_ammo,old_armor
+end)()
+-- Remote plans use a separate channel through the real dispatch boundary.
+;(function()
+  call('queue_cancel',{})
+  call('queue_submit',{lane='remote',steps={{action='wait_ticks',args={ticks=8}},{action='describe'}}})
+  call('walk',{direction='east',ticks=100})
+  advance(2)
+  local action=storage.agent_harness.active[1]
+  eq(action.kind,'walk'); eq(action.queued,nil)
+  local r=call('status',{brief=true})
+  eq(r.queues.remote.active.action,'wait_ticks'); eq(r.queues.body.paused,true)
+  call('walk',{direction='west',ticks=100})
+  action=storage.agent_harness.active[1]
+  advance(10)
+  local q=call('queue_status',{lane='remote'})
+  eq(q.paused,false); eq(q.active,false); eq(q.history[#q.history].action,'describe')
+  eq(storage.agent_harness.active[1],action); eq(action.queued,nil)
+  fails(function() call('queue_submit',{lane='remote',steps={{action='walk',args={direction='east',ticks=1}}}}) end,'steps[1]')
+  eq(storage.agent_harness.active[1],action)
+  call('queue_repeat',{lane='remote',steps={{action='wait_ticks',args={ticks=100}}}})
+  advance(1); call('queue_cancel',{lane='remote'})
+  eq(storage.agent_harness.active[1],action)
+  eq(call('queue_status',{}).lanes.remote.paused,true)
+  call('stop',{})
 end)()
 print('runtime: '..assertions..' assertions passed')
