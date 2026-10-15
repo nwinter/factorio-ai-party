@@ -319,6 +319,21 @@ fh call status
   `{entity, position, side, ghost}` (wires the game does not draw, such as radar links, are left out); `networks` per
   circuit connector `{id, signals, more}`: the signals on that network now, largest first, at most 30. An entity whose
   circuit settings were never changed shows its wires and `settings_note`.
+- Chests and roboports in `circuit_set` (Sol, Luna, d15 06:20: read contents on provider and requester chests and an
+  enable condition on a requester were refused). What 2.0.77 has for a logistic chest
+  (LuaLogisticContainerControlBehavior): `circuit_exclusive_mode_of_operation` `send_contents` | `set_requests` |
+  `none`, which the game lets be set only on requester and buffer chests (the GUI's Read contents / Set requests), and a
+  circuit condition with `circuit_condition_enabled` (the GUI's Enable/disable). So:
+  - `read: {contents: true}` on a requester or buffer chest sets `send_contents` (`false`: `none`); `set_requests:
+    true` sets `set_requests` (any other chest: refused, naming its kind).
+  - A provider or storage chest sends its contents whenever wired; 2.0.77 has no switch for it. `read: {contents:
+    true}` there changes nothing and `notes` says so; `false` is refused.
+  - `enable: "pentapod-egg >= 2"` on a logistic chest sets its circuit condition (`circuit_condition_enabled`,
+    `circuit_condition`); `notes` says which setting it is.
+  - No chest has a logistic network condition: `logistic` is refused (`no logistic network condition on any chest in
+    2.0.77`).
+  - A roboport: `read: {logistic_network_contents: true}` (or `items`, `contents`) sets `read_items_mode` `logistics`
+    (its network's items as signals); `missing_requests: true` sets `missing_requests`.
 - `circuit_set` (friction2, Opus 18:54: "production-science-pack < 1000" on an inserter whose logistic condition "< 100"
   read 101; Opus told Astra it ran, and it stayed off 10.8 min): when an enable or logistic condition is not met after
   the call, `stays_disabled` names it, with what it reads and whether this call set it, and the CLI puts it on the
@@ -1319,6 +1334,16 @@ queue calls and `stop` leave the remote lane running. Remote submissions, failur
 and cancellations leave the body action and body queue running. Standing orders
 run only in the body lane; remote repeats accept only `orders:"none"` (the default
 for that lane).
+
+`place_ghosts` and `deconstruct` with `platform` run in the remote lane too (Astra, d15 06:23: large ship conversions
+held the body queue and needed an outside tile checker). `wait_until {until: "platform_built", platform, entities?}`
+is met when no tile ghost (foundation) is left on that platform; with `entities: true` no entity ghost either; `saw:
+platform Starling: 3 tile ghosts left, 1 entity ghost`. It is a wait in either lane, a guard's `when` and an order's
+`when`.
+
+```sh
+fh queue submit --args '{"lane":"remote","steps":[{"action":"place_ghosts","args":{"platform":"Starling","tiles":{"name":"space-platform-foundation","area":{"left_top":{"x":-20,"y":-10},"right_bottom":{"x":20,"y":10}}}}},{"action":"wait_until","args":{"until":"platform_built","platform":"Starling","timeout":36000}},{"action":"place_ghosts","args":{"platform":"Starling","entities":[{"name":"thruster","position":{"x":0,"y":12}}]}}]}'
+```
 
 ```sh
 fh queue submit --args '{"lane":"remote","steps":[{"action":"wait_until","args":{"until":"platform_arrived","platform":"Sunward","location":"gleba","timeout":36000}},{"action":"circuit_set","args":{"platform":"Sunward","position":{"x":-10,"y":9.5},"enable":"signal-B < 0"}},{"action":"drop","args":{"platform":"Sunward","items":[{"item":"iron-plate","count":100}],"full":true}}]}'

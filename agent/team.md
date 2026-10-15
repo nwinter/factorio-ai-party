@@ -83,7 +83,7 @@ already targets your character.
   20 minutes can be taken the same way; the owner hears it.
 - `./fh board update --args '{"id":N,"title":"...","needs":{"iron-plate":300}}'` corrects an item's title and what it
   asks for (its poster or owner; anyone after the same 20 quiet minutes); `board {id}` keeps the change in `history`.
-- `queue_submit {lane:"remote",steps:[...]}` runs platform waits, drops, schedules, platform configuration and body-independent reads alongside body work; queue controls accept the same lane, and status shows both.
+- `queue_submit {lane:"remote",steps:[...]}` runs platform waits, drops, schedules, platform configuration, platform `place_ghosts`/`deconstruct` (wait `{until:"platform_built",platform}` for the foundation) and body-independent reads alongside body work; queue controls accept the same lane, and status shows both.
 - `drill_sites {position,surface?}` lists nearest visible same-resource placements for one depleted drill, with mining-area amounts and placement checks; `resource` supplies the name if no previous mining target was recorded.
 - `./fh view platform=Sunward --out sunward.png` shows platform foundation and structure footprints; `agriculture {surface:"gleba"}` lists towers, ghosts and recorded tower-loss positions.
 - `game_alerts {kind:"no_power"}` groups connected machines without power by electric network, including isolated drill networks; `move_to` reports narrow-corridor margin crossings in `last.passed_within_margin`.
@@ -409,6 +409,7 @@ already targets your character.
   in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`
   reads back the conditions, settings, each wire's far end and the signals on each network now. A logistic condition
   reads the network whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met).
+  Requester and buffer chests: `read: {contents: true}` or `set_requests: true`, and `enable` (the chest's circuit condition); provider chests send contents whenever wired; no chest has a logistic condition. A roboport: `read: {logistic_network_contents: true}`.
 - Landfill on Gleba wetland goes in only where no slipstack, cuttlepop, hairyclubnub or stromatolite stands (marked or
   not, for a tile laid by hand): a dry run and a failed build name them (`blocked by slipstack tree at (x,y): mine it
   first`); `place_ghosts` marks them for removal first (`tile_obstacles_marked`) and `construct` mines them before it

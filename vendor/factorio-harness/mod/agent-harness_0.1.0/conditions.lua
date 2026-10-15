@@ -230,6 +230,20 @@ return function(api)
       local n=#p.surface.find_entities_filtered{position=centre,radius=radius,type={'entity-ghost','tile-ghost'},force=p.force}
       return n>=(c.at_least or 1),n..' ghosts'
     end,
+    -- A platform's foundation built (Astra, d15 06:23: ship conversions ran in the body queue with an outside tile
+    -- checker): no tile ghost left on the named platform; with entities=true no entity ghost either.
+    platform_built=function(p,c)
+      local pl
+      for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each; break end end
+      assert(pl,'no platform of ours named '..tostring(c.platform))
+      local surface=pl.surface
+      assert(surface,'platform '..c.platform..' has no surface yet')
+      local tiles=surface.count_entities_filtered{type='tile-ghost',force=p.force}
+      local ents=c.entities and surface.count_entities_filtered{type='entity-ghost',force=p.force} or nil
+      local met=tiles==0 and (ents==nil or ents==0)
+      return met,string.format('platform %s: %d tile ghost%s left%s',c.platform,tiles,tiles==1 and '' or 's',
+        ents and string.format(', %d entity ghost%s',ents,ents==1 and '' or 's') or '')
+    end,
     -- Our buildings under a health fraction (default: any damage), the nearest named.
     damaged=function(p,c)
       local centre,radius=area(p,c)
@@ -293,7 +307,7 @@ return function(api)
       return n>0,n..' burners below '..c.count..' fuel'..(near and string.format(' (nearest %s at %d,%d)',near.name,math.floor(near.position.x),math.floor(near.position.y)) or '')
     end,
   }
-  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced'
+  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced|platform_built'
   -- Argument checks run when a plan is submitted, not when it first fires.
   function M.validate(c)
     assert(type(c)=='table' and checks[c['until']],'until must be one of '..NAMES)
@@ -331,6 +345,10 @@ return function(api)
       end
       assert(c.at_least~=nil,'produced requires at_least (items made since the wait began; crafts without item)')
       number(c.at_least,1,1e9,'at_least')
+    end
+    if kind=='platform_built' then
+      assert(type(c.platform)=='string' and #c.platform>0,'platform_built requires platform (a platform name)')
+      assert(c.entities==nil or type(c.entities)=='boolean','platform_built entities must be true or false')
     end
     if kind=='researched' then assert(type(c.technology)=='string','researched requires technology') end
     if kind=='rocket_ready' then assert(c.position~=nil,'rocket_ready requires position (a rocket silo\'s, any tile of it)') end

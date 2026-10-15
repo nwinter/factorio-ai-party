@@ -67,7 +67,8 @@ return function(api)
     circuit_set = {position='{x,y}: in reach, or ours in a visible chunk (remote view)',
       platform='platform name: on that platform (all of it in remote view)',
       surface='planet or surface name (remote view, visible chunks)',
-      enable='"ice < 300" or {signal, comparator, value|signal2}; false: off',
+      enable='"ice < 300" or {signal, comparator, value|signal2}; false: off; on a logistic chest: its circuit condition (circuit_condition_enabled, circuit_condition: the GUI\'s Enable/disable)',
+      set_requests='requester or buffer chest: true sets its requests from the wires (circuit_exclusive_mode_of_operation set_requests); false: none. Chests in 2.0.77: read: {contents: true} is send_contents on a requester or buffer; provider and storage chests send their contents whenever wired, with no switch; no chest has a logistic network condition. A roboport: read: {logistic_network_contents: true} is read_items_mode logistics (missing_requests: true the missing requests)',
       logistic='a condition as enable, on the logistic network (connects it); false: off. The game reads the network whose logistic area holds the entity\'s centre (circuit.logistic_reads names it and its count, or none: never met)',
       read='{switch: bool}: hand, contents, resources, speed, ammo, ... (read_X); train stop names',
       settings='{name: value}: any switch, mode, signal or condition by its readback name; inserters and loaders also filters (item names), filter_mode (whitelist|blacklist), use_filters, as configure sets them (reply filters: the line)',
@@ -654,11 +655,71 @@ return function(api)
   -- The entity's circuit GUI, changed as a player changes it there: every
   -- argument is checked first, then the changes apply in order; the reply
   -- reads back what the game holds.
+  -- Chests and roboports in the words agents use (Sol, Luna, d15 06:20: read contents on provider and requester
+  -- chests and an enable condition on a requester were refused). What 2.0.77 has (LuaLogisticContainerControlBehavior):
+  -- circuit_exclusive_mode_of_operation send_contents | set_requests | none, which the game lets be set only on
+  -- requester and buffer chests (the GUI's Read contents / Set requests); a circuit condition with
+  -- circuit_condition_enabled (the GUI's Enable/disable). Provider and storage chests send their contents whenever
+  -- wired, with no switch. No chest has a logistic network condition. A roboport reads its network's items with
+  -- read_items_mode logistics (or missing_requests).
+  local CHEST_NO_LOGISTIC = 'no logistic network condition on any chest in 2.0.77 (a chest\'s circuit settings: read contents or set requests, requester and buffer only, and an enable condition)'
+  local function chest_words(e, kind, a)
+    if kind ~= 'logistic_container' and kind ~= 'roboport' then return a, nil end
+    local b, notes = {}, {}
+    for k, v in pairs(a) do b[k] = v end
+    local st = {}
+    for k, v in pairs(type(a.settings) == 'table' and a.settings or {}) do st[k] = v end
+    if kind == 'roboport' then
+      if type(a.read) == 'table' then
+        local r = {}
+        for k, v in pairs(a.read) do
+          if k == 'logistic_network_contents' or k == 'items' or k == 'contents' or k == 'logistics' then
+            st.read_items_mode = v and 'logistics' or 'none'
+          elseif k == 'missing_requests' then st.read_items_mode = v and 'missing_requests' or 'none'
+          else r[k] = v end
+        end
+        b.read = next(r) and r or nil
+      end
+      b.settings = next(st) and st or nil
+      return b, nil
+    end
+    local proto = e.type == 'entity-ghost' and try(function() return e.ghost_prototype end) or try(function() return e.prototype end)
+    local mode = try(function() return proto.logistic_mode end) or '?'
+    local requests = mode == 'requester' or mode == 'buffer'
+    if a.logistic ~= nil then error('logistic: ' .. e.name .. ' has ' .. CHEST_NO_LOGISTIC, 0) end
+    if a.enable ~= nil then
+      b.enable = nil
+      if a.enable == false then st.circuit_condition_enabled = false
+      else st.circuit_condition_enabled = true; st.circuit_condition = a.enable end
+      notes[#notes+1] = 'enable is the chest\'s circuit condition (circuit_condition_enabled, circuit_condition: the GUI\'s Enable/disable)'
+    end
+    if type(a.read) == 'table' then
+      local r = {}
+      for k, v in pairs(a.read) do
+        if k == 'contents' or k == 'read_contents' then
+          if requests then st.circuit_exclusive_mode_of_operation = v and 'send_contents' or 'none'
+          elseif v == true then notes[#notes+1] = e.name .. ' sends its contents to the wires whenever wired: 2.0.77 has no switch for it (Read contents and Set requests are requester and buffer settings)'
+          else error('read.contents: ' .. e.name .. ' sends its contents whenever wired; 2.0.77 has no switch to stop it (only requester and buffer chests have Read contents / Set requests)', 0) end
+        else r[k] = v end
+      end
+      b.read = next(r) and r or nil
+    end
+    if a.set_requests ~= nil then
+      if type(a.set_requests) ~= 'boolean' then error('set_requests must be true or false', 0) end
+      if not requests then error('set_requests: ' .. e.name .. ' is a ' .. mode .. ' chest; 2.0.77 lets only requester and buffer chests set requests from the wires', 0) end
+      st.circuit_exclusive_mode_of_operation = a.set_requests and 'set_requests' or 'none'
+      b.set_requests = nil
+    end
+    b.settings = next(st) and st or nil
+    return b, #notes > 0 and notes or nil
+  end
   function M.handlers.circuit_set(p, a)
     local e, by = target(p, a, 'target')
     local cb = behavior(e)
     local kind = kind_of(cb)
     local props = props_of(cb, kind)
+    local chest_notes
+    a, chest_notes = chest_words(e, kind, a)
     -- A ghost by what it builds (its own name is entity-ghost): it takes the same settings (Astra 12:20).
     local ghost = e.type == 'entity-ghost'
     local steps, out = {}, {entity=ghost and try(function() return e.ghost_name end) or e.name, ghost=ghost or nil, position=e.position, by=by}
@@ -762,6 +823,7 @@ return function(api)
       done[#done+1] = s.what
     end
     out.circuit = M.read(e, cb)
+    out.notes = chest_notes
     M.held_off(e, cb, out, a)
     return out
   end

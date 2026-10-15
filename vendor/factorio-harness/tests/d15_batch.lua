@@ -190,3 +190,19 @@ do
   users[1].valid=false; eq(F.read(p,{}).read,5)
 end
 print('d15_batch fuel_budget: ok')
+
+-- 8 (Astra): wait_until platform_built: no tile ghost (with entities, no entity ghost) left on the platform. ------
+do
+  local counts={['tile-ghost']=3,['entity-ghost']=1}
+  local pl={valid=true,name='Starling',surface={count_entities_filtered=function(f) return counts[f.type] end}}
+  local p={force={platforms={pl}}}
+  local C=require('conditions'){position=function(v) return v end,known=function() return true end}
+  local c={['until']='platform_built',platform='Starling'}
+  C.validate(c)
+  local met,saw=C.check(p,c); eq(met,false); eq(saw,'platform Starling: 3 tile ghosts left')
+  counts['tile-ghost']=0; eq((C.check(p,c)),true)
+  met,saw=C.check(p,{['until']='platform_built',platform='Starling',entities=true}); eq(met,false); eq(saw,'platform Starling: 0 tile ghosts left, 1 entity ghost')
+  assert(not pcall(C.validate,{['until']='platform_built'}))
+  assert(not pcall(C.check,p,{['until']='platform_built',platform='Nope'}))
+end
+print('d15_batch platform_built: ok')

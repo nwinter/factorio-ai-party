@@ -91,8 +91,8 @@ defines.wire_connector_id={circuit_red=1,circuit_green=2,combinator_input_red=1,
   pole_copper=5,power_switch_left_copper=5,power_switch_right_copper=6}
 defines.wire_type={red=1,green=2,copper=3}
 defines.wire_origin={player=0,radars=1,script=2}
-defines.control_behavior={type={inserter=1,constant_combinator=2,arithmetic_combinator=3,decider_combinator=4,space_platform_hub=5,lamp=6,wall=7,container=8,generic_on_off=9},
-  inserter={hand_read_mode={hold=0,pulse=1}}}
+defines.control_behavior={type={inserter=1,constant_combinator=2,arithmetic_combinator=3,decider_combinator=4,space_platform_hub=5,lamp=6,wall=7,container=8,generic_on_off=9,logistic_container=20},
+  inserter={hand_read_mode={hold=0,pulse=1}},logistic_container={exclusive_mode={send_contents=0,set_requests=1,none=2}}}
 local CB=defines.control_behavior.type
 -- A character reaches 15 tiles here, on its own surface.
 for _,b in ipairs(runtime.bots.list()) do
@@ -283,6 +283,23 @@ fails(function() astra('circuit_set',{position={x=2,y=0},read={contents=true}}) 
 fails(function() astra('circuit_set',{position={x=4,y=0},read={hand=true}}) end,'has no read switches')
 r=astra('circuit_set',{position={x=10,y=0},read={contents=true}})
 eq(chest.get_control_behavior().read_contents,true); eq(r.circuit.settings.read_contents,true)
+-- Chests in 2.0.77 (Sol, Luna, d15 06:20): read contents and set requests on requester and buffer chests (the exclusive
+-- mode), enable as the chest's circuit condition; a provider sends its contents whenever wired; no logistic condition.
+do
+  local rcb={type=CB.logistic_container,circuit_exclusive_mode_of_operation=2,circuit_condition_enabled=false}
+  local req=thing('requester-chest','logistic-container',12,rcb,6); req.prototype.logistic_mode='requester'
+  local pcb={type=CB.logistic_container,circuit_exclusive_mode_of_operation=0,circuit_condition_enabled=false}
+  local prov=thing('passive-provider-chest','logistic-container',13,pcb,6); prov.prototype.logistic_mode='passive-provider'
+  r=astra('circuit_set',{position={x=12,y=6},read={contents=true},enable='iron-plate >= 2'})
+  eq(rcb.circuit_exclusive_mode_of_operation,0); eq(rcb.circuit_condition_enabled,true); eq(rcb.circuit_condition.constant,2)
+  assert(r.notes and r.notes[1]:find('Enable/disable',1,true),'enable note')
+  astra('circuit_set',{position={x=12,y=6},set_requests=true}); eq(rcb.circuit_exclusive_mode_of_operation,1)
+  fails(function() astra('circuit_set',{position={x=12,y=6},logistic='iron-plate >= 6'}) end,'no logistic network condition on any chest in 2.0.77')
+  r=astra('circuit_set',{position={x=13,y=6},read={contents=true}})
+  eq(pcb.circuit_exclusive_mode_of_operation,0); assert(r.notes[1]:find('sends its contents to the wires whenever wired',1,true),r.notes[1])
+  fails(function() astra('circuit_set',{position={x=13,y=6},set_requests=true}) end,'lets only requester and buffer chests set requests')
+  fails(function() astra('circuit_set',{position={x=13,y=6},read={contents=false}}) end,'no switch to stop it')
+end
 r=astra('circuit_set',{position={x=2,y=0},settings={circuit_hand_read_mode='pulse',circuit_set_stack_size=true,circuit_stack_control_signal='signal-S'}})
 eq(inserter_cb.circuit_hand_read_mode,1); eq(inserter_cb.circuit_set_stack_size,true); eq(inserter_cb.circuit_stack_control_signal.name,'signal-S')
 eq(r.circuit.settings.circuit_hand_read_mode,'pulse'); eq(r.circuit.settings.circuit_stack_control_signal,'signal-S')
