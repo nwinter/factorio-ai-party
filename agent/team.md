@@ -432,9 +432,8 @@ already targets your character.
   loads the list into the rocket from your inventory and our chests in reach (any chest kind, logistic chests and a
   landing pad too, nearest first; `from` for given chests) and launches
   in the same tick once every count is aboard; before the rocket is ready it waits for it. `./fh call preflight` (silo
-  `position`, optional `items`, `platform`, `surface`) shows the cargo against 1000 kg and 20 slots, what a list lacks, the
-  platform's requests from this planet less its hub and this rocket, rockets already on their way to it, its ammo per
-  type over the last leg (`ammo_rates`) and the hub slots asteroid chunks take, as `fh platform NAME` does. `launch` takes `min_cargo` and `arrived: true`,
+  `position` optional: all visible indexed silos nearest first; optional `items`, `platform`, `surface`) shows cargo,
+  arrival/ETA, requests less hub and rocket, and (with `platform`) incoming rockets, `ammo_rates`, `hub_chunks`; no platform lists those stopped/headed here. `launch` takes `min_cargo` and `arrived: true`,
   read in the tick it launches; `fh queue submit --file plan.json --args '{"dry_run":true}'` queues nothing and shows
   the silo cargo before each launch step. `load_silo` with `"walk": true` and `from` (chests anywhere on the silo's
   surface) walks between them and the silo as many trips as the load takes, in one timed call (outcomes `loaded`,

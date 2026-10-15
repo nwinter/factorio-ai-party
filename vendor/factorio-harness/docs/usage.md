@@ -2101,21 +2101,48 @@ fh sleep 900 --until researched                       # ...or until the research
     - The silo and every chest in reach: the load at once, as without `walk`. Nothing of what the rocket needs in the
       chests or held, or none of it fits under the lift: refused, nothing walked.
     - `fh call load_silo --args '{"items":{"agricultural-science-pack":930},"from":{"x":129.5,"y":14.5},"walk":true,"launch":true,"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`
-- `preflight {position, items?, platform?, surface?}` (read; Gemini, shift12) shows what the silo's rocket would carry,
-  by remote view (a visible chunk):
-  - `cargo {items, rows [{item, count, each_kg, kg, stacks}], kg, lift_kg, free_kg, over_kg, slots, free_slots}`,
-    `rocket`, `rocket_ready`, `auto_requests`;
-  - with `items`: `order [{item, want, aboard, lacks, fits, you_hold}]` (`fits`: how many of what it lacks the rocket
-    takes by weight and slots);
-  - with `platform`: `platform {name, where, arrived, requests [{item, min, hub, aboard, lacks_after}], not_requested,
-    incoming, incoming_cargo, ammo_rates, hub_chunks}`: its hub's requests importing from this planet (active sections),
-    what the hub holds, what this rocket carries, and what they lack after it; `not_requested` is cargo it does not
-    request from here; the rockets already on their way to it, its ammo per type over the last leg and the hub slots
-    asteroid chunks take, as `platforms` gives them (the line adds `2 rockets on the way: firearm-magazine*40`). With
-    `surface` (a silo on another planet) `platform` still names where the rocket goes, as with `launch` (it was
-    refused as `give platform or surface, not both`);
-  - `launch_now`: `ok`, or `refused: ` and what `launch` would refuse now (the rocket not ready, overweight, empty, the
-    platform not stopped here); `line`, all of it in one line.
+- `preflight {position?, items?, platform?, surface?}` (read; Gemini, shift12/14) combines rocket cargo and
+  platform dispatch facts, by remote view in visible chunks. `surface` selects the planet (default yours);
+  `platform` remains the destination and can be given with `surface`:
+  - With `position`: `silo`, `position`, `rocket`, `rocket_ready`, `parts` while building, `built_parts` when
+    ready/rising, `next_parts` for the rocket after it, and `auto_requests`;
+    `cargo {items, rows [{item, count, each_kg, kg, stacks}], kg, lift_kg, free_kg, over_kg, slots, free_slots}`.
+  - With `items`: `order [{item, want, aboard, lacks, fits, you_hold}]` (`fits`: how many of what it lacks the rocket
+    takes by weight and slots).
+  - With `platform`: `platform {name, where, at, arrived, headed_here, next_stop, from, to, eta_to, eta_s,
+    distance_left_km, connection_length_km, flown_fraction, speed_km_s, eta_basis, eta_unknown, arrival_unknown,
+    requests [{item, min, hub, aboard, lacks, lacks_after}], not_requested, incoming, incoming_cargo, ammo_rates,
+    hub_chunks, line}`.
+    Requests are active hub sections importing from this planet, even before the platform departs for it; section
+    multipliers apply, and item qualities are counted separately. `hub` includes main and trash inventories;
+    `aboard` is this rocket's cargo. `lacks = max(0, min - hub)`; `lacks_after = max(0, min - hub - aboard)`
+    (zero lacks fields omitted). `not_requested` is rocket cargo it does not request from here.
+    `incoming`/`incoming_cargo` list rockets already on their way to the hub, `ammo_rates` gives ammo per type over
+    the last leg, and `hub_chunks` counts hub slots occupied by asteroid chunks, as `platforms` does. Incoming cargo
+    is reported separately and is not subtracted from `lacks_after`. The line includes the incoming-cargo summary.
+    These destination diagnostics are read once per call, including when multiple silos are compared.
+  - An ETA is game seconds at the current speed, rounded up: remaining connection distance / (`platform.speed * 60`).
+    Remaining distance is `(1 - flown_fraction) * connection_length_km`, using the direction toward the current
+    schedule stop (or the last visited endpoint when no matching schedule stop exists). `eta_basis` names the
+    calculation, and `eta_to` names the endpoint. A leg to another planet has that planet's ETA, with
+    `arrival_unknown` for this planet. Zero speed, no connection, or a departure still pending: `eta_unknown`, with
+    no invented arrival time. Wait conditions, acceleration, later legs and cargo sent in the meantime are not
+    predicted. Already stopped here: `arrived: true`, `eta_s: 0`.
+  - Without `platform`: `platforms` lists ours stopped here or flying/scheduled next here, arrived first then ETA,
+    then name. A stopped platform paused at another planet is excluded. Each row has the same timing fields and
+    only requests from here unmet by its hub, plus what this rocket adds and `lacks_after`; destination diagnostics
+    (`incoming`, `incoming_cargo`, `ammo_rates`, `hub_chunks`) are included when a platform is named.
+  - Without `position`: `surface`, `silos` (the above per-silo views, nearest your coordinates first), and
+    `silos_as_of` (the start tick of the completed discovery pass). Each row has its position, readiness, parts,
+    cargo kg and top items, and its own `platform`/`platforms` comparison; rockets are compared separately.
+    Discovery uses the existing background census, without a surface scan during the call; newly built silos
+    appear after its next completed pass. Cargo, parts and visibility are read now. Before the first pass with
+    the index, `silos_pending: true`; no visible indexed silos still returns platform timing/requests.
+  - `launch_now`: `ok`, or `refused: ` and the current checks (rocket not ready, overweight, empty, named platform
+    not stopped here). This does not select a destination. `line` is one line, including platform names containing
+    newlines; every silo and platform also has a one-line summary.
+  - `fh call preflight --args '{"surface":"fulgora","platform":"Sunward"}'`
+  - `fh call preflight --args '{"position":{"x":-65.5,"y":90.5}}'`
   - `fh call preflight --args '{"items":{"agricultural-science-pack":1000},"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`
 - supply and science count a silo's rocket once, as silo cargo (`silo rockets N`); its output inventory is that rocket,
   which was also counted under machine outputs (Astra, 06:29: 90 counted for 45 in the rocket).

@@ -7426,7 +7426,7 @@ function handlers.silo(p,a) return M.silo.read(p,a) end
 -- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),
 -- launch's min_cargo and arrived guard and a queue dry run's cargo (Luna).
 M.rocketload=require('rocketload'){cargo=M.cargo,remote_entity=remote_entity,reason=reason,
-  where=function(pl) return M.freight.where(pl) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
+  where=function(pl) return M.freight.where(pl) end,silos=function(p) return M.census.silos(p) end,
   ammo=function(pl) return M.freight.ammo(pl) end,incoming=function(pl) return M.freight.incoming(pl) end,
   hub_chunks=function(pl) return pl.hub and pl.hub.valid and space.hub_chunks(pl.hub) or nil end,
   reach_entity=function(p,pos) return entity(p,{position=pos}) end,
