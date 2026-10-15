@@ -33,20 +33,12 @@ if [ "${POG_STOP_WORLD:-0}" = 1 ]; then
   sleep 5   # /server-save returns before the file is written
   tools/winps.sh tools/win/stop-world.ps1 -Name "$world" || true
 fi
-# Journals are mostly wait-poll status traffic: drop it and gzip the rest.
+# Journals gzipped whole (d15 trajectory analysis: the status and queue_status calls, dropped here before, are what the
+# analysis needs); tools/handover.py reads the .gz when the next shift carries the notes over.
 python3 - "$rundir" <<'PY'
-import glob, gzip, json, os, sys
+import glob, gzip, os, shutil, sys
 for j in glob.glob(f"{sys.argv[1]}/*/journal.jsonl"):
-    kept, pending = [], None
-    for line in open(j):
-        try: e = json.loads(line)
-        except Exception: continue
-        if e.get("event") == "request":
-            pending = e["request"].get("action")
-            if pending in ("status", "queue_status"): continue
-        elif e.get("event") == "response" and pending in ("status", "queue_status"): continue
-        kept.append(line)
-    with gzip.open(j + ".gz", "wt") as g: g.writelines(kept)
+    with open(j, "rb") as src, gzip.open(j + ".gz", "wb") as g: shutil.copyfileobj(src, g)
     os.remove(j)
 PY
 echo "stopped helpers for $run; world $world saved"

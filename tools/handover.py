@@ -12,7 +12,7 @@ Sonnet's queue loop and Haiku's "top up boilers every 2-3 min" rode through 5 co
 
 Facts only, no advice: counts of what the agent did and what came of it (moved nothing, failed, stood).
 """
-import json, os, re, sys, time
+import gzip, json, os, re, sys, time
 from collections import Counter
 
 NOTES_MAX = 16000  # characters of a carried-over notes.md (others ran 6-17 KB; Muse's 134 KB was read whole each shift)
@@ -47,13 +47,16 @@ def journal_stats(path, since=None, max_bytes=60_000_000):
     queue_jobs, queue_pending, first, last} for requests at or after `since` (epoch seconds)."""
     reqs, out = {}, {"actions": 0, "reads": 0, "talk": 0, "waits": 0, "wait_s": 0, "idle_s": 0, "by_action": Counter(),
                      "noop": Counter(), "errors": Counter(), "first": None, "last": None, "jobs": []}
+    # tools/stop-team.sh gzips each journal and removes journal.jsonl before the next shift's tools/new-run.sh hands it
+    # over (d15 trajectory analysis: every carried notes.md said "no requests in your journal"): the .gz is read then.
+    gz = not os.path.exists(path) and os.path.exists(path + ".gz")
     try:
-        size = os.path.getsize(path)
-        f = open(path, errors="replace")
+        size = os.path.getsize(path + ".gz" if gz else path)
+        f = gzip.open(path + ".gz", "rt", errors="replace") if gz else open(path, errors="replace")
     except OSError:
         return None
     with f:
-        if size > max_bytes:
+        if size > max_bytes and not gz:
             f.seek(size - max_bytes)
             f.readline()
         for line in f:
