@@ -88,8 +88,8 @@ fh call status
   in `types` as a name (`types_note`).
 - `transfer`, `collect`, `feed`, `inspect`, `rearm` and `refuel` run `position` and `positions` as one list and say so
   in `corrected`: one `{x,y}` given as `positions`, a list given as `position`, a `position` where only `positions` is
-  taken (`collect`, `feed`, `rearm`, `refuel`), or both at once (`position` first). A plain `position` where it is
-  taken stays as it is; with `radius` neither is touched. Queue steps (`queue_submit`, `queue_repeat`, `queue_edit`)
+  taken (`collect`, `feed`, `refuel`), or both at once (`position` first). A plain `position` where it is
+  taken stays as it is (`rearm`: the turret there); with `radius` neither is touched (`rearm`: the radius's centre). Queue steps (`queue_submit`, `queue_repeat`, `queue_edit`)
   are corrected the same way, and the reply lists each in `corrected` (`step 1: collect {...} (position is positions
   (a list))`).
 - `transfer` is `{position, direction: "to_entity"|"to_player", item, count, inventory?}` at one entity
@@ -165,6 +165,13 @@ fh call status
   categories: ...)`, or `recipe: stone-furnace (type furnace) takes no recipe; only assembling machines ... do` refuse the
   call (in a batch or a ghost list, that entry), and nothing of it is placed. Dry runs make the same check (`recipes`,
   `recipes_refused`, and `; N refused for the recipe` in the summary).
+- A `builds` batch stops at the first entry that fails (the entries before it stay built), and the error names the
+  entries not tried: `build 2/5 failed after 1 built: placement blocked by medium-electric-pole (99.5,2.5);
+  medium-electric-pole (99.5,2.5) is entry 1 of this batch; entries 3-5 were not tried (all: true tries every entry)`.
+  `all: true` (or `skip_failed: true`; Muse, shift13: a pole placed inside the assembler's footprint stopped the
+  batch, and three calls followed) builds every entry that can be built and lists the rest in `failed` `{index, item,
+  position, error}`, with `summary: 4 of 5 built; 1 not built (failed)`. An entry blocked by what an earlier entry of
+  the same batch placed says which entry.
 - `inventory` (read, `fh call inventory`; Gemini, 06:20: held items without a full observe) is one small reply of
   short item lines (`name*count`, `name@quality*count`, or `empty`): `inventory` (main), `free` (`free=62/100`),
   `guns`, `ammo`, `armor`, `equipment` (in the armor's grid), `trash` (trash slots, when any), `cursor` (the stack in
@@ -428,11 +435,26 @@ fh call status
   assemblers'; `feed` tops a tower up with the seed kinds it holds, else every kind you carry.
 - `rearm` with `radius`, `area` or `surface: true` (your whole surface) walks one tour through every turret there that
   takes the ammo and holds under `below` rounds of any ammo (items in its ammo slots; default `count`), topping each
-  up to `count` (Opus, shift12 13:50). Turrets within 24 tiles of each other are one cluster, as the `turrets` read
-  groups fronts; the nearest cluster comes first from where you stand, then the nearest from where the last ended,
-  nearest first inside one. The reply lists `clusters` (`2 turrets around (22,1), 20 tiles from you, holding 0-3
-  rounds`), `places` (up to 128 a call; `skipped` the rest), `below`, `count`, and `other_ammo` (turrets there that take
-  other ammo, such as rocket turrets). Timed like the radius tour (`ticks`, default 3600; `--wait` waits).
+  up to `count` (Opus, shift12 13:50). `radius` is round you, or round `position` (Haiku, shift13: `{"position":
+  {"x":142,"y":-27},"radius":20,"below":8}` was refused, and areas were made by hand). Turrets within 24 tiles of each
+  other are one cluster, as the `turrets` read groups fronts; the nearest cluster comes first from where you stand,
+  then the nearest from where the last ended, nearest first inside one. The reply lists `clusters` (`2 turrets around
+  (22,1), 20 tiles from you, holding 0-3 rounds`), `places` (up to 128 a call; `skipped` the rest), `below`, `count`,
+  and `other_ammo` (turrets there that take other ammo, such as rocket turrets). Timed like the radius tour (`--wait`
+  waits).
+  - `ticks` defaults by the tour's length (Haiku, shift13: surface tours of about 520 and 820 tiles ended `timed_out`
+    at 60 s with 4 turrets left). The default is the walk from you through every turret in order, at your running
+    speed, half again for turns, plus 1 s a turret and 10 s; at least 3600 (60 s), at most 36000 (10 min). The reply's
+    `ticks` and `ticks_note` say what it came to: `the default for this tour: 1929 tiles from you through 13 turrets at
+    your running speed (9.0 tiles/s), half again for turns, 1 s a turret and 10 s` (20675 ticks). A `ticks` given
+    stays as given.
+  - A turret under `below` whose ammo slots hold other ammo with no room for the call's (a gun turret's one slot
+    holding piercing rounds takes no firearm magazines) is left out of the walk and named in `no_room`: `1 turret under
+    8 rounds with no room for firearm-magazine (its ammo slots hold other ammo): gun-turret (145,-33) holds
+    piercing-rounds-magazine*5` (Haiku, shift13: three walks to (88,47) gave nothing).
+- `below` works on every form of `rearm`: in reach and at `positions` (or one `position`), a turret holding `below`
+  rounds or more is left as it is and named in `held_enough` (`1 turret holds 10 rounds or more: gun-turret (22,6)
+  12`); the others get topped up to `count` (at least `below`).
 - Burner fuel by category: `feed` without `fuel` gives a burner the fuel it burns (coal for chemical burners; a
   biochamber burns nutrients, so it gets nutrients); `refuel` skips burners of another category in a radius and refuses
   one named by position (`biochamber at (-20.5,-20.5) burns nutrients fuel, not coal (chemical)`).
@@ -1334,6 +1356,15 @@ fh sleep 900 --until researched                       # ...or until the research
     `feed {"area": {...}, "recipe": "advanced-circuit", "crafts": 5}` loads every advanced circuit assembler in it.
   - `inspect {"positions": [...]}` (1..32 entries, each may carry `name` or `unit_number`): one inspect per entry in one
     call, `entities` in order and `count`; an entry that fails is `{position, error}`.
+  - `compact: true` with `position`, `positions` or `area` (Muse, shift13: about 10 inspects over positions read as
+    tables or JSON): one line per entity in `lines`, in the same order: name, position, status, health, recipe and what
+    it holds (as the area rows: a chest's items and slots, a machine's `in`, `out`, `fuel`, `ammo`), a requester's
+    `requests`, an inserter's hand; a ghost reads `ghost of NAME`. `assembling-machine-2 (72.5,-12.5):
+    item_ingredient_shortage; health 350/350; recipe production-science-pack; in: rail*38 productivity-module*1`,
+    `requester-chest (75.5,-12.5): health 350/350; empty; 0 of 48 slots; requests rail 0/100`, `inserter (78.5,-10.5):
+    waiting_for_source_items; health 150/150; hand empty`, `gun-turret (145,-33): working; health 400/400; ammo:
+    piercing-rounds-magazine*4`. An entry that fails is its position and the error. The CLI prints `lines` one to a
+    line.
   - `inspect {"area": {...}, "types"?: [...]}` (Gemini, shift10: dozens of single inspects to check buffer chests): our
     chests and machines (every type with an inventory by default: chests, machines, labs, silos, boilers, drills,
     turrets, wagons, vehicles, landing pads, hubs, roboports, towers) with their centre in the area (up to 128x128)

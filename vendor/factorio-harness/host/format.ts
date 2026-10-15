@@ -78,6 +78,12 @@ export function formatCompact(value: unknown): string {
   function render(entry: unknown, label: string, depth: number) {
     const indent = '  '.repeat(depth);
     const prefix = label ? `${label}: ` : '';
+    // A reply's lines (inspect compact: one per entity) print one to a line, as they read (Muse, shift13).
+    if (label === 'lines' && depth === 0 && Array.isArray(entry) && entry.length > 0 && entry.every(item => typeof item === 'string')) {
+      lines.push(`lines[${entry.length}]:`);
+      for (const item of entry) lines.push(`  ${item}`);
+      return;
+    }
     // The top level always lists one field per line.
     const simple = label || !record(entry) ? inline(entry) : undefined;
     if (simple !== undefined) { lines.push(indent + prefix + simple); return; }
