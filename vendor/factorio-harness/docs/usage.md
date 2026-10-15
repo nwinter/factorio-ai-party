@@ -3693,6 +3693,22 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   `{kind:"project", status:"active"}`. Board aliases: `board` with an `id` and `step`, `done`, `undone`,
   `remove_step`, `goal`, `handoff` or `areas` is `board_update`; `steps` there is `step`, and `step` in a post is
   `steps`. Open projects are never pruned; at most 30 are open at once (a post past that fails).
+- Links and step owners (viewers Foobator and joonazan, d15 06:37-08:22; fields to use, none required):
+  - `blocked_by` (task, request or project): the item numbers it waits for (up to 8; `[]` clears), and `parent`: the
+    project it serves, a long-term goal such as "Aquilo landing" (`false` clears). Both on `board_post` and
+    `board_update`; the item reads show them.
+  - A step may be `{text, owner?, parallel?}`: its own owner, and `parallel: true` for no order between it and the
+    parallel steps next to it. `board_update {id, take_step: N}` takes a step for yourself when you lead the project,
+    added the step, or the project has `open_steps: true` (its owner's choice); `release_step` gives it up.
+  - The compact line: `#476 Aquilo landing [sol] 1/4; next 2. ride the rocket | 3. drop the heaters @luna; blocked by
+    #497 robot mall (claimed, 0 of 1 step) <- #510 ...; part of #400 nuclear plant; steps open to all`: the title,
+    owner, steps done of all, the next step (with the parallel ones after it and each step's owner), what blocks it
+    (two links deep, open items only) and its parent. The plain `board` read and the status shift block use it when
+    the full lines take more than 1200 bytes (`projects_form` says which); `board {projects: "compact" | "full"}`
+    picks one. Measured on shift16: the plain board read's `projects` was 1.46 KB at the median (35 reads, lines up
+    to about 330 bytes with the handoff); the whole reply 3.7 KB at the median, 23 KB at most.
+  - `open_steps` in the plain listing: up to 5 steps of projects with `open_steps` (or no owner) that nobody owns,
+    with the call that takes one.
 - A project's events (`board_events`): `step_added`, `step_done`, `step_undone`, `step_removed`, `goal`, `handoff`,
   `areas`, each with `text` (the steps or what changed), and every project event carries the project's `progress`,
   `steps_done` and `steps_total` after the change. Its owner and poster hear of others' changes in `team.board`

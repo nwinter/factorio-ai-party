@@ -96,7 +96,8 @@ already targets your character.
 - A `project` (`"goal"`, `"steps":["...","..."]`, `"areas"`) stays on the board across shifts. Anyone adds steps and
   marks them done (`./fh board update --args '{"id":N,"step":"...","done":[2,3]}'`); the owner writes `goal` and
   `handoff`, and anyone may once the owner has made no request for 30 minutes (and may then take it). `./fh board
-  projects` lists the open ones with progress.
+  projects` lists the open ones with progress. Optional fields: `blocked_by` (item numbers it waits for), `parent` (the project it serves), steps as
+  `{text, owner, parallel}`, `open_steps: true` (anyone may `take_step`); a long project list shows one compact line each (`board {projects: "full"}` for more).
 - `./fh research` shows the research queue: each technology's progress, who queued it, its packs, and when it should
   finish at the current lab throughput (or which pack it waits for). `./fh research done` lists what finished lately
   and what each unlocked. `./fh call science` (or `--args '{"pack":"logistic-science-pack"}'`) counts each pack the
