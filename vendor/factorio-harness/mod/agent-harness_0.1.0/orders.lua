@@ -9,7 +9,10 @@
 -- run_order), through the same handlers as its own requests: walking, reach,
 -- inventory and crafting time as for a player. They start only while the
 -- character is free (no action, the queue empty and not repeating, a body on
--- the map) and `hold` ticks after the agent's own last character work. Any
+-- the map) and `hold` ticks after the agent's own last character work. Between
+-- the rounds of a repeating plan (scheduler.lua resting) triggered orders run
+-- too, and the default routine with queue_repeat orders=all; the hold then
+-- counts from the agent's own last request, not the round's last step. Any
 -- request of the agent's that drives the character, and any queue call of its
 -- own, stops a running order at once (scheduler.lua: the run's remaining steps
 -- come back as order_result `interrupted`); the order resumes when the
@@ -58,11 +61,21 @@ return function(api)
     local seen=api.last_seen(index)
     return not seen or game.tick-seen>AWAY
   end
-  -- What keeps the character from an order: its own action, its queue, no body.
+  -- What keeps the character from an order: its own action, its queue, no body. A repeating plan resting between
+  -- rounds keeps none out unless it says orders=none.
   local function busy(index)
     local kind=api.busy(index)
     if kind then return 'your '..kind end
-    if not api.scheduler.free(index) then return 'your queue' end
+    if not api.scheduler.free(index) then
+      local rest=api.scheduler.resting(index)
+      if not rest then
+        local loop=api.scheduler.loop_orders(index)
+        if loop=='none' then return 'your repeating plan (orders: none)' end
+        if loop then return 'your repeating plan\'s round (orders run between its rounds: '..(loop=='all' and 'all' or 'triggered ones')..')' end
+        return 'your queue'
+      end
+      if rest.orders=='none' then return 'your repeating plan (orders: none)' end
+    end
     local ok,p=pcall(api.player,index)
     if not (ok and p and p.character) then return 'character (dead, riding or aboard)' end
   end
@@ -114,6 +127,13 @@ return function(api)
       if x.held and x.held.met and x.held.tick>=fresh then return x end
     end
   end
+  -- The tick the hold counts from: the agent's own last request or busy character; between the rounds of a repeating
+  -- plan, a busy look from before the round ended was the round's own step, so only the agent's request counts.
+  function M.since(index,b)
+    local rest=api.scheduler.resting(index)
+    if rest and (b.busy_tick or 0)<=rest.since then return b.drove_tick or 0 end
+    return math.max(b.busy_tick or 0,b.drove_tick or 0)
+  end
   local function look(index,b)
     settle(b,api.scheduler.order_result(index))
     local running=api.scheduler.order(index)
@@ -139,12 +159,14 @@ return function(api)
     end
     if paused(b) or away(index) then return end
     if busy(index) then b.busy_tick=game.tick; return end
-    if game.tick-math.max(b.busy_tick or 0,b.drove_tick or 0)<b.hold then return end
+    if game.tick-M.since(index,b)<b.hold then return end
     local p=api.player(index)
     local t=trigger(b,p,function() return true end)
     if t then return start(index,t) end
+    -- Between rounds the default routine runs only with orders=all.
+    local rest=api.scheduler.resting(index)
     local d=default(b)
-    if d and not d.off and (d.resume or game.tick>=d.next_tick) then start(index,d) end
+    if d and not d.off and (d.resume or game.tick>=d.next_tick) and (not rest or rest.orders=='all') then start(index,d) end
   end
   -- Once a tick: the agents whose second it is. A fault stays with the agent's
   -- orders (shown in its line), never the runtime.
@@ -201,7 +223,7 @@ return function(api)
       parts[1]='paused'..(b.paused_until and ' for '..secs(b.paused_until-game.tick)..' s' or '')..' (orders_resume)'
     else
       local why=busy(index)
-      local left=b.hold-(game.tick-math.max(b.busy_tick or 0,b.drove_tick or 0))
+      local left=b.hold-(game.tick-M.since(index,b))
       if why then
         parts[1]=waiting and (waiting.name..' waits for '..why..', resumes after') or ('waiting for '..why)
       elseif left>0 then
@@ -339,7 +361,7 @@ return function(api)
       cooldown_ticks='with when: 300..216000 (default 600) after a run before the trigger can fire again',
       interval_ticks='default routine: 60..36000 (default 1800) from the end of a run to the next',
       max_ticks='60..18000 (default 3600): a run that takes longer is stopped and counts as failed',
-      returns='order, list. Orders run only while your character is free (no action, your queue empty and not repeating, a body on the map) and hold_s after your own last action. Your own character request or queue call stops a running order at once; it resumes after (a trigger only if it still holds). 3 failed runs in a row switch an order off. Every reply carries the orders line (which runs and why, or what they wait for)'},
+      returns='order, list. Orders run only while your character is free (no action, your queue empty and not repeating, a body on the map; between the rounds of a repeating queue, triggered orders, and the default routine with queue_repeat orders=all) and hold_s after your own last action. Your own character request or queue call stops a running order at once; it resumes after (a trigger only if it still holds). 3 failed runs in a row switch an order off. Every reply carries the orders line (which runs and why, or what they wait for)'},
     order_remove={name='order name'},
     orders={returns='your standing orders: state (running, ready, holds, not holding, cooling N s, next in N s, resumes when free, off), runs, failures, last'},
     orders_pause={seconds='optional 1..3600 (default until orders_resume); a running order stops and resumes after'},

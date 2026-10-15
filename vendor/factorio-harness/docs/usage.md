@@ -150,7 +150,13 @@ fh call status
   side of transport-belt facing east)`; an underground entrance `moves items south underground to (x,y)` (its exit),
   an exit `fed underground from (x,y)`; a splitter names both lanes. A ghost reads the belts and belt ghosts around it.
   A `builds` batch, `place_ghosts` and `belt_route` reply with `last_belt`, the same for the last belt they placed:
-  `transport-belt (1001.5,1010.5): moves items east to (1002.5,1010.5) ...`.
+  `transport-belt (1001.5,1010.5): moves items east to (1002.5,1010.5) ...`. A `builds` batch and `place_ghosts` that
+  placed two or more belts list each one in `belts` (the first 16; `belts_more`), so a belt facing the wrong way shows
+  (Grok, shift13: three belts of a batch faced south, +y, and the plates ran away from the drop belt). A `build` dry
+  run lists each planned belt, underground exit and splitter in `belts` `{index, name, position, moves}`: the tile its
+  items move to and what stands there: `moves items south to (20.5,28.5): planned #2 transport-belt facing south`,
+  `...: transport-belt (20.5,30.5) facing west` (built; a ghost says `ghost`), `...: nothing there (no belt takes them
+  there: they stop at its end)`.
 - An inserter's `direction` names the side it picks up from; it drops to the opposite side. Built at (10.5,5.5) with
   `direction: east` it picks up at (11.5,5.5) and drops at (9.5,5.5) (items move west); with `direction: west` it picks
   up at (9.5,5.5) and drops at (11.5,5.5) (items move east). A long-handed inserter reaches 2 tiles each way. Belts,
@@ -1183,6 +1189,13 @@ fh sleep 900 --until researched                       # ...or until the research
   - In the team block's alerts, a platform of your force that stops at or leaves the planet you are on (Gemini, 16:50):
     `platform Sunward stopped at nauvis, your planet, 30s ago`, `platform Sunward left nauvis, your planet, 12s ago,
     flying to gleba` (once each, within 5 minutes; from the stops freight.lua records once a game second).
+    An arrival names its cargo pods still in the air toward your planet (Grok, shift13: Sunward's 519 production packs
+    were in the air while the pad and `where_is` showed none, and Astra was told they had not landed): `...; 3 cargo
+    pods from Starling still in the air: ice*12 iron-ore*4 (to the landing pad at (52,54); 2 ascending, 1
+    descending)`. A pod from a hub reads `awaiting_launch`, then `ascending` on the platform's surface, then
+    `surface_transition` and `descending` on the planet's, and `parking` at the pad; it is gone once its cargo is
+    delivered, about 20 s in all on a copy of world n. pods.lua reads the surfaces of the platforms stopped at a space
+    location once a game second and follows each pod down by reference.
   - With a deadline file (`--deadline-file`, `FH_DEADLINE_FILE`) a sleep never runs past it: it is cut to the time left and reports `woke: deadline` when it ends there; after the deadline it does not start (`woke: deadline`, `slept_s: 0`).
   - A sleep started within 10 game seconds of reading a wake on an event (anything but `elapsed`, `died`, `respawned`, `deadline`, `told`, `mentioned`) does not start: it returns at once with that wake, `repeat: true` and `while_asleep: this sleep did not start: you woke (damaged) 4 s ago; ...`, so a shell loop of sleeps ends on the first wake. At most 3 repeats per wake; none for a sleep given `--until`, none in `turns` mode. A tell or mention wakes once: the reply that woke the agent delivered it (shift07: Luna's 32 repeats of tells already read). `fh sleep` and `fh wait --until` wait out such a repeat (Muse, shift08: "woke 4s ago" refusals burned turns): on a `repeat: true` reply the CLI waits the rest of the 10 s and starts the sleep again (at most 3 tries), and the final reply carries `waited_out: your previous sleep woke (board) 4 s before this one, and a sleep within 10 s of a wake repeats that wake; this sleep started after 7 s more`, with the team block the earlier replies carried. The runtime's own `sleep` reply is unchanged.
   - A board line wakes once too, like a tell, a mention or eggs. A loop that drops each reply (Opus, shift12 12:26: an
@@ -1513,6 +1526,15 @@ fh sleep 900 --until researched                       # ...or until the research
   before, so a steady loop says it once. A step with `up_to: true` or `on_short: "skip"` is left out of the line (its
   short was allowed for); `queue_status` history still marks it `short: true`. `on_fail: "skip"` does not count as
   allowing a short.
+- Standing orders between the rounds of a repeating plan (Opus, shift13: "orders never run while my queue repeats, so
+  turret rearm and boiler fuel orders never fire"): `queue_repeat {orders}` says which may run in the pause between
+  its rounds: `triggers` (the default: orders with `when`), `all` (the default routine too) or `none`.
+  - An order that starts there runs in the queue as at any other time; the next round loads once it ends (the round
+    waits for it, up to the order's `max_ticks`).
+  - Its `hold` counts from your own last request, not the round's last step, so a short pause still lets one start.
+  - During a round the orders line says `waiting for your repeating plan's round (orders run between its rounds:
+    triggered ones)`; with `none`, `waiting for your repeating plan (orders: none)`.
+  - `queue_status` and the queue write replies show `orders_between_rounds`.
 - `inspect` of an assembler or furnace whose recipe lacks an ingredient for one craft while another is stacked (5 crafts
   or more; Grok, shift11: an electromagnetic plant on electronic-circuit held 135 iron plates and no copper cable)
   says so in `input_imbalance` (`iron-plate 135 in input, copper-cable 0: item_ingredient_shortage on copper-cable`)
@@ -2321,7 +2343,28 @@ fh sleep 900 --until researched                       # ...or until the research
   characters) and `places` (each chest, pod, lab,
   machine, vehicle, pad, hub and teammate holding it, `{kind, entity or agent, position, count, distance}`, nearest
   first, `limit` default 15, `more` past it). Belts and inserter hands are totals only. It scans the surface's
-  storage and belt entities once per call.
+  storage and belt entities once per call. Cargo pods from our platforms still in the air toward that surface are
+  `in_flight` (by_kind too): `{platform, state (awaiting_launch, ascending, surface_transition, descending, parking),
+  count, lands (landing pad (52,54), or the ground)}` (pods.lua, as in the arrival line).
+- `construction_robots {position?, network?, surface?}` (read; Astra, shift13: Fulgora's only construction robot
+  stalled 3 times holding removed modules with no storage slot for them, and finding out why took about 15 minutes):
+  the construction robots of the logistic network covering `position` (default where you stand), or of network id
+  `network` (the `networks` read lists them); `surface` reads another planet by remote view (with position or
+  network).
+  - `summary`: `network 85: 10 construction robots (8 in roboports, 2 in the air, 2 held up); 2 roboports; 0 storage
+    chests`.
+  - `robots`, one line for each in the air (the first 32; `robots_more`): where it is, its charge, what it holds, its
+    orders (the first 3: construct, deconstruct, upgrade, repair, deliver, pickup, explode_cliff, with target and
+    item), and what holds it up.
+    - `construction-robot (-121.5,436): energy 72%; holds wood*4; no order; nowhere to put wood*4: no storage chest
+      in network 85 has room for it (0 storage chests in it)`
+    - `construction-robot (32.2,-27.9): energy 75%; holds nothing; orders: pickup passive-provider-chest at
+      (-31.5,3.5) (item wooden-chest); then construct wooden-chest ghost at (50.5,-30.5)`
+    - Held up also reads `its target X (x,y) is outside the network's construction area`, `waiting to charge at
+      roboport (x,y): 2 of 3 in its queue (4 charging now)`, `charging at roboport (x,y)`.
+  - `charging_queues`: roboports with robots waiting to charge (`roboport (9,55): 3 waiting, 4 charging`).
+  - Robots in roboports are counts only (the engine lists only those in the air). It costs about as much as a plain
+    read (about 2 ms a call with its dispatch, 4-5 ms with 38 in the air, on a copy of world n).
 - `fh call ores --args '{"resource":"iron-ore"}'` (read; optional `resource`: a name or a list, default every
   resource; `surface`: a planet; `position`: measure from there; `min_amount`; `limit` 1..100, default 20): every
   resource patch on the charted chunks of the surface, nearest first, the same for everyone apart from distances. A
