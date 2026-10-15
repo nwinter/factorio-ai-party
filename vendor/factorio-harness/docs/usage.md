@@ -659,19 +659,39 @@ fh call status
 - Enemies on the way (Opus, shift09 03:20: the pathfinder walked him 30 tiles from a nest, and big biters killed him; on
   a copy of world n the engine's path from (-110,447) to (62,40) passes 31 tiles from a biter spawner): a path found
   for `move_to` is checked against the enemy worms and spawners the map shows (on charted chunks).
-  - By default worms only, each with its range + 4 tiles (small 25, medium 30, big 38, behemoth 48).
-    `avoid_enemies: true` adds spawners, with their units' sight (30 tiles on Nauvis, 40 on Gleba), and makes the
-    margin 8; a number 0..32 is that margin; `false` turns the check off. The reply says what is checked
-    (`avoid_enemies: worms (range + 4)`).
+  - By default (round1950a: Haiku died at 45h02m and 45h57m walking in): worms, each with its range + 4 tiles (small
+    25, medium 30, big 38, behemoth 48); spawners, 40 tiles + 4 (a tree 38 tiles from a nest: big spitters killed
+    Haiku within 5 s); and the areas under attack now: an attack (any enemy hit on our things, as the status alerts
+    count them) whose last hit came within the last 30 s is a disc of 24 tiles round its first hit + 4 (Haiku's rearm
+    tour walked into attack #1550 and died; status had listed attack #1548 at its goal). `avoid_enemies: true` makes
+    the margin 8; a number 0..32 is that margin; `false` turns the check off. The reply says what is checked
+    (`avoid_enemies: worms (range + 4), spawners (40 tiles + 4) and areas under attack now (24 tiles + 4)`). Worms
+    keep to their range: they do not move, and a path 34 tiles from a medium worm is out of its reach.
+  - An attack that starts after the plan, near the way on (the straight line on passes nearer its first hit than the
+    character is), plans the walk again round it, once each, every half second: `last.replanned: attack #1711 at
+    (-110,-91) started on the way: planned again round it`. A zone round the character itself keeps to just short of
+    it, so the way goes no deeper. On a copy of world n a walk across the base re-planned round a turret's attack, and
+    ended `no_safe_route` when every way through the base passed within 24 tiles of it.
   - Structures within 32 tiles of each other are one nest. A path through a reach (its deepest pass counts) is walked
     as legs around it: corners of an octagon around each worm's or spawner's reach, the shortest way along them, each
     leg the engine's path, checked again (up to 4 detours). `last.avoided_enemies` names each nest gone around (`2
     big-worm-turret, 3 biter-spawner, 3 medium-worm-turret, 2 small-worm-turret around (-12,359)`).
-  - A goal inside a worm's range (with `avoid_enemies: true`, also a spawner's units' sight) on the chunks the map
-    draws is refused before the walk starts (Astra, operator 07:26: she died at (-25,335) on the way to (-10,350), a
+  - A goal inside a worm's range, within 40 tiles of a spawner or in an area under attack now (on the chunks the map
+    draws) is refused before the walk starts (`goal (-163,-53) is within 40 tiles of spitter-spawner (-190,-31), its
+    units' reach (34.9 tiles from it): ...`; `goal (-112,-96) is within 24 tiles of attack #1696 at (-114,-98), an area
+    under attack now (last hit 1s ago) (2.8 tiles from it): ...`) (Astra, operator 07:26: she died at (-25,335) on the way to (-10,350), a
     goal in a nest's reach that the walk did not avoid): `goal (60,0) is inside medium-worm-turret (50,5) range 30
     (11.2 tiles from it): unsafe_goal: true to go anyway; the nearest safe spot toward it: (84,0), 24 tiles from it,
-    outside every worm's range + 4 the map shows`.
+    outside every worm's range, spawner's 40 tiles and area under attack (24 tiles), + 4, the map shows`.
+  - The walking tours (`rearm`, `refuel`, `feed`, `collect` and `transfer` with `walk`, `radius` or `pick`, `recover`)
+    and `mine {tiles, walk}` walk with the same check, and take `avoid_enemies` and `unsafe_goal`: each leg goes round
+    the discs, and a place inside one is left out unless `unsafe_goal`, named: `last.danger` (how many),
+    `last.dangers` (the first 8), `last.first_unreached`: `(-114,-100): place (-114,-100) is within 24 tiles of
+    attack #1696 at (-114,-98), an area under attack now (last hit 0s ago) (2.0 tiles from it) (unsafe_goal: true walks
+    there)`; a tour that reached none ends `unreached` with it. The start reply says `avoid_enemies`.
+  - `mine` of an entity inside a worm's range, within 40 tiles of a spawner or in an area under attack now is refused
+    unless `unsafe_goal` (`the mining spot (50,50) is within 40 tiles of biter-spawner (50,20), its units' reach (30.0
+    tiles from it): unsafe_goal: true to mine anyway; ...`).
     - The safe spot is the point nearest the goal, on the line back to the character, outside every worm's (and
       spawner's) reach plus the margin. With the character in a reach too, it is the nearest such point round the
       goal, within 128 tiles. The chunks round the goal and the spot are read at the call.
@@ -805,6 +825,26 @@ fh call status
   `shoot`, `kite` and `vehicle {drive}` until `retreat_guard {clear: true}`. A call's own `retreat` wins.
   `retreat_guard {}` and `status` show it (`retreat_guard: to (260,-60) at health under 85% (standing
   retreat_guard)`). A retreat point inside an enemy weapon's reach is refused, naming the nearest safe spot.
+- Hit with nothing walking the character (round1950a: Haiku asleep at 46h51m, 8 hits and 263 damage from a big
+  spitter's acid inside one of its sleep's 1 s checks, so the sleep woke only as `died`): with no action running, or
+  during a `mine`, a walking tour, `pickup`, `repair`, `construct` or a wait, and its guns off, the first enemy hit
+  walks it away at once, as a player would run. `move_to`, `shoot`, `kite`, drives and `walk` keep their own
+  `retreat`.
+  - Where to: the standing `retreat_guard`'s `to` when set; else one of our turrets within 96 tiles holding ammo (or
+    taking electricity or fluid) and not past the attacker, 3 tiles behind it; else 24 tiles straight away from the
+    attacker (or the nearest enemy within 40 tiles when the hit names none, as acid does), or turned off that by 45, 90
+    then 135 degrees: the first free spot outside every worm's range and spawner's 40 tiles the map shows.
+  - The walk keeps out of the reach the map shows, but not of the areas under attack round it (its own attackers').
+    A queue pauses and the action ends `retreated`, as for a retreat. On arrival it ends `retreated`
+    (`last.retreated.going: away at (-224,-200)`); with enemy units still within 20 tiles it walks on, from the
+    nearest, at most 6 walks a minute.
+  - A sleep wakes `damaged` with it: `woke: damaged after 1 s (health 170, hit by big-spitter; hit by big-spitter at
+    (-200.0,-200.0): walking away to (-224,-200))` (`fled` in JSON).
+  - `retreat_guard {idle: false}` keeps the character standing when hit (`{idle: true}` again); status shows `idle:
+    false (stands when hit with no action running)`.
+  - On a copy of world n a big spitter ordered to attack a sleeping bot in the open hit it at 250: it walked away at
+    once, the sleep woke within a second, it walked on four times as the spitter followed, the last time to a turret's
+    cover, and lived; with no walk on, the spitter caught it once it stood.
 - Output is compact tables meant for reading. Use `--format json` for programs.
 
 ### Output shape, chat and time left
@@ -1072,7 +1112,7 @@ fh sleep 900 --until researched                       # ...or until the research
     start and the wait) is still the wait's outcome, a failure exit 1. The tick of the previous reply comes from the
     pace file (`.fh-pace.json` next to the journal).
 - `fh wait --until tell|alert|COND [--max S]` is one blocking wait with one line out: `woke: told after 42 s (astra: coal please); your next reply's team block has the rest`. It is a sleep (S seconds, default 600, up to 900) whose requests peek, so the team block stays for the agent's next reply: it ends on what ends a sleep (a tell or mention, damage, death, board news, the queue finishing or stalling), on `alert` (a new attack area, enemy group or enemy base: `woke: alert`) or on a sleep `--until` condition. `--format json` adds the line as `result.line`.
-- `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), a teammate's chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`; a viewer's `@mention` only with `--wake-on-viewers`, else it waits for the next reply), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), eggs of ours on your surface or in a holder you built will hatch within 5 minutes (`eggs`, with the line; delivered in `team.alerts`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second. Past 1.25 x SECONDS + 10 s of real time it goes on while the game still advances below 55 ticks/s (Luna, Astra, Sol, 13:41: after the crash world n ran at 7-10 ticks/s and 12 game s took 85 real s), up to 3 x SECONDS + 60 s, and then exits 1 with `timed_out` (`the game advanced 12 of the 60 s asked in 240 s of real time (slow_game: 3 ticks/s, 5% of normal)`); when no game tick passed for 20 s it exits 1 with `paused` (`no game tick passed for 20 s (the game is paused or stopped)`). A sleep that ran in a slow game carries `slow_game: 18 ticks/s, 30% of normal`. The same holds for `--wait` on actions and `fh wait`: a computed wait budget (the action's ticks at 60/s x 1.25 + 5 s) goes on while a slow game advances, up to 3 x those ticks' time + 60 s (45 min at most), names `slow_game` in its reply, and a `wait_timeout` says whether the game stopped or ran slow; an explicit `--wait-timeout MS` stays as given.
+- `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`; a hit that names no attacker, such as a spitter's acid, counts too, `by: enemies`, and the health it falls from is the highest seen in the sleep, so a sleep begun hurt that healed still wakes on the next hit; round1950a), dies (`died`, exit 1), a teammate's chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`; a viewer's `@mention` only with `--wake-on-viewers`, else it waits for the next reply), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), eggs of ours on your surface or in a holder you built will hatch within 5 minutes (`eggs`, with the line; delivered in `team.alerts`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second. Past 1.25 x SECONDS + 10 s of real time it goes on while the game still advances below 55 ticks/s (Luna, Astra, Sol, 13:41: after the crash world n ran at 7-10 ticks/s and 12 game s took 85 real s), up to 3 x SECONDS + 60 s, and then exits 1 with `timed_out` (`the game advanced 12 of the 60 s asked in 240 s of real time (slow_game: 3 ticks/s, 5% of normal)`); when no game tick passed for 20 s it exits 1 with `paused` (`no game tick passed for 20 s (the game is paused or stopped)`). A sleep that ran in a slow game carries `slow_game: 18 ticks/s, 30% of normal`. The same holds for `--wait` on actions and `fh wait`: a computed wait budget (the action's ticks at 60/s x 1.25 + 5 s) goes on while a slow game advances, up to 3 x those ticks' time + 60 s (45 min at most), names `slow_game` in its reply, and a `wait_timeout` says whether the game stopped or ran slow; an explicit `--wait-timeout MS` stays as given.
   - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory; also `>`, `<=` and the words `below`, `under`, `above`, `at_least`), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64; a level fallen under at one chest, Haiku 12:20: `item_count coal below 20 at 10,39`, then one feed), `rocket_ready X,Y` (the silo at X,Y has its rocket built and ready to launch), `platform_arrived PLATFORM [PLANET]`, any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
   - `platform_arrived {platform, location?}` (a `wait_until` condition, so also `fh wait --until`, queue steps, guards and a standing order's `when`; Gemini, shift10: rocket launches wait on a platform's arrival): met while the platform is stopped at a space location, at `location` (a planet) when given, else at any stop; `saw` is `Sunward at gleba` or `Sunward flying nauvis->gleba 25%`. On a private 2.0.77 server a platform leaving a stop is on its route within 4 ticks, and one arriving reads at the planet from that tick (the game's speed value still falls for a few seconds); `fh wait --until "platform_arrived Sunward gleba"` woke when Sunward reached Gleba. An unknown platform fails the wait.
   - `platform_left {platform, location?}` (Gemini, 16:50: departure as a condition, the same places as

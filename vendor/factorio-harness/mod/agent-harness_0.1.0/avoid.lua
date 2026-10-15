@@ -13,7 +13,7 @@
 -- Default (avoid_enemies not given): worms, range + 4; spawners, 40 tiles +
 -- 4 (round1950a, Haiku died twice near nests: a tree 38 tiles from one, a
 -- rearm tour past another); and the areas under attack now (an incident hit
--- within the last minute, threat.lua), 24 tiles round its first hit + 4.
+-- within the last 30 s, threat.lua), 24 tiles round its first hit + 4.
 -- avoid_enemies: true (or a margin in tiles): the same with + 8 (or the
 -- margin). false: no check. A disc holding the start or the goal is not
 -- avoided (the walk goes there): it is named.
@@ -25,7 +25,9 @@ return function(api)
   M.WORM_PAD, M.PAD, M.TTL, M.CHUNKS_PER_TICK, M.MAX_DETOURS, M.NEST = 4, 8, 3600, 8, 4, 32
   -- round1950a: how far a spawner's units come for a character (at least), an attack's zone round its first hit, and
   -- how long after its last hit an attack counts as under way.
-  M.SPAWNER_REACH, M.ATTACK_R, M.ATTACK_ACTIVE = 40, 24, 3600
+  -- (30 s: every enemy hit is an incident, and a lone biter shot at a wall should not keep walks off the base's edge
+  -- for long; on a copy of world n one turret hit sent a walk through the base to no_safe_route)
+  M.SPAWNER_REACH, M.ATTACK_R, M.ATTACK_ACTIVE = 40, 24, 1800
   M.SIDES = 8
   local function dist(a, b) return ((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) ^ 0.5 end
   local function at(pos) return string.format('(%g,%g)', math.floor(pos.x + 0.5), math.floor(pos.y + 0.5)) end
