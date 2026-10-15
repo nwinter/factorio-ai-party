@@ -7,7 +7,7 @@ import { createServer, type Socket } from 'node:net';
 import { once } from 'node:events';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const exec = promisify(execFile);
@@ -253,6 +253,31 @@ test('fh wait --max S waits for the action to end, at most S s; at once when idl
     });
     assert(Date.now()-started<15000,'it gave up after about 1 s');
     await assert.rejects(cli(port,['wait','--max','901']),(error:any)=>/1\.\.900/.test(error.stdout));
+  });
+});
+test('fh wait with nothing running: the last action ended before the previous call is not the wait\'s, exit 0',async()=>{
+  // friction3 (Haiku 23:03): two waits after a rearm had ended printed its old timed_out as a fresh error, exit 1;
+  // Luna and Muse took a walk's and a collect's old outcome as the wait's.
+  const dir=await mkdtemp(join(tmpdir(),'fh-idle-'));
+  const pace=join(dir,'.fh-pace.json');
+  await engine(()=>({ok:true,tick:6040,result:{active:false,combat:false,last:{kind:'gather',outcome:'timed_out',tick:640}}}),async port=>{
+    // No call before it on record: the outcome is the wait's, as before (a failure exits 1).
+    await assert.rejects(cli(port,['wait','--until','idle','--max','150'],'json',{FH_PACE_FILE:pace}),(error:any)=>{
+      assert.equal(error.code,1); assert.equal(JSON.parse(error.stdout).error.code,'timed_out'); return true;
+    });
+    // That call's reply (tick 6040) came after the gather ended (tick 640): the next wait says nothing ran.
+    const json=JSON.parse((await cli(port,['wait','--until','idle','--max','150'],'json',{FH_PACE_FILE:pace})).stdout);
+    assert.equal(json.ok,true); assert.equal(json.result.idle,true); assert.equal(json.result.nothing_running,true);
+    assert.equal(json.result.note,'nothing was running when this wait began: the last action, gather, ended timed_out 90 s ago, before your previous call');
+    const {stdout}=await cli(port,['wait','--max','60'],'compact',{FH_PACE_FILE:pace});
+    assert.match(stdout,/^outcome: idle$/m); assert.doesNotMatch(stdout,/timed_out at its own tick limit|^error/m);
+    assert.match(stdout,/nothing was running when this wait began: the last action, gather, ended timed_out 90 s ago/);
+  });
+  // An action that ended after the previous call (a fast walk between its start and the wait) is still the wait's.
+  await writeFile(pace,JSON.stringify({tick:600})+'\n');
+  await engine(()=>({ok:true,tick:700,result:{active:false,combat:false,last:{kind:'move_to',outcome:'arrived',tick:640}}}),async port=>{
+    const json=JSON.parse((await cli(port,['wait','--max','60'],'json',{FH_PACE_FILE:pace})).stdout);
+    assert.equal(json.ok,true); assert.equal(json.result.last.outcome,'arrived'); assert.equal(json.result.nothing_running,undefined);
   });
 });
 test('a sleep replaced by a newer one ends (woke replaced) without reading the other sleep\'s wake',async()=>{

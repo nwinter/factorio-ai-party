@@ -61,6 +61,18 @@ eq(r.sections[1].requests[1],'iron-plate 1..inf')
 eq(#space.requests(p,{clear_all=true}).sections[1].requests,0)
 fails(function() space.requests(p,{set={{item='nope',min=1}}}) end,'unknown item: nope')
 fails(function() space.requests(p,{set={{item='coal',min=5,max=2}}}) end,'max must be at least min')
+-- min alone keeps the slot's max while it is at least min, as the GUI does (friction3: Grok's map sets turned
+-- copper-cable 200..400 into 40..inf); under min it is dropped, said; "inf" sets none.
+r=space.requests(p,{set={{item='coal',min=5,max=10}}})
+r=space.requests(p,{set={{item='coal',min=7}}})
+eq(r.sections[1].requests[1],'coal 7..10'); eq(r.stored[1],'coal 7..10 (max kept: not named in this edit) (was coal 5..10)')
+r=space.requests(p,{set={{item='coal',min=20}}})
+eq(r.stored[1],'coal 20..inf (max 10 dropped: under min 20) (was coal 7..10)')
+r=space.requests(p,{set={{item='coal',min=5,max=10}}})
+r=space.requests(p,{set={{item='coal',min=5,max='inf'}}})
+eq(r.stored[1],'coal 5..inf (was coal 5..10)')
+fails(function() space.requests(p,{set={{item='coal',min=5,max='lots'}}}) end,'max must be at least min ("inf" for none)')
+space.requests(p,{clear_all=true})
 -- set as a map (friction2: Muse's {"low-density-structure": 100} set nothing and the reply said changed_section 1; the
 -- silo requester stayed at min 4 for 11.7 min): the call runs as the list (aliases.lua, the reply's corrected says so);
 -- a map that reaches the handler is refused with the list form; a call that changes nothing names no changed section.
@@ -72,7 +84,7 @@ do
   eq(#args.set,3); eq(args.set[1].item,'coal'); eq(args.set[1].min,5); eq(args.set[1].max,10)
   eq(args.set[2].item,'iron-plate'); eq(args.set[2].min,7); eq(args.set[2].count,nil)
   eq(args.set[3].item,'low-density-structure'); eq(args.set[3].min,100); eq(args.position.x,1)
-  eq(fix.notes[1],'set as a map {item: min} is the list [{item, min}]')
+  eq(fix.notes[1],'set as a map {item: min} is the list [{item, min}]'); eq(fix.quiet,true)
   eq(fix.call,'requests {"position":{"x":1,"y":2},"set":[{"item":"coal","max":10,"min":5},{"item":"iron-plate","min":7},{"item":"low-density-structure","min":100}]}')
   -- a list, or a map of something else, is left as it is
   local list={{item='coal',min=1}}

@@ -3855,6 +3855,16 @@ end)()
   assert(n>=20 and (found==0 or docs>=15),'examples checked: '..n..' in describe, '..docs..' in the docs')
 end)()
 ;(function()
+  -- Forms the docs give (take-and-give, requests set as a map; friction3: Haiku and Grok read "warning: corrected" on
+  -- each): a quiet fix sets no corrected on success; any other note still does.
+  local fix=runtime.aliases.fix
+  runtime.aliases.fix=function(action,args) return action,args,{notes={'a documented form'},call=action..' {}',quiet=true} end
+  eq(call('status',{}).corrected,nil)
+  runtime.aliases.fix=function(action,args) return action,args,{notes={'x is y'},call=action..' {}'} end
+  eq(call('status',{}).corrected,'status {} (x is y)')
+  runtime.aliases.fix=fix
+end)()
+;(function()
   -- Argument refusals name the form that works, with the caller's own values (Muse, Luna, shift11; operator 11:02).
   -- Two places, to take from and to give to (friction2: Grok's from_entity and to_entity, refused as unknown arguments
   -- three times): the call runs as the pick courier and says so (here the item is unknown to the fake game).
