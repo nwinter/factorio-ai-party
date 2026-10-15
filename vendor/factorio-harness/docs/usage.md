@@ -2353,6 +2353,22 @@ fh sleep 900 --until researched                       # ...or until the research
   `(rate of the last 2m: none in the last 1m)`. `fh research done` (`research_done {limit?}`): technologies your force finished lately, newest first, with
   `ago`, `unlocks` and `queued_by`. `unlocks` names recipes, `travel to PLACE`, `QUALITY quality`, given items, and
   bonuses as `modifier-type +10%` (fractions) or `+N`.
+- `fh progress` (pog's `bin/fh`, `tools/progress.py`; viewers Alex and Foobator) prints the run so far by shift from
+  the recorded data on the host (no game call): each shift's score log, `agent-stats.json`, `efficiency.jsonl` and
+  `tokens.json`, through the site's long-run reading (`site/longrun.py`).
+  - One line a shift: clock and game time, technologies (`+N` of its own, total), SPM, packs made a minute,
+    plates and circuits a minute, rockets, deaths, loss alerts, machines running, items made by machines and moved
+    by hand. Then a run line (game time, technologies, rockets, packs made, platforms, planets, deaths, loss alerts) and
+    the last 3 shifts side by side.
+  - SPM is research units a minute: the labs' use of packs in sets (the most-used pack that does not spoil); `-`
+    where a score log has no lab counts. A shift's own changes run from its first score row to its last. A shift that
+    began from an earlier save says so: `began from an earlier save (41h41m; the shift before ended at 44h58m)`.
+  - Moved by hand before shift10 is counted from the journals' direct calls (`(journals)`); since then it is the
+    game's count. Made by machines, machines and running are recorded since shift13.
+  - `--full`: each shift's technologies, the labs' use and packs made per pack, platforms (built, lost, where), the
+    team's tokens and model calls; the run's packs per pack and the measures. `--last N`: the last N shifts (the run
+    line and the trend still cover the run). `--format json`: all of it as JSON. Team numbers only: no agent is listed.
+  - `fh progress --last 2`
 - Editing the queue as the research GUI does: `research {remove: NAME}` (or an array; `cancel` is the same) takes it
   out, with queued technologies that need it (`also_removed`); progress stays with the technology. `research {move:
   NAME, to: N}` puts it at position N (1 is researched now); a move ahead of a queued prerequisite or behind a queued
