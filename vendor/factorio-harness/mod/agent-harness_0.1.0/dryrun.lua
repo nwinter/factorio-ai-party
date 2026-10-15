@@ -350,7 +350,13 @@ return function(api)
     local here = try(function() return surface.get_tile(x, y) end)
     local name = here and try(function() return here.name end)
     if not name then return {why='outside the map'} end
+    -- the tile or its frozen or thawed variant (concrete on Aquilo reads frozen-concrete; Sol, shift17)
     if name == ti.result then return {already=true} end
+    local tp = try(function() return prototypes.tile[ti.result] end)
+    for _, k in ipairs({'frozen_variant', 'thawed_variant'}) do
+      local v = tp and try(function() return tp[k] end)
+      if v and try(function() return v.name end) == name then return {already=true} end
+    end
     local hl = try(function() return here.prototype.collision_mask.layers end) or {}
     if not placeable_on(ti, name, hl) then return {why=item..' cannot go on '..name..others_text(force, name, hl, item)} end
     local ghost = (try(function()
