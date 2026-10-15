@@ -11370,6 +11370,7 @@ space=space_module{chronicle_created=function(pl,who) return M.chronicle.created
   stop=function(p) M.stop_player(p.index) end,
   -- A platform's defence: hub health, turrets and their ammo against the hub's, repair packs (platalerts.lua).
   defense=function(pl) return M.platalerts.defense(pl) end}
+M.space=space  -- tests reach its limits (GHOST_CAP)
 -- A full drop's pods that wait for a hatch (space.lua), every 10 ticks: sent
 -- as hatches free up, then the result kept as last_drop (status shows it,
 -- and drop_pending while pods wait; --wait follows them as it does shoot).

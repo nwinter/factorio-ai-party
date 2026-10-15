@@ -76,10 +76,11 @@ psurf.find_entities_filtered=function(f)
     end
     if ok and f.area then local a=f.area; ok=e.position.x>=a.left_top.x and e.position.x<=a.right_bottom.x and e.position.y>=a.left_top.y and e.position.y<=a.right_bottom.y end
     if ok then out[#out+1]=e end
+    if f.limit and #out>=f.limit then break end
   end
   return out
 end
-psurf.count_entities_filtered=function(f) return #psurf.find_entities_filtered(f) end
+psurf.count_entities_filtered=function(f) local g={}; for k,v in pairs(f) do if k~='limit' then g[k]=v end end; return #psurf.find_entities_filtered(g) end
 local platform={valid=true,name='Starling',index=1,force=force,surface=psurf,hub=hub,state=6,space_location={name='nauvis'}}
 psurf.platform=platform
 hub.get_logistic_sections=function() return nil end
@@ -278,6 +279,23 @@ eq(#bot('configure',{platform='Starling',position={x=-2.5,y=-6.5},filters={'meta
 -- [] clears every slot; the count reads 0 again.
 cc=bot('configure',{platform='Starling',position={x=-2.5,y=-6.5},filters={}})
 eq(#cc.filters,0); eq(cc.filter_slots,0); eq(cfilters[1],nil)
+-- Past a cap the count says "at least" and how many of how many were counted (Astra, d15 15:11: Aegis's 924 tile
+-- ghosts read 466 under one 500 cap for both kinds).
+do
+  local caps=runtime.space.GHOST_CAP
+  runtime.space.GHOST_CAP={['entity-ghost']=2000,['tile-ghost']=3}
+  blocked=bot('platforms',{platform='Starling'}).platforms[1].construction_blocked
+  local line
+  for _,l in ipairs(blocked) do if l:find('ghost count capped',1,true) then line=l end end
+  eq(line,'ghost count capped (the first 3 of 13 tile-ghosts counted): the counted ghosts need inserter at least 1, hub has 1, space-platform-foundation at least 3, hub has 20')
+  hub_inv[2]=stack('space-platform-foundation',1)
+  for _,l in ipairs(bot('platforms',{platform='Starling'}).platforms[1].construction_blocked) do if l:find('ghosts wait for items',1,true) then line=l end end
+  assert(line:find('space-platform-foundation (ghosts need at least 3, hub has 1)',1,true) and line:find('(the first 3 of 13 tile-ghosts counted)',1,true),line)
+  hub_inv[2]=stack('space-platform-foundation',20)
+  runtime.space.GHOST_CAP=caps
+  blocked=bot('platforms',{platform='Starling'}).platforms[1].construction_blocked
+  for _,l in ipairs(blocked) do assert(not l:find('at least',1,true),l) end
+end
 setmetatable(collector,nil)
 -- describe lists platform on both.
 local d=runtime.dispatch{action='describe',args={},bot='astra'}

@@ -405,6 +405,19 @@ install(true)
 advance(1)
 eq(bot.astra('queue_status').paused,true)
 bot.astra('queue_resume',{}); advance(2)
+-- The remote lane carries over too (Astra, d15 15:37: an install paused a remote wait_until platform_arrived while the
+-- body queue's same wait ran on): the running wait with its until_tick, the pending steps, no interrupted row.
+bot.waiter('queue_submit',{lane='remote',steps={{action='wait_ticks',args={ticks=900}},{action='wait_ticks',args={ticks=30}}}})
+advance(3)
+local rq=bot.waiter('queue_status',{lane='remote',peek=true}); eq(rq.active.action,'wait_ticks'); local r_until=rq.active.until_tick
+local r_hist=#rq.history
+install()
+rq=bot.waiter('queue_status',{lane='remote',peek=true})
+eq(rq.paused,false,'remote lane not paused'); eq(rq.active.action,'wait_ticks'); eq(rq.active.until_tick,r_until); eq(rq.pending_count,1)
+eq(#rq.history,r_hist,'no interrupted row')
+local rn=notes('waiter'); assert(rn and rn[1]:find('(your remote queue carried over)',1,true),rn and rn[1])
+advance(r_until-tick+40)
+rq=bot.waiter('queue_status',{lane='remote',peek=true}); eq(rq.history[#rq.history].ok,true); eq(rq.active,false)
 -- A stop without a new runtime (a tick fault) pauses as before.
 assert(pcall(runtime.stop_all)); advance(1)
 eq(bot.astra('queue_status').paused,true)

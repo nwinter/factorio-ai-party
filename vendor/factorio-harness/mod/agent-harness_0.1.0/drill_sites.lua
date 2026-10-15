@@ -126,6 +126,15 @@ return function(api)
       return a.position.y<b.position.y
     end)
     local checks,examined=0,0
+    -- A drill (or a drill's ghost) already on the footprint (Astra, d15 15:11: on Fulgora the manual placement check
+    -- passed three spots each covered by a working drill): the spot is skipped and named, before the engine check.
+    local occupied={}
+    local function occupant(c)
+      local x,y=c.position.x,c.position.y
+      for _,o in ipairs(surface.find_entities_filtered{area={{x-w/2+0.05,y-h/2+0.05},{x+w/2-0.05,y+h/2-0.05}},type={'mining-drill','entity-ghost'},limit=8}) do
+        if o.valid and o~=e and (o.type=='mining-drill' or o.ghost_type=='mining-drill') then return o end
+      end
+    end
     local box=e.bounding_box
     local bw,bh=box and box.right_bottom.x-box.left_top.x,box and box.right_bottom.y-box.left_top.y
     for _,c in ipairs(candidates) do
@@ -135,16 +144,27 @@ return function(api)
       -- is already an occupied placement. Avoid repeated expensive engine checks
       -- of the drill's own footprint before the nearest free candidate.
       local overlaps=bw and bh and math.abs(c.position.x-origin.x)<bw and math.abs(c.position.y-origin.y)<bh
-      if not overlaps then
+      local o=not overlaps and occupant(c)
+      if o then
+        checks=checks+1
+        occupied[#occupied+1]=string.format('(%g,%g): %s%s (%g,%g)',c.position.x,c.position.y,o.type=='entity-ghost' and 'ghost of ' or '',
+          o.type=='entity-ghost' and o.ghost_name or o.name,o.position.x,o.position.y)
+      elseif not overlaps then
         checks=checks+1
         if surface.can_place_entity{name=e.name,position=c.position,direction=e.direction,quality=e.quality,force=p.force,
             build_check_type=defines.build_check_type.manual} then out.sites[#out.sites+1]=c end
       end
     end
     out.checks=checks
+    if #occupied>0 then
+      out.occupied=#occupied
+      out.occupied_by={}
+      for i=1,math.min(3,#occupied) do out.occupied_by[i]=occupied[i] end
+    end
     out.truncated=examined<#candidates and #out.sites<limit or nil
     out.line=string.format('%s (%g,%g): %d %s sites within %d tiles; amounts in the %.1f-tile mining radius; nearest first%s',
       e.name,origin.x,origin.y,#out.sites,resource,search,r,out.truncated and '; placement check limit reached' or '')
+      ..(#occupied>0 and string.format('; %d nearer spot%s left out: a drill stands there (%s)',#occupied,#occupied==1 and '' or 's',table.concat(out.occupied_by,'; ')) or '')
     return out
   end
   function M.group(force,g)
@@ -170,6 +190,6 @@ return function(api)
   M.schema={position='required: depleted mining drill of ours',surface='optional surface name (default yours)',
     resource='optional resource entity name when the last mining target was not recorded; a recorded target must match',
     radius='2..24 (default 16); reduced on dense patches to keep the resource read at 1024 tiles',limit='1..8 sites (default 3)',
-    returns='drill, position, direction, footprint, mining_radius, resource and resource_source, searched_radius, radius_reduced, sites [{position, distance, amount, tiles}], checks, truncated, line; visible mining areas only, same resource, sorted by distance; amount and tiles cover the mining area; engine manual placement check uses this drill size/direction/quality with existing entities present; sites are alternatives, not a simultaneous layout'}
+    returns='drill, position, direction, footprint, mining_radius, resource and resource_source, searched_radius, radius_reduced, sites [{position, distance, amount, tiles}], checks, truncated, occupied and occupied_by (spots left out because a drill or a drill ghost stands on them, the first 3 named), line; visible mining areas only, same resource, sorted by distance; amount and tiles cover the mining area; engine manual placement check uses this drill size/direction/quality with existing entities present; sites are alternatives, not a simultaneous layout'}
   return M
 end
