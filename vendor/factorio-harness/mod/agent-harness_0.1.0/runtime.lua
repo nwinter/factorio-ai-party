@@ -3610,6 +3610,10 @@ end
 -- medium-electric-pole" at their own positions; the tiles refused them).
 local function placement_error(p,proto,pos,direction,near)
  local function blockers()
+  if proto.type=='rail-ramp' then
+    local _,_,text=M.placewhy.ramp_collisions(p.surface,p.force,proto,pos,direction)
+    if text~='' then return '; ramp footprint contains '..text end
+  end
   local b=proto.collision_box or {left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}
   local l,t,r,btm=b.left_top.x,b.left_top.y,b.right_bottom.x,b.right_bottom.y
   if direction==4 or direction==12 then l,t,r,btm=-btm,l,-t,r end
@@ -7829,6 +7833,7 @@ M.paste_plan=blueprint_handlers.plan
 M.dryrun=require('dryrun'){placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
   sidefeed=M.sidefeed,coverage=function(s,force,pos,planned) return M.networks.coverage(s,force,pos,planned) end,
   placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
+  ghost_placeable=function(p,proto,pos,direction) return construction.ghost_placeable(p.surface,p.force,proto,pos,direction) end,
   crafting_count=function(p,item) return crafting_count(p,item) end,
   rail_box=function(name,pos,dir) return M.rails and M.rails.box(name,pos,dir) end,
   rail_overlaps=function(shape,l,t,r,b) return M.rails.overlaps(shape,l,t,r,b) end,
@@ -8323,15 +8328,15 @@ local function place_ghost(p,spec)
   local proto=type(spec.name)=='string' and prototypes.entity[spec.name]
   assert(proto and proto.items_to_place_this and #proto.items_to_place_this>0,'not a placeable entity: '..tostring(spec.name))
   local pos=position(spec.position)
-  assert(charted(p,pos),'position is not charted')
   local direction=spec.direction and M.direction_of(spec.direction)
   assert(spec.direction==nil or direction,'direction must be a compass name (north, east, south, west) or 0..15')
   assert(spec.type==nil or proto.type=='underground-belt' and (spec.type=='input' or spec.type=='output'),'type is input|output for underground belts only')
+  if proto.type=='rail-ramp' then pos,direction=M.placewhy.ramp_position(pos,direction) end
+  assert(charted(p,pos),'position is not charted')
   -- The engine's check refuses trees, rocks and stumps (shake3: "placement
   -- blocked by tree-08"); a player's ghost goes over them and marks the trees
   -- and rocks, and the build clears the stumps (build_direct).
-  if not p.surface.can_place_entity{name=spec.name,position=pos,direction=direction,force=p.force,build_check_type=defines.build_check_type.manual_ghost,forced=true}
-    and not construction.only_obstacles(p.surface,proto,pos,direction) then
+  if not construction.ghost_placeable(p.surface,p.force,proto,pos,direction) then
     error(placement_error(p,proto,pos,direction),0)
   end
   -- Tiles it cannot stand on (water, Gleba wetland): the forced ghost check
