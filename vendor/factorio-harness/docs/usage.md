@@ -1264,7 +1264,7 @@ fh queue cancel --args '{"lane":"remote"}'
 ```
 
 The remote lane accepts `wait_ticks`; `wait_until` with `platform_arrived`,
-`platform_left` or `researched`; `drop`, `platform_schedule`, `configure`,
+`platform_left` or `researched`, or `item_count` with an explicit platform hub; `drop`, `platform_schedule`, `configure`,
 `circuit_set`, `circuit`, `wire`, `requests` and `flush` with an explicit `platform`;
 and read actions that need no body. `observe` requires `platform` or a scope other
 than `craftable` or `sleep_check`. `inventory`, `craftable`, `sleep_check`,

@@ -11,7 +11,8 @@ return function(api)
     a=a or {}
     if action=='wait_ticks' then return end
     if action=='wait_until' then
-      assert(WAITS[a['until']], 'remote lane wait_until supports platform_arrived, platform_left or researched')
+      assert(WAITS[a['until']] or (a['until']=='item_count' and type(a.platform)=='string' and a.platform~=''),
+        'remote lane wait_until supports platform_arrived, platform_left, researched or item_count with platform')
       return
     end
     if action=='drop' or action=='platform_schedule' or PLATFORM_WRITES[action] then
@@ -70,7 +71,7 @@ return function(api)
       return out
     end
   end
-  M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|researched; drop, platform_schedule, configure, circuit_set, circuit, wire, requests and flush with explicit platform; body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
+  M.schema.queue_submit.note='remote lane: wait_ticks; wait_until platform_arrived|platform_left|researched or item_count with platform; drop, platform_schedule, configure, circuit_set, circuit, wire, requests and flush with explicit platform; body-independent read actions (observe needs platform or scope). Body steps, body conditions and nested queue calls refuse with the step/guard path. Full drops already started continue sending pods if the queue is cancelled, as in the body lane.'
   M.schema.queue_status.returns=M.schema.queue_status.returns..'; lane and lanes {body, remote}: each lane\'s paused, pending, active, revision and repeating state'
   function M.validate(a) local _,engine=lane(a); return engine.validate(a) end
   function M.tick() base.tick(); remote.tick() end

@@ -3336,6 +3336,18 @@ end)()
   advance(10); eq(call('queue_status').paused,false)
   landed=50; advance(10); eq(call('queue_status').paused,true)
   call('queue_cancel',{})
+  landed=0
+  call('queue_submit',{lane='remote',steps={{action='wait_until',args=c}}})
+  call('walk',{direction='east',ticks=100})
+  advance(12)
+  local body_action=storage.agent_harness.active[1]
+  eq(body_action.kind,'walk');eq(call('queue_status',{lane='remote'}).active.action,'wait_until')
+  landed=50;advance(10)
+  local rq=call('queue_status',{lane='remote'})
+  eq(rq.active,false);eq(rq.history[#rq.history].result.outcome,'met')
+  eq(storage.agent_harness.active[1],body_action)
+  fails(function() call('queue_submit',{lane='remote',steps={{action='wait_until',args={['until']='item_count',item='coal',at_least=1}}}}) end,'steps[1]')
+  call('stop',{});call('queue_cancel',{lane='remote'})
   p.force.platforms,defines.inventory.hub_main=platforms,hub_id
 end)()
 -- wait_until as a direct call: met at once returns met; otherwise a timed

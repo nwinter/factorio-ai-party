@@ -69,6 +69,7 @@ return function(api)
     local line=body_asleep_line(p,record,seconds)
     local q=queue_of(p.index,true)
     if running(q) then
+      line=line:gsub('^no queue and no action','no body queue or body action'):gsub('^your queue','your body queue')
       line=line..string.format('; remote queue keeps running (%s%d steps pending%s); this sleep ends when either lane finishes or stalls',
         q.current and q.current.action..' running, ' or '',#q.pending,q.loop and ', repeating' or '')
     end
@@ -105,7 +106,7 @@ return function(api)
       while_asleep=out.while_asleep}
     sleeps()[p.index] = record
     return {while_asleep=out.while_asleep,
-      sleeping_s=0, until_tick=game.tick, ['repeat']=true, woke=woke, mention=out.mention, tell=out.tell, board=out.board, queue=out.queue}
+      sleeping_s=0, until_tick=game.tick, ['repeat']=true, woke=woke, mention=out.mention, tell=out.tell, board=out.board, queue=out.queue, queue_lane=out.queue_lane, remote_queue_steps=out.remote_queue_steps}
   end
   function M.handlers.sleep(p, a)
     local seconds = api.integer(a.seconds, nil, 1, MAX_TICKS / 60, 'seconds (1..900)')

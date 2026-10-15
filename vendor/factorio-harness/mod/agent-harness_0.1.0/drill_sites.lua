@@ -11,6 +11,7 @@ return function(api)
     assert(e.type=='mining-drill' and e.force==p.force,'position must name a mining drill of ours')
     assert(e.status==defines.entity_status.no_minable_resources and not (e.mining_target and e.mining_target.valid),
       'drill does not report no_minable_resources with no mining target')
+    local origin=e.position
     local radius=api.integer(a.radius,16,2,24,'radius')
     local limit=api.integer(a.limit,3,1,8,'limit')
     local mem=(api.state().push_drills or {})[p.force.name] or {}
@@ -22,7 +23,7 @@ return function(api)
     assert(type(r)=='number' and r>0 and r<=16,'unsupported drill mining radius')
     local w,h=proto.tile_width,proto.tile_height
     if e.direction==4 or e.direction==12 then w,h=h,w end
-    local out={surface=p.surface.name,drill=e.name,position=pos(e.position),direction=e.direction,
+    local out={surface=p.surface.name,drill=e.name,position=pos(origin),direction=e.direction,
       footprint={width=w,height=h},mining_radius=r,resource=resource,
       resource_source=remembered and 'last observed mining target' or resource and 'supplied in this call' or nil,
       radius=radius,sites={},placement_check='manual, with existing entities still present',tick=game.tick}
@@ -49,8 +50,25 @@ return function(api)
     local search=radius
     local found
     repeat
-      found=surface.find_entities_filtered{type='resource',name=resource,
-        area={{e.position.x-search-r-1,e.position.y-search-r-1},{e.position.x+search+r+1,e.position.y+search+r+1}},limit=MAX_ORE+1}
+      local left,top=origin.x-search-r-1,origin.y-search-r-1
+      local right,bottom=origin.x+search+r+1,origin.y+search+r+1
+      found={}
+      local taken={}
+      for cx=math.floor(left/32),math.floor(right/32) do
+        for cy=math.floor(top/32),math.floor(bottom/32) do
+          if #found<=MAX_ORE and seen(cx*32,cy*32) then
+            -- Hidden chunks do not affect the result or its density limit.
+            for _,o in ipairs(surface.find_entities_filtered{type='resource',name=resource,
+              area={{math.max(left,cx*32),math.max(top,cy*32)},{math.min(right,(cx+1)*32),math.min(bottom,(cy+1)*32)}},limit=MAX_ORE+1}) do
+              local point=not taken[o] and o.valid and o.position
+              if point and seen(point.x,point.y) then
+                taken[o]=true;found[#found+1]={entity=o,position=point}
+                if #found>MAX_ORE then break end
+              end
+            end
+          end
+        end
+      end
       if #found<=MAX_ORE then break end
       search=math.floor(search/2)
     until search<2
@@ -59,15 +77,13 @@ return function(api)
     if #found>MAX_ORE then out.truncated=true; out.line='resource read reached its 1024-tile limit; no sites evaluated'; return out end
     -- Sparse tile map; summed-area tables make every candidate's amount a
     -- constant-time read, including large drills over dense patches.
-    local x0,y0=math.floor(e.position.x-search-r-1),math.floor(e.position.y-search-r-1)
-    local x1,y1=math.ceil(e.position.x+search+r+1),math.ceil(e.position.y+search+r+1)
+    local x0,y0=math.floor(origin.x-search-r-1),math.floor(origin.y-search-r-1)
+    local x1,y1=math.ceil(origin.x+search+r+1),math.ceil(origin.y+search+r+1)
     local amounts,counts={},{}
     for _,o in ipairs(found) do
-      if o.valid and seen(o.position.x,o.position.y) then
-        local x,y=math.floor(o.position.x),math.floor(o.position.y)
-        amounts[y]=amounts[y] or {}; counts[y]=counts[y] or {}
-        amounts[y][x]=(amounts[y][x] or 0)+o.amount; counts[y][x]=(counts[y][x] or 0)+1
-      end
+      local x,y=math.floor(o.position.x),math.floor(o.position.y)
+      amounts[y]=amounts[y] or {}; counts[y]=counts[y] or {}
+      amounts[y][x]=(amounts[y][x] or 0)+o.entity.amount; counts[y][x]=(counts[y][x] or 0)+1
     end
     local function at(t,x,y) return t[y] and t[y][x] or 0 end
     for y=y0,y1 do
@@ -83,11 +99,12 @@ return function(api)
     end
     local candidates={}
     local fx,fy=w%2/2,h%2/2
-    for x=math.ceil(e.position.x-search-fx),math.floor(e.position.x+search-fx) do
-      for y=math.ceil(e.position.y-search-fy),math.floor(e.position.y+search-fy) do
+    local visible_radius=math.max(r,w/2,h/2)
+    for x=math.ceil(origin.x-search-fx),math.floor(origin.x+search-fx) do
+      for y=math.ceil(origin.y-search-fy),math.floor(origin.y+search-fy) do
         local px,py=x+fx,y+fy
-        local d=((px-e.position.x)^2+(py-e.position.y)^2)^0.5
-        if d<=search and visible_box(px,py,math.max(r,w/2,h/2)) then
+        local d=((px-origin.x)^2+(py-origin.y)^2)^0.5
+        if d<=search and visible_box(px,py,visible_radius) then
           local amount=under(amounts,px,py)
           if amount>0 then candidates[#candidates+1]={position={x=px,y=py},distance=d,amount=amount,tiles=under(counts,px,py)} end
         end
@@ -110,7 +127,7 @@ return function(api)
     out.checks=checks
     out.truncated=checks<#candidates and #out.sites<limit or nil
     out.line=string.format('%s (%g,%g): %d %s sites within %d tiles; amounts in the %.1f-tile mining radius; nearest first%s',
-      e.name,e.position.x,e.position.y,#out.sites,resource,search,r,out.truncated and '; placement check limit reached' or '')
+      e.name,origin.x,origin.y,#out.sites,resource,search,r,out.truncated and '; placement check limit reached' or '')
     return out
   end
   M.schema={position='required: depleted mining drill of ours',surface='optional surface name (default yours)',

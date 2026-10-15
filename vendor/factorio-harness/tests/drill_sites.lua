@@ -17,6 +17,7 @@ force.is_chunk_visible=function(_,chunk) return not hidden or chunk.x<=0 end
 surface.find_entities_filtered=function(f)
   reads=reads+1
   assert(f.type=='resource' and f.limit==1025)
+  if hidden then assert(f.area[2][1]<=32,'hidden chunks must not affect the density limit') end
   local out={}
   for _,o in ipairs(tiles) do
     if o.name==f.name and o.position.x>=f.area[1][1] and o.position.x<f.area[2][1] and o.position.y>=f.area[1][2] and o.position.y<f.area[2][2] then
@@ -61,7 +62,7 @@ tiles={}; eq(#D.read(p,{position=e.position,resource='coal'}).sites,0)
 for x=-26,26 do for y=-26,26 do tile(x,y) end end
 reads=0;checks=0
 r=D.read(p,{position=e.position,resource='coal',radius=24})
-eq(r.radius_reduced,true); assert(r.searched_radius<24); assert(reads<=4); assert(checks<=128)
+eq(r.radius_reduced,true); assert(r.searched_radius<24); assert(reads<=24); assert(checks<=128)
 -- Rejected placements cannot cause an unbounded number of engine calls.
 blocked=true;checks=0
 r=D.read(p,{position=e.position,resource='coal',radius=8})
