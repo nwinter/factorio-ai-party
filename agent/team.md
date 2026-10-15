@@ -142,7 +142,10 @@ already targets your character.
   game chat as `server:`. It is not for help with the game. Viewers see it on the ticker.
 - Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
-  your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, and the
+  your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, power cuts
+  (`power cut #1: small-electric-pole (x,y) destroyed by big-biter ...: split electric network #57 in 2: #212 has no
+  power (31 poles, ...): 20 electric-mining-drill, ...`; `scan` rows of poles give `network` and `wires`, `inspect`
+  gives `wires`), and the
   game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
   (125,40)`, `12 gun-turret out of ammo near (67,-170)`, turrets rebuilt empty (built with no ammo, still empty 60 s later, named), ghosts waiting for materials, inserters that lost their pickup or drop target (by
   what they feed, with what each read and puts into), an electric network drawing 85%
@@ -284,13 +287,16 @@ already targets your character.
   an area under attack now (an attack hit in the last 30 s; + 4), walking legs around them (`last.avoided_enemies`;
   a new attack on the way re-plans, `last.replanned`); a goal inside one is refused (`unsafe_goal: true` goes anyway);
   no way round: `no_safe_route`. The walking tours (rearm, refuel, feed, collect, transfer `walk`) and `mine` check
-  each place the same way (`last.danger`, `last.dangers`). Hit with no action running (or mining, on a tour or
+  each place the same way, at the call too: the reply's `left_out` names the stops left out, and a tour whose every
+  stop lies in such a reach is refused (`last.danger`, `last.dangers` for those found on the way). Hit with no action running (or mining, on a tour or
   waiting), your character walks away at once, to turret cover or 24 tiles from the attacker, and a sleep wakes
   `damaged` saying where; `retreat_guard {idle: false}` keeps it standing.
 - A walk stops short of rails that a moving train will cross within 6 s and goes on once it has passed (status
   `train_wait`, then `last.train_waits`).
 - `./fh call recover --wait` walks to your own corpses on your surface, nearest first, and takes everything from each; a
   corpse keeps what you carried when you died and does not expire. One inside a worm's range is left out (`left_out`).
+  `recover {"dry_run": true}` walks nowhere: each corpse's distance, items, whether recover walks to it, and its
+  `danger` (worms and spawners whose reach comes near it, attacks near it in the last 10 minutes).
 - A target in a narrow gap no path leads into ends the walk `arrived_near` before it (`last.pocket`; `"squeeze":true`
   walks in). Squeezed in, the walk gets out along the gaps first (`last.escaped`); closed in, `last.mine_to_get_out`
   names everything to mine to open ground (chests, accumulators, walls, trees and rocks before poles and machines); not

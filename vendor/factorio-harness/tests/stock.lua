@@ -153,6 +153,39 @@ do
   tour=stock.start_tour(p,'rearm',{a1},600,{item='firearm-magazine',avoid_enemies=true}); eq(tour.avoid_mode.v,true)
   api.visit,api.goal_check,api.goal_text,api.avoid_mode,api.avoid_start,reachable=kv,kc,kt,km,ks,kr
 end
+-- round2120a (Haiku, shift14 03:58: rearm surface=true walked into a big worm's range): every stop is checked at the
+-- call too: one inside a reach is left out and named (left_out), none left refuses; a courier with either place in
+-- one is refused; screened (the caller checked them) and unsafe_goal skip the check.
+do
+  local km,ki,kt=api.avoid_mode,api.goal_inside,api.goal_text
+  api.avoid_mode=function(v) if v==false then return nil end return {pad=4,spawners=true,attacks=true} end
+  api.goal_inside=function(_,goal) if goal.x==30 then return {m={name='big-worm-turret',x=40,y=0,range=38},d=10} end end
+  api.goal_text=function(label,goal) return label..' ('..goal.x..','..goal.y..') is inside big-worm-turret (40,0) range 38 (10.0 tiles from it)' end
+  local a1,a2,a3={valid=true,name='gun-turret',position={x=3,y=0}},{valid=true,name='gun-turret',position={x=30,y=0}},{valid=true,name='gun-turret',position={x=50,y=0}}
+  local tour,out=stock.start_tour(p,'rearm',{a1,a2,a3},600,{item='firearm-magazine',count=10})
+  eq(out.places,2); eq(#tour.targets,2); eq(tour.targets[2].entity,a3)
+  eq(out.left_out[1],'gun-turret (30,0) is inside big-worm-turret (40,0) range 38 (10.0 tiles from it)'); eq(out.left_out_more,nil)
+  eq(tour.left_out[1],out.left_out[1]); eq(tour.left_out_count,1)
+  tour,out=stock.start_tour(p,'rearm',{a1,a2,a3},600,{item='firearm-magazine',screened=true}); eq(out.places,3); eq(out.left_out,nil); eq(tour.screened,nil)
+  tour,out=stock.start_tour(p,'rearm',{a1,a2,a3},600,{item='firearm-magazine',unsafe_goal=true}); eq(out.places,3); eq(out.left_out,nil)
+  tour,out=stock.start_tour(p,'rearm',{a1,a2,a3},600,{item='firearm-magazine',avoid_enemies=false}); eq(out.places,3)
+  local ok,err=pcall(stock.start_tour,p,'rearm',{a2},600,{item='firearm-magazine'})
+  assert(not ok and tostring(err):find('every place of this tour lies in enemy reach the map shows: gun-turret (30,0) is inside big-worm-turret (40,0) range 38 (10.0 tiles from it): unsafe_goal: true to go anyway',1,true),tostring(err))
+  -- Nine left out: the first 8 named, the rest counted.
+  local many={}
+  for i=1,9 do many[i]={valid=true,name='gun-turret',position={x=30,y=i}} end
+  many[10]=a1
+  tour,out=stock.start_tour(p,'rearm',many,600,{item='firearm-magazine',ordered=true})
+  eq(out.places,1); eq(#out.left_out,8); eq(out.left_out_more,1); eq(tour.left_out_count,9)
+  -- A courier goes to both places or none.
+  ok,err=pcall(stock.start_legs,p,{{entity=a1,position=a1.position},{position={x=30,y=0}}},600,{item='pipe'})
+  assert(not ok and tostring(err):find('a place of this courier lies in enemy reach the map shows: place (30,0) is inside big-worm-turret (40,0) range 38 (10.0 tiles from it): unsafe_goal: true to go anyway',1,true),tostring(err))
+  eq(stock.start_legs(p,{{entity=a1,position=a1.position},{position={x=30,y=0}}},600,{item='pipe',unsafe_goal=true}).unsafe_goal,true)
+  -- collect with a radius: the assembler at (30,0) left out.
+  local action,o=stock.start(p,{item='pipe',radius=64},600)
+  eq(o.places,1); eq(action.targets[1].position.x,20); eq(o.left_out[1],'assembling-machine-1 (30,0) is inside big-worm-turret (40,0) range 38 (10.0 tiles from it)')
+  api.avoid_mode,api.goal_inside,api.goal_text=km,ki,kt
+end
 -- A courier whose take fails goes no further (round1650d: Luna's walked on to the give): failed, with the first error.
 do
   local kept=api.visit
