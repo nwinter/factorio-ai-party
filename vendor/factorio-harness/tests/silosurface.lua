@@ -238,8 +238,23 @@ do
   assembler.get_inventory=function(i) return {valid=true,is_empty=function() return not (i==23 and modules or i~=23 and items) end} end
   fails(function() astra('configure',{platform='Sunward',position=assembler.position,recipe='rocket-fuel'}) end,'assembling_machine_input holds items')
   eq(storage.agent_harness.active[b.index],active); items=false; modules=true
-  fails(function() astra('configure',{platform='Sunward',position=assembler.position,recipe='rocket-fuel'}) end,'assembling_machine_modules holds items')
+  -- Modules the new recipe allows stay (Astra, shift17 10:50: an idle crusher with efficiency modules was refused; a
+  -- private 2.0.77 server: set_recipe keeps them): the remote change goes through.
+  local slots={{valid_for_read=true,name='efficiency-module'},{valid_for_read=false}}
+  assembler.get_module_inventory=function() return slots end
+  local saved_items,saved_recipe=prototypes.item,prototypes.recipe
+  prototypes.item=setmetatable({['efficiency-module']={category='efficiency',module_effects={consumption=-0.3}},
+    ['productivity-module']={category='productivity',module_effects={productivity=0.04,consumption=0.4,speed=-0.05}}},{__index=saved_items})
+  prototypes.recipe=setmetatable({['rocket-fuel']={allowed_effects={consumption=true,speed=true,productivity=false,quality=true,pollution=true}}},{__index=saved_recipe})
+  r=astra('configure',{platform='Sunward',position=assembler.position,recipe='rocket-fuel'})
+  eq(r.remote,true); eq(recipe_now,'rocket-fuel'); recipe_now=nil
+  -- One the recipe forbids would come out: refused, naming it, its slot and the slot change that empties it.
+  slots[2]={valid_for_read=true,name='productivity-module'}
+  fails(function() astra('configure',{platform='Sunward',position=assembler.position,recipe='rocket-fuel'}) end,
+    'productivity-module in module slot 2 (productivity is not allowed with rocket-fuel)')
+  fails(function() astra('configure',{platform='Sunward',position=assembler.position,recipe='rocket-fuel'}) end,'configure modules {"2":"empty"}')
   eq(recipe_now,nil); modules=false
+  assembler.get_module_inventory=nil; prototypes.item,prototypes.recipe=saved_items,saved_recipe
   b.character=nil; b.surface='platform-1'; b.position={x=0,y=0}
   b.travel={state='aboard',platform='Sunward',platform_index=1}
   r=astra('configure',{position=assembler.position,recipe='rocket-fuel'})

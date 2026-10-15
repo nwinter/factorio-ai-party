@@ -2545,8 +2545,13 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     buffer chest's (or a landing pad's) requests there the same way and reads them back: `target: "requester-chest at
     (5.5,135.5) on vulcanus"`, `sections`. With `surface` it needs `position` (never your character's requests).
   - `configure {surface, position, recipe}` sets an assembler's recipe there as a remote recipe change does in reach
-    of nothing: an empty, idle machine takes it (`remote: true`); occupied input, output or module slots,
-    or crafting progress, produce a refusal naming the machine, surface and blocking state. Fluids require
+    of nothing: an empty, idle machine takes it (`remote: true`); occupied input or output slots, or crafting
+    progress, produce a refusal naming the machine, surface and blocking state. Modules stay as in the game (Astra,
+    shift17 10:50: an idle crusher holding efficiency modules was refused; checked on a private 2.0.77 server): a
+    module stays unless the new recipe forbids one of its positive effects or its category (productivity modules out
+    for wooden-chest, a quality module out for a barrel recipe; a speed module's negative quality and an efficiency
+    module's negative consumption keep them in). One that would come out is refused by name and slot, with the
+    `modules {"2":"empty"}` change that empties it. Fluids require
     `force: true` to discard them. Recipe changes on `platform` or another `surface` never walk the character,
     including with `walk: true`, and never return items to its inventory or spill at its position. Aboard,
     `configure {position, recipe}` uses the current platform's remote view without needing `platform` again.
