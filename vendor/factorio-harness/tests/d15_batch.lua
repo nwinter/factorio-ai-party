@@ -206,3 +206,29 @@ do
   assert(not pcall(C.check,p,{['until']='platform_built',platform='Nope'}))
 end
 print('d15_batch platform_built: ok')
+
+-- 22 (Astra): change pending steps while the active one runs: mode pending, queue_edit by id (edit, delete, move). ---
+do
+  game={tick=0}
+  local state,active={},{}
+  local players={[1]={index=1}}
+  local s=require('scheduler'){state=function() return state end,player=function(i) return players[i] end,
+    handlers={long=function(p) active[p.index]=game.tick+100; return {} end,craft=function() return {} end},
+    busy=function(p) return active[p.index]~=nil end,stop=function(p) active[p.index]=nil end,stop_index=function(i) active[i]=nil end,
+    condition=function() return false end,validate_condition=function() end}
+  local h,p=s.handlers,players[1]
+  local function tick() game.tick=game.tick+1; for i,t in pairs(active) do if game.tick>=t then active[i]=nil end end; s.tick() end
+  h.queue_submit(p,{steps={{action='long'},{action='craft',label='a'},{action='craft',label='b'},{action='craft',label='c'}}})
+  tick(); eq(h.queue_status(p).active.action,'long')
+  local q=h.queue_status(p,{pending='all'})
+  local ida,idc=q.pending[1].id,q.pending[3].id
+  q=h.queue_edit(p,{id=idc,to=1}); eq(q.pending[1].label,'c'); eq(active[1]~=nil,true)
+  q=h.queue_edit(p,{id=ida}); eq(h.queue_status(p).pending_count,2)
+  q=h.queue_edit(p,{id=idc,steps={{action='craft',label='c2'}}}); eq(h.queue_status(p,{pending='all'}).pending[1].label,'c2')
+  local ok,err=pcall(h.queue_edit,p,{id=h.queue_status(p).active.id}); assert(not ok); has(err,'it is the active step')
+  q=h.queue_submit(p,{mode='pending',steps={{action='craft',label='z'}}})
+  eq(q.active.action,'long'); eq(#q.pending,1); eq(q.pending[1].label,'z'); has(q.submission,'pending replaced: 2 dropped, 1 queued')
+  eq(active[1]~=nil,true,'the active step goes on')
+  h.queue_cancel(p,{})
+end
+print('d15_batch queue_edit id: ok')

@@ -2113,6 +2113,12 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
 - `mode: "replace"` stops the active step of any plan (Sonnet, d15 07:50: a running `load_silo` went on after a replace
   and took a `queue_cancel` first, about 5 times): its history entry reads `ok: false`, `reason: stopped by
   queue_submit mode=replace`, `stopped_by: replace`; it is not run again. Pending steps and guards go as before.
+- To change what comes next while the active step runs (Astra, d15 09:20: a `load_silo` was running): `queue_submit
+  {mode: "pending", steps}` replaces the pending steps and keeps the active step and the guards (`submission: pending
+  replaced: 2 dropped, 1 queued; the active step goes on`; a repeating plan refuses it). `queue_edit {id: "job-12"}`
+  deletes that pending step, `{id, steps}` puts steps in its place, and `{id, to: 1}` moves it to that pending place;
+  no `expected_revision` is needed with `id`. An `id` that is the active step is refused (`it is the active step:
+  queue_edit changes pending steps only`).
   `append` leaves the active step running.
 - A `place_ghosts` or `build` step with failed entries fails (Astra, d15 07:50: queues read all ok while key belts were
   never placed): `reason: place_ghosts: 3 entries failed (37 placed); first: #5 transport-belt (1.5,2.5): blocked by
