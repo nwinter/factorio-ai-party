@@ -192,7 +192,7 @@ storage.networks.boiler_own={}
 run(5)  -- (whole 5 s draw samples keep the 2-minute checks below aligned)
 storage.networks.views={}
 local g=N.alert_groups(force)
-eq(#g,1); eq(g[1].kind,'boiler_fuel'); eq(g[1].n,2); eq(g[1].by.luna,1); eq(g[1].center.x,35); eq(g[1].rank,30002)
+eq(#g,2); eq(g[2].kind,'no_power.network'); eq(g[2].n,1); eq(g[1].kind,'boiler_fuel'); eq(g[1].n,2); eq(g[1].by.luna,1); eq(g[1].center.x,35); eq(g[1].rank,30002)
 eq(g[1].now_text,'2 boilers under 20 min of their own fuel at this draw, 1 under 10, 1 under 5, lowest 2 min')
 eq(g[1].line,'2 boilers under 20 min of their own fuel at this draw, 1 under 10, 1 under 5, not refilled, near (35,19) (electric #7: 11 boilers, '
   ..'1 with fuel at their feeders); boiler (66,16) 2 min: no inserter feeds it; boiler (4,22) 12 min: no inserter feeds it; '
@@ -650,3 +650,22 @@ do
   assert(not pcall(N.read,{force=force},{fresh='yes'}),'fresh is a boolean')
 end
 print('networks: ok')
+
+-- Opus's 11 drills on an isolated two-pole network: one alert across cells,
+-- attribution to their builder, no generation in the sampled electricity GUI.
+do
+  local drills={}
+  for i=1,11 do drills[i]=add{type='mining-drill',name='electric-mining-drill',position={x=300+i*9,y=40},surface=nauvis,
+    electric_network_id=9,status=defines.entity_status.no_power,last_user={name='opus'}} end
+  run(60); storage.networks.views={}
+  local found
+  for _,g in ipairs(N.alert_groups(force)) do if g.key=='no_power.network|nauvis|9' then assert(not found); found=g end end
+  assert(found,'two-pole unpowered network is not filtered out')
+  eq(found.n,11); eq(found.names['electric-mining-drill'],11); eq(found.by.opus,11)
+  has(found.line,'electric #9'); has(found.line,'11 machines report no_power'); has(found.line,'no generation in that sample')
+  for _,e in ipairs(drills) do e.status=defines.entity_status.working end
+  run(60); storage.networks.views={}
+  for _,g in ipairs(N.alert_groups(force)) do assert(g.key~='no_power.network|nauvis|9','recovered network disappears') end
+  for _,e in ipairs(drills) do e.valid=false end
+end
+print('network no-power groups: ok')

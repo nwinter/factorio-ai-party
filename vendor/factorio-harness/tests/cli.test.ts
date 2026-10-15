@@ -685,3 +685,22 @@ test('polls fall back to plain status on a runtime without peek',async()=>{
   });
   assert.deepEqual(seen.map(r=>[r.action,r.args.peek??false]),[['walk',false],['status',true],['status',false]]);
 });
+
+test('fh view platform=NAME writes a platform schematic PNG',async()=>{
+  const {mkdtemp,readFile,rm}=await import('node:fs/promises');
+  const {tmpdir}=await import('node:os');
+  const {join}=await import('node:path');
+  const dir=await mkdtemp(join(tmpdir(),'fh-platform-view-'));
+  try {
+    await engine(request=>{
+      assert.equal(request.action,'observe');assert.equal(request.args.platform,'Sunward');assert.equal(request.args.tiles,true);
+      return {ok:true,result:{platform:'Sunward',position:{x:0,y:0},entities:[],tiles:[{name:'space-platform-foundation',position:{x:0,y:0}}]}};
+    },async port=>{
+      const path=join(dir,'sunward.png');
+      const {stdout}=await cli(port,['view','platform=Sunward','--out',path]);
+      const result=JSON.parse(stdout).result;
+      assert.equal(result.kind,'platform-schematic');assert.equal(result.platform,'Sunward');assert.deepEqual(result.position,{x:0,y:0});
+      assert.equal((await readFile(path)).subarray(0,8).toString('hex'),'89504e470d0a1a0a');
+    });
+  } finally {await rm(dir,{recursive:true,force:true});}
+});

@@ -408,3 +408,11 @@ P2.give_up(p,nav); P2.on_finished(p,nav,{id=100+#asked})
 eq(nav.why,'no path request found a way for the character to (60,5), nor to anywhere within 42 tiles of it (the path requests take oil-ocean-deep, oil-ocean-shallow as ground, as the character walks it: it was not what blocked the way)')
 eq(wet_area[1][1],-4,'the box is cut to 64 tiles round the goal'); eq(wet_area[2][1],68); eq(wet_area[1][2],-3)
 print('pathing: ok')
+
+-- A narrow-corridor corner must not get the normal extra radius (it can cross a reach).
+do
+  asked={}
+  local tight={position={x=20,y=0},tolerance=.25,precise_corner=true}
+  P.request(p,tight)
+  eq(asked[1].radius,.25);eq(asked[2].radius,.25)
+end

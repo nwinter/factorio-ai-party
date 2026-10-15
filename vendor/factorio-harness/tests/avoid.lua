@@ -320,3 +320,100 @@ eq(nav.attack_replan,nil,'no new plan')
 storage.agent_harness.damage={}
 astra('stop')
 print('avoid: ok')
+
+-- Opus, shift14/15 far-east mine. Real charted coordinates copied into a fixture;
+-- the default +4 discs close a 6.145-tile gap by 1.855 tiles. The route through
+-- that corridor must keep out of every actual reach and report margin passes.
+do
+  local es=dofile('tests/fixtures/opus-corridor.lua')
+  local blobs={}
+  for _,e in ipairs(es) do blobs[#blobs+1]={members={{x=e.x,y=e.y,r=e.range+4,range=e.range,name=e.name}}} end
+  local start,goal={x=266,y=-290},{x=393,y=-279}
+  local path,narrow=A.route(start,goal,blobs,{})
+  assert(path and narrow,'the corridor is inside margins, outside reaches')
+  local len,prev=0,start
+  for _,v in ipairs(path) do
+    for _,e in ipairs(es) do assert(A.seg_dist(prev,v,e)>=e.range+0.49,'corridor clears '..e.name) end
+    local leg=((prev.x-v.x)^2+(prev.y-v.y)^2)^.5
+    assert(leg<=16.001,'short engine goals through the corridor')
+    len=len+leg; prev=v
+  end
+  assert(len<140,'uses the corridor, not the northern 263-tile detour')
+  local n={foes={vias={{x=10,y=20},{x=30,y=20}},tolerance=2}}
+  assert(A.next_leg({},n)); eq(n.tolerance,0.25,'reach the corner before turning')
+  assert(A.next_leg({},n)); eq(n.tolerance,2,'user tolerance only at final goal')
+  n={vehicle=true,foes={vias={{x=10,y=20},{x=30,y=20}},tolerance=2}}
+  assert(A.next_leg({},n));eq(n.tolerance,3,'vehicle turning tolerance stays unchanged')
+end
+-- A rotated ring with 0.225-tile gaps: the old octagon graph returns nil,
+-- although all four gaps are outside the protected discs.
+do
+  local ring={}
+  for i=0,3 do
+    local angle=(21+i*90)*math.pi/180
+    ring[#ring+1]={members={{x=10.2*math.cos(angle),y=10.2*math.sin(angle),r=7.1,range=6,name='w'}}}
+  end
+  local path=A.detour({x=-30,y=-10},{x=0,y=0},ring,{})
+  assert(path and #path>1,'the sub-tile opening is real')
+  local prev={x=-30,y=-10}
+  for _,v in ipairs(path) do for _,b in ipairs(ring) do assert(A.seg_dist(prev,v,b.members[1])>=7.09) end; prev=v end
+end
+-- The four-detour limit only rejects actual reach, never a margin-only pass.
+do
+  local stash={}
+  local B=dofile('mod/agent-harness_0.1.0/avoid.lua'){state=function() return stash end,charted=function() return true end,leg=function() error('no fifth detour') end}
+  local sp={name='nauvis',index=91,find_entities_filtered=function() return {} end}
+  local pp={surface=sp,force=force,position={x=168.5,y=-280}}
+  local goal={x=268.5,y=-280}
+  local nav={position=goal,tolerance=1}
+  B.start(pp,nav,B.mode(nil))
+  local cs=B.chunks_near({pp.position,goal},52)
+  for _,c in ipairs(cs) do B.read_chunk(sp,force,c[1],c[2]) end
+  -- read_chunk returns rows; scan populates the cache.
+  B.scan(sp,force,cs,#cs)
+  local key=(math.floor(218.5/32)+524288)*1048576+(math.floor(-239.5/32)+524288)
+  stash.enemy_chunks[91][key]={t=game.tick,list={{x=218.5,y=-239.5,name='spitter-spawner',spawner=true}}}
+  nav.foes.detours=4
+  assert(B.accept(pp,nav,{{position=goal}}),'40.5 tiles from sight 40 is margin only')
+  assert(nav.foes.passed)
+  pp.position={x=168.5,y=-278}; nav.position={x=268.5,y=-278};nav.foes.goal=nav.position
+  eq(B.accept(pp,nav,{{position=nav.position}}),false,'38.5 tiles is still refused')
+  eq(nav.path_state,'unsafe')
+end
+print('avoid round0020b: ok')
+-- Replay the failing final leg through accept/next_leg, as straight engine legs.
+-- Terrain pathfinding is still the game's job; each path it returns is guarded.
+do
+  local es=dofile('tests/fixtures/opus-corridor.lua')
+  local st={}; local B
+  B=dofile('mod/agent-harness_0.1.0/avoid.lua'){state=function() return st end,charted=function() return true end,
+    leg=function(p,n) return B.next_leg(p,n) end}
+  local sp={name='nauvis',index=92}
+  sp.find_entities_filtered=function(q)
+    local out={}
+    for _,e in ipairs(es) do
+      if e.x>=q.area[1][1] and e.x<q.area[2][1] and e.y>=q.area[1][2] and e.y<q.area[2][2] then
+        out[#out+1]={valid=true,name=e.name,type=e.name:find('spawner') and 'unit-spawner' or 'turret',position={x=e.x,y=e.y},force=enemy}
+      end
+    end
+    return out
+  end
+  prototypes.entity['small-worm-turret']={turret_range=25};prototypes.entity['big-worm-turret']={turret_range=38}
+  local pp={surface=sp,force=force,position={x=266,y=-290}}
+  local nav={position={x=393,y=-279},tolerance=1}
+  B.start(pp,nav,B.mode(nil))
+  local chunks={}
+  for x=4,16 do for y=-14,-3 do chunks[#chunks+1]={x,y,(x+524288)*1048576+(y+524288)} end end
+  B.scan(sp,force,chunks,#chunks)
+  eq(B.accept(pp,nav,{{position=nav.position}}),false)
+  eq(nav.foes.margin_route,true);eq(nav.foes.detours,1)
+  for _=1,16 do
+    assert(B.accept(pp,nav,{{position=nav.position}}),'planned leg remains outside actual reaches')
+    pp.position=nav.position
+    if not nav.leg then break end
+    assert(B.leg_done(pp,nav,'arrived'))
+  end
+  eq(pp.position.x,393);eq(pp.position.y,-279);eq(nav.foes.detours,1)
+  local last={};B.report(last,nav);assert(last.passed_within_margin and not last.why)
+end
+print('Opus corridor accepted: ok')

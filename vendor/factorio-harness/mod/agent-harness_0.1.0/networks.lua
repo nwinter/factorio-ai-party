@@ -455,7 +455,7 @@ return function(api)
   -- the rows. Between steps ctx holds plain data and entities, linked by id.
   local function new_net(id, poles, cx, cy)
     return {id=id, poles=poles, center={x=cx, y=cy}, cap_kw=0, solar_peak_kw=0, solar=0,
-      acc=0, acc_j=0, acc_buf=0, machines=0, low=0, none=0, boilers={}, gens=0}
+      acc=0, acc_j=0, acc_buf=0, machines=0, low=0, none=0, powerless={names={}, by={}, at={}}, boilers={}, gens=0}
   end
   local function e_ctx(n, f, surface)
     -- A platform (Astra, 14:05: Starling's network 475, 5 solar panels and assemblers on low power, was not found): its
@@ -515,7 +515,14 @@ return function(api)
     if net then
       local st = defines.entity_status or {}
       net.machines = net.machines + 1
-      if e.status == st.low_power then net.low = net.low + 1 elseif e.status == st.no_power then net.none = net.none + 1 end
+      if e.status == st.low_power then net.low = net.low + 1 elseif e.status == st.no_power then
+        net.none = net.none + 1
+        local g = net.powerless
+        g.names[e.name] = (g.names[e.name] or 0) + 1
+        local who = try(function() return e.last_user.name end)
+        if who then g.by[who] = (g.by[who] or 0) + 1 end
+        if #g.at < 8 then g.at[#g.at+1] = {x=e.position.x, y=e.position.y} end
+      end
     end
   end
   local function e_machines(ctx, f, surface)
@@ -562,7 +569,7 @@ return function(api)
     local rows = {}
     for _, net in pairs(nets) do
       -- (on a platform every network with a machine or a pole: a platform is small and Astra's Starling had 1)
-      if net.poles > 2 or net.gens > 0 or (ctx.platform and (net.machines > 0 or net.poles > 0)) then
+      if net.poles > 2 or net.gens > 0 or net.none > 0 or (ctx.platform and (net.machines > 0 or net.poles > 0)) then
         local d = draw(n, net.id)
         net.draw = d
         local solar_now = d and d.by['solar-panel'] or 0
@@ -1900,6 +1907,18 @@ return function(api)
                 at(x.e.position.x, x.e.position.y), x.chest.name, at(x.chest.position.x, x.chest.position.y), x.held or 'no fuel',
                 math.floor(FEED_TICKS / 3600), x.feeder)}
           end
+        end
+        if (r.none or 0) > 0 then
+          local g = r.powerless or {names={}, by={}, at={}}
+          local names = {}
+          for name, count in pairs(g.names) do names[#names+1] = count .. ' ' .. name end
+          table.sort(names)
+          local generation = r.draw and r.draw.now
+          out[#out+1] = {key='no_power.network|' .. s.name .. '|' .. r.id, kind='no_power.network', surface=s.name,
+            n=r.none, names=g.names, by=g.by, at=g.at, center=r.center,
+            line=string.format('electric #%d near %s: %d machines report no_power (%s); %d poles%s',
+              r.id, at(r.center.x, r.center.y), r.none, table.concat(names, ', '), r.poles,
+              generation ~= nil and string.format('; supplied %s (5 s average)%s', mw(generation), generation == 0 and ', no generation in that sample' or '') or '; generation sample unavailable')}
         end
   end
   local function logistic_groups(out, s, r)

@@ -76,6 +76,8 @@ already targets your character.
   20 minutes can be taken the same way; the owner hears it.
 - `./fh board update --args '{"id":N,"title":"...","needs":{"iron-plate":300}}'` corrects an item's title and what it
   asks for (its poster or owner; anyone after the same 20 quiet minutes); `board {id}` keeps the change in `history`.
+- `./fh view platform=Sunward --out sunward.png` shows platform foundation and structure footprints; `agriculture {surface:"gleba"}` lists towers, ghosts and recorded tower-loss positions.
+- `game_alerts {kind:"no_power"}` groups connected machines without power by electric network, including isolated drill networks; `move_to` reports narrow-corridor margin crossings in `last.passed_within_margin`.
 - `inspect` reads any entity on your surface in a chunk our radars see, by remote view (`by: remote view`); out of
   sight and coverage, the refusal names the nearest radar coverage.
 - The team plan is one board item everyone edits: goals, and one line per agent of what they are on. `./fh board plan`
