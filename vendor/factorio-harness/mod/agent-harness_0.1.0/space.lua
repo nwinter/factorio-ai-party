@@ -668,6 +668,7 @@ return function(api)
     assert(a.name==nil or (type(a.name)=='string' and #a.name>=1 and #a.name<=64),'name must be 1..64 characters')
     local pl=p.force.create_space_platform{name=a.name,planet=planet,starter_pack=pack}
     assert(pl,'the game refused to create a platform')
+    if api.chronicle_created then pcall(api.chronicle_created,pl,p.name) end  -- who made it (chronicle.lua)
     return {name=pl.name,state=platform_states[pl.state],planet=planet,
       next='a rocket silo on '..planet..' with a '..pack..' in its rocket cargo (transfer item='..pack..', inventory rocket_silo_rocket) launches it on its own once the rocket is ready'}
   end

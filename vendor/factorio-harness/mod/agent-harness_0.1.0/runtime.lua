@@ -1287,7 +1287,7 @@ M.EXAMPLES={
 function handlers.describe()
   local description = {protocol=1, version='0.1.0', max_action_ticks=MAX_TICKS, deduplication_window=256, deduplication_bytes=8*1024*1024,
     -- operator-only reads this runtime answers (dispatch with operator=true; callers check here before asking)
-    operator_reads={'attack_groups_live','big_enemies_live','hauling','loadout','clouds','efficiency','census'},
+    operator_reads={'attack_groups_live','big_enemies_live','hauling','loadout','clouds','efficiency','census','chronicle'},
     target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (inspect and cargo weigh: sight, or by remote view anywhere on your surface in a chunk our force sees now, by: remote view); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, reach and visibility come from its position',
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
@@ -1412,6 +1412,7 @@ function handlers.describe()
   for name,schema in pairs(M.supply and M.supply.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.trace and M.trace.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.audience and M.audience.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.chronicle and M.chronicle.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.capsules and M.capsules.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.flush and M.flush.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circuits and M.circuits.schema or {}) do description.actions[name]=schema end
@@ -9220,7 +9221,7 @@ function handlers.wait_until(p,a)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
-local passive={retreat_guard=true,order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
+local passive={retreat_guard=true,order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,chronicle=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
 -- circuit_set and wire (circuits.lua) leave the character and its queue alone, as circuit did.
 passive.circuit_set=true; passive.wire=true
 -- Planners and blueprint tools never drive the character, near or by remote
@@ -9649,7 +9650,7 @@ function M.dispatch_inner(request)
   if request.operator==true then
     local ok,result=pcall(function()
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
-      local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action]
+      local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.hauling.operator[request.action] or M.loadout.operator[request.action] or M.efficiency.operator[request.action] or M.census.operator[request.action] or M.chronicle.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.bplibrary_operator[request.action]
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
@@ -10098,7 +10099,11 @@ function handlers.drops(p,a) return M.drops.read(p,a) end
 M.freight=require('freight'){state=state,spoil=M.spoil,pods=M.pods}
 -- Each platform's flight over the last 60 and 180 s: speed, thruster fluids, tanks, pumps (engine.lua; Astra, 21:20).
 M.engine=require('engine'){state=state}
-space=space_module{freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+-- The run's chronicle: agents' entries and the events the harness saw (chronicle.lua; viewers Alex and syndesis 22:24).
+M.chronicle=require('chronicle'){state=state,where=function(pl) return M.freight and M.freight.where(pl) end,
+  owner=function(c) return M.character_owner(c) end}
+for name,handler in pairs(M.chronicle.handlers) do handlers[name]=handler end
+space=space_module{chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   engine=function(pl) return M.engine.read(pl) end,
   state=state,thrust=function(pl) return M.thrust.read(pl) end,
@@ -10785,6 +10790,7 @@ function M.tick_body(event)
   pcall(survey.tick,event.tick)  -- status's factory survey, a slice a tick (task-statuscost)
   pcall(threat.tick,event.tick)  -- the chart sweep, a slice a tick (task-statuscost)
   pcall(M.census.tick,event.tick)  -- the host reads' counts, a band or slice a step (census.lua)
+  pcall(M.chronicle.tick,event.tick)  -- the chronicle's events: research, launches, platform stops and platforms made
   pcall(M.ground.watch_tick,event.tick)  -- items on the ground for status alerts and reply hints, a band or a pile a step
   pcall(M.scienceline.tick,event.tick)
   M.powercut.tick(event.tick)  -- a pole death's check and trace, a stage a tick (never raises)
@@ -10988,6 +10994,12 @@ function M.on_event(event)
       return
     end
     if not (e and e.valid and e.force and e.force.name~='enemy' and e.force.name~='neutral') then return end
+    -- A platform's hub (the platform is lost: where it was, what killed it, its cargo) or an agent's character: the
+    -- chronicle's events (chronicle.lua); a fault is counted.
+    if e.type=='space-platform-hub' or e.type=='character' then
+      local ok,err=pcall(M.chronicle.on_died,e,event)
+      if not ok then s.chronicle_errors={count=((s.chronicle_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
+    end
     if LOSS.not_lost[e.type] then return end
     s.alerts=nil -- superseded by incidents
     -- A turret of ours that died: its ghost requests the ammo it held (turretammo.lua); a fault is counted.
