@@ -523,6 +523,15 @@ fh call status
 - `below` works on every form of `rearm`: in reach and at `positions` (or one `position`), a turret holding `below`
   rounds or more is left as it is and named in `held_enough` (`1 turret holds 10 rounds or more: gun-turret (22,6)
   12`); the others get topped up to `count` (at least `below`).
+- `feed {clear_spoilage: true}` clears waste before topping up each machine, including on position/radius walking
+  tours. It takes spoilage and spoil results of the current recipe's ingredients/products from input, output and fuel
+  slots, and everything in burnt-result slots, into your inventory. Items that are valid recipe inputs or outputs
+  stay there. Fresh ingredients and fuel stay. `entities[].cleared` (also in a tour's `last.entities`) lists inventory,
+  item, quality, count, taken and left, including waste that did not fit in your inventory. A dirty machine is a tour
+  stop even when you have no top-up items left. Cleanup preserves each stack's metadata and uses normal reach.
+- `collect {outputs_only: true}` takes machine outputs only: an empty output never falls through to fuel, burnt
+  results or input slots. It works with positions, walking, radius, `wait_ticks` and `pick`; requester/chest stock is
+  excluded. `outputs_only: false` keeps ordinary inventory selection.
 - Burner fuel by category: `feed` without `fuel` gives a burner the fuel it burns (coal for chemical burners; a
   biochamber burns nutrients, so it gets nutrients); `refuel` skips burners of another category in a radius and refuses
   one named by position (`biochamber at (-20.5,-20.5) burns nutrients fuel, not coal (chemical)`).
@@ -1430,6 +1439,14 @@ fh sleep 900 --until researched                       # ...or until the research
   - Several conditions (Muse, 21:20: wake on whichever of two or three chests fills first; Grok, 21:20: `fh wait --until "alert|platform_arrived NAME planet"` was a client_error): joined by `|` (`fh wait --until "item_count coal>=50 at 10,39 | item_count iron-plate>=100 at 12,39"`, `fh sleep 300 --until "alert|platform_arrived Sunward gleba"`), or a JSON list, are sent as `{until: "any", conditions: [...]}` (the runtime also takes a plain list): 1..8 conditions, alerts among them (plain or with kinds), whichever holds first wakes it. `condition` reads `item_count coal | item_count iron-plate`, `saw` lists each one's reading while none holds, and a condition wake names the one that held (`met`; the wait's line: `woke: condition after 7 s (item_count coal: saw coal 60 at (10,39))`). One met at the start ends the sleep at once. `tell` (also `tells`, `mention`, `told`) among them is dropped by both `fh sleep --until` and `fh wait --until` (both wake on tells); `fh sleep 300 --until "tell|alert"` waits for either event. A runtime from before this deploy refuses until=any, and the CLI says so.
   - `fh call sleep --args '{"seconds":N}'` (with or without `--wait`, also in `fh run` and `fh stream`) is the same blocking wait; the raw action only starts a sleep.
   - Claude Code agents get a 20-minute Bash timeout (tools/clean-profile.py in the pog repo), above the longest sleep. Codex agents' `yield_time_ms` returns earlier and leaves the sleep running in the background.
+- `build` and `construct` replies include `materials`, read before acting: per item and quality, `need`, `held`,
+  `missing`, `queued`, `missing_after_queue` and `hand_craftable` (items, including recipe yield). The hand-craftable
+  counts are independent: different items may consume the same ingredients. They describe normal-quality hand
+  crafts only; existing higher-quality items are counted separately. Counts are for requested placements before
+  recovered items; a tile brush's `need` is an upper bound (`maximum: true`). These facts do not start crafts.
+  The existing `build {dry_run: true}` placement check includes these materials. `construct {area, dry_run: true}`
+  checks materials for the known ghosts without marking, mining, building, walking or pausing the queue. Actual
+  construction still completes what it can; an immediate build failure includes its pre-build material summary.
 - A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works. A wait that ends `failed` names the call (`action: build`) and puts its error on the error line (Sol, shift09: the silo build hit trees after its craft and read only `Control ended: failed`): `error: action_interrupted: Control ended: failed: placement blocked by stingfrond (63.9375,11.375), stingfrond (68.125,12.4375); it needs the trees mined first (mine them, or place_ghosts marks them and construct clears them)`. A refused build names what is in the way the same way, direct or after a craft: trees and rocks need mining first, and a cliff takes cliff explosives (a character cannot mine one).
 
 ## Messages and reads
@@ -3960,3 +3977,19 @@ fh watch    # deploy on every change
 - A runtime error quarantines the runtime. Read-only calls still work until a fixed deploy succeeds.
 - Module top-level code must not touch the game. Persistent state goes in `storage.agent_harness`.
 - Changing prototypes or `control.lua` still needs a game reload.
+
+- `preflight {position, items, from}` also reads one source chest position or up to 16 in sight/remote view.
+  `from` lists each distinct chest and its stock of each requested item/quality. The existing `order` rows add
+  `kg`, `slots`, `from_held`, `from_short` (what the chests lack after cargo already aboard) and `short` (also less
+  what you hold). `manifest` reports the requested list's kg/slots, the silo's lift/cargo slots, and `after_kg`,
+  `after_slots`, `fits` for the whole list after topping up existing cargo, including unrelated cargo already aboard.
+  These combined limits differ from the individual `order[].fits` checks. No cargo moves. Discovery without a silo
+  position includes the same manifest and source checks for each visible silo.
+- `supply {item}` adds `surplus_chest`: the largest unreserved stock among plain, storage and provider chests,
+  excluding requesters and buffers. It includes position, kind, held, reserved for robot pickups, and free; this
+  does not reserve the stock or assert that no inserter uses it. It is independent of the largest-five chest list.
+- Full `status` warnings recheck up to three recorded egg sites within 64 tiles of your character: enemies visible
+  within 16 tiles now, the recorded first-hatch timer (future or elapsed), and visible gun turrets within 64 tiles
+  whose range covers the site, with ammo and inactive state. An elapsed timer is not evidence of a hatch. Old timer
+  sites are retained for ten minutes; enemies can have moved, and eggs can have been consumed or carried away.
+  The bounded reads show their check tick and report caps (33 enemies, 65 guns); brief status does not run them.

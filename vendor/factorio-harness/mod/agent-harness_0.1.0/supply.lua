@@ -743,6 +743,22 @@ return function(api)
     end
     return out
   end
+  -- Stock outside requester/buffer chests, net of this chest's robot pickups.
+  function M.surplus_chest(t)
+    local best
+    for _, c in ipairs(t.chests) do
+      if c.kind=='chest' or c.kind=='storage' or c.kind=='passive-provider' or c.kind=='active-provider' then
+        local reserved=M.reserved(c.e,t.item)
+        local free=math.max(0,c.n-reserved)
+        if free>0 and (not best or free>best.free) then
+          best={name=c.e.name,position={x=c.e.position.x,y=c.e.position.y},kind=c.kind,held=c.n,reserved=reserved,free=free}
+        end
+      end
+    end
+    if best then best.line=string.format('%s %s: %d held, %d reserved for robot pickups, %d unreserved; %s',
+      best.name,at(best.position),best.held,best.reserved,best.free,best.kind) end
+    return best
+  end
   -- The nearest place holding the item to a position, other than the entity itself.
   local function nearest(t, e)
     local best, bd
@@ -1262,7 +1278,7 @@ return function(api)
 
   M.schema = {supply = {item='item or fluid name; fluids return 10-minute flow, connected segment stock/capacity, makers and users by status', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole; fluid segments touching it include their whole connected stock',
     radius='with near: 1..512 tiles (default 64); alone: that far around you, on your surface',
-    returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); chests (largest 5; what a requester or buffer chest asks for); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); freshness (its spread over every place read: count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; chests adds each one\'s least and most spoiled and count-weighted %); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
+    returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); surplus_chest (the largest unreserved stock outside requester/buffer chests, with held and robot-pickup reservations); chests (largest 5; what a requester or buffer chest asks for); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); freshness (its spread over every place read: count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; chests adds each one\'s least and most spoiled and count-weighted %); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
 
   function M.supply(p, a)
     local item = a.item
@@ -1300,7 +1316,7 @@ return function(api)
     local out = {item=item, surface=surface.name, area=area and (at(area.position) .. ' radius ' .. area.radius) or nil,
       flow=string.format('made %d, used %d in the last 10 min on %s', flow('input'), flow('output'), surface.name),
       where=total > 0 and (total .. ': ' .. table.concat(parts, ', ')) or ('none on ' .. surface.name .. (area and ' in this area' or '')),
-      chests=#t.chests > 0 and M.top_chests(t) or nil}
+      chests=#t.chests > 0 and M.top_chests(t) or nil, surplus_chest=M.surplus_chest(t)}
     local lines = M.network_lines(t, scan)
     if #lines > 0 then out.networks = lines end
     out.makers, out.makers_worst = M.machines(t, t.makers, 'makers', scan, packs)

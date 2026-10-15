@@ -447,3 +447,13 @@ do
   big.valid=false; small.valid=false
 end
 print('supply: ok')
+
+-- The extra stock chest cannot be crowded out by full requesters or buffers.
+do
+  local S=dofile('mod/agent-harness_0.1.0/supply.lua'){}
+  local c=chest(350,0,'steel-chest',nil,{[AC]=6})
+  local t={item=AC,chests={{e=c5,kind='requester',n=900},{e=c8,kind='buffer',n=800},{e=c1,kind='passive-provider',n=3},{e=c,kind='chest',n=6}}}
+  local r=S.surplus_chest(t)
+  eq(r.name,'steel-chest');eq(r.free,6);eq(r.reserved,0)
+  t.chests[4]=nil;eq(S.surplus_chest(t),nil,'provider is fully reserved')
+end

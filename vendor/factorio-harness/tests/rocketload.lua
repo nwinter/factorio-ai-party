@@ -222,7 +222,7 @@ eq(f.platform.requests[1].item,'agricultural-science-pack'); eq(f.platform.reque
 eq(f.platform.requests[2].item,'iron-plate'); eq(f.platform.requests[2].lacks_after,200)
 eq(f.platform.not_requested,'space-platform-foundation*10')
 eq(f.launch_now,'ok')
-eq(f.line,'rocket-silo at (65.5,14.5) on nauvis: rocket built and ready; cargo agricultural-science-pack*600 space-platform-foundation*10, 800/1000 kg, 4/20 slots; the list lacks agricultural-science-pack 400 (200 fit), iron-plate 10 (10 fit); platform Sunward at nauvis; arrived; requests from nauvis: agricultural-science-pack lacks 850 (rocket 600, lacks_after 250), iron-plate lacks 200 (rocket 0, lacks_after 200); launch now: ok')
+eq(f.line,'rocket-silo at (65.5,14.5) on nauvis: rocket built and ready; cargo agricultural-science-pack*600 space-platform-foundation*10, 800/1000 kg, 4/20 slots; manifest 1010 kg, 6 slots; cargo after filling it 1210/1000 kg, 7/20 slots; the list lacks agricultural-science-pack 400 (200 fit), iron-plate 10 (10 fit); platform Sunward at nauvis; arrived; requests from nauvis: agricultural-science-pack lacks 850 (rocket 600, lacks_after 250), iron-plate lacks 200 (rocket 0, lacks_after 200); launch now: ok')
 -- Not ready, over the lift, the platform on its path: what launch would refuse now.
 silo.rocket_silo_status=0; cargo.add('space-platform-foundation',20); pl.stopped=false
 f=R.preflight(p,{position={x=65.5,y=14.5},platform='Sunward'})
@@ -537,3 +537,25 @@ fails(function() R.walk_start(p,{position=S,items={['agricultural-science-pack']
 fails(function() R.walk_start(p,{position=S,items={['agricultural-science-pack']=1},from={x=129.5,y=14.5},walk=true,chests=false}) end,'chests does not go with it')
 fails(function() R.load(p,{position=S,items={['agricultural-science-pack']=1},avoid_enemies=false}) end,'avoid_enemies goes with walk=true')
 print('rocketload ok')
+
+-- Manifest: remote chest counts, qualities, duplicates, unrelated cargo and combined limits.
+do
+  local remote=api.remote_entity
+  api.remote_entity=function(_,a) if a.position.x==60.5 then return cA elseif a.position.x==61.5 then return cB else return silo end end
+  cargo.counts={};cargo.order={};chestA.counts={};chestA.order={};chestB.counts={};chestB.order={};main.counts={};main.order={}
+  cargo.add('iron-plate',10); cargo.add('rocket-fuel',20)
+  chestA.add('iron-plate',50); chestA.add('iron-plate',200,'rare'); chestB.add('iron-plate',20)
+  main.add('iron-plate',5)
+  local r=R.preflight(p,{position=S,items={['iron-plate']=100},from={cA.position,cA.position,cB.position}})
+  eq(#r.from,2); eq(r.order[1].from_held,70); eq(r.order[1].from_short,20); eq(r.order[1].short,15)
+  eq(r.manifest.kg,100);eq(r.manifest.slots,1);eq(r.manifest.after_kg,300);eq(r.manifest.after_slots,2);eq(r.manifest.fits,true)
+  eq(chestA.get_item_count{name='iron-plate',quality='normal'},50,'read moves nothing')
+  r=R.preflight(p,{position=S,items={{name='iron-plate',count=250,quality='rare'}},from=cA.position})
+  eq(r.order[1].from_held,200);eq(r.order[1].short,50);eq(r.manifest.slots,3)
+  r=R.preflight(p,{position=S,items={['iron-plate']=500,['agricultural-science-pack']=500}})
+  eq(r.manifest.after_kg,1200);eq(r.manifest.fits,false,'items separately fit but together exceed lift')
+  local limits=api.cargo.limits;api.cargo.limits=function() return 100000000,2 end
+  r=R.preflight(p,{position=S,items={['iron-plate']=201}})
+  eq(r.manifest.after_slots,4);eq(r.manifest.fits,false,'slots include unrelated cargo')
+  api.cargo.limits=limits;api.remote_entity=remote
+end

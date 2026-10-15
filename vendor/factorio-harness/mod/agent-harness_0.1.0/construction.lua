@@ -167,14 +167,14 @@ return function(api)
     end
     return true
   end
-  function M.plan_ghosts(p,a,box)
+  function M.plan_ghosts(p,a,box,ghosts)
     local pending={}
     local action={kind='construct',pending=pending,built=0,mined=0,gone=0,missing={},failed={},seen={}}
     local function add(e,ghost) add_mine(action,e,ghost) end
     -- Tile ghosts (landfill, paths) are placed like tiles from the cursor;
     -- the trees and rocks a tile collides with go first (M.tile_obstacles).
     local tiles={}
-    for _,e in pairs(p.surface.find_entities_filtered{area=box,type={'entity-ghost','tile-ghost'},force=p.force}) do
+    for _,e in pairs(ghosts or p.surface.find_entities_filtered{area=box,type={'entity-ghost','tile-ghost'},force=p.force}) do
       if e.valid and api.known(p,e) then
         local obstacles=e.type=='tile-ghost' and M.tile_obstacles(p,e) or M.mark_obstacles(p,e)
         pending[#pending+1]={ghost=e,tries=0,stand_fails=0,obstacles=#obstacles>0 and obstacles or nil}
