@@ -224,6 +224,8 @@ already targets your character.
   `configure` (modules by hand, a recipe change on a stocked machine) walk into reach first and then act, the reply's
   `walking` line saying so; past 32 tiles the refusal names the same call with `"walk": true`; `"walk": false` refuses.
   The destination is checked for enemies again when the call starts; a new worm in a previously clear area is included.
+- `sleep --until "tell|alert"` and `wait --until` accept the same joined events; `wait_until {until:"item_count", platform, item, at_least}` waits for landed hub stock in sleep, queue steps and guards (incoming cargo and hub trash excluded).
+  `feed {area, walk:true}` already tours successive groups; `out_of_reach` is the initial count, `last.visited` the stops reached; exhausted carried items and fuel slots holding another fuel limit delivery.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` (and `feed` or `collect {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one

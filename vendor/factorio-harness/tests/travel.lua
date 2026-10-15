@@ -129,6 +129,7 @@ for _,ok in ipairs({{'tell',{to='sol',text='x'}},{'operator',{text='x'}},{'board
   {'science',{}},{'supply',{item='coal'}},{'scan',{platform='alpha'}},{'scan',{surface='nauvis'}},{'scan',{}},{'observe',{scope='scan'}},
   {'networks',{}},{'inspect',{surface='nauvis',position={x=0,y=0}}},
   {'wait_until',{['until']='platform_arrived',platform='alpha'}},{'wait_until',{['until']='platform_left',platform='alpha'}},
+  {'wait_until',{['until']='item_count',item='coal',at_least=5,platform='alpha'}},
   {'wait_until',{['until']='researched'}},{'wait_until',{['until']='item_count',item='coal',at_least=5,positions={{x=0,y=0}}}},
   {'dry_run',{action='scan',args={}}}}) do bots.check_action(b.index,ok[1],ok[2]) end
 -- Sol, 23:13: every remote-view call with platform= or surface= works aboard (place_ghosts with surface=nauvis and its
