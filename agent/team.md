@@ -314,7 +314,8 @@ already targets your character.
   `vehicle {"drive":{...},"combat":true}` keeps the guns on auto for the whole drive (`last.shots`, `last.kills`).
 - `vehicle {"drive":{"x":-40,"y":-200},"remote":true,"vehicle":311799}` drives one of our cars or tanks in radar coverage by
   remote view while your character stays put; its guns do not fire that way.
-- `equip {slot,item,index?}` tries compatible empty gun/ammo slots before slot 1 when index is omitted; an explicit index selects only that slot.
+- `equip {slot,item,index?}` tries compatible empty gun/ammo slots before slot 1 when index is omitted; an explicit index selects only that slot. A gun already in a slot is selected; an occupied slot swaps when your inventory has room.
+  `shoot` replies with `gun {slot, name, range, ammo_slot, ammo, count}` and `no_compatible_ammo` or `out_of_range` when it will not fire; `last_combat.why_none` when nothing fired.
 - `equipment {"vehicle":311799,"operation":"insert","item":"energy-shield-equipment"}` works a tank's (6x8) or spidertron's
   (10x6) equipment grid in reach or seated; `"operation":"list"` shows it, also by remote view; `inspect` on it too.
 - `clear_cliffs {"positions":[{"x":82,"y":38.5}]}` throws cliff explosives you hold at those cliffs, walking into their 10-tile
