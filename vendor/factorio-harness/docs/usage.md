@@ -1686,10 +1686,17 @@ fh sleep 900 --until researched                       # ...or until the research
   ghost on it, and on the hub `hub_slots` (`0 of 65 free`). `platforms` shows `hub_slots` per platform, and with
   `platform` set, `construction_blocked`: `hub full: 0 of 65 slots free; 1 marked for deconstruction wait for room
   (removed entities and their contents go to the hub)`, `ghosts wait for items the hub lacks: inserter (ghosts need 1, hub has 0)`.
-  Items count at the ghost's quality. Tile ghosts the game's foundation rules hold back get one line each: a tile
-  that would enclose empty space no ghost covers (`tile ghost (-7.5,8.5) space-platform-foundation: building it would
-  enclose 6 empty tiles with no ghost: (-6.5,8.5), ...`), one with no foundation or tile ghost beside it, one more than
-  200 tiles north of the hub, one in the 82 tiles south of a thruster. `inspect` on a tile ghost shows the same. Every
+  Items count at the ghost's quality. Tile ghosts the game's foundation rules hold back get one line each, by the rules
+  a copy of world n showed (platformtiles2): the hub builds one tile at a time and looks at its 8 neighbours only.
+  A run is the empty side neighbours (north, east, south, west) joined through the empty corners between them.
+  A ghost with two runs would split the empty space beside it and stays, even when each side stays open to space
+  (`tile ghost (-2.5,13.5) space-platform-foundation: building it would split the empty space beside it: (-2.5,12.5)
+  and (-2.5,14.5) meet only through it (...); on one side a hole of 3 empty tiles with no ghost: (-2.5,11.5), ...`:
+  Astra's three ghosts at (-3,12..14) on Sunward, shift14). With the hole's tiles ghosted too, the hub fills it from
+  the far end in (on the copy six ghosts in about 8 s), and such a ghost is not named. An enclosed one-tile hole fills,
+  and foundation at a corner is enough. Also named: one with no foundation among the 8 tiles round it, one more than
+  200 tiles north of the hub, one in the 82 tiles south of a thruster. Each check plays the ghosts out in turn, so a
+  ghost beside one that gets built is not named. `inspect` on a tile ghost shows the same (`tile_wait`). Every
   tile ghost on the platform counts, also past the 64 the check reads and under an entity ghost (Astra, shift12
   12:41: Starling had 336 tile ghosts, and the tile ghost at (-7.5,-0.5) under a belt ghost was named a hole); the
   dry run's hole count looks past the box it reads the same way.
@@ -2742,6 +2749,32 @@ Some actions work at a distance, the way a player can through remote view:
   tiles under an entity that is not marked: robots take a tile once what stands on it is gone). With `tiles`, entities
   are marked only when `entity_names` or `entity_types` name them. `cancel_deconstruction {area, tiles}` clears tile
   marks (`tiles_cancelled`).
+- On a platform the hub removes a marked foundation tile only with exactly one run (as for tile ghosts, above). With
+  none, all four side neighbours foundation, it would open a new hole. With two it would join separate empty space.
+  A diagonal neighbour alone is not enough, and two holes joined far round still count as two (the copy's C-shaped
+  hole). The hub also needs room for the item it returns, and nothing may stand on the tile. Whether the rest of the
+  foundation stays joined is not looked at: a tile holding a one-tile peninsula on went, leaving it apart. Docked or
+  in flight is the same. A marked tile waits until its neighbours change: a chain marked from the edge in goes one
+  tile at a time (on the copy (-4,10), (-4,9), (-4,8), (-3,8) and Astra's (-2,8) in about 2 s). So deconstruct's
+  reply plays out every marked tile on the platform:
+  - `tiles_go`: `9 marked tiles on the platform go, one at a time, each once a side neighbour is empty space, in
+    this order: (-9.5,8.5), ...`;
+  - `tiles_waiting` and `waiting`, the first 8, each with why:
+    - `(-1.5,8.5): none of its four side neighbours (north, east, south, west) is empty space: the hub removes a
+      foundation tile only beside empty space`;
+    - `its empty side neighbours (5.5,-4.5) and (3.5,-4.5) do not meet through the tiles round it: removing it would
+      join separate empty space, which the hub does not do`;
+    - `the hub has no room for space-platform-foundation`;
+    - `fast-inserter (10.5,5.5) stands on it`;
+    - `; the marked tile beside it at (x,y) waits too`.
+  `platforms {platform}` shows the same as `tile_removals` (`marked`, `go`, `waiting`), and `inspect` of a marked
+  tile, its `deconstructible-tile-proxy`, says `tile_wait` (`marked for removal: nothing holds it; the hub removes it
+  next`, `... it goes once a tile beside it has gone (8 before it ...)`, or `... waits: ...`).
+- `deconstruct {..., dry_run: true}` marks nothing:
+  - with `tiles`: `tiles_would_mark` (not marked yet, nothing standing on them; `refused: {under_entity}` for the
+    rest, which the game refuses: an edge tile under an inserter on the copy) and `tile_ghosts_would_go`; on a
+    platform also `tiles_go` and `waiting` as if they were marked;
+  - entities: `would_mark` and `would_mark_by_name`.
 - The same call removes our tile ghosts of those tiles, as a planner over them does: `tiles: ["landfill"]` takes away
   landfill planned over water before robots build it (`tile_ghosts_removed`; Grok, shift10 06:20: it marked 0 there,
   and only an unfiltered deconstruct removed the 41 ghosts). Built landfill is minable in 2.0 and is marked like any
