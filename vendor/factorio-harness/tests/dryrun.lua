@@ -764,7 +764,16 @@ do
   local r = dryrun.check(cp2, {kind='ghosts', entities=belts})
   eq(r.summary, '6 placeable (of 6); 4 over cliffs')
   eq(r.items['cliff-explosives'], 1); eq(r.missing['cliff-explosives'], 1)
+  -- no construction robots reach it (Sol 15:41 on Gleba): clear it by hand with clear_cliffs, its position given
+  eq(r.cliffs, '4 placeable entries stand over 1 cliff: placing marks it, and a marked cliff goes only with one explosive (construction robots bring it): cliff-explosives 1, you hold 0'
+    ..'; no construction robots reach it here: clear it by hand first, clear_cliffs {"positions":[{"x":20,"y":20.5}]} (throws the explosives from within their range, walking there)')
+  eq(r.cliffs_by_hand[1].x, 20); eq(r.cliffs_by_hand[1].y, 20.5)
+  -- a network with construction robots over it: no hand-clearing line
+  cw2.find_logistic_network_by_position = function() return {available_construction_robots=5} end
+  r = dryrun.check(cp2, {kind='ghosts', entities=belts})
   eq(r.cliffs, '4 placeable entries stand over 1 cliff: placing marks it, and a marked cliff goes only with one explosive (construction robots bring it): cliff-explosives 1, you hold 0')
+  eq(r.cliffs_by_hand, nil)
+  cw2.find_logistic_network_by_position = nil
   held['cliff-explosives'] = 3
   r = dryrun.check(cp2, {kind='ghosts', entities=belts})
   eq(r.missing, nil); has(r.cliffs, 'cliff-explosives 1, you hold 3')

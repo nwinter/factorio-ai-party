@@ -497,8 +497,8 @@ def describe(n, row, start, end, events, chapters, team, deaths, biggest, moment
         for e in events:
             if e["kind"] in ("platform", "depart", "arrive", "planet"):
                 lines.append(f"• {e['title']}")
-        if row.get("spm") is not None:
-            lines.append(f"• Science: {row['spm']:g} packs a minute on average")
+        if row.get("spm") is not None:  # research units a minute (site/longrun.py): SPM as players say it
+            lines.append(f"• Science: {row['spm']:g} SPM on average (research units a minute)")
     fights = sorted([e for e in events if e["kind"] == "fight"], key=lambda e: -e["lost"])
     line = f"• Deaths: {deaths}" if deaths else "• No deaths"
     if fights:

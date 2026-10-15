@@ -127,7 +127,8 @@ advance(30)
 fails(function() astra('use_item',{item='grenade',position={x=at.x+5,y=at.y}}) end,'no grenade held')
 fails(function() astra('use_item',{item='iron-plate',position={x=at.x+5,y=at.y}}) end,'iron-plate is not a capsule')
 body.items['cliff-explosives']=1
-fails(function() astra('use_item',{item='cliff-explosives',position={x=at.x+5,y=at.y}}) end,'(destroy-cliffs) is not usable this way')
+-- cliff explosives are thrown now (tests/cliffs.lua); with no cliff there, the call says so
+fails(function() astra('use_item',{item='cliff-explosives',position={x=at.x+5,y=at.y}}) end,'no cliff within the blast')
 body.items['grenade']=1
 fails(function() astra('use_item',{item='grenade'}) end,'position is required')
 fails(function() astra('use_item',{item='nonsense'}) end,'unknown item nonsense')

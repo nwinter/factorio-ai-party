@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Tests for tools/quota_check.py and tools/agy-quota.py (run: python3 tools/test_quota.py)."""
+import os as _os
+_os.environ["POG_AGY_PACE"] = "off"  # the weekly pacing reads the live quota brief; off in these tests
 import json
 import os
 import subprocess
@@ -177,6 +179,43 @@ def agy_turn_timeout():
     print("agy turn timeout: ok (short continue after a timed-out turn, full after one that ended, fresh past the limit)")
 
 
+def agy_pace():
+    """tools/agy-quota.py pace(): the weekly pacing sleeps for the duty cycle the budget allows, longer above the line."""
+    import importlib.util, tempfile, time as _t
+    spec = importlib.util.spec_from_file_location("agyq", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                                      "agy-quota.py"))
+    with tempfile.TemporaryDirectory() as d:
+        now = _t.time()
+        brief = os.path.join(d, "brief.json")
+        def write(pct):
+            json.dump({"profiles": [{"command": "agy", "observed_at": now, "windows": [
+                {"key": "agy:gemini:10080", "percent": pct, "resets_at": now + 90 * 3600}]}]}, open(brief, "w"))
+        write(87.0)
+        env = {"POG_AGY_BRIEF": brief, "POG_AGY_PACE_FILE": os.path.join(d, "pace.json"), "POG_AGY_PACE": ""}
+        old = {k: os.environ.get(k) for k in env}
+        os.environ.update(env)
+        try:
+            m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+            since = now - 301   # a 5-minute turn
+            w1 = m.pace(d, since, now + 4 * 3600)
+            # 10% left over 90 h is 0.111 %/h, a duty of 0.063: about 15 sleeps of the turn's length
+            assert 4000 < w1 < 5000, w1
+            write(89.0)        # 2% above the line now: the sleep is longer, up to the cap
+            w2 = m.pace(d, since, now + 4 * 3600)
+            assert w2 > w1 and w2 <= m.MAX_SLEEP, (w1, w2)
+            assert m.pace(d, since, now + 600) == "stop"   # the sleep would pass the deadline
+            os.environ["POG_AGY_PACE"] = "off"
+            assert m.pace(d, since, now + 4 * 3600) is None
+            events = [json.loads(l)["event"] for l in open(os.path.join(d, "context.log"))]
+            assert events == ["agy-pace"] * 3, events
+        finally:
+            for k, v in old.items():
+                if v is None: os.environ.pop(k, None)
+                else: os.environ[k] = v
+    print("agy pace: ok (duty sleep, longer above the line, stop past the deadline, off)")
+
+
 if __name__ == "__main__":
     main()
     agy_turn_timeout()
+    agy_pace()

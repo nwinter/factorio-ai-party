@@ -866,8 +866,13 @@ async function main() {
       ammo_used: shot ? last?.ammo_used : undefined,
       detail: last?.result, alive: status.result?.alive === false ? false : undefined,
       // construct: what it did and what stopped it, blockers with coordinates (request #167); kite: why it stopped.
-      ...(last?.kind === 'construct' ? {built: last.built, mined: last.mined, remaining: last.remaining || undefined,
+      ...(last?.kind === 'construct' ? {built: last.built, mined: last.mined, tiles_mined: last.tiles_mined, remaining: last.remaining || undefined,
         missing: last.missing, failed: last.failed, blockers: last.blockers} : {}),
+      // mine {tiles} (minetile, Sol 15:28): each tile mined and what went back, those skipped and why.
+      ...(last?.kind === 'mine' && (last?.tiles !== undefined || last?.skipped !== undefined) ? {mined: last.mined,
+        tiles: Array.isArray(last.tiles) ? last.tiles.map((t: {tile?: string, restored?: string, position?: {x?: number, y?: number}}) =>
+          `${t.tile} (${t.position?.x},${t.position?.y}) -> ${t.restored}`) : undefined,
+        skipped: last.skipped, left: last.left, error: last.error} : {}),
       // kite: what it killed, what is left, the ammunition, where it retreated from (kite.lua).
       ...(last?.kind === 'kite' ? {kills: last.kills, enemies_left: last.enemies_left, ammo_used: last.ammo_used, ammo_left: last.ammo_left,
         reloads: last.reloads, retreated_from: last.retreated_from} : {}),
@@ -879,7 +884,9 @@ async function main() {
         build_spot: last.build_spot, build_spot_note: last.build_spot_note, build_spot_squeeze: last.build_spot_squeeze, squeezed: last.squeezed,
         legs: legLines(last.legs),
         // a walk to a target's reach: how near it ended, an end within reach counted as arrived, a spot walked to (movetarget)
-        reach: last.reach, reach_note: last.reach_note, reach_walk: last.reach_walk} : {}),
+        reach: last.reach, reach_note: last.reach_note, reach_walk: last.reach_walk,
+        // a position nothing led to, walked near instead (friction2)
+        near_walk: last.near_walk, target: last.near_walk ? last.target : undefined} : {}),
       // vehicle drive: the path it followed and a back-up (vehicles.lua).
       ...(last?.kind === 'drive' ? {path_length: last.path_length, backed_up: last.backed_up,
         // drivesafe: the box it planned for, a stop short of the target, ours it braked or stopped for, a dry run's path

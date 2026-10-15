@@ -80,6 +80,29 @@ end
 rcon.print(helpers.table_to_json(out))
 """
 
+# Science packs the labs used, as FLOW_LUA's 30 two-minute buckets over the last hour, oldest first (the production
+# statistics' consumption side: labs are what consume science packs). The ten-hour precision's samples are two
+# minutes each, so a bucket is one read (FLOW_LUA's one-hour samples take ten). Only surfaces where a pack was ever
+# consumed are read.
+USED_FLOW_LUA = r"""
+local f = game.forces.player
+local out = {}
+for _, s in pairs(game.surfaces) do
+  local st = f.get_item_production_statistics(s)
+  for _, n in ipairs(ITEMS) do
+    if prototypes.item[n] and st.get_output_count(n) > 0 then
+      local series = out[n] or {}
+      for b = 30, 1, -1 do
+        local c = st.get_flow_count{name = n, category = "output", precision_index = defines.flow_precision_index.ten_hours, sample_index = b, count = true}
+        series[31 - b] = (series[31 - b] or 0) + c
+      end
+      out[n] = series
+    end
+  end
+end
+rcon.print(helpers.table_to_json(out))
+"""
+
 # The base for the site's live map: every building of ours on nauvis (poles left out), from one
 # find_entities_filtered, in two grids of category letters. Each cell takes its most telling building (defence > labs >
 # oil > assembly > smelting > mining > power > logistics > inserters > belts > rails > pipes).
@@ -405,6 +428,11 @@ class Harness:
 
     def flows(self, items):
         lua = FLOW_LUA.replace("ITEMS", "{" + ",".join(json.dumps(i) for i in items) + "}")
+        return self.lua(lua)
+
+    def used_flows(self, items):
+        """{pack: 30 two-minute counts the labs used, oldest first} (USED_FLOW_LUA)."""
+        lua = USED_FLOW_LUA.replace("ITEMS", "{" + ",".join(json.dumps(i) for i in items) + "}")
         return self.lua(lua)
 
     def basemap(self, cell=4, max_cells=128, ore=False):
