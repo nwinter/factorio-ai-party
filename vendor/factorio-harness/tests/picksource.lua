@@ -307,4 +307,48 @@ eq(last.outcome,'failed'); assert(tostring(last.first_error):find('^%(%-188.5,%-
 eq(last.error,last.first_error)
 body.position={x=50,y=32}
 
+-- 11. round1650d: walking transfers.
+-- A walking take from chests that hold none of the item now is refused before the walk, naming the nearest holding it
+-- (Sonnet walked 66 tiles to an empty provider chest, Muse 44 to an empty iron chest).
+local far_empty=chest({x=95.5,y=32.5})
+fails(function() luna('transfer',{position=far_empty.position,item='yumako-seed',count=5,direction='to_player',walk=true}) end,
+  'wooden-chest at (95.5,32.5) holds no yumako-seed now: nothing walked; the nearest holding it: wooden-chest at (55.5,36.5), 7.1 tiles from you, holds 76')
+assert(not luna('status').active,'nothing started')
+r=luna('transfer',{position=far_empty.position,item='yumako-seed',count=5,direction='to_player',walk=true,up_to=true})
+eq(r.moved,0); eq(r.short.reason,'source_empty'); assert(r.note:find('nothing walked',1,true),r.note)
+-- A hinted chest that feeds something says so, as from: "nearest" would leave it out without feeding: true.
+local feeder={valid=true,name='inserter',type='inserter',position={x=55.5,y=37.5},force=force,pickup_target=yfarm,drop_target={valid=true,name='agricultural-tower'}}
+world[#world+1]=feeder
+fails(function() luna('transfer',{position=far_empty.position,item='yumako-seed',count=5,direction='to_player',walk=true}) end,
+  'holds 76 (inserter (55.5,37.5) picks from it into agricultural-tower; transfer from: "nearest" with feeding: true)')
+feeder.valid=false
+-- An end that moved nothing says why on its error line: a give to a chest that took none (Sol 00:05: nothing_to_do).
+main.insert{name='iron-plate',count=5}
+far_empty.inv.insert{name='wood',count=100*16}
+r=luna('transfer',{position=far_empty.position,item='iron-plate',count=5,direction='to_entity',walk=true})
+body.position={x=90,y=32}
+advance(3)
+last=luna('status').last
+eq(last.outcome,'nothing_to_do'); eq(last.why,'wooden-chest (95.5,32.5) is full')
+far_empty.inv.remove{name='wood',count=100*16}; main.remove{name='iron-plate',count=5}
+body.position={x=50,y=32}
+-- With to, inventory goes with the place that has it: neither chest has fuel, so the call is refused at once (Luna
+-- 00:05 and Grok 00:39: rocket_silo_rocket was tried on the chest taken from and the courier ended nothing_collected).
+yumako.inv.insert{name='yumako-seed',count=10}
+fails(function() luna('transfer',{positions={yumako.position},item='yumako-seed',pick='first_with_stock',to=yfarm.position,inventory='fuel'}) end,
+  'inventory fuel is neither on wooden-chest at (47.5,33.5), the place taken from, nor on wooden-chest at (55.5,36.5), the place given to')
+-- A furnace given to: the give gets the fuel inventory, the take the chest's own.
+prototypes.item.coal={name='coal',type='item',stack_size=50,fuel_value=4000000}
+local fuel_inv=inventory(1)
+local furnace={valid=true,name='stone-furnace',type='furnace',position={x=56,y=29},force=force,surface=surface,quality={name='normal'},unit_number=3001,
+  health=200,max_health=200,prototype={name='stone-furnace',type='furnace'},bounding_box={left_top={x=55,y=28},right_bottom={x=57,y=30}}}
+furnace.get_inventory=function(i) return i==defines.inventory.fuel and fuel_inv or nil end
+furnace.get_fuel_inventory=function() return fuel_inv end
+world[#world+1]=furnace
+local coal_chest=chest({x=49.5,y=30.5},{coal=20})
+r=luna('transfer',{positions={coal_chest.position},item='coal',pick='first_with_stock',count=10,to=furnace.position,inventory='fuel'})
+advance(3)
+last=luna('status').last
+eq(last.outcome,'transferred'); eq(fuel_inv.get_item_count('coal'),10); eq(coal_chest.inv.get_item_count('coal'),10)
+
 print('picksource: ok')

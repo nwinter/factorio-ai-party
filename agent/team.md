@@ -198,7 +198,9 @@ already targets your character.
   holding the item and says which, a `count` it lacks from the next ones (one holding it all goes alone); chests that
   feed something (requester and buffer chests, a chest an inserter takes from) only with `"feeding": true`, and walking
   (`"walk": true` looks 32 tiles) none in a worm's reach, each named when left out; `transfer
-  {from: {x,y}, to: {x,y}, item, count}` takes at one place and gives at the other in one call; `transfer`/`collect {positions,
+  {from: {x,y}, to: {x,y}, item, count}` takes at one place and gives at the other in one call (`inventory` goes with
+  the place that has it, a silo's cargo at `to`); a walking take from chests holding none of it now is refused before
+  the walk, naming the nearest holding it; `transfer`/`collect {positions,
   item | items, pick: "first_with_stock" | "most_stock"}` takes at one listed place that holds the item now (empty
   ones are `skipped`, not short; none: nothing walked), and `to` (`{x,y}` or `{item: {x,y}}`) carries it on to that
   item's destination in the same call; `./fh call inventory` shows main,

@@ -218,7 +218,9 @@ do
   eq(b.alerts.losses['stone-furnace'],1); eq(b.alerts.latest[1],alerts.latest[1]); eq(b.surface,'nauvis'); eq(b.connected,true)
   eq(b.factory,nil); eq(b.enemies,nil); eq(scans,0)
   eq(call('status',{brief=true,peek=true}).alerts,nil)
-  fails(function() call('status',{alerts=true}) end,'alerts is an option of brief')
+  -- alerts without brief runs as the brief status (round1650d: Astra's {inventory, machines: false, alerts: false})
+  local nb=call('status',{alerts=true,peek=true})
+  eq(nb.brief,true); assert(tostring(nb.corrected):find('alerts goes with brief: brief=true',1,true),tostring(nb.corrected))
   p.surface.find_entities_filtered=find
 end
 -- A wipe larger than any entry cap is counted whole, per area, and pushed once
@@ -1000,8 +1002,8 @@ do
     defines.rocket_silo_status=kept_def or {building_rocket=0,create_rocket=1,rocket_ready=7,launch_started=14}
     silo.rocket_silo_status,silo.rocket_parts=7,0
     local si=call('inspect',{position={x=3,y=0}})
-    eq(si.rocket_ready,true); assert(si.parts:find('^0/'),si.parts)
-    assert(si.rocket:find('^rocket built and ready: parts consumed %(0/%d+%), not launched; no launch seen$'),si.rocket)
+    eq(si.rocket_ready,true); assert(si.next_parts:find('^0/'),si.next_parts); eq(si.parts,nil)
+    assert(si.rocket:find("^rocket ready to launch, not launched; the next rocket's parts 0/%d+; no launch seen$"),si.rocket)
     silo.rocket_silo_status,silo.rocket_parts=nil,nil; defines.rocket_silo_status=kept_def
   end
   local kept=main
@@ -1965,7 +1967,8 @@ do
   local sup=call('observe',{scope='supply',item='transport-belt'})
   eq(sup.item,'transport-belt'); assert(sup.where and sup.counted and sup.flow,'supply reply')
 end
-fails(function() call('observe',{scope='supply',item='transport-belt',radius=5}) end,'radius needs near')
+-- radius alone: around the character (round1650d: Grok, twice in shift13).
+eq(call('observe',{scope='supply',item='transport-belt',radius=5}).item,'transport-belt')
 fails(function() call('observe',{scope='supply',item='transport-belt',pack='x'}) end,'unknown argument pack for supply; valid: item, near, radius, surface')
 fails(function() call('observe',{scope='supply',item='nope'}) end,'item must be an item name')
 -- nearest sorts by distance, skips fogged chunks and the character itself.
