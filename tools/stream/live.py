@@ -637,10 +637,20 @@ class LiveSource:
                     projects, _ = self.read("board", {"kind": "project", "status": "active", "limit": 12}, **self.reader())
                 except Exception:
                     projects = {}
+                # every active item, for the live page's open and in-progress lists (viewer joonazan, d15 08:19: "I can't
+                # see the open jobs"); None when the read fails, and the page keeps its counts only
+                try:
+                    active = {"items": []}
+                    for kind in ("task", "request"):
+                        part, _ = self.read("board", {"kind": kind, "status": "active", "limit": 100}, **self.reader())
+                        active["items"] += part.get("items") or []
+                except Exception:
+                    active = None
                 items = {it.get("id"): it for it in (res.get("items") or []) + (claims.get("items") or [])
-                         + (projects.get("items") or [])}
+                         + (projects.get("items") or []) + ((active or {}).get("items") or [])}
                 obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned"),
-                                "plan": res.get("plan")}  # the team plan (board_plan; absent on older runtimes)
+                                "plan": res.get("plan"),  # the team plan (board_plan; absent on older runtimes)
+                                "active_ids": [it.get("id") for it in active.get("items") or []] if isinstance(active, dict) else None}
                 if self.journals and "plan" in res:  # the plan a shift leaves, for its page on the site (planlog.py)
                     try:
                         planlog.save(self.journals, planlog.record(res.get("plan"), obs["board"]["items"],

@@ -127,6 +127,30 @@ def public_youtube(viewers, hidden=None):
     return rows[-YOUTUBE_MAX:]
 
 
+REPLY_MAX = 40  # agents' replies to viewers in the state (newest kept); the live page's chat shows them
+
+
+def public_replies(rows, hidden=None):
+    """The agents' and the Operator's lines that answer a viewer or speak to the viewers (model.py viewer_replies,
+    tools/stream/viewer_replies.py), oldest first, the newest REPLY_MAX: {seq, t, tick, by, text, kind, to, answers?}.
+    A reply to a line the site hides keeps its own words; that line and its viewer's name are left out."""
+    out = []
+    for r in rows or []:
+        if not isinstance(r, dict) or not r.get("text") or not r.get("by") or not isinstance(r.get("t"), (int, float)):
+            continue
+        row = {"seq": r.get("seq"), "t": round(r["t"], 1), "tick": r.get("tick"), "by": str(r["by"]), "text": str(r["text"]),
+               "kind": r.get("kind") or "reply", "to": [str(n) for n in r.get("to") or []]}
+        a = r.get("answers")
+        if isinstance(a, dict) and a.get("name"):
+            if hidden and hidden.hides(a.get("name"), a.get("text")):
+                row["to"] = [n for n in row["to"] if n.lower() != str(a["name"]).lower()]
+            else:
+                row["answers"] = {"name": str(a["name"]), "text": str(a.get("text") or ""), "t": a.get("t"), "source": a.get("source")}
+        out.append(row)
+    out.sort(key=lambda r: r["t"])
+    return out[-REPLY_MAX:]
+
+
 def public_state(s):
     out = {k: s[k] for k in TOP_KEYS if k in s}
     out["agents"] = [{k: a[k] for k in AGENT_KEYS if k in a} for a in s.get("agents", [])]
@@ -155,6 +179,9 @@ def public_state(s):
     yt = public_youtube(s.get("viewers"), hidden_now())
     if yt:
         out["youtube_chat"] = yt
+    vr = public_replies(s.get("viewer_replies"), hidden_now())
+    if vr:
+        out["viewer_replies"] = vr
     # The broadcast the stream service's YouTube chat bridge follows, so the live page embeds the current one.
     yt = ((s.get("viewers_status") or {}).get("youtube") or {})
     if re.fullmatch(r"[\w-]{11}", str(yt.get("video") or "")):
