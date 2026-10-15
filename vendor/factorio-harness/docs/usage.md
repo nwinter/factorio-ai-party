@@ -157,7 +157,12 @@ fh call status
   run lists each planned belt, underground exit and splitter in `belts` `{index, name, position, moves}`: the tile its
   items move to and what stands there: `moves items south to (20.5,28.5): planned #2 transport-belt facing south`,
   `...: transport-belt (20.5,30.5) facing west` (built; a ghost says `ghost`), `...: nothing there (no belt takes them
-  there: they stop at its end)`.
+  there: they stop at its end)`. Into a transport belt's side (Grok, shift17 10:50: he nearly joined an ice belt into the
+  magazine line) it names the lane and what it carries now: `...: transport-belt (40.5,30.5) facing west: side-load onto
+  its right lane (that lane now: ice*4)` (the lane on the side the items come from; a ghost or a planned belt has no
+  items yet); a belt nothing feeds from behind or from its other side turns into a curve: `...: no belt feeds it from
+  behind, so it turns into a curve and both lanes go on`; one facing them: `...: it faces them; they do not go on`.
+  The same goes for `place_ghosts` with `dry_run`.
 - An inserter's `direction` names the side it picks up from; it drops to the opposite side. Built at (10.5,5.5) with
   `direction: east` it picks up at (11.5,5.5) and drops at (9.5,5.5) (items move west); with `direction: west` it picks
   up at (9.5,5.5) and drops at (11.5,5.5) (items move east). A long-handed inserter reaches 2 tiles each way. Belts,
