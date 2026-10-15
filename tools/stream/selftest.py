@@ -327,7 +327,8 @@ def main():
         b["changelog"][0]["request"] == "Save build orders", b["changelog"]
     # open projects come from their own read (they outlive the newest 60 items), with their progress
     assert b["projects"] == [{"id": 6, "title": "Nuclear plant", "owner": "astra", "agent": "astra", "status": "doing",
-                              "progress": "3 of 7 steps", "done": 3, "total": 7}] and b["projects_total"] == 1, b["projects"]
+                              "progress": "3 of 7 steps", "done": 3, "total": 7, "next": "4. turbines", "goal": None}] \
+        and b["projects_total"] == 1, b["projects"]  # next: its first step not done (the site's Team plan)
     # a runtime older than projects refuses the kind: the rest of the board still comes
     osrc = LiveSource("test", run, harness=FakeHarness(board=True, no_projects=True))
     oobs = osrc.observe()
