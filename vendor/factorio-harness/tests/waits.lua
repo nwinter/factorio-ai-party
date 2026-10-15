@@ -93,22 +93,48 @@ game.tick=7000; mode='realtime'; s.alert_seq=4
 r=W.handlers.sleep(p,{seconds=300,condition={['until']='alert'}}); eq(r.condition,'alert'); assert(r.wakes_on:find('a new alert',1,true))
 eq(W.handlers.sleep_check(p,{peek=true}).woke,nil)
 s.alert_seq=5; game.tick=7100; r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'alert'); assert(r.alert:find('new attack',1,true))
+-- Chosen kinds (Luna, 19:50): a push alert group of those kinds addressed to you, new or grown since the sleep began;
+-- starved: a machine in your claims lacking ingredients that did not at the start (looked at every 10 s).
+local groups,starving={},{}
+local Wk=dofile('mod/agent-harness_0.1.0/waits.lua'){state=function() return s end,integer=integer,replace=function() end,
+  advance=function() end,clock_mode=function() return 'realtime' end,
+  alert_levels=function(_,kinds) local out={} for k,g in pairs(groups) do if g.kind==kinds[1] or g.kind==kinds[2] then out[k]=g end end return out end,
+  starved=function() local out={} for u,l in pairs(starving) do out[u]=l end return out end}
+game.tick=8000; s.alert_seq=9
+groups.lp={kind='low_power',level=3,text='3 assembling-machine-2 low power near (10,10)'}
+starving[11]='assembling-machine-2 (1,1) in your claim "gears" item ingredient shortage'
+r=Wk.handlers.sleep(p,{seconds=300,condition={['until']='alert',kinds={'low_power','starved'}}})
+eq(r.condition,'alert low_power starved')
+s.alert_seq=10; game.tick=8060
+eq(Wk.handlers.sleep_check(p,{peek=true}).woke,nil,'other alerts and the groups already there do not wake it')
+groups.lp.level=5; game.tick=8120
+r=Wk.handlers.sleep_check(p,{peek=true}); eq(r.woke,'alert'); eq(r.alert,'3 assembling-machine-2 low power near (10,10)')
+-- A new starving machine in a claim wakes it at the next look (10 s).
+game.tick=9000; groups.lp.level=5
+r=Wk.handlers.sleep(p,{seconds=300,condition={['until']='alert',kinds={'starved'}}}); eq(Wk.handlers.sleep_check(p,{peek=true}).woke,nil)
+starving[12]='assembling-machine-2 (5,1) in your claim "gears" item ingredient shortage'
+game.tick=9300; eq(Wk.handlers.sleep_check(p,{peek=true}).woke,nil,'not looked at yet')
+game.tick=9600; r=Wk.handlers.sleep_check(p,{peek=true}); eq(r.woke,'alert'); eq(r.alert,'assembling-machine-2 (5,1) in your claim "gears" item ingredient shortage')
+-- One kind as a word; bad kinds are refused.
+game.tick=10000; r=Wk.handlers.sleep(p,{seconds=60,condition={['until']='alert',kinds='low_power'}}); eq(r.condition,'alert low_power')
+fails(function() Wk.handlers.sleep(p,{seconds=60,condition={['until']='alert',kinds={}}}) end,'kinds: 1..16 alert kinds')
+fails(function() Wk.handlers.sleep(p,{seconds=60,condition={['until']='alert',kinds={'low power!'}}}) end,'kinds are alert kind names')
 -- round1950a item 2 (Haiku 46h51m: a big spitter's acid, "hit 8 times by enemies"): a hit with no attacker named
 -- wakes too; and the health to fall from is the highest seen in the sleep (a sleep begun hurt heals meanwhile).
 p.character={valid=true,health=250,unit_number=7}; s.alert_seq=nil
-game.tick=8230; W.handlers.sleep(p,{seconds=60}); eq(W.handlers.sleep_check(p,{peek=true}).woke,nil)
-s.char_hits={[7]={hits=1,damage=40,last=8235}}; game.tick=8236
+game.tick=11230; W.handlers.sleep(p,{seconds=60}); eq(W.handlers.sleep_check(p,{peek=true}).woke,nil)
+s.char_hits={[7]={hits=1,damage=40,last=11235}}; game.tick=11236
 r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'damaged'); eq(r.by,'enemies')
 s.char_hits=nil
-game.tick=8250; p.character.health=100; W.handlers.sleep(p,{seconds=60})
-game.tick=8260; p.character.health=250; eq(W.handlers.sleep_check(p,{peek=true}).woke,nil,'healed: no wake')
-game.tick=8270; p.character.health=200
+game.tick=11250; p.character.health=100; W.handlers.sleep(p,{seconds=60})
+game.tick=11260; p.character.health=250; eq(W.handlers.sleep_check(p,{peek=true}).woke,nil,'healed: no wake')
+game.tick=11270; p.character.health=200
 r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'damaged'); eq(r.lost,50); eq(r.health,200)
 p.character.health=250
 -- Walked away when hit (runtime.lua idle_hit): the wake says where.
-game.tick=8300; W.handlers.sleep(p,{seconds=60})
-s.idle_fled={[1]={tick=8301,from={x=151.2,y=-26},to={x=127,y=-26},by='big-spitter'}}; s.char_hits={[7]={hits=1,damage=40,last=8301,by='big-spitter'}}
-game.tick=8302; r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'damaged'); eq(r.fled,'hit by big-spitter at (151.2,-26.0): walking away to (127,-26)')
+game.tick=11300; W.handlers.sleep(p,{seconds=60})
+s.idle_fled={[1]={tick=11301,from={x=151.2,y=-26},to={x=127,y=-26},by='big-spitter'}}; s.char_hits={[7]={hits=1,damage=40,last=11301,by='big-spitter'}}
+game.tick=11302; r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'damaged'); eq(r.fled,'hit by big-spitter at (151.2,-26.0): walking away to (127,-26)')
 s.idle_fled=nil; s.char_hits=nil
 mode='realtime'
 -- In turns mode the clock is asked to run for the sleep (advance caps at 36000).

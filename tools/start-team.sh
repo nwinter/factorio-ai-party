@@ -248,8 +248,9 @@ helpers=("stream-service:$!:$rundir/stream-service.log")
 # without one uses the main checkout's.
 if [ "${POG_OBS:-1}" != 0 ]; then
   py=tools/.venv/bin/python; [ -x "$py" ] || py=$HOME/code/player-of-games/tools/.venv/bin/python
-  nohup ssh -N -o ControlMaster=no -o ControlPath=none -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 \
-    -R 8787:127.0.0.1:8788 pogwin >/dev/null 2>&1 &
+  # In a loop: a box reboot or a dropped link ended the one ssh and the overlay vanished from the stream (2026-10-14).
+  nohup bash -c 'while true; do ssh -N -o ControlMaster=no -o ControlPath=none -o ExitOnForwardFailure=yes \
+    -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -R 8787:127.0.0.1:8788 pogwin; sleep 5; done' >/dev/null 2>&1 &
   echo $! > "$rundir/overlay-tunnel.pid"
   # A new OBS process for each streamed shift (2026-10-13 08:29: after 24.5 h in one process Quick Sync failed with
   # MFX_ERR_MEMORY_ALLOC and the stream stopped). tools/shift-change.sh restarts it between stop-team and this

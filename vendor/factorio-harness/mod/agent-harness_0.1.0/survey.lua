@@ -407,6 +407,12 @@ return function(api)
   for _,t in ipairs(SURVEY_TYPES) do WALK_TYPES[#WALK_TYPES+1]=t end
   WALK_TYPES[#WALK_TYPES+1]='underground-belt'; WALK_TYPES[#WALK_TYPES+1]='transport-belt'
   local walk=api.walk or require('walk'){state=api.state}
+  -- A call timed as its own profile part while the operator profile runs (runtime M.timed); else just the call.
+  local function timed(label,fn,...)
+    if api.timed then return api.timed(label,fn,...) end
+    return fn(...)
+  end
+  local step_do
   function M.tick(tick)
     local st=api.state()
     st.survey_bg=true
@@ -441,31 +447,35 @@ return function(api)
           steps=0,every=walk.every(st.survey_steps[key],BG_TICKS)}
       elseif job and walk.due(job,tick,BG_TICKS) then
         job.steps=job.steps+1
-        local force=game.forces[job.force]
-        local surface=force and game.get_surface(job.surface)
-        if not (force and surface) then st.survey_jobs[key]=nil
-        elseif job.done then
-          local entry2=acc_done(job.a,job.b,force,surface)
-          entry2.tick=job.start
-          cache[key]=entry2
-          st.survey_steps[key]=job.steps
-          st.survey_jobs[key]=nil
-        elseif not job.list then
-          job.walk=job.walk or walk.start(surface)
-          job.tech=job.tech or force.current_research
-          local list=walk.band(job.walk,surface,{force=force,type=WALK_TYPES})
-          if list then job.list,job.i=list,1 else job.done=true end
-        else
-          local last=math.min(#job.list,job.i+SLICE-1)
-          for i=job.i,last do
-            local e=job.list[i]
-            local t=e.valid and e.type
-            if t=='underground-belt' or t=='transport-belt' then belt_one(job.b,surface,force,e,t) elseif t then acc_entity(job.a,e,job.tech) end
-          end
-          job.i=last+1
-          if job.i>#job.list then job.list,job.i=nil,nil end
-        end
+        -- (each kind of step its own profile part, survey.<kind>: operator 18:12, survey.tick 66 ms in one game second)
+        timed('survey.'..(job.done and 'done' or job.list and 'slice' or 'band'),step_do,st,cache,key,job)
       end
+    end
+  end
+  step_do=function(st,cache,key,job)
+    local force=game.forces[job.force]
+    local surface=force and game.get_surface(job.surface)
+    if not (force and surface) then st.survey_jobs[key]=nil
+    elseif job.done then
+      local entry2=acc_done(job.a,job.b,force,surface)
+      entry2.tick=job.start
+      cache[key]=entry2
+      st.survey_steps[key]=job.steps
+      st.survey_jobs[key]=nil
+    elseif not job.list then
+      job.walk=job.walk or walk.start(surface)
+      job.tech=job.tech or force.current_research
+      local list=walk.band(job.walk,surface,{force=force,type=WALK_TYPES})
+      if list then job.list,job.i=list,1 else job.done=true end
+    else
+      local last=math.min(#job.list,job.i+SLICE-1)
+      for i=job.i,last do
+        local e=job.list[i]
+        local t=e.valid and e.type
+        if t=='underground-belt' or t=='transport-belt' then belt_one(job.b,surface,force,e,t) elseif t then acc_entity(job.a,e,job.tech) end
+      end
+      job.i=last+1
+      if job.i>#job.list then job.list,job.i=nil,nil end
     end
   end
 

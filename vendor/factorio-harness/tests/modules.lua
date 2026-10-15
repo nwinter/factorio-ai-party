@@ -24,10 +24,22 @@ local plain_recipe={name='iron-gear-wheel',allowed_effects=ALL}
 local no_quality={name='no-quality-recipe',allowed_effects={speed=true,consumption=true,pollution=true,productivity=true}}
 local M=dofile('mod/agent-harness_0.1.0/modules.lua'){out_of_reach=function(_,e) return 'entity is out of reach: '..e.name end}
 
--- The list: one slot an entry, counts expanded; not a module: refused with modules like it.
+-- A list: the modules the machine ends up holding, counts expanded; not a module: refused with modules like it.
 local want=M.parse({'speed-module',{name='efficiency-module',count=2,quality='rare'}})
+eq(want.kind,'set'); want=want.list
 eq(#want,3); eq(want[1].name,'speed-module'); eq(want[1].quality,'normal'); eq(want[3].name,'efficiency-module'); eq(want[3].quality,'rare')
-eq(#M.parse(false),0); eq(#M.parse({}),0); eq(#M.parse('speed-module'),1)
+eq(#M.parse(false).list,0); eq(#M.parse({}).list,0); eq(#M.parse('speed-module').list,1)
+-- A list with keep or empty entries goes slot by slot (slots past it empty); numbered slots change only those named.
+local w=M.parse({'keep','efficiency-module','empty',false})
+eq(w.kind,'slots'); eq(w.n,4); eq(w.rest,'empty'); eq(w.at[1],'keep'); eq(w.at[2].name,'efficiency-module'); eq(w.at[3],false); eq(w.at[4],false)
+w=M.parse({['3']={name='speed-module',quality='rare'},['1']='empty'})
+eq(w.kind,'slots'); eq(w.n,3); eq(w.rest,'keep'); eq(w.at[3].quality,'rare'); eq(w.at[1],false); eq(w.at[2],nil)
+fails(function() M.parse({['0']='speed-module'}) end,'slot 0 is not a slot number 1..64')
+fails(function() M.parse({['2']={name='speed-module',count=2}}) end,'one module a slot (no count) in slot 2')
+fails(function() M.parse({['2']='speed'}) end,'slot 2: not a module: speed')
+fails(function() M.parse({first='speed-module'}) end,'modules: first is not a slot number')
+local mixed={'speed-module'}; mixed['2']='speed-module'
+fails(function() M.parse(mixed) end,'a list or numbered slots, not both')
 fails(function() M.parse({'speed'}) end,'not a module: speed; modules like it: speed-module, speed-module-2')
 fails(function() M.parse({'iron-plate'}) end,'not a module: iron-plate')
 fails(function() M.parse({{name='speed-module',count=0}}) end,'count is a whole number 1..16')
@@ -96,12 +108,21 @@ eq(M.set(p,a,M.parse({'efficiency-module'}),true).unchanged,true)
 fails(function() M.set(p,a,M.parse({'speed-module-2','speed-module-2'}),true) end,
   'not enough modules in your inventory for assembling-machine-2 (5.5,0.5) making iron-gear-wheel (speed-module-2: 2 needed, you hold 0); by="robots" requests them instead')
 eq(ainv[1].name,'efficiency-module')
+-- The efficiency module it holds stays in slot 1; the speed module goes into slot 2.
 r=M.set(p,a,M.parse({'speed-module','efficiency-module'}),true)
-eq(r.after,'speed-module*1 efficiency-module*1'); eq(held['speed-module@normal'],1)
+eq(r.after,'efficiency-module*1 speed-module*1'); eq(held['speed-module@normal'],1); eq(r.returned,nil)
+eq(r.by_slot[1],'1 efficiency-module'); eq(r.by_slot[2],'2 speed-module')
 -- The engine's own check refuses a slot: nothing moves.
 ainv.refuse={['speed-module']=true}
-fails(function() M.set(p,a,M.parse({'efficiency-module','speed-module'}),true) end,'the game refuses speed-module in slot 2')
+fails(function() M.set(p,a,M.parse({'speed-module','speed-module'}),true) end,'the game refuses speed-module in slot 1')
+eq(ainv[1].name,'efficiency-module')
 ainv.refuse=nil
+-- Slot by slot: keep leaves slot 1, slot 2 is emptied.
+r=M.set(p,a,M.parse({'keep','empty'}),true)
+eq(r.after,'efficiency-module*1'); eq(r.returned,'speed-module*1 (to your inventory)'); eq(held['speed-module@normal'],2)
+r=M.set(p,a,M.parse({['2']='speed-module'}),true)
+eq(r.after,'efficiency-module*1 speed-module*1'); eq(ainv[1].name,'efficiency-module'); eq(ainv[2].name,'speed-module')
+eq(M.set(p,a,M.parse({['1']='keep'}),true).unchanged,true)
 -- Too many for the slots, and a module the recipe does not take.
 fails(function() M.set(p,a,M.parse({'speed-module','speed-module','speed-module'}),true) end,'has 2 module slots; 3 given')
 local f=machine(am2,6.5,furnace_recipe)
@@ -177,4 +198,66 @@ local dg={valid=true,type='entity-ghost',name='entity-ghost',ghost_name='electri
   position={x=9.5,y=0.5},force=force,surface=surface,insert_plan={}}
 M.set(p,dg,M.parse({{name='speed-module',count=3}}),true)
 eq(dg.insert_plan[1].items.in_inventory[3].inventory,2); eq(dg.insert_plan[1].items.in_inventory[3].stack,2)
+-- Astra, shift13 19:40: 9 drills holding speed-module-2 in slots 1 and 2 and efficiency-module in slot 3, asked for
+-- ["speed-module-2", "efficiency-module"] by robots. Slot by slot that took the efficiency module out of slot 3 and asked
+-- for one in slot 2, none in the network (the drills drew more power). Now the modules named stay where they are:
+-- only one speed-module-2 comes out.
+local d,dinv=machine(drill,60.5,nil)
+dinv[1].set_stack{name='speed-module-2'}; dinv[2].set_stack{name='speed-module-2'}; dinv[3].set_stack{name='efficiency-module'}
+roboports={}
+r=M.set(p,d,M.parse({'speed-module-2','efficiency-module'}),true,'robots')
+eq(r.requested,nil); eq(r.removing,'speed-module-2*1')
+eq(r.by_slot[1],'1 speed-module-2'); eq(r.by_slot[2],'2 speed-module-2 (speed-module-2 coming out)'); eq(r.by_slot[3],'3 efficiency-module')
+eq(#d.item_request_proxy.insert_plan,0); eq(d.item_request_proxy.removal_plan[1].items.in_inventory[1].stack,1)
+-- The same list again: the request stands as it is.
+r=M.set(p,d,M.parse({'speed-module-2','efficiency-module'}),true,'robots')
+eq(r.unchanged,true); eq(r.removing,'speed-module-2*1')
+-- A module on its way in counts where it goes: slot 2's request is left, slot 1's speed module stays.
+r=M.set(p,d,M.parse({['2']='efficiency-module'}),true,'robots')
+eq(r.requested,'efficiency-module*1'); eq(r.removing,'speed-module-2*1'); eq(r.by_slot[2],'2 speed-module-2 (efficiency-module requested; speed-module-2 coming out)')
+r=M.set(p,d,M.parse({'efficiency-module','speed-module-2','efficiency-module'}),true,'robots')
+eq(r.unchanged,true); eq(r.requested,'efficiency-module*1')
+-- A module requested for slot 2 (slot 1 empty) stays requested there: the list asks for nothing new.
+local d2,d2inv=machine(drill,62.5,nil)
+d2inv[3].set_stack{name='speed-module-2'}
+M.set(p,d2,M.parse({['2']='efficiency-module'}),true,'robots')
+r=M.set(p,d2,M.parse({'efficiency-module','speed-module-2'}),true,'robots')
+eq(r.unchanged,true); eq(r.requested,'efficiency-module*1'); eq(r.by_slot[1],'1 empty'); eq(r.by_slot[2],'2 empty (efficiency-module requested)')
+-- Numbered slots: slot 3 changes, slot 2's request is kept as it is.
+r=M.set(p,d,M.parse({['3']='speed-module-2'}),true,'robots')
+eq(r.requested,'efficiency-module*1 speed-module-2*1'); eq(r.removing,'speed-module-2*1 efficiency-module*1')
+eq(r.by_slot[1],'1 speed-module-2'); eq(r.by_slot[3],'3 efficiency-module (speed-module-2 requested; efficiency-module coming out)')
+-- keep and empty slot by slot: slot 1 as it is, slot 2 empty (its request goes), slot 3 empty.
+r=M.set(p,d,M.parse({'keep','empty','empty'}),true,'robots')
+eq(r.requested,nil); eq(r.removing,'speed-module-2*1 efficiency-module*1')
+eq(r.by_slot[2],'2 speed-module-2 (speed-module-2 coming out)'); eq(r.by_slot[3],'3 efficiency-module (efficiency-module coming out)')
+-- Too high a slot, and a module the drill does not take.
+fails(function() M.set(p,d,M.parse({['4']='speed-module'}),true,'robots') end,'electric-mining-drill (60.5,0.5) has 3 module slots; slot 4 named')
+-- By hand, a list with fewer modules: the ones named stay, the others come out.
+local h,hin=machine(drill,8.5,nil)
+hin[1].set_stack{name='speed-module'}; hin[2].set_stack{name='efficiency-module'}; hin[3].set_stack{name='speed-module'}
+held['speed-module@normal']=0; held['efficiency-module@normal']=0
+r=M.set(p,h,M.parse({'efficiency-module','speed-module'}),true)
+eq(r.by,'hand'); eq(r.returned,'speed-module*1 (to your inventory)'); eq(r.by_slot[1],'1 speed-module'); eq(r.by_slot[2],'2 efficiency-module'); eq(r.by_slot[3],'3 empty')
+-- A hand swap clears the robot requests on the slots it set.
+local px2={valid=true,insert_plan={{id={name='efficiency-module',quality='normal'},items={in_inventory={{inventory=4,stack=2,count=1}}}}},removal_plan={}}
+px2.destroy=function() px2.valid=false; h.item_request_proxy=nil end
+h.item_request_proxy=px2
+held['speed-module@normal']=1
+r=M.set(p,h,M.parse({['3']='speed-module'}),true)
+eq(r.note,'the robot requests on the slots set were cleared'); eq(px2.valid,false); eq(r.by_slot[3],'3 speed-module')
+-- A ghost with no requests yet: a numbered slot alone.
+local g3={valid=true,type='entity-ghost',name='entity-ghost',ghost_name='electric-mining-drill',ghost_type='mining-drill',ghost_prototype=drill,
+  position={x=13.5,y=0.5},force=force,surface=surface,insert_plan={}}
+r=M.set(p,g3,M.parse({['2']='speed-module'}),true)
+eq(r.requested,'speed-module*1'); eq(r.by_slot[1],'1 empty'); eq(r.by_slot[2],'2 speed-module (requested)'); eq(r.by_slot[3],'3 empty')
+-- A ghost: numbered slots keep the other requests.
+local g2={valid=true,type='entity-ghost',name='entity-ghost',ghost_name='electric-mining-drill',ghost_type='mining-drill',ghost_prototype=drill,
+  position={x=11.5,y=0.5},force=force,surface=surface,insert_plan={}}
+M.set(p,g2,M.parse({'speed-module','speed-module','speed-module'}),true)
+r=M.set(p,g2,M.parse({['2']='efficiency-module'}),true)
+eq(r.before,'speed-module*3'); eq(r.requested,'speed-module*2 efficiency-module*1')
+eq(r.by_slot[1],'1 speed-module (requested)'); eq(r.by_slot[2],'2 efficiency-module (requested)'); eq(r.by_slot[3],'3 speed-module (requested)')
+r=M.set(p,g2,M.parse({'efficiency-module','speed-module'}),true)
+eq(r.requested,'speed-module*1 efficiency-module*1'); eq(r.by_slot[1],'1 speed-module (requested)'); eq(r.by_slot[3],'3 empty')
 print('modules: ok')

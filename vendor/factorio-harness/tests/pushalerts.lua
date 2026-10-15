@@ -406,6 +406,37 @@ do
   eq(st9.push_turrets.player.ready,true)
   force.players={}; game.forces=nil; ents.nauvis={}
 end
+-- 7b. The networks stage in steps (operator 18:12: networks.alert_groups 58-60 ms in one tick on world n): the api's
+-- cursor stepped NET_SLICE networks a step on ticks of their own; each step a profile part by kind (api.timed).
+do
+  local st11={board={items={}}}
+  local calls,labels,ticks_seen=0,{},{}
+  local NS=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){
+    state=function() return st11 end,
+    agents=function() return {{index=1,name='astra'}} end,
+    who=function(p) return p.name end,
+    place=function(index) return {key='nauvis',position={x=200,y=10}} end,
+    network_cursor=function(f) return {left=3} end,
+    network_step=function(cur,max)
+      calls=calls+1; eq(max,2); ticks_seen[game.tick]=true
+      cur.left=cur.left-1
+      if cur.left>0 then return false end
+      return true,{{key='power_high|nauvis|7',kind='power_high',surface='nauvis',n=90,names={},by={},at={},center={x=0,y=0},line='electric #7'}}
+    end,
+    timed=function(label,fn,...) labels[label]=(labels[label] or 0)+1; return fn(...) end}
+  force.players={{}}; game.forces={player=force}
+  game.tick=game.tick+1; NS.tick(game.tick)
+  local n=0
+  repeat game.tick=game.tick+1; NS.tick(game.tick); n=n+1 until not st11.push_jobs.player or n>5000
+  eq(calls,3,'the networks stage in three steps')
+  local distinct=0; for _ in pairs(ticks_seen) do distinct=distinct+1 end
+  eq(distinct,3,'each on a tick of its own')
+  eq(labels['pushalerts.networks'],3); eq(labels['pushalerts.alerts'],1); eq(labels['pushalerts.merge'],1)
+  assert(labels['pushalerts.band'],'the bands timed')
+  local keys={}; for _,g in ipairs(st11.push_alerts.player.groups) do keys[g.key]=true end
+  assert(keys['power_high|nauvis|7'],'the stepped groups are in the read')
+  force.players={}; game.forces=nil
+end
 -- 8. A claim routes the groups on its own surface only (Sol 07:52: Astra's Nauvis claim #212 labelled Gleba furnaces
 -- at (62,22)).
 do
@@ -486,6 +517,30 @@ do
     ..'the first: nutrients spoils in 4s at (43.5,34.5)')
   game.tick=game.tick+600
   eq(R.read(sol,{kind='no_fuel'}).groups[1].line:match('the first: .*$'),'the first: nutrients spoiled at (43.5,34.5)', 'worked out when shown')
+  ents.nauvis={}
+end
+-- A sleep on chosen kinds (Luna, 19:50: low power, starvation in a claim): levels gives the groups of those kinds
+-- (and their sub-kinds) addressed to you; starved the assemblers and furnaces lacking ingredients in your own claims.
+do
+  local st={board={items={{kind='claim',status='claimed',owner='luna',id=5,title='gears',area={left_top={x=0,y=0},right_bottom={x=20,y=20}}},
+    {kind='claim',status='claimed',owner='sol',id=6,area={left_top={x=100,y=0},right_bottom={x=120,y=20}}}}}}
+  local names={[0]='working',[1]='no_power',[7]='item_ingredient_shortage',[8]='no_ingredients'}
+  local R=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,
+    agents=function() return {{index=2,name='sol'},{index=3,name='luna'}} end, who=function(p) return p.name end,
+    place=function() return {key='nauvis',position={x=50,y=10}} end, status_name=function(e) return names[e.status] end}
+  ents.nauvis={}; ents.vulcanus={}
+  local lu=agent('luna',nauvis)
+  for i=1,3 do ent('nauvis','assembling-machine-2','assembling-machine',4+i*3,10,{status=1,unit_number=20+i}) end
+  ent('nauvis','assembling-machine-2','assembling-machine',5.5,15.5,{status=7,unit_number=30})
+  ent('nauvis','stone-furnace','furnace',105,5,{status=8,unit_number=31})
+  game.tick=game.tick+1800
+  local lv=R.levels(lu,{'no_power'}); local key,g=next(lv)
+  assert(key and next(lv,key)==nil,'one group'); eq(g.level,3); assert(g.text:find('3 assembling-machine-2',1,true),g.text)
+  eq(next(R.levels(lu,{'low_power'})),nil,'other kinds are left out')
+  eq(next(R.levels(agent('sol',nauvis),{'no_power'})),nil,'addressed to luna (her claim)')
+  local sv=R.starved(lu); eq(sv[30],'assembling-machine-2 (5.5,15.5) in your claim "gears" item ingredient shortage'); eq(sv[31],nil,"sol's claim")
+  eq(next(sv,30),nil)
+  eq(R.starved(agent('sol',nauvis))[31],'stone-furnace (105,5) in your claim "6" no ingredients')
   ents.nauvis={}
 end
 print('pushalerts: ok')

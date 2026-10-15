@@ -440,6 +440,12 @@ return function(api)
     q.paused=false; q.revision=q.revision+1
     return snapshot(q,RECENT)
   end
+  -- A call timed as its own profile part while the operator profile runs (runtime M.timed; operator 18:12:
+  -- scheduler.tick 182 ms in one game second at 17:53); else just the call.
+  local function timed(label,fn,...)
+    if api.timed then return api.timed(label,fn,...) end
+    return fn(...)
+  end
   function M.tick()
     for index,q in pairs(api.state().queues or {}) do
       if not q.paused then
@@ -453,7 +459,7 @@ return function(api)
             local step=q.current
             if game.tick>=step.next_check then
               step.next_check=game.tick+CHECK_TICKS
-              local ok,met,saw=pcall(api.condition,p,step.args)
+              local ok,met,saw=pcall(timed,'scheduler.wait_until',api.condition,p,step.args)
               step.saw=ok and saw or nil
               q.current=nil
               if not ok then fail(q,p,step,{reason=tostring(met)})
@@ -503,7 +509,7 @@ return function(api)
             else
               -- What the step moves by hand is the queue's or its standing order's (hauling.lua).
               if api.step_begin then pcall(api.step_begin,index,step) end
-              local ok,result=pcall(api.handlers[step.action],p,step.args)
+              local ok,result=pcall(timed,'scheduler.step '..tostring(step.action),api.handlers[step.action],p,step.args)
               if ok and api.claim then api.claim(p) end
               if api.step_done then pcall(api.step_done,index) end
               if not ok then

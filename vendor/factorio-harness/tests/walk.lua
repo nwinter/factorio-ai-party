@@ -49,7 +49,7 @@ eq(w.box.left,-4); eq(w.box.right,13); eq(w.box.top,-2); eq(w.box.bottom,10)
 local most,bands
 n,most,bands=read(w)
 eq(n,#ents,'every entity once')
-eq(most,903,'the dense chunk and the 3 border entities beside it')
+eq(most,901,'the dense chunk and a border entity beside it')
 assert(bands<=40,'bands: '..bands)
 eq(swept,18*13,'every chunk of the box once')
 -- 3. A player far off: the box reaches the player, 4 chunks around.
@@ -67,4 +67,23 @@ eq(W.every(nil,1800),4); eq(W.every(30,1800),48); eq(W.every(1,18000),600)
 local job={start=100,every=48}
 eq(W.due(job,120,1800),false); eq(W.due(job,148,1800),true); eq(W.due(job,170,1800),false); eq(W.due(job,196,1800),true)
 job.last=1539; eq(W.due(job,1541,1800),false); eq(W.due(job,1543,1800),true,'past 80%: every 4')
+-- 6. A band covers at most 32 chunks (operator 18:12: a band grown to 8 full rows over a sparse edge found a whole
+-- base strip in one step): a box 120 chunks wide, empty above a dense strip; every entity still once.
+ents,storage.walk_box={},{}
+for x=0,119 do for k=0,9 do put(x*32+3*k+1.5,40*32+16.5) end end
+put(0.5,0.5)
+local most_chunks=0
+local s_find=s.find_entities_filtered
+s.find_entities_filtered=function(f)
+  local a=f.area
+  if a then most_chunks=math.max(most_chunks,(a[2][1]-a[1][1])/32*(a[2][2]-a[1][2])/32) end
+  return s_find(f)
+end
+storage.walk_box[1]={left=0,right=119,top=0,bottom=40}
+w=W.start(s)
+eq(w.cols,32,'the first band')
+n=read(w)
+eq(n,#ents,'every entity once')
+assert(most_chunks<=32,'a band of '..most_chunks..' chunks')
+s.find_entities_filtered=s_find
 print('walk: ok')

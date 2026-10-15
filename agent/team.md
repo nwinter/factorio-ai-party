@@ -96,9 +96,12 @@ already targets your character.
   `"surface"`) reads one item: where it sits (chests by kind, belts, machine outputs, inserter hands, robots,
   characters), each logistic network's stock of it (free and reserved, and which requesters the reserved stock is for),
   its robots, every unmet requester with the reason, the machines that make and use it by status (the worst 3 with
-  positions), and the inserters feeding them.
+  positions), and the inserters feeding them; `throughput` names a machine whose inserters carry less than its
+  recipe at full speed, each inserter's rate a minute, and how many inserters like its fastest it takes (`trace
+  {position}` on a machine gives the same).
 - `./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
-  starts, naming each step's makers, their states and what they lack; with `"per_min":30` each step's rate for that
+  starts, naming each step's makers, their states and what they lack; `fixes` gives, for a starved maker, the nearest
+  chest within 64 tiles holding what it lacks and one `transfer` call that carries it there; with `"per_min":30` each step's rate for that
   target, what it makes now, its makers' rate each and the machines the target takes.
   `./fh call pickup --args '{"belt":true,"item":"iron-plate","count":200,"position":{"x":90.5,"y":-11.5}}' --wait` takes
   items off belt lanes by hand (from belts within 1 tile, walking to them). `inspect` on a machine gives its `rate` (crafts
@@ -366,8 +369,13 @@ already targets your character.
 - Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`), and
   so do tell, chat, say, operator, the board, research, platform calls and waits on `platform_arrived`/`platform_left`.
 - Modules: `configure {position | positions, modules: ["speed-module-2","speed-module-2"], by?}` sets a machine's module
-  slots (past the list: empty); in reach by hand (old ones to your inventory), else (remote, `surface`, `platform`, or
-  `by: "robots"`) an item request robots or the platform hub carry out; on a ghost its requests. `inspect` reads them back.
+  slots: the modules it already holds that the list names stay in their slots, the rest go into the other slots (past
+  the list: empty); `["keep","efficiency-module","empty"]` goes slot by slot and `{"2":"efficiency-module"}` changes
+  only slot 2. In reach by hand (old ones to your inventory), else (remote, `surface`, `platform`, or `by: "robots"`) an
+  item request robots or the platform hub carry out; on a ghost its requests. `inspect` reads them back (`by_slot`).
+- `configure {position, storage_filter: "efficiency-module"}` sets a storage chest's filter (robots store no other item
+  in it); `configure {position, input_priority, output_priority, filter}` sets a splitter's (left and right facing the
+  way items move); `inspect` shows both.
 - Turret targeting: `configure {position | positions, platform?, priority_targets: ["big-metallic-asteroid", ...],
   ignore_unprioritised: true}` sets a turret's (or ghost's) priority list as its GUI does; inspect reads it back;
   blueprints keep it.
@@ -399,7 +407,9 @@ already targets your character.
 - `./fh sleep 600 --until "rocket_ready 65.5,14.5"` (or `wait_until {"until":"rocket_ready","position":...}`) waits for
   that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
   `./fh wait --until "item_count coal below 20 at 10,39"` wakes when that chest's coal falls under 20 (also `>=`, `<`,
-  `above`; several `X,Y` are summed).
+  `above`; several `X,Y` are summed). `./fh wait --until "alert low_power starved"` wakes on a new or grown alert
+  group of those kinds addressed to you (`low_power`, `no_power`, `no_fuel`, ... as `game_alerts` names them), or
+  `starved`: an assembler or furnace in your own claims that lacks ingredients and did not when the wait began.
 - `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the
   patches on the charted map nearest first: amount left (oil: yield), distance from you and from our nearest building,
   enemy spawners and worms within 50 tiles, and how many of our drills are on it.

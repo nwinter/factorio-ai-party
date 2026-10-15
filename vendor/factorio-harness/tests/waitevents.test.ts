@@ -217,6 +217,7 @@ test('fh wait --until EVENT --max S: one sleep, peek reads only, one line out',a
     const {stdout}=await cli(port,['wait','--until','tell','--max','30'],'compact');
     assert.equal(stdout,"woke: told after 4 s (astra: coal please); your next reply's team block has the rest\n");
     await cli(port,['wait','--until','alert'],'compact');
+    await cli(port,['wait','--until','alert low_power, starved','--max','300'],'compact');
     await cli(port,['wait','--until','item_count coal>=5','--max','120'],'compact');
     const json=JSON.parse((await cli(port,['wait','--until','tell','--max','60'])).stdout);
     assert.equal(json.result.line,"woke: told after 4 s (astra: coal please); your next reply's team block has the rest");
@@ -224,7 +225,7 @@ test('fh wait --until EVENT --max S: one sleep, peek reads only, one line out',a
   });
   const sleeps=seen.filter(r=>r.action==='sleep');
   assert.deepEqual(sleeps.map(r=>[r.args.seconds,r.args.condition,r.args.peek]),[
-    [30,undefined,true],[600,{until:'alert'},true],[120,{until:'item_count',item:'coal',at_least:5},true],[60,undefined,true]]);
+    [30,undefined,true],[600,{until:'alert'},true],[300,{until:'alert',kinds:['low_power','starved']},true],[120,{until:'item_count',item:'coal',at_least:5},true],[60,undefined,true]]);
   const reads=seen.filter(isCheck); assert(reads.length>0 && reads.every(r=>r.args.peek===true),'the team block waits for the next reply');
 });
 test('fh wait --max S waits for the action to end, at most S s; at once when idle; --until idle the same',async()=>{

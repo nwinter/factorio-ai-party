@@ -76,10 +76,91 @@ return function(api)
     ['artillery-wagon']=true,['entity-ghost']=true,['tile-ghost']=true,['construction-robot']=true,['logistic-robot']=true,
     ['combat-robot']=true,['character-corpse']=true,['item-request-proxy']=true,['spider-leg']=true,['spider-unit']=true}
   M.NOT_BUILDING=NOT_BUILDING
+  -- The spawners within MAX_BASE_RANGE of the agent (operator 18:33: threat.watch 93 ms in one reply, a find over
+  -- the ~800 chunks of that circle): from the force's spawner index for the surface (M.tick builds it in bands over
+  -- every circle asked for, SPAWN_TICKS old at most) when the index covers the circle, else found at once. An entity
+  -- counts when its box reaches the circle, as the find has it; south to north, then west to east, either way.
+  local SPAWN_TICKS,SPAWN_KEEP,SPAWN_BAND=3600,36000,32
+  local function spawn_key(p) return p.force.name..'/'..p.surface.index end
+  local function box_within(e,c,r)
+    local ok,b=pcall(function() return e.bounding_box end)
+    local x0,y0,x1,y1=e.position.x,e.position.y,e.position.x,e.position.y
+    if ok and b and b.left_top then x0,y0,x1,y1=b.left_top.x,b.left_top.y,b.right_bottom.x,b.right_bottom.y end
+    local dx=math.max(x0-c.x,0,c.x-x1)
+    local dy=math.max(y0-c.y,0,c.y-y1)
+    return dx*dx+dy*dy<=r*r
+  end
+  local function by_position(a,b)
+    if a.position.y~=b.position.y then return a.position.y<b.position.y end
+    return a.position.x<b.position.x
+  end
+  local function spawners_near(p)
+    local st=api.state()
+    local s,centre=p.surface,p.position
+    local key=spawn_key(p)
+    -- (the circle asked for, so the next index covers it)
+    st.spawn_want=st.spawn_want or {}
+    local want=st.spawn_want[key] or {}
+    st.spawn_want[key]=want
+    want[p.index]={tick=game.tick,x=centre.x,y=centre.y}
+    local idx=(st.spawn_index or {})[key]
+    local m=MAX_BASE_RANGE/32
+    local found
+    if idx and game.tick-idx.tick<2*SPAWN_TICKS and math.floor(centre.x/32-m)>=idx.box.left and math.floor(centre.x/32+m)<=idx.box.right
+      and math.floor(centre.y/32-m)>=idx.box.top and math.floor(centre.y/32+m)<=idx.box.bottom then
+      found={}
+      for _,e in ipairs(idx.list) do if e.valid and box_within(e,centre,MAX_BASE_RANGE) then found[#found+1]=e end end
+    else
+      found=s.find_entities_filtered{type='unit-spawner',position=centre,radius=MAX_BASE_RANGE}
+    end
+    table.sort(found,by_position)
+    return found
+  end
+  -- The index's background pass: the chunk box of every circle asked for in the last SPAWN_KEEP ticks, a band of up to
+  -- SPAWN_BAND chunks of one row a step, the steps spread over half of SPAWN_TICKS.
+  function M.spawn_step(st,key,tick)
+    st.spawn_jobs=st.spawn_jobs or {}
+    st.spawn_index=st.spawn_index or {}
+    local job,idx=st.spawn_jobs[key],st.spawn_index[key]
+    local force_name,index=key:match('^(.*)/(%d+)$')
+    local force,s=game.forces[force_name],game.get_surface(tonumber(index))
+    if not (force and s) then st.spawn_jobs[key],st.spawn_index[key],st.spawn_want[key]=nil,nil,nil; return end
+    if not job then
+      if idx and tick-idx.start<SPAWN_TICKS then return end
+      local b,m={},math.ceil(MAX_BASE_RANGE/32)+1
+      for i,w in pairs(st.spawn_want[key]) do
+        if tick-w.tick>SPAWN_KEEP then st.spawn_want[key][i]=nil
+        else
+          local cx,cy=math.floor(w.x/32),math.floor(w.y/32)
+          b.left=math.min(b.left or cx-m,cx-m); b.right=math.max(b.right or cx+m,cx+m)
+          b.top=math.min(b.top or cy-m,cy-m); b.bottom=math.max(b.bottom or cy+m,cy+m)
+        end
+      end
+      if not b.left then st.spawn_want[key]=nil; st.spawn_index[key]=nil; return end
+      local steps=(b.bottom-b.top+1)*math.ceil((b.right-b.left+1)/SPAWN_BAND)
+      st.spawn_jobs[key]={start=tick,box=b,x=b.left,y=b.top,list={},last=tick,every=math.max(1,math.min(600,math.floor(SPAWN_TICKS*0.5/steps)))}
+      return
+    end
+    if tick-job.last<job.every then return end
+    job.last=tick
+    local b=job.box
+    local x1=math.min(job.x+SPAWN_BAND-1,b.right)
+    local X0,Y0,X1,Y1=job.x*32,job.y*32,(x1+1)*32,(job.y+1)*32
+    for _,e in ipairs(s.find_entities_filtered{area={{X0,Y0},{X1,Y1}},type='unit-spawner'}) do
+      local q=e.position
+      if q.x>=X0 and q.x<X1 and q.y>=Y0 and q.y<Y1 and e.force~=force then job.list[#job.list+1]=e end
+    end
+    job.x=x1+1
+    if job.x>b.right then job.x=b.left; job.y=job.y+1 end
+    if job.y>b.bottom then
+      st.spawn_index[key]={tick=job.start,start=job.start,box=b,list=job.list}
+      st.spawn_jobs[key]=nil
+    end
+  end
   -- Spawners within range of the agent, clustered into bases.
   local function bases(p)
-    local s,centre=p.surface,p.position
-    local found=s.find_entities_filtered{type='unit-spawner',position=centre,radius=MAX_BASE_RANGE}
+    local s=p.surface
+    local found=spawners_near(p)
     local out={}
     for _,e in ipairs(found) do
       if e.valid and e.type=='unit-spawner' and e.force~=p.force and api.known(p,e) then
@@ -301,7 +382,9 @@ return function(api)
   -- when a surface's chart is CHART_TICKS old, it sweeps the box of generated
   -- chunks the last chart saw, grown by SWEEP_MARGIN and to every player on
   -- the surface, SWEEP chunk positions a tick; its state is in storage.
-  local SWEEP,SWEEP_MARGIN=2000,4
+  -- Operator 18:12 (threat.tick 83 ms in one game second at 17:53): SWEEP a tick finished a big surface's sweep in a
+  -- few ticks; now the box's chunk positions spread over SWEEP_TICKS, at least SWEEP_MIN and at most SWEEP a tick.
+  local SWEEP,SWEEP_MARGIN,SWEEP_TICKS,SWEEP_MIN=2000,4,1800,16
   function M.tick(tick)
     local st=api.state()
     st.chart_bg=true
@@ -319,6 +402,17 @@ return function(api)
         if e.chart then e.chart.tick=tick end
       end
     end
+    -- The spawner index (spawners_near), per force and surface asked for.
+    local wanted={}
+    for key in pairs(st.spawn_want or {}) do wanted[#wanted+1]=key end
+    table.sort(wanted)
+    for _,key in ipairs(wanted) do
+      local ok,err=pcall(M.spawn_step,st,key,tick)
+      if not ok then
+        st.spawn_jobs[key]=nil
+        st.spawn_errors={count=((st.spawn_errors or {}).count or 0)+1,last=tostring(err),tick=tick}
+      end
+    end
   end
   function M.sweep_step(st,key,e,tick)
     do
@@ -334,14 +428,16 @@ return function(api)
             local ok,here=pcall(function() return pl.surface.index==s.index and pl.position end)
             if ok and here then grow(b,math.floor(here.x/32)-SWEEP_MARGIN,math.floor(here.y/32)-SWEEP_MARGIN); grow(b,math.floor(here.x/32)+SWEEP_MARGIN,math.floor(here.y/32)+SWEEP_MARGIN) end
           end
-          if b.left then st.chart_jobs[key]={start=tick,left=b.left,right=b.right,top=b.top,bottom=b.bottom,x=b.left,y=b.top}
+          if b.left then
+            local per=math.min(SWEEP,math.max(SWEEP_MIN,math.ceil((b.right-b.left+1)*(b.bottom-b.top+1)/SWEEP_TICKS)))
+            st.chart_jobs[key]={start=tick,left=b.left,right=b.right,top=b.top,bottom=b.bottom,x=b.left,y=b.top,per=per}
           else e.chart.tick=tick end  -- no generated chunk and nobody there: nothing to sweep
         end
       elseif not (force and s) then st.chart_jobs[key]=nil
       else
         job.t=job.t or chart_new(s,force)
         local n=0
-        while n<SWEEP and job.y<=job.bottom do
+        while n<(job.per or SWEEP) and job.y<=job.bottom do
           local c={x=job.x,y=job.y}
           if s.is_chunk_generated(c) then chart_chunk(job.t,s,force,c) end
           n=n+1; job.x=job.x+1

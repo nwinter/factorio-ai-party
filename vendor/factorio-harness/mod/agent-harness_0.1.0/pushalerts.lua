@@ -274,6 +274,7 @@ return function(api)
   -- a game second): one band of a planet (walk.lua) or SLICE of the entities it found, one step every few ticks so
   -- a read spreads over its 30 s.
   local SLICE = 150
+  local NET_SLICE = 2   -- networks whose alert groups one step of the background read makes
   local walk = api.walk or require('walk'){state=api.state}
   local function planets()
     local out = {}
@@ -455,6 +456,12 @@ return function(api)
     table.sort(out, function(a, b) return a.name < b.name end)
     return out
   end
+  -- A call timed as its own profile part while the operator profile runs (runtime M.timed); else just the call.
+  local function timed(label, fn, ...)
+    if api.timed then return api.timed(label, fn, ...) end
+    return fn(...)
+  end
+  local step_do
   function M.tick(tick)
     local s = api.state()
     s.push_alerts = s.push_alerts or {}
@@ -490,33 +497,46 @@ return function(api)
       elseif job and walk.due(job, tick, SCAN_TICKS) then
         job.steps = job.steps + 1
         local stage = job.stages[job.i]
-        if stage.surface then
-          -- A planet: a band found in one step (walk.lua), then read SLICE a step.
-          local surface
-          for _, x in ipairs(planets()) do if x.name == stage.surface then surface = x end end
-          if not surface or job.budget <= 0 then job.i = job.i + 1; job.walk, job.list = nil, nil
-          elseif not job.list then
-            job.walk = job.walk or walk.start(surface)
-            local list = walk.band(job.walk, surface, {force=force, type=TYPES, limit=job.budget})
-            if list then job.list, job.at = list, 1; job.budget = job.budget - #list
-            else job.walk = nil; job.i = job.i + 1 end
-          else
-            local last = math.min(#job.list, job.at + SLICE - 1)
-            read_list(job.groups, surface, job.list, job.at, last, inserter_memory(force), turret_memory(force), job.mining, drill_memory(force))
-            job.at = last + 1
-            if job.at > #job.list then job.list, job.at = nil, nil end
-          end
-        elseif stage.step == 'alerts' then
-          job.i = job.i + 1; game_alerts(job.groups, force); forget_unseen(inserter_memory(force))
-          local tmem = turret_memory(force)
-          turrets_read(tmem, job.budget > 0 and job.tgen == tmem.gen)
-        elseif stage.step == 'networks' then job.i = job.i + 1; job.extra = network_groups(force)
-        else
-          s.push_alerts[force.name] = {tick=job.start, groups=merge(job.groups, job.extra, job.mining, force)}
-          s.push_steps[force.name] = job.steps
-          s.push_jobs[force.name] = nil
-        end
+        -- (each kind of step its own profile part, pushalerts.<kind>: operator 18:12, pushalerts.tick 487 ms in one
+        -- game second at 17:53)
+        local kind = stage.surface and (job.list and 'slice' or 'band') or stage.step
+        timed('pushalerts.' .. kind, step_do, s, force, tick, job, stage)
       end
+    end
+  end
+  step_do = function(s, force, tick, job, stage)
+    if stage.surface then
+      -- A planet: a band found in one step (walk.lua), then read SLICE a step.
+      local surface
+      for _, x in ipairs(planets()) do if x.name == stage.surface then surface = x end end
+      if not surface or job.budget <= 0 then job.i = job.i + 1; job.walk, job.list = nil, nil
+      elseif not job.list then
+        job.walk = job.walk or walk.start(surface)
+        local list = walk.band(job.walk, surface, {force=force, type=TYPES, limit=job.budget})
+        if list then job.list, job.at = list, 1; job.budget = job.budget - #list
+        else job.walk = nil; job.i = job.i + 1 end
+      else
+        local last = math.min(#job.list, job.at + SLICE - 1)
+        read_list(job.groups, surface, job.list, job.at, last, inserter_memory(force), turret_memory(force), job.mining, drill_memory(force))
+        job.at = last + 1
+        if job.at > #job.list then job.list, job.at = nil, nil end
+      end
+    elseif stage.step == 'alerts' then
+      job.i = job.i + 1; game_alerts(job.groups, force); forget_unseen(inserter_memory(force))
+      local tmem = turret_memory(force)
+      turrets_read(tmem, job.budget > 0 and job.tgen == tmem.gen)
+    elseif stage.step == 'networks' then
+      -- NET_SLICE networks a step, then the lightning and science groups each a step (operator 18:12: all of them in
+      -- one tick took 58-60 ms on world n); without the stepped api, all at once as before.
+      if api.network_cursor then
+        job.net = job.net or api.network_cursor(force)
+        local done, out = api.network_step(job.net, NET_SLICE)
+        if done then job.extra, job.net = out, nil; job.i = job.i + 1 end
+      else job.i = job.i + 1; job.extra = network_groups(force) end
+    else
+      s.push_alerts[force.name] = {tick=job.start, groups=merge(job.groups, job.extra, job.mining, force)}
+      s.push_steps[force.name] = job.steps
+      s.push_jobs[force.name] = nil
     end
   end
   -- One of our turrets died (the runtime's on_entity_died): marked built since, for when its ghost is built again.
@@ -733,6 +753,53 @@ return function(api)
     local parts = {}
     for _, s in ipairs(order) do parts[#parts+1] = s .. ' ' .. by[s] end
     return string.format('drills out of ore: %d (%s)', total, table.concat(parts, ', '))
+  end
+  -- For a sleep that wakes on chosen alert kinds (Luna, 19:50: low power, starvation in a claim): the groups of those
+  -- kinds addressed to p now (a kind matches its own sub-kinds: lost_source matches lost_source.boiler), each
+  -- {level, text}; a group new since the sleep began, or grown, wakes it (waits.lua).
+  local function kind_matches(kind, kinds)
+    for _, k in ipairs(kinds) do
+      if kind == k or kind:sub(1, #k + 1) == k .. '.' then return true end
+    end
+    return false
+  end
+  function M.levels(p, kinds)
+    local c = current(p.force)
+    local me = api.who(p)
+    local here = try(function() return p.surface.name end)
+    local who, out = roster(), {}
+    for _, g in ipairs(c.groups) do
+      if g.kind and kind_matches(g.kind, kinds) and owners(g, who)[me] then
+        out[g.key] = {level=g.rank or g.n, text=M.text(g, here, nil, true)}
+      end
+    end
+    return out
+  end
+  -- Machines in p's own active board claims that lack ingredients now (assemblers and furnaces, the game's status):
+  -- {unit = line}; at most STARVED_FIND a claim.
+  local STARVED_FIND = 500
+  local STARVED = {item_ingredient_shortage=true, fluid_ingredient_shortage=true, no_ingredients=true}
+  function M.starved(p)
+    local me = api.who(p)
+    local board = api.state().board
+    local out = {}
+    for _, i in pairs(board and board.items or {}) do
+      local a = i.area
+      if i.kind == 'claim' and ACTIVE[i.status] and i.owner == me and a then
+        local name, surface = api.claim_surface and api.claim_surface(i) or i.surface or 'nauvis', nil
+        for _, x in pairs(game.surfaces) do if x.name == name then surface = x end end
+        for _, e in ipairs(surface and try(function()
+          return surface.find_entities_filtered{area={{a.left_top.x, a.left_top.y}, {a.right_bottom.x, a.right_bottom.y}}, force=p.force, type={'assembling-machine', 'furnace'}, limit=STARVED_FIND}
+        end) or {}) do
+          local status = e.valid and api.status_name and api.status_name(e)
+          if status and STARVED[status] and e.unit_number then
+            out[e.unit_number] = string.format('%s %s in your claim "%s" %s', e.name, string.format('(%g,%g)', e.position.x, e.position.y),
+              tostring(i.title or i.id), status:gsub('_', ' '))
+          end
+        end
+      end
+    end
+    return out
   end
   -- Groups now in p's own board claims (selfview.lua review), worst first, without hints.
   function M.claim_lines(p)

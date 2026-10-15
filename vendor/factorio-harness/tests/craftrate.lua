@@ -48,4 +48,31 @@ r=R.recipe(force,eggs,'biochamber')
 eq(r.crafts_per_min,8); eq(r.products[1].net_per_min,48)
 assert(r.line:find("biochamber's own +50%",1,true),r.line)
 fails(function() R.recipe(force,eggs,'iron-chest') end,'machine must be a crafting machine name')
+-- feed (Sol, 19:50: a standard inserter capped green circuits at 37.5/min): the inserters into and out of a machine
+-- against its recipe at full speed. Green circuits in an assembling-machine-2: 90 crafts/min take 360 items, make 90.
+local circuit={name='electronic-circuit',energy=0.5,ingredients={{type='item',name='iron-plate',amount=1},{type='item',name='copper-cable',amount=3}},
+  products={{type='item',name='electronic-circuit',amount=1}}}
+force.recipes['electronic-circuit']={productivity_bonus=0}
+force.inserter_stack_size_bonus=0; force.bulk_inserter_capacity_bonus=0
+local am2={valid=true,name='assembling-machine-2',prototype={},force=force,crafting_speed=0.75,position={x=10.5,y=10.5},get_recipe=function() return circuit end}
+local function ins(name,x,y,speed,f)
+  local i={valid=true,name=name,position={x=x,y=y},force=force,prototype={get_inserter_rotation_speed=function() return speed end}}
+  for k,v in pairs(f or {}) do i[k]=v end
+  return i
+end
+local yellow,blue=ins('inserter',8.5,9.5,0.014),ins('fast-inserter',8.5,10.5,0.04)
+local out=ins('inserter',12.5,10.5,0.014)
+eq(R.inserter_rate(yellow),0.84); eq(R.inserter_rate(blue),2.4)
+local fd=R.feed(am2,{yellow,blue},{out})
+eq(fd.input.per_min,194.4); eq(fd.input.needs_per_min,360); eq(fd.output.per_min,50.4)
+eq(fd.line,'assembling-machine-2 (10.5,10.5) (electronic-circuit): input: 2 inserters carry at most 194.4/min (inserter (8.5,9.5) 50.4/min, '
+  ..'fast-inserter (8.5,10.5) 144/min); the recipe takes 360/min at full speed, so it runs at most 54% of full speed; it takes 3 inserters like '
+  ..'fast-inserter (144/min each); output: 1 inserter carries at most 50.4/min (inserter (12.5,10.5) 50.4/min); it makes 90/min at full speed, '
+  ..'so it runs at most 56% of full speed; it takes 2 inserters like inserter (50.4/min each)')
+-- Stack bonuses count (a bulk inserter its own); an override caps the stack. Enough: nil.
+force.bulk_inserter_capacity_bonus=3
+local bulk=ins('bulk-inserter',8.5,11.5,0.04,{prototype={bulk=true,get_inserter_rotation_speed=function() return 0.04 end}})
+eq(R.inserter_rate(bulk),9.6); bulk.inserter_stack_size_override=2; eq(R.inserter_rate(bulk),4.8); bulk.inserter_stack_size_override=nil
+eq(R.feed(am2,{bulk},{bulk}),nil,'576/min each way: enough')
+eq(R.feed(am2,{},{}),nil,'no inserters: nothing read')
 print('craftrate: ok')

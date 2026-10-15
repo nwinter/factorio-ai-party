@@ -1145,6 +1145,90 @@ do
   fails(function() call('configure',{positions={{x=6,y=0}},recipe='iron-gear-wheel'}) end,'positions goes with priority_targets')
   p.surface.find_entities_filtered,prototypes.entity,prototypes.get_entity_filtered=saved_find,saved_entity,saved_filtered
 end
+-- A storage chest's filter (Astra 18:58: removed modules had no storage chest to go to) and a splitter's priorities and
+-- filter (Muse 19:50: a plate split could not favour the steel branch), built and ghost, in configure and inspect. The
+-- fakes keep what 2.0.77 keeps on a copy of world n: a storage chest's filter reads back as prototypes; a ghost keeps it
+-- for the chest it becomes and reads nil (a blueprint of it holds it); a splitter's filter reads {name, quality,
+-- comparator}.
+do
+  local saved_find,saved_inv,saved_item,saved_quality=p.surface.find_entities_filtered,game.create_inventory,prototypes.item,prototypes.quality
+  local extra={['efficiency-module']={name='efficiency-module',type='module'},coal={name='coal',type='item'},['iron-plate']={name='iron-plate',type='item'},
+    ['copper-plate']={name='copper-plate',type='item'}}
+  prototypes.item=setmetatable({},{__index=function(_,k) return extra[k] or (saved_item and saved_item[k]) end})
+  prototypes.quality=setmetatable({},{__index=function(_,k) if k=='normal' or k=='rare' then return {name=k} end return saved_quality and saved_quality[k] end})
+  local function proto_of(name) return setmetatable({},{__index=function(_,k) if k=='name' then return name end end}) end
+  local function chest(pos,ghost,mode)
+    local c={valid=true,name=ghost and 'entity-ghost' or 'storage-chest',type=ghost and 'entity-ghost' or 'logistic-container',ghost_name=ghost and 'storage-chest' or nil,
+      ghost_type=ghost and 'logistic-container' or nil,position=pos,force=p.force,health=100,max_health=100,surface=p.surface,
+      bounding_box={left_top={x=pos.x-0.4,y=pos.y-0.4},right_bottom={x=pos.x+0.4,y=pos.y+0.4}},get_fluid_contents=function() return {} end}
+    local proto={name='storage-chest',type='logistic-container',logistic_mode=mode or 'storage'}
+    if ghost then c.ghost_prototype=proto else c.prototype=proto end
+    local held
+    return setmetatable(c,{__index=function(_,k)
+      if k=='storage_filter' then return (not ghost and held) and {name=proto_of(held.name),quality=proto_of(held.quality)} or nil end
+      if k=='held' then return held end
+    end,__newindex=function(t,k,v) if k=='storage_filter' then held=v else rawset(t,k,v) end end})
+  end
+  local function splitter(pos,dir,ghost)
+    local sp={valid=true,name=ghost and 'entity-ghost' or 'splitter',type=ghost and 'entity-ghost' or 'splitter',ghost_name=ghost and 'splitter' or nil,
+      ghost_type=ghost and 'splitter' or nil,position=pos,direction=dir,force=p.force,health=100,max_health=100,
+      splitter_input_priority='none',splitter_output_priority='none',get_fluid_contents=function() return {} end,
+      get_max_transport_line_index=function() return 0 end}
+    local filter
+    return setmetatable(sp,{__index=function(_,k) if k=='splitter_filter' then return filter and {name=filter.name,quality=filter.quality or 'normal',comparator='='} or nil end end,
+      __newindex=function(t,k,v) if k=='splitter_filter' then filter=v else rawset(t,k,v) end end})
+  end
+  local store,gstore,provider=chest({x=20.5,y=0.5}),chest({x=22.5,y=0.5},true),chest({x=24.5,y=0.5},false,'active-provider')
+  local sp,gsp=splitter({x=27,y=0.5},0),splitter({x=31.5,y=1},4,true)
+  local at={[20]=store,[22]=gstore,[24]=provider,[27]=sp,[31]=gsp}
+  p.surface.find_entities_filtered=function(f) local x=f.position and math.floor(f.position.x); return x and at[x] and {at[x]} or {} end
+  -- A ghost's filter from a blueprint of it (request_filters, as 2.0.77 writes it).
+  game.create_inventory=function()
+    local stack={}
+    stack.create_blueprint=function(a) stack.ents={{name='storage-chest',position=gstore.position,
+      request_filters=gstore.held and {sections={{index=1,filters={{index=1,name=gstore.held.name,quality=gstore.held.quality,comparator='=',count=0}}}}} or nil}} end
+    stack.get_blueprint_entities=function() return stack.ents end
+    return {insert=function() end,destroy=function() end,[1]=stack}
+  end
+  local r=call('configure',{position={x=20.5,y=0.5},storage_filter='efficiency-module'})
+  eq(r.storage_filter,'efficiency-module'); eq(r.storage_filter_before,'none'); eq(store.held.name,'efficiency-module')
+  eq(call('inspect',{position={x=20.5,y=0.5}}).storage_filter,'efficiency-module')
+  r=call('configure',{position={x=20.5,y=0.5},storage_filter={name='iron-plate',quality='rare'}})
+  eq(r.storage_filter,'iron-plate@rare'); eq(r.storage_filter_before,'efficiency-module')
+  -- filters with one name on a storage chest is its one filter slot; false or "none" clears it.
+  eq(call('configure',{position={x=20.5,y=0.5},filters={'copper-plate'}}).storage_filter,'copper-plate')
+  eq(call('configure',{position={x=20.5,y=0.5},storage_filter=false}).storage_filter,'none'); eq(store.held,nil)
+  fails(function() call('configure',{position={x=20.5,y=0.5},filters={'iron-plate','copper-plate'}}) end,'a storage chest has one filter slot')
+  fails(function() call('configure',{position={x=20.5,y=0.5},storage_filter='iron-plat'}) end,'storage_filter: unknown item iron-plat')
+  fails(function() call('configure',{position={x=24.5,y=0.5},storage_filter='iron-plate'}) end,'storage-chest (24.5,0.5) is not a storage chest')
+  -- A ghost: kept for the chest it becomes, read back from a blueprint of it.
+  r=call('configure',{position={x=22.5,y=0.5},storage_filter='efficiency-module'})
+  eq(r.ghost,true); eq(r.storage_filter,'efficiency-module'); eq(gstore.held.name,'efficiency-module')
+  eq(call('inspect',{position={x=22.5,y=0.5}}).storage_filter,'efficiency-module')
+  -- A splitter: a filter with output priority none is refused; with a side, the line names the tiles.
+  fails(function() call('configure',{position={x=27,y=0.5},filter='iron-plate'}) end,
+    'splitter (27,0.5): a filter sends its items to the output priority side and the other items to the other side; with output priority none it does nothing')
+  eq(sp.splitter_output_priority,'none')
+  r=call('configure',{position={x=27,y=0.5},output_priority='left',filter='iron-plate'})
+  eq(r.output_priority,'left'); eq(r.filter,'iron-plate'); eq(r.input_priority,'none')
+  eq(r.line,'input priority: none (both inputs alike); output priority: left; filter: iron-plate to the left output (26.5,-0.5) only, other items to the right output (27.5,-0.5)')
+  eq(r.before,'input priority: none (both inputs alike); output priority: none (items split evenly)')
+  r=call('configure',{position={x=27,y=0.5},input_priority='right'})
+  eq(r.line,'input priority: right (the right input (27.5,1.5) first, the other when it has none); output priority: left; filter: iron-plate to the left output (26.5,-0.5) only, other items to the right output (27.5,-0.5)')
+  local seen=call('inspect',{position={x=27,y=0.5}})
+  eq(seen.splitter.input_priority,'right'); eq(seen.splitter.filter,'iron-plate'); eq(seen.filters,nil)
+  r=call('configure',{position={x=27,y=0.5},filter=false,output_priority='right'})
+  eq(r.filter,'none'); eq(r.line,'input priority: right (the right input (27.5,1.5) first, the other when it has none); output priority: right (the right output (27.5,-0.5) first, the other when it is full)')
+  -- A filter set some other way while output priority is none: inspect says it does nothing.
+  sp.splitter_output_priority='none'; sp.splitter_filter={name='coal'}
+  eq(call('inspect',{position={x=27,y=0.5}}).splitter.line,'input priority: right (the right input (27.5,1.5) first, the other when it has none); output priority: none (items split evenly); filter: coal (does nothing while output priority is none)')
+  fails(function() call('configure',{position={x=27,y=0.5},output_priority='middle'}) end,'output_priority is left, right or none')
+  fails(function() call('configure',{position={x=20.5,y=0.5},output_priority='left'}) end,"input_priority, output_priority and filter are a splitter's settings; storage-chest (20.5,0.5) is a logistic-container")
+  -- A ghost facing east: left is north; filters with one name is its filter.
+  r=call('configure',{position={x=31.5,y=1},output_priority='right',filters={'coal'},input_priority='left'})
+  eq(r.ghost,true); eq(r.line,'input priority: left (the left input (30.5,0.5) first, the other when it has none); output priority: right; filter: coal to the right output (32.5,1.5) only, other items to the left output (32.5,0.5)')
+  p.surface.find_entities_filtered,game.create_inventory,prototypes.item,prototypes.quality=saved_find,saved_inv,saved_item,saved_quality
+end
 -- A refused configure stops nothing (Astra 11:01, twice: configure with surface=nauvis, her own surface, failed and
 -- paused her queue): its target and checks run before the queue would stop; surface naming the character's own surface
 -- is the same as none (out of reach: remote view, the queue goes on).

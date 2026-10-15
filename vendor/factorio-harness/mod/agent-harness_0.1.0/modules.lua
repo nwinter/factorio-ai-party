@@ -1,6 +1,14 @@
 -- A machine's modules in one call (Astra and Gemini, shift12 15:10: Sunward's module swaps took three blueprint round
--- trips, Fulgora's upgrades four): configure {position(s), modules: [...]} sets the module slots, slot by slot; the
--- slots past the list end up empty. Read on 2.0.77, a private copy of world n:
+-- trips, Fulgora's upgrades four): configure {position(s), modules} sets the module slots. modules is
+-- - a list of modules: the machine ends up holding these; the ones it holds (or has coming) that the list names stay
+--   in their slots and the rest go into the other slots in slot order; slots left over end up empty (Astra, shift13
+--   19:40: applied slot by slot, ["speed-module-2", "efficiency-module"] on drills holding speed-module-2 in slots 1
+--   and 2 and efficiency-module in slot 3 took the efficiency module out of slot 3 and asked for one in slot 2, with
+--   none in the network: 11 drills drew more power);
+-- - a list with "keep" or "empty" entries: slot by slot, entry i for slot i; "keep" leaves the slot (and any request
+--   on it) as it is, slots past the list end up empty;
+-- - numbered slots, {"1": "speed-module", "3": "empty"}: only the slots named change.
+-- Read on 2.0.77, a private copy of world n:
 -- - In reach, by hand: the old modules go to the character's inventory and the new ones come from it, as a player
 --   swaps them in the machine's GUI.
 -- - Out of reach, on another surface or on a platform: an item request on the machine (2.0's item-request-proxy, as
@@ -58,26 +66,70 @@ return function(api)
     for i = 1, math.min(#hits, 12) do shown[i] = hits[i] end
     return table.concat(shown, ', ') .. (#hits > 12 and string.format(' (+%d more)', #hits - 12) or '')
   end
-  -- modules: a list, one entry a slot: a module name, or {name, count?, quality?} for count slots; [] or false: none.
-  -- Returns the wanted module per slot ({name, quality} or false), as many as given.
+  -- One module entry: a module name or {name, quality?}: {name, quality}; "empty" or false: false; "keep": 'keep'.
+  local function entry_of(entry, where)
+    if entry == false or entry == 'empty' then return false end
+    if entry == 'keep' then return 'keep' end
+    local name, quality = entry, 'normal'
+    if type(entry) == 'table' then name, quality = entry.name, entry.quality or 'normal' end
+    local item = type(name) == 'string' and prototypes.item[name]
+    if not (item and item.type == 'module') then
+      local like = modules_like(name)
+      error(string.format('%snot a module: %s%s', where or '', tostring(name), like ~= '' and '; modules like it: ' .. like or ''), 0)
+    end
+    if not prototypes.quality[quality] then error('unknown quality ' .. tostring(quality), 0) end
+    return {name=name, quality=quality}
+  end
+  local SLOT_FORMS = 'modules is a list of module names (or {name, count?, quality?}) the machine ends up holding, a list '
+    .. 'with "keep" and "empty" entries (slot by slot), or numbered slots {"1": "speed-module", "3": "empty"}; [] or false empties the slots'
+  -- modules (see the top): {kind='set', list={{name, quality}...}} or {kind='slots', at={[i]={name, quality}|false|'keep'},
+  -- n (the last slot named), rest ('empty' past a list, 'keep' for numbered slots)}.
   function M.parse(v)
-    if v == false then return {} end
+    if v == false then return {kind='set', list={}} end
     if type(v) == 'string' then v = {v} end
-    if type(v) ~= 'table' then error('modules is a list of module names, one a slot (or {name, count?, quality?}); [] or false empties the slots', 0) end
-    local out = {}
-    for _, entry in ipairs(v) do
-      local name, count, quality = entry, 1, 'normal'
-      if type(entry) == 'table' then name, count, quality = entry.name, entry.count or 1, entry.quality or 'normal' end
-      local item = type(name) == 'string' and prototypes.item[name]
-      if not (item and item.type == 'module') then
-        local like = modules_like(name)
-        error(string.format('not a module: %s%s', tostring(name), like ~= '' and '; modules like it: ' .. like or ''), 0)
+    if type(v) ~= 'table' then error(SLOT_FORMS, 0) end
+    local numbered, listed, top = false, false, 0
+    for k in pairs(v) do
+      if type(k) == 'number' then listed = true; top = math.max(top, k)
+      elseif type(k) == 'string' and k:match('^%d+$') then numbered = true
+      else error(string.format('modules: %s is not a slot number; %s', tostring(k), SLOT_FORMS), 0) end
+    end
+    if numbered and listed then error('modules: a list or numbered slots, not both', 0) end
+    if top > #v then error('modules: a list entry is missing (null): "empty" leaves a slot empty, "keep" as it is', 0) end
+    if numbered then
+      local at, n = {}, 0
+      for k, entry in pairs(v) do
+        local i = tonumber(k)
+        if i < 1 or i > 64 then error(string.format('modules: slot %s is not a slot number 1..64', k), 0) end
+        if type(entry) == 'table' and (entry.count or 1) ~= 1 then error(string.format('modules: one module a slot (no count) in slot %d', i), 0) end
+        at[i] = entry_of(entry, string.format('slot %d: ', i))
+        n = math.max(n, i)
       end
-      if type(count) ~= 'number' or count < 1 or count ~= math.floor(count) or count > 16 then error('a modules entry\'s count is a whole number 1..16', 0) end
-      if not prototypes.quality[quality] then error('unknown quality ' .. tostring(quality), 0) end
-      for _ = 1, count do out[#out+1] = {name=name, quality=quality} end
+      return {kind='slots', at=at, n=n, rest='keep'}
+    end
+    local out, slotted = {}, false
+    for i, entry in ipairs(v) do
+      if entry == false or entry == 'empty' or entry == 'keep' then slotted = true; out[#out+1] = entry_of(entry)
+      else
+        local count = type(entry) == 'table' and entry.count or 1
+        if type(count) ~= 'number' or count < 1 or count ~= math.floor(count) or count > 16 then error('a modules entry\'s count is a whole number 1..16', 0) end
+        local m = entry_of(entry)
+        for _ = 1, count do out[#out+1] = m end
+      end
       if #out > 64 then error('modules lists at most 64 slots', 0) end
     end
+    if slotted then
+      local at = {}
+      for i, m in ipairs(out) do at[i] = m end
+      return {kind='slots', at=at, n=#out, rest='empty'}
+    end
+    return {kind='set', list=out}
+  end
+  -- The modules a want names (for the checks): {name, quality} per module, keep and empty left out.
+  function M.named(want)
+    local out = {}
+    if want.kind == 'set' then for _, m in ipairs(want.list) do out[#out+1] = m end
+    else for i = 1, want.n do local m = want.at[i]; if type(m) == 'table' then out[#out+1] = m end end end
     return out
   end
 
@@ -220,32 +272,100 @@ return function(api)
     return text
   end
 
+  -- The module each slot is to hold: {name, quality}, false (none) or 'keep'. A list (kind set) leaves the modules a
+  -- slot holds or has coming (cur) where the list names them, then fills the other slots in slot order.
+  local function targets(want, cur, slots)
+    local slot = {}
+    if want.kind == 'slots' then
+      for i = 1, slots do
+        local m = want.at[i]
+        if m == nil then m = want.rest == 'keep' and 'keep' or false end
+        slot[i] = m
+      end
+      return slot
+    end
+    local left = {}
+    for _, m in ipairs(want.list) do left[#left+1] = m end
+    for i = 1, slots do
+      if cur[i] then
+        for j, m in ipairs(left) do
+          if same(cur[i], m) then slot[i] = m; table.remove(left, j); break end
+        end
+      end
+    end
+    local j = 1
+    for i = 1, slots do
+      if slot[i] == nil then slot[i] = left[j] or false; j = j + 1 end
+    end
+    return slot
+  end
+  -- A built machine's module item request, if any: (proxy, insert plan, removal plan).
+  local function request_of(e)
+    local proxy = try(function() return e.item_request_proxy end)
+    if not (proxy and proxy.valid) then return nil, {}, {} end
+    return proxy, try(function() return proxy.insert_plan end) or {}, try(function() return proxy.removal_plan end) or {}
+  end
+  -- Each slot as a line: what it holds and what is on its way in or out ("2 speed-module-2 (efficiency-module
+  -- requested; speed-module-2 coming out)"); a ghost's slots by its requests ("1 speed-module (requested)").
+  function M.by_slot(e)
+    local mc = machine(e)
+    if mc.slots == 0 then return nil end
+    local out = {}
+    if mc.ghost then
+      local plan = plan_slots(try(function() return e.insert_plan end), mc.index)
+      for i = 1, mc.slots do
+        local m = plan[i - 1]
+        out[i] = m and string.format('%d %s (requested)', i, label(m.name, m.quality)) or string.format('%d empty', i)
+      end
+      return out
+    end
+    local _, ins, rem = request_of(e)
+    ins, rem = plan_slots(ins, mc.index), plan_slots(rem, mc.index)
+    for i = 1, mc.slots do
+      local st = mc.inv[i]
+      local text = string.format('%d %s', i, st.valid_for_read and label(st.name, st.quality.name) or 'empty')
+      local notes = {}
+      if ins[i - 1] then notes[#notes+1] = label(ins[i - 1].name, ins[i - 1].quality) .. ' requested' end
+      if rem[i - 1] then notes[#notes+1] = label(rem[i - 1].name, rem[i - 1].quality) .. ' coming out' end
+      out[i] = text .. (#notes > 0 and ' (' .. table.concat(notes, '; ') .. ')' or '')
+    end
+    return out
+  end
+
   -- Sets one machine's modules. p: the player, bot or remote proxy; e: the machine or its ghost; want: M.parse's
-  -- list; near: the character sees it (configure_target); by: nil, 'hand' or 'robots'.
+  -- result; near: the character sees it (configure_target); by: nil, 'hand' or 'robots'.
   function M.set(p, e, want, near, by)
     local mc = machine(e)
     assert(mc.slots > 0, string.format('%s has no module slots', mc.text))
-    if #want > mc.slots then
-      error(string.format('%s has %d module slot%s; %d given', mc.text, mc.slots, mc.slots == 1 and '' or 's', #want), 0)
+    local plural = mc.slots == 1 and '' or 's'
+    if want.kind == 'set' and #want.list > mc.slots then
+      error(string.format('%s has %d module slot%s; %d given', mc.text, mc.slots, plural, #want.list), 0)
     end
-    for _, w in ipairs(want) do
+    if want.kind == 'slots' and want.n > mc.slots then
+      error(string.format('%s has %d module slot%s; slot %d named', mc.text, mc.slots, plural, want.n), 0)
+    end
+    for _, w in ipairs(M.named(want)) do
       local why = M.why_not(mc.proto, mc.recipe, w, mc.text)
       if why then error(why, 0) end
     end
-    local slot = {}
-    for i = 1, mc.slots do slot[i] = want[i] or false end
     local row = {name=e.type == 'entity-ghost' and e.ghost_name or e.name, position={x=e.position.x, y=e.position.y}, ghost=mc.ghost or nil}
-    -- A ghost: its insert plan's module rows.
+    -- A ghost: its insert plan's module rows, slot by slot.
     if mc.ghost then
       assert(by ~= 'hand', 'a ghost takes modules as requests: by=hand needs a built machine')
       local plans = try(function() return e.insert_plan end) or {}
       local before = plan_slots(plans, mc.index)
+      local slot = targets(want, setmetatable({}, {__index=function(_, i) return before[i - 1] or false end}), mc.slots)
       local slots = {}
-      for i = 1, mc.slots do if slot[i] then slots[i - 1] = slot[i] end end
+      for i = 1, mc.slots do
+        local m = slot[i]
+        if m == 'keep' then m = before[i - 1] end
+        if m then slots[i - 1] = m end
+      end
       e.insert_plan = replan(plans, mc.index, slots)
       row.by = 'ghost'
       row.before = M.text(list_of(before))
       row.requested = M.text(list_of(slots))
+      row.by_slot = M.by_slot(e)
       row.note = 'the robots that build it bring them'
       return row
     end
@@ -256,11 +376,14 @@ return function(api)
     local reach = near and try(function() return p.can_reach_entity(e) end)
     local hand = by == 'hand' or (by == nil and reach)
     if by == 'hand' and not reach then error(api.out_of_reach and api.out_of_reach(p, e) or 'entity is out of reach', 0) end
+    local proxy, old_ins, old_rem = request_of(e)
+    local pend_ins, pend_rem = plan_slots(old_ins, mc.index), plan_slots(old_rem, mc.index)
     if hand then
+      local slot = targets(want, now, mc.slots)
       local main = p.get_main_inventory()
       local change, out_of, need = {}, {}, {}
       for i = 1, mc.slots do
-        if not same(now[i], slot[i]) then
+        if slot[i] ~= 'keep' and not same(now[i], slot[i]) then
           change[#change+1] = i
           if now[i] then out_of[key(now[i].name, now[i].quality)] = (out_of[key(now[i].name, now[i].quality)] or 0) + 1 end
           if slot[i] then
@@ -270,7 +393,7 @@ return function(api)
           end
         end
       end
-      if #change == 0 then row.by = 'hand'; row.unchanged = true; row.after = row.before; return row end
+      if #change == 0 then row.by = 'hand'; row.unchanged = true; row.after = row.before; row.by_slot = M.by_slot(e); return row end
       local short = {}
       for k, x in pairs(need) do
         local held = main.get_item_count{name=x.name, quality=x.quality}
@@ -291,16 +414,16 @@ return function(api)
       -- The old ones out first (to the inventory, else spilled at the character's feet), then the new ones in.
       local returned, spilled = {}, {}
       for _, i in ipairs(change) do
-        local s = inv[i]
-        if s.valid_for_read then
-          local name, quality = s.name, s.quality.name
-          local moved = main.insert{name=name, quality=quality, count=s.count}
+        local st = inv[i]
+        if st.valid_for_read then
+          local name, quality = st.name, st.quality.name
+          local moved = main.insert{name=name, quality=quality, count=st.count}
           returned[#returned+1] = {name=name, quality=quality}
-          if moved < s.count then
+          if moved < st.count then
             spilled[#spilled+1] = {name=name, quality=quality}
-            p.surface.spill_item_stack{position=p.position, stack={name=name, quality=quality, count=s.count - moved}, enable_looted=true, allow_belts=false}
+            p.surface.spill_item_stack{position=p.position, stack={name=name, quality=quality, count=st.count - moved}, enable_looted=true, allow_belts=false}
           end
-          s.clear()
+          st.clear()
         end
       end
       for _, i in ipairs(change) do
@@ -310,45 +433,69 @@ return function(api)
           inv[i].set_stack{name=w.name, quality=w.quality, count=1}
         end
       end
+      -- Robot requests on the slots set by hand go (they would undo it).
+      if proxy then
+        local dropped = false
+        for _, i in ipairs(change) do
+          if pend_ins[i - 1] or pend_rem[i - 1] then pend_ins[i - 1], pend_rem[i - 1], dropped = nil, nil, true end
+        end
+        if dropped then
+          local ni, nr = replan(old_ins, mc.index, pend_ins), replan(old_rem, mc.index, pend_rem)
+          if #ni == 0 and #nr == 0 then proxy.destroy() else proxy.insert_plan = ni; proxy.removal_plan = nr end
+          row.note = 'the robot requests on the slots set were cleared'
+        end
+      end
       local after = {}
       for i = 1, mc.slots do after[i] = inv[i].valid_for_read and {name=inv[i].name, quality=inv[i].quality.name} or false end
       row.by = 'hand'
       row.after = M.text(tally(after))
       row.returned = #returned > 0 and M.text(tally(returned)) .. ' (to your inventory)' or nil
       row.spilled = #spilled > 0 and M.text(tally(spilled)) .. ' (no room: on the ground at your feet)' or nil
+      row.by_slot = M.by_slot(e)
       return row
     end
-    -- An item request on the built machine: the new modules in, the old ones out, slot by slot.
-    local ins, rem = {}, {}
+    -- An item request on the built machine, slot by slot: the new modules in, the old ones out. A slot's module is
+    -- what it will hold once the requests on it are done (cur), so a list leaves a module on its way in where it goes.
+    local cur = {}
     for i = 1, mc.slots do
-      if not same(now[i], slot[i]) then
+      if pend_ins[i - 1] then cur[i] = pend_ins[i - 1]
+      elseif pend_rem[i - 1] then cur[i] = false
+      else cur[i] = now[i] end
+    end
+    local slot = targets(want, cur, mc.slots)
+    local ins, rem, changed = {}, {}, false
+    for i = 1, mc.slots do
+      if slot[i] == 'keep' then
+        ins[i - 1], rem[i - 1] = pend_ins[i - 1], pend_rem[i - 1]
+      elseif not same(now[i], slot[i]) then
         if slot[i] then ins[i - 1] = slot[i] end
         if now[i] then rem[i - 1] = now[i] end
+        if not (same(pend_ins[i - 1], slot[i] or nil) and same(pend_rem[i - 1], now[i] or nil)) then changed = true end
+      elseif pend_ins[i - 1] or pend_rem[i - 1] then changed = true
       end
     end
-    local proxy = try(function() return e.item_request_proxy end)
-    local had = proxy and proxy.valid
-    local old_ins = had and try(function() return proxy.insert_plan end) or {}
-    local old_rem = had and try(function() return proxy.removal_plan end) or {}
     local new_ins, new_rem = replan(old_ins, mc.index, ins), replan(old_rem, mc.index, rem)
     row.by = try(function() return e.surface.platform end) and 'hub' or 'robots'
     if not next(ins) and not next(rem) then
       row.unchanged = true; row.after = row.before
-      if had then
+      if proxy then
         if #new_ins == 0 and #new_rem == 0 then proxy.destroy() else proxy.insert_plan = new_ins; proxy.removal_plan = new_rem end
-        if next(plan_slots(old_ins, mc.index)) or next(plan_slots(old_rem, mc.index)) then row.note = 'its module requests were cleared: the slots hold that already' end
+        if next(pend_ins) or next(pend_rem) then row.note = 'its module requests were cleared: the slots hold that already' end
       end
+      row.by_slot = M.by_slot(e)
       return row
     end
-    if had then
+    if proxy then
       proxy.insert_plan = new_ins
       proxy.removal_plan = new_rem
     else
       proxy = e.surface.create_entity{name='item-request-proxy', position=e.position, force=e.force, target=e, modules=new_ins, removal_plan=new_rem}
       assert(proxy, 'the game made no item request for ' .. mc.text)
     end
+    row.unchanged = not changed or nil
     row.requested = next(ins) and M.text(list_of(ins)) or nil
     row.removing = next(rem) and M.text(list_of(rem)) or nil
+    row.by_slot = M.by_slot(e)
     row.note = M.carrier(e, list_of(ins), next(rem) and list_of(rem) or nil)
     return row
   end
