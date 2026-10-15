@@ -131,6 +131,11 @@ function ClearSentinel($why) {
 }
 function StartUp {
   ClearSentinel 'before starting'
+  # A config change that must land while OBS is closed (it rewrites its ini files on exit): D:\pog\obs-prestart.ps1,
+  # when present, runs here (19:25 2026-10-14: BrowserHWAccel=false against the overlay's GPU memory leak).
+  if (Test-Path 'D:\pog\obs-prestart.ps1') {
+    try { $r = & 'D:\pog\obs-prestart.ps1' 2>&1 | Out-String; Say "start: obs-prestart.ps1: $($r.Trim())" } catch { Say "start: obs-prestart.ps1 failed: $_" }
+  }
   $since = Get-Date
   Start-ScheduledTask -TaskName '__OBSTASK__'
   Say 'start: Start-ScheduledTask __OBSTASK__'
