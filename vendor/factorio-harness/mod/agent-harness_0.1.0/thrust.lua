@@ -231,6 +231,85 @@ return function(api)
     end
     return out
   end
+  -- How long a thruster burns on what it holds with no supply (Grok, shift17 20:40: an oxidizer pump cut at V >= 15
+  -- and the leg peaked at 51 km/s). Measured on 2.0.77, its prototype's min_performance {fluid_volume 0.1, fluid_usage
+  -- 0.1, effectivity 1} and max_performance {0.8, 2, 0.51} per tank of 1000: at 80% full or more it burns 2 of each
+  -- fluid a tick; between 80% and 10%, linearly less (0.1 a tick at 10%); below 10%, 0.1 a tick until empty. Its thrust
+  -- is the use times the effectivity (0.51 at 80%, 1 at 10%), so it falls to about a tenth. From amount a (per tank):
+  -- {full_s (at 80% or more), to_10_s (until 10%), equiv_s (seconds of full thrust in all, to 10%), empty_s}.
+  M.TANK = 1000
+  function M.burn(a, volume)
+    volume = volume or M.TANK
+    local hi, lo = 0.8 * volume, 0.1 * volume
+    local umax, umin = 2, 0.1
+    local slope = (umax - umin) / (hi - lo)
+    local ticks_full, ticks_mid, thrust = 0, 0, 0
+    local x = a
+    if x > hi then ticks_full = (x - hi) / umax; thrust = thrust + (x - hi) * 0.51; x = hi end
+    if x > lo then
+      -- dx/dt = -(umin + slope (x - lo)): exponential toward lo - umin/slope.
+      local y0, y1 = x - lo + umin / slope, umin / slope
+      ticks_mid = math.log(y0 / y1) / slope
+      -- the thrust over it: the effectivity integrated over the fluid used (linear 1 at lo to 0.51 at hi)
+      local function eff(v) return 1 - (v - lo) / (hi - lo) * 0.49 end
+      thrust = thrust + (x - lo) * (eff(x) + eff(lo)) / 2
+      x = lo
+    end
+    local ticks_low = x / umin
+    local function s(ticks) return math.floor(ticks / 6 + 0.5) / 10 end
+    return {full_s=s(ticks_full), to_10_s=s(ticks_full + ticks_mid), equiv_s=s(thrust / (umax * 0.51)), empty_s=s(ticks_full + ticks_mid + ticks_low)}
+  end
+  M.RULE = 'a thruster burns 2 fuel and 2 oxidizer a tick while its tanks are 80% full or more, linearly less down to '
+    .. '0.1 a tick at 10%, and 0.1 a tick below; its thrust falls with it to about a tenth (use x effectivity 0.51 at 80%, '
+    .. '1 at 10%). From full tanks with no supply: 1.7 s at full thrust, 20.1 s until 10%, about 10.3 s of full thrust in '
+    .. 'all. With no thrust (or a tenth of it) a platform slows, then drifts backward at up to 10 km/s. Measured on 2.0.77: '
+    .. 'a 170 t, 21-tile-wide test platform with 1 thruster went from 0 to 86 km/s in 6 s on one full tank with no supply'
+  -- What stays with the thrusters when their pumps stop: per fluid, the thrusters' own tanks and the pipes and tanks
+  -- between them and the pumps that push toward them (the walk stops at a pump), and how long that burns.
+  function M.after_pumps(pl)
+    local s = try(function() return pl.surface end)
+    if not s then return nil end
+    local thrusters = try(function() return s.find_entities_filtered{type='thruster', force=pl.force} end) or {}
+    if #thrusters == 0 then return nil end
+    local by, order = {}, {}
+    for _, t in ipairs(thrusters) do
+      for _, tk in ipairs(tanks(t)) do
+        local b = by[tk.fluid]
+        if not b then b = {fluid=tk.fluid, thrusters=0, own=0, between=0, seen={}, pumps={}, pump_seen={}}; by[tk.fluid] = b; order[#order+1] = b end
+        b.thrusters = b.thrusters + 1; b.own = b.own + tk.amount
+        local queue, head = {{box=t.fluidbox, i=tk.index}}, 1
+        while head <= #queue and head <= MAX_BOXES do
+          local cur = queue[head]; head = head + 1
+          for _, pc in ipairs(try(function() return cur.box.get_pipe_connections(cur.i) end) or {}) do
+            local target = pc.target
+            local e = target and try(function() return target.owner end)
+            local j = pc.target_fluidbox_index or 1
+            local k = e and ((try(function() return e.unit_number end) or 0) * 16 + j)
+            if e and PASS[e.type] and not b.seen[k] then
+              b.seen[k] = true
+              local f = try(function() return target[j] end)
+              if f and f.name == tk.fluid then b.between = b.between + f.amount end
+              queue[#queue+1] = {box=target, i=j}
+            elseif e and e.type == 'pump' and not b.pump_seen[k] then
+              b.pump_seen[k] = true; b.pumps[#b.pumps+1] = e
+            end
+          end
+        end
+      end
+    end
+    local lines = {}
+    for _, b in ipairs(order) do
+      local each = (b.own + b.between) / b.thrusters
+      local r = M.burn(each)
+      local pumps = {}
+      for i = 1, math.min(2, #b.pumps) do pumps[i] = 'pump ' .. at(b.pumps[i]) .. ': ' .. state_text(b.pumps[i]) end
+      lines[#lines+1] = string.format('%s: if its pumps stop, %d thruster%s %d and the pipes and tanks between them and the pumps %d (%d a thruster): '
+        .. 'about %g s of full thrust, %g s until 10%%, then 0.1 a tick until empty at %g s%s', b.fluid, b.thrusters, b.thrusters == 1 and ' holds' or 's hold',
+        math.floor(b.own + 0.5), math.floor(b.between + 0.5), math.floor(each + 0.5), r.equiv_s, r.to_10_s, r.empty_s,
+        #pumps > 0 and '; ' .. table.concat(pumps, '; ') or '; no pump between them and the rest of the line')
+    end
+    return {lines=lines, rule=M.RULE}
+  end
   -- The thrusters' tanks in one phrase: "thruster-fuel 99%, thruster-oxidizer 18%" (the lowest of each).
   function M.lowest_text(r)
     local names = {}

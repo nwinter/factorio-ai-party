@@ -405,6 +405,39 @@ return function(api)
     end
     return made
   end
+  -- What there is of a pack that nobody made lately (Grok, shift17 20:40: "chemical science missing" with 5571 in chests
+  -- and labs consuming them): used in the last 10 minutes on any surface, held in our labs, and in our logistic
+  -- networks (their providers, storage and buffers), as the game counts them.
+  local function packs_stock(force, names)
+    local out = {}
+    for _, name in ipairs(names) do out[name] = {used=0, labs=0, networks=0} end
+    if #names == 0 then return out end
+    for _, surface in pairs(game.surfaces or {}) do
+      local okp, stats = pcall(function() return force.get_item_production_statistics(surface) end)
+      if not okp then stats = nil end
+      local okl, labs = pcall(function() return surface.find_entities_filtered{type='lab', force=force} end)
+      if not okl or type(labs) ~= 'table' then labs = {} end
+      local nets = {}
+      pcall(function() nets = force.logistic_networks[surface.name] or {} end)
+      for _, name in ipairs(names) do
+        local s = out[name]
+        if stats then
+          local ok, n = pcall(function() return stats.get_flow_count{name=name, category='output',
+            precision_index=defines.flow_precision_index.ten_minutes, count=true} end)
+          if ok and type(n) == 'number' then s.used = s.used + n end
+        end
+        for _, lab in ipairs(labs) do
+          local ok, n = pcall(function() return lab.get_inventory(defines.inventory.lab_input).get_item_count(name) end)
+          if ok and type(n) == 'number' then s.labs = s.labs + n end
+        end
+        for _, net in ipairs(nets) do
+          local ok, n = pcall(function() return net.get_item_count(name) end)
+          if ok and type(n) == 'number' then s.networks = s.networks + n end
+        end
+      end
+    end
+    return out
+  end
   -- The research queue in full: each entry's progress, who queued it, the
   -- packs it needs, and when it should finish at the measured throughput.
   -- An entry that needs a pack the current research does not use and nobody
@@ -424,6 +457,9 @@ return function(api)
       end
     end
     local made = packs_made(force, needed)
+    local unmade = {}
+    for _, name in ipairs(needed) do if (made[name] or 0) <= 0 then unmade[#unmade+1] = name end end
+    local stock = packs_stock(force, unmade)
     for i, t in ipairs(queue) do
       local progress = 0
       if i == 1 and current and current.name == t.name then progress = force.research_progress or 0
@@ -431,16 +467,25 @@ return function(api)
         local ok, saved = pcall(function() return t.saved_progress end)
         if ok and type(saved) == 'number' then progress = saved end
       end
-      local packs, missing = {}, {}
+      local packs, missing, stocked = {}, {}, {}
       for _, ing in ipairs(t.research_unit_ingredients or {}) do
         packs[#packs+1] = ing.name
-        if not in_use[ing.name] and (made[ing.name] or 0) <= 0 then missing[#missing+1] = ing.name end
+        if not in_use[ing.name] and (made[ing.name] or 0) <= 0 then
+          local s = stock[ing.name] or {used=0, labs=0, networks=0}
+          if s.labs + s.networks > 0 then
+            stocked[#stocked+1] = string.format('%s: none made in 10 min; %d in stock (labs %d, logistic networks %d); labs used %d in 10 min',
+              ing.name, s.labs + s.networks, s.labs, s.networks, math.floor(s.used + 0.5))
+          else missing[#missing+1] = ing.name end
+        end
       end
       local by = M.queued_by(force.name, t.name)
       local entry = {name=t.name, progress=math.floor(progress * 1000 + 0.5) / 10, queued_by=by and by.by,
         packs=table.concat(packs, '+')}
+      -- Not made lately with some in stock: the labs can run on it (not_made_recently); none made and none in our labs
+      -- or logistic networks: they cannot (waits_for; the clock stops there).
+      if #stocked > 0 then entry.not_made_recently = table.concat(stocked, '; ') end
       if #missing > 0 then
-        entry.waits_for = table.concat(missing, '+') .. ' (none made in 10 min)'
+        entry.waits_for = table.concat(missing, '+') .. ' (none made in 10 min, none in our labs or logistic networks: the labs cannot run it)'
         stalled = stalled or t.name
       end
       if rate and rate > 0 and not stalled then
