@@ -196,7 +196,7 @@ eq(#g,1); eq(g[1].kind,'boiler_fuel'); eq(g[1].n,2); eq(g[1].by.luna,1); eq(g[1]
 eq(g[1].now_text,'2 boilers under 20 min of their own fuel at this draw, 1 under 10, 1 under 5, lowest 2 min')
 eq(g[1].line,'2 boilers under 20 min of their own fuel at this draw, 1 under 10, 1 under 5, not refilled, near (35,19) (electric #7: 11 boilers, '
   ..'1 with fuel at their feeders); boiler (66,16) 2 min: no inserter feeds it; boiler (4,22) 12 min: no inserter feeds it; '
-  ..'fuel within 64 tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50; belts: coal 16 on 2 tiles, nearest (31,13), (31,12)')
+  ..'fuel within 64 tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50; belts: coal 16 on 2 tiles, nearest (31,13), (31,12); least-stocked feed chest wooden-chest (41,13): 400 coal (400 fuel items)')
 -- The chest empties: lb1 is low too, its feeder and the empty chest named.
 chest_coal=0; run(5); storage.networks.views={}
 g=N.alert_groups(force)
@@ -508,6 +508,12 @@ has(fg.line,'1 boiler under 20 min of their own fuel at this draw, 1 under 10, 1
   ..'boiler (200,200) 0 min: no inserter feeds it; '
   ..'fuel within 64 tiles (the boilers hold none; looked for coal, solid-fuel, wood, rocket-fuel, nuclear-fuel): iron-chest (81,13) coal 50, wooden-chest (41,13) coal 400; belts: coal 16')
 has(fg.line,'boiler (200,200) 0 min: no inserter feeds it')
+-- Round 00:20: report the least fuel stock among the network's already-read feeder chests.
+do
+  local function c(x,n) return {e={valid=true,name='requester-chest',position={x=x,y=39}},count=n,held='coal '..n} end
+  local fg=N.fuel_group({name='nauvis'},{id=9,boilers={{e=empty,min=0,chest=c(10,50)},{e=empty,min=0,chest=c(20,3)}},fuel_low={{e=empty,min=0}}},force)
+  has(fg.line,'least-stocked feed chest requester-chest (20,39): coal 3 (3 fuel items)')
+end
 -- Logistic coverage (Sonnet, shift10): a chest outside every roboport's logistic area; 2.0.77: a square, edges in.
 do
   local ports={}

@@ -248,6 +248,15 @@ test('fh wait exits nonzero when the action ended badly or is still running at t
     });
   });
 });
+test('fh wait allows a feed short only when up_to was recorded on its completion',async()=>{
+  for (const allowed of [true,false]) {
+    await engine(()=>({ok:true,result:{active:false,last:{kind:'gather',op:'feed',outcome:'out_of_items',short_allowed:allowed,moved:100,left:1}}}),async port=>{
+      const {code,stdout}=await compact(port,['wait']);
+      assert.equal(code,allowed?0:1,stdout);
+      assert.match(stdout,/out_of_items/);
+    });
+  }
+});
 test('board and plan commands map to the board actions',async()=>{
   const seen:any[]=[];
   await engine(request=>{seen.push(request);return {ok:true,result:{}};},async port=>{
@@ -588,6 +597,10 @@ test('move_to and drive --wait show gaps, escapes, enemies gone around; no_safe_
     // round1050f: a belt line that mined the rocks and trees in its way.
     {action:'build_path',last:{kind:'build_path',outcome:'path_built',placed:30,skipped:0,next_index:31,total:30,cleared:3,cleared_names:'big-volcanic-rock*2 tree-08*1'},code:0,shown:['placed','cleared','cleared_names'],lines:['big-volcanic-rock*2 tree-08*1']},
     {action:'build_path',last:{kind:'build_path',outcome:'build_failed',placed:4,skipped:0,next_index:5,total:30,next_position:{x:24.5,y:0.5},error:'placement blocked by stone-furnace (24,1)',cleared:1,cleared_names:'huge-rock*1'},code:1,shown:['placed','next_index','next_position','cleared'],lines:['Control ended: build_failed: placement blocked by stone-furnace (24,1)']},
+    {action:'transfer',last:{kind:'gather',op:'transfer',outcome:'transferred',moved:43,entities:[{position:{x:15.5,y:53.5},inventory:'chest',moved:43,delivery_note:'fast-inserter (15.5,54.5) takes from this chest -> rocket-silo (15.5,59.5)'}]},code:0,shown:['moved'],lines:['transfers[1]:','rocket-silo (15.5,59.5)']},
+    // Round 00:20: a feed explicitly allowing a short succeeds without hiding out_of_items or remaining stops.
+    {action:'feed',last:{kind:'gather',op:'feed',outcome:'out_of_items',short_allowed:true,moved:100,left:1},code:0,shown:['moved','left']},
+    {action:'feed',last:{kind:'gather',op:'feed',outcome:'out_of_items',moved:100,left:1},code:1,shown:['moved','left']},
     // collectwait: a collect waiting at a machine, what it took against what the inserters took.
     {action:'collect',last:{kind:'gather',outcome:'collected',took:'iron-gear-wheel*11',made:'iron-gear-wheel*10',inserters_took:'iron-gear-wheel*3',crafts:10,waited_s:5},code:0,shown:['took','made','inserters_took','crafts','waited_s']},
     {action:'move_to',last:{kind:'move_to',outcome:'arrived_near',pocket:'(55,21) lies in a gap narrower than 0.7 tiles (assembling-machine-2 (53.5,22.5)) that no path led into; stopped at (51.5,24.4), 4.8 tiles from it (squeeze=true walks in)'},code:0,shown:['pocket']},
@@ -615,7 +628,7 @@ test('move_to and drive --wait show gaps, escapes, enemies gone around; no_safe_
       polls++;
       return {ok:true,result:polls<2?{active:{kind:end.last.kind,until_tick:180}}:{active:false,last:end.last}};
     },async port=>{
-      const args=end.action==='vehicle'?'{"drive":{"x":30,"y":145}}':end.action==='collect'?'{"position":{"x":55,"y":21},"wait_ticks":300}':'{"position":{"x":55,"y":21}}';
+      const args=end.action==='transfer'?'{"position":{"x":15.5,"y":53.5},"item":"low-density-structure","walk":true}':end.action==='feed'?'{"radius":20,"item":"coal","up_to":true}':end.action==='vehicle'?'{"drive":{"x":30,"y":145}}':end.action==='collect'?'{"position":{"x":55,"y":21},"wait_ticks":300}':'{"position":{"x":55,"y":21}}';
       const {code,stdout}=await compact(port,['call',end.action,'--args',args,'--wait']);
       assert.equal(code,end.code,stdout);
       // A wait that ended in success lists fields one per line; a failed one on the error_result line (key=value).
