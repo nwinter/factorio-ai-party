@@ -4,6 +4,9 @@ import { createServer, type Socket } from 'node:net';
 import { once } from 'node:events';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 const exec = promisify(execFile);
 async function engine(reply: (request:any)=>any, run:(port:number)=>Promise<void>) {
   const sockets = new Set<Socket>();
@@ -553,6 +556,20 @@ test('a compact wait that ends badly still ends with the error line and exits no
     assert.match(stdout,/\nerror: action_interrupted: Control ended: blocked\n$/);
   });
 });
+test('compact load_silo wait retains the measured cadence when it times out',async()=>{
+  await engine(request=>{
+    if(request.action==='load_silo')return {ok:true,result:{until_tick:60,waiting:{why:'no rocket'}}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:1,y:1},health:250,max_health:250,inventory:[]}}};
+    return {ok:true,result:{active:false,last:{kind:'feed',handler:'load_silo',outcome:'timed_out',
+      silo_wait:{parts:46,parts_per_min:0.8,idle_window_s:225,gives_up_tick:216000}}}};
+  },async port=>{
+    const {code,stdout}=await compact(port,['call','load_silo','--args','{"items":{"iron-plate":1}}','--wait']);
+    assert.equal(code,1);
+    assert.match(stdout,/silo_wait:/);
+    assert.match(stdout,/parts_per_min[=:] ?0.8/);
+    assert.match(stdout,/idle_window_s[=:] ?225/);
+  });
+});
 test('kite --wait waits for the fight to end and reports it like move_to',async()=>{
   // Sol, shift09: kite --wait returned at once while the kite still ran.
   for (const end of [
@@ -718,6 +735,29 @@ test('fh view platform=NAME writes a platform schematic PNG',async()=>{
   } finally {await rm(dir,{recursive:true,force:true});}
 });
 
+test('CLI waits follow a silo deadline extension; explicit timeouts still stop',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'fh-silo-clock-'));
+  const preload=join(dir,'clock.cjs');
+  // Accelerate the wall clock only. Real one-second polling crosses the old
+  // 30-second budget, so this catches a wait that keeps its acceptance limit.
+  await writeFile(preload,'const real=Date.now.bind(Date);const start=real();Date.now=()=>start+(real()-start)*100;');
+  try {
+    for (const args of [['call','load_silo','--wait'],['wait'],['wait','--wait-timeout','50']]) {
+      let polls=0;
+      await engine(request=>{
+        if(request.action==='load_silo')return {ok:true,tick:1,result:{until_tick:61,waiting:{why:'no rocket'}}};
+        polls++;
+        return {ok:true,tick:1+(polls-1)*6000,result:polls<4?{active:{kind:'feed',until_tick:polls===1?61:24001,
+          silo_wait:{gives_up_tick:216001}},combat:false}:{active:false,combat:false,last:{kind:'feed',handler:'load_silo',outcome:'fed'}}};
+      },async port=>{
+        const run=()=>exec(process.execPath,['--require',preload,'dist/host/cli.js','--format','json','--port',String(port),...args],
+          {env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}});
+        if(args.includes('--wait-timeout')) await assert.rejects(run(),(e:any)=>{assert.equal(JSON.parse(e.stdout).error.code,'wait_timeout');return true;});
+        else {const {stdout}=await run();assert.equal(JSON.parse(stdout).ok,true);assert(polls>=4);}
+      });
+    }
+  } finally {await rm(dir,{recursive:true,force:true});}
+});
 
 test('refuel area --wait follows the gather and retains fuel source facts',async()=>{
   let polls=0;

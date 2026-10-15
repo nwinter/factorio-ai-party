@@ -555,6 +555,16 @@ local closed = rdr.check(rme, {kind='build', entities=ring()})
 has(closed.closes_in, 'placed, these close the character in where it stands (50.5,50.5): without any one of #1 pipe (48.5,48.5)')
 has(closed.closes_in, '(of 16 planned entries around it) a gap out stays; the area (49,49)-(52,52) (about 11 tiles)')
 eq(rdr.check(rme, {kind='build', entities=ring({x=52.5, y=50.5})}).closes_in, nil, 'one gap left')
+-- The same pocket is reported with the character far outside the plan, and
+-- names the planned entries and footprint tiles on its boundary.
+rme.position={x=20,y=20}
+local away=rdr.check(rme,{kind='build',entities=ring()})
+eq(away.closes_in,nil);eq(away.pockets_checked.checked,true);eq(#away.pockets,1)
+eq(#away.pockets[1].planned_boundary,16)
+eq(away.pockets[1].planned_boundary[1].index,1)
+eq(away.pockets[1].planned_boundary[1].tiles,'48,48..48,48')
+eq(rdr.check(rme,{kind='build',entities=ring({x=52.5,y=50.5})}).pockets,nil)
+rme.position=ring_me.position
 -- Built ring with one gap (stretched as built), the last pipe planned: it fills the last gap out.
 local built_ring = {ring_me}
 for _, e in ipairs(ring({x=52.5, y=50.5})) do built_ring[#built_ring+1] = {name='pipe', type='pipe', position=e.position} end

@@ -503,6 +503,7 @@ local function finish(index, outcome)
   if action and action.kind=='feed' then
     local last=s.last[index]
     last.result=action.result; last.error=action.error; last.handler=action.handler
+    if action.await_silo then last.silo_wait=M.rocketload.wait_report(action) end
   end
   if action and action.kind=='wait_until' then
     local last=s.last[index]
@@ -833,6 +834,7 @@ local function active(index)
     built=action.built,remaining=action.kind=='construct' and construction.remaining(action) or nil,
     missing=action.missing and next(action.missing) and action.missing or nil,
     awaiting_craft=action.awaiting_craft,got=action.got,
+    silo_wait=action.await_silo and M.rocketload.wait_report(action) or nil,
     condition=action.kind=='wait_until' and action.condition['until'] or nil,saw=action.kind=='wait_until' and action.saw or nil,
     stuck_s=action.watch and game.tick-action.watch.since>=STUCK_TICKS and math.floor((game.tick-action.watch.since)/60) or nil,
     -- Waiting short of rails a moving train will pass (M.train_guard).
@@ -3285,7 +3287,15 @@ local function craft_stock(p,name,count,force,notes)
   local line=stock.line(s)
   local wanted=count*(product.amount or product.amount_max or 1)
   if not force and s.total>=wanted and (recipe.energy or 0.5)*count/hand_speed(p)>=STOCK_REFUSE_S then
-    error('not crafted: '..line..'; or pass force=true to hand-craft anyway',0)
+    local chests={}
+    for _,x in ipairs(s.places) do
+      local t=x.entity.type
+      if (t=='container' or t=='logistic-container' or t=='cargo-landing-pad') and #chests<4 then
+        chests[#chests+1]=string.format('%s (%g,%g) holds %d',x.name,x.position.x,x.position.y,x.count)
+      end
+    end
+    error('not crafted: '..line..(#chests>0 and '; stocked in '..table.concat(chests,'; ') or '')
+      ..'; craft force=true allows hand crafting despite this stock; queue step on_fail: abort (default) pauses the plan, skip continues with the next step, goto:<label> continues at that pending label; skipping does not acquire items',0)
   end
   notes[product.name]=line
 end
@@ -7996,8 +8006,8 @@ function handlers.load_silo(p,a)
   local okw,wf=pcall(M.rocketload.wait_fields,entity(p,{position=a.position}),ticks)
   if okw then for k,v in pairs(wf) do await[k]=v end end
   state().active[p.index]={kind='feed',handler='load_silo',args=rest,await_silo=await,until_tick=until_tick,next_check=game.tick+FEED_CHECK}
-  return {waiting={why=r.why,rocket=r.rocket,
-    note=okw and string.format('waits while the silo makes parts: it ends after %ds with no new part, at the latest at tick %d',math.floor(ticks/60),await.give_up) or nil},
+  return {waiting={why=r.why,rocket=r.rocket,rate=okw and M.rocketload.wait_report(state().active[p.index]) or nil,
+    note=okw and string.format('waits while the silo makes parts: the idle window starts at %ds and grows to 3 times the longest observed interval to a part increase; at the latest tick %d',math.floor(ticks/60),await.give_up) or nil},
     until_tick=until_tick,gives_up_tick=okw and await.give_up or nil}
 end
 function handlers.preflight(p,a) return M.rocketload.preflight(p,a) end
@@ -11252,6 +11262,13 @@ end
 -- One running action's tick (M.tick_body).
 function M.tick_action(index,action,event)
   local ok,p=pcall(player,index,action.kind=='drive')
+  -- Read a due silo sample before testing the deadline: a part arriving on
+  -- that tick can extend the idle window, but never the absolute give-up.
+  local silo_ready
+  if ok and action.await_silo and event.tick>=action.next_check
+    and event.tick<=(action.await_silo.give_up or action.until_tick) then
+    silo_ready=M.feed_ready(p,action)
+  end
   if not ok then
     finish(index,'player_unavailable')
   elseif action.retreat and event.tick%5==0 and M.retreat_due(index,p,action) then
@@ -11312,7 +11329,7 @@ function M.tick_action(index,action,event)
     elseif event.tick>=action.next_check then
       if action.aside then stop(p); action.aside=nil end
       action.next_check=event.tick+FEED_CHECK
-      if M.feed_ready(p,action) then
+      if silo_ready or (not action.await_silo and M.feed_ready(p,action)) then
         action.awaiting_craft=nil
         action.running=true
         local ok,result=pcall(handlers[action.handler],p,action.args)

@@ -2095,7 +2095,28 @@ local gear_machine={valid=true,name='assembling-machine-2',type='assembling-mach
   get_output_inventory=function() return gear_out end,get_recipe=function() return {products={{type='item',name='iron-gear-wheel'}}} end}
 p.surface.find_entities_filtered=function(f) return f.radius and {gear_machine} or {} end
 have['iron-gear-wheel']=100
-fails(function() call('craft',{recipe='iron-gear-wheel',count=100}) end,'not crafted: 200 iron-gear-wheel held by our factory (200 in 1 assembling-machine-2); nearest 200 at (12,5) 13 tiles away; collect item=iron-gear-wheel radius=15 gathers it; or pass force=true')
+fails(function() call('craft',{recipe='iron-gear-wheel',count=100}) end,'not crafted: 200 iron-gear-wheel held by our factory (200 in 1 assembling-machine-2); nearest 200 at (12,5) 13 tiles away; collect item=iron-gear-wheel radius=15 gathers it; craft force=true')
+-- Existing on_fail: skip continues after a real stock refusal; no chest is
+-- silently drained. Requesters in the journal were feeding other machines.
+;(function()
+  local find=p.surface.find_entities_filtered
+  local oldqueues,oldactive=storage.agent_harness.queues,storage.agent_harness.active
+  storage.agent_harness.queues={};storage.agent_harness.active={}
+  local chest={valid=true,name='requester-chest',type='logistic-container',position={x=20.5,y=59.5},
+    get_inventory=function() return gear_out end}
+  p.surface.find_entities_filtered=function(f) return f.radius and {chest} or {} end
+  local ok,err=pcall(call,'craft',{recipe='iron-gear-wheel',count=100})
+  eq(ok,false);assert(err:find('requester-chest (20.5,59.5) holds 200',1,true),err)
+  for _,part in ipairs({'abort (default) pauses','skip continues','goto:<label>','skipping does not acquire items'}) do assert(err:find(part,1,true),err) end
+  call('queue_submit',{steps={{action='craft',args={recipe='iron-gear-wheel',count=100},on_fail='skip'},
+    {action='wait_ticks',args={ticks=1}}}})
+  advance(30)
+  local q=call('queue_status',{history='all'})
+  eq(q.paused,false);eq(q.pending_count,0);eq(q.history[1].ok,false);eq(q.history[2].ok,true)
+  eq(gear_out.get_item_count{name='iron-gear-wheel'},200,'stock was only read')
+  storage.agent_harness.queues,storage.agent_harness.active=oldqueues,oldactive
+  p.surface.find_entities_filtered=find
+end)()
 local forced=call('craft',{recipe='iron-gear-wheel',count=100,force=true})
 eq(forced.started,100); assert(forced.stock['iron-gear-wheel']:find('200 iron-gear-wheel held',1,true))
 -- A short craft (under 3 s of hand time) goes ahead and just names the stock.
@@ -4515,13 +4536,33 @@ end)()
   local st=call('status',{})
   eq(st.active,false); eq(st.last.outcome,'fed'); eq(st.last.result.loaded[1].loaded,90); eq(st.last.result.complete,true)
   eq(cargo[1].count,90); eq(main[1].count,0)
+  -- A delivery near the old deadline extends the wait before timeout is
+  -- tested; status and completion carry its measured rate and idle window.
+  do
+    rocket_there=false;silo.rocket_parts=45
+    local w=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=1},chests=false,ticks=60})
+    local a=storage.agent_harness.active[1]
+    advance(40);silo.rocket_parts=46
+    advance(21)
+    local active=call('status').active
+    eq(active.kind,'feed');eq(active.silo_wait.parts_added,1)
+    assert(active.silo_wait.idle_window_s>1)
+    assert(active.silo_wait.parts_per_min>0)
+    a.await_silo.give_up=tick+20
+    a.until_tick=tick+20
+    silo.rocket_parts=47
+    advance(21)
+    local ended=call('status').last
+    eq(ended.outcome,'timed_out');eq(ended.silo_wait.gives_up_tick,tick-1)
+    eq(ended.silo_wait.parts_added,2)
+  end
   -- Sonnet, shift14 22:50 (re-issued 3 times as the wait ran out each minute through the build): while the silo makes
   -- parts the wait goes on; ticks with no new part ends it.
   do
     rocket_there=false; silo.rocket_parts=0
     main[1]=stack('agricultural-science-pack',10)
     local w=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=10},chests=false,ticks=60})
-    assert(w.waiting.note:find('^waits while the silo makes parts: it ends after 1s with no new part'),w.waiting.note)
+    assert(w.waiting.note:find('^waits while the silo makes parts: the idle window starts at 1s'),w.waiting.note)
     eq(w.gives_up_tick,tick+216000)
     for k=1,12 do advance(4); silo.rocket_parts=k*4; advance(3) end  -- 84 ticks, a part every 7
     eq(call('status',{}).active.kind,'feed','past its 60 ticks while parts came')
