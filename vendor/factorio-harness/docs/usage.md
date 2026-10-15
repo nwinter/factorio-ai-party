@@ -1714,9 +1714,14 @@ Previously unexplored or unrecorded stretches can therefore be `unknown`, even i
 this runtime was installed. This read never moves, repairs or places belts.
 
 `inspect.heating` distinguishes the surface's heating requirement, the entity's `freezable`/`frozen` flags, its
-`demand_kw`, and heat buffers touching the one-tile border around its footprint. The heater rows name pipes,
-towers, reactors or exchangers with their current temperatures and whether they are at least 30 C; ghosts are
-identified and have no temperature. A frozen entity reports the observed cold/missing heaters without treating
+`demand_kw`, and the heaters touching the one-tile border around its footprint. Only heat pipes, nuclear reactors and
+heating towers heat a neighbour (Sol, shift17 10:50: a heat exchanger at 431 C was listed and the turbine and assembler
+beside it stayed frozen; checked on a private 2.0.77 Space Age server with source temperatures held on Aquilo): at 30 C
+or more (29.9 C does not), touching it on a side or a corner (one empty tile between: no heat); a heat exchanger does
+not heat its neighbours at 431 C or 600 C; a frozen machine thaws a few to about 30 s after a heater warms it (a 68 C
+heat pipe beside a chemical plant: frozen at 10 s, thawed by 30 s). `heater_rule` says this in the reply. The heater
+rows name those pipes, towers and reactors with their current temperatures and whether they are at least 30 C; ghosts
+are identified and have no temperature. A frozen entity reports the observed cold/missing heaters without treating
 nearby heat as proof of sufficient supply. `heat_neighbours` separately lists actual engine heat-network links:
 a heated assembler can have none. Heat buffers add thermal mass in MJ/C, temperature limits and maximum transfer
 MW. Other entities have no exposed thermal mass or internal temperature.

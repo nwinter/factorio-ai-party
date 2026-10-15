@@ -1,7 +1,17 @@
 -- Freezing and heat-network connections are separate engine facts. Freezable
 -- machines have no heat_neighbours even while an adjacent pipe warms them.
+-- What heats a neighbour (d15, Sol shift17 10:50: a heat exchanger at 431 C was listed as a heater, and the turbine
+-- and assembler beside it stayed frozen; checked on a private 2.0.77 Space Age server, sources held at a set
+-- temperature on Aquilo): heat pipes and reactor-type entities (nuclear reactor, heating tower) at 30 C or more that
+-- touch the machine (a side or a corner; one empty tile between: no heat). A heat exchanger does not, at 431 C or
+-- 600 C. 29.9 C does not; 30 C does. A frozen machine thaws a few to about 30 s after a heater warms it (a 68 C heat
+-- pipe beside a chemical plant: frozen at 10 s, thawed by 30 s). The game's changelog: "Added heating_radius to
+-- ReactorPrototype and HeatPipePrototype".
 return function(api)
   local M={}
+  local HEATERS={['heat-pipe']=true,reactor=true}
+  M.RULE='heated by a heat pipe, nuclear reactor or heating tower at 30 C or more touching it (a side or a corner); '..
+    'a heat exchanger does not heat its neighbours; a frozen machine thaws a few to about 30 s after a heater warms it'
   local function try(f) local ok,v=pcall(f);if ok then return v end end
   local function buffer(p) return try(function() return p.heat_buffer_prototype or p.heat_energy_source_prototype end) end
   local function box(p,pos,dir)
@@ -19,7 +29,7 @@ return function(api)
     if energy==0 and not heat then return nil end
     local required=try(function() return p.surface.planet.prototype.entities_require_heating end) or false
     local out={surface_requires_heating=required,demand_kw=energy*60/1000,minimum_heater_temperature=30,
-      heating_border_tiles=1,heaters={},heat_neighbours={}}
+      heating_border_tiles=1,heaters={},heat_neighbours={},heater_rule=required and energy>0 and M.RULE or nil}
     if heat then
       out.thermal_mass_mj_per_c=heat.specific_heat/1000000
       out.max_temperature=heat.max_temperature;out.min_working_temperature=heat.min_working_temperature
@@ -30,19 +40,19 @@ return function(api)
     local here=visible(p,pos)
     out.heaters_unread=not here and 'placement is not currently visible' or nil
     local list=here and p.surface.find_entities_filtered{area={{b.l-1,b.t-1},{b.r+2,b.b+2}},
-      force=p.force,type={'heat-pipe','reactor','boiler','heat-interface','entity-ghost'},limit=65} or {}
+      force=p.force,type={'heat-pipe','reactor','entity-ghost'},limit=65} or {}
     out.heater_read_capped=#list==65 or nil
     for _,e in ipairs(list) do
       local ghost=e.type=='entity-ghost'
       local pr=ghost and e.ghost_prototype or e.prototype
-      if e.valid and buffer(pr) and visible(p,e.position) and touches(b,box(pr,e.position,e.direction)) then
+      if e.valid and HEATERS[pr.type] and buffer(pr) and visible(p,e.position) and touches(b,box(pr,e.position,e.direction)) then
         local temp=not ghost and try(function() return e.temperature end) or nil
         out.heaters[#out.heaters+1]={name=ghost and e.ghost_name or e.name,position={x=e.position.x,y=e.position.y},
           ghost=ghost or nil,temperature=temp,at_least_30c=temp and temp>=30 or false}
       end
     end
     for _,r in ipairs(planned or {}) do
-      if r.proto and r.pos and buffer(r.proto) and touches(b,box(r.proto,r.pos,r.dir)) then
+      if r.proto and r.pos and HEATERS[r.proto.type] and buffer(r.proto) and touches(b,box(r.proto,r.pos,r.dir)) then
         out.heaters[#out.heaters+1]={name=r.name,position=r.pos,planned_index=r.index,planned=true}
       end
     end
@@ -68,9 +78,9 @@ return function(api)
       if out.frozen then
         local built,warm=0,0
         for _,h in ipairs(out.heaters) do if not h.ghost then built=built+1;if h.at_least_30c then warm=warm+1 end end end
-        out.reason=built==0 and 'frozen; no built heat buffer observed touching the one-tile border'
-          or warm==0 and 'frozen; all observed adjacent heat buffers are below 30 C'
-          or 'frozen; adjacent heat buffers at or above 30 C are listed at their current temperature'
+        out.reason=built==0 and 'frozen; no built heater (heat pipe, nuclear reactor, heating tower) touches it'
+          or warm==0 and 'frozen; every heater touching it is below 30 C'
+          or 'frozen; a heater at 30 C or more touches it (listed); a frozen machine thaws a few to about 30 s after it is warmed'
       else out.reason=out.freezable and 'not frozen' or 'not freezable on this surface' end
     end
     return out

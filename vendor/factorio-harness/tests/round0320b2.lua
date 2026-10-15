@@ -37,7 +37,7 @@ end
 do
   local heat={specific_heat=1000000,max_temperature=1000,min_working_temperature=15,max_transfer=1000000}
   local asm={name='assembler',heating_energy=100000/60,collision_box={left_top={x=-1.2,y=-1.2},right_bottom={x=1.2,y=1.2}}}
-  local pipe={name='heat-pipe',heat_buffer_prototype=heat,collision_box={left_top={x=-.4,y=-.4},right_bottom={x=.4,y=.4}}}
+  local pipe={name='heat-pipe',type='heat-pipe',heat_buffer_prototype=heat,collision_box={left_top={x=-.4,y=-.4},right_bottom={x=.4,y=.4}}}
   local function footprint(pr,p) local b=pr.collision_box;return {left_top={x=p.x+b.left_top.x,y=p.y+b.left_top.y},right_bottom={x=p.x+b.right_bottom.x,y=p.y+b.right_bottom.y}} end
   local list={}
   local p={force={is_chunk_visible=function() return true end},surface={planet={prototype={entities_require_heating=true}},find_entities_filtered=function() return list end}}
@@ -48,6 +48,16 @@ do
   list={h};r=H.inspect(p,e);eq(#r.heaters,1);eq(r.heaters[1].at_least_30c,false);assert(r.reason:find('below 30'))
   h.temperature=100;e.frozen=false;r=H.inspect(p,e);eq(r.heaters[1].at_least_30c,true);eq(r.frozen,false);eq(#r.heat_neighbours,0)
   h.position.x=3.5;r=H.inspect(p,e);eq(#r.heaters,0)
+  -- A heat exchanger touching it is no heater (Sol, shift17 10:50; a private 2.0.77 server: one at 431 C and at 600 C
+  -- left the machine beside it frozen); the reply states the rule.
+  local hx={name='heat-exchanger',type='boiler',heat_energy_source_prototype=heat,collision_box={left_top={x=-1.4,y=-.9},right_bottom={x=1.4,y=.9}}}
+  list={{valid=true,name='heat-exchanger',type='boiler',prototype=hx,position={x=.5,y=-1.5},direction=0,temperature=431}}
+  e.frozen=true;r=H.inspect(p,e);eq(#r.heaters,0);assert(r.reason:find('no built heater',1,true),r.reason)
+  assert(r.heater_rule:find('a heat exchanger does not heat',1,true),r.heater_rule)
+  local tower={name='heating-tower',type='reactor',heat_buffer_prototype=heat,collision_box={left_top={x=-1.4,y=-1.4},right_bottom={x=1.4,y=1.4}}}
+  list={{valid=true,name='heating-tower',type='reactor',prototype=tower,position={x=.5,y=-2.5},direction=0,temperature=30}}
+  r=H.inspect(p,e);eq(#r.heaters,1);eq(r.heaters[1].at_least_30c,true);assert(r.reason:find('thaws a few to about 30 s',1,true),r.reason)
+  e.frozen=false;list={h}
   h.heat_neighbours={e};r=H.inspect(p,h);eq(r.thermal_mass_mj_per_c,1);eq(#r.heat_neighbours,1)
   local rows=H.plan(p,{{index=1,name='assembler',proto=asm,pos=e.position,dir=0},{index=2,name='heat-pipe',proto=pipe,pos={x=2.5,y=.5},dir=0}})
   eq(rows[1].proposed,true);eq(rows[1].frozen,nil);eq(rows[1].heaters[1].planned_index,2)
