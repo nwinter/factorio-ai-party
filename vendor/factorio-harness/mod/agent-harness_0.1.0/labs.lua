@@ -140,7 +140,7 @@ return function(api)
       .. 'and what they put into ("stone: 7 electric-mining-drill (5 working, 2 output full) into 6 transport-belt, 1 wooden-chest"), a resource\'s '
       .. 'required fluid the step below it; '
       .. 'chain_tree: every step down to what nothing makes {item, depth, made_per_min, used_per_min, makers, '
-      .. 'working, states, lacking {ingredient: makers}, miners, miner_states, outputs} (40 steps at most, chain_cut); counted (what the scan read)'}
+      .. 'working, states, lacking {ingredient: makers}, miners, miner_states, outputs} (40 steps at most, chain_cut); counted (what the scan read); effective_research_units (spoilable packs, by quality: observed count, now, packs_per_unit, technology when used by the current research; remaining durability times fresh share, before productivity and lab drain bonuses)'}
   function M.science(p, a)
     local surface = p.surface
     if a.surface ~= nil then
@@ -167,7 +167,7 @@ return function(api)
   function M.science_fresh(surface, force, tech, needed, packs)
     local names = {}
     for _, name in ipairs(packs) do names[name] = true end
-    local scan = api.supply.scan(surface, force, names, {packs=needed})
+    local scan = api.supply.scan(surface, force, names, {packs=needed, science_value=true})
     local stats = force.get_item_production_statistics(surface)
     local function flow(name, category)
       local ok, n = pcall(stats.get_flow_count, {name=name, category=category, precision_index=defines.flow_precision_index.ten_minutes, count=true})
@@ -223,9 +223,23 @@ return function(api)
       else line = line .. ' (the current research does not use it)' end
       if carried[name] then line = line .. '; carried: ' .. table.concat(carried[name], ', ') end
       if #largest > 0 then line = line .. '; largest holders: ' .. table.concat(largest, ', ') end
+      -- Value comes from the same stack reads as the spoil spread, including
+      -- labs' partially consumed packs. The surface scan's scope stays explicit.
+      local values, freshness = {}, {}
+      for _, r in ipairs(t.spread or {}) do
+        local value = api.spoil and api.spoil.research_value(r, force)
+        if value then
+          value.item, value.count = r.key, r.count
+          values[#values+1] = value
+          freshness[#freshness+1] = r.key .. '*' .. r.count .. ': ' .. api.spoil.research_text(r, force)
+        end
+      end
+      table.sort(values, function(x, y) return x.item < y.item end)
+      table.sort(freshness)
+      if #freshness > 0 then line = line .. '; observed stacks on ' .. surface.name .. ': ' .. table.concat(freshness, '; ') end
       -- The pack's recipe tree from the scan's crafters (supply.lua chain).
       local okc, chain = pcall(api.supply.chain, scan, force, surface, name)
-      out[#out+1] = {pack=name, made_10min=made, used_10min=used, makers=#t.makers, makers_working=working, makers_states=#list > 0 and list or nil,
+      out[#out+1] = {pack=name, effective_research_units=#values > 0 and values or nil, made_10min=made, used_10min=used, makers=#t.makers, makers_working=working, makers_states=#list > 0 and list or nil,
         in_makers=t.outputs, chests=chests, landing_pads=pads > 0 and pads or nil, hubs=hubs > 0 and hubs or nil, belts=t.belts, labs=t.labs, labs_lacking=needed[name] and lacking or nil,
         carried=carried[name], largest=#largest > 0 and largest or nil, line=line, reach=api.supply.reach(t, scan, needed),
         chain=okc and chain and chain.line or nil, chain_tree=okc and chain and chain.tree or nil, chain_cut=okc and chain and chain.cut or nil}

@@ -662,18 +662,24 @@ return function(api)
     local hub = try(function() return pl.hub end)
     local inv = hub and hub.valid and try(function() return hub.get_inventory(defines.inventory.hub_main) end)
     if not (inv and api.spoil) then return nil end
-    local acc = api.spoil.inventory(inv, {})
-    if #acc == 0 then return nil end
     local l = M.leg(pl)
+    local trash = defines.inventory.hub_trash and try(function() return hub.get_inventory(defines.inventory.hub_trash) end)
+    local acc = api.spoil.inventory(inv, {}, nil, l and l.eta_ticks)
+    if trash then api.spoil.inventory(trash, acc, nil, l and l.eta_ticks) end
+    if #acc == 0 then return nil end
     local arrive = l and l.eta_ticks and game.tick + l.eta_ticks
     local before, after = {}, {}
     if arrive then
-      for i = 1, #inv do
-        local s = inv[i]
-        local t = api.spoil.stack_spoil(s)
-        if t then
-          if t <= arrive then before[s.name] = (before[s.name] or 0) + s.count
-          elseif not after[s.name] or t < after[s.name] then after[s.name] = t end
+      for _, inventory in ipairs(trash and {inv, trash} or {inv}) do
+        for i = 1, #inventory do
+          local s = inventory[i]
+          local t = api.spoil.stack_spoil(s)
+          if t then
+            local q = try(function() return s.quality.name end) or 'normal'
+            local key = s.name .. (q ~= 'normal' and '@' .. q or '')
+            if t <= arrive then before[key] = (before[key] or 0) + s.count
+            elseif not after[key] or t < after[key] then after[key] = t end
+          end
         end
       end
     end
@@ -682,10 +688,12 @@ return function(api)
     for i = 1, math.min(8, #acc) do
       local r = acc[i]
       local text = api.spoil.row_text(r)
+      local value = api.spoil.research_text and api.spoil.research_text(r, pl.force)
+      if value then text = text .. '; ' .. value end
       if arrive then
-        local b = before[r.name] or 0
+        local b = before[r.key] or 0
         text = text .. string.format('; arrival at %s in %s: %d spoil before it, %d arrive', l.to, secs(l.eta_ticks), b, r.count - b)
-          .. (after[r.name] and string.format(', the next spoils %s after arrival', secs(after[r.name] - arrive)) or '')
+          .. (after[r.key] and string.format(', the next spoils %s after arrival', secs(after[r.key] - arrive)) or '')
       end
       out[#out+1] = text
     end
