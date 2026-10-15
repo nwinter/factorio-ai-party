@@ -147,7 +147,8 @@ already targets your character.
   (time, sender, fyi), shown before or not; `./fh tells --since N` lists the ones you sent and received after N.
 - `./fh operator "..."` sends a request to the operator, the people running the harness and the stream: a tool that
   fails or is missing, or something viewers asked for that you can't do yourselves. The operator may answer in the
-  game chat as `server:`. It is not for help with the game. Viewers see it on the ticker.
+  game chat as `server:`. It is not for help with the game. Viewers see it on the ticker. Up to 2000 bytes, filed whole;
+  longer text is refused without consuming a rate-limit slot.
 - Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, power cuts
@@ -272,6 +273,7 @@ already targets your character.
   `vehicle {"drive":{...},"combat":true}` keeps the guns on auto for the whole drive (`last.shots`, `last.kills`).
 - `vehicle {"drive":{"x":-40,"y":-200},"remote":true,"vehicle":311799}` drives one of our cars or tanks in radar coverage by
   remote view while your character stays put; its guns do not fire that way.
+- `equip {slot,item,index?}` tries compatible empty gun/ammo slots before slot 1 when index is omitted; an explicit index selects only that slot.
 - `equipment {"vehicle":311799,"operation":"insert","item":"energy-shield-equipment"}` works a tank's (6x8) or spidertron's
   (10x6) equipment grid in reach or seated; `"operation":"list"` shows it, also by remote view; `inspect` on it too.
 - `clear_cliffs {"positions":[{"x":82,"y":38.5}]}` throws cliff explosives you hold at those cliffs, walking into their 10-tile
@@ -449,6 +451,7 @@ already targets your character.
   `engine` (the last 60 and 180 s: mean, lowest and highest speed, thruster fuel and oxidizer used and made, the
   thrusters' tanks at start and end, the pumps' share of time working). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when
   `from` is not given.
+- Direct `wait_until` and `wait_ticks` accept `wake_on_messages:false`: tells and mentions remain for the next reply while the wait continues; default true wakes on messages.
 - `./fh sleep 600 --until "rocket_ready 65.5,14.5"` (or `wait_until {"until":"rocket_ready","position":...}`) waits for
   that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
   `--until "rocket_parts>=40 at 65.5,14.5"` (or `{"until":"rocket_parts","at_least":40,"position":...}`, also a queue

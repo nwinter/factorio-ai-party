@@ -4413,4 +4413,41 @@ end)()
   eq(call('status',{}).last.belt.taken,5)
   runtime.beltpick.pickup,runtime.beltpick.tick=kept_pick,kept_tick
 end)()
+-- Shift14: default equip hit a loaded pistol slot twice before index=2 worked.
+;(function()
+  local old_get,old_main=p.get_inventory,p.get_main_inventory
+  local old_gun,old_ammo,old_armor=defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor
+  defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor=2,3,4
+  local gun_slots={stack('pistol',1),stack(nil,0),stack(nil,0)}
+  local ammo_slots={stack('firearm-magazine',10),stack(nil,0),stack(nil,0)}
+  local armor_slots={stack('light-armor',1)}
+  local source=stack('rocket-launcher',1)
+  p.get_inventory=function(id) return id==2 and gun_slots or id==3 and ammo_slots or armor_slots end
+  p.get_main_inventory=function() return {find_item_stack=function(name) return source.valid_for_read and source.name==name and source or nil end} end
+  local occupied_attempts=0
+  gun_slots[1].swap_stack=function() occupied_attempts=occupied_attempts+1; return false end
+  local r=call('equip',{slot='gun',item='rocket-launcher'})
+  eq(r.index,2); eq(gun_slots[1].name,'pistol'); eq(gun_slots[2].name,'rocket-launcher'); eq(occupied_attempts,0)
+  source=stack('rocket',20)
+  local ammo_swap=ammo_slots[2].swap_stack
+  ammo_slots[2].swap_stack=function(other) return gun_slots[2].name=='rocket-launcher' and ammo_swap(other) end
+  r=call('equip',{slot='ammo',item='rocket'}); eq(r.index,2); eq(ammo_slots[1].name,'firearm-magazine')
+  -- Empty incompatible slots are skipped, without changing either stack.
+  source=stack('piercing-rounds-magazine',10)
+  ammo_slots[2]=stack(nil,0); ammo_slots[2].swap_stack=function() return false end
+  r=call('equip',{slot='ammo',item='piercing-rounds-magazine'}); eq(r.index,3); eq(ammo_slots[2].valid_for_read,false)
+  -- An explicit index never redirects to another slot.
+  source=stack('rocket-launcher',1)
+  fails(function() call('equip',{slot='gun',item='rocket-launcher',index=1}) end,'gun slot 1 (holds pistol)')
+  eq(occupied_attempts,1); eq(source.name,'rocket-launcher'); eq(source.count,1); eq(gun_slots[3].valid_for_read,false)
+  fails(function() call('equip',{slot='gun',item='rocket-launcher',index=4}) end,'index')
+  -- No empty compatible slot: preserve the historical slot-1 swap fallback.
+  gun_slots[3].swap_stack=function() return false end
+  fails(function() call('equip',{slot='gun',item='rocket-launcher'}) end,'nothing moved')
+  eq(source.count,1)
+  source=stack('heavy-armor',1)
+  r=call('equip',{slot='armor',item='heavy-armor'}); eq(r.index,1); eq(source.name,'light-armor')
+  p.get_inventory,p.get_main_inventory=old_get,old_main
+  defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor=old_gun,old_ammo,old_armor
+end)()
 print('runtime: '..assertions..' assertions passed')

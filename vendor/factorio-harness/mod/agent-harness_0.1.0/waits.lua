@@ -18,7 +18,7 @@ return function(api)
   local MOVING = {walk=true, move_to=true, build_path=true, kite=true, collect=true, feed=true, rearm=true, refuel=true}
   local WAKE_VIEWERS = 'optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too; without it a viewer\'s @mention waits for your next reply (team block) and wakes nothing'
   M.schema = {
-    wait_ticks = {ticks='1..54000 simulation ticks: the character stands idle that long (a direct timed action, outcome duration_elapsed, or told|mentioned when a tell or a teammate\'s mention ends it early; use --wait), or a queue step', wake_on_viewers=WAKE_VIEWERS, pause_queue='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'},
+    wait_ticks = {ticks='1..54000 simulation ticks: the character stands idle that long (a direct timed action, outcome duration_elapsed, or told|mentioned when a tell or a teammate\'s mention ends it early; use --wait), or a queue step', wake_on_viewers=WAKE_VIEWERS, wake_on_messages='boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply', pause_queue='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'},
     sleep = {seconds='1..900', condition='optional wait_until condition {until=researched|item_count|rocket_ready|rocket_parts|crafting_done|..., ...}: the sleep also ends when it holds (woke=condition, saw); researched without technology means the research running now; item_count may take positions (chests); {until=alert}: a new attack, enemy group or enemy base alert (woke=alert); {until=alert, kinds=[low_power, no_power, no_fuel, ..., starved]}: a new or grown alert group of those kinds addressed to you, or (starved) a machine in your claims newly lacking ingredients (woke=alert, alert=its text); {until=any, conditions=[...]} (or a list): 1..8 conditions, alerts among them, whichever holds first wakes it (met names it)',
       peek='boolean: the reply leaves the team block for your next reply (fh wait --until)', wake_on_viewers=WAKE_VIEWERS,
       note='fh sleep SECONDS [--until ...]: waits while the game runs (in turns mode it advances the game); your current action and queue keep going, and the reply says first which (while_asleep). Returns early when your character takes damage or dies, a teammate\'s message mentions you (a viewer\'s @mention waits for your next reply unless wake_on_viewers), a teammate tells you something (tell), a board item of yours is assigned or changed by someone else, eggs of ours on your surface or built by you will hatch within 5 minutes (eggs), your running queue finishes or stalls (a step fails, or a walking step has not moved you for 30 s), or the condition holds; a dead bot sleeps until it respawns. sleep_check reports woke=damaged|died|respawned|mentioned|told|board|eggs|alert|queue_done|queue_stalled|condition|elapsed'},
@@ -39,11 +39,13 @@ return function(api)
   function M.handlers.wait_ticks(p, a)
     local ticks = api.integer(a.ticks, nil, 1, MAX_TICKS, 'ticks (1..54000)')
     assert(a.wake_on_viewers == nil or type(a.wake_on_viewers) == 'boolean', 'wake_on_viewers must be true or false')
+    assert(a.wake_on_messages == nil or type(a.wake_on_messages) == 'boolean', 'wake_on_messages must be true or false')
     api.replace(p)
     local until_tick = game.tick + ticks
     -- A tell or mention ends it early (runtime.lua tick: outcome told|mentioned); a viewer's @mention only with wake_on_viewers.
-    api.state().active[p.index] = {kind='wait_ticks', until_tick=until_tick, start_tick=game.tick, wake_viewers=a.wake_on_viewers == true or nil}
-    return {until_tick=until_tick}
+    api.state().active[p.index] = {kind='wait_ticks', until_tick=until_tick, start_tick=game.tick, wake_viewers=a.wake_on_viewers == true or nil,
+      wake_messages=a.wake_on_messages}
+    return {until_tick=until_tick, wake_on_messages=a.wake_on_messages}
   end
   -- What keeps going while the agent sleeps, in one line (the reply's first).
   local function asleep_line(p, record, seconds)
