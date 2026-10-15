@@ -1766,6 +1766,22 @@ fh sleep 900 --until researched                       # ...or until the research
   mining, building or crafting by hand, the inventory) is refused with that list.
 - `platforms` shows each platform's `defense`: `hub_health` (`637/1000`), `turrets` (`5 gun-turrets: 4 empty, 0 low
   (under 10 rounds)`) and `ammo`, the ammo flow (`turrets hold 6 rounds, the hub firearm-magazine 920`).
+- Every `platforms` row shows `hub_chunks`, the hub slots asteroid chunks take (Astra, shift14 22:50: a chunk backlog
+  hid in the raw stock; a chunk stacks to 1): `asteroid chunks take 22 of 99 slots (carbonic 9, metallic 9, oxide 4)`.
+  With `platform` set, and in `preflight` with `platform`:
+  - `ammo_rates`, one line per ammo type the hub or the turrets hold, or made or used in the window: made and used a
+    minute (the platform surface's item statistics, as the production screen counts them: made is crafted aboard;
+    used is the game's consumption, turret shots and ammo crafted into other items), then what the hub's main
+    inventory and the ammo turrets hold now. The window is the last leg: in flight this leg so far, stopped the leg
+    flown before it. In flight the line adds the reserve at the arrival at that rate, or when it runs out first:
+    `firearm-magazine: made 54/min, used 35/min over this leg nauvis->gleba (3m46s so far); hub 751, turrets 194; at
+    the arrival at gleba in 2m09s about 985 at that rate`, `...; runs out in 4m09s at that rate, before the arrival at
+    gleba in 75m00s`. A leg that began before the runtime kept these counts reads the game's last 10 minutes (`over
+    the last 10 min`).
+  - `incoming` and `incoming_cargo`: rockets launched to its hub whose cargo pod has not arrived yet, with their cargo
+    (`1 rocket on the way: firearm-magazine*20`; per rocket `a rocket from nauvis launched 3s ago: firearm-magazine*20
+    (rising over nauvis)`, then `(coming down onto the platform)`). On 2.0.77 a pod rose over the planet for about 25
+    s, came down onto the platform at about 30 s and was delivered by 35 s; a pod is counted for a minute at most.
 - Flight, on every `platforms` row and in `inspect` of a hub under `flight`: `speed_kms` (the hub GUI's km/s; the game's
   own value, `speed` with `platform` set, is km per tick), `next_stop` (the schedule's stop it flies to, or while it waits at its current stop, the
   one after it), and on a route `leg` in the way it is flown (`vulcanus->nauvis`), `heading_to`, `leg_km`,
@@ -2091,9 +2107,13 @@ fh sleep 900 --until researched                       # ...or until the research
     `rocket`, `rocket_ready`, `auto_requests`;
   - with `items`: `order [{item, want, aboard, lacks, fits, you_hold}]` (`fits`: how many of what it lacks the rocket
     takes by weight and slots);
-  - with `platform`: `platform {name, where, arrived, requests [{item, min, hub, aboard, lacks_after}], not_requested}`:
-    its hub's requests importing from this planet (active sections), what the hub holds, what this rocket carries, and
-    what they lack after it; `not_requested` is cargo it does not request from here;
+  - with `platform`: `platform {name, where, arrived, requests [{item, min, hub, aboard, lacks_after}], not_requested,
+    incoming, incoming_cargo, ammo_rates, hub_chunks}`: its hub's requests importing from this planet (active sections),
+    what the hub holds, what this rocket carries, and what they lack after it; `not_requested` is cargo it does not
+    request from here; the rockets already on their way to it, its ammo per type over the last leg and the hub slots
+    asteroid chunks take, as `platforms` gives them (the line adds `2 rockets on the way: firearm-magazine*40`). With
+    `surface` (a silo on another planet) `platform` still names where the rocket goes, as with `launch` (it was
+    refused as `give platform or surface, not both`);
   - `launch_now`: `ok`, or `refused: ` and what `launch` would refuse now (the rocket not ready, overweight, empty, the
     platform not stopped here); `line`, all of it in one line.
   - `fh call preflight --args '{"items":{"agricultural-science-pack":1000},"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`
@@ -3380,7 +3400,14 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   Accumulators show their stored energy against their maximum (`accumulators 2 at 50% (5.0 MJ of 10.0 MJ)`; read:
   `acc_mj`, `acc_max_mj`; Gemini, 07:55, for Fulgora's lightning), read from them when the line is made, and their
   net flow over the last 30 s: `, falling 14.6 MW net over the last 30 s: empty in about 35s at that rate` or `, rising
-  10.7 MW net` (the game counts accumulators as producers while they discharge and consumers while they charge). The API exposes no storm state or schedule
+  10.7 MW net` (the game counts accumulators as producers while they discharge and consumers while they charge).
+  The read takes the accumulators' energy at the read, whatever the view's age (Astra, shift14 22:50: the read's sum
+  stayed put at dusk while an accumulator's inspect moved): `acc_mj`, `acc_max_mj`, `acc_pct` and the line's
+  accumulator part, from the accumulators the last view found (one built since counts from the next view). The 5 s
+  samples keep what they held: `acc_series` is one value every 15 s over the last 3 minutes, oldest first (`66% 52%
+  39% (every 15 s over the last 3 min, oldest first)`). `networks {fresh: true}` adds `draw_now_kw` per electric
+  network (its statistics over the last 5 s); `read_now` says which parts were read at the call and which are the
+  view's (`as_of`). The API exposes no storm state or schedule
   (checked on 2.0.77, world n, 2026-10-14: LuaSurface, LuaPlanet and Fulgora's LuaSpaceLocationPrototype have no
   lightning or storm key). Lightning strikes in the dark: one Fulgora day of samples (a 256x256 box, every 4 s) saw
   bolts at darkness 0.06 to 0.85, in all but one sample at 0.48 and over, and none in daylight. So the networks read's
@@ -3433,7 +3460,10 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   at that solar power (a planet's counts them at their output now). Read fields `platform` (per surface),
   `solar_power` (percent) and `solar_power_text` (per electric network). `power {platform}` (`fh call observe --args
   '{"scope":"power","platform":"Starling"}'`) reads that platform, 64 tiles round its hub unless an area, position
-  or radius is given; every `power` reply adds `solar_power` and `lines`, those networks' lines as above. A platform's poles are found at once each view (Astra, 14:05: Starling's network 475 was not found), and a platform network with no pole of ours gets a line from its panels and machines: `Lonely (platform) electric #475 (no pole of ours found near (3,-6)): capacity 900 kW; no draw figures (the game gives a network's statistics through its poles); ...`; `power` lists such a network from the machines in its area (`poles: 0`, `entities`, `note`).
+  or radius is given; every `power` reply adds `solar_power` and `lines`, those networks' lines as above, with
+  `lines_as_of` (the view's age; their accumulator part is read at the call). Per network `power` sums the
+  accumulators in its area at the call: `accumulators`, `acc_mj`, `acc_max_mj`, `acc_pct`; `power {fresh: true}`
+  passes `fresh` to the networks read (draw now). A platform's poles are found at once each view (Astra, 14:05: Starling's network 475 was not found), and a platform network with no pole of ours gets a line from its panels and machines: `Lonely (platform) electric #475 (no pole of ours found near (3,-6)): capacity 900 kW; no draw figures (the game gives a network's statistics through its poles); ...`; `power` lists such a network from the machines in its area (`poles: 0`, `entities`, `note`).
 - `inspect` on a producer or consumer of electricity adds `electricity`: `max_kw` at its quality (a machine's times
   its modules' consumption bonus, `consumption_bonus: "-60%"`, with `drain_kw`; a solar panel's at 100% and
   `at_solar_power_kw` where it is, with `solar_power`; a generator's maximum output; an accumulator's `stored_mj`,

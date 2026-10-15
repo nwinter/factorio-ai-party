@@ -105,6 +105,7 @@ return function(api)
     end
     n.map, n.map_tick = map, game.tick
     for id in pairs(n.samples) do if not map[id] then n.samples[id] = nil end end
+    for id in pairs(n.acc_refs or {}) do if not map[id] then n.acc_refs[id] = nil end end
   end
   -- The pole map in the background (operator 04:00: the view's map step found
   -- every pole on every surface at once each minute, 122 ms in one game
@@ -162,7 +163,18 @@ return function(api)
         end
         local list = n.samples[id] or {}
         n.samples[id] = list
-        list[#list+1] = {tick=game.tick, kw=kw, by=by, acc=acc}
+        -- What the network's accumulators hold at this sample (Astra, shift14 22:50: a series over a Fulgora day took
+        -- ~15 single reads): the ones the last view found, read now (plain reads of valid accumulators: 0.09 ms for
+        -- Fulgora's 203 on a copy of world n, 0.2-0.6 ms with a pcall each).
+        local refs = n.acc_refs and n.acc_refs[id]
+        local acc_j, acc_buf
+        if refs then
+          acc_j, acc_buf = 0, 0
+          for _, e in ipairs(refs) do
+            if e.valid then acc_j, acc_buf = acc_j + e.energy, acc_buf + e.electric_buffer_size end
+          end
+        end
+        list[#list+1] = {tick=game.tick, kw=kw, by=by, acc=acc, acc_j=acc_j, acc_buf=acc_buf}
         while list[1] and list[1].tick <= game.tick - WINDOW do table.remove(list, 1) end
       end
     end
@@ -329,12 +341,35 @@ return function(api)
     if not list or #list == 0 then return r.acc_j end
     local j, k = 0, 0
     for _, e in ipairs(list) do
-      if e.valid then j, k = j + (try(function() return e.energy end) or 0), k + 1 end
+      if e.valid then j, k = j + e.energy, k + 1 end
     end
     if k == 0 then return r.acc_j end
     return k < r.acc and j * r.acc / k or j
   end
   M.acc_flow, M.acc_stored = acc_flow, acc_stored
+  -- The accumulator part of an electric row's line: how many, what they hold now of their maximum, and the trend over
+  -- the last ACC_LOOK ticks with the time to empty at that rate. The view writes it, and a read writes it again from
+  -- what they hold at the read.
+  local function acc_part(n, id, count, j, buf)
+    local flow = acc_flow(n, id)
+    local trend = ''
+    if flow and flow > 1 then
+      trend = string.format(', falling %s net over the last %d s: empty in about %s at that rate', mw(flow), ACC_LOOK / 60, span(j / (flow * 1000)))
+    elseif flow and flow < -1 then trend = string.format(', rising %s net over the last %d s', mw(-flow), ACC_LOOK / 60) end
+    return string.format('accumulators %d at %d%% (%s of %s)%s', count, buf > 0 and math.floor(100 * j / buf + 0.5) or 0, mj(j), mj(buf), trend)
+  end
+  -- What a network's accumulators held at its samples: one value every 15 s over the last 3 min, oldest first.
+  local function acc_series(n, id)
+    local list = n.samples[id] or {}
+    local out, last = {}, nil
+    for _, x in ipairs(list) do
+      if x.acc_j and x.acc_buf and x.acc_buf > 0 and x.tick > game.tick - 10800 and (not last or x.tick - last >= 900) then
+        out[#out+1] = math.floor(100 * x.acc_j / x.acc_buf + 0.5) .. '%'
+        last = x.tick
+      end
+    end
+    return #out >= 2 and out or nil
+  end
   -- The draw over the window: average, now (last sample), and by producer name (averages).
   local function draw(n, id)
     local list = n.samples[id] or {}
@@ -608,13 +643,10 @@ return function(api)
         -- and its trend over the last ACC_LOOK ticks: the time to empty at that rate (Gemini, 15:10).
         if net.acc > 0 then
           net.acc_j = acc_stored(net) or net.acc_j
-          local flow = acc_flow(n, net.id)
-          local trend = ''
-          if flow and flow > 1 then
-            trend = string.format(', falling %s net over the last %d s: empty in about %s at that rate', mw(flow), ACC_LOOK / 60, span(net.acc_j / (flow * 1000)))
-          elseif flow and flow < -1 then trend = string.format(', rising %s net over the last %d s', mw(-flow), ACC_LOOK / 60) end
-          parts[#parts+1] = string.format('accumulators %d at %d%% (%s of %s)%s', net.acc, net.acc_buf > 0 and math.floor(100 * net.acc_j / net.acc_buf + 0.5) or 0,
-            mj(net.acc_j), mj(net.acc_buf), trend)
+          parts[#parts+1] = acc_part(n, net.id, net.acc, net.acc_j, net.acc_buf)
+          -- (the samples read these accumulators from now on)
+          n.acc_refs = n.acc_refs or {}
+          n.acc_refs[net.id] = net.accs
         end
         parts[#parts+1] = string.format('machines %d: %d low power, %d no power', net.machines, net.low, net.none)
         if #net.boilers > 0 then
@@ -1370,8 +1402,22 @@ return function(api)
     error(string.format('no %s named %s; platforms: %s; planets and surfaces: %s', a.platform ~= nil and 'platform of ours' or 'surface or platform',
       tostring(want), #names > 0 and table.concat(names, ', ') or 'none', table.concat(planets, ', ')), 0)
   end
+  -- The network's draw now: its statistics' production over the last 5 s, from one of its poles (fresh: true).
+  local function draw_now(n, id)
+    local m = n.map and n.map[id]
+    local stats = m and m.pole and m.pole.valid and try(function() return m.pole.electric_network_statistics end)
+    if not stats then return nil end
+    local kw = 0
+    for name in pairs(try(function() return stats.output_counts end) or {}) do
+      local f = try(function() return stats.get_flow_count{name=name, category='output', precision_index=defines.flow_precision_index.five_seconds} end)
+      if f and f > 0 then kw = kw + f * 60 / 1000 end
+    end
+    return kw
+  end
   function M.read(p, a)
+    assert(a.fresh == nil or type(a.fresh) == 'boolean', 'fresh must be true or false')
     local v = view(p.force)
+    local n = store()
     local named = M.surface_named(p.force, a)
     local out = {}
     for _, s in ipairs(v.surfaces) do
@@ -1397,7 +1443,21 @@ return function(api)
             x.lowest_boiler = {position={x=lb.e.position.x, y=lb.e.position.y}, min=math.floor(lb.min), fuel=burner_fuel(lb.e),
               feeder=lb.feeder or 'no inserter feeds it', feeder_has_fuel=lb.fed}
           end
-          if r.acc > 0 then x.acc_mj, x.acc_max_mj = math.floor(r.acc_j / 1e5 + 0.5) / 10, math.floor(r.acc_buf / 1e5 + 0.5) / 10 end
+          -- Accumulators read now, whatever the view's age (Astra, shift14 22:50: the view's sum stayed put while an
+          -- accumulator's inspect moved), the line's part too, and what they held every 15 s over the last 3 min.
+          if r.acc > 0 then
+            local j = acc_stored(r) or r.acc_j
+            x.acc_mj, x.acc_max_mj = math.floor(j / 1e5 + 0.5) / 10, math.floor(r.acc_buf / 1e5 + 0.5) / 10
+            x.acc_pct = r.acc_buf > 0 and math.floor(100 * j / r.acc_buf + 0.5) or nil
+            local series = acc_series(n, r.id)
+            x.acc_series = series and table.concat(series, ' ') .. ' (every 15 s over the last 3 min, oldest first)' or nil
+            local live = acc_part(n, r.id, r.acc, j, r.acc_buf)
+            x.line = x.line:gsub('accumulators %d+ at %d+%% %b()[^;]*', function() return live end, 1)
+          end
+          if a.fresh then
+            local kw = draw_now(n, r.id)
+            x.draw_now_kw = kw and math.floor(kw + 0.5) or nil
+          end
           row.electric[#row.electric+1] = x
         end
         for _, r in ipairs(s.logistic) do
@@ -1431,6 +1491,7 @@ return function(api)
     local none = named and #out == 0 and string.format('no electric network over 2 poles or with a generator, no logistic network and no turret of ours on %s as of %ds ago',
       label(named) .. (try(function() return named.platform end) and ' (' .. named.name .. ')' or ''), math.floor((game.tick - v.tick) / 60)) or nil
     return {surfaces=out, none=none, as_of=string.format('%ds ago', math.floor((game.tick - v.tick) / 60)),
+      read_now=a.fresh and 'accumulators (acc_mj, acc_pct, the line\'s part) and draw_now_kw (the last 5 s of each network\'s statistics); the rest as of the view' or 'accumulators (acc_mj, acc_pct, the line\'s part); the rest as of the view, rebuilt every 60 s (fresh: true reads the draw now too)',
       note='draw: the network\'s production statistics sampled every 5 s; capacity: generators at their maximum plus solar at its output now '
         .. '(on a platform, solar at the solar power where it is: no night in space); solar power: a planet\'s solar-power against 100%, '
         .. 'a platform\'s the solar power in space of where it stops, or flying, of both ends of its connection by how far along it is; '
@@ -2103,9 +2164,9 @@ return function(api)
         .. 'fuel (its fuel slots, e.g. coal*5), burning, water and steam (amount/capacity), feeder (the inserter dropping into it and '
         .. 'what it takes from, with the fuel there, or no inserter feeds it), feeder_has_fuel}], more}], networks with a boiler not '
         .. 'working first, and those boilers first in each; at most 64 rows (more: rows left out, all working). Read only'},
-    networks = {surface='optional planet or surface name, or a platform\'s name',platform='optional platform name or index (its surface\'s networks)',
+    networks = {surface='optional planet or surface name, or a platform\'s name',platform='optional platform name or index (its surface\'s networks)',fresh='optional boolean: read each electric network\'s draw now too (draw_now_kw, the last 5 s of its statistics); accumulators are read now always; the rest is the view of as_of (rebuilt every 60 s)',
       returns='surfaces [{surface, platform (on a platform surface), electric [{id, poles, center, draw_kw {avg, now, over_s}, capacity_kw, generators_kw, solar, solar_peak_kw (on a platform: at the solar power where it is), solar_power (percent), solar_power_text, '
-        .. 'acc, machines, low, none, boilers, fuel_min, boilers_fed, boilers_under_20_min, boilers_under_10_min, lowest_boiler_min, line}], logistic [{id, roboports, personal, center, '
+        .. 'acc, acc_mj, acc_max_mj, acc_pct (accumulators read now), acc_series (what they held every 15 s over the last 3 min, from the 5 s samples), draw_now_kw (fresh), machines, low, none, boilers, fuel_min, boilers_fed, boilers_under_20_min, boilers_under_10_min, lowest_boiler_min, line (its accumulator part read now)}], logistic [{id, roboports, personal, center, '
         .. 'logistic_area and construction_area {x0, y0, x1, y1}, logistic_robots and construction_robots {total, idle, working, '
         .. 'charging, waiting}, logistic, logistic_idle, none_idle_s, construction, construction_idle, unfilled, unfilled_items, '
         .. 'ghosts, line}], turrets {by_name, '

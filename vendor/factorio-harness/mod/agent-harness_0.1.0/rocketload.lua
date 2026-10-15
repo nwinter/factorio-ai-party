@@ -661,8 +661,18 @@ return function(api)
       local extra = {}
       for _, r in ipairs(held) do if not asked[r.name] then extra[#extra+1] = label(r) .. '*' .. r.count end end
       plat.not_requested = #extra > 0 and table.concat(extra, ' ') or nil
+      -- Rockets already on their way to it, its ammo over the last leg and the hub slots asteroid chunks take (Astra,
+      -- shift14 22:50: reconciled by hand before each launch).
+      local inc = api.incoming and try(function() return api.incoming(pl) end)
+      if inc then
+        plat.incoming = inc.lines
+        plat.incoming_cargo = string.format('%d rocket%s on the way: %s', inc.rockets, inc.rockets == 1 and '' or 's', inc.cargo)
+      end
+      plat.ammo_rates = api.ammo and try(function() return api.ammo(pl) end) or nil
+      plat.hub_chunks = api.hub_chunks and try(function() return api.hub_chunks(pl) end) or nil
       out.platform = plat
       words[#words+1] = string.format('platform %s %s%s', pl.name, w.text, plat.arrived and '' or ' (not stopped at ' .. tostring(here) .. ')')
+      if plat.incoming_cargo then words[#words+1] = plat.incoming_cargo end
       if #asks == 0 then words[#words+1] = 'it requests nothing from ' .. tostring(here)
       else words[#words+1] = #lacking > 0 and 'after this rocket its requests from ' .. tostring(here) .. ' lack ' .. table.concat(lacking, ', ') or 'this rocket covers its requests from ' .. tostring(here) end
     end
@@ -860,9 +870,9 @@ return function(api)
       returns='silo, loaded [{item, asked, aboard_before, loaded, aboard, from (you N, iron-chest (x,y) N), short, why (weight, slots, or what you and the chests held)}], cargo, rocket_weight, slots (used/total), chests (how many were read), complete, short; launch (the launch reply) with launch=true. No rocket yet, or launch=true before the rocket is ready: a timed action (until_tick, waiting {why, rocket}; outcome fed | failed | timed_out; last.result holds the reply). Into the rocket only what fits under its 1000 kg lift and in its cargo slots; a silo with automatic requests on is refused'},
     preflight = {position='the rocket silo {x,y} (any tile of it), in a visible chunk (remote view)', surface='optional planet name: the silo there by remote view',
       items='optional item list (as load_silo items): what it still lacks against the cargo aboard, and how much of that fits',
-      platform='optional platform name: where it is, whether it has arrived here, and its requests from this planet less its hub and this rocket',
+      platform='optional platform name (with surface too: where the rocket goes): where it is, whether it has arrived here, its requests from this planet less its hub and this rocket, rockets on their way to it, its ammo per type over the last leg, the hub slots asteroid chunks take',
       returns='silo, rocket, rocket_ready, auto_requests, cargo {items, rows [{item, count, each_kg, kg, stacks}], kg, lift_kg, free_kg, over_kg, slots, free_slots}, '
-        .. 'order [{item, want, aboard, lacks, fits, you_hold}], platform {name, where, arrived, requests [{item, min (from this planet), hub, aboard, lacks_after}], not_requested (cargo it does not request from here)}, '
+        .. 'order [{item, want, aboard, lacks, fits, you_hold}], platform {name, where, arrived, requests [{item, min (from this planet), hub, aboard, lacks_after}], not_requested (cargo it does not request from here), incoming (rockets launched to its hub not arrived yet: from, how long ago, cargo, rising or coming down), incoming_cargo, ammo_rates (per ammo type: made and used a minute over the last leg, hub and turrets now, in flight the reserve at arrival or when it runs out), hub_chunks (hub slots asteroid chunks take)}, '
         .. 'launch_now (ok, or refused: what launch would refuse now), line. Read only'},
   }
   return M
