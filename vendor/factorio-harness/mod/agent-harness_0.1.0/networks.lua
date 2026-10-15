@@ -1941,6 +1941,7 @@ return function(api)
             out[#out+1] = {key='feed_chest_low|' .. s.name .. '|' .. unit, kind='feed_chest_low', surface=s.name, n=1,
               rank=x.count == 0 and 3 or x.count < 10 and 2 or 1, names={boiler=1}, by=u and {[u]=1} or {},
               at={{x=x.e.position.x, y=x.e.position.y}}, center={x=math.floor(x.e.position.x + 0.5), y=math.floor(x.e.position.y + 0.5)},
+              chest_at={x=x.chest.position.x, y=x.chest.position.y},
               now_text=string.format('%s holding %s', x.chest.name, x.held or 'no fuel'),
               line=string.format('boiler %s: its feed chest %s %s holds %s, nothing put into it for %d+ min (feeder %s)',
                 at(x.e.position.x, x.e.position.y), x.chest.name, at(x.chest.position.x, x.chest.position.y), x.held or 'no fuel',

@@ -7186,6 +7186,16 @@ function M.feeds(p,e,mode)
     end
   end
 end
+-- Items in a logistic chest robots are on their way to pick up (the game's targeted pickups; 0 for other entities).
+function M.robot_reserved(e,item)
+  local ok,point=pcall(function() return e.get_logistic_point(defines.logistic_member_index.logistic_container) end)
+  local n=0
+  for _,st in ipairs(ok and point and point.targeted_items_pickup or {}) do
+    local name=type(st.name)=='table' and st.name.name or st.name
+    if name==item then n=n+(st.count or 0) end
+  end
+  return n
+end
 -- Delivery is the hand move at this tick. Inserters and logistics can remove it afterward.
 function M.delivery_note(p,e,item)
   local mode=e.prototype.logistic_mode
@@ -7410,30 +7420,40 @@ function M.pick_source(p,a,verb)
     if not ok then skipped[#skipped+1]={position=raw,error=reason(e)}
     else
       friendly(p,e)
-      local item,n=nil,0
+      local item,n,reserved,held_reserved=nil,0,0,nil
       for _,name in ipairs(items) do
         local k
         if a.outputs_only then
           local ok,_,inv=pcall(infer_inventory,e,{outputs_only=true})
           k=ok and inv.get_item_count{name=name,quality=a.quality or 'normal'} or 0
         else k=entity_holds(e,name,a.quality) end
-        if k>0 and (item==nil or (a.pick=='most_stock' and k>n)) then item,n=name,k end
+        -- What robots already reserved there is not there for a hand (Haiku, shift17 10:50: walked to a chest, then
+        -- "holds no X now"): only the rest counts, read before the walk.
+        local r=k>0 and M.robot_reserved(e,name) or 0
+        if k-r>0 and (item==nil or (a.pick=='most_stock' and k-r>n-reserved)) then item,n,reserved=name,k,r end
+        if k>0 and r>=k then held_reserved={name=name,count=k,reserved=r} end
         if item and a.pick=='first_with_stock' then break end
       end
-      if not item then skipped[#skipped+1]={position=e.position,name=e.name,holds=0}
-      elseif not best or (a.pick=='most_stock' and n>best.count) then best={entity=e,item=item,count=n} end
+      if not item then skipped[#skipped+1]={position=e.position,name=e.name,holds=held_reserved and held_reserved.count or 0,
+        reserved=held_reserved and held_reserved.reserved or nil,why=held_reserved and 'all of it reserved for robot pickup' or nil}
+      elseif not best or (a.pick=='most_stock' and n-reserved>best.count-best.reserved) then best={entity=e,item=item,count=n,reserved=reserved} end
     end
     if best and a.pick=='first_with_stock' then break end
   end
   local label=table.concat(items,' or ')
   if not best then
     return {moved=0,transferred=0,picked='none',skipped=#skipped,skipped_places=#skipped<=8 and skipped or nil,
-      note=string.format('none of the %d listed places holds %s now: nothing taken, nothing walked',#list,label)}
+      note=(function()
+        local res=0
+        for _,s in ipairs(skipped) do res=res+(s.reserved or 0) end
+        return res>0 and string.format('none of the %d listed places holds %s now that robots have not reserved for pickup (%d reserved): nothing taken, nothing walked',#list,label,res)
+          or string.format('none of the %d listed places holds %s now: nothing taken, nothing walked',#list,label)
+      end)()}
   end
   local e=best.entity
-  local picked={position=e.position,name=e.name,item=best.item,holds=best.count,rule=a.pick,
-    line=string.format('%s at (%g,%g) holds %d %s (%s; %d listed place%s skipped)',e.name,e.position.x,e.position.y,best.count,best.item,a.pick,
-      #skipped,#skipped==1 and '' or 's')}
+  local picked={position=e.position,name=e.name,item=best.item,holds=best.count,rule=a.pick,reserved=best.reserved>0 and best.reserved or nil,
+    line=string.format('%s at (%g,%g) holds %d %s%s (%s; %d listed place%s skipped)',e.name,e.position.x,e.position.y,best.count,best.item,
+      best.reserved>0 and string.format(', %d of them reserved for robot pickup',best.reserved) or '',a.pick,#skipped,#skipped==1 and '' or 's')}
   local take={direction='to_player',item=best.item,quality=a.quality,outputs_only=a.outputs_only,count=counts[best.item] or a.count,keep=a.keep,keep_max=a.keep_max,inventory=a.inventory,
     up_to=a.up_to==true and true or nil,ticks=a.ticks}
   -- With to, inventory goes with the place that has it (round1650d: Luna's and Grok's rocket_silo_rocket was tried on the

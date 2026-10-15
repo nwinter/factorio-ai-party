@@ -599,4 +599,14 @@ do
   eq(g[1].line,'1 biochamber short of ingredients with spoilage in their input near (41,10): biochamber (40.5,10): input holds spoilage 50 in 1 of its 2 slots (its recipe does not take spoilage)')
   ents.nauvis={}
 end
+-- A boiler's feed chest in someone's claim (Haiku, shift17 10:50): the line names the claim, and that owner hears it.
+do
+  local st={board={items={{id=31,kind='claim',status='doing',owner='opus',title='fuel',surface='nauvis',area={left_top={x=-30,y=30},right_bottom={x=-20,y=40}}}}}}
+  local P=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,agents=function() return {} end,who=function(p) return p.name end}
+  local g={kind='feed_chest_low',surface='nauvis',center={x=-27,y=42},chest_at={x=-26.5,y=39.5},n=1,names={},by={},
+    line='boiler (-27,42): its feed chest requester-chest (-26.5,39.5) holds no fuel, nothing put into it for 5+ min (feeder burner-inserter (-26.5,40.5))'}
+  eq(P.text(g,'nauvis'),g.line.."; the chest is in opus's claim #31")
+  eq(#P.claims_over(g,g.chest_at),1); eq(#P.claims_over(g,g.center),0)
+  g.chest_at={x=0,y=0}; eq(P.text(g,'nauvis'),g.line)
+end
 print('pushalerts: ok')

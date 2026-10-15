@@ -1965,6 +1965,10 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     - `pick: "first_with_stock"` reads every listed place as `inspect` does (in sight, or by remote view where our
       force sees the chunk) and takes at the first in list order that holds a listed item now (its first listed item
       it holds); `pick: "most_stock"` takes at the place holding the most. `items` as a map `{"bioflux": 5}` (Luna,
+      Robot-reserved stock (Haiku, shift17 10:50: walked, then "holds no X now"): what robots are on their way to pick
+      up at a logistic chest is read before any walk; a place whose stock is all reserved is skipped (`why: all of it
+      reserved for robot pickup`), the picked line says `holds 12 yumako-seed, 4 of them reserved for robot pickup`,
+      `most_stock` compares what is not reserved, and with none left the note says so.
       shift17 10:50: that form was refused, and a list then moved the whole stack) caps the take at the picked item's
       count, as `count` does. `items` lists up to 16 items to look for
       (`item` too); the item picked is the one taken (`count`, `up_to`, `keep` as in a plain take). The take walks
@@ -3948,7 +3952,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     never rose between the networks view's looks of that time (one a minute; told only once the looks cover 5 minutes),
     no robot is on the way to it with a fuel, and no inserter dropping into it holds a fuel: `boiler (-1,41): its feed
     chest requester-chest (10,39) holds 12 coal, nothing put into it for 5+ min (feeder inserter (-1,39))`; told again
-    under 10 and when empty (`holds no fuel`);
+    under 10 and when empty (`holds no fuel`); a chest inside someone's claim adds `; the chest is in opus's claim #31`,
+    and that claim's owner hears it as well as the boiler's (Haiku, shift17 10:50: "so the fuel owner is told directly");
     `robots_busy`, a logistic network with no idle logistic robot in every 30-second look for 10 minutes (`logistic
     #3: no idle logistic robot for 11 min (147 robots; 1 requests unfilled 60+ s)`). A network with machines on low
     power (satisfaction under 100%) shows as the `low power` groups above.
