@@ -583,7 +583,8 @@
     }).join('');
     var needs = p.needs ? Object.keys(p.needs).map(function (k) { return esc(p.needs[k]) + ' ' + esc(label(k)); }).join(', ') : '';
     var who = p.requested_by ? ((team[p.requested_by] || {}).display_name || p.requested_by) : '';
-    var body = (steps ? '<ol class="project-steps">' + steps + '</ol>' : p.steps_cut ? '' : '<p class="fx-muted small">No steps yet.</p>') +
+    var body = (steps ? '<ol class="project-steps">' + steps + '</ol>' : p.steps_cut ? ''
+        : '<p class="fx-muted small">' + (p.total ? 'Its step list is not available yet.' : 'No steps yet.') + '</p>') +
       (p.steps_cut ? '<p class="fx-muted small">' + (steps ? 'Only its open steps are shown here' : 'Its steps are left out here') + ' to keep the page small.</p>'
         : p.steps_partial ? '<p class="fx-muted small">The next open steps; the whole list comes with a later refresh.</p>' : '') +
       (p.status === 'blocked' ? '<p class="small"><span class="fx-chip fx-chip--grey">blocked</span></p>' : '') +
