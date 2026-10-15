@@ -42,6 +42,9 @@ do
   end}
   local r,ghosts=M.ghosts(p,{})
   eq(#ghosts,2);eq(r[1].quality,'rare');eq(r[2].need,5)
+  p.surface.find_entities_filtered=function() local many={} for i=1,1025 do many[i]={valid=false} end return many end
+  local ok,err=pcall(M.ghosts,p,{})
+  eq(ok,false);has(tostring(err),'more than 1024 ghosts')
 end
 -- Current enemies are separate evidence from a past timer. Gun range does not
 -- imply ammunition, activity, or a proven hatch. All reads are bounded/local.
@@ -62,7 +65,8 @@ do
   local r=E.read(p,sites)
   has(r[1],'1 enemies visible within 16 tiles now');has(r[1],'recorded first-hatch timer elapsed 10s ago')
   has(r[1],'gun-turret (10,0) ammo 0 inactive')
-  live=false;r=E.read(p,sites);has(r[1],'no enemies visible within 16 tiles now')
+  gun.position={x=20,y=0};gun.quality={name='rare',range_multiplier=1.2}
+  live=false;r=E.read(p,sites);has(r[1],'no enemies visible within 16 tiles now');has(r[1],'gun-turret@rare (20,0)')
   sites[1].tick=6600;r=E.read(p,sites);has(r[1],'recorded first-hatch timer in 10s')
   p.position={x=100,y=0};eq(E.read(p,sites),nil)
 end

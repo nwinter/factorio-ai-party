@@ -50,7 +50,9 @@ return function(api)
   end
   function M.ghosts(p,box)
     local by,list={},{}
-    for _,e in pairs(p.surface.find_entities_filtered{area=box,type={'entity-ghost','tile-ghost'},force=p.force,limit=1025}) do
+    local found=p.surface.find_entities_filtered{area=box,type={'entity-ghost','tile-ghost'},force=p.force,limit=1025}
+    assert(#found<=1024,'more than 1024 ghosts; construct a smaller area')
+    for _,e in pairs(found) do
       if e.valid and api.known(p,e) then
         list[#list+1]=e
         assert(#list<=1024,'more than 1024 ghosts; construct a smaller area')

@@ -32,9 +32,10 @@ return function(api)
         if e.valid and seen(p,e.position) then
           local proto=e.prototype
           local range=proto.turret_range or (proto.attack_parameters and proto.attack_parameters.range) or 18
+          range=range*(e.quality and e.quality.range_multiplier or 1)
           if d(e.position,s.position)<=range then
             local inv=e.get_inventory(defines.inventory.turret_ammo)
-            cover[#cover+1]=string.format('%s %s ammo %d%s',e.name,at(e.position),inv and inv.get_item_count() or 0,e.active==false and ' inactive' or '')
+            cover[#cover+1]=string.format('%s%s %s ammo %d%s',e.name,e.quality and e.quality.name~='normal' and '@'..e.quality.name or '',at(e.position),inv and inv.get_item_count() or 0,e.active==false and ' inactive' or '')
           end
         end
       end
@@ -44,7 +45,7 @@ return function(api)
         or string.format('recorded first-hatch timer in %ds',math.ceil((s.tick-game.tick)/60))
       out[#out+1]=string.format('egg site %s: %s; %s; gun range covering the spot: %s%s; checked tick %d',at(s.position),
         count>0 and string.format('%d%s enemies visible within 16 tiles now (%s)',count,#enemies==33 and '+' or '',table.concat(kinds,', '))
-          or 'no enemies visible within 16 tiles now',timing,
+          or (#enemies==33 and 'no visible enemies among the 33 read within 16 tiles (capped)' or 'no enemies visible within 16 tiles now'),timing,
         #cover>0 and table.concat(cover,'; ') or 'none among visible guns within 64 tiles',#guns==65 and ' (gun read capped at 65)' or '',game.tick)
     end
     return #out>0 and out or nil

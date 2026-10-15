@@ -4657,6 +4657,17 @@ end)()
   output[1]=stack('spoilage',2);p.position={x=15,y=0}
   call('feed',{radius=32,items={'iron-ore'},clear_spoilage=true,avoid_enemies=false})
   advance(2);eq(output[1].valid_for_read,false);eq(call('status').last.entities[1].cleared[1].taken,2)
+  -- A later dirty stop keeps the tour going even with no top-up items carried.
+  local other_output=listing(inv(stack('spoilage',3)))
+  local other={valid=true,name='stone-furnace',type='furnace',force=p.force,position={x=40,y=0},get_recipe=function() return recipe end,
+    get_inventory=function(id) if id==defines.inventory.furnace_result then return other_output end end}
+  output[1]=stack('spoilage',2);main=listing(inv(stack(nil,0),stack(nil,0)));p.position={x=0,y=0}
+  p.surface.find_entities_filtered=function(f) return f.position and {f.position.x==40 and other or e} or {} end
+  p.can_reach_entity=function(target) return math.abs(p.position.x-target.position.x)<=10 end
+  call('feed',{positions={e.position,other.position},items={'iron-ore'},clear_spoilage=true,walk=true,avoid_enemies=false})
+  advance(1);p.position={x=15,y=0};advance(2);eq(call('status').active.kind,'gather')
+  p.position={x=35,y=0};advance(2)
+  eq(other_output[1].valid_for_read,false);eq(#call('status').last.entities,2);eq(main.get_item_count{name='spoilage'},5)
   main=saved.main;p.surface.find_entities_filtered=saved.find;p.can_reach_entity=saved.reach;p.position=saved.pos;defines.inventory.burnt_result=saved.burnt;p.get_main_inventory=saved.get_main
 end)()
 ;(function()
