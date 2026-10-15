@@ -1061,6 +1061,8 @@
       top.append(el("span", "pname", x.name), el("span", "plost", "LOST"),
         el("span", "pwhere", [x.cause, x.where].filter(Boolean).join(" · ")));
       row.append(top);
+      // what went down with it (the harness read its hub at its death; viewer syndesis 22:24)
+      if (x.cargo && x.cargo_items) row.append(el("div", "pl2", "cargo lost: " + x.cargo));
       plats.append(row);
       shown++;
     }

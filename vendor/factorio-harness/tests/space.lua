@@ -717,4 +717,31 @@ do
   eq(space3.requests(p,{platform='alpha'}).construction_overlap,nil,'a section that is off requests nothing')
   hub_sections.get_section(2).active=true
 end
+-- Hub slots asteroid chunks take, one a slot (Astra, shift14 22:50: a chunk backlog hid in raw stock).
+do
+  local function chunk(name) return {valid_for_read=true,name=name,count=1} end
+  local empty={valid_for_read=false}
+  local inv={chunk('metallic-asteroid-chunk'),empty,chunk('carbonic-asteroid-chunk'),chunk('metallic-asteroid-chunk'),
+    {valid_for_read=true,name='iron-plate',count=50}}
+  inv.get_contents=function() return {{name='iron-plate',count=50}} end
+  local hub={get_inventory=function(i) assert(i==defines.inventory.hub_main); return inv end}
+  eq(space.hub_chunks(hub),'asteroid chunks take 3 of 5 slots (metallic 2, carbonic 1)')
+  local kept=platform.hub.get_inventory
+  platform.hub.get_inventory=function(i) if i==defines.inventory.hub_main then return inv end end
+  eq(space.platforms(p,{}).platforms[1].hub_chunks,'asteroid chunks take 3 of 5 slots (metallic 2, carbonic 1)','every row')
+  inv[1],inv[3],inv[4]=empty,empty,empty
+  eq(space.hub_chunks(hub),nil,'no chunk in the hub')
+  platform.hub.get_inventory=kept
+  -- With platform set, per ammo type over the last leg and the rockets on their way up (freight.lua's reads).
+  local real=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return space_state end}
+  local fake=setmetatable({ammo=function(pl) assert(pl==platform); return {'firearm-magazine: made 42/min, used 38/min over the last 10 min; hub 544, turrets 191'} end,
+    incoming=function() return {rockets=1,cargo='firearm-magazine*20',lines={'a rocket from nauvis launched 3s ago: firearm-magazine*20 (rising over nauvis)'}} end},{__index=real})
+  local space4=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return space_state end,position=function(v) return v end,
+    integer=function(v,d) return v==nil and d or v end,remote_entity=function() return silo end,real=function(q) return q end,freight=fake}
+  local row=space4.platforms(p,{platform='alpha'}).platforms[1]
+  eq(row.ammo_rates[1],'firearm-magazine: made 42/min, used 38/min over the last 10 min; hub 544, turrets 191')
+  eq(row.incoming_cargo,'1 rocket on the way: firearm-magazine*20'); eq(row.incoming[1],'a rocket from nauvis launched 3s ago: firearm-magazine*20 (rising over nauvis)')
+  row=space4.platforms(p,{}).platforms[1]
+  eq(row.ammo_rates,nil,'details only for one named platform'); eq(row.incoming_cargo,nil)
+end
 print('space: ok')

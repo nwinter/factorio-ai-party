@@ -233,6 +233,23 @@ silo.no_rocket=true
 f=R.preflight(p,{position={x=65.5,y=14.5}})
 eq(f.cargo.items,'no rocket to load yet'); eq(f.cargo.slots,'0/20')
 silo.no_rocket=nil
+-- Rockets on their way to the platform, its ammo over the last leg and the hub slots chunks take (Astra, shift14 22:50:
+-- reconciled by hand before each launch).
+api.incoming=function(x) assert(x==pl); return {rockets=2,cargo='firearm-magazine*40',lines={'a rocket from nauvis launched 3s ago: firearm-magazine*20 (rising over nauvis)','a rocket from nauvis launched 20s ago: firearm-magazine*20 (coming down onto the platform)'}} end
+api.ammo=function() return {'firearm-magazine: made 42/min, used 38/min over the last 10 min; hub 544, turrets 191'} end
+api.hub_chunks=function() return 'asteroid chunks take 22 of 99 slots (carbonic 9, metallic 9, oxide 4)' end
+f=R.preflight(p,{position={x=65.5,y=14.5},platform='Sunward'})
+eq(f.platform.incoming_cargo,'2 rockets on the way: firearm-magazine*40'); eq(#f.platform.incoming,2)
+eq(f.platform.ammo_rates[1],'firearm-magazine: made 42/min, used 38/min over the last 10 min; hub 544, turrets 191')
+eq(f.platform.hub_chunks,'asteroid chunks take 22 of 99 slots (carbonic 9, metallic 9, oxide 4)')
+assert(f.line:find('platform Sunward at nauvis; 2 rockets on the way: firearm-magazine*40; after this rocket',1,true),f.line)
+api.incoming=function() return {rockets=1,cargo='empty',lines={'a rocket from nauvis launched 3s ago: empty (rising over nauvis)'}} end
+eq(R.preflight(p,{position={x=65.5,y=14.5},platform='Sunward'}).platform.incoming_cargo,'1 rocket on the way: empty')
+api.incoming=function() return nil end; api.ammo=function() error('no stats') end
+f=R.preflight(p,{position={x=65.5,y=14.5},platform='Sunward'})
+eq(f.platform.incoming,nil); eq(f.platform.ammo_rates,nil,'a failing read is left out')
+assert(not f.line:find('on the way',1,true),f.line)
+api.incoming,api.ammo,api.hub_chunks=nil,nil,nil
 
 -- 7. A queue dry run's silo cargo (Luna's race): a rocket_ready wait, then the launch with min_cargo, the top-up
 -- after it: the launch would be refused; the top-up before it: it would go, and the cargo is the one it leaves.
