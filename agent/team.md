@@ -218,7 +218,9 @@ already targets your character.
   every assembler and furnace output in the radius (output slots only). `position` and `positions` are interchangeable
   in these calls (`corrected` says how it ran). A repeating queue (`queue_repeat`, optional `name`) puts a `queue:`
   line in the team block when a round's short steps differ from the round before; steps with `up_to: true` or
-  `"on_short": "skip"` are left out of it. `transfer` is `{position, direction: "to_entity"|"to_player", item, count,
+  `"on_short": "skip"` are left out of it. `queue_repeat` takes `times` (rounds) and `for_ticks` (no round starts
+  after that); the loop then ends with one `queue:` line (`done after N rounds: ...`) and `loop_done` in `queue_status`;
+  its `orders` says which standing orders may run between its rounds (triggered ones by default). `transfer` is `{position, direction: "to_entity"|"to_player", item, count,
   inventory?}` on any container (`./fh help transfer` shows calls that work; an argument refusal ends with one built
   from your call, `launch`'s with the silos there); out of reach, it says the distance, your
   reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
@@ -359,6 +361,10 @@ already targets your character.
   last gap out when the plan would close you in where you stand; a build reply says `closed_in` after it.
   Dry runs and build replies also name logistic chests no roboport covers (`outside_logistic_coverage`) and inserters
   or belts feeding an underground entrance from the side, with the lane that gets nothing (`underground_side_feed`).
+  Dry runs list each cliff the placement marks (`cliffs_under`). `conflicts {name, position}` (a read) says what
+  building there takes away: everything in the way, the fluid segments that split and the poles cut off.
+- A burner whose burnt-result slot is full and that burns nothing reads `burnt_result_full` in scan, supply,
+  bottleneck and the status warning, and `inspect` says what fills it, whatever the game's status reads.
 - `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}}}'` lists every chest's
   and machine's contents in the area (where inspect reads, up to 64) as one table: `holds`, `requests`, `recipe`, `status_name`.
   `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north",

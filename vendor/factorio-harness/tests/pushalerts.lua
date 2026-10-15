@@ -519,6 +519,27 @@ do
   eq(R.read(sol,{kind='no_fuel'}).groups[1].line:match('the first: .*$'),'the first: nutrients spoiled at (43.5,34.5)', 'worked out when shown')
   ents.nauvis={}
 end
+-- A burner its full burnt-result slot stopped (Sol, shift14 03:54: two agricultural science biochambers read working and
+-- made nothing): a burnt_full group whatever the status reads, each with what fills that slot and its fuel slot.
+do
+  local st={board={items={}}}
+  local stuck={}
+  local R=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,
+    agents=function() return {{index=2,name='sol'}} end, who=function(p) return p.name end,
+    place=function() return {key='nauvis',position={x=50,y=40}} end,
+    burnt_stuck=function(e) return stuck[e] end}
+  ents.nauvis={}; ents.vulcanus={}
+  local a=ent('nauvis','biochamber','assembling-machine',45.5,72.5,{status=1})
+  local b=ent('nauvis','biochamber','assembling-machine',68.5,49.5,{status=1})
+  ent('nauvis','biochamber','assembling-machine',49.5,44.5,{status=1})
+  stuck[a]={burnt='spoilage*200',fuel='spoilage*3',foreign='spoilage',burns='nutrients'}
+  stuck[b]={burnt='spoilage*200',fuel='',burns='nutrients'}
+  local r=R.read(sol,{kind='burnt_full'}).groups
+  eq(#r,1); eq(r[1].count,2)
+  eq(r[1].line,'2 biochamber stopped by a full burnt-result slot near (57,61): biochamber (45.5,72.5): burnt-result slot spoilage*200; fuel slot spoilage*3 '
+    ..'(not a fuel it burns: it burns nutrients); biochamber (68.5,49.5): burnt-result slot spoilage*200; fuel slot empty')
+  ents.nauvis={}
+end
 -- A sleep on chosen kinds (Luna, 19:50: low power, starvation in a claim): levels gives the groups of those kinds
 -- (and their sub-kinds) addressed to you; starved the assemblers and furnaces lacking ingredients in your own claims.
 do

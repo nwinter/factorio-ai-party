@@ -318,5 +318,32 @@ do
   tech.researched=true
   _,n,cliffs=C.mark_obstacles(cp2,belt)
   eq(n,0); eq(#cliffs,1); eq(cliff.marked,true)
+  -- Only the cliffs the engine finds in the ghost's own box (Sol, shift14 21:17: Gleba's diagonal cliffs have turned
+  -- boxes; read as square, the box of one no ghost touched met a belt's, and the placement marked it while the dry run,
+  -- asking the engine, listed none). The fake engine finds this turned cliff only past the belt's box.
+  local turned={valid=true,type='cliff',name='cliff-gleba',position={x=2,y=0.5},marked=false,
+    bounding_box={left_top={x=0.9,y=0.3},right_bottom={x=2.6,y=0.7},orientation=0.125}}
+  turned.to_be_deconstructed=function() return turned.marked end
+  turned.order_deconstruction=function() turned.marked=true; return true end
+  local cp3={force={technologies={['cliff-explosives']=tech}},surface={find_entities_filtered=function(f)
+    if f.type~='cliff' then return {} end
+    local rb=f.area.right_bottom or f.area[2]
+    return (rb.x or rb[1])>1.2 and {turned} or {}
+  end}}
+  _,n,cliffs=C.mark_obstacles(cp3,belt)
+  eq(#cliffs,0); eq(turned.marked,false,'not in the belt\'s box: no mark')
+  -- A ghost whose collision mask misses the cliff's: no mark either.
+  local cliff2={valid=true,type='cliff',name='cliff',position={x=0.5,y=0.5},marked=false,prototype={collision_mask={layers={cliff=true,object=true}}},
+    bounding_box={left_top={x=-1.5,y=0.1},right_bottom={x=2.5,y=0.9}}}
+  cliff2.to_be_deconstructed=function() return cliff2.marked end
+  cliff2.order_deconstruction=function() cliff2.marked=true; return true end
+  local cp4={force={technologies={['cliff-explosives']=tech}},surface={find_entities_filtered=function(f) return f.type=='cliff' and {cliff2} or {} end}}
+  local over={valid=true,position={x=0.5,y=0.5},direction=0,ghost_prototype={collision_box={left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}},
+    collision_mask={layers={elevated_rail=true}}},bounding_box={left_top={x=0.1,y=0.1},right_bottom={x=0.9,y=0.9}}}
+  _,n,cliffs=C.mark_obstacles(cp4,over)
+  eq(#cliffs,0); eq(cliff2.marked,false)
+  over.ghost_prototype.collision_mask={layers={object=true}}
+  _,n,cliffs=C.mark_obstacles(cp4,over)
+  eq(#cliffs,1); eq(cliff2.marked,true)
 end
 print('rails ok')
