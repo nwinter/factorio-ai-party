@@ -332,4 +332,54 @@ do
   eq(s3.pollution.cloud_beyond_chart,first_s.pollution.cloud_beyond_chart)
   game.forces={enemy=enemy,player=mine}; game.get_surface=nil; game.players=nil
 end
+-- The spawner index (operator 18:33: threat.watch 93 ms in one reply, its find of spawners within 512 tiles): built in
+-- the background in bands of at most 32 chunks over the circles asked for; a reply inside it finds no spawner and gives
+-- the same bases; a killed spawner drops out at once; an agent outside it is found at once as before.
+do
+  local st4={}
+  local nests={}
+  for i=0,5 do nests[#nests+1]={valid=true,type='unit-spawner',force=enemy,position={x=150+i*3,y=-100+i*2},
+    bounding_box={left_top={x=147.5+i*3,y=-102.5+i*2},right_bottom={x=152.5+i*3,y=-97.5+i*2}}} end
+  nests[#nests+1]={valid=true,type='unit-spawner',force=enemy,position={x=-400,y=250},bounding_box={left_top={x=-402.5,y=247.5},right_bottom={x=-397.5,y=252.5}}}
+  nests[#nests+1]={valid=true,type='unit-spawner',force=enemy,position={x=900,y=0},bounding_box={left_top={x=897.5,y=-2.5},right_bottom={x=902.5,y=2.5}}}
+  local direct,banded,widest=0,0,0
+  local surf={index=4,name='nauvis',get_total_pollution=function() return 0 end,get_pollution=function() return 0 end,get_chunks=chunks,
+    is_chunk_generated=function() return false end,
+    find_entities_filtered=function(f)
+      if f.type=='unit-spawner' then
+        local out={}
+        if f.area then
+          banded=banded+1; widest=math.max(widest,(f.area[2][1]-f.area[1][1])/32)
+          for _,e in ipairs(nests) do local q=e.position; if q.x>=f.area[1][1]-3 and q.x<=f.area[2][1]+3 and q.y>=f.area[1][2]-3 and q.y<=f.area[2][2]+3 then out[#out+1]=e end end
+        else
+          direct=direct+1
+          for _,e in ipairs(nests) do if distance(e.position,f.position)<=f.radius+2.5 then out[#out+1]=e end end
+        end
+        return out
+      end
+      if f.type=='radar' then return {} end
+      return {}
+    end,
+    get_closest=function(pos,list) return list[1] end}
+  local T4=dofile('mod/agent-harness_0.1.0/threat.lua'){state=function() return st4 end,distance=distance,known=function() return true end}
+  local a={index=7,surface=surf,position={x=0,y=0},force=mine}
+  game.tick=700000
+  local first=T4.summary(a,true).enemies
+  eq(direct,1); eq(first.bases,2,'the near nests as one base and the one at (-400,250); (900,0) is out of range')
+  game.forces={enemy=enemy,player=mine}
+  game.get_surface=function(i) return i==4 and surf or nil end
+  game.players={}
+  local ticks=0
+  repeat game.tick=game.tick+1; ticks=ticks+1; T4.tick(game.tick) until (st4.spawn_index and st4.spawn_index['player/4']) or ticks>5000
+  assert(st4.spawn_index['player/4'],'the index is built')
+  assert(widest<=32,'bands of at most 32 chunks: '..widest)
+  assert(ticks>40,'spread over ticks: '..ticks)
+  local second=T4.summary(a,true).enemies
+  eq(direct,1,'no find in the reply'); eq(second.bases,first.bases); eq(second.nearest,first.nearest)
+  nests[7].valid=false
+  eq(T4.summary(a,true).enemies.bases,1,'a killed nest drops out at once')
+  local far={index=8,surface=surf,position={x=3000,y=0},force=mine}
+  T4.summary(far,true); eq(direct,2,'outside the index: found at once')
+  game.forces={enemy=enemy,player=mine}; game.get_surface=nil; game.players=nil
+end
 print('threat tests passed')
