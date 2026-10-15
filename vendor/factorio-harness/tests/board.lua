@@ -838,6 +838,25 @@ r=op('board_update',{id=rid,title='need 50 green circuits'}); eq(r.item.title,'n
 local plan_id
 for id,item in pairs(storage.agent_harness.board.items) do if item.kind=='plan' then plan_id=id end end
 if plan_id then fails(function() sol('board_update',{id=plan_id,title='x'}) end,'the team plan changes with board_plan') end
+-- plan_ticks (the pog site's Team plan, viewer Alex 22:12): the plan also as lines with the tick each was set, the goals'
+-- tick and the last edit's; without it the plan is as before.
+do
+  local t0=game.tick
+  sol('board_plan',{goals='rockets: blue science line'})
+  jump(600)
+  astra('board_plan',{doing='blue circuits at (40,-20)'})
+  jump(60)
+  sol('board_plan',{agent='grok',doing='oil outpost'})
+  local p=sol('board',{limit=5,plan_ticks=true}).plan
+  eq(p.goals_tick,t0); eq(p.updated_tick,game.tick)
+  local by={}
+  for _,l in ipairs(p.lines) do by[l.agent]=l end
+  eq(by.astra.text,'blue circuits at (40,-20)'); eq(by.astra.tick,t0+600); eq(by.astra.by,'astra')
+  eq(by.grok.tick,game.tick); eq(by.grok.by,'sol')
+  local plain=sol('board',{limit=5}).plan
+  eq(plain.lines,nil); eq(plain.goals_tick,nil); assert(plain.doing and #plain.doing==#p.lines,'doing as before')
+  fails(function() sol('board',{limit=5,plan_ticks='yes'}) end,'plan_ticks must be true or false')
+end
 -- A claim is on one surface (Sol 07:52: Astra's Nauvis claim #212 labelled Gleba furnaces at (62,22)): the poster's, or
 -- `surface`; overlaps count on that surface only; its owner moves it with board_update {surface}; one from before
 -- claims had a surface gets its owner's surface the first time it is read, else nauvis.

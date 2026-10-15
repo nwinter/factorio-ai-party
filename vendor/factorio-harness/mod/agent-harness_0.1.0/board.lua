@@ -758,6 +758,7 @@ return function(api)
     end
     assert(a.kind == nil or KINDS[a.kind], 'kind must be task, request, claim, note, project, harness or plan')
     assert(a.since_tick == nil or type(a.since_tick) == 'number', 'since_tick must be a tick')
+    assert(a.plan_ticks == nil or type(a.plan_ticks) == 'boolean', 'plan_ticks must be true or false')
     -- An agent's plain listing (no filter, no limit): about 3 KB, newest
     -- first, each item with its last note; the plan's goals and the reader's
     -- own line, and a line per open project (agent-minds study: the median
@@ -776,7 +777,7 @@ return function(api)
     table.sort(list, function(x, y) return x.updated_tick > y.updated_tick or (x.updated_tick == y.updated_tick and x.id > y.id) end)
     local out, where = {}, where_for(by)
     local unowned = open_unowned()
-    local plan = (a.kind == nil or a.kind == 'plan') and a.mine ~= true and M.plan_view() or nil
+    local plan = (a.kind == nil or a.kind == 'plan') and a.mine ~= true and M.plan_view(a.plan_ticks == true) or nil
     if brief then
       local used = 0
       if plan then
@@ -810,15 +811,20 @@ return function(api)
     local b = store()
     return b.plan_id and b.items[b.plan_id]
   end
-  function M.plan_view()
+  -- ticks (the board read's plan_ticks; the pog site's Team plan, viewer Alex 22:12): also each line as {agent, text,
+  -- by, tick} (the tick it was set), goals_tick (when the goals were last set; none for goals set before 2026-10-14
+  -- 22:30) and updated_tick (the plan's last edit).
+  function M.plan_view(ticks)
     local i = plan_item()
     if not i then return nil end
-    local lines = {}
+    local lines, rows = {}, {}
     for _, l in ipairs(i.lines) do
       lines[#lines+1] = l.agent .. ': ' .. l.text .. (l.by ~= l.agent and ' (set by ' .. l.by .. ')' or '')
+      rows[#rows+1] = {agent=l.agent, text=l.text, by=l.by, tick=l.tick}
     end
     return {id=i.id, goals=i.goals, doing=#lines > 0 and lines or nil,
-      edited=i.edited_by and string.format('by %s, %s ago', i.edited_by, ago(game.tick - i.updated_tick)) or nil}
+      edited=i.edited_by and string.format('by %s, %s ago', i.edited_by, ago(game.tick - i.updated_tick)) or nil,
+      lines=ticks and rows or nil, goals_tick=ticks and i.goals and i.goals_tick or nil, updated_tick=ticks and i.updated_tick or nil}
   end
   -- The plan's goals, agent `name`'s own line and the open projects (the
   -- shift block), or nil.
@@ -876,6 +882,7 @@ return function(api)
         while #item.history > PLAN_HISTORY do table.remove(item.history, 1) end
       end
       item.goals = goals
+      item.goals_tick = goals and game.tick or nil
       changed[#changed+1] = item.goals and 'goals: ' .. item.goals or 'goals cleared'
     end
     if doing ~= nil then
@@ -996,7 +1003,9 @@ return function(api)
     board = {full='boolean: the plain listing in full (by default it is about 3 KB: the newest items with their last note, the plan\'s goals and your line, and more: how many were left out)',
       mine='boolean: items I own or requested', status='active|open|claimed|doing|done|blocked|dropped or an array of them',
       kind='task|request|claim|note|project|harness|plan', since_tick='items updated after this tick', limit='1..100 (default 30), newest first',
-      id='one item in full (all notes; a project with all its steps)', returns='plan (the team plan: goals, doing lines, last edit), projects (the plain listing: one line per open project, yours first: progress, owner, next step, handoff; the rows leave them out), items, matched, open_unowned (open task/request items nobody owns); a project row has progress ("3 of 7 steps"), goal, next_steps, areas, handoff and owner_state (its owner\'s last request); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus"); an open claim has owner_active (when its owner last posted, updated it, or made a request standing in it or acting on a position in it), stale=true after 30 min of that (anyone may remove or rebuild there without notice) and allow (who may do that while it is fresh); after 2 h with no such activity the harness closes it (dropped)'},
+      id='one item in full (all notes; a project with all its steps)',
+      plan_ticks='boolean: the plan also as lines [{agent, text, by, tick}] (the tick each line was set), goals_tick and updated_tick',
+      returns='plan (the team plan: goals, doing lines, last edit), projects (the plain listing: one line per open project, yours first: progress, owner, next step, handoff; the rows leave them out), items, matched, open_unowned (open task/request items nobody owns); a project row has progress ("3 of 7 steps"), goal, next_steps, areas, handoff and owner_state (its owner\'s last request); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus"); an open claim has owner_active (when its owner last posted, updated it, or made a request standing in it or acting on a position in it), stale=true after 30 min of that (anyone may remove or rebuild there without notice) and allow (who may do that while it is fresh); after 2 h with no such activity the harness closes it (dropped)'},
     board_plan = {goals='the team goals, 1..600 characters, replace the current ones ("" clears them)',
       doing='one line of what an agent is on, 1..160 characters ("" removes the line)', agent='whose line doing sets (default you)',
       returns='the team plan: goals, doing (one line per agent, "(set by NAME)" when someone else wrote it), edited; with no arguments it only reads'},
