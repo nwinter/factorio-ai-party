@@ -456,6 +456,24 @@ fh call status
   builds it). Reply: `stop`, `position`, `direction`, `serves`, `side`, `rail {position, ghost}`, `built` or `ghost`,
   `limit`. On a line signalled for one way only, a stop for the other way is refused and the refusal names the
   signals.
+- `fh view platform=Sunward --out sunward.png` makes a bounded schematic of an owned platform, also while aboard.
+  `--args '{"position":{"x":0,"y":24},"radius":16}'` sets its centre and radius (1..32, default 24; centre defaults
+  to the hub). The same data is available through `observe {platform, position?, radius?, limit?, tiles?}`: entity
+  names, positions, footprints, directions and ghosts; foundation tiles encoded as horizontal `tile_runs`
+  (`x,y,count,name`) with `tile_count`. Empty space is the background. Entity limit 1..512 defaults to 512;
+  `truncated` reports extra entities. The PNG shows gray foundation, outlined footprints coloured by entity type, and blue ghosts,
+  with a returned legend and no player marker. Each read is restricted to the requested square; it does not scan the whole platform.
+- `game_alerts {kind:"no_power"}` includes `no_power.network`: machines reporting no power grouped by electric
+  network, including networks with only one or two poles and no generators. The line includes network id, position,
+  machine counts/names, pole count and the last five-second supply sample; zero supplied says no generation in that
+  sample. These groups use the existing background network scan and push-alert routing to claims/builders/nearest
+  agents. Recovery removes the group; a later outage is news again. Machines without any network remain `unconnected`.
+- `agriculture {surface?}` lists crop towers from the background census: current visible towers (`state: built`,
+  position, status, seeds), visible tower ghosts (`state: ghost`), and recorded tower deaths (`state: destroyed`,
+  position, `lost_tick`, cause). A ghost at a recorded loss position includes the loss tick; a visible rebuilt tower
+  replaces that loss. `as_of` is the census discovery tick; `pending` means the first complete pass is not ready.
+  History keeps up to 256 tower deaths per force/surface since this history was installed. It does not reconstruct
+  older deaths without a remaining ghost. `fh call agriculture --args '{"surface":"gleba"}'` is read only.
 - Gleba farming (Sol, shift09 board #368): `inspect` on an agricultural tower adds `tower`: `state` in words
   (`working (planting or harvesting)`, `waiting for plants to grow`, `no seeds in its input`, `no free cell with soil
   for its seeds`, `output full`, `no power`), `seeds` and `output` (its two inventories), `area` (`48 cells of 3x3
@@ -791,8 +809,14 @@ fh call status
     it, so the way goes no deeper. On a copy of world n a walk across the base re-planned round a turret's attack, and
     ended `no_safe_route` when every way through the base passed within 24 tiles of it.
   - Structures within 32 tiles of each other are one nest. A path through a reach (its deepest pass counts) is walked
-    as legs around it: corners of an octagon around each worm's or spawner's reach, the shortest way along them, each
-    leg the engine's path, checked again (up to 4 detours). `last.avoided_enemies` names each nest gone around (`2
+    as legs around it: octagon corners and points through narrow gaps, the shortest way along them. Intermediate
+    corners use 0.25-tile arrival tolerance. A rejected intermediate leg is replanned to that corner and keeps its
+    remaining legs. Repeated crossings widen only the crossed disc, preserving existing gaps to other discs.
+    If the padded route is absent or over 1.5 times the direct distance, a route using half a tile beyond actual
+    worm/spawner reach is checked too; it is used if at least 20% shorter, in legs of at most 16 tiles. These
+    intermediate goals use the same 0.25-tile radius in the engine path request. Attack zones keep their full margin.
+    Each engine path is checked again (up to 4 detours); a path outside every actual reach may cross only a margin
+    even at the retry limit. `last.passed_within_margin` names those crossings and their distances. `last.avoided_enemies` names each nest gone around (`2
     big-worm-turret, 3 biter-spawner, 3 medium-worm-turret, 2 small-worm-turret around (-12,359)`).
   - A goal inside a worm's range, within 40 tiles of a spawner or in an area under attack now (on the chunks the map
     draws) is refused before the walk starts (`goal (-163,-53) is within 40 tiles of spitter-spawner (-190,-31), its

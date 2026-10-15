@@ -1478,12 +1478,17 @@ async function main() {
       }
     } else if (command === 'view') {
       if (!values.out) throw new Error('view requires --out path.png');
+      for (const word of positionals.slice(1)) {
+        if (!word.startsWith('platform=') || !word.slice(9)) throw new Error('view accepts platform=NAME and --args JSON');
+        if (args.platform !== undefined) throw new Error('view platform was given twice');
+        args.platform=word.slice(9);
+      }
       const reply = await execute('observe',{radius:24,...args,tiles:true,resources:'tiles'});
       if (reply.ok) {
         const path = resolve(values.out);
         await mkdir(dirname(path),{recursive:true});
         await writeFile(path,renderMap(reply.result,Number(args.radius ?? 24)));
-        output({ok:true,tick:reply.tick,result:{path,kind:'local-schematic',legend:'white=player, blue=iron/water, orange=copper, dark=coal, green=trees/uranium, red=enemies, tan=structures',position:reply.result.player?.position,entities:Object.keys(reply.result.entities ?? {}).length,tiles:Object.keys(reply.result.tiles ?? {}).length,truncated:reply.result.truncated ?? false,tiles_truncated:reply.result.tiles_truncated ?? false}});
+        output({ok:true,tick:reply.tick,result:{path,kind:reply.result.platform ? 'platform-schematic' : 'local-schematic',platform:reply.result.platform,legend:reply.result.platform ? 'gray=foundation, dark=space/footprint edges, gold=belts/inserters, teal=machines, blue=solar/ghosts, purple=accumulators/thrusters, red=turrets, green=collectors, pale=hub, steel=pipes' : 'white=player, blue=iron/water, orange=copper, dark=coal, green=trees/uranium, red=enemies, tan=structures',position:reply.result.position ?? reply.result.player?.position,entities:Object.keys(reply.result.entities ?? {}).length,tiles:reply.result.tile_count ?? Object.keys(reply.result.tiles ?? {}).length,truncated:reply.result.truncated ?? false,tiles_truncated:reply.result.tiles_truncated ?? false}});
       } else {output(reply);process.exitCode=1;}
     } else if (command === 'sleep') {
       if (bridged) throw new Error('sleep needs the harness mod (not a bridge session)');

@@ -146,7 +146,7 @@ return function(api)
     if L.centre then start = M.start_centre(p) end
     local h = M.half(c) + L.pad
     local id = p.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=mask or c.prototype.collision_mask, start=start,
-      goal=nav.position, force=p.force, radius=nav.tolerance + 1 + (nav.replans or 0) + (L.wide or 0), entity_to_ignore=c, can_open_gates=true,
+      goal=nav.position, force=p.force, radius=nav.precise_corner and nav.tolerance or nav.tolerance + 1 + (nav.replans or 0) + (L.wide or 0), entity_to_ignore=c, can_open_gates=true,
       -- finer grids take more steps: let the engine spread them over ticks
       pathfind_flags={prefer_straight_paths=true, no_break=L.res == 0, cache=false}, path_resolution_modifier=L.res ~= 0 and L.res or nil}
     local paths = api.paths()

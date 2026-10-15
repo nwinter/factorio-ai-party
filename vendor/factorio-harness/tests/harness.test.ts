@@ -86,3 +86,13 @@ test('science and supply travel as read-only observe scopes (a loaded bootstrap 
   assert.match(science,/"action":"observe".*"scope":"science"/);
   assert.match(supply,/"action":"observe".*"item":"advanced-circuit".*"scope":"supply"/);
 });
+
+test('platform PNG draws empty space, foundation and footprints without a phantom player',()=>{
+  const png=renderMap({platform:'Sunward',position:{x:0,y:0},tile_runs:[{name:'space-platform-foundation',x:0,y:0,count:1}],
+    entities:[{name:'crusher',type:'assembling-machine',position:{x:1,y:1},box:{left_top:{x:0,y:1},right_bottom:{x:2,y:2}}}]},2);
+  const pixels=inflateSync(png.subarray(41,41+png.readUInt32BE(33)));
+  const pixel=(x:number,y:number)=>[...pixels.subarray(y*(40*3+1)+1+x*3,y*(40*3+1)+4+x*3)];
+  assert.deepEqual(pixel(20,20),[79,88,100]);
+  assert.deepEqual(pixel(12,20),[19,25,31]);
+  assert.deepEqual(pixel(20,28),[77,154,160]);assert.deepEqual(pixel(28,28),[77,154,160]);
+});

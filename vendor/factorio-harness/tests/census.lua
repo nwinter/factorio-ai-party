@@ -138,3 +138,44 @@ eq(localstate.census.job.silos,nil)
 localstate.census.job.stage='done'; localstate.census.job.base.x={}; C.tick(8003)
 list,asof=C.silos{surface=surface,force=force}; eq(#list,0); eq(asof,nil)
 print('census silo index reload: ok')
+
+-- Crop towers and their ghosts use the same sliced census pass, and dispatch
+-- agriculture as a read without touching a character or launching a new scan.
+do
+  local built={valid=true,type='agricultural-tower',name='agricultural-tower',unit_number=43,position={x=10,y=0},surface=surface,force=force,
+    status=0,get_inventory=function() return {get_contents=function() return {} end} end}
+  local ghost={valid=true,type='entity-ghost',name='entity-ghost',ghost_name='agricultural-tower',ghost_type='agricultural-tower',
+    position={x=20,y=0},surface=surface,force=force}
+  local state2={};local pending=true
+  local C2=dofile('mod/agent-harness_0.1.0/census.lua'){state=function() return state2 end,
+    walk={every=function() return 1 end,due=function() return true end,start=function() return {} end,
+      band=function() if pending then pending=false;return {built,ghost} end end}}
+  C2.tick(9000);C2.tick(9001);C2.tick(9002)
+  eq(#state2.census.job.towers[1],2)
+  local rows,asof=C2.towers(force,surface);eq(asof,nil)
+  state2.census.job.stage='done';state2.census.job.base.x={};C2.tick(9003)
+  rows,asof=C2.towers(force,surface);eq(#rows,2);eq(asof,9000)
+  storage.agent_harness.census=state2.census
+  defines.inventory.agricultural_tower_input=98
+  local view=grok('observe',{scope='agriculture',surface='nauvis'})
+  eq(#view.towers,2);eq(view.towers[1].state,'built');eq(view.towers[2].state,'ghost')
+  runtime.on_event{name=defines.events.on_entity_died,entity=built,tick=game.tick}
+  built.valid=false
+  view=grok('agriculture',{})
+  eq(view.towers[1].state,'destroyed');eq(view.towers[1].position.x,10)
+end
+print('census agriculture: ok')
+-- observe platform must dispatch without reading the caller's absent character.
+do
+  local bot=runtime.bots.record(runtime.bots.index_of('grok'))
+  local saved=bot.character
+  bot.character=nil;bot.travel={state='aboard',platform='Sunward'}
+  local ps={valid=true,name='platform-test',index=17}
+  ps.find_entities_filtered=function(q) assert(q.area and q.limit);return {} end
+  ps.find_tiles_filtered=function(q) assert(q.area and q.name=='space-platform-foundation');return {} end
+  force.platforms={{valid=true,name='Sunward',surface=ps,hub={position={x=0,y=0}}}}
+  local view=grok('observe',{platform='Sunward',radius=16,tiles=true})
+  eq(view.platform,'Sunward');eq(view.position.x,0);eq(view.player,nil)
+  bot.character=saved;bot.travel=nil
+end
+print('bodiless platform observe: ok')

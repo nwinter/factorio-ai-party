@@ -50,7 +50,7 @@ export function utf8Chunks(text: string, max: number): string[] {
 }
 
 /** Read-only views the runtime serves through `observe`. */
-const OBSERVE_SCOPES = new Set(['map', 'nearest', 'craftable', 'scan', 'power', 'grid', 'rates', 'bottleneck', 'stock', 'platforms', 'labs', 'science', 'supply', 'sleep_check']);
+const OBSERVE_SCOPES = new Set(['agriculture', 'map', 'nearest', 'craftable', 'scan', 'power', 'grid', 'rates', 'bottleneck', 'stock', 'platforms', 'labs', 'science', 'supply', 'sleep_check']);
 
 export class Harness {
   /** `bot` addresses a script-driven bot by name instead of a player. */

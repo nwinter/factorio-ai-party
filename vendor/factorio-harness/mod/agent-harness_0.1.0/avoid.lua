@@ -297,8 +297,16 @@ return function(api)
   -- of every disc. Blobs in skip are left out. Returns the corners to walk
   -- through (b last), {} when a-b is clear, nil when there is no way.
   local function clear(a, b, discs)
+    local dx, dy = b.x-a.x, b.y-a.y
+    local length = dx*dx + dy*dy
+    local x0, x1, y0, y1 = math.min(a.x,b.x), math.max(a.x,b.x), math.min(a.y,b.y), math.max(a.y,b.y)
     for _, o in ipairs(discs) do
-      if seg_dist(a, b, o) < o.r - 0.01 then return false end
+      local r = o.r - 0.01
+      if o.x+r > x0 and o.x-r < x1 and o.y+r > y0 and o.y-r < y1 then
+        local t = length > 0 and math.max(0,math.min(1,((o.x-a.x)*dx+(o.y-a.y)*dy)/length)) or 0
+        local x, y = a.x+t*dx-o.x, a.y+t*dy-o.y
+        if x*x+y*y < r*r then return false end
+      end
     end
     return true
   end
@@ -317,6 +325,26 @@ return function(api)
         local free = true
         for dj, w in ipairs(discs) do if dj ~= di and dist(q, w) < w.r then free = false; break end end
         if free then nodes[#nodes+1] = q end
+      end
+    end
+    -- Octagons leave no vertices inside some real gaps. Add the throat and its
+    -- two approaches, testing every new point and edge against the original discs.
+    for i, o in ipairs(discs) do
+      for j = i + 1, #discs do
+        local w = discs[j]
+        local d = dist(o, w)
+        local gap = d - o.r - w.r
+        if gap > 0.1 and gap < 12 then
+          local ux, uy = (w.x - o.x) / d, (w.y - o.y) / d
+          local x, y = o.x + ux * (o.r + gap / 2), o.y + uy * (o.r + gap / 2)
+          local length = math.max(o.r, w.r) + 2
+          for _, step in ipairs({-1, -0.5, 0, 0.5, 1}) do
+            local q = {x=x - uy * length * step, y=y + ux * length * step}
+            local free = true
+            for _, other in ipairs(discs) do if dist(q, other) < other.r then free = false; break end end
+            if free then nodes[#nodes+1] = q end
+          end
+        end
       end
     end
     nodes[#nodes+1] = b
@@ -342,6 +370,43 @@ return function(api)
     local out, i = {}, goal
     while i and i ~= 0 do table.insert(out, 1, {x=nodes[i].x, y=nodes[i].y}); i = came[i] end
     return out
+  end
+
+  -- When the padded route is blocked or takes a large detour, test the actual
+  -- reaches with half a tile of clearance. Every returned engine path is still
+  -- checked against actual reach, and margin crossings are recorded on last.
+  function M.route(a, b, blobs, skip)
+    local full = M.detour(a,b,blobs,skip)
+    local function length(vias)
+      if not vias then return math.huge end
+      if #vias == 0 then return dist(a,b) end
+      local total, prev = 0, a
+      for _, v in ipairs(vias) do total=total+dist(prev,v); prev=v end
+      return total
+    end
+    local full_length = length(full)
+    if full_length <= dist(a,b)*1.5 then return full end
+    local tight = {}
+    for _, bl in ipairs(blobs) do
+      local copy = {members={}}
+      for _, m in ipairs(bl.members) do
+        copy.members[#copy.members+1] = {x=m.x,y=m.y,r=m.attack and m.r or math.min(m.r,m.range+0.5)}
+      end
+      tight[#tight+1]=copy
+    end
+    local narrow = M.detour(a,b,tight,skip)
+    if narrow and length(narrow) < full_length*0.8 then
+      -- The engine can bend a long, clear corridor leg through a neighbouring
+      -- chunk's nest. Short local goals keep the request in the corridor.
+      local legs, prev = {}, a
+      for _, v in ipairs(narrow) do
+        local count = math.max(1,math.ceil(dist(prev,v)/16))
+        for i=1,count do legs[#legs+1]={x=prev.x+(v.x-prev.x)*i/count,y=prev.y+(v.y-prev.y)*i/count} end
+        prev=v
+      end
+      return legs, true
+    end
+    return full
   end
 
   -- A walk's or drive's setup: mode, the final goal, and the chunks along
@@ -429,6 +494,12 @@ return function(api)
     end
     return skip
   end
+  local function passed(f, m, d)
+    f.passed = f.passed or {}
+    local k = m.name .. at(m)
+    local old = f.passed[k]
+    if not old or d < old.d then f.passed[k] = {d=d, text=string.format('%s %s: %.1f tiles (%s %g)', m.name, at(m), d, m.spawner and 'sight' or 'range', m.range)} end
+  end
   -- A path found for a walk or drive: true to take it. Otherwise it waits for
   -- chunks (scanning), goes around a nest (the first leg asked for), or ends
   -- (unsafe: no way round).
@@ -439,7 +510,7 @@ return function(api)
     local here = {x=p.position.x, y=p.position.y}
     local pts = {here}
     for _, w in ipairs(path) do pts[#pts+1] = w.position end
-    local final = f.goal
+    local final = nav.leg and nav.position or f.goal
     local R = max_reach(f.mode)
     local near = M.chunks_near(pts, R)
     local need = M.missing(surface, near)
@@ -458,7 +529,14 @@ return function(api)
     local blobs = M.blobs(surface, near, f.mode)
     local skip = fit(blobs, here, final, f)
     local bi, m, d = M.crossing(pts, blobs, skip)
-    if not bi then return true end
+    if not bi then
+      -- Endpoint fitting can shrink a short corridor leg's margin. Still report
+      -- where the accepted path passes inside the originally requested margin.
+      for _, bl in ipairs(blobs) do for _, mm in ipairs(bl.members) do mm.r=mm.range+f.mode.pad end end
+      local _, mm, dd = M.crossing(pts,blobs,skip)
+      if mm and dd >= mm.range then passed(f,mm,dd) end
+      return true
+    end
     -- Through a nest's reach: plan with every read chunk near the path and near the straight way to the goal.
     local around = M.chunks_near({here, final}, R)
     for _, ch in ipairs(near) do around[#around+1] = ch end
@@ -466,26 +544,44 @@ return function(api)
     skip, bi = fit(blobs, here, final, f), nil
     for bj, b in ipairs(blobs) do
       for _, mm in ipairs(b.members) do
-        if mm.x == m.x and mm.y == m.y and mm.name == m.name then bi = bj end
+        if mm.x == m.x and mm.y == m.y and mm.name == m.name then bi, m = bj, mm end
       end
     end
     local bl = blobs[bi] or {x=m.x, y=m.y, r=m.r, members={m}}
     if not blobs[bi] then blobs[#blobs+1] = bl end
     f.crossed = string.format('%s %s (%s %g + %g) at %.1f tiles', m.name, at(m), m.spawner and 'sight' or 'range', m.range, f.mode.pad, d)
     nav.found = nil
+    -- The retry budget must not reject a path solely for crossing a margin.
+    -- crossing chose the deepest pass relative to actual reach, across every disc.
+    local function margin_only()
+      if d < m.range then return false end
+      passed(f,m,d)
+      return true
+    end
+    if f.margin_route and margin_only() then return true end
     if f.detours >= M.MAX_DETOURS then
+      if margin_only() then return true end
       nav.path_state = 'unsafe'
-      f.why = string.format('every path found passes within reach of %s; %d detours tried', f.crossed, f.detours)
+      f.why = string.format('path still passes within reach of %s; %d detours tried', f.crossed, f.detours)
       return false
     end
     f.detours = f.detours + 1
-    -- A second time through the same nest: its discs grow by 8 for the plan.
+    -- A repeated crossing widens only that member, preserving gaps to other discs.
     f.grow = f.grow or {}
     local key = blob_key(bl)
     if f.planned and f.planned[key] then
-      for _, mm in ipairs(bl.members) do mm.r = math.min(mm.r + 8, dist(mm, here) - 0.5); f.grow[member_key(mm)] = mm.r end
+      local radius = math.min(m.r + 8, dist(m, here) - 0.5, dist(m, final) - 0.5)
+      for _, other in ipairs(blobs) do
+        for _, mm in ipairs(other.members) do
+          local gap = dist(m, mm) - m.r - mm.r
+          if mm ~= m and gap > 0 then radius = math.min(radius, m.r + math.max(0, gap - 0.5)) end
+        end
+      end
+      m.r = math.max(m.r, radius); f.grow[member_key(m)] = m.r
     end
-    local vias = M.detour(here, final, blobs, skip)
+    local vias, narrow
+    if nav.vehicle then vias=M.detour(here,final,blobs,skip) else vias,narrow=M.route(here,final,blobs,skip) end
+    if narrow then f.margin_route=true end
     -- The straight line is clear and the engine's path bends into the reach
     -- (water or cliffs in the way): the disc it entered grows past the line,
     -- so the way round has corners that hold the path off it.
@@ -494,15 +590,7 @@ return function(api)
       if r > m.r then m.r = r; f.grow[member_key(m)] = r end
       vias = M.detour(here, final, blobs, skip)
     end
-    -- No way round, but the path stays out of the weapon's own reach (only
-    -- the margin is crossed): walked, and said.
-    if (not vias or #vias == 0) and d >= m.range then
-      f.passed = f.passed or {}
-      local k = m.name .. at(m)
-      local old = f.passed[k]
-      if not old or d < old.d then f.passed[k] = {d=d, text=string.format('%s %s: %.1f tiles (%s %g)', m.name, at(m), d, m.spawner and 'sight' or 'range', m.range)} end
-      return true
-    end
+    if (not vias or #vias == 0) and margin_only() then return true end
     if not vias or #vias == 0 then
       nav.path_state = 'unsafe'
       f.why = string.format('no way to %s around %s: the path passes %s', at(final), M.name(bl), f.crossed)
@@ -516,18 +604,20 @@ return function(api)
         if not f.planned[k] then f.planned[k] = true; f.avoided[#f.avoided+1] = M.name(o) end
       end
     end
+    if nav.leg then for _, v in ipairs(f.vias or {}) do vias[#vias+1] = v end end
     f.vias = vias
     api.leg(p, nav)
     return false
   end
-  -- The next leg: the next corner (3 tiles is near enough) or the goal.
+  -- Corners have only one tile of extra clearance; stopping three tiles early cuts them.
   function M.next_leg(p, nav)
     local f = nav.foes
     local v = f and f.vias and table.remove(f.vias, 1)
     if not v then return false end
     local last = #f.vias == 0
     nav.position = v
-    nav.tolerance = last and f.tolerance or 3
+    nav.tolerance = last and f.tolerance or (nav.vehicle and 3 or 0.25)
+    nav.precise_corner = not nav.vehicle and not last and f.margin_route or nil
     nav.leg = not last or nil
     f.legs = (f.legs or 0) + 1
     return true

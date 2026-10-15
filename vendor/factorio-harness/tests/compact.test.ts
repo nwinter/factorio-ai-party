@@ -43,6 +43,7 @@ test('every Lua suite passes against the compacted modules, and the compacted bu
   const dir = await mkdtemp(join(tmpdir(), 'fh-compact-'));
   await cp('mod', join(dir, 'mod'), {recursive: true});
   await mkdir(join(dir, 'tests'));
+  await cp('tests/fixtures', join(dir, 'tests/fixtures'), {recursive:true});
   for (const file of await readdir('tests')) if (file.endsWith('.lua')) await cp(join('tests', file), join(dir, 'tests', file));
   const modDir = join(dir, 'mod/agent-harness_0.1.0');
   for (const file of await readdir(modDir)) {
