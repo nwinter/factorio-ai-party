@@ -116,6 +116,18 @@ return function(api)
     return free or sec.filters_count+1,false
   end
   function M.requests(p,a)
+    -- remove: the same as clear (Opus, d15 09:20: max 0 was his way to clear a request, and it sent what he held to
+    -- the trash).
+    if a.remove~=nil then
+      assert(type(a.remove)=='table','remove is a list of item names, as clear')
+      local b={}
+      for k,v in pairs(a) do b[k]=v end
+      local list={}
+      for _,n in ipairs(a.clear or {}) do list[#list+1]=n end
+      for _,n in ipairs(a.remove) do list[#list+1]=n end
+      b.clear=list; b.remove=nil; a=b
+    end
+    assert(a.force==nil or type(a.force)=='boolean','force must be true or false')
     local label,secs,chest=sections_of(p,a)
     -- A requester chest's "request from buffer chests" switch.
     local buffers
@@ -230,6 +242,17 @@ return function(api)
           else max_note=string.format(' (max %d dropped: under min %d)',old.max,min) end
         end
         assert(max==nil or (type(max)=='number' and max>=min),'max must be at least min ("inf" for none)')
+        -- A personal max under what the character holds (Opus, d15 09:20: max 0 to clear a request sent 6 pumpjacks and
+        -- 30 steel to the trash, and robots carried them off): the game moves what is over a max to the trash. Refused
+        -- unless force.
+        if label=='character' and type(max)=='number' and not a.force then
+          local held=try(function() return p.get_main_inventory().get_item_count{name=name,quality=quality} end)
+            or try(function() return p.get_item_count(name) end) or 0
+          if held>max then
+            error(string.format('%s max %d: you hold %d; the game moves what you hold over a personal max to your trash, and robots take it to storage. clear (or remove): ["%s"] deletes the request and keeps what you hold; force: true sets the max anyway',
+              name,max,held,name),0)
+          end
+        end
         -- The import planet: the one named, else the one the slot already has (Luna, shift12 19:30: an edit of min
         -- and max without from turned three requests from vulcanus into from nauvis).
         local from,kept=r.from,false
@@ -1284,7 +1307,7 @@ return function(api)
   end
   M.schema={
     requests={surface='optional planet name, with position: a requester or buffer chest or landing pad there by remote view, where our force sees the chunk (the reply\'s target says on which surface)',target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
-      set='array of {item,min,max? (omitted: the slot\'s max is kept while at least min; "inf": none),quality?,from? (planet to import from, platform hubs; omitted: the planet the slot already has is kept)} (a map {item: min} runs as that list); replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
+      set='array of {item,min,max? (omitted: the slot\'s max is kept while at least min; "inf": none),quality?,from? (planet to import from, platform hubs; omitted: the planet the slot already has is kept)} (a map {item: min} runs as that list); replaces that item\'s slot',clear='array of item names whose request slot is deleted (what is held stays)',remove='the same as clear',force='true: set a personal max under what you hold (the game moves the rest to your trash); without it such a set is refused',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       active='boolean: switch the section on or off (the GUI\'s checkbox; a section that is off requests nothing)',
       construction_requests='platform hub: boolean, the hub\'s Request missing construction materials (on: the game keeps a section requesting what the platform\'s ghosts need; a paste of a hub blueprint that has it off switches it off, and paste switches it back on)',
       returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"]}], changed_section (only when a slot was set or cleared or the section switched; else unchanged), stored (each item this call set or cleared, as read back from its slot: "processing-unit 0..400 from vulcanus (import planet kept: not named in this edit) (was 0..200 from vulcanus)", "coal: cleared (was coal=500 from vulcanus)"), note (sections that are off but hold requests); on a platform hub: construction_requests (on: its controlled section lists what the ghosts need), construction_overlap (items a manual section requests too: the hub requests the sum), over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); call with no set/clear/active to just read'},

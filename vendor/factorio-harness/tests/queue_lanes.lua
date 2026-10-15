@@ -12,6 +12,8 @@ local handlers={
   drop=function() calls[#calls+1]='drop'; s.drop=true; return {until_tick=game.tick+30} end,
   platform_schedule=function() calls[#calls+1]='schedule' end,
   circuit_set=function() calls[#calls+1]='circuit' end,
+  place_ghosts=function() calls[#calls+1]='ghosts'; return {placed=2} end,
+  deconstruct=function() calls[#calls+1]='decon'; return {marked=3} end,
   platforms=function() calls[#calls+1]='read'; return {platforms={}} end,
   observe=function() return {} end,
   inspect=function() error('entity no longer visible') end,
@@ -75,6 +77,10 @@ for _,action in ipairs{'walk','transfer','inventory','queue_submit'} do
 end
 fails(function() h.queue_submit(p,remote{steps={{action='observe'}}}) end,'steps[1]')
 fails(function() h.queue_submit(p,remote{steps={{action='circuit_set'}}}) end,'requires platform')
+-- Astra (d15 06:23): platform place_ghosts and deconstruct in the remote lane, and a wait for the foundation.
+fails(function() h.queue_submit(p,remote{steps={{action='place_ghosts',args={entities={}}}}}) end,'remote lane place_ghosts requires platform')
+fails(function() h.queue_submit(p,remote{steps={{action='deconstruct',args={area={}}}}}) end,'remote lane deconstruct requires platform')
+fails(function() h.queue_submit(p,remote{steps={{action='wait_until',args={['until']='ghosts_waiting'}}}}) end,'platform_built')
 fails(function() h.queue_submit(p,remote{steps={},guards={{when={['until']='researched'},steps={{action='walk'}}}}}) end,'guards[1]')
 fails(function() h.queue_submit(p,remote{steps={},guards={{when={['until']='health_below',fraction=.5}}}}) end,'guards[1]')
 fails(function() h.queue_repeat(p,remote{steps={{action='platforms'}},condition={['until']='health_below',fraction=.5}}) end,'condition')

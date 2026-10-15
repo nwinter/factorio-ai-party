@@ -71,7 +71,27 @@ runtime.operator.bot_create('astra')
 local A=runtime.avoid
 -- (round1950a: spawners, 40 tiles, and the areas under attack now count by default too)
 eq(A.mode(nil).pad,4); eq(A.mode(nil).spawners,true); eq(A.mode(nil).attacks,true); eq(A.mode(false),nil); eq(A.mode(true).spawners,true); eq(A.mode(true).pad,8); eq(A.mode(12).pad,12)
-fails(function() A.mode('yes') end,'avoid_enemies must be true, false or a margin 0..32 tiles')
+fails(function() A.mode('yes') end,'avoid_enemies must be true, false, a margin 0..32 tiles or {distance: N}')
+-- {distance: N} (Opus, d15 07:50): N tiles from every worm and spawner, their reach not counted.
+eq(A.mode({distance=12}).distance,12); eq(A.mode({distance=12}).pad,0)
+eq(A.describe(A.mode({distance=12})),'worms and spawners (12 tiles from each; their reach not counted) and areas under attack now (24 tiles)')
+fails(function() A.mode({distance=2}) end,'avoid_enemies {distance: N}: N 4..64')
+fails(function() A.mode({distance=12,pad=3}) end,'avoid_enemies {distance: N}')
+do
+  -- the discs: every worm and spawner N tiles round, whatever its reach
+  local chunks=A.chunks_near({{x=0,y=0}},16)
+  local st=storage.agent_harness
+  st.enemy_chunks=st.enemy_chunks or {}
+  local kept=st.enemy_chunks[surface.index]
+  local c={}
+  st.enemy_chunks[surface.index]=c
+  c[chunks[1][3]]={t=game.tick,list={{x=10,y=0,name='medium-worm-turret'},{x=60,y=0,name='biter-spawner',spawner=true}}}
+  local blobs=A.blobs(surface,{chunks[1]},A.mode({distance=12}))
+  local rs={}
+  for _,b in ipairs(blobs) do for _,m in ipairs(b.members or {b}) do rs[#rs+1]=m.r end end
+  table.sort(rs); eq(rs[1],12); eq(rs[#rs],12)
+  st.enemy_chunks[surface.index]=kept
+end
 eq(A.describe(A.mode(nil)),'worms (range + 4), spawners (40 tiles + 4) and areas under attack now (24 tiles + 4)')
 eq(A.describe(A.mode(true)),'worms (range + 8), spawners (40 tiles + 8) and areas under attack now (24 tiles + 8)')
 -- A detour clears the disc; a clear line needs none; a goal walled in by discs has no way.

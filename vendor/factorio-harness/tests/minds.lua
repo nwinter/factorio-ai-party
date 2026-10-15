@@ -187,8 +187,9 @@ eq(r.corrected,'transfer {"count":1,"direction":"to_player","item":"copper-plate
 assert(r.entities,'ran as a batch')
 r=sol('collect',{position={3.5,3.5},item='copper-plate'})
 eq(r.corrected,'collect {"item":"copper-plate","positions":[[3.5,3.5]]} (position is positions (a list))')
+-- feed takes position itself since d15 (Muse 06:28: the radius's centre, or alone the machine there): no correction.
 r=sol('feed',{position={x=3.5,y=3.5}})
-eq(r.corrected,'feed {"positions":[{"x":3.5,"y":3.5}]} (position is positions (a list))')
+eq(r.corrected,nil)
 -- A plain position where position is taken, and anything with radius, are left alone.
 eq(sol('inspect',{position={x=3.5,y=3.5}}).corrected,nil)
 fails(function() sol('collect',{radius=5,position={x=1,y=1},item='copper-plate'}) end,'unknown argument position for collect')

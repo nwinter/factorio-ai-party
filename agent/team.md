@@ -83,7 +83,7 @@ already targets your character.
   20 minutes can be taken the same way; the owner hears it.
 - `./fh board update --args '{"id":N,"title":"...","needs":{"iron-plate":300}}'` corrects an item's title and what it
   asks for (its poster or owner; anyone after the same 20 quiet minutes); `board {id}` keeps the change in `history`.
-- `queue_submit {lane:"remote",steps:[...]}` runs platform waits, drops, schedules, platform configuration and body-independent reads alongside body work; queue controls accept the same lane, and status shows both.
+- `queue_submit {lane:"remote",steps:[...]}` runs platform waits, drops, schedules, platform configuration, platform `place_ghosts`/`deconstruct` (wait `{until:"platform_built",platform}` for the foundation) and body-independent reads alongside body work; queue controls accept the same lane, and status shows both.
 - `drill_sites {position,surface?}` lists nearest visible same-resource placements for one depleted drill, with mining-area amounts and placement checks; `resource` supplies the name if no previous mining target was recorded.
 - `./fh view platform=Sunward --out sunward.png` shows platform foundation and structure footprints; `agriculture {surface:"gleba"}` lists towers, ghosts and recorded tower-loss positions.
 - `game_alerts {kind:"no_power"}` groups connected machines without power by electric network, including isolated drill networks; `move_to` reports narrow-corridor margin crossings in `last.passed_within_margin`.
@@ -109,6 +109,7 @@ already targets your character.
   the ingredient most makers lack (`chemical-science-pack: 9 of 14 makers lack advanced-circuit, ...; plastic-bar:
   4 of 4 working, made 30/min, used 52/min`), and `chain_tree` lists every step down to ores and fluids; a mined or pumped step names its drills or pumps, their states
   (working, output full, no resource left) and what they put into.
+- `./fh call fuel_budget` (optional `"surface"`): each fuel made and used per minute, and each group of fuel users (boilers, furnaces, burner drills, heating towers, `recipe plastic-bar`, ...) with what it burns per minute and the minutes its own fuel lasts, fewest first.
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
   `"surface"`) reads one item: where it sits (chests by kind, belts (`belt_lines`: the 5 belt lines holding the most, with their ends and the tile with the most), machine outputs, inserter hands, robots,
   characters), each logistic network's stock of it (free and reserved, and which requesters the reserved stock is for),
@@ -386,6 +387,7 @@ already targets your character.
   `"dry_run":true`; a tile anything stands on is refused, naming it. `construct` mines tiles marked for deconstruction too.
   Entity `mine` takes one `position` per call or queue step; its `positions`/`area` require `tiles: true`.
   `mine {position, count: 200}` on ore, coal or stone mines 200 units in one call (outcome `mined`), going on to the next tile in reach.
+  `move_to {avoid_enemies: {distance: 12}}` keeps every worm and spawner 12 tiles off, their reach not counted. `feed` takes `position` with `radius` (its centre); `feed {area}` over 64 machines walks one tour; `refuel {from: "nearest", from_radius: 128}` looks farther for fuel.
 - `build {item: "rail-ramp", position, direction}` and `construct` on a ramp ghost build it by hand from one held ramp;
   the centre snaps to the ramp grid, with the same collision and reach checks.
 - A `craft` stock refusal names stocking chests and queue-step `on_fail`: `abort` pauses, `skip` continues,
@@ -407,6 +409,7 @@ already targets your character.
   in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`
   reads back the conditions, settings, each wire's far end and the signals on each network now. A logistic condition
   reads the network whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met).
+  Requester and buffer chests: `read: {contents: true}` or `set_requests: true`, and `enable` (the chest's circuit condition); provider chests send contents whenever wired; no chest has a logistic condition. A roboport: `read: {logistic_network_contents: true}`.
 - Landfill on Gleba wetland goes in only where no slipstack, cuttlepop, hairyclubnub or stromatolite stands (marked or
   not, for a tile laid by hand): a dry run and a failed build name them (`blocked by slipstack tree at (x,y): mine it
   first`); `place_ghosts` marks them for removal first (`tile_obstacles_marked`) and `construct` mines them before it
@@ -536,6 +539,7 @@ already targets your character.
 - `./fh call requests --args '{"platform":"NAME"}'` shows each hub section; `off: true` means it requests nothing
   (`"section":N,"active":true` switches it on), and each request shows the planet it imports from. A `set` without
   `section` edits the slot of the section that already requests the item (`sections_note` names a shared group or a second section).
+  Personal requests: `clear` (or `remove`): `["pumpjack"]` deletes the request and keeps what you hold; a `max` under what you hold is refused without `force: true` (the game trashes the rest).
 - `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without
   a planet); it is also a `wait_until` condition, a queue guard and an order's `when`.
   `platform_left Sunward [nauvis]` waits for its departure; the team alerts say when a platform stops at or leaves

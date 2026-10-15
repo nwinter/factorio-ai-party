@@ -772,4 +772,15 @@ do
   eq(r2.stored[1]:sub(1,13),'coal: cleared')
   table.remove(p.force.platforms)
 end
+-- Personal max under what you hold (Opus, d15 09:20): refused without force; remove is clear.
+do
+  local main={get_item_count=function(q) return (type(q)=='table' and q.name or q)=='pumpjack' and 6 or 0 end}
+  p.get_main_inventory=function() return main end
+  prototypes.item.pumpjack={}
+  space.requests(p,{set={{item='pumpjack',min=0,max=10}}})
+  fails(function() space.requests(p,{set={{item='pumpjack',min=0,max=0}}}) end,'pumpjack max 0: you hold 6; the game moves what you hold over a personal max to your trash')
+  local r=space.requests(p,{set={{item='pumpjack',min=0,max=0}},force=true}); eq(r.changed_section,1)
+  r=space.requests(p,{remove={'pumpjack'}}); eq(r.stored[1]:sub(1,17),'pumpjack: cleared')
+  p.get_main_inventory=nil
+end
 print('space: ok')

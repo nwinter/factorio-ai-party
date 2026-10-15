@@ -515,8 +515,15 @@ do
   eq(#r,1)
   eq(r[1].line,'2 (1 biochamber, 1 heating-tower) out of fuel near (48,47); refuel; 3 biochamber around it burn spoiling fuel, 2 of them within 60s; '
     ..'the first: nutrients spoils in 4s at (43.5,34.5)')
+  -- Heating towers (Gemini, d15 07:54): empty and under 500 C, their own group with the temperature; hotter, not said.
+  ent('nauvis','heating-tower','reactor',146.5,48.5,{status=3,temperature=320,burner={inventory={is_empty=function() return true end},remaining_burning_fuel=0}})
+  ent('nauvis','heating-tower','reactor',246.5,48.5,{status=3,temperature=640,burner={inventory={is_empty=function() return true end},remaining_burning_fuel=0}})
   game.tick=game.tick+600
   eq(R.read(sol,{kind='no_fuel'}).groups[1].line:match('the first: .*$'),'the first: nutrients spoiled at (43.5,34.5)', 'worked out when shown')
+  game.tick=game.tick+1801
+  local h=R.read(sol,{kind='heat_no_fuel'}).groups
+  eq(#h,1)
+  eq(h[1].line,'1 heating-tower out of fuel and under 500 C near (147,49): heating-tower (146.5,48.5): 320 C, fuel slot empty; refuel')
   ents.nauvis={}
 end
 -- A burner its full burnt-result slot stopped (Sol, shift14 03:54: two agricultural science biochambers read working and

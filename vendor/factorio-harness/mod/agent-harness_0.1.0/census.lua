@@ -122,9 +122,39 @@ return function(api)
     return out
   end
   -- One entity into the pass.
+  -- Fuel users for the fuel budget (fuelbudget.lua; Opus, d15 06:20 and 07:50): entities with a burner (boilers, stone
+  -- and steel furnaces, burner drills and inserters, heating towers, burner generators), and machines whose recipe
+  -- takes a fuel item as an ingredient (plastic from coal, ...). Entity references only, at most FUEL_MAX a surface.
+  local FUEL_MAX = 4096
+  local burner_of, fuel_item = {}, {}
+  local function has_burner(name)
+    local b = burner_of[name]
+    if b == nil then b = try(function() return prototypes.entity[name].burner_prototype ~= nil end) == true; burner_of[name] = b end
+    return b
+  end
+  local function is_fuel(item)
+    local f = fuel_item[item]
+    if f == nil then f = (try(function() return prototypes.item[item].fuel_value end) or 0) > 0; fuel_item[item] = f end
+    return f
+  end
+  local function takes_fuel(e)
+    local ok, r = pcall(e.get_recipe)
+    if not (ok and r) then return false end
+    for _, ing in ipairs(try(function() return r.ingredients end) or {}) do
+      if (ing.type == nil or ing.type == 'item') and is_fuel(ing.name) then return true end
+    end
+    return false
+  end
   local function read_entity(job, s, e)
     if not e.valid then return end
     local t, name = e.type, e.name
+    if job.fuel and t ~= 'car' and t ~= 'locomotive' and t ~= 'spider-vehicle' and t ~= 'character' then
+      local list = job.fuel[s.index]
+      if (not list or #list < FUEL_MAX) and (has_burner(name) or ((t == 'assembling-machine' or t == 'furnace') and takes_fuel(e))) then
+        if not list then list = {}; job.fuel[s.index] = list end
+        list[#list+1] = e
+      end
+    end
     if api.observe_entity then api.observe_entity(e) end
     -- A pass already running before this index was installed stays incomplete for silo discovery.
     if (t == 'agricultural-tower' or (t == 'entity-ghost' and e.ghost_type == 'agricultural-tower')) and job.towers then
@@ -258,7 +288,7 @@ return function(api)
     for _, s in ipairs(surfaces()) do list[#list+1] = s.index end
     local want_ore = st.ore_asked and tick - st.ore_asked <= ORE_WANT and (not st.ore_tick or tick - st.ore_tick >= ORE_EVERY)
     return {start=tick, surfaces=list, si=1, steps=0, every=walk.every(st.steps, PERIOD),
-      machines=0, starved=0, where={}, mach={}, silos={}, towers={}, building_counts={},
+      machines=0, starved=0, where={}, mach={}, silos={}, towers={}, building_counts={}, fuel={},
       base={x={}, y={}, c={}, w={}, h={}, turrets={}, blocks={}, top=0, n=0}, want_ore=want_ore or nil, stage='walk'}
   end
   -- Bands of chunk rows over a tile box, at most `width` chunks a band: {X0, Y0, X1, Y1, first_x, last_x, first_y, last_y}.
@@ -425,7 +455,7 @@ return function(api)
         buildings=#b.x, core=b.core_out, turrets=has and b.turrets or {}}
       st.done = {start=job.start, tick=game.tick, steps=job.steps, extras={electric_machines=job.machines, starved=job.starved},
         building_counts=job.building_counts,building_counts_as_of=job.building_counts and job.start or nil,
-        where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers}
+        where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers, fuel=job.fuel}
       if b.ore then st.ore = {start=job.start, ore=b.ore}; st.ore_tick = job.start end
       st.steps = job.steps
       st.job = nil
@@ -456,6 +486,11 @@ return function(api)
     return d and d.towers and d.towers[surface.index] or {}, d and d.towers and d.start or nil
   end
 
+  -- The fuel users the last pass found on a surface (entity references; fuelbudget.lua reads their state now).
+  function M.fuel_users(surface)
+    local d = (api.state().census or {}).done
+    return d and d.fuel and d.fuel[surface.index] or nil, d and d.fuel and d.start or nil
+  end
   function M.buildings(force)
     local d=(api.state().census or {}).done
     if force.name~='player' or not d then return nil end

@@ -39,8 +39,9 @@ return function(api)
     collector_path_blocked='asteroid collector path blocked', pipeline_overextended='pipeline overextended (flow stops)',
     no_platform_storage='platform hub storage full', platform_tile_building_blocked='platform tile building blocked',
     input_spoilage='short of ingredients with spoilage in their input (their recipes do not take it)',
-    requester_full='requester chests with every slot taken while a request is short'}
-  local HINT = {no_power='fh call power', unconnected='fh call power', low_power='more power: fh call power', no_fuel='refuel',
+    requester_full='requester chests with every slot taken while a request is short',
+    heat_no_fuel='heating towers out of fuel and under 500 C (heat exchangers take 500 C and more)'}
+  local HINT = {no_power='fh call power', unconnected='fh call power', low_power='more power: fh call power', no_fuel='refuel', heat_no_fuel='refuel',
     no_ammo='rearm', flamer_dry='fh call flamers', no_material_for_construction='craft or bring the items for the ghosts',
     not_enough_construction_robots='more construction robots in the roboports', not_enough_repair_packs='repair packs into a roboport or storage chest',
     no_storage='a storage chest in the network', train_out_of_fuel='refuel the locomotive'}
@@ -232,7 +233,7 @@ return function(api)
   -- within seconds): per cell and name, in mining['rot|surface|cx,cy'][name], how many burn it, how many of those
   -- spoil within ROT_SOON ticks, and the first to spoil (its stack's spoil_tick, item and position). An out-of-fuel
   -- group says it for its names (M.text, worked out when shown).
-  local ROT_SOON = 3600
+  local ROT_SOON, HEAT_WARN = 3600, 500
   local function spoiling(e, s, mining)
     if not (mining and api.first_spoil) then return end
     local burner = e.burner
@@ -284,6 +285,18 @@ return function(api)
           local inv = try(function() return e.get_inventory(defines.inventory.turret_ammo) end)
           local tk, td = turret_kind(e, inv and inv.get_item_count() == 0, tmem)
           if tk then kind, detail = tk, td end
+        elseif e.type == 'reactor' and e.burner then
+          -- Heating towers (Gemini, d15 07:54: a dedicated warning when they run out of fuel): a burner reactor with an
+          -- empty fuel slot and nothing burning, under HEAT_WARN C; one still hotter is not said (feeds gated by its
+          -- temperature empty its slot by design).
+          local inv = try(function() return e.burner.inventory end)
+          local empty = inv and try(function() return inv.is_empty() end)
+          local burning = try(function() return e.burner.currently_burning end)
+          local left = try(function() return e.burner.remaining_burning_fuel end) or 0
+          local temp = try(function() return e.temperature end)
+          if empty and not burning and left <= 0 and temp and temp < HEAT_WARN then
+            kind, detail = 'heat_no_fuel', string.format('%s %s: %d C, fuel slot empty', e.name, at_text(e.position), math.floor(temp))
+          elseif kind == 'no_fuel' and temp and temp >= HEAT_WARN then kind = nil end
         elseif e.type == 'fluid-turret' then
           -- all it holds, its own buffer too (flameroil.lua; fluidbox[1] alone reads empty once the pipe drains)
           local amount = try(function() return (flameroil.read(e)) end)
@@ -776,6 +789,13 @@ return function(api)
       return string.format('%s short of ingredients with spoilage in their input near (%d,%d)%s%s: %s%s', what(g), g.center.x, g.center.y,
         g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '')
+    end
+    if g.kind == 'heat_no_fuel' then
+      -- '2 heating-tower out of fuel and under 500 C near (40,12): heating-tower (40.5,12.5): 412 C, fuel slot empty; ...; refuel'
+      return string.format('%s out of fuel and under 500 C near (%d,%d)%s%s: %s%s%s', what(g), g.center.x, g.center.y,
+        g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
+        table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '',
+        not plain and '; refuel' or '')
     end
     if g.kind == 'burnt_full' then
       -- '2 biochamber stopped by a full burnt-result slot near (57,61): biochamber (45.5,72.5): burnt-result slot spoilage*200; fuel slot spoilage*3 (not a fuel it burns: it burns nutrients); ...'

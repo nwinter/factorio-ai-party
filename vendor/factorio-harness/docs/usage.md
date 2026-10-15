@@ -319,6 +319,21 @@ fh call status
   `{entity, position, side, ghost}` (wires the game does not draw, such as radar links, are left out); `networks` per
   circuit connector `{id, signals, more}`: the signals on that network now, largest first, at most 30. An entity whose
   circuit settings were never changed shows its wires and `settings_note`.
+- Chests and roboports in `circuit_set` (Sol, Luna, d15 06:20: read contents on provider and requester chests and an
+  enable condition on a requester were refused). What 2.0.77 has for a logistic chest
+  (LuaLogisticContainerControlBehavior): `circuit_exclusive_mode_of_operation` `send_contents` | `set_requests` |
+  `none`, which the game lets be set only on requester and buffer chests (the GUI's Read contents / Set requests), and a
+  circuit condition with `circuit_condition_enabled` (the GUI's Enable/disable). So:
+  - `read: {contents: true}` on a requester or buffer chest sets `send_contents` (`false`: `none`); `set_requests:
+    true` sets `set_requests` (any other chest: refused, naming its kind).
+  - A provider or storage chest sends its contents whenever wired; 2.0.77 has no switch for it. `read: {contents:
+    true}` there changes nothing and `notes` says so; `false` is refused.
+  - `enable: "pentapod-egg >= 2"` on a logistic chest sets its circuit condition (`circuit_condition_enabled`,
+    `circuit_condition`); `notes` says which setting it is.
+  - No chest has a logistic network condition: `logistic` is refused (`no logistic network condition on any chest in
+    2.0.77`).
+  - A roboport: `read: {logistic_network_contents: true}` (or `items`, `contents`) sets `read_items_mode` `logistics`
+    (its network's items as signals); `missing_requests: true` sets `missing_requests`.
 - `circuit_set` (friction2, Opus 18:54: "production-science-pack < 1000" on an inserter whose logistic condition "< 100"
   read 101; Opus told Astra it ran, and it stayed off 10.8 min): when an enable or logistic condition is not met after
   the call, `stays_disabled` names it, with what it reads and whether this call set it, and the CLI puts it on the
@@ -333,6 +348,11 @@ fh call status
     fast-inserter (-65.5,95.5): its circuit condition ... is ignored: no red or green wire connects it, and the game
     counts a circuit condition only with a circuit connection`.
 - `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests" switch.
+- Personal requests (Opus, d15 09:20: max 0 to clear a request sent 6 pumpjacks and 30 steel to the trash, and robots
+  carried them off): a `set` whose `max` is under what the character holds of the item is refused (`pumpjack max 0: you
+  hold 6; the game moves what you hold over a personal max to your trash, and robots take it to storage. clear (or
+  remove): ["pumpjack"] deletes the request and keeps what you hold; force: true sets the max anyway`). `force: true`
+  sets it. `remove` is the same as `clear`: the slot is deleted and what is held stays.
 - A `set` or `clear` without `section` edits the item's slot in the manual section that already requests it (Grok, d15
   06:20: a hub's `set` of underground-belt 4 added a new section and the hub requested 2 plus 4). Before, it went to the
   first manual section without a logistic group, or a new one. An item no manual section requests goes there as before.
@@ -549,6 +569,9 @@ fh call status
 - `below` works on every form of `rearm`: in reach and at `positions` (or one `position`), a turret holding `below`
   rounds or more is left as it is and named in `held_enough` (`1 turret holds 10 rounds or more: gun-turret (22,6)
   12`); the others get topped up to `count` (at least `below`).
+- `feed {position, radius}` centres the radius on `position` (Muse, d15 06:28: refused before, while rearm and refuel
+  took it); `position` alone is the machine there, as `positions` with one entry. `feed {area}` with more than 64
+  machines in the area walks them as one tour, as `radius` does (`area_tour`; Opus, d15 06:20: refused 3 times).
 - `feed {clear_spoilage: true}` clears waste before topping up each machine, including on position/radius walking
   tours. It takes spoilage and spoil results of the current recipe's ingredients/products from input, output and fuel
   slots, and everything in burnt-result slots, into your inventory. Items that are valid recipe inputs or outputs
@@ -845,7 +868,11 @@ fh call status
     Haiku within 5 s); and the areas under attack now: an attack (any enemy hit on our things, as the status alerts
     count them) whose last hit came within the last 30 s is a disc of 24 tiles round its first hit + 4 (Haiku's rearm
     tour walked into attack #1550 and died; status had listed attack #1548 at its goal). `avoid_enemies: true` makes
-    the margin 8; a number 0..32 is that margin; `false` turns the check off. The reply says what is checked
+    the margin 8; a number 0..32 is that margin; `false` turns the check off. `{distance: N}` (4..64; Opus, d15
+    07:50: `false` walked him through a nest, death 32) keeps every worm and spawner the map shows N tiles off,
+    their own reach not counted (a worm's range can be more than N: big 38, behemoth 48), and areas under attack now
+    24 tiles (`avoid_enemies: worms and spawners (12 tiles from each; their reach not counted) and areas under attack
+    now (24 tiles)`). The reply says what is checked
     (`avoid_enemies: worms (range + 4), spawners (40 tiles + 4) and areas under attack now (24 tiles + 4)`). Worms
     keep to their range: they do not move, and a path 34 tiles from a medium worm is out of its reach.
   - An attack that starts after the plan, near the way on (the straight line on passes nearer its first hit than the
@@ -1313,6 +1340,16 @@ and cancellations leave the body action and body queue running. Standing orders
 run only in the body lane; remote repeats accept only `orders:"none"` (the default
 for that lane).
 
+`place_ghosts` and `deconstruct` with `platform` run in the remote lane too (Astra, d15 06:23: large ship conversions
+held the body queue and needed an outside tile checker). `wait_until {until: "platform_built", platform, entities?}`
+is met when no tile ghost (foundation) is left on that platform; with `entities: true` no entity ghost either; `saw:
+platform Starling: 3 tile ghosts left, 1 entity ghost`. It is a wait in either lane, a guard's `when` and an order's
+`when`.
+
+```sh
+fh queue submit --args '{"lane":"remote","steps":[{"action":"place_ghosts","args":{"platform":"Starling","tiles":{"name":"space-platform-foundation","area":{"left_top":{"x":-20,"y":-10},"right_bottom":{"x":20,"y":10}}}}},{"action":"wait_until","args":{"until":"platform_built","platform":"Starling","timeout":36000}},{"action":"place_ghosts","args":{"platform":"Starling","entities":[{"name":"thruster","position":{"x":0,"y":12}}]}}]}'
+```
+
 ```sh
 fh queue submit --args '{"lane":"remote","steps":[{"action":"wait_until","args":{"until":"platform_arrived","platform":"Sunward","location":"gleba","timeout":36000}},{"action":"circuit_set","args":{"platform":"Sunward","position":{"x":-10,"y":9.5},"enable":"signal-B < 0"}},{"action":"drop","args":{"platform":"Sunward","items":[{"item":"iron-plate","count":100}],"full":true}}]}'
 fh queue status --args '{"lane":"remote"}'
@@ -1602,6 +1639,30 @@ burner. The same fuel-category and enemy checks apply to source walks and burner
 pickup reach and the normal six-items-per-six-ticks pickup rate, with quality and spoilage preserved. A full
 inventory can carry a partial take to burners and return for more. `--wait` waits through an area tour as well as
 a radius tour; `last.fuel_taken` and `sources` give each source, taken count, outcome and refusal/path reason.
+`from_radius` (1..128, default 64; Haiku, d15 06:20: boilers starved when no coal lay within 64 tiles) is how far
+round each refill stop the nearest chest or belt holding the fuel is looked for (`from: "nearest"` only; at most 256
+read each time).
+
+A rearm or refuel tour that runs out of the item with stops left ends `out_of_items` only while one of those stops
+still holds less than the tour's count; if none does, it ends `topped_up` (Haiku, d15 07:50: tours whose remaining
+burners were full ended `out_of_items`, and `fh wait` exited 1). `refuel {position, radius}` centres the radius on
+`position`, as the schema said; before d15 it used your own position.
+
+`fuel_budget {surface?}` (read; Opus, d15 06:20 and 07:50: fuel starvation was behind most stalls and took chained
+bottleneck calls to find) gives, per surface:
+- `items`: each fuel item the users burn or hold (coal and solid fuel always) made and used per minute from the
+  production statistics (last 10 minutes), and what the groups below burn per minute working as now: `coal: made
+  30/min, used 60/min (production statistics, last 10 min); the groups below burn about 115.4/min working as now`.
+- `groups`, fewest minutes first: boilers, furnaces, burner drills, burner inserters, heating towers, burner
+  generators (their burners) and `recipe NAME` for machines whose recipe takes a fuel item (plastic-bar from coal).
+  Each has `machines`, `working`, `states`, `fuel [{item, burn_per_min, held, minutes_left}]`, `empty_fuel` and
+  `line`: `boilers: 27 (25 working, 2 no_fuel); coal: burns about 675/min, holds 3100 (about 4.6 min at that rate);
+  2 with empty fuel slots`. The burn rate is each working machine at full use: a burner's energy use (with its
+  consumption bonus) over the fuel's value and the burner's effectivity; a fuel ingredient at the machine's crafting
+  speed over the recipe's time. `minutes_left` counts only the fuel in the group's own slots (an ingredient user's
+  input); fuel in chests, on belts and in inserter hands is not counted.
+- The users come from the census's last background pass (`as_of`; before its first pass none are listed and
+  `pending` says so); their state is read at the call, at most 2048 a call (`capped`). The read is kept 10 seconds.
 
 ```sh
 fh call refuel --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":40,"y":20}},"from":"nearest","fuel":"coal","count":10}' --wait
@@ -3837,6 +3898,10 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     chests with every slot taken while a request of theirs has been short 60+ s, per network (up to 32 looked at, 3
     named): `requester chests with every slot taken while a request is short 60+ s: 1 in network 5 (spoilage 494 among
     their slots): requester-chest (48.5,34.5) asks bioflux: all 48 slots taken (spoilage 494 in 10 slots, ...)`.
+    `heat_no_fuel` (Gemini, d15 07:54): heating towers (a burner reactor) with an empty fuel slot and nothing burning,
+    under 500 C (heat exchangers take 500 C and more): `1 heating-tower out of fuel and under 500 C near (147,49):
+    heating-tower (146.5,48.5): 320 C, fuel slot empty; refuel`. A tower at 500 C or more with an empty slot is not
+    said (feeds gated by temperature empty it by design).
     `input_spoilage` (read with the machines' status): assemblers and furnaces short of ingredients
     (`item_ingredient_shortage`, `no_ingredients`) with spoilage their recipe does not take in their input: `2
     biochamber short of ingredients with spoilage in their input near (40,12): biochamber (40.5,10): input holds
