@@ -276,6 +276,7 @@ already targets your character.
   to its centre, as `build` measures it); in reach, at once. `{"position":{x,y},"reach":"build"}` does the same for a point.
 - `move_to --args '{"position":{"x":40,"y":5},"via":[{"x":10,"y":30},{"x":30,"y":30}]}'` walks the via points in order
   in one call, each leg pathfound and checked for enemies like a single `move_to`; `last.legs` gives each leg's outcome.
+  Without `ticks` its time limit scales with the route's length (the reply's `limit` says it).
 - `move_to` keeps out of the range of the worms the map shows, plus 4 tiles; `"avoid_enemies":true` also keeps out of
   spawners' units' sight, 8 tiles more, walking legs around a nest (`last.avoided_enemies`); no way round: `no_safe_route`.
   A goal inside such a range is refused, naming the worm and the nearest safe spot toward it; `"unsafe_goal":true` goes anyway.
@@ -285,7 +286,8 @@ already targets your character.
   corpse keeps what you carried when you died and does not expire. One inside a worm's range is left out (`left_out`).
 - A target in a narrow gap no path leads into ends the walk `arrived_near` before it (`last.pocket`; `"squeeze":true`
   walks in). Squeezed in, the walk gets out along the gaps first (`last.escaped`); closed in, `last.mine_to_get_out`
-  names everything to mine to open ground (chests, accumulators, walls, trees and rocks before poles and machines). A
+  names everything to mine to open ground (chests, accumulators, walls, trees and rocks before poles and machines); not
+  closed in but with no way to the target, `last.mine_for_a_way` names the fewest to mine for one. A
   `build` batch that fails part way, and a real `place_ghosts`, say on the `warning:` line when what they place closes
   you in. A `build` batch with `"all": true` builds every entry it can and lists the rest in `failed` with why.
   `circuit_set` says `stays disabled` there when one of the entity's conditions is not met after the call;

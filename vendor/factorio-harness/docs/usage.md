@@ -62,7 +62,9 @@ fh call status
   check by the runtime test.
 - Common wrong argument names run as meant, and the reply's `corrected` (also on the final `warning:` line) shows the
   call as it ran: `craft` `item` is `recipe`, `move_to` `target` is `position`, `scan` `names`/`types`/`range` are
-  `name`/`type`/`radius`, `chat`/`tells` `count` is `limit`, `build` `placements` is `builds`, `board_post` `text` is
+  `name`/`type`/`radius`, `chat`/`tells` `count` is `limit`, `build` `placements` (and `items`, a list of entries) is
+  `builds`, a `build` entry's `name` is `item` (round1820a, Opus: a 12-drill batch refused `item is required`; also
+  `entity` with no `item`, which otherwise names a rail planner's rail), `board_post` `text` is
   `title`, `recipes`/`technologies` `search`/`name` are `prefix`, `transfer` `to_player: true` is `direction`, and a
   `board` call with an `id` and a `note`, `owner` or `status` is `board_update`. round1650d added (Opus, Sonnet, Sol,
   Astra, Gemini, Haiku, Luna): `fh view` (observe) `center` is `position`, and `area` is its centre as `position` with
@@ -633,6 +635,15 @@ fh call status
     kind: chests, accumulators, walls, gates, solar panels, lamps, trees and rocks 1; belts, pipes, inserters and pumps
     2; poles, machines and the rest 3; cliffs, tiles and others' entities never; at most 16. On a copy of world n's
     Fulgora island a search took 2 to 8 ms (the old one, which stopped at the first pocket, 1.3 to 3.3).
+  - Not closed in, yet no way to the target (round1820a, Astra on Fulgora: packed accumulators, 6 failed walks in
+    about 4 game minutes; lifting 2 of them, then `pathfind: false`, got through): a walk that ends `unreachable` or
+    `blocked`, or a near walk (`arrived_near`) to a goal point no entity covers, names the fewest of our entities
+    (trees, rocks) to mine for a way from where the character can get to (the give-up's nearest reachable spot, or
+    where it stands) to the target, by the same costs: `last.mine_for_a_way`, and in `why` (or `near_walk`): `...;
+    mining accumulator (-53,108) and accumulator (-53,106) opens a way from (-54.5,112.5) to (-53.5,104.5)`. The
+    search spans both points and 8 tiles round them, at most 48 a side (a goal farther off is left alone): on a copy of
+    world n's Fulgora island 1.4 to 2.3 ms for Gemini's accumulators, 9 ms at 41 by 46 tiles, once as the walk ends. On
+    the copy, mining the 4 accumulators one answer named let the same walk arrive.
   - A `build` batch that fails after some entries stand says what those entries closed in its refusal
     (`build 9/9 failed after 8 built: ...; the character is closed in now where it stands (50.5,108.5): ...`; Gemini's
     19:25 batch failed after 2 built, and those 2 had closed the last gap out). A real `place_ghosts` says
@@ -732,6 +743,15 @@ fh call status
   - A via point counts as reached within 1 tile (or `within` when larger), and only the last leg steps off a belt.
   - `ticks` covers the whole walk; the reply says `via: 2, legs: 3`; `status` shows `active.leg: 2 of 3` and
     `active.to`, the leg's goal.
+  - Without `ticks` the limit scales with the planned route (round1820a, Opus: 400-tile via trips timed out at the
+    fixed 3600 ticks four times in shift13 while walking fine): straight lines from you through the via points to
+    `position`, at your speed, 1.5 times that and 10 s more, at least 3600 and at most 36000 ticks. Any `move_to`
+    reply says it: `limit: 6487 ticks (1m48s) for the planned route, 589 tiles in straight lines through the via points
+    at 0.15 tiles a tick` (`3600 ticks (1m00s)` for a short walk, `..., as given` with `ticks`). A walk that runs out
+    names the limit and the leg in `why`: `time ran out at (265.4,-251.7), 160.2 tiles from the target: its limit,
+    3600 ticks (1m00s), ran out on leg 4 of 7 (to (300,-260))`, and `last.limit`; `--wait`'s error line ends with
+    that why (`move_to timed_out at its own tick limit: time ran out at ...`), as it does for any timed action that
+    says one.
   - A leg that does not arrive ends the walk with its outcome, and `last.why` (and `build_spot`) describe that leg.
   - `last.legs` lists each leg, `{to, outcome, s, why, avoided_enemies}`, then the legs `not walked`; `last.target`
     is `position`.

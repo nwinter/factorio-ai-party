@@ -140,6 +140,25 @@ do
   _,f=A.fix('recipes',{item='pentapod-egg'},takes); eq(f.prefix,'pentapod-egg')
   _,f=A.fix('observe',{scope='craftable',item='roboport'},takes); eq(f.recipes[1],'roboport'); eq(#f.recipes,1)
 end
+-- round1820a item 3: build entries name what to place by name (Opus 00:42, Haiku 00:52, Grok 00:25, Gemini 23:10).
+do
+  local A=dofile('mod/agent-harness_0.1.0/aliases.lua')({})
+  local takes=function(action,k) return action=='build' and ({builds=true,item=true,entity=true,position=true,direction=true,dry_run=true})[k]==true end
+  local list={{name='electric-mining-drill',position={x=1,y=2}},{item='pipe',position={x=3,y=2}}}
+  local _,f,n=A.fix('build',{builds=list},takes)
+  eq(f.builds[1].item,'electric-mining-drill'); eq(f.builds[1].name,nil); eq(f.builds[2].item,'pipe'); eq(n.notes[1],'name is item')
+  eq(list[1].name,'electric-mining-drill','the caller\'s list is left as it was')
+  _,f,n=A.fix('build',{name='gun-turret',position={x=149,y=-26}},takes)
+  eq(f.item,'gun-turret'); eq(f.name,nil); eq(n.notes[1],'name is item')
+  _,f,n=A.fix('build',{entity='passive-provider-chest',position={x=-72.5,y=87.5}},takes)
+  eq(f.item,'passive-provider-chest'); eq(f.entity,nil); eq(n.notes[1],"entity is item (entity names a rail planner's rail, with item)")
+  -- A rail planner's entity stays: it names which rail.
+  _,f,n=A.fix('build',{item='rail',entity='curved-rail-a',position={x=0,y=0}},takes); eq(n,nil)
+  _,f,n=A.fix('build',{item='rail',builds={{entity='half-diagonal-rail',position={x=0,y=0}}}},takes); eq(n,nil)
+  -- items as a list of entries is builds (Grok 00:25).
+  _,f,n=A.fix('build',{items={{item='iron-chest',position={x=1,y=1}}}},takes)
+  eq(f.builds[1].item,'iron-chest'); eq(f.items,nil); eq(n.notes[1],'items is builds')
+end
 sol('stop')
 -- A scoped read (fh sends scan as observe {scope}): the view's own names.
 r=sol('observe',{scope='scan',names='wooden-chest',radius=5})
