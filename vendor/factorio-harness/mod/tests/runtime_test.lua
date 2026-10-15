@@ -596,7 +596,7 @@ p.build_from_cursor=build_single; p.can_build_from_cursor=function() return true
   p.surface.find_entities_filtered=function() return now and {now} or {} end
   p.build_from_cursor=function(args)
     p.cursor_stack.count=p.cursor_stack.count-1
-    local m={valid=true,name=machine.name,type=machine.type,position={x=args.position.x+.5,y=.5},force=p.force,prototype=machine}
+    local m={valid=true,name=machine.name,type=machine.type,position={x=args.position.x+.5,y=.5},force=p.force,prototype=machine,fluidbox={}}
     m.set_recipe=function(r) m.recipe=r; return {} end
     m.get_recipe=function() return m.recipe and {name=m.recipe} or nil end
     made[#made+1]=m; now=m
@@ -612,6 +612,20 @@ p.build_from_cursor=build_single; p.can_build_from_cursor=function() return true
   prototypes={item={['wooden-chest']={place_result=machine}},entity={}}
   r=call('build',{item='wooden-chest',recipe='iron-gear-wheel',builds={{position={x=6,y=0}},{position={x=8,y=0}}}})
   eq(made[2].recipe,'iron-gear-wheel'); eq(made[3].recipe,'iron-gear-wheel')
+  -- A later placement refuses: the first entry's configure already ran.
+  wood.count=3
+  local canbuild=p.can_build_from_cursor
+  local apply_entry=runtime.entryset.built
+  runtime.entryset.built=function(...) local a={...};apply_entry(...);assert(#a[4].failed==0,table.concat(a[4].failed,'; ')) end
+  p.can_build_from_cursor=function(a)
+    if a.position.x==10 then eq(made[#made].recipe,'iron-gear-wheel','configured before the later placement check');return false end
+    return true
+  end
+  fails(function() call('build',{item='wooden-chest',builds={
+    {position={x=4,y=0},configure={recipe='iron-gear-wheel'}},{position={x=10,y=0}}}}) end,'build 2/2 failed after 1 built')
+  eq(made[#made].recipe,'iron-gear-wheel')
+  p.can_build_from_cursor=canbuild
+  runtime.entryset.built=apply_entry
   prototypes=saved_prototypes
   wood.prototype.place_result={type='furnace',name='stone-furnace'}
   fails(function() call('build',{item='wooden-chest',position={x=6,y=0},recipe='iron-gear-wheel'}) end,
@@ -4892,5 +4906,35 @@ end)()
   eq(storage.agent_harness.active[1],action)
   eq(call('queue_status',{}).lanes.remote.paused,true)
   call('stop',{})
+end)()
+;(function()
+  -- Actual runtime wiring retains the shared planner's facts for a failed feed stop.
+  call('stop',{})
+  local reach,probe,report=p.can_reach_entity,runtime.margin_probe.tick,runtime.avoid.report
+  p.can_reach_entity=function() return false end
+  runtime.margin_probe.tick=function() return false end
+  runtime.avoid.report=function(out) out.why='fixture corridor blocked';out.smaller_margins={largest_verified_margin=2,line='largest verified margin 2 tiles'} end
+  local pos={x=p.position.x+40,y=p.position.y}
+  local e={valid=true,position=pos,name='iron-chest'}
+  storage.agent_harness.active[1]={kind='gather',op='feed',item='coal',targets={{entity=e,position=pos}},index=1,got=0,visited=0,want=math.huge,
+    until_tick=game.tick+600,avoid_mode={pad=4},nav={position=pos,tolerance=7,path_state='unsafe',foes={}}}
+  advance(1)
+  local a=storage.agent_harness.active[1]
+  eq(a.route_failures[1].smaller_margins.largest_verified_margin,2)
+  assert(a.first_unreached:find('fixture corridor blocked; largest verified margin 2 tiles',1,true))
+  advance(1)
+  eq(call('status',{brief=true}).last.route_failures[1].smaller_margins.largest_verified_margin,2)
+  p.can_reach_entity,runtime.margin_probe.tick,runtime.avoid.report=reach,probe,report
+end)()
+;(function()
+  -- The runtime carries entry circuit/wire settings into the platform preview.
+  local check,platform,find,pump=runtime.dryrun.check,p.surface.platform,p.surface.find_entities_filtered,prototypes.entity.pump
+  runtime.dryrun.check=function() return {summary='fixture placement preview'},{},{} end
+  p.surface.platform={force=p.force,name='fixture-platform'}
+  p.surface.find_entities_filtered=function() return {} end
+  prototypes.entity.pump={type='pump',name='pump'}
+  local r=call('dry_run',{action='place_ghosts',args={entities={{name='pump',position={x=1,y=1},circuit={enable='signal-D = 0'}}}}})
+  assert(r.pump_circuits[1]:find('no red or green wire declared',1,true))
+  runtime.dryrun.check,p.surface.platform,p.surface.find_entities_filtered,prototypes.entity.pump=check,platform,find,pump
 end)()
 print('runtime: '..assertions..' assertions passed')

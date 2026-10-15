@@ -302,7 +302,7 @@ return function(api)
       local name, n = hand(i)
       local text = source_text(row, nil)
       out.feeders[k] = {inserter=i.name, position=i.position, status=status(i), filter=filter_text(filters_of(i)),
-        held=name and (n .. ' ' .. name) or nil, from=text}
+        held=name and (n .. ' ' .. name) or nil, held_blocked=api.held_blocked and api.held_blocked(i), from=text}
     end
     if #lacking == 0 then out.note = 'it holds every ingredient for its next craft (all=true lists them all)' end
     -- Containers near it that hold an ingredient and that no inserter reads.
@@ -643,6 +643,8 @@ return function(api)
                 text = string.format('%s %s %s%s', i.name, at(i.position), st, fl and ' filter ' .. filter_text(fl) or '')
               end
               if name then text = text .. string.format(', holding %d %s', cnt, name) end
+              local blocked=not dark and api.held_blocked and api.held_blocked(i)
+              if blocked then text=text..'; '..blocked end
               if not this_lane then text = text .. ', picks only the ' .. (side(k) == 'left' and 'right' or 'left') .. ' lane'
               else
                 route.any_taker = true
@@ -786,6 +788,7 @@ return function(api)
       local i, t = row.e, row.drop
       local name, n = hand(i)
       local st = status(i)
+      local blocked=api.held_blocked and api.held_blocked(i)
       local fl = filters_of(i)
       local text = string.format('%s %s %s%s%s', i.name, at(i.position), st, fl and ' filter ' .. filter_text(fl) or '',
         name and string.format(', holding %d %s', n, name) or '')
@@ -800,6 +803,7 @@ return function(api)
         ends[#ends+1] = place(t)
       end
       if FULL[st] and name then text = text .. ' (holding what it cannot drop)' end
+      if blocked then text=text..'; '..blocked end
       out.takers[#out.takers+1] = text
     end
     if #out.takers == 0 then out.takers = nil; if #starts == 0 then out.note = 'no inserter takes from it' end end

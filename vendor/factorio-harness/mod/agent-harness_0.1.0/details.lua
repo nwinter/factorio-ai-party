@@ -7,6 +7,20 @@
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  function M.held_blocked(e)
+    if e.type~='inserter' then return nil end
+    local h=try(function() return e.held_stack end)
+    local t=try(function() return e.drop_target end)
+    if not (h and h.valid_for_read and t and t.valid) then return nil end
+    if t.type=='transport-belt' or t.type=='underground-belt' or t.type=='splitter' then return nil end
+    if e.force and e.surface and not e.surface.platform and
+      try(function() return e.force.is_chunk_visible(e.surface,{math.floor(t.position.x/32),math.floor(t.position.y/32)}) end)==false then return nil end
+    local q=try(function() return type(h.quality)=='string' and h.quality or h.quality.name end) or 'normal'
+    if try(function() return t.can_insert{name=h.name,count=1,quality=q} end)~=false then return nil end
+    local r=try(function() return t.get_recipe() end)
+    return string.format('%s (%g,%g) holds %d %s@%s; %s (%g,%g) cannot accept one now%s',
+      e.name,e.position.x,e.position.y,h.count,h.name,q,t.name,t.position.x,t.position.y,r and ' (recipe '..r.name..')' or '')
+  end
   -- An item filter as 'name' or 'name@quality'. 2.0.77 gives inserters' and loaders' as {name, quality} strings and a
   -- storage chest's as {name=LuaItemPrototype, quality=LuaQualityPrototype} (userdata, read by their name).
   local function item_name(f)
@@ -325,6 +339,7 @@ return function(api)
     if e.type == 'inserter' then
       local held = try(function() local s = e.held_stack; return s and s.valid_for_read and s.count .. ' ' .. s.name or nil end)
       out.held = held or 'nothing'
+      out.held_blocked=M.held_blocked(e)
       out.pickup_target = where(try(function() return e.pickup_target end))
       out.drop_target = where(try(function() return e.drop_target end))
       -- Nothing to drop into: the tile its items land on (on a platform,
