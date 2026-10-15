@@ -281,7 +281,7 @@
   }
 
   // ------------------------------------------------------------------ dashboard
-  var ACT_LABEL = { acting: 'acting', thinking: 'thinking', idle: 'idle', dead: 'dead', offline: 'offline' };
+  var ACT_LABEL = { acting: 'acting', thinking: 'thinking', idle: 'idle', dead: 'dead', offline: 'offline', resting: 'resting' };
   var ALERT_TONES = { attack: 'danger', death: 'danger', low_power: 'warn', research: 'info' };
   var ALERT_ICONS = { attack: '⚔', death: '✝', low_power: '⚡', research: '⚗' };
   // The dashboard's cards are made once; each refresh fills their bodies (the map card keeps its viewer).

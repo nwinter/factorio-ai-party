@@ -586,6 +586,24 @@ The site's agents page has a "Now" block per card (guns and ammo, armor and equi
 largest stacks, free slots, crafting, building), filled by site.js from the live API every 30 s and hidden when no
 shift is on. push_live.py publishes `agents[].loadout`.
 
+### An agent resting between turns (2026-10-14, eng/pacing)
+
+Since 17:01 Gemini plays short turns with long sleeps to pace its weekly quota (tools/agy-quota.py pace(), Nick's even
+pacing until Sunday 12:51). Before the agy loop sleeps (a pacing sleep or a quota reset), agy-quota.py writes
+runs/RUN/gemini/resting.json `{since, until, reason: pace|quota, sleep_s, used, resets}`; the next turn begins with
+`agy-quota.py --woke`, which moves it to resting-last.json and gives that turn its first line ("You rested 75 min to
+pace your weekly quota (it resets Sun 12:51); the game went on meanwhile: check what changed (./fh call status, chat,
+board) before acting.").
+
+- tools/stream/pacing.py reads it. live.py puts it on the agent row; model.py's card says "resting until 18:17 · pacing
+  its weekly quota" (activity `resting`: a blue dot, not idle or offline; "waiting until ... for its quota to reset"
+  for a quota sleep), the hosts get it once per rest (an alert of kind `rest`, an info line for them), and the
+  director leaves the agent out of its picks. The site's card shows the same state and text.
+- tools/supervise.sh types no nudge into the sleeping loop (logs "skip nudges: resting until 18:17" once a rest), and
+  tools/idle_nudge.py sends no tell ("resting until ..." as its reason).
+- Tests: tools/test_quota.py (the state file, the wake line, the loop's next prompt), tools/test_supervise.py,
+  tools/stream/test_pacing.py.
+
 ### Each battle fact on its planet (2026-10-14, eng/planetmix)
 
 Viewer Joonazan, 13:38: "There are no biters on Gleba. There are also other announcements that sound like they are

@@ -504,6 +504,8 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .state[data-s="thinking"]::before { background: var(--fx-cyan); }
 .state[data-s="dead"]::before { background: var(--fx-red); }
 .state[data-s="offline"] { opacity: .6; }
+/* resting between turns, pacing its quota (tools/stream/pacing.py): a calm blue, not offline */
+.state[data-s="resting"]::before { background: #6f8fbf; }
 
 /* the map viewer (static/mapview.js): the live map and the run page's time-lapse; the canvas draws the marks, these
    rules style the controls, the legend (.b-X and .o-X are the same colours the canvas uses) and full screen */

@@ -199,8 +199,9 @@ fh call status
   item?, ticks?}` throw the game's capsule as a player does (range 10 from the character, cooldown 30 ticks, blast radius
   1.5), one per spot, each landing before the next, walking into range with walk; a timed call. The reply lists each
   spot's cliffs in the blast; a spot with none is refused at once (the nearest cliff named). `last`: `thrown`,
-  `destroyed [{name, position}]`, `skipped [{position, why}]`, `left`; outcomes cliffs_destroyed | nothing_destroyed |
-  out_of_items | out_of_range | timed_out. Dry runs over cliffs no construction robot reaches add the call to clear
+  `destroyed [{name, position}]`, `skipped [{position, why}]`, `left`; outcomes cliffs_destroyed | nothing_to_do (every
+  spot clear already, nothing thrown) | nothing_destroyed | out_of_items | out_of_range | timed_out. `fh call clear_cliffs
+  --wait` (and use_item cliff-explosives --wait) waits for the end; cliffs_destroyed and nothing_to_do are successes. Dry runs over cliffs no construction robot reaches add the call to clear
   them (`cliffs`, `cliffs_by_hand`). Reply: `kind`
   (throw|self), `projectile`, `distance`, `range`, `cooldown_ticks`, `left`, `healed`. It is an instant action that
   stops what the character was doing, as `shoot` does.
