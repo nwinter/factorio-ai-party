@@ -8859,10 +8859,20 @@ handlers.equipment=function(p,a)
   assert(not p.permission_group or p.permission_group.allows_action(defines.input_action[input]),'permission denied: '..input)
   return equipment_handler(p,a)
 end
-local timed={recover=true,walk=true,move_to=true,build_path=true,construct=true,kite=true,mine=true,pickup=true,repair=true,rearm=true,refuel=true,transfer=true,collect=true,feed=true,wait_until=true,wait_ticks=true,build=true,load_silo=true}
--- The active action kind a step's handler starts, where it differs from its name.
+-- Actions whose handler can start a timed action: as a queue step they wait for its end (Sol 22:45: a clear_cliffs step
+-- began and ended in the same tick, and the next step, a move_to, stopped its throw; vehicle drives the same).
+-- tests/queuetimed.lua lists every timed action and checks each is here.
+local timed={recover=true,walk=true,move_to=true,build_path=true,construct=true,kite=true,mine=true,pickup=true,repair=true,rearm=true,refuel=true,transfer=true,collect=true,feed=true,wait_until=true,wait_ticks=true,build=true,load_silo=true,
+  clear_cliffs=true,use_item=true,vehicle=true}
+-- The active action kind a step's handler starts, where it differs from its name (use_item: cliff explosives only;
+-- vehicle: a drive, or a drive's dry run).
 local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true,gather=true},build={feed=true},collect={gather=true},feed={gather=true},load_silo={feed=true,gather=true},
-  recover={gather=true}}
+  recover={gather=true},use_item={clear_cliffs=true},vehicle={drive=true}}
+-- Whether a queue step of `action` waits while an active action of `kind` runs (shoot and drop are read apart: the
+-- combat channel and drop jobs).
+function M.queue_waits(action,kind)
+  return timed[action]==true and (timed_kind[action] and timed_kind[action][kind]==true or kind==action) or false
+end
 local conditions=conditions_module{known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end}
@@ -8875,7 +8885,7 @@ scheduler=scheduler_module{
     if action=='shoot' then return state().combat and state().combat[p.index]~=nil end
     if action=='drop' then return state().drop_jobs and state().drop_jobs[p.index]~=nil or false end
     local now=timed[action] and state().active[p.index]
-    return now and (timed_kind[action] and timed_kind[action][now.kind] or now.kind==action) or false
+    return now and M.queue_waits(action,now.kind) or false
   end,
   -- Halting controls must not pause the queue: guard reactions and goto
   -- continue right after it. Pausing is always explicit (scheduler.pause).
