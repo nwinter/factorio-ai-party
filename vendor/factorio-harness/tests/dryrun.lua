@@ -768,6 +768,14 @@ do
   eq(r.cliffs, '4 placeable entries stand over 1 cliff: placing marks it, and a marked cliff goes only with one explosive (construction robots bring it): cliff-explosives 1, you hold 0'
     ..'; no construction robots reach it here: clear it by hand first, clear_cliffs {"positions":[{"x":20,"y":20.5}]} (throws the explosives from within their range, walking there)')
   eq(r.cliffs_by_hand[1].x, 20); eq(r.cliffs_by_hand[1].y, 20.5)
+  -- each cliff the placement marks, as the engine finds them in the entries' boxes (Sol, shift14 21:17)
+  eq(#r.cliffs_under, 1); eq(r.cliffs_under[1].name, 'cliff'); eq(r.cliffs_under[1].position.x, 20)
+  -- cliff explosives not researched: the placement marks none (construction.lua), and the dry run says so
+  force.technologies = {['cliff-explosives']={researched=false}}
+  local un = dryrun.check(cp2, {kind='ghosts', entities=belts})
+  eq(un.cliffs, '4 placeable entries stand over 1 cliff; cliff-explosives is not researched, so placing marks none of them and nothing builds the ghosts over them while they stand')
+  eq((un.items or {})['cliff-explosives'], nil); eq(un.cliffs_by_hand, nil)
+  force.technologies = nil
   -- a network with construction robots over it: no hand-clearing line
   cw2.find_logistic_network_by_position = function() return {available_construction_robots=5} end
   r = dryrun.check(cp2, {kind='ghosts', entities=belts})

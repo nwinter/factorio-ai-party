@@ -1607,7 +1607,9 @@ return function(api)
     for _, n in ipairs(need_list) do add(n.item:match('^(%S+)'), 1) end
     -- One explosive item per cliff the plan marks (cliff-explosives on every planet's cliffs).
     local ncliffs, by_item = 0, {}
-    for _, c in pairs(cliffs) do ncliffs = ncliffs + 1; by_item[c.item] = (by_item[c.item] or 0) + 1; add(c.item, 1) end
+    -- (as the placement: no mark, no explosive, before cliff explosives are researched; construction.lua mark_obstacles)
+    local unresearched = try(function() return force.technologies['cliff-explosives'].researched end) == false
+    for _, c in pairs(cliffs) do ncliffs = ncliffs + 1; by_item[c.item] = (by_item[c.item] or 0) + 1; if not unresearched then add(c.item, 1) end end
     for _, t in pairs(planned) do
       local proto = prototypes.tile[t.name]
       add(t.item or try(function() return proto.items_to_place_this[1].name end), 1)
@@ -1641,6 +1643,17 @@ return function(api)
         out.cliffs = string.format('%d placeable entr%s stand%s over %d cliff%s: placing marks %s, and a marked cliff goes only with one explosive (construction robots bring it): %s',
           over_cliffs, over_cliffs == 1 and 'y' or 'ies', over_cliffs == 1 and 's' or '', ncliffs, ncliffs == 1 and '' or 's',
           ncliffs == 1 and 'it' or 'them', table.concat(parts, '; '))
+        if unresearched then
+          out.cliffs = string.format('%d placeable entr%s stand%s over %d cliff%s; cliff-explosives is not researched, so placing marks none of them and nothing builds the ghosts over them while they stand',
+            over_cliffs, over_cliffs == 1 and 'y' or 'ies', over_cliffs == 1 and 's' or '', ncliffs, ncliffs == 1 and '' or 's')
+        end
+        -- Each cliff under the placeable entries, as the engine finds them in their boxes: the ones the placement marks
+        -- (Sol, shift14 21:17: placements marked cliffs a dry run had not listed; construction.lua cliffs_under).
+        local list = {}
+        for _, c in pairs(cliffs) do if c.e.valid then list[#list+1] = {name=c.e.name, position={x=c.e.position.x, y=c.e.position.y}} end end
+        table.sort(list, function(a, b) if a.position.x ~= b.position.x then return a.position.x < b.position.x end return a.position.y < b.position.y end)
+        for i = 33, #list do list[i] = nil end
+        out.cliffs_under = list
         -- No construction robot reaches them (Sol 15:41: a nutrient belt over cliffs on Gleba with no robots there):
         -- the cliffs to clear by hand with clear_cliffs, which throws the explosives as a player does.
         local robots, at = 0, {}
@@ -1653,7 +1666,7 @@ return function(api)
         end
         local own = try(function() return p.character and p.character.logistic_network end)
         robots = robots + (own and try(function() return own.available_construction_robots end) or 0)
-        if robots == 0 and #at > 0 then
+        if robots == 0 and #at > 0 and not unresearched then
           local list = {}
           for _, q in ipairs(at) do list[#list+1] = string.format('{"x":%g,"y":%g}', q.x, q.y) end
           out.cliffs = out.cliffs .. string.format('; no construction robots reach %s here: clear %s by hand first, clear_cliffs {"positions":[%s]} (throws the explosives from within their range, walking there)',

@@ -416,6 +416,10 @@ fh call status
     pieces. `from_direction` fixes the first heading.
   - The route keeps off water, cliffs, buildings, ghosts, other forces' entities and uncharted chunks, crosses rails
     where the game allows it, and goes over trees and rocks (a ghost marks them for removal; `construct` mines them).
+    `construct` leaves marked cliffs (no hand can mine one: Sol, shift14 21:18, construct failed on four with "the
+    engine would not mine cliff-gleba (98,14.5) by hand") and names them in `last.cliffs`: `6 cliffs in the area are
+    marked for deconstruction: a cliff goes only with one cliff explosive (construction robots bring it, or clear_cliffs
+    throws it), so construct leaves them: (94,26.5), (98,26.5), ...`.
     The search stays within 32 tiles of each leg's ends and stops after 6000 placement checks; a point no piece fits
     at fails at once (`no rail route: to (150,350): blocked by deepwater`), and a route not found says the nearest end
     reached and what blocks there (`blocked there by transport-belt (82.5,-96.5) and 6 more, ...`).
@@ -1282,6 +1286,20 @@ fh sleep 900 --until researched                       # ...or until the research
 - An electric machine no pole reaches reads `status_name: unpowered` in `observe` and `scan` rows (whatever the
   engine's status, often `low_power`), with `power: "unpowered: no pole reaches it; nearest pole medium-electric-pole
   at (17,10), 7 tiles"` in `inspect` and in build replies.
+- A burner whose burnt-result slot is full and that burns nothing reads `burnt_result_full`, whatever the engine's
+  status (Sol, shift14 03:54: two agricultural science biochambers read working through repeated checks and made
+  nothing, spoilage*200 in that slot). It shows in `scan` and `observe` rows (`status_name`, the `status` field, with
+  `burnt_result_full` naming what fills it), in `supply` and `bottleneck` (the makers' states, ranked with no power
+  first, with the line below), in trace, rates and the science line, in the `status` fuel warning and as a game alert
+  (below). `inspect` keeps the engine's `status`/`status_name` pair and adds `burnt_result_full`: `its burnt-result slot
+  is full (spoilage*200); its fuel slot holds spoilage*3, which it does not burn (it burns nutrients): nothing burns,
+  it has no energy (the game's status reads working)`, or `... it burns nothing more once the fuel burning now runs
+  out` while it still burns. On 2.0.77 (a copy of world n's save from then): nutrients that spoil in a biochamber's
+  one fuel slot go to its burnt-result slot (one slot; spoilage stacks to 200); with that slot full the spoilage stays
+  in the fuel slot, which a biochamber does not burn (spoilage is chemical fuel), energy is 0 and crafting stops (the
+  two kept crafting progress 0.890 and 0.625 over 20 s while a chamber beside them made 15 packs). With 18 spoilage
+  taken out of the slot the fuel slot's spoilage went there (184), the chamber's inserter refilled nutrients, and it
+  made 3 packs within 3 s.
 - `inspect` gives the engine's status as a number (`status`) with its `defines.entity_status` name beside it
   (`status_name`), always the pair (Muse, shift10: `--format json` gave 14, 26, 27 to look up); an unpowered machine
   says so in `power`.
@@ -2046,7 +2064,14 @@ fh sleep 900 --until researched                       # ...or until the research
   - `cliffs` when placeable entries stand over cliffs (placing marks each; one cliff-explosives each, counted in
     `items` and `missing`): `3 placeable entries stand over 1 cliff: placing marks it, and a marked cliff goes only
     with one explosive (construction robots bring it): cliff-explosives 1, you hold 0`; the summary adds `; 3 over
-    cliffs`.
+    cliffs`; `cliffs_under` lists each cliff `{name, position}` (up to 32). These are the cliffs the real placement
+    marks: both take the cliffs the engine finds in an entry's own box whose collision mask meets it (Sol, shift14
+    21:17: a belt_route and a place_ghosts marked three cliffs their dry runs had not listed. Gleba's diagonal cliffs
+    have turned boxes, and the placement read them square; on a copy of world n a hand build fit on every tile beside
+    those cliffs and the engine found them in no ghost's box. Now neither marks them, and a belt on a cliff marks it
+    in both). Before cliff explosives are researched the placement marks none: `... stand over 1 cliff; cliff-explosives
+    is not researched, so placing marks none of them and nothing builds the ghosts over them while they stand`, and
+    no explosive is counted.
   - `summary` (`9 placeable, 2 need tiles first, 1 blocked (of 12)`), `checked`, and `entities` rows `{index,
     name, position, direction, status, why, reach}` for every entry that is not plainly placeable (`details: true`:
     every entry, with `footprint` tiles `x0,y0..x1,y1`); `index` is `copy.index` under `repeat`; `asked` when the
@@ -2180,6 +2205,24 @@ fh sleep 900 --until researched                       # ...or until the research
     are the ones `ports` gives (a recipe opens and closes them); heat points come from the prototype, turned with the
     entity, as 2.0.77 joined them on a copy of world n (a heat exchanger's heat input is on its back). A flipped paste
     is not read (`connections_note`). At most 64 rows (256 with `details`).
+- `conflicts {name, position, direction?, surface?, platform?}` (read; conflicts.lua; Sonnet, shift14 21:20: rich
+  sulfuric acid wells on Vulcanus lay under pipes, poles and tanks, and a pumpjack dry run named at most four blockers
+  each) says what building `name` there takes away. `remove`: every entity whose collision meets its footprint at the
+  snapped position, `{name, position, kind}` (`ours` first, then `ghost`, `tree or rock`, `cliff`, `force NAME`);
+  `resource`: what is under it (`sulfuric-acid-geyser (-4.5,101.5): 331% yield`); `fluid`: for each fluid segment
+  our pipes, tanks and pumps in the way are in, whether taking them away splits it, with each side's machines and
+  pipes (`pipe (10.5,101.5), pipe (10.5,102.5) (heavy-oil segment, 200 in these): taking them away splits it into 2:
+  [no machine; at least 11 pipes (not walked to its end)] and [chemical-plant (8.5,118.5); 8 pipes]`), and for a
+  machine in the way the pipes its ports join (a machine is no part of a segment: 2.0.77 gives its fluid boxes no
+  segment id, and a chemical plant's two pipes on one box read two segments, so it joins nothing); `power`: each of our
+  poles in the way with its network and the wires that go, whether the poles it joined stay joined, and each group cut
+  off with its poles and the machines in their supply areas (`cut off: 1 pole (medium-electric-pole (-10.5,101.5)) with
+  7 machines in their supply areas (fast-inserter*3 chemical-plant*2 assembling-machine-2*1 pumpjack*1); no generator,
+  solar panel or accumulator among them`); `unpowered_after`: machines no pole's supply area covers once they are
+  gone; `supplied_by`: for an electric entity, the pole whose supply area covers it then (or that none does); `line`.
+  On a copy of world n, taking away what it named over Sonnet's wells split the heavy-oil segment in two (726 became
+  726 and 2000) and network 518 into three (549, 550, 518), as it said. Fluid walks stop after 3000 steps (300 more
+  once the split is decided), pole walks after 6000 (64 more).
 - `ports {name, position, direction?, recipe?, mirror?, platform?}` (read; ports.lua, Gemini's request: a recipe moves
   which fluid an electromagnetic plant's ports carry) lists the fluid connections of an entity that is not built:
   `ports [{at, joins, direction, flow, fluid, box, there}]` (`at` the entity's tile with the port, `joins` the tile
@@ -2291,7 +2334,8 @@ fh sleep 900 --until researched                       # ...or until the research
   crude-oil 87/200`.
 - `collect` with `radius` skips stock inside another agent's active board claim and reports `skipped_claims` (`40 iron-plate in 2 places of #4 iron smelting (claim by sol); ask the owner`). `collect` on named positions still takes, and lists the claimed ones in `claimed`.
 - The `status` fuel warning names burners out of fuel or burning their last: `fuel: boiler 1/3 no_fuel, 1 burning their
-  last fuel`. Where some hold fuel that spoils within 60 s (a biochamber's nutrients), it says how many and the first,
+  last fuel`; burners stopped by a full burnt-result slot: `fuel: biochamber 0/33 no_fuel, 2 stopped by a full
+  burnt-result slot (the first at (45.5,72.5): spoilage*200)`. Where some hold fuel that spoils within 60 s (a biochamber's nutrients), it says how many and the first,
   from the stack that spoils first (Sol, shift13 16:50): `fuel: biochamber 0/18 no_fuel, fuel spoils within 60s in 11
   (the first: nutrients in 12s at (77.5,60.5))`.
 - The `status` power warning appears only when some electric machine lacks power: `power: 3 of 78 machines low_power; 1 unconnected (fh call power lists them)` (`no_power` = connected to a network with no generation; `unconnected` = no pole reaches it).
@@ -2830,6 +2874,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     around them (Sol, shift13 16:50: biochambers starved with 20 nutrients loaded, the batch rotting within seconds):
     `2 (1 biochamber, 1 heating-tower) out of fuel near (48,47); refuel; 3 biochamber around it burn spoiling fuel, 2
     of them within 60s; the first: nutrients spoils in 4s at (43.5,34.5)` (`spoiled` once its time is past).
+  - Burners stopped by a full burnt-result slot, whatever their status reads (kind `burnt_full`): `2 biochamber
+    stopped by a full burnt-result slot near (57,61): biochamber (45.5,72.5): burnt-result slot spoilage*200; fuel slot
+    spoilage*3 (not a fuel it burns: it burns nutrients); biochamber (68.5,49.5): ...`.
   - Lost sources on planet surfaces (Haiku, 04:52: an inserter with no source fails silently; a boiler went no_fuel
     when its feed chest was removed): an inserter that had a pickup target and has none now, or whose drop target is
     gone, by area and by what it feeds (kinds `lost_source.<fed>` and `lost_target.<fed>`; fed is boiler, furnace,
