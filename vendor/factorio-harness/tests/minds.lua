@@ -121,6 +121,10 @@ do
   _,f,n=A.fix('transfer',{from_entity={x=52.5,y=45.5},to_entity={x=65.5,y=14.5},item='coal'},takes)
   eq(f.pick,'first_with_stock'); eq(f.positions[1].x,52.5); eq(f.to.y,14.5); eq(f.from_entity,nil); eq(f.to_entity,nil)
   eq(n.notes[1],'from_entity and to_entity without pick: a take there and a give at to_entity (pick="first_with_stock")')
+  -- a form the docs give: quiet (no corrected on success; friction3), unless another note goes with it
+  eq(n.quiet,true)
+  _,f,n=A.fix('transfer',{from_entity={x=52.5,y=45.5},to_entity={x=65.5,y=14.5},item='coal',amount=5},takes)
+  eq(f.count,5); eq(#n.notes,2); eq(n.quiet,nil)
   _,f,n=A.fix('transfer',{position={x=52.5,y=45.5},to={x=65.5,y=14.5},item='coal',count=5},takes)
   eq(f.pick,'first_with_stock'); eq(f.positions[1].x,52.5); eq(f.position,nil); eq(f.count,5)
   eq(n.notes[1],'position and to without pick: a take there and a give at to (pick="first_with_stock")')

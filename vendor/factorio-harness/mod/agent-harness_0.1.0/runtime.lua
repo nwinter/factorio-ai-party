@@ -1246,8 +1246,9 @@ function handlers.describe()
       inspect={position='{x,y}',positions='optional 1..32 positions: one inspect each in one call, results in order (an entry that fails has position and error)',area='or {left_top, right_bottom} up to 128x128: our chests and machines (entities with an inventory; types to choose) with their centre inside that inspect can read (in sight, or by remote view in a chunk our force sees now), at most 64, one row each in reading order: entities [{name, position, holds (a chest: its items largest first, slots used of the total; a machine: in, out, fuel, ...), requests (requester, buffer: held/asked), recipe, status_name}], count, not_in_sight (how many more the area holds in chunks our force does not see)',types='with area: entity types (1..16; default every type with an inventory: chests, machines, labs, silos, boilers, drills, turrets, wagons, vehicles, landing pads, hubs, roboports, towers)',platform='optional platform name: inspect on that space platform (platform coordinates, hub at 0,0; the whole platform is in sight)',note='read-only, without reach: any entity in sight (32 tiles of the character), or by remote view any entity on your surface in a chunk our force sees now (radar coverage or a character\'s sight), as the map shows it (by: remote view; surface= another surface reads the same way); out of both, the refusal names the nearest radar coverage; in_reach says whether acting on it would reach; electricity (a producer or consumer of electricity): max_kw at its quality (a machine with its modules\' consumption_bonus, and drain_kw; a solar panel at 100% and at_solar_power_kw where it is, with solar_power; an accumulator stored_mj, capacity_mj, charge_kw, discharge_kw), and now: what all of its name on its electric network make or draw (5 s average; the game counts power by prototype, not per entity); holds (a chest, logistic chest, wagon, car or spider trunk, landing pad, hub): one line, the largest stacks first as name*count, then slots used of the total and the red-X limit; requests (requester, buffer): item held/asked per request, summed over active sections; output_fill (assembler, furnace): each product in the output held of its stack size and %, and full when the machine stopped for it (status full_output), e.g. copper-cable 200/200 (100%), full; input_imbalance (assembler, furnace): an ingredient short of one craft while another is stacked (5 crafts or more), e.g. iron-plate 135 in input, copper-cable 0: item_ingredient_shortage on copper-cable, with feeders: the inserters dropping into it, the ones whose source holds the missing one first (from where, how much of it there, or a filter that keeps it out; a fluid: its pipes); inserters and mining drills show their drop tile and what stands there (io); build replies and observe entity rows show a drill\'s drop and drop_into too; trash: what the game put in a silo\'s, landing pad\'s or hub\'s trash slots; rocket_weight (a silo): cargo held/lift kg; silo_inventories (a silo): [{inventory (its transfer name), alias, holds, what, example (one fh call transfer for it)}]: assembling_machine_input (parts: the rocket-part recipe\'s ingredients), rocket_silo_rocket (cargo: goes up with the rocket at launch), rocket_silo_trash (take-only); modules {inventory_index (the inventory a blueprint module request names), slots, contents, requested and removing (modules on their way in and out: configure modules\' item request, a ghost\'s requests)}; filters, filter_mode, use_filters (inserters, loaders); an asteroid collector: filters (chunk names), filter_slots (the game\'s count; 0 until a filter is set), arm (chunks its arms hold), its output under inventories.asteroid_collector_output; a turret (built or ghost): priority_targets (names in priority order), ignore_unprioritised, targeting (one line); held (an inserter\'s hand), pickup_target, drop_target, io_warning (\'no pickup target\', \'no drop target\': the engine\'s targets; also in io and observe rows; build and rotate replies read what stands on the points (on the engine\'s 1/256-tile grid), as the engine sets targets a tick later; a builds batch lists inserters_without_target after all its entries (first 16; inserters_without_target_count past them); an inserter ghost: what stands on its points); marked_for_deconstruction, marked_for_upgrade; ghosts_here (ghosts on the footprint, with their filters); on a platform: hub_slots, repair_packs and damaged (most damaged first, up to 10; damaged_count past that) on the hub, repair (how a damaged entity there gets repaired), and construction_blocked (hub full, ghosts whose items the hub lacks); spoiling: per inventory (and a belt\'s lanes, an inserter\'s hand, an item on the ground) each spoilable item, the time until its first stack spoils and how spoiled that stack is, and how many spoil within 5 min, earliest first; an item that hatches into enemies when it spoils (pentapod-egg, biter-egg) says hatches, and what into; hatch_warning sums those up (count, into what, the first, how many within 5 min); output_spoil (an assembler, furnace or biochamber whose products spoil): what the next products start at, the count-weighted spoilage of the spoilable ingredients in its input (bioflux from 15 yumako-mash at 80% and 12 jelly at 20%: about 53%), or fresh when the recipe resets freshness (pentapod-egg); an agricultural tower: tower {state, seeds, output, area, cells (growing, grown, free with soil for which seeds, blocked by what, no soil), plantable_now, planted_10min, plants (time until grown), harvest_made_10min, empty_cells (each cell with soil and no plant, nearest first: where and why: the tower holds none of its seed, what blocks it, tiles round it that are not soil, or free and plantable with the tower\'s state)}; rate (an assembler or furnace: its recipe at its crafting speed and productivity now, as if it ran all the time: crafts_per_min, productivity with its parts, products per craft and per minute, net of the same item among its ingredients, ignored_by_productivity, line)'}, rotate={direction='optional compass name (north, east, south, west; 2.0 numbers 0, 4, 8, 12 too): turn until it faces this way, one 90-degree turn at a time as the R key does',returns='rotated, before, after (compass names; 2.0 directions: north 0, east 4, south 8, west 12), turns (how many 90-degree turns it took), entity; one call without direction is one 90-degree turn clockwise, reverse=true counter-clockwise',position='{x,y}',reverse='boolean'},
       configure={surface='optional planet name: act there by remote view, where our force sees the chunk',auto_requests='rocket silo: boolean, the GUI\'s automatic requests (fill and launch for platforms\' requests in orbit; switched on with cargo loaded by hand, that cargo goes to the trash slots: cargo_to_trash, note)',send_to_orbit_automatically='rocket silo: boolean, the GUI\'s send to orbit automatically; a silo reply reads back settings {silo, auto_requests, send_to_orbit_automatically, requesting_for, rocket, parts}',position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine)',platform='optional platform name: configure on that space platform through remote view (platform coordinates, hub at 0,0)',recipe='enabled recipe',quality='optional recipe quality (normal, uncommon, rare, epic, legendary; the machine needs the quality unlocked)',filters='or: item names (one name alone too) for a filtering inserter/loader, or asteroid chunk names (metallic-asteroid-chunk, ...) for an asteroid collector ([] clears and, on an inserter, turns filtering off; up to the entity\'s filter slot count; a collector\'s count reads 0 until a filter is set, so there each slot is tried and only the game\'s refusal fails it; the reply reads the filters back, not_set for a name that did not stick)',filter_mode='whitelist|blacklist (inserters; alias mode; alone it keeps the items; asteroid collectors have no filter mode in the game)',use_filters='inserters: true|false, the GUI\'s use filters (false keeps the items, unused)',force='boolean: allow destroying held fluids',priority_targets='turrets (gun, rocket, railgun, laser, tesla, flamethrower; built or ghost, in reach, by remote view or on a platform): entity names in priority order, as the turret GUI\'s priority list, e.g. ["big-metallic-asteroid","big-carbonic-asteroid","big-oxide-asteroid"] or ["medium-biter","big-biter"]; replaces the list; [] or false clears it; at most 64; an unknown name is refused with names like it; artillery has none',ignore_unprioritised='turrets: true|false, the turret GUI\'s Ignore unprioritised targets',modules='a machine\'s module slots, slot by slot (assemblers, furnaces, drills, labs, beacons, silos; built or ghost): module names one a slot, or {name, count?, quality?}, e.g. ["speed-module-2","speed-module-2"]; the slots past the list end up empty; [] or false empties them all. In reach (by hand): the old modules go to your inventory, the new ones come from it. Out of reach, by remote view, surface= or platform=: an item request (as remote view\'s ghost cursor makes): construction robots (on a platform its hub) bring the new ones and take the old ones to storage (a swap goes ahead with no room, the old ones riding in a robot; a removal alone waits for room). A ghost: its module requests. A module the machine or its recipe does not take is refused (e.g. productivity under a recipe that allows none)',by='with modules: hand (in reach, from your inventory) or robots (an item request even in reach); default: hand in reach, else robots',positions='with priority_targets or ignore_unprioritised: 1..64 turrets (or ghosts) set alike in one call; a row each (turrets), one that fails with its error; configured, failed; with modules: 1..64 machines set alike (machines)',returns='modules: name, position, by (hand, robots, hub, ghost), before, after (by hand) or requested and removing (an item request), returned (the old modules, to your inventory), note (who brings them: the network that covers it, what it holds of each, idle construction robots, and a storage chest\'s room for the removed ones (a removal alone waits for room); or the hub); returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change; filters: filters, filter_mode, use_filters read back, line (whitelist: items | blacklist: items | off (filters: items) | set by circuit), before (the line before); a turret: priority_targets and ignore_unprioritised read back, targeting (priority targets: a, b (in this order); ignore unprioritised targets: on|off), ghost'},
       transfer={position='{x,y}',positions='optional array of 1..64 {x,y}: same transfer per entity; per-entity rows plus total',
-        from='"nearest" (with item; to_player): take from the nearest of our chests in reach (or within radius) that holds the item now, as the map shows them, requester and buffer chests last; a count more than that chest holds comes from the next ones too, in that order (up to 16 chests); from_nearest says which (name, position, distance, how many each holds, chests checked); none: refused with the nearest within 32 tiles (up_to=true: moved 0, short)',
-        radius='with from "nearest": 1..256 tiles around you, walking to the chests (a timed call, as walk; the walk ends transferred once the count is taken); default: in reach',
+        from='"nearest" (with item; to_player): take from the nearest of our chests in reach (or within radius) that holds the item now, as the map shows them; chests that feed something are left out (requester and buffer chests, and chests an inserter takes from: a machine\'s input, a turret\'s feeder; feeding: true takes from them too, last), and walking, chests in a worm\'s reach the map shows (the legs go round the worms as move_to\'s do); a count more than that chest holds comes from the next ones too, nearest first (up to 16 chests), and one chest that holds it all, no farther than those, goes alone; from_nearest says which (name, position, distance, how many each holds, chests checked, what was left out and why); none: refused with the nearest within 32 tiles (up_to=true: moved 0, short)',
+        feeding='with from "nearest": true takes from chests that feed something too (requester and buffer chests, a machine\'s input chest, a turret\'s feeder), after the others',
+        radius='with from "nearest": 1..256 tiles around you, walking to the chests (a timed call, as walk; the walk ends transferred once the count is taken); walk: true alone looks 32 tiles; default: in reach',
         walk='true: targets out of reach are walked to first, nearest first, then the same transfer is made at each (one timed call, as feed and collect tours; returns places and until_tick, legs (the route: each stop with walk tiles and in_reach), then last {op: transfer, transferred, items, entities, left}: transferred | nothing_to_do | out_of_items (nothing left to give) | nothing_collected (nothing to take) | inventory_full | unreached (no place reached) | timed_out); all in reach: the transfer at once',
         ticks='with walk: 1..36000 (default 3600); with pick and to: 1..36000 (default 18000)',
         pick='first_with_stock|most_stock, with positions and item or items: every listed place is read (in sight or by remote view) and the take is made at one: the first in list order holding a listed item now, or the one holding the most; empty places are skipped (skipped, skipped_places; never short); none holding any: moved 0, picked none, nothing walked. The take walks there when out of reach (as walk). Returns picked {position, name, item, holds, rule, line}',
@@ -5857,6 +5858,7 @@ function M.transfer_walk(p,a)
   end
   -- All in reach: the transfer at once (a fill is its total there).
   if far==0 then
+    args.avoid=nil
     if fill then args.fill=nil; args.total=fill end
     return handlers.transfer(p,args)
   end
@@ -5879,7 +5881,8 @@ function M.transfer_walk(p,a)
     if args.partial then return {transferred=0,moved=0,direction='to_entity',short={asked=args.count or 1,moved=0,reason='none_held'}} end
     error(string.format('no %s in inventory; nothing to give at %d place%s',args.item,#entities,#entities>1 and 's' or ''),0)
   end
-  args.positions=nil; args.position=nil; args.fill=nil
+  local avoid=args.avoid
+  args.positions=nil; args.position=nil; args.fill=nil; args.avoid=nil
   -- What each source holds as the walk starts, and what robots have reserved there (Grok, 15:20: a provider emptied by
   -- robots before he arrived, three times): an empty take on arrival says it.
   local reserved_total=0
@@ -5891,7 +5894,7 @@ function M.transfer_walk(p,a)
       M.saw_stock(e,args.item,entity_holds(e,args.item,args.quality),r)
     end
   end
-  local action,out=stock.start_tour(p,'transfer',entities,ticks,{transfer=args,item=args.item,quality=args.quality,rows={},items={},fill=fill})
+  local action,out=stock.start_tour(p,'transfer',entities,ticks,{transfer=args,item=args.item,quality=args.quality,rows={},items={},fill=fill,avoid_mode=avoid})
   if reserved_total>0 then
     out.reserved_note=string.format('robots have %d %s reserved to take at %s now: they may empty %s before you arrive',
       reserved_total,args.item,#entities>1 and 'these places' or 'it',#entities>1 and 'them' or 'it')
@@ -5925,6 +5928,23 @@ end
 -- requester feeding a machine): the chests holding it nearest first, requester and buffer chests last (they feed
 -- machines), and a count taken from as many of them as it takes.
 M.NEAREST_TYPES={'container','logistic-container','linked-container'}
+-- What a chest feeds: a requester or buffer chest's own name for it, or what an inserter that takes from it drops
+-- into (a machine's input chest, a turret's feeder); nil for a chest nothing takes from.
+function M.feeds(p,e,mode)
+  if mode=='requester' or mode=='buffer' then return 'a '..mode..' chest' end
+  local b=e.bounding_box
+  local ok,list=pcall(function() return p.surface.find_entities_filtered{area={{b.left_top.x-3,b.left_top.y-3},{b.right_bottom.x+3,b.right_bottom.y+3}},type='inserter',force=p.force} end)
+  for _,i in ipairs(ok and list or {}) do
+    local okp,src=pcall(function() return i.pickup_target end)
+    if okp and src==e then
+      local okd,dst=pcall(function() return i.drop_target end)
+      return string.format('%s (%g,%g) picks from it%s',i.name,i.position.x,i.position.y,okd and dst and dst.valid and ' into '..dst.name or '')
+    end
+  end
+end
+-- friction2 and friction3: the chests holding it, nearest first; each says what it feeds (M.feeds), and those come
+-- last (Grok took 40 iron plates from a requester feeding a machine; Sonnet took 1130 cable back out of the input
+-- chests of the line it had just filled; Opus's tour took 20 rounds from each of 5 requesters feeding turrets).
 function M.holding(p,item,quality,radius,exclude)
   local found,checked={},0
   for _,e in pairs(p.surface.find_entities_filtered{position=p.position,radius=radius,force=p.force,type=M.NEAREST_TYPES}) do
@@ -5934,10 +5954,11 @@ function M.holding(p,item,quality,radius,exclude)
       if n>0 then
         local okm,mode=pcall(function() return e.type=='logistic-container' and e.prototype.logistic_mode or nil end)
         mode=okm and mode or nil
+        local feeds=M.feeds(p,e,mode)
         -- what robots have reserved there (Grok, 15:20: three walks to a copper-cable provider robots emptied)
         local okr,r=pcall(M.supply.reserved,e,item)
         r=okr and r or 0
-        found[#found+1]={entity=e,count=n,reserved=r,free=math.max(0,n-r),distance=distance(p.position,e.position),fed=(mode=='requester' or mode=='buffer') or nil,mode=mode}
+        found[#found+1]={entity=e,count=n,reserved=r,free=math.max(0,n-r),distance=distance(p.position,e.position),fed=feeds and true or nil,feeds=feeds,mode=mode}
       end
     end
   end
@@ -5973,13 +5994,21 @@ function M.stock_then(e,item)
     seen.reserved>0 and string.format(', %d of it then reserved for robots to take',seen.reserved) or '')
 end
 function M.reserved_text(r) return r and r>0 and string.format(', %d of it reserved for robots to take',r) or '' end
+-- transfer {item, from: "nearest", radius} (Haiku 10:50: an ammo chest held pipes and no magazines, which cost a
+-- walk): our chests in reach, or within radius (1..256, walking there; walk: true alone, 32), that hold the item, as
+-- the map shows them (in sight or by remote view). Left out unless feeding: true: chests that feed something
+-- (M.feeds). Walking, also left out: chests in a worm's reach the map shows, and the legs go round them as move_to's
+-- do (friction3: Opus's tour of 5 turret feeders walked into worm range and was killed). A count the nearest lacks
+-- comes from the next ones, nearest first; one chest that holds it all, no farther than those, is taken alone
+-- (Sonnet: a 600 take went 57 tiles west, then 107 east, past a chest holding 1000).
 function M.from_nearest(p,a)
   assert(a.from=='nearest','from is "nearest" (the nearest chest holding the item)')
   assert(type(a.item)=='string' and prototypes.item[a.item],'from: "nearest" needs item')
   assert(a.direction==nil or a.direction=='to_player','from: "nearest" takes from a chest: direction to_player')
   assert(a.position==nil and a.positions==nil and a.area==nil,'from: "nearest" finds the chest: no position, positions or area')
+  assert(a.feeding==nil or type(a.feeding)=='boolean','feeding must be true or false')
   local reach=p.reach_distance or 10
-  local radius=a.radius~=nil and integer(a.radius,reach,1,256,'radius') or nil
+  local radius=a.radius~=nil and integer(a.radius,reach,1,256,'radius') or (a.walk==true and 32) or nil
   local found,checked=M.holding(p,a.item,a.quality,radius or reach+3,nil)
   local holding=#found
   if not radius then
@@ -5987,44 +6016,79 @@ function M.from_nearest(p,a)
     for _,f in ipairs(found) do if p.can_reach_entity(f.entity) then kept[#kept+1]=f end end
     found=kept
   end
-  local best=found[1]
+  -- What feeds something stays, unless asked; walking, what lies in a worm's reach stays too.
+  local mode=radius and M.avoid.mode(nil) or nil
+  local pool,fed,unsafe={},{},{}
+  for _,f in ipairs(found) do
+    if f.fed and not a.feeding then fed[#fed+1]=f
+    else
+      local c=mode and #pool<24 and not p.can_reach_entity(f.entity) and M.avoid.goal_check(p,p.position,f.entity.position,mode)
+      if c then f.unsafe=M.avoid.goal_text(f.entity.name,f.entity.position,c); unsafe[#unsafe+1]=f
+      else pool[#pool+1]=f end
+    end
+  end
+  local function left_out()
+    local parts={}
+    if #fed>0 then
+      local list={}
+      for i=1,math.min(3,#fed) do local f=fed[i]; list[i]=string.format('%s (%g,%g) holds %d: %s',f.entity.name,f.entity.position.x,f.entity.position.y,f.count,f.feeds) end
+      parts[#parts+1]=string.format('%d chest%s feeding something left out (feeding: true includes them): %s%s',#fed,#fed==1 and '' or 's',
+        table.concat(list,'; '),#fed>3 and '; ...' or '')
+    end
+    if #unsafe>0 then parts[#parts+1]=string.format('%d in enemy reach left out: %s',#unsafe,unsafe[1].unsafe) end
+    return #parts>0 and table.concat(parts,'; ') or nil
+  end
+  local best=pool[1]
   if not best then
     local far=M.nearest_holding(p,a.item,a.quality,32,nil)
     local where=far and string.format('; the nearest within 32 tiles: %s at (%g,%g), %.1f tiles away, holds %d%s (radius=%d walks there)',
       far.entity.name,far.entity.position.x,far.entity.position.y,far.distance,far.count,M.reserved_text(far.reserved),math.min(256,math.ceil(far.distance)+1)) or '; none within 32 tiles holds any'
-    local text=string.format('no chest %s holds %s (%d checked)%s',radius and ('within '..radius..' tiles') or 'in reach',a.item,checked,where)
+    if far and (#fed>0 or #unsafe>0) then where='' end
+    local why=left_out()
+    local text=string.format('no chest %s holds %s (%d checked)%s%s',radius and ('within '..radius..' tiles') or 'in reach',a.item,checked,where,
+      why and '; '..why or '')
     if a.up_to==true then return {moved=0,transferred=0,short={asked=a.count or 'all',moved=0,reason='source_empty'},note=text} end
     error(text,0)
   end
-  -- A count more than the first holds: the next ones too, in that order, until they hold it (at most 16 chests).
+  -- A count more than the first holds: the next ones too, in that order, until they hold it (at most 16 chests); one
+  -- that holds it all and is no farther than the farthest of those goes alone.
   local want=a.count~=nil and integer(a.count,1,1,10000,'count') or nil
   local use,have={},0
-  for _,f in ipairs(found) do
+  for _,f in ipairs(pool) do
     if #use>=16 then break end
     use[#use+1]=f; have=have+f.count
     if not want or have>=want then break end
   end
+  if want and #use>1 then
+    local farthest=0
+    for _,f in ipairs(use) do farthest=math.max(farthest,f.distance) end
+    for _,f in ipairs(pool) do
+      if f.free>=want and f.distance<=farthest then use={f}; have=f.count; best=f; break end
+    end
+  end
   for _,f in ipairs(use) do M.saw_stock(f.entity,a.item,f.count,f.reserved) end
   local args={}
   for k,v in pairs(a) do args[k]=v end
-  args.from=nil; args.radius=nil; args.direction='to_player'
+  args.from=nil; args.radius=nil; args.direction='to_player'; args.feeding=nil
   args.positions={}
   for i,f in ipairs(use) do args.positions[i]={x=f.entity.position.x,y=f.entity.position.y,unit_number=f.entity.unit_number} end
   args.walk=radius~=nil or nil
+  if args.walk then args.avoid=mode end
   if #use>1 then if args.walk then args.fill=want else args.total=want end end
   local out=args.walk and M.transfer_walk(p,args) or handlers.transfer(p,args)
+  local why=left_out()
   if #use==1 then
     local e=best.entity
-    out.from_nearest=string.format('%s at (%g,%g), %.1f tiles from you, holds %d %s%s%s (%d chest%s checked, %d holding it%s)',e.name,e.position.x,e.position.y,
-      best.distance,best.count,a.item,M.reserved_text(best.reserved),best.fed and ' (a '..best.mode..' chest: taken from last)' or '',checked,checked==1 and '' or 's',holding,
-      best.free==0 and '; every one holding it has all of it reserved for robots' or '')
+    out.from_nearest=string.format('%s at (%g,%g), %.1f tiles from you, holds %d %s%s%s (%d chest%s checked, %d holding it%s)%s',e.name,e.position.x,e.position.y,
+      best.distance,best.count,a.item,M.reserved_text(best.reserved),best.fed and ' ('..best.feeds..')' or '',checked,checked==1 and '' or 's',holding,
+      best.free==0 and '; every one holding it has all of it reserved for robots' or '',why and '; '..why or '')
   else
     local parts={}
     for i,f in ipairs(use) do
-      parts[i]=string.format('%s (%g,%g) %.1f tiles, holds %d%s%s',f.entity.name,f.entity.position.x,f.entity.position.y,f.distance,f.count,M.reserved_text(f.reserved),f.fed and ' ('..f.mode..')' or '')
+      parts[i]=string.format('%s (%g,%g) %.1f tiles, holds %d%s%s',f.entity.name,f.entity.position.x,f.entity.position.y,f.distance,f.count,M.reserved_text(f.reserved),f.fed and ' ('..f.feeds..')' or '')
     end
-    out.from_nearest=string.format('%d chests hold %d of the %d asked, nearest first, requester and buffer chests last: %s (%d chest%s checked, %d holding it)',
-      #use,have,want,table.concat(parts,'; '),checked,checked==1 and '' or 's',holding)
+    out.from_nearest=string.format('%d chests hold %d of the %d asked, nearest first%s: %s (%d chest%s checked, %d holding it)%s',
+      #use,have,want,a.feeding and ', those feeding something last' or '',table.concat(parts,'; '),checked,checked==1 and '' or 's',holding,why and '; '..why or '')
   end
   return out
 end
@@ -8802,7 +8866,7 @@ function M.dispatch_inner(request)
     result=r
   end
   M.seated_ok=nil
-  if corrected and type(result)=='table' then
+  if corrected and type(result)=='table' and not corrected.quiet then
     result.corrected=corrected.call..' ('..table.concat(corrected.notes,'; ')..')'..(result.corrected and '; '..result.corrected or '')
   end
   -- Item moves: moved, and the inventory line after the move (Muse 06:27).
@@ -9268,6 +9332,8 @@ stock=stock_module{distance=distance,integer=integer,position=position,claims=M.
   -- recover's walk keeps out of the enemy reach the map shows, as move_to's (avoid.lua).
   avoid_start=function(p,nav,mode) return M.avoid.start(p,nav,mode) end,
   stop_walking=function(p) p.walking_state={walking=false,direction=defines.direction.north} end,
+  -- A tour's legs round the worms the map shows (avoid.lua), as a walk's: each leg's end starts the next.
+  leg_done=function(p,nav,outcome) return M.avoid.leg_done(p,nav,outcome) end,
   -- A courier's destination found on arrival: within reach of its position, then the entity there.
   near=function(p,pos) return distance(p.position,pos)<=math.max(1,(p.reach_distance or 10)-1) end,
   find=function(p,pos) return entity(p,{position=pos}) end}
