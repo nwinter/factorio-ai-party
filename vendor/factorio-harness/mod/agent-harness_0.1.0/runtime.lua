@@ -1470,7 +1470,7 @@ function handlers.describe()
         pick='first_with_stock|most_stock with positions and item or items: as transfer\'s pick (one listed place that holds it now; empty ones skipped, never short)',items='with pick: 1..16 item names',to='with pick: {x,y} or {item: {x,y}}: carry what was taken there and give it (as transfer\'s to)',
         radius='1..256: with item, walk to our machine outputs/chests holding it (as stock lists), nearest-neighbour route, taking it until count; without item, to every assembler and furnace output in it holding anything, taking all of it (output slots only, never inputs or fuel; chests need item; last reports items); a timed action',count='with radius: stop after this many (default all)',want='optional, with item: hold this many; takes only the difference (nothing when you already have it); not with count',ticks='with radius: 1..36000 (default 3600)',
         outcomes='with radius: collected | nothing_collected | inventory_full | timed_out; status reports got, visited, and tally with 2+ places: moved per item, places touched of the total, short (not reached, failed, not visited); in reach or with positions, 2+ targets: tally as transfer\'s'},
-      research={technology='name (omit everything to report: current, progress, queue, pending, and entries: each queued technology with progress %, queued_by, packs, done_in at the lab throughput of the last minute (2 minutes, then the last 5, when the last minute had no research progress; throughput says which), waits_for a pack nobody made in 10 minutes; throughput; clock_stops_at)',remove='a queued technology name, or an array: takes it out of the queue as the research GUI does, with queued technologies that need it (also_removed); progress is kept for later',cancel='same as remove',move='a queued technology name: reorders it to position `to` (1 = researched now); refused ahead of a queued prerequisite or behind a queued technology that needs it',to='position for move (1..queue length)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={prefix='optional',limit='1..256',machine='optional crafting machine name: each entry\'s rate at its crafting speed and its own productivity (default: crafting speed 1)',returns='entries [{name, ingredients, products (with ignored_by_productivity: the amount productivity does not apply to), energy (seconds a craft at speed 1), rate (crafts/min, productivity with research, each product per minute, net of what goes back in)}]'}, technologies={prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those'},
+      research={technology='name (omit everything to report: current, progress, queue, pending, and entries: each queued technology with progress %, queued_by, packs, done_in at the lab throughput of the last minute (2 minutes, then the last 5, when the last minute had no research progress; throughput says which), waits_for a pack nobody made in 10 minutes with none in our labs or logistic networks; not_made_recently such a pack with some in stock, the stock and what labs used; throughput; clock_stops_at)',remove='a queued technology name, or an array: takes it out of the queue as the research GUI does, with queued technologies that need it (also_removed); progress is kept for later',cancel='same as remove',move='a queued technology name: reorders it to position `to` (1 = researched now); refused ahead of a queued prerequisite or behind a queued technology that needs it',to='position for move (1..queue length)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={prefix='optional',limit='1..256',machine='optional crafting machine name: each entry\'s rate at its crafting speed and its own productivity (default: crafting speed 1)',returns='entries [{name, ingredients, products (with ignored_by_productivity: the amount productivity does not apply to), energy (seconds a craft at speed 1), rate (crafts/min, productivity with research, each product per minute, net of what goes back in)}]'}, technologies={prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those'},
       blueprint_import={blueprint='export string',slot='default clipboard'},blueprint_export={slot='default clipboard',name='or a team library entry (blueprint_save)',layout='true returns normalized relative layout and material costs instead of export string'},
       blueprint_list={name='optional team library entry: that entry in full (all entity counts, description, anchor, captured area)',returns='slots (your own); library: the team\'s entries {name, author, entities, tiles, footprint WxH tiles, counts (largest 4), saved, last_used (ago, by whom) or never, uses, surface, anchor, description}; library_limit'},
       blueprint_delete={slot='name',name='or a team library entry: its author any time, anyone after 24 game hours unused'},
@@ -7476,6 +7476,34 @@ function M.from_nearest(p,a)
   end
   return out
 end
+-- How much of an item a crafting machine's input takes by hand now (Muse, shift18 12:46: modules collected from one
+-- machine's output piled up in the character, 78 and growing, because the next machine took no more). Measured on
+-- 2.0.77: an assembler's, chemical plant's or furnace's input takes up to one stack plus 64 of each ingredient (50 ->
+-- 114, 100 -> 164, 200 -> 264), whatever the machine; an item its recipe does not use, none. nil: not a crafting
+-- machine's input (a chest, module or fuel slots), no recipe read, or the item goes elsewhere.
+M.INPUT_OVER_STACK=64
+function M.machine_room(e,item,quality)
+  if not (e and e.valid and (e.type=='assembling-machine' or e.type=='furnace')) then return nil end
+  local okr,recipe=pcall(function() return e.get_recipe() or (e.type=='furnace' and e.previous_recipe) end)
+  if not okr or not recipe then return nil end
+  local name=recipe.name
+  if type(name)~='string' then name=name and name.name end
+  local proto=name and prototypes.recipe[name]
+  if not proto then return nil end
+  local okn,inv_name=pcall(infer_inventory,e,{direction='to_entity',item=item,quality=quality})
+  local input=e.type=='furnace' and 'furnace_source' or 'assembling_machine_input'
+  local uses=false
+  for _,ing in ipairs(proto.ingredients or {}) do if ing.type~='fluid' and ing.name==item then uses=true end end
+  if not uses then
+    if okn and inv_name~=input then return nil end
+    return {room=0,why=string.format('its recipe %s does not use %s',name,item)}
+  end
+  local inv=e.get_inventory(defines.inventory[input])
+  local held=inv and inv.get_item_count{name=item,quality=quality or 'normal'} or 0
+  local cap=(prototypes.item[item] and prototypes.item[item].stack_size or 1)+M.INPUT_OVER_STACK
+  local room=math.max(0,cap-held)
+  return {room=room,held=held,cap=cap,why=room==0 and string.format('its input holds %d %s, as much as a hand puts in (one stack and %d)',held,item,M.INPUT_OVER_STACK) or nil}
+end
 -- transfer or collect {positions, item | items, pick, to} (Luna 07:57: a repeating seed courier walked 300+ tile laps
 -- from empty seed chests). pick reads every listed place as inspect does (in sight or by remote view) and takes from
 -- one: first_with_stock, the first in list order that holds a listed item now (its first listed item it holds);
@@ -7554,6 +7582,23 @@ function M.pick_source(p,a,verb)
       best.reserved>0 and string.format(', %d of them reserved for robot pickup',best.reserved) or '',a.pick,#skipped,#skipped==1 and '' or 's')}
   local take={direction='to_player',item=best.item,quality=a.quality,outputs_only=a.outputs_only,count=counts[best.item] or a.count,keep=a.keep,keep_max=a.keep_max,inventory=a.inventory,
     up_to=a.up_to==true and true or nil,ticks=a.ticks}
+  -- With to on a crafting machine: what its input takes now, read before the take; none: nothing taken, nothing walked;
+  -- else the take is at most that (the rest stays in the source).
+  local to_takes
+  if dest and a.inventory==nil then
+    local to=dest(best.item)
+    local okd,there=pcall(entity,p,{position=to},true)
+    local okr,room=pcall(M.machine_room,okd and there or nil,best.item,a.quality)
+    if okr and room then
+      local where=string.format('%s at (%g,%g)',there.name,there.position.x,there.position.y)
+      if room.room==0 then
+        return {moved=0,transferred=0,picked=picked,skipped=#skipped,refused=where..': '..room.why,
+          note=string.format('%s takes no %s now: %s; nothing taken, nothing walked',where,best.item,room.why)}
+      end
+      take.count=math.min(take.count or room.room,room.room)
+      to_takes=string.format('%s takes %d %s now (its input holds %d of %d: one stack and %d); the take is at most that',where,room.room,best.item,room.held,room.cap,M.INPUT_OVER_STACK)
+    end
+  end
   -- With to, inventory goes with the place that has it (round1650d: Luna's and Grok's rocket_silo_rocket was tried on the
   -- chest taken from, "inventory is not applicable", and the courier ended nothing_collected): the give's for a silo or
   -- a machine at to, the take's for the picked place; refused when neither has it.
@@ -7594,6 +7639,7 @@ function M.pick_source(p,a,verb)
       to_line=string.format('then gives it at (%g,%g)%s',to.x,to.y,found and '' or ' (out of sight now: found on arrival)')}
   end
   out.picked=picked; out.skipped=#skipped; out.skipped_places=#skipped>0 and #skipped<=8 and skipped or nil
+  out.to_takes=to_takes
   if verb=='collect' then out.direction=nil end
   return out
 end
@@ -11295,7 +11341,7 @@ space=space_module{chronicle_created=function(pl,who) return M.chronicle.created
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,
   engine=function(pl) return M.engine.read(pl) end,
-  state=state,thrust=function(pl) return M.thrust.read(pl) end,
+  state=state,thrust=function(pl) return M.thrust.read(pl) end,thrust_after=function(pl) return M.thrust.after_pumps(pl) end,
   rocket=function(e) return M.silo.rocket(e) end,
   -- A full drop's pods waiting for a hatch: a channel of their own, as shoot's is, so the
   -- character's action and queue go on (drop is passive); M.drop_jobs_tick sends them.

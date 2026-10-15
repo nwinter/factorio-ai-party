@@ -79,7 +79,10 @@ local n=0;for _ in pairs(state.read_memory.read_entries) do n=n+1 end;eq(n,256)
 for i=1,2050 do R.observe{valid=true,name='iron-chest',type='container',position={x=i,y=91},force=force,surface=surface} end
 n=0;for _ in pairs(state.read_memory.entries) do n=n+1 end;eq(n,2048)
 shown=false
-r=R.read(p,{position={x=2050,y=90}},'inspect',live);eq(r.by,'last seen memory')
+r=R.read(p,{position={x=2050,y=90}},'inspect',live);eq(r.by,'last seen memory');eq(r.holds,nil,'a recorded inspect keeps its own fields')
+-- A sighting only (Muse, shift18 12:46: "only basic info"): holds says why there is none.
+r=R.read(p,{position={x=2050,y=91}},'inspect',live);eq(r.detail,'last observed entity summary')
+has(r.holds,'unknown: its chunk is not in sight now (no radar or character of ours sees it), and the game shows an entity\'s contents only in sight')
 shown=true
 -- Area predicates validate the box and bound the entity selection.
 local C=require('conditions'){position=pos,known=function() return true end}
