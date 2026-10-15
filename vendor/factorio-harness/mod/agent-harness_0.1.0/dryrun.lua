@@ -1835,6 +1835,7 @@ return function(api)
       end
       out.belts = #list > 0 and list or nil
     end
+    if api.heating then out.heating,out.heating_more=api.heating(p,recs) end
     local function idx(r) return r.copy and (r.copy..'.'..r.index) or r.index end
     -- Fluid and heat connections of the plan (Sol, shift13 16:50: Gleba's heat power planned by footprints, the
     -- joins unknown until it was built): for each planned boiler, heat exchanger, turbine, reactor, heating tower,

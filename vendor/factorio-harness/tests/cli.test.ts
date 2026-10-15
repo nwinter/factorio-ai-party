@@ -758,3 +758,16 @@ test('CLI waits follow a silo deadline extension; explicit timeouts still stop',
     }
   } finally {await rm(dir,{recursive:true,force:true});}
 });
+
+test('refuel area --wait follows the gather and retains fuel source facts',async()=>{
+  let polls=0;
+  await engine(request=>{
+    if(request.action==='refuel')return {ok:true,result:{until_tick:180,op:'refuel',places:2}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:30,y:0},health:250,max_health:250,inventory:[]}}};
+    polls++;
+    return {ok:true,result:polls<2?{active:{kind:'gather',until_tick:180}}:{active:false,last:{kind:'gather',op:'refuel',outcome:'topped_up',moved:20,fuel_taken:20,sources:[{name:'iron-chest',taken:20}]}}};
+  },async port=>{
+    const {code,stdout}=await compact(port,['call','refuel','--args','{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":40,"y":10}},"from":"nearest"}','--wait']);
+    assert.equal(code,0,stdout);assert.ok(polls>=2);assert.match(stdout,/outcome: topped_up/);assert.match(stdout,/fuel_taken: 20/);assert.match(stdout,/iron-chest/);
+  });
+});
