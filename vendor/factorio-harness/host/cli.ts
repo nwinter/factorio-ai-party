@@ -1021,6 +1021,7 @@ async function main() {
       ...(last?.kind === 'move_to' || last?.kind === 'drive' ? {avoided_enemies: last.avoided_enemies,
         enemies_at_start_or_goal: last.enemies_at_start_or_goal, passed_within_margin: last.passed_within_margin} : {}),
       why: last?.why, note: status.result?.note,
+      silo_wait: last?.silo_wait ?? status.result?.active?.silo_wait,
       // a call made after its walk into reach, or not made when the walk did not get there (autowalk.lua)
       walked: last?.walked, not_made: last?.not_made,
       // a tour's places left out for an enemy (round1950a)

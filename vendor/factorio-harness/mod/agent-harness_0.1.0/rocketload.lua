@@ -346,17 +346,44 @@ return function(api)
     return built * 1000000 + st * 1000 + parts
   end
   function M.wait_fields(silo, ticks)
-    return {stall=ticks, give_up=game.tick + math.max(ticks, M.MAX_WAIT), mark=progress_mark(silo)}
+    return {stall=ticks, idle_ticks=ticks, give_up=game.tick + math.max(ticks, M.MAX_WAIT), mark=progress_mark(silo),
+      parts=try(function() return silo.rocket_parts end) or 0, part_tick=game.tick, parts_added=0, observed_ticks=0}
+  end
+  -- The measured cadence belongs to this wait, not another silo or rocket.
+  -- A burst's spacing sets the idle window; its part count sets the rate.
+  -- Never shrink the window after a faster burst, or extend it just because
+  -- a poll happened. Reset the measurement when the part counter rolls over.
+  function M.wait_report(action)
+    local w=action.await_silo
+    if not w then return nil end
+    local elapsed=w.observed_ticks or 0
+    return {parts=w.parts, parts_added=w.parts_added or 0, observed_s=elapsed/60,
+      parts_per_min=elapsed>0 and (w.parts_added or 0)*3600/elapsed or nil,
+      rate_basis=elapsed>0 and 'part-count increases observed during this wait' or 'no part-count increase observed during this wait',
+      last_part_ago_s=w.part_tick and (game.tick-w.part_tick)/60 or nil,
+      idle_window_s=(w.idle_ticks or w.stall or 3600)/60, gives_up_tick=w.give_up}
   end
   function M.ready(p, action)
     local w = action.await_silo
     local silo = w and try(function() return api.reach_entity(p, w.position) end)
     if not (silo and silo.valid and silo.type == 'rocket-silo') then return true end
     if w.stall then
+      local parts=try(function() return silo.rocket_parts end) or 0
       local mark = progress_mark(silo)
+      w.idle_ticks=w.idle_ticks or w.stall
+      if w.parts and parts>w.parts then
+        local gap=game.tick-(w.part_tick or game.tick)
+        w.parts_added=(w.parts_added or 0)+parts-w.parts
+        w.observed_ticks=(w.observed_ticks or 0)+gap
+        w.part_tick=game.tick
+        w.idle_ticks=math.max(w.idle_ticks,3*gap)
+      elseif not w.parts or parts<w.parts then
+        w.parts_added,w.observed_ticks,w.part_tick=0,0,game.tick
+      end
+      w.parts=parts
       if mark ~= w.mark then
         w.mark = mark
-        action.until_tick = math.min(w.give_up, math.max(action.until_tick or 0, game.tick + w.stall))
+        action.until_tick = math.min(w.give_up, math.max(action.until_tick or 0, game.tick + w.idle_ticks))
       end
     end
     if not M.rocket_inventory(silo) then return false end
@@ -1029,7 +1056,7 @@ return function(api)
       launch='true: launch once the rocket is ready, in the tick the cargo is loaded; needs platform (or orbit=true); refused (not launched, an error) when any count fell short; min_cargo and arrived are checked as launch checks them',
       platform='with launch: the platform in orbit to send it to', orbit='with launch: true for no platform',
       min_cargo='with launch: as launch min_cargo', arrived='with launch: as launch arrived',
-      ticks='1..36000 (default 3600): how long to wait for the rocket (no rocket yet, or not ready for a launch) with no new rocket part: the wait goes on while the silo makes parts (or the rocket moves on to ready), 1 game hour at most in all (gives_up_tick); with walk, the whole tour (default 18000)',
+      ticks='1..36000 (default 3600): how long to wait for the rocket (no rocket yet, or not ready for a launch) with no new rocket part: the idle window grows to at least 3 times the longest observed gap between part increases; the wait goes on while the silo makes parts (or the rocket moves on to ready), 1 game hour at most in all (gives_up_tick); with walk, the whole tour (default 18000)',
       returns='silo, loaded [{item, asked, aboard_before, loaded, aboard, from (you N, iron-chest (x,y) N), freshness (a spoilable item: the loaded batch\'s spread and, for a pack the running research takes, how many a unit the running research takes and its units left), short, why (weight, slots, or what you and the chests held)}], cargo, rocket_weight, slots (used/total), chests (how many were read), complete, short; launch (the launch reply) with launch=true. No rocket yet, or launch=true before the rocket is ready: a timed action (until_tick, waiting {why, rocket}; outcome fed | failed | timed_out; last.result holds the reply). Into the rocket only what fits under its 1000 kg lift and in its cargo slots; a silo with automatic requests on is refused'},
     preflight = {from='with items: one chest position or 1..16, readable in sight or remote view; per-chest stock, order.from_held, from_short (less what is aboard), short (also less you_hold); repeated chests counted once; nothing moved',position='optional rocket silo {x,y} (any tile of it), in a visible chunk (remote view); omitted: all visible silos in the background census index, nearest your coordinates first',
       surface='optional planet name (default yours); platform remains the rocket destination',

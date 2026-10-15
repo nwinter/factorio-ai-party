@@ -553,6 +553,20 @@ test('a compact wait that ends badly still ends with the error line and exits no
     assert.match(stdout,/\nerror: action_interrupted: Control ended: blocked\n$/);
   });
 });
+test('compact load_silo wait retains the measured cadence when it times out',async()=>{
+  await engine(request=>{
+    if(request.action==='load_silo')return {ok:true,result:{until_tick:60}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:1,y:1},health:250,max_health:250,inventory:[]}}};
+    return {ok:true,result:{active:false,last:{kind:'feed',handler:'load_silo',outcome:'timed_out',
+      silo_wait:{parts:46,parts_per_min:0.8,idle_window_s:225,gives_up_tick:216000}}}};
+  },async port=>{
+    const {code,stdout}=await compact(port,['call','load_silo','--args','{"items":{"iron-plate":1}}','--wait']);
+    assert.equal(code,1);
+    assert.match(stdout,/silo_wait:/);
+    assert.match(stdout,/parts_per_min[=:] ?0.8/);
+    assert.match(stdout,/idle_window_s[=:] ?225/);
+  });
+});
 test('kite --wait waits for the fight to end and reports it like move_to',async()=>{
   // Sol, shift09: kite --wait returned at once while the kite still ran.
   for (const end of [

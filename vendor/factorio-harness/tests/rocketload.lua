@@ -559,3 +559,25 @@ do
   eq(r.manifest.after_slots,4);eq(r.manifest.fits,false,'slots include unrelated cargo')
   api.cargo.limits=limits;api.remote_entity=remote
 end
+
+-- Slow part deliveries grow the idle window; polling alone never extends it.
+do
+  local oldtick,oldparts,oldstate,oldrocket=game.tick,silo.rocket_parts,silo.rocket_silo_status,silo.no_rocket
+  game.tick=100;silo.rocket_parts=45;silo.rocket_silo_status=0;silo.no_rocket=true
+  local w=R.wait_fields(silo,3600);w.position={x=65.5,y=14.5};w.launch=true
+  local action={await_silo=w,until_tick=3700}
+  eq(R.wait_report(action).parts_per_min,nil)
+  game.tick=3100;silo.rocket_parts=46;eq(R.ready(p,action),false)
+  eq(action.until_tick,12100);eq(R.wait_report(action).idle_window_s,150)
+  eq(R.wait_report(action).parts_per_min,1.2)
+  game.tick=7100;eq(R.ready(p,action),false);eq(action.until_tick,12100,'no part, no extension')
+  game.tick=9100;silo.rocket_parts=47;R.ready(p,action)
+  eq(action.until_tick,27100);eq(R.wait_report(action).parts_per_min,0.8)
+  game.tick=10000;silo.rocket_parts=48;R.ready(p,action)
+  eq(w.idle_ticks,18000,'a fast part does not erase the slow cadence')
+  game.tick=w.give_up-5;silo.rocket_parts=49;R.ready(p,action)
+  eq(action.until_tick,w.give_up,'absolute cap never moves');eq(w.give_up,216100)
+  silo.rocket_parts=0;game.tick=game.tick+1;R.ready(p,action)
+  eq(R.wait_report(action).parts_added,0,'counter rollover is not negative production')
+  game.tick,silo.rocket_parts,silo.rocket_silo_status,silo.no_rocket=oldtick,oldparts,oldstate,oldrocket
+end

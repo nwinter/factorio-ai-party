@@ -416,3 +416,25 @@ do
   P.request(p,tight)
   eq(asked[1].radius,.25);eq(asked[2].radius,.25)
 end
+
+-- A build closes a walkable pocket even when the character stands outside it.
+do
+  local ring={{0,0,1,8,'drill','left',base=true},{5,0,6,8,'drill','right',base=true},
+    {0,8,6,9,'accumulator','bottom',base=true},{1,-0.2,5,0.2,'accumulator','lid',base=true}}
+  local list,info=P.pockets(fake({}),0.2,ring,{})
+  eq(info.checked,true);eq(#list,1);eq(#list[1].around,4)
+  assert(list[1].region.tiles>20)
+  ring[4]=nil;eq(#P.pockets(fake({}),0.2,ring,{}),0,'open gap is not a pocket')
+  eq(#P.pockets(fake(pocket),0.2,{lid},{}),1,'one closing entry beside existing buildings')
+  eq(#P.pockets(shut,0.2,{lid},{}),0,'already closed before the plan')
+  local scans=0
+  local no_scan={find_entities_filtered=function() scans=scans+1;return {} end}
+  list,info=P.pockets(no_scan,0.2,{{0,0,100,100,'drill','large',base=true}},{})
+  eq(#list,0);eq(info.checked,false);eq(scans,0,'oversized check does not scan')
+  -- Planned terrain only counts in the after layout.
+  local terrain={find_entities_filtered=function() return {} end,
+    find_tiles_filtered=function() return {{name='water',position={x=2,y=2}}} end}
+  ring[4]={1,-0.2,5,0.2,'accumulator','lid',base=true}
+  list=P.pockets(terrain,0.2,ring,{open={['2,2']=true}})
+  eq(#list,1)
+end
