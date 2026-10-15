@@ -17,6 +17,7 @@ import json, math, os, re, time
 from collections import deque
 
 import attention
+import pacing
 import clouds as clouds_mod
 import loadout as loadouts_mod
 import efficiency as efficiency_mod
@@ -416,6 +417,7 @@ class Agent:
         self.last = None
         self.last_activity_t = None  # wall time of the last observed action or speech
         self.combat = False  # in a fight now: hit lately or fighting (combat_state)
+        self.resting = None  # a rest between turns (pacing.py: {since, until, reason}), or None
         self.combat_state = None  # "hurt" | "fighting" | "guard" | None
         self.combat_info = {}
         self.plan = None  # the action running now with its bounds (live.py `plan`; onecam.py looks ahead with it)
@@ -758,6 +760,12 @@ class Model:
             ag.avatar = a["avatar"] if isinstance(a["avatar"], dict) else None
         if "notes_job" in a:
             ag.notes_job = a["notes_job"]
+        if "resting" in a:  # the agy loop sleeps between turns (pacing.py); said once to the hosts as a fact
+            rest = a["resting"] if isinstance(a["resting"], dict) else None
+            if rest and (not ag.resting or ag.resting.get("until") != rest.get("until")):
+                self.alert("rest", f"{ag.display_name} is {pacing.label(rest)}", key=f"rest:{ag.name}:{rest.get('until')}",
+                           agent=ag.name, ttl=60)
+            ag.resting = rest
         if "profile_set" in a:
             ag.profile_set = a["profile_set"]
         if a.get("position"):
@@ -1225,11 +1233,17 @@ class Model:
         return dict(e, text=text, platform=p.get("name"))
 
     # ---- derived ---------------------------------------------------------------------------------------------
+    def is_resting(self, ag, now=None):
+        r = ag.resting
+        return bool(r and r.get("until", 0) > (now or time.time()))
+
     def activity(self, ag, now):
         if not ag.connected:
             return "offline"
         if not ag.alive:
             return "dead"
+        if self.is_resting(ag, now):  # between turns, pacing its quota: neither idle nor offline
+            return "resting"
         if ag.active:
             return "acting"
         if ag.last_activity_t and now - ag.last_activity_t < THINK_WINDOW and not self.paused:
@@ -1239,6 +1253,8 @@ class Model:
     def action_text(self, ag):
         if not ag.connected:
             return "client offline"
+        if self.is_resting(ag):
+            return pacing.label(ag.resting)
         if not ag.alive:
             if ag.dead_until_tick and ag.dead_until_tick > self.tick:
                 return f"respawning in {math.ceil((ag.dead_until_tick - self.tick) / 60)} s"
@@ -1682,6 +1698,7 @@ class Model:
                 "combat_state": ag.combat_state, "combat_info": ag.combat_info or None,
                 "surface": ag.surface, "where": where_label(ag.surface, ag.platform) if ag.surface else None,
                 "on_platform": bool(ag.platform), "attention": self.attention_row(ag, now), "auto": ag.auto,
+                "resting_until": ag.resting["until"] if self.is_resting(ag, now) else None,
                 "tokens": (tok.get(ag.name) or {}).get("total") or None,  # this shift's, for the card's small figure
             })
         res = self.research

@@ -29,6 +29,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.join(ROOT, "tools", "stream"))
 sys.dont_write_bytecode = True
+import pacing  # noqa: E402  (tools/stream/pacing.py: an agent's rest between turns)
 
 
 def log(msg):
@@ -178,6 +179,9 @@ class Nudger:
             return "queued work in its journal"
         if now - self.start < self.grace_s:
             return "first minutes of the shift"
+        rest = self.run_dir and pacing.resting(os.path.join(self.run_dir, row["name"]), now)
+        if rest:  # the agy loop sleeps between turns (tools/agy-quota.py): nobody reads a tell until it wakes
+            return pacing.label(rest)
         if self.deadline and now >= self.deadline:
             return "after the deadline"
         if now - self.last.get(row["name"], -1e18) < self.every_s:
