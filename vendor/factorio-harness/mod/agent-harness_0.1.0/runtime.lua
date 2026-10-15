@@ -10209,7 +10209,11 @@ function handlers.construction_robots(p,a)
 end
 -- Tells: lines to named teammates outside the chat (tells.lua).
 M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,
-  where_from=function(me) return M.where.from(me) end}
+  where_from=function(me) return M.where.from(me) end,
+  -- A direct wait that no tell ends (wake_on_messages: false), and ending one for tell {wake: true} (Astra, d15 14:48).
+  deaf=function(index) local a=state().active[index]; if M.deaf_wait(a) then return {kind=a.kind,until_tick=a.until_tick} end end,
+  wake=function(index,from) local a=state().active[index]; if not M.deaf_wait(a) then return false end; a.told='told by '..from..' (wake: true)'; finish(index,'told'); return true end}
+function M.deaf_wait(a) return a~=nil and (a.kind=='wait_ticks' or a.kind=='wait_until') and not a.queued and a.wake_messages==false end
 for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
 M.factory_digest=require('factory_digest'){state=state,use_lines=function(force) return M.research_use.lines(force) end}
 -- Idle characters for the operator's nudge (idle.lua): idle_report, and the

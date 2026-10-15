@@ -74,6 +74,7 @@ const help = `fh — Factorio agent CLI
   fh operator "text"                        A request to the operator (harness bugs, tools, viewer asks); input as for say
   fh tell NAME[,NAME]|team "text"           A line to teammates outside chat: their next reply's team block, wakes them; input as for say
                                             --fyi: no answer needed; it waits for their next reply and wakes nobody
+                                            --wake: also ends their wait that ignores messages (wake_on_messages: false), once per 10 min per teammate
   fh tells [--since SEQ] [--limit N]        The last 30 tells you received (time, sender, fyi), shown before or not;
                                             --since SEQ: the ones you sent or received after SEQ
   fh players [NAME] [--args '{"minutes":10}'] Human players on the map: where, group, what each built, removed, ordered, moved
@@ -571,7 +572,7 @@ async function main() {
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
-    full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'}, look:{type:'string'}, fyi:{type:'boolean'},
+    full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'}, look:{type:'string'}, fyi:{type:'boolean'}, wake:{type:'boolean'},
     'text-file':{type:'string'}, 'deadline-file':{type:'string'}, until:{type:'string'},
     max:{type:'string'}, title:{type:'string'},
   }});
@@ -753,6 +754,10 @@ async function main() {
     if (values.fyi) {
       if (command !== 'tell') throw new Error('--fyi applies to tell');
       args.fyi = true;
+    }
+    if (values.wake) {
+      if (command !== 'tell') throw new Error('--wake applies to tell');
+      args.wake = true;
     }
     if (values.title !== undefined) {
       if (command !== 'chronicle') throw new Error('--title applies to chronicle');

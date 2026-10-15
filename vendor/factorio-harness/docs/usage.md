@@ -4415,7 +4415,14 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   gets it in the next reply's `team.tells` and, if asleep, wakes with `woke: told` (and `tell: "from: text"`); it is
   never in the game chat, `chat` reads, the `chat:` trailer or `chat_remaining`, and draws no bubble. Unknown names
   fail with the roster; yourself is left out. The reply: `seq`, `to` (names, or `team`), and `away` for recipients on
-  another planet, a platform or in a cargo pod (`sol is on Vulcanus`). `tells {since?, limit?}` (limit 1..100,
+  another planet, a platform or in a cargo pod (`sol is on Vulcanus`). A recipient in a direct `wait_ticks` or
+  `wait_until` started with `wake_on_messages: false` gets the tell in its next reply only; the reply says so in
+  `ignoring` (`sonnet is in a wait_until that ignores messages until tick 812345 (about 12 min)`; Astra, d15 14:48:
+  Sonnet sat in back-to-back 15-minute waits like that, and no freight tell reached it for about an hour).
+  `tell {wake: true}` (`fh tell NAME --wake "text"`) ends such a wait as well (outcome `told`, `last.why` `told by
+  astra (wake: true)`), at most once per 10 minutes per sender and recipient: the reply lists `woken`, and
+  `not_woken` (`sonnet: woken by you 4 min ago; again from tick T`) with the recipient in `ignoring`. `wake` and `fyi`
+  do not go together. `tells {since?, limit?}` (limit 1..100,
   default 30, newest kept) lists tells oldest first as `{seq,tick,ago_s,from,away?,to?,team?,fyi?,text}`. Without
   `since`: the last 30 you received (team tells included), at every read, whether or not a team block showed them
   (Muse, shift10: two tells shown once and missed were lost). With `since`: the ones you sent or received after that

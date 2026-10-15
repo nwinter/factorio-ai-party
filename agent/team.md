@@ -161,6 +161,7 @@ already targets your character.
 - `./fh tell luna "29 plates in the chest at (3,4)"` (or `luna,sol`, or `team`; text as for `say`) reaches only
   them, outside the game chat: it appears in their next reply under `team: tells` and wakes them from `sleep`.
   Add `--fyi` when no answer is needed: it waits for their next reply, marked `(fyi)`, and wakes nobody.
+  The reply's `ignoring` names a recipient in a wait that ignores messages (and until when); `--wake` ends that wait too, once per 10 minutes per teammate.
   Viewers see tells on the stream's logistics ticker. `./fh tells` lists the last 30 tells you received
   (time, sender, fyi), shown before or not; `./fh tells --since N` lists the ones you sent and received after N.
 - The stream's operator-only `POST /platform` holds a whole platform on air; an operator follow of an agent aboard

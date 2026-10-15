@@ -9,6 +9,10 @@ return function(api)
   local MAX_LOG, MAX_LEN, MAX_TO = 300, 500, 8
   local TEAM = {team=true, everyone=true, all=true}
   local OPERATOR_KEEP = 3
+  -- wake: true ends a recipient's wait that ignores messages (wake_on_messages: false) at most once per WAKE_EVERY
+  -- ticks per sender and recipient (Astra, d15 14:48: Sonnet sat in back-to-back 15-minute waits that no tell reached
+  -- for about an hour).
+  M.WAKE_EVERY = 10 * 3600
   local function store()
     local s = api.state()
     s.tells = s.tells or {seq=0, log={}}
@@ -58,13 +62,16 @@ return function(api)
     tell = {to='a teammate name or display name, several (array or "luna,sol"), or "team" for everyone',
       text='1..500 characters, one line (longer is cut to 500; the reply says so)',
       fyi='true: for their information; it waits for their next reply (marked fyi) and wakes nobody: routine updates, no answer needed',
-      returns='seq and to (cut {length, kept} when the text was cut; away "sol is on Vulcanus" for recipients on another planet, platform or in a cargo pod): the line goes to each recipient\'s next reply (team: tells), wakes them if asleep (woke=told), and stays out of the game chat; viewers see it as text on the stream\'s logistics ticker, never spoken'},
+      wake='true (fh tell --wake): also ends a recipient\'s direct wait_ticks or wait_until that ignores messages (wake_on_messages: false), at most once per 10 minutes per sender and recipient; the reply\'s woken and not_woken say which',
+      returns='seq and to (cut {length, kept} when the text was cut; away "sol is on Vulcanus" for recipients on another planet, platform or in a cargo pod; ignoring "sonnet is in a wait_until that ignores messages until tick T (about N min)" for a recipient no tell wakes now; woken and not_woken with wake): the line goes to each recipient\'s next reply (team: tells), wakes them if asleep (woke=told), and stays out of the game chat; viewers see it as text on the stream\'s logistics ticker, never spoken'},
     tells = {since='optional sequence number: the tells you sent or received after it (since=0: all of them); without it, the tells you received', limit='1..100, newest kept (default 30)',
       returns='tells {seq,tick,ago_s,from,away?,to?,team?,fyi?,text} oldest first: without since the last 30 you received, whether or not a team block showed them; with since those you sent or received (to on each). away: "on Vulcanus" when the sender is somewhere other than you now. cursor: the newest seq'},
   }
   function M.handlers.tell(p, a)
     local me = api.who(p)
     assert(a.fyi == nil or type(a.fyi) == 'boolean', 'fyi must be true or false')
+    assert(a.wake == nil or type(a.wake) == 'boolean', 'wake must be true or false')
+    assert(not (a.wake and a.fyi), 'wake or fyi, not both: fyi wakes nobody')
     local text, cut = one_line(a.text)
     local names, team = recipients(a.to, me)
     local s = store()
@@ -83,7 +90,26 @@ return function(api)
       local w = where(name)
       if w then away[#away+1] = name .. ' is ' .. w end
     end
+    -- Recipients in a wait that ignores messages: said, and with wake ended (once per WAKE_EVERY per sender).
+    local ignoring, woken, not_woken = {}, {}, {}
+    s.wakes = s.wakes or {}
+    for _, name in ipairs(api.deaf and names or {}) do
+      local d = index[name] and api.deaf(index[name])
+      if d then
+        local key = me .. '>' .. name
+        local last = s.wakes[key]
+        if a.wake and (not last or game.tick - last >= M.WAKE_EVERY) then
+          if api.wake(index[name], me) then s.wakes[key] = game.tick; woken[#woken+1] = name end
+        else
+          ignoring[#ignoring+1] = string.format('%s is in a %s that ignores messages until tick %d (about %d min)', name, d.kind, d.until_tick,
+            math.ceil(math.max(0, d.until_tick - game.tick) / 3600))
+          if a.wake then not_woken[#not_woken+1] = string.format('%s: woken by you %d min ago; again from tick %d', name, math.floor((game.tick - last) / 3600), last + M.WAKE_EVERY) end
+        end
+      end
+    end
+    for k, tick in pairs(s.wakes) do if game.tick - tick > M.WAKE_EVERY then s.wakes[k] = nil end end
     return {seq=t.seq, to=team and 'team' or names, cut=cut, away=#away > 0 and table.concat(away, '; ') or nil,
+      ignoring=#ignoring > 0 and table.concat(ignoring, '; ') or nil, woken=#woken > 0 and woken or nil, not_woken=#not_woken > 0 and not_woken or nil,
       note=t.fyi and 'fyi: in their next reply (team: tells), not waking them; not in chat' or 'in their next reply (team: tells), waking them if asleep; not in chat'}
   end
   local function read(a, me)
