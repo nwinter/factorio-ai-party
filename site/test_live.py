@@ -49,6 +49,14 @@ def payload_tests():
     assert out["cameras"]["cam3"]["work"].startswith("Sol building")
     size = len(json.dumps(out["space"]) + json.dumps(out["fights"]) + json.dumps(out["cameras"]))
     assert size < 1500, size  # the map's additions stay a small part of a ~16 KB push
+    # the other planets' maps (viewers craigNZ830, Foobator, d15 07:05): all listed, one grid a push, in turn
+    grid = lambda n: {"tick": n, "cell": 8, "x0": 0, "y0": 0, "w": 2, "h": 1, "rows": ["AS"], "buildings": n, "capped": None}
+    sp = dict(s, planet_maps={"vulcanus": grid(5), "gleba": grid(7)})
+    a_, b_ = push_live.public_state(sp), push_live.public_state(sp)
+    assert a_["planets"] == [{"surface": "gleba", "tick": 7, "buildings": 7}, {"surface": "vulcanus", "tick": 5, "buildings": 5}], a_["planets"]
+    assert {a_["planet_map"]["surface"], b_["planet_map"]["surface"]} == {"gleba", "vulcanus"} and a_["planet_map"]["rows"] == ["AS"]
+    assert "capped" not in a_["planet_map"] and "planet_maps" not in a_
+    assert "planets" not in push_live.public_state(s)
     s["shift"] = {"start": 1, "end": 2, "next": 3, "next_exact": False}
     assert push_live.public_state(s)["shift"] == s["shift"]  # the offline state's "next shift" line
     s2 = dict(s, space={"active": False})
@@ -221,6 +229,10 @@ const calls2 = [];
 M.paint(new Proxy({}, { get: (t, k) => (k in t ? t[k] : (...a) => calls2.push([k, t.fillStyle, ...a])), set: (t, k, v) => { t[k] = v; return true; } }),
   scg, () => null, 'sans-serif', null);
 out.gleba.paintCells = calls2.filter((c) => c[0] === 'fillRect' && String(c[1]).startsWith('rgba(140, 140, 0,')).length;
+// another planet's coarse map (viewers craigNZ830, Foobator, d15 07:05): its buildings, the agents on it; Nauvis lists it
+const dv = M.prepare(Object.assign({}, data.full, { planets: data.planets, surface: 'vulcanus' }));
+out.vulcanus = Object.assign(summary(M.scene(dv, null, 400, 400)), { auto: dv.auto });
+out.planetsOnNauvis = M.prepare(Object.assign({}, data.full, { planets: data.planets })).planets;
 process.stdout.write(JSON.stringify(out));
 """
 
@@ -280,8 +292,10 @@ def map_tests():
         gleba = viewer_data(map_state(True))
         gleba["agents"] = [dict(a) for a in gleba["agents"]]
         gleba["agents"][4].update(surface="gleba", where="Gleba", position={"x": -190, "y": -120})
+        planets = {"vulcanus": {"surface": "vulcanus", "tick": 3, "cell": 8, "x0": 4960, "y0": -3040, "w": 10, "h": 10,
+                                "rows": ["SSAAEE" for _ in range(10)], "buildings": 120}}
         json.dump({"full": viewer_data(map_state(True)), "old": viewer_data(map_state(False)), "gleba": gleba,
-                   "clouds": CLOUDS}, open(path, "w"))
+                   "clouds": CLOUDS, "planets": planets}, open(path, "w"))
         r = subprocess.run(["node", js, os.path.join(SITE, "static", "mapview.js"), path], capture_output=True, text=True, timeout=30)
         assert r.returncode == 0, r.stderr
         o = json.loads(r.stdout)
@@ -328,6 +342,11 @@ def map_tests():
         assert [a["name"] for a in g["agents"]] == ["sonnet"] and len(g["away"]) == 8, (g["agents"], g["away"])
         assert g["away"][0][0] == "Astra · Nauvis" and g["away"][2][0] == "Luna · Vulcanus", g["away"]
         assert -232 <= g["auto"]["cx"] <= -150 and g["hitNest"]["text"] == "Enemy nest the spores reached", g
+        v = o["vulcanus"]  # Vulcanus: its coarse map drawn and framed; Luna, who is there, drawn; no Nauvis nests or fights
+        assert v["base"] and v["nests"] == 0 and v["fights"] == 0, v
+        assert "luna" in [a["name"] for a in v["agents"]] and not any(a[0].startswith("Luna") for a in v["away"]), v
+        assert 4960 <= v["auto"]["cx"] <= 5040, v["auto"]
+        assert o["planetsOnNauvis"] == ["vulcanus"], o["planetsOnNauvis"]
         assert g["hit"]["text"].startswith("Spores 14.7 in chunk (-7, -5)") and g["paintCells"] == 3, g
 
         js = os.path.join(d, "live.js")
@@ -336,7 +355,9 @@ def map_tests():
         # the joined chat pane (eng/sitechat2): the YouTube lines push_live publishes, in time order, badged
         yt = [{"id": "yt:2", "name": "Joonazan", "text": "no biters on Gleba", "t": 1792015200.0},
               {"id": "yt:1", "name": "Enginerd", "text": "<b>hi</b>", "t": 1792015100.0}]
-        json.dump(dict(map_state(True), youtube_chat=yt), open(spath, "w"))
+        pm = {"surface": "vulcanus", "tick": 3, "cell": 8, "x0": 4960, "y0": -3040, "w": 6, "h": 2, "rows": ["SSAAEE", "SS"], "buildings": 9}
+        json.dump(dict(map_state(True), youtube_chat=yt, planets=[{"surface": "vulcanus", "tick": 3, "buildings": 9}], planet_map=pm),
+                  open(spath, "w"))
         r = subprocess.run(["node", js, os.path.join(SITE, "static", "live.js"), spath], capture_output=True, text=True, timeout=30)
         assert r.returncode == 0, r.stderr
         lv = json.loads(r.stdout)
@@ -355,6 +376,7 @@ def map_tests():
         got = lv["sets"][-1]
         assert got["base"]["rows"] and got["core"]["cell"] == 1 and len(got["turrets"]) == 3 and got["nests"] == [[90, 10, "s"]]
         assert [a["name"] for a in got["agents"]] == [a["name"] for a in map_state(True)["agents"]] and "cams" in got
+        assert got["planets"]["vulcanus"]["rows"] == ["SSAAEE", "SS"], got.get("planets")  # the push's planet map reaches the viewer
         assert "agent-live" in lv["agents"]
         # the board card: open projects with their progress, and a project step with the step it did (eng/projects)
         bd = lv["board"]

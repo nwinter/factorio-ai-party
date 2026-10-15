@@ -78,6 +78,8 @@ def reads(bot="sol"):
         "basemap": ("stream 60 s: harness BASEMAP_LUA (live map)", timed_lua(H.basemap_lua())),
         "basemap_ore": ("stream 300 s: BASEMAP_LUA with ore", timed_lua(H.basemap_lua(ore=True))),
         "platforms_view": ("stream 15 s: harness PLATFORM_LUA", timed_lua(H.PLATFORM_LUA)),
+        "planets": ("stream 60 s: harness PLANET_READ_LUA, the list", timed_lua(H.planet_read_lua())),
+        "planet_map": ("stream 60 s: harness PLANET_READ_LUA, one planet (vulcanus)", timed_lua(H.planet_read_lua("vulcanus"))),
         "probe": ("stream at start: harness PROBE_LUA", timed_lua(H.PROBE_LUA)),
         "snapshot": ("analyst 90 s: analyst/game.py SNAPSHOT_LUA", timed_lua(surface_all(A.SNAPSHOT_LUA))),
         "machines": ("analyst 90 s: analyst/game.py MACHINES_LUA", timed_lua(surface_all(A.MACHINES_LUA))),

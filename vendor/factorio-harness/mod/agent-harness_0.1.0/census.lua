@@ -145,6 +145,13 @@ return function(api)
     end
     return false
   end
+  local PLANET_MAX, PLANET_CELLS = 60000, 128
+  local planet_of = {}
+  local function is_planet(s)
+    local v = planet_of[s.index]
+    if v == nil then v = try(function() return s.planet ~= nil end) == true; planet_of[s.index] = v end
+    return v
+  end
   local function read_entity(job, s, e)
     if not e.valid then return end
     local t, name = e.type, e.name
@@ -192,6 +199,21 @@ return function(api)
       local row = job.mach[key] or {}
       job.mach[key] = row
       row[st] = (row[st] or 0) + 1
+    end
+    -- Another planet's buildings, for its coarse map (viewers craigNZ830 and Foobator, d15 07:05: the live map showed
+    -- Nauvis only): each one's centre and category, at most PLANET_MAX a planet.
+    if s.name ~= 'nauvis' and CAT[t] and job.planets and is_planet(s) then
+      local P = job.planets[s.name]
+      if not P then P = {x={}, y={}, c={}, minx=math.huge, miny=math.huge, maxx=-math.huge, maxy=-math.huge}; job.planets[s.name] = P end
+      if #P.x < PLANET_MAX then
+        local p = e.position
+        local i = #P.x + 1
+        P.x[i], P.y[i], P.c[i] = p.x, p.y, OIL[name] and 'O' or CAT[t]
+        if p.x < P.minx then P.minx = p.x end
+        if p.x > P.maxx then P.maxx = p.x end
+        if p.y < P.miny then P.miny = p.y end
+        if p.y > P.maxy then P.maxy = p.y end
+      end
     end
     if s.name == 'nauvis' and CAT[t] then
       local p = e.position
@@ -288,7 +310,7 @@ return function(api)
     for _, s in ipairs(surfaces()) do list[#list+1] = s.index end
     local want_ore = st.ore_asked and tick - st.ore_asked <= ORE_WANT and (not st.ore_tick or tick - st.ore_tick >= ORE_EVERY)
     return {start=tick, surfaces=list, si=1, steps=0, every=walk.every(st.steps, PERIOD),
-      machines=0, starved=0, where={}, mach={}, silos={}, towers={}, building_counts={}, fuel={},
+      machines=0, starved=0, where={}, mach={}, silos={}, towers={}, building_counts={}, fuel={}, planets={},
       base={x={}, y={}, c={}, w={}, h={}, turrets={}, blocks={}, top=0, n=0}, want_ore=want_ore or nil, stage='walk'}
   end
   -- Bands of chunk rows over a tile box, at most `width` chunks a band: {X0, Y0, X1, Y1, first_x, last_x, first_y, last_y}.
@@ -447,6 +469,38 @@ return function(api)
         b.ore_cnt, b.ore_bands = nil, nil
         job.stage = 'done'
       end
+    elseif job.planets and next(job.planets) and not job.planets_done then
+      -- Each other planet's coarse grid, in steps (SLICE * 4 points a step): its cell doubled from CELL until the
+      -- planet's buildings fit PLANET_CELLS cells a side; a cell takes its most telling building, as Nauvis's.
+      job.plist = job.plist or (function() local l = {} for k in pairs(job.planets) do l[#l+1] = k end table.sort(l) return l end)()
+      job.pi = job.pi or 1
+      local name = job.plist[job.pi]
+      if not name then job.planets_done = true; return end
+      local P = job.planets[name]
+      if not P.cell then
+        local C = CELL
+        while (P.maxx - P.minx) / C + 1 > PLANET_CELLS or (P.maxy - P.miny) / C + 1 > PLANET_CELLS do C = C * 2 end
+        P.cell = C
+        P.cx0, P.cy0 = math.floor(P.minx / C), math.floor(P.miny / C)
+        P.cx1, P.cy1 = math.floor(P.maxx / C), math.floor(P.maxy / C)
+        P.grid, P.i = {}, 1
+      end
+      local C, grid = P.cell, P.grid
+      local last = math.min(#P.x, P.i + SLICE * 4 - 1)
+      for i = P.i, last do
+        local cx, cy = math.floor(P.x[i] / C), math.floor(P.y[i] / C)
+        local row = grid[cy]
+        if not row then row = {} grid[cy] = row end
+        local old = row[cx]
+        if not old or RANK[P.c[i]] > RANK[old] then row[cx] = P.c[i] end
+      end
+      P.i = last + 1
+      if P.i > #P.x then
+        P.out = {tick=game.tick, cell=C, x0=P.cx0 * C, y0=P.cy0 * C, w=P.cx1 - P.cx0 + 1, h=P.cy1 - P.cy0 + 1,
+          rows=rows_of(grid, P.cx0, P.cx1, P.cy0, P.cy1), buildings=#P.x, capped=#P.x >= PLANET_MAX or nil}
+        P.x, P.y, P.c, P.grid = nil, nil, nil, nil
+        job.pi = job.pi + 1
+      end
     else
       -- The pass is complete: its parts replace the last ones.
       local C, has = job.C or CELL, #b.x > 0
@@ -455,7 +509,8 @@ return function(api)
         buildings=#b.x, core=b.core_out, turrets=has and b.turrets or {}}
       st.done = {start=job.start, tick=game.tick, steps=job.steps, extras={electric_machines=job.machines, starved=job.starved},
         building_counts=job.building_counts,building_counts_as_of=job.building_counts and job.start or nil,
-        where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers, fuel=job.fuel}
+        where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers, fuel=job.fuel,
+        planets=(function() local out = {} for k, P in pairs(job.planets or {}) do if P.out then out[k] = P.out end end return out end)()}
       if b.ore then st.ore = {start=job.start, ore=b.ore}; st.ore_tick = job.start end
       st.steps = job.steps
       st.job = nil
@@ -506,7 +561,8 @@ return function(api)
     local st = store()
     local d = st.done
     local part = args.part
-    assert(part == 'extras' or part == 'snapshot' or part == 'machines' or part == 'basemap', 'part must be extras, snapshot, machines or basemap')
+    assert(part == 'extras' or part == 'snapshot' or part == 'machines' or part == 'basemap' or part == 'planets', 'part must be extras, snapshot, machines, basemap or planets')
+    assert(args.surface == nil or (type(args.surface) == 'string' and part == 'basemap'), 'surface goes with part basemap: another planet\'s coarse map')
     if part == 'basemap' and args.ore then st.ore_asked = game.tick end
     if not d then return {ready=false, part=part, pass_running=st.job ~= nil} end
     local out = {ready=true, part=part, as_of=d.start, pass_ticks=d.tick - d.start}
@@ -527,6 +583,16 @@ return function(api)
       out.entities, out.surfaces_with_buildings = counts, d.where
     elseif part == 'machines' then
       out.machines = d.machines
+    elseif part == 'planets' then
+      -- The other planets with a coarse map: name, building count, cell, size (the maps themselves: basemap surface=).
+      local list = {}
+      for name, m in pairs(d.planets or {}) do list[#list+1] = {name=name, buildings=m.buildings, cell=m.cell, w=m.w, h=m.h, capped=m.capped} end
+      table.sort(list, function(a, b) return a.name < b.name end)
+      out.planets = list
+    elseif args.surface ~= nil and args.surface ~= 'nauvis' then
+      local m = (d.planets or {})[args.surface]
+      out.surface = args.surface
+      if m then out.basemap = m else out.basemap = nil; out.none = 'no buildings of ours on ' .. args.surface .. ' in the last pass' end
     else
       local map = {}
       for k, v in pairs(d.basemap) do map[k] = v end

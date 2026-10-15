@@ -178,6 +178,16 @@ pumpjacks), `A` assembly (assemblers, the silo), `S` smelting, `M` mining (drill
 under the buildings. With a base, the page frames the base and pins an agent more than a base-width away to the
 map's edge (dashed, its distance in the tooltip).
 
+`planets` and `planet_map` are the other planets we have built on (viewers craigNZ830 and Foobator, d15 07:05: the map
+showed Nauvis only). `planets` lists them all, `[{surface, tick, buildings}]`. `planet_map` is one of them in turn
+each push (`{surface, tick, cell, x0, y0, w, h, rows, buildings}`, the same letters as `basemap`, cell 4 doubled until
+the planet's buildings fit 128 cells a side), so a push carries one planet's grid (at most about 17 KB); the page
+keeps the ones it has seen and drops a planet `planets` no longer lists. They come from the harness census's last
+pass (`census {part: "planets"}` and `census {part: "basemap", surface}`, operator reads that answer from storage),
+one planet a minute in the stream service. The map card shows a tab per planet beside Nauvis; on a planet's tab its
+buildings are drawn, with the agents on it (the rest listed in the corner); no core, ore, terrain, nests or turret
+range there.
+
 `youtube_chat` (eng/sitechat2; Luna 13:54, a viewer's suggestion) is the YouTube lines of the stream service's viewer
 lane (tools/stream/viewers.py: only lines that passed its moderation, YouTube deletions it saw taken out), oldest
 first, the newest 60: `[{id, name, text, t, staff?}]`; push_live.py also leaves out lines site/moderation.py hides

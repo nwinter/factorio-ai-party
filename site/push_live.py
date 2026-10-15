@@ -180,8 +180,31 @@ def public_board(board):
     return b
 
 
+PLANET_MAP_KEYS = ("surface", "tick", "cell", "x0", "y0", "w", "h", "rows", "buildings")
+_planet_turn = {"i": 0}
+
+
+def public_planets(maps):
+    """The other planets' coarse maps (viewers craigNZ830 and Foobator, d15 07:05): planets [{surface, tick, buildings}]
+    for all of them, and planet_map, one of them in turn each push (the page keeps the ones it has seen): one grid of
+    at most 128x128 letters a push instead of all."""
+    if not isinstance(maps, dict) or not maps:
+        return None, None
+    names = sorted(k for k, m in maps.items() if isinstance(m, dict) and isinstance(m.get("rows"), list))
+    if not names:
+        return None, None
+    listing = [{"surface": n, "tick": maps[n].get("tick"), "buildings": maps[n].get("buildings")} for n in names]
+    name = names[_planet_turn["i"] % len(names)]
+    _planet_turn["i"] += 1
+    m = maps[name]
+    return listing, {k: m[k] for k in PLANET_MAP_KEYS if k in m} | {"surface": name}
+
+
 def public_state(s):
     out = {k: s[k] for k in TOP_KEYS if k in s}
+    planets, planet_map = public_planets(s.get("planet_maps"))
+    if planets:
+        out["planets"], out["planet_map"] = planets, planet_map
     if "board" in out:
         out["board"] = public_board(out["board"])
     out["agents"] = [{k: a[k] for k in AGENT_KEYS if k in a} for a in s.get("agents", [])]

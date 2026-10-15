@@ -151,6 +151,10 @@ class LiveSource:
         self.next_basemap = 0
         self.ore_every = 300.0  # ore under and around the base: every resource tile there, so less often still
         self.next_ore = 0
+        # the other planets' coarse maps (census.lua): one planet a minute, in turn (each a census read from storage)
+        self.planet_every = 60.0
+        self.next_planet = 0
+        self.planet_turn = 0
         self.platform_detail = {}
         self.platform_views = {}
         # work away from the body (remote platform builds, far ghosts): the agents' fh journals beside stream.json
@@ -276,6 +280,19 @@ class LiveSource:
                     errors["basemap_log"] = str(e)
             except Exception as e:
                 errors["basemap"] = str(e)
+        if time.time() >= self.next_planet:
+            self.next_planet = time.time() + self.planet_every
+            try:
+                names = sorted(p["name"] for p in self.h.planets() if isinstance(p, dict) and p.get("name"))
+                obs["planet_names"] = names
+                if names:
+                    name = names[self.planet_turn % len(names)]
+                    self.planet_turn += 1
+                    m = self.h.planet_map(name)
+                    if m:
+                        obs["planet_map"] = m
+            except Exception as e:
+                errors["planet_map"] = str(e)
 
         profiles = {}
         if self.use_profiles:

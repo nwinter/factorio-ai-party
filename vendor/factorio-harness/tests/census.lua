@@ -94,7 +94,7 @@ for _,r in ipairs(grok('describe').operator_reads or {}) do listed=listed or r==
 eq(listed,true,'describe lists census')
 local r=op('census',{part='extras'})
 eq(r.ready,false); eq(r.part,'extras')
-fails(function() op('census',{part='everything'}) end,'part must be extras, snapshot, machines or basemap')
+fails(function() op('census',{part='everything'}) end,'part must be extras, snapshot, machines, basemap or planets')
 -- Grok's stone tiles and the bot's body are the only entities: the pass walks them and ends.
 advance(4000)
 r=op('census',{part='extras'})
@@ -143,6 +143,27 @@ do
   local users,as_of=C2.fuel_users(surface); eq(#users,1); eq(users[1],b); eq(as_of,5000)
 end
 print('census fuel users: ok')
+-- Other planets' coarse maps (viewers craigNZ830, Foobator, d15 07:05: the live map was Nauvis only): the same pass,
+-- each planet's grid made in steps after the walk; read with basemap surface= and listed with part planets.
+do
+  local gleba={name='gleba',index=4,planet={name='gleba'}}
+  local function ent(name,t,x,y) return {valid=true,type=t,name=name,position={x=x,y=y},surface=gleba,force=force,status=0,get_recipe=function() return nil end} end
+  local list={ent('biochamber','assembling-machine',10.5,10.5),ent('stone-furnace','furnace',30.5,10.5),ent('gun-turret','ammo-turret',31,11),ent('transport-belt','transport-belt',600,10)}
+  local ls,once={},true
+  local C3=dofile('mod/agent-harness_0.1.0/census.lua'){state=function() return ls end,
+    walk={every=function() return 1 end,due=function() return true end,start=function() return {} end,
+      band=function() if once then once=false return list end end}}
+  local kept,kept_get=game.surfaces,game.get_surface; game.surfaces={gleba}; game.get_surface=function() return gleba end
+  for t=5000,5040 do C3.tick(t) end
+  local r=C3.read({part='planets'})
+  eq(r.ready,true); eq(#r.planets,1); eq(r.planets[1].name,'gleba'); eq(r.planets[1].buildings,4)
+  local m=C3.read({part='basemap',surface='gleba'}).basemap
+  eq(m.cell,8,'doubled until 590 tiles fit 128 cells'); eq(m.x0,8); eq(m.w,75)
+  eq(m.rows[1]:sub(1,1),'A'); eq(m.rows[1]:sub(3,3),'D','the turret outranks the furnace in its cell')
+  eq(C3.read({part='basemap',surface='vulcanus'}).none,'no buildings of ours on vulcanus in the last pass')
+  game.surfaces,game.get_surface=kept,kept_get
+end
+print('census planets: ok')
 list[1]=nil
 list=C.silos{surface=surface,force=force}; eq(#list,1,'caller sorting cannot change the index')
 target.valid=false; list=C.silos{surface=surface,force=force}; eq(#list,0)

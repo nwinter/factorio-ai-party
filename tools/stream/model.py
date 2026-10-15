@@ -584,6 +584,7 @@ class Model:
         self.power = None
         self.darkness = None  # LuaSurface.darkness: 0 day .. ~0.85 midnight (nightlift.py)
         self.basemap = None  # the base as a coarse grid (harness.BASEMAP_LUA), for the site's live map only
+        self.planet_maps = {}  # the other planets' coarse maps by surface (census.lua via harness.planet_map), one read a minute
         self.clouds = {}  # surface -> pollution or spores per charted chunk (clouds.normalise; live.py observe_clouds)
         self.clouds_t = None
         self.board = {"events": deque(maxlen=40), "seen": set(), "items": {}, "open_unowned": None,
@@ -673,6 +674,11 @@ class Model:
         if obs.get("basemap"):
             ore = obs["basemap"].get("ore") or (self.basemap or {}).get("ore")  # ore is read less often: keep the last
             self.basemap = dict(obs["basemap"], ore=ore) if ore else obs["basemap"]
+        if obs.get("planet_names") is not None:  # a planet the census no longer lists has no buildings of ours now
+            keep = set(obs["planet_names"])
+            self.planet_maps = {k: v for k, v in self.planet_maps.items() if k in keep}
+        if isinstance(obs.get("planet_map"), dict) and obs["planet_map"].get("surface"):
+            self.planet_maps[obs["planet_map"]["surface"]] = obs["planet_map"]
         if obs.get("clouds") is not None:  # a read happened: a surface missing from it has no cloud now
             self.clouds, self.clouds_t = clouds_mod.normalise(obs["clouds"]), now
         if obs.get("power"):
@@ -1968,6 +1974,7 @@ class Model:
             "research_news": self.research_news_snapshot(now),
             "darkness": self.darkness,
             "basemap": self.basemap,
+            "planet_maps": dict(self.planet_maps),  # the other planets' coarse maps by surface (push_live sends one a push)
             # the map's pollution and spore layer, one row per surface (clouds.py; the overlay's map shots, the site)
             "clouds": [dict(c, age_s=round(now - self.clouds_t)) for c in self.clouds.values()] if self.clouds_t else [],
             "production": self.production(now),
