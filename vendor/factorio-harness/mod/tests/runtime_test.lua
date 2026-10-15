@@ -679,6 +679,36 @@ fails(function() call('build',{item='rail',entity='curved-rail-a',position={x=5,
 eq(rail.count,1)
 main=saved_main; prototypes=saved_prototypes
 end
+-- A held ramp uses direct placement even while ticks run, and revives the
+-- ghost construct supplies. Refusals consume none; snapped centres match ghosts.
+do
+  local saved_main,saved_prototypes=main,prototypes
+  local saved_find=p.surface.find_entities_filtered
+  local proto={name='rail-ramp',type='rail-ramp',items_to_place_this={{name='rail-ramp',count=1}}}
+  local ramp=stack('rail-ramp',2);ramp.prototype={place_result=proto}
+  ramp.clear=function() ramp.count=0;ramp.valid_for_read=false end
+  main={ramp};main.find_item_stack=function() return ramp end
+  main.get_item_count=function(f) return f.name=='rail-ramp' and ramp.count or 0 end
+  prototypes={entity={['rail-ramp']=proto},item={['rail-ramp']=ramp.prototype}}
+  game.tick_paused=false
+  local ghost={valid=true,name='entity-ghost',ghost_name='rail-ramp',position={x=1,y=0},force=p.force}
+  ghost.revive=function(a)
+    eq(a.raise_revive,true);ghost.valid=false
+    return {},{valid=true,name='rail-ramp',type='rail-ramp',position=ghost.position,force=p.force}
+  end
+  p.surface.find_entities_filtered=function(f) return f.ghost_name and ghost.valid and {ghost} or {} end
+  eq(call('build',{item='rail-ramp',position={x=0,y=-1},direction=3}).consumed,1)
+  eq(ghost.valid,false);eq(ramp.count,1)
+  fails(function() call('build',{item='rail-ramp',position={x=9,y=0}}) end,'placement blocked')
+  eq(ramp.count,1)
+  local made=call('build',{item='rail-ramp',position={x=4,y=0},direction='north'})
+  eq(made.consumed,1);eq(made.entity.position.x,5);eq(ramp.count,0)
+  p.surface.find_entities_filtered=saved_find
+  main,prototypes=saved_main,saved_prototypes
+end
+-- Entity batches are explicitly refused, before walking or selecting a target.
+fails(function() call('mine',{positions={{x=1,y=0},{x=2,y=0}}}) end,'mine positions and area require tiles: true (laid tiles only); entity mining takes one position {x,y} per call or queue step')
+fails(function() call('mine',{area={{0,0},{2,2}}}) end,'mine positions and area require tiles: true')
 game.tick_paused=false; p.surface.can_place_entity=nil; p.surface.create_entity=nil
 wood.prototype.place_result.name=nil; wood.count=1
 p.build_from_cursor=function() p.cursor_stack.count=0; p.cursor_stack.valid_for_read=false end

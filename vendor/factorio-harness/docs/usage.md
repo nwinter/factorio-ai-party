@@ -457,7 +457,9 @@ fh call status
     standing spots that reach every piece, items against what you hold); `rail_route` holds the plan. Its signals show
     `after_rails`: the game takes a rail signal only beside a rail or rail ghost, so they are checked as placed.
   - `build` with the rail item and `entity` places one piece; a curve takes 3 rails and a half-diagonal 2, as the game
-    charges them.
+    charges them. `build {item: "rail-ramp", position, direction}` and `construct` on a ramp ghost also build by
+    hand, consuming one held ramp. The ramp centre snaps to its 2-tile grid, as ghost placement does; collision
+    and reach checks still apply, and a refused placement consumes no ramp.
 - `train_stop {position, name, direction?, limit?, ghosts?}` puts a stop beside the nearest straight north-south or
   east-west rail or rail ghost of yours within 6 tiles, on the right of the trains it serves: east of a north-south
   rail for trains heading north, west for south; south of an east-west rail for trains heading east, north for west.
@@ -1480,6 +1482,8 @@ fh sleep 900 --until researched                       # ...or until the research
   (73.5,-54.5) is mined out; the nearest stone within 8 tiles is out of reach: entity is out of reach: ...` with its
   spot; none left: `stone at (73.5,-54.5) is mined out and no stone is left within 8 tiles of it`. A position never
   mined and given no `name` fails as before (`entity not found at ...`).
+- Entity `mine` takes one `position` per call or queue step. `positions` and `area` without `tiles: true` are
+  refused explicitly: these selectors apply only to laid tiles.
 - `mine {tiles: true, position | positions | area, name?, walk?, dry_run?}` (minetile; Sol 15:28: landfill under an old
   pole at (194,58) kept a 3x3 planting cell off the yumako farm, with no robots there) mines tiles laid by a player by
   hand, as a player mines them:
