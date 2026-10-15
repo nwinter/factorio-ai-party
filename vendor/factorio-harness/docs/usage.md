@@ -897,6 +897,12 @@ fh call status
     now (24 tiles)`). The reply says what is checked
     (`avoid_enemies: worms (range + 4), spawners (40 tiles + 4) and areas under attack now (24 tiles + 4)`). Worms
     keep to their range: they do not move, and a path 34 tiles from a medium worm is out of its reach.
+  - A walk refused `no_safe_route` that starts within 16 tiles of where one of your last 4 walks (30 minutes) ended, and
+    goes within 16 tiles of where it started, gets `last.walked_back` (Haiku, d15 07:50: return walks were refused after
+    the walk out): `{tick, ago_s, from, to, via, line}`, the way you walked (a point every 8 tiles) reversed as at most
+    12 via points. A `move_to` with them walks it, each leg checked again with the margins it is given. In Haiku's
+    shift-16 case the return went to a different end, (82.5,-4.5) instead of (84,77), past the spawner at (219,-239),
+    so no stored way would have matched it.
   - An attack that starts after the plan, near the way on (the straight line on passes nearer its first hit than the
     character is), plans the walk again round it, once each, every half second: `last.replanned: attack #1711 at
     (-110,-91) started on the way: planned again round it`. A zone round the character itself keeps to just short of

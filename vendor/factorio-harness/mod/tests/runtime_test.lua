@@ -5075,6 +5075,22 @@ end)()
   end
 end)()
 ;(function()
+  -- The way walked, offered back to a refused walk (Haiku, d15 07:50).
+  local kept=p.position
+  local act={trail_pts={{x=0,y=0}},surface_name=p.surface.name}
+  for i=1,10 do runtime.trail_point(act,{x=i*10,y=0}) end
+  eq(#act.trail_pts,11)
+  p.position={x=100,y=0}
+  runtime.walked_record(1,act,'arrived')
+  local back=runtime.walked_back(1,{x=98,y=1},{x=2,y=0},p.surface.name)
+  assert(back and back.via[1].x==90 and back.via[#back.via].x==10,'reversed points')
+  assert(back.line:find('you walked from (0,0) to (100,0)',1,true),back.line)
+  eq(runtime.walked_back(1,{x=50,y=40},{x=2,y=0},p.surface.name),nil,'not where it ended')
+  eq(runtime.walked_back(1,{x=98,y=1},{x=60,y=60},p.surface.name),nil,'not toward where it started')
+  runtime.walked_record(1,{trail_pts={{x=0,y=0}},surface_name='x'},'blocked')
+  p.position=kept
+end)()
+;(function()
   -- Cargo bay attachment and the tile grid (Astra, d15 07:50: "nothing found" for a bay that fit its cleared footprint).
   local hub={valid=true,type='space-platform-hub',name='space-platform-hub',position={x=0,y=0},bounding_box={left_top={x=-4,y=-4},right_bottom={x=4,y=4}}}
   local fake={surface={find_entities_filtered=function() return {hub} end},force=p.force}
