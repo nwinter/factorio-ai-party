@@ -188,11 +188,16 @@ class Check:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--port', type=int, required=True, help='localhost RCON port of a disposable copy')
-    ap.add_argument('--password-file', type=Path, required=True)
+    ap.add_argument('--port', type=int, help='localhost RCON port of a disposable copy; omitted: skip')
+    ap.add_argument('--password-file', type=Path)
     args = ap.parse_args()
+    if args.port is None:
+        print('SKIP: autowalk private-server check requires --port and --password-file')
+        return
     if args.port in PORTS.values():
         ap.error('use a separate private server port, not one assigned to a pog world')
+    if args.password_file is None:
+        ap.error('--password-file is required with --port')
     Check(args).run()
 
 
