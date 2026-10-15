@@ -1371,6 +1371,7 @@ function handlers.describe()
         ammo='in a vehicle: an ammo name (cannon-shell, explosive-cannon-shell, firearm-magazine, flamethrower-ammo, rocket, ...): the gun that takes it, its slot loaded from your inventory when empty or holding another kind',
         note='seated in a car, tank or spidertron as its gunner (the driver, unless driver_is_gunner is off and a passenger sits in) it fires the vehicle\'s selected gun from the vehicle\'s ammo slots; the turret turns toward the target as a player\'s cursor turns it; position= aims at the entity there (not our own), auto=true at the nearest enemy in radius; vehicle {drive} goes on while it fires; reply: vehicle, seat, gun, gun_slot, range, guns (each slot with its ammo), target, out_of_range',
         outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={slot='gun|ammo|armor',item='owned item name',index='optional exact slot; without it gun/ammo tries compatible empty slots in order, then slot 1; armor defaults to 1'},
+      pipe_gaps={from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; axis-aligned legs, at most 512 tiles',returns='line (one line), segments [{from, to, tiles, first, last, segment_id, fluid, amount, extent, underground}] (runs of tiles whose fluid entities join, with the engine\'s fluid segment there), cuts [{between, line}] (two neighbouring entities that do not join, or where the line stops at a tile with nothing), empty [{from, to, tiles}] (no fluid entity of ours and no pipe-to-ground pair over it), ghosts [{position, name}], unknown [{from, to, tiles}] (chunks our force does not see now: not read); in sight or by remote view on your surface'},
       belt_gaps={from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; axis-aligned legs, at most 512 tiles',surface='optional surface name (default yours)',returns='missing and ghosts with observed_tick; unknown means no recorded observation, never a missing belt; observations lists each chunk and age/current flag; visible chunks refreshed (at most 4); otherwise the remembered layout, including observed underground spans; no live entity reads in fog. Memory starts when installed, up to 256 chunks, discovered by the census or this call, one visible chunk refreshed per second'},
       drill_sites=M.drill_sites.schema,
       agriculture={surface='optional surface name (default yours)',returns='towers [{name, position, state (built, ghost, destroyed), status, seeds, lost_tick, cause, line}], as_of (census discovery tick), pending, history; current visible towers and ghosts, plus up to 256 recorded tower deaths since this history was installed; rebuilt positions show the current tower'},
@@ -2687,7 +2688,7 @@ handlers.launch=function(p,a)
   end)
   return out
 end
-local views={belt_gaps=true,drill_sites=true,agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
+local views={pipe_gaps=true,belt_gaps=true,drill_sites=true,agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
 function handlers.observe(p,a)
   -- Newer read-only views travel as observe scopes: an already loaded
   -- bootstrap treats unknown action names as cached mutations.
@@ -10248,7 +10249,7 @@ passive.circuit_set=true; passive.wire=true
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
 for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route','rail_route','train_stop','blueprint_save','blueprint_rename'}) do passive[name]=true end
-local reads={fuel_budget=true,belt_gaps=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
+local reads={fuel_budget=true,belt_gaps=true,pipe_gaps=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
 M.reads=reads
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
 
@@ -10264,7 +10265,7 @@ local EXTRA_ARGS={attach={'offline'},build={'quality','entity'},collect={'count'
 EXTRA_ARGS.circuit_set=TARGET
 EXTRA_ARGS.trace=TARGET
 -- observe forwards to the scoped views; a scoped call is checked as that view.
-local VIEW_SCOPES={belt_gaps=true,drill_sites=true,agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
+local VIEW_SCOPES={pipe_gaps=true,belt_gaps=true,drill_sites=true,agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
 local allowed_args
 function check_args(action,args)
   if not allowed_args then
@@ -11080,6 +11081,10 @@ end
 -- background pass; the operator read census returns the last complete one (census.lua; operator 22:00, task-slowreads).
 M.beltgaps=require('beltgaps'){state=state,position=position}
 function handlers.belt_gaps(p,a) return M.beltgaps.read(p,a) end
+-- pipe_gaps: a pipe line's segments and cuts along tiles (pipegaps.lua; Muse, shift17 10:50).
+M.pipegaps=require('pipegaps'){position=position,connections=function(e) return pipes.connections(e) end,
+  segment_box=function(e,i) return pipes.segment_box(e,i) end,visible=function(p,pos) return M.memory_visible(p,pos) end}
+function handlers.pipe_gaps(p,a) return M.pipegaps.read(p,a) end
 function M.memory_visible(p,pos)
   return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos))
 end

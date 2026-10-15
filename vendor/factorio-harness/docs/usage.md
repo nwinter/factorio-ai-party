@@ -1704,6 +1704,15 @@ source must be an own chest readable when the call starts. Each take is at most 
 at most 64 source attempts, at its tick limit (default 36,000), or when it completes or cannot obtain more fuel.
 Unspent fuel stays in the character inventory. A short tour ends `out_of_items` with the remaining stop count.
 
+`pipe_gaps {from,to,via?}` (Muse, shift17 10:50: 15 minutes locating a cut crude line by chaining supply and inspect
+by hand) reads a pipe line the same way, live, in sight or by remote view on your surface (512 tiles, 16 corners, one
+small area query a tile): `segments` are runs of tiles whose fluid entities (pipes, pipes-to-ground, tanks, pumps, any
+with a fluidbox) join by a pipe connection, each with the engine's fluid segment there (`segment_id`, `fluid`,
+`amount`, `extent`) and the tiles a pipe-to-ground pair covers (`underground`); `cuts` say where the line breaks: `pipe
+(3.5,0.5) and pipe (4.5,0.5) do not join`, `pipe (5.5,0.5): nothing of ours with a fluidbox at (6.5,0.5)`, `...: a ghost
+of pipe at (14.5,0.5), not built yet`; `empty` runs, `ghosts`, and `unknown` runs (chunks our force does not see now,
+not read); `line` sums it up in one line.
+
 `belt_gaps {from,to,via?,surface?}` reads a tile line with horizontal/vertical legs, up to 512 tiles and 16 corners.
 It returns `missing`, `ghosts`, and `unknown`, each with its position and observation tick where known, plus counts
 of built belts and observed underground spans. `missing` means no surface belt was present at that observation;
