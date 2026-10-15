@@ -886,13 +886,52 @@ end)()
   local fp = plan(36.5); fp.kind = 'paste'; fp.flipped = true
   local fo = dr.check(cp, fp)
   eq(fo.connections, nil); eq(fo.connections_note, 'not read for a flipped paste')
-  -- A pipe-to-ground pair: joined underground within its reach; one alone says so.
-  local u = dr.check(cp, {kind='build', entities={
-    {index=1, name='pipe-to-ground', position={x=140.5, y=40.5}, direction=0, item='pipe-to-ground'},
-    {index=2, name='pipe-to-ground', position={x=140.5, y=46.5}, direction=8, item='pipe-to-ground'},
-    {index=3, name='pipe-to-ground', position={x=150.5, y=40.5}, direction=0, item='pipe-to-ground'}}})
+  -- Each planned pipe-to-ground (Sol 18:21: four built reversed, seen only by inspect after building): what its mouth
+  -- joins, and whether it pairs and with which. 2.0.77 on a copy of world n: 10 apart pair, 11 apart do not; the first
+  -- pipe-to-ground on the line decides (facing the same way, it pairs on beyond and the one behind gets none).
+  local function p2g(i, x, y, d) return {index=i, name='pipe-to-ground', position={x=x, y=y}, direction=d, item='pipe-to-ground'} end
+  local u = dr.check(cp, {kind='build', entities={p2g(1, 200.5, 40.5, 0), p2g(2, 200.5, 46.5, 8),
+    {index=3, name='pipe', position={x=200.5, y=39.5}, direction=0, item='pipe'}, p2g(4, 210.5, 40.5, 0)}})
   c = rows(u)
-  eq(c[1], nil, 'a pair joined underground: no row')
-  eq(c[3].fluid[1], 'input-output south at (150.5,41.5): underground: no pipe-to-ground facing back within 10 tiles')
+  eq(c[1].fluid[1], 'mouth north at (200.5,39.5): planned #3 pipe')
+  eq(c[1].fluid[2], 'underground south: pairs with planned #2 pipe-to-ground (200.5,46.5), 6 tiles')
+  eq(c[2].fluid[1], 'mouth south at (200.5,47.5): nothing there')
+  eq(c[2].fluid[2], 'underground north: pairs with planned #1 pipe-to-ground (200.5,40.5), 6 tiles')
+  eq(c[3], nil, 'a pipe joining only the plan: no row')
+  eq(c[4].fluid[1], 'mouth north at (210.5,39.5): nothing there')
+  eq(c[4].fluid[2], 'underground south: unpaired: no pipe-to-ground facing back within 10 tiles')
+  eq(u.connections_open, 3)   -- #2's mouth, #4's mouth and its underground end
+  c = rows(dr.check(cp, {kind='ghosts', entities={p2g(1, 220.5, 30.5, 0), p2g(2, 220.5, 40.5, 8), p2g(3, 222.5, 30.5, 0), p2g(4, 222.5, 41.5, 8),
+    p2g(5, 224.5, 30.5, 0), p2g(6, 224.5, 34.5, 0), p2g(7, 224.5, 38.5, 8)}}))
+  eq(c[1].fluid[2], 'underground south: pairs with planned #2 pipe-to-ground (220.5,40.5), 10 tiles')
+  eq(c[3].fluid[2], 'underground south: unpaired: no pipe-to-ground facing back within 10 tiles', '11 apart')
+  eq(c[4].fluid[2], 'underground north: unpaired: no pipe-to-ground facing back within 10 tiles')
+  eq(c[5].fluid[2], 'underground south: unpaired: the first on its line, planned #6 pipe-to-ground (224.5,34.5), faces the same way')
+  eq(c[6].fluid[2], 'underground south: pairs with planned #7 pipe-to-ground (224.5,38.5), 4 tiles')
+  -- A built one facing back pairs, and the reply says what it pairs with now (the engine's view of it).
+  local P = {name='pipe-to-ground', type='pipe-to-ground', position={x=230.5, y=36.5}, direction=0, valid=true, unit_number=71}
+  local B = {name='pipe-to-ground', type='pipe-to-ground', position={x=230.5, y=46.5}, direction=8, valid=true, unit_number=72}
+  B.fluidbox = setmetatable({get_locked_fluid=function() return nil end, get_pipe_connections=function() return {
+    {connection_type='normal', flow_direction='input-output', position={x=230.5, y=46.5}, target_position={x=230.5, y=47.5}},
+    {connection_type='underground', flow_direction='input-output', position={x=230.5, y=46.5}, target_position={x=230.5, y=36.5},
+      target={object_name='LuaFluidBox', owner=P}}} end}, {__len=function() return 1 end})
+  P.force, B.force = cp.force, cp.force
+  local dp = {surface=world(function() return 'grass-1' end, {P, B}), force=cp.force, position={x=230, y=42}, build_distance=10,
+    get_main_inventory=function() return {get_item_count=function() return 9 end} end}
+  c = rows(dr.check(dp, {kind='build', entities={p2g(1, 230.5, 40.5, 0)}}))
+  eq(c[1].fluid[2], 'underground south: pairs with pipe-to-ground (230.5,46.5), 6 tiles (it pairs with pipe-to-ground (230.5,36.5) now)')
+  c = rows(dr.check(dp, {kind='build', entities={p2g(1, 230.5, 32.5, 0)}}))
+  eq(c[1].fluid[2], 'underground south: unpaired: the first on its line, pipe-to-ground (230.5,36.5), faces the same way')
+  -- Past 64 rows (256 with details) the rest are only counted.
+  local many = {}
+  for i = 1, 70 do many[i] = p2g(i, 300.5 + 3 * i, 300.5, 0) end
+  local mo = dr.check(cp, {kind='ghosts', entities=many})
+  eq(#mo.connections, 64); eq(mo.connections_open, 140)
+  eq(mo.connections[64].fluid[2], 'underground south: unpaired: no pipe-to-ground facing back within 10 tiles')
+  eq(#dr.check(cp, {kind='ghosts', details=true, entities=many}).connections, 70)
+  -- Reversed: the mouth faces away from the pipe it was meant for, the underground side faces it.
+  c = rows(dr.check(dp, {kind='build', entities={p2g(1, 236.5, 40.5, 8), {index=2, name='pipe', position={x=236.5, y=39.5}, direction=0, item='pipe'}}}))
+  eq(c[1].fluid[1], 'mouth south at (236.5,41.5): nothing there')
+  eq(c[1].fluid[2], 'underground north: unpaired: no pipe-to-ground facing back within 10 tiles')
 end)()
 print('dryrun: ok')

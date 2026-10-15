@@ -1935,15 +1935,22 @@ fh sleep 900 --until researched                       # ...or until the research
     planned boiler, heat exchanger, steam engine or turbine, reactor or heating tower, heat interface, pump, offshore
     pump, storage tank, fusion machine, and assembling machine or furnace given a `recipe`: `{index, name, position,
     direction, fluid, heat}`. Each fluid or heat connection point gives its side, the tile it joins and what is there:
-    another entry of the plan with a connection back (`input-output water west at (126.5,40.5): planned #5 pipe`,
-    `heat south at (128.5,41.5): planned #2 heat-pipe`), an entity or ghost of ours with one (`pipe (130.5,40.5)`),
-    something without one (`faces stone-wall (130.5,40.5) (no connection back)`, `faces planned #2 pipe-to-ground (no
-    connection back)`), or `nothing there`. Pipes, pipe-to-grounds and heat pipes get a row only for their joins to
-    what stands already and for an underground end with no partner (`underground: no pipe-to-ground facing back within
-    10 tiles`). `connections_open` counts the points of the other rows that join nothing. Fluid points are the ones
-    `ports` gives (a recipe opens and closes them); heat points come from the prototype, turned with the entity, as
-    2.0.77 joined them on a copy of world n (a heat exchanger's heat input is on its back). A flipped paste is not
-    read (`connections_note`). At most 64 rows (256 with `details`).
+    another entry of the plan with a connection back (`input water west at (126.5,40.5): planned #5 pipe`, `heat
+    south at (128.5,41.5): planned #2 heat-pipe`), an entity or ghost of ours with one (`pipe (130.5,40.5)`), something
+    without one (`faces stone-wall (130.5,40.5) (no connection back)`, `faces planned #2 pipe-to-ground (no connection
+    back)`, `faces planned #1 offshore-pump (blocked)`), or `nothing there`. Pipes and heat pipes get a row only for
+    their joins to what stands already. Each pipe-to-ground gets a row (Sol 18:21: four placed reversed in a rocket-chem
+    layout, seen only by inspect after building): what its mouth joins (`mouth north at (200.5,39.5): planned #3 pipe`,
+    `mouth south at (200.5,47.5): nothing there`) and whether it pairs and with which (`underground south: pairs with
+    planned #2 pipe-to-ground (200.5,46.5), 6 tiles`; with one built that pairs with another now, `(it pairs with
+    pipe-to-ground (230.5,36.5) now)`; `underground south: unpaired: no pipe-to-ground facing back within 10 tiles`,
+    `unpaired: the first on its line, planned #6 pipe-to-ground (224.5,34.5), faces the same way`). They pair as 2.0.77
+    paired them on a copy of world n: up to 10 tiles apart (11 apart do not), and the first pipe-to-ground on the line
+    decides (facing the same way, it pairs on beyond and the one behind gets none). `connections_open` counts the points
+    that join nothing, pipes and heat pipes aside (an open mouth and an unpaired underground end count). Fluid points
+    are the ones `ports` gives (a recipe opens and closes them); heat points come from the prototype, turned with the
+    entity, as 2.0.77 joined them on a copy of world n (a heat exchanger's heat input is on its back). A flipped paste
+    is not read (`connections_note`). At most 64 rows (256 with `details`).
 - `ports {name, position, direction?, recipe?, mirror?, platform?}` (read; ports.lua, Gemini's request: a recipe moves
   which fluid an electromagnetic plant's ports carry) lists the fluid connections of an entity that is not built:
   `ports [{at, joins, direction, flow, fluid, box, there}]` (`at` the entity's tile with the port, `joins` the tile

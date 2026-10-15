@@ -100,17 +100,30 @@ return function(api)
   -- a copy of world n: heat exchangers in the four directions and a heating tower warmed from a heat interface on the
   -- tile this predicts (818 and 604 C); one beside a side without a connection stayed at 15 C.
   local STEP = {[0]={0,-1}, [4]={1,0}, [8]={0,1}, [12]={-1,0}}
+  -- (the turned connections per prototype and direction, read once: a prototype read makes new tables each time)
+  local HEAT = {}
   function M.heat_points(proto, pos, dir)
-    local list = try(function() return proto.heat_buffer_prototype.connections end)
-      or try(function() return proto.heat_energy_source_prototype.connections end)
-    local out = {}
     dir = dir or 0
-    for _, c in ipairs(list or {}) do
-      local rx, ry = c.position.x or c.position[1], c.position.y or c.position[2]
-      if dir == 4 then rx, ry = -ry, rx elseif dir == 8 then rx, ry = -rx, -ry elseif dir == 12 then rx, ry = ry, -rx end
-      local cd = ((c.direction or 0) + dir) % 16
-      local x, y = math.floor(pos.x + rx), math.floor(pos.y + ry)
-      if STEP[cd] then out[#out+1] = {x=x, y=y, dir=cd, tx=x+STEP[cd][1], ty=y+STEP[cd][2]} end
+    local name = proto and proto.name or ''
+    local per = HEAT[name] or {}
+    HEAT[name] = per
+    local rel = per[dir]
+    if not rel then
+      local list = try(function() return proto.heat_buffer_prototype.connections end)
+        or try(function() return proto.heat_energy_source_prototype.connections end)
+      rel = {}
+      for _, c in ipairs(list or {}) do
+        local rx, ry = c.position.x or c.position[1], c.position.y or c.position[2]
+        if dir == 4 then rx, ry = -ry, rx elseif dir == 8 then rx, ry = -rx, -ry elseif dir == 12 then rx, ry = ry, -rx end
+        local cd = ((c.direction or 0) + dir) % 16
+        if STEP[cd] then rel[#rel+1] = {rx, ry, cd} end
+      end
+      per[dir] = rel
+    end
+    local out = {}
+    for i, c in ipairs(rel) do
+      local x, y = math.floor(pos.x + c[1]), math.floor(pos.y + c[2])
+      out[i] = {x=x, y=y, dir=c[3], tx=x+STEP[c[3]][1], ty=y+STEP[c[3]][2]}
     end
     return out
   end
@@ -1716,52 +1729,87 @@ return function(api)
     -- joins unknown until it was built): for each planned boiler, heat exchanger, turbine, reactor, heating tower,
     -- pump, tank, and a machine given a fluid recipe, each connection point: the tile it joins and what is there to
     -- join: another entry of the plan or a building or ghost of ours with a connection back, something without
-    -- one, or nothing. Pipes and heat pipes give only their joins to what is already built. Fluid points as the
-    -- ports read gives them (ports.lua), heat points from the prototype (M.heat_points).
+    -- one, or nothing. Pipes and heat pipes give only their joins to what is already built. Each pipe-to-ground
+    -- says what its mouth joins and whether it pairs, and with which (Sol 18:21: four pipe-to-grounds of a
+    -- rocket-chem layout placed reversed, seen only by inspect after building). Fluid points as the ports read gives them
+    -- (ports.lua), heat points from the prototype (M.heat_points).
     local CONNECTS = {boiler=true, generator=true, reactor=true, ['heat-pipe']=true, ['heat-interface']=true, pipe=true,
       ['pipe-to-ground']=true, pump=true, ['offshore-pump']=true, ['storage-tank']=true, ['fusion-reactor']=true,
       ['fusion-generator']=true}
-    local LINES = {pipe=true, ['pipe-to-ground']=true, ['heat-pipe']=true}
+    local LINES = {pipe=true, ['heat-pipe']=true}
     local function tile_of(p0) return math.floor(p0.x), math.floor(p0.y) end
-    local by_tile = {}   -- 'f'|'h' .. tile key -> {{r, c}}
+    local by_tile = {f={}, h={}}   -- fluid and heat points by tile key: {{r, c}}
     local with = {}
+    -- (fluid points read once per name, direction and recipe and moved to each entry: entries of one name and
+    -- direction snap alike, so they lie whole tiles apart)
+    local shapes = {}
     -- (a flipped paste: the game turns a storage tank or a fusion machine its own way, which the plan's directions
     -- may not match)
     if plan.flipped then out.connections_note = 'not read for a flipped paste' end
     for _, r in ipairs(plan.flipped and {} or recs) do
       local t = r.proto and r.proto.type
       if t and r.pos and r.status ~= 'blocked' and r.status ~= 'exists' and (CONNECTS[t] or (r.recipe and (t == 'assembling-machine' or t == 'furnace'))) then
-        local e0 = {prototype=r.proto, position=r.pos, direction=r.dir}
+        local sk = r.name..'|'..r.dir..'|'..(r.recipe or '')
+        local shape = shapes[sk]
+        if not shape then
+          local e0 = {prototype=r.proto, position=r.pos, direction=r.dir}
+          shape = {pos=r.pos, rows=api.fluid_rows and try(function() return api.fluid_rows(e0, r.recipe) end) or {}}
+          shapes[sk] = shape
+        end
+        local dx, dy = r.pos.x - shape.pos.x, r.pos.y - shape.pos.y
         local fl = {}
-        for _, c in ipairs(api.fluid_rows and try(function() return api.fluid_rows(e0, r.recipe) end) or {}) do
-          local x, y = tile_of(c.at)
-          local tx, ty = tile_of(c.joins)
+        for _, c in ipairs(shape.rows) do
+          local x, y = tile_of{x=c.at.x+dx, y=c.at.y+dy}
+          local tx, ty = tile_of{x=c.joins.x+dx, y=c.joins.y+dy}
           fl[#fl+1] = {x=x, y=y, tx=tx, ty=ty, dir=c.direction, flow=c.flow, fluid=c.fluid, kind=c.kind or 'normal', reach=c.underground_reach}
         end
         local ht = M.heat_points(r.proto, r.pos, r.dir)
         if #fl > 0 or #ht > 0 then
           r.fl, r.ht = fl, ht
           with[#with+1] = r
-          for _, c in ipairs(fl) do local k = 'f'..key(c.x, c.y); by_tile[k] = by_tile[k] or {}; table.insert(by_tile[k], {r=r, c=c}) end
-          for _, c in ipairs(ht) do local k = 'h'..key(c.x, c.y); by_tile[k] = by_tile[k] or {}; table.insert(by_tile[k], {r=r, c=c}) end
+          for _, c in ipairs(fl) do local k = key(c.x, c.y); local t = by_tile.f; t[k] = t[k] or {}; table.insert(t[k], {r=r, c=c}) end
+          for _, c in ipairs(ht) do local k = key(c.x, c.y); local t = by_tile.h; t[k] = t[k] or {}; table.insert(t[k], {r=r, c=c}) end
         end
       end
     end
     if #with > 0 then
       local OPP = {north='south', south='north', east='west', west='east'}
+      -- Ours on a tile (a find each tile once a call) and an entity's fluid connections (once each).
+      local found, conns = {}, {}
+      local function ours(x, y)
+        local k = key(x, y)
+        local list = found[k]
+        if not list then
+          list = {}
+          for _, o in pairs(try(function() return s.find_entities_filtered{area={{x+0.1, y+0.1}, {x+0.9, y+0.9}}, force=force} end) or {}) do
+            if o.valid and o.type ~= 'character' then list[#list+1] = o end
+          end
+          found[k] = list
+        end
+        return list
+      end
+      local function fluid_of(o)
+        local u = o.unit_number
+        local list = u and conns[u]
+        if not list then
+          list = api.fluid_connections and try(function() return api.fluid_connections(o) end) or {}
+          if u then conns[u] = list end
+        end
+        return list
+      end
+      local function label_of(o) return (o.type == 'entity-ghost' and o.ghost_name..' ghost' or o.name)..' '..at(o.position) end
       -- What answers connection c of planned r: (text, joined, built): a planned entry with a connection back, else
-      -- an entity of ours there, else a planned entry without one.
-      local function partner(r, c, kind)
-        for _, q in ipairs(by_tile[kind..key(c.tx, c.ty)] or {}) do
+      -- an entity of ours there, else a planned entry without one. quiet: no text unless it joins one of ours.
+      local function partner(r, c, kind, quiet)
+        for _, q in ipairs(by_tile[kind][key(c.tx, c.ty)] or {}) do
           local d = q.c
           if q.r ~= r and d.tx == c.x and d.ty == c.y and (kind == 'h' or d.kind == 'normal') then
-            return 'planned #'..tostring(idx(q.r))..' '..q.r.name, true
+            return not quiet and 'planned #'..tostring(idx(q.r))..' '..q.r.name or nil, true
           end
         end
         local other
-        for _, o in pairs(try(function() return s.find_entities_filtered{area={{c.tx+0.1, c.ty+0.1}, {c.tx+0.9, c.ty+0.9}}, force=force} end) or {}) do
-          if o.valid and o.type ~= 'character' then
-            local label = (o.type == 'entity-ghost' and o.ghost_name..' ghost' or o.name)..' '..at(o.position)
+        for _, o in ipairs(ours(c.tx, c.ty)) do
+          if o.valid then
             local joined = false
             if kind == 'h' then
               local proto = o.type == 'entity-ghost' and o.ghost_prototype or o.prototype
@@ -1769,15 +1817,16 @@ return function(api)
                 if h.x == c.tx and h.y == c.ty and h.tx == c.x and h.ty == c.y then joined = true end
               end
             else
-              for _, oc in ipairs(api.fluid_connections and try(function() return api.fluid_connections(o) end) or {}) do
+              for _, oc in ipairs(fluid_of(o)) do
                 if (oc.kind or 'normal') == 'normal' and oc.x == c.tx and oc.y == c.ty and oc.tx == c.x and oc.ty == c.y then joined = true end
               end
             end
-            if joined then return label, true, true end
-            other = other or label
+            if joined then return label_of(o), true, true end
+            other = other or o
           end
         end
-        if other then return 'faces '..other..' (no connection back)' end
+        if quiet then return nil, false end
+        if other then return 'faces '..label_of(other)..' (no connection back)' end
         for _, q in ipairs(occupied[key(c.tx, c.ty)] or {}) do
           if q ~= r then
             return string.format('faces planned #%s %s (%s)', tostring(idx(q)), q.name, q.status == 'blocked' and 'blocked' or 'no connection back')
@@ -1785,44 +1834,68 @@ return function(api)
         end
         return 'nothing there'
       end
-      -- A pipe-to-ground's underground end: the nearest one facing back within its reach, planned or built.
-      local function under(r, c)
+      -- A pipe-to-ground's underground end: whether it pairs and with which. 2.0.77 on a copy of world n: two pair
+      -- up to their reach apart (10 tiles: 10 apart paired, 11 not), and the first pipe-to-ground on the line
+      -- decides: facing back it pairs; facing the same way it pairs on beyond, and this one gets none.
+      local function under(r, c, quiet)
+        local back = OPP[c.dir]
         local d = STEP[({north=0, east=4, south=8, west=12})[c.dir] or 0]
-        for n = 1, c.reach or 10 do
+        local reach = c.reach or 10
+        for n = 1, reach do
           local x, y = c.x + d[1] * n, c.y + d[2] * n
-          for _, q in ipairs(by_tile['f'..key(x, y)] or {}) do
-            if q.r ~= r and q.c.kind == 'underground' and q.c.dir == OPP[c.dir] then return 'underground to planned #'..tostring(idx(q.r))..' '..q.r.name..' '..tile_text(x, y) end
+          for _, q in ipairs(by_tile.f[key(x, y)] or {}) do
+            if q.r ~= r and q.c.kind == 'underground' and (q.c.dir == back or q.c.dir == c.dir) then
+              if quiet then return nil, q.c.dir == back end
+              local label = 'planned #'..tostring(idx(q.r))..' '..q.r.name..' '..tile_text(x, y)
+              if q.c.dir == back then return string.format('pairs with %s, %d tiles', label, n), true end
+              return 'unpaired: the first on its line, '..label..', faces the same way', false
+            end
           end
-          for _, o in pairs(try(function() return s.find_entities_filtered{area={{x+0.1, y+0.1}, {x+0.9, y+0.9}}, force=force} end) or {}) do
-            for _, oc in ipairs(o.valid and api.fluid_connections and try(function() return api.fluid_connections(o) end) or {}) do
-              if oc.kind == 'underground' and oc.x == x and oc.y == y then
-                return 'underground to '..(o.type == 'entity-ghost' and o.ghost_name..' ghost' or o.name)..' '..at(o.position)
+          for _, o in ipairs(ours(x, y)) do
+            for _, oc in ipairs(o.valid and fluid_of(o) or {}) do
+              if oc.kind == 'underground' and oc.x == x and oc.y == y and quiet and (NAMES[oc.dir] == back or NAMES[oc.dir] == c.dir) then
+                return nil, NAMES[oc.dir] == back
+              elseif oc.kind == 'underground' and oc.x == x and oc.y == y then
+                local label = label_of(o)
+                if NAMES[oc.dir] == back then
+                  local now = oc.target and oc.target.valid and oc.target.unit_number ~= o.unit_number and oc.target
+                  return string.format('pairs with %s, %d tiles%s', label, n, now and ' (it pairs with '..now.name..' '..at(now.position)..' now)' or ''), true
+                end
+                if NAMES[oc.dir] == c.dir then return 'unpaired: the first on its line, '..label..', faces the same way', false end
               end
             end
           end
         end
-        return string.format('underground: no pipe-to-ground facing back within %d tiles', c.reach or 10)
+        return not quiet and string.format('unpaired: no pipe-to-ground facing back within %d tiles', reach) or nil, false
       end
       local rows, open = {}, 0
+      local limit = plan.details and 256 or MAX_INSERTERS
       for _, r in ipairs(with) do
         local line = LINES[r.proto.type]
+        local p2g = r.proto.type == 'pipe-to-ground'
+        -- (past the row limit only counted: no text)
+        local quiet = #rows >= limit
         local fluid, heat = {}, {}
         for _, c in ipairs(r.fl) do
-          local there, joined, built
-          if c.kind == 'underground' then there = under(r, c); joined = there:find('^underground to') ~= nil
-          else there, joined, built = partner(r, c, 'f') end
-          if not line or built or (c.kind == 'underground' and not there:find('^underground to planned')) then
-            local what = (c.flow or 'fluid')..(c.fluid and c.fluid ~= 'none' and ' '..c.fluid or '')
-            fluid[#fluid+1] = string.format('%s %s at %s: %s', what, c.dir or '?', tile_text(c.tx, c.ty), there)
+          if c.kind == 'underground' then
+            local there, joined = under(r, c, quiet)
+            if there then fluid[#fluid+1] = string.format('underground %s: %s', c.dir or '?', there) end
+            if not joined then open = open + 1 end
+          else
+            local there, joined, built = partner(r, c, 'f', line or quiet)
+            if there and (not line or built) then
+              local what = p2g and 'mouth' or (c.flow or 'fluid')..(c.fluid and c.fluid ~= 'none' and ' '..c.fluid or '')
+              fluid[#fluid+1] = string.format('%s %s at %s: %s', what, c.dir or '?', tile_text(c.tx, c.ty), there)
+            end
+            if not line and not joined then open = open + 1 end
           end
-          if not line and not joined then open = open + 1 end
         end
         for _, c in ipairs(r.ht) do
-          local there, joined, built = partner(r, c, 'h')
-          if not line or built then heat[#heat+1] = string.format('heat %s at %s: %s', NAMES[c.dir] or '?', tile_text(c.tx, c.ty), there) end
+          local there, joined, built = partner(r, c, 'h', line or quiet)
+          if there and (not line or built) then heat[#heat+1] = string.format('heat %s at %s: %s', NAMES[c.dir] or '?', tile_text(c.tx, c.ty), there) end
           if not line and not joined then open = open + 1 end
         end
-        if (#fluid > 0 or #heat > 0) and #rows < (plan.details and 256 or MAX_INSERTERS) then
+        if (#fluid > 0 or #heat > 0) and #rows < limit then
           rows[#rows+1] = {index=idx(r), name=r.name, position=r.pos, direction=r.dir ~= 0 and NAMES[r.dir] or nil,
             fluid=#fluid > 0 and fluid or nil, heat=#heat > 0 and heat or nil}
         end
