@@ -729,8 +729,8 @@ fh call status
       goal (cut to 64 tiles round the goal): `... nor to anywhere within 15 tiles of it (the path requests take
       oil-ocean-deep, oil-ocean-shallow as ground, as the character walks it: it was not what blocked the way)`. The
       path requests walk over shallow water, wetland and both oil oceans: on a copy of world n, `move_to` crossed
-      `oil-ocean-shallow` and went into `oil-ocean-deep`. The read takes 0.3 to 3 ms (emulated copy), once as the walk
-      ends.
+      `oil-ocean-shallow` and went into `oil-ocean-deep`. The read takes 0.1 to 0.9 ms on a copy of world n (emulated;
+      2.8 ms the first time), once as the walk ends.
   - A `build` batch that fails after some entries stand says what those entries closed in its refusal
     (`build 9/9 failed after 8 built: ...; the character is closed in now where it stands (50.5,108.5): ...`; Gemini's
     19:25 batch failed after 2 built, and those 2 had closed the last gap out). A real `place_ghosts` says
