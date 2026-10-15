@@ -1393,7 +1393,7 @@ function handlers.describe()
         returns='an undamaged target (or none damaged among positions/area): ok with unchanged "not damaged", nothing started, no repair tool needed, last outcome nothing_to_do (a queue step goes on); with positions/area: targets, damaged, already_full, failed and first_error (positions that name no entity), until_tick; a damaged target with no repair tool held fails (no repair tool in inventory)',platform='refused: the game repairs platform entities itself, one at a time, with repair packs from the hub; platforms {platform} and inspect of the hub list damaged and repair_packs'},
       mine={unsafe_goal='optional true: mine where the enemy check refuses: an entity inside a worm\'s range, within 40 tiles of a spawner or in an area under attack now (24 tiles round its first hit, hit within the last 30 s) on the chunks the map shows',avoid_enemies='as move_to\'s (false: no check)',position='{x,y}', ticks='1..600 (with tiles: 1..36000, default the mining time plus 10 s a tile out of reach, at least 10 s)', name='optional (with tiles: a tile name: only that tile in an area)',
         tiles='true: mine the tiles laid by a player at position, positions (1..64) or area (up to 32x32: the minable laid tiles there), by hand as a player mines them: within reach (reach_distance to the tile\'s edge), the tile\'s mining time at your mining speed (landfill and artificial soil 0.5 s at mining speed 1, concrete and stone path 0.1 s; dry_run says the seconds), the product to your inventory, the tile under it put back (landfill on wetland: wetland). A natural tile and a tile anything stands on are refused or skipped, naming it (mine it first); a timed action, nearest first: outcomes target_mined | inventory_full | out_of_reach | failed | timed_out; last.mined, last.tiles [{position, tile, restored, items}], last.skipped [{position, why}], last.items, last.moved. Tiles by the game\'s tile coordinates (the top-left corner, as grid shows them)',
-        positions='with tiles: 1..64 tiles',area='with tiles: {left_top, right_bottom} up to 32x32 tiles',walk=WALK..'; mine walks as move_to {target, reach} does, then mines on arrival (last.walked); with tiles: each tile out of reach walked to in turn, tiles inside a weapon\'s reach left out (skipped)',
+        positions='only with tiles: true: 1..64 laid tiles; entities take one position per call or queue step',area='only with tiles: true: {left_top, right_bottom} up to 32x32 laid tiles; no entity area mining',walk=WALK..'; mine walks as move_to {target, reach} does, then mines on arrival (last.walked); with tiles: each tile out of reach walked to in turn, tiles inside a weapon\'s reach left out (skipped)',
         dry_run='with tiles: mine nothing; each tile: tile, restores, seconds, in_reach, distance; items, seconds, skipped (why), natural (natural tiles in the area)',
         radius='1..32 (default 8): a resource tile at position that is mined out (the resource named, or the one an earlier mine at that position took): the tile of the same resource within radius of it, one in reach first, is mined instead; the reply\'s instead (and last.instead) names it', outcomes='moved 0 and timed now; last.moved (how many more of its products you hold) and last.inv when it ends; target_mined | duration_elapsed (ore: last reports mined) | inventory_full (blocked_item) | not_minable (a stump, remnant or corpse; last.error) | target_lost | out_of_reach'},
       stock={item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',quality='default normal',
@@ -3055,6 +3055,7 @@ function handlers.mine(p,a)
     end
     return reply
   end
+  assert(a.positions==nil and a.area==nil,'mine positions and area require tiles: true (laid tiles only); entity mining takes one position {x,y} per call or queue step')
   assert(a.dry_run==nil,'dry_run goes with tiles: true (mine {tiles: true, dry_run: true})')
   -- Seen out of reach (autowalk.lua; Astra, shift12: a tree 5.4 tiles off refused, and as a queue step it paused the
   -- plan): within 32 tiles the character walks into reach first, then mines it.
@@ -3803,6 +3804,10 @@ function M.build_far(p,b,a)
   local item=prototypes and prototypes.item[b.item or a.item or '']
   local place=item and item.place_result
   if place and place.type=='transport-belt' then pos={x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5} end
+  if place and place.type=='rail-ramp' then
+    local direction=M.direction_of(b.direction or a.direction or 'north')
+    if direction then pos=M.placewhy.ramp_position(pos,direction) end
+  end
   local reach=p.build_distance or 10
   if distance(p.position,pos)<=reach then return nil end
   -- (out of sight: the sight refusal, with the nearest radar coverage when the chunk is dark)
@@ -3914,20 +3919,24 @@ local function build_one(p,a)
   else
     assert(a.entity==nil or (place and place.name==a.entity),'entity: '..a.item..' places '..tostring(place and place.name))
   end
-  assert(place and place.type ~= 'rail-ramp','only ordinary entity placement is supported')
+  assert(place,'item does not place an entity')
   -- recipe: checked before anything is placed, set once it stands (M.recipe_for).
   if a.recipe~=nil then M.recipe_for(p,place,a.recipe) end
   -- Cursor building borrows the cursor; direct placement leaves it alone.
   -- While the game is tick-paused (turn mode between actions) the engine
   -- refuses every cursor build ("placement blocked" on clear ground), so
   -- place directly then, as in map view.
-  local direct=in_map_view(p) or M.bots.is(p) or place.type=='underground-belt' or planner~=nil or game.tick_paused==true
+  local direct=in_map_view(p) or M.bots.is(p) or place.type=='underground-belt' or place.type=='rail-ramp' or planner~=nil or game.tick_paused==true
   assert(direct or not p.cursor_stack.valid_for_read,'cursor must be empty; clear it in the client first')
   if place.type=='transport-belt' then
     pos={x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5}
     build_reach(p,pos,'snapped position')
   end
   local direction=M.direction_of(a.direction or 'north'); assert(direction,'invalid direction: a compass name (north, east, south, west) or 0..15')
+  if place.type=='rail-ramp' then
+    pos,direction=M.placewhy.ramp_position(pos,direction)
+    build_reach(p,pos,'snapped position')
+  end
   local filter={position=pos,radius=2,name=place.name,limit=64}
   local existing={}
   for _,e in pairs(p.surface.find_entities_filtered(filter)) do
