@@ -233,3 +233,28 @@ do
 end
 print('d15_batch queue_edit id: ok')
 
+
+-- Blockers 7 (d15 trajectory analysis): a courier round that moves nothing says so and counts as idle. ---------------
+do
+  game={tick=0}
+  local state,active={},{}
+  local players={[1]={index=1}}
+  local moved=0
+  local s=require('scheduler'){state=function() return state end,player=function(i) return players[i] end,
+    handlers={transfer=function() return {transferred=moved} end},
+    busy=function() return false end,stop=function() end,stop_index=function() end,
+    condition=function() return false end,validate_condition=function() end}
+  local function tick(n) for _=1,n or 1 do game.tick=game.tick+1; s.tick() end end
+  s.handlers.queue_repeat(players[1],{name='coal-run',interval_ticks=60,steps={{action='transfer',args={}}}})
+  tick(3)
+  local q=state.queues[1]
+  eq(q.empty_rounds,1)
+  local h=q.history[#q.history]
+  eq(h.action,'round'); eq(h.result.line,'queue coal-run round 1 moved nothing (1 item-moving step; 1 round in a row)')
+  eq(s.round_news(1)[1],'queue coal-run round 1 moved nothing (1 item-moving step; 1 round in a row)')
+  local I=require('idle'){state=function() return state end}
+  eq((I.busy(state,1)),false,'the loop counts as idle')
+  moved=5; tick(70)
+  eq(q.empty_rounds,nil); eq((I.busy(state,1)),true,'a round that moved something: busy again')
+end
+print('d15_batch empty rounds: ok')

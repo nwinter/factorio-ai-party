@@ -209,7 +209,25 @@ return function(api)
   end
   -- Its shorts stay out of the round line, which is for shorts the plan did not allow for (Grok, shift10: a brick loop
   -- whose up_to steps found an empty chest put a line in the team block every round; he cancelled two loops over it).
+  -- Items a step moved, from its reply or its timed action's completion (moved, transferred, given).
+  local MOVERS={transfer=true,collect=true,feed=true,refuel=true,rearm=true,pickup=true,load_silo=true}
+  local function moved_count(result)
+    if type(result)~='table' then return 0 end
+    local n=0
+    for _,src in ipairs({result,type(result.completion)=='table' and result.completion or {},type(result.accepted)=='table' and result.accepted or {}}) do
+      for _,k in ipairs({'moved','transferred','given','loaded','taken'}) do
+        if type(src[k])=='number' and src[k]>n then n=src[k] end
+      end
+    end
+    return n
+  end
   local function tally(q,step,result)
+    -- A courier round's items (d15 trajectory analysis: 21 of Muse's 33 rounds moved nothing, and the loop still read as
+    -- work): what its item-moving steps moved.
+    if q.loop and not step.order and q.round and MOVERS[step.action] then
+      q.round.movers=(q.round.movers or 0)+1
+      q.round.moved=(q.round.moved or 0)+moved_count(result)
+    end
     local r=q.loop and not step.order and not allows_short(step) and q.round
     local key=r and short_key(step,result)
     if not key then return end
@@ -221,6 +239,20 @@ return function(api)
     local r=q.round
     q.round={counts={},keys={},n=0}
     if not r then return end
+    -- A round whose item-moving steps moved nothing: said in the history and the team block, and counted (idle.lua
+    -- counts the loop as idle while its last round moved nothing).
+    if (r.movers or 0)>0 then
+      if (r.moved or 0)==0 then
+        q.empty_rounds=(q.empty_rounds or 0)+1
+        local line=string.format('queue %sround %d moved nothing (%d item-moving step%s; %d round%s in a row)',q.name and q.name..' ' or '',q.cycle or 1,
+          r.movers,r.movers==1 and '' or 's',q.empty_rounds,q.empty_rounds==1 and '' or 's')
+        q.history[#q.history+1]={action='round',ok=true,result={round=q.cycle or 1,moved=0,line=line},finished_tick=game.tick,plan=q.plan_seq}
+        if #q.history>MAX_HISTORY then table.remove(q.history,1) end
+        q.round_news=q.round_news or {}
+        q.round_news[#q.round_news+1]=line
+        while #q.round_news>3 do table.remove(q.round_news,1) end
+      else q.empty_rounds=nil end
+    end
     local parts={}
     for _,key in ipairs(r.keys) do parts[#parts+1]=key..(r.counts[key]>1 and ' x'..r.counts[key] or '') end
     local sig=table.concat(parts,', ')
@@ -612,7 +644,7 @@ return function(api)
     M.pause(p.index)
     new_plan(q,items,'repeat',a.name)
     q.loop=copy_steps(items); q.interval=interval; q.next_cycle_tick=nil; q.cycle=1; q.orders=orders
-    q.name=a.name; q.round={counts={},keys={},n=0}; q.round_sig=nil; q.round_news=nil
+    q.name=a.name; q.round={counts={},keys={},n=0}; q.round_sig=nil; q.round_news=nil; q.empty_rounds=nil
     q.times=times; q.for_ticks=for_ticks; q.stop_tick=for_ticks and game.tick+for_ticks or nil; q.loop_done=nil; q.condition=a.condition; q.condition_error=nil; q.submission=nil
     assign(q,items); q.pending=items; q.paused=false; q.revision=q.revision+1
     if met then q.pending={}; q.cycle=0; end_loop(q,"condition met: "..tostring(saw or a.condition["until"])) end

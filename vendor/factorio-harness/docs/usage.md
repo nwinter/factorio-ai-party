@@ -2232,6 +2232,11 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   queue pause/resume does); a relative active step such as `transfer`, `walk` or `wait_ticks` refuses ahead.
   `mode: "append"` explicitly waits behind the current round. The reply's `submission` says which happened, and
   `repeat_name` names the loop. Ordinary nonrepeating plans still append by default.
+- A repeating plan's round whose item-moving steps (transfer, collect, feed, refuel, rearm, pickup, load_silo) moved
+  nothing says so (d15 trajectory analysis: 21 of Muse's 33 courier rounds moved nothing and the loop still read as
+  work): a history entry `round` with `line: queue coal-run round 4 moved nothing (2 item-moving steps; 3 rounds in a
+  row)`, the same line once in the team block, and the loop counts as idle (idle_report, the idle nudge) until a round
+  moves something.
 - `mode: "replace"` stops the active step of any plan (Sonnet, d15 07:50: a running `load_silo` went on after a replace
   and took a `queue_cancel` first, about 5 times): its history entry reads `ok: false`, `reason: stopped by
   queue_submit mode=replace`, `stopped_by: replace`; it is not run again. Pending steps and guards go as before.
