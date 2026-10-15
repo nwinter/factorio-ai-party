@@ -34,9 +34,24 @@ return function(api)
     local found,note=api.find_kinds(p,base,a.types)
     assert(#found<=1024,'refuel area read exceeds the 1024-entity limit')
     local targets,hidden={},0
+    -- feed_chests (Haiku, d15 06:20: "a one-call fill of every boiler feed chest from the nearest coal source"): the
+    -- chests that inserters take from to feed those burners, each topped up to count, instead of the burners.
+    assert(a.feed_chests==nil or type(a.feed_chests)=='boolean','feed_chests must be true or false')
+    local chests_seen={}
     for _,e in ipairs(found) do
       if e.valid and e.force==p.force then
         if not seen(p,e) then hidden=hidden+1
+        elseif a.feed_chests then
+          if api.fuel_inventory(e) and api.accepts(e,fuel) then
+            for _,c in ipairs(api.feed_chests and api.feed_chests(p,e) or {}) do
+              local k=key(c)
+              if not chests_seen[k] then
+                chests_seen[k]=true
+                local inv=api.chest_inventory(c)
+                if inv and inv.get_item_count{name=fuel,quality=a.quality or 'normal'}<count then targets[#targets+1]=c end
+              end
+            end
+          end
         else
           local inv=api.fuel_inventory(e)
           if inv and api.accepts(e,fuel) and inv.get_item_count{name=fuel,quality=a.quality or 'normal'}<count then targets[#targets+1]=e end
@@ -52,22 +67,26 @@ return function(api)
     local ticks=api.integer(a.ticks,36000,1,36000,'ticks')
     local action,out=api.start_tour(p,'refuel',targets,ticks,{item=fuel,quality=a.quality or 'normal',count=count,
       avoid_enemies=a.avoid_enemies,unsafe_goal=a.unsafe_goal})
+    local function inv_of(e) return a.feed_chests and api.chest_inventory(e) or api.fuel_inventory(e) end
     for _,t in ipairs(action.targets) do
-      t.needed=math.max(0,count-api.fuel_inventory(t.entity).get_item_count{name=fuel,quality=action.quality})
+      t.needed=math.max(0,count-inv_of(t.entity).get_item_count{name=fuel,quality=action.quality})
     end
     -- from_radius (Haiku, d15 06:20: boilers starved when no coal lay within 64 tiles): how far round each refill stop
     -- the nearest source is looked for, 1..128 (default 64).
     assert(a.from_radius==nil or a.from=='nearest','from_radius goes with from: nearest')
     local from_radius=api.integer(a.from_radius,64,1,128,'from_radius')
-    action.fuel_round={from=from,nearest=a.from=='nearest',radius=from_radius,sources={},tried={},taken=0,attempts=0}
+    action.fuel_round={chests=a.feed_chests or nil,from=from,nearest=a.from=='nearest',radius=from_radius,sources={},tried={},taken=0,attempts=0}
     out.from=a.from;out.types_note=note;out.entities_not_in_sight=hidden>0 and hidden or nil
+    if a.feed_chests then out.feed_chests=string.format('%d chest%s that inserters feed those burners from, each topped up to %d %s',#targets,#targets==1 and '' or 's',count,fuel) end
     out.until_tick=action.until_tick;out.needed=need(action);out.held=api.held(p,fuel,action.quality)
     api.start(p,action)
     return out
   end
   function M.feed_visit(p,action,e)
-    local out=api.give(p,e,action.item,action.quality,action.count)
-    local have=api.fuel_inventory(e).get_item_count{name=action.item,quality=action.quality}
+    local chests=action.fuel_round and action.fuel_round.chests
+    local t0=action.targets[action.index]
+    local out=chests and api.give_chest(p,e,action.item,action.quality,math.max(1,t0.needed or action.count)) or api.give(p,e,action.item,action.quality,action.count)
+    local have=(chests and api.chest_inventory(e) or api.fuel_inventory(e)).get_item_count{name=action.item,quality=action.quality}
     local t=action.targets[action.index];t.needed=math.max(0,action.count-have)
     action.rows=action.rows or {}
     local row=t.row or {name=e.name,position=t.position,given=0}
