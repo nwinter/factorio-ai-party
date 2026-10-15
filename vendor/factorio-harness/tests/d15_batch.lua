@@ -258,3 +258,61 @@ do
   eq(q.empty_rounds,nil); eq((I.busy(state,1)),true,'a round that moved something: busy again')
 end
 print('d15_batch empty rounds: ok')
+
+-- Ship endurance (Astra, d15: Wayfarer was lost at Aquilo after its rockets, fuel and repair packs ran out): a route's
+-- legs at the platform's speed and each resource's stock, rates and when it runs out. ----------------------------------
+do
+  defines={flow_precision_index={ten_minutes=2,five_seconds=0},inventory={hub_main=1,turret_ammo=1}}
+  local function loc(sp) return {solar_power_in_space=sp} end
+  prototypes={item={rocket={type='ammo'},['firearm-magazine']={type='ammo'},['repair-pack']={type='repair-tool'},['iron-plate']={type='item'}},
+    fluid={['thruster-fuel']={},['thruster-oxidizer']={}},
+    space_location={nauvis=loc(100),fulgora=loc(120),aquilo=loc(60)},
+    space_connection={a={from={name='nauvis'},to={name='fulgora'},length=15000},b={from={name='fulgora'},to={name='aquilo'},length=30000}}}
+  -- per minute: made, used (the statistics give 10-minute counts)
+  local items={rocket={0,10},['firearm-magazine']={20,5},['repair-pack']={0,1}}
+  local fluids={['thruster-fuel']={400,500}}
+  local function stats(t) return {get_flow_count=function(a) local r=t[a.name]; assert(a.count and a.precision_index==2); return r and (a.category=='input' and r[1] or r[2])*10 or 0 end} end
+  local hub=setmetatable({get_contents=function() return {{name='rocket',count=120},{name='firearm-magazine',count=50},{name='repair-pack',count=40},{name='iron-plate',count=9}} end,
+    count_empty_stacks=function() return 12 end},{__len=function() return 50 end})
+  local turret={get_inventory=function() return {get_contents=function() return {{name='rocket',count=30}} end} end}
+  local thruster={fluidbox={{name='thruster-fuel',amount=10000},{name='thruster-oxidizer',amount=8000}}}
+  local pole={electric_network_statistics={output_counts={['solar-panel']=1},input_counts={thruster=1,['ammo-turret']=1},
+    get_flow_count=function(a) return a.category=='output' and 1000 or 500 end}}
+  local force={get_item_production_statistics=function() return stats(items) end,get_fluid_production_statistics=function() return stats(fluids) end}
+  local surface={find_entities_filtered=function(f)
+    if f.type=='ammo-turret' then return {turret} elseif f.type=='electric-pole' then return {pole} elseif type(f.type)=='table' then return {thruster} end
+    return {} end}
+  local pl={name='Wayfarer',surface=surface,force=force,hub={get_inventory=function() return hub end},space_location={name='nauvis'},speed=0,
+    schedule={current=1,records={{station='nauvis'},{station='fulgora'},{station='aquilo'}}}}
+  local leg,segs=nil,{{kind='leg',from='fulgora',to='nauvis',start=0,['end']=36000},{kind='stop',at='nauvis',start=36000}}
+  local E=require('endurance'){platform=function() return pl end,leg=function() return leg end,segments=function() return segs end}
+  local r=E.read({},{platform='Wayfarer'})
+  eq(r.route,'schedule'); eq(r.speed_km_per_min,1500); has(r.speed_from,'the last leg fulgora->nauvis')
+  eq(#r.legs,3); eq(r.legs[1].minutes,10); eq(r.legs[2].minutes,20); eq(r.legs[3].none,true,'aquilo->nauvis has no connection')
+  eq(r.total_minutes,30)
+  has(r.lines[1],'nauvis->fulgora 15000 km, 10m00s; fulgora->aquilo 30000 km, 20m00s; aquilo->nauvis ? km, time unknown (no space connection between them); in all 30m00s')
+  local by={}; for _,x in ipairs(r.resources) do by[x.name]=x end
+  eq(by['iron-plate'],nil,'only ammunition, repair packs and thruster fluids')
+  eq(by.rocket.stock,150,'hub and turrets'); eq(by.rocket.lasts_min,15); eq(by.rocket.runs_out_on,'fulgora->aquilo')
+  has(by.rocket.line,'rocket: 150 now, made 0/min, used 10/min (last 10 min); lasts 15m00s at that rate (runs out on fulgora->aquilo); at the route\'s end about 0')
+  eq(by['firearm-magazine'].lasts_min,nil); eq(by['firearm-magazine'].at_end,500)
+  eq(by['repair-pack'].runs_out_on,nil); has(by['repair-pack'].line,'lasts 40m00s at that rate (past the route\'s end)')
+  eq(by['thruster-fuel'].stock,10000); eq(by['thruster-fuel'].lasts_min,100); eq(by['thruster-fuel'].at_end,7000)
+  eq(by['thruster-oxidizer'].stock,8000); eq(by['thruster-oxidizer'].lasts_min,nil)
+  eq(r.hub_slots,'12 of 50 free'); eq(r.power,'makes 60 kW, draws 60 kW now'); eq(r.solar_power,'nauvis 100%, fulgora 120%, aquilo 60%')
+  -- flying: the rest of the leg first, at the speed now; the schedule from its current stop round to it
+  leg={from='nauvis',to='fulgora',left_km=6000}
+  pl.space_location,pl.speed,pl.space_connection,pl.schedule.current=nil,25/60,{},2
+  r=E.read({},{platform='Wayfarer'})
+  eq(r.speed_from,'now'); eq(r.legs[1].now,true); eq(r.legs[1].minutes,4)
+  eq(r.legs[2].from,'fulgora'); eq(r.legs[2].to,'aquilo'); eq(r.legs[4].to,'fulgora'); eq(#r.legs,4)
+  -- a given route; an unknown place is refused; stopped with no finished leg: times unknown
+  leg,pl.speed,pl.space_connection,pl.space_location,segs=nil,0,nil,{name='nauvis'},{}
+  r=E.read({},{platform='Wayfarer',route={'fulgora','nauvis'}})
+  eq(r.route,'given'); eq(#r.legs,2); eq(r.total_minutes,nil); has(r.speed_from,'unknown'); has(r.lines[1],'time unknown')
+  eq(by.rocket.lasts_min,15)
+  local ok,err=pcall(E.read,{},{platform='Wayfarer',route={'mars'}})
+  assert(not ok and tostring(err):find('unknown space location mars',1,true),err)
+  prototypes,defines=nil,nil
+end
+print('d15_batch endurance: ok')

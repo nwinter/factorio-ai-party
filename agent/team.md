@@ -112,6 +112,7 @@ already targets your character.
   (working, output full, no resource left) and what they put into.
 - `power` (observe scope) gives per network `supply_line`: generators' nameplate, what the working ones can give, the stopped ones by status (dry steam engines), and `boilers` by state.
 - `./fh call fuel_budget` (optional `"surface"`): each fuel made and used per minute, and each group of fuel users (boilers, furnaces, burner drills, heating towers, `recipe plastic-bar`, ...) with what it burns per minute and the minutes its own fuel lasts, fewest first.
+- `./fh call platform_endurance --args '{"platform":"Wayfarer"}'` (optional `"route":["fulgora","aquilo"]`, default its schedule): each leg's km and minutes at its speed, and each ammunition, repair pack and thruster fluid aboard with its stock, made and used per minute, and the leg it runs out on; hub slots free, power, solar power at the stops.
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
   `"surface"`) reads one item: where it sits (chests by kind, belts (`belt_lines`: the 5 belt lines holding the most, with their ends and the tile with the most), machine outputs, inserter hands, robots,
   characters), each logistic network's stock of it (free and reserved, and which requesters the reserved stock is for),

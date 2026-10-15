@@ -1734,6 +1734,24 @@ bottleneck calls to find) gives, per surface:
 - The users come from the census's last background pass (`as_of`; before its first pass none are listed and
   `pending` says so); their state is read at the call, at most 2048 a call (`capped`). The read is kept 10 seconds.
 
+`platform_endurance {platform, route?}` (read; Astra, d15: Wayfarer was lost at Aquilo after its rockets, fuel and
+repair packs ran out on the way) projects a planned route at the rates the platform shows now:
+- `route`: the stops given (`"route":["fulgora","aquilo","nauvis"]`, 1 to 12 space locations), else the schedule
+  from its current stop round to that stop again. `legs [{from, to, km, minutes}]`: while it flies, the rest of the
+  leg first (`now: true`); then stop to stop by each pair's space connection (`none: true` when there is none).
+  `total_km`, `total_minutes`.
+- `speed_km_per_min` and `speed_from`: the speed now while it flies, else the average of its last finished leg on
+  record (a leg first seen mid-flight is skipped); stopped with no finished leg, times are unknown and it says so.
+- `resources`: each ammunition item and repair pack aboard or made or used there, and `thruster-fuel` and
+  `thruster-oxidizer`, with `stock` (hub and turrets; the fluids in thrusters and storage tanks), `made_per_min` and
+  `used_per_min` (the platform surface's production statistics, last 10 minutes), `lasts_min` when it falls,
+  `runs_out_on` (the leg it runs out on), `at_end` and `line`: `rocket: 150 now, made 0/min, used 10/min (last 10
+  min); lasts 15m00s at that rate (runs out on fulgora->aquilo); at the route's end about 0`.
+- `hub_slots` (`12 of 50 free`), `power` (what its network makes and draws now) and `solar_power` at the route's
+  locations (each location's solar power in space, in percent, as its prototype gives it), and `lines` with the route and the hub.
+- The rates are those of the last 10 minutes where it is now; a fight near a planet or a change of thrust on the way
+  changes them.
+
 ```sh
 fh call refuel --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":40,"y":20}},"from":"nearest","fuel":"coal","count":10}' --wait
 fh call refuel --args '{"radius":64,"from":{"x":-12.5,"y":8.5},"count":20}' --wait
