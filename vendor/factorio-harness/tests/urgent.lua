@@ -36,14 +36,15 @@ s.damage={d={id=10,at={x=5,y=5},surface='nauvis',damage=10,hits=1,last=900}}
 eq(U.check(p,base),nil)
 s.damage=nil
 
--- An enemy group heading for a spot within 64 tiles.
+-- An enemy group heading for a spot within 40 tiles (Haiku, shift17 09:20: groups heading 52-63 tiles away woke it).
 game.tick=20000; base=U.base(p)
 s.attack_groups={{seq=1,tick=19000,size=20,position={x=0,y=200},target={x=0,y=10},surface='nauvis'},
   {seq=2,tick=20010,size=3,position={x=500,y=0},target={x=400,y=0},surface='nauvis'},
-  {seq=3,tick=20020,size=9,kinds='9 big-biter',position={x=90,y=90},target={x=50,y=0},surface='nauvis'}}
+  {seq=4,tick=20015,size=9,position={x=187,y=-14},target={x=63,y=0},surface='nauvis'},
+  {seq=3,tick=20020,size=9,kinds='9 big-biter',position={x=90,y=90},target={x=36,y=0},surface='nauvis'}}
 game.tick=20030
-eq(U.check(p,base),'enemy group of 9 (9 big-biter) gathered at (90,90) heading for (50,0), 50 tiles from you')
-eq(U.check(p,base),nil,'each group once; the one before the sleep and the far one do not wake it')
+eq(U.check(p,base),'enemy group of 9 (9 big-biter) gathered at (90,90), 127 tiles from you, heading for (36,0), 36 tiles from you')
+eq(U.check(p,base),nil,'each group once; the one before the sleep, one heading 63 tiles away and the far one do not wake it')
 s.attack_groups=nil
 
 -- Buildings destroyed by enemies in a fresh claim of mine, or near me; friendly fire and teammates' claims do not.
@@ -145,8 +146,11 @@ eq(W.handlers.sleep_check(p,{peek=true}).woke,nil)
 game.tick=60100; s.damage={a={id=40,at={x=10,y=10},surface='nauvis',damage=50,hits=2,last=60100}}
 r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'urgent'); has(r.urgent,'attack on our structures 14 tiles from you')
 eq(W.handlers.sleep_check(p,{}).woke,'urgent','the reason sticks')
--- A sleep right after it repeats the wake (a loop of sleeps ends), as a damage wake does.
-game.tick=60200; r=W.handlers.sleep(p,{seconds=600}); eq(r['repeat'],true); eq(r.woke,'urgent'); has(r.urgent,'14 tiles from you')
+-- A sleep right after it runs, and the same attack does not wake it again (Haiku, shift17 09:20: "the next sleep
+-- repeats it"); told once, again only 5 minutes later and grown.
+game.tick=60200; r=W.handlers.sleep(p,{seconds=600}); eq(r['repeat'],nil); eq(r.woke,nil)
+s.damage.a.last=60250; s.damage.a.hits=3; game.tick=60260
+eq(W.handlers.sleep_check(p,{peek=true}).woke,nil,'the same attack, told already')
 game.tick=61000; r=W.handlers.sleep(p,{seconds=600,wake_on_urgent=false})
 assert(not r.wakes_on:find('urgent',1,true),r.wakes_on)
 game.tick=61100; s.damage={a={id=41,at={x=5,y=5},surface='nauvis',damage=50,hits=2,last=61100}}
@@ -170,7 +174,7 @@ eq(r.woke,'alert'); eq(r.alert,'enemy group of 6 gathered at (80,0) heading for 
 game.tick=62200; s.alert_seq=53
 W.handlers.sleep(p,{seconds=600,condition={['until']='alert',near={x=0,y=0},radius=30,min_size=4}})
 s.attack_groups[2]={seq=54,tick=62210,size=7,position={x=80,y=10},target={x=25,y=0},surface='nauvis'}; s.alert_seq=54
-game.tick=62220; r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'urgent'); has(r.urgent,'enemy group of 7')
+game.tick=62220; r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'urgent'); has(r.urgent,'enemy group of 7'); has(r.urgent,'heading for (25,0), 25 tiles from you')
 game.tick=63000; s.alert_seq=60; s.attack_groups=nil; s.damage=nil
 r=W.handlers.sleep(p,{seconds=600,wake_on_urgent=false,condition={['until']='alert',min_size=4}})
 s.alert_seq=61; s.attack_groups={{seq=61,tick=63010,size=6,position={x=800,y=0},target={x=700,y=0},surface='nauvis'}}

@@ -16,7 +16,10 @@
 -- and size (Haiku, 06:20: "an alert filter by area or minimum size").
 return function(api)
   local M = {}
-  M.NEAR, M.GROUP_NEAR, M.MIN_MACHINES, M.SHARE, M.REPEAT = 40, 64, 20, 0.5, 5 * 3600
+  -- GROUP_NEAR was 64 (d15 first cut); Haiku, shift17 09:20: groups heading 52-63 tiles away that gathered 100+ tiles
+  -- off woke its sleeps every few minutes ("an urgent alert about a far attack"), so a group's target counts within the
+  -- same 40 tiles as an attack.
+  M.NEAR, M.GROUP_NEAR, M.MIN_MACHINES, M.SHARE, M.REPEAT = 40, 40, 20, 0.5, 5 * 3600
   local KEEP = 30 * 3600
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function round(v) return math.floor(v + 0.5) end
@@ -121,8 +124,9 @@ return function(api)
           local key = 'group|' .. tostring(g.seq)
           if d <= M.GROUP_NEAR and news(told, key, g.size or 0) then
             tell(told, key, g.size or 0)
-            return string.format('enemy group of %d%s gathered at (%d,%d) heading for (%d,%d), %d tiles from you', g.size or 0,
-              g.kinds and ' (' .. g.kinds .. ')' or '', g.position.x, g.position.y, g.target.x, g.target.y, round(d))
+            return string.format('enemy group of %d%s gathered at (%d,%d), %d tiles from you, heading for (%d,%d), %d tiles from you',
+              g.size or 0, g.kinds and ' (' .. g.kinds .. ')' or '', g.position.x, g.position.y, round(dist(g.position, pos)),
+              g.target.x, g.target.y, round(d))
           end
         end
       end

@@ -523,7 +523,7 @@ already targets your character.
   Several joined by `|` wake on whichever holds first: `./fh wait --until "alert|platform_arrived Sunward gleba"`,
   `"item_count coal>=50 at 10,39 | item_count iron-plate>=100 at 12,39"` (the wake names the one that held).
 - Every sleep and wait ends on an urgent alert (`woke: urgent`, naming it): our structures attacked within 40 tiles of
-  you, an enemy group heading within 64 tiles of you, enemies destroying buildings in your fresh claims or near you, a
+  you, an enemy group heading within 40 tiles of you, enemies destroying buildings in your fresh claims or near you, a
   platform you hear about losing a building or its hub hit, a teammate dying on your surface, a network on your surface
   half on low or no power; `--no-urgent` opts out. `--until "alert near=X,Y radius=R min_size=N"` (or `area=X1,Y1,X2,Y2`)
   wakes only on an attack, group or nest there and that big; `woke: alert` names the alert.
