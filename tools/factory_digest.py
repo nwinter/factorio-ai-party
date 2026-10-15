@@ -1,6 +1,7 @@
 """Facts from the harness's completed surveys, sent by idle_nudge at deadline - 2 h.
 
-No game scans or live reads beyond the operator factory_digest cache read. The
+No game scans beyond the operator factory_digest read (cached factory counts,
+engine vehicle counters, and a small agent loadout read). The
 outbox is durable across supervisor restarts; each tell has a stable request ID.
 """
 import fcntl
@@ -73,7 +74,9 @@ def facts(report):
         rows.append("No completed planetary surveys or recent traced belt-end contents cached.")
     if report.get("more_surfaces"):
         rows.append(f"{report['more_surfaces']} more cached surfaces omitted.")
-    rows.append("Cached planets and sampled ends only; missing data is unknown.")
+    rows.extend(report.get("research_use") or [])
+    rows.append("Machine counts are cached; belt ends are sampled; equipment/vehicle times are stated above; missing data is unknown."
+                if report.get("research_use") else "Cached planets and sampled ends only; missing data is unknown.")
     return rows
 
 

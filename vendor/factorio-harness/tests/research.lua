@@ -346,6 +346,7 @@ eq(shift.research_since_your_last_shift,'steel-axe, construction-robotics, oil-p
 -- logistic-robotics and construction-robotics share roboports; solar panels and pumpjacks are built; logistic-system
 -- is not researched; accumulators were researched above and none is built.
 eq(shift.researched_none_built,'roboports (logistic-robotics, construction-robotics); accumulators (electric-energy-accumulators)')
+eq(#shift.research_use,2); assert(shift.research_use[1]:find('Agent equipment',1,true))
 -- Once per shift; peeks and directors get none and leave it for later.
 eq((astra('status').team or {}).shift,nil)
 eq((request{action='status',args={},player=2}.team or {}).shift,nil)

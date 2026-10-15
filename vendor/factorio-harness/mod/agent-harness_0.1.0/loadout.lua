@@ -141,5 +141,33 @@ return function(api)
     end
     return {agents=out, tick=game.tick}
   end
+  -- Small combat-only loadout read for shift/digest facts. Main inventory contents are complete, never top-N.
+  -- A failed inventory read stays unknown; no character is not an empty loadout.
+  function M.usage(force)
+    local out={agents={},tick=game.tick,force_unknown=0}
+    for _,a in ipairs(api.agents()) do
+      local ok,p=pcall(api.lookup,a.index)
+      local f=ok and p and try(function() return p.force.name end)
+      if not f then out.force_unknown=out.force_unknown+1
+      elseif f==force.name then
+        local row={name=a.name}
+        local c=try(function() return p.character end)
+        row.alive=c and try(function() return c.valid end) or false
+        if row.alive then
+          local d=defines.inventory
+          local armor,guns,ammo=inventory(p,d.character_armor),inventory(p,d.character_guns),inventory(p,d.character_ammo)
+          row.armor_known=armor~=nil; row.guns_known=guns~=nil and try(function() return #guns end)~=nil
+          row.ammo_known=ammo~=nil and try(function() return #ammo end)~=nil
+          row.armor=equipment(armor); row.guns=slots(guns); row.ammo=slots(ammo)
+          local ok_grid,grid=pcall(function() return armor and armor[1] and armor[1].valid_for_read and armor[1].grid or nil end)
+          row.equipment_known=row.armor_known and ok_grid and (not grid or try(function() return grid.equipment end)~=nil)
+          local main=try(function() return p.get_main_inventory() end)
+          row.carried=main and try(function() return main.get_contents() end) or nil
+        end
+        out.agents[#out.agents+1]=row
+      end
+    end
+    return out
+  end
   return M
 end

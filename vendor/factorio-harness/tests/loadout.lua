@@ -83,3 +83,28 @@ astra.get_main_inventory = function() error('boom') end
 a = L.operator.loadout({}).agents[1]
 eq(a.name, 'astra'); eq(a.alive, true)
 print('loadout: ok')
+
+-- Research/use reads all carried gear, with force isolation and unknowns for unavailable inventories.
+local force={name='player'}; astra.force=force; dead.force=force
+inventories[4]=inv({suit})
+local reads=0
+local contents={}
+for i=1,12 do contents[#contents+1]={name='bulk-material-'..i,count=10000} end
+contents[#contents+1]={name='power-armor-mk2',count=1,quality='rare'}
+contents[#contents+1]={name='piercing-rounds-magazine',count=3,quality='normal'}
+astra.get_main_inventory=function() return {get_contents=function() reads=reads+1;return contents end} end
+local usage=L.usage(force)
+eq(#usage.agents,2);eq(usage.force_unknown,1);eq(reads,1)
+a=usage.agents[1];eq(a.armor.name,'power-armor-mk2');eq(a.equipment_known,true)
+eq(a.guns_known,true);eq(a.ammo_known,true);eq(a.carried[14].name,'piercing-rounds-magazine')
+eq(usage.agents[2].alive,false);eq(usage.agents[2].carried,nil)
+dead.force={name='other'};eq(#L.usage(force).agents,1)
+local get=astra.get_inventory
+astra.get_inventory=function(id) if id==2 then error('inventory unavailable') end; return get(id) end
+astra.get_main_inventory=function() error('inventory unavailable') end
+a=L.usage(force).agents[1];eq(a.guns_known,false);eq(a.carried,nil);eq(a.ammo_known,true)
+local saved=grid.equipment;grid.equipment=nil
+setmetatable(grid,{__index=function(_,k) if k=='equipment' then error('grid unavailable') end end})
+eq(L.usage(force).agents[1].equipment_known,false)
+grid.equipment=saved;setmetatable(grid,nil)
+print('loadout usage: ok')

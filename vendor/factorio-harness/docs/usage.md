@@ -3949,7 +3949,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   at the runtime's first sample), so no research event is needed; nothing before the first snapshot is known) and
   `researched_none_built` (`roboports (logistic-robotics,
   construction-robotics); ...`: researched technologies with none of their buildings on any surface, from the
-  harness's `unlocks.lua`, the table the stream hosts use), `networks` (the networks lines, above) and `retro` (the
+  harness's `unlocks.lua`, the table the stream hosts use), `research_use` (two equipment/building-use lines, also
+  included in the factory digest), `networks` (the networks lines, above) and `retro` (the
   previous shift, above).
 - Research news needs no restart: a technology that leaves the head of the queue researched (or a level up) and was
   not announced by `on_research_finished` (which control.lua forwards from the next server start) is announced by the
@@ -4085,7 +4086,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   `python3 tools/idle_nudge.py --run runs/RUN --world n --digest-now`; add `--dry-run` to log the text without
   sending or marking it delivered. This command exits after the digest and sends no idle nudges.
   The operator-only `factory_digest {force?}` read uses completed survey caches and visible endpoint lane readings
-  already made by `trace`; it performs no new entity, inventory or tile scan. Up to 16 cached planetary surfaces
+  already made by `trace`; it performs no new surface/entity or tile scan. Its two `research_use` lines use the
+  completed census, engine vehicle counters, and a small current agent loadout read (details below).
+  Up to 16 cached planetary surfaces
   (platforms excluded) report survey ages, drill no-resources statuses with counts and up to 3 positions per
   prototype, input-shortage/output-full machine counts by type, boiler/furnace no-fuel and last-buffered-fuel
   counts, and non-working labs with status counts. Last buffered fuel means an empty burner inventory with fuel
@@ -4098,6 +4101,21 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   cursor across restarts; `factory-digest.jsonl` records sent parts, failures and dry runs. Retries reuse request IDs
   for harness deduplication while those IDs remain in its response cache. A manual send does not consume the
   scheduled send; adjusting a deadline after delivery does not send another scheduled digest.
+- Researched equipment and building use (`team.shift.research_use` at shift start and `factory_digest.research_use`
+  in the halfway/manual digest): two factual lines. Recipe unlocks identify researched armor, personal equipment,
+  guns and ammo. The first line compares these with agents' worn armor, armor-grid equipment, gun/ammo slots and
+  carried main-inventory items. It reads each agent's small loadout now; carried gear is counted from the complete
+  main inventory, including items below the loadout display's top-items cutoff. Counts combine qualities.
+  Agents without a character and unknown forces are named as counts; unavailable inventories are unknown.
+  The second line lists furnace, mining-drill, transport-belt and assembler families with a researched successor,
+  followed by each tier's standing count on each planet in the completed census. Belts here are transport-belt
+  entities; underground belts and splitters are separate entity types. Platforms are excluded. Counts are added
+  during the existing census pass, and the line states its age; no additional search runs. Before the first
+  complete pass with these fields, or for a force other than `player`, planet counts are unknown. Failed retries
+  do not reset the observation age. Vehicles with researched recipes (cars, tanks, spider vehicles, locomotives
+  and wagons) show current force-wide engine entity counts. Research mappings come from recipe products, including
+  Space Age items. A list shows up to 24 prototype names and the number omitted; at most 16 planets are listed.
+  The digest includes the same two facts and retains the snapshot tick on every delivery part.
 - Cost: with a full board and 9 bots, hints add under 0.01 ms per request in steady state (0.5 ms on an agent's first
   request against a full backlog); nothing runs per tick.
 

@@ -9648,7 +9648,8 @@ M.board=require('board'){state=state,claims=M.claims,director=function(index) re
   science_line=function(p,h) return M.scienceline.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
-M.research=require('research'){state=state,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end}
+M.research=require('research'){state=state,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end,
+  use_lines=function(force) return M.research_use.lines(force) end}
 function handlers.research_done(p,a) return M.research.done(p,a) end
 function handlers.research_options(p,a) return M.research.options(p.force,a) end
 -- Where an item is stored, nearest first (stores.lua).
@@ -9671,7 +9672,7 @@ end
 M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,
   where_from=function(me) return M.where.from(me) end}
 for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
-M.factory_digest=require('factory_digest'){state=state}
+M.factory_digest=require('factory_digest'){state=state,use_lines=function(force) return M.research_use.lines(force) end}
 -- Idle characters for the operator's nudge (idle.lua): idle_report, and the
 -- standing clock idle_tick keeps.
 M.idle=require('idle'){state=state,agents=function() return M.board.agents() end,
@@ -9695,6 +9696,8 @@ M.idle=require('idle'){state=state,agents=function() return M.board.agents() end
 M.loadout=require('loadout'){agents=function() return M.board.agents() end,
   lookup=function(index) local ok,p=pcall(M.lookup,index); return ok and body(p) or nil end,
   active=function(index) return M.active(index) end}
+M.research_use=require('research_use'){loadout=function(force) return M.loadout.usage(force) end,
+  buildings=function(force) return M.census.buildings(force) end}
 -- Hand hauling per agent, for the stream and the site (hauling.lua; viewer Joonazan, 05:00).
 M.hauling=require('hauling'){state=state,
   name=function(index) local ok,p=pcall(M.lookup,index); return ok and p and p.valid and M.board.who(p) or tostring(index) end,

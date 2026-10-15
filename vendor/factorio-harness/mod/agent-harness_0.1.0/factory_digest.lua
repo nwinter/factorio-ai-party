@@ -1,6 +1,6 @@
--- Operator-only cached factory digest. No entities, inventories or tiles are
--- queried here. Completed surveys supply machine/fuel counts; trace remembers
--- only the visible endpoint lane readings it already made. Missing is unknown.
+-- Operator-only factory digest. Completed surveys supply machine/fuel counts; trace remembers
+-- the visible endpoint lane readings it already made. Research/use facts reuse the census,
+-- engine counters and a small loadout read. No new surface scans. Missing is unknown.
 return function(api)
   local M={operator={}}
   local MAX_ENDS,MAX_SURFACES,KEEP=128,16,18000
@@ -62,7 +62,8 @@ return function(api)
       table.sort(g.ends,function(x,y) return x.position.y<y.position.y or x.position.y==y.position.y and x.position.x<y.position.x end)
       out[#out+1]=g
     end
-    return {tick=game.tick,surfaces=out,more_surfaces=#keys>MAX_SURFACES and #keys-MAX_SURFACES or nil,
+    return {tick=game.tick,surfaces=out,research_use=api.use_lines and api.use_lines(force) or nil,
+      more_surfaces=#keys>MAX_SURFACES and #keys-MAX_SURFACES or nil,
       old_end_observations=old,scope='completed cached planetary surveys; belt endpoints observed by trace in the last 5 game minutes (at most 128 remembered); no new scan'}
   end
   return M
