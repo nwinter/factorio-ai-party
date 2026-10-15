@@ -622,6 +622,11 @@ return function(api)
     return with_belts(c,force)
   end
 
+  -- The last groups as they are, never scanned here (open.lua reads them for a sleep's reply): {} before the first.
+  function M.cached_groups(force)
+    local c = (api.state().push_alerts or {})[force.name]
+    return c and c.groups or {}
+  end
   -- Who hears a group: the owners of active board claims over its centre (on its surface),
   -- else agents who built in it, else the nearest agent on its surface.
   local ACTIVE = {open=true, claimed=true, doing=true, blocked=true}

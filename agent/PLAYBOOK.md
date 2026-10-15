@@ -77,11 +77,15 @@ Your character stands still while you think, and the clock does not.
   changes your board item, when your running queue finishes or stalls, and with `--until` when a condition holds:
   `--until "researched"` (the research running now, or `researched TECH`), `--until crafting_done`,
   `--until "item_count iron-plate>=200"` (your inventory) or `"item_count iron-plate>=200 at -18.5,-34.5 -16.5,-34.5"`
-  (chests). It does not return when a machine starves, and never runs past your deadline. `./fh call sleep` is the
+  (chests). It does not return when a machine starves, and never runs past your deadline. With no queue running, no
+  action running and no `--until` it lasts at most 300 s (`capped at 300 s: no queue, action or condition`); up to 900 s
+  otherwise. Its first reply and the one that reads the wake carry `open for you: ...` (your board items, alert groups
+  and idle or starved machines in your fresh claims, requests and tells to you unanswered). `./fh call sleep` is the
   same wait. A tell or mention wakes it once.
 - `./fh wait --until "tell|alert|COND" --max 600` is the same wait with one line out (`woke: told after 42 s (astra:
   ...)`): it ends on a tell or mention, a new attack/enemy alert (`alert`), a `--until` condition as for sleep, or
-  after `--max` seconds (up to 900); the team block comes with your next reply.
+  after `--max` seconds (up to 900; 300 with nothing running and no condition); the team block comes with your next
+  reply, and the line ends with `open for you: ...`.
 - `./fh wait --max 150` (or `--until idle`) waits for your running action (and combat) to end, at most 150 s, and
   returns at once when nothing runs (`outcome: idle`, exit 0, naming the last action and how long ago it ended when
   that was before your previous call).

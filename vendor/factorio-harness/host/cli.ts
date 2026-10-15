@@ -311,9 +311,12 @@ function wakeLine(reply: Reply): string {
   const detail = r.urgent ?? r.tell ?? r.mention ?? r.board ?? r.eggs ?? r.alert ?? r.queue
     ?? (r.woke === 'condition' && r.saw !== undefined ? `${r.met ? `${r.met}: ` : ''}saw ${typeof r.saw === 'string' ? r.saw : JSON.stringify(r.saw)}` : undefined)
     // (round1950a: and where the character walks away to when hit with nothing walking it)
-    ?? (r.woke === 'damaged' ? `health ${r.health}${r.by ? `, hit by ${r.by}` : ''}${r.fled ? `; ${r.fled}` : ''}` : undefined) ?? r.note;
+    ?? (r.woke === 'damaged' ? `health ${r.health}${r.by ? `, hit by ${r.by}` : ''}${r.fled ? `; ${r.fled}` : ''}` : undefined) ?? r.note
+    // A sleep cut to 300 s with nothing running and no condition (d15 H4).
+    ?? (r.woke === 'elapsed' && r.capped ? r.capped : undefined);
   const more = r.full ? '' : ['told','mentioned','board','eggs','alert','urgent','damaged'].includes(r.woke) ? '; your next reply\'s team block has the rest' : '';
-  return `woke: ${r.woke ?? 'nothing'} after ${r.slept_s ?? 0} s${detail !== undefined ? ` (${said(detail)})` : ''}${r.wait_line ? `; ${said(r.wait_line)}` : ''}${more}`;
+  // What is open for the agent (open.lua; d15 H3), last.
+  return `woke: ${r.woke ?? 'nothing'} after ${r.slept_s ?? 0} s${detail !== undefined ? ` (${said(detail)})` : ''}${r.wait_line ? `; ${said(r.wait_line)}` : ''}${more}${r.open ? `; ${said(r.open)}` : ''}`;
 }
 function deployingCommand(command: string): boolean { return command === 'deploy' || command === 'watch'; }
 function integer(value: string | undefined, fallback: number): number {

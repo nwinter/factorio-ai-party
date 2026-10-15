@@ -97,7 +97,16 @@ def nudge_text(row, standing_s=None):
                f"spot or 20 s of work in 2 minutes ends idle).") if counted else ""
     return (f"Operator (automatic, facts only): your character has stood idle for {minutes(standing)} min "
             f"({doing}).{counted} Queue: {queue_text(row.get('queue'))}.{orders_text(row.get('orders'))} "
-            "Unread for you: " + ", ".join(unread) + ".")
+            "Unread for you: " + ", ".join(unread) + "." + open_text(row.get("open")))
+
+
+def open_text(line):
+    """The harness's "open for you" line (open.lua, d15 H3: board items, alert groups and idle machines in fresh claims,
+    unanswered requests and tells), as the nudge's last sentence; nothing from a harness before it."""
+    if not line:
+        return ""
+    line = str(line).strip().rstrip(".")
+    return " " + line[0].upper() + line[1:] + "."
 
 
 class Nudger:
