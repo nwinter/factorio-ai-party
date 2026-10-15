@@ -14,7 +14,16 @@ local tiles={}
 local reads,checks=0,0
 local hidden=false
 force.is_chunk_visible=function(_,chunk) return not hidden or chunk.x<=0 end
+local drills={}
 surface.find_entities_filtered=function(f)
+  if type(f.type)=='table' then
+    local out={}
+    for _,d in ipairs(drills) do
+      local h=d.half
+      if d.position.x+h>f.area[1][1] and d.position.x-h<f.area[2][1] and d.position.y+h>f.area[1][2] and d.position.y-h<f.area[2][2] then out[#out+1]=d end
+    end
+    return out
+  end
   reads=reads+1
   assert(f.type=='resource' and f.limit==1025)
   if hidden then assert(f.area[2][1]<=32,'hidden chunks must not affect the density limit') end
@@ -94,4 +103,19 @@ local nreads=reads;eq(D.group(force,group).site.position.x,3.5);eq(reads,nreads)
 game.tick=game.tick+3600;blocked=true
 g=D.group(force,group);eq(g.site,nil);nreads=reads
 D.group(force,group);eq(reads,nreads)
+-- A spot a working drill (or a drill ghost) covers is left out and named, though the engine check passes it (Astra,
+-- d15 15:11, Fulgora).
+game.tick=game.tick+3600;blocked=false
+tiles={};for x=4,12 do for y=-2,2 do tile(x,y) end end
+drills={{valid=true,type='mining-drill',name='electric-mining-drill',position={x=3.5,y=.5},half=1.5},
+  {valid=true,type='entity-ghost',ghost_type='mining-drill',ghost_name='electric-mining-drill',position={x=3.5,y=3.5},half=1.5}}
+r=D.read(p,{position=e.position,resource='coal',radius=8,limit=3})
+for _,c in ipairs(r.sites) do
+  assert(math.abs(c.position.x-3.5)>=3 or math.abs(c.position.y-.5)>=3,'no site over the working drill')
+  assert(math.abs(c.position.x-3.5)>=3 or math.abs(c.position.y-3.5)>=3,'no site over the ghost')
+end
+assert(r.occupied>=2,tostring(r.occupied))
+assert(r.line:find('nearer spots left out: a drill stands there',1,true),r.line)
+assert(r.occupied_by[1]:find('electric-mining-drill (3.5,0.5)',1,true),r.occupied_by[1])
+drills={}
 print('drill sites: ok')

@@ -518,6 +518,8 @@ return function(api)
   -- platform's ghosts, at most 500, when asked), tile ghosts the foundation
   -- rules hold back (tilecheck.lua).
   local tiles=require('tilecheck')()
+  -- On world n 327 ghosts on Aegis took 1.3 ms to count (about 4 us each): 4000 stay under 20 ms.
+  M.GHOST_CAP={['entity-ghost']=1000,['tile-ghost']=3000}
   function M.blockers(pl)
     local hub=pl.hub
     if not (hub and hub.valid) then return nil end
@@ -531,25 +533,48 @@ return function(api)
     end
     -- Items by name and the ghost's quality: the hub builds a ghost only from
     -- items of that quality.
+    -- Every ghost is counted up to GHOST_CAP of each kind (Astra, d15 15:11: one search capped at 500 for both kinds
+    -- said Aegis's tile ghosts needed 466 foundation while 924 stood); past a cap the line says so, from the game's
+    -- count. The item a ghost takes is read once per ghost name.
     local need,order={},{}
-    for _,g in ipairs(try(function() return s.find_entities_filtered{type={'entity-ghost','tile-ghost'},limit=500} end) or {}) do
-      local it=try(function() return g.ghost_prototype.items_to_place_this[1] end)
-      local n=it and (type(it.name)=='string' and it.name or it.name and it.name.name)
-      if n then
-        local q=tiles.quality_of(g)
-        local k=n..'@'..q
-        if not need[k] then need[k]={name=n,quality=q,count=0}; order[#order+1]=k end
-        need[k].count=need[k].count+(it.count or 1)
+    local items_of,short={},{}
+    for _,kind in ipairs({'entity-ghost','tile-ghost'}) do
+      local cap=M.GHOST_CAP[kind]
+      local list=try(function() return s.find_entities_filtered{type=kind,limit=cap} end) or {}
+      if #list>=cap then
+        local total=try(function() return s.count_entities_filtered{type=kind} end) or #list
+        if total>#list then short[#short+1]=string.format('the first %d of %d %ss counted',#list,total,kind) end
+      end
+      for _,g in ipairs(list) do
+        local gname=try(function() return g.ghost_name end) or '?'
+        local key=kind..'|'..gname
+        local it=items_of[key]
+        if it==nil then
+          local first=try(function() return g.ghost_prototype.items_to_place_this[1] end)
+          local n=first and (type(first.name)=='string' and first.name or first.name and first.name.name)
+          it=n and {name=n,count=first.count or 1} or false
+          items_of[key]=it
+        end
+        if it then
+          local q=tiles.quality_of(g)
+          local k=it.name..'@'..q
+          if not need[k] then need[k]={name=it.name,quality=q,count=0}; order[#order+1]=k end
+          need[k].count=need[k].count+it.count
+        end
       end
     end
-    local missing={}
+    table.sort(order)
+    local missing,counted={},{}
     for _,k in ipairs(order) do
       local w=need[k]
       local have=inv.get_item_count{name=w.name,quality=w.quality}
       local label=w.name..(w.quality~='normal' and '@'..w.quality or '')
-      if have<w.count then missing[#missing+1]=string.format('%s (ghosts need %d, hub has %d)',label,w.count,have) end
+      if have<w.count then missing[#missing+1]=string.format('%s (ghosts need %s%d, hub has %d)',label,#short>0 and 'at least ' or '',w.count,have) end
+      counted[#counted+1]=string.format('%s at least %d, hub has %d',label,w.count,have)
     end
-    if #missing>0 then out[#out+1]='ghosts wait for items the hub lacks: '..table.concat(missing,', ') end
+    if #missing>0 then out[#out+1]='ghosts wait for items the hub lacks: '..table.concat(missing,', ')..(#short>0 and ' ('..table.concat(short,'; ')..')' or '') end
+    -- Past a cap the hub may hold enough for the ghosts counted and not for the rest: what the counted ones need.
+    if #short>0 then out[#out+1]='ghost count capped ('..table.concat(short,'; ')..'): the counted ghosts need '..(#counted>0 and table.concat(counted,', ') or 'nothing') end
     -- Tile ghosts the foundation rules hold back.
     for _,line in ipairs(try(function() return tiles.stalled(pl) end) or {}) do out[#out+1]=line end
     return #out>0 and out or nil

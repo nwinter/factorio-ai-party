@@ -2435,7 +2435,11 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   ghost on it, and on the hub `hub_slots` (`0 of 65 free`). `platforms` shows `hub_slots` per platform, and with
   `platform` set, `construction_blocked`: `hub full: 0 of 65 slots free; 1 marked for deconstruction wait for room
   (removed entities and their contents go to the hub)`, `ghosts wait for items the hub lacks: inserter (ghosts need 1, hub has 0)`.
-  Items count at the ghost's quality. Tile ghosts the game's foundation rules hold back get one line each, by the rules
+  Items count at the ghost's quality. Up to 1000 entity ghosts and 3000 tile ghosts are counted (Astra, d15 15:11:
+  one cap of 500 for both kinds read 466 foundation on Aegis while 924 tile ghosts stood). Past a cap the counts read
+  `at least`, the line says `(the first 3000 of 3400 tile-ghosts counted)`, and a line `ghost count capped (...): the
+  counted ghosts need space-platform-foundation at least 3000, hub has 3200` follows, since the hub may hold enough
+  for the counted ghosts and not for the rest. On world n counting took about 4 µs a ghost. Tile ghosts the game's foundation rules hold back get one line each, by the rules
   a copy of world n showed (platformtiles2): the hub builds one tile at a time and looks at its 8 neighbours only.
   A run is the empty side neighbours (north, east, south, west) joined through the empty corners between them.
   A ghost with two runs would split the empty space beside it and stays, even when each side stays open to space
@@ -3459,7 +3463,11 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   must match it. `radius` is 2..24 (default 16), `limit` 1..8 (default 3). Dense areas reduce the search
   radius until the read fits within 1024 resource tiles (`searched_radius`, `radius_reduced`); at most
   128 placement checks run (`truncated` when that prevents completing the result). Every returned
-  mining area must be currently visible. Example:
+  mining area must be currently visible. A centre where a mining drill or a drill's ghost already stands on the
+  footprint is left out before the engine check, which passed such spots (Astra, d15 15:11: on Fulgora, three
+  sites for the depleted drill at (-45.5,81.5) were each under a working drill): `occupied` counts them,
+  `occupied_by` names the first 3 (`(3.5,0.5): electric-mining-drill (3.5,0.5)`), and the line ends `; N nearer
+  spots left out: a drill stands there (...)`. Example:
   `fh call drill_sites --args '{"surface":"vulcanus","position":{"x":69.5,"y":-89.5},"resource":"coal"}'`.
 - `fh call ores --args '{"resource":"iron-ore"}'` (read; optional `resource`: a name or a list, default every
   resource; `surface`: a planet; `position`: measure from there; `min_amount`; `limit` 1..100, default 20): every
