@@ -53,7 +53,8 @@ local function match(e,f)
   local pos=e.position
   if f.area then
     local lt,rb=f.area.left_top or f.area[1],f.area.right_bottom or f.area[2]
-    if pos.x<lt.x or pos.x>rb.x or pos.y<lt.y or pos.y>rb.y then return false end
+    local x0,y0,x1,y1=lt.x or lt[1],lt.y or lt[2],rb.x or rb[1],rb.y or rb[2]  -- (walk.lua's bands: {{x0,y0},{x1,y1}})
+    if pos.x<x0 or pos.x>x1 or pos.y<y0 or pos.y>y1 then return false end
   end
   if f.position then
     local r=f.radius or 0.5
@@ -183,7 +184,9 @@ r=astra('scan',{position={x=200,y=200},radius=2})
 assert(not has(r.team and r.team.alerts,'item stacks'),'seen lines repeat')
 -- A pile that grows by half is told again after the next pass.
 for i=0,99 do stack_at('iron-plate',100,20+(i%15),31+math.floor(i/15)) end
-advance(1800)
+-- (the watch is a background pass now, task-slowreads: one starts when the last is 30 s old and spreads its steps over
+-- up to 80% of the next 30 s)
+advance(3600)
 r=astra('scan',{position={x=200,y=200},radius=2})
 local again=has(r.team and r.team.alerts,'250 item stacks on the ground at (20,20)')
 assert(again,'grown pile not told again')
@@ -192,9 +195,29 @@ r=astra('scan',{position={x=200,y=200},radius=2}); eq(has(r.team and r.team.aler
 eq(has(astra('status').alerts.ground_items,'(300,300)'),nil)
 -- A pad with free slots is not spilling.
 pad_inv.count_empty_stacks=function() return 3 end
-advance(1800)
+advance(3600)
 eq(has(astra('status').alerts.ground_items or {},'cargo landing pad'),nil)
 pad_inv.count_empty_stacks=function() return 0 end
+-- The watch in the background (task-slowreads: 31 ms in one reply on world n every 30 s): a reply reads its last pass and
+-- finds or counts nothing over the whole surface; the pass reads one band a step.
+do
+  local whole,per_tick=0,0
+  local find,count=surface.find_entities_filtered,surface.count_entities_filtered
+  local function items(f) return listed(f.type or {},'item-entity') end
+  surface.find_entities_filtered=function(f)
+    if items(f) and not f.area and not f.position then whole=whole+1 end
+    if items(f) then per_tick=per_tick+1 end
+    return find(f)
+  end
+  surface.count_entities_filtered=function(f) if items(f) and not f.area and not f.position then whole=whole+1 end return count(f) end
+  for _=1,3 do astra('status') end
+  eq(whole,0,'no whole-surface read in a reply')
+  local worst=0
+  for _=1,3600 do per_tick=0; advance(1); worst=math.max(worst,per_tick) end
+  assert(worst<=4,'a few finds a tick at most: '..worst)
+  eq(whole,0,'no whole-surface read in the pass once the box is known')
+  surface.find_entities_filtered,surface.count_entities_filtered=find,count
+end
 
 -- deconstruct items_on_ground: every stack in the area marked, our chest left alone.
 local area={left_top={x=0,y=0},right_bottom={x=40,y=40}}
