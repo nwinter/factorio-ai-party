@@ -45,13 +45,25 @@ local function Inv(slots,items)
   for _,it in ipairs(items or {}) do t.add(it[1],it[2],it[3]) end
   return setmetatable(t,{__len=function() return slots end,__index=function(_,i) if type(i)=='number' then return {valid_for_read=i<=used()} end end})
 end
+-- An item stack's quality is a LuaQualityPrototype in the game: userdata, not a table (Gemini 18:21: load_silo matched
+-- no stack, held or in the chest, while it compared a table's name). The fake stacks carry userdata with a name.
+local qualities={}
+local function quality(q)
+  if not qualities[q] then
+    local u=io.tmpfile()
+    debug.setmetatable(u,{__index={name=q}})
+    qualities[q]=u
+  end
+  return qualities[q]
+end
+assert(type(quality('normal'))=='userdata' and quality('normal').name=='normal')
 local function move_stacks(source,target,match,limit)
   local moved=0
   for _,k in ipairs(source.order) do
     local c=source.counts[k]
     if c and moved<limit then
       local name,q=k:match('^(.-)@(.*)$')
-      if match({name=name,quality={name=q}}) then
+      if match({name=name,quality=quality(q)}) then
         local n=math.min(c,limit-moved,target.room(name,q))
         if n>0 then source.add(name,-n,q); target.add(name,n,q); moved=moved+n end
       end
@@ -126,7 +138,7 @@ r=R.load(p,{position={x=65.5,y=14.5},items={['agricultural-science-pack']=600},t
 eq(r.loaded[1].aboard_before,600); eq(r.loaded[1].loaded,0); eq(r.complete,true)
 -- Short of what you and the chests hold.
 r=R.load(p,{position={x=65.5,y=14.5},items={['agricultural-science-pack']=900},to_total=true})
-eq(r.loaded[1].loaded,200); eq(r.loaded[1].short,100); eq(r.loaded[1].why,'you and the 2 chests read held only 200')
+eq(r.loaded[1].loaded,200); eq(r.loaded[1].short,100); eq(r.loaded[1].why,'you held 0; iron-chest (61.5,10.5) held 0; iron-chest (60.5,10.5) held 200')
 -- from: only the chests given (after your inventory).
 chestB.add('agricultural-science-pack',50); main.add('agricultural-science-pack',10)
 r=R.load(p,{position={x=65.5,y=14.5},items={['agricultural-science-pack']=40},from={x=61.5,y=10.5}})
@@ -144,7 +156,7 @@ cargo.counts={}; cargo.order={}; launched=nil
 chestA.counts={}; chestA.order={}; chestB.counts={}; chestB.order={}; main.counts={}; main.order={}
 main.add('agricultural-science-pack',300)
 fails(function() R.load(p,{position={x=65.5,y=14.5},items={['agricultural-science-pack']=1000},launch=true,platform='Sunward'}) end,
-  'not launched: agricultural-science-pack 700 short (you and the 2 chests read held only 300); what was loaded stays in the rocket (it holds agricultural-science-pack*300, 300/1000 kg)')
+  'not launched: agricultural-science-pack 700 short (you held 300; iron-chest (61.5,10.5) held 0; iron-chest (60.5,10.5) held 0); what was loaded stays in the rocket (it holds agricultural-science-pack*300, 300/1000 kg)')
 eq(launched,nil); eq(cargo.counts['agricultural-science-pack@normal'],300)
 -- The launch refused after loading: said, the cargo stays.
 local real_launch=api.launch
@@ -263,4 +275,41 @@ eq(sim.launches[1].would_refuse,nil); eq(sim.launches[2].would_refuse[1],'empty 
 -- No silo there.
 sim=R.simulate(p,{{action='launch',args={position={x=500,y=500},platform='Sunward'}}})
 assert(sim.notes[1]:find('^step 1 %(launch%): not counted: entity not found'),sim.notes[1])
+-- 8. Gemini 18:21 (shift13, 01:19 UTC): load_silo {items {advanced-circuit 711}, from the requester chest at
+-- (-63.5,96.5), launch to Sunward} answered "you and the 1 chests read held only 0" while the chest held 2001: the
+-- stacks' quality is userdata in the game. Replayed: the 711 go in (289 kg of science aboard: 1000 kg) and it launches.
+prototypes.item['advanced-circuit']={weight=1000,stack_size=200}
+prototypes.item['electromagnetic-science-pack']={weight=1000,stack_size=200}
+cargo.counts={}; cargo.order={}; cargo.add('electromagnetic-science-pack',289)
+main.counts={}; main.order={}
+local reqinv=Inv(48,{{'advanced-circuit',2001}})
+local requester={valid=true,name='requester-chest',type='logistic-container',position={x=-63.5,y=96.5},force='us',surface=surface}
+requester.get_inventory=function(i) if i==1 then return reqinv end end
+local kept_reach=api.reach_entity
+api.reach_entity=function(pp,pos) if pos.x==-63.5 then return requester end return kept_reach(pp,pos) end
+launched=nil
+r=R.load(p,{position={x=65.5,y=14.5},items={['advanced-circuit']=711},from={{x=-63.5,y=96.5}},launch=true,platform='Sunward'})
+eq(r.loaded[1].loaded,711); eq(r.loaded[1].from,'requester-chest (-63.5,96.5) 711'); eq(r.complete,true)
+eq(reqinv.counts['advanced-circuit@normal'],1290); eq(r.rocket_weight,'1000/1000 kg'); eq(launched.platform,'Sunward')
+api.reach_entity=kept_reach
+-- Every chest kind in reach is read, nearest first, a landing pad too (its own inventory).
+local asked_types
+local kept_find=p.surface.find_entities_filtered
+defines.inventory.cargo_landing_pad_main=50
+local padinv=Inv(80,{{'advanced-circuit',40}})
+local pad={valid=true,name='cargo-landing-pad',type='cargo-landing-pad',position={x=70,y=20},force='us',surface=surface}
+pad.get_inventory=function(i) if i==50 then return padinv end end
+p.surface.find_entities_filtered=function(f) asked_types=f.type; return {pad,requester,silo} end
+cargo.counts={}; cargo.order={}
+local seen={}
+for _,t in ipairs(R.chests_in_reach(p,silo)) do seen[#seen+1]=t.name end
+for _,t in ipairs({'container','logistic-container','linked-container','infinity-container','cargo-landing-pad'}) do
+  local found=false
+  for _,x in ipairs(asked_types) do found=found or x==t end
+  assert(found,'chest kind asked: '..t)
+end
+eq(table.concat(seen,','),'cargo-landing-pad,requester-chest','nearest first: the pad (70,20) is nearer (62,12) than the requester')
+r=R.load(p,{position={x=65.5,y=14.5},items={['advanced-circuit']=100}})
+eq(r.loaded[1].from,'cargo-landing-pad (70,20) 40, requester-chest (-63.5,96.5) 60')
+p.surface.find_entities_filtered=kept_find
 print('rocketload ok')
