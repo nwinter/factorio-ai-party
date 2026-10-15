@@ -266,6 +266,22 @@ api.ammo=function() return {'firearm-magazine: made 42/min, used 38/min'} end
 api.hub_chunks=function() return 'asteroid chunks take 22 of 99 slots' end
 f=R.preflight(p,{position=silo.position,platform='Sunward'})
 eq(f.platform.eta_s,1350); eq(f.platform.eta_to,'nauvis'); eq(f.platform.from,'gleba'); eq(f.platform.to,'nauvis')
+-- Freshness reads the rocket now and the hub at the current leg's ETA.
+do
+  local seen = {}
+  api.fresh_inv=function(_,inv,_,eta)
+    seen[#seen+1]={inventory=inv,eta=eta}
+    return {inv==cargo and 'rocket value now' or 'hub value at arrival'}
+  end
+  local value=R.preflight(p,{position=silo.position,platform='Sunward'})
+  eq(seen[1].inventory,cargo); eq(seen[1].eta,nil); eq(seen[2].eta,81000)
+  eq(value.cargo.freshness[1],'rocket value now'); eq(value.platform.freshness[1],'hub value at arrival')
+  assert(value.line:find('rocket value now',1,true) and value.line:find('hub value at arrival',1,true))
+  seen={};pl.speed=0
+  R.preflight(p,{position=silo.position,platform='Sunward'})
+  eq(seen[2].eta,nil,'no invented arrival value when the current speed is zero')
+  pl.speed=.05;api.fresh_inv=nil
+end
 eq(f.platform.headed_here,true); eq(f.platform.arrived,false); eq(math.floor(f.platform.distance_left_km+0.5),4050)
 eq(f.platform.speed_km_s,3); assert(f.platform.eta_basis:find('60 ticks',1,true))
 eq(f.platform.requests[1].lacks_after,250,'same shortfall while approaching, incoming cargo reported separately')

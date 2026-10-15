@@ -643,6 +643,9 @@ return function(api)
       timing = timing .. '; arrival at ' .. here .. ' unknown'
     end
     if route_only then return plat end
+    local hub_inv = try(function() return pl.hub.get_inventory(defines.inventory.hub_main) end)
+    local hub_trash = defines.inventory.hub_trash and try(function() return pl.hub.get_inventory(defines.inventory.hub_trash) end)
+    plat.freshness = api.fresh_inv and api.fresh_inv(pl.force, hub_inv, nil, l and l.eta_ticks, hub_trash) or nil
     -- Keep qualities separate, including cargo moved to the hub's trash inventory.
     local hub = {}
     for _, id in ipairs({'hub_main', 'hub_trash'}) do
@@ -671,6 +674,7 @@ return function(api)
     plat.not_requested = #extra > 0 and table.concat(extra, ' ') or nil
     plat.line = one_line(string.format('platform %s %s; %s; requests from %s: %s', pl.name, w.text, timing, here,
       #lacking > 0 and table.concat(lacking, ', ') or (unmet_only and 'none unmet' or 'none')))
+    if plat.freshness then plat.line = plat.line .. '; hub cargo: ' .. table.concat(plat.freshness, '; ') end
     return plat
   end
   local function platforms(p, a, here, inv, held, extra_cache)
@@ -765,6 +769,8 @@ return function(api)
     out.cargo = {items=inv and list_text(held) or 'no rocket to load yet', rows=#rows > 0 and rows or nil, kg=kg(g), lift_kg=kg(lift),
       free_kg=kg(math.max(0, lift - g)), over_kg=g > lift and kg(g - lift) or nil, slots=used .. '/' .. slots, free_slots=math.max(0, slots - used)}
     local words = {string.format('%s: %s; cargo %s, %g/%g kg, %d/%d slots', out.silo, out.rocket or 'rocket state unknown', out.cargo.items, kg(g), kg(lift), used, slots)}
+    out.cargo.freshness = api.fresh_inv and api.fresh_inv(p.force, inv) or nil
+    if out.cargo.freshness then words[#words+1] = 'rocket cargo: ' .. table.concat(out.cargo.freshness, '; ') end
     -- How many more of an item the rocket takes: by weight, and by slots (a part stack's room counted).
     local function fits(r)
       local each = weight(r.name)
@@ -989,7 +995,7 @@ return function(api)
       surface='optional planet name (default yours); platform remains the rocket destination',
       items='optional item list (as load_silo items): what each rocket still lacks against the cargo aboard, and how much of that fits',
       platform='optional platform name: location, arrival/next stop, current-connection ETA and its calculation, requests importing from this planet less its hub and this rocket, incoming rockets, ammo per type over the last leg, and hub slots asteroid chunks take; omitted: our platforms stopped here or flying/scheduled next here (paused departures excluded), with unmet requests from here',
-      returns='position, silo, rocket, rocket_ready, parts (building), built_parts (ready/rising), next_parts, auto_requests, cargo {items, rows [{item, count, each_kg, kg, stacks}], kg, lift_kg, free_kg, over_kg, slots, free_slots}, '
+      returns='position, silo, rocket, rocket_ready, parts (building), built_parts (ready/rising), next_parts, auto_requests, cargo {items, freshness (spoil spread and effective research units for spoilable packs now, before lab bonuses), rows [{item, count, each_kg, kg, stacks}], kg, lift_kg, free_kg, over_kg, slots, free_slots}, '
         .. 'order [{item, want, aboard, lacks, fits, you_hold}], platform (named) or platforms (discovery) [{name, where, at, arrived, headed_here, next_stop, from, to, distance_left_km, connection_length_km, flown_fraction, speed_km_s, eta_to, eta_s (game seconds at current speed), eta_basis, eta_unknown, arrival_unknown (current leg does not end here), requests [{item, min, hub, aboard, lacks, lacks_after}], not_requested, line}], '
         .. 'With named platform: incoming (rockets launched to its hub not arrived yet), incoming_cargo, ammo_rates (per ammo type: made and used per minute over the last leg, current hub/turret stock and reserve at arrival), hub_chunks (slots asteroid chunks take); incoming cargo is separate from lacks_after. '
         .. 'launch_now (ok, or refused: what launch would refuse now), line (one line). No position: surface, silos [the same per-silo views, nearest first], silos_as_of (discovery tick; rocket/cargo read now), silos_pending (before first census); no visible silos: platform(s) still returned. Read only'},

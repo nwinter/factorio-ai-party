@@ -99,9 +99,9 @@ return function(api)
   end
   -- What a belt's lines hold of the wanted items. One item: the entity's
   -- own count covers its lines (a quarter of the time of reading each line).
-  local function belt_lines(e, names, single, out)
+  local function belt_lines(e, names, single, out, qualities)
     if single then
-      local n = e.get_item_count(single)
+      local n = e.get_item_count(qualities and {name=single} or single)
       if n > 0 then out[single] = (out[single] or 0) + n end
       return
     end
@@ -112,7 +112,7 @@ return function(api)
       end
     end
   end
-  local function belt_counts(e, names, single, out) pcall(belt_lines, e, names, single, out) end
+  local function belt_counts(e, names, single, out, qualities) pcall(belt_lines, e, names, single, out, qualities) end
   local function short_list(map, limit, sep)
     local list = {}
     for k, n in pairs(map) do list[#list+1] = {k=k, n=n} end
@@ -210,6 +210,26 @@ return function(api)
     -- and how many spoil within 5 minutes (spoil.lua), read where it was found.
     local sp, spoils = api.spoil, {}
     for name in pairs(names) do spoils[name] = sp and sp.spoils(name) or nil end
+    -- science asks for stock value across qualities. Reuse one compact content
+    -- read per inventory to find packs before walking their spoilable stacks.
+    local normal_count, content_counts = count, {}
+    local function count(inv, item, entity)
+      if not (opts.science_value and inv and spoils[item]) then return normal_count(inv, item) end
+      -- ItemFilter with no quality counts every quality in native code. Most
+      -- holders have no packs; avoid allocating their complete contents.
+      if entity and try(function() return entity.get_item_count{name=item} end) == 0 then return 0 end
+      local counts = content_counts[inv]
+      if not counts then
+        local ok, rows = pcall(function() return inv.get_contents() end)
+        if not ok then return normal_count(inv, item) end
+        counts = {}; content_counts[inv] = counts
+        for k, row in pairs(rows) do
+          local name, n = type(row) == 'table' and row.name or k, type(row) == 'table' and row.count or row
+          counts[name] = (counts[name] or 0) + n
+        end
+      end
+      return counts[item] or 0
+    end
     local function spoil_at(t, e, kind, read)
       if not spoils[t.item] then return end
       local acc = {}
@@ -270,7 +290,7 @@ return function(api)
         for _, ing in ipairs(io.ingredients) do
           local t = T[ing.name]
           if t and not t.user_of[e.unit_number] then
-            local u = {e=e, recipe=recipe, has=count(input_of(e), ing.name), feeders={}}
+            local u = {e=e, recipe=recipe, has=count(input_of(e), ing.name, e), feeders={}}
             t.user_of[e.unit_number] = u; t.users[#t.users+1] = u; t.inputs = t.inputs + u.has
             if u.has > 0 then spoil_at(t, e, 'input', function(acc) sp.inventory(input_of(e), acc) end) end
           end
@@ -282,10 +302,10 @@ return function(api)
       local rocket = e.type == 'rocket-silo' and inventory(e, 'rocket_silo_rocket') or nil
       if rocket then out = nil end
       for name, t in pairs(T) do
-        local n = count(out, name)
+        local n = count(out, name, e)
         if n > 0 then t.outputs = t.outputs + n; spot(t, e, n, 'output'); spoil_at(t, e, 'output', function(acc) sp.inventory(out, acc) end) end
-        local r = count(rocket, name)
-        if r > 0 then t.rockets = t.rockets + r end
+        local r = count(rocket, name, e)
+        if r > 0 then t.rockets = t.rockets + r; spoil_at(t, e, 'rocket cargo', function(acc) sp.inventory(rocket, acc) end) end
       end
     end
     end)
@@ -296,8 +316,9 @@ return function(api)
       for _, e in ipairs(labs) do
         local inv = inventory(e, 'lab_input')
         for name, t in pairs(T) do
-          local n = count(inv, name)
+          local n = count(inv, name, e)
           t.labs = t.labs + n
+          if n > 0 then spoil_at(t, e, 'lab', function(acc) sp.inventory(inv, acc) end) end
           if packs[name] then
             local u = {e=e, lab=true, has=n, feeders={}}
             t.user_of[e.unit_number] = u; t.users[#t.users+1] = u
@@ -470,7 +491,7 @@ return function(api)
         filters = point and not id and try(function() return point.filters end) or {}
       end
       for name, t in pairs(T) do
-        local n = count(main, name) + count(trash, name)
+        local n = count(main, name, e) + count(trash, name, e)
         if n > 0 then
           bump(t.kinds, kind, n)
           t.chests[#t.chests+1] = {n=n, e=e, kind=kind}
@@ -494,7 +515,7 @@ return function(api)
     timed('supply.belts', function()
     for _, e in ipairs(belts) do
       local held = {}
-      belt_counts(e, names, single, held)
+      belt_counts(e, names, single, held, opts.science_value and spoils[single])
       for name, n in pairs(held) do local t = T[name]; t.belts = t.belts + n; spot(t, e, n, 'belt'); spoil_at(t, e, 'belt', function(acc) sp.belt(e, acc) end) end
     end
     end)
@@ -570,6 +591,9 @@ return function(api)
       if inside(ch.c.position) then
         for name, t in pairs(T) do
           local n = try(function() return ch.c.get_item_count(name) end) or 0
+          if opts.science_value and spoils[name] then
+            n = try(function() return ch.c.get_item_count{name=name} end) or n
+          end
           if n > 0 then
             t.carried = t.carried + n; t.characters[#t.characters+1] = ch.name .. ' ' .. n
             spoil_at(t, ch.c, 'carried by ' .. ch.name, function(acc) sp.inventory(ch.c.get_main_inventory(), acc) end)

@@ -82,20 +82,65 @@ return function(api)
   -- (under 25%, 25-50%, 50-75%, 75% and over), and how many spoil within 10, 30 and 60 minutes.
   M.WITHIN = {600 * 60, 1800 * 60, 3600 * 60}
   local function bucket(pct) return pct < 0.25 and 1 or pct < 0.5 and 2 or pct < 0.75 and 3 or 4 end
-  function M.add(acc, s, where)
+  -- Measured in 2.0.77 Space Age: a pack contributes its remaining tool
+  -- durability times (1 - spoil_percent). Normal labs, before productivity
+  -- and lab-specific drain bonuses. Quality is already in get_durability.
+  local durability = {}
+  local function pack_durability(name, quality)
+    local key = name .. '@' .. (quality or 'normal')
+    if durability[key] == nil then
+      local proto = prototypes.item[name]
+      durability[key] = proto and proto.type == 'tool' and try(function() return proto.get_durability(quality) end) or false
+    end
+    return durability[key] or nil
+  end
+  local function add_research(r, name, quality, count, pct, tick, used, eta)
+    local full = pack_durability(name, quality)
+    if not full or full <= 0 then return end
+    local remaining = math.max(0, (count - 1) * full + math.min(full, used or full))
+    local now = remaining * math.max(0, 1 - pct)
+    r.research_units = (r.research_units or 0) + now
+    if eta then
+      local left = tick - game.tick
+      local at_arrival = left > 0 and now * math.max(0, 1 - math.max(0, eta) / left) or 0
+      r.research_units_at_arrival = (r.research_units_at_arrival or 0) + at_arrival
+    end
+  end
+  function M.research_value(r, force)
+    if r.research_units == nil then return nil end
+    local per, tech = 1, force and force.current_research
+    local technology
+    for _, ing in ipairs(tech and tech.research_unit_ingredients or {}) do
+      if ing.name == r.name and (ing.amount or 0) > 0 then per, technology = ing.amount, tech.name; break end
+    end
+    return {now=r.research_units / per, at_arrival=r.research_units_at_arrival and r.research_units_at_arrival / per,
+      packs_per_unit=per, technology=technology, basis='before productivity and lab drain bonuses'}
+  end
+  function M.research_text(r, force)
+    local v = M.research_value(r, force)
+    if not v then return nil end
+    return string.format('effective research units now %.2f%s (%g pack/unit%s; before lab bonuses)', v.now,
+      v.at_arrival and string.format(', at arrival %.2f', v.at_arrival) or '', v.packs_per_unit,
+      v.technology and ' for ' .. v.technology or '')
+  end
+  function M.add(acc, s, where, eta)
     local tick, pct = stack_spoil(s)
     if not tick then return end
     local q = try(function() return s.quality.name end)
-    M.add_count(acc, s.name, q, s.count, pct, tick, where)
+    local remaining = pack_durability(s.name, q) and try(function() return s.durability end)
+    M.add_count(acc, s.name, q, s.count, pct, tick, where, remaining, eta)
   end
   -- n items of a stack spoiled pct that spoils at tick (a moved part of a stack: transfer's batch).
-  function M.add_count(acc, name, q, n, pct, tick, where)
+  function M.add_count(acc, name, q, n, pct, tick, where, remaining_durability, eta)
     local key = name .. (q and q ~= 'normal' and '@' .. q or '')
     local r = acc[key]
     if not r then
       r = {key=key, name=name, count=0, soon=0, tick=tick, percent=pct, where=where, min=pct, max=pct, wsum=0, buckets={0, 0, 0, 0}, within={0, 0, 0}}
       acc[key] = r; acc[#acc+1] = r
     end
+    -- A moved batch may carry count/spoil data without remaining tool durability.
+    -- Only an actual stack read supplies enough information for research value.
+    if remaining_durability ~= nil then add_research(r, name, q, n, pct, tick, remaining_durability, eta) end
     local s = {count=n}
     r.count = r.count + s.count
     if tick - game.tick <= M.WARN_TICKS then r.soon = r.soon + s.count end
@@ -117,6 +162,9 @@ return function(api)
     x.min, x.max = math.min(x.min, r.min or r.percent), math.max(x.max, r.max or r.percent)
     for i = 1, 4 do x.buckets[i] = x.buckets[i] + (r.buckets and r.buckets[i] or 0) end
     for i = 1, 3 do x.within[i] = x.within[i] + (r.within and r.within[i] or 0) end
+    for _, field in ipairs({'research_units', 'research_units_at_arrival'}) do
+      if r[field] ~= nil then x[field] = (x[field] or 0) + r[field] end
+    end
     return x
   end
   local function pc(x) return math.floor(x * 100 + 0.5) end
@@ -135,9 +183,9 @@ return function(api)
       buckets={['0-25']=r.buckets[1], ['25-50']=r.buckets[2], ['50-75']=r.buckets[3], ['75+']=r.buckets[4]},
       within={['10min']=r.within[1], ['30min']=r.within[2], ['60min']=r.within[3]}}
   end
-  function M.inventory(inv, acc, where)
+  function M.inventory(inv, acc, where, eta)
     if not (inv and try(function() return inv.valid end)) then return acc end
-    for i = 1, #inv do M.add(acc, inv[i], where) end
+    for i = 1, #inv do M.add(acc, inv[i], where, eta) end
     return acc
   end
   -- Items on a belt's lanes (the lanes' stacks carry their spoilage).

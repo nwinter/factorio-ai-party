@@ -5014,13 +5014,14 @@ local function move_stacks(source,target,match,limit)
 end
 -- A moved batch's spoilage in lines (Sol, 22:25: choosing 2000 fresh agricultural packs for Aquilo): per item the
 -- spread (spoil.lua spread_text); a science pack the running research takes, how many a unit it takes and the units
--- left. (Whether a lab gives less research for a partly spoiled pack is not checked in the game: no units are worked
--- out from the count.)
+-- left. Effective research value uses the measured 2.0.77 spoil/durability rule (spoil.lua).
 function M.fresh_lines(force,acc)
   local out={}
   for i,r in ipairs(acc or {}) do
     if i>8 then out[#out+1]=string.format('+%d more spoilable items',#acc-8); break end
     local line=M.spoil.spread_text(r)
+    local value=M.spoil.research_text(r,force)
+    if value then line=line..'; '..value end
     local tech=force and force.current_research
     for _,ing in ipairs(tech and tech.research_unit_ingredients or {}) do
       if ing.name==r.name and (ing.amount or 0)>0 then
@@ -5034,9 +5035,10 @@ function M.fresh_lines(force,acc)
 end
 -- An inventory's spoilable items as those lines (names: only these items), nil when none (Sol, 22:52: a platform's
 -- hub before departure, a drop's items, a rocket's cargo).
-function M.fresh_inv(force,inv,names)
-  if not inv then return nil end
-  local acc=M.spoil.inventory(inv,{})
+function M.fresh_inv(force,inv,names,eta,extra)
+  if not inv and not extra then return nil end
+  local acc=M.spoil.inventory(inv,{},nil,eta)
+  if extra then M.spoil.inventory(extra,acc,nil,eta) end
   if names then
     local keep={}
     for _,r in ipairs(acc) do if names[r.name] then keep[#keep+1]=r end end
@@ -7507,6 +7509,7 @@ function handlers.silo(p,a) return M.silo.read(p,a) end
 -- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),
 -- launch's min_cargo and arrived guard and a queue dry run's cargo (Luna).
 M.rocketload=require('rocketload'){cargo=M.cargo,remote_entity=remote_entity,reason=reason,
+  fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,
   where=function(pl) return M.freight.where(pl) end,silos=function(p) return M.census.silos(p) end,
   ammo=function(pl) return M.freight.ammo(pl) end,incoming=function(pl) return M.freight.incoming(pl) end,
   hub_chunks=function(pl) return pl.hub and pl.hub.valid and space.hub_chunks(pl.hub) or nil end,
@@ -10162,7 +10165,7 @@ M.supply.feed=function(e,into,from) return M.craftrate.feed(e,into,from) end
 M.trace=require('trace'){supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
 -- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
-  agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,supply=M.supply}
+  agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,supply=M.supply,spoil=M.spoil}
 function handlers.labs(p,a) return M.labs.view(p,a) end
 function handlers.science(p,a) return M.labs.science(p,a) end
 rates=rates_module{position=position,status_name=function(e) return M.machine_status(e) end}
@@ -10265,7 +10268,7 @@ M.chronicle=require('chronicle'){state=state,where=function(pl) return M.freight
 for name,handler in pairs(M.chronicle.handlers) do handlers[name]=handler end
 space=space_module{chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
-  fresh_inv=function(force,inv,names) return M.fresh_inv(force,inv,names) end,
+  fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,
   engine=function(pl) return M.engine.read(pl) end,
   state=state,thrust=function(pl) return M.thrust.read(pl) end,
   rocket=function(e) return M.silo.rocket(e) end,

@@ -549,8 +549,27 @@ fh call status
     rows each have `freshness`. Before departure (Sol, 22:52: 1960 agricultural packs aboard Sunward): every
     `platforms` row (`fh platform NAME` too) has `freshness` for the hub's spoilable items; `drop` with `dry_run` has it
     for the hub's stacks of the items to drop; `launch` has it for the rocket's cargo, read before it goes. A science pack the running research takes adds how many a unit it takes and its units left: `; the running
-    research agricultural-science-pack-research takes 1 a unit, 750 units left`. No research is worked out from the
-    count: whether a lab gives less for a partly spoiled pack is not checked in the game yet.
+    research agricultural-science-pack-research takes 1 a unit, 750 units left`.
+  - Agricultural science value (measured in Factorio 2.0.77 Space Age): a full normal pack at 0%, 25%, 50%, 75%,
+    and 90% spoilage supplies 1, 0.75, 0.5, 0.25, and 0.1 base research units. `science` adds
+    `effective_research_units` per quality for the observed stacks on its surface, and the same values to its line.
+    `platforms.freshness`, the detailed platform freight/spoiling lines, and `preflight`'s rocket and hub cargo
+    freshness give the current value (hub main and trash inventories together). A hub in flight also gives value at arrival on its current leg, using that
+    leg's current-speed ETA and each stack's spoil rate. No arrival value is given when the ETA is unknown.
+    Example: `effective research units now 100.00, at arrival 50.00 (1 pack/unit; before lab bonuses)`.
+    For each stack, value is `((count - 1) * full_durability(quality) + remaining_durability) * (1 - spoiled_share)`;
+    divide by this pack's ingredient amount when the running research uses it (otherwise the stated basis is one
+    pack/unit). Uncommon/rare/epic/legendary full durability is 2/3/4/6; partly consumed lab packs retain only their
+    remaining durability. Values exclude productivity and lab drain bonuses, other required packs, subsequent
+    waiting and consumption time. Arrival value ages each stack separately and gives zero to packs that expire
+    before arrival; it assumes no cargo changes. The science scan keeps its existing bounds and 10-second reuse
+    (`as_of`); the value's item counts name the stacks actually read, including labs and silo rocket cargo.
+    These figures are instantaneous stock value, not a promise of completed research.
+  - Private engine regression: install `tests/private/science-value-probe_0.1.0` as a mod only on a disposable
+    2.0.77 Space Age copy. Run `python3 tools/test_science_value_private.py --port PORT --password-file FILE`
+    from the outer repository. Its 25 cases create five isolated forces and labs for `stack-inserter`, use zero
+    productivity and 100x lab speed, and measure fixed spoil levels, natural aging, quality and partial durability.
+    With no port the optional private check prints `SKIP` and exits successfully.
   - `inspect` on an assembler, furnace or biochamber whose products spoil adds `output_spoil`, what its next products
     start at: `bioflux start about 53% spoiled (recipe bioflux: the count-weighted spoilage of yumako-mash*15 at 80%,
     jelly*12 at 20%)`, or `pentapod-egg start fresh (recipe pentapod-egg resets freshness)`.
