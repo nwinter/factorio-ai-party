@@ -214,4 +214,58 @@ do
   check(cs.handlers.queue_status(p).cycle>=4); check(cs.round_news(1)==nil)
   check(not pcall(cs.handlers.queue_repeat,p,{name=string.rep('x',40),steps={{action='craft'}}}))
 end
+-- A loop with an end (Muse, 21:20: provider-to-furnace refills, ~10 a night): times rounds, or no round starting at or
+-- after for_ticks from the call; a round under way finishes; the queue is left empty and free, with a loop_done history
+-- entry, queue_status loop_done and one team block line.
+do
+  local lstate,lcalls={},0
+  local ls=factory{state=function() return lstate end,player=function(i) return players[i] end,
+    handlers={craft=function() lcalls=lcalls+1; return {started=1} end,walk=handlers.walk},
+    busy=function(pp,action) return action=='walk' and active[pp.index]~=nil end,stop=stop,stop_index=function(i) active[i]=nil end,
+    condition=function() return false end,validate_condition=function() end}
+  local lh=ls.handlers
+  local function ltick(n) for _=1,n or 1 do tick(); ls.tick() end end
+  local r=lh.queue_repeat(p,{name='refill',times=3,interval_ticks=60,steps={{action='craft'}}})
+  check(r.repeating and r.times==3 and r.rounds_left==2)
+  ltick(70); r=lh.queue_status(p); check(r.cycle==2 and r.rounds_left==1 and lcalls==2)
+  ltick(200); r=lh.queue_status(p,{history='all'})
+  check(lcalls==3 and not r.repeating and r.times==nil and r.pending_count==0)
+  check(r.loop_done.rounds==3 and r.loop_done.name=='refill' and r.loop_done.reason=='3 of 3 rounds run (times 3)')
+  local last=r.history[#r.history]
+  check(last.action=='loop_done' and last.ok and last.result.rounds==3)
+  check(ls.free(1))
+  local lines=ls.round_news(1)
+  check(lines and lines[#lines]=='queue refill done after 3 rounds: 3 of 3 rounds run (times 3)')
+  -- for_ticks 150, a round every 60 ticks: rounds start at +1, +62, +123; the next would start at +184, so it ends.
+  lcalls=0
+  local start=game.tick
+  r=lh.queue_repeat(p,{for_ticks=150,interval_ticks=60,steps={{action='craft'}}})
+  check(r.stops_tick==start+150 and r.times==nil)
+  ltick(300); r=lh.queue_status(p)
+  check(lcalls==3 and not r.repeating and r.loop_done.rounds==3)
+  check(r.loop_done.reason==string.format('no round starts at or after tick %d (for_ticks 150)',start+150))
+  check(ls.round_news(1)[1]:find('^queue done after 3 rounds: ')~=nil)
+  -- A round under way when the time passes finishes.
+  lcalls=0
+  lh.queue_repeat(p,{for_ticks=60,interval_ticks=60,steps={{action='walk',args={ticks=100}},{action='craft'}}})
+  ltick(90); check(lh.queue_status(p).repeating and lcalls==0)
+  ltick(40); r=lh.queue_status(p); check(lcalls==1 and not r.repeating and r.loop_done.rounds==1)
+  -- times and for_ticks together: the first to come ends it.
+  lcalls=0
+  lh.queue_repeat(p,{times=2,for_ticks=6000,interval_ticks=60,steps={{action='craft'}}})
+  ltick(200); check(lcalls==2 and lh.queue_status(p).loop_done.reason=='2 of 2 rounds run (times 2)')
+  -- Refusals; a cancel removes the loop and its end; a new loop clears the last loop_done.
+  check(not pcall(lh.queue_repeat,p,{times=0,steps={{action='craft'}}}))
+  check(not pcall(lh.queue_repeat,p,{times=1.5,steps={{action='craft'}}}))
+  check(not pcall(lh.queue_repeat,p,{for_ticks=30,steps={{action='craft'}}}))
+  check(not pcall(lh.queue_repeat,p,{for_ticks=500000,steps={{action='craft'}}}))
+  r=lh.queue_repeat(p,{times=5,interval_ticks=60,steps={{action='craft'}}})
+  check(r.loop_done==nil and r.times==5)
+  r=lh.queue_cancel(p,{}); check(not r.repeating and r.times==nil and r.stops_tick==nil)
+  -- Without times or for_ticks a loop runs on as before.
+  lcalls=0
+  lh.queue_repeat(p,{interval_ticks=60,steps={{action='craft'}}})
+  ltick(400); r=lh.queue_status(p); check(r.repeating and lcalls>=6 and r.times==nil and r.rounds_left==nil)
+  lh.queue_cancel(p,{})
+end
 print('scheduler: '..assertions..' assertions passed')

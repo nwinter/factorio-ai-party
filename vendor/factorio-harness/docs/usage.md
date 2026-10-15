@@ -1513,6 +1513,13 @@ fh sleep 900 --until researched                       # ...or until the research
   before, so a steady loop says it once. A step with `up_to: true` or `on_short: "skip"` is left out of the line (its
   short was allowed for); `queue_status` history still marks it `short: true`. `on_fail: "skip"` does not count as
   allowing a short.
+- `queue_repeat` with an end (Muse, 21:20: refill loops): `times` (1..10000) runs that many rounds; `for_ticks`
+  (60..432000) starts no round at or after that many ticks from the call (a round under way finishes); with both, the
+  first to come ends it; with neither, the loop runs until `queue_cancel` as before. The brief reply and `queue_status`
+  show `times`, `rounds_left` (after the current round) and `stops_tick`. When the loop ends the queue is empty (standing
+  orders can run again): the history gets `loop_done {rounds, reason}`, `queue_status` shows `loop_done {name, rounds,
+  reason, tick}`, and the team block says it once under `queue`: `queue furnace refill done after 3 rounds: 3 of 3
+  rounds run (times 3)` or `... done after 7 rounds: no round starts at or after tick 10370000 (for_ticks 600)`.
 - `inspect` of an assembler or furnace whose recipe lacks an ingredient for one craft while another is stacked (5 crafts
   or more; Grok, shift11: an electromagnetic plant on electronic-circuit held 135 iron plates and no copper cable)
   says so in `input_imbalance` (`iron-plate 135 in input, copper-cable 0: item_ingredient_shortage on copper-cable`)
