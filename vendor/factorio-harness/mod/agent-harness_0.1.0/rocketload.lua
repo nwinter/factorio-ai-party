@@ -294,7 +294,7 @@ return function(api)
         for _, c in ipairs(chests) do take(chest_inventory(c), c.name .. ' ' .. at(c.position)) end
       end
       local row = {item=label(r), asked=r.count, aboard_before=before, loaded=moved, aboard=before + moved,
-        from=#from > 0 and table.concat(from, ', ') or nil, order=fresh_first and 'fresh first' or nil}
+        from=#from > 0 and table.concat(from, ', ') or nil}
       if moved < want then
         row.short = want - moved
         if room < want and moved >= room then
@@ -306,6 +306,7 @@ return function(api)
         end
         short[#short+1] = string.format('%s %d short (%s)', row.item, row.short, row.why)
       end
+      if fresh_first then row.order = 'fresh first' end
       rows[#rows+1] = row
       if moved > 0 then moved_all[#moved_all+1] = {name=r.name, quality=r.quality, count=moved} end
     end
