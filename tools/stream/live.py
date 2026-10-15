@@ -109,7 +109,7 @@ class LiveSource:
         self.operator_seq = operator_inbox.start_seq(self.inbox_path) if self.inbox_path else 0
         self.platform_every = 15.0
         self.next_platforms = 0
-        self.basemap_every = 300.0  # the site's live map: the base changes slowly and the read walks every building (60 s until 2026-10-14 21:40: 0.6 s of Lua a read)
+        self.basemap_every = 60.0  # the site's live map (300 s for an hour on 2026-10-14 while the read cost 0.6 s; the census made it ~12 ms)
         self.next_basemap = 0
         self.ore_every = 300.0  # ore under and around the base: every resource tile there, so less often still
         self.next_ore = 0
