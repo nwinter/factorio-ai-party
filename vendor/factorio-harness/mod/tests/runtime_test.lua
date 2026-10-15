@@ -22,12 +22,13 @@ local evolution=0.25
 local enemy_evolution={name='enemy',get_evolution_factor=function() return evolution end,get_evolution_factor_by_time=function() return 0.2 end,
   get_evolution_factor_by_pollution=function() return 0.04 end,get_evolution_factor_by_killing_spawners=function() return 0.01 end}
 local pollution_stats={input_counts={},output_counts={},get_flow_count=function() return 0 end}
-game={tick=tick,get_player=function(index) if index==1 then return p end end,forces={enemy=enemy_evolution},
+game={tick=tick,get_player=function(index) if index==1 then return p end end,forces={player=p.force,enemy=enemy_evolution},
   get_pollution_statistics=function() return pollution_stats end}
 p.surface.index=1; p.surface.get_total_pollution=function() return 0 end; p.surface.get_chunks=function() return function() end end; p.surface.get_pollution=function() return 0 end
 p.surface.find_entities_filtered=function() return {} end
 local runtime=dofile('mod/agent-harness_0.1.0/runtime.lua')
 local function call(action,args) return runtime.dispatch{action=action,args=args,player=1} end
+assert(runtime.dispatch{operator=true,action='factory_digest',args={}}.scope:find('no new scan',1,true))
 local function advance(n)
   for _=1,n do tick=tick+1; game.tick=tick; runtime.tick{tick=tick} end
 end

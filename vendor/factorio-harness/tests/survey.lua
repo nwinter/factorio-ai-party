@@ -249,4 +249,8 @@ eq(S2.summary(p).factory.research,'automation 50% eta 1m15s (rate of the last 2m
 -- No rate measured yet (under 30 s of samples): no ETA.
 rate={nil}; game.tick=301200
 eq(S2.summary(p).factory.research,'automation 50% (queue ends)')
+local cached=storage.survey_cache['player/1']
+assert(cached.digest and cached.digest.tick<cached.tick,'survey failure retains original digest age')
+eq(cached.digest.machines.lab.type,'lab')
+assert(cached.digest.fuel.boiler.empty>0 and cached.digest.fuel.boiler.low>0)
 print('survey: ok')

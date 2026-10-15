@@ -4027,6 +4027,26 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   or message; in compact output fh prints each as an `OPERATOR:` line on stderr as soon as a reply carries it and first
   on stdout (`--format json` keeps it in the document only), and
   files it in `.operator-tells.jsonl` beside `--journal` (or `FH_OPERATOR_FILE`) for a post-tool hook.
+- Operator factory digest (`factory_digest.lua`, `tools/factory_digest.py`): the idle-nudge supervisor sends
+  a team tell on its first poll at or after the run deadline minus 2 hours, before the deadline, once per run.
+  No deadline means no automatic digest. `POG_IDLE_NUDGE=0` disables this supervisor and the scheduled digest.
+  Operator request (also works outside that window):
+  `python3 tools/idle_nudge.py --run runs/RUN --world n --digest-now`; add `--dry-run` to log the text without
+  sending or marking it delivered. This command exits after the digest and sends no idle nudges.
+  The operator-only `factory_digest {force?}` read uses completed survey caches and visible endpoint lane readings
+  already made by `trace`; it performs no new entity, inventory or tile scan. Up to 16 cached planetary surfaces
+  (platforms excluded) report survey ages, drill no-resources statuses with counts and up to 3 positions per
+  prototype, input-shortage/output-full machine counts by type, boiler/furnace no-fuel and last-buffered-fuel
+  counts, and non-working labs with status counts. Last buffered fuel means an empty burner inventory with fuel
+  still burning. These are sampled statuses, not a claim that upstream supplies or an entire ore patch are empty.
+  Belt contents cover at most 128 remembered traced endpoints, only observations from the last 5 game minutes:
+  full/empty lane counts, positions (up to 3 per condition), and ages. Missing surveys or endpoint contents are
+  unknown, not zero; cached surveys from before this feature are explicitly unknown until refreshed.
+  Facts are packed into tells of at most 480 UTF-8 bytes each; each names the snapshot tick (ages are at that
+  snapshot, including on a delayed retry). `runs/RUN/factory-digest.json` stores the delivery
+  cursor across restarts; `factory-digest.jsonl` records sent parts, failures and dry runs. Retries reuse request IDs
+  for harness deduplication while those IDs remain in its response cache. A manual send does not consume the
+  scheduled send; adjusting a deadline after delivery does not send another scheduled digest.
 - Cost: with a full board and 9 bots, hints add under 0.01 ms per request in steady state (0.5 ms on an agent's first
   request against a full backlog); nothing runs per tick.
 
