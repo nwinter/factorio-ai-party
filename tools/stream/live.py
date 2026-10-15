@@ -11,6 +11,7 @@ import basemap_log
 import efficiency
 import hauling
 import operator_inbox
+import planlog
 import pacing
 from harness import Harness
 from model import SCIENCE, SPARK_ITEMS, notes_job
@@ -85,6 +86,7 @@ class LiveSource:
         self.has_operator = False
         self.inbox_path = operator_inbox.path_for(journals)
         self.journals = journals
+        self.plan_ticks_ok = None  # the runtime takes board {plan_ticks} (None: not asked yet)
         # hand hauling (hauling.lua `hauling`), every few minutes: runs/RUN/hauling.jsonl, and the shift's numbers
         self.has_hauling = False
         self.next_hauling = 0
@@ -109,7 +111,7 @@ class LiveSource:
         self.operator_seq = operator_inbox.start_seq(self.inbox_path) if self.inbox_path else 0
         self.platform_every = 15.0
         self.next_platforms = 0
-        self.basemap_every = 300.0  # the site's live map: the base changes slowly and the read walks every building (60 s until 2026-10-14 21:40: 0.6 s of Lua a read)
+        self.basemap_every = 60.0  # the site's live map (300 s for an hour on 2026-10-14 while the read cost 0.6 s; the census made it ~12 ms)
         self.next_basemap = 0
         self.ore_every = 300.0  # ore under and around the base: every resource tile there, so less often still
         self.next_ore = 0
@@ -589,7 +591,18 @@ class LiveSource:
         if time.time() >= self.next_board:
             self.next_board = time.time() + self.board_every
             try:
-                res, _ = self.read("board", {"limit": 60}, **self.reader())
+                # with each plan line's tick (board plan_ticks: the site's Team plan says when each line changed);
+                # an older runtime refuses the argument, and is asked without it from then on
+                if self.plan_ticks_ok is not False:
+                    try:
+                        res, _ = self.read("board", {"limit": 60, "plan_ticks": True}, **self.reader())
+                        self.plan_ticks_ok = True
+                    except RuntimeError as e:
+                        if "plan_ticks" not in str(e):
+                            raise
+                        self.plan_ticks_ok = False
+                if self.plan_ticks_ok is False:
+                    res, _ = self.read("board", {"limit": 60}, **self.reader())
                 claims, _ = self.read("board", {"kind": "claim", "limit": 30}, **self.reader())
                 try:  # open projects outlive the newest 60 items (eng/projects; an older runtime refuses the kind)
                     projects, _ = self.read("board", {"kind": "project", "status": "active", "limit": 12}, **self.reader())
@@ -599,6 +612,12 @@ class LiveSource:
                          + (projects.get("items") or [])}
                 obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned"),
                                 "plan": res.get("plan")}  # the team plan (board_plan; absent on older runtimes)
+                if self.journals and "plan" in res:  # the plan a shift leaves, for its page on the site (planlog.py)
+                    try:
+                        planlog.save(self.journals, planlog.record(res.get("plan"), obs["board"]["items"],
+                                                                   res.get("open_unowned"), res.get("tick")))
+                    except OSError as e:
+                        errors["plan_log"] = str(e)
             except Exception as e:
                 errors["board"] = str(e)
 
