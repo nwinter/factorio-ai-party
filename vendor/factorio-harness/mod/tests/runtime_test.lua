@@ -517,6 +517,29 @@ wood.count=5
 local skipped=call('build',{item='wooden-chest',skip_failed=true,builds={{position={x=4,y=0}},{position={x=8,y=0}},{position={x=9,y=0}}}})
 eq(skipped.built,2); eq(skipped.placed[2].x,9.5); eq(#skipped.failed,1); eq(skipped.failed[1].index,2); eq(skipped.failed[1].position.x,8)
 assert(skipped.failed[1].error:find('placement blocked',1,true),skipped.failed[1].error); eq(wood.count,3)
+-- all (Muse, shift13): the same as skip_failed, with each row's item and a summary.
+;(function()
+wood.count=5
+local every=call('build',{item='wooden-chest',all=true,builds={{position={x=4,y=0}},{position={x=8,y=0}},{position={x=9,y=0}}}})
+eq(every.built,2); eq(#every.failed,1); eq(every.failed[1].index,2); eq(every.failed[1].item,'wooden-chest')
+eq(every.summary,'2 of 3 built; 1 not built (failed)'); eq(wood.count,3)
+fails(function() call('build',{item='wooden-chest',all='yes',builds={{position={x=4,y=0}}}}) end,'all must be true or false')
+-- Without it, the refusal names the entries not tried.
+wood.count=5
+fails(function() call('build',{item='wooden-chest',builds={{position={x=4,y=0}},{position={x=8,y=0}},{position={x=9,y=0}},{position={x=10,y=0}}}}) end,
+  'build 2/4 failed after 1 built: placement blocked')
+fails(function() call('build',{item='wooden-chest',builds={{position={x=8,y=0}},{position={x=9,y=0}},{position={x=10,y=0}}}}) end,
+  '; entries 2-3 were not tried (all: true tries every entry)')
+fails(function() call('build',{item='wooden-chest',builds={{position={x=4,y=0}},{position={x=8,y=0}},{position={x=9,y=0}}}}) end,
+  '; entry 3 was not tried (all: true tries every entry)')
+-- An entry blocked by one this batch placed says which (Muse: a pole inside the assembler's footprint).
+eq(runtime.own_blockers('placement blocked by medium-electric-pole (20.5,64.5)',{{name='medium-electric-pole',position={x=20.5,y=64.5},index=1}}),
+  'placement blocked by medium-electric-pole (20.5,64.5); medium-electric-pole (20.5,64.5) is entry 1 of this batch')
+eq(runtime.own_blockers('placement blocked by tree-01 (3,4), medium-electric-pole (20.5,64.5)',{{name='medium-electric-pole',position={x=20.5,y=64.5},index=4}}),
+  'placement blocked by tree-01 (3,4), medium-electric-pole (20.5,64.5); medium-electric-pole (20.5,64.5) is entry 4 of this batch')
+eq(runtime.own_blockers('placement blocked by tree-01 (3,4)',{{name='medium-electric-pole',position={x=20.5,y=64.5},index=1}}),'placement blocked by tree-01 (3,4)')
+eq(runtime.own_blockers('item is not in main inventory',{{name='medium-electric-pole',position={x=20.5,y=64.5},index=1}}),'item is not in main inventory')
+end)()
 wood.count=3
 -- The engine refills the hand from inventory after the last item; that still counts as consumed.
 local spare=stack('wooden-chest',4); main[2]=spare
@@ -3530,6 +3553,41 @@ end)()
   eq(r.entities[1].holds,'empty; 0 of 32 slots'); eq(r.entities[2].holds,'iron-plate*150 coal*20; 2 of 32 slots')
   eq(r.entities[3].holds,'in: copper-cable*8'); eq(r.entities[3].recipe,'electronic-circuit'); eq(r.entities[1].status_name,nil,'a chest has none')
   eq(r.not_in_sight,'1 more in the area in chunks our force does not see now (radar coverage or a character\'s sight lights a chunk)')
+  -- compact (Muse, shift13: ~10 inspects over positions read as tables or JSON): one line per entity, the same
+  -- reading order; health where the entity has it.
+  c.health=320; c.max_health=350; a.health=200; a.max_health=200
+  local short=call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}},compact=true})
+  eq(short.entities,nil); eq(short.count,3); eq(#short.lines,3)
+  eq(short.lines[1],'iron-chest (1.5,1.5): empty; 0 of 32 slots')
+  eq(short.lines[2],'iron-chest (2.5,1.5): health 200/200; holds iron-plate*150 coal*20; 2 of 32 slots')
+  eq(short.lines[3],'assembling-machine-2 (1.5,4.5): health 320/350; recipe electronic-circuit; in: copper-cable*8')
+  -- Over positions, in the order given; an entry that fails is its position and why.
+  p.surface.find_entities_filtered=function(f)
+    if f.area and f.force then return list end
+    local out={}
+    for _,e in ipairs(f.position and list or {}) do
+      if math.abs(e.position.x-f.position.x)<=(f.radius or 0.5) and math.abs(e.position.y-f.position.y)<=(f.radius or 0.5) then out[#out+1]=e end
+    end
+    return out
+  end
+  -- An inserter: its hand; a pole (no inventory): no holds.
+  local ins={valid=true,name='inserter',type='inserter',position={x=3.5,y=4.5},force=p.force,health=150,max_health=150,
+    held_stack={valid_for_read=true,name='copper-cable',count=2},get_inventory=function() return nil end}
+  local pole={valid=true,name='small-electric-pole',type='electric-pole',position={x=4.5,y=4.5},force=p.force,health=100,max_health=100,
+    get_inventory=function() return nil end}
+  list[#list+1]=ins; list[#list+1]=pole
+  short=call('inspect',{positions={c.position,a.position,{x=20,y=20},ins.position,pole.position},compact=true})
+  eq(short.count,5); eq(short.lines[1],'assembling-machine-2 (1.5,4.5): health 320/350; recipe electronic-circuit; in: copper-cable*8')
+  eq(short.lines[2],'iron-chest (2.5,1.5): health 200/200; holds iron-plate*150 coal*20; 2 of 32 slots')
+  assert(short.lines[3]:find('^%(20,20%): '),short.lines[3])
+  eq(short.lines[4],'inserter (3.5,4.5): health 150/150; hand: copper-cable*2')
+  eq(short.lines[5],'small-electric-pole (4.5,4.5): health 100/100')
+  list[#list]=nil; list[#list]=nil
+  -- One position: one line.
+  short=call('inspect',{position=a.position,compact=true})
+  eq(short.count,1); eq(short.lines[1],'iron-chest (2.5,1.5): health 200/200; holds iron-plate*150 coal*20; 2 of 32 slots')
+  fails(function() call('inspect',{position=a.position,compact='yes'}) end,'compact must be true or false')
+  p.surface.find_entities_filtered=function(f) if f.area and f.force then return list end return {} end
   fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=200,y=10}}}) end,'at most 128x128')
   fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=9,y=9}},position={x=1,y=1}}) end,'give area, positions or position: one of them')
   fails(function() call('inspect',{position={x=1.5,y=1.5},types={'container'}}) end,'types goes with area')

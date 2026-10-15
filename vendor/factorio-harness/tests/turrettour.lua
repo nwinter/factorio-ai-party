@@ -187,4 +187,58 @@ eq(r.places,1); eq(active('grok').targets[1].entity,f1)
 r=grok('feed',{radius=5,fuel='coal',fuel_count=10})
 eq(r.places,0); eq(r.nothing,'nothing in radius 5 wants what you hold (1 machine of those kinds there)')
 eq(r.nearest_outside,'nearest machine that wants what you hold outside it: stone-furnace at (30,0), 30 tiles from you')
+
+-- Haiku, shift13: position with radius (the radius round that point; a call with both was refused and areas were made
+-- by hand); below on every form; a tour's default ticks by its length (surface tours of 520 and 820 tiles ended
+-- timed_out at 60 s); a turret whose slot holds other ammo is left out (three walks to one gave nothing).
+local function has(s,part) assert(type(s)=='string' and s:find(part,1,true),tostring(s)..' lacks '..part) end
+r=opus('rearm',{position={x=-61,y=1},radius=10,below=5})
+eq(r.places,2); eq(active('opus').targets[1].entity,b1); eq(active('opus').targets[2].entity,b2)
+-- 64 tiles at 9 tiles/s is under a minute: the 60 s floor.
+eq(r.ticks,3600); eq(active('opus').until_tick,game.tick+3600)
+eq(r.ticks_note,'the default for this tour: 64 tiles from you through 2 turrets at your running speed (9.0 tiles/s), half again for turns, 1 s a turret and 10 s; at least 60 s')
+-- Nothing in that radius: inside is measured from the centre, the nearest outside it from the character.
+r=opus('rearm',{position={x=-61,y=1},radius=1,below=5})
+eq(r.places,0); has(r.nearest_outside,'gun-turret at (20,0), 20 tiles from you')
+local ok2,err2=pcall(opus,'rearm',{position={x=0,y=0},area={left_top={x=-1,y=-1},right_bottom={x=1,y=1}}})
+assert(not ok2 and tostring(err2):find('position goes with radius (its centre), or alone (the turret there)',1,true),tostring(err2))
+-- The whole surface: 440 tiles through 5 turrets.
+local function route_len()
+  local at,len={x=0,y=0},0
+  for _,t in ipairs(active('opus').targets) do local q=t.entity.position; len=len+((q.x-at.x)^2+(q.y-at.y)^2)^0.5; at=q end
+  return len
+end
+r=opus('rearm',{surface=true,below=5})
+eq(r.places,5); eq(r.ticks,math.ceil(route_len()*1.5/0.15)+60*5+600); assert(r.ticks>3600,r.ticks)
+eq(active('opus').until_tick,game.tick+r.ticks)
+-- ticks given: as given.
+r=opus('rearm',{surface=true,below=5,ticks=1200})
+eq(r.ticks,nil); eq(r.ticks_note,nil); eq(active('opus').until_tick,game.tick+1200)
+-- A tour over 10 minutes long: cut to 36000.
+local far=turret(5000,0)
+r=opus('rearm',{surface=true,below=5})
+eq(r.ticks,36000); has(r.ticks_note,'; cut to 10 min')
+far.valid=false
+-- A turret under below whose slot holds other ammo, with no room for the call's: left out, and named.
+local full=turret(26,-3,{['piercing-rounds-magazine']=2})
+full.get_inventory(defines.inventory.turret_ammo).can_insert=function(st) eq(st.name,'firearm-magazine'); return false end
+r=opus('rearm',{radius=40,below=5})
+eq(r.places,2)
+for _,t in ipairs(active('opus').targets) do assert(t.entity~=full,'left out') end
+eq(r.no_room,'1 turret under 5 rounds with no room for firearm-magazine (its ammo slots hold other ammo): gun-turret (26,-3) holds piercing-rounds-magazine*2')
+r=opus('rearm',{position={x=26,y=-3},radius=2,below=5})
+eq(r.places,0); eq(r.nothing,'no turret there that takes firearm-magazine holds under 5 rounds with room for it'); has(r.no_room,'gun-turret (26,-3)')
+full.valid=false
+-- below on the in-reach and positions forms: a turret holding below or more is left as it is.
+r=opus('rearm',{positions={{x=22,y=6}},below=10})
+eq(r.moved,0); eq(r.below,10); eq(r.held_enough,'1 turret holds 10 rounds or more: gun-turret (22,6) 12')
+eq(r.nothing,'no turret there holds under 10 rounds')
+-- position alone: the turret there.
+r=opus('rearm',{position={x=22,y=6},below=10})
+eq(r.held_enough,'1 turret holds 10 rounds or more: gun-turret (22,6) 12')
+-- Only the one under below goes on to the transfer (out of reach here, so the call fails naming it alone).
+ok2,err2=pcall(opus,'rearm',{positions={{x=22,y=6},{x=20,y=0}},below=10})
+assert(not ok2 and tostring(err2):find('the first (20,0): entity is out of reach',1,true) and not tostring(err2):find('(22,6)',1,true),tostring(err2))
+ok2,err2=pcall(opus,'rearm',{positions={{x=22,y=6}},ticks=60})
+assert(not ok2 and tostring(err2):find('ticks applies with radius, area or surface',1,true),tostring(err2))
 print('turrettour: ok')
