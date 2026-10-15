@@ -99,10 +99,19 @@ s.chronicle=nil
 eq(U.check(p,base),nil)
 view={surfaces={{name='nauvis',electric={{id=2,machines=300,low=100,none=10,center={x=-10,y=40}},{id=9,machines=10,low=10,none=0}}},
   {name='vulcanus',electric={{id=3,machines=100,low=90,none=0}}}}}
-eq(U.check(p,base),nil,'110 of 300 is under half')
+eq(U.check(p,base),nil,'110 of 300 is under half (seen with power)')
 view.surfaces[1].electric[1].low=160
 eq(U.check(p,base),'power collapse: electric #2 near (-10,40) has 170 of 300 machines on low or no power (160 low, 10 none)')
 eq(U.check(p,base),nil)
+-- A network dark for longer than NEW_COLLAPSE (d15: far-east networks kept dark on purpose woke sleeps for hours), or
+-- never seen with power, does not wake; one that had power a minute ago does.
+view.surfaces[1].electric[2]={id=11,machines=50,low=50,none=0}
+eq(U.check(p,base),nil,'never seen with power')
+game.tick=game.tick+U.NEW_COLLAPSE+60; view.surfaces[1].electric[1].low=200
+eq(U.check(p,base),nil,'#2 dark too long: no longer new')
+view.surfaces[1].electric[2].low=0; U.check(p,base)
+game.tick=game.tick+3600; view.surfaces[1].electric[2].low=40
+has(U.check(p,base),'power collapse: electric #11')
 view=nil
 
 -- No character (aboard, in a pod): the near kinds are skipped, the rest still read.

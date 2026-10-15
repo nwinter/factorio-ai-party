@@ -20,6 +20,10 @@ return function(api)
   -- off woke its sleeps every few minutes ("an urgent alert about a far attack"), so a group's target counts within the
   -- same 40 tiles as an attack.
   M.NEAR, M.GROUP_NEAR, M.MIN_MACHINES, M.SHARE, M.REPEAT = 40, 40, 20, 0.5, 5 * 3600
+  -- A collapse wakes only while it is new: the network had power (under SHARE of its machines short) within the last
+  -- NEW_COLLAPSE ticks (d15 trajectory analysis: far-east networks the team keeps dark woke Haiku and Sonnet for hours,
+  -- and they turned urgent wakes off). One never seen with power since this runtime started does not wake.
+  M.NEW_COLLAPSE = 10 * 3600
   local KEEP = 30 * 3600
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function round(v) return math.floor(v + 0.5) end
@@ -77,11 +81,19 @@ return function(api)
   local function collapsed(p)
     local view = api.power_view and try(function() return api.power_view(p.force) end)
     local out = {}
+    local st = api.state()
+    st.power_had = st.power_had or {}
+    local had = st.power_had
     for _, s in ipairs(view and view.surfaces or {}) do
       for _, r in ipairs(s.electric or {}) do
         local bad = (r.low or 0) + (r.none or 0)
+        local key = 'power|' .. s.name .. '|' .. tostring(r.id)
         if (r.machines or 0) >= M.MIN_MACHINES and bad >= M.SHARE * r.machines then
-          out[#out+1] = {key='power|' .. s.name .. '|' .. tostring(r.id), surface=s.name, level=bad, r=r}
+          if had[key] and game.tick - had[key] <= M.NEW_COLLAPSE then
+            out[#out+1] = {key=key, surface=s.name, level=bad, r=r}
+          end
+        else
+          had[key] = game.tick
         end
       end
     end
