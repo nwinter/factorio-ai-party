@@ -1676,11 +1676,19 @@ return function(api)
     end
     return #out > 0 and out or nil
   end
-  function M.team(p, losses)
+  function M.team(p, losses, helper)
     local h = hints(p.index)
     -- Mentions go first (insertion order is the JSON order).
     local out = {}
-    out.mentions, out.tells = mentions(p)
+    -- A subagent's call (helper; d15 trajectory analysis: 12-22% of Astra's tells went to its helpers): the mentions and
+    -- tells stay for the main session, and the helper reads how many wait.
+    if helper then
+      local box = api.state().mentions and api.state().mentions[p.index]
+      local n = box and #box.list or 0
+      if n > 0 then out.held_for_main = string.format('%d tell%s or mention%s wait for your main session (shown to it, not to a helper)', n, n == 1 and '' or 's', n == 1 and '' or 's') end
+    else
+      out.mentions, out.tells = mentions(p)
+    end
     out.board = board_lines(p, h)
     out.research = api.research_lines and api.research_lines(p, h) or nil
     if api.watch then pcall(api.watch, p) end

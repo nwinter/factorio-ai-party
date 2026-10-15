@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Harness, luaString, parseReply } from '../host/harness.js';
+import { Harness, luaString, parseReply, helperThread } from '../host/harness.js';
 import { bundleRuntime } from '../host/bundle.js';
 import { renderMap } from '../host/view.js';
 import { execFileSync } from 'node:child_process';
@@ -95,4 +95,33 @@ test('platform PNG draws empty space, foundation and footprints without a phanto
   assert.deepEqual(pixel(20,20),[79,88,100]);
   assert.deepEqual(pixel(12,20),[19,25,31]);
   assert.deepEqual(pixel(20,28),[77,154,160]);assert.deepEqual(pixel(28,28),[77,154,160]);
+});
+
+test('a subagent thread marks its requests helper (d15: tells went to Astra\'s helpers); an old runtime drops the mark', async () => {
+  assert.equal(helperThread({CODEX_THREAD_ID:'a', CODEX_SESSION_ID:'a'}), false);
+  assert.equal(helperThread({CODEX_THREAD_ID:'b', CODEX_SESSION_ID:'a'}), true);
+  assert.equal(helperThread({MUSE_THREAD_ID:'t2', MUSE_SESSION_ID:'t1'}), true);
+  assert.equal(helperThread({}), false);
+  const kept = {t: process.env.CODEX_THREAD_ID, s: process.env.CODEX_SESSION_ID};
+  process.env.CODEX_THREAD_ID = 'helper-1'; process.env.CODEX_SESSION_ID = 'root';
+  try {
+    const sent: any[] = [];
+    let refuse = true;
+    const h = new Harness({async command(c) {
+      const req = JSON.parse(c.match(/dispatch", \[(=*)\[([\s\S]*)\]\1\]\)\)$/)?.[2] ?? '{}');
+      sent.push(req);
+      if (refuse && req.args.helper) { refuse = false; return JSON.stringify({ok:false,id:req.id,error:{message:'unknown argument helper for status; valid: brief'}}); }
+      return JSON.stringify({ok:true,id:req.id,result:{}});
+    }});
+    const r = await h.request('status', {brief:true});
+    assert.equal(r.ok, true);
+    assert.equal(sent[0].args.helper, true);
+    assert.equal(sent[1].args.helper, undefined);
+    assert.notEqual(sent[0].id, sent[1].id);
+    await h.request('status', {});
+    assert.equal(sent[2].args.helper, undefined, 'not sent again to that runtime');
+  } finally {
+    if (kept.t === undefined) delete process.env.CODEX_THREAD_ID; else process.env.CODEX_THREAD_ID = kept.t;
+    if (kept.s === undefined) delete process.env.CODEX_SESSION_ID; else process.env.CODEX_SESSION_ID = kept.s;
+  }
 });

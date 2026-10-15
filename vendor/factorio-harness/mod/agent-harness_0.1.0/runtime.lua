@@ -10387,7 +10387,8 @@ function check_args(action,args)
   for key in pairs(args) do
     -- peek (boolean) on any request: read without consuming this agent's
     -- team hints (overlays polling as an agent).
-    if not set[key] and not (key=='scope' and action~='observe' and VIEW_SCOPES[action]) and not (key=='peek' and type(args.peek)=='boolean') then
+    if not set[key] and not (key=='scope' and action~='observe' and VIEW_SCOPES[action]) and not (key=='peek' and type(args.peek)=='boolean')
+      and not (key=='helper' and type(args.helper)=='boolean') then
       local valid={}
       for k in pairs(set) do valid[#valid+1]=k end
       table.sort(valid)
@@ -10872,7 +10873,9 @@ function M.dispatch_inner(request)
     if p and p.valid then result.clock=clock_line(p,peek) end
     if p and p.valid and not M.is_director(p.index) then
       -- Operator tells ride on every reply until a game action or message (tells.lua operator_lines).
-      local consume=not peek and not M.read_call(request.action,request.args) and not M.idle.WAITS[request.action] and request.action~='sleep_check'
+      -- helper (host harness.ts helperThread: a subagent sharing the character): tells stay for the main session.
+      local helper=type(request.args)=='table' and request.args.helper==true
+      local consume=not peek and not helper and not M.read_call(request.action,request.args) and not M.idle.WAITS[request.action] and request.action~='sleep_check'
         and not ({chat=true,tells=true,board=true,board_events=true,queue_status=true,research_done=true,players=true,votes=true,requests=true})[request.action]
       result.operator=M.tells.operator_lines(p.index,consume)
       -- What the agent did, for the nudge's counts and the end of standing (idle.lua).
@@ -10906,7 +10909,7 @@ function M.dispatch_inner(request)
     -- What is new for this agent (mentions, board, attacks/losses, reminders);
     -- directors and peeking readers (overlays) leave the agent's cursors alone.
     if p and p.valid and not peek and request.action~='board_events' and not M.is_director(p.index) then
-      result.team=M.board.team(p,M.ground.unseen(p,unseen_losses(p)))
+      result.team=M.board.team(p,M.ground.unseen(p,unseen_losses(p)),type(request.args)=='table' and request.args.helper==true)
       -- What a sleep's or wait's reply showed (kept in case the next sleep follows too soon to read it), and what the
       -- agent missed that way, shown once (missed.lua).
       pcall(M.missed.after,p.index,missed_kind,missed_late,result,M.board.delivered(p.index))

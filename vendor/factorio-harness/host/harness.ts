@@ -52,11 +52,34 @@ export function utf8Chunks(text: string, max: number): string[] {
 /** Read-only views the runtime serves through `observe`. */
 const OBSERVE_SCOPES = new Set(['danger','pipe_gaps','belt_gaps','drill_sites','agriculture', 'map', 'nearest', 'craftable', 'scan', 'power', 'grid', 'rates', 'bottleneck', 'stock', 'platforms', 'labs', 'science', 'supply', 'sleep_check']);
 
+/** A subagent's call (d15 trajectory analysis: Astra's helpers share its character, and 12-22% of its tells were shown
+ * to whichever helper called next): Codex and Muse give each thread its id and the session's, equal for the main
+ * thread. The request then carries helper=true and the runtime leaves the tells and mentions for the main session. */
+export function helperThread(env: NodeJS.ProcessEnv = process.env): boolean {
+  for (const [thread, session] of [['CODEX_THREAD_ID', 'CODEX_SESSION_ID'], ['MUSE_THREAD_ID', 'MUSE_SESSION_ID']]) {
+    const t = env[thread], s = env[session];
+    if (t && s && t !== s) return true;
+  }
+  return false;
+}
+let runtimeTakesHelper = true;
+
 export class Harness {
   /** `bot` addresses a script-driven bot by name instead of a player. */
   constructor(readonly transport: Transport, readonly player = 1, readonly journal?: string, readonly bot?: string) {}
 
   async request(action: string, args: Record<string, unknown> = {}, id: string = randomUUID()): Promise<Reply> {
+    if (!runtimeTakesHelper || !helperThread() || args.helper !== undefined) return this.requestOnce(action, args, id);
+    const reply = await this.requestOnce(action, {...args, helper:true}, id);
+    // A runtime from before helper refuses the argument: once, then never again in this process.
+    if (!reply.ok && /unknown argument helper\b/.test(String(reply.error?.message ?? ''))) {
+      runtimeTakesHelper = false;
+      return this.requestOnce(action, args, randomUUID());
+    }
+    return reply;
+  }
+
+  async requestOnce(action: string, args: Record<string, unknown> = {}, id: string = randomUUID()): Promise<Reply> {
     // Reuse the bootstrap's stable read-only operation. New observation views
     // must not be treated as mutations by a bootstrap already loaded in-game.
     if (OBSERVE_SCOPES.has(action)) { args = {...args, scope:action}; action = 'observe'; }
