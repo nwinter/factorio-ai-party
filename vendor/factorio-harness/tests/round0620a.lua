@@ -318,7 +318,7 @@ eq(row_of(astra('scan',{position={x=7.5,y=0.5},radius=1,fields='filters'}),'stee
 local ok3,err3=pcall(astra,'configure',{position=ins.position,filtr={'coal'}})
 assert(not ok3,'refused')
 assert(err3:find('unknown argument filtr for configure; valid: ',1,true),err3)
-assert(err3:find('; closest name: filters; long-handed-inserter at (10.5,0.5) takes: filters, filter_mode (alias mode), use_filters; and position, name, unit_number, platform, surface',1,true),err3)
+assert(err3:find('; closest name: filters; long-handed-inserter at (10.5,0.5) takes: filters, filter_mode (alias mode), use_filters, spoil_priority; and position, name, unit_number, platform, surface',1,true),err3)
 -- A chest: configure has nothing of its own for it.
 fails(function() astra('configure',{position={x=7.5,y=0.5},bar=4}) end,
   'iron-chest at (7.5,0.5) takes: nothing of its own: configure sets recipes (assembling machines), item filters (inserters, loaders, asteroid collectors), modules (machines with module slots), turret targets and rocket silo switches')

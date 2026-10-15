@@ -213,7 +213,10 @@ return function(api)
   -- cargo pod down from the hub; the body is made again where that pod comes
   -- down, wearing the same armor and guns. Same payload and the game's own
   -- ascent and descent time as a player's trip.
-  M.ABOARD_NOTE = 'platforms, platform_schedule, platform_create, requests (platform= or position=), drop (hub items down to the planet), ghost tools, grid/scan, inspect, circuit_set and wire with platform=, research, recipes/technologies, chat and board, then land'
+  M.ABOARD_NOTE = 'every read (status, scan, inspect, science, supply, networks, platforms, map, ...: of the platform, or of a planet with surface=) but inventory and craftable; '
+    .. 'tell, chat, say, operator, board and votes; research; platform_schedule, platform_create, requests (platform= or position=), drop (hub items down to the planet) and land; '
+    .. 'ghost tools, grid/scan, circuit_set and wire with platform=; sleep, and wait_until on platform_arrived, platform_left, researched, rocket_ready or item_count at positions. '
+    .. 'Nothing that needs a body: walking, mining, building or crafting by hand, your inventory'
   -- A ride never ends sooner than MIN_*: should the engine replace a pod
   -- entity on its way (unverified), the ride still takes its time.
   local ASCENT_TICKS, MAX_TRAVEL_TICKS, LAUNCH_WAIT, MIN_ASCENT, MIN_DESCENT = 2400, 18000, 300, 1200, 600
@@ -385,6 +388,14 @@ return function(api)
   -- Remote view of a platform or a planet by name (platform= or surface=).
   local REMOTE = {inspect=true, circuit_set=true, circuit=true, wire=true, trace=true, ores=true, preflight=true}
   local VIEWS = {platforms=true, sleep_check=true}
+  -- Astra, 18:16: aboard, tell, operator, scan with platform, science and wait_until platform_arrived were refused while
+  -- the refusal said grid/scan work. The team's calls work aboard, as every read does (the runtime's read-only list,
+  -- api.read_only) but the two about the character's own inventory; so do waits on conditions that need no body.
+  local TEAM = {tell=true, tells=true, operator=true, board=true, board_post=true, board_update=true, board_plan=true, board_events=true,
+    vote=true, votes=true, lookahead=true}
+  local BODY_READS = {inventory=true, craftable=true}
+  local BODYLESS_WAITS = {platform_arrived=true, platform_left=true, researched=true, rocket_ready=true}
+  REMOTE.scan = true
   function M.check_action(index, action, args)
     local b = bots().by_index[index]
     if not (b and b.travel) then return end
@@ -393,13 +404,16 @@ return function(api)
       error(no_body(b), 0)
     end
     args = type(args) == 'table' and args or {}
-    if ABOARD[action] then return end
+    if ABOARD[action] or TEAM[action] then return end
     -- A dry run is checked as the call it tries (dryrun.lua).
     if action == 'dry_run' and type(args.args) == 'table' then return M.check_action(index, args.action, args.args) end
     if ON_PLATFORM[action] and args.platform ~= nil then return end
     if REMOTE[action] and (args.platform ~= nil or args.surface ~= nil) then return end
     if action == 'requests' and (args.platform ~= nil or args.position ~= nil) then return end
     if action == 'observe' and VIEWS[args.scope] then return end
+    if api.read_only and api.read_only(action) and not BODY_READS[action] and not (action == 'observe' and BODY_READS[args.scope]) then return end
+    -- wait_until on a platform, the research, a silo, or counts at positions (no body needed).
+    if action == 'wait_until' and (BODYLESS_WAITS[args['until']] or (args['until'] == 'item_count' and (args.positions ~= nil or args.position ~= nil))) then return end
     error(no_body(b), 0)
   end
   -- A bot's corpse (Opus, shift12 15:20: a corpse recovery call). The game leaves a character-corpse where the
