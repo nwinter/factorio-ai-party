@@ -126,12 +126,19 @@ function parseUntil(text: string): Record<string, unknown> {
   const trimmed = text.trim();
   if (trimmed.startsWith('{')) return object(JSON.parse(trimmed),'--until');
   const [kind = '', ...rest] = trimmed.split(/\s+/);
-  const usage = '--until takes researched [TECH], crafting_done, item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, platform_arrived PLATFORM [PLANET], platform_left PLATFORM [PLANET], or a wait_until condition as JSON';
+  const usage = '--until takes researched [TECH], crafting_done, alert [KIND ...], item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, platform_arrived PLATFORM [PLANET], platform_left PLATFORM [PLANET], or a wait_until condition as JSON';
   if (kind === 'researched' || kind === 'research') {
     if (rest.length > 1) throw new Error(usage);
     return rest[0] ? {until:'researched', technology:rest[0]} : {until:'researched'};
   }
   if (kind === 'crafting_done' || kind === 'crafted') return {until:'crafting_done'};
+  // alert: a new attack, enemy group or enemy base alert; with kinds (Luna, 19:50), a new or grown alert group of
+  // those kinds addressed to you (low_power, no_power, no_fuel, ...), or starved: a machine in your claims that
+  // lacks ingredients (`alert low_power starved`, commas also separate).
+  if (kind === 'alert' || kind === 'alerts') {
+    const kinds = rest.join(' ').split(/[\s,]+/).filter(Boolean);
+    return kinds.length ? {until:'alert', kinds} : {until:'alert'};
+  }
   // A silo's rocket built and ready to launch (Luna, shift10: the rocket is no item to count).
   if (kind === 'rocket_ready') {
     const xy = rest.filter(word => word !== 'at').join('').match(/^\(?(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\)?$/);
@@ -177,12 +184,11 @@ function parseUntil(text: string): Record<string, unknown> {
 }
 /**
  * `fh wait --until EVENT`: tell (a tell or mention; any wait ends on those), alert (a new attack, enemy group or
- * enemy base alert), or a sleep condition as for `fh sleep --until` (researched, item_count, crafting_done, ...).
+ * enemy base alert; `alert KIND ...` for chosen kinds), or a sleep condition as for `fh sleep --until` (researched, item_count, crafting_done, ...).
  */
 function untilEvent(text: string | undefined): Record<string, unknown> | undefined {
   const kind = (text ?? '').trim().split(/\s+/)[0];
   if (!kind || kind === 'tell' || kind === 'tells' || kind === 'mention' || kind === 'told') return undefined;
-  if (kind === 'alert' || kind === 'alerts') return {until:'alert'};
   return parseUntil(text!);
 }
 /** The one line `fh wait --until` prints: what woke it, after how long, and what it was. */

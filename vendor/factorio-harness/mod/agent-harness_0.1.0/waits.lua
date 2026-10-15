@@ -9,11 +9,12 @@ return function(api)
   -- A queue step that walks the character and has not moved it for this long
   -- has stalled (shake4: Muse's move job stuck pathfinding through a sleep).
   local STILL_TICKS = 1800
+  local STARVED_TICKS = 600 -- a starved wake looks at the sleeper's claims every 10 s
   local MOVING = {walk=true, move_to=true, build_path=true, kite=true, collect=true, feed=true, rearm=true, refuel=true}
   local WAKE_VIEWERS = 'optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too; without it a viewer\'s @mention waits for your next reply (team block) and wakes nothing'
   M.schema = {
     wait_ticks = {ticks='1..54000 simulation ticks: the character stands idle that long (a direct timed action, outcome duration_elapsed, or told|mentioned when a tell or a teammate\'s mention ends it early; use --wait), or a queue step', wake_on_viewers=WAKE_VIEWERS, pause_queue='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'},
-    sleep = {seconds='1..900', condition='optional wait_until condition {until=researched|item_count|rocket_ready|crafting_done|..., ...}: the sleep also ends when it holds (woke=condition, saw); researched without technology means the research running now; item_count may take positions (chests); {until=alert}: a new attack, enemy group or enemy base alert (woke=alert)',
+    sleep = {seconds='1..900', condition='optional wait_until condition {until=researched|item_count|rocket_ready|crafting_done|..., ...}: the sleep also ends when it holds (woke=condition, saw); researched without technology means the research running now; item_count may take positions (chests); {until=alert}: a new attack, enemy group or enemy base alert (woke=alert); {until=alert, kinds=[low_power, no_power, no_fuel, ..., starved]}: a new or grown alert group of those kinds addressed to you, or (starved) a machine in your claims newly lacking ingredients (woke=alert, alert=its text)',
       peek='boolean: the reply leaves the team block for your next reply (fh wait --until)', wake_on_viewers=WAKE_VIEWERS,
       note='fh sleep SECONDS [--until ...]: waits while the game runs (in turns mode it advances the game); your current action and queue keep going, and the reply says first which (while_asleep). Returns early when your character takes damage or dies, a teammate\'s message mentions you (a viewer\'s @mention waits for your next reply unless wake_on_viewers), a teammate tells you something (tell), a board item of yours is assigned or changed by someone else, eggs of ours on your surface or built by you will hatch within 5 minutes (eggs), your running queue finishes or stalls (a step fails, or a walking step has not moved you for 30 s), or the condition holds; a dead bot sleeps until it respawns. sleep_check reports woke=damaged|died|respawned|mentioned|told|board|eggs|alert|queue_done|queue_stalled|condition|elapsed'},
     sleep_check = {peek='boolean: leave mentions unread (the CLI polls with peek, then reads once)', returns='woke (nil while sleeping), slept_s, health/lost when damaged, mention, tell, board, eggs, queue (what finished or stalled), saw (the condition), queue_steps (steps your queue finished during the sleep)'},
@@ -99,8 +100,17 @@ return function(api)
     if a.condition ~= nil then
       assert(type(a.condition) == 'table', 'condition is a wait_until condition: {until=..., ...}')
     end
-    -- until=alert (fh wait --until alert): a new attack, enemy group or enemy base alert for the team.
-    if a.condition ~= nil and a.condition['until'] == 'alert' then alert = true
+    -- until=alert (fh wait --until alert): a new attack, enemy group or enemy base alert for the team; with kinds
+    -- (Luna, 19:50: low power, starvation in a claim), a new or grown alert group of those kinds addressed to you, or
+    -- starved: a machine in one of your claims that lacks ingredients and did not when the sleep began.
+    local kinds
+    if a.condition ~= nil and a.condition['until'] == 'alert' then
+      alert = true
+      if a.condition.kinds ~= nil then
+        kinds = type(a.condition.kinds) == 'string' and {a.condition.kinds} or a.condition.kinds
+        assert(type(kinds) == 'table' and #kinds >= 1 and #kinds <= 16, 'kinds: 1..16 alert kinds (game_alerts names them: low_power, no_power, no_fuel, boiler_fuel, ...; starved: machines lacking ingredients in your claims)')
+        for _, k in ipairs(kinds) do assert(type(k) == 'string' and k:match('^[%w_.-]+$'), 'kinds are alert kind names') end
+      end
     elseif a.condition ~= nil then
       condition = {}
       for k, v in pairs(a.condition) do condition[k] = v end
@@ -121,7 +131,21 @@ return function(api)
     record.egg_seq = api.egg_seq and api.egg_seq() or nil
     local q = queue_of(p.index)
     if running(q) then record.queue = true end
-    if alert then record.alert_seq = api.state().alert_seq or 0 end
+    if alert and not kinds then record.alert_seq = api.state().alert_seq or 0 end
+    if kinds then
+      local starved, rest = false, {}
+      for _, k in ipairs(kinds) do if k == 'starved' then starved = true else rest[#rest+1] = k end end
+      record.alert_kinds = #rest > 0 and rest or nil
+      -- Only the levels and unit numbers are kept (the record lives in storage).
+      record.alert_base = {}
+      if record.alert_kinds and api.alert_levels then
+        for key, g in pairs(api.alert_levels(p, rest)) do record.alert_base[key] = g.level end
+      end
+      if starved and api.starved then
+        record.starved_base, record.starved_next = {}, game.tick + STARVED_TICKS
+        for unit in pairs(api.starved(p)) do record.starved_base[unit] = true end
+      end
+    end
     local out = {}
     out.while_asleep = asleep_line(p, record, seconds)
     record.while_asleep = out.while_asleep
@@ -149,7 +173,7 @@ return function(api)
     else
       out.wakes_on = 'damage, death, ' .. mentions .. ', a tell, a board item of yours' ..
         (record.queue and ', your queue finishing or stalling' or '') .. (condition and ', the condition' or '') .. (alert and ', a new alert' or '')
-      if alert then out.condition = 'alert' end
+      if alert then out.condition = kinds and 'alert ' .. table.concat(kinds, ' ') or 'alert' end
     end
     return out
   end
@@ -227,6 +251,20 @@ return function(api)
     if record.alert_seq and (api.state().alert_seq or 0) > record.alert_seq then
       out.alert = 'a new attack, enemy group or enemy base alert (your next reply\'s team alerts)'
       return 'alert'
+    end
+    -- Chosen kinds: a group of them new or grown since the sleep began.
+    if record.alert_kinds and api.alert_levels then
+      for key, g in pairs(api.alert_levels(p, record.alert_kinds)) do
+        local was = record.alert_base[key]
+        if not was or g.level > was then out.alert = g.text; return 'alert' end
+      end
+    end
+    -- starved: a machine in your claims lacking ingredients that did not at the start (looked at every 10 s).
+    if record.starved_base and game.tick >= record.starved_next then
+      record.starved_next = game.tick + STARVED_TICKS
+      for unit, line in pairs(api.starved(p)) do
+        if not record.starved_base[unit] then out.alert = line; return 'alert' end
+      end
     end
     if record.condition and c and c.valid then
       local ok, met, saw = pcall(api.condition, p, record.condition)

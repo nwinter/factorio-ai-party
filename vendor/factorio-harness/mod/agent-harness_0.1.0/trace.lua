@@ -338,6 +338,14 @@ return function(api)
       row.text = table.concat(parts, '; ')
       out.ingredients[#out.ingredients+1] = row
     end
+    -- throughput (Sol, 19:50): the inserters into and out of it against its recipe at full speed (craftrate.feed).
+    if CRAFTER[e.type] and api.feed then
+      local into, from = {}, {}
+      for _, row in ipairs(feeders) do into[#into+1] = row.e end
+      for _, row in ipairs(idx.by_pick[e.unit_number] or {}) do from[#from+1] = row.e end
+      local fd = try(function() return api.feed(e, into, from) end)
+      if fd then out.throughput = fd.line end
+    end
     out.cost = string.format('%d inserters, %d containers looked at', idx.n, #boxes)
     return out
   end
@@ -1027,7 +1035,7 @@ return function(api)
     surface='with item: a surface name (default yours)',
     near='with item: optional {x,y}: makers and labs in this area only (cheaper than the whole surface)', radius='with near: 1..512 tiles (default 64)',
     platform='optional platform name: trace on that platform (platform coordinates, hub at 0,0)',
-    returns='position: per ingredient it lacks (has/needs) each feeding inserter (status, filter, held), its pickup target (a chest, a machine\'s output, a belt tile with each lane) and what that holds, and the nearest container within 10 tiles holding it that no inserter reads; feeders. forward: takers (a belt tile: belt, lanes); merges (every route\'s, once); routes [{from, path (belt runs, undergrounds, splitters with filters, as flown), carries, merges (where other items join the lane: the belt it joins carrying them, a belt side-loading them onto it, a splitter\'s other input, an inserter putting them onto it; each with what the lane carried up to there), takers (status, filter, held, into), stop (belt end with each lane and full, the front item, joins another route, the cap), nobody_takes}]. item: makers, routes, direct, reaches, labs_short and labs (each short lab: the route reaching it, else its own inserters and what they read, and the nearest route tile). cost'},
+    returns='position: per ingredient it lacks (has/needs) each feeding inserter (status, filter, held), its pickup target (a chest, a machine\'s output, a belt tile with each lane) and what that holds, and the nearest container within 10 tiles holding it that no inserter reads; feeders; throughput (a crafting machine whose inserters in or out carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, and how many like its fastest it takes). forward: takers (a belt tile: belt, lanes); merges (every route\'s, once); routes [{from, path (belt runs, undergrounds, splitters with filters, as flown), carries, merges (where other items join the lane: the belt it joins carrying them, a belt side-loading them onto it, a splitter\'s other input, an inserter putting them onto it; each with what the lane carried up to there), takers (status, filter, held, into), stop (belt end with each lane and full, the front item, joins another route, the cap), nobody_takes}]. item: makers, routes, direct, reaches, labs_short and labs (each short lab: the route reaching it, else its own inserters and what they read, and the nearest route tile). cost'},
   }
   return M
 end
