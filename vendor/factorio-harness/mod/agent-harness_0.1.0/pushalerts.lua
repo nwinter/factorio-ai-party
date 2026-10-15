@@ -754,6 +754,53 @@ return function(api)
     for _, s in ipairs(order) do parts[#parts+1] = s .. ' ' .. by[s] end
     return string.format('drills out of ore: %d (%s)', total, table.concat(parts, ', '))
   end
+  -- For a sleep that wakes on chosen alert kinds (Luna, 19:50: low power, starvation in a claim): the groups of those
+  -- kinds addressed to p now (a kind matches its own sub-kinds: lost_source matches lost_source.boiler), each
+  -- {level, text}; a group new since the sleep began, or grown, wakes it (waits.lua).
+  local function kind_matches(kind, kinds)
+    for _, k in ipairs(kinds) do
+      if kind == k or kind:sub(1, #k + 1) == k .. '.' then return true end
+    end
+    return false
+  end
+  function M.levels(p, kinds)
+    local c = current(p.force)
+    local me = api.who(p)
+    local here = try(function() return p.surface.name end)
+    local who, out = roster(), {}
+    for _, g in ipairs(c.groups) do
+      if g.kind and kind_matches(g.kind, kinds) and owners(g, who)[me] then
+        out[g.key] = {level=g.rank or g.n, text=M.text(g, here, nil, true)}
+      end
+    end
+    return out
+  end
+  -- Machines in p's own active board claims that lack ingredients now (assemblers and furnaces, the game's status):
+  -- {unit = line}; at most STARVED_FIND a claim.
+  local STARVED_FIND = 500
+  local STARVED = {item_ingredient_shortage=true, fluid_ingredient_shortage=true, no_ingredients=true}
+  function M.starved(p)
+    local me = api.who(p)
+    local board = api.state().board
+    local out = {}
+    for _, i in pairs(board and board.items or {}) do
+      local a = i.area
+      if i.kind == 'claim' and ACTIVE[i.status] and i.owner == me and a then
+        local name, surface = api.claim_surface and api.claim_surface(i) or i.surface or 'nauvis', nil
+        for _, x in pairs(game.surfaces) do if x.name == name then surface = x end end
+        for _, e in ipairs(surface and try(function()
+          return surface.find_entities_filtered{area={{a.left_top.x, a.left_top.y}, {a.right_bottom.x, a.right_bottom.y}}, force=p.force, type={'assembling-machine', 'furnace'}, limit=STARVED_FIND}
+        end) or {}) do
+          local status = e.valid and api.status_name and api.status_name(e)
+          if status and STARVED[status] and e.unit_number then
+            out[e.unit_number] = string.format('%s %s in your claim "%s" %s', e.name, string.format('(%g,%g)', e.position.x, e.position.y),
+              tostring(i.title or i.id), status:gsub('_', ' '))
+          end
+        end
+      end
+    end
+    return out
+  end
   -- Groups now in p's own board claims (selfview.lua review), worst first, without hints.
   function M.claim_lines(p)
     local c = current(p.force)

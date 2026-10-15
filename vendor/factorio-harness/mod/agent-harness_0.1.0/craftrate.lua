@@ -103,5 +103,58 @@ return function(api)
     out.machine = machine
     return out
   end
+  -- An inserter's throughput: one swing per revolution of its arm, stack sized by its prototype and the force's bonuses
+  -- (rates.lua's estimate; extension time and belt pickup make real inserters a little slower). Items a second.
+  function M.inserter_rate(e)
+    local proto, force = e.prototype, e.force
+    local stack = 1 + (proto.inserter_stack_size_bonus or 0)
+    if proto.uses_inserter_stack_size_bonus ~= false then
+      stack = stack + ((proto.bulk and force.bulk_inserter_capacity_bonus or force.inserter_stack_size_bonus) or 0)
+    end
+    local override = try(function() return e.inserter_stack_size_override end) or 0
+    if override > 0 then stack = math.min(stack, override) end
+    return proto.get_inserter_rotation_speed(e.quality) * 60 * stack
+  end
+  -- feed (Sol, 19:50: a standard inserter capped green circuits at 37.5/min): the inserters dropping into a crafting
+  -- machine against the items its recipe takes a minute at full speed, and those taking from it against what it
+  -- makes. Only sides with inserters are read (a machine fed by a loader or by hand has none). Each side short of
+  -- the recipe's rate: the inserters with their rate, the share of full speed they allow, and how many inserters
+  -- like its fastest the recipe takes. Nil when nothing is short or the machine has no recipe.
+  local function side(rows, need, what)
+    if #rows == 0 or need <= 0 then return nil end
+    local cap, best, list = 0, nil, {}
+    for _, i in ipairs(rows) do
+      local r = try(function() return M.inserter_rate(i) end)
+      if r then
+        cap = cap + r * 60
+        if not best or r > best.r then best = {e=i, r=r} end
+        list[#list+1] = string.format('%s (%g,%g) %s/min', i.name, i.position.x, i.position.y, num(r * 60))
+      end
+    end
+    if not best or cap >= need * 0.99 then return nil end
+    local each = best.r * 60
+    return {inserters=list, per_min=r1(cap), needs_per_min=r1(need), share=r1(cap / need * 100),
+      line=string.format('%s: %d %s at most %s/min (%s); %s %s/min at full speed, so it runs at most %d%% of full speed; it takes %d inserters like %s (%s/min each)',
+        what, #list, #list == 1 and 'inserter carries' or 'inserters carry', num(cap), table.concat(list, ', '), what == 'input' and 'the recipe takes' or 'it makes', num(need),
+        math.floor(cap / need * 100 + 0.5), math.ceil(need / each - 0.0001), best.e.name, num(each))}
+  end
+  function M.feed(e, into, from)
+    local rate = M.machine(e)
+    if not rate then return nil end
+    local need, made = 0, 0
+    for _, ing in ipairs(rate.ingredients) do
+      if not (prototypes.fluid and prototypes.fluid[ing.name]) then need = need + ing.per_min end
+    end
+    for _, p in ipairs(rate.products) do
+      if not (prototypes.fluid and prototypes.fluid[p.name]) then made = made + p.per_min end
+    end
+    local input, output = side(into or {}, need, 'input'), side(from or {}, made, 'output')
+    if not input and not output then return nil end
+    local lines = {}
+    if input then lines[#lines+1] = input.line end
+    if output then lines[#lines+1] = output.line end
+    return {recipe=rate.recipe, input=input, output=output, line=string.format('%s %s (%s): %s', e.name, string.format('(%g,%g)', e.position.x, e.position.y),
+      rate.recipe, table.concat(lines, '; '))}
+  end
   return M
 end

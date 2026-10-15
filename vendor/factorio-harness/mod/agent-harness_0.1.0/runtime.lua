@@ -1287,7 +1287,7 @@ function handlers.describe()
       rates={area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',
         returns='rows per item: produced, consumed, net at full speed, by/into machines x count; power produced/consumed; errors (no_recipe, no_fuel, no_power, no_resources, ...)',
         note='Rate Calculator formulas: recipe, crafting speed, modules, beacons, productivity, quality, fuel, drill resources; our machines only'},
-      bottleneck={item='or an item or fluid name: its recipe chain on the surface followed down to where the shortage starts (Sonnet, 15:20): line (each step: its makers by state and what most of them lack, made and used per minute), path, root (the last step), not_working (per step of the path up to 3 makers not working: position, state, what they lack), steps (every step of the tree); kept 10 s',surface='with item: a surface name (default yours)',
+      bottleneck={item='or an item or fluid name: its recipe chain on the surface followed down to where the shortage starts (Sonnet, 15:20): line (each step: its makers by state and what most of them lack, made and used per minute), path, root (the last step), not_working (per step of the path up to 3 makers not working: position, state, what they lack), fixes (a starved one\'s nearest chest within 64 tiles holding what it lacks, and one transfer call carrying it there), steps (every step of the tree); kept 10 s',surface='with item: a surface name (default yours)',
         per_min='with item: a target rate (items a minute): target {per_min, line, steps [{item, depth, need_per_min (for the target; an item two steps need adds up), made_per_min (now, last 10 min), recipe (the one most of its makers run), makers, machine, crafts_per_min_each (at their speed, modules and beacons in it), productivity_pct (theirs plus the recipe research), per_min_each, machines_for_target, full_speed_per_min (the makers there at full speed), miners, line}]}: mining drills by their mining speed on their resource, offshore pumps by pumping speed, a pumpjack\'s yield not counted; a step no maker on the surface makes is followed by its recipe of that name',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',
         returns='groups (machine+recipe x count, status counts, short = missing ingredients), limits (input/output inserters slower than the machine at full speed), needs (items consumed beyond area production /min, flagged over one belt), inserters (waiting for source/space), belt_capacity',
         note='inserter rates are estimates (arm rotation x stack size)'},
@@ -8540,7 +8540,9 @@ M.waits=require('waits'){state=state,integer=integer,
   dead_until=function(index) local b=M.bots.record(index); return b and not b.travel and not M.bots.alive(b) and b.dead_until_tick or nil end,
   board_seq=function() return M.board.seq() end,board_news=function(p,seq) return M.board.news(p,seq) end,
   egg_seq=function() return M.spoil.seq() end,egg_news=function(p,seq) return M.spoil.news(p,seq,M.board.who(p)) end,
-  condition=function(p,c) return conditions.check(p,c) end,validate_condition=function(c) return conditions.validate(c) end}
+  condition=function(p,c) return conditions.check(p,c) end,validate_condition=function(c) return conditions.validate(c) end,
+  -- chosen alert kinds (Luna, 19:50): the push alert groups of those kinds for p, and machines starving in its claims
+  alert_levels=function(p,kinds) return M.pushalerts.levels(p,kinds) end,starved=function(p) return M.pushalerts.starved(p) end}
 for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
@@ -9521,8 +9523,10 @@ survey=survey_module{state=state,timed=M.timed,status_name=function(e) return en
 M.supply=require('supply'){timed=M.timed,integer=integer,position=position,status_name=function(e) return entity_status_names[e.status] end,spoil=M.spoil,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 function handlers.supply(p,a) return M.supply.supply(p,a) end
+-- throughput's inserters against recipes (craftrate.feed; Sol, 19:50)
+M.supply.feed=function(e,into,from) return M.craftrate.feed(e,into,from) end
 -- trace: a machine's feeders and their sources, its output followed to where it ends, an item's routes (trace.lua).
-M.trace=require('trace'){supply=M.supply,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return entity_status_names[e.status] end}
+M.trace=require('trace'){supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return entity_status_names[e.status] end}
 -- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,supply=M.supply}
@@ -9574,6 +9578,7 @@ M.lightning=require('lightning'){}
 M.pushalerts=require('pushalerts'){state=state,timed=M.timed,agents=function() return M.board.agents() end,who=M.board.who,
   first_spoil=function(inv) return survey.first_spoil(inv) end,
   claim_surface=function(i) return M.claims.surface_of(i) end,
+  status_name=function(e) return entity_status_names[e.status] end,
   place=function(index) return M.where.place(index) end,targets=M.targets,
   network_groups=function(force)
     local out=M.networks.alert_groups(force)
