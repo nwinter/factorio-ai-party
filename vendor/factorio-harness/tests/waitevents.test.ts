@@ -241,6 +241,9 @@ test('fh wait/sleep --until A|B: whichever holds first (Grok: alert|platform_arr
     await cli(port,['wait','--until','tell|mention','--max','30'],'compact');
     await cli(port,['wait','--until','[{"until":"crafting_done"},{"until":"alert","kinds":["no_power"]}]','--max','60'],'compact');
     await cli(port,['sleep','45','--until','crafting_done | researched'],'compact');
+    await cli(port,['sleep','30','--until','tell|alert'],'compact');
+    await cli(port,['sleep','30','--until','tell|mention'],'compact');
+    await cli(port,['sleep','30','--until','tell|alert|item_count item=coal at_least=50 platform=Sunward'],'compact');
   });
   const sleeps=seen.filter(r=>r.action==='sleep');
   assert.deepEqual(sleeps.map(r=>[r.args.seconds,r.args.condition]),[
@@ -248,7 +251,9 @@ test('fh wait/sleep --until A|B: whichever holds first (Grok: alert|platform_arr
     [120,{until:'any',conditions:[{until:'item_count',item:'coal',at_least:50,positions:[{x:10,y:39}]},{until:'item_count',item:'iron-plate',at_least:100,positions:[{x:12,y:39}]}]}],
     [30,undefined],
     [60,{until:'any',conditions:[{until:'crafting_done'},{until:'alert',kinds:['no_power']}]}],
-    [45,{until:'any',conditions:[{until:'crafting_done'},{until:'researched'}]}]]);
+    [45,{until:'any',conditions:[{until:'crafting_done'},{until:'researched'}]}],
+    [30,{until:'alert'}],[30,undefined],
+    [30,{until:'any',conditions:[{until:'alert'},{until:'item_count',item:'coal',at_least:50,platform:'Sunward'}]}]]);
 });
 test('fh wait --max S waits for the action to end, at most S s; at once when idle; --until idle the same',async()=>{
   // friction1300 (Grok, Haiku): `fh wait --max 150` slept the whole 150 s while the walk had ended after 46.
