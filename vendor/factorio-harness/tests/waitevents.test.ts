@@ -589,3 +589,26 @@ test('--wake-on-viewers asks a sleep and a direct wait for it; a runtime without
     assert.equal(waits.length,2); assert.equal(waits[1].args.wake_on_viewers,undefined); assert.notEqual(waits[0].id,waits[1].id);
   });
 });
+test('urgent alerts (d15): --until alert takes an area and size filter, --no-urgent opts out, the wake line names the alert',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{
+    seen.push(request);
+    if(request.action==='sleep')return {ok:true,result:{while_asleep:'no queue and no action',sleeping_s:request.args.seconds}};
+    if(request.action==='wait_ticks')return {ok:true,result:{until_tick:100}};
+    return {ok:true,result:{slept_s:3,woke:'urgent',urgent:'attack on our structures 14 tiles from you: attack #40 at (10,10)'}};
+  },async port=>{
+    const {stdout}=await cli(port,['wait','--until','alert near=10,-40 radius=80 min_size=5','--max','300'],'compact');
+    assert.equal(stdout,"woke: urgent after 3 s (attack on our structures 14 tiles from you: attack #40 at (10,10)); your next reply's team block has the rest\n");
+    await cli(port,['sleep','120','--until','alert area=-50,-50,50,50 surface=gleba','--no-urgent'],'compact');
+    await cli(port,['wait','--until','tell|alert min_size=3'],'compact');
+    await assert.rejects(cli(port,['wait','--until','alert low_power min_size=3']),(error:any)=>/kinds .* or a filter/.test(error.stdout+error.stderr));
+    await assert.rejects(cli(port,['wait','--until','alert near=1']),(error:any)=>/near= takes 2 numbers/.test(error.stdout+error.stderr));
+    await cli(port,['call','wait_ticks','--args','{"ticks":60}','--no-urgent'],'compact');
+  });
+  const sleeps=seen.filter(r=>r.action==='sleep');
+  assert.deepEqual(sleeps.map(r=>[r.args.seconds,r.args.condition,r.args.wake_on_urgent]),[
+    [300,{until:'alert',near:{x:10,y:-40},radius:80,min_size:5},undefined],
+    [120,{until:'alert',area:{left_top:{x:-50,y:-50},right_bottom:{x:50,y:50}},surface:'gleba'},false],
+    [600,{until:'alert',min_size:3},undefined]]);
+  assert.equal(seen.find(r=>r.action==='wait_ticks').args.wake_on_urgent,false);
+});

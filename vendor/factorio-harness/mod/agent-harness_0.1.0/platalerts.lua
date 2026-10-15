@@ -233,6 +233,14 @@ return function(api)
     table.sort(out, function(a, b) return a.last_tick > b.last_tick end)
     return #out > 0 and out or nil
   end
+  -- Whether p hears about the platform named `name` (urgent.lua: hub damage and losses wake those it would tell).
+  function M.hears(p, name)
+    local me = api.who(p)
+    for _, pl in pairs(p.force.platforms) do
+      if pl.valid and pl.name == name then return addressed(pl, rec(pl), me) end
+    end
+    return false
+  end
   -- The lines for agent p; h is its hint state (board.lua).
   function M.lines(p, h)
     local by = store().by

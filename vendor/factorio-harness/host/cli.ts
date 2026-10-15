@@ -93,6 +93,7 @@ Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT),
          --wait, --wait-timeout MS (default: until the action's own end tick, at least 30000), --journal PATH, --args-file PATH
          --wait-through-tells (a tell or mention does not end the wait; told_during_wait lists them at the end)
          --wake-on-viewers (fh sleep, fh wait, --wait: a viewer's @mention ends it too; by default it waits for your next reply)
+         --no-urgent (fh sleep, fh wait --until, direct wait_ticks/wait_until: an urgent alert does not end it; by default it does)
          Exit codes: 0 done, 1 failed, 3 the wait ended while the action still runs (a tell or mention, or the wait timeout)
          --full (after --wait: the whole status instead of outcome, position and inventory change)
          --since SEQ (chat, board events), --limit N, --deadline-file PATH (FH_DEADLINE_FILE: time left on the clock line)
@@ -146,7 +147,29 @@ function parseUntil(text: string): Record<string, unknown> {
   // alert: a new attack, enemy group or enemy base alert; with kinds (Luna, 19:50), a new or grown alert group of
   // those kinds addressed to you (low_power, no_power, no_fuel, ...), or starved: a machine in your claims that
   // lacks ingredients (`alert low_power starved`, commas also separate).
+  // A filter by area and size (Haiku, d15 06:20: "an alert filter by area or minimum size"): near=X,Y [radius=R],
+  // area=X1,Y1,X2,Y2, min_size=N, surface=NAME (`alert near=10,-40 radius=80 min_size=5`); it takes no kinds.
   if (kind === 'alert' || kind === 'alerts') {
+    const pairs = rest.filter(word => word.includes('='));
+    if (pairs.length) {
+      if (pairs.length !== rest.length) throw new Error('--until alert takes kinds (alert low_power starved) or a filter (alert near=X,Y radius=R min_size=N, area=X1,Y1,X2,Y2, surface=NAME), not both');
+      const condition: Record<string, unknown> = {until:'alert'};
+      const numbers = (v: string, n: number, name: string) => {
+        const list = v.replace(/[()]/g, '').split(',').map(Number);
+        if (list.length !== n || list.some(x => !Number.isFinite(x))) throw new Error(`--until alert ${name}= takes ${n === 1 ? 'a number' : `${n} numbers joined by commas`}`);
+        return list;
+      };
+      for (const pair of pairs) {
+        const at = pair.indexOf('='), key = pair.slice(0, at), v = pair.slice(at + 1);
+        if (key === 'near' || key === 'at') { const [x, y] = numbers(v, 2, key); condition.near = {x, y}; }
+        else if (key === 'radius') condition.radius = numbers(v, 1, key)[0];
+        else if (key === 'min_size' || key === 'size') condition.min_size = numbers(v, 1, key)[0];
+        else if (key === 'area') { const [x1, y1, x2, y2] = numbers(v, 4, key); condition.area = {left_top:{x:x1, y:y1}, right_bottom:{x:x2, y:y2}}; }
+        else if (key === 'surface') condition.surface = v;
+        else throw new Error(`--until alert filter keys are near, radius, area, min_size and surface (not ${key})`);
+      }
+      return condition;
+    }
     const kinds = rest.join(' ').split(/[\s,]+/).filter(Boolean);
     return kinds.length ? {until:'alert', kinds} : {until:'alert'};
   }
@@ -271,11 +294,11 @@ function untilEvent(text: string | undefined): Record<string, unknown> | undefin
 function wakeLine(reply: Reply): string {
   const r = reply.result ?? {};
   const said = (value: unknown) => String(value).replace(/\s*\n\s*/g, ' ');
-  const detail = r.tell ?? r.mention ?? r.board ?? r.eggs ?? r.alert ?? r.queue
+  const detail = r.urgent ?? r.tell ?? r.mention ?? r.board ?? r.eggs ?? r.alert ?? r.queue
     ?? (r.woke === 'condition' && r.saw !== undefined ? `${r.met ? `${r.met}: ` : ''}saw ${typeof r.saw === 'string' ? r.saw : JSON.stringify(r.saw)}` : undefined)
     // (round1950a: and where the character walks away to when hit with nothing walking it)
     ?? (r.woke === 'damaged' ? `health ${r.health}${r.by ? `, hit by ${r.by}` : ''}${r.fled ? `; ${r.fled}` : ''}` : undefined) ?? r.note;
-  const more = r.full ? '' : ['told','mentioned','board','eggs','alert','damaged'].includes(r.woke) ? '; your next reply\'s team block has the rest' : '';
+  const more = r.full ? '' : ['told','mentioned','board','eggs','alert','urgent','damaged'].includes(r.woke) ? '; your next reply\'s team block has the rest' : '';
   return `woke: ${r.woke ?? 'nothing'} after ${r.slept_s ?? 0} s${detail !== undefined ? ` (${said(detail)})` : ''}${r.wait_line ? `; ${said(r.wait_line)}` : ''}${more}`;
 }
 function deployingCommand(command: string): boolean { return command === 'deploy' || command === 'watch'; }
@@ -512,7 +535,7 @@ async function main() {
     format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
     host:{type:'string'}, port:{type:'string'}, timeout:{type:'string'}, id:{type:'string'},
     file:{type:'string'}, out:{type:'string'}, mods:{type:'string'}, journal:{type:'string'},
-    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'},
+    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'},
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
@@ -877,7 +900,7 @@ async function main() {
   // target_destroyed: a shoot at an entity ended because it is gone.
   // transferred: a transfer that walked (walk, pick, a courier's to) moved items (Astra 07:53: exit 1 'Control ended:
   // transferred' after moving 200 solid fuel); unreached and nothing_collected still fail.
-  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear','dropped','transferred','previewed',
+  const successfulOutcomes = ['told','mentioned','urgent','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear','dropped','transferred','previewed',
     // clear_cliffs (use_item cliff-explosives): the explosives destroyed cliffs (Sol 17:21/17:32: fh wait exited 1 on it)
     'cliffs_destroyed',
     // load_silo walk (Luna, shift14 21:20): the list aboard, and launched; short and no_rocket still fail.
@@ -1212,8 +1235,15 @@ async function main() {
     // quiet (fh wait --until): peek requests leave the team block for the agent's next reply; one line out.
     // --wake-on-viewers: a viewer's @mention ends the sleep too (a runtime from before it ends a sleep on one anyway).
     let viewers = wakeViewers;
-    const sleepArgs = (peek: boolean) => ({seconds, ...(condition ? {condition} : {}), ...(peek ? {peek:true} : {}), ...(viewers ? {wake_on_viewers:true} : {})});
+    // --no-urgent: an urgent alert does not end it (urgent.lua; a runtime from before urgent wakes takes no wake_on_urgent).
+    let noUrgent = values['no-urgent'] === true;
+    const sleepArgs = (peek: boolean) => ({seconds, ...(condition ? {condition} : {}), ...(peek ? {peek:true} : {}), ...(viewers ? {wake_on_viewers:true} : {}),
+      ...(noUrgent ? {wake_on_urgent:false} : {})});
     let started = await harness.request('sleep',sleepArgs(quiet));
+    if (!started.ok && noUrgent && /unknown argument wake_on_urgent/.test(String(started.error?.message ?? ''))) {
+      noUrgent = false;
+      started = await harness.request('sleep',sleepArgs(quiet));
+    }
     if (!started.ok && viewers && /unknown argument wake_on_viewers/.test(String(started.error?.message ?? ''))) {
       viewers = false;
       started = await harness.request('sleep',sleepArgs(quiet));
@@ -1390,6 +1420,8 @@ async function main() {
     // --wake-on-viewers: a direct wait ends on a viewer's @mention too (the runtime ends it told|mentioned).
     const viewersArg = wakeViewers && (action === 'wait_ticks' || action === 'wait_until') && args.wake_on_viewers === undefined;
     if (viewersArg) args = {...args, wake_on_viewers:true};
+    // --no-urgent: an urgent alert does not end a direct wait (by default it ends it, outcome urgent, last.why naming it).
+    if (values['no-urgent'] === true && (action === 'wait_ticks' || action === 'wait_until') && args.wake_on_urgent === undefined) args = {...args, wake_on_urgent:false};
     let reply: Reply;
     try {
       reply = await harness.request(action,args,requestId);

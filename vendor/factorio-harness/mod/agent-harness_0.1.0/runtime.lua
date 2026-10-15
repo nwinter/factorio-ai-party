@@ -9624,7 +9624,11 @@ M.waits=require('waits'){state=state,integer=integer,
   condition=function(p,c,record) return M.waiteta.check(p,c,record) end,validate_condition=function(c) return conditions.validate(c) end,
   wait_info=function(out,record) return M.waiteta.info(out,record) end,
   -- chosen alert kinds (Luna, 19:50): the push alert groups of those kinds for p, and machines starving in its claims
-  alert_levels=function(p,kinds) return M.pushalerts.levels(p,kinds) end,starved=function(p) return M.pushalerts.starved(p) end}
+  alert_levels=function(p,kinds) return M.pushalerts.levels(p,kinds) end,starved=function(p) return M.pushalerts.starved(p) end,
+  -- urgent alerts wake every sleep and direct wait (urgent.lua); until=alert names its alert, filtered by area and size
+  urgent_base=function(p) return M.urgent.base(p) end,urgent=function(p,base) return M.urgent.check(p,base) end,
+  alert_line=function(p,from,filter) return M.urgent.alert(p,from,filter) end,alert_filter=function(m,p) return M.urgent.filter(m,p) end,
+  alert_filter_text=function(f) return M.urgent.filter_text(f) end}
 for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
@@ -9842,11 +9846,13 @@ function handlers.cameras() return M.cameras.list() end
 function handlers.wait_until(p,a)
   assert(a.wake_on_viewers==nil or type(a.wake_on_viewers)=='boolean','wake_on_viewers must be true or false')
   assert(a.wake_on_messages==nil or type(a.wake_on_messages)=='boolean','wake_on_messages must be true or false')
+  assert(a.wake_on_urgent==nil or type(a.wake_on_urgent)=='boolean','wake_on_urgent must be true or false')
   local viewers=a.wake_on_viewers==true or nil
   local messages=a.wake_on_messages
-  if a.pause_queue~=nil or a.wake_on_viewers~=nil or messages~=nil then
+  local urgent=a.wake_on_urgent~=false and M.urgent.base(p) or nil
+  if a.pause_queue~=nil or a.wake_on_viewers~=nil or messages~=nil or a.wake_on_urgent~=nil then
     local copy={}
-    for k,v in pairs(a) do if k~='pause_queue' and k~='wake_on_viewers' and k~='wake_on_messages' then copy[k]=v end end
+    for k,v in pairs(a) do if k~='pause_queue' and k~='wake_on_viewers' and k~='wake_on_messages' and k~='wake_on_urgent' then copy[k]=v end end
     a=copy
   end
   conditions.validate(a)
@@ -9855,7 +9861,7 @@ function handlers.wait_until(p,a)
   for k,v in pairs(a) do if k~='timeout' and k~='pause_queue' then condition[k]=v end end
   -- Met already: done at once, like construct with nothing to do.
   local record={kind='wait_until',condition=condition,until_tick=game.tick+timeout,next_check=game.tick+FEED_CHECK,start_tick=game.tick,
-    wake_viewers=viewers,wake_messages=messages}
+    wake_viewers=viewers,wake_messages=messages,urgent=urgent}
   local ok,met,saw=pcall(M.waiteta.check,p,condition,record)
   -- error, not assert: Factorio's Lua 5.2 assert puts the source line in front of the reason.
   if not ok then error(met,0) end
@@ -10776,6 +10782,11 @@ M.engine=require('engine'){state=state}
 M.chronicle=require('chronicle'){state=state,where=function(pl) return M.freight and M.freight.where(pl) end,
   owner=function(c) return M.character_owner(c) end}
 for name,handler in pairs(M.chronicle.handlers) do handlers[name]=handler end
+-- Urgent alerts that end every sleep and direct wait (Nick, d15 06:17; urgent.lua), and until=alert's filter.
+M.urgent=require('urgent'){state=state,who=function(p) return M.board.who(p) end,
+  attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,
+  claim_surface=function(i) return M.claims.surface_of(i) end,claim_stale=function(i) return M.claims.stale(i) end,
+  platform_hears=function(p,name) return M.platalerts.hears(p,name) end,power_view=function(f) return M.networks.cached_view(f) end}
 space=space_module{chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,
@@ -11315,6 +11326,10 @@ function M.tick_action(index,action,event)
     local _,kind,from=M.board.inbox_tick(index,action.wake_viewers)
     action.told=from and kind..' by '..from or kind
     finish(index,kind)
+  elseif (action.kind=='wait_ticks' or action.kind=='wait_until') and not action.queued and action.urgent and event.tick%60==0
+    and M.urgent.waking(p,action) then
+    -- An urgent alert ends a direct wait as it ends a sleep (urgent.lua; last.why names it).
+    finish(index,'urgent')
   elseif event.tick>action.until_tick then
     finish(index,(action.kind=='move_to' or action.kind=='build_path' or action.kind=='construct' or (action.kind=='mine' and action.tiles) or action.kind=='kite' or action.kind=='feed' or action.kind=='gather' or action.kind=='wait_until' or action.kind=='drive' or action.area~=nil or (action.kind=='repair' and action.targets~=nil)) and 'timed_out' or 'duration_elapsed')
   elseif action.kind=='wait_until' then
