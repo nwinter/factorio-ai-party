@@ -365,7 +365,8 @@ already targets your character.
   chests near the silo. A silo's transfer inventories: `assembling_machine_input` (alias `parts`, the rocket-part
   ingredients) and `rocket_silo_rocket` (alias `cargo`, what goes up with the rocket); `inspect` lists them with a call each.
 - `./fh call load_silo --args '{"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","position":{"x":65.5,"y":14.5},"to_total":true}' --wait`
-  loads the list into the rocket from your inventory and our chests in reach (`from` for given chests) and launches
+  loads the list into the rocket from your inventory and our chests in reach (any chest kind, logistic chests and a
+  landing pad too, nearest first; `from` for given chests) and launches
   in the same tick once every count is aboard; before the rocket is ready it waits for it. `./fh call preflight` (silo
   `position`, optional `items`, `platform`) shows the cargo against 1000 kg and 20 slots, what a list lacks, and the
   platform's requests from this planet less its hub and this rocket. `launch` takes `min_cargo` and `arrived: true`,

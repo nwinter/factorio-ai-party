@@ -23,9 +23,14 @@ return function(api)
   local function key(name, quality) return name .. '@' .. (quality or 'normal') end
   local function weight(name) return try(function() return prototypes.item[name].weight end) or 0 end
   local function stack_size(name) return try(function() return prototypes.item[name].stack_size end) or 1 end
-  -- A stack's quality: a name (get_contents rows) or a LuaQualityPrototype, which is userdata in the game (round1650d:
-  -- load_silo matched no stack of the inventory or a chest, "held only 0", for Grok, Gemini, Astra and Sonnet).
-  local function quality_of(s) local q = s.quality; if type(q) == 'string' then return q end; return q and q.name or 'normal' end
+  -- An item stack's quality is a LuaQualityPrototype (userdata in the game, not a table: Gemini 18:21, load_silo matched
+  -- no stack while it read only a table's name); a contents row's is its name.
+  local function quality_of(s)
+    local q = s.quality
+    if q == nil then return 'normal' end
+    if type(q) == 'string' then return q end
+    return try(function() return q.name end) or 'normal'
+  end
 
   -- An item list: {name: count} or [{item (or name), count, quality?}]; repeated entries add up.
   function M.items(v, what)
@@ -141,14 +146,18 @@ return function(api)
   end
 
   -- Chests -------------------------------------------------------------------------
-  local CHEST_TYPES = {'container', 'logistic-container'}
+  -- Every chest kind: chests, logistic chests (requester, buffer, provider, storage), linked and infinity chests, and
+  -- a cargo landing pad.
+  local CHEST_TYPES = {'container', 'logistic-container', 'linked-container', 'infinity-container', 'cargo-landing-pad'}
   local function chest_inventory(c)
     return try(function() return c.get_inventory(defines.inventory.chest) end)
+      or (defines.inventory.cargo_landing_pad_main and try(function() return c.get_inventory(defines.inventory.cargo_landing_pad_main) end))
   end
-  -- Our chests within reach of the character, nearest first.
+  -- Our chests within reach of the character, nearest first (reach to the box, as the engine measures it: a landing
+  -- pad's centre is 4 tiles inside its edge).
   function M.chests_in_reach(p, skip)
     local found = try(function()
-      return p.surface.find_entities_filtered{position=p.position, radius=(p.reach_distance or 10) + 6, type=CHEST_TYPES, force=p.force, limit=64}
+      return p.surface.find_entities_filtered{position=p.position, radius=(p.reach_distance or 10) + 8, type=CHEST_TYPES, force=p.force, limit=64}
     end) or {}
     local out = {}
     for _, c in ipairs(found) do
@@ -221,6 +230,16 @@ return function(api)
       local goal = math.min(want, room)
       local moved, from = 0, {}
       local function match(s) return s.name == r.name and quality_of(s) == r.quality end
+      -- what each source held of it before the move, for a shortfall's why
+      local function count(source) return source and try(function() return source.get_item_count{name=r.name, quality=r.quality} end) or 0 end
+      local you = 0
+      for _, source in ipairs(api.give_sources(p, r.name)) do you = you + count(source) end
+      local held = {string.format('you held %d', you)}
+      for k, c in ipairs(chests) do
+        if k <= 4 then held[#held+1] = string.format('%s %s held %d', c.name, at(c.position), count(chest_inventory(c))) end
+      end
+      if #chests > 4 then held[#held+1] = string.format('%d more chests', #chests - 4) end
+      if #chests == 0 then held[#held+1] = a.chests == false and 'chests not read (chests=false)' or 'no chest of ours in reach' end
       local function take(source, name)
         if moved >= goal or not source then return end
         local n = api.move_stacks(source, inv, match, goal - moved)
@@ -237,7 +256,7 @@ return function(api)
         elseif not try(function() return inv.can_insert{name=r.name, quality=r.quality} end) then
           row.why = string.format('the rocket\'s cargo slots are full (%d of %d)', used_slots(inv), #inv)
         else
-          row.why = string.format('you and the %d chests read held only %d', #chests, moved)
+          row.why = table.concat(held, '; ')
         end
         short[#short+1] = string.format('%s %d short (%s)', row.item, row.short, row.why)
       end
@@ -547,7 +566,7 @@ return function(api)
     load_silo = {position='the rocket silo {x,y} (any tile of it), within reach',
       items='the cargo to load: {"item-name": count} or [{"item", "count", "quality"}], 1..20 items',
       to_total='true: each count is what the rocket should hold in all (only the rest is loaded); default: each count is loaded on top of what it holds',
-      from='optional chest {x,y} or 1..16 of them, within reach: take from these (after your inventory); default: your inventory, then our chests within reach, nearest first (at most 16)',
+      from='optional chest {x,y} or 1..16 of them, within reach: take from these (after your inventory); default: your inventory, then our chests within reach, nearest first (at most 16): every chest kind (chests, logistic chests, linked and infinity chests) and a cargo landing pad',
       chests='false: your inventory only',
       launch='true: launch once the rocket is ready, in the tick the cargo is loaded; needs platform (or orbit=true); refused (not launched, an error) when any count fell short; min_cargo and arrived are checked as launch checks them',
       platform='with launch: the platform in orbit to send it to', orbit='with launch: true for no platform',
