@@ -2466,8 +2466,8 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   pump cut at V < 15 and the leg peaked at 51 km/s): per thruster fluid, what stays with the thrusters when their pumps
   stop (their own tanks, and the pipes and tanks between them and the pumps; the walk stops at a pump) and how long
   that burns: `thruster-oxidizer: if its pumps stop, 2 thrusters hold 2000 and the pipes and tanks between them and
-  the pumps 160 (1080 a thruster): about 10.3 s of full thrust, 20.1 s until 10%, then 0.1 a tick until empty at
-  36.7 s; pump (3.5,7): off by its circuit condition ...`. `thruster_burn`, the game's rule as measured on 2.0.77 (the
+  the pumps 160 (1080 a thruster): about 11 s of full thrust, 20.7 s until 10%, then 0.1 a tick until empty at
+  37.4 s; pump (3.5,7): off by its circuit condition ...`. `thruster_burn`, the game's rule as measured on 2.0.77 (the
   thruster prototype's min_performance and max_performance): a thruster burns 2 fuel and 2 oxidizer a tick while its
   tanks (1000 each) are 80% full or more, linearly less to 0.1 a tick at 10%, and 0.1 a tick below; its thrust falls
   with it to about a tenth (use x effectivity, 0.51 at 80%, 1 at 10%). From full tanks with no supply: 1.7 s at full
