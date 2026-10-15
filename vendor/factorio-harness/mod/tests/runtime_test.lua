@@ -2712,6 +2712,13 @@ end)()
   local sc=call('scan',{surface='vulcanus',position={x=5,y=5},radius=4})
   eq(sc.entities[1].name,'transport-belt')
   fails(function() call('scan',{surface='vulcanus'}) end,'scan with surface needs position, area or positions there')
+  -- deconstruct marks there too (Sol, 23:13: marks on a planet from a platform).
+  standing[1].minable=true; standing[1].order_deconstruction=function() standing[1].marked=true; return true end
+  local find=vulcanus.find_entities_filtered
+  vulcanus.find_entities_filtered=function(f) if f.invert then return standing end return find(f) end
+  local dc=call('deconstruct',{surface='vulcanus',area={left_top={x=0,y=0},right_bottom={x=10,y=10}}})
+  eq(dc.changed,1); eq(standing[1].marked,true)
+  vulcanus.find_entities_filtered=find
   prototypes.entity,game.get_surface,p.force.platforms,p.force.is_chunk_charted=entity_protos,get_surface,platforms,charted
 end)()
 -- A ghost goes over trees and rocks and marks them, though the engine's check

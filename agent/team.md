@@ -265,7 +265,7 @@ already targets your character.
   gives each item's spread (least and most spoiled, the share by count, the counts under 25/50/75%, how many spoil
   within 10/30/60 min) in `inspect`, `supply` and every `platforms` row (the hub; `drop` dry_run for the items to drop,
   `launch` for the rocket's cargo), and the moved batch's in `transfer`, `collect` and `load_silo` (a
-  science pack: the research units it covers). Eggs of ours
+  science pack: how many a unit the running research takes, and its units left). Eggs of ours
   hatching within 5 minutes on your surface top `team.alerts` (`eggs hatching: ...`) and wake `fh sleep` (`woke: eggs`).
 - In a tank, car or spidertron you drive, `shoot` fires its gun: `--args '{"position":{"x":294,"y":-135},"gun":"tank-cannon"}'`
   (or `"ammo":"explosive-cannon-shell"`, `"auto":true`), loading the slot from your inventory; `vehicle {drive}` goes on meanwhile.
@@ -397,7 +397,9 @@ already targets your character.
   spoil_priority: fresh_first | spoiled_first | none}` sets an inserter's Spoil priority (built or ghost; `inspect`
   shows it).
 - Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`), and
-  so do tell, chat, say, operator, the board, research, platform calls and waits on `platform_arrived`/`platform_left`.
+  so do tell, chat, say, operator, the board, research, platform calls and waits on `platform_arrived`/`platform_left`,
+  and every remote-view call with `platform=` or `surface=` (place_ghosts, deconstruct, configure, circuit_set,
+  requests with position, ...; the refusal lists them).
 - Modules: `configure {position | positions, modules: ["speed-module-2","speed-module-2"], by?}` sets a machine's module
   slots: the modules it already holds that the list names stay in their slots, the rest go into the other slots (past
   the list: empty); `["keep","efficiency-module","empty"]` goes slot by slot and `{"2":"efficiency-module"}` changes

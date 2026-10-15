@@ -545,11 +545,9 @@ fh call status
     what moved, per item; a timed one (walk, a courier's take) has it on `last.freshness`; `load_silo`'s `loaded`
     rows each have `freshness`. Before departure (Sol, 22:52: 1960 agricultural packs aboard Sunward): every
     `platforms` row (`fh platform NAME` too) has `freshness` for the hub's spoilable items; `drop` with `dry_run` has it
-    for the hub's stacks of the items to drop; `launch` has it for the rocket's cargo, read before it goes. A science pack the running research takes adds the research units it covers, the units
-    left, and how many of those come from packs that do not spoil within 60 min: `; 500 research units of
-    agricultural-science-pack-research (1 a unit, 750 units left), 0 of them from packs that do not spoil within 60
-    min`. The units count every pack until it spoils: the 2.0.77 binary shows no link between a pack's spoil level and
-    the research it gives (a lab moves spoiled items out).
+    for the hub's stacks of the items to drop; `launch` has it for the rocket's cargo, read before it goes. A science pack the running research takes adds how many a unit it takes and its units left: `; the running
+    research agricultural-science-pack-research takes 1 a unit, 750 units left`. No research is worked out from the
+    count: whether a lab gives less for a partly spoiled pack is not checked in the game yet.
   - `inspect` on an assembler, furnace or biochamber whose products spoil adds `output_spoil`, what its next products
     start at: `bioflux start about 53% spoiled (recipe bioflux: the count-weighted spoilage of yumako-mash*15 at 80%,
     jelly*12 at 20%)`, or `pentapod-egg start fresh (recipe pentapod-egg resets freshness)`.
@@ -1708,8 +1706,14 @@ fh sleep 900 --until researched                       # ...or until the research
   science and wait_until platform_arrived were refused while the refusal said scan works). Aboard work: every read
   (status, scan, inspect, science, supply, networks, platforms, map and the rest: of the platform, or of a planet with
   `surface=`) except `inventory` and `craftable`; `tell`, `chat`, `say`, `operator`, the board and votes; research;
-  `platform_schedule`, `platform_create`, `requests` (`platform=` or `position=`), `drop` and `land`; ghost tools,
-  `grid`/`scan`, `circuit_set` and `wire` with `platform=`; `sleep`; and `wait_until` on `platform_arrived`,
+  `platform_schedule`, `platform_create`, `requests` (`platform=` or `position=`), `drop` and `land`; every call that
+  acts by remote view, with `platform=NAME` (`place_ghosts`, `deconstruct`, `cancel_deconstruction`, `paste`,
+  `blueprint_place`, `grid`, `scan`, `inspect`, `configure`, `flush`, `circuit_set`, `circuit`, `wire`, `ports`,
+  `cargo`, `trace`, `power`, `conflicts`) or with `surface=NAME`, a planet (`inspect`, `circuit_set`, `circuit`,
+  `wire`, `ores`, `launch`, `configure`, `silo`, `preflight`, `requests` with position, `place_ghosts`, `scan`,
+  `conflicts`, `deconstruct`, `cancel_deconstruction`), and their dry runs (Sol, 23:13: `place_ghosts surface=nauvis`
+  was refused aboard; one list in bots.lua decides both what runtime.lua runs by remote view and what works aboard);
+  `deconstruct` and `cancel_deconstruction` take `surface=` everywhere now; `sleep`; and `wait_until` on `platform_arrived`,
   `platform_left`, `researched`, `rocket_ready` or `item_count` at positions. Anything that needs a body (walking,
   mining, building or crafting by hand, the inventory) is refused with that list.
 - `platforms` shows each platform's `defense`: `hub_health` (`637/1000`), `turrets` (`5 gun-turrets: 4 empty, 0 low
