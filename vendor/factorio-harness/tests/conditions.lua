@@ -85,7 +85,7 @@ surface.find_entities_filtered=function(f)
 end
 met,saw=check({['until']='rocket_ready',position={x=68,y=12}})
 -- (Astra 10:50: a built rocket said plainly; its 0/50 parts were read as launched or as a missing kit)
-eq(met,true); eq(saw,'rocket-silo (65.5,14.5): rocket built and ready: parts consumed (0/50), not launched, cargo agricultural-science-pack*45')
+eq(met,true); eq(saw,"rocket-silo (65.5,14.5): rocket ready to launch, not launched, cargo agricultural-science-pack*45; the next rocket's parts 0/50")
 silo.rocket_silo_status=5; silo.rocket_parts=12; cargo={}
 met,saw=check({['until']='rocket_ready',position={x=65.5,y=14.5}})
 eq(met,false); eq(saw,'rocket-silo (65.5,14.5): rocket_rising, parts 12/50, cargo none')
@@ -93,9 +93,15 @@ local ok,err=pcall(check,{['until']='rocket_ready',position={x=0,y=0}}); eq(ok,f
 assert(not pcall(C.validate,{['until']='rocket_ready'}))
 silo.rocket_silo_status=7; silo.rocket_parts=0; cargo={{name='agricultural-science-pack',count=45,quality='normal'}}
 met,saw=check({['until']='item_count',item='agricultural-science-pack',at_least=45,positions={{x=65.5,y=14.5}}})
-eq(met,true); eq(saw,'agricultural-science-pack 45 in 1 entities; rocket-silo (65.5,14.5): rocket built and ready: parts consumed (0/50), not launched, cargo agricultural-science-pack*45')
+eq(met,true); eq(saw,"agricultural-science-pack 45 in 1 entities; rocket-silo (65.5,14.5): rocket ready to launch, not launched, cargo agricultural-science-pack*45; the next rocket's parts 0/50")
 met,saw=check({['until']='item_count',item='rocket',at_least=1,positions={{x=65.5,y=14.5}}})
-eq(met,false); eq(saw,'rocket 0 in 1 entities; rocket-silo (65.5,14.5): rocket built and ready: parts consumed (0/50), not launched, cargo agricultural-science-pack*45')
+eq(met,false); eq(saw,"rocket 0 in 1 entities; rocket-silo (65.5,14.5): rocket ready to launch, not launched, cargo agricultural-science-pack*45; the next rocket's parts 0/50")
+-- The silo goes on with the next rocket's parts while one is ready (round1650d: Grok read "parts consumed (13/50)"
+-- beside a ready rocket as one still being built): those are named as the next rocket's.
+silo.rocket_parts=13
+met,saw=check({['until']='rocket_ready',position={x=65.5,y=14.5}})
+eq(met,true); eq(saw,"rocket-silo (65.5,14.5): rocket ready to launch, not launched, cargo agricultural-science-pack*45; the next rocket's parts 13/50")
+silo.rocket_parts=0
 -- One position is the same as positions with it (Haiku, 12:20: a level fallen under at one chest).
 met,saw=check({['until']='item_count',item='agricultural-science-pack',below=50,position={x=65.5,y=14.5}})
 eq(met,true); assert(saw:find('agricultural-science-pack 45 in 1 entities',1,true),saw)

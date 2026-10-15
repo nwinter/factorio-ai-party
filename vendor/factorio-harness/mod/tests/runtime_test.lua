@@ -218,7 +218,9 @@ do
   eq(b.alerts.losses['stone-furnace'],1); eq(b.alerts.latest[1],alerts.latest[1]); eq(b.surface,'nauvis'); eq(b.connected,true)
   eq(b.factory,nil); eq(b.enemies,nil); eq(scans,0)
   eq(call('status',{brief=true,peek=true}).alerts,nil)
-  fails(function() call('status',{alerts=true}) end,'alerts is an option of brief')
+  -- alerts without brief runs as the brief status (round1650d: Astra's {inventory, machines: false, alerts: false})
+  local nb=call('status',{alerts=true,peek=true})
+  eq(nb.brief,true); assert(tostring(nb.corrected):find('alerts goes with brief: brief=true',1,true),tostring(nb.corrected))
   p.surface.find_entities_filtered=find
 end
 -- A wipe larger than any entry cap is counted whole, per area, and pushed once
@@ -977,8 +979,8 @@ do
     defines.rocket_silo_status=kept_def or {building_rocket=0,create_rocket=1,rocket_ready=7,launch_started=14}
     silo.rocket_silo_status,silo.rocket_parts=7,0
     local si=call('inspect',{position={x=3,y=0}})
-    eq(si.rocket_ready,true); assert(si.parts:find('^0/'),si.parts)
-    assert(si.rocket:find('^rocket built and ready: parts consumed %(0/%d+%), not launched; no launch seen$'),si.rocket)
+    eq(si.rocket_ready,true); assert(si.next_parts:find('^0/'),si.next_parts); eq(si.parts,nil)
+    assert(si.rocket:find("^rocket ready to launch, not launched; the next rocket's parts 0/%d+; no launch seen$"),si.rocket)
     silo.rocket_silo_status,silo.rocket_parts=nil,nil; defines.rocket_silo_status=kept_def
   end
   local kept=main
@@ -1959,7 +1961,8 @@ do
   local sup=call('observe',{scope='supply',item='transport-belt'})
   eq(sup.item,'transport-belt'); assert(sup.where and sup.counted and sup.flow,'supply reply')
 end
-fails(function() call('observe',{scope='supply',item='transport-belt',radius=5}) end,'radius needs near')
+-- radius alone: around the character (round1650d: Grok, twice in shift13).
+eq(call('observe',{scope='supply',item='transport-belt',radius=5}).item,'transport-belt')
 fails(function() call('observe',{scope='supply',item='transport-belt',pack='x'}) end,'unknown argument pack for supply; valid: item, near, radius, surface')
 fails(function() call('observe',{scope='supply',item='nope'}) end,'item must be an item name')
 -- nearest sorts by distance, skips fogged chunks and the character itself.
@@ -3993,6 +3996,29 @@ end)()
   fails(function() call('load_silo',{position=silo.position,items={['agricultural-science-pack']=100},to_total=true,chests=false,launch=true,platform='Nowhere'}) end,
     'loaded, then the launch was refused: no platform named Nowhere')
   eq(cargo[1].count,100)
+  -- Astra 18:33 (tick 9965693) and 23:53, Gemini 18:21: with the game's item stacks (quality a LuaQualityPrototype,
+  -- userdata) load_silo matched nothing and said held 0. Your own inventory (chests=false), as a queue step (Astra's
+  -- followed a wait_until item_count) and as a direct call; it fails on the rocketload.lua before the fix (0 of 50).
+  local qn=io.tmpfile(); debug.setmetatable(qn,{__index={name='normal'}})
+  local function game_stack(name,n) local s=stack(name,n); s.quality=qn; return s end
+  for i=1,3 do cargo[i]=stack(nil,0) end
+  main=inv(game_stack('agricultural-science-pack',80),stack(nil,0))
+  main.get_contents=function() return {{name='agricultural-science-pack',count=main[1].count,quality='normal'}} end
+  call('queue_cancel',{})
+  call('queue_submit',{steps={{action='load_silo',args={position=silo.position,items={['agricultural-science-pack']=50},chests=false}}}})
+  advance(3)
+  local qs=call('queue_status',{history=2})
+  local last=qs.history[#qs.history]
+  eq(last.action,'load_silo'); eq(last.ok,true,'the queued load_silo step')
+  eq(last.result.loaded[1].loaded,50); eq(last.result.loaded[1].from,'you 50')
+  eq(cargo[1].count,50); eq(main[1].count,30)
+  -- the same as a direct call
+  r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=30},chests=false})
+  eq(r.loaded[1].loaded,30); eq(r.complete,true); eq(cargo[1].count,80); eq(main[1].count,0)
+  -- none held: the why says what you held
+  main[1]=game_stack('agricultural-science-pack',0)
+  r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=5},chests=false})
+  eq(r.loaded[1].why,'you held 0; chests not read (chests=false)')
   -- A queue dry run: the cargo before the launch step, queued nothing.
   cargo[1].count=60
   local before=call('queue_status',{}).revision

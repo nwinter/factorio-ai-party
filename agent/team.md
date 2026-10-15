@@ -197,7 +197,9 @@ already targets your character.
   holding the item and says which, a `count` it lacks from the next ones (one holding it all goes alone); chests that
   feed something (requester and buffer chests, a chest an inserter takes from) only with `"feeding": true`, and walking
   (`"walk": true` looks 32 tiles) none in a worm's reach, each named when left out; `transfer
-  {from: {x,y}, to: {x,y}, item, count}` takes at one place and gives at the other in one call; `transfer`/`collect {positions,
+  {from: {x,y}, to: {x,y}, item, count}` takes at one place and gives at the other in one call (`inventory` goes with
+  the place that has it, a silo's cargo at `to`); a walking take from chests holding none of it now is refused before
+  the walk, naming the nearest holding it; `transfer`/`collect {positions,
   item | items, pick: "first_with_stock" | "most_stock"}` takes at one listed place that holds the item now (empty
   ones are `skipped`, not short; none: nothing walked), and `to` (`{x,y}` or `{item: {x,y}}`) carries it on to that
   item's destination in the same call; `./fh call inventory` shows main,
@@ -326,8 +328,11 @@ already targets your character.
   fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
   new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that
   reach every placement, and what each planned inserter picks up from and drops into (`missing: no drop target`);
-  `inspect` and build replies flag a built inserter with no pickup or drop target. `closes_in` names the entry that
-  fills the last gap out when the plan would close you in where you stand; a build reply says `closed_in` after it.
+  `inspect` and build replies flag a built inserter with no pickup or drop target. `connections` gives each planned
+  boiler's, turbine's, reactor's, pump's or pipe's fluid and heat connection points and what joins each (`planned #5
+  pipe`, `nothing there`), and for each pipe-to-ground what its mouth joins and whether it pairs, with which;
+  `inspect` of a heat entity shows its heat connections and temperature. `closes_in` names the entry that fills the
+  last gap out when the plan would close you in where you stand; a build reply says `closed_in` after it.
   Dry runs and build replies also name logistic chests no roboport covers (`outside_logistic_coverage`) and inserters
   or belts feeding an underground entrance from the side, with the lane that gets nothing (`underground_side_feed`).
 - `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}}}'` lists every chest's
@@ -367,7 +372,8 @@ already targets your character.
   chests near the silo. A silo's transfer inventories: `assembling_machine_input` (alias `parts`, the rocket-part
   ingredients) and `rocket_silo_rocket` (alias `cargo`, what goes up with the rocket); `inspect` lists them with a call each.
 - `./fh call load_silo --args '{"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","position":{"x":65.5,"y":14.5},"to_total":true}' --wait`
-  loads the list into the rocket from your inventory and our chests in reach (`from` for given chests) and launches
+  loads the list into the rocket from your inventory and our chests in reach (any chest kind, logistic chests and a
+  landing pad too, nearest first; `from` for given chests) and launches
   in the same tick once every count is aboard; before the rocket is ready it waits for it. `./fh call preflight` (silo
   `position`, optional `items`, `platform`) shows the cargo against 1000 kg and 20 slots, what a list lacks, and the
   platform's requests from this planet less its hub and this rocket. `launch` takes `min_cargo` and `arrived: true`,
