@@ -977,8 +977,8 @@ do
     defines.rocket_silo_status=kept_def or {building_rocket=0,create_rocket=1,rocket_ready=7,launch_started=14}
     silo.rocket_silo_status,silo.rocket_parts=7,0
     local si=call('inspect',{position={x=3,y=0}})
-    eq(si.rocket_ready,true); assert(si.parts:find('^0/'),si.parts)
-    assert(si.rocket:find('^rocket built and ready: parts consumed %(0/%d+%), not launched; no launch seen$'),si.rocket)
+    eq(si.rocket_ready,true); assert(si.next_parts:find('^0/'),si.next_parts); eq(si.parts,nil)
+    assert(si.rocket:find("^rocket ready to launch, not launched; the next rocket's parts 0/%d+; no launch seen$"),si.rocket)
     silo.rocket_silo_status,silo.rocket_parts=nil,nil; defines.rocket_silo_status=kept_def
   end
   local kept=main

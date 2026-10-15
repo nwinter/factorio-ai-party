@@ -636,7 +636,8 @@ return function(api)
       -- rocket_ready beside parts, and the rocket in words (silo.lua M.rocket; Astra 10:50)
       local okr,rk=pcall(function() return api.rocket and api.rocket(e) end)
       silos[#silos+1]={position=e.position,status=silo_states[e.rocket_silo_status],
-        parts=e.rocket_parts..'/'..e.prototype.rocket_parts_required,
+        parts=not (okr and rk and rk.next_parts) and e.rocket_parts..'/'..e.prototype.rocket_parts_required or nil,
+        next_parts=okr and rk and rk.next_parts or nil,
         rocket_ready=e.rocket_silo_status==defines.rocket_silo_status.rocket_ready,rocket=okr and rk and rk.rocket or nil,
         cargo=cargo and top_items(cargo,8) or nil,
         trash=trash and top_items(trash,8) or nil,auto_requests=e.use_transitional_requests or nil,

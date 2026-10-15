@@ -4003,7 +4003,7 @@ function handlers.inspect(p,a)
   -- A silo's rocket in words, parts and rocket_ready side by side, and its last launch (silo.lua M.rocket; Astra 10:50).
   if e.type=='rocket-silo' then
     local okr,rk=pcall(M.silo.rocket,e)
-    if okr then out.parts=rk.parts; out.rocket_ready=rk.rocket_ready; out.rocket=rk.rocket; out.last_launch=rk.last_launch end
+    if okr then out.parts=rk.parts; out.next_parts=rk.next_parts; out.rocket_ready=rk.rocket_ready; out.rocket=rk.rocket; out.last_launch=rk.last_launch end
     -- Its inventories by transfer name, alias, what each holds and is for, and a call for each (Luna 12:20).
     local oki,rows=pcall(M.silo.inventories,e,M.aliases.encode)
     out.silo_inventories=oki and rows or nil
