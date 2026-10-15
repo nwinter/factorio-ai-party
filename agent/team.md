@@ -283,7 +283,7 @@ already targets your character.
   a give the target could not take all of (full), or a courier that delivered less than it took, ends with a `short`
   warning naming what fills the target's slots and what you still carry;
   queue and standing-order history entries carry both. `feed`, `collect` and `transfer` take `area {left_top,
-  right_bottom}` for every machine (or chest) inside it; `inspect` of a machine shows `output_fill` (and `full`).
+  right_bottom}` for every machine (or chest) inside it; `inspect` of a machine shows `output_fill` (and `full`) and `output_stop`: where each product stops it, and whether a `full_output` is a full output or a machine short of an ingredient holding a few crafts' worth (the game reads it so).
   `feed` gives a burner fuel when its fuel slots are empty, or with `fuel` (`true` or a fuel name); a furnace with no
   recipe yet takes the `item`/`items` it smelts; each named machine gets a row (`gave` or `got`, and its `fuel`).
 - Reach is measured to an entity's edge: 10 tiles for buildings, 2.7 for ore, trees and rocks. `rotate` is one

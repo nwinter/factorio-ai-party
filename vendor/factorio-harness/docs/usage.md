@@ -1809,8 +1809,23 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   spoilage its recipe does not take in its input shows `input_spoilage` (`input holds spoilage 50 in 1 of its 3 slots
   (its recipe does not take spoilage)`).
 - `inspect` of an assembler or furnace shows `output_fill`: each product in its output slots held of its stack size
-  with the %, and `full` when the machine has stopped for it (status `full_output`): `copper-cable 200/200 (100%),
-  full`, or `empty`. A column in the `inspect {positions}` table too.
+  with the %, and `full` when the machine has stopped for it (status `full_output` and a stack that takes no further
+  craft): `copper-cable 200/200 (100%), full`, `empty`, or `cryogenic-science-pack 45/200 (23%), status full_output
+  below its limit (output_stop)`. A column in the `inspect {positions}` table too.
+- `inspect` of an assembler or furnace with a recipe shows `output_stop` (Sol, shift17 12:20: Aquilo science read
+  full_output at 45 packs and 135 hot fluoroketone, misdiagnosed about 5 times), from the game's rules measured on
+  2.0.77: `lines`, one per product: an item stops the machine when a craft's amount no longer fits in one stack (it
+  waits with that craft finished: `cryogenic-science-pack 45 held: it stops when a craft's 1 no longer fit in one
+  stack (200) ...`), a fluid when a craft's amount no longer fits in its output box (`fluoroketone-hot 135 of 300 in
+  its output box ...`; the box's own capacity, sized to the recipe; pipes joined to it take from it as they have
+  room); `products [{name, fluid, per_craft, held, stops_at, full, full_output_from}]`; when the machine is not
+  working, `idle_full_output`: an assembling machine that is not crafting for another reason reads `full_output`, not
+  the shortage, once it holds amount x (1 + ceil(1.166 x crafts per second)) of any product (2 crafts' worth for a
+  slow recipe: 2 cryogenic packs or 6 hot fluoroketone; 3 for gears in an assembler 2), and that output does not stop
+  it; and with status `full_output`, `line`: `full_output: output at its limit, fluoroketone-hot 298 of 300: ...` or
+  `full_output, no output at its limit: it is not crafting and holds 2 crafts' worth or more (cryogenic-science-pack
+  45, fluoroketone-hot 135); it lacks ice 2 (a craft takes 3): it crafts again when that arrives`. `fluids_summary`
+  gives a crafting machine's boxes at that capacity (it read `135/1000`, another box's volume).
 - `inspect` of an assembler or furnace adds `rate` (Sol, 15:20: an egg breeder's output twice miscounted): its recipe
   (a furnace's last one when idle) at its crafting speed now and its productivity, as if it ran all the time:
   `crafts_per_min`, `seconds_per_craft`, `speed`, `productivity` (the game's figure for the machine, capped at the
