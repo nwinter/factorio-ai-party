@@ -208,6 +208,7 @@ eq(r.item,AC); eq(r.surface,'nauvis')
 eq(r.flow,'made 300, used 120 in the last 10 min on nauvis')
 -- Where it sits: every kind of place, the team's characters on this surface only.
 eq(r.where,'466: belts 7, requester chests 59, passive-provider chests 3, buffer chests 50, other chests 100, landing pads 7, landed cargo pods 4, machine outputs 205, users\' inputs 5, silo rockets 10, inserter hands 1, robots 3, characters 12 (sol 12)')
+eq(r.belt_lines[1],'7 on 1 belt tile (31,-2)-(31,-2); most 7 at (31,-2); out end (31,-2) 7')
 eq(r.chests[1],'(50,0) steel-chest 100')
 eq(r.chests[2],'(40,3) requester-chest 40 (no request for it: its section asking for it is off)')
 eq(r.chests[3],'(300,0) buffer-chest 30 (no request for it)')

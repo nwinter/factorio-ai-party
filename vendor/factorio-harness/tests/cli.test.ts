@@ -570,6 +570,21 @@ test('compact load_silo wait retains the measured cadence when it times out',asy
     assert.match(stdout,/idle_window_s[=:] ?225/);
   });
 });
+test('load_silo --wait follows a walking load tour to its end (Sol 07:50)',async()=>{
+  let polls=0;
+  await engine(request=>{
+    if(request.action==='load_silo')return {ok:true,tick:1,result:{op:'load_silo',walk:true,until_tick:18001,needs:'iron-plate 10 (you hold 0)'}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:1,y:1},health:250,max_health:250,inventory:[]}}};
+    polls++;
+    return polls<3?{ok:true,tick:10*polls,result:{active:{kind:'gather',op:'load_silo',until_tick:18001},combat:false}}
+      :{ok:true,tick:40,result:{active:false,combat:false,last:{kind:'gather',op:'load_silo',outcome:'launched',loaded:10}}};
+  },async port=>{
+    const {code,stdout}=await compact(port,['call','load_silo','--args','{"items":{"iron-plate":10},"walk":true,"from":{"x":5,"y":5}}','--wait']);
+    assert.equal(code,0);
+    assert.ok(polls>=3,'polled until the tour ended');
+    assert.match(stdout,/launched/);
+  });
+});
 test('kite --wait waits for the fight to end and reports it like move_to',async()=>{
   // Sol, shift09: kite --wait returned at once while the kite still ran.
   for (const end of [

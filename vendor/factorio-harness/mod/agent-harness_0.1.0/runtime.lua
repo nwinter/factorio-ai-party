@@ -843,7 +843,7 @@ local function active(index)
     built=action.built,remaining=action.kind=='construct' and construction.remaining(action) or nil,
     missing=action.missing and next(action.missing) and action.missing or nil,
     awaiting_craft=action.awaiting_craft,got=action.got,
-    silo_wait=action.await_silo and M.rocketload.wait_report(action) or nil,
+    silo_wait=action.await_silo and M.rocketload.wait_report(action) or action.silo_hold and M.rocketload.wait_report({await_silo=action.silo_hold}) or nil,
     condition=action.kind=='wait_until' and action.condition['until'] or nil,saw=action.kind=='wait_until' and action.saw or nil,
     stuck_s=action.watch and game.tick-action.watch.since>=STUCK_TICKS and math.floor((game.tick-action.watch.since)/60) or nil,
     -- Waiting short of rails a moving train will pass (M.train_guard).
@@ -9483,7 +9483,7 @@ end
 local conditions=conditions_module{known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end}
-M.waiteta=require('waiteta'){state=state,check=function(p,c) return conditions.check(p,c,true) end,
+M.waiteta=require('waiteta'){state=state,check=function(p,c,record) return conditions.check(p,c,true,record) end,
   research_rate=function(name) return M.research.rate(name) end,crafting_left=crafting_left,
   busy=function(s,index) return M.idle.busy(s,index) end,
   has_body=function(index) local p=M.lookup(index); return p and p.valid and p.character and p.character.valid end}

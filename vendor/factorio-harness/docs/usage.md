@@ -1426,6 +1426,13 @@ fh sleep 900 --until researched                       # ...or until the research
   observed wake or the sleep's time limit. The existing idle tick counts it without entity scans.
 - `wait_ticks {ticks: 1..54000}` holds the character idle (outcome `duration_elapsed`); like any character action it replaces the current one.
 - `wait_until {until: "rocket_ready", position}` (Luna, shift10 06:20: an `item_count` wait for the item `rocket` stayed 0 at a silo whose rocket was ready; that item is ammunition) is met when the rocket silo on that tile (any tile of it) has its rocket built and ready to launch, the GUI's rocket state. `saw`: `rocket-silo (65.5,14.5): rocket built (50/50 parts) and ready to launch, not launched, cargo agricultural-science-pack*45; parts for the rocket after it 0/50`; no silo of ours there fails the wait. It works as a queue step, a sleep condition and an order's `when` too.
+- `wait_until {until: "produced", positions, item?, at_least}` (Grok, d15 07:50: `item_count` on a provider that robots
+  empty never rises) is met when the machines on `positions` (1..64, or `position`) made `at_least` items of `item`
+  since the wait began: the products-finished counter each machine's GUI shows, counted from its value at the wait's
+  first check, times what the machine's recipe makes of the item per craft; without `item`, crafts. `saw`: `made 37
+  iron-gear-wheel (37 crafts) in 2 machines since the wait began (at least 50)`. A queue `wait_until` step or a direct
+  wait only (the counts start with the wait; a guard, an order's `when` or a loop `condition` refuses). Word form:
+  `fh sleep 600 --until "produced iron-gear-wheel>=50 at 10.5,20.5 13.5,20.5"` (`produced>=N at X,Y`: crafts).
 - `wait_until {until: "rocket_parts", at_least: N, position}` (Sonnet, shift14 22:50) is met when the rocket being built
   at that silo has at least N parts; a built rocket (rising into place or ready) has all of them, and while one
   launches the count is the next one's. `saw`: `rocket parts 35/50 (at least 40); rocket-silo (65.5,14.5):
@@ -1999,7 +2006,17 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   steps, keeping the loop. Ahead interrupts and restarts an absolute-goal step (`wait_until`, `move_to`, etc. as
   queue pause/resume does); a relative active step such as `transfer`, `walk` or `wait_ticks` refuses ahead.
   `mode: "append"` explicitly waits behind the current round. The reply's `submission` says which happened, and
-  `repeat_name` names the loop. Ordinary nonrepeating plans still append by default and replace pending steps only.
+  `repeat_name` names the loop. Ordinary nonrepeating plans still append by default.
+- `mode: "replace"` stops the active step of any plan (Sonnet, d15 07:50: a running `load_silo` went on after a replace
+  and took a `queue_cancel` first, about 5 times): its history entry reads `ok: false`, `reason: stopped by
+  queue_submit mode=replace`, `stopped_by: replace`; it is not run again. Pending steps and guards go as before.
+  `append` leaves the active step running.
+- A `place_ghosts` or `build` step with failed entries fails (Astra, d15 07:50: queues read all ok while key belts were
+  never placed): `reason: place_ghosts: 3 entries failed (37 placed); first: #5 transport-belt (1.5,2.5): blocked by
+  ...`, `entries_failed: 3`; the step's `on_fail` applies (default: the plan pauses; `skip` goes on, the entry still
+  failed) and `plan.failed` counts it. The entries placed stay. `build` with `all: true` lists its failures the same
+  way; a walking or stepping-aside build is read from its completion. Tile areas' `tiles_refused` do not fail a step (a
+  tile already laid is refused too).
   A running standing order already steps aside for a submit; this is unchanged.
 - Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
   `revision`, `paused`, `active`, `pending` (the next 5 as `id action [label]`), `pending_count`, `recent` (the last 2
@@ -2473,7 +2490,7 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     (or follows its `on_fail`) and the rocket stays. `wait_until {"until":"item_count","item":...,"at_least":1000,
     "positions":[silo]}` counts the silo's rocket cargo.
   - `fh call launch --args '{"min_cargo":{"agricultural-science-pack":1000},"platform":"Sunward","position":{"x":65.5,"y":14.5},"arrived":true}'`
-- `load_silo {position, items, to_total?, from?, chests?, launch?, platform?, orbit?, min_cargo?, arrived?, ticks?}`
+- `load_silo {position, items, to_total?, from?, chests?, up_to?, launch?, platform?, orbit?, min_cargo?, arrived?, ticks?}`
   (rocketload.lua; Sonnet, shift12: about 40 transfer and launch round trips a shift) loads an item list into a silo's
   rocket cargo in one call. The silo must be within reach.
   - `items`: `{"agricultural-science-pack":1000}` or `[{item, count, quality}]`, 1..20 items. Each count is loaded on top
@@ -2496,6 +2513,10 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     `min_cargo` and `arrived` are checked as `launch` checks them. Any count short: `not launched: ...; what was loaded
     stays in the rocket (it holds ..., 600/1000 kg)`. A launch refused after loading: `loaded, then the launch was
     refused: ...; the cargo stays in the rocket`.
+  - `up_to: true` (Sonnet, d15 07:50: a launch stayed unlaunched when weight ran short, about 5 retries a shift) loads
+    what fits (weight, slots) and what you and the chests hold. A short row goes to `up_to_short` (not `short`), the
+    call does not fail, and a launch goes with what is aboard; none of the list aboard: `not launched (up_to): none of
+    the list is aboard`. `min_cargo` still guards the launch. A queue dry run counts it the same way.
   - No rocket yet, or `launch: true` before the rocket is ready: a timed action (`waiting {why, rocket}`,
     `until_tick`; `ticks` 1..36000, default 3600) that runs the whole call in the tick the rocket is there (ready, for
     a launch); outcome `fed` (`last.result` holds the reply), `failed` (`last.error`) or `timed_out`. `--wait` follows
@@ -2521,10 +2542,17 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     - another trip while the rocket still needs some, a chest in `from` holds it and the trip loaded any.
     - The reply: `op: load_silo`, `needs` (`agricultural-science-pack 930 (you hold 0)`), `chests` (what each holds of
       the list), `trip`, `legs`, `rocket`, `until_tick` (`ticks` default 18000).
-    - Outcomes: `loaded`, `launched` (with `launch`: at the last silo stop when the rocket is ready then; not ready:
-      `loaded`, `last.why` `loaded, not launched: building the rocket: parts 35/50 (load_silo {launch: true} without walk
-      waits for it)`), `short` (`last.why`: the lift, the cargo slots, the chests empty, a trip that loaded none),
-      `no_rocket` (none at the silo on arrival: what you took stays with you), `unreached`, `timed_out`.
+    - No rocket at the silo yet, or with `launch` a rocket not ready (Astra, d15 06:23: twice the walking load put cargo
+      in a rocket not yet ready and the silo's automatic requests took it out again): the tour waits at the silo and
+      loads nothing until it is, as the load without `walk` waits (the wait goes on while the silo makes parts, at most
+      1 game hour; `active.silo_wait`, `last.silo_wait`; `last.why` `waiting at the silo for the rocket to be ready
+      (building the rocket: parts 35/50); nothing loaded yet` if the tour times out). Then it loads, and launches in
+      that tick.
+    - Outcomes: `loaded`, `launched`, `short` (`last.why`: the lift, the cargo slots, the chests empty, a trip that
+      loaded none; with `up_to` the tour ends `loaded`, or `launched`, with what is aboard and `last.why` `up_to: the
+      rocket still lacks ...`), `unreached`, `timed_out`. Before d15 a rocket not ready gave `loaded, not launched`
+      and no rocket gave `no_rocket`.
+    - `--wait` follows the tour to its end (Sol, d15 07:50: it returned the acceptance before).
     - `last`: `trips`, `taken`, `taken_items`, `loaded`, `stops [{position, name, trip, taken | loaded, full, note}]`,
       `cargo`, `rocket_weight`, `launch`. Walks go round enemies as a tour's (`avoid_enemies`, `unsafe_goal`).
     - The silo and every chest in reach: the load at once, as without `walk`. Nothing of what the rocket needs in the
@@ -4209,6 +4237,12 @@ fh watch    # deploy on every change
   `after_slots`, `fits` for the whole list after topping up existing cargo, including unrelated cargo already aboard.
   These combined limits differ from the individual `order[].fits` checks. No cargo moves. Discovery without a silo
   position includes the same manifest and source checks for each visible silo.
+- `supply {item}` adds `belt_lines` (Muse, Grok, d15 07:50: supply said coal 1001 on belts and the backed-up line took
+  128-wide scans to find): the belt tiles holding the item joined into lines (tiles side by side that hold it; an empty
+  tile or an underground's two ends split a line), the 5 holding the most first: `412 on 52 belt tiles
+  (12.5,30.5)-(63.5,30.5); most 8 at (40.5,30.5); out end (63.5,30.5) 8, in end (12.5,30.5) 6` (out: its items move on
+  to no belt of the line; in: nothing of the line feeds it; up to 4 ends, the fullest first), then `N more belt lines
+  hold M`. Up to 4096 belt tiles are listed; the `belts` total counts every one.
 - `supply {item}` adds `surplus_chest`: the largest unreserved stock among plain, storage and provider chests,
   excluding requesters and buffers. It includes position, kind, held, reserved for robot pickups, and free; this
   does not reserve the stock or assert that no inserter uses it. It is independent of the largest-five chest list.
