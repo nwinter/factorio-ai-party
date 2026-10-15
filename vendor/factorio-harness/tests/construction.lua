@@ -264,6 +264,15 @@ local clear=C.plan_ghosts(p,{},{})
 eq(#clear.pending,3) -- other forces' entities are not ours to mine
 eq(run_timed(clear),'constructed');eq(clear.mined,3);eq(#navs,1)
 eq(mined_at[1],30);eq(mined_at[2],60) -- sequential, each after its full mining time
+-- A marked cliff is left: only cliff explosives clear one (Sol, shift14 21:18: construct failed on 4 marked cliffs,
+-- "the engine would not mine cliff-gleba (98,14.5) by hand"); counted and named for the reply's last.cliffs.
+do
+  local saved=marked
+  marked={{valid=true,name='cliff-gleba',type='cliff',minable=true,force={name='neutral'},position={x=98,y=14.5}}}
+  local cl=C.plan_ghosts(p,{},{})
+  eq(#cl.pending,0); eq(cl.ncliffs,1); eq(cl.cliffs[1].name,'cliff-gleba'); eq(cl.cliffs[1].position.x,98)
+  marked=saved
+end
 marked={tree(170.5),tree(171.5)};p.full=true;mined_at={};p.position={x=170.5,y=3.5}
 local can_insert=p.can_insert
 p.can_insert=function() return not p.full end
