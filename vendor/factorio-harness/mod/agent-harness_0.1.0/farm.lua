@@ -9,7 +9,7 @@
 -- tree fits on jellynut soil, so soil comes from each plant's tile list.
 return function(api)
   local M = {}
-  local MAX_PLANT_ROWS = 6
+  local MAX_PLANT_ROWS, MAX_EMPTY_ROWS = 6, 24
   -- A tower's status in words (the engine's name stays in status_name).
   local STATE = {working='working (planting or harvesting)', waiting_for_plants_to_grow='waiting for plants to grow',
     item_ingredient_shortage='no seeds in its input', no_spot_seedable_by_inputs='no free cell with soil for its seeds',
@@ -84,11 +84,18 @@ return function(api)
       end
     end
     table.sort(rows, function(x, y) return x.left < y.left end)
-    -- The cells: free with soil (for which seeds), blocked (by what), no soil.
+    -- The cells: free with soil (for which seeds), blocked (by what), no soil. Each cell with soil and no plant is
+    -- also a row of empty (Sol, 15:20: three yumako cells stayed empty after several farm walks): where, and why the
+    -- tower does not plant it.
     local free, blocked, nosoil, plantable = {}, {}, {}, 0
+    local empty = {}
     local seed_list = {}
     for name in pairs(seeds) do seed_list[#seed_list+1] = name end
     table.sort(seed_list)
+    local held_names = {}
+    for name in pairs(holds) do held_names[#held_names+1] = name end
+    table.sort(held_names)
+    local tower_state = status and (STATE[status] or status) or nil
     for dx = -radius, radius do
       for dy = -radius, radius do
         if (dx ~= 0 or dy ~= 0) and not by_cell[dx .. ',' .. dy] then
@@ -98,17 +105,47 @@ return function(api)
           for _, seed in ipairs(seed_list) do if M.soil(seeds[seed])[tile] then fits[#fits+1] = seed end end
           if #fits == 0 then nosoil[tile] = (nosoil[tile] or 0) + 1
           else
-            local clear = try(function() return surface.can_place_entity{name=seeds[fits[1]], position=c, force=e.force} end)
+            -- The seed it would take: one the tower holds that fits, else the first that fits.
+            local seed = fits[1]
+            for _, s in ipairs(fits) do if holds[s] then seed = s; break end end
+            local clear = try(function() return surface.can_place_entity{name=seeds[seed], position=c, force=e.force} end)
+            local why
             if clear then
-              for _, seed in ipairs(fits) do free[seed] = (free[seed] or 0) + 1 end
-              for _, seed in ipairs(fits) do if holds[seed] then plantable = plantable + 1; break end end
+              for _, s in ipairs(fits) do free[s] = (free[s] or 0) + 1 end
+              if holds[seed] then
+                plantable = plantable + 1
+                why = string.format('free, soil for %s and the tower holds it: not planted yet (tower: %s)', seed, tower_state or 'state unknown')
+              else
+                why = string.format('free, soil for %s; the tower holds no %s (%s)', table.concat(fits, ' or '), table.concat(fits, ' or '),
+                  #held_names > 0 and 'it holds ' .. table.concat(held_names, ', ') or 'it holds no seeds')
+              end
             else
               local by
               for _, o in ipairs(try(function() return surface.find_entities_filtered{area={{c.x - size / 2, c.y - size / 2}, {c.x + size / 2, c.y + size / 2}}, limit=8} end) or {}) do
-                if o.valid and o ~= e and o.type ~= 'resource' then by = o.name; break end
+                if o.valid and o ~= e and o.type ~= 'resource' then by = o; break end
               end
-              blocked[by or tile] = (blocked[by or tile] or 0) + 1
+              blocked[by and by.name or tile] = (blocked[by and by.name or tile] or 0) + 1
+              if by then
+                why = string.format('soil for %s, blocked by %s %s', seed, by.name, at(by.position))
+              else
+                -- No entity: the tiles under the plant that are not its soil (a cell's centre tile can be soil while
+                -- its neighbours are not), else the game's own refusal.
+                local bad, nbad, soil = {}, 0, M.soil(seeds[seed])
+                for tx = -1, 1 do
+                  for ty = -1, 1 do
+                    local t = try(function() return surface.get_tile(c.x + tx, c.y + ty).name end)
+                    if t and not soil[t] then bad[t] = (bad[t] or 0) + 1; nbad = nbad + 1 end
+                  end
+                end
+                local parts = {}
+                for t, n in pairs(bad) do parts[#parts+1] = n .. ' ' .. t end
+                table.sort(parts)
+                why = nbad > 0 and string.format('soil for %s at its centre, but %d of the 9 tiles round it are not (%s): the game refuses the plant', seed,
+                    nbad, table.concat(parts, ', '))
+                  or string.format('soil for %s; the game refuses a plant there with no entity in the cell (tile %s)', seed, tile)
+              end
             end
+            empty[#empty+1] = {d=dx * dx + dy * dy, text=at(c) .. ' ' .. why}
           end
         end
       end
@@ -135,6 +172,12 @@ return function(api)
       plantable_now = plantable,
       planted_10min = planted,
     }
+    if #empty > 0 then
+      table.sort(empty, function(x, y) if x.d ~= y.d then return x.d < y.d end return x.text < y.text end)
+      out.empty_cells = {}
+      for i = 1, math.min(MAX_EMPTY_ROWS, #empty) do out.empty_cells[i] = empty[i].text end
+      if #empty > MAX_EMPTY_ROWS then out.empty_cells[#out.empty_cells+1] = (#empty - MAX_EMPTY_ROWS) .. ' more' end
+    end
     if #rows > 0 then
       out.plants = {}
       for i = 1, math.min(MAX_PLANT_ROWS, #rows) do out.plants[i] = rows[i].text end

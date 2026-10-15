@@ -97,6 +97,10 @@ already targets your character.
   characters), each logistic network's stock of it (free and reserved, and which requesters the reserved stock is for),
   its robots, every unmet requester with the reason, the machines that make and use it by status (the worst 3 with
   positions), and the inserters feeding them.
+- `./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
+  starts, naming each step's makers, their states and what they lack. `inspect` on a machine gives its `rate` (crafts
+  and output per minute, net of what goes back in), on an agricultural tower its `empty_cells` and why; a take from
+  a chest names what robots have reserved there.
 - `./fh call turrets` (optional `"surface"` or `"area"`) lists every turret by front: its ammo (a flamer's oil with
   its buffer), health, and what feeds it (an inserter and its belt or chest, robots, a pipe, power, or nothing:
   hand-fed); the hand-fed and low ones first.
