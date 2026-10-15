@@ -16,6 +16,9 @@ Sources, all read-only, in runs/RUN/:
                             shift's items and calls moved by hand (direct, queue, standing order), carry distance and
                             top repeated haul, the last read less the first. A shift without it counts the journal's
                             direct hand moves whose reply says what moved (queue steps are not in the journals)
+  efficiency.jsonl          the stream's reads of the harness's machine credit (tools/stream/efficiency.py): what the
+                            machines each agent built made this shift, the share moved by machines, machines and how
+                            many working, from the shift's last read (the runtime counts the shift itself)
 
 The result is cached as agent-stats.json (in runs/RUN/, or --cache-dir) with the sources' sizes and times: a finished
 shift is counted once, a live one again when a journal grows. Text kept: only the lines spoken on stream and the
@@ -33,8 +36,9 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent / "stream"))
 import hauling as haul_file  # noqa: E402  (tools/stream/hauling.py: the stream's hauling.jsonl rows)
+import efficiency as eff_file  # noqa: E402  (tools/stream/efficiency.py: the stream's efficiency.jsonl rows)
 
-VERSION = 6
+VERSION = 7
 # Requests that only read (no change in the game) and talk; every other action counts as a game action. The
 # clock line's "+Ns since your last request" is no measure of busy time: an agent's tools send requests too.
 READS = {"observe", "inspect", "sleep", "chat", "inventory", "inv", "tells", "board", "recipes", "placements",
@@ -175,6 +179,25 @@ def game_hauls(run_dir, keys):
                            "haul_queue_items": 0, "haul_queue_calls": 0, "haul_order_items": 0, "haul_order_calls": 0,
                            "haul_carry": 0, "haul_top": None, "haul_from": "game"})
     return out
+
+
+EFF_FIELDS = {"items_shift": "made_items", "machine_share_pct": "made_share_pct", "machines": "machines",
+              "running": "machines_working", "ore_shift_about": "ore_about"}
+
+
+def game_efficiency(run_dir, keys):
+    """({key: machine stats}, team) from the stream's efficiency.jsonl (efficiency.lua's counts): the shift's last
+    read, whose shift numbers are the runtime's own (since the shift started); ({}, None) without the file."""
+    rows = eff_file.read_rows(str(Path(run_dir) / eff_file.FILE))
+    if not rows:
+        return {}, None
+    last = rows[-1]
+    out = {}
+    for a in last.get("agents") or []:
+        if a.get("name") in keys:
+            out[a["name"]] = {v: a.get(k) for k, v in EFF_FIELDS.items()}
+    team = last.get("team") or {}
+    return out, {v: team.get(k) for k, v in EFF_FIELDS.items()}
 
 
 def journal_path(d):
@@ -445,7 +468,7 @@ def operator_requests(run_dir, keys):
 
 def sources(run_dir, keys):
     files = [journal_path(run_dir / k) for k in keys] + [run_dir / f for f in (
-        "stream-service.log", "caster.log", "operator-inbox.jsonl", "scores.jsonl", "team.txt", haul_file.FILE)]
+        "stream-service.log", "caster.log", "operator-inbox.jsonl", "scores.jsonl", "team.txt", haul_file.FILE, eff_file.FILE)]
     out = {}
     for f in files:
         if f and f.exists():
@@ -473,6 +496,11 @@ def compute(run_dir, display_names=()):
     for k, h in game_hauls(run_dir, keys).items():
         if k in agents:
             agents[k].update(h)
+    # what the machines each agent built made this shift (efficiency.lua), where the stream kept the reads
+    machines, machines_team = game_efficiency(run_dir, keys)
+    for k, e in machines.items():
+        if k in agents:
+            agents[k].update(e)
     done = research_done(run_dir)
     for tech, who in queued.items():
         k = key_of(str(who), keys)
@@ -488,7 +516,8 @@ def compute(run_dir, display_names=()):
         s["operator_seqs"] = ops.get(k, [])
         s["operator"] = len(s["operator_seqs"])  # this file's; across shifts see site/agents.py
     return {"version": VERSION, "run": run_dir.name, "tick0": clock[0][1] if clock else None,
-            "tick1": clock[-1][1] if clock else None, "agents": agents, "sources": sources(run_dir, keys)}
+            "tick1": clock[-1][1] if clock else None, "agents": agents, "machines_team": machines_team,
+            "sources": sources(run_dir, keys)}
 
 
 def load(run_dir, cache_dir=None, display_names=()):

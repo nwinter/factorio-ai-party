@@ -896,6 +896,8 @@ async function main() {
       ...(last?.kind === 'move_to' || last?.kind === 'drive' ? {avoided_enemies: last.avoided_enemies,
         enemies_at_start_or_goal: last.enemies_at_start_or_goal, passed_within_margin: last.passed_within_margin} : {}),
       why: last?.why, note: status.result?.note,
+      // waits short of rails a moving train was about to pass, on any walk, and a walk ending on rails (round1520d)
+      train_waits: last?.train_waits, on_rails: last?.on_rails,
       // retreat (operator 12:27): why it went back, from where, the health then and now, where to.
       retreated: last?.retreated,
       // collect over a radius: moved per item, places touched, what fell short.
@@ -949,7 +951,7 @@ async function main() {
       // an active 'feed'; the radius tours run as 'gather'; vehicle drive runs
       // as 'drive' (request #5: the wait returned the previous action's result). A transfer that walks (walk, pick)
       // runs as 'gather' too.
-      const kinds = action === 'collect' || action === 'feed' ? ['gather'] : ['rearm','refuel','transfer'].includes(action) ? ['gather','feed'] : action === 'build' || action === 'load_silo' ? ['feed']
+      const kinds = action === 'collect' || action === 'feed' || action === 'recover' ? ['gather'] : ['rearm','refuel','transfer'].includes(action) ? ['gather','feed'] : action === 'build' || action === 'load_silo' ? ['feed']
         : action === 'vehicle' ? ['drive'] : [action];
       const stillRunning = active && (action === 'shoot' || action === 'drop' || kinds.includes(active.kind));
       if (status.ok && stillRunning && told(status, acceptedTick) && action !== 'wait_ticks' && action !== 'wait_until') {
@@ -1231,6 +1233,8 @@ async function main() {
       : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until','wait_ticks','kite'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
         // rearm over an area or the whole surface: the same tour (Opus, shift12 13:50).
         || (action === 'rearm' && (args.area !== undefined || args.surface !== undefined) && reply.result?.until_tick !== undefined)
+        // recover: the walk to your corpses (round1520d).
+        || (action === 'recover' && reply.result?.until_tick !== undefined)
         || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined)
         // build stepping off its own footprint, then placing the rest (Sol 11:18: --wait returned at "built 1 of 5")
         || (action === 'build' && reply.result?.stepping_aside !== undefined)

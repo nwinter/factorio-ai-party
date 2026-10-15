@@ -787,6 +787,9 @@ def context_facts(s, baseline=None, deadline=None, clock=True, shift=None):
         if left is None or left >= 10:  # the handover only once it is near
             f["shift"].pop("at_the_deadline", None)
     f.update(planet_facts(s))
+    # a notable change in the team's machines over 30 minutes (model.efficiency_news; Nick 15:50): a fact to mention
+    if s.get("efficiency_news"):
+        f["machines_news"] = dict(s["efficiency_news"])
     sc = s.get("science") or {}
     if sc.get("stage_label"):
         f["stage"] = sc["stage_label"]
@@ -835,6 +838,9 @@ CARD_CALLS = {
                "they are, with no verdict on anyone",
     "tokens": "the card ranks the agents by tokens their models read and wrote this shift (most read again from cache): "
               "read the top names and their numbers as they are, with no verdict on anyone",
+    "efficiency": "the card shows what the machines the team built made this shift, how many machines are working, the "
+                  "share of items moved by machines rather than by hand, and one agent's machines: read the numbers as "
+                  "they are, with no verdict on anyone and no ranking",
 }
 
 

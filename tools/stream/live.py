@@ -8,6 +8,7 @@ worlds (e.g. the paused co-op save in world c).
 import math, os, re, time
 
 import basemap_log
+import efficiency
 import hauling
 import operator_inbox
 from harness import Harness
@@ -88,6 +89,11 @@ class LiveSource:
         self.next_hauling = 0
         self.hauling_path = hauling.path_for(journals)
         self.hauling_first = (hauling.read_rows(self.hauling_path) or [None])[0] if self.hauling_path else None
+        # production credited to who built the machine (efficiency.lua `efficiency`; Nick 15:50), every few minutes:
+        # runs/RUN/efficiency.jsonl; the shift's numbers are the runtime's own
+        self.has_efficiency = False
+        self.next_efficiency = 0
+        self.efficiency_path = efficiency.path_for(journals)
         # what each agent carries, wears and builds (loadout.lua `loadout`; Nick, 08:55): every few seconds
         self.has_loadout = False
         self.next_loadout = 0
@@ -422,6 +428,7 @@ class LiveSource:
             self.has_groups = "attack_groups_live" in (res.get("operator_reads") or [])
             self.has_big = "big_enemies_live" in (res.get("operator_reads") or [])
             self.has_hauling = "hauling" in (res.get("operator_reads") or [])
+            self.has_efficiency = "efficiency" in (res.get("operator_reads") or [])
             self.has_loadout = "loadout" in (res.get("operator_reads") or [])
             self.has_clouds = "clouds" in (res.get("operator_reads") or [])
         except Exception as e:
@@ -475,6 +482,23 @@ class LiveSource:
         obs["hauling"] = {"rows": hauling.shift_rows(self.hauling_first, row, team), "since": self.hauling_first["t"],
                           "t": row["t"]}
 
+    def observe_efficiency(self, obs, errors):
+        """Production credited to who built the machine (operator read `efficiency`), every efficiency.READ_EVERY
+        seconds: each read is a row in runs/RUN/efficiency.jsonl, and obs["efficiency"] the read for the card."""
+        now = time.time()
+        if not getattr(self, "has_efficiency", False) or now < self.next_efficiency:
+            return
+        try:
+            res, _ = self.h.operator_read("efficiency")
+        except Exception as e:
+            errors["efficiency"] = str(e)
+            self.next_efficiency = now + 60.0
+            return
+        self.next_efficiency = now + efficiency.READ_EVERY
+        row = efficiency.append(self.efficiency_path, res, now)
+        if row is not None:
+            obs["efficiency"] = efficiency.view(row, set(self.agents_cfg) or None)
+
     def observe_loadout(self, obs, errors):
         """Each agent's guns and ammo, armor and equipment, largest stacks, craft queue and build progress (operator
         read `loadout`), every loadout_every seconds: obs["loadout"] is the read's rows."""
@@ -516,6 +540,7 @@ class LiveSource:
                 self.board_probe()
         self.observe_groups(obs, errors)
         self.observe_hauling(obs, errors)
+        self.observe_efficiency(obs, errors)
         self.observe_loadout(obs, errors)
         self.observe_clouds(obs, errors)
         if self.has_confess:  # confessionals (agent -> viewers only), read as the operator

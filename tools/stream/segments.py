@@ -12,6 +12,7 @@ casters say matches the screen. The page renders a segment from its facts only.
 import itertools, math, re, threading, time
 from collections import deque
 
+import efficiency
 import hauling
 import tokens
 from model import SCIENCE, platform_shot
@@ -43,6 +44,9 @@ TYPES = {
     # Tokens each agent's model read and wrote this shift (operator 08:55, from Nick); the director shows it every
     # tokens_every, halfway between the hauling cards, ranked, numbers only.
     "tokens": {"title": "Tokens this shift", "params": {}, "seconds": [10, 16]},
+    # What the machines each agent built made this shift (Nick 15:50; efficiency.lua): the team's numbers and one
+    # agent's line, a different agent each time; the director shows it every efficiency_every, no ranking.
+    "efficiency": {"title": "Machines at work this shift", "params": {}, "seconds": [10, 16]},
 }
 LULL_ORDER = ["production", "spotlight", "research", "space", "overview", "recap"]
 MOMENT_FRESH_S = 150.0
@@ -74,7 +78,7 @@ def human(item):
 class Segments:
     def __init__(self, spacing=180.0, lull_after=360.0, urgent_quiet=20.0, overview_zoom=0.2, spotlight_zoom=0.9,
                  recap_every=1200.0, replay_spacing=90.0, cheap_quiet=180.0, hauling_every=1800.0,
-                 tokens_every=1800.0):
+                 tokens_every=1800.0, efficiency_every=1800.0):
         self.spacing = spacing            # seconds between segment starts, whoever asks
         # Replays skip `spacing` (replays.py), so they have their own: one start per replay_spacing (shake12: three in
         # 41 s). A single cheap building's loss airs only when no segment has started for cheap_quiet and no fight cut
@@ -101,6 +105,10 @@ class Segments:
         # The token card: the same, its first one half a period in (between the hauling cards, not after one).
         self.tokens_every = tokens_every
         self.last_tokens = time.time() - tokens_every / 2
+        # The machines card: the same, its first one a third of a period in; each card names the next agent.
+        self.efficiency_every = efficiency_every
+        self.last_efficiency = time.time() - efficiency_every * 2 / 3
+        self.efficiency_turn = 0
         self.urgent_quiet = urgent_quiet  # no segment within this long of an attack cut on the main camera
         self.overview_zoom = overview_zoom
         self.spotlight_zoom = spotlight_zoom
@@ -144,6 +152,8 @@ class Segments:
             return "no hand hauling counted this shift yet"
         if kind == "tokens" and not any(r.get("total") for r in (snap.get("tokens") or {}).get("rows") or []):
             return "no tokens counted this shift yet"
+        if kind == "efficiency" and not ((snap.get("efficiency") or {}).get("team") or {}).get("machines"):
+            return "no machines counted yet"
         return None
 
     def moments(self, snap, fresh_only=False, now=None):
@@ -254,6 +264,8 @@ class Segments:
                 self.last_hauling = now
             if kind == "tokens":
                 self.last_tokens = now
+            if kind == "efficiency":
+                self.last_efficiency = now
             return 200, {k: seg[k] for k in ("id", "state", "seconds", "title", "facts")} | {"eta": STARTING_S}
 
     # ---- the clock (called once a second with the latest snapshot) ---------------------------------------------
@@ -308,6 +320,11 @@ class Segments:
             code, _ = self.request({"type": "tokens", "by": "director", "reason": "tokens due"}, now)
             if code != 200 and self.why_unavailable("tokens", snap, now):
                 self.last_tokens = now  # nothing counted yet: the next one is due in tokens_every
+        elif (self.cur is None and self.queue is None and now - self.last_efficiency >= self.efficiency_every
+              and now - self.last_start >= self.spacing and self.urgent_since(snap, now) >= 60):
+            code, _ = self.request({"type": "efficiency", "by": "director", "reason": "machines card due"}, now)
+            if code != 200 and self.why_unavailable("efficiency", snap, now):
+                self.last_efficiency = now  # nothing counted yet: the next one is due in efficiency_every
         elif self.cur is None and self.queue is None and now - self.last_end >= self.lull_after:
             self.lull(snap, now)
         return self.public()
@@ -466,6 +483,24 @@ class Segments:
         facts = {"rows": rows, "minutes": minutes, "team_tokens": team, "team_text": tokens.short(team),
                  "line": tokens.card_line(counted, 5, lambda n: names.get(n, n))}
         return "Tokens this shift", facts, None
+
+    def build_efficiency(self, params, snap, now):
+        """The team's machines this shift (efficiency.lua): items they made, how many machines and how many working,
+        the share of items moved by machines (against hand hauling), and one agent's line; numbers only."""
+        e = snap.get("efficiency") or {}
+        names = {a["name"]: a.get("display_name") or a["name"] for a in snap.get("agents") or [] if a.get("name")}
+        team = e.get("team") or {}
+        one = efficiency.pick(e.get("agents") or [], self.efficiency_turn)
+        self.efficiency_turn += 1
+        facts = {"team_items_this_shift": team.get("items_shift") or 0, "team_items_text": efficiency.fmt(team.get("items_shift")),
+                 "machines": team.get("machines") or 0, "machines_working": team.get("running") or 0,
+                 "moved_by_machines_pct": team.get("machine_share_pct"),
+                 "ore_mined_about": team.get("ore_about") or None,
+                 "agent": names.get(one["name"], one["name"]) if one else None,
+                 "agent_line": efficiency.agent_line(one, lambda n: names.get(n, n)) if one else None,
+                 "agent_machines": one.get("machines") if one else None,
+                 "agent_machines_working": one.get("running") if one else None}
+        return "Machines at work this shift", {k: v for k, v in facts.items() if v is not None}, None
 
     def build_space(self, params, snap, now):
         sp = snap.get("space") or {}

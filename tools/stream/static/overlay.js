@@ -1259,6 +1259,12 @@
         t.append(el("div", "td", r.rank + ". " + r.agent), el("div", "td num", n(r.items)), el("div", "td num faint", n(r.calls)));
       body.append(t);
       if (f.minutes != null) body.append(el("div", "snote", "this shift · last " + f.minutes + " min"));
+    } else if (seg.type === "efficiency") { // the team's machines this shift and one agent's (segments.py build_efficiency)
+      const n = (v) => Number(v || 0).toLocaleString("en-US");
+      body.append(factRow("Made by machines", n(f.team_items_this_shift) + " items"),
+        factRow("Machines", n(f.machines) + " · " + n(f.machines_working) + " working"));
+      if (f.moved_by_machines_pct != null) body.append(factRow("Moved by machines", f.moved_by_machines_pct + "% (rest by hand)"));
+      if (f.agent_line) body.append(el("div", "snote", f.agent_line));
     } else if (seg.type === "tokens") { // tokens each agent's model read and wrote this shift (segments.py build_tokens)
       const t = el("div", "stable");
       t.append(el("div", "th", "Agent"), el("div", "th num", "tokens"), el("div", "th num", "cached"),
@@ -1301,7 +1307,7 @@
       const title = el("div", "stitle");
       title.append(el("span", "tag", seg.type === "spotlight" ? "Spotlight" : seg.type === "overview" ? "Overview"
         : seg.type === "attack_replay" ? "Replay" : seg.type === "space" || seg.type === "space_moment" ? "Space Age"
-        : seg.type === "hauling" || seg.type === "tokens" ? "Stats" : "Analysis"),
+        : seg.type === "hauling" || seg.type === "tokens" || seg.type === "efficiency" ? "Stats" : "Analysis"),
         el("span", "", seg.title));
       if (seg.type === "spotlight") {
         const ag = (s.agents || []).find((a) => a.name === (seg.facts || {}).name);

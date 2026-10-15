@@ -108,6 +108,18 @@ return function(api)
     return table.concat(parts, sep or ', ')
   end
   local function bump(map, key, n) map[key] = (map[key] or 0) + (n or 1) end
+  -- How much of an item robots are on their way to take from a logistic chest (its logistic point's pickup
+  -- reservations; Grok, 15:20); 0 for any other entity.
+  function M.reserved(e, item)
+    if not (e and e.valid and e.type == 'logistic-container') then return 0 end
+    local pt = try(function() return e.get_logistic_point(defines.logistic_member_index.logistic_container) end)
+    local n = 0
+    for _, r in ipairs(pt and try(function() return pt.targeted_items_pickup end) or {}) do
+      local name = type(r.name) == 'table' and r.name.name or r.name
+      if name == item then n = n + (r.count or 0) end
+    end
+    return n
+  end
   -- Why a requester or buffer chest asks for none of an item although a
   -- section names it: the section is off, or a circuit sets the requests.
   local function request_note(e, item)
@@ -171,7 +183,7 @@ return function(api)
     end
     local counted = {}
     local function spot(t, e, n, kind)
-      if #t.spots < MAX_SPOTS then t.spots[#t.spots+1] = {position=e.position, name=e.name, n=n, kind=kind, unit=e.unit_number} end
+      if #t.spots < MAX_SPOTS then t.spots[#t.spots+1] = {position=e.position, name=e.name, n=n, kind=kind, unit=e.unit_number, e=e} end
     end
     -- A spoilable item (Space Age): its first stack to spoil or hatch, where,
     -- and how many spoil within 5 minutes (spoil.lua), read where it was found.
@@ -193,7 +205,7 @@ return function(api)
     local any_pack = false
     for name in pairs(names) do if packs[name] or (prototypes.item[name] and try(function() return prototypes.item[name].type end) == 'tool') then any_pack = true end end
     local types = {}
-    for t, group in pairs(GROUP) do if (group ~= 'labs' and group ~= 'miners' or any_pack) and (group ~= 'robots' or not area) then types[#types+1] = t end end
+    for t, group in pairs(GROUP) do if (group ~= 'labs' and group ~= 'miners' or any_pack or (group == 'miners' and opts.miners)) and (group ~= 'robots' or not area) then types[#types+1] = t end end
     table.sort(types)
     local found = surface.find_entities_filtered(filter{type=types, limit=MAX_FOUND})
     local lists, seen = {crafters={}, labs={}, chests={}, belts={}, inserters={}, robots={}, miners={}}, {}
@@ -652,7 +664,11 @@ return function(api)
         if not bd or d < bd then best, bd = s, d end
       end
     end
-    return best and string.format('nearest %s: %s %s %d tiles', t.item, best.name, at(best.position), math.floor(math.sqrt(bd) + 0.5))
+    if not best then return nil end
+    -- with what robots have reserved there for pickup (Grok, 15:20: three walks to a provider emptied by robots)
+    local reserved = best.e and M.reserved(best.e, t.item) or 0
+    return string.format('nearest %s: %s %s %d tiles%s', t.item, best.name, at(best.position), math.floor(math.sqrt(bd) + 0.5),
+      reserved > 0 and string.format(' (holds %d, %d of it reserved for robots to take)', best.n or 0, reserved) or '')
   end
   -- What a machine lacks for its next craft (a lab: the needed packs it has none of).
   local function missing(e, u, packs)
@@ -1032,6 +1048,44 @@ return function(api)
     end
     -- path: the items the line walked; last: its last step (where the shortage starts).
     return {line='chain: ' .. table.concat(parts, '; '), tree=rows, cut=#nodes >= CHAIN_NODES or nil, path=path, last=parts[#parts]}
+  end
+  -- bottleneck {item} (Sonnet, 15:20: a purple science shortage dug down its chain by hand four times, through
+  -- advanced circuits, plastic, petroleum gas, the refinery and calcite): the item's recipe tree on the surface as the
+  -- science line's chain reads it (one supply scan, mining drills and pumps included), the line that follows the
+  -- ingredient most of a step's makers lack down to its root, and on each step of that line up to 3 makers that are
+  -- not working, with position, state and what they lack. Kept 10 s like supply.
+  function M.bottleneck_item(p, a)
+    local item = a.item
+    assert(type(item) == 'string' and (prototypes.item[item] or (prototypes.fluid and prototypes.fluid[item])),
+      'item must be an item or fluid name (processing-unit, plastic-bar, petroleum-gas, ...)')
+    local surface = p.surface
+    if a.surface ~= nil then
+      assert(type(a.surface) == 'string', 'surface must be a surface name')
+      surface = game.get_surface(a.surface)
+      assert(surface, 'no surface ' .. a.surface)
+    end
+    local force = p.force
+    local key = string.format('bottleneck|%s|%s|%s', tostring(surface.index or surface.name), force.name, item)
+    return M.reuse(key, function()
+      local names = prototypes.item[item] and {[item]=true} or {}
+      local scan = M.scan(surface, force, names, {packs=M.packs_of(force), miners=true})
+      local chain = M.chain(scan, force, surface, item)
+      local where = {}
+      for _, name in ipairs(chain.path or {}) do
+        local rows = {}
+        for _, m in ipairs(scan.by_product and scan.by_product[name] or {}) do
+          if #rows >= 3 then break end
+          local state = m.e.valid and (api.status_name(m.e) or 'unknown')
+          if state and state ~= 'working' then
+            local lack = (not m.miner) and missing(m.e, m, nil) or {}
+            rows[#rows+1] = string.format('%s %s %s%s', m.e.name, at(m.e.position), state, #lack > 0 and ' (lacks ' .. table.concat(lack, ', ') .. ')' or '')
+          end
+        end
+        if #rows > 0 then where[#where+1] = name .. ': ' .. table.concat(rows, '; ') end
+      end
+      return {item=item, surface=surface.name, line=chain.line, path=chain.path, root=chain.last, not_working=#where > 0 and where or nil,
+        steps=chain.tree, cut=chain.cut}
+    end)
   end
   local function packs_of(force)
     local tech, packs = force.current_research, {}

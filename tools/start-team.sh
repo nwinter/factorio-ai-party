@@ -8,10 +8,14 @@
 # POG_ANALYST (default 1: analyst on; POG_ANALYST_MODEL default sonnet; POG_ANALYST_ROUTE default claude-c).
 # POG_VIEWER_RELAY (default 1: viewer lines that pass the filters and Clef reach the agents in game chat; 0: off).
 # POG_RESUME=PREVIOUS_RUN: a later shift of the same world (docs/SPACEAGE.md, shifts): no new instance; the server
-# starts on the newest of saves\PREVIOUS_RUN.zip and the autosaves after it (copied to saves\RUN_ID.zip), existing bots
-# are kept, and each agent starts from its notes.md of that run. POG_SPACE_AGE must match the instance's mods.
+# starts on the previous run's stop save (its stopped.json, written by tools/stop-team.sh), else the newest save
+# written after its stop, else the newest save (tools/win/resume-save.ps1; copied to saves\RUN_ID.zip); the tick it
+# resumes at is checked against the previous run's last (tools/resume_guard.py; refused when it went back more than
+# POG_RESUME_TICK_SLACK ticks, default 10 game minutes); existing bots are kept, and each agent starts from its
+# notes.md of that run. POG_SPACE_AGE must match the instance's mods.
 # POG_RESUME_DIR: the previous run's directory (default runs/PREVIOUS_RUN here, else in ~/code/player-of-games).
-# POG_DRY_RUN=1: check what can be checked here and print the plan; touches nothing.
+# POG_DRY_RUN=1: check what can be checked here and print the plan; touches nothing. With POG_RESUME, POG_DRY_RUN_PICK=1
+# also asks the Windows box which save it would take (resume-save.ps1 -Check: read only, safe while the world runs).
 # --stream: OBS is restarted first (tools/obs-restart.sh; POG_OBS_RESTART=0 skips it, POG_OBS_RESTARTED=1 says the
 # caller did), then tools/obs-steps.sh --stream (scene, overlay, recording, stream, vertical).
 # Each team line: name<TAB>kind<TAB>route<TAB>model<TAB>effort<TAB>label<TAB>harness
@@ -53,6 +57,17 @@ if [ -n "$resume" ]; then
     prev_dir=$(dirname "$prev_dir")/$up; hops=$((hops + 1))
   done
   export POG_RESUME POG_RESUME_DIR=$prev_dir   # tools/new-run.sh and tools/launch-agent.sh read them
+  # The previous run's stop record (tools/stop_save.py, in its own directory, not the notes one): which save it wrote
+  # and when, by the Windows box's clock (operator 17:00: after a crash restart the 15:55 change took a 10:48 save).
+  stop_dir=$carry_from
+  stop_utc='' stop_save='' stop_tick=''
+  if [ -f "$stop_dir/stopped.json" ]; then
+    read -r stop_utc stop_save stop_tick < <(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(r.get("stop_utc") or "-", r.get("save") or "-", r.get("tick") if r.get("tick") is not None else "-")' "$stop_dir/stopped.json") || true
+    [ "$stop_utc" = - ] && stop_utc=''; [ "$stop_save" = - ] && stop_save=''; [ "$stop_tick" = - ] && stop_tick=''
+  fi
+  stop_args=()
+  [ -n "$stop_utc" ] && stop_args+=(-StopUtc "$stop_utc")
+  [ -n "$stop_save" ] && stop_args+=(-StopSave "$stop_save")
 fi
 members=$(awk -F'\t' '!/^#/ && NF {print $1}' "$team")
 # Quota headroom per route from ai-usage, read-only (docs/studies/shake5.md, P1 item 6: Gemini began shake5 at 72% of
@@ -65,8 +80,16 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   python3 tools/code_check.py || true
   if [ -n "$resume" ]; then
     echo "1. resume: tools/winps.sh tools/win/resume-save.ps1 -Name $world -From $resume -Check (refuse unless space_age=$POG_SPACE_AGE);"
-    echo "   stop world $world; copy the newest of saves\\$resume.zip and later autosaves to saves\\$run.zip; refresh the instance's harness mod;"
+    echo "   stop world $world; copy the previous run's stop save (else the newest save after its stop; with no stop record the newest save) to saves\\$run.zip; refresh the instance's harness mod;"
     echo "   start the server on $run.zip; deploy the runtime; write runs/$run/resumed-from"
+    if [ -n "$stop_utc" ]; then
+      echo "   stop record $stop_dir/stopped.json: tick $stop_tick, save ${stop_save:-none (it fell back to /server-save)} at $stop_utc: resume-save gets ${stop_args[*]}"
+    else
+      echo "   no stop record in $stop_dir (stopped.json): resume-save takes the newest save"
+    fi
+    if [ "${POG_DRY_RUN_PICK:-0}" = 1 ]; then
+      tools/winps.sh tools/win/resume-save.ps1 -Name "$world" -From "$resume" ${stop_args[@]+"${stop_args[@]}"} -Check 2>&1 | sed 's/^/   pick: /'
+    fi
     last=$(tail -1 "$prev_dir/scores.jsonl" 2>/dev/null | python3 -c 'import json,sys; t=json.loads(sys.stdin.read())["score"]["tick"]; print(f"tick {t} (game {t//3600}m)")' 2>/dev/null || echo "no scores.jsonl")
     echo "   previous run $prev_dir: last score $last"
   else
@@ -117,8 +140,12 @@ printf '%s\n' "POG_BROKER=${POG_BROKER:-0}" "POG_FULL_TOOLS=${POG_FULL_TOOLS:-0}
 if [ -n "$resume" ]; then
   # 1. A later shift: the same instance and save (docs/HARNESS3-NOTES.md, round 7).
   log "world $world: resuming run $resume ($prev_dir)"
-  check=$(tools/winps.sh tools/win/resume-save.ps1 -Name "$world" -From "$resume" -Check) || true
+  if [ -n "$stop_utc" ]; then log "world $world: the previous run's stop record: tick $stop_tick, save ${stop_save:-none} at $stop_utc"
+  else log "world $world: no stop record in $stop_dir (stopped.json): resume-save takes the newest save"; fi
+  check=$(tools/winps.sh tools/win/resume-save.ps1 -Name "$world" -From "$resume" ${stop_args[@]+"${stop_args[@]}"} -Check) || true
   printf '%s\n' "$check" | while read -r line; do log "  $line"; done
+  refused=$(printf '%s\n' "$check" | sed -n 's/^refuse=//p')
+  [ -z "$refused" ] || { log "refusing: resume-save would take no save: $refused"; exit 1; }
   save_sa=$(printf '%s\n' "$check" | sed -n 's/^space_age=\([01]\).*/\1/p')
   [ -n "$save_sa" ] || { log "resume check failed: $(printf '%s' "$check" | tr '\n' ' ' | cut -c1-300)"; exit 1; }
   if [ "$save_sa" != "$POG_SPACE_AGE" ]; then
@@ -128,9 +155,10 @@ if [ -n "$resume" ]; then
   log "world $world: stopping old processes"
   tools/winps.sh tools/win/stop-world.ps1 -Name "$world" >/dev/null || true
   scp -q -r vendor/factorio-harness/mod/agent-harness_0.1.0 pogwin:D:/pog/mods/ 2>/dev/null
-  copied=$(tools/winps.sh tools/win/resume-save.ps1 -Name "$world" -From "$resume" -To "$run") || true
+  copied=$(tools/winps.sh tools/win/resume-save.ps1 -Name "$world" -From "$resume" -To "$run" ${stop_args[@]+"${stop_args[@]}"}) || true
   printf '%s\n' "$copied" | grep -q '^copied=' || { log "resume copy failed: $(printf '%s' "$copied" | tr '\n' ' ' | cut -c1-300)"; exit 1; }
-  log "world $world: $(printf '%s\n' "$copied" | grep '^save=') copied to $run.zip"
+  resumed_save=$(printf '%s\n' "$copied" | sed -n 's/^save=//p')
+  log "world $world: $resumed_save (written $(printf '%s\n' "$copied" | sed -n 's/^save_time=//p'); $(printf '%s\n' "$copied" | sed -n 's/^why=//p')) copied to $run.zip"
   echo "$resume" > "$rundir/resumed-from"
 else
   # 1. Fresh world with the current mod (stop any previous one of this name first).
@@ -157,8 +185,18 @@ trusted=${POG_TRUSTED_PLAYERS-nick}
 if [ -n "$resume" ]; then
   # A save made while tick-paused would load paused; team runs are real time. Game time goes on from the save's tick.
   python3 tools/pog.py --world "$world" resume >/dev/null 2>&1 || true
-  tick=$(python3 tools/pog.py --world "$world" score 2>/dev/null | python3 -c 'import json,sys; t=json.load(sys.stdin)["tick"]; print(f"{t} (game {t // 3600}m)")' 2>/dev/null || echo '?')
-  log "world $world: resumed at tick $tick"
+  tick=$(python3 tools/pog.py --world "$world" score 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["tick"])' 2>/dev/null || echo '?')
+  # The tick against the previous run's last (tools/resume_guard.py): a world that went back is not played on.
+  if [ "$tick" = '?' ]; then log "world $world: resumed; its tick could not be read"
+  else
+    guard=$(python3 tools/resume_guard.py "$stop_dir" "$tick" "${resumed_save:-}") && guard_ok=1 || guard_ok=0
+    log "world $world: $guard"
+    if [ "$guard_ok" = 0 ]; then
+      python3 tools/pog.py --world "$world" pause >/dev/null 2>&1 || true
+      log "refusing: world $world is paused on $run.zip; no agents start (check the saves, or POG_RESUME_TICK_SLACK)"
+      exit 1
+    fi
+  fi
   # Losses in this shift start new incidents; the previous shift's stay in status alerts history.
   # The shift's number in the world, counted as the stream hosts count it (tools/shift_times.py, resumed-from chain):
   # the agents' shift block says the same number.

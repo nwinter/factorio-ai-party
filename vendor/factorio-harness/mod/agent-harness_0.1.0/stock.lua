@@ -504,17 +504,20 @@ return function(api)
     local t=action.targets[action.index]
     if not action.nav then
       action.nav={position=t.position,tolerance=math.max(1,(p.reach_distance or 10)-3),max_stalls=6,replans=0,stalled=0,last_position=p.position}
-      -- A tour with avoid (transfer from: "nearest"; friction3: worms killed Opus on such a tour along a turret line) walks
-      -- its legs as move_to does: around the worms the map shows, their range + 4.
-      if action.avoid and api.avoid_start then api.avoid_start(p,action.nav,action.avoid) end
+      -- avoid_mode (recover; transfer from: "nearest" walking, friction3: worms killed Opus on such a tour along a turret
+      -- line): the walk keeps out of the enemy reach the map shows, as move_to's.
+      if action.avoid_mode and api.avoid_start then api.avoid_start(p,action.nav,action.avoid_mode) end
       api.request_path(p,action.nav)
     end
     local outcome=api.navigate(p,action.nav)
     -- A leg round a nest ended: the next one starts.
     if outcome and action.nav.foes and api.leg_done and api.leg_done(p,action.nav,outcome) then outcome=nil end
-    -- Arrived yet still out of reach, or blocked (or no way round the worms): skip this place.
+    -- Arrived yet still out of reach, or blocked (or no way round the worms): skip this place (the first one's why in
+    -- first_unreached).
     if outcome then
       if outcome=='no_safe_route' then action.unsafe=(action.unsafe or 0)+1 end
+      action.first_unreached=action.first_unreached or string.format('(%g,%g): %s%s',t.position.x,t.position.y,outcome,
+        action.nav.why and ': '..action.nav.why or '')
       action.index=action.index+1; action.nav=nil; action.unreached=(action.unreached or 0)+1; api.stop_walking(p)
     end
   end

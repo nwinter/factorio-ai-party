@@ -53,7 +53,7 @@ def find(d, since):
 
 
 BRIEF = os.path.expanduser(os.environ.get("POG_AGY_BRIEF", "~/.cache/ai-usage/agent-brief.json"))
-PACE = os.path.expanduser(os.environ.get("POG_AGY_PACE", "~/.cache/pog/agy-pace.json"))
+PACE = os.path.expanduser(os.environ.get("POG_AGY_PACE_FILE", "~/.cache/pog/agy-pace.json"))
 PACE_CAP = float(os.environ.get("POG_AGY_PACE_CAP", 97))        # % of the weekly window to reach at its reset
 FULL_RATE = float(os.environ.get("POG_AGY_FULL_RATE", 1.75))    # %/h of the weekly window at full play (shift10-12)
 MAX_SLEEP = int(os.environ.get("POG_AGY_PACE_MAX", 3 * 3600))
