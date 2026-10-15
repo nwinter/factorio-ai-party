@@ -4719,6 +4719,9 @@ function handlers.inspect(p,a)
     out.rate=okr and rate or nil
     local okf,fill=pcall(M.output_fill,e)
     out.output_fill=okf and fill or nil
+    -- Where its output stops it, per product, and what full_output means now (outputstop.lua; Sol, shift17 12:20).
+    local oko,stop=pcall(M.timed,'inspect.outputstop',M.outputstop.read,e,out.status_name)
+    out.output_stop=oko and stop or nil
     -- An ingredient short of a craft while another is stacked, and who feeds the machine (inputs.lua; Grok, shift11).
     local oki,bal=pcall(M.timed,'inspect.inputs',M.inputs.check,e,out.status_name)
     if oki and bal then out.input_imbalance,out.feeders,out.feeders_count=bal.input_imbalance,bal.feeders,bal.feeders_count end
@@ -4726,8 +4729,9 @@ function handlers.inspect(p,a)
   return out
 end
 -- How full an assembler's or furnace's output is (Muse: which of the machines fed by hand wait on their output): each
--- product held of its stack size, and full when the machine has stopped for it (status full_output), as the
--- machine GUI's output slot and status show: "copper-cable 180/200 (90%), full".
+-- product held of its stack size, and full when the machine has stopped for it: status full_output with a stack that
+-- takes no further craft ("copper-cable 200/200 (100%), full"). full_output below that is an idle machine holding a
+-- few crafts' worth (outputstop.lua): "cryogenic-science-pack 45/200 (23%), status full_output below its limit".
 function M.output_fill(e)
   local inv=e.get_output_inventory and e.get_output_inventory()
   if not inv then return nil end
@@ -4741,8 +4745,23 @@ function M.output_fill(e)
   end
   local status=defines.entity_status and defines.entity_status.full_output
   local full=status~=nil and e.status==status
-  if #parts==0 then return full and 'empty, full' or 'empty' end
-  return table.concat(parts,', ')..(full and ', full' or '')
+  if not full then return #parts==0 and 'empty' or table.concat(parts,', ') end
+  -- At its limit: a product whose stack or output box takes no further craft (outputstop.lua).
+  local at,fluid_at=false,false
+  local ok,stop=pcall(M.outputstop.read,e,'full_output')
+  for _,p in ipairs(ok and stop and stop.products or {}) do
+    if p.full then if p.fluid then fluid_at=true else at=true end end
+  end
+  -- No recipe read: a full stack.
+  if not (ok and stop) then
+    for i=1,#inv do
+      local s=inv[i]
+      if s.valid_for_read and s.count>=((s.prototype and s.prototype.stack_size) or (prototypes.item[s.name] and prototypes.item[s.name].stack_size) or 1) then at=true end
+    end
+  end
+  local tail=at and ', full' or fluid_at and ', full (a fluid output: output_stop)' or ', status full_output below its limit (output_stop)'
+  if #parts==0 then return 'empty'..tail end
+  return table.concat(parts,', ')..tail
 end
 -- inspect over positions (Muse surveys 6 assemblers every 5 minutes, one call each): one inspect per entry, in order;
 -- an entry that fails is its position and error. Each entry may carry name or unit_number.
@@ -5177,6 +5196,26 @@ function M.configure_approach(p,a,e,f)
   return M.autowalk.approach(p,'configure',a,{entity=e},why..': '..M.autowalk.line({f},1,f))
 end
 M.preflight=M.preflight or {}
+-- A queued step's arguments checked at submit and in dry_run as the live call reads them, with no world (Sol, shift17
+-- 19:06: a modules map passed the dry run and failed live in 8 steps; a transfer with no direction failed 3 times).
+M.step_checks={
+  configure=function(a)
+    if a.modules~=nil then M.modules.parse(a.modules) end
+    assert(a.by==nil or a.by=='hand' or a.by=='robots','by is hand (in reach, from your inventory) or robots (an item request)')
+    if type(a.recipe)=='string' and a.recipe~='' and prototypes.recipe then assert(prototypes.recipe[a.recipe],'unknown recipe: '..a.recipe) end
+  end,
+  transfer=function(a)
+    assert(a.direction==nil or a.direction=='to_entity' or a.direction=='to_player','direction must be to_entity or to_player')
+    if type(a.item)=='string' and prototypes.item then assert(prototypes.item[a.item],'unknown item '..a.item) end
+    if a.items~=nil then assert(a.direction~=nil,'items requires direction to_entity or to_player') end
+    -- A direct call infers it from who holds the item at the call; a queued step runs later.
+    if a.direction==nil and a.item~=nil and a.pick==nil and a.from==nil and a.items==nil and a.to==nil then
+      error('a queued transfer of an item needs direction: to_entity (from your inventory into the target) or to_player '..
+        '(from the target into your inventory). A direct call infers it from who holds the item at the call; a queued '..
+        'step runs later, and fails when both sides hold it or neither does',0)
+    end
+  end,
+}
 M.preflight.configure=function(p,a)
   if a.modules~=nil then M.modules.parse(a.modules) end
   if a.positions~=nil then return end
@@ -8229,6 +8268,7 @@ M.replace=require('replace'){filters=function(e) return M.details.filters(e) end
   circuit_snapshot=function(e) return M.circuits.snapshot(e) end,circuit_restore=function(e,s) return M.circuits.restore(e,s) end}
 -- A crafting machine's input against its recipe, and its feeders (inputs.lua; Grok, shift11).
 M.inputs=require('inputs'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end}
+M.outputstop=require('outputstop'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end}
 M.beltflow=require('beltflow'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end}
 -- Underground entrances fed from the side by an inserter or a belt (sidefeed.lua; Sol, shift10).
 M.sidefeed=require('sidefeed'){try=function(fn) local ok,v=pcall(fn); if ok then return v end end}
@@ -8367,19 +8407,20 @@ function handlers.load_silo(p,a)
   local ticks=integer(a.ticks,3600,1,36000,'ticks')
   local r=M.rocketload.load(p,a)
   if not r.wait then return r end
-  if a.awaited then error('the rocket is still not ready: '..r.why,0) end
+  if a.awaited then error((r.platform and 'still waiting, nothing loaded: ' or 'the rocket is still not ready: ')..r.why,0) end
   local rest={}
   for k,v in pairs(a) do rest[k]=v end
   rest.awaited=true
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   local until_tick=game.tick+ticks
   -- While the silo makes parts the wait goes on (rocketload.lua M.ready; Sonnet 22:50): ticks with no new part ends it.
-  local await={position=a.position,launch=a.launch==true}
+  local await={position=a.position,launch=a.launch==true,platform=a.launch==true and a.platform or nil}
   local okw,wf=pcall(M.rocketload.wait_fields,entity(p,{position=a.position}),ticks)
   if okw then for k,v in pairs(wf) do await[k]=v end end
   state().active[p.index]={kind='feed',handler='load_silo',args=rest,await_silo=await,until_tick=until_tick,next_check=game.tick+FEED_CHECK}
   return {waiting={why=r.why,rocket=r.rocket,rate=okw and M.rocketload.wait_report(state().active[p.index]) or nil,
-    note=okw and string.format('waits while the silo makes parts: the idle window starts at %ds and grows to 3 times the longest observed interval to a part increase; at the latest tick %d',math.floor(ticks/60),await.give_up) or nil},
+    note=okw and (r.platform and string.format('waits for the platform to be in orbit here, at the latest tick %d; then loads and launches in that tick',await.give_up)
+      or string.format('waits while the silo makes parts: the idle window starts at %ds and grows to 3 times the longest observed interval to a part increase; at the latest tick %d',math.floor(ticks/60),await.give_up)) or nil},
     until_tick=until_tick,gives_up_tick=okw and await.give_up or nil}
 end
 function handlers.preflight(p,a) return M.rocketload.preflight(p,a) end
@@ -9914,7 +9955,7 @@ M.waiteta=require('waiteta'){state=state,check=function(p,c,record) return condi
 M.scheduler_api={
   state=state,player=player,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
-  condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) return check_args(action,args) end,validate_condition=function(c) return conditions.validate(c) end,
+  condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end end,validate_condition=function(c) return conditions.validate(c) end,
   wait_check=function(p,c,record) return M.waiteta.check(p,c,record) end,
   wait_info=function(out,record) return M.waiteta.info(out,record) end,
   fix_args=function(action,args) return M.aliases.fix(action,args,M.takes) end,

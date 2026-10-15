@@ -105,6 +105,32 @@ return function(api)
     return {at=loc, stopped=loc ~= nil, text=loc and 'at ' .. loc or 'not at a stop'}
   end
 
+  local platform_view
+  -- A launch to a platform that is not in orbit of the silo's planet (Sonnet, shift17 19:15: 500 packs loaded into a
+  -- rocket for Kestrel, still flying, stayed in it): 'here' (it is: load and launch), 'headed' with why (its current
+  -- leg or next stop is this planet: the load waits, nothing loaded), or 'away' with why (refused, nothing loaded).
+  function M.platform_gate(p, a, silo)
+    if not (a.launch and a.platform ~= nil) then return 'here' end
+    local pl = api.platform(p, a.platform)
+    local here = planet_of(silo)
+    local w = where(pl)
+    if w.at == here then return 'here' end
+    local v = platform_view(pl, here, nil, {}, true, true)
+    if v.headed_here then
+      return 'headed', string.format('platform %s is %s, headed to %s%s: nothing is loaded until it is in orbit there (a launch needs it there, and the rocket would hold the cargo until then)',
+        pl.name, w.text, here, v.eta_s and string.format(' (about %ds at its speed now)', v.eta_s) or '')
+    end
+    return 'away', string.format('platform %s is %s, not headed to %s (next stop %s): a launch needs it in orbit of %s; nothing loaded',
+      pl.name, w.text, here, tostring(v.next_stop or 'none'), here)
+  end
+  -- How to send what is aboard (Sonnet, shift17 19:16: three calls after 1000 packs were aboard).
+  function M.as_is(silo, a)
+    local pos = silo.position
+    if a and a.platform ~= nil then
+      return string.format('launch it as it is: launch {"position":{"x":%g,"y":%g},"platform":"%s"}', pos.x, pos.y, tostring(a.platform))
+    end
+    return string.format('launch it as it is: launch {"position":{"x":%g,"y":%g},"platform":NAME}', pos.x, pos.y)
+  end
   -- min_cargo against counts (count(r) gives what is aboard): ok, lines, lacks.
   function M.min_check(list, count)
     local lines, lacks = {}, {}
@@ -247,6 +273,9 @@ return function(api)
     if not inv or (a.launch and not ready(silo)) then
       return {wait=true, why=not inv and 'no rocket to load yet' or 'the rocket is not ready to launch yet', rocket=rk and rk.rocket or nil}
     end
+    local gate, gate_why = M.platform_gate(p, a, silo)
+    if gate == 'headed' then return {wait=true, platform=true, why=gate_why, rocket=rk and rk.rocket or nil} end
+    if gate == 'away' then error(gate_why .. '; the rocket holds ' .. list_text(contents(inv)), 0) end
     -- The chests: those given, else ours in reach.
     local chests = {}
     if a.from ~= nil then
@@ -334,13 +363,13 @@ return function(api)
     end
     if a.launch then
       if #short > 0 and not a.up_to then
-        error(string.format('not launched: %s; what was loaded stays in the rocket (it holds %s, %s)',
-          table.concat(short, '; '), out.cargo, out.rocket_weight), 0)
+        error(string.format('not launched: %s; what was loaded stays in the rocket (it holds %s, %s); %s, or load the rest (to_total=true counts what is aboard)',
+          table.concat(short, '; '), out.cargo, out.rocket_weight, M.as_is(silo, a)), 0)
       end
       local ok, launched = pcall(api.launch, p, {position=silo.position, platform=a.platform, orbit=a.orbit, min_cargo=a.min_cargo, arrived=a.arrived})
       if not ok then
-        error(string.format('loaded, then the launch was refused: %s; the cargo stays in the rocket (it holds %s, %s)',
-          api.reason and api.reason(launched) or tostring(launched), out.cargo, out.rocket_weight), 0)
+        error(string.format('loaded, then the launch was refused: %s; the cargo stays in the rocket (it holds %s, %s); %s',
+          api.reason and api.reason(launched) or tostring(launched), out.cargo, out.rocket_weight, M.as_is(silo, a)), 0)
       end
       out.launch = launched
     end
@@ -400,7 +429,16 @@ return function(api)
       end
     end
     if not M.rocket_inventory(silo) then return false end
-    return not w.launch or ready(silo)
+    if w.launch and not ready(silo) then return false end
+    -- The platform still on its way here: the wait goes on to give_up; it left for elsewhere: the load reruns and refuses.
+    if w.launch and w.platform ~= nil then
+      local ok, gate = pcall(M.platform_gate, p, {launch=true, platform=w.platform}, silo)
+      if ok and gate == 'headed' then
+        action.until_tick = math.min(w.give_up or game.tick + 3600, math.max(action.until_tick or 0, game.tick + 1800))
+        return false
+      end
+    end
+    return true
   end
 
   -- load_silo {walk: true, from} ------------------------------------------------------
@@ -490,6 +528,10 @@ return function(api)
     end
     if not far then return nil end
     local inv = M.rocket_inventory(silo)
+    if inv and a.launch then
+      local gate, gate_why = M.platform_gate(p, a, silo)
+      if gate == 'away' then error(gate_why .. '; nothing walked', 0) end
+    end
     local goals = {}
     for _, r in ipairs(M.items(a.items, 'items')) do
       local before = aboard(inv, r)
@@ -501,7 +543,7 @@ return function(api)
     local action = {silo=silo, chests=chests, goals=goals}
     local rows = needs(p, action)
     if #rows == 0 then
-      error(string.format('nothing to load: the rocket holds the list already (%s); nothing walked', list_text(contents(inv))), 0)
+      error(string.format('nothing to load: the rocket holds the list already (%s); nothing walked; %s', list_text(contents(inv)), M.as_is(silo, a)), 0)
     end
     local first, todo = trip(p, action, p.position, rows)
     local taking, held_any = false, false
@@ -510,7 +552,9 @@ return function(api)
       if n.held > 0 then held_any = true end
     end
     if not taking and not held_any then
-      error(string.format('nothing walked: the rocket still needs %s and none of it fits under its lift (it holds %s)', need_text(rows), api.rocket_weight(silo)), 0)
+      error(string.format('nothing walked: the rocket still needs %s and none of it fits under its lift (it holds %s, %s)%s; %s',
+        need_text(rows), list_text(contents(inv)), api.rocket_weight(silo),
+        a.to_total and '' or ' (items adds to what is aboard; to_total=true counts what is aboard)', M.as_is(silo, a)), 0)
     end
     if taking and not todo and not held_any then
       error(string.format('nothing walked: the rocket still needs %s and the chests in from hold none of it (%s)', need_text(rows), chests_text(action, rows)), 0)
@@ -555,14 +599,27 @@ return function(api)
     -- ready and the silo's automatic requests took it out again): the tour holds at the silo and loads nothing, as the
     -- load without walk waits (M.ready: while the silo makes parts the wait goes on, at most to give_up), checked
     -- every 30 ticks; then it loads, and launches in that tick.
-    if not inv or (action.load.launch and not ready(e)) then
+    -- The platform not in orbit here yet: the tour holds at the silo as for the rocket; gone elsewhere: it ends there.
+    local gate, gate_why = 'here', nil
+    if inv and action.load.launch and ready(e) then
+      local okg, g, why = pcall(M.platform_gate, p, action.load, e)
+      if okg then gate, gate_why = g, why end
+    end
+    if gate == 'away' then
+      action.final = 'short'; action.why = gate_why
+      action.rows[#action.rows+1] = {position=e.position, name=e.name, trip=action.trips, loaded=0, why=gate_why}
+      return {transferred=0, stop='short'}
+    end
+    if not inv or (action.load.launch and not ready(e)) or gate == 'headed' then
       local hold = action.silo_hold
       if not hold then
         hold = M.wait_fields(e, action.hold_ticks or 3600)
         hold.position = e.position; hold.launch = action.load.launch == true; hold.since = game.tick
+        hold.platform = action.load.launch and action.load.platform or nil
         action.silo_hold = hold; action.hold_check = game.tick
         action.rows[#action.rows+1] = {position=e.position, name=e.name, trip=action.trips, loaded=0,
-          why=not inv and 'no rocket to load yet: waiting at the silo' or 'the rocket is not ready to launch yet: waiting at the silo, nothing loaded'}
+          why=not inv and 'no rocket to load yet: waiting at the silo' or gate == 'headed' and gate_why .. ': waiting at the silo'
+            or 'the rocket is not ready to launch yet: waiting at the silo, nothing loaded'}
       end
       if game.tick >= (action.hold_check or 0) then
         action.hold_check = game.tick + 30
@@ -570,7 +627,8 @@ return function(api)
         local done = M.ready(p, view)
         if view.until_tick and view.until_tick > (action.until_tick or 0) then action.until_tick = view.until_tick end
         if not done then
-          action.why = string.format('waiting at the silo for %s (%s); nothing loaded yet', not inv and 'a rocket' or 'the rocket to be ready', rk and rk.rocket_now or 'no rocket')
+          action.why = gate == 'headed' and ('waiting at the silo: ' .. gate_why)
+            or string.format('waiting at the silo for %s (%s); nothing loaded yet', not inv and 'a rocket' or 'the rocket to be ready', rk and rk.rocket_now or 'no rocket')
           return {transferred=0, wait=true}
         end
         inv = M.rocket_inventory(e)
@@ -685,7 +743,7 @@ return function(api)
   end
   local function one_line(s) return (s:gsub('[%c]+', ' ')) end
   -- The next scheduled stop is a fact, not a departure time. A stopped ship has no flight ETA.
-  local function platform_view(pl, here, inv, held, unmet_only, route_only)
+  function platform_view(pl, here, inv, held, unmet_only, route_only)
     local w = where(pl)
     local plat = {name=pl.name, where=w.text, at=w.at, arrived=w.stopped == true and w.at == here}
     local l = w.leg

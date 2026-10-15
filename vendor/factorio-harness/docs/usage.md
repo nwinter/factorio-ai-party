@@ -712,6 +712,8 @@ fh call status
   foundation) never takes its place as the target.
 - `configure {position | positions, modules, by?}` sets a machine's module slots in one call (Astra and Gemini, shift12
   15:10: Sunward's module swaps took three blueprint round trips, Fulgora's upgrades four). `modules` is one of:
+  - A map of module names to counts (`{"efficiency-module": 3}`; Sol, shift17 19:06): that list, the names in
+    alphabetical order, each count times (1..16).
   - A list of modules (`["speed-module-2","efficiency-module"]`, or `{name, count, quality}`): the machine ends up
     holding these. The modules it holds, or has on their way in, that the list names stay in their slots; the rest go
     into the other slots in slot order; slots left over end up empty. (Astra, shift13 19:40: applied slot by slot, that
@@ -1447,7 +1449,14 @@ fh queue repeat --file plan.json
   (out of reach, an unknown entity, a timed-out tour) still follow `on_fail`.
 - `queue edit` needs the current revision, so you can't accidentally edit a plan that has already moved on.
 - `fh queue submit --file plan.json --args '{"dry_run":true}'` checks the plan as a submit does and queues nothing (the
-  queue, its revision and a running standing order are left as they are; Luna, shift12 15:20). It counts the silo
+  queue, its revision and a running standing order are left as they are; Luna, shift12 15:20). A submit, a dry run,
+  `order_set` and `plan_save` check each step's arguments as the live call reads them where no world is needed (Sol,
+  shift17 19:06: a modules map passed the dry run and failed live in 8 steps): `configure` its `modules` (as below),
+  `by` and a recipe name; `transfer` its `direction` and item name, and an item with no `direction` is refused (`a
+  queued transfer of an item needs direction: to_entity (from your inventory into the target) or to_player (from the
+  target into your inventory) ...`: a direct call infers it from who holds the item at the call; a queued step runs
+  later; `pick`, `from`, `to` and `items` forms aside, `items` needing a direction as live). A standing order set before
+  this runs as it was set; a saved plan is checked again at `plan_run` (a submit), which refuses such a step. It counts the silo
   cargo the steps would leave, from what you, the chests and the silos hold now through `transfer`, `load_silo` and
   `launch` steps (waits move nothing): `launches [{step, label, silo, cargo (before that launch), kg, min_cargo,
   platform_now, would_refuse}]`, `silos_after`, and `notes` for steps whose item moves are not counted (`collect`,
@@ -1847,8 +1856,23 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   spoilage its recipe does not take in its input shows `input_spoilage` (`input holds spoilage 50 in 1 of its 3 slots
   (its recipe does not take spoilage)`).
 - `inspect` of an assembler or furnace shows `output_fill`: each product in its output slots held of its stack size
-  with the %, and `full` when the machine has stopped for it (status `full_output`): `copper-cable 200/200 (100%),
-  full`, or `empty`. A column in the `inspect {positions}` table too.
+  with the %, and `full` when the machine has stopped for it (status `full_output` and a stack that takes no further
+  craft): `copper-cable 200/200 (100%), full`, `empty`, or `cryogenic-science-pack 45/200 (23%), status full_output
+  below its limit (output_stop)`. A column in the `inspect {positions}` table too.
+- `inspect` of an assembler or furnace with a recipe shows `output_stop` (Sol, shift17 12:20: Aquilo science read
+  full_output at 45 packs and 135 hot fluoroketone, misdiagnosed about 5 times), from the game's rules measured on
+  2.0.77: `lines`, one per product: an item stops the machine when a craft's amount no longer fits in one stack (it
+  waits with that craft finished: `cryogenic-science-pack 45 held: it stops when a craft's 1 no longer fit in one
+  stack (200) ...`), a fluid when a craft's amount no longer fits in its output box (`fluoroketone-hot 135 of 300 in
+  its output box ...`; the box's own capacity, sized to the recipe; pipes joined to it take from it as they have
+  room); `products [{name, fluid, per_craft, held, stops_at, full, full_output_from}]`; when the machine is not
+  working, `idle_full_output`: an assembling machine that is not crafting for another reason reads `full_output`, not
+  the shortage, once it holds amount x (1 + ceil(1.166 x crafts per second)) of any product (2 crafts' worth for a
+  slow recipe: 2 cryogenic packs or 6 hot fluoroketone; 3 for gears in an assembler 2), and that output does not stop
+  it; and with status `full_output`, `line`: `full_output: output at its limit, fluoroketone-hot 298 of 300: ...` or
+  `full_output, no output at its limit: it is not crafting and holds 2 crafts' worth or more (cryogenic-science-pack
+  45, fluoroketone-hot 135); it lacks ice 2 (a craft takes 3): it crafts again when that arrives`. `fluids_summary`
+  gives a crafting machine's boxes at that capacity (it read `135/1000`, another box's volume).
 - `inspect` of an assembler or furnace adds `rate` (Sol, 15:20: an egg breeder's output twice miscounted): its recipe
   (a furnace's last one when idle) at its crafting speed now and its productivity, as if it ran all the time:
   `crafts_per_min`, `seconds_per_craft`, `speed`, `productivity` (the game's figure for the machine, capped at the
@@ -2707,8 +2731,20 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     `slots` (used/total), `chests`, `complete`, `short`.
   - `launch: true` with `platform` (or `orbit: true`) launches in the same tick, once every count is aboard;
     `min_cargo` and `arrived` are checked as `launch` checks them. Any count short: `not launched: ...; what was loaded
-    stays in the rocket (it holds ..., 600/1000 kg)`. A launch refused after loading: `loaded, then the launch was
-    refused: ...; the cargo stays in the rocket`.
+    stays in the rocket (it holds ..., 600/1000 kg); launch it as it is: launch {"position":{...},"platform":"..."}, or
+    load the rest (to_total=true counts what is aboard)`. A launch refused after loading: `loaded, then the launch was
+    refused: ...; the cargo stays in the rocket ...; launch it as it is: ...`. With cargo aboard, a walking load that
+    has nothing to do says so with the same `launch it as it is` line (`nothing to load: the rocket holds the list
+    already (...)`, and `nothing walked: ... none of it fits under its lift (it holds metallurgic-science-pack*1000,
+    1000/1000 kg) (items adds to what is aboard; to_total=true counts what is aboard)`; Sonnet, shift17 19:16).
+  - The platform is read before anything is loaded (Sonnet, shift17 19:15: 500 packs for Kestrel, still flying, stayed
+    in a rocket): in orbit of the silo's planet, the load and launch go ahead; flying here (its current leg ends here,
+    or its next scheduled stop is here and it is not paused), the call waits as for a rocket, nothing loaded (`waiting
+    {why: "platform Kestrel is flying fulgora->vulcanus 80%, headed to vulcanus (about 95s at its speed now): nothing is
+    loaded until it is in orbit there ..."}`; the wait goes on while it flies here, at most to `gives_up_tick`); a walking
+    load holds at the silo the same way; anywhere else: refused, nothing loaded (`platform Kestrel is at gleba, not
+    headed to vulcanus (next stop ...): a launch needs it in orbit of vulcanus; nothing loaded`). An unknown platform is
+    refused before loading too.
   - `up_to: true` (Sonnet, d15 07:50: a launch stayed unlaunched when weight ran short, about 5 retries a shift) loads
     what fits (weight, slots) and what you and the chests hold. A short row goes to `up_to_short` (not `short`), the
     call does not fail, and a launch goes with what is aboard; none of the list aboard: `not launched (up_to): none of

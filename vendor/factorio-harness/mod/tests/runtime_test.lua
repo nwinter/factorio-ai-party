@@ -4684,10 +4684,14 @@ end)()
     eq(stl.active,false); eq(stl.last.outcome,'timed_out','no new part for 60 ticks')
     silo.rocket_parts=0; rocket_there=true; main[1]=stack(nil,0)
   end
-  -- With launch: the launch's refusal after loading says the cargo stays.
+  -- With launch to a platform that does not exist: refused before anything is loaded (the platform is read first;
+  -- Sonnet, shift17 19:15).
   main[1]=stack('agricultural-science-pack',10)
+  local aboard_before=cargo[1].valid_for_read and cargo[1].count or 0
   fails(function() call('load_silo',{position=silo.position,items={['agricultural-science-pack']=100},to_total=true,chests=false,launch=true,platform='Nowhere'}) end,
-    'loaded, then the launch was refused: no platform named Nowhere')
+    'no platform named Nowhere')
+  eq(cargo[1].valid_for_read and cargo[1].count or 0,aboard_before,'nothing loaded'); eq(main[1].count,10)
+  call('load_silo',{position=silo.position,items={['agricultural-science-pack']=100},to_total=true,chests=false})
   eq(cargo[1].count,100)
   -- Astra 18:33 (tick 9965693) and 23:53, Gemini 18:21: with the game's item stacks (quality a LuaQualityPrototype,
   -- userdata) load_silo matched nothing and said held 0. Your own inventory (chests=false), as a queue step (Astra's
@@ -4722,6 +4726,18 @@ end)()
   eq(dr.launches[1].would_refuse[1],'min_cargo not met: agricultural-science-pack 60 of 100 (40 short)')
   eq(call('queue_status',{}).revision,before,'nothing queued')
   fails(function() call('queue_submit',{dry_run='yes',steps={}}) end,'dry_run must be true or false')
+  -- A step's arguments checked at submit as the live call reads them (Sol, shift17 19:06): modules (a map too), by, and
+  -- a transfer of an item with no direction.
+  fails(function() call('queue_submit',{dry_run=true,steps={{action='configure',args={position=silo.position,modules={['agricultural-science-pack']=2}}}}}) end,
+    'steps[1] (configure): args: not a module: agricultural-science-pack')
+  fails(function() call('queue_submit',{steps={{action='configure',args={position=silo.position,modules={'agricultural-science-pack'}}}}}) end,'not a module')
+  fails(function() call('queue_submit',{dry_run=true,steps={{action='configure',args={position=silo.position,by='robot'}}}}) end,'by is hand')
+  fails(function() call('queue_submit',{dry_run=true,steps={{action='transfer',args={position=silo.position,item='agricultural-science-pack',count=5}}}}) end,
+    'steps[1] (transfer): args: a queued transfer of an item needs direction: to_entity (from your inventory into the target) or to_player')
+  fails(function() call('queue_submit',{dry_run=true,steps={{action='transfer',args={position=silo.position,item='agricultural-science-pack',direction='in'}}}}) end,
+    'direction must be to_entity or to_player')
+  eq(call('queue_submit',{dry_run=true,steps={{action='transfer',args={position=silo.position,item='agricultural-science-pack',count=5,direction='to_entity'}}}}).steps,1)
+  eq(call('queue_status',{}).revision,before,'nothing queued')
   -- walk with from (Luna, shift14 21:20: 930 agricultural science packs from a provider 64 tiles from the silo took four
   -- walks and several calls): a chest out of reach; one timed tour takes there and loads at the silo.
   local chest={valid=true,name='iron-chest',type='container',position={x=40.5,y=5.5},force=p.force,surface=p.surface,unit_number=78}

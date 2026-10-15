@@ -80,7 +80,7 @@ return function(api)
     if not prototypes.quality[quality] then error('unknown quality ' .. tostring(quality), 0) end
     return {name=name, quality=quality}
   end
-  local SLOT_FORMS = 'modules is a list of module names (or {name, count?, quality?}) the machine ends up holding, a list '
+  local SLOT_FORMS = 'modules is a list of module names (or {name, count?, quality?}) the machine ends up holding, a map of names to counts {"efficiency-module": 3}, a list '
     .. 'with "keep" and "empty" entries (slot by slot), or numbered slots {"1": "speed-module", "3": "empty"}; [] or false empties the slots'
   -- modules (see the top): {kind='set', list={{name, quality}...}} or {kind='slots', at={[i]={name, quality}|false|'keep'},
   -- n (the last slot named), rest ('empty' past a list, 'keep' for numbered slots)}.
@@ -88,6 +88,25 @@ return function(api)
     if v == false then return {kind='set', list={}} end
     if type(v) == 'string' then v = {v} end
     if type(v) ~= 'table' then error(SLOT_FORMS, 0) end
+    -- A map of module names to counts ({"efficiency-module": 3}; Sol, shift17 19:06: 8 queued steps wrote it so) is
+    -- that list: the names in order, each count times.
+    local named_keys, other_keys = {}, false
+    for k in pairs(v) do
+      if type(k) == 'string' and not k:match('^%d+$') then named_keys[#named_keys+1] = k else other_keys = true end
+    end
+    if #named_keys > 0 then
+      if other_keys then error('modules: a map of module names to counts, or numbered slots, not both; ' .. SLOT_FORMS, 0) end
+      table.sort(named_keys)
+      local list = {}
+      for _, k in ipairs(named_keys) do
+        local n = v[k]
+        if type(n) ~= 'number' or n < 1 or n ~= math.floor(n) or n > 16 then
+          error(string.format('modules: %s: a count is a whole number 1..16 (a map of module names to counts); %s', k, SLOT_FORMS), 0)
+        end
+        list[#list+1] = {name=k, count=n}
+      end
+      v = list
+    end
     local numbered, listed, top = false, false, 0
     for k in pairs(v) do
       if type(k) == 'number' then listed = true; top = math.max(top, k)

@@ -147,6 +147,10 @@ return function(api)
         -- "fluid 19.9/21100", and 99.4/66700 for a full one); the segment's, when larger, comes apart.
         local okc,cap=pcall(fb.get_capacity,i)
         local own=defs[i] and volume(defs[i])
+        -- A crafting machine's boxes are its recipe's (fewer than the prototype lists, so defs[i] is another box), and
+        -- get_capacity is the box's own there, sized to the recipe (2.0.77: cryogenic science's hot output 300, its
+        -- cold input 12; Sol read "fluoroketone-hot 135/1000"); pipes joined to it do not add to it.
+        if (e.type=='assembling-machine' or e.type=='furnace') and okc and type(cap)=='number' then own=cap end
         fluid,amount,capacity=f and f.name,f and f.amount or 0,own or (okc and cap) or 0
         if own and okc and type(cap)=='number' and cap>own+0.5 then segment=cap end
         -- An empty box a recipe has fixed to one fluid says which.

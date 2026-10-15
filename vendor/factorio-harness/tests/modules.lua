@@ -37,7 +37,12 @@ eq(w.kind,'slots'); eq(w.n,3); eq(w.rest,'keep'); eq(w.at[3].quality,'rare'); eq
 fails(function() M.parse({['0']='speed-module'}) end,'slot 0 is not a slot number 1..64')
 fails(function() M.parse({['2']={name='speed-module',count=2}}) end,'one module a slot (no count) in slot 2')
 fails(function() M.parse({['2']='speed'}) end,'slot 2: not a module: speed')
-fails(function() M.parse({first='speed-module'}) end,'modules: first is not a slot number')
+fails(function() M.parse({first='speed-module'}) end,'modules: first: a count is a whole number 1..16 (a map of module names to counts)')
+-- A map of names to counts (Sol, shift17 19:06): the list, names in order.
+w=M.parse({['efficiency-module']=3}); eq(w.kind,'set'); eq(#w.list,3); eq(w.list[3].name,'efficiency-module')
+w=M.parse({['speed-module']=1,['efficiency-module']=2}); eq(#w.list,3); eq(w.list[1].name,'efficiency-module'); eq(w.list[3].name,'speed-module')
+fails(function() M.parse({['efficiency-module']=3,['2']='speed-module'}) end,'a map of module names to counts, or numbered slots, not both')
+fails(function() M.parse({speed=2}) end,'not a module: speed')
 local mixed={'speed-module'}; mixed['2']='speed-module'
 fails(function() M.parse(mixed) end,'a list or numbered slots, not both')
 fails(function() M.parse({'speed'}) end,'not a module: speed; modules like it: speed-module, speed-module-2')
