@@ -10,6 +10,7 @@ import math, os, re, time
 import basemap_log
 import efficiency
 import hauling
+import chronicle_log
 import operator_inbox
 import pacing
 from harness import Harness
@@ -107,6 +108,11 @@ class LiveSource:
         self.notes_cache = {}  # agent -> (mtime, job line): notes.md is read again only when it changed
         # after the file's last request, or the earlier shifts' for a new one (the save holds them all)
         self.operator_seq = operator_inbox.start_seq(self.inbox_path) if self.inbox_path else 0
+        # the run's chronicle (chronicle.lua, operator read; viewers Alex and syndesis 22:24): appended to
+        # runs/RUN/chronicle.jsonl from where the run (or the runs it resumed from) left off
+        self.has_chronicle = False
+        self.chronicle_path = chronicle_log.path_for(journals)
+        self.chronicle_seq, self.chronicle_eid = chronicle_log.start_cursors(self.chronicle_path) if self.chronicle_path else (0, 0)
         self.platform_every = 15.0
         self.next_platforms = 0
         self.basemap_every = 60.0  # the site's live map (300 s for an hour on 2026-10-14 while the read cost 0.6 s; the census made it ~12 ms)
@@ -434,6 +440,7 @@ class LiveSource:
             self.has_efficiency = "efficiency" in (res.get("operator_reads") or [])
             self.has_loadout = "loadout" in (res.get("operator_reads") or [])
             self.has_clouds = "clouds" in (res.get("operator_reads") or [])
+            self.has_chronicle = "chronicle" in (res.get("operator_reads") or [])
         except Exception as e:
             self.has_board = False
             print(f"[live] board probe failed: {e}", flush=True)
@@ -538,7 +545,8 @@ class LiveSource:
         if self.caps is None or not self.caps.get("harness"):
             return
         if not self.has_board or not getattr(self, "has_groups", True) or not getattr(self, "has_hauling", True) \
-                or not getattr(self, "has_loadout", True) or not getattr(self, "has_clouds", True):
+                or not getattr(self, "has_loadout", True) or not getattr(self, "has_clouds", True) \
+                or not getattr(self, "has_chronicle", True):
             if time.time() >= self.next_board_probe:
                 self.board_probe()
         self.observe_groups(obs, errors)
@@ -573,6 +581,21 @@ class LiveSource:
                     self.operator_seq = res["cursor"]  # a fresh world counts its requests from 1 again
             except Exception as e:
                 errors["operator_requests"] = str(e)
+        if getattr(self, "has_chronicle", False):  # the run's chronicle: new entries and events, every poll
+            try:
+                res, _ = self.h.operator_read("chronicle", {"since": self.chronicle_seq, "events_since": self.chronicle_eid,
+                                                            "limit": 50})
+                if (res.get("cursor") or 0) < self.chronicle_seq or (res.get("events_cursor") or 0) < self.chronicle_eid:
+                    self.chronicle_seq, self.chronicle_eid = 0, 0  # a fresh world counts from 1 again
+                entries, events = chronicle_log.append(getattr(self, "chronicle_path", None), res, self.chronicle_seq,
+                                                       self.chronicle_eid)
+                obs["chronicle"] = {"entries": entries, "events": events}
+                if entries:
+                    self.chronicle_seq = max(int(e["seq"]) for e in entries)
+                if events:
+                    self.chronicle_eid = max(int(e["id"]) for e in events)
+            except Exception as e:
+                errors["chronicle"] = str(e)
         if not self.has_board:
             return
         try:

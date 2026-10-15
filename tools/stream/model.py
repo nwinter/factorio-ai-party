@@ -108,6 +108,19 @@ def board_verb(change):
 PROGRESS_RE = re.compile(r"^(\d+) of (\d+) steps?$")
 
 
+def lost_details(ev):
+    """A harness platform_lost event (chronicle.lua) as the stream's loss facts: where (a stop or the leg flown), cause
+    (what killed the hub), cargo ("400 iron-plate, 20 rocket-fuel, +3 kinds"), hit_by (the asteroid kinds that hit it
+    most)."""
+    cargo = [c for c in ev.get("cargo") or [] if isinstance(c, dict)]
+    more = (ev.get("cargo_kinds") or 0) - len(cargo)
+    text = ", ".join(f"{c.get('count')} {c.get('name')}" for c in cargo) + (f", +{more} kinds" if more > 0 else "")
+    hits = [h.get("name") for h in ev.get("hit_by") or [] if isinstance(h, dict) and h.get("name")]
+    out = {"where": ev.get("where"), "cause": ev.get("by"), "cargo": text or "empty", "cargo_items": ev.get("cargo_items") or 0,
+           "hit_by": ", ".join(hits) or None}
+    return {k: v for k, v in out.items() if v is not None}
+
+
 def project_steps(progress, done=None, total=None):
     """A project's steps done and in all, from an event's numbers or its progress text ("3 of 7 steps", "no steps
     yet": 0, 0); None, None when neither says."""
@@ -493,6 +506,10 @@ class Model:
         self.rockets_at_start = None  # the shift's first rocket is a headline (seeded with the count at start)
         # Space widget: status alerts' platform_hits rows by platform (live.py), and platforms lost lately
         self.platform_hits, self.platforms_lost = {}, deque(maxlen=6)
+        # the run's chronicle (live.py, the harness's chronicle read; viewers Alex and syndesis 22:24): the agents'
+        # entries and the events the harness saw, the newest kept for the state; a platform's loss as the harness read
+        # it at its hub's death (where, what killed it, its cargo), by name, for the stream's own loss line
+        self.chronicle_entries, self.chronicle_events, self.harness_lost = deque(maxlen=12), deque(maxlen=20), {}
         self.work = deque(maxlen=20)  # work away from the body (live.py observe_work), for the director
         self.incoming = {}  # id -> an enemy group on its way (attack_groups_live), as last read
         self.big = {}  # id -> a demolisher near our buildings (big_enemies_live), as last read
@@ -530,6 +547,10 @@ class Model:
             self._ingest_agent(a, now)
         for m in obs.get("chat", []):
             self._ingest_chat(m, now)
+        for e in (obs.get("chronicle") or {}).get("entries") or []:
+            self._ingest_chronicle_entry(e, now)
+        for e in (obs.get("chronicle") or {}).get("events") or []:
+            self._ingest_chronicle_event(e, now)
         for c in obs.get("confessions") or []:
             self._ingest_confession(c, now)
         for t in obs.get("tells") or []:
@@ -1488,6 +1509,30 @@ class Model:
                 self._platform_destroyed(p, now)
         self.platform_last.update(names)
 
+    def _ingest_chronicle_entry(self, e, now):
+        """An agent's chronicle entry: its words, where it stood and the events it is filed beside."""
+        agent = self._who(e.get("agent"))
+        self.chronicle_entries.append({"seq": e.get("seq"), "tick": e.get("tick"), "game_time": e.get("game_time"),
+                                       "agent": agent, "name": e.get("agent"), "title": clean_text(e.get("title") or "") or None,
+                                       "text": clean_text(e.get("text") or ""), "where": e.get("platform") or e.get("planet"),
+                                       "about": [str(r.get("line")) for r in e.get("refs") or [] if isinstance(r, dict)][:3],
+                                       "t": now})
+        if agent:
+            self.agents[agent].bump(2.0, now)
+
+    def _ingest_chronicle_event(self, ev, now):
+        """An event the harness saw. A platform's loss carries where it was, what killed it and its hub's items: the
+        stream's own loss line (_platform_destroyed) takes them."""
+        row = {k: ev.get(k) for k in ("id", "kind", "tick", "game_time", "line", "platform", "agent", "where", "by",
+                                      "cargo", "cargo_items", "hit_by") if ev.get(k) is not None}
+        row["t"] = now
+        self.chronicle_events.append(row)
+        if ev.get("kind") == "platform_lost" and ev.get("platform"):
+            self.harness_lost[ev["platform"]] = (now, ev)
+            for x in self.platforms_lost:  # the stream saw it go first: the harness's facts fill in
+                if x["name"] == ev["platform"] and now - x["t"] < 600:
+                    x.update(lost_details(ev))
+
     def _platform_destroyed(self, p, now):
         where = platform_place(p)
         cause = None
@@ -1496,12 +1541,18 @@ class Model:
                 m = re.search(r"\(by ([^)]*)\)", text)
                 cause = m.group(1) if m else None
                 break
+        # the harness read it at its hub's death (chronicle.lua): where it flew, what killed it, the cargo it held
+        hl = self.harness_lost.get(p["name"])
+        details = lost_details(hl[1]) if hl and now - hl[0] < 600 else {}
+        where = details.get("where") or where
+        cause = details.get("cause") or cause
         left = sorted(self.platform_last)
         text = f"{p['name']} destroyed {where}" + (f" by {cause}" if cause else "")
-        self.platforms_lost.append({"name": p["name"], "where": where, "cause": cause, "t": now})
+        self.platforms_lost.append(dict({"name": p["name"], "where": where, "cause": cause, "t": now}, **details))
         self.alert("headline", text, key=f"lost:{p['name']}", ttl=600, facts={
             "headline": "platform_destroyed", "platform": p["name"], "where": where, "destroyed_by": cause,
             "what_it_means": "its hub is gone, so the platform and everything aboard it are lost",
+            "cargo_lost": details.get("cargo"), "hit_most_by": details.get("hit_by"),
             "platforms_left": left or "none", "game_time": fmt_game_time(self.tick / 60)})
 
     LOST_SHOW_S = 120  # a lost platform stays in the widget this long, marked lost, with its cause
@@ -1717,6 +1768,9 @@ class Model:
             "agents": agents,
             "chat": self.chat_window(),
             "operator_requests": list(self.operator_requests),
+            # the run's chronicle, newest last: the agents' entries and the events the harness saw (the site's live page;
+            # the hosts read a new entry)
+            "chronicle": {"entries": list(self.chronicle_entries)[-8:], "events": list(self.chronicle_events)[-12:]},
             "research": {"current": res["current"], "label": tech_label(res["current"]), "progress": res["progress"],
                          "done_count": len(res["done"]), "recent": list(res["recent"])[:4]},
             "unused_unlocks": self.unused_unlocks(now),
