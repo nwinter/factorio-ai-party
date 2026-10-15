@@ -35,7 +35,20 @@ deliver() {
   fi
 }
 
+# A rest the agy loop is in (tools/agy-quota.py: resting.json, until when; operator 17:17, Gemini pacing its weekly
+# quota): the pane looks idle while the loop sleeps, and a nudge typed into it would land in the sleeping shell.
+resting_until() {
+  python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["until"]))' "$dir/resting.json" 2>/dev/null
+}
+logged_rest=""
 while [ "$(date +%s)" -lt "$deadline" ]; do
+  rest=$(resting_until)
+  if [ -n "$rest" ] && [ "$rest" -gt "$(date +%s)" ]; then
+    if [ "$rest" != "$logged_rest" ]; then
+      log "skip nudges: resting until $(date -r "$rest" +%H:%M) (resting.json)"; logged_rest=$rest
+    fi
+    sleep "$poll"; continue
+  fi
   status=$(agent_status)
   if [ "$status" = idle ] || [ "$status" = done ]; then
     # Agents waiting on background work can look idle between turns: require a quiet minute.

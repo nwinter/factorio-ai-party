@@ -10,6 +10,7 @@ import math, os, re, time
 import basemap_log
 import hauling
 import operator_inbox
+import pacing
 from harness import Harness
 from model import SCIENCE, SPARK_ITEMS, notes_job
 from work import WorkFeed
@@ -300,6 +301,8 @@ class LiveSource:
                 a["dead_until_tick"] = st.get("dead_until_tick")
             if self.journals:
                 a["notes_job"] = self.notes_job(name)
+                # a rest between turns (tools/agy-quota.py resting.json: Gemini pacing its weekly quota), or None
+                a["resting"] = pacing.resting(os.path.join(self.journals, name))
             obs["agents"].append(a)
         # Only `names` become agents: the run's team, or every profile when the run lists none. Profiles outside the
         # team (a human player such as Nick in shake8, fh players eng/players adds) are not agent cards.

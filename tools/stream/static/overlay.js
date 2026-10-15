@@ -297,6 +297,7 @@
       c.root.classList.toggle("main", a.camera === "main");
       c.root.classList.toggle("dead", a.activity === "dead");
       c.root.classList.toggle("offline", a.activity === "offline");
+      c.root.classList.toggle("resting", a.activity === "resting");
       setText(c.badge, a.camera ? SLOT_LABEL[a.camera] || a.camera : "");
     });
     for (const [name, c] of cards) if (!keep.has(name)) { c.root.remove(); cards.delete(name); }
