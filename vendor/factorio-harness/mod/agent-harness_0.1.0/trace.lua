@@ -706,10 +706,13 @@ return function(api)
         if #nexts == 0 then
           close(e.position)
           local l = lanes_of(e)
-          local parts = {}
+          local parts, full = {}, {}
           for _, sd in ipairs({'left', 'right'}) do
-            parts[#parts+1] = sd .. ' lane ' .. lane_text(l[sd]) .. (lane_full(e, sd == 'left' and 1 or 2) and ' (full)' or '')
+            full[sd]=lane_full(e,sd=='left' and 1 or 2)
+            parts[#parts+1] = sd .. ' lane ' .. lane_text(l[sd]) .. (full[sd] and ' (full)' or '')
           end
+          if api.end_seen then api.end_seen(p.force,e.surface,e.position,{left_full=full.left,right_full=full.right,
+            left_empty=next(l.left)==nil,right_empty=next(l.right)==nil}) end
           route.stop = 'belt ends at ' .. place(e) .. ': ' .. table.concat(parts, ', ')
           if lane_full(e, k) then route.front = front_item(e, k) end
           break

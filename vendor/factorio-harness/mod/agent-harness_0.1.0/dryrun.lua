@@ -1579,6 +1579,43 @@ return function(api)
       end
     end
 
+    -- Walkable pockets the build leaves away from the character's current
+    -- position. The existing closes_in check above still describes its own
+    -- last gap; this bounded check names planned boundaries of other pockets.
+    if manual and character and not on_platform and api.pathing and api.pathing.pockets then
+      local boxes,near,open={},{},nil
+      for _,r in ipairs(recs) do
+        if r.box and r.mask and r.mask.player and r.status~='blocked' and r.status~='exists' then
+          near[#near+1]=r
+          local b=r.box
+          if r.proto.type~='gate' then boxes[#boxes+1]={b.left_top.x,b.left_top.y,b.right_bottom.x,b.right_bottom.y,r.name,r,base=true} end
+        end
+      end
+      local window=#boxes>0 and api.pathing.pocket_window(boxes)
+      if window and not window.checked then out.pockets_checked=window end
+      if window and window.checked then
+        for _,piece in ipairs(M.joined_pieces(s,force,near)) do boxes[#boxes+1]=piece end
+        for _,t in pairs(planned) do if not t.layers.player then open=open or {};open[t.x..','..t.y]=true end end
+        local pockets,check=api.pathing.pockets(s,api.pathing.half(character),boxes,{ignore=character,force=force,open=open})
+        out.pockets_checked=check
+        if #pockets>0 then
+          out.pockets={}
+          for _,pk in ipairs(pockets) do
+            local boundary={}
+            for _,b in ipairs(pk.around) do
+              local r=b[6]
+              local x0,y0,x1,y1=span(r.box)
+              boundary[#boundary+1]={index=r.copy and (r.copy..'.'..r.index) or r.index,name=r.name,position=r.pos,
+                tiles=string.format('%d,%d..%d,%d',x0,y0,x1,y1)}
+            end
+            local g=pk.region
+            out.pockets[#out.pockets+1]={area={left_top={x=g.x0,y=g.y0},right_bottom={x=g.x1,y=g.y1}},
+              walkable_tiles=g.tiles,planned_boundary=boundary,note='no way to the check window edge for the character; open or unwalkable before this plan'}
+          end
+        end
+      end
+    end
+
     -- A build batch stops at its first failing entry: which one, and why.
     if manual then
       local first, why

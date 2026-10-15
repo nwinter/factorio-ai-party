@@ -464,7 +464,7 @@ return function(api)
   -- keys) leave some out. Returns hit(x, y, h): the first box a box of half
   -- size h (default half, at most reach) at (x, y) overlaps, as {x0, y0, x1,
   -- y1, name, id}.
-  local function bucket_of(surface, area, reach, opts)
+  local function collision_boxes(surface, area, opts)
     local boxes = {}
     local skip, open = opts.skip, opts.open
     for _, e in ipairs(try(function() return surface.find_entities_filtered{area=area, collision_mask='player'} end) or {}) do
@@ -480,6 +480,10 @@ return function(api)
       end
     end
     for _, b in ipairs(opts.extra or {}) do boxes[#boxes+1] = b end
+    return boxes
+  end
+  local function bucket_of(surface, area, reach, opts)
+    local boxes=collision_boxes(surface,area,opts)
     -- Boxes by 2-tile bucket, each in every bucket its reach touches (the
     -- padded box's reach when looking for room to turn).
     local bucket = {}
@@ -764,6 +768,138 @@ return function(api)
       end
     end
     return {region=after, gaps=gaps, around=around}
+  end
+  -- New walkable pockets beside a build plan, even when the character is
+  -- elsewhere. One bounded quarter-tile grid, two floods; no per-entry
+  -- engine queries. The boundary must be reached before a component is
+  -- called open. Pre-existing pockets are not attributed to the plan.
+  function M.pocket_window(planned)
+    local l,t,r,b=math.huge,math.huge,-math.huge,-math.huge
+    for _,p in ipairs(planned) do l=math.min(l,p[1]);t=math.min(t,p[2]);r=math.max(r,p[3]);b=math.max(b,p[4]) end
+    -- Include existing surroundings of a single closing entry too: a small
+    -- plan can seal a much larger pocket that is already mostly built.
+    local w,h=math.max(24,r-l+4),math.max(24,b-t+4)
+    l,t=math.floor((l+r-w)/2),math.floor((t+b-h)/2)
+    r,b=l+math.ceil(w),t+math.ceil(h)
+    local info={area={left_top={x=l,y=t},right_bottom={x=r,y=b}},step=STEP,max_side=32}
+    if r-l>32 or b-t>32 then
+      info.checked=false;info.reason='pocket check needs a window larger than 32 tiles a side'
+      return info
+    end
+    info.checked=true
+    return info
+  end
+  function M.pockets(surface, half, planned, opts)
+    opts=opts or {}
+    if #planned==0 then return {}, {checked=true} end
+    local info=M.pocket_window(planned)
+    if not info.checked then return {},info end
+    local l,t,r,b=info.area.left_top.x,info.area.left_top.y,info.area.right_bottom.x,info.area.right_bottom.y
+    local area={{l,t},{r,b}}
+    local nx,ny=(r-l)/STEP+1,(b-t)/STEP+1
+    local old,now,edge={},{},{}
+    -- Rasterize each obstacle once. Strict bounds match overlaps(): touching
+    -- a collision edge is free. Planned boxes win so boundary IDs survive.
+    local function raster(cells,boxes)
+      for _,box in ipairs(boxes) do
+        local i0=math.max(0,math.floor((box[1]-half-l)/STEP)+1)
+        local i1=math.min(nx-1,math.ceil((box[3]+half-l)/STEP)-1)
+        local j0=math.max(0,math.floor((box[2]-half-t)/STEP)+1)
+        local j1=math.min(ny-1,math.ceil((box[4]+half-t)/STEP)-1)
+        for j=j0,j1 do for i=i0,i1 do cells[j*nx+i+1]=box end end
+      end
+    end
+    raster(old,collision_boxes(surface,area,{ignore=opts.ignore,force=opts.force}))
+    raster(now,collision_boxes(surface,area,{ignore=opts.ignore,force=opts.force,open=opts.open}))
+    raster(now,planned)
+    for j=0,ny-1 do for i=0,nx-1 do
+      local k=j*nx+i+1
+      edge[k]=i==0 or j==0 or i==nx-1 or j==ny-1
+    end end
+    -- Scanline flood: each open row segment queues at most one seed per
+    -- adjoining segment, instead of visiting four neighbours per grid point.
+    local function fill(cells,seen,queue,spans,stop_at_edge,known_open)
+      local head,tail=1,#queue
+      while head<=tail do
+        local k=queue[head];head=head+1
+        if known_open and known_open[k] then return true end
+        if not cells[k] and not seen[k] then
+          local row=k-(k-1)%nx
+          local a,z=k,k
+          while a>row and not cells[a-1] and not seen[a-1] and not (known_open and known_open[a-1]) do a=a-1 end
+          while z<row+nx-1 and not cells[z+1] and not seen[z+1] and not (known_open and known_open[z+1]) do z=z+1 end
+          local opened=stop_at_edge and (edge[a] or edge[z] or known_open and (known_open[a-1] or known_open[z+1]))
+          local up,down=false,false
+          for n=a,z do
+            seen[n]=true
+            local u=n-nx
+            local free=u>0 and not cells[u] and not seen[u]
+            if free and not up then tail=tail+1;queue[tail]=u end
+            up=free
+            local d=n+nx
+            free=d<=nx*ny and not cells[d] and not seen[d]
+            if free and not down then tail=tail+1;queue[tail]=d end
+            down=free
+          end
+          if opened then return true end
+          if spans then spans[#spans+1]={a,z} end
+        end
+      end
+    end
+    local function exterior(cells)
+      local seen,queue={},{}
+      for k=1,nx*ny do if edge[k] and not cells[k] then queue[#queue+1]=k end end
+      fill(cells,seen,queue)
+      return seen
+    end
+    local seen=exterior(now)
+    local old_closed,old_open,out,total={},{},{},0
+    for seed=1,nx*ny do if not now[seed] and not seen[seed] then
+      local spans={};fill(now,seen,{seed},spans)
+      local changed=false
+      local function was_open(k)
+        if old[k] or old_open[k] then return true end
+        if old_closed[k] then return false end
+        local visited={}
+        local open=fill(old,visited,{k},nil,true,old_open)
+        local cache=open and old_open or old_closed
+        for n in pairs(visited) do cache[n]=true end
+        cache[k]=true
+        return open or false
+      end
+      local x0,y0,x1,y1=r,b,l,t
+      local boundary,count={},0
+      local function hit(n)
+        local box=now[n]
+        if box then
+          if box[6] then boundary[box[6]]=true end
+          if box.ids then for _,id in ipairs(box.ids) do boundary[id]=true end end
+        end
+      end
+      for _,span in ipairs(spans) do
+        local a,z=span[1],span[2]
+        local y=t+math.floor((a-1)/nx)*STEP
+        x0=math.min(x0,l+(a-1)%nx*STEP);x1=math.max(x1,l+(z-1)%nx*STEP)
+        y0,y1=math.min(y0,y),math.max(y1,y)
+        count=count+z-a+1
+        hit(a-1);hit(z+1)
+        for n=a,z do
+          changed=changed or was_open(n)
+          if now[n-nx] then hit(n-nx) end
+          if now[n+nx] then hit(n+nx) end
+        end
+      end
+      if changed and next(boundary) then
+        total=total+1
+        if #out<4 then
+          local around={}
+          for _,p in ipairs(planned) do if p.base and boundary[p[6]] then around[#around+1]=p end end
+          out[#out+1]={region={x0=x0,y0=y0,x1=x1,y1=y1,tiles=math.floor(count*STEP*STEP+0.5)},around=around}
+        end
+      end
+    end end
+    info.checked=true;info.cells=nx*ny;info.pockets=total;info.more=total>#out and total-#out or nil
+    return out,info
   end
   -- After a build: closed in now, and not without the entities just built;
   -- those that each fill the last gap out. nil otherwise.

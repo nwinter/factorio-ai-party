@@ -145,3 +145,10 @@ test('the standing orders line follows the clock line (and comes before teammate
   assert.equal(formatCompact({ok:true,id:'s',result:{teammates:'Sol 5 tiles E',orders:line,clock:'game 1m',tick:5}}),
     `clock: "game 1m"\norders: "${line}"\nteammates: "Sol 5 tiles E"\ntick: 5\n`);
 });
+
+test('build dry-run pockets appear on the final warning line', () => {
+  const reply = {ok:true,result:{dry_run:true,pockets:[{area:{left_top:{x:1,y:1},right_bottom:{x:4,y:7}},
+    planned_boundary:[{index:1,name:'accumulator',position:{x:3,y:0},tiles:'2,-1..3,0'}]}]}};
+  assert.match(finalLine(reply) ?? '', /warning: walkable pockets:.*accumulator/);
+  assert.match(finalLine(reply) ?? '', /2,-1\.\.3,0/);
+});

@@ -22,6 +22,8 @@ once per --every-min minutes per agent, never in the first --grace-min minutes a
 start), and not after the run's deadline. Each nudge is a line in runs/RUN/nudges.jsonl (sent or not, and why not),
 with since_last_nudge: whether a reply delivered the last nudge's tell (its unread tells went to 0) and whether the
 agent made requests since. Delivered is not read: Sonnet writes its replies to a file and reads the last 2 lines.
+The same supervisor sends a cached factory digest once at deadline - 2 h.
+--digest-now sends an operator-requested digest and exits; --dry-run logs without sending.
 """
 import argparse, datetime, json, os, sys, time
 
@@ -29,6 +31,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.join(ROOT, "tools", "stream"))
 sys.dont_write_bytecode = True
+from factory_digest import Digest
 import pacing  # noqa: E402  (tools/stream/pacing.py: an agent's rest between turns)
 
 
@@ -229,9 +232,9 @@ class Harness:
         self.pw = open(os.path.expanduser(f"~/.config/pog/rcon-{world}.pw")).read().strip()
         self.rcon = None
 
-    def dispatch(self, action, args):
+    def dispatch(self, action, args, request_id=None):
         from harness import lua_string
-        req = {"id": f"idle-nudge-{int(time.time() * 1000)}", "operator": True, "action": action, "args": args}
+        req = {"id": request_id or f"idle-nudge-{time.time_ns()}", "operator": True, "action": action, "args": args}
         cmd = ('/silent-command rcon.print(remote.call("agent_harness","dispatch",'
                + lua_string(json.dumps(req, ensure_ascii=False)) + '))')
         for attempt in (0, 1):
@@ -281,9 +284,15 @@ def main():
     ap.add_argument("--grace-min", type=float, default=5)
     ap.add_argument("--dry-run", action="store_true", help="log what would be sent; send nothing")
     ap.add_argument("--once", action="store_true", help="one poll (with --grace-min 0 to check the rules now)")
+    ap.add_argument("--digest-now", action="store_true", help="send one cached factory digest to the team now, then exit (no idle nudges)")
     a = ap.parse_args()
     h = Harness(a.world, a.port)
     n = Nudger(team_members(a.run), a.idle_min, a.every_min, a.grace_min, deadline=run_deadline(a.run), run_dir=a.run)
+    digest = Digest(a.run, n.deadline)
+    if a.digest_now:
+        for row in digest.step(time.time(), h.dispatch, manual=True, dry_run=a.dry_run):
+            log(row['text'])
+        return
     path = os.path.join(a.run, "nudges.jsonl")
 
     def send(name, text):
@@ -307,9 +316,15 @@ def main():
         + (" (dry run)" if a.dry_run else ""))
     while True:
         now = time.time()
+        digest.deadline = n.deadline = run_deadline(a.run)
         if n.deadline and now >= n.deadline:
             log("deadline reached")
             return
+        try:
+            for row in digest.step(now, h.dispatch, dry_run=a.dry_run):
+                log(f"factory digest part {row['part']}: {'dry run' if a.dry_run else 'sent'}")
+        except Exception as e:
+            log(f"factory digest failed: {type(e).__name__}: {e}")
         try:
             n.step(h.dispatch("idle_report", {}), now, send, write)
         except Exception as e:

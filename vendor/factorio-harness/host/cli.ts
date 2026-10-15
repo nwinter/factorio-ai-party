@@ -893,6 +893,14 @@ async function main() {
     const remaining = untilTick !== undefined && nowTick !== undefined ? Math.max(0,untilTick-nowTick) : 0;
     return Math.min(ownEnd ? 960000 : 900000, Math.max(30000, Math.ceil(remaining/60*1000*1.25)+5000));
   }
+  // A silo can extend its idle deadline when it observes another part. Base
+  // the host budget on ticks since this wait began, never on repeated polls.
+  function siloBudget(status: Reply, startTick: number | undefined, budget: number): number {
+    const active = status.result?.active;
+    const end = active?.until_tick, limit = active?.silo_wait?.gives_up_tick;
+    if (startTick === undefined || !Number.isFinite(end) || !Number.isFinite(limit)) return budget;
+    return Math.max(budget, waitBudget(Math.min(end, limit), startTick));
+  }
   // A timed-out wait must not look like a finished action: no completion
   // snapshot, a still_running block, and an error that says what to do.
   function timedOut(action: string, status: Reply, waitedMs: number, pacer?: Pacer, ending?: string): Reply {
@@ -1022,6 +1030,7 @@ async function main() {
       ...(last?.kind === 'move_to' || last?.kind === 'drive' ? {avoided_enemies: last.avoided_enemies,
         enemies_at_start_or_goal: last.enemies_at_start_or_goal, passed_within_margin: last.passed_within_margin} : {}),
       why: last?.why, note: status.result?.note,
+      silo_wait: last?.silo_wait ?? status.result?.active?.silo_wait,
       // a call made after its walk into reach, or not made when the walk did not get there (autowalk.lua)
       walked: last?.walked, not_made: last?.not_made,
       // a tour's places left out for an enemy (round1950a)
@@ -1064,11 +1073,11 @@ async function main() {
     return withSlow(withTells(compactWaits ? await brief(done, started, before, action) : await finalReply(done)));
   }
   async function waitForActionEnd(action: string, untilTick: number | undefined, nowTick: number | undefined, started: number, acceptedTick?: number): Promise<Reply> {
-    const budget = waitBudget(untilTick,nowTick,action === 'wait_until');
-    const deadline = started+budget;
+    let budget = waitBudget(untilTick,nowTick,action === 'wait_until');
+    let deadline = started+budget;
     const explicit = values['wait-timeout'] !== undefined && action !== 'wait_until';
     // (an explicit --wait-timeout: the cap is the deadline; the overtime check still names a stopped game)
-    const cap = explicit ? deadline : slowCap(started, budget);
+    let cap = explicit ? deadline : slowCap(started, budget);
     const pacer = lastPacer = new Pacer();
     pacer.see(nowTick, started);
     let staleLooks = 0;
@@ -1079,7 +1088,7 @@ async function main() {
     // rule (pace.ts) says when that last look comes: past the deadline a slow game that still advances keeps the wait.
     while (!stopping) {
       ending = overtime(pacer, deadline, cap);
-      const lastLook = ending !== 'go';
+      let lastLook = ending !== 'go';
       const status = await poll();
       pacer.see(status.tick);
       const active = action === 'shoot' ? status.result?.combat : action === 'drop' ? status.result?.drop_pending : status.result?.active;
@@ -1092,6 +1101,13 @@ async function main() {
         : action === 'vehicle' ? ['drive'] : action === 'use_item' ? ['clear_cliffs'] : [action];
       // A walk into reach that the call makes first (autowalk.lua) runs as a move_to naming the call (walking_for).
       const stillRunning = active && (action === 'shoot' || action === 'drop' || kinds.includes(active.kind) || active.walking_for === action);
+      if (!explicit && status.ok && stillRunning) {
+        const extended = siloBudget(status, nowTick, budget);
+        if (extended > budget) {
+          budget = extended; deadline = started+budget; cap = slowCap(started,budget);
+          ending = overtime(pacer,deadline,cap); lastLook = ending !== 'go';
+        }
+      }
       if (status.ok && stillRunning && told(status, acceptedTick) && action !== 'wait_ticks' && action !== 'wait_until') {
         if (!throughTells) return {...status, result:{...status.result, interrupted:{inbox:wakeInbox(status, acceptedTick), active}}};
         noteTell(wakeInbox(status, acceptedTick));
@@ -1296,11 +1312,11 @@ async function main() {
     if (!first.ok) return first;
     const since = typeof first.tick === 'number' ? first.tick + 1 : undefined;
     const untilTick = first.result?.active?.until_tick ?? first.result?.combat?.until_tick;
-    const budget = capMs ?? waitBudget(untilTick,first.tick ?? first.result?.tick);
-    const deadline = started+budget;
+    let budget = capMs ?? waitBudget(untilTick,first.tick ?? first.result?.tick);
+    let deadline = started+budget;
     // --wait-timeout, or fh wait --max S: the end as given, with no slow-game overtime.
     const explicit = values['wait-timeout'] !== undefined || capMs !== undefined;
-    const cap = explicit ? deadline : slowCap(started, budget);
+    let cap = explicit ? deadline : slowCap(started, budget);
     const pacer = lastPacer = new Pacer();
     pacer.see(first.tick, started);
     let status = first;
@@ -1329,6 +1345,10 @@ async function main() {
         const full = await finalReply(ended);
         return withSlow(withTells({...full, result:{idle:true, last, last_combat:status.result?.last_combat, waited_ms:Date.now()-started,
           team:full.result?.team, clock:full.result?.clock, orders:full.result?.orders, chat:full.result?.chat}}));
+      }
+      if (!explicit) {
+        budget = siloBudget(status, first.tick ?? first.result?.tick, budget);
+        deadline = started+budget; cap = slowCap(started,budget);
       }
       ending = overtime(pacer, deadline, cap);
       if (ending !== 'go') break;
@@ -1420,7 +1440,8 @@ async function main() {
       const completion = await waitForAction(action, reply.result?.until_tick, reply.tick, before);
       if (completion.error?.code === 'wait_timeout') return {...reply, ok:false, result:{accepted:reply.result, ...completion.result}, error:completion.error};
       // Compact: the brief completion only (the acceptance was printed already when onAccepted is set).
-      if (compactWaits && completion.error?.code !== undefined && completion.error.code !== 'action_interrupted') {
+      if (compactWaits && completion.error?.code !== undefined && completion.error.code !== 'action_interrupted'
+        && !(completion.error.code === 'timed_out' && completion.result?.silo_wait)) {
         return {...reply, tick:completion.tick ?? reply.tick, ok:false,
           result:{accepted:reply.result, ...(action === 'wait_until' ? completion.result : {})}, error:completion.error};
       }

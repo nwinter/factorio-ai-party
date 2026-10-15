@@ -379,6 +379,8 @@ already targets your character.
   Entity `mine` takes one `position` per call or queue step; its `positions`/`area` require `tiles: true`.
 - `build {item: "rail-ramp", position, direction}` and `construct` on a ramp ghost build it by hand from one held ramp;
   the centre snaps to the ramp grid, with the same collision and reach checks.
+- A `craft` stock refusal names stocking chests and queue-step `on_fail`: `abort` pauses, `skip` continues,
+  `goto:<label>` jumps to that pending label. Skipping acquires nothing; `transfer`/`collect` take stock explicitly.
 - Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, repairs,
   ghosts. `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":
   "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[{"action":"rearm","args":{"radius":20}}]}'`
@@ -418,6 +420,8 @@ already targets your character.
   pipe`, `nothing there`), and for each pipe-to-ground what its mouth joins and whether it pairs, with which;
   `inspect` of a heat entity shows its heat connections and temperature. `closes_in` names the entry that fills the
   last gap out when the plan would close you in where you stand; a build reply says `closed_in` after it.
+  `build` dry runs also name off-character `pockets`, their area and planned boundary tiles (a bounded 24–32-tile
+  window); `pockets_checked` says when a larger plan was not checked.
   Dry runs and build replies also name logistic chests no roboport covers (`outside_logistic_coverage`) and inserters
   or belts feeding an underground entrance from the side, with the lane that gets nothing (`underground_side_feed`).
   Rail ramp dry runs list every physical collision in `collisions`, including rotated cliffs and deconstruction
@@ -480,7 +484,9 @@ already targets your character.
   surface) walks between them and the silo as many trips as the load takes, in one timed call (outcomes `loaded`,
   `launched`, `short`, `no_rocket`; `last.trips`, `last.stops`). A silo's `rocket_ready` is true only for a built
   rocket (`built_parts` 50/50); `next_parts` counts parts for the rocket after it. A `load_silo` waiting for its rocket
-  waits while the silo makes parts (`ticks`: the time with no new part). A spoiling item goes in fresh first (the least
+  waits while the silo makes parts (`ticks`: initial idle window, grown to 3 times the longest observed interval to
+  a part increase, capped at `gives_up_tick`); `silo_wait` reports the observed parts/minute and idle window.
+  A spoiling item goes in fresh first (the least
   spoiled stacks of you and the chests; `"fresh_first": false` for the old order).
 - A drop's landing line gives the container's exact position and the other cargo pod containers within 8 tiles with
   what each holds; `scan` lists a cargo pod container with `holds`.
@@ -568,3 +574,5 @@ already targets your character.
 
 - `configure {platform | surface, position, recipe}` changes an empty idle machine remotely; a remote refusal never walks the body. Aboard, `configure {position, recipe}` uses the current platform. `belt_route` follows an existing belt chain from `from` to its open end and names blocked connection tiles.
 - Numeric `move_to {avoid_enemies:N}` keeps a hard margin; `no_safe_route` adds `last.smaller_margins` with the largest smaller integer margin whose engine route was verified, its closest nest pass, or the check's failure/budget reason. The check leaves the character stationary.
+
+- The operator factory digest arrives by `tell` at deadline minus 2 hours, or on operator request: cached planetary machine/fuel counts and sampled belt ends, with observation ages; missing data is unknown.
