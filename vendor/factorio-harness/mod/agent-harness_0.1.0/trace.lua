@@ -39,6 +39,20 @@ return function(api)
   local FULL = {waiting_for_space_in_destination=true, full_output=true, not_enough_space_in_output=true}
 
   local function try(fn, ...) local ok, v = pcall(fn, ...); if ok then return v end end
+  -- Items a resource gives when mined (ores, stone, coal, scrap): only those have drills among their makers. Read from
+  -- the resource prototypes once (on a copy of world n the drill search cost 6 ms a call, for any item).
+  local MINED
+  function M.mined(item)
+    if not MINED then
+      MINED = {}
+      local list = try(function() return prototypes.get_entity_filtered{{filter='type', type='resource'}} end) or {}
+      for _, r in pairs(list) do
+        local mp = try(function() return r.mineable_properties end)
+        for _, prod in ipairs(mp and mp.products or {}) do if prod.name then MINED[prod.name] = true end end
+      end
+    end
+    return MINED[item] == true
+  end
   local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
   local function place(e) return e.name .. ' ' .. at(e.position) end
   local function side(i) return i % 2 == 1 and 'left' or 'right' end
@@ -828,7 +842,7 @@ return function(api)
       local r = seen(e.position) and recipe_of(e)
       for _, prod in ipairs(r and r.products or {}) do if prod.name == item then makers[#makers+1] = e; break end end
     end
-    if prototypes.item[item] then
+    if M.mined(item) then
       for _, e in ipairs(find{type='mining-drill', limit=4096}) do
         if seen(e.position) then
           local res = try(function() return e.mining_target end)

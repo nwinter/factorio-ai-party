@@ -5937,7 +5937,7 @@ function M.feeds(p,e,mode)
     local okp,src=pcall(function() return i.pickup_target end)
     if okp and src==e then
       local okd,dst=pcall(function() return i.drop_target end)
-      return string.format('%s (%g,%g) takes from it%s',i.name,i.position.x,i.position.y,okd and dst and dst.valid and ' into '..dst.name or '')
+      return string.format('%s (%g,%g) picks from it%s',i.name,i.position.x,i.position.y,okd and dst and dst.valid and ' into '..dst.name or '')
     end
   end
 end
@@ -6031,7 +6031,7 @@ function M.from_nearest(p,a)
     if #fed>0 then
       local list={}
       for i=1,math.min(3,#fed) do local f=fed[i]; list[i]=string.format('%s (%g,%g) holds %d: %s',f.entity.name,f.entity.position.x,f.entity.position.y,f.count,f.feeds) end
-      parts[#parts+1]=string.format('%d chest%s feeding something left out (feeding: true takes from them too): %s%s',#fed,#fed==1 and '' or 's',
+      parts[#parts+1]=string.format('%d chest%s feeding something left out (feeding: true includes them): %s%s',#fed,#fed==1 and '' or 's',
         table.concat(list,'; '),#fed>3 and '; ...' or '')
     end
     if #unsafe>0 then parts[#parts+1]=string.format('%d in enemy reach left out: %s',#unsafe,unsafe[1].unsafe) end

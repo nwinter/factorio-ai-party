@@ -1166,8 +1166,8 @@ fh sleep 900 --until researched                       # ...or until the research
       input chests of the line it had just filled; Opus's tour took 20 rounds from each of 5 chests feeding turrets;
       friction2: Grok took 40 iron plates from a requester feeding a machine): requester and buffer chests, and a chest
       an inserter takes from. `from_nearest` or the refusal names them: `2 chests feeding something left out (feeding:
-      true takes from them too): requester-chest (9.5,59.5) holds 100: a requester chest; iron-chest (20.5,33.5) holds
-      40: inserter (20.5,34.5) takes from it into gun-turret`. With `feeding: true` they come last.
+      true includes them): requester-chest (9.5,59.5) holds 100: a requester chest; iron-chest (20.5,33.5) holds 40:
+      inserter (20.5,34.5) picks from it into gun-turret`. With `feeding: true` they come last.
     - Walking (`radius`, or `walk: true` alone, which looks 32 tiles; friction3: Muse's `walk: true` was refused), a
       chest in a worm's or a spawner's reach the map shows is left out and named (`1 in enemy reach left out:
       wooden-chest (91,33) is inside medium-worm-turret (95,30) range 30 (5.1 tiles from it)`), and the walk's legs go
@@ -2175,7 +2175,10 @@ fh sleep 900 --until researched                       # ...or until the research
     nothing says so (`... drops onto nothing at (29.5,-1.5)`).
   - Bounded: 3000 belt tiles, 6 inserter hops, 24 routes, 48 makers, 1024 labs per read; `cost` says what was walked.
     Measured on a private copy of shift09's world (x86 emulated): a machine 2-3 ms, forward 3-8 ms, an item over
-    the whole of Nauvis 22-41 ms, with `near` (radius 64) about 20 ms.
+    the whole of Nauvis 22-41 ms, with `near` (radius 64) about 20 ms. On a copy of shift13's world (01:05 UTC, x86
+    emulated): `copper-plate` over Nauvis 56-140 ms (48 makers, 326 belt tiles), `copper-ore` 145-310 ms (13 drills,
+    1484 belt tiles, one outpost belt 715 tiles long), `copper-ore` with `near` (radius 64) 9-13 ms, `forward` from the
+    outpost's drill 62-65 ms.
 
 ## Retries
 

@@ -206,7 +206,7 @@ r=luna('transfer',{item='iron-plate',from='nearest',count=100})
 eq(r.moved,100); eq(main.get_item_count('iron-plate'),100)
 eq(c1.inv.get_item_count('iron-plate'),20); eq(c2.inv.get_item_count('iron-plate'),50); eq(r1.inv.get_item_count('iron-plate'),100)
 eq(r.from_nearest,'wooden-chest at (44.5,36.5), 7.1 tiles from you, holds 150 iron-plate (5 chests checked, 3 holding it); '
-  ..'1 chest feeding something left out (feeding: true takes from them too): requester-chest (48.5,34.5) holds 100: a requester chest')
+  ..'1 chest feeding something left out (feeding: true includes them): requester-chest (48.5,34.5) holds 100: a requester chest')
 -- none holds it all: nearest first, as many as it takes
 r=luna('transfer',{item='iron-plate',from='nearest',count=60})
 eq(r.moved,60); eq(c1.inv.get_item_count('iron-plate'),0); eq(c2.inv.get_item_count('iron-plate'),10)
@@ -222,7 +222,10 @@ local feeder={valid=true,name='inserter',type='inserter',position={x=45.5,y=27.5
   bounding_box={left_top={x=45.15,y=27.15},right_bottom={x=45.85,y=27.85}}}
 world[#world+1]=feeder
 fails(function() luna('transfer',{item='iron-plate',from='nearest',count=10}) end,
-  'no chest in reach holds iron-plate (6 checked); 2 chests feeding something left out (feeding: true takes from them too): requester-chest (48.5,34.5) holds 50: a requester chest; wooden-chest (45.5,28.5) holds 40: inserter (45.5,27.5) takes from it into assembling-machine-2')
+  'no chest in reach holds iron-plate (6 checked); 2 chests feeding something left out (feeding: true includes them): requester-chest (48.5,34.5) holds 50: a requester chest; wooden-chest (45.5,28.5) holds 40: inserter (45.5,27.5) picks from it into assembling-machine-2')
+-- (no "for this call:" example after it: the refusal is no argument error; on the copy "takes from" in it drew one
+-- that dropped walk)
+do local ok,err=pcall(luna,'transfer',{item='iron-plate',from='nearest',count=10,walk=true}); assert(not ok and not tostring(err):find('for this call',1,true),tostring(err)) end
 fails(function() luna('transfer',{item='iron-plate',from='nearest',feeding='yes'}) end,'feeding must be true or false')
 feeder.valid=false; c3.valid=false
 -- walking (radius, up to 256): the count across the stops; the walk ends transferred once it is taken

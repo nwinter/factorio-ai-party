@@ -10,6 +10,9 @@ local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring
 defines={inventory={chest=1,crafter_input=3,lab_input=4,asteroid_collector_output=8,hub_main=9},entity_status={}}
 prototypes={item={['stone-brick']={type='item'},['iron-plate']={type='item'},['oxide-asteroid-chunk']={type='item'},
   ['metallic-asteroid-chunk']={type='item'},['chemical-science-pack']={type='tool'},['iron-ore']={type='item'}},recipe={}}
+-- The resources, as get_entity_filtered{{filter='type', type='resource'}} gives them (the items drills make).
+local function ore(name) return {mineable_properties={products={{type='item',name=name,amount=1}}}} end
+prototypes.get_entity_filtered=function(f) assert(f[1].type=='resource') return {['copper-ore']=ore('copper-ore'),['iron-ore']=ore('iron-ore')} end
 local function inv(items)
   items=items or {}
   local i={}
@@ -320,6 +323,8 @@ has(r.makers,'2 making it (2 mining drills): ')
 local direct=table.concat(r.direct,' | ')
 has(direct,'electric-mining-drill (80.5,78.5) drops into iron-chest (80.5,80.5)')
 has(direct,'burner-mining-drill (84,78) waiting_for_space_in_destination: drops onto nothing at (84,79.3)')
+-- Only an item a resource gives looks at drills (on a copy of world n the drill search cost 6 ms a call).
+eq(trace.mined('copper-ore'),true); eq(trace.mined('iron-plate'),false); eq(trace.mined('chemical-science-pack'),false)
 -- A drill start traces forward.
 has(trace.trace(p,{position={x=80.5,y=78.5}}).note,'electric-mining-drill has no recipe to trace back: traced forward (its output)')
 drill.valid=false; idle.valid=false; other.valid=false; ore_box.valid=false

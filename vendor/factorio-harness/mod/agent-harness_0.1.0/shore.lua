@@ -691,7 +691,8 @@ return function(api)
     if #parts > 0 then text[#text+1] = 'in the way: ' .. table.concat(parts, ', ') .. (#order > 6 and string.format(' and %d more kinds', #order - 6) or '') end
     if #tparts > 0 then text[#text+1] = string.format('tiles %s cannot stand on: %s', proto.name, table.concat(tparts, ', ')) end
     if #text == 0 then return nil end
-    return string.format('nothing fits within %g tiles of (%g,%g): %s', radius, pos.x, pos.y, table.concat(text, '; '))
+    return string.format('nothing fits within %g tiles of (%g,%g): %s', radius, math.floor(pos.x * 10 + 0.5) / 10, math.floor(pos.y * 10 + 0.5) / 10,
+      table.concat(text, '; '))
   end
   return M
 end
