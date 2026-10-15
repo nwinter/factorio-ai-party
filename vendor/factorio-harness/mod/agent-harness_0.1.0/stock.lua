@@ -305,7 +305,7 @@ return function(api)
     if not (e and e.valid) then action.why='the machine is gone'; return action.got>0 and 'collected' or 'nothing_collected' end
     if not p.can_reach_entity(e) then
       if not action.nav then
-        action.nav={position=t.position,tolerance=math.max(1,(p.reach_distance or 10)-3),max_stalls=6,replans=0,stalled=0,last_position=p.position}
+        action.nav={position=t.position,tolerance=t.pickup_reach and math.max(0.1,t.pickup_reach-0.2) or math.max(1,(p.reach_distance or 10)-3),max_stalls=6,replans=0,stalled=0,last_position=p.position}
         api.request_path(p,action.nav)
       end
       local outcome=api.navigate(p,action.nav)
@@ -546,7 +546,7 @@ return function(api)
         break
       elseif not (t.entity and t.entity.valid) then
         action.index=action.index+1; action.nav=nil
-      elseif p.can_reach_entity(t.entity) then
+      elseif (t.pickup_reach and api.distance(p.position,t.position)<=t.pickup_reach) or (not t.pickup_reach and p.can_reach_entity(t.entity)) then
         local ok,out
         if action.op then ok,out=pcall(api.visit,p,action,t.entity)
         else
@@ -554,7 +554,8 @@ return function(api)
           action.trash_tally=action.trash_tally or {}
           ok,out=pcall(api.take,p,t.entity,action.item,action.quality,math.min(10000,action.want-action.got),(action.all or action.outputs_only) and OUTPUT[t.entity.type] or nil,action.trash_tally)
         end
-        action.index=action.index+1; action.nav=nil; action.visited=action.visited+1
+        if not (ok and out.wait) then action.index=action.index+1; action.visited=action.visited+1 end
+        action.nav=nil
         if ok then
           action.got=action.got+out.transferred
           if out.transferred>0 then action.touched=(action.touched or 0)+1 end
@@ -564,6 +565,7 @@ return function(api)
           end
           if out.inventory_full then return 'inventory_full' end
           if out.stop then return out.stop end
+          if out.wait then api.stop_walking(p);return nil end
         else
           action.errors=(action.errors or 0)+1
           action.first_error=action.first_error or string.format('(%g,%g): %s',t.position.x,t.position.y,(tostring(out):gsub('^[^:]*:%d+: ','')))
@@ -590,7 +592,7 @@ return function(api)
           return nil
         end
       end
-      action.nav={position=t.position,tolerance=math.max(1,(p.reach_distance or 10)-3),max_stalls=6,replans=0,stalled=0,last_position=p.position}
+      action.nav={position=t.position,tolerance=t.pickup_reach and math.max(0.1,t.pickup_reach-0.2) or math.max(1,(p.reach_distance or 10)-3),max_stalls=6,replans=0,stalled=0,last_position=p.position}
       -- avoid_mode (recover; transfer from: "nearest" walking, friction3: worms killed Opus on such a tour along a turret
       -- line): the walk keeps out of the enemy reach the map shows, as move_to's.
       if action.avoid_mode and api.avoid_start then api.avoid_start(p,action.nav,action.avoid_mode) end

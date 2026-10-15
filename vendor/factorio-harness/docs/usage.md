@@ -1449,6 +1449,55 @@ fh sleep 900 --until researched                       # ...or until the research
   construction still completes what it can; an immediate build failure includes its pre-build material summary.
 - A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works. A wait that ends `failed` names the call (`action: build`) and puts its error on the error line (Sol, shift09: the silo build hit trees after its craft and read only `Control ended: failed`): `error: action_interrupted: Control ended: failed: placement blocked by stingfrond (63.9375,11.375), stingfrond (68.125,12.4375); it needs the trees mined first (mine them, or place_ghosts marks them and construct clears them)`. A refused build names what is in the way the same way, direct or after a craft: trees and rocks need mining first, and a cliff takes cliff explosives (a character cannot mine one).
 
+### Fuel rounds, remembered belt gaps, and heating
+
+`refuel` accepts `from: "nearest"` or a chest position with `area` or `radius`. It uses carried fuel first, walks
+into reach of a source when it runs out, takes fuel, and continues the burner tour. `count` is the target held per
+burner. The same fuel-category and enemy checks apply to source walks and burner walks. Belts use the character's
+pickup reach and the normal six-items-per-six-ticks pickup rate, with quality and spoilage preserved. A full
+inventory can carry a partial take to burners and return for more. `--wait` waits through an area tour as well as
+a radius tour; `last.fuel_taken` and `sources` give each source, taken count, outcome and refusal/path reason.
+
+```sh
+fh call refuel --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":40,"y":20}},"from":"nearest","fuel":"coal","count":10}' --wait
+fh call refuel --args '{"radius":64,"from":{"x":-12.5,"y":8.5},"count":20}' --wait
+```
+
+These forms select at most 128 burners from at most 1024 own entities in an area up to 256x256 (or radius 256).
+Only burners currently in sight/remote view are selected; `entities_not_in_sight` counts excluded entities.
+The nearest-source search reads at most 256 own chest/belt entities within 64 tiles of each refill stop, then
+chooses the nearest observed candidate outside enemy reach; `source_read_capped` marks a capped search. A named
+source must be an own chest readable when the call starts. Each take is at most 10,000 items; the tour ends after
+at most 64 source attempts, at its tick limit (default 36,000), or when it completes or cannot obtain more fuel.
+Unspent fuel stays in the character inventory. A short tour ends `out_of_items` with the remaining stop count.
+
+`belt_gaps {from,to,via?,surface?}` reads a tile line with horizontal/vertical legs, up to 512 tiles and 16 corners.
+It returns `missing`, `ghosts`, and `unknown`, each with its position and observation tick where known, plus counts
+of built belts and observed underground spans. `missing` means no surface belt was present at that observation;
+it is not a claim about current fogged terrain. `unknown` means no complete stored observation exists. Ghosts
+remain distinct from built belts. Paired underground interiors are excluded from missing surface belts.
+
+Memory starts when this runtime is installed. The background census registers visible belt chunks, and one
+registered visible chunk is refreshed each second; at most 256 chunks are retained across surfaces/forces.
+An explicit read refreshes at most four visible chunks (or chunks wholly within 32 tiles of the character), then
+uses remembered data. `observations` lists per-chunk ticks and `current`; a chunk with more than 1024 matching
+entities is marked `capped` and its previous snapshot is retained. No current entities are queried under fog.
+Previously unexplored or unrecorded stretches can therefore be `unknown`, even if the map was explored before
+this runtime was installed. This read never moves, repairs or places belts.
+
+`inspect.heating` distinguishes the surface's heating requirement, the entity's `freezable`/`frozen` flags, its
+`demand_kw`, and heat buffers touching the one-tile border around its footprint. The heater rows name pipes,
+towers, reactors or exchangers with their current temperatures and whether they are at least 30 C; ghosts are
+identified and have no temperature. A frozen entity reports the observed cold/missing heaters without treating
+nearby heat as proof of sufficient supply. `heat_neighbours` separately lists actual engine heat-network links:
+a heated assembler can have none. Heat buffers add thermal mass in MJ/C, temperature limits and maximum transfer
+MW. Other entities have no exposed thermal mass or internal temperature.
+
+`build {dry_run:true}` adds `heating` for up to 64 planned placements: demand and adjacent built/ghost/planned heat
+buffers, with `planned_index` for another entry. Built candidates show their current temperature; a proposed
+entity has no frozen flag or assumed heat supply. Existing `connections[].heat` still gives the planned heat
+ports and their joins. Heater searches are local, capped at 65 entities per placement (`heater_read_capped`).
+
 ## Messages and reads
 
 - `inspect` is a read: any entity in sight (32 tiles, visible chunk) works without reach, like `scan`; `in_reach` says whether acting on it would reach.

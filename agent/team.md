@@ -228,6 +228,8 @@ already targets your character.
   `configure` (modules by hand, a recipe change on a stocked machine) walk into reach first and then act, the reply's
   `walking` line saying so; past 32 tiles the refusal names the same call with `"walk": true`; `"walk": false` refuses.
   The destination is checked for enemies again when the call starts; a new worm in a previously clear area is included.
+- `refuel {area|radius,from:"nearest"|chest_position,fuel,count}` collects fuel from observed chests/belts and tops up burners in one enemy-checked tour; `--wait` waits through it, `last.sources`/`fuel_taken` report takes.
+- `belt_gaps {from,to,via?,surface?}` reads remembered belt gaps/ghosts with observation ticks; unrecorded tiles are unknown. `inspect.heating` and build dry_run report freezing, demand, adjacent heat buffers and actual/proposed heat connections.
 - `feed {clear_spoilage:true}` clears spoiled recipe waste and burnt results before top-ups, also walking; `entities.cleared` reports taken/left. `collect {outputs_only:true}` reads/takes machine outputs only, never fuel.
 - `build`/`construct` report pre-action `materials` (need, held, missing, queued, hand_craftable). Build's existing `dry_run` includes them; `construct {dry_run:true}` checks ghost materials without acting.
 - `sleep --until "tell|alert"` and `wait --until` accept the same joined events; `wait_until {until:"item_count", platform, item, at_least}` waits for landed hub stock in sleep, queue steps and guards (incoming cargo and hub trash excluded).

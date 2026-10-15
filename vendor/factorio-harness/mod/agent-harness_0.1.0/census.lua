@@ -125,6 +125,7 @@ return function(api)
   local function read_entity(job, s, e)
     if not e.valid then return end
     local t, name = e.type, e.name
+    if api.observe_entity then api.observe_entity(e) end
     -- A pass already running before this index was installed stays incomplete for silo discovery.
     if (t == 'agricultural-tower' or (t == 'entity-ghost' and e.ghost_type == 'agricultural-tower')) and job.towers then
       job.towers[s.index] = job.towers[s.index] or {}

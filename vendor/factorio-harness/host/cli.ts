@@ -1041,6 +1041,7 @@ async function main() {
       moved: last?.moved, inv: last?.inv,
       // A short feed still says how many stops remain when up_to makes its exit successful.
       ...(last?.kind === 'gather' ? {left:last.left, short_allowed:last.short_allowed, short:last.short} : {}),
+      ...(last?.fuel_taken !== undefined ? {fuel_taken:last.fuel_taken, sources:last.sources, source_read_capped:last.source_read_capped} : {}),
       // Transfer tours retain the inventory selected and local delivery/refusal facts in compact waits too.
       ...(last?.op === 'transfer' && Array.isArray(last.entities) ? {
         transfers:last.entities.slice(0,8), transfers_more:last.entities.length>8?last.entities.length-8:undefined,
@@ -1387,7 +1388,7 @@ async function main() {
     const waits = bridged ? ['walk','mine','build'].includes(action)
       : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until','wait_ticks','kite'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
         // rearm over an area or the whole surface: the same tour (Opus, shift12 13:50).
-        || (action === 'rearm' && (args.area !== undefined || args.surface !== undefined) && reply.result?.until_tick !== undefined)
+        || (['rearm','refuel'].includes(action) && (args.area !== undefined || args.surface !== undefined) && reply.result?.until_tick !== undefined)
         // recover: the walk to your corpses (round1520d).
         || (action === 'recover' && reply.result?.until_tick !== undefined)
         || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined)
