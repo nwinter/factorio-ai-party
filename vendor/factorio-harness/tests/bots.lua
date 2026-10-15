@@ -693,6 +693,24 @@ do
   eq(rf.consumed,1); eq(rf.not_placed,'3 with no landfill left')
   bot.get_main_inventory=function() return inv end
   s.set_tiles=laid
+  -- Concrete on Aquilo lands as its frozen variant (Sol, shift17 61h20: a 3x3 of concrete on rough ice failed "no tile
+  -- was placed" though all 9 were laid, world n read frozen-concrete there): counted as placed, and as already there.
+  do
+    local ice={name='ice-rough',prototype={collision_mask={layers={ground_tile=true}}}}
+    local aq={}
+    local s4={get_tile=function(x,y) return aq[at(x,y)] or ice end,find_entities_filtered=function() return {} end,
+      set_tiles=function(list) for _,tt in ipairs(list) do aq[at(tt.position[1],tt.position[2])]={name='frozen-'..tt.name,prototype={collision_mask={layers={ground_tile=true}}}} end end,
+      set_hidden_tile=function() end,create_entity=function(a) made[#made+1]=a end}
+    local used=0
+    local inv4={get_item_count=function() return 30 end,remove=function(a) used=used+a.count end}
+    local bot4={surface=s4,force=force,get_main_inventory=function() return inv4 end}
+    local concrete={name='concrete',frozen_variant={name='frozen-concrete'},mineable_properties={minable=true}}
+    local stack4={prototype={place_as_tile_result={result=concrete,condition={layers={water_tile=true}}}}}
+    local made0=#made
+    local r4=B.place_tiles(bot4,{item='concrete'},stack4,{x=5.5,y=-0.5},3)
+    eq(r4.consumed,9); eq(used,9); eq(r4.not_placed,nil); eq(aq[at(5,-1)].name,'frozen-concrete'); eq(#made,made0)
+    fails(function() B.place_tiles(bot4,{item='concrete'},stack4,{x=5.5,y=-0.5},1) end,'no tile was placed: (5.5,-0.5): concrete is there already')
+  end
   -- Without the dry run module, the item's own rules: tile_condition (landfill never on lava).
   local lava={name='lava',prototype={collision_mask={layers={water_tile=true,lava_tile=true}}}}
   local s3={get_tile=function() return lava end,find_entities_filtered=function() return {} end,set_tiles=function() error('no set_tiles on lava') end}

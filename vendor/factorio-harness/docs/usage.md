@@ -1714,9 +1714,14 @@ Previously unexplored or unrecorded stretches can therefore be `unknown`, even i
 this runtime was installed. This read never moves, repairs or places belts.
 
 `inspect.heating` distinguishes the surface's heating requirement, the entity's `freezable`/`frozen` flags, its
-`demand_kw`, and heat buffers touching the one-tile border around its footprint. The heater rows name pipes,
-towers, reactors or exchangers with their current temperatures and whether they are at least 30 C; ghosts are
-identified and have no temperature. A frozen entity reports the observed cold/missing heaters without treating
+`demand_kw`, and the heaters touching the one-tile border around its footprint. Only heat pipes, nuclear reactors and
+heating towers heat a neighbour (Sol, shift17 10:50: a heat exchanger at 431 C was listed and the turbine and assembler
+beside it stayed frozen; checked on a private 2.0.77 Space Age server with source temperatures held on Aquilo): at 30 C
+or more (29.9 C does not), touching it on a side or a corner (one empty tile between: no heat); a heat exchanger does
+not heat its neighbours at 431 C or 600 C; a frozen machine thaws a few to about 30 s after a heater warms it (a 68 C
+heat pipe beside a chemical plant: frozen at 10 s, thawed by 30 s). `heater_rule` says this in the reply. The heater
+rows name those pipes, towers and reactors with their current temperatures and whether they are at least 30 C; ghosts
+are identified and have no temperature. A frozen entity reports the observed cold/missing heaters without treating
 nearby heat as proof of sufficient supply. `heat_neighbours` separately lists actual engine heat-network links:
 a heated assembler can have none. Heat buffers add thermal mass in MJ/C, temperature limits and maximum transfer
 MW. Other entities have no exposed thermal mass or internal temperature.
@@ -1949,7 +1954,9 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     laps from empty seed chests):
     - `pick: "first_with_stock"` reads every listed place as `inspect` does (in sight, or by remote view where our
       force sees the chunk) and takes at the first in list order that holds a listed item now (its first listed item
-      it holds); `pick: "most_stock"` takes at the place holding the most. `items` lists up to 16 items to look for
+      it holds); `pick: "most_stock"` takes at the place holding the most. `items` as a map `{"bioflux": 5}` (Luna,
+      shift17 10:50: that form was refused, and a list then moved the whole stack) caps the take at the picked item's
+      count, as `count` does. `items` lists up to 16 items to look for
       (`item` too); the item picked is the one taken (`count`, `up_to`, `keep` as in a plain take). The take walks
       there when out of reach (as `walk`).
     - Empty places are skipped: `skipped` counts them and `skipped_places` lists up to 8 (`holds: 0`, or the
@@ -2538,8 +2545,13 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     buffer chest's (or a landing pad's) requests there the same way and reads them back: `target: "requester-chest at
     (5.5,135.5) on vulcanus"`, `sections`. With `surface` it needs `position` (never your character's requests).
   - `configure {surface, position, recipe}` sets an assembler's recipe there as a remote recipe change does in reach
-    of nothing: an empty, idle machine takes it (`remote: true`); occupied input, output or module slots,
-    or crafting progress, produce a refusal naming the machine, surface and blocking state. Fluids require
+    of nothing: an empty, idle machine takes it (`remote: true`); occupied input or output slots, or crafting
+    progress, produce a refusal naming the machine, surface and blocking state. Modules stay as in the game (Astra,
+    shift17 10:50: an idle crusher holding efficiency modules was refused; checked on a private 2.0.77 server): a
+    module stays unless the new recipe forbids one of its positive effects or its category (productivity modules out
+    for wooden-chest, a quality module out for a barrel recipe; a speed module's negative quality and an efficiency
+    module's negative consumption keep them in). One that would come out is refused by name and slot, with the
+    `modules {"2":"empty"}` change that empties it. Fluids require
     `force: true` to discard them. Recipe changes on `platform` or another `surface` never walk the character,
     including with `walk: true`, and never return items to its inventory or spill at its position. Aboard,
     `configure {position, recipe}` uses the current platform's remote view without needing `platform` again.
@@ -4319,7 +4331,12 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   `operator [{seq, ago_s, text}]` (peeks, reads and waits included; the newest 3) until the agent's next game action
   or message; in compact output fh prints each as an `OPERATOR:` line on stderr as soon as a reply carries it and first
   on stdout (`--format json` keeps it in the document only), and
-  files it in `.operator-tells.jsonl` beside `--journal` (or `FH_OPERATOR_FILE`) for a post-tool hook.
+  files it in `.operator-tells.jsonl` beside `--journal` (or `FH_OPERATOR_FILE`) for a post-tool hook. Each message is
+  printed once (Muse, shift17 10:50: "operator repeat banners flood stdout and bury command output when piped"): a later
+  fh call whose reply still carries a message already in that file leaves it out of stdout and stderr; the post-tool
+  hook (pog tools/context.py) puts each new one in the model's context once. It is printed on every reply, as before,
+  with `--operator-repeat` (or `FH_OPERATOR_REPEAT=1`), in a workspace without the hook (no `.context-hooks` beside the
+  file: Gemini's), and without an operator file.
 - Operator factory digest (`factory_digest.lua`, `tools/factory_digest.py`): the idle-nudge supervisor sends
   a team tell on its first poll at or after the run deadline minus 2 hours, before the deadline, once per run.
   No deadline means no automatic digest. `POG_IDLE_NUDGE=0` disables this supervisor and the scheduled digest.

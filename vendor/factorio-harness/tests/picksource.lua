@@ -383,6 +383,19 @@ r=luna('transfer',{positions={coal_chest.position},item='coal',pick='first_with_
 advance(3)
 last=luna('status').last
 eq(last.outcome,'transferred'); eq(fuel_inv.get_item_count('coal'),10); eq(coal_chest.inv.get_item_count('coal'),10)
+-- items as {name: count} with pick and to (Luna, shift17 10:50: {"items":{"bioflux":5}} was refused, and items:["bioflux"]
+-- then moved all 24): the picked item's count caps the take; what reaches the destination is that count.
+do
+  body.position={x=50,y=32}
+  local bio=chest({x=51.5,y=30.5},{['yumako-seed']=24})
+  local dest=chest({x=53.5,y=33.5})
+  local held=main.get_item_count('yumako-seed')
+  luna('collect',{positions={bio.position},items={['yumako-seed']=5},pick='first_with_stock',to=dest.position})
+  advance(3)
+  eq(luna('status').last.outcome,'transferred'); eq(bio.inv.get_item_count('yumako-seed'),19); eq(dest.inv.get_item_count('yumako-seed'),5)
+  eq(main.get_item_count('yumako-seed'),held)
+  fails(function() luna('collect',{positions={bio.position},items={['yumako-seed']=0},pick='first_with_stock',to=dest.position}) end,'items count for yumako-seed')
+end
 
 -- friction6: two item counts, one target; validate before any move, then report each result.
 do

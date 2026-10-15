@@ -100,8 +100,9 @@ Your character stands still while you think, and the clock does not.
   `./fh wait --until` for a wait that leaves the queue running.
 - The clock line counts a wait or sleep as idle: `character idle 5m00s of it (100%, 4m30s of that in wait_ticks)`.
   The operator's idle nudge uses the same count.
-- An `OPERATOR:` line (on stderr, and first on stdout) is a message from the operator; it comes again on every reply
-  until your next game action or message. With `--format json` it is only in the reply's `result.operator`.
+- An `OPERATOR:` line (on stderr, and first on stdout) is a message from the operator. fh prints each message once;
+  later replies that still carry it leave it out (`--operator-repeat` prints it on every reply). With `--format json`
+  it is only in the reply's `result.operator`.
 - `./fh call labs` says which labs lack which packs, which inserters feeding them are idle and why, and the research ETA.
 - `feed` tops up every machine in reach (or `"radius":20` to walk a line) with its recipe ingredients, lab science
   packs and burner fuel; `keep` holds back a reserve. Use it instead of one `transfer` per machine.

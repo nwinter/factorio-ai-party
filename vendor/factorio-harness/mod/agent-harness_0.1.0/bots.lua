@@ -576,10 +576,17 @@ return function(api)
     local quality = a.quality or 'normal'
     local have = inv.get_item_count{name=a.item, quality=quality}
     local x0, y0 = math.floor(pos.x - (size - 1) / 2), math.floor(pos.y - (size - 1) / 2)
+    -- The tile or its frozen or thawed variant (Sol, shift17 61h20: concrete laid on Aquilo reads frozen-concrete,
+    -- so every tile counted as not placed and the build failed "no tile was placed" after laying the floor).
+    local same = {[tile.name]=true}
+    for _, k in ipairs({'frozen_variant', 'thawed_variant'}) do
+      local ok, v = pcall(function() return tile[k] end)
+      if ok and v then same[v.name] = true end
+    end
     -- Without the dry run module: the item's own tile rules.
     local function rules(x, y)
       local here = surface.get_tile(x, y)
-      if here.name == tile.name then return {already=true} end
+      if same[here.name] then return {already=true} end
       local ok = true
       if result.tile_condition then
         ok = false
@@ -642,14 +649,14 @@ return function(api)
     local placed = 0
     for _, t in ipairs(tiles) do
       local x, y = t.position[1], t.position[2]
-      if surface.get_tile(x, y).name == tile.name then placed = placed + 1
+      if same[surface.get_tile(x, y).name] then placed = placed + 1
       else
         local ok, v = pcall(verdict, x, y)
         refuse(x, y, ok and v.why or 'the game refused it there')
       end
     end
     for _, g in ipairs(fulfilled) do
-      if surface.get_tile(g.position.x, g.position.y).name ~= tile.name then
+      if not same[surface.get_tile(g.position.x, g.position.y).name] then
         pcall(surface.create_entity, {name='tile-ghost', inner_name=tile.name, position=g.position, force=g.force})
       end
     end
