@@ -917,7 +917,7 @@ async function main() {
   // target_destroyed: a shoot at an entity ended because it is gone.
   // transferred: a transfer that walked (walk, pick, a courier's to) moved items (Astra 07:53: exit 1 'Control ended:
   // transferred' after moving 200 solid fuel); unreached and nothing_collected still fail.
-  const successfulOutcomes = ['told','mentioned','urgent','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear','dropped','transferred','previewed',
+  const successfulOutcomes = ['told','mentioned','urgent','duration_elapsed','target_mined','mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear','dropped','transferred','previewed',
     // clear_cliffs (use_item cliff-explosives): the explosives destroyed cliffs (Sol 17:21/17:32: fh wait exited 1 on it)
     'cliffs_destroyed',
     // load_silo walk (Luna, shift14 21:20): the list aboard, and launched; short and no_rocket still fail.

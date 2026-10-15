@@ -20,6 +20,55 @@ return function(api)
     return false
   end
   local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
+  -- settings, and settings keys at an entry's top level (Sol, d15 06:20: builds entries with settings {recipe, modules,
+  -- circuit, requests, filters} returned success and set nothing, several refits): settings is taken as an alias,
+  -- each key going where it belongs (recipe to the entry's recipe; circuit, requests, wires, configure to theirs;
+  -- any other key into configure, whose argument check refuses an unknown name). A setting key at the entry's top
+  -- level is refused with the corrected shape. Nothing is ignored silently.
+  local SHAPE = '{item|name, position, direction?, recipe?, configure {recipe, modules, filters, filter_mode, use_filters, ...}, requests {set, ...}, circuit {enable, read, ...}, wires [{to, color}]}'
+  local TOP = {modules='configure', filters='configure', filter_mode='configure', use_filters='configure', spoil_priority='configure',
+    bar='configure', priority_targets='configure', circuit_condition='circuit', logistic_condition='circuit', enable='circuit',
+    read='circuit', signals='circuit', decider='circuit', arithmetic='circuit', request_filters='requests', set='requests'}
+  function M.normalize(entries, what)
+    local moved = 0
+    for i, e in ipairs(type(entries) == 'table' and entries or {}) do
+      if type(e) == 'table' then
+        local where = (what or 'entry') .. ' ' .. i
+        for key, home in pairs(TOP) do
+          if e[key] ~= nil then
+            error(string.format('%s: %s is not an entry key; it goes in %s {%s = ...}: an entry is %s', where, key, home, key, SHAPE), 0)
+          end
+        end
+        local st = e.settings
+        if st ~= nil then
+          assert(type(st) == 'table' and #st == 0, where .. ': settings is an object; an entry is ' .. SHAPE)
+          local function into(kind, k, v)
+            e[kind] = e[kind] or {}
+            assert(type(e[kind]) == 'table', where .. ': ' .. kind .. ' is an object')
+            assert(e[kind][k] == nil or e[kind][k] == v, where .. ': settings.' .. k .. ' conflicts with ' .. kind .. '.' .. k)
+            e[kind][k] = v
+          end
+          for k, v in pairs(st) do
+            if k == 'recipe' then
+              assert(e.recipe == nil or e.recipe == v, where .. ': settings.recipe conflicts with recipe')
+              e.recipe = v
+            elseif k == 'circuit' or k == 'requests' or k == 'configure' then
+              assert(type(v) == 'table', where .. ': settings.' .. k .. ' is an object')
+              for k2, v2 in pairs(v) do into(k, k2, v2) end
+            elseif k == 'wires' then
+              assert(e.wires == nil, where .. ': settings.wires conflicts with wires')
+              e.wires = v
+            else
+              into('configure', k, v)
+            end
+          end
+          e.settings = nil
+          moved = moved + 1
+        end
+      end
+    end
+    return moved
+  end
   -- Before anything is placed: shapes and argument names.
   function M.check(entries, ctx)
     for i, e in ipairs(entries) do

@@ -286,6 +286,15 @@ fh call status
     `entry 1: configure takes the entry's position`, `entry 2 wire 1: {to {x,y}, color red|green, from_side?,
     to_side?} (from is the entry)`); `requests` on a `platform` entry is refused (the hub's requests are `requests`
     with `platform`).
+  - `settings {...}` on an entry (Sol, d15 06:20: `builds` entries with `settings: {recipe, modules, circuit,
+    requests, filters}` returned success and set nothing) is read as an alias: `recipe` becomes the entry's recipe;
+    `circuit`, `requests`, `configure` and `wires` go to theirs; any other key goes into `configure`, whose argument
+    check refuses an unknown name (`unknown argument colour for configure`). The reply says `settings_alias: 1
+    entries' settings read as configure/requests/circuit/wires`. A setting key at the entry's top level is refused
+    before anything is placed: `builds entry 1: modules is not an entry key; it goes in configure {modules = ...}: an
+    entry is {item|name, position, direction?, recipe?, configure {...}, requests {...}, circuit {...}, wires [...]}`
+    (modules, filters, filter_mode, use_filters, spoil_priority, bar, priority_targets, circuit_condition,
+    logistic_condition, enable, read, signals, decider, arithmetic, request_filters, set).
   - The reply adds `settings` `[{index, name, position, configure, requests, circuit, wires}]` (each `set`, or the
     game's refusal) and `settings_line`: `settings: 4 set, 1 refused: entry 2 configure: recipe incompatible with
     machine`. A refused setting leaves its entry placed. An entry that failed to place gets no settings.
@@ -324,6 +333,13 @@ fh call status
     fast-inserter (-65.5,95.5): its circuit condition ... is ignored: no red or green wire connects it, and the game
     counts a circuit condition only with a circuit connection`.
 - `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests" switch.
+- A `set` or `clear` without `section` edits the item's slot in the manual section that already requests it (Grok, d15
+  06:20: a hub's `set` of underground-belt 4 added a new section and the hub requested 2 plus 4). Before, it went to the
+  first manual section without a logistic group, or a new one. An item no manual section requests goes there as before.
+  `sections_note` names a logistic group the edit changes (`section 1 is the logistic group "ship parts": every entity
+  in the group gets the change, as in the GUI`), any other section requesting the item too (`underground-belt is
+  requested in section 2 too (the hub requests the sum; requests {section, clear} removes one)`), and `sections
+  changed: 1, 2` when one call edited several. `section: N` still names one section for every entry.
 - `requests` shows each section's state: `off: true` for a section switched off (the GUI's checkbox; it requests
   nothing, and the reply's `note` names it), and on a platform hub the planet each request imports from, exact
   requests too (`calcite=500 from vulcanus`). `requests {platform, section: 1, active: true}` (or `false`) switches a
@@ -1660,6 +1676,12 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   mined and given no `name` fails as before (`entity not found at ...`).
 - Entity `mine` takes one `position` per call or queue step. `positions` and `area` without `tiles: true` are
   refused explicitly: these selectors apply only to laid tiles.
+- `mine {position, count}` on a resource (ore, coal, stone; Grok, d15 06:20: 200 coal took a 50-round queue at 600
+  ticks a call) mines `count` units (1..2000) in one timed call; `ticks` goes with entities mined whole and is refused
+  with `count`. The time is what that many hand-mining cycles take, plus a margin (reply `count`, `cycle_ticks`,
+  `until_tick`). A tile mined out goes on with the nearest tile of the same resource in reach. Outcomes: `mined`
+  (`last.mined` = `last.count`), `target_mined` with `last.why` `mined 12 of 200: no coal left in reach`,
+  `inventory_full`, or `duration_elapsed` if the time runs out first (`last.mined` short of `last.count`).
 - `mine {tiles: true, position | positions | area, name?, walk?, dry_run?}` (minetile; Sol 15:28: landfill under an old
   pole at (194,58) kept a 3x3 planting cell off the yumako farm, with no robots there) mines tiles laid by a player by
   hand, as a player mines them:

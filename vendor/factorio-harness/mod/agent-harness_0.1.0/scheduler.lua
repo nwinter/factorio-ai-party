@@ -4,7 +4,7 @@ return function(api)
   local QUEUES=api.queue_key or 'queues'
   local MAX_PENDING, MAX_HISTORY, MAX_INSTANT, MAX_BYTES, MAX_GUARDS, CHECK_TICKS = 128, 64, 4, 1048576, 8, 10
   -- Outcomes of timed actions that count as the step succeeding.
-  local SUCCESS={duration_elapsed=true,target_mined=true,repair_completed=true,arrived=true,arrived_near=true,path_built=true,constructed=true,nothing_to_do=true,clear=true,fed=true,collected=true,topped_up=true,target_destroyed=true,dropped=true,transferred=true,picked_up=true,
+  local SUCCESS={duration_elapsed=true,target_mined=true,mined=true,repair_completed=true,arrived=true,arrived_near=true,path_built=true,constructed=true,nothing_to_do=true,clear=true,fed=true,collected=true,topped_up=true,target_destroyed=true,dropped=true,transferred=true,picked_up=true,
     -- load_silo walk (Luna, shift14 21:20): the list aboard, and launched
     loaded=true,launched=true,
     -- clear_cliffs and use_item with cliff explosives (Sol 22:45), and a vehicle drive's dry run

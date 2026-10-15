@@ -127,3 +127,30 @@ do
   m1.products_finished=107; eq((C.check(p,{['until']='produced',at_least=1,positions={{x=10.5,y=20.5}}},true,r2)),true)
 end
 print('d15_batch produced: ok')
+
+-- 1 (Sol): build/place_ghosts entries with settings {...}: read as an alias; setting keys at the top level refused. --
+do
+  local checked={}
+  local E=require('entryset'){check=function(action,args)
+    checked[#checked+1]=action
+    if action=='configure' then for k in pairs(args) do assert(({recipe=1,modules=1,filters=1,filter_mode=1,use_filters=1})[k],'unknown argument '..k..' for configure') end end
+  end,call=function() return {} end,position=function(v) return v end,reason=tostring}
+  local entries={{item='biochamber',position={x=1,y=1},settings={recipe='bioflux',modules={'speed-module'},circuit={enable={}},requests={set={}},filters={'coal'}}}}
+  eq(E.normalize(entries),1)
+  local e=entries[1]
+  eq(e.settings,nil); eq(e.recipe,'bioflux'); eq(e.configure.modules[1],'speed-module'); eq(e.configure.filters[1],'coal')
+  assert(e.circuit.enable and e.requests.set,'circuit and requests moved')
+  eq(E.any(entries),true)
+  E.check(entries,{})
+  -- an unknown key inside settings goes to configure, whose check refuses it by name
+  local bad={{item='inserter',position={x=1,y=1},settings={colour='red'}}}
+  E.normalize(bad)
+  local ok,err=pcall(E.check,bad,{}); assert(not ok); has(err,'unknown argument colour for configure')
+  -- setting keys at the entry's top level: refused with the corrected shape
+  ok,err=pcall(E.normalize,{{item='assembling-machine-2',position={x=1,y=1},modules={'speed-module'}}},'builds entry')
+  assert(not ok); has(err,'builds entry 1: modules is not an entry key; it goes in configure {modules = ...}')
+  ok,err=pcall(E.normalize,{{name='inserter',position={x=1,y=1},settings={recipe='a'},recipe='b'}})
+  assert(not ok); has(err,'settings.recipe conflicts with recipe')
+  eq(E.normalize({{name='inserter',position={x=1,y=1}}}),0)
+end
+print('d15_batch settings: ok')

@@ -368,7 +368,8 @@ already targets your character.
 - `place_ghosts` entries, `build` `builds` entries and a single `build` take `configure`, `requests`, `circuit` (the
   arguments of `configure`, `requests`, `circuit_set`, without `position`) and `wires: [{to, color, from_side,
   to_side}]`: set after every entry is placed, then the wires; the reply's `settings` and `settings_line` say what was
-  set or refused (a refused setting leaves the entry placed); `dry_run` gives `settings_planned`.
+  set or refused (a refused setting leaves the entry placed); `dry_run` gives `settings_planned`. An entry's
+  `settings: {...}` is read as those keys (`settings_alias`); a setting key such as `modules` at the entry's top level is refused with the shape.
 - Turret ghosts from `place_ghosts` and `paste` request ammo, so the robots that build them bring it (`ammo`: a name,
   `{name, count}` or false; default 10 of what the logistic network there holds most of); so do the ghosts of turrets that died.
 - Water and Gleba wetland: `pole_route` shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost under
@@ -384,6 +385,7 @@ already targets your character.
   stone path, artificial soil) by hand: the tile under it goes back and the item to you; `positions`, `area`, `"walk":true`,
   `"dry_run":true`; a tile anything stands on is refused, naming it. `construct` mines tiles marked for deconstruction too.
   Entity `mine` takes one `position` per call or queue step; its `positions`/`area` require `tiles: true`.
+  `mine {position, count: 200}` on ore, coal or stone mines 200 units in one call (outcome `mined`), going on to the next tile in reach.
 - `build {item: "rail-ramp", position, direction}` and `construct` on a ramp ghost build it by hand from one held ramp;
   the centre snaps to the ramp grid, with the same collision and reach checks.
 - A `craft` stock refusal names stocking chests and queue-step `on_fail`: `abort` pauses, `skip` continues,
@@ -532,7 +534,8 @@ already targets your character.
   thruster input it lacks and the pumps, plants, crushers and chunks behind it (`platforms {platform}`:
   `thrust_inputs`).
 - `./fh call requests --args '{"platform":"NAME"}'` shows each hub section; `off: true` means it requests nothing
-  (`"section":N,"active":true` switches it on), and each request shows the planet it imports from.
+  (`"section":N,"active":true` switches it on), and each request shows the planet it imports from. A `set` without
+  `section` edits the slot of the section that already requests the item (`sections_note` names a shared group or a second section).
 - `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without
   a planet); it is also a `wait_until` condition, a queue guard and an order's `when`.
   `platform_left Sunward [nauvis]` waits for its departure; the team alerts say when a platform stops at or leaves

@@ -144,31 +144,66 @@ return function(api)
     -- changed: a slot set or cleared, or the section switched (friction2: a set the call read as nothing still said
     -- changed_section).
     local touched,stored,changed
+    local others={}
     if changing then
       local sec
-      if a.section~=nil then
-        sec=secs.get_section(api.integer(a.section,1,1,100,'section'))
-        assert(sec,'section '..a.section..' does not exist (sections_count '..secs.sections_count..')')
-      else
-        for i=1,secs.sections_count do local s=secs.get_section(i); if s.is_manual and s.group=='' then sec=s; break end end
-        sec=sec or secs.add_section()
-        assert(sec,'no manual logistic section could be added')
+      -- The section a set or clear of one item goes to without section (Grok, d15 06:20: a hub's set added a new
+      -- section and the hub requested the sum, underground-belt 2 plus 4): the manual section that already requests
+      -- it (the first; any others are named), else the default one below.
+      local function holding(name,quality)
+        local first,rest=nil,{}
+        if a.section~=nil then return nil,rest end
+        for i=1,secs.sections_count do
+          local s_=secs.get_section(i)
+          if s_.is_manual then
+            local _,found=slot_of(s_,name,quality)
+            if found then if first then rest[#rest+1]=s_.index else first=s_ end end
+          end
+        end
+        return first,rest
       end
-      assert(sec.is_manual,'section '..sec.index..' is controlled by the game')
+      local default
+      local function default_section()
+        if default then return default end
+        if a.section~=nil then
+          default=secs.get_section(api.integer(a.section,1,1,100,'section'))
+          assert(default,'section '..a.section..' does not exist (sections_count '..secs.sections_count..')')
+        else
+          for i=1,secs.sections_count do local s_=secs.get_section(i); if s_.is_manual and s_.group=='' then default=s_; break end end
+          default=default or secs.add_section()
+          assert(default,'no manual logistic section could be added')
+        end
+        assert(default.is_manual,'section '..default.index..' is controlled by the game')
+        return default
+      end
+      local function for_item(name,quality)
+        local found,rest=holding(name,quality)
+        local target=found or default_section()
+        if #rest>0 then others[#others+1]=string.format('%s is requested in section%s %s too (the hub requests the sum; requests {section, clear} removes one)',
+          name,#rest>1 and 's' or '',table.concat(rest,', ')) end
+        if target.group~='' then others[#others+1]=string.format('%s: section %d is the logistic group "%s": every entity in the group gets the change, as in the GUI',name,target.index,target.group) end
+        return target
+      end
+      sec=(a.active~=nil or a.clear_all) and default_section() or nil
       touched=sec
       if a.active~=nil then sec.active=a.active; changed=true end
       if a.clear_all then changed=changed or (sec.filters_count or 0)>0; sec.filters={} end
+      local sections_touched,seen_sec={},{}
+      local function touch(s_) touched=touched or s_; if not seen_sec[s_.index] then seen_sec[s_.index]=true; sections_touched[#sections_touched+1]=s_.index end end
+      if sec then touch(sec) end
       -- What is stored for each item touched, read back from its slot (Luna, shift12 12:47): `processing-unit 0..400
       -- from vulcanus (was 0..200 from vulcanus)`, `coal: cleared (was coal=500 from vulcanus)`.
       local is_hub=hub~=nil
       stored={}
       for _,name in ipairs(a.clear or {}) do
-        local i,found=slot_of(sec,item_name(name),'normal')
+        local csec=sec or for_item(item_name(name),'normal')
+        touch(csec)
+        local i,found=slot_of(csec,item_name(name),'normal')
         if found then
-          local was=filter_text(sec.get_slot(i),is_hub)
-          sec.clear_slot(i); changed=true
+          local was=filter_text(csec.get_slot(i),is_hub)
+          csec.clear_slot(i); changed=true
           stored[#stored+1]=name..': cleared'..(was and ' (was '..was..')' or '')
-        else stored[#stored+1]=name..': no request to clear in section '..sec.index end
+        else stored[#stored+1]=name..': no request to clear in section '..csec.index end
       end
       local listed=type(a.set)=='table'
       if listed then local n=0; for _ in pairs(a.set) do n=n+1 end; listed=n==#a.set end
@@ -182,8 +217,10 @@ return function(api)
         end
         local name,quality=item_name(r.item),r.quality or 'normal'
         local min=api.integer(r.min,0,0,1000000000,'min')
-        local i,found=slot_of(sec,name,quality)
-        local old=found and sec.get_slot(i) or nil
+        local ssec=sec or for_item(name,quality)
+        touch(ssec)
+        local i,found=slot_of(ssec,name,quality)
+        local old=found and ssec.get_slot(i) or nil
         -- The max: the one named ("inf" for none), else the one the slot already has while it is at least min, as the
         -- GUI keeps it when only min is edited (friction3: Grok's map sets turned copper-cable 200..400 into 40..inf).
         local max,max_note=r.max,''
@@ -207,10 +244,12 @@ return function(api)
           kept=from~=nil
         end
         local was=old and filter_text(old,is_hub)
-        sec.set_slot(i,{value={type='item',name=name,quality=quality,comparator='='},min=min,max=max,import_from=from}); changed=true
-        local now=filter_text(sec.get_slot(i),is_hub) or name
+        ssec.set_slot(i,{value={type='item',name=name,quality=quality,comparator='='},min=min,max=max,import_from=from}); changed=true
+        local now=filter_text(ssec.get_slot(i),is_hub) or name
         stored[#stored+1]=now..max_note..(kept and is_hub and ' (import planet kept: not named in this edit)' or '')..(was and was~=now and ' (was '..was..')' or '')
       end
+      if not touched then touch(default_section()) end
+      if #sections_touched>1 then table.sort(sections_touched); others[#others+1]='sections changed: '..table.concat(sections_touched,', ') end
     end
     local out={target=label,sections=list_sections(secs,a.platform~=nil or (chest and chest.type=='space-platform-hub')),from_buffers=buffers}
     -- Requests set into a section that is off are not made: say so.
@@ -221,6 +260,7 @@ return function(api)
         #off>1 and 's' or '',table.concat(off,', '),#off>1 and 'are' or 'is',#off>1 and 'their' or 'its')
     end
     out.changed_section=changed and touched and touched.index or nil
+    out.sections_note=#others>0 and others or nil
     if changing and not changed then out.unchanged='this call set, cleared and switched nothing in section '..(touched and touched.index or '?') end
     out.stored=stored and #stored>0 and stored or nil
     if hub and hub.valid and keep then
