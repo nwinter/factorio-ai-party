@@ -1375,6 +1375,19 @@ function handlers.describe()
   for name,schema in pairs(M.packaudit and M.packaudit.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.silo and M.silo.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.rocketload and M.rocketload.schema or {}) do description.actions[name]=schema end
+  -- Settings on entries (entryset.lua; Sol 19:50): place_ghosts and build entries, and a single build's own.
+  if M.entryset then
+    local t=M.entryset.schema_text
+    local pg,b=description.actions.place_ghosts,description.actions.build
+    if pg and pg.entities then pg.entities=pg.entities..'; each entry may also carry '..t end
+    if b and b.builds then b.builds=b.builds..'; each entry may also carry '..t end
+    if b then
+      b.configure='a single build: configure arguments for it (as configure takes them, no position); builds entries carry their own'
+      b.requests='a single build: requests arguments for it (set, clear, ...)'
+      b.circuit='a single build: circuit_set arguments for it (enable, read, settings, decider, ...)'
+      b.wires='a single build: [{to {x,y}, color red|green, from_side?, to_side?}] from it'
+    end
+  end
   description.actions.status.brief='boolean: only active, last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older)'
   description.actions.status.alerts='boolean, with brief: add the alerts block (losses, attacked areas, groups, enemy news; read from what the game reported, no scan)'
   description.actions.status.inventory='boolean: add inventory, one line: main (name*count, free slots), ammo, guns, armor with its equipment, trash slots, cursor (the inventory read in one line)'
@@ -8360,6 +8373,55 @@ for name in pairs(M.dryrun.ACTIONS) do
     -- "dry_run":"true" must not build for real.
     assert(type(a)~='table' or a.dry_run==nil or a.dry_run==false,'dry_run must be true or false')
     return handler(p,a)
+  end
+end
+-- Settings on the entries of place_ghosts and build (entryset.lua; Sol, shift13 19:50: a bio cell took about 10
+-- configure and wire round trips): configure, requests, circuit and wires set after every entry is placed.
+M.entryset=require('entryset'){check=function(action,args) return check_args(action,args) end,
+  call=function(action,p,args) return handlers[action](p,args) end,position=position,reason=reason}
+do
+  local place=handlers.place_ghosts
+  handlers.place_ghosts=function(p,a)
+    if type(a)~='table' or not M.entryset.any(a.entities) then return place(p,a) end
+    local ctx={platform=a.platform,surface=a.surface}
+    M.entryset.check(a.entities,ctx)
+    local out=place(p,a)
+    if a.dry_run==true then return out end
+    local skip={}
+    for _,f in ipairs(out.failed or {}) do if f.index then skip[f.index]=true end end
+    out.settings,out.settings_line=M.entryset.apply(p,a.entities,ctx,skip)
+    return out
+  end
+  local build=handlers.build
+  handlers.build=function(p,a)
+    local entries=type(a)=='table' and (a.builds or {a}) or {}
+    if not M.entryset.any(entries) then return build(p,a) end
+    M.entryset.check(entries,{})
+    local out=build(p,a)
+    if a.dry_run==true then return out end
+    local skip={}
+    for _,f in ipairs(out.failed or {}) do if f.index then skip[f.index]=true end end
+    -- A build that waits (a hand craft, a step aside off its footprint) builds the rest when it reruns, and sets
+    -- those entries then; the ones built already are set now.
+    if out.until_tick and (out.awaiting_craft or out.stepping_aside) then
+      local act=state().active[p.index]
+      local left=act and act.args and (act.args.builds and #act.args.builds or 1) or #entries
+      for i=#entries-left+1,#entries do skip[i]=true end
+      out.settings_note=string.format('%d entr%s set when built (the build goes on)',left,left==1 and 'y is' or 'ies are')
+    end
+    out.settings,out.settings_line=M.entryset.apply(p,entries,{},skip)
+    return out
+  end
+  -- A dry run (the dispatcher's dry_run action, a queue step's): the same check, and what each entry would set.
+  local dry=handlers.dry_run
+  handlers.dry_run=function(p,a)
+    local args=type(a)=='table' and type(a.args)=='table' and a.args or nil
+    local entries=args and (a.action=='place_ghosts' and args.entities or a.action=='build' and (args.builds or {args})) or nil
+    if not entries or not M.entryset.any(entries) then return dry(p,a) end
+    M.entryset.check(entries,a.action=='place_ghosts' and {platform=args.platform,surface=args.surface} or {})
+    local out=dry(p,a)
+    out.settings_planned=M.entryset.plan(entries)
+    return out
   end
 end
 local equipment_handler=handlers.equipment

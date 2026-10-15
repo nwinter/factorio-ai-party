@@ -292,6 +292,10 @@ already targets your character.
   you in. A `build` batch with `"all": true` builds every entry it can and lists the rest in `failed` with why.
   `circuit_set` says `stays disabled` there when one of the entity's conditions is not met after the call;
   `requests` `set` takes a map `{item: min}` too; an entry without `max` keeps the slot's max (`"max": "inf"` sets none).
+- `place_ghosts` entries, `build` `builds` entries and a single `build` take `configure`, `requests`, `circuit` (the
+  arguments of `configure`, `requests`, `circuit_set`, without `position`) and `wires: [{to, color, from_side,
+  to_side}]`: set after every entry is placed, then the wires; the reply's `settings` and `settings_line` say what was
+  set or refused (a refused setting leaves the entry placed); `dry_run` gives `settings_planned`.
 - Turret ghosts from `place_ghosts` and `paste` request ammo, so the robots that build them bring it (`ammo`: a name,
   `{name, count}` or false; default 10 of what the logistic network there holds most of); so do the ghosts of turrets that died.
 - Water and Gleba wetland: `pole_route` shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost under
