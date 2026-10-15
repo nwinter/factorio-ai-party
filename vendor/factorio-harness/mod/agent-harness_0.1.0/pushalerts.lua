@@ -579,6 +579,7 @@ return function(api)
     elseif stage.step=='merge' then
       job.result={tick=job.start,groups=merge(job.groups,job.extra,job.mining,force)}
       job.i=job.i+1;job.site_index=1
+      job.stages[job.i]=job.stages[job.i] or {step='drill_sites'}
     else
       -- At most one depleted group lookup in a background step. Never in a
       -- reply; drill_sites caches both a free site and a bounded miss.

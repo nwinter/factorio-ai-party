@@ -113,7 +113,7 @@ return function(api)
     m.next=(m.next-1)%#m.order+1
     local c=m.chunks[m.order[m.next]]
     local f,s=game.forces[c.force],game.surfaces[c.surface]
-    if f and s then refresh(c,f,s) end
+    if f and s then refresh(c,f,s) else c.pending=nil end
     if not c.pending then m.next=m.next+1 end
   end
   local function line(a)

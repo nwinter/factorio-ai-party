@@ -97,6 +97,7 @@ surface.find_entities_filtered=function() return drills end;force.players={{}}
 local A2=require('pushalerts'){state=function() return bg end,agents=function() return {} end,who=function() return 'opus' end,
   drill_site=function(f,g) lookups=lookups+1;eq(g.n,2);eq(g.ore,'coal');return {tick=game.tick,drill=g.drill.name,origin=g.drill.position,radius=24,site={position={x=20.5,y=.5},distance=16.5,amount=100}} end}
 A2.tick(game.tick)
+table.remove(bg.push_jobs.player.stages) -- a scan already running before this deployment
 for _=1,200 do game.tick=game.tick+1;A2.tick(game.tick);if not bg.push_jobs.player then break end end
 eq(lookups,1);local result=A2.read(p,{kind='out_of_ore'});eq(#result.groups,1);eq(result.groups[1].drill_site.site.amount,100)
 has(result.groups[1].line,'nearest checked coal site with room');A2.read(p,{kind='out_of_ore'});eq(lookups,1)
@@ -118,4 +119,7 @@ local full=DB.read(p,arg);eq(items_read,384);eq(full.belts,16);eq(full.observati
 local ghost={valid=true,type='entity-ghost',ghost_type='transport-belt',ghost_name='transport-belt',name='entity-ghost',force=force,surface=surface,
   position={x=.5,y=.5},direction=4,bounding_box={left_top={x=.1,y=.1},right_bottom={x=.9,y=.9}}}
 DB.observe(ghost);eq(DB.alert_groups(force)[1].n,1)
+DB.read(p,arg);game.surfaces={}
+DB.tick(15);eq(dense_state.belt_memory.chunks['player|nauvis|0,0'].pending,nil,'deleted surface releases pending refresh')
+game.surfaces={nauvis=surface}
 print('d15_0450a: ok')
