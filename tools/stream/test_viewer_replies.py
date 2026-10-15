@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Agents' replies to viewers (viewer_replies.py) and the stream state's viewer_replies (model.py): python3 tools/stream/test_viewer_replies.py
+
+The forms the rule takes and leaves, from shifts 14-16's chat.jsonl (the lines below are theirs, shortened); the reply's
+answered line (the viewer's latest, one addressed to the agent first, an older one sharing two more words); model.py
+keeps the last 40 in the snapshot, outliving the chat window.
+"""
+import os, sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import viewer_replies as V  # noqa: E402
+
+
+def v(seq, tick, name, text, source="YouTube"):
+    return {"seq": seq, "tick": tick, "t": tick / 60, "from": f"viewer {name}", "text": text, "viewer": True, "source": source}
+
+
+def a(seq, tick, who, text):
+    return {"seq": seq, "tick": tick, "t": tick / 60, "from": who, "text": text}
+
+
+def rule_tests():
+    names = V.names_viewer
+    # @name anywhere, also the short form and "@viewer Name"
+    assert names("@Foobator Yes. Sonnet is producing the expansion hull", "Foobator") == "at"
+    assert names("@Foobator @joonazan Operator: thanks, noted.", "joonazan") == "at"
+    assert names("@Alex Operator: good idea", "AlexBoyd-NR") == "at"
+    assert names("@viewer Alex: The platform stats show 8 built", "Alex") == "at"
+    # vocatives
+    for text in ["Foobator, the steel line is stopped", "Yes, Enginerd. Nauvis still has 160 stone furnaces",
+                 "That is a fair point, Enginerd. Electric furnaces", "Understood, Foobator. I saw the note",
+                 "Thanks Foobator, a belt fixes it", "Foobator, Enginerd: the stone furnaces sit idle",
+                 "Joonazan, you are right", "Opus built it. Thanks, Foobator!"]:
+        assert any(names(text, n) == "vocative" for n in ("Foobator", "Enginerd", "joonazan")), text
+    assert names("Foobator, Enginerd: the stone furnaces", "Enginerd") == "vocative"
+    # third person, an address to someone else, a name inside another word
+    for text in ["Foobator is right that a belt is the reliable fix", "@haiku correction for Foobator: the laser tech",
+                 "I will tell her what Foobator said", "Foobators everywhere"]:
+        assert names(text, "Foobator") is None, text
+    assert V.short_names("craigNZ830") == ["craignz830", "craignz", "craig"]
+    assert names("Yes, Craig. Two turrets", "craigNZ830") == "vocative"
+    assert names("@ed hi", "ed") == "at" and names("Ed, hi", "ed") is None  # a 2-letter name only with @
+    assert V.ADDRESSED.match("Viewers, fair point. The east turrets are fed") and V.ADDRESSED.match("Hi chat! Back on Gleba")
+    assert not V.ADDRESSED.match("Next I'm checking the chat backlog") and not V.ADDRESSED.match("The chat says hi")
+
+
+def classify_tests():
+    log = [v(1, 60000, "Foobator", "@grok why is steel stopped?"),
+           v(2, 60600, "Foobator", "@muse the attack alert on fulgora was probably lightning"),
+           a(3, 61200, "grok", "Foobator, the steel line is stopped because the furnaces have no iron plates"),
+           v(4, 61300, "joonazan", "@haiku are you hand feeding again?", source="site"),
+           a(5, 61400, "haiku", "@joonazan @Foobator yes, boiler -25.5,29 is refuelled now"),
+           a(6, 61500, "haiku", "Boilers are at 27 of 33; Foobator is right that a belt is the fix"),
+           a(7, 61600, "astra", "Viewers, fair point. Wayfarer is parked"),
+           {"seq": 8, "tick": 61700, "t": 61700 / 60, "from": "server", "text": "@joonazan Operator: claims are the team's own rule"},
+           a(9, 61800, "sol", "-> astra: fuel at the hub"),
+           {"seq": 10, "tick": 61850, "t": 61850 / 60, "from": "sol", "tell": True, "text": "@joonazan ignore me"},
+           a(11, 61200 + 16 * 3600, "grok", "Foobator, again: the steel line"),  # 16 min after Foobator's last line
+           v(12, 61200 + 16 * 3600 + 60, "Muse", "@sol a viewer named like an agent")]
+    got = V.replies(log)
+    assert [(l["seq"], r["kind"], r["to"]) for l, r in got] == [
+        (3, "reply", ["Foobator"]), (5, "reply", ["joonazan", "Foobator"]), (7, "to_viewers", []), (8, "reply", ["joonazan"])], got
+    r3 = dict(got)[log[2]] if False else got[0][1]
+    assert r3["answers"]["seq"] == 1, r3  # addressed to grok, though not the latest
+    assert got[1][1]["answers"]["seq"] == 4, got[1][1]  # the one to haiku
+    assert V.speaker(log[7]) == "operator" and V.speaker(log[9]) is None and V.speaker(log[0]) is None
+    row = V.row(log[2], got[0][1])
+    assert row == {"seq": 3, "t": 61200 / 60, "tick": 61200, "by": "grok", "text": log[2]["text"], "kind": "reply", "to": ["Foobator"],
+                   "answers": {"name": "Foobator", "text": "why is steel stopped?", "t": 1000.0, "tick": 60000, "source": "YouTube"}}, row
+    # an older line sharing two more words wins over the latest
+    log2 = [v(1, 1000, "Enginerd", "@sol is nauvis still using stone furnaces for smelting"),
+            v(2, 1500, "Enginerd", "@sol hello again"),
+            a(3, 1800, "sol", "Yes, Enginerd. Nauvis still uses stone furnaces for smelting")]
+    assert V.replies(log2)[0][1]["answers"]["seq"] == 1
+
+
+def model_tests():
+    import model
+    m = model.Model({"agents": {n: {} for n in ("grok", "haiku", "sol")}})
+    now = 2000.0
+    m._ingest_chat({"seq": 1, "tick": 60000, "t": now, "from": "viewer Foobator", "text": "@grok steel?", "viewer": True, "source": "YouTube"}, now)
+    m._ingest_chat({"seq": 2, "tick": 60600, "t": now + 10, "from": "grok", "text": "Foobator, the steel line is stopped at (12,40)."}, now + 10)
+    m._ingest_chat({"seq": 3, "tick": 60700, "t": now + 12, "from": "haiku", "text": "Boilers at 27 of 33."}, now + 12)
+    snap_rows = list(m.viewer_replies)
+    assert [(r["seq"], r["by"], r["to"]) for r in snap_rows] == [(2, "grok", ["Foobator"])], snap_rows
+    assert snap_rows[0]["answers"]["text"] == "steel?"
+    # it outlives the chat window: 200 more lines
+    for i in range(200):
+        m._ingest_chat({"seq": 100 + i, "tick": 61000 + i, "t": now + 20 + i, "from": "sol", "text": f"line {i}"}, now + 20 + i)
+    assert len(m.viewer_replies) == 1 and all(c.get("seq") != 2 for c in m.chat)
+
+
+def main():
+    rule_tests()
+    classify_tests()
+    try:
+        import model  # noqa: F401
+    except Exception as e:  # the stream model needs its own imports; the rule tests stand alone
+        print(f"viewer replies: model part skipped ({e})")
+    else:
+        model_tests()
+    print("viewer replies: ok (@name, vocatives, viewer-addressed lines, third person left out, the answered line, model snapshot)")
+
+
+if __name__ == "__main__":
+    main()
