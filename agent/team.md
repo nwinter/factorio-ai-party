@@ -539,6 +539,7 @@ already targets your character.
 - `./fh call requests --args '{"platform":"NAME"}'` shows each hub section; `off: true` means it requests nothing
   (`"section":N,"active":true` switches it on), and each request shows the planet it imports from. A `set` without
   `section` edits the slot of the section that already requests the item (`sections_note` names a shared group or a second section).
+  Personal requests: `clear` (or `remove`): `["pumpjack"]` deletes the request and keeps what you hold; a `max` under what you hold is refused without `force: true` (the game trashes the rest).
 - `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without
   a planet); it is also a `wait_until` condition, a queue guard and an order's `when`.
   `platform_left Sunward [nauvis]` waits for its departure; the team alerts say when a platform stops at or leaves

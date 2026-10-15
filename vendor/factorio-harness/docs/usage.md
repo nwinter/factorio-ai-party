@@ -348,6 +348,11 @@ fh call status
     fast-inserter (-65.5,95.5): its circuit condition ... is ignored: no red or green wire connects it, and the game
     counts a circuit condition only with a circuit connection`.
 - `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests" switch.
+- Personal requests (Opus, d15 09:20: max 0 to clear a request sent 6 pumpjacks and 30 steel to the trash, and robots
+  carried them off): a `set` whose `max` is under what the character holds of the item is refused (`pumpjack max 0: you
+  hold 6; the game moves what you hold over a personal max to your trash, and robots take it to storage. clear (or
+  remove): ["pumpjack"] deletes the request and keeps what you hold; force: true sets the max anyway`). `force: true`
+  sets it. `remove` is the same as `clear`: the slot is deleted and what is held stays.
 - A `set` or `clear` without `section` edits the item's slot in the manual section that already requests it (Grok, d15
   06:20: a hub's `set` of underground-belt 4 added a new section and the hub requested 2 plus 4). Before, it went to the
   first manual section without a logistic group, or a new one. An item no manual section requests goes there as before.
