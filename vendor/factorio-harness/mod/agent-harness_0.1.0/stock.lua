@@ -200,7 +200,8 @@ return function(api)
     local skipped
     s.places,skipped=unclaimed(p,s.places,a.item)
     local action={kind='gather',item=a.item,quality=a.quality,want=want,got=0,visited=0,
-      targets=route(p.position,s.places),index=1,until_tick=game.tick+ticks}
+      targets=route(p.position,s.places),index=1,until_tick=game.tick+ticks,avoid_enemies=a.avoid_enemies,unsafe_goal=a.unsafe_goal}
+    M.guard(action)
     local out={item=a.item,want=want,stock=s.total,places=#action.targets,skipped_claims=skipped}
     if not chests and not a.types then
       -- Say how much sits in chests that this trip leaves alone.
@@ -424,13 +425,23 @@ return function(api)
     else targets=route(p.position,places,MAX_TOUR) end
     local action={kind='gather',op=op,got=0,visited=0,want=math.huge,targets=targets,index=1,until_tick=game.tick+ticks}
     for k,v in pairs(fields or {}) do if k~='ordered' then action[k]=v end end
-    return action,{op=op,item=action.item,places=#action.targets,skipped=#entities>MAX_TOUR and #entities-MAX_TOUR or nil}
+    M.guard(action)
+    return action,{op=op,item=action.item,places=#action.targets,skipped=#entities>MAX_TOUR and #entities-MAX_TOUR or nil,
+      avoid_enemies=action.avoid_mode and api.describe_avoid and api.describe_avoid(action.avoid_mode) or nil}
+  end
+  -- Every tour walks with the enemy check (round1950a, Haiku 45h02m: a rearm tour walked past a nest into an attack
+  -- and died): avoid_enemies as move_to's (default worms, spawners within 40 tiles and the areas under attack now;
+  -- false: none), its legs round them, and a place inside one left out unless unsafe_goal (M.tick).
+  function M.guard(action)
+    if action.avoid_mode == nil and action.avoid_enemies ~= false and api.avoid_mode then action.avoid_mode = api.avoid_mode(action.avoid_enemies) end
+    action.avoid_enemies = nil
   end
   -- A courier's legs (runtime.lua M.pick_source): its places in the given order, never re-routed; a place without
   -- an entity (find) is resolved on arrival, when the character comes within reach of its position.
   function M.start_legs(p,places,ticks,fields)
     local action={kind='gather',op='transfer',got=0,visited=0,want=math.huge,targets=places,index=1,until_tick=game.tick+ticks}
     for k,v in pairs(fields or {}) do action[k]=v end
+    M.guard(action)
     return action
   end
   local function done(action)
@@ -505,6 +516,20 @@ return function(api)
     end
     local t=action.targets[action.index]
     if not action.nav then
+      -- A place inside a worm's range, within 40 tiles of a spawner or in an area under attack now is not walked to
+      -- (round1950a: Haiku's rearm cluster lay in attack #1548): left out, named, unless unsafe_goal.
+      if action.avoid_mode and not action.unsafe_goal and api.goal_check then
+        local okc,c=pcall(api.goal_check,p,p.position,t.position,action.avoid_mode)
+        if okc and c then
+          local why=api.goal_text('place',t.position,c)
+          action.danger=(action.danger or 0)+1
+          action.dangers=action.dangers or {}
+          if #action.dangers<8 then action.dangers[#action.dangers+1]=why end
+          action.first_unreached=action.first_unreached or string.format('(%g,%g): %s (unsafe_goal: true walks there)',t.position.x,t.position.y,why)
+          action.index=action.index+1; action.unreached=(action.unreached or 0)+1
+          return nil
+        end
+      end
       action.nav={position=t.position,tolerance=math.max(1,(p.reach_distance or 10)-3),max_stalls=6,replans=0,stalled=0,last_position=p.position}
       -- avoid_mode (recover; transfer from: "nearest" walking, friction3: worms killed Opus on such a tour along a turret
       -- line): the walk keeps out of the enemy reach the map shows, as move_to's.

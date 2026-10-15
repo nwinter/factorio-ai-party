@@ -219,10 +219,20 @@ return function(api)
       if not (api.traveling and api.traveling(p.index)) then return 'died' end
     else
       -- Enemy hits are also kept per character (board.lua's alerts), so a hit
-      -- healed again between two checks still counts, with its attacker.
+      -- healed again between two checks still counts, with its attacker; one
+      -- with none named counts too (round1950a: a spitter's acid names none,
+      -- "by enemies").
       local hits = api.state().char_hits
       local hit = hits and c.unit_number and hits[c.unit_number]
-      if hit and hit.last and hit.last >= record.start_tick then out.by = hit.by end
+      if hit and hit.last and hit.last >= record.start_tick then out.by = hit.by or 'enemies' end
+      -- The health to fall from: the highest seen in this sleep (a character
+      -- that began it hurt heals meanwhile; round1950a).
+      if record.health and c.health > record.health then record.health = c.health end
+      -- Walked away when hit (runtime.lua M.idle_hit, round1950a item 2).
+      local fled = api.state().idle_fled and api.state().idle_fled[p.index]
+      if fled and fled.tick >= record.start_tick then
+        out.fled = string.format('hit by %s at (%.1f,%.1f): walking away to (%g,%g)', fled.by, fled.from.x, fled.from.y, fled.to.x, fled.to.y)
+      end
       if out.by or (record.health and c.health < record.health - 0.01) then
         out.health = math.floor(c.health)
         if record.health and c.health < record.health then out.lost = math.floor(record.health - c.health + 0.5) end

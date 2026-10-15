@@ -49,6 +49,10 @@ test('circuit_set: an entity a condition keeps off ends on the warning line (fri
     stays_disabled:'inserter (75.5,-1.5): its logistic condition production-science-pack < 100 is not met (network 8: production-science-pack 101) (not set by this call)'}};
   assert.match(formatCompact(reply), /\nwarning: stays disabled: inserter \(75\.5,-1\.5\): its logistic condition production-science-pack < 100 is not met .*\n$/);
   assert.equal(finalLine(reply)?.startsWith('warning: stays disabled: inserter (75.5,-1.5)'), true);
+  // round1950a (Astra 21:00): a circuit condition with no wire is ignored by the game, said on the warning line.
+  const ignored = {ok:true, result:{entity:'fast-inserter',
+    condition_ignored:'fast-inserter (-65.5,95.5): its circuit condition electromagnetic-science-pack < 0 is ignored: no red or green wire connects it, and the game counts a circuit condition only with a circuit connection'}};
+  assert.match(formatCompact(ignored), /\nwarning: condition ignored: fast-inserter \(-65\.5,95\.5\): its circuit condition .* is ignored: no red or green wire connects it/);
 });
 test('a build or ghosts that close the character in end on the warning line (friction2: Gemini)', () => {
   const built = {ok:true,id:'x',result:{built:2,closed_in:'the character is closed in now where it stands (-57,71.5): the last gap out was where accumulator (-60,71) now stands'}};

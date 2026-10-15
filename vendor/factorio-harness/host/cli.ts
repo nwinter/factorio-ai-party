@@ -197,7 +197,8 @@ function wakeLine(reply: Reply): string {
   const said = (value: unknown) => String(value).replace(/\s*\n\s*/g, ' ');
   const detail = r.tell ?? r.mention ?? r.board ?? r.eggs ?? r.alert ?? r.queue
     ?? (r.woke === 'condition' && r.saw !== undefined ? `saw ${typeof r.saw === 'string' ? r.saw : JSON.stringify(r.saw)}` : undefined)
-    ?? (r.woke === 'damaged' ? `health ${r.health}${r.by ? `, hit by ${r.by}` : ''}` : undefined) ?? r.note;
+    // (round1950a: and where the character walks away to when hit with nothing walking it)
+    ?? (r.woke === 'damaged' ? `health ${r.health}${r.by ? `, hit by ${r.by}` : ''}${r.fled ? `; ${r.fled}` : ''}` : undefined) ?? r.note;
   const more = r.full ? '' : ['told','mentioned','board','eggs','alert','damaged'].includes(r.woke) ? '; your next reply\'s team block has the rest' : '';
   return `woke: ${r.woke ?? 'nothing'} after ${r.slept_s ?? 0} s${detail !== undefined ? ` (${said(detail)})` : ''}${more}`;
 }
@@ -912,6 +913,8 @@ async function main() {
         path: last.path, steered: last.steered, pocket: last.pocket, escaped: last.escaped, mine_to_get_out: last.mine_to_get_out,
         // not closed in, yet no way to the target: what to mine for one (round1820a)
         mine_for_a_way: last.mine_for_a_way,
+        // an attack that started on the way: planned again round it (round1950a)
+        replanned: last.replanned,
         // a spot it reaches within build reach when it gave up, a squeeze walked along gaps, each leg of a via walk (round0620c)
         build_spot: last.build_spot, build_spot_note: last.build_spot_note, build_spot_squeeze: last.build_spot_squeeze, squeezed: last.squeezed,
         legs: legLines(last.legs),
@@ -928,6 +931,8 @@ async function main() {
       ...(last?.kind === 'move_to' || last?.kind === 'drive' ? {avoided_enemies: last.avoided_enemies,
         enemies_at_start_or_goal: last.enemies_at_start_or_goal, passed_within_margin: last.passed_within_margin} : {}),
       why: last?.why, note: status.result?.note,
+      // a tour's places left out for an enemy (round1950a)
+      danger: last?.danger, dangers: last?.dangers,
       // waits short of rails a moving train was about to pass, on any walk, and a walk ending on rails (round1520d)
       train_waits: last?.train_waits, on_rails: last?.on_rails,
       // retreat (operator 12:27): why it went back, from where, the health then and now, where to.

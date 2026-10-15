@@ -389,6 +389,9 @@ return function(api)
         out.enable = condition_text(c) or 'blank'
         -- (false too: an unmet condition read as nil was dropped from the reply)
         if type(c) == 'table' then out.enable_met = c.fulfilled end
+        -- No red or green wire: the game ignores a circuit condition, and the entity runs (Astra 21:00: a fast
+        -- inserter on Fulgora with enable EM < 0 and no wire read disabled and kept working).
+        if not nets and e.type ~= 'entity-ghost' then out.enable_ignored = 'no red or green wire connects it: the game ignores this condition' end
       else out.enable = false end
       local logistic = try(function() return cb.connect_to_logistic_network end)
       if logistic then
@@ -771,7 +774,12 @@ return function(api)
     local c = out.circuit
     if out.ghost or not (c and (c.enable_met ~= nil or c.logistic_met ~= nil)) then return end
     local held = {}
-    if c.enable and c.enable_met == false then
+    -- An enable condition with no circuit wire holds nothing (the game ignores it): said instead.
+    if c.enable and c.enable_ignored then
+      out.condition_ignored = string.format('%s (%g,%g): its circuit condition %s is ignored: no red or green wire connects it, and the game counts a circuit condition only with a circuit connection',
+        out.entity, e.position.x, e.position.y, c.enable)
+    end
+    if c.enable and c.enable_met == false and not c.enable_ignored then
       local cond = try(function() return cb.circuit_condition end)
       local first = type(cond) == 'table' and cond.first_signal
       local n = first and try(function() return e.get_signal(first, defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green) end)
