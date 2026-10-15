@@ -93,6 +93,24 @@ game.tick=7000; mode='realtime'; s.alert_seq=4
 r=W.handlers.sleep(p,{seconds=300,condition={['until']='alert'}}); eq(r.condition,'alert'); assert(r.wakes_on:find('a new alert',1,true))
 eq(W.handlers.sleep_check(p,{peek=true}).woke,nil)
 s.alert_seq=5; game.tick=7100; r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'alert'); assert(r.alert:find('new attack',1,true))
+-- round1950a item 2 (Haiku 46h51m: a big spitter's acid, "hit 8 times by enemies"): a hit with no attacker named
+-- wakes too; and the health to fall from is the highest seen in the sleep (a sleep begun hurt heals meanwhile).
+p.character={valid=true,health=250,unit_number=7}; s.alert_seq=nil
+game.tick=8230; W.handlers.sleep(p,{seconds=60}); eq(W.handlers.sleep_check(p,{peek=true}).woke,nil)
+s.char_hits={[7]={hits=1,damage=40,last=8235}}; game.tick=8236
+r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'damaged'); eq(r.by,'enemies')
+s.char_hits=nil
+game.tick=8250; p.character.health=100; W.handlers.sleep(p,{seconds=60})
+game.tick=8260; p.character.health=250; eq(W.handlers.sleep_check(p,{peek=true}).woke,nil,'healed: no wake')
+game.tick=8270; p.character.health=200
+r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'damaged'); eq(r.lost,50); eq(r.health,200)
+p.character.health=250
+-- Walked away when hit (runtime.lua idle_hit): the wake says where.
+game.tick=8300; W.handlers.sleep(p,{seconds=60})
+s.idle_fled={[1]={tick=8301,from={x=151.2,y=-26},to={x=127,y=-26},by='big-spitter'}}; s.char_hits={[7]={hits=1,damage=40,last=8301,by='big-spitter'}}
+game.tick=8302; r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'damaged'); eq(r.fled,'hit by big-spitter at (151.2,-26.0): walking away to (127,-26)')
+s.idle_fled=nil; s.char_hits=nil
+mode='realtime'
 -- In turns mode the clock is asked to run for the sleep (advance caps at 36000).
 p.character={valid=true,health=250}; mode='turns'
 W.handlers.sleep(p,{seconds=900}); eq(advanced,36000)

@@ -226,6 +226,53 @@ eq(#asked,1); eq(asked[1].goal.x,-40) -- the way back is asked for
 -- Not on a dry run.
 astra('vehicle',{drive={x=100,y=0},dry_run=true,retreat={to={x=-40,y=0}}})
 astra('vehicle',{exit=true})
+-- round1950a item 2 (Haiku 46h51m: a big spitter's acid killed it inside one 1 s check of its sleep; it woke only as
+-- died): a hit with nothing walking it walks the character away at once, 24 tiles straight from the attacker, and the
+-- sleep wakes damaged saying so. A hit with no attacker named (acid) goes from the nearest enemy within 40 tiles.
+-- retreat_guard {idle: false} keeps it standing; a move_to (its own retreat) is left alone.
+do
+  local idx=runtime.bots.index_of('sol')
+  local body=runtime.lookup(idx).character
+  body.position={x=0,y=0}; body.health=250
+  sol('stop'); asked={}
+  sol('sleep',{seconds=300})
+  local spitter={valid=true,name='big-spitter',type='unit',position={x=10,y=0},force=game.forces.enemy}
+  local function hit(cause) runtime.on_event{name=defines.events.on_entity_damaged,entity=body,force=game.forces.enemy,cause=cause,final_damage_amount=40,tick=tick} end
+  hit(spitter); body.health=210
+  advance(1)
+  local act=sol('status').active
+  eq(act.kind,'move_to'); eq(act.to.x,-24); eq(act.to.y,0)
+  assert(tostring(act.retreating or ''):find('hit by big-spitter with no action running; walking away to (-24,0)',1,true),tostring(act.retreating))
+  local w=sol('sleep_check',{peek=true})
+  eq(w.woke,'damaged'); eq(w.by,'big-spitter'); eq(w.fled,'hit by big-spitter at (0.0,0.0): walking away to (-24,0)')
+  -- arrived: retreated, away at the spot
+  body.position={x=-24,y=0}; advance(2)
+  local last=sol('status').last
+  eq(last.outcome,'retreated'); eq(last.retreated.going,'away at (-24,0)'); eq(last.retreated.why,'hit by big-spitter with no action running')
+  -- No attacker named (a spitter's acid): away from the nearest enemy within 40 tiles; the sleep wakes on it too.
+  jump(700); body.position={x=0,y=0}; body.health=250
+  storage.agent_harness.char_hits=nil -- (the hit record of a new incident: no attacker named yet)
+  local find=surface.find_entities_filtered
+  surface.find_entities_filtered=function(f) if f.force=='enemy' and f.radius then return {spitter} end return find(f) end
+  sol('sleep',{seconds=300})
+  hit(nil); advance(1)
+  eq(sol('status').active.to.x,-24)
+  w=sol('sleep_check',{peek=true}); eq(w.woke,'damaged'); eq(w.by,'enemies')
+  surface.find_entities_filtered=find
+  sol('stop')
+  -- idle: false keeps it standing; set and read back.
+  local g=sol('retreat_guard',{idle=false}); eq(g.idle,false); eq(g.retreat_guard,false)
+  assert(sol('status').retreat_guard:find('idle: false',1,true),sol('status').retreat_guard)
+  jump(700); hit(spitter); advance(1)
+  eq(sol('status').active,false)
+  sol('retreat_guard',{idle=true}); eq(sol('status').retreat_guard,nil)
+  -- A move_to has its own retreat: a hit leaves it walking where it was going.
+  jump(700); sol('move_to',{position={x=50,y=0},pathfind=false})
+  hit(spitter); advance(1)
+  eq(sol('status').active.to.x,50)
+  sol('stop')
+  storage.agent_harness.damage=nil -- (these hits made attack #1 at (0,0), under attack now for a minute)
+end
 fails(function() astra('move_to',{position={x=1,y=1},retreat={to={x=1,y=1},shield_below=2}}) end,'shield_below is a fraction between 0 and 1')
 fails(function() astra('move_to',{position={x=1,y=1},retreat='home'}) end,'retreat is {to: {x,y}')
 print('retreat: ok')

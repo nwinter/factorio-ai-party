@@ -69,10 +69,11 @@ runtime.operator.bot_create('astra')
 
 -- The module on its own: modes, nests, crossings, the way round.
 local A=runtime.avoid
-eq(A.mode(nil).pad,4); eq(A.mode(nil).spawners,nil); eq(A.mode(false),nil); eq(A.mode(true).spawners,true); eq(A.mode(true).pad,8); eq(A.mode(12).pad,12)
+-- (round1950a: spawners, 40 tiles, and the areas under attack now count by default too)
+eq(A.mode(nil).pad,4); eq(A.mode(nil).spawners,true); eq(A.mode(nil).attacks,true); eq(A.mode(false),nil); eq(A.mode(true).spawners,true); eq(A.mode(true).pad,8); eq(A.mode(12).pad,12)
 fails(function() A.mode('yes') end,'avoid_enemies must be true, false or a margin 0..32 tiles')
-eq(A.describe(A.mode(nil)),'worms (range + 4)')
-eq(A.describe(A.mode(true)),"worms (range + 8) and spawners (their units' sight + 8)")
+eq(A.describe(A.mode(nil)),'worms (range + 4), spawners (40 tiles + 4) and areas under attack now (24 tiles + 4)')
+eq(A.describe(A.mode(true)),'worms (range + 8), spawners (40 tiles + 8) and areas under attack now (24 tiles + 8)')
 -- A detour clears the disc; a clear line needs none; a goal walled in by discs has no way.
 local disc={x=50,y=0,r=10,members={{x=50,y=0,r=10,range=6,name='w'}}}
 eq(#A.detour({x=0,y=0},{x=100,y=30},{disc},{}),0)
@@ -105,8 +106,14 @@ prototypes={entity={['medium-worm-turret']={attack_parameters={range=30}},['bite
 force.get_friend=function() return false end; force.get_cease_fire=function() return false end
 local enemy=game.forces.enemy
 local structures={}
+local trees={}
 surface.find_entities_filtered=function(f)
   local out={}
+  -- an entity looked up at a position (mine's target): the trees there
+  if f.position and not f.type then
+    for _,e in ipairs(trees) do if math.abs(e.position.x-f.position.x)<=(f.radius or 0.5) and math.abs(e.position.y-f.position.y)<=(f.radius or 0.5) then out[#out+1]=e end end
+    return out
+  end
   if f.area and f.type then
     local a=f.area
     for _,e in ipairs(structures) do
@@ -125,7 +132,7 @@ structures={worm}
 local function path(points) local out={} for i,q in ipairs(points) do out[i]={position={x=q[1],y=q[2]}} end return out end
 local function answer(points) local n=#asked; runtime.on_event{name=10,id=700+n-1,path=path(points)}; runtime.on_event{name=10,id=700+n,path=path(points)} end
 local r=astra('move_to',{position={x=100,y=0}})
-eq(r.avoid_enemies,'worms (range + 4)'); eq(#asked,2)
+eq(r.avoid_enemies,'worms (range + 4), spawners (40 tiles + 4) and areas under attack now (24 tiles + 4)'); eq(#asked,2)
 advance(3) -- the chunks along the way are read meanwhile (8 a tick)
 answer({{0,0},{50,0},{100,0}})
 advance(2)
@@ -156,7 +163,7 @@ eq(last.avoided_enemies[1],'1 medium-worm-turret around (50,5)')
 asked={}
 local ok,err=pcall(astra,'move_to',{position={x=60,y=0}})
 eq(ok,false)
-eq(tostring(err):match('goal .*'),"goal (60,0) is inside medium-worm-turret (50,5) range 30 (11.2 tiles from it): unsafe_goal: true to go anyway; the nearest safe spot toward it: (84,0), 24 tiles from it, outside every worm's range + 4 the map shows")
+eq(tostring(err):match('goal .*'),"goal (60,0) is inside medium-worm-turret (50,5) range 30 (11.2 tiles from it): unsafe_goal: true to go anyway; the nearest safe spot toward it: (84,0), 24 tiles from it, outside every worm's range, spawner's 40 tiles and area under attack (24 tiles), + 4, the map shows")
 eq(#asked,0,'no path asked')
 -- unsafe_goal: true goes anyway (the worm's nest is not avoided); the reply and last name it.
 r=astra('move_to',{position={x=60,y=0},unsafe_goal=true})
@@ -214,19 +221,33 @@ structures={{valid=true,name='biter-spawner',type='unit-spawner',position={x=50,
 storage.agent_harness.enemy_chunks=nil
 asked={}
 r=astra('move_to',{position={x=100,y=0},avoid_enemies=true})
-eq(r.avoid_enemies,"worms (range + 8) and spawners (their units' sight + 8)")
+eq(r.avoid_enemies,'worms (range + 8), spawners (40 tiles + 8) and areas under attack now (24 tiles + 8)')
 advance(3)
 answer({{0,0},{100,0}})
 advance(2)
 nav=storage.agent_harness.active[runtime.bots.index_of('astra')]
 eq(nav.foes.detours,1); eq(nav.foes.avoided[1],'1 biter-spawner around (50,20)')
--- A goal in a spawner's units' sight (30) is refused with avoid_enemies=true; worms only by default.
+-- A goal within 40 tiles of a spawner is refused (round1950a, Haiku 45h57m: a tree 38 tiles from a nest; big spitters
+-- killed it within 5 s), by default too; avoid_enemies=false walks there.
 astra('stop'); asked={}
 ok,err=pcall(astra,'move_to',{position={x=50,y=35},avoid_enemies=true})
-eq(ok,false); assert(tostring(err):find("goal (50,35) is inside biter-spawner (50,20) sight 30 (15.0 tiles from it): unsafe_goal: true to go anyway; the nearest safe spot toward it:",1,true),err)
-assert(tostring(err):find("outside every worm's range and spawner's units' sight + 8 the map shows",1,true),err)
-r=astra('move_to',{position={x=50,y=35}}); eq(r.unsafe_goal,nil); astra('stop')
--- Without avoid_enemies the spawner is no matter: worms only.
+eq(ok,false); assert(tostring(err):find("goal (50,35) is within 40 tiles of biter-spawner (50,20), its units' reach (15.0 tiles from it): unsafe_goal: true to go anyway; the nearest safe spot toward it:",1,true),err)
+assert(tostring(err):find("outside every worm's range, spawner's 40 tiles and area under attack (24 tiles), + 8, the map shows",1,true),err)
+fails(function() astra('move_to',{position={x=50,y=55}}) end,"goal (50,55) is within 40 tiles of biter-spawner (50,20), its units' reach (35.0 tiles from it)")
+r=astra('move_to',{position={x=50,y=55},avoid_enemies=false}); eq(r.unsafe_goal,nil); astra('stop')
+-- Mining within 40 tiles of a spawner is refused too (round1950a, Haiku 45h57m: a dry tree 38 tiles from a nest),
+-- unless unsafe_goal.
+do
+  local tree={valid=true,name='dry-tree',type='tree',position={x=50,y=50},force={name='neutral'},minable=true,
+    prototype={mineable_properties={products={}}},bounding_box={left_top={x=49.6,y=49.6},right_bottom={x=50.4,y=50.4}}}
+  trees={tree}
+  me.position={x=50,y=48}
+  fails(function() astra('mine',{position={x=50,y=50}}) end,"the mining spot (50,50) is within 40 tiles of biter-spawner (50,20), its units' reach (30.0 tiles from it): unsafe_goal: true to mine anyway")
+  local okm,errm=pcall(astra,'mine',{position={x=50,y=50},unsafe_goal=true})
+  assert(okm or not tostring(errm):find('unsafe_goal',1,true),tostring(errm))
+  astra('stop'); trees={}; me.position={x=0,y=0}
+end
+-- By default the way goes round a spawner too: one 20 tiles off it.
 astra('stop'); asked={}
 storage.agent_harness.enemy_chunks=nil
 astra('move_to',{position={x=100,y=0}})
@@ -234,5 +255,42 @@ advance(3)
 answer({{0,0},{100,0}})
 advance(2)
 nav=storage.agent_harness.active[runtime.bots.index_of('astra')]
-eq(nav.path_state,'found'); eq(nav.foes.detours,0)
+eq(nav.foes.detours,1); eq(nav.foes.avoided[1],'1 biter-spawner around (50,20)')
+-- The areas under attack now (round1950a, Haiku 45h02m: a rearm tour walked into attack #1550 and died; status had
+-- listed attack #1548 at its goal): an incident hit within the last minute is a disc of 24 tiles round its first hit.
+astra('stop'); asked={}
+structures={}; storage.agent_harness.enemy_chunks=nil
+storage.agent_harness.damage={['nauvis:1,0']={id=1548,at={x=60,y=0},first=tick-300,last=tick-60,hits=5,damage=180,surface='nauvis',size=3}}
+fails(function() astra('move_to',{position={x=65,y=0}}) end,
+  'goal (65,0) is within 24 tiles of attack #1548 at (60,0), an area under attack now (last hit 1s ago, 3 attackers seen) (5.0 tiles from it): unsafe_goal: true to go anyway; the nearest safe spot toward it:')
+-- An attack whose last hit was over a minute ago is over.
+storage.agent_harness.damage['nauvis:1,0'].last=tick-3700
+r=astra('move_to',{position={x=65,y=0}}); eq(r.unsafe_goal,nil); astra('stop')
+-- A way through one goes round it, named.
+storage.agent_harness.damage['nauvis:1,0'].last=tick-60
+asked={}
+astra('move_to',{position={x=120,y=0}})
+advance(3)
+answer({{0,0},{60,0},{120,0}})
+advance(2)
+nav=storage.agent_harness.active[runtime.bots.index_of('astra')]
+eq(nav.foes.detours,1); eq(nav.foes.avoided[1],'1 attack #1548 around (60,0)')
+astra('stop')
+-- An attack that starts on the way later: the walk plans again round it (once), said in last.replanned.
+storage.agent_harness.damage={}
+asked={}
+astra('move_to',{position={x=120,y=0}})
+advance(3)
+answer({{0,0},{120,0}})
+advance(2)
+nav=storage.agent_harness.active[runtime.bots.index_of('astra')]
+eq(nav.path_state,'found'); local before=#asked
+storage.agent_harness.damage['nauvis:2,0']={id=1550,at={x=70,y=2},first=tick,last=tick,hits=1,damage=30,surface='nauvis',size=1}
+advance(31)
+nav=storage.agent_harness.active[runtime.bots.index_of('astra')]
+assert(#asked>before,'a new path asked for'); eq(nav.attack_replan,'attack #1550 at (70,2) started on the way: planned again round it')
+storage.agent_harness.damage={}
+astra('stop')
+last=astra('status').last
+eq(last.replanned,'attack #1550 at (70,2) started on the way: planned again round it')
 print('avoid: ok')

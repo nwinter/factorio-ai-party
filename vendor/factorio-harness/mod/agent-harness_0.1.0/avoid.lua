@@ -10,8 +10,11 @@
 -- around it: corners of octagons around the discs, the shortest way along
 -- them (a visibility graph), each leg walked with the engine's path and
 -- checked again.
--- Default (avoid_enemies not given): worms only, range + 4. avoid_enemies:
--- true (or a margin in tiles): spawners too, with range or sight + 8 (or the
+-- Default (avoid_enemies not given): worms, range + 4; spawners, 40 tiles +
+-- 4 (round1950a, Haiku died twice near nests: a tree 38 tiles from one, a
+-- rearm tour past another); and the areas under attack now (an incident hit
+-- within the last minute, threat.lua), 24 tiles round its first hit + 4.
+-- avoid_enemies: true (or a margin in tiles): the same with + 8 (or the
 -- margin). false: no check. A disc holding the start or the goal is not
 -- avoided (the walk goes there): it is named.
 -- Cost: the worms and spawners are read per chunk (charted chunks: what the
@@ -20,6 +23,9 @@
 return function(api)
   local M = {}
   M.WORM_PAD, M.PAD, M.TTL, M.CHUNKS_PER_TICK, M.MAX_DETOURS, M.NEST = 4, 8, 3600, 8, 4, 32
+  -- round1950a: how far a spawner's units come for a character (at least), an attack's zone round its first hit, and
+  -- how long after its last hit an attack counts as under way.
+  M.SPAWNER_REACH, M.ATTACK_R, M.ATTACK_ACTIVE = 40, 24, 3600
   M.SIDES = 8
   local function dist(a, b) return ((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) ^ 0.5 end
   local function at(pos) return string.format('(%g,%g)', math.floor(pos.x + 0.5), math.floor(pos.y + 0.5)) end
@@ -38,15 +44,15 @@ return function(api)
   -- true (worms and spawners, +8), a number (worms and spawners, + it).
   function M.mode(v)
     if v == false then return nil end
-    if v == nil then return {pad=M.WORM_PAD} end
-    if v == true then return {spawners=true, pad=M.PAD} end
+    if v == nil then return {spawners=true, attacks=true, pad=M.WORM_PAD} end
+    if v == true then return {spawners=true, attacks=true, pad=M.PAD} end
     assert(type(v) == 'number' and v >= 0 and v <= 32, 'avoid_enemies must be true, false or a margin 0..32 tiles')
-    return {spawners=true, pad=v}
+    return {spawners=true, attacks=true, pad=v}
   end
   function M.describe(mode)
     if not mode then return nil end
-    return mode.spawners and string.format('worms (range + %g) and spawners (their units\' sight + %g)', mode.pad, mode.pad)
-      or string.format('worms (range + %g)', mode.pad)
+    return string.format('worms (range + %g), spawners (%d tiles + %g) and areas under attack now (%d tiles + %g)', mode.pad, M.SPAWNER_REACH, mode.pad,
+      M.ATTACK_R, mode.pad)
   end
 
   -- A worm's attack range; a spawner's reach: the farthest sight among the units it makes.
@@ -68,8 +74,28 @@ return function(api)
     reach_of[name] = r
     return r
   end
-  -- The farthest a disc can reach: big worms 48, Gleba spawners 40 in 2.0.
+  -- The farthest a disc can reach: behemoth worms 48, spawners 40 (M.SPAWNER_REACH).
   local function max_reach(mode) return 48 + mode.pad end
+  -- The areas under attack now on a surface (threat.lua's incidents, hit within M.ATTACK_ACTIVE), as discs within the
+  -- box {x0, y0, x1, y1} (nil: all of them): {x, y, r, range, name ('attack #ID'), attack=true, id, ago (s), size}.
+  function M.attack_discs(surface, mode, box)
+    local out = {}
+    if not (mode and mode.attacks) then return out end
+    local areas = api.state().damage
+    if not areas then return out end
+    local name = surface.name
+    for _, a in pairs(areas) do
+      if a.id and a.at and a.last and game.tick - a.last <= M.ATTACK_ACTIVE and (a.surface == nil or a.surface == name) then
+        local x, y = a.at.x, a.at.y
+        local r = M.ATTACK_R + mode.pad
+        if not box or (x + r >= box[1] and x - r <= box[3] and y + r >= box[2] and y - r <= box[4]) then
+          out[#out+1] = {x=x, y=y, r=r, range=M.ATTACK_R, name='attack #' .. a.id, attack=true, id=a.id,
+            ago=math.floor((game.tick - a.last) / 60), size=a.size}
+        end
+      end
+    end
+    return out
+  end
 
   -- Hostile forces: neither ours, neutral, friends nor at cease-fire.
   local function hostile(force)
@@ -185,9 +211,19 @@ return function(api)
       for _, e in ipairs(rec and rec.list or {}) do
         if mode.spawners or not e.spawner then
           local range = M.reach(e.name, e.spawner)
+          if e.spawner then range = math.max(range, M.SPAWNER_REACH) end
           discs[#discs+1] = {x=e.x, y=e.y, r=range + mode.pad, range=range, name=e.name, spawner=e.spawner}
         end
       end
+    end
+    -- The areas under attack now near those chunks (round1950a).
+    if mode.attacks and #chunks > 0 then
+      local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
+      for _, ch in ipairs(chunks) do
+        x0, y0 = math.min(x0, ch[1] * 32), math.min(y0, ch[2] * 32)
+        x1, y1 = math.max(x1, ch[1] * 32 + 32), math.max(y1, ch[2] * 32 + 32)
+      end
+      for _, d in ipairs(M.attack_discs(surface, mode, {x0, y0, x1, y1})) do discs[#discs+1] = d end
     end
     -- Single-link groups.
     local group, blobs = {}, {}
@@ -307,8 +343,26 @@ return function(api)
     if not mode or surface.platform ~= nil then return nil end
     local f = {mode=mode, goal={x=nav.position.x, y=nav.position.y}, origin={x=p.position.x, y=p.position.y}, tolerance=nav.tolerance, detours=0, skips=0}
     f.pending = M.missing(surface, M.chunks_near({p.position, f.goal}, max_reach(mode)))
+    -- The attacks under way now: the plan goes round those it meets; one that starts later is M.attack_ahead's.
+    f.attacks_known = {}
+    for _, d in ipairs(M.attack_discs(surface, mode)) do f.attacks_known[d.id] = true end
     nav.foes = f
     return f
+  end
+  -- An attack that started after the walk's plan, near its way on (the straight line from here to the walk's goal,
+  -- within the zone's disc), with here outside its zone: that disc, once (the walk plans again round it); else nil
+  -- (round1950a: Haiku's rearm tour walked on into attack #1550 and died).
+  function M.attack_ahead(p, nav)
+    local f = nav.foes
+    if not (f and f.mode and f.mode.attacks and f.attacks_known) then return nil end
+    local here = p.position
+    for _, d in ipairs(M.attack_discs(p.surface, f.mode)) do
+      if not f.attacks_known[d.id] then
+        f.attacks_known[d.id] = true
+        if dist(here, d) >= d.range and seg_dist(here, f.goal, d) < d.r then return d end
+      end
+    end
+    return nil
   end
   -- Each tick while the path is asked for: read some chunks.
   function M.tick(p, nav)
@@ -388,6 +442,8 @@ return function(api)
     -- No worm or spawner recorded near the path: nothing to check (most walks).
     local c, any = cache(surface), false
     for _, ch in ipairs(near) do local rec = c[ch[3]]; if rec and rec.list then any = true; break end end
+    -- (an area under attack now is no chunk record: round1950a)
+    if not any and f.mode.attacks then any = #M.attack_discs(surface, f.mode) > 0 end
     if not any then return true end
     local blobs = M.blobs(surface, near, f.mode)
     local skip = fit(blobs, here, final, f)
@@ -558,14 +614,20 @@ return function(api)
   end
   -- 'goal (-10,350) is inside big-worm-turret (-21,343) range 38 (13.0 tiles from it)'.
   function M.goal_text(label, goal, c)
-    return string.format('%s %s is inside %s %s %s %g (%.1f tiles from it)', label, at(goal), c.m.name, at(c.m), c.m.spawner and 'sight' or 'range',
-      c.m.range, c.d)
+    local m = c.m
+    if m.attack then
+      return string.format('%s %s is within %g tiles of %s at %s, an area under attack now (last hit %ds ago%s) (%.1f tiles from it)', label, at(goal),
+        m.range, m.name, at(m), m.ago or 0, m.size and m.size > 0 and string.format(', %d attackers seen', m.size) or '', c.d)
+    elseif m.spawner then
+      return string.format('%s %s is within %g tiles of %s %s, its units\' reach (%.1f tiles from it)', label, at(goal), m.range, m.name, at(m), c.d)
+    end
+    return string.format('%s %s is inside %s %s range %g (%.1f tiles from it)', label, at(goal), m.name, at(m), m.range, c.d)
   end
   -- '; the nearest safe spot toward it: (-10,302), 48 tiles from the goal, outside every worm's range + 8 ...'.
   function M.spot_text(goal, c, mode)
     if not c.spot then return '; no spot within 128 tiles of it is outside every reach the map shows' end
-    return string.format('; the nearest safe spot toward it: %s, %d tiles from it, outside every %s the map shows', at(c.spot), math.floor(dist(c.spot, goal) + 0.5),
-      mode.spawners and string.format('worm\'s range and spawner\'s units\' sight + %g', mode.pad) or string.format('worm\'s range + %g', mode.pad))
+    return string.format('; the nearest safe spot toward it: %s, %d tiles from it, outside every worm\'s range, spawner\'s %d tiles and area under attack (%d tiles), + %g, the map shows',
+      at(c.spot), math.floor(dist(c.spot, goal) + 0.5), M.SPAWNER_REACH, M.ATTACK_R, mode.pad)
   end
   -- The facts for last: what was gone around, what lies at the start or goal.
   function M.report(last, nav)
@@ -580,6 +642,7 @@ return function(api)
       last.passed_within_margin = list
     end
     if f.why then last.why = f.why end
+    if nav.attack_replan then last.replanned = nav.attack_replan end
   end
   return M
 end
