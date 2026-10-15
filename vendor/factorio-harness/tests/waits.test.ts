@@ -38,6 +38,37 @@ async function engine(reply: (request:any)=>any, run:(port:number)=>Promise<void
 function cli(port:number,args:string[]) {
   return exec(process.execPath,['dist/host/cli.js','--format','json','--port',String(port),...args],{env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}});
 }
+test('wait wake keeps a current ETA and idle time on its single line; sleep prints the initial estimate',async()=>{
+  const initial='researched automation: ETA 70s (measured throughput); character idle 0s in this wait';
+  const current='researched automation: ETA 50s (measured throughput); character idle 20s in this wait';
+  const response=(request:any)=>({ok:true,result:request.action==='sleep'
+    ? {sleeping_s:60,until_tick:3601,while_asleep:'your character stands idle',wait_line:initial,idle_s:0}
+    : {woke:'told',slept_s:20,tell:'sol: coal ready',wait_line:current,idle_s:20,wait_estimates:[{condition:'researched automation',eta_s:50}]}});
+  await engine(response,async port=>{
+    const out=await exec(process.execPath,['dist/host/cli.js','--port',String(port),'wait','--until','researched automation','--max','60'],{env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}});
+    assert.equal(out.stdout.trim().split('\n').length,1);
+    assert.ok(out.stdout.includes(current)); assert.ok(!out.stdout.includes(initial));
+    const json=JSON.parse((await cli(port,['wait','--until','researched automation','--max','60'])).stdout).result;
+    assert.equal(json.idle_s,20); assert.equal(json.wait_estimates[0].eta_s,50); assert.ok(json.line.includes(current));
+    const sleep=await exec(process.execPath,['dist/host/cli.js','--port',String(port),'sleep','60','--until','researched automation'],{env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}});
+    assert.ok(sleep.stdout.includes('wait: '+initial)); assert.ok(sleep.stdout.includes(current));
+  });
+});
+test('direct wait --wait preserves final estimates on success and timeout in compact and JSON replies',async()=>{
+  for (const outcome of ['met','timed_out']) {
+    const line='item_count coal: '+(outcome==='met'?'ETA 0s (condition holds now)':'no estimate (no net inventory change)')+'; character idle 2s in this wait';
+    await engine(request=>({ok:true,result:request.action==='wait_until'?{until_tick:121,wait_line:'initial estimate'}:
+      request.action==='observe'?{player:{position:{x:0,y:0}}}:{active:false,last:{kind:'wait_until',outcome,condition:'item_count',saw:'coal 3',
+        wait_line:line,idle_s:2,wait_estimates:[{condition:'item_count coal',...(outcome==='met'?{eta_s:0}:{no_estimate:'no net inventory change'})}]}}}),async port=>{
+      const args=['call','wait_until','--args','{"until":"item_count","item":"coal","at_least":5}','--wait'];
+      const out=await cli(port,args).catch((e:any)=>e);
+      const result=JSON.parse(out.stdout).result;
+      assert.equal(result.completion.last.wait_line,line); assert.equal(result.completion.last.idle_s,2);
+      const compact=await exec(process.execPath,['dist/host/cli.js','--port',String(port),...args],{env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}}).catch((e:any)=>e);
+      assert.ok(compact.stdout.includes(line),compact.stdout); assert.match(compact.stdout,/idle_s: 2/);
+    });
+  }
+});
 test('raw wait_until word form and timeout aliases normalize before direct and queued calls',async()=>{
   const seen:any[]=[];
   await engine(request=>{seen.push(request); return {ok:true,result:{}};},async port=>{

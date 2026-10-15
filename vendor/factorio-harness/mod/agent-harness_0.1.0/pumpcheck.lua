@@ -24,20 +24,20 @@ return function(api)
       if proto and proto.type=='pump' then
         n=n+1
         if n<=64 then
-        local built=try(function() return p.surface.find_entities_filtered{position=e.position,name=e.name,force=p.force,limit=1}[1] end)
-        local current=built and api.read(built) or nil
-        local enabled=current and current.enable
-        local spec=e.circuit
-        if spec and spec.enable~=nil then enabled=spec.enable end
-        if spec and spec.settings and spec.settings.circuit_enable_disable~=nil then enabled=spec.settings.circuit_enable_disable end
-        if enabled then
-          local wired=current and current.networks and next(current.networks)~=nil
-          local planned=wires[key(e.position)] or 0
-          if not wired then
-            rows[#rows+1]=string.format('pump (%g,%g): enable condition has no connected circuit wire%s',e.position.x,e.position.y,
-              planned>0 and '; '..planned..' circuit wire(s) declared in this plan, not connected yet' or '; no red or green wire declared in this plan')
+          local built=try(function() return p.surface.find_entities_filtered{position=e.position,name=e.name,force=p.force,limit=1}[1] end)
+          local current=built and api.read(built) or nil
+          local enabled=current and current.enable
+          local spec=e.circuit
+          if spec and spec.enable~=nil then enabled=spec.enable end
+          if spec and spec.settings and spec.settings.circuit_enable_disable~=nil then enabled=spec.settings.circuit_enable_disable end
+          if enabled then
+            local wired=current and current.networks and next(current.networks)~=nil
+            local planned=wires[key(e.position)] or 0
+            if not wired then
+              rows[#rows+1]=string.format('pump (%g,%g): enable condition has no connected circuit wire%s',e.position.x,e.position.y,
+                planned>0 and '; '..planned..' circuit wire(s) declared in this plan, not connected yet' or '; no red or green wire declared in this plan')
+            end
           end
-        end
         end
       end
     end

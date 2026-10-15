@@ -20,9 +20,10 @@ return function(api)
   M.schema = {
     wait_ticks = {ticks='1..54000 simulation ticks: the character stands idle that long (a direct timed action, outcome duration_elapsed, or told|mentioned when a tell or a teammate\'s mention ends it early; use --wait), or a queue step', wake_on_viewers=WAKE_VIEWERS, wake_on_messages='boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply', pause_queue='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'},
     sleep = {seconds='1..900', condition='optional wait_until condition {until=researched|item_count|rocket_ready|rocket_parts|crafting_done|..., ...}: the sleep also ends when it holds (woke=condition, saw); researched without technology means the research running now; item_count may take positions (chests); {until=alert}: a new attack, enemy group or enemy base alert (woke=alert); {until=alert, kinds=[low_power, no_power, no_fuel, ..., starved]}: a new or grown alert group of those kinds addressed to you, or (starved) a machine in your claims newly lacking ingredients (woke=alert, alert=its text); {until=any, conditions=[...]} (or a list): 1..8 conditions, alerts among them, whichever holds first wakes it (met names it)',
+      returns='wait_estimates: each condition ETA in game seconds with rate basis, or no_estimate reason; idle_s: character idle seconds in this wait; wait_line: one-line summary',
       peek='boolean: the reply leaves the team block for your next reply (fh wait --until)', wake_on_viewers=WAKE_VIEWERS,
       note='fh sleep SECONDS [--until ...]: waits while the game runs (in turns mode it advances the game); your current action and queue keep going, and the reply says first which (while_asleep). Returns early when your character takes damage or dies, a teammate\'s message mentions you (a viewer\'s @mention waits for your next reply unless wake_on_viewers), a teammate tells you something (tell), a board item of yours is assigned or changed by someone else, eggs of ours on your surface or built by you will hatch within 5 minutes (eggs), your running queue finishes or stalls (a step fails, or a walking step has not moved you for 30 s), or the condition holds; a dead bot sleeps until it respawns. sleep_check reports woke=damaged|died|respawned|mentioned|told|board|eggs|alert|queue_done|queue_stalled|condition|elapsed'},
-    sleep_check = {peek='boolean: leave mentions unread (the CLI polls with peek, then reads once)', returns='woke (nil while sleeping), slept_s, health/lost when damaged, mention, tell, board, eggs, queue (what finished or stalled), saw (the condition), queue_steps (steps your queue finished during the sleep)'},
+    sleep_check = {peek='boolean: leave mentions unread (the CLI polls with peek, then reads once)', returns='woke (nil while sleeping), slept_s, health/lost when damaged, mention, tell, board, eggs, queue (what finished or stalled), saw (the condition), queue_steps (steps your queue finished during the sleep), wait_estimates (current ETA/rate basis or no_estimate for each condition), idle_s (character idle seconds in this wait), wait_line (one line)'},
   }
   local function sleeps()
     local s = api.state()
@@ -75,6 +76,28 @@ return function(api)
     end
     return line
   end
+  -- One predicate read per poll: its observation supplies both the wake test and the estimate, even when a
+  -- higher-priority event wakes us. A final non-peek reply refreshes the estimate without changing the first wake.
+  local function observe_conditions(p,record,out,initial)
+    local rows,saws={},{}
+    record.met_condition=nil
+    for _,cond in ipairs(record.conditions or (record.condition and {record.condition}) or {}) do
+      local ok,met,saw,row=pcall(api.condition,p,cond,record)
+      if initial then assert(ok,met) end
+      if ok then
+        saws[#saws+1]=saw
+        if row then rows[#rows+1]=row end
+        if met and not record.met_condition then record.met_condition={text=texts_of(cond),saw=saw} end
+      else
+        rows[#rows+1]={condition=texts_of(cond),as_of_tick=game.tick,no_estimate='condition is unavailable',
+          line=texts_of(cond)..': no estimate (condition is unavailable)'}
+      end
+    end
+    if record.wait_alert then rows[#rows+1]={condition='alert',as_of_tick=game.tick,no_estimate='event timing is not measured',
+      line='alert: no estimate (event timing is not measured)'} end
+    record.wait_estimates=#rows>0 and rows or nil
+    if #saws==1 then out.saw=saws[1] elseif #saws>1 then out.saw=saws end
+  end
   -- A sleep started right after a wake on an event (a shell loop of sleeps:
   -- shake5-6, Opus and Sonnet) ends at once and repeats that wake, so the
   -- loop reaches its end and the agent reads the wake. A tell or mention
@@ -104,9 +127,11 @@ return function(api)
     out.while_asleep = string.format('this sleep did not start: you woke (%s) %d s ago; it ends at once and repeats that wake', woke, ago)
     local record = {start_tick=game.tick, until_tick=game.tick, woke=woke, out=out, read_tick=prev.read_tick, repeats=(prev.repeats or 0) + 1,
       while_asleep=out.while_asleep}
+    if api.wait_info then api.wait_info(out,record) end
     sleeps()[p.index] = record
-    return {while_asleep=out.while_asleep,
+    local reply={while_asleep=out.while_asleep,
       sleeping_s=0, until_tick=game.tick, ['repeat']=true, woke=woke, mention=out.mention, tell=out.tell, board=out.board, queue=out.queue, queue_lane=out.queue_lane, remote_queue_steps=out.remote_queue_steps}
+    return api.wait_info and api.wait_info(reply,record) or reply
   end
   function M.handlers.sleep(p, a)
     local seconds = api.integer(a.seconds, nil, 1, MAX_TICKS / 60, 'seconds (1..900)')
@@ -166,7 +191,7 @@ return function(api)
     assert(a.wake_on_viewers == nil or type(a.wake_on_viewers) == 'boolean', 'wake_on_viewers must be true or false')
     local c = p.character
     local record = {start_tick=game.tick, until_tick=game.tick + seconds * 60, health=c and c.valid and c.health or nil,
-      conditions=condition and conditions or nil, wake_viewers=a.wake_on_viewers == true or nil}
+      conditions=condition and conditions or nil, wake_viewers=a.wake_on_viewers == true or nil,wait_alert=alert}
     -- A dead bot sleeps until it respawns (or a mention, or time up).
     record.dead_until = api.dead_until and api.dead_until(p.index) or nil
     record.board_seq = api.board_seq and api.board_seq() or nil
@@ -195,19 +220,13 @@ return function(api)
     out.sleeping_s = seconds
     out.until_tick = record.until_tick
     if #texts > 0 then out.condition = table.concat(texts, ' | ') end
-    local saws = {}
-    for i, cond in ipairs(conditions) do
-      local ok, met, saw = pcall(api.condition, p, cond)
-      assert(ok, met)
-      saws[#saws+1] = saw
-      -- Met already: the first check ends the sleep.
-      if met and not record.woke then
-        record.woke = 'condition'; out.already_met = true
-        record.out = {while_asleep=record.while_asleep, slept_s=0, until_tick=record.until_tick, woke='condition', saw=saw,
-          met=#members > 1 and texts_of(cond) or nil}
-      end
+    observe_conditions(p,record,out,true)
+    if record.met_condition then
+      record.woke='condition'; out.already_met=true
+      record.out={while_asleep=record.while_asleep,slept_s=0,until_tick=record.until_tick,woke='condition',saw=record.met_condition.saw,
+        met=#members>1 and record.met_condition.text or nil}
     end
-    if #saws == 1 then out.saw = saws[1] elseif #saws > 1 then out.saw = saws end
+    if api.wait_info then api.wait_info(out,record); if record.out then api.wait_info(record.out,record) end end
     sleeps()[p.index] = record
     -- In turns mode time only runs when asked to.
     if api.clock_mode() == 'turns' and not record.woke then api.advance(p, math.min(seconds * 60, 36000)) end
@@ -322,20 +341,10 @@ return function(api)
         if not record.starved_base[unit] then out.alert = line; return 'alert' end
       end
     end
-    -- (record.condition: a sleep begun before until=any)
-    local list = record.conditions or (record.condition and {record.condition})
-    if list and c and c.valid then
-      local saws = {}
-      for _, cond in ipairs(list) do
-        local ok, met, saw = pcall(api.condition, p, cond)
-        if ok then saws[#saws+1] = saw end
-        if ok and met then
-          out.saw = saw
-          if #list > 1 then out.met = texts_of(cond) end
-          return 'condition'
-        end
-      end
-      if #saws == 1 then out.saw = saws[1] elseif #saws > 1 then out.saw = saws end
+    if record.met_condition then
+      out.saw=record.met_condition.saw
+      if #(record.conditions or {})>1 then out.met=record.met_condition.text end
+      return 'condition'
     end
     if record.queue then
       local reason = queue_why(p, record, out)
@@ -352,6 +361,7 @@ return function(api)
     assert(record, 'no sleep started; call sleep {seconds} first (fh sleep SECONDS)')
     -- What kept going comes first here too: today's CLI prints only this reply.
     local out = {while_asleep=record.while_asleep, slept_s=math.floor((game.tick - record.start_tick) / 60), until_tick=record.until_tick}
+    observe_conditions(p,record,out)
     out.woke = record.woke or why(p, record, out)
     if out.woke and record.queue then
       local q = queue_of(p.index)
@@ -374,7 +384,9 @@ return function(api)
     if out.woke then record.woke = out.woke; record.out = record.out or out end
     -- The agent has read the wake: a sleep right after it repeats it (repeat_of).
     if record.out and a.peek ~= true and not record.read_tick then record.read_tick = game.tick end
-    return record.out or out
+    local reply=record.out or out
+    if api.wait_info then api.wait_info(reply,record) end
+    return reply
   end
   return M
 end

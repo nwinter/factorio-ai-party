@@ -109,8 +109,9 @@ return function(api)
     -- given tiles (chests, machines: every inventory they have; a rocket
     -- silo's rocket cargo too, which the game counts with the silo's own; each
     -- silo's rocket state and cargo follow in saw).
-    item_count=function(p,c)
+    item_count=function(p,c,estimate)
       local n,where=0,''
+      local scope={}
       -- One position counts as positions={position} (Haiku, 12:20: item_count coal below 20 at a chest; a lone position
       -- was ignored and the character's inventory counted).
       local positions=c.positions or (c.position and {c.position})
@@ -123,11 +124,15 @@ return function(api)
         local inv=hub.get_inventory(defines.inventory.hub_main)
         assert(inv,'platform '..c.platform..' has no hub inventory')
         n=inv.get_item_count(c.item)
+        scope={'platform',c.platform}
         where=' in '..c.platform..' hub (landed stock; excludes incoming cargo and hub trash)'
       elseif positions then
+        scope={tostring(p.surface.index or p.surface.name or '')}
         local seen,silos=0,{}
         for _,raw in ipairs(positions) do
-          for _,e in pairs(p.surface.find_entities_filtered{position=api.position(raw),radius=0.3,force=p.force}) do
+          local pos=api.position(raw)
+          scope[#scope+1]=pos.x..','..pos.y
+          for _,e in pairs(p.surface.find_entities_filtered{position=pos,radius=0.3,force=p.force}) do
             -- A silo's rocket stands on its centre and holds nothing of its own (the silo counts the cargo); a robot
             -- flying over a chest is not the chest (runtime.lua M.target_rank, Astra 07:05).
             if e.valid and e~=p.character and e.type~='rocket-silo-rocket' and e.type~='rocket-silo-rocket-shadow'
@@ -142,24 +147,29 @@ return function(api)
         where=' in '..seen..' entities'..(#silos>0 and '; '..table.concat(silos,'; ') or '')
       else
         n=p.get_main_inventory().get_item_count(c.item)
+        scope={'character',tostring(p.index)}
       end
       local met=(c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
-      return met,c.item..' '..n..where
+      return met,c.item..' '..n..where,estimate and {value=n,scope=table.concat(scope,':')} or nil
     end,
     -- A silo's rocket built and ready to launch (the GUI's rocket state).
-    rocket_ready=function(p,c)
-      local line,ready=silo_line(silo_at(p,c))
-      return ready,line
+    rocket_ready=function(p,c,estimate)
+      local e=silo_at(p,c)
+      local line,ready=silo_line(e)
+      local state=rocket_state(e)
+      return ready,line,estimate and {entity=e,required=e.prototype.rocket_parts_required,
+        parts=(ready or ROCKET_UP[state]) and e.prototype.rocket_parts_required or e.rocket_parts} or nil
     end,
     -- The rocket being built has at least at_least parts (Sonnet, shift14 22:50: a wait on the build's progress). A
     -- built rocket (rising into place or ready) has all of its parts; while one launches, the count is the next one's.
-    rocket_parts=function(p,c)
+    rocket_parts=function(p,c,estimate)
       local e=silo_at(p,c)
       local state,ready=rocket_state(e)
       local required=e.prototype.rocket_parts_required
       local n=(ready or ROCKET_UP[state]) and required or e.rocket_parts
       local line=silo_line(e)
-      return n>=c.at_least,string.format('rocket parts %d/%d (at least %d); %s',n,required,c.at_least,line)
+      return n>=c.at_least,string.format('rocket parts %d/%d (at least %d); %s',n,required,c.at_least,line),
+        estimate and {entity=e,parts=n,required=required} or nil
     end,
     crafting_done=function(p)
       local n=p.crafting_queue_size; return n==0,n..' crafts queued'
@@ -194,14 +204,15 @@ return function(api)
     -- arrival): at `location` when given (a planet), else at any stop. As the platform list shows it: a platform is
     -- at a location while it is stopped there and on a route between two while it flies (2.0.77: space_location
     -- clears within 4 ticks of leaving).
-    platform_arrived=function(p,c)
+    platform_arrived=function(p,c,estimate)
       local pl
       for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each end end
       if not pl then error('no platform of ours named '..tostring(c.platform),0) end
       -- freight.lua's rule, the platforms row's too (Luna, shift12 12:47: a wait met while the row showed the platform
       -- in flight): stopped at a location and not on its path; a leg in the way it is flown.
       local w=api.platform_where and api.platform_where(pl)
-      if w then return w.stopped==true and (c.location==nil or w.at==c.location),c.platform..' '..w.text end
+      if w then return w.stopped==true and (c.location==nil or w.at==c.location),c.platform..' '..w.text,
+        estimate and {leg=w.leg,paused=pl.paused} or nil end
       local loc=pl.space_location and pl.space_location.name
       local conn=pl.space_connection
       local where=loc and ('at '..loc) or conn and string.format('flying %s->%s %d%%',conn.from.name,conn.to.name,math.floor((pl.distance or 0)*100+0.5)) or 'nowhere'
@@ -274,9 +285,9 @@ return function(api)
     end
     return c
   end
-  function M.check(p,c)
+  function M.check(p,c,estimate)
     if c['until']=='researched' then assert(p.force.technologies[c.technology],'unknown technology') end
-    return checks[c['until']](p,c)
+    return checks[c['until']](p,c,estimate)
   end
   M.names=NAMES
   return M

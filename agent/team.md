@@ -37,6 +37,8 @@ already targets your character.
   (operator messages are in `result.operator`). The `clock:` line ends with the time left until your deadline. A `--wait` that a tell
   or mention ends while the action still runs exits 3 (`still_running`); `--wait-through-tells` keeps waiting. A viewer's
   @mention ends no sleep or wait (it comes in your next reply); `--wake-on-viewers` makes it end them.
+- Conditional `sleep`, `wait_until`, and queue waits report `wait_estimates` (ETA and rate basis, or no estimate) and
+  `idle_s` in this wait; `sleep_check` and wake replies refresh them, and `fh wait --until` includes them on its line.
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Post a claim for the area you
   build in (`board post` with kind `claim` and the area; it is on your surface, or `"surface":"gleba"`): it shows teammates who works where, sends that area's
   alerts to you, and keeps teammates' `stock` sweeps out of its chests. Put shared infrastructure (power poles, main
