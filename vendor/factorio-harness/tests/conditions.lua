@@ -150,4 +150,29 @@ local ok,err=pcall(C.check,p,{['until']='platform_arrived',platform='Nope'})
 eq(ok,false); eq(err,'no platform of ours named Nope')
 assert(not pcall(C.validate,{['until']='platform_arrived'}),'needs platform')
 assert(not pcall(C.validate,{['until']='platform_arrived',platform='Sunward',location='mars'}),'a known location')
+-- Named hub counts landed main-inventory stock only, from another planet or without a body.
+defines.inventory.hub_main=42
+local landed=0
+sunward.hub={valid=true,get_inventory=function(id)
+  eq(id,42)
+  return {get_item_count=function(item) eq(item,'agricultural-science-pack'); return landed end}
+end}
+local hubwait={['until']='item_count',platform='Sunward',item='agricultural-science-pack',at_least=1000}
+local nobody=setmetatable({force=mine},{__index=function() error('no body or surface access') end})
+C.validate(hubwait)
+met,saw=C.check(nobody,hubwait); eq(met,false)
+eq(saw,'agricultural-science-pack 0 in Sunward hub (landed stock; excludes incoming cargo and hub trash)')
+landed=999; eq(C.check(nobody,hubwait),false)
+landed=1000; eq(C.check(nobody,hubwait),true)
+eq(C.check(nobody,{['until']='item_count',platform='Sunward',item='agricultural-science-pack',below=1000}),false)
+for _,fields in ipairs({{platform=''}, {platform=42}, {platform='Sunward',position={x=0,y=0}},
+  {platform='Sunward',positions={{x=0,y=0}}}, {platform='Sunward',surface='nauvis'}}) do
+  local c={['until']='item_count',item='agricultural-science-pack',at_least=1}
+  for k,v in pairs(fields) do c[k]=v end
+  assert(not pcall(C.validate,c))
+end
+local ok,err=pcall(C.check,nobody,{['until']='item_count',platform='Nope',item='agricultural-science-pack',at_least=1})
+assert(not ok and tostring(err):find('no platform of ours named Nope',1,true))
+sunward.hub.valid=false
+assert(not pcall(C.check,nobody,hubwait),'missing hub is an error, not a zero count')
 print('conditions: ok')

@@ -144,4 +144,24 @@ eq(T.tick(p,action),'inventory_full'); eq(action.blocked_item,'landfill'); eq(ti
 room=true
 fails(function() T.handle(p,{tiles=true}) end,'tiles: true takes position, positions (1..64) or area')
 fails(function() T.handle(p,{tiles=true,position={x=240,y=54},name='nope'}) end,'name is a tile name')
+-- Laid tiles use entity reach, unlike ore tiles and plants. positions tours keep
+-- that reach at every stop, for default walking and explicit walk: true.
+for _,mode in ipairs({'default','explicit'}) do
+  p.position={x=300.5,y=0.5}; p.resource_reach_distance=2.7
+  lay(308,0,'concrete','grass-1'); lay(330,0,'concrete','grass-1')
+  local args={tiles=true,positions={{x=308,y=0},{x=330,y=0}}}
+  if mode=='explicit' then args.walk=true end
+  reply,action=T.handle(p,args)
+  eq(T.distance(p,308,0),7.5)
+  local before=#navs
+  T.tick(p,action)
+  eq(#navs,before,'7.5 tiles is in laid-tile reach')
+  game.tick=action.mining; T.tick(p,action)
+  eq(tile_at(308,0).name,'grass-1')
+  T.tick(p,action)
+  eq(#navs,before+1); eq(navs[#navs].tolerance,8.5)
+  navs[#navs].arrive='arrived'; p.position={x=322,y=0.5}
+  T.tick(p,action); game.tick=action.mining
+  eq(T.tick(p,action),'target_mined'); eq(tile_at(330,0).name,'grass-1')
+end
 print('tilemine: ok')
