@@ -267,6 +267,9 @@ body.portrait .cam-fill .tag, body.portrait .cam-fill .pace { font-size: 17px; l
 .card.oncam .dot.thinking { animation: blink 3.2s ease-in-out infinite; }
 .dot.dead { background: var(--dead); }
 .dot.offline { background: transparent; border: 2px solid var(--idle); width: 6px; height: 6px; }
+/* resting between turns, pacing its quota (pacing.py): the card says until when */
+.dot.resting { background: #6f8fbf; opacity: 0.8; }
+.card.resting .txt { color: var(--muted); }
 @keyframes breathe { 0%, 100% { box-shadow: 0 0 0 0 rgba(var(--fx-green-rgb), 0.45); } 50% { box-shadow: 0 0 0 5px rgba(var(--fx-green-rgb), 0); } }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 
