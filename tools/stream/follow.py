@@ -11,6 +11,8 @@ like that?").
 seconds: at most 1800 (default 600). The follow is kept in runs/RUN/director-follow.json ({agent, until, label, by};
 until is epoch seconds), so a serve.py restart keeps it; writing or deleting that file by hand works too (the service
 reads it again when it changes). While it is on, onecam.py keeps the camera on air on that agent (module doc there).
+Aboard a platform, the camera frames the whole ship with extra space ahead in flight. An explicit /platform hold
+takes priority until it expires or is deleted, then this follow resumes if its deadline has not passed.
 """
 import json, os, time
 

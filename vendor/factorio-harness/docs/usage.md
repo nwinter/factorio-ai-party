@@ -3950,6 +3950,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - Operator: `tools/harness-requests.py list|show|answer|board|events|mentions` in the pog repo. Underneath, a dispatch
   request with `"operator": true` and no player or bot may call `board`, `board_events`, `board_update`, `board_post`,
   `board_plan` (goals and other agents' lines; the operator has no line), `mention_counts` and `tells` as `operator`.
+- Operator stream camera (HTTP on the stream service, not an `fh` action): `POST /platform {name, seconds?, label?,
+  by?}` holds the whole named platform on air; `DELETE /platform` ends it. Seconds defaults to 600, capped at 1800.
+  The hold persists in `runs/RUN/director-platform.json` and takes priority over `/follow`; an unexpired follow
+  resumes afterward. A follow of an agent aboard also frames the whole ship. Flight framing includes space ahead
+  for asteroids; urgent events elsewhere use insets. Full operator details: `docs/STREAM-NOTES.md` in the pog repo.
 - Operator live attack groups (threat.lua; the pog stream follows a big group as it approaches): `attack_groups_live`
   (read) lists up to 10 enemy groups that finished gathering with a target, visible or not, while valid and under 10
   game minutes old: `id, surface, position, size, kinds, state (gathering|moving|attacking_*), gathered, first_size,
