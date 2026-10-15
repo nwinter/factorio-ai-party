@@ -7973,7 +7973,7 @@ function handlers.load_silo(p,a)
   if okw then for k,v in pairs(wf) do await[k]=v end end
   state().active[p.index]={kind='feed',handler='load_silo',args=rest,await_silo=await,until_tick=until_tick,next_check=game.tick+FEED_CHECK}
   return {waiting={why=r.why,rocket=r.rocket,rate=okw and M.rocketload.wait_report(state().active[p.index]) or nil,
-    note=okw and string.format('waits while the silo makes parts: the idle window starts at %ds and grows to 3 times the longest observed gap between part increases; at the latest tick %d',math.floor(ticks/60),await.give_up) or nil},
+    note=okw and string.format('waits while the silo makes parts: the idle window starts at %ds and grows to 3 times the longest observed interval to a part increase; at the latest tick %d',math.floor(ticks/60),await.give_up) or nil},
     until_tick=until_tick,gives_up_tick=okw and await.give_up or nil}
 end
 function handlers.preflight(p,a) return M.rocketload.preflight(p,a) end

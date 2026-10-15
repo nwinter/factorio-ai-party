@@ -818,15 +818,17 @@ return function(api)
     end end
     -- Scanline flood: each open row segment queues at most one seed per
     -- adjoining segment, instead of visiting four neighbours per grid point.
-    local function fill(cells,seen,queue,spans)
+    local function fill(cells,seen,queue,spans,stop_at_edge,known_open)
       local head,tail=1,#queue
       while head<=tail do
         local k=queue[head];head=head+1
+        if known_open and known_open[k] then return true end
         if not cells[k] and not seen[k] then
           local row=k-(k-1)%nx
           local a,z=k,k
-          while a>row and not cells[a-1] and not seen[a-1] do a=a-1 end
-          while z<row+nx-1 and not cells[z+1] and not seen[z+1] do z=z+1 end
+          while a>row and not cells[a-1] and not seen[a-1] and not (known_open and known_open[a-1]) do a=a-1 end
+          while z<row+nx-1 and not cells[z+1] and not seen[z+1] and not (known_open and known_open[z+1]) do z=z+1 end
+          local opened=stop_at_edge and (edge[a] or edge[z] or known_open and (known_open[a-1] or known_open[z+1]))
           local up,down=false,false
           for n=a,z do
             seen[n]=true
@@ -839,6 +841,7 @@ return function(api)
             if free and not down then tail=tail+1;queue[tail]=d end
             down=free
           end
+          if opened then return true end
           if spans then spans[#spans+1]={a,z} end
         end
       end
@@ -850,11 +853,20 @@ return function(api)
       return seen
     end
     local seen=exterior(now)
-    local reachable,out,total=nil,{},0
+    local old_closed,old_open,out,total={},{},{},0
     for seed=1,nx*ny do if not now[seed] and not seen[seed] then
-      reachable=reachable or exterior(old)
       local spans={};fill(now,seen,{seed},spans)
       local changed=false
+      local function was_open(k)
+        if old[k] or old_open[k] then return true end
+        if old_closed[k] then return false end
+        local visited={}
+        local open=fill(old,visited,{k},nil,true,old_open)
+        local cache=open and old_open or old_closed
+        for n in pairs(visited) do cache[n]=true end
+        cache[k]=true
+        return open or false
+      end
       local x0,y0,x1,y1=r,b,l,t
       local boundary,count={},0
       local function hit(n)
@@ -872,8 +884,9 @@ return function(api)
         count=count+z-a+1
         hit(a-1);hit(z+1)
         for n=a,z do
-          changed=changed or reachable[n] or old[n]~=nil
-          hit(n-nx);hit(n+nx)
+          changed=changed or was_open(n)
+          if now[n-nx] then hit(n-nx) end
+          if now[n+nx] then hit(n+nx) end
         end
       end
       if changed and next(boundary) then

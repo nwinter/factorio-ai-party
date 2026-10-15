@@ -438,3 +438,21 @@ do
   list=P.pockets(terrain,0.2,ring,{open={['2,2']=true}})
   eq(#list,1)
 end
+
+-- Many small newly sealed pockets: the response is capped, all are counted.
+do
+  local boxes={}
+  for x=0,4 do
+    local ox=x*4
+    for _,b in ipairs({{ox,0,ox+0.5,3},{ox+2.5,0,ox+3,3},{ox+0.5,0,ox+2.5,0.5},{ox+0.5,2.5,ox+2.5,3}}) do
+      b[5]='wall';b[6]=#boxes+1;b.base=true;boxes[#boxes+1]=b
+    end
+  end
+  local list,info=P.pockets(fake({}),0.2,boxes,{})
+  eq(#list,4);eq(info.pockets,5);eq(info.more,1)
+  -- Existing pockets are excluded even beside newly closed ones.
+  local built={};for i=1,4 do built[i]=boxes[i] end
+  local planned={};for i=5,#boxes do planned[#planned+1]=boxes[i] end
+  list,info=P.pockets(fake(built),0.2,planned,{})
+  eq(#list,4);eq(info.pockets,4);eq(info.more,nil)
+end

@@ -1325,6 +1325,13 @@ fh queue repeat --file plan.json
 - `"wait":false` lets a step overlap the next one, for example shooting while walking.
 - `wait_ticks` and `wait_until` are queue steps and also direct timed actions (see Waiting below).
 - A failed step pauses the queue. Use `on_fail` (`abort`, `skip`, `goto:<label>`) and `guards` to handle failures instead.
+  `on_fail` is on the step, outside `args`: `{"action":"craft","args":{"recipe":"iron-gear-wheel","count":10},"on_fail":"skip"}`.
+  A stock refusal from `craft` names up to four nearest stocking chests (name, position, count), from its existing
+  64-tile stock check, and states the options: `abort` (default) pauses, `skip` continues, `goto:<label>` continues at
+  that pending label. Skipping acquires no items. `craft {force: true}` permits hand crafting despite factory stock;
+  `transfer {direction: "from_entity", position, item, count}` or `collect` explicitly takes stock. `craft` does not
+  withdraw it from a chest. The existing refusal applies when stock covers the requested product and its hand craft
+  takes at least 3 seconds.
 - A step that runs short (outcome `out_of_items`, `nothing_collected` or `inventory_full`, or a transfer's `no ITEM in
   inventory`) is done, not failed, with `"on_short": "skip"` on the step or `"up_to": true` in a `transfer`, `collect`
   or `feed` step's args: its history entry has `ok: true` and `short: true`, and the plan goes on. Other failures
@@ -2341,10 +2348,17 @@ fh sleep 900 --until researched                       # ...or until the research
   - No rocket yet, or `launch: true` before the rocket is ready: a timed action (`waiting {why, rocket}`,
     `until_tick`; `ticks` 1..36000, default 3600) that runs the whole call in the tick the rocket is there (ready, for
     a launch); outcome `fed` (`last.result` holds the reply), `failed` (`last.error`) or `timed_out`. `--wait` follows
-    it. The wait goes on while the silo makes parts (Sonnet, shift14 22:50: re-issued 3 times through one build):
-    `ticks` is the time allowed with no new part and no change in the rocket's state, and `gives_up_tick` (1 game hour
-    on) ends it in all (`waiting.note: waits while the silo makes parts: it ends after 60s with no new part, at the
-    latest at tick N`).
+    it. The wait goes on while the silo makes parts. `ticks` is the initial idle window (default 60 game seconds).
+    Each observed part-count increase extends the deadline by at least that window; the window grows to three times
+    the longest observed interval to an increase (the first interval starts when this wait starts), and never shrinks
+    after a faster burst. A rocket-state change also refreshes the window; polling alone does not. `gives_up_tick`
+    (1 game hour from the start) ends the wait in all cases. Before the first increase, only the initial window is known.
+    `waiting.rate`, then `active.silo_wait` and `last.silo_wait` (also the compact `--wait` reply), report `parts`,
+    `parts_added`, `observed_s`, `parts_per_min`, `rate_basis`, `last_part_ago_s`, `idle_window_s`, `gives_up_tick`.
+    The rate counts part increases from this wait's start through its latest increase; it is absent until measured,
+    and resets if the part counter rolls over. It describes this wait, not the recipe's nominal crafting speed.
+    CLI `--wait` and `fh wait` follow the increasing deadline within their existing 15-minute computed-budget cap
+    (45 minutes with slow-game overtime); explicit `--wait-timeout` or `fh wait --max` keeps its requested limit.
   - `fh call load_silo --args '{"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","position":{"x":65.5,"y":14.5},"to_total":true}'`
   - `walk: true` with `from` (Luna, shift14 21:20: 930 agricultural science packs from a provider 64 tiles from the
     silo took four walks and several calls): the chests anywhere on the silo's surface, in sight or on the map. One
@@ -2663,6 +2677,15 @@ fh sleep 900 --until researched                       # ...or until the research
     plan). A build reply says the same after the fact: `closed_in: the character is closed in now where it stands
     (0.5,78.5): the last gap out was where pipe (-1.5,78.5) now stands; ...`. About 1 ms a check on a private 2.0.77
     server (no way out within 16 tiles counts as closed in).
+  - `build` dry runs also report `pockets` away from the character: up to four newly enclosed walkable areas, their
+    `area`, approximate `walkable_tiles`, and `planned_boundary` entries (`index`, `name`, `position`, `tiles`, the
+    inclusive tile-coordinate footprint). Existing closed pockets are excluded; ground made walkable by this plan
+    counts. These are the planned boundary pieces, not a claim that removing any single one opens the area.
+    `pockets_checked` gives the check window, 0.25-tile grid, cell count and any extra pocket count. The window covers
+    the footprints plus a 2-tile margin, at least 24 tiles per side and at most 32 (16,641 grid points). Larger plans
+    return `checked: false` and the reason, without that scan. Reaching the window edge counts as open: this is a
+    local check, not a claim about routes beyond it. It uses the character's box, joined walls/pipes and open own gates
+    as `closes_in` does; off platforms only. Compact output includes the pockets on its final warning line.
   - `outside_logistic_coverage` (Sonnet, shift10: 8 chests with 31k copper sat outside roboport range for hours): each
     planned provider, requester, buffer or storage chest that no roboport's logistic area covers, a roboport planned in
     the same call or a roboport ghost counting: `#2 requester-chest (146.5,160.5): outside logistic coverage: nearest
