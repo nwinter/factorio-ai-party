@@ -262,7 +262,7 @@ print('d15_batch empty rounds: ok')
 -- Ship endurance (Astra, d15: Wayfarer was lost at Aquilo after its rockets, fuel and repair packs ran out): a route's
 -- legs at the platform's speed and each resource's stock, rates and when it runs out. ----------------------------------
 do
-  defines={flow_precision_index={ten_minutes=2,five_seconds=0},inventory={hub_main=1,turret_ammo=1}}
+  defines={flow_precision_index={ten_minutes=2,five_seconds=0},inventory={hub_main=1,turret_ammo=1,assembling_machine_input=2}}
   local function loc(sp) return {solar_power_in_space=sp} end
   prototypes={item={rocket={type='ammo'},['firearm-magazine']={type='ammo'},['repair-pack']={type='repair-tool'},['iron-plate']={type='item'}},
     fluid={['thruster-fuel']={},['thruster-oxidizer']={}},
@@ -279,12 +279,18 @@ do
   local pole={electric_network_statistics={output_counts={['solar-panel']=1},input_counts={thruster=1,['ammo-turret']=1},
     get_flow_count=function(a) return a.category=='output' and 1000 or 500 end}}
   local force={get_item_production_statistics=function() return stats(items) end,get_fluid_production_statistics=function() return stats(fluids) end}
+  -- an assembler making firearm magazines from 4 iron plates a craft; the hub holds 9 plates
+  local asm={get_recipe=function() return {name='firearm-magazine',products={{name='firearm-magazine',amount=1}},ingredients={{type='item',name='iron-plate',amount=4}}} end,
+    get_inventory=function() return {get_contents=function() return {} end} end}
   local surface={find_entities_filtered=function(f)
-    if f.type=='ammo-turret' then return {turret} elseif f.type=='electric-pole' then return {pole} elseif type(f.type)=='table' then return {thruster} end
+    if f.type=='ammo-turret' then return {turret} elseif f.type=='electric-pole' then return {pole} elseif f.type=='assembling-machine' then return {asm}
+    elseif type(f.type)=='table' then return {thruster} end
     return {} end}
   local pl={name='Wayfarer',surface=surface,force=force,hub={get_inventory=function() return hub end},space_location={name='nauvis'},speed=0,
     schedule={current=1,records={{station='nauvis'},{station='fulgora'},{station='aquilo'}}}}
-  local leg,segs=nil,{{kind='leg',from='fulgora',to='nauvis',start=0,['end']=36000},{kind='stop',at='nauvis',start=36000}}
+  -- the last leg (10 minutes): freight.lua's ammunition counts at its ends: rockets 10/min used, magazines 20 made and 5 used a minute
+  local leg,segs=nil,{{kind='leg',from='fulgora',to='nauvis',start=0,['end']=36000,ammo0={rocket={made=0,used=0},['firearm-magazine']={made=0,used=0}},
+    ammo1={rocket={made=0,used=100},['firearm-magazine']={made=200,used=50}}},{kind='stop',at='nauvis',start=36000}}
   local E=require('endurance'){platform=function() return pl end,leg=function() return leg end,segments=function() return segs end}
   local r=E.read({},{platform='Wayfarer'})
   eq(r.route,'schedule'); eq(r.speed_km_per_min,1500); has(r.speed_from,'the last leg fulgora->nauvis')
@@ -294,10 +300,16 @@ do
   local by={}; for _,x in ipairs(r.resources) do by[x.name]=x end
   eq(by['iron-plate'],nil,'only ammunition, repair packs and thruster fluids')
   eq(by.rocket.stock,150,'hub and turrets'); eq(by.rocket.lasts_min,15); eq(by.rocket.runs_out_on,'fulgora->aquilo')
-  has(by.rocket.line,'rocket: 150 now, made 0/min, used 10/min (last 10 min); lasts 15m00s at that rate (runs out on fulgora->aquilo); at the route\'s end about 0')
-  eq(by['firearm-magazine'].lasts_min,nil); eq(by['firearm-magazine'].at_end,500)
-  eq(by['repair-pack'].runs_out_on,nil); has(by['repair-pack'].line,'lasts 40m00s at that rate (past the route\'s end)')
-  eq(by['thruster-fuel'].stock,10000); eq(by['thruster-fuel'].lasts_min,100); eq(by['thruster-fuel'].at_end,7000)
+  has(by.rocket.line,'rocket: 150 now, made 0/min, used 10/min (over the last leg fulgora->nauvis, 10m00s); lasts 15m00s at that rate (runs out on fulgora->aquilo); at the route\'s end about 0')
+  -- made 20/min from 9 iron plates at 4 a craft: 2 more, then 5/min used alone (Astra, d15 15:39)
+  local fm=by['firearm-magazine']
+  eq(fm.ingredient_limited.more,2); eq(fm.ingredient_limited.item,'iron-plate'); eq(fm.at_end,-98); eq(fm.lasts_min,10.4); eq(fm.runs_out_on,'fulgora->aquilo')
+  has(fm.line,'ingredient-limited: the ingredients aboard make at most 2 more (iron-plate 9 aboard, 4 a craft)')
+  -- stopped: no flight rate for repair packs (not in the leg counts) or the thruster fluids, and nothing projected
+  eq(by['repair-pack'].flight_rate,'unknown'); eq(by['repair-pack'].lasts_min,nil); eq(by['repair-pack'].at_end,nil)
+  has(by['repair-pack'].line,'repair-pack: 40 now; flight use unknown: stopped, and no finished leg on record for it (at the stop, last 10 min: made 0/min, used 1/min)')
+  eq(by['thruster-fuel'].stock,10000); eq(by['thruster-fuel'].flight_rate,'unknown'); eq(by['thruster-fuel'].at_end,nil)
+  has(by['thruster-fuel'].line,'flight use unknown: stopped; the thrusters burn only in flight')
   eq(by['thruster-oxidizer'].stock,8000); eq(by['thruster-oxidizer'].lasts_min,nil)
   eq(r.hub_slots,'12 of 50 free'); eq(r.power,'makes 60 kW, draws 60 kW now'); eq(r.solar_power,'nauvis 100%, fulgora 120%, aquilo 60%')
   -- flying: the rest of the leg first, at the speed now; the schedule from its current stop round to it
@@ -306,6 +318,9 @@ do
   r=E.read({},{platform='Wayfarer'})
   eq(r.speed_from,'now'); eq(r.legs[1].now,true); eq(r.legs[1].minutes,4)
   eq(r.legs[2].from,'fulgora'); eq(r.legs[2].to,'aquilo'); eq(r.legs[4].to,'fulgora'); eq(#r.legs,4)
+  by={}; for _,x in ipairs(r.resources) do by[x.name]=x end
+  eq(by['thruster-fuel'].lasts_min,100,'flying: the last 10 minutes'); eq(by['thruster-fuel'].rate_from,'last 10 min, flying')
+  eq(by['repair-pack'].lasts_min,40); eq(by['rocket'].rate_from,'last 10 min, flying')
   -- a given route; an unknown place is refused; stopped with no finished leg: times unknown
   leg,pl.speed,pl.space_connection,pl.space_location,segs=nil,0,nil,{name='nauvis'},{}
   r=E.read({},{platform='Wayfarer',route={'fulgora','nauvis'}})

@@ -1768,13 +1768,23 @@ repair packs ran out on the way) projects a planned route at the rates the platf
   record (a leg first seen mid-flight is skipped); stopped with no finished leg, times are unknown and it says so.
 - `resources`: each ammunition item and repair pack aboard or made or used there, and `thruster-fuel` and
   `thruster-oxidizer`, with `stock` (hub and turrets; the fluids in thrusters and storage tanks), `made_per_min` and
-  `used_per_min` (the platform surface's production statistics, last 10 minutes), `lasts_min` when it falls,
-  `runs_out_on` (the leg it runs out on), `at_end` and `line`: `rocket: 150 now, made 0/min, used 10/min (last 10
-  min); lasts 15m00s at that rate (runs out on fulgora->aquilo); at the route's end about 0`.
+  `used_per_min` with `rate_from`, `lasts_min` when it falls, `runs_out_on` (the leg it runs out on), `at_end` and
+  `line`: `rocket: 150 now, made 0/min, used 10/min (over the last leg fulgora->nauvis, 10m00s); lasts 15m00s at that
+  rate (runs out on fulgora->aquilo); at the route's end about 0`.
+- Rates (Astra, d15 15:39: parked, thruster fuel read 0 made and 0 used, as if it lasted for ever): flying, the
+  platform surface's production statistics over the last 10 minutes; stopped, an ammunition item's made and used
+  over the last finished leg (freight.lua's counts at the leg's ends). With no such leg, and for repair packs and the
+  thruster fluids while stopped, `flight_rate: "unknown"` and nothing is projected: `thruster-fuel: 10000 units now;
+  flight use unknown: stopped; the thrusters burn only in flight (at the stop, last 10 min: made 0/min, used 0/min)`.
+- An item made aboard (Astra: parked Aegis projected rockets 1030 + 36/min to 2650 with about 500 explosives' worth
+  of ingredients left) is capped by the ingredients aboard: the assemblers whose recipe makes it, that recipe's item
+  ingredients in the hub and in those machines' inputs, one level down. `ingredient_limited {more, item, have,
+  per_craft, ingredient_made_per_min}`; the projection stops making it after `more`, and the line says
+  `ingredient-limited: the ingredients aboard make at most 2 more (iron-plate 9 aboard, 4 a craft)` (and the
+  ingredient's own rate aboard when it is made there, not counted ahead).
 - `hub_slots` (`12 of 50 free`), `power` (what its network makes and draws now) and `solar_power` at the route's
   locations (each location's solar power in space, in percent, as its prototype gives it), and `lines` with the route and the hub.
-- The rates are those of the last 10 minutes where it is now; a fight near a planet or a change of thrust on the way
-  changes them.
+- A fight near a planet or a change of thrust on the way changes the rates.
 
 ```sh
 fh call refuel --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":40,"y":20}},"from":"nearest","fuel":"coal","count":10}' --wait
