@@ -45,13 +45,21 @@ local function Inv(slots,items)
   for _,it in ipairs(items or {}) do t.add(it[1],it[2],it[3]) end
   return setmetatable(t,{__len=function() return slots end,__index=function(_,i) if type(i)=='number' then return {valid_for_read=i<=used()} end end})
 end
+-- A stack's quality is a LuaQualityPrototype, userdata in the game (round1650d: load_silo matched no stack, "you and
+-- the 1 chests read held only 0", for Grok, Gemini, Astra and Sonnet): userdata here too, with its name.
+local QUALITY={}
+local function quality_proto(q)
+  if not QUALITY[q] then local u=io.tmpfile(); debug.setmetatable(u,{__index={name=q}}); QUALITY[q]=u end
+  return QUALITY[q]
+end
+assert(type(quality_proto('normal'))=='userdata' and quality_proto('normal').name=='normal')
 local function move_stacks(source,target,match,limit)
   local moved=0
   for _,k in ipairs(source.order) do
     local c=source.counts[k]
     if c and moved<limit then
       local name,q=k:match('^(.-)@(.*)$')
-      if match({name=name,quality={name=q}}) then
+      if match({name=name,quality=quality_proto(q)}) then
         local n=math.min(c,limit-moved,target.room(name,q))
         if n>0 then source.add(name,-n,q); target.add(name,n,q); moved=moved+n end
       end

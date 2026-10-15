@@ -23,7 +23,9 @@ return function(api)
   local function key(name, quality) return name .. '@' .. (quality or 'normal') end
   local function weight(name) return try(function() return prototypes.item[name].weight end) or 0 end
   local function stack_size(name) return try(function() return prototypes.item[name].stack_size end) or 1 end
-  local function quality_of(s) local q = s.quality; return type(q) == 'table' and q.name or q or 'normal' end
+  -- A stack's quality: a name (get_contents rows) or a LuaQualityPrototype, which is userdata in the game (round1650d:
+  -- load_silo matched no stack of the inventory or a chest, "held only 0", for Grok, Gemini, Astra and Sonnet).
+  local function quality_of(s) local q = s.quality; if type(q) == 'string' then return q end; return q and q.name or 'normal' end
 
   -- An item list: {name: count} or [{item (or name), count, quality?}]; repeated entries add up.
   function M.items(v, what)
