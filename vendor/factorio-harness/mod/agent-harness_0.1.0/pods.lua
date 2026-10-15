@@ -84,6 +84,15 @@ return function(api)
     if #list > (limit or 6) then parts[#parts+1] = '+' .. (#list - (limit or 6)) .. ' more' end
     return table.concat(parts, ' ')
   end
+  -- The pods followed now that left platform `platform` of force `force` (freight.lua counts each on the platform's
+  -- stop, through to where it went).
+  function M.from(force, platform)
+    local out = {}
+    for _, r in pairs(store()) do
+      if r.force == force and r.platform == platform and r.pod and r.pod.valid then out[#out+1] = r.pod end
+    end
+    return out
+  end
   -- "3 cargo pods from Sunward still in the air: processing-unit*300 (to the landing pad at (52,54); 2 descending,
   -- 1 ascending)", or nil when none.
   function M.line(force, to, platform)

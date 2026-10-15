@@ -132,6 +132,63 @@ met,saw=C.check(p,{['until']='platform_arrived',platform='Sunward',location='nau
 eq(met,false); eq(saw,'Sunward flying gleba->nauvis 75%')
 met,saw=C.check(p,{['until']='platform_left',platform='Sunward'})
 eq(met,true); eq(saw,'Sunward flying gleba->nauvis 75%')
+-- 7. Cargo pods (Astra, 21:20: left the hub is not delivered): at a stop the pods leaving the hub are followed down;
+-- a stop says what went down, what each landing pad received, and the pods still in flight. (Found by a look of its
+-- own here; in the runtime they come from pods.lua, below.)
+sunward.space_connection=nil; sunward.space_location={name='nauvis'}; sunward.state=6
+second()
+local plsurf={name='platform-1'}
+local on_platform={}
+plsurf.find_entities_filtered=function(f) eq(f.type,'cargo-pod'); local out={} for _,e in ipairs(on_platform) do out[#out+1]=e end return out end
+sunward.surface=plsurf
+local nauvis_s={name='nauvis'}
+local padE={valid=true,name='cargo-landing-pad',position={x=10.5,y=20.5},surface=nauvis_s}
+local function pod(unit,dest,items,origin)
+  local e={valid=true,unit_number=unit,surface=plsurf,position={x=0,y=-2},cargo_pod_origin=origin or hub,cargo_pod_destination=dest}
+  e.get_inventory=function(id) eq(id,4); return inv(items) end
+  return e
+end
+local p1=pod(501,{station=padE},{['agricultural-science-pack']=200})
+local p2=pod(502,{surface=nauvis_s},{['iron-plate']=50})
+local p3=pod(503,{station=padE},{['agricultural-science-pack']=100})
+local rocketpod=pod(504,{station=hub},{['iron-plate']=10},{name='rocket-silo'})
+on_platform={p1,p2,rocketpod}
+local function quarter(n) for _=1,n or 1 do game.tick=game.tick+60; F.pod_tick(game.tick) end end
+quarter()
+eq(#st.freight[1].pods,2,'the rocket\'s pod coming aboard is not one of the hub\'s')
+-- They fly down; p1 lands in the pad, p2 on the ground; p3 leaves later and is still descending.
+on_platform={p3,rocketpod}; p1.surface=nauvis_s; p2.surface=nauvis_s; p2.position={x=-3.4,y=7.6}
+quarter()
+on_platform={rocketpod}; p3.surface=nauvis_s
+p1.valid=false; p2.valid=false
+quarter()
+local fr7=F.read(sunward)[1]
+has(fr7.line,'; cargo pods sent down 3 (agricultural-science-pack*300 iron-plate*50), received by landing pads 1 (agricultural-science-pack*200) '
+  ..'at cargo-landing-pad (10.5,20.5) on nauvis, landed as cargo pod containers (no landing pad) 1 (iron-plate*50) at (-3,8) on nauvis, '
+  ..'in flight 1 (agricultural-science-pack*100): #503 to cargo-landing-pad descending on nauvis (left the hub 1s ago)')
+eq(fr7.pods.sent,3); eq(fr7.pods.received,1); eq(fr7.pods.in_flight,1); eq(fr7.pods.received_items['agricultural-science-pack'],200)
+-- Gone from the platform without reaching the planet: said so. After the stop the last one is still followed.
+local p5=pod(505,{station=padE},{['iron-plate']=5}); on_platform={p5}
+quarter(); p5.valid=false; quarter()
+has(F.read(sunward)[1].line,'gone before leaving the platform 1 (iron-plate*5)')
+sunward.space_location=nil; sunward.state=3; sunward.space_connection={from={name='nauvis'},to={name='gleba'},length=15000}; sunward.distance=0.1
+second(); p3.valid=false; quarter()
+local stop7=F.read(sunward)[2]
+has(stop7.line,'received by landing pads 2 (agricultural-science-pack*300)'); eq(stop7.pods.in_flight,0)
+-- With pods.lua (runtime.lua passes it): the pods it follows from this platform are the ones taken.
+do
+  local st2={}
+  local from_pods={}
+  local F2=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return st2 end,
+    pods={from=function(force_name,platform) eq(force_name,'player'); eq(platform,'Sunward'); return from_pods end}}
+  sunward.space_connection=nil; sunward.space_location={name='nauvis'}; sunward.state=6
+  F2.tick(game.tick)
+  plsurf.find_entities_filtered=function() error('pods.lua looks; freight does not') end
+  local p6=pod(506,{station=padE},{['iron-plate']=7}); from_pods={p6}
+  game.tick=game.tick+60; F2.pod_tick(game.tick)
+  eq(#st2.freight[1].pods,1)
+  has(F2.read(sunward)[1].line,'cargo pods sent down 1 (iron-plate*7)')
+end
 -- A platform gone: its record goes.
 force.platforms={}
 second()
