@@ -840,7 +840,9 @@ async function main() {
     // clear_cliffs (use_item cliff-explosives): the explosives destroyed cliffs (Sol 17:21/17:32: fh wait exited 1 on it)
     'cliffs_destroyed',
     // load_silo walk (Luna, shift14 21:20): the list aboard, and launched; short and no_rocket still fail.
-    'loaded','launched'];
+    'loaded','launched',
+    // a call made after its walk into reach (autowalk.lua)
+    'done'];
   // How long to wait: an explicit --wait-timeout, else until the action's own
   // end tick (at 60 ticks/s plus a margin), never less than 30 s nor more than 15 min.
   // ownEnd: the action's end tick already reflects --wait-timeout (wait_until), so
@@ -936,7 +938,7 @@ async function main() {
     const result: Record<string, unknown> = {
       // A feed is the call that waited for a hand craft (build, transfer, rearm, refuel): named as that call.
       outcome: last?.outcome ?? (status.result?.active ? 'running' : 'idle'),
-      action: shot ? 'shoot' : last?.kind === 'feed' && typeof last?.handler === 'string' ? last.handler : last?.kind,
+      action: shot ? 'shoot' : last?.kind === 'feed' && typeof last?.handler === 'string' ? last.handler : last?.walking_for ?? last?.kind,
       waited_s: Math.round((Date.now()-started)/100)/10,
       position: player?.position ?? status.result?.position,
       health: player && player.health < player.max_health ? `${Math.round(player.health)}/${Math.round(player.max_health)}` : undefined,
@@ -978,6 +980,8 @@ async function main() {
       ...(last?.kind === 'move_to' || last?.kind === 'drive' ? {avoided_enemies: last.avoided_enemies,
         enemies_at_start_or_goal: last.enemies_at_start_or_goal, passed_within_margin: last.passed_within_margin} : {}),
       why: last?.why, note: status.result?.note,
+      // a call made after its walk into reach, or not made when the walk did not get there (autowalk.lua)
+      walked: last?.walked, not_made: last?.not_made,
       // a tour's places left out for an enemy (round1950a)
       danger: last?.danger, dangers: last?.dangers,
       // waits short of rails a moving train was about to pass, on any walk, and a walk ending on rails (round1520d)
@@ -1043,7 +1047,8 @@ async function main() {
       // runs as 'gather' too.
       const kinds = action === 'collect' || action === 'feed' || action === 'recover' ? ['gather'] : ['rearm','refuel','transfer'].includes(action) ? ['gather','feed'] : action === 'build' || action === 'load_silo' ? ['feed']
         : action === 'vehicle' ? ['drive'] : action === 'use_item' ? ['clear_cliffs'] : [action];
-      const stillRunning = active && (action === 'shoot' || action === 'drop' || kinds.includes(active.kind));
+      // A walk into reach that the call makes first (autowalk.lua) runs as a move_to naming the call (walking_for).
+      const stillRunning = active && (action === 'shoot' || action === 'drop' || kinds.includes(active.kind) || active.walking_for === action);
       if (status.ok && stillRunning && told(status, acceptedTick) && action !== 'wait_ticks' && action !== 'wait_until') {
         if (!throughTells) return {...status, result:{...status.result, interrupted:{inbox:wakeInbox(status, acceptedTick), active}}};
         noteTell(wakeInbox(status, acceptedTick));
@@ -1362,7 +1367,10 @@ async function main() {
         // cliff explosives thrown by hand: each lands before the next (clear_cliffs; use_item cliff-explosives runs it;
         // Sol 17:21/17:32: --wait returned at once with until_tick)
         || (['clear_cliffs','use_item'].includes(action) && reply.result?.until_tick !== undefined);
-    if (wait && reply.ok && waits) {
+    // A call out of reach that walks first by default (autowalk.lua; the reply's walking line): waited for as --wait does,
+    // since the same call in reach would have been done at once.
+    const walked = reply.ok && reply.result?.walking !== undefined && reply.result?.until_tick !== undefined;
+    if ((wait || walked) && reply.ok && (waits || walked)) {
       onAccepted?.(reply);
       const completion = await waitForAction(action, reply.result?.until_tick, reply.tick, before);
       if (completion.error?.code === 'wait_timeout') return {...reply, ok:false, result:{accepted:reply.result, ...completion.result}, error:completion.error};

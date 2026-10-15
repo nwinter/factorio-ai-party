@@ -954,6 +954,47 @@ fh call status
     cover, and lived; with no walk on, the spitter caught it once it stood.
 - Output is compact tables meant for reading. Use `--format json` for programs.
 
+### Out of reach: the call walks first
+
+`transfer`, `collect`, `feed`, `rearm`, `refuel`, `mine` (tiles too), `build`, `rotate` and `configure` (where it needs
+reach) take `walk` (autowalk.lua; Haiku 22:53, friction1300's 16 refusals in an hour).
+- `walk` omitted: a target out of reach within 32 tiles of the character (to its edge; a build position to the position)
+  is walked into reach first, and the call is made there. The reply's `walking` line says so, e.g. `iron-chest (59.5,19.5)
+  is 17.9 tiles away (to its edge), reach 10: walking into reach first (walk: false refuses instead)`.
+- Past 32 tiles the call is refused, and the refusal ends with the same call with `walk: true`: `...; 45.0 tiles is past
+  the 32 a call walks by default: transfer {"item":"coal","position":{"x":7.5,"y":70.5},"walk":true} walks there first`.
+- `walk: true` walks there from farther too. `walk: false` refuses out of reach, nothing walked, as before.
+- How each walks:
+  - `transfer`, `collect`, `feed` walk as their `walk: true` tours do (`legs`, `out_of_reach`, outcomes as there).
+  - `rearm` and `refuel` with `positions` walk the tour `radius` walks, over those turrets or burners. `below` leaves
+    the turrets holding enough (`held_enough`), and none of them is walked to.
+  - `mine`, `build`, `rotate`, `configure` walk as `move_to {target, reach}` does. Status shows `active.kind: move_to`
+    with `walking_for: mine`. On arrival the call is made: a mine goes on as a mine (`last.walked` names the walk); any
+    other ends with `last.outcome: done`, `last.result` (the call's reply) and `last.walked`, or `failed` with
+    `last.error`. A walk that does not get there leaves `last.not_made` (`build was not made: the walk into reach of
+    (20,0) ended unreachable`).
+  - `build` with `builds` builds the entries in order; an entry out of reach is walked to, and the rest is built from
+    there (the reply: `built` so far and `walking` for `entry N of M`).
+  - `configure` walks only where reach is needed: modules `by: hand`, and a recipe change on a machine holding items or
+    mid-craft, for one machine. Anything else out of reach still goes by remote view, nothing walked.
+- Safety: every such walk keeps the enemy checks. A goal inside a weapon's reach the map shows is refused unless
+  `unsafe_goal: true`; `avoid_enemies` goes round the nests as `move_to`'s does. The tours leave out and name a place
+  inside one. Tile mining skips such tiles. The train guard and a standing `retreat_guard` apply to the walk as to any
+  `move_to`.
+  Destination checks refresh the charted chunks around the target in the current tick; overlapping tour stops
+  share that read. Previously they reused the path cache for up to a minute, so a new worm in an area previously
+  read as empty could be missed. Path checks along the route still use the one-minute cache.
+- `fh call` waits for a call that walks as `--wait` does, since the same call in reach would have been done at once.
+- A queue step waits for the walk and the call. The step succeeds on `done` or the call's own outcome, and fails when
+  the walk did not get there.
+- A call that walks replaces the running action, as any timed call does.
+- Engine check: on a private 2.0.77 Space Age copy, all nine call types completed from 12 and 31 tiles away with
+  `fh call` without `--wait`; targets at 40 tiles were refused with the `walk: true` call. A build at exactly 32
+  tiles, a four-entry build across 30 tiles, a queued build followed by a transfer, three-stop rearm/refuel tours,
+  tile mining, tree/ore mining and modules by hand completed. All nine refused a target inside a small worm's
+  25-tile range without moving the bot, including a worm added after an empty destination had been cached.
+  These checks used the deployed runtime with normal visibility checks.
+
 ### Output shape, chat and time left
 
 ```sh
@@ -3731,6 +3772,22 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   request against a full backlog); nothing runs per tick.
 
 ## Live reload
+
+Private engine regression checks, from the outer repository root:
+
+```sh
+# A disposable copy of a save, running 2.0.77 headless with Space Age and agent-harness enabled,
+# auto_pause=false, and RCON published only on localhost at a separate port (27197 here).
+npm --prefix vendor/factorio-harness run build
+POG_WORLD=autowalkcheck POG_RCON_PORT=27197 POG_RCON_PASSWORD_FILE=/absolute/path/private-rcon.pw bin/fh deploy
+python3 tools/test_autowalk_private.py --port 27197 --password-file /absolute/path/private-rcon.pw
+```
+
+`test_autowalk_private.py` creates a temporary bot and surface, supplies test items, and checks completed game
+effects as well as CLI replies. It finds a worm in the copied save and uses the same prototype for the enemy
+checks. The bot and surface are removed in its cleanup. It refuses the ports assigned to pog worlds. The copy's
+normal production continues; the script is for a disposable server, not the live world. Lua sent by this script
+is checked for one-line comments before sending. The server and copied save are removed separately after testing.
 
 ```sh
 fh deploy   # bundle runtime.lua and its sibling modules, validate, swap in

@@ -215,6 +215,10 @@ already targets your character.
   `--args '{"history":"all","pending":10}'` shows more.
   `queue_submit` into a repeat requires explicit `mode`: `replace` stops it, `ahead` interrupts/restarts an absolute-goal step, `append` waits behind this round; refusal names the job.
   `queue_repeat {condition: {until: ...}}` ends at a round boundary when met (before round one too); `feed up_to:true` ending `out_of_items` exits 0 from `--wait`/`fh wait`, with moved and stops left.
+- Out of reach within 32 tiles, `transfer`, `collect`, `feed`, `rearm`, `refuel`, `mine`, `build`, `rotate` and
+  `configure` (modules by hand, a recipe change on a stocked machine) walk into reach first and then act, the reply's
+  `walking` line saying so; past 32 tiles the refusal names the same call with `"walk": true`; `"walk": false` refuses.
+  The destination is checked for enemies again when the call starts; a new worm in a previously clear area is included.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` (and `feed` or `collect {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one

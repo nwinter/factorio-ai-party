@@ -439,8 +439,34 @@ p.build_from_cursor=function()
   p.cursor_stack.count=p.cursor_stack.count-1
   placed={valid=true,name='wooden-chest',type='container',position={x=2.5,y=0.5},force=p.force}
 end
-fails(function() call('build',{item='wooden-chest',position={x=20,y=0}}) end,'position is out of build reach: (20,0) is 20.0 tiles from the character at (0.0,0.0), build reach 10')
-fails(function() call('build',{item='wooden-chest',position={x=40,y=0}}) end,'position is outside local visible area: (40,0) is 40.0 tiles from the character')
+fails(function() call('build',{item='wooden-chest',position={x=20,y=0},walk=false}) end,'position is out of build reach: (20,0) is 20.0 tiles from the character at (0.0,0.0), build reach 10')
+fails(function() call('build',{item='wooden-chest',position={x=40,y=0},walk=false}) end,'position is outside local visible area: (40,0) is 40.0 tiles from the character')
+-- Out of reach by default (autowalk.lua): within 32 tiles a walk into build reach first; past them refused, naming the
+-- call that walks.
+;(function()
+  local r=call('build',{item='wooden-chest',position={x=20,y=0}})
+  eq(r.walking_for,'build'); eq(r.walking,'(20,0) is 20.0 tiles from you, build reach 10: walking into reach first (walk: false refuses instead)')
+  eq(call('status').active.kind,'move_to'); eq(call('status').active.walking_for,'build'); call('stop',{})
+  eq(call('status').last.not_made,'build was not made: the walk into reach of (20,0) ended stopped')
+  -- The walk arrives within build reach: the build is made there; last names the walk and holds the build's reply.
+  call('build',{item='wooden-chest',position={x=20,y=0}})
+  p.position={x=12,y=0}; advance(2)
+  local last=call('status').last
+  eq(call('status').active,false); eq(last.kind,'build'); eq(last.outcome,'done'); eq(last.result.consumed,1)
+  eq(last.walked,'walked from (0,0) to (12,0) first, into reach of (20,0)')
+  wood.count=wood.count+1; p.position={x=0,y=0}; placed=nil
+  -- As a queue step the step waits for the walk and the build, then the plan goes on.
+  call('queue_submit',{steps={{action='build',args={item='wooden-chest',position={x=20,y=0}}},{action='wait_ticks',args={ticks=1}}}})
+  advance(2)
+  local q=call('queue_status',{history=2})
+  eq(q.active.action,'build'); eq(call('status').active.walking_for,'build')
+  p.position={x=12,y=0}; advance(4)
+  q=call('queue_status',{history=2})
+  eq(q.pending_count,0); eq(q.history[#q.history].action,'wait_ticks'); eq(q.history[#q.history-1].action,'build'); eq(q.history[#q.history-1].ok,true)
+  wood.count=wood.count+1; p.position={x=0,y=0}; placed=nil
+  fails(function() call('build',{item='wooden-chest',position={x=40,y=0}}) end,
+    'position is outside local visible area: (40,0) is 40.0 tiles from the character at (0.0,0.0) (limit 32 tiles, in a visible chunk; move_to within 30 tiles first); 40.0 tiles is past the 32 a call walks by default: build {"item":"wooden-chest","position":{"x":40,"y":0},"walk":true} walks there first')
+end)()
 local built=call('build',{item='wooden-chest',position={x=2,y=0}})
 eq(built.consumed,1); eq(built.entity.position.x,2.5); eq(built.entity.position.y,0.5)
 eq(wood.count,2); eq(p.cursor_stack.valid_for_read,false); eq(built.closed_in,nil)
@@ -1082,12 +1108,30 @@ eq(call('configure',{position=am.position,recipe='iron-gear-wheel',force=true}).
 am.fluidbox={}
 p.can_reach_entity=function() return false end
 for _,slots in pairs(am_slots) do slots.is_empty=function() return not slots[1].valid_for_read end end
+call('queue_cancel',{}); call('queue_submit',{steps={{action='wait_ticks',args={ticks=1000}}}}); advance(1)
 local remote_change=call('configure',{position=am.position,recipe='copper-cable'})
 eq(remote_change.recipe,'copper-cable'); eq(remote_change.remote,true)
+eq(call('queue_status').paused,false); eq(call('queue_status').active.action,'wait_ticks')
 plate_stack.name,plate_stack.count,plate_stack.valid_for_read='iron-plate',4,true
-fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel'}) end,'remote recipe change: the machine at (3,0) holds items')
+fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel',walk=false}) end,'remote recipe change: the machine at (3,0) holds items')
+-- By default the character walks into reach first and changes it there (autowalk.lua): the call is character work.
+;(function()
+  am.bounding_box={left_top={x=1.5,y=-1.5},right_bottom={x=4.5,y=1.5}}
+  local r=call('configure',{position=am.position,recipe='iron-gear-wheel'})
+  eq(r.walking_for,'configure'); eq(call('queue_status').paused,true)
+  assert(r.walking:find('the machine holds items or is mid-craft, which come back to you only in reach: assembling-machine-1 (3,0) is ',1,true),r.walking)
+  eq(call('status').active.walking_for,'configure'); call('stop',{})
+  am.bounding_box=nil
+end)()
 p.can_reach_entity=function() return true end
 eq(call('configure',{position=am.position,recipe='iron-gear-wheel'}).remote,nil)
+-- Freshness/autowalk merge: an aboard proxy throws on body reads, yet configure remains remote.
+do
+  local nobody=setmetatable({surface=p.surface,force=p.force},{__index=function() error('aboard with no body',0) end})
+  eq(runtime.remote(nobody,'configure',{surface=p.surface.name,position=am.position,modules={'productivity-module'}}),true)
+  eq(runtime.remote(nobody,'configure',{platform='Sunward',position=am.position,modules={'productivity-module'}}),true)
+end
+
 -- A turret's priority targets and Ignore unprioritised targets (Astra, shift12 15:02: Sunward's rocket turrets on big
 -- asteroids only), built and ghost. The fake keeps slots as 2.0.77 does: a set past the end appends; a cleared slot
 -- leaves a gap that get_priority_target reads as nil and priority_targets skips; trailing gaps shrink the list.
@@ -3279,7 +3323,11 @@ advance(6); eq(call('status').active,false); eq(call('status').last.outcome,'dur
 -- inspect is a read: anything in sight, no reach needed; in_reach says so.
 p.can_reach_entity=function() return false end
 local far=call('inspect',{position=ins.position}); eq(far.in_reach,false); eq(far.io,'2.5,-0.5 (no pickup target) -> 2.5,1.7 transport-belt')
-fails(function() call('rotate',{position=ins.position}) end,'out of reach')
+fails(function() call('rotate',{position=ins.position,walk=false}) end,'out of reach')
+-- By default it walks into reach first (autowalk.lua).
+ins.bounding_box={left_top={x=2.15,y=-0.35},right_bottom={x=2.85,y=0.35}}
+local turn=call('rotate',{position=ins.position}); eq(turn.walking_for,'rotate'); call('stop',{})
+ins.bounding_box=nil
 p.can_reach_entity=function() return true end
 -- build short of an item the hand-craft queue is making waits for it, then builds.
 p.force.recipes={lab={products={{name='lab',amount=1}},energy=2}}
@@ -3501,13 +3549,21 @@ end)()
   eq(call('transfer',{position=car.position,item='iron-plate',count=2,direction='from_player'}).transferred,2); eq(car.slots[1].name,'iron-plate')
   eq(call('transfer',{position=car.position,item='iron-plate',count=2,direction='to_entity',to_entity=true}).transferred,2)
   eq(call('transfer',{position=car.position,item='iron-plate',direction='take'}).transferred,4)
-  -- Out of reach: how far, the reach, and a free spot that reaches it; nothing walks.
+  -- Out of reach with walk: false: how far, the reach, and a free spot that reaches it; nothing walks.
   p.surface.find_non_colliding_position=function(_,pos) return {x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5} end
-  fails(function() call('transfer',{position=far.position,item='iron-plate',count=1,direction='to_entity'}) end,
+  fails(function() call('transfer',{position=far.position,item='iron-plate',count=1,direction='to_entity',walk=false}) end,
     'entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away (to its edge), reach 10; in reach from (10.5,0.5)')
   eq(call('status').active,false)
+  -- By default (autowalk.lua) it walks there first, as walk: true does, and says so.
+  local walking=call('transfer',{position=far.position,item='iron-plate',count=1,direction='to_entity'})
+  eq(walking.op,'transfer'); eq(walking.out_of_reach,1)
+  eq(walking.walking,'wooden-chest (20,0) is 20.0 tiles away (to its edge), reach 10: walking into reach first (walk: false refuses instead)')
+  eq(call('status').active.kind,'gather'); call('stop',{})
+  local several=call('transfer',{positions={req.position,far.position},item='iron-plate',count=5,direction='to_entity'})
+  eq(several.walking,'1 of 2 places are out of reach (the farthest: wooden-chest (20,0) is 20.0 tiles away (to its edge), reach 10): walking to them first, nearest first (walk: false refuses instead)')
+  call('stop',{})
   -- Several targets, one failing: the tally names the moved total, the targets touched and the failure.
-  local spread=call('transfer',{positions={req.position,big.position,far.position},item='iron-plate',count=5,direction='to_entity'})
+  local spread=call('transfer',{positions={req.position,big.position,far.position},item='iron-plate',count=5,direction='to_entity',walk=false})
   eq(spread.transferred,10)
   eq(spread.tally,'moved 10 iron-plate; 2 of 3 targets touched; short: 1 failed (entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away (to its edge), reach 10; in reach from (10.5,0.5))')
   -- One target: no tally.
