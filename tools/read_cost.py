@@ -102,6 +102,10 @@ def reads(bot="sol"):
         "votes": ("viewer relay 60 s: operator read", op("votes")),
         "blueprint_library": ("bplibrary 60 s: operator read", op("blueprint_library")),
         "idle_report": ("idle nudge 60 s: operator read", op("idle_report")),
+        "census_extras": ("inside extras: operator read census", op("census", {"part": "extras"})),
+        "census_basemap": ("inside basemap: operator read census", op("census", {"part": "basemap"})),
+        "census_snapshot": ("inside snapshot: operator read census", op("census", {"part": "snapshot"})),
+        "census_machines": ("inside machines: operator read census", op("census", {"part": "machines"})),
     }
 
 
