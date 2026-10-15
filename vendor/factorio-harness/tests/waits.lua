@@ -175,3 +175,21 @@ end
 p.character={valid=true,health=250}; mode='turns'
 W.handlers.sleep(p,{seconds=900}); eq(advanced,36000)
 print('waits: ok')
+
+-- Both lanes can wake a sleep; remote completion does not depend on body work.
+do
+  game.tick=game.tick+10000
+  s.sleeps=nil; s.last_wakes=nil; s.queues=nil; s.active={[1]={kind='walk'}}
+  s.remote_queues={[1]={paused=false,pending={},current={id='job-1',action='wait_until'},history={}}}
+  local r=W.handlers.sleep(p,{seconds=60})
+  assert(r.while_asleep:find('remote queue keeps running',1,true))
+  local q=s.remote_queues[1]
+  q.current=nil; q.history={{ok=true,finished_tick=game.tick+1}}
+  game.tick=game.tick+2
+  r=W.handlers.sleep_check(p,{peek=true})
+  eq(r.woke,'queue_done'); eq(r.queue_lane,'remote'); eq(r.remote_queue_steps,1); eq(s.active[1].kind,'walk')
+  game.tick=game.tick+10000; s.sleeps=nil
+  q.current={id='job-2',action='wait_until'}; q.paused=false
+  W.handlers.sleep(p,{seconds=60}); q.paused=true
+  r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'queue_stalled'); eq(r.queue_lane,'remote')
+end

@@ -696,6 +696,53 @@ return function(api)
       end
     end
   end
+  -- Belt planning: memoize the discs around each tile chunk, not a fresh goal check per A* tile.
+  -- Reads only charted chunks, shared with destination checks in this tick; no surface-wide scan.
+  function M.route_guard(p, value)
+    if value==nil or value==false then return nil end
+    local mode=M.mode(value)
+    local by_chunk={}
+    local stats={chunks=0}
+    local function around(x,y)
+      if p.surface.platform~=nil then return {} end
+      local cx,cy=math.floor(x/32),math.floor(y/32)
+      local k=cx..','..cy
+      local discs=by_chunk[k]
+      if not discs then
+        discs={}; by_chunk[k]=discs; stats.chunks=stats.chunks+1
+        -- A chunk corner is less than 23 tiles from its centre.
+        read_discs(p,mode,{x=cx*32+16,y=cy*32+16},discs,{},max_reach(mode)+23)
+      end
+      return discs
+    end
+    local function blocked(x,y)
+      local point={x=x+0.5,y=y+0.5}
+      for _,m in ipairs(around(x,y)) do
+        if dist(point,m)<m.r then
+          return string.format('%s %s: within %g tiles (reach %g + clearance %g)',m.name,at(m),m.r,m.range,mode.pad)
+        end
+      end
+    end
+    local function guide(a,b)
+      local members,seen={},{}
+      local steps=math.max(1,math.ceil(dist(a,b)/32))
+      for i=0,steps do
+        for _,m in ipairs(around(a.x+(b.x-a.x)*i/steps,a.y+(b.y-a.y)*i/steps)) do
+          local k=member_key(m)
+          if not seen[k] then
+            seen[k]=true
+            members[#members+1]={x=m.x,y=m.y,r=m.r}
+          end
+        end
+      end
+      assert(#members<=32,'enemy clearance guide exceeds 32 nearby hazards')
+      -- Strict clearance: no move_to margin relaxation. The tile search rechecks snapped corners.
+      local vias=M.detour(a,b,{{members=members}},{})
+      assert(vias,'no route outside the requested enemy clearance')
+      return vias
+    end
+    return blocked,M.describe(mode),max_reach(mode)+2,stats,guide
+  end
   -- The weapon whose own reach holds goal deepest: {m, d}, nil when none.
   local function deepest(discs, goal)
     local inside

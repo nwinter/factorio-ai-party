@@ -64,3 +64,8 @@ clock.handlers.clock(p,{mode='turns'}); game.tick_paused=false
 game.connected_players={}; tick(); eq(game.tick_paused,false)
 game.connected_players={p}; tick(); eq(game.tick_paused,true)
 
+
+-- A remote lane alone holds the turn clock open.
+s.remote_queues={[1]={paused=false,pending={},current={action='wait_until'}}}
+clock.after_dispatch(); eq(game.tick_paused,false)
+s.remote_queues[1].paused=true; tick(); eq(game.tick_paused,true)

@@ -29,8 +29,8 @@ return function(api)
     s.sleeps = s.sleeps or {}
     return s.sleeps
   end
-  local function queue_of(index)
-    local qs = api.state().queues
+  local function queue_of(index,remote)
+    local qs = api.state()[remote and 'remote_queues' or 'queues']
     return qs and qs[index]
   end
   local function running(q)
@@ -48,7 +48,7 @@ return function(api)
     return {until_tick=until_tick, wake_on_messages=a.wake_on_messages}
   end
   -- What keeps going while the agent sleeps, in one line (the reply's first).
-  local function asleep_line(p, record, seconds)
+  local function body_asleep_line(p, record, seconds)
     if record.dead_until then return 'dead: you respawn at tick ' .. record.dead_until end
     local q = queue_of(p.index)
     if running(q) then
@@ -64,6 +64,16 @@ return function(api)
       return string.format('your %s keeps going, then your character stands idle%s', active.kind or 'action', held)
     end
     return string.format('no queue and no action: your character stands idle for up to %d s%s', seconds, held)
+  end
+  local function asleep_line(p,record,seconds)
+    local line=body_asleep_line(p,record,seconds)
+    local q=queue_of(p.index,true)
+    if running(q) then
+      line=line:gsub('^no queue and no action','no body queue or body action'):gsub('^your queue','your body queue')
+      line=line..string.format('; remote queue keeps running (%s%d steps pending%s); this sleep ends when either lane finishes or stalls',
+        q.current and q.current.action..' running, ' or '',#q.pending,q.loop and ', repeating' or '')
+    end
+    return line
   end
   -- A sleep started right after a wake on an event (a shell loop of sleeps:
   -- shake5-6, Opus and Sonnet) ends at once and repeats that wake, so the
@@ -96,7 +106,7 @@ return function(api)
       while_asleep=out.while_asleep}
     sleeps()[p.index] = record
     return {while_asleep=out.while_asleep,
-      sleeping_s=0, until_tick=game.tick, ['repeat']=true, woke=woke, mention=out.mention, tell=out.tell, board=out.board, queue=out.queue}
+      sleeping_s=0, until_tick=game.tick, ['repeat']=true, woke=woke, mention=out.mention, tell=out.tell, board=out.board, queue=out.queue, queue_lane=out.queue_lane, remote_queue_steps=out.remote_queue_steps}
   end
   function M.handlers.sleep(p, a)
     local seconds = api.integer(a.seconds, nil, 1, MAX_TICKS / 60, 'seconds (1..900)')
@@ -163,6 +173,7 @@ return function(api)
     record.egg_seq = api.egg_seq and api.egg_seq() or nil
     local q = queue_of(p.index)
     if running(q) then record.queue = true end
+    if running(queue_of(p.index,true)) then record.remote_queue=true end
     if plain then record.alert_seq = api.state().alert_seq or 0 end
     if kinds then
       local starved, rest = false, {}
@@ -223,8 +234,8 @@ return function(api)
       end
     end
   end
-  local function queue_why(p, record, out)
-    local q = queue_of(p.index)
+  local function queue_why(p, record, out, remote)
+    local q = queue_of(p.index,remote)
     if not q or q.paused then
       out.queue = q and failure(q, record.start_tick) or 'paused (see queue_status)'
       return 'queue_stalled'
@@ -330,6 +341,10 @@ return function(api)
       local reason = queue_why(p, record, out)
       if reason then return reason end
     end
+    if record.remote_queue then
+      local reason=queue_why(p,record,out,true)
+      if reason then out.queue_lane='remote'; return reason end
+    end
     if game.tick >= record.until_tick then return 'elapsed' end
   end
   function M.handlers.sleep_check(p, a)
@@ -346,6 +361,14 @@ return function(api)
         if q.history[i].ok then n = n + 1 end
       end
       out.queue_steps = n
+    end
+    if out.woke and record.remote_queue then
+      local q=queue_of(p.index,true)
+      local n=0
+      for _,h in ipairs(q and q.history or {}) do
+        if (h.finished_tick or 0)>=record.start_tick and h.ok then n=n+1 end
+      end
+      out.remote_queue_steps=n
     end
     -- The first reason sticks, so the final (non-peek) read repeats it.
     if out.woke then record.woke = out.woke; record.out = record.out or out end

@@ -176,6 +176,11 @@ do
   force.platforms={{valid=true,name='Sunward',surface=ps,hub={position={x=0,y=0}}}}
   local view=grok('observe',{platform='Sunward',radius=16,tiles=true})
   eq(view.platform,'Sunward');eq(view.position.x,0);eq(view.player,nil)
+  grok('queue_submit',{lane='remote',steps={{action='wait_ticks',args={ticks=2}},
+    {action='observe',args={platform='Sunward',radius=16}}}})
+  for _=1,4 do game.tick=game.tick+1;runtime.tick{tick=game.tick} end
+  local q=grok('queue_status',{lane='remote'})
+  eq(q.paused,false);eq(q.active,false);eq(#q.history,2);eq(q.history[2].ok,true)
   bot.character=saved;bot.travel=nil
 end
 print('bodiless platform observe: ok')

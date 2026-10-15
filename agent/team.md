@@ -76,6 +76,8 @@ already targets your character.
   20 minutes can be taken the same way; the owner hears it.
 - `./fh board update --args '{"id":N,"title":"...","needs":{"iron-plate":300}}'` corrects an item's title and what it
   asks for (its poster or owner; anyone after the same 20 quiet minutes); `board {id}` keeps the change in `history`.
+- `queue_submit {lane:"remote",steps:[...]}` runs platform waits, drops, schedules, platform configuration and body-independent reads alongside body work; queue controls accept the same lane, and status shows both.
+- `drill_sites {position,surface?}` lists nearest visible same-resource placements for one depleted drill, with mining-area amounts and placement checks; `resource` supplies the name if no previous mining target was recorded.
 - `./fh view platform=Sunward --out sunward.png` shows platform foundation and structure footprints; `agriculture {surface:"gleba"}` lists towers, ghosts and recorded tower-loss positions.
 - `game_alerts {kind:"no_power"}` groups connected machines without power by electric network, including isolated drill networks; `move_to` reports narrow-corridor margin crossings in `last.passed_within_margin`.
 - `inspect` reads any entity on your surface in a chunk our radars see, by remote view (`by: remote view`); out of
@@ -230,6 +232,8 @@ already targets your character.
 - `build`/`construct` report pre-action `materials` (need, held, missing, queued, hand_craftable). Build's existing `dry_run` includes them; `construct {dry_run:true}` checks ghost materials without acting.
 - `sleep --until "tell|alert"` and `wait --until` accept the same joined events; `wait_until {until:"item_count", platform, item, at_least}` waits for landed hub stock in sleep, queue steps and guards (incoming cargo and hub trash excluded).
   `feed {area, walk:true}` already tours successive groups; `out_of_reach` is the initial count, `last.visited` the stops reached; exhausted carried items and fuel slots holding another fuel limit delivery.
+- `order_set` can take fuel from a named chest then `feed {area, walk:true}` over several furnace areas on `fuel_below`; the complete `keep-furnaces-fueled` call is in usage.md.
+  `belt_route {avoid_enemies: N}` keeps belts, underground spans and returns outside charted enemy reach plus N tiles (0..32; true=8; omitted/false disables); endpoints inside are refused.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` (and `feed` or `collect {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one

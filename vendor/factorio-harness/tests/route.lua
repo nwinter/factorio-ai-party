@@ -269,4 +269,68 @@ do
   eq(r.route,'E2 uE5 E2')
   blocked={}
 end
+-- Opt-in hazard tiles are barriers, including every underground span and a return line.
+reset()
+local probes=0
+local safe=dofile('mod/agent-harness_0.1.0/route.lua'){
+  position=function(v) return v end,directions={north=0,east=4,south=8,west=12},
+  chunk_of=function(pos) return {x=math.floor(pos.x/32),y=math.floor(pos.y/32)} end,
+  route_guard=function(_,value)
+    if value==nil or value==false then return nil end
+    return function(x,y)
+      probes=probes+1
+      if (x-40)^2+y*y<30^2 then return 'spawner clearance' end
+    end,'test clearance',60,{chunks=1}
+  end}
+local function clear_plan(plan)
+  local entrance
+  for _,e in ipairs(plan.entities) do
+    local x,y=e.position.x-0.5,e.position.y-0.5
+    assert((x-40)^2+y*y>=30^2,'belt inside hazard')
+    if e.type=='input' then entrance=e
+    elseif e.type=='output' then
+      assert(entrance)
+      local dx,dy=e.position.x-entrance.position.x,e.position.y-entrance.position.y
+      local n=math.abs(dx)+math.abs(dy)
+      for i=1,n-1 do
+        local xx,yy=entrance.position.x-0.5+dx*i/n,entrance.position.y-0.5+dy*i/n
+        assert((xx-40)^2+yy*yy>=30^2,'underground crosses hazard')
+      end
+    end
+  end
+end
+local guarded=safe.plan(p,{from={x=0,y=0},to={x=80,y=0},avoid_enemies=8,['return']=true})
+clear_plan(guarded); eq(guarded.avoid_enemies,'test clearance'); eq(guarded.cost.hazard_chunks,1)
+assert(guarded.tiles>80,'detour leaves the original 24-tile search margin')
+fails(function() safe.plan(p,{from={x=40,y=0},to={x=80,y=0},avoid_enemies=8}) end,'from')
+fails(function() safe.plan(p,{from={x=0,y=0},to={x=40,y=0},avoid_enemies=8}) end,'inside enemy clearance')
+fails(function() safe.plan(p,{from={x=0,y=0},to={x=80,y=0},via={{x=40,y=0}},avoid_enemies=8}) end,'via 1')
+local before=probes
+local direct=safe.plan(p,{from={x=0,y=0},to={x=80,y=0},avoid_enemies=false})
+eq(direct.tiles,81); eq(probes,before,'disabled guard does no hazard reads')
+-- The real avoidance guide splits a 480-tile line around a spawner within the existing A* budget.
+reset()
+local old_find=surface.find_entities_filtered
+surface.index=1; mine.name='player'
+local enemy={name='enemy'}
+game={tick=1,forces={mine,enemy}}
+local hazards={{valid=true,name='biter-spawner',type='unit-spawner',position={x=240.5,y=0.5},force=enemy}}
+local reads=0
+surface.find_entities_filtered=function(f)
+  if type(f.force)=='table' and f.force[1]=='enemy' then reads=reads+1; return hazards end
+  return old_find(f)
+end
+local memory={}
+local avoid=require('avoid'){state=function() return memory end,charted=function() return true end}
+local guided=dofile('mod/agent-harness_0.1.0/route.lua'){
+  position=function(v) return v end,directions={north=0,east=4,south=8,west=12},
+  chunk_of=function(pos) return {x=math.floor(pos.x/32),y=math.floor(pos.y/32)} end,route_guard=avoid.route_guard}
+local long=guided.plan(p,{from={x=0,y=0},to={x=480,y=0},avoid_enemies=8})
+assert(long.avoidance_waypoints>0); assert(long.cost.expansions<=8000); assert(reads<400,'chunk-local hazard reads')
+for _,e in ipairs(long.entities) do assert((e.position.x-240.5)^2+(e.position.y-0.5)^2>=48^2) end
+-- The chart check is before the engine query: hidden enemies do not affect the guide.
+local hidden=require('avoid'){state=function() return {} end,charted=function() return false end}
+local block,_,_,_,guide=hidden.route_guard(p,8)
+local n=reads; eq(block(240,0),nil); eq(#guide({x=0,y=0},{x=480,y=0}),0); eq(reads,n)
+surface.find_entities_filtered=old_find
 print('route: ok')

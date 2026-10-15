@@ -1,6 +1,7 @@
 -- Short-horizon plans execute at simulation speed. No coroutines or host clock.
 return function(api)
   local M = {handlers={}}
+  local QUEUES=api.queue_key or 'queues'
   local MAX_PENDING, MAX_HISTORY, MAX_INSTANT, MAX_BYTES, MAX_GUARDS, CHECK_TICKS = 128, 64, 4, 1048576, 8, 10
   -- Outcomes of timed actions that count as the step succeeding.
   local SUCCESS={duration_elapsed=true,target_mined=true,repair_completed=true,arrived=true,arrived_near=true,path_built=true,constructed=true,nothing_to_do=true,clear=true,fed=true,collected=true,topped_up=true,target_destroyed=true,dropped=true,transferred=true,picked_up=true,
@@ -15,9 +16,9 @@ return function(api)
     order_set=true, order_remove=true, orders=true, orders_pause=true, orders_resume=true}
   local function queue(index)
     local s=api.state()
-    s.queues=s.queues or {}
-    s.queues[index]=s.queues[index] or {revision=0,sequence=0,pending={},history={},paused=true}
-    return s.queues[index]
+    s[QUEUES]=s[QUEUES] or {}
+    s[QUEUES][index]=s[QUEUES][index] or {revision=0,sequence=0,pending={},history={},paused=true}
+    return s[QUEUES][index]
   end
   local function revision(q,a)
     if a.expected_revision~=nil then assert(a.expected_revision==q.revision,'queue revision conflict; inspect queue_status') end
@@ -48,7 +49,8 @@ return function(api)
             if not fix.quiet then corrected[#corrected+1]='step '..i..': '..fix.call..' ('..table.concat(fix.notes,'; ')..')' end
           elseif ok and fixed_args~=args then action,args=fixed_action,fixed_args end
         end
-        assert(not action:match('^queue_') and not forbidden[action],'action is not queueable')
+        assert(not action:match('^queue_') and (api.check_step or not forbidden[action]),'action is not queueable')
+        if api.check_step then api.check_step(action,args or {}) end
         assert(action=='wait_ticks' or action=='wait_until' or api.handlers[action],'unknown action in plan')
         assert(args==nil or type(args)=='table','step args must be an object')
         if api.check_args then checked('args',function() api.check_args(action,args) end) end
@@ -118,7 +120,10 @@ return function(api)
     for i,g in ipairs(a.guards) do
       checked('guards['..i..']',function()
         assert(type(g)=='table','each guard is {when, goto|steps}')
-        checked('when',function() api.validate_condition(g.when) end)
+        checked('when',function()
+          api.validate_condition(g.when)
+          if api.check_step then api.check_step('wait_until',g.when) end
+        end)
         if p and api.check_action then api.check_action(p.index,'wait_until',g.when) end
         assert(g['goto']==nil or type(g['goto'])=='string','guard goto must be a label')
         assert(not (g['goto'] and g.steps),'a guard takes goto or steps, not both')
@@ -239,7 +244,7 @@ return function(api)
   end
   -- The round lines not yet shown to the agent (the reply's team block).
   function M.round_news(index)
-    local q=(api.state().queues or {})[index]
+    local q=(api.state()[QUEUES] or {})[index]
     local lines=q and q.round_news
     if lines then q.round_news=nil end
     return lines
@@ -352,7 +357,7 @@ return function(api)
   -- Standing orders (orders.lua) run in the agent's own queue while it is
   -- free: no step running or pending and no repeating plan.
   function M.free(index)
-    local q=(api.state().queues or {})[index]
+    local q=(api.state()[QUEUES] or {})[index]
     return not q or (not q.current and #q.pending==0 and not q.loop)
   end
   -- Between the rounds of a repeating plan (Opus, shift13: orders never ran while Opus's queue repeated, so turret rearm
@@ -360,14 +365,14 @@ return function(api)
   -- next: when the next round is due (it waits for an order that runs then); orders: which may run (queue_repeat
   -- orders: triggers, the default; all; none).
   function M.resting(index)
-    local q=(api.state().queues or {})[index]
+    local q=(api.state()[QUEUES] or {})[index]
     if not (q and q.loop and not q.paused and not q.current and #q.pending==0 and not q.order) then return nil end
     local next_tick=q.next_cycle_tick or game.tick+(q.interval or 0)
     return {since=next_tick-(q.interval or 0),next=next_tick,orders=q.orders or 'triggers'}
   end
   -- A repeating plan that is not paused: which orders may run between its rounds (orders.lua's line).
   function M.loop_orders(index)
-    local q=(api.state().queues or {})[index]
+    local q=(api.state()[QUEUES] or {})[index]
     return q and q.loop and not q.paused and (q.orders or 'triggers') or nil
   end
   function M.run_order(index,name,items,reason)
@@ -382,14 +387,14 @@ return function(api)
   end
   -- The running order: name, reason, its step number and count.
   function M.order(index)
-    local q=(api.state().queues or {})[index]
+    local q=(api.state()[QUEUES] or {})[index]
     if not (q and q.order) then return nil end
     local o=q.order
     return {name=o.name,reason=o.reason,total=o.total,started_tick=o.started_tick,step=math.max(1,math.min(o.total,o.total-#q.pending))}
   end
   -- Ends the running order at once (removed, over its time): outcome and reason for orders.lua.
   function M.cancel_order(index,outcome,why)
-    local q=(api.state().queues or {})[index]
+    local q=(api.state()[QUEUES] or {})[index]
     if not (q and q.order) then return end
     local name=q.order.name
     if q.current then record(q,q.current,false,{reason=why}); q.current=nil end
@@ -398,7 +403,7 @@ return function(api)
     q.order_result={name=name,outcome=outcome,reason=why,tick=game.tick}
   end
   function M.order_result(index)
-    local q=(api.state().queues or {})[index]
+    local q=(api.state()[QUEUES] or {})[index]
     local r=q and q.order_result
     if r then q.order_result=nil end
     return r
@@ -410,7 +415,7 @@ return function(api)
   -- A repeating plan resting between cycles runs nothing, so a runtime
   -- replacement leaves it scheduled instead of pausing the loop.
   function M.pause_all()
-    for index,q in pairs(api.state().queues or {}) do
+    for index,q in pairs(api.state()[QUEUES] or {}) do
       local resting=q.loop and not q.current and #q.pending==0 and not (api.state().active or {})[index]
       if not resting then M.pause(index) end
     end
@@ -523,6 +528,7 @@ return function(api)
     if a.condition~=nil then
       checked('condition',function()
         api.validate_condition(a.condition)
+        if api.check_step then api.check_step('wait_until',a.condition) end
         if api.check_action then api.check_action(p.index,'wait_until',a.condition) end
       end)
     end
@@ -583,7 +589,7 @@ return function(api)
     return fn(...)
   end
   function M.tick()
-    for index,q in pairs(api.state().queues or {}) do
+    for index,q in pairs(api.state()[QUEUES] or {}) do
       if not q.paused then
         -- A vehicle step (a drive, getting in or out) runs with the character seated, as a direct vehicle call does;
         -- any other step needs it on foot: the lookup refuses a seated one and the plan pauses, as before
@@ -648,7 +654,7 @@ return function(api)
           -- A plan submitted while a direct command still drives the
           -- character runs after it, as if it had been the plan's first step.
           q.after_direct=nil
-          if not q.paused and not q.current and #q.pending>0 and api.direct_action then q.after_direct=api.direct_action(p) end
+          if not q.paused and not q.current and #q.pending>0 and api.direct_action then q.after_direct=api.direct_action(p,q.pending[1].action) end
           for _=1,MAX_INSTANT do
             if q.paused or q.current or q.after_direct or #q.pending==0 then break end
             local step=table.remove(q.pending,1)
@@ -657,7 +663,8 @@ return function(api)
             -- Every step started counts as the agent's (selfview.lua my_hour).
             if api.on_step then pcall(api.on_step,index,step.action) end
             local allowed,why=true,nil
-            if api.check_action then allowed,why=pcall(api.check_action,index,step.action,step.args) end
+            if api.check_step then allowed,why=pcall(api.check_step,step.action,step.args) end
+            if allowed and api.check_action then allowed,why=pcall(api.check_action,index,step.action,step.args) end
             if not allowed then
               fail(q,p,step,{reason=api.reason and api.reason(why) or tostring(why)})
             elseif step.action=='wait_ticks' then

@@ -385,6 +385,16 @@ fh call status
     charted ground within 24 tiles of each leg's ends, and each leg (from, `via` points in order, to) is at most 1000
     tiles. The line may spend 8000 placement checks and 8000 expansions; with its return line, 12000 and 13000 in all.
     One call lays at most 2048 belts and undergrounds (both lines; a dry run checks as many).
+  - `avoid_enemies: true` keeps the line outside charted worms' range + 8 tiles, spawners' 40 + 8 tiles,
+    and current attack areas' 24 + 8 tiles. A number `0..32` sets that extra clearance; omitted or `false`
+    leaves the existing placement-only search. The check includes every underground span and the return line.
+    A start, end or via point inside the clearance is refused with the hazard named. Search windows expand to
+    `max(24, 50 + clearance)` tiles around each leg's ends; placement/expansion budgets remain unchanged.
+    The existing detour geometry supplies automatic waypoints (at most 64, with at most 32 nearby hazards per
+    leg). The reply includes `avoid_enemies`, `avoidance_waypoints` and `cost.hazard_chunks` (tile chunks whose
+    nearby hazards were read).
+    `belt_route {"from":{"x":0.5,"y":0.5},"to":{"x":480.5,"y":0.5},"avoid_enemies":12,"dry_run":true}`
+    plans with 12 tiles beyond those ranges. Pipes, poles and rails use separate planners and do not accept this option.
   - It never uses a tile one of our belts holds or outputs into. Turns cost a little; an underground pair costs more
     and hops anything but lava and empty space, never over one of the same kind on its axis.
   - Trees, rocks and wild plants are passed over at a small cost: the ghosts mark them for removal and `construct`
@@ -1255,6 +1265,42 @@ fh restore NAME [--args '{"minutes":30}']      # cancel their pending orders; gh
   and a manual ghost fits; counts `cancelled`, `ghosts`, `already` (rebuilt or ghosted), `blocked`. No items are
   created; each removal is restored once.
 
+## Remote queue lane
+
+`queue_submit`, `queue_repeat`, `queue_edit`, `queue_status`, `queue_cancel` and
+`queue_resume` accept `lane:"remote"`. Omitting `lane` selects the existing body
+queue; `lane:"body"` names it explicitly. Each lane has its own steps, history,
+revision, guards, repeat rounds and failure state. Body walks, transfers, local
+queue calls and `stop` leave the remote lane running. Remote submissions, failures
+and cancellations leave the body action and body queue running. Standing orders
+run only in the body lane; remote repeats accept only `orders:"none"` (the default
+for that lane).
+
+```sh
+fh queue submit --args '{"lane":"remote","steps":[{"action":"wait_until","args":{"until":"platform_arrived","platform":"Sunward","location":"gleba","timeout":36000}},{"action":"circuit_set","args":{"platform":"Sunward","position":{"x":-10,"y":9.5},"enable":"signal-B < 0"}},{"action":"drop","args":{"platform":"Sunward","items":[{"item":"iron-plate","count":100}],"full":true}}]}'
+fh queue status --args '{"lane":"remote"}'
+fh queue cancel --args '{"lane":"remote"}'
+```
+
+The remote lane accepts `wait_ticks`; `wait_until` with `platform_arrived`,
+`platform_left` or `researched`, or `item_count` with an explicit platform hub; `drop`, `platform_schedule`, `configure`,
+`circuit_set`, `circuit`, `wire`, `requests` and `flush` with an explicit `platform`;
+and read actions that need no body. `observe` requires `platform` or a scope other
+than `craftable` or `sleep_check`. `inventory`, `craftable`, `sleep_check`,
+`dry_run`, `screenshot`, body conditions and body actions are refused. Validation
+names the step or guard path and checks the entire submitted plan before changing
+the selected queue. `queue_edit` revisions refer to the selected lane.
+
+A full `drop` waits on the existing pod-dispatch channel. A competing drop finishes
+before the next queued remote drop starts. Already-started full drops continue
+sending their remaining pods after queue cancellation, as in the body lane.
+`queue_status` returns the selected lane in full and `lanes.body`/`lanes.remote`
+summaries; `status`, including `brief`, returns both under `queues`. `sleep` wakes
+when either running lane finishes or stalls; a remote wake has
+`queue_lane:"remote"` and `remote_queue_steps`. The turn clock stays running for
+either lane. Losing the actor or a runtime replacement pauses the remote lane;
+its pending steps remain available to `queue_resume {lane:"remote"}`.
+
 ## The in-game queue
 
 A queue plan runs inside the game, with no CLI round trip between steps:
@@ -1671,6 +1717,33 @@ fh sleep 900 --until researched                       # ...or until the research
     {"action":"feed","args":{"radius":20,"types":["boiler"],"item":"coal","up_to":true}}]}`.
     The feed radius is around the character after the take. For a chest-to-one-entity move, `transfer {from,to,item,count}`
     is already one take-and-give action. `from:"nearest"` includes feeding chests only with `feeding:true`.
+  - A single `order_set` installs a recurring chest-to-furnaces routine using existing steps. This example
+    triggers when any of our burners within 48 tiles of `(0,0)` holds fewer than 5 fuel items; it takes coal
+    from the chest at `(0,10)` up to 1200 carried, then tops furnaces in two fixed areas up to 20 coal each.
+    The trigger circle includes both areas and also counts any other burners in that circle. The feed steps
+    target only furnaces in the two rectangles, including ones above 5 but below 20. Each area accepts at most
+    64 targets. The character carries the fuel; no fuel is created or taken remotely.
+
+    ```sh
+    fh call order_set --args '{
+      "name":"keep-furnaces-fueled",
+      "when":{"until":"fuel_below","count":5,"position":{"x":0,"y":0},"radius":48},
+      "cooldown_ticks":1800,"max_ticks":18000,
+      "steps":[
+        {"action":"transfer","args":{"position":{"x":0,"y":10},"direction":"to_player",
+          "item":"coal","count":1200,"up_to":1200,"walk":true,"ticks":3600}},
+        {"action":"feed","args":{"area":{"left_top":{"x":-30,"y":-20},"right_bottom":{"x":-2,"y":20}},
+          "types":["furnace"],"fuel":"coal","fuel_count":20,"walk":true,"ticks":6000,"up_to":true}},
+        {"action":"feed","args":{"area":{"left_top":{"x":2,"y":-20},"right_bottom":{"x":30,"y":20}},
+          "types":["furnace"],"fuel":"coal","fuel_count":20,"walk":true,"ticks":6000,"up_to":true}}
+      ]}'
+    ```
+
+    The order starts while the character is free, after the existing hold (default 20 seconds); after a run it
+    checks again following the 30-second cooldown. Own character work interrupts it. A short chest load moves
+    what exists; a feed with `up_to:true` keeps its short count and continues. Fuel slots occupied by another fuel
+    are not replaced. Walking uses the usual enemy checks and the per-step tick budgets; the order's overall
+    budget here is 5 minutes. `orders` reports the run and last result; three failed runs disable the order.
   - `feed` rows (`entities`): each machine fed `{position, name, gave, fuel}`, `fuel` being its fuel slots after
     (`coal 10`, `solid-fuel 3`, `empty`); with `positions` or `area` also each machine that got nothing (`got:
     "nothing"`). Haiku's boilers in one call: `feed {"area": {...}, "types": ["boiler"], "fuel": true}` tops up every
@@ -2838,6 +2911,19 @@ fh sleep 900 --until researched                       # ...or until the research
   - `charging_queues`: roboports with robots waiting to charge (`roboport (9,55): 3 waiting, 4 charging`).
   - Robots in roboports are counts only (the engine lists only those in the air). It costs about as much as a plain
     read (about 2 ms a call with its dispatch, 4-5 ms with 38 in the air, on a copy of world n).
+- `drill_sites {position, surface?, resource?, radius?, limit?}` reads one depleted mining drill
+  (`no_minable_resources`, no mining target). It lists nearest visible centres where the same drill,
+  direction and quality pass the engine's manual placement check, with existing entities still present.
+  Each site has `position`, `distance`, `amount` and `tiles` for the same resource inside the drill's mining
+  area. The response includes the drill's `footprint`, `mining_radius`, `resource_source` and a one-line
+  summary. Sites are alternatives and may overlap each other; no entities are moved, marked or built.
+  The resource comes from the drill's last mining target recorded by the out-of-ore alert scan. If none
+  was recorded, the reply says so and returns no sites unless `resource` is supplied; an existing memory
+  must match it. `radius` is 2..24 (default 16), `limit` 1..8 (default 3). Dense areas reduce the search
+  radius until the read fits within 1024 resource tiles (`searched_radius`, `radius_reduced`); at most
+  128 placement checks run (`truncated` when that prevents completing the result). Every returned
+  mining area must be currently visible. Example:
+  `fh call drill_sites --args '{"surface":"vulcanus","position":{"x":69.5,"y":-89.5},"resource":"coal"}'`.
 - `fh call ores --args '{"resource":"iron-ore"}'` (read; optional `resource`: a name or a list, default every
   resource; `surface`: a planet; `position`: measure from there; `min_amount`; `limit` 1..100, default 20): every
   resource patch on the charted chunks of the surface, nearest first, the same for everyone apart from distances. A
