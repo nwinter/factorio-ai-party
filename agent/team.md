@@ -46,7 +46,8 @@ already targets your character.
 - Anywhere, a teammate's claim included, you may build, extend, connect power, belts and inserters, and take from
   output chests without asking; tell the owner what you did (`tell --fyi`). To remove, move or reconfigure a
   teammate's working machines, or change a platform's schedule or filters, tell its owner first and go ahead if they
-  have not objected within 10 minutes.
+  have not objected within 10 minutes. A platform taking damage is the exception: anyone aboard or controlling it may
+  stop it at once (thrust, schedule) and tell the owner after.
 - A claim stays fresh while its owner works on it: posting or updating it, or the owner's own requests made standing
   in it or acting on a position in it. After 30 minutes without that it is `stale` on the board and in `claimed`
   labels: anyone may also remove or rebuild there without telling the owner first, and `stock` sweeps include it.
@@ -578,3 +579,5 @@ already targets your character.
 - The operator factory digest arrives by `tell` at deadline minus 2 hours, or on operator request: cached planetary machine/fuel counts and sampled belt ends, with observation ages; missing data is unknown.
 - Shift and factory-digest `research_use` lines compare researched gear with current worn/fitted/carried gear,
   show building tiers per planet from the dated census, and researched vehicles against force-wide built counts.
+
+- Hand `build` applies each entry’s settings as placed; `inspect`/`trace` flag held-item refusal, and platform build dry runs report unwired pump enable conditions. Queue transfer steps accept `min_moved:1`; full `status` has cached boiler/feeder fuel, and feed-tour failures retain smaller-margin route facts.

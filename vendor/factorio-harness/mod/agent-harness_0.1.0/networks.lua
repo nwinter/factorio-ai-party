@@ -593,6 +593,7 @@ return function(api)
             if not ctx.supplied then M.boiler_supply(net.boilers, surface, f) end   -- (the background view reads it in slices)
             local each, own = fed_kw * 1000 / #net.boilers, 0
             net.fed = 0
+            net.boiler_low_rows={};net.boiler_low_count=0;net.boiler_sample_tick=game.tick
             local st = store()
             st.boiler_prev = nil   -- (the running-down rule's memory, before 03:25)
             st.boiler_own = st.boiler_own or {}
@@ -616,6 +617,14 @@ return function(api)
                 hist[#hist+1] = {tick=game.tick, j=b.j}
                 if #hist > OWN_LOOKS then table.remove(hist, 1) end
                 st.boiler_own[unit] = hist
+              end
+              if b.min<20 then
+                net.boiler_low_count=net.boiler_low_count+1
+                if #net.boiler_low_rows<6 then
+                  local c=b.chest
+                  net.boiler_low_rows[#net.boiler_low_rows+1]=string.format('%s %.1f min, %s',at(b.e.position.x,b.e.position.y),b.min,
+                    c and c.e and c.e.valid and string.format('%s %s: %s',c.e.name,at(c.e.position.x,c.e.position.y),c.held or 'no fuel') or b.feeder or 'feeder unknown')
+                end
               end
               if b.fed then net.fed = net.fed + 1 end
               local refilled = b.fed and not b.drop
@@ -1343,6 +1352,26 @@ return function(api)
     local out = {}
     for _, k in ipairs(keys) do out[k] = r[k] end
     return out
+  end
+  -- Status reads only the finished cache: no view() fallback or entity reads.
+  function M.boiler_line(f,surface)
+    local v=store().views[f.name]
+    for _,s in ipairs(v and v.surfaces or {}) do if s.name==surface then
+      local parts,n,unknown,more={},0,0,0
+      local oldest
+      for _,r in ipairs(s.electric or {}) do
+        if r.boiler_low_count then
+          n=n+r.boiler_low_count
+          oldest=math.min(oldest or r.boiler_sample_tick,r.boiler_sample_tick)
+          for _,line in ipairs(r.boiler_low_rows or {}) do if #parts<6 then parts[#parts+1]=line else more=more+1 end end
+          more=more+math.max(0,r.boiler_low_count-#(r.boiler_low_rows or {}))
+        elseif #(r.boilers or {})>0 then unknown=unknown+#r.boilers end
+      end
+      return string.format('boilers on %s under 20 min of own fuel at sampled draw: %d%s%s%s%s',surface,n,
+        #parts>0 and '; '..table.concat(parts,'; ') or '',more>0 and '; '..more..' more unlisted' or '',
+        unknown>0 and '; '..unknown..' have no draw estimate' or '',oldest and '; sample '..math.floor((game.tick-oldest)/60)..' s old' or '')
+    end end
+    return 'boilers on '..surface..': completed network fuel sample unavailable'
   end
   -- One surface's largest electric network by capacity, as plain numbers
   -- (scienceline.lua): {id, capacity_kw, draw_kw (5 min avg), boilers, fed,

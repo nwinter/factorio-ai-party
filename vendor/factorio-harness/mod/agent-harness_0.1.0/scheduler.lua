@@ -56,6 +56,7 @@ return function(api)
         if api.check_args then checked('args',function() api.check_args(action,args) end) end
         if p and api.check_action then api.check_action(p.index,action,args) end
         assert(step.wait==nil or type(step.wait)=='boolean','step wait must be boolean')
+        assert(step.min_moved==nil or (action=='transfer' and step.wait~=false and type(step.min_moved)=='number' and step.min_moved==math.floor(step.min_moved) and step.min_moved>=1 and step.min_moved<=10000), 'min_moved requires a transfer step with wait=true and an integer 1..10000')
         assert(step.label==nil or (type(step.label)=='string' and #step.label<=64),'label must be a string of at most 64 bytes')
         local on_fail=step.on_fail
         assert(step.on_short==nil or step.on_short=='skip','on_short must be skip')
@@ -69,7 +70,7 @@ return function(api)
           assert(timeout==nil or (type(timeout)=='number' and timeout==math.floor(timeout) and timeout>=1 and timeout<=54000),'wait_until timeout must be 1..54000 ticks')
           checked('args',function() api.validate_condition(args) end)
         end
-        out[#out+1]={action=action,args=args or {},wait=step.wait~=false,label=step.label,on_fail=on_fail,on_short=step.on_short}
+        out[#out+1]={action=action,args=args or {},wait=step.wait~=false,label=step.label,on_fail=on_fail,on_short=step.on_short,min_moved=step.min_moved}
       end)
     end
     return out,#corrected>0 and corrected or nil
@@ -101,7 +102,7 @@ return function(api)
   end
   local function copy_steps(items)
     local out={}
-    for _,step in ipairs(items) do out[#out+1]={action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,plan=step.plan} end
+    for _,step in ipairs(items) do out[#out+1]={action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,min_moved=step.min_moved,plan=step.plan} end
     return out
   end
   -- Plans (Grok, shift14 22:50: queue status showed hours of standing-order history, and a finished pickup plan read
@@ -281,6 +282,7 @@ return function(api)
   -- Grok, Luna, Sonnet and Muse in shift08). The history entry says short.
   local SHORT={out_of_items=true,nothing_collected=true,inventory_full=true}
   local function short(step,result)
+    if result and result.minimum_failed then return false end
     if not allows_short(step) then return false end
     if type(result)~='table' then return false end
     if SHORT[result.outcome] then return true end
@@ -292,7 +294,19 @@ return function(api)
   local function moved(p,step,result)
     if api.moved_step and type(result)=='table' then pcall(api.moved_step,p,step,result) end
   end
+  local function minimum(step,result)
+    if not step.min_moved then return true end
+    local r=type(result)=='table' and (result.completion or result) or {}
+    local n=r.moved or r.transferred
+    if type(n)=='number' and n>=step.min_moved then return true end
+    if not result.minimum_failed then
+      result.reason='transfer min_moved '..step.min_moved..': moved '..(type(n)=='number' and n or 'unknown')..(result.reason and '; '..result.reason or '')
+    end
+    result.minimum_failed=true
+    return false
+  end
   local function fail(q,p,step,result)
+    minimum(step,result)
     moved(p,step,result)
     if short(step,result) then result.short=true; record(q,step,true,result); return end
     record(q,step,false,result)
@@ -352,7 +366,7 @@ return function(api)
         rest.via=#left>0 and left or nil
         args=rest
       end
-      if again then table.insert(q.pending,1,{id=step.id,action=step.action,args=args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,plan=step.plan}) end
+      if again then table.insert(q.pending,1,{id=step.id,action=step.action,args=args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short,min_moved=step.min_moved,plan=step.plan}) end
     end
     q.paused=true; q.revision=q.revision+1
     -- A standing order stopped by anything else (the agent's own request, a
@@ -632,7 +646,7 @@ return function(api)
               local success=not outcome or SUCCESS[outcome]==true
               local result={accepted=step.result,outcome=outcome or 'completed',completion=api.completion and api.completion(p,step.action)}
               q.current=nil
-              if success then moved(p,step,result); record(q,step,true,result) else fail(q,p,step,result) end
+              if success and minimum(step,result) then moved(p,step,result); record(q,step,true,result) else fail(q,p,step,result) end
             end
           end
           -- An order running between rounds finishes first; the next round loads after it.
@@ -701,7 +715,8 @@ return function(api)
                 fail(q,p,step,{reason=api.reason and api.reason(result) or tostring(result)})
               elseif step.wait and api.busy(p,step.action) then
                 step.result=result; q.current=step
-              else moved(p,step,result); record(q,step,true,result) end
+              elseif minimum(step,result) then moved(p,step,result); record(q,step,true,result)
+              else fail(q,p,step,result) end
             end
           end
           if q.order and not q.paused and not q.current and #q.pending==0 then
@@ -725,7 +740,7 @@ return function(api)
       times='optional 1..10000: the number of rounds; after the last one the loop ends',
       for_ticks='optional 60..432000: from this call, no round starts at or after that many ticks (a round under way finishes); with times, whichever comes first ends the loop',
       note='a loop that ends (times, for_ticks) leaves the queue empty: history entry loop_done {rounds, reason}, queue_status loop_done, and one team block line under queue ("queue NAME done after N rounds: ...");a round whose steps ran short (out_of_items, nothing_collected, inventory_full, none held, or a short reply) puts one line in the team block (queue: "queue NAME round N: K of M steps short: transfer iron-plate inventory_full x2, ..."), only when it differs from the last round\'s; a step with up_to=true or on_short=skip is left out of it (its history entry says short=true)'},
-    queue_submit={steps='array of {action,args,wait?,label?,on_fail?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace|ahead: omitted refuses nonempty submits into a repeating plan, naming it; replace stops an active repeating step and removes the loop (ordinary plans: pending only); ahead interrupts and restarts an absolute-goal step after the new steps, preserving the loop (other active steps refuse); append explicitly waits behind the current round',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
+    queue_submit={steps='array of {action,args,wait?,label?,on_fail?,min_moved?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace|ahead: omitted refuses nonempty submits into a repeating plan, naming it; replace stops an active repeating step and removes the loop (ordinary plans: pending only); ahead interrupts and restarts an absolute-goal step after the new steps, preserving the loop (other active steps refuse); append explicitly waits behind the current round',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
       dry_run='true: check the plan as a submit does and queue nothing (the queue is left as it is); returns steps, corrected, and the silo cargo the steps would leave: launches [{step, label, silo, cargo (before that launch), kg, min_cargo (lines), platform_now, would_refuse}], silos_after, notes (steps whose item moves are not counted); counted from what you, the chests and the silos hold now through transfer, load_silo and launch steps'},
     queue_edit={expected_revision='required from queue_status',index='1-based pending index',remove='count to remove',steps='replacement steps'},
     queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses',expected_revision='optional'},
@@ -739,7 +754,7 @@ return function(api)
       checked='every 10 ticks; enemies count only if known from the chart (units only in visible chunks)',pause_queue=PAUSE_QUEUE,
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
       wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
-    step_options={label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it)',on_short='skip: a step that runs short (out_of_items, nothing_collected, inventory_full, or no item held to give) counts as done (history: short=true) and the plan goes on; up_to=true in a transfer, collect or feed step does the same'},
+    step_options={min_moved='transfer steps only, integer 1..10000, wait=true: require at least this many reported items moved after completion; otherwise on_fail applies, even with up_to=true or on_short=skip; missing moved count is unknown and fails; no rollback',label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it)',on_short='skip: a step that runs short (out_of_items, nothing_collected, inventory_full, or no item held to give) counts as done (history: short=true) and the plan goes on; up_to=true in a transfer, collect or feed step does the same'},
     guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the plan runs; each fires once, stops the running step',max=MAX_GUARDS}
   }
   return M

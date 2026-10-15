@@ -771,3 +771,17 @@ test('refuel area --wait follows the gather and retains fuel source facts',async
     assert.equal(code,0,stdout);assert.ok(polls>=2);assert.match(stdout,/outcome: topped_up/);assert.match(stdout,/fuel_taken: 20/);assert.match(stdout,/iron-chest/);
   });
 });
+
+test('failed feed --wait retains the verified smaller-margin facts in compact output',async()=>{
+  let polls=0;
+  await engine(request=>{
+    if(request.action==='feed')return {ok:true,result:{until_tick:180,op:'feed',places:1}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:0,y:0},health:250,max_health:250,inventory:[]}}};
+    polls++;
+    return {ok:true,result:polls<2?{active:{kind:'gather',until_tick:180}}:{active:false,last:{kind:'gather',op:'feed',outcome:'unreached',
+      why:'no route at requested clearance',route_failures:[{position:{x:40,y:0},smaller_margins:{largest_verified_margin:2,line:'largest verified margin 2 tiles'}}]}}};
+  },async port=>{
+    const {code,stdout}=await compact(port,['call','feed','--args','{"item":"coal","count":1,"radius":32}','--wait']);
+    assert.equal(code,1,stdout);assert.match(stdout,/largest_verified_margin=2/);assert.match(stdout,/largest verified margin 2 tiles/);
+  });
+});
