@@ -72,7 +72,12 @@ alert=A.read(p,{kind='unconnected'});eq(#alert.groups,1);eq(alert.groups[1].stal
 shown=true;machine.valid=false;eq(#A.read(p,{kind='unconnected'}).groups,0)
 -- At most 2048 plain entity observations; none retains LuaEntity references.
 for i=1,2050 do shown=true;R.read(p,{position={x=i,y=90}},'inspect',function() return {name='iron-chest',position={x=i,y=90}} end) end
-local n=0;for _ in pairs(state.read_memory.entries) do n=n+1 end;eq(n,2048)
+local n=0;for _ in pairs(state.read_memory.read_entries) do n=n+1 end;eq(n,256)
+for i=1,2050 do R.observe{valid=true,name='iron-chest',type='container',position={x=i,y=91},force=force,surface=surface} end
+n=0;for _ in pairs(state.read_memory.entries) do n=n+1 end;eq(n,2048)
+shown=false
+r=R.read(p,{position={x=2050,y=90}},'inspect',live);eq(r.by,'last seen memory')
+shown=true
 -- Area predicates validate the box and bound the entity selection.
 local C=require('conditions'){position=pos,known=function() return true end}
 local area={left_top={x=-128,y=-128},right_bottom={x=128,y=128}}
@@ -95,4 +100,22 @@ A2.tick(game.tick)
 for _=1,200 do game.tick=game.tick+1;A2.tick(game.tick);if not bg.push_jobs.player then break end end
 eq(lookups,1);local result=A2.read(p,{kind='out_of_ore'});eq(#result.groups,1);eq(result.groups[1].drill_site.site.amount,100)
 has(result.groups[1].line,'nearest checked coal site with room');A2.read(p,{kind='out_of_ore'});eq(lookups,1)
+-- Dense chunk work is sliced; fog cancels a partial refresh without reading it.
+local dense_state,items_read={},0
+local DB=require('beltgaps'){state=function() return dense_state end,position=pos}
+entities={};shown=true
+for x=0,15 do for y=0,15 do
+  local e=belt(x,1);e.position.y=y+.5;e.bounding_box.left_top.y=y+.1;e.bounding_box.right_bottom.y=y+.9
+  e.get_item_count=function() assert(shown,'hidden pending entity');items_read=items_read+1;return 1 end
+end end
+surface.find_entities_filtered=function() assert(shown,'hidden dense query');return entities end
+local arg={from={0,0},to={15,0}}
+local partial=DB.read(p,arg);eq(items_read,128);eq(partial.observations[1].pending.total,256);eq(partial.belts,0)
+shown=false;DB.read(p,arg);eq(items_read,128);eq(dense_state.belt_memory.chunks['player|nauvis|0,0'].pending,nil)
+shown=true;DB.read(p,arg);eq(items_read,256)
+local full=DB.read(p,arg);eq(items_read,384);eq(full.belts,16);eq(full.observations[1].pending,nil)
+-- A ghost sighting after an item-carrying belt is a gap, not a lost history.
+local ghost={valid=true,type='entity-ghost',ghost_type='transport-belt',ghost_name='transport-belt',name='entity-ghost',force=force,surface=surface,
+  position={x=.5,y=.5},direction=4,bounding_box={left_top={x=.1,y=.1},right_bottom={x=.9,y=.9}}}
+DB.observe(ghost);eq(DB.alert_groups(force)[1].n,1)
 print('d15_0450a: ok')

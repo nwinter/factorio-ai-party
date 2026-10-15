@@ -87,7 +87,9 @@ e.position={x=.5,y=.5};e.prototype.tile_width=3;e.prototype.tile_height=3;e.dire
 tiles={};for x=4,8 do tile(x,0) end
 s.push_drills={player={[10]='coal'}}
 local group={key='out_of_ore.coal|vulcanus|0,0',surface='vulcanus',ore='coal',drill={position=e.position,name=e.name,unit_number=10}}
-local g=D.group(force,group);eq(g.site.position.x,3.5);eq(g.radius,24)
+e.bounding_box={left_top={x=-.9,y=-.9},right_bottom={x=1.9,y=1.9}}
+checks=0
+local g=D.group(force,group);eq(g.site.position.x,3.5);eq(g.radius,24);eq(checks,1)
 local nreads=reads;eq(D.group(force,group).site.position.x,3.5);eq(reads,nreads)
 game.tick=game.tick+3600;blocked=true
 g=D.group(force,group);eq(g.site,nil);nreads=reads

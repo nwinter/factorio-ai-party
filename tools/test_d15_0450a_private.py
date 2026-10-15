@@ -31,7 +31,7 @@ def main():
         rows.append({'case': name, 'result': value})
         print(name, 'ok', flush=True)
 
-    def profile(action, options):
+    def profile(action, options, label=None):
         req = json.dumps({'bot': c.name, 'action': action, 'args': options})
         source = 'local req=helpers.json_to_table(' + json.dumps(req) + ');for i=1,3 do req.id="d15-prof-"..game.tick.."-"..i;local p=helpers.create_profiler();local out=remote.call("agent_harness","dispatch",helpers.table_to_json(req));p.stop();assert(helpers.json_to_table(out).ok,out);rcon.print({"","' + action + ': ",p});end'
         r = Rcon('127.0.0.1', args.port, c.password, timeout=60)
@@ -40,11 +40,12 @@ def main():
         finally:
             r.sock.close()
         assert 'Error' not in timing and 'ms' in timing, timing
-        rows.append({'case': action + ' profiler', 'timing': timing})
+        rows.append({'case': (label or action) + ' profiler', 'timing': timing})
         print(timing, flush=True)
 
     bot = c.lua(f'rcon.print(remote.call("agent_harness","bot_create","{c.name}"))')
     try:
+        c.lua('rcon.print(remote.call("agent_harness","profile_ticks",{seconds=60}))')
         c.lua(f'''local s=game.create_surface("{c.name}",{{width=512,height=128,autoplace_settings={{entity={{treat_missing_as_default=false}},tile={{treat_missing_as_default=false}},decorative={{treat_missing_as_default=false}}}}}});
           s.request_to_generate_chunks({{0,0}},4);s.force_generate_chunk_requests();
           local tiles={{}};for x=-90,90 do for y=-40,40 do tiles[#tiles+1]={{name='lab-dark-1',position={{x,y}}}} end end;s.set_tiles(tiles);
@@ -94,8 +95,24 @@ def main():
         r = call('drill_sites', options)
         assert r['sites'] and r['resource'] == 'coal', r
         record('same-resource drill placement in engine', r)
-        profile('drill_sites', options)
+        profile('drill_sites', options, 'drill_sites sparse')
+        c.lua('local t=storage.d15check;for x=-32,16 do for y=-24,24 do if math.abs(x+9)>=3 or math.abs(y)>=3 then if not t.s.find_entity("coal",{x+.5,y+.5}) then t.s.create_entity{name="coal",position={x+.5,y+.5},amount=1000} end end end end;rcon.print(true)')
+        r = call('drill_sites', options)
+        assert r['radius_reduced'] and r['searched_radius'] < 24, r
+        record('dense drill lookup shrinks its search', r)
+        profile('drill_sites', options, 'drill_sites dense')
+        c.lua('local t=storage.d15check;for x=64,95 do for y=0,31 do local e=t.s.create_entity{name="transport-belt",position={x+.5,y+.5},direction=defines.direction.east,force="player"};e.active=false;e.get_transport_line(1).insert_at_back{name="iron-ore",count=1} end end;game.forces.player.chart(t.s,{{64,0},{96,32}});rcon.print(true)')
+        time.sleep(1)
+        dense_line = {'from': {'x': 64.5, 'y': .5}, 'to': {'x': 95.5, 'y': .5}}
+        for _ in range(10):
+            r = call('belt_gaps', dense_line)
+            if r['belts'] == 32:
+                break
+        assert r['belts'] == 32, r
+        record('full 1024-belt chunk', r)
+        profile('belt_gaps', dense_line, 'belt_gaps 1024-belt chunk')
     finally:
+        c.lua('rcon.print(remote.call("agent_harness","profile_ticks",{stop=true}))')
         c.lua(f'rcon.print(remote.call("agent_harness","bot_remove","{c.name}"))')
         if args.output:
             args.output.write_text(json.dumps(rows, indent=2) + '\n')

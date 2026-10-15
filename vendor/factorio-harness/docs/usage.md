@@ -1511,13 +1511,14 @@ also retain a basic summary; seeing a belt records its layout. A trace with no s
 remembered belt layout, with each tile's age, direction and last item count. It stops at an unknown tile,
 a splitter/linked belt whose lane routing was not recorded, or 512 tiles. A live trace reaching fog stops its
 current route there and attaches available remembered layout. Unrecorded entities remain unknown. Memory
-holds at most 2,048 entity/read observations and the existing 256 belt chunks; eviction loses old observations.
+holds at most 2,048 entity summaries and 256 detailed read observations (separate budgets, so background sightings do not evict detailed reads) and the existing 256 belt chunks; eviction loses old observations.
 
 `game_alerts {kind:"belt_cut"}` and the team alert digest name formerly item-carrying belt tiles missing in
 a later visible sample, with their observation ticks. An observed replacement clears the tile immediately.
-Census, scan/inspect and trace sightings register belt chunks. The background refresh reads one registered
-visible chunk per second (at most 256 seconds per full rotation); `belt_gaps` refreshes up to four visible
-chunks per call. Fog preserves the dated observation without querying hidden entities. At most eight gap
+Census, scan/inspect and trace sightings register belt chunks. The background refresh processes at most 128 belt/ghost entities every 15 ticks, completing one chunk
+before starting the next (64..512 seconds per 256-chunk rotation). `belt_gaps` shares a 128-entity budget
+across up to four visible chunks per call. Large chunks complete across calls/background steps;
+`observations[].pending` gives the read/total counts, and replies keep the previous completed layout meanwhile. Fog preserves the dated observation without querying hidden entities. At most eight gap
 positions are written per chunk alert, with the count of any remaining tiles.
 
 `order_set.when.radius` accepts 1..256. `ammo_below` and `fuel_below` also accept
@@ -1567,9 +1568,9 @@ it is not a claim about current fogged terrain. `unknown` means no complete stor
 remain distinct from built belts. Paired underground interiors are excluded from missing surface belts.
 
 Memory starts when this runtime is installed. The background census registers visible belt chunks, and one
-registered visible chunk is refreshed each second; at most 256 chunks are retained across surfaces/forces.
-An explicit read refreshes at most four visible chunks (or chunks wholly within 32 tiles of the character), then
-uses remembered data. `observations` lists per-chunk ticks and `current`; a chunk with more than 1024 matching
+registered visible chunk is refreshed in 128-entity steps every 15 ticks; at most 256 chunks are retained across surfaces/forces.
+An explicit read shares a 128-entity budget across at most four visible chunks (or chunks wholly within 32 tiles of the character), then
+uses remembered data. `observations` lists per-chunk ticks, `current`, and any `pending` read/total counts; a chunk with more than 1024 matching
 entities is marked `capped` and its previous snapshot is retained. No current entities are queried under fog.
 Previously unexplored or unrecorded stretches can therefore be `unknown`, even if the map was explored before
 this runtime was installed. This read never moves, repairs or places belts.
@@ -1594,7 +1595,7 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   character's sight), as the game's map shows it, and the reply says `by: remote view` (Astra, operator 04:57: inspect
   worked only within 32 tiles; `surface=` naming the character's own surface added nothing then). `surface=` another
   surface reads its visible chunks and says `by: remote view` too. The cargo weigh read (`cargo {position}`) does the
-  same (`from.by`). Out of sight and of every chunk our force sees, the refusal names the nearest radar coverage:
+  same (`from.by`). Inspect uses dated memory outside coverage; an unrecorded target is unknown. Other reads that require coverage name the nearest radar coverage:
   `target at (3.5,0.5) ((3.5,0.5) is 196.5 tiles from the character at (200.0,0.0)) is in no chunk our force sees now
   (radar coverage or a character's sight); the nearest radar coverage (or a character's sight) is chunk
   (96,0)-(127,31), 93 tiles away`; actions keep the 32-tile sight rule, and name the nearest coverage when the target

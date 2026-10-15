@@ -15,17 +15,22 @@ return function(api)
     seen[v]=nil;return out
   end
   local function store()
-    local s=api.state();s.read_memory=s.read_memory or {entries={},slots={},next=1};return s.read_memory
+    local s=api.state();s.read_memory=s.read_memory or {entries={},slots={},next=1}
+    local m=s.read_memory;m.read_entries=m.read_entries or {};m.read_slots=m.read_slots or {};m.read_next=m.read_next or 1;return m
   end
   local function key(p,q,kind) return p.force.name..'|'..p.surface.name..'|'..q.x..','..q.y..'|'..kind end
   local function put(p,q,kind,value,box)
     local m=store();local k=key(p,q,kind)
     local v=copy(value)
-    if not m.entries[k] then
-      local old=m.slots[m.next];if old then m.entries[old]=nil end
-      m.slots[m.next]=k;m.next=m.next%2048+1
+    -- Background sightings cannot evict detailed reads made by agents.
+    local summary=kind=='summary'
+    local entries,slots=summary and m.entries or m.read_entries,summary and m.slots or m.read_slots
+    local cursor=summary and 'next' or 'read_next'
+    if not entries[k] then
+      local old=slots[m[cursor]];if old then entries[old]=nil end
+      slots[m[cursor]]=k;m[cursor]=m[cursor]%(summary and 2048 or 256)+1
     end
-    m.entries[k]={force=p.force.name,surface=p.surface.name,position=copy(q),kind=kind,value=v,box=copy(box),tick=game.tick}
+    entries[k]={force=p.force.name,surface=p.surface.name,position=copy(q),kind=kind,value=v,box=copy(box),tick=game.tick}
   end
   function M.observe(e,p)
     if not e.valid or e.type=='character' or e.type=='resource' then return end
@@ -40,11 +45,14 @@ return function(api)
   local function kind(action,a) return action=='trace' and ('trace:'..tostring(a.forward==true)..':'..tostring(a.all==true)) or 'inspect' end
   local function recall(p,a,action)
     local q=api.position(a.position);local best,rank
-    local entries=store().entries
-    local direct=entries[key(p,q,kind(action,a))]
+    local m=store()
+    local direct=m.read_entries[key(p,q,kind(action,a))] or m.entries[key(p,q,kind(action,a))]
     if direct and ((a.name and a.name~=direct.value.name and a.name~=direct.value.entity and a.name~=direct.value.belt and a.name~=direct.value.ghost_name)
       or a.unit_number and a.unit_number~=direct.value.unit_number) then direct=nil end
-    for _,r in pairs(direct and {direct} or entries) do
+    local candidates={}
+    if direct then candidates[1]=direct
+    else for _,pool in ipairs{m.read_entries,m.entries} do for _,r in pairs(pool) do candidates[#candidates+1]=r end end end
+    for _,r in ipairs(candidates) do
       local v=r.value
       if r.force==p.force.name and r.surface==p.surface.name and (r.kind==kind(action,a) or r.kind=='summary')
         and (not a.name or a.name==v.name or a.name==v.entity or a.name==v.belt or a.name==v.ghost_name) and (not a.unit_number or a.unit_number==v.unit_number) then
