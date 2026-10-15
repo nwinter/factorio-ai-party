@@ -953,10 +953,15 @@ def qa_html(qa, n=None):
             who = f'<span class="chip viewer">{esc(q["who"])}</span>'
         elif q["kind"] == "agent":
             who = agent_chip(q["who"])
+        elif q["kind"] == "operator":
+            who = '<span class="chip host">Operator</span>'
         else:
             who = f'<span class="chip host">{esc(q["who"])}</span>'
-        items.append(f'<li class="qa-{q["kind"]}"><span class="c-time">{esc(_pt(q["t"], day=False))}{video_link(n, q["t"], 10)}</span>{who}'
-                     f'<span class="c-text">{esc(q["text"])}</span></li>')
+        # an answer: whom it answers, and under the viewer line it answers when that is shown (longrun.thread_qa)
+        to = (f'<span class="c-to muted small">↩ {esc(", ".join(q["to"]))}</span> ' if q.get("to") else "")
+        thread = " qa-thread" if q.get("thread") else ""
+        items.append(f'<li class="qa-{q["kind"]}{thread}"><span class="c-time">{esc(_pt(q["t"], day=False))}{video_link(n, q["t"], 10)}</span>{who}'
+                     f'{to}<span class="c-text">{esc(q["text"])}</span></li>')
     if len(items) <= 40:
         return f'<ol class="chat qa">{"".join(items)}</ol>'
     # a long transcript: the first 30 lines, the rest one click away
@@ -1720,6 +1725,7 @@ def live_app(heading, sample_href):
     </div>
     <div class="fx-tab-body">
       <div data-pane="site" class="vchat-pane">
+        <label class="vchat-filter fx-muted small"><input type="checkbox" id="vchat-replies" checked> Show agents' replies to viewers</label>
         <ol id="vchat" class="vchat" aria-live="polite"></ol>
         <form id="vchat-form" class="vchat-form" autocomplete="off">
           <input class="fx-textfield" name="name" maxlength="20" placeholder="Name" aria-label="Your name">
@@ -1734,6 +1740,7 @@ def live_app(heading, sample_href):
           <div><dt>Several</dt><dd>one per person into the game at a time, up to 3 wait their turn</dd></div>
           <div><dt>Rules</dt><dd>no account, no links, be kind</dd></div>
           <div><dt>YT · SITE</dt><dd>YouTube and site comments in one list, in time order; you write as a site comment</dd></div>
+          <div><dt>REPLY</dt><dd>an agent or the Operator answering a viewer in the game chat, in its colour, under the line it answers; untick above to hide</dd></div>
         </dl>
       </div>
       <div data-pane="yt" class="yt-pane" hidden>

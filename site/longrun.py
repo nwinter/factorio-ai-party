@@ -15,6 +15,10 @@ import json
 import os
 import re
 from pathlib import Path
+import sys
+
+sys.path.append(str(Path(__file__).resolve().parent.parent / "tools" / "stream"))  # last: site modules keep their names
+import viewer_replies  # noqa: E402  (tools/stream/viewer_replies.py: which agent lines answer a viewer; the live page's too)
 
 SCIENCE = re.compile(r"-science-pack$")
 # every science pack in tech-tree order: (item, label)
@@ -382,6 +386,31 @@ def shift_plan(path, clean=lambda s: s, keep=lambda s: True, game=lambda tick: N
             "read_t": datetime.datetime.fromtimestamp(rec["t"]).isoformat(timespec="seconds") if isinstance(rec.get("t"), (int, float)) else None}
 
 
+
+def thread_qa(qa):
+    """Each agent's or the Operator's answer right after the viewer line it answers (and after earlier answers to it)
+    when that line is shown; the rest stay in time order. `re` (the answered line's seq and tick) and `seq` are dropped."""
+    out = []
+    for q in qa:
+        ref = q.pop("re", None)
+        at = None
+        if ref and q["kind"] in ("agent", "operator"):
+            for i in range(len(out) - 1, -1, -1):
+                v = out[i]
+                if v["kind"] == "viewer" and (v.get("seq"), v["tick"]) == ref or (v["kind"] == "viewer" and v.get("seq") is None and v["tick"] == ref[1]):
+                    at = i
+                    break
+        if at is None:
+            out.append(q)
+            continue
+        while at + 1 < len(out) and out[at + 1].get("thread"):
+            at += 1
+        q["thread"] = True
+        out.insert(at + 1, q)
+    for q in out:
+        q.pop("seq", None)
+    return out
+
 def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=(), hide=lambda name, text: False):
     """{"shifts": [row per shift], "research": [(game minute, technologies)], "spm": [(game minute, research units/min)],
     "spm_packs": {pack: [(game minute, packs the labs used/min)]}, "made_spm": [(game minute, packs made/min, all
@@ -583,20 +612,24 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
                 if any(q["kind"] == "viewer" and q["who"] == clean(vname) and q["text"] == clean(c["text"])
                        and c["tick"] - q["tick"] < 5 * 3600 for q in qa[-6:]):
                     continue  # the same line again (a resend, or the relay's retry)
-                qa.append({"kind": "viewer", "who": clean(vname), "text": clean(c["text"]), "tick": c["tick"]})
-        if viewers:  # any viewer spoke (shown or hidden): the agents' and hosts' answers
-            for c in chat:
-                who = str(c.get("from", ""))
-                if who not in agents or not keep(c["text"]):
+                qa.append({"kind": "viewer", "who": clean(vname), "text": clean(c["text"]), "tick": c["tick"], "seq": c.get("seq")})
+        if viewers:  # any viewer spoke (shown or hidden): the agents' and the Operator's answers, and the hosts'
+            # (viewer_replies.py: a line naming a viewer who wrote in the last 15 minutes, @name or as a vocative, or
+            # one that speaks to the viewers; the live page's site chat uses the same rule)
+            for c, vr in viewer_replies.replies(chat):
+                who = viewer_replies.speaker(c)
+                if not keep(c["text"]) or (who != "operator" and who not in agents):
                     continue
-                low = c["text"].lower()
-                if any(v in low and 0 <= c["tick"] - t <= 20 * 3600 for v, t in viewers.items() if len(v) >= 3):
-                    qa.append({"kind": "agent", "who": who, "text": clean(c["text"]), "tick": c["tick"]})
+                ans = vr.get("answers")
+                qa.append({"kind": "operator" if who == "operator" else "agent", "who": "Operator" if who == "operator" else who,
+                           "text": clean(c["text"]), "tick": c["tick"], "to": [clean(n) for n in vr["to"]],
+                           "re": (ans.get("seq"), ans.get("tick")) if ans else None})
             for w, host, text in host_replies(d / "caster.log", ta):
                 raw = tick_at(w)
                 if raw is not None and keep(text):
                     qa.append({"kind": "host", "who": host, "text": clean(text), "tick": raw + (origin["tick"] if origin else 0)})
             qa.sort(key=lambda q: q["tick"])
+            qa = thread_qa(qa)
             first_v = next((q for q in qa if q["kind"] == "viewer"), None)
             if first_v:
                 first("viewer", "First viewer message in the game", "team",

@@ -19,6 +19,7 @@ from collections import deque
 import attention
 import pacing
 import waitcard
+import viewer_replies
 import clouds as clouds_mod
 import loadout as loadouts_mod
 import efficiency as efficiency_mod
@@ -481,6 +482,9 @@ class Model:
         for name, cfg in (run.get("agents") or {}).items():
             self.agents[name] = Agent(name, cfg)
         self.chat = deque(maxlen=200)  # chat_window() picks each lane's latest from here
+        # agents' and the Operator's lines that answer a viewer or speak to the viewers (viewer_replies.py; Nick, d15
+        # 08:07): the live page's site chat shows them among the viewers' lines, so they outlive the chat window
+        self.viewer_replies = deque(maxlen=40)
         self.chat_seen = set()
         self.operator_requests = deque(maxlen=5)  # the last few agents' requests to the operator, for the snapshot
         self.alerts = deque(maxlen=30)
@@ -902,6 +906,10 @@ class Model:
             entry["notice"] = True
         entry["lane"] = chat_lane(entry)
         self.chat.append(entry)
+        if entry["lane"] not in ("viewer", "notice"):
+            r = viewer_replies.classify(entry, [c for c in self.chat if viewer_replies.viewer_name(c)])
+            if r:
+                self.viewer_replies.append(viewer_replies.row(entry, r))
         cl = None if sender else CHANGELOG_RE.match(clean_text(entry["text"]))
         if cl:
             self._changelog(cl.group(2).strip(), m.get("tick"), entry["t"], version=cl.group(1))
@@ -1802,6 +1810,7 @@ class Model:
             "shift": self.run.get("shift"),
             "agents": agents,
             "chat": self.chat_window(),
+            "viewer_replies": list(self.viewer_replies),
             "operator_requests": list(self.operator_requests),
             # the run's chronicle, newest last: the agents' entries and the events the harness saw (the site's live page;
             # the hosts read a new entry)

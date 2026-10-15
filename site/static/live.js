@@ -96,12 +96,60 @@
   var chatList = $('#vchat'), chatForm = $('#vchat-form'), chatNote = $('#vchat-note');
   // One pane, both chats in time order (Luna 13:54, a viewer's suggestion): the site's comments (/v1/chat, every 4 s)
   // and the YouTube lines the stream service passed (state.youtube_chat, push_live.py), each with its source.
-  var lastSeq = null, chatTimer = null, chatMsgs = [], ytLines = [];
+  var lastSeq = null, chatTimer = null, chatMsgs = [], ytLines = [], replyLines = [];
+  // Agents' and the Operator's lines that answer a viewer or speak to the viewers (state.viewer_replies: tools/stream/
+  // viewer_replies.py; d15 08:07: what the models said back stays readable after it scrolled past live). Shown
+  // unless the reader unticks them (remembered per browser).
+  var showReplies = store('chatReplies') !== '0';
+  // The viewer line a reply answers, in this list: the same viewer, the same words (the relay's "@astra " stripped,
+  // its cut "…" too), written before the reply.
+  function bareText(s) { return String(s || '').replace(/^@\S+\s+/, '').replace(/…$/, '').trim().toLowerCase(); }
+  function answered(list, r) {
+    var a = r.answers;
+    if (!a || !a.name) return -1;
+    var name = String(a.name).toLowerCase(), body = bareText(a.text);
+    for (var i = list.length - 1; i >= 0; i--) {
+      var m = list[i];
+      if (m.src === 'agent' || String(m.name || '').toLowerCase() !== name || (m.t || 0) > (r.t || 0) + 5) continue;
+      var mine = bareText(m.text);
+      if (body && mine && (mine.indexOf(body) === 0 || body.indexOf(mine) === 0)) return i;
+    }
+    return -1;
+  }
   function joinedChat() {
     var all = chatMsgs.map(function (m) { return { src: 'site', name: m.name, text: m.text, t: m.t, k: 's' + m.seq }; })
       .concat(ytLines.map(function (m) { return { src: 'yt', name: m.name, text: m.text, t: m.t, k: 'y' + m.id }; }));
     all.sort(function (a, b) { return (a.t || 0) - (b.t || 0) || (a.k < b.k ? -1 : 1); });
-    return all.slice(-150);
+    all = all.slice(-150);
+    if (!showReplies || !replyLines.length) return all;
+    // A reply goes right after the viewer line it answers (after earlier replies to it) when that line is in the list;
+    // else in time order among the rest.
+    var first = all.length ? all[0].t || 0 : 0;
+    replyLines.slice().sort(function (a, b) { return (a.t || 0) - (b.t || 0); }).forEach(function (r) {
+      if ((r.t || 0) < first) return;
+      var item = { src: 'agent', by: r.by, name: r.by, text: r.text, t: r.t, k: 'a' + r.seq, to: r.to || [], kind: r.kind };
+      var at = answered(all, r);
+      if (at >= 0) {
+        item.thread = true;
+        while (at + 1 < all.length && all[at + 1].src === 'agent' && all[at + 1].thread) at++;
+        all.splice(at + 1, 0, item);
+        return;
+      }
+      var i = all.length;
+      while (i > 0 && (all[i - 1].t || 0) > (item.t || 0)) i--;
+      all.splice(i, 0, item);
+    });
+    return all;
+  }
+  function replyHtml(m, t) {
+    var a = m.by === 'operator' ? { name: 'operator', display_name: 'Operator' } : (team[m.by] || { name: m.by });
+    var col = m.by === 'operator' ? null : acColor(safeColor(a.color));
+    var who = esc(a.display_name || a.name || m.by);
+    var tag = m.kind === 'to_viewers' ? 'TO VIEWERS' : 'REPLY';
+    var to = m.to && m.to.length ? ' <span class="c-to fx-muted">↩ ' + esc(m.to.join(', ')) + '</span>' : '';
+    return '<li class="c-agent' + (m.thread ? ' c-thread' : '') + '"' + (col ? ' style="--ac:' + col + '"' : '') +
+      '><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-agent">' + tag + '</span> <b class="c-agent-name">' +
+      who + '</b>' + to + ' <span class="c-text">' + esc(m.text) + '</span></li>';
   }
   function renderChat() {
     if (!chatList) return;
@@ -111,36 +159,78 @@
     var atEnd = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
     chatList.innerHTML = all.length ? all.map(function (m) {
       var t = new Date(m.t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      if (m.src === 'agent') return replyHtml(m, t);
       return '<li class="c-' + m.src + '"><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-' + m.src + '">' +
         (m.src === 'yt' ? 'YT' : 'SITE') + '</span> <b>' + esc(m.name) + '</b> <span class="c-text">' + esc(m.text) + '</span></li>';
     }).join('') : '<li class="fx-muted">No messages yet. Say hello.</li>';
     if (atEnd || !chatList.dataset.seen) chatList.scrollTop = chatList.scrollHeight;
     chatList.dataset.seen = '1';
   }
+  // One poll at a time (joonazan, d15 08:05: "the site sends messages twice quite often"): a send and a tab switch
+  // each called pollChat while a poll was in flight, both appended the same new messages, and each started its own
+  // timer, so polls ran in parallel from then on. A call during a poll now asks for one more after it, and messages
+  // merge by seq.
+  var polling = false, pollAgain = false;
+  function mergeChat(list, add) {
+    var seen = {};
+    list.forEach(function (m) { seen[m.seq] = 1; });
+    (add || []).forEach(function (m) { if (!seen[m.seq]) { seen[m.seq] = 1; list.push(m); } });
+    list.sort(function (a, b) { return a.seq - b.seq; });
+    return list;
+  }
   function pollChat() {
     clearTimeout(chatTimer);
     if (!API || demo) { chatNote.textContent = demo ? 'Chat is off in the sample view.' : 'Chat is not configured.'; return; }
+    if (polling) { pollAgain = true; return; }
+    polling = true; pollAgain = false;
     var visible = !app.querySelector('[data-pane="site"]').hidden;
     getJSON(API + '/v1/chat' + (lastSeq != null ? '?after=' + lastSeq : '?limit=60')).then(function (d) {
       var hidden = {}; (d.hidden || []).forEach(function (s) { hidden[s] = 1; });
-      chatMsgs = chatMsgs.filter(function (m) { return !hidden[m.seq]; }).concat(d.messages || []);
-      if (d.messages && d.messages.length) lastSeq = d.messages[d.messages.length - 1].seq;
+      chatMsgs = mergeChat(chatMsgs.filter(function (m) { return !hidden[m.seq]; }), d.messages);
+      if (d.messages && d.messages.length) lastSeq = Math.max(lastSeq || 0, d.messages[d.messages.length - 1].seq);
       else if (lastSeq == null) lastSeq = d.last_seq || 0;
       chatForm.hidden = d.open === false;
       if (d.open === false) chatNote.textContent = 'Chat is closed right now.';
       renderChat();
     }).catch(function () { chatNote.textContent = 'Chat is unavailable right now.'; })
-      .then(function () { chatTimer = setTimeout(pollChat, document.hidden || !visible ? 20000 : 4000); });
+      .then(function () {
+        polling = false;
+        clearTimeout(chatTimer);
+        if (pollAgain) { pollChat(); return; }
+        chatTimer = setTimeout(pollChat, document.hidden || !visible ? 20000 : 4000);
+      });
+  }
+  var repliesBox = $('#vchat-replies');
+  if (repliesBox) {
+    repliesBox.checked = showReplies;
+    repliesBox.addEventListener('change', function () {
+      showReplies = repliesBox.checked;
+      store('chatReplies', showReplies ? '1' : '0');
+      chatList.dataset.sig = '';
+      renderChat();
+    });
   }
   if (chatForm) {
     var nameIn = chatForm.querySelector('[name=name]'), textIn = chatForm.querySelector('[name=text]');
+    var sendBtn = chatForm.querySelector('[type=submit]');
     nameIn.value = store('chatName') || '';
+    // A message id made once per message and sent again on a retry: the worker stores a message once per id, so a
+    // second press or a retry after a slow reply cannot post it twice. One send at a time.
+    var sending = false, pending = null;  // pending: {text, cid} of the message not yet confirmed
+    function newCid() {
+      var b = new Uint8Array(12);
+      try { crypto.getRandomValues(b); } catch (e) { for (var i = 0; i < b.length; i++) b[i] = Math.floor(Math.random() * 256); }
+      return Array.prototype.map.call(b, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+    }
     chatForm.addEventListener('submit', function (ev) {
       ev.preventDefault();
-      if (!API || demo) return;
+      if (!API || demo || sending) return;
       var body = { name: nameIn.value.trim(), text: textIn.value.trim() };
       if (!body.text) return;
+      if (!pending || pending.text !== body.text) pending = { text: body.text, cid: newCid() };
+      body.cid = pending.cid;
       store('chatName', body.name);
+      sending = true; if (sendBtn) sendBtn.disabled = true;
       chatNote.textContent = 'Sending…';
       fetch(API + '/v1/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
@@ -150,10 +240,15 @@
               (res.d && res.d.retry_after_s ? ' (try again in ' + res.d.retry_after_s + ' s)' : '') + '.';
             return;
           }
-          textIn.value = ''; chatNote.textContent = '';
+          pending = null;
+          if (res.d && res.d.message) chatMsgs = mergeChat(chatMsgs, [res.d.message]);
+          if (textIn.value.trim() === body.text) textIn.value = '';
+          chatNote.textContent = '';
+          renderChat();
           pollChat();
         })
-        .catch(function () { chatNote.textContent = 'Could not send. Check your connection.'; });
+        .catch(function () { chatNote.textContent = 'Could not send. Check your connection.'; })
+        .then(function () { sending = false; if (sendBtn) sendBtn.disabled = false; });
     });
   }
   if (!app.querySelector('[data-pane="site"]').hidden) pollChat();
@@ -307,6 +402,8 @@
     var agents = s.agents || [], chat = s.chat || [], r = s.research || {}, sci = s.science || {}, board = s.board || {};
     if (s.stream) embedPlayer(s.stream.youtube_video_id, s.stream.youtube_channel_id);
     ytLines = Array.isArray(s.youtube_chat) ? s.youtube_chat.filter(function (m) { return m && m.text && isFinite(m.t); }) : [];
+    replyLines = Array.isArray(s.viewer_replies) ? s.viewer_replies.filter(function (m) { return m && m.text && m.by && isFinite(m.t); }) : [];
+    team = {}; (s.agents || []).forEach(function (a) { team[a.name] = a; });
     renderChat();
     var byName = {}; agents.forEach(function (a) { byName[a.name] = a; });
     team = byName; lastState = s;

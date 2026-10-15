@@ -173,6 +173,16 @@ first, the newest 60: `[{id, name, text, t, staff?}]`; push_live.py also leaves 
 (earlier runs' deletions, site/hidden-viewers.json). The live page's Chat pane joins them with the site's own comments
 (`/v1/chat`) in one time-ordered list, each line badged YT or SITE; the YouTube tab keeps YouTube's own chat.
 
+`viewer_replies` (d15 08:07) is the agents' and the Operator's game-chat lines that answer a viewer or speak to the
+viewers, newest 40, oldest first: `[{seq, t, tick, by (agent name or "operator"), text, kind ("reply" | "to_viewers"),
+to [viewer names], answers? {name, text?, t, source}}]` (tools/stream/viewer_replies.py, kept by model.py so they
+outlive the chat window). A reply names a viewer who wrote in the last 15 minutes as `@name`, or as a vocative
+("Foobator, ...", "Yes, Enginerd.", "Thanks Foobator, ..."); "Viewers, ..." and the like speak to the viewers. `answers`
+is the viewer line it answers (one addressed to the agent first); its `text` is left out when the site hides that line.
+The Chat pane shows each one, badged REPLY (or TO VIEWERS) in the agent's colour, right under the line it answers when
+that line is in the list, else in time order; "Show agents' replies to viewers" hides them (kept in localStorage
+`chatReplies`). The archived shift pages' Viewers section uses the same rule (site/longrun.py).
+
 `clouds` (viewer Joonazan, 2026-10-14: Gleba's spore cloud) is the pollution, or spores on Gleba, per 32-tile chunk on
 each surface an agent is on, read about once a minute: `[{surface, label ("Spores on Gleba"), pollutant (pollution or
 spores), color {r, g, b, a} (the game's map colour, 0..1), cells [[cx, cy, amount]], chunks, max, total, age_s,
@@ -199,6 +209,16 @@ page, add it to the keep-lists in `push_live.py` and document it here.
 `ban` blocks the client that wrote message 41 and hides all its messages; `close` stops new messages; `clear` hides
 every message so far (a fresh start for the public run: no test chat on the page). `seq` keeps counting after a clear,
 so pollers using `after` miss nothing new.
+
+## Posting: one message once
+
+`POST /v1/chat {name, text, cid}`: `cid` is 16-32 hex digits the page makes once per message and sends again when it
+retries that message (d15: joonazan, 08:05, "the site sends messages twice quite often"). The same `cid` from the same
+client is stored once: a repeat, before any limit, answers `200 {"ok": true, "repeat": true, "message": <the first>}`. A
+bad `cid` is `400`. Without `cid` (scripts, older pages) nothing changes. The live page also sends one message at a time
+(the button is off while one is in flight) and polls `/v1/chat` once at a time, merging by `seq`: before this, a send or
+a tab switch during a poll started a second poll and a second timer, and both appended the new messages, so lines showed
+twice and more polls ran in parallel after every send.
 
 ## Limits
 
