@@ -104,7 +104,7 @@ h.queue_resume(p,{}); tick(); check(#calls==before+3)
 -- but pauses one with work under way.
 tick(); check(not h.queue_status(p).paused)
 scheduler.pause_all(); check(not h.queue_status(p).paused)
-h.queue_submit(p,{steps={{action='walk',args={ticks=30}}}}); tick()
+h.queue_submit(p,{mode='append',steps={{action='walk',args={ticks=30}}}}); tick()
 scheduler.pause_all(); check(h.queue_status(p).paused)
 h.queue_resume(p,{})
 h.queue_cancel(p,{})
@@ -327,8 +327,48 @@ do
   bad({steps={{action='craft',label=string.rep('箱',22)}}},'label 66 bytes')
   bad({steps={},guards={{when={['until']='bad'}}}},'guards[1]: when: until must be ready')
   bad({steps={},guards={{when={['until']='ready'},steps={{action='inspect'}}}}},'guards[1]: steps[1] (inspect)')
+  local ok,err=pcall(h.queue_repeat,p,{condition={['until']='bad'},steps={{action='craft'}}})
+  assert(not ok and tostring(err):find('condition: until must be ready',1,true),tostring(err))
+  assert(h.queue_status(p).revision==before and h.queue_status(p).pending_count==1)
   local q=h.queue_submit(p,{steps={{action='wait_ticks',args={ticks_alias=5}}}})
   assert(q.pending[2].args.ticks==5,'validation uses the normalized args')
 end
 
+-- Round 00:20: explicit queue precedence and condition-ended carry rounds.
+do
+  h.queue_repeat(p,{name='plate-haul',interval_ticks=60,steps={{action='wait_until',args={['until']='stock',timeout=500}},{action='craft'}}})
+  tick()
+  local revision=h.queue_status(p).revision
+  local ok,err=pcall(h.queue_submit,p,{steps={{action='craft'}}})
+  check(not ok and err:find('plate-haul',1,true) and err:find('mode="ahead"',1,true))
+  check(h.queue_status(p).revision==revision and h.queue_status(p).active.action=='wait_until')
+  local out=h.queue_submit(p,{mode='ahead',steps={{action='craft',label='urgent'}}})
+  check(out.repeating and out.repeat_name=='plate-haul' and out.pending[1].label=='urgent' and out.pending[2].action=='wait_until')
+  tick(); check(h.queue_status(p).active.action=='wait_until')
+  check(h.queue_status(p).history[1].label=='urgent')
+  out=h.queue_submit(p,{mode='replace',steps={{action='craft',label='replacement'}}})
+  check(not out.repeating and not out.active and #out.pending==1 and out.submission:find('stopped and replaced',1,true))
+  tick(); check(h.queue_status(p).history[1].label=='replacement')
+  h.queue_repeat(p,{name='relative',steps={{action='wait_ticks',args={ticks=50}}}}); tick()
+  revision=h.queue_status(p).revision
+  check(not pcall(h.queue_submit,p,{mode='ahead',steps={{action='craft'}}}))
+  check(h.queue_status(p).revision==revision and h.queue_status(p).active.action=='wait_ticks')
+  h.queue_cancel(p,{})
+  world.stock=true
+  out=h.queue_repeat(p,{condition={['until']='stock'},steps={{action='craft'}}})
+  check(not out.repeating and #out.pending==0 and out.loop_done.rounds==0)
+  world.stock=false
+  h.queue_repeat(p,{name='carry',interval_ticks=60,condition={['until']='stock'},steps={{action='craft'}}})
+  tick(); world.stock=true; tick()
+  out=h.queue_status(p)
+  check(not out.repeating and out.loop_done.rounds==1 and out.loop_done.reason=='condition met: saw stock')
+  world.stock=false
+  h.queue_repeat(p,{interval_ticks=60,condition={['until']='stock'},steps={{action='craft'}}})
+  tick(); tick(); world.stock=true
+  for _=1,70 do tick() end
+  out=h.queue_status(p)
+  check(not out.repeating and out.loop_done.rounds==1)
+  check(not pcall(h.queue_repeat,p,{condition='stock',steps={{action='craft'}}}))
+  h.queue_cancel(p,{})
+end
 print('scheduler: '..assertions..' assertions passed')

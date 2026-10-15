@@ -240,12 +240,12 @@ do
   last=luna('status').last
   eq(last.outcome,'transferred'); eq(last.taken,40); eq(last.delivered,10)
   eq(last.short.asked,40); eq(last.short.moved,10); eq(last.short.reason,'target_full')
-  assert(last.short.why:find('is full: all '..#yfarm.inv..' slots taken (',1,true) and last.short.why:find('spoilage',1,true),last.short.why)
+  assert(last.short.why:find('chest refused yumako-seed; all '..#yfarm.inv..' slots taken (',1,true) and last.short.why:find('spoilage',1,true),last.short.why)
   eq(last.short.kept,'30 yumako-seed not delivered, carried by you'); eq(main.get_item_count('yumako-seed'),30)
   -- A plain give into it: moved 0 of 30 is a short line (the reply's warning), with what fills it.
   local g=luna('transfer',{position=yfarm.position,item='yumako-seed',count=30,direction='to_entity'})
   eq(g.transferred,0); eq(g.short.asked,30); eq(g.short.moved,0); eq(g.short.reason,'target_full')
-  eq(g.short.why,'all 16 slots taken (spoilage 400 in 8 slots, iron-plate 350 in 7 slots, yumako-seed 50 in 1 slot)')
+  eq(g.short.why,'chest refused yumako-seed; all 16 slots taken (spoilage 400 in 8 slots, iron-plate 350 in 7 slots, yumako-seed 50 in 1 slot)')
   for _,s in ipairs(filler) do s.clear() end
   yfarm.inv.can_insert=nil
   main.remove{name='yumako-seed',count=30}; yfarm.inv.remove{name='yumako-seed',count=10}
@@ -362,7 +362,7 @@ r=luna('transfer',{position=far_empty.position,item='iron-plate',count=5,directi
 body.position={x=90,y=32}
 advance(3)
 last=luna('status').last
-eq(last.outcome,'nothing_to_do'); eq(last.why,'wooden-chest (95.5,32.5) is full')
+eq(last.outcome,'nothing_to_do'); assert(last.why:find('wooden-chest (95.5,32.5) chest refused iron-plate;',1,true) and last.why:find('wood 1600 in 16 slots',1,true),last.why)
 far_empty.inv.remove{name='wood',count=100*16}; main.remove{name='iron-plate',count=5}
 body.position={x=50,y=32}
 -- With to, inventory goes with the place that has it: neither chest has fuel, so the call is refused at once (Luna
@@ -414,6 +414,8 @@ do
   target.inv.insert{name='wood',count=1600}
   r=luna('transfer',{position=target.position,direction='to_entity',items={['iron-plate']=1,coal=1}})
   eq(r.transferred,0); eq(r.short.missing,2); assert(r.entries[1].entity_full)
+  eq(r.entries[1].entity_full.inventory,'chest')
+  assert(r.entries[1].entity_full.slots:find('chest refused coal;',1,true),r.entries[1].entity_full.slots)
   fails(function() luna('transfer',{position=target.position,direction='to_entity',inventory='rocket_silo_rocket',items={['iron-plate']=1,coal=1}}) end,
     'all 2 items failed, nothing moved; first coal:')
 end

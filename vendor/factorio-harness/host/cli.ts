@@ -227,6 +227,9 @@ function normalizeWaitArgs(action: string, args: Record<string, unknown>, path =
   }
   if (!['queue_submit', 'queue_repeat', 'queue_edit'].includes(action)) return args;
   const out = {...args};
+  if (action === 'queue_repeat' && out.condition && typeof out.condition === 'object' && !Array.isArray(out.condition)) {
+    out.condition = normalizeWaitArgs('wait_until', out.condition as Record<string, unknown>, `${path}.condition`, depth + 1);
+  }
   if (Array.isArray(out.steps)) out.steps = out.steps.map((step, i) => {
     if (!step || typeof step !== 'object' || typeof step.action !== 'string' || !step.args || typeof step.args !== 'object') return step;
     return {...step, args:normalizeWaitArgs(step.action, step.args, `${path}.steps[${i + 1}].args`, depth + 1)};
@@ -1032,6 +1035,12 @@ async function main() {
         crafts: last.crafts, waited_s: last.waited_s, counted_from: last.counted_from} : {}),
       // An item move that ran over time: what it moved and the inventory line after (Muse 06:27).
       moved: last?.moved, inv: last?.inv,
+      // A short feed still says how many stops remain when up_to makes its exit successful.
+      ...(last?.kind === 'gather' ? {left:last.left, short_allowed:last.short_allowed, short:last.short} : {}),
+      // Transfer tours retain the inventory selected and local delivery/refusal facts in compact waits too.
+      ...(last?.op === 'transfer' && Array.isArray(last.entities) ? {
+        transfers:last.entities.slice(0,8), transfers_more:last.entities.length>8?last.entities.length-8:undefined,
+      } : {}),
       // A courier (transfer or collect with pick and to): where it took from, what it took and what arrived.
       picked: last?.picked, taken: last?.taken, delivered: last?.delivered,
       team: carrier.result?.team, clock: carrier.result?.clock, orders: carrier.result?.orders, chat: carrier.result?.chat,
@@ -1090,7 +1099,7 @@ async function main() {
             note:`${action} is not running and recorded no result of its own (the last result, ${last.kind} ${last.outcome} at tick ${last.tick}, predates it)`}};
         }
         // A kite that ran its ticks out kited for as long as it was asked: done, as shoot's duration_elapsed is.
-        if (status.ok && last?.outcome && !successfulOutcomes.includes(last.outcome) && !(action === 'kite' && last.outcome === 'timed_out')) {
+        if (status.ok && last?.outcome && !successfulOutcomes.includes(last.outcome) && !(last.op === 'feed' && last.outcome === 'out_of_items' && last.short_allowed === true) && !(action === 'kite' && last.outcome === 'timed_out')) {
           return {...status,ok:false,error:endedError(action,last)};
         }
         return status;
@@ -1306,7 +1315,7 @@ async function main() {
           return withSlow(withTells({...full, result:{idle:true, nothing_running:true, note, last, last_combat:status.result?.last_combat,
             waited_ms:Date.now()-started, team:full.result?.team, clock:full.result?.clock, orders:full.result?.orders, chat:full.result?.chat}}));
         }
-        const ok = !last?.outcome || successfulOutcomes.includes(last.outcome);
+        const ok = !last?.outcome || successfulOutcomes.includes(last.outcome) || (last.op === 'feed' && last.outcome === 'out_of_items' && last.short_allowed === true);
         const ended = {...status, ok, ...(ok ? {} : {error:endedError(last.kind ?? 'the action',last)})};
         if (compactWaits) return withSlow(withTells(await brief(ended, started)));
         const full = await finalReply(ended);

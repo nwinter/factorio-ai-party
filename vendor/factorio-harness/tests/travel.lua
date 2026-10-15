@@ -248,11 +248,12 @@ do
   bots.check_action(b.index,'configure',{surface='nauvis'})
   bots.check_action(b.index,'queue_submit',{})
   fails(function() bots.check_action(b.index,'configure',{}) end,'remote view only')
-  local state,dropped={},0
+  local state,dropped,departed={},0,false
   local s=dofile('mod/agent-harness_0.1.0/scheduler.lua'){
     state=function() return state end,player=function() return {index=b.index} end,
     handlers={drop=function() dropped=dropped+1; return {} end,craft=function() error('body action ran') end},
-    check_action=bots.check_action,validate_condition=function() end,condition=function() return true end,
+    check_action=bots.check_action,validate_condition=function() end,
+    condition=function(_,a) if a['until']=='platform_left' then return departed end return true end,
     stop=function() end,busy=function() return false end}
   local p={index=b.index}
   local steps={{action='wait_until',args={['until']='platform_arrived',platform='alpha-2'}},{action='drop',args={platform='alpha-2'}}}
@@ -263,9 +264,30 @@ do
   fails(function() s.handlers.queue_submit(p,{steps={steps[1],{action='craft',args={recipe='iron-gear-wheel'}}}}) end,'steps[2] (craft)')
   eq(s.handlers.queue_status(p).revision,rev)
   fails(function() s.handlers.queue_submit(p,{steps={},guards={{when={['until']='crafting_done'}}}}) end,'guards[1]')
-  s.handlers.queue_submit(p,{steps={{action='drop'}}})
+  -- Repeat modes keep the aboard checks and contextual errors before any preemption.
+  s.handlers.queue_repeat(p,{name='aboard-loop',steps=steps,interval_ticks=60,
+    condition={['until']='platform_left',platform='alpha-2'}})
+  s.tick()
+  rev=s.handlers.queue_status(p).revision
+  fails(function() s.handlers.queue_submit(p,{steps={{action='drop'}}}) end,'repeating job "aboard-loop"')
+  fails(function() s.handlers.queue_submit(p,{mode='replace',steps={{action='craft'}}}) end,'steps[1] (craft)')
+  fails(function() s.handlers.queue_submit(p,{mode='ahead',steps={},guards={{when={['until']='crafting_done'}}}}) end,'guards[1]')
+  fails(function() s.handlers.queue_repeat(p,{condition={['until']='crafting_done'},steps=steps}) end,'condition:')
+  eq(s.handlers.queue_status(p).revision,rev)
+  eq(s.handlers.queue_status(p).active.action,'wait_until')
+  local ahead=s.handlers.queue_submit(p,{mode='ahead',steps={{action='drop',label='urgent'}}})
+  eq(ahead.repeating,true); eq(ahead.pending[1].label,'urgent'); eq(ahead.pending[2].action,'wait_until')
+  s.tick(); eq(dropped,2)
+  game.tick=game.tick+1; s.tick(); eq(dropped,3)
+  game.tick=game.tick+1; s.tick()
+  departed=true; game.tick=game.tick+60; s.tick()
+  eq(s.handlers.queue_status(p).repeating,false); eq(s.handlers.queue_status(p).loop_done.rounds,1)
+  departed=false
+  s.handlers.queue_repeat(p,{steps=steps})
+  local replacement=s.handlers.queue_submit(p,{mode='replace',steps={{action='drop'}}})
+  eq(replacement.repeating,false); eq(#replacement.pending,1)
   b.travel.state='descending'; game.tick=game.tick+1; s.tick()
-  eq(dropped,1); eq(s.handlers.queue_status(p).paused,true)
+  eq(dropped,3); eq(s.handlers.queue_status(p).paused,true)
   b.travel=before
 end
 
