@@ -887,6 +887,8 @@ async function main() {
       // stopped before, a squeeze it walked out of, what to mine when closed in; enemies gone around (avoid.lua).
       ...(last?.kind === 'move_to' ? {nearest_reachable: last.nearest_reachable, reachable_gap: last.reachable_gap, off_belt: last.off_belt,
         path: last.path, steered: last.steered, pocket: last.pocket, escaped: last.escaped, mine_to_get_out: last.mine_to_get_out,
+        // not closed in, yet no way to the target: what to mine for one (round1820a)
+        mine_for_a_way: last.mine_for_a_way,
         // a spot it reaches within build reach when it gave up, a squeeze walked along gaps, each leg of a via walk (round0620c)
         build_spot: last.build_spot, build_spot_note: last.build_spot_note, build_spot_squeeze: last.build_spot_squeeze, squeezed: last.squeezed,
         legs: legLines(last.legs),

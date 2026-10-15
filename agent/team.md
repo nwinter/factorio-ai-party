@@ -280,7 +280,8 @@ already targets your character.
   corpse keeps what you carried when you died and does not expire. One inside a worm's range is left out (`left_out`).
 - A target in a narrow gap no path leads into ends the walk `arrived_near` before it (`last.pocket`; `"squeeze":true`
   walks in). Squeezed in, the walk gets out along the gaps first (`last.escaped`); closed in, `last.mine_to_get_out`
-  names everything to mine to open ground (chests, accumulators, walls, trees and rocks before poles and machines). A
+  names everything to mine to open ground (chests, accumulators, walls, trees and rocks before poles and machines); not
+  closed in but with no way to the target, `last.mine_for_a_way` names the fewest to mine for one. A
   `build` batch that fails part way, and a real `place_ghosts`, say on the `warning:` line when what they place closes
   you in. `circuit_set` says `stays disabled` there when one of the entity's conditions is not met after the call;
   `requests` `set` takes a map `{item: min}` too; an entry without `max` keeps the slot's max (`"max": "inf"` sets none).

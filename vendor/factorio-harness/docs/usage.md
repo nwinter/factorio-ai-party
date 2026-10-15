@@ -605,6 +605,15 @@ fh call status
     kind: chests, accumulators, walls, gates, solar panels, lamps, trees and rocks 1; belts, pipes, inserters and pumps
     2; poles, machines and the rest 3; cliffs, tiles and others' entities never; at most 16. On a copy of world n's
     Fulgora island a search took 2 to 8 ms (the old one, which stopped at the first pocket, 1.3 to 3.3).
+  - Not closed in, yet no way to the target (round1820a, Astra on Fulgora: packed accumulators, 6 failed walks in
+    about 4 game minutes; lifting 2 of them, then `pathfind: false`, got through): a walk that ends `unreachable` or
+    `blocked`, or a near walk (`arrived_near`) to a goal point no entity covers, names the fewest of our entities
+    (trees, rocks) to mine for a way from where the character can get to (the give-up's nearest reachable spot, or
+    where it stands) to the target, by the same costs: `last.mine_for_a_way`, and in `why` (or `near_walk`): `...;
+    mining accumulator (-53,108) and accumulator (-53,106) opens a way from (-54.5,112.5) to (-53.5,104.5)`. The
+    search spans both points and 8 tiles round them, at most 48 a side (a goal farther off is left alone): on a copy of
+    world n's Fulgora island 1.4 to 2.3 ms for Gemini's accumulators, 9 ms at 41 by 46 tiles, once as the walk ends. On
+    the copy, mining the 4 accumulators one answer named let the same walk arrive.
   - A `build` batch that fails after some entries stand says what those entries closed in its refusal
     (`build 9/9 failed after 8 built: ...; the character is closed in now where it stands (50.5,108.5): ...`; Gemini's
     19:25 batch failed after 2 built, and those 2 had closed the last gap out). A real `place_ghosts` says
