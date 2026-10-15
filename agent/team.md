@@ -90,7 +90,8 @@ already targets your character.
   finish at the current lab throughput (or which pack it waits for). `./fh research done` lists what finished lately
   and what each unlocked. `./fh call science` (or `--args '{"pack":"logistic-science-pack"}'`) counts each pack the
   research needs over your whole surface, the same for everyone wherever they stand: made and used in 10 minutes,
-  the assemblers set to it and their states, packs in chests, on belts, in labs and carried, and the largest chests;
+  the assemblers set to it and their states, packs in chests, in landing pads and hubs, on belts, in labs and carried,
+  and the largest holders (landing pads included);
   its `reach` line says where else each pack sits (inserter hands, robots) and why it does not reach the labs; its
   `chain` line walks the pack's recipe tree down, each step with its makers and made and used per minute, following
   the ingredient most makers lack (`chemical-science-pack: 9 of 14 makers lack advanced-circuit, ...; plastic-bar:
@@ -266,7 +267,11 @@ already targets your character.
 - Gleba: `inspect` on an agricultural tower shows its `tower` state, seeds, output, which cells have soil for which
   seeds, and its plants with time to harvest; `transfer`, `feed` and `collect` work on its seeds and harvest.
 - Spoilage: `inspect`, `supply` and `stock` give the first stack to spoil and when; pentapod eggs say when they hatch
-  into enemies (`hatch_warning`, `hatch`); `output_spoil` is what a machine's next products start at. Eggs of ours
+  into enemies (`hatch_warning`, `hatch`); `output_spoil` is what a machine's next products start at; `freshness`
+  gives each item's spread (least and most spoiled, the share by count, the counts under 25/50/75%, how many spoil
+  within 10/30/60 min) in `inspect`, `supply` and every `platforms` row (the hub; `drop` dry_run for the items to drop,
+  `launch` for the rocket's cargo), and the moved batch's in `transfer`, `collect` and `load_silo` (a
+  science pack: how many a unit the running research takes, and its units left). Eggs of ours
   hatching within 5 minutes on your surface top `team.alerts` (`eggs hatching: ...`) and wake `fh sleep` (`woke: eggs`).
 - In a tank, car or spidertron you drive, `shoot` fires its gun: `--args '{"position":{"x":294,"y":-135},"gun":"tank-cannon"}'`
   (or `"ammo":"explosive-cannon-shell"`, `"auto":true`), loading the slot from your inventory; `vehicle {drive}` goes on meanwhile.
@@ -405,7 +410,9 @@ already targets your character.
   spoil_priority: fresh_first | spoiled_first | none}` sets an inserter's Spoil priority (built or ghost; `inspect`
   shows it).
 - Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`), and
-  so do tell, chat, say, operator, the board, research, platform calls and waits on `platform_arrived`/`platform_left`.
+  so do tell, chat, say, operator, the board, research, platform calls and waits on `platform_arrived`/`platform_left`,
+  and every remote-view call with `platform=` or `surface=` (place_ghosts, deconstruct, configure, circuit_set,
+  requests with position, ...; the refusal lists them).
 - Modules: `configure {position | positions, modules: ["speed-module-2","speed-module-2"], by?}` sets a machine's module
   slots: the modules it already holds that the list names stay in their slots, the rest go into the other slots (past
   the list: empty); `["keep","efficiency-module","empty"]` goes slot by slot and `{"2":"efficiency-module"}` changes

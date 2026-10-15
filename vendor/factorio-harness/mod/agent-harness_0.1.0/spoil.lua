@@ -77,16 +77,63 @@ return function(api)
   M.stack_spoil = stack_spoil
   -- Per item: count, the first stack to spoil (its tick and share), and how
   -- many spoil within WARN_TICKS. acc is {[key]=row} plus the rows in order.
+  -- The spread too (Sol, 22:25: a chest of 1846 agricultural packs showed the oldest at 91% while hundreds were at
+  -- 15-30%): the least and most spoiled stack, the count-weighted spoiled share (wsum / count), the counts by share
+  -- (under 25%, 25-50%, 50-75%, 75% and over), and how many spoil within 10, 30 and 60 minutes.
+  M.WITHIN = {600 * 60, 1800 * 60, 3600 * 60}
+  local function bucket(pct) return pct < 0.25 and 1 or pct < 0.5 and 2 or pct < 0.75 and 3 or 4 end
   function M.add(acc, s, where)
     local tick, pct = stack_spoil(s)
     if not tick then return end
     local q = try(function() return s.quality.name end)
-    local key = s.name .. (q and q ~= 'normal' and '@' .. q or '')
+    M.add_count(acc, s.name, q, s.count, pct, tick, where)
+  end
+  -- n items of a stack spoiled pct that spoils at tick (a moved part of a stack: transfer's batch).
+  function M.add_count(acc, name, q, n, pct, tick, where)
+    local key = name .. (q and q ~= 'normal' and '@' .. q or '')
     local r = acc[key]
-    if not r then r = {key=key, name=s.name, count=0, soon=0, tick=tick, percent=pct, where=where}; acc[key] = r; acc[#acc+1] = r end
+    if not r then
+      r = {key=key, name=name, count=0, soon=0, tick=tick, percent=pct, where=where, min=pct, max=pct, wsum=0, buckets={0, 0, 0, 0}, within={0, 0, 0}}
+      acc[key] = r; acc[#acc+1] = r
+    end
+    local s = {count=n}
     r.count = r.count + s.count
     if tick - game.tick <= M.WARN_TICKS then r.soon = r.soon + s.count end
     if tick < r.tick then r.tick, r.percent, r.where = tick, pct, where end
+    r.min, r.max = math.min(r.min or pct, pct), math.max(r.max or pct, pct)
+    r.wsum = (r.wsum or 0) + pct * s.count
+    if r.buckets then local b = bucket(pct); r.buckets[b] = r.buckets[b] + s.count end
+    for i, w in ipairs(M.WITHIN) do if r.within and tick - game.tick <= w then r.within[i] = r.within[i] + s.count end end
+  end
+  -- Rows of the same item merged (supply over many places).
+  function M.merge(into, r)
+    local x = into[r.key]
+    if not x then
+      x = {key=r.key, name=r.name, count=0, soon=0, tick=r.tick, percent=r.percent, where=r.where, min=r.min, max=r.max, wsum=0, buckets={0, 0, 0, 0}, within={0, 0, 0}}
+      into[r.key] = x; into[#into+1] = x
+    end
+    x.count, x.soon, x.wsum = x.count + r.count, x.soon + r.soon, x.wsum + (r.wsum or r.percent * r.count)
+    if r.tick < x.tick then x.tick, x.percent, x.where = r.tick, r.percent, r.where end
+    x.min, x.max = math.min(x.min, r.min or r.percent), math.max(x.max, r.max or r.percent)
+    for i = 1, 4 do x.buckets[i] = x.buckets[i] + (r.buckets and r.buckets[i] or 0) end
+    for i = 1, 3 do x.within[i] = x.within[i] + (r.within and r.within[i] or 0) end
+    return x
+  end
+  local function pc(x) return math.floor(x * 100 + 0.5) end
+  -- "agricultural-science-pack*1846: spoiled 15-91%, 27% by count; under 25% 900, 25-50% 700, 50-75% 200, 75%+ 46;
+  -- spoil within 10 min 46, 30 min 120, 60 min 400"
+  function M.spread_text(r)
+    if not r.buckets then return M.row_text(r) end
+    local b, w = r.buckets, r.within
+    local range = pc(r.min) == pc(r.max) and string.format('%d%%', pc(r.min)) or string.format('%d-%d%%', pc(r.min), pc(r.max))
+    return string.format('%s*%d: spoiled %s, %d%% by count; under 25%% %d, 25-50%% %d, 50-75%% %d, 75%%+ %d; spoil within 10 min %d, 30 min %d, 60 min %d',
+      r.key, r.count, range, r.count > 0 and pc(r.wsum / r.count) or 0, b[1], b[2], b[3], b[4], w[1], w[2], w[3])
+  end
+  function M.spread(r)
+    if not r.buckets then return nil end
+    return {count=r.count, min=pc(r.min), max=pc(r.max), mean=r.count > 0 and pc(r.wsum / r.count) or 0,
+      buckets={['0-25']=r.buckets[1], ['25-50']=r.buckets[2], ['50-75']=r.buckets[3], ['75+']=r.buckets[4]},
+      within={['10min']=r.within[1], ['30min']=r.within[2], ['60min']=r.within[3]}}
   end
   function M.inventory(inv, acc, where)
     if not (inv and try(function() return inv.valid end)) then return acc end

@@ -927,6 +927,11 @@ do
   local seen=call('inspect',{position={x=3,y=0}})
   eq(seen.trash,'40 space-platform-foundation, 7 solar-panel, 1 inserter (in rocket_silo_trash, put there by the game; take: transfer {position, direction=to_player, inventory=rocket_silo_trash}, item= for one kind)')
   eq(seen.inventories.rocket_silo_trash[1].count,40)
+  -- Each spoilable item's spread, per inventory (Sol, 22:25).
+  silo_trash[1].spoil_tick=game.tick+600; silo_trash[1].spoil_percent=0.5
+  eq(call('inspect',{position={x=3,y=0}}).freshness[1],'rocket_silo_trash: space-platform-foundation*40: spoiled 50%, 50% by count; '
+    ..'under 25% 0, 25-50% 0, 50-75% 40, 75%+ 0; spoil within 10 min 40, 30 min 40, 60 min 40')
+  silo_trash[1].spoil_tick=nil
   local kept=main
   main=inv(stack(nil,0),stack(nil,0),stack(nil,0),stack(nil,0))
   local took=call('transfer',{position={x=3,y=0},item='solar-panel'})
@@ -2739,6 +2744,13 @@ end)()
   eq(sc.entities[2].name,'cargo-pod-container'); eq(sc.entities[2].position.x,6.5); eq(sc.entities[2].holds,'advanced-circuit*1945')
   standing[2]=nil
   fails(function() call('scan',{surface='vulcanus'}) end,'scan with surface needs position, area or positions there')
+  -- deconstruct marks there too (Sol, 23:13: marks on a planet from a platform).
+  standing[1].minable=true; standing[1].order_deconstruction=function() standing[1].marked=true; return true end
+  local find=vulcanus.find_entities_filtered
+  vulcanus.find_entities_filtered=function(f) if f.invert then return standing end return find(f) end
+  local dc=call('deconstruct',{surface='vulcanus',area={left_top={x=0,y=0},right_bottom={x=10,y=10}}})
+  eq(dc.changed,1); eq(standing[1].marked,true)
+  vulcanus.find_entities_filtered=find
   prototypes.entity,game.get_surface,p.force.platforms,p.force.is_chunk_charted=entity_protos,get_surface,platforms,charted
 end)()
 -- A ghost goes over trees and rocks and marks them, though the engine's check
@@ -4336,17 +4348,19 @@ end)()
     for i=1,3 do cargo[i]=stack(nil,0) end
     local kept_spoil=ag.get_spoil_ticks
     ag.get_spoil_ticks=function() return 3600*60 end
-    local function aged(n,pct) local s=stack('agricultural-science-pack',n); s.spoil_percent=pct; return s end
+    local function aged(n,pct) local s=stack('agricultural-science-pack',n); s.spoil_percent=pct; s.spoil_tick=game.tick+(1-pct)*3600*60; return s end
     main=inv(aged(50,0.6),stack(nil,0))
     main.get_contents=function() local out={}; for _,s in ipairs(main) do if s.valid_for_read then out[#out+1]={name=s.name,count=s.count,quality='normal'} end end; return out end
     held_inv[1]=aged(50,0.3); held_inv[2]=aged(50,0.1)
     r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=80},from={x=40.5,y=5.5}})
     eq(r.loaded[1].loaded,80); eq(r.loaded[1].order,'fresh first'); eq(r.loaded[1].from,'iron-chest (40.5,5.5) 80')
+    eq(r.loaded[1].freshness:match('^[^;]*'),'agricultural-science-pack*80: spoiled 10-30%, 18% by count')
     eq(held_inv[2].count,0,'the 10% stack first'); eq(held_inv[1].count,20,'then 30 of the 30% one'); eq(main[1].count,50,'yours (60%) stays')
     -- fresh_first=false: you first
     for i=1,3 do cargo[i]=stack(nil,0) end
     r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=60},from={x=40.5,y=5.5},fresh_first=false})
     eq(r.loaded[1].order,nil); eq(r.loaded[1].from,'you 50, iron-chest (40.5,5.5) 10'); eq(main[1].count,0)
+    eq(r.loaded[1].freshness:match('^[^;]*'),'agricultural-science-pack*60: spoiled 30-60%, 55% by count')
     ag.get_spoil_ticks=kept_spoil
     held_inv[1]=stack(nil,0); held_inv[2]=stack(nil,0)
   end

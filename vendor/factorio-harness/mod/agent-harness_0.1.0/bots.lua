@@ -213,9 +213,18 @@ return function(api)
   -- cargo pod down from the hub; the body is made again where that pod comes
   -- down, wearing the same armor and guns. Same payload and the game's own
   -- ascent and descent time as a player's trip.
+  -- The calls that act by remote view (runtime.lua wraps them): on a platform with platform=NAME, on another surface
+  -- (a planet, or a platform by its surface's name) with surface=NAME. Aboard they all work (Sol, 23:13: place_ghosts
+  -- with surface=nauvis, and its dry run, were refused as no-body while a player aboard places ghosts on a planet by
+  -- remote view); the refusal lists them from here.
+  M.PLATFORM_ACTIONS = {'place_ghosts', 'deconstruct', 'cancel_deconstruction', 'paste', 'blueprint_place', 'grid', 'scan', 'inspect',
+    'configure', 'flush', 'circuit_set', 'circuit', 'wire', 'ports', 'cargo', 'trace', 'power', 'conflicts'}
+  M.SURFACE_ACTIONS = {'inspect', 'circuit_set', 'circuit', 'wire', 'ores', 'launch', 'configure', 'silo', 'preflight', 'requests',
+    'place_ghosts', 'scan', 'conflicts', 'deconstruct', 'cancel_deconstruction'}
   M.ABOARD_NOTE = 'every read (status, scan, inspect, science, supply, networks, platforms, map, ...: of the platform, or of a planet with surface=) but inventory and craftable; '
     .. 'tell, chat, say, operator, board and votes; research; platform_schedule, platform_create, requests (platform= or position=), drop (hub items down to the planet) and land; '
-    .. 'ghost tools, grid/scan, circuit_set and wire with platform=; sleep, and wait_until on platform_arrived, platform_left, researched, rocket_ready, rocket_parts or item_count at positions. '
+    .. 'by remote view with platform=NAME: ' .. table.concat(M.PLATFORM_ACTIONS, ', ') .. '; with surface=NAME (a planet): ' .. table.concat(M.SURFACE_ACTIONS, ', ')
+    .. ' (requests there with position); sleep, and wait_until on platform_arrived, platform_left, researched, rocket_ready, rocket_parts or item_count at positions. '
     .. 'Nothing that needs a body: walking, mining, building or crafting by hand, your inventory'
   -- A ride never ends sooner than MIN_*: should the engine replace a pod
   -- entity on its way (unverified), the ride still takes its time.
@@ -384,9 +393,9 @@ return function(api)
     review=true, networks=true, boilers=true, research=true, research_next=true, technologies=true, recipes=true, say=true, chat=true, confess=true, confessions=true, chronicle=true,
     profile=true, clock=true, advance=true, sleep=true, sleep_check=true, wait_ticks=true, queue_status=true, queue_cancel=true,
     blueprint_import=true, blueprint_list=true, blueprint_export=true, blueprint_delete=true, cameras=true, profiles=true, ports=true, cargo=true}
-  local ON_PLATFORM = {place_ghosts=true, deconstruct=true, cancel_deconstruction=true, paste=true, blueprint_place=true, grid=true, scan=true}
-  -- Remote view of a platform or a planet by name (platform= or surface=).
-  local REMOTE = {inspect=true, circuit_set=true, circuit=true, wire=true, trace=true, ores=true, preflight=true}
+  local ON_PLATFORM, ON_SURFACE = {}, {}
+  for _, name in ipairs(M.PLATFORM_ACTIONS) do ON_PLATFORM[name] = true end
+  for _, name in ipairs(M.SURFACE_ACTIONS) do ON_SURFACE[name] = true end
   local VIEWS = {platforms=true, sleep_check=true}
   -- Astra, 18:16: aboard, tell, operator, scan with platform, science and wait_until platform_arrived were refused while
   -- the refusal said grid/scan work. The team's calls work aboard, as every read does (the runtime's read-only list,
@@ -395,7 +404,6 @@ return function(api)
     vote=true, votes=true, lookahead=true}
   local BODY_READS = {inventory=true, craftable=true}
   local BODYLESS_WAITS = {platform_arrived=true, platform_left=true, researched=true, rocket_ready=true, rocket_parts=true}
-  REMOTE.scan = true
   function M.check_action(index, action, args)
     local b = bots().by_index[index]
     if not (b and b.travel) then return end
@@ -408,7 +416,9 @@ return function(api)
     -- A dry run is checked as the call it tries (dryrun.lua).
     if action == 'dry_run' and type(args.args) == 'table' then return M.check_action(index, args.action, args.args) end
     if ON_PLATFORM[action] and args.platform ~= nil then return end
-    if REMOTE[action] and (args.platform ~= nil or args.surface ~= nil) then return end
+    if ON_SURFACE[action] and args.surface ~= nil then return end
+    -- trace reads another surface with surface= (an item's routes there).
+    if action == 'trace' and args.surface ~= nil then return end
     if action == 'requests' and (args.platform ~= nil or args.position ~= nil) then return end
     if action == 'observe' and VIEWS[args.scope] then return end
     if api.read_only and api.read_only(action) and not BODY_READS[action] and not (action == 'observe' and BODY_READS[args.scope]) then return end

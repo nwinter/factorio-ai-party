@@ -132,7 +132,7 @@ return function(api)
   -- inserter hands): where else it sits and why it does not reach the labs.
   -- One pass for all packs through supply's scan (supply.lua: its bounds).
   M.schema.science = {pack='optional item: a science pack (default: each pack the current research needs)', surface='optional surface name (default yours)',
-    returns='research and per pack one line and its numbers, for the whole surface, the same for everyone: made and used in the last 10 min (the game\'s statistics), makers (crafters of any type set to it, Space Age ones too, by name: working and the other states; packs waiting in their output), held in chests, on belts and in labs (labs lacking it of those that need it), carried by agents, the largest chests with positions; reach: chests by kind, inserter hands, robots carrying it, the inserters taking from its makers and feeding the labs (by status, what the waiting ones\' sources hold), the logistic requesters for it per network (met, on the way, unmet with reasons), and the worst lab (position, what it lacks, its feeder\'s source, the nearest stock); chain: the pack\'s recipe tree from the step down, '
+    returns='research and per pack one line and its numbers, for the whole surface, the same for everyone: made and used in the last 10 min (the game\'s statistics), makers (crafters of any type set to it, Space Age ones too, by name: working and the other states; packs waiting in their output), held in chests, in landing pads and platform hubs, on belts and in labs (labs lacking it of those that need it), carried by agents, the largest holders with positions (chests, landing pads, hubs); reach: chests by kind, inserter hands, robots carrying it, the inserters taking from its makers and feeding the labs (by status, what the waiting ones\' sources hold), the logistic requesters for it per network (met, on the way, unmet with reasons), and the worst lab (position, what it lacks, its feeder\'s source, the nearest stock); chain: the pack\'s recipe tree from the step down, '
       .. 'following the ingredient most of a step\'s makers lack while most of them lack one and ending at the first step whose makers mostly do '
       .. 'not, each step with its makers and made and used per minute (10 min statistics) ("chemical-science-pack: 9 of 14 makers lack '
       .. 'advanced-circuit, made 12/min, used 30/min; advanced-circuit: ...; plastic-bar: 4 of 4 working, made 30/min, used 52/min"); '
@@ -202,26 +202,31 @@ return function(api)
       for name, n in pairs(by_name) do names[#names+1] = {name=name, n=n} end
       table.sort(names, function(x, y) if x.n ~= y.n then return x.n > y.n end return x.name < y.name end)
       for i, x in ipairs(names) do names[i] = x.n .. ' ' .. x.name end
-      local chests, rows = 0, {}
+      -- Landing pads and platform hubs beside the chests, and among the largest holders (Sol, 23:03: chests 185 and
+      -- the largest chests left out the landing pad's 766; Muse read it as 170 agricultural packs left).
+      local chests, pads, hubs, rows = 0, 0, 0, {}
       for _, c in ipairs(t.chests) do
-        if c.kind ~= 'pad' and c.kind ~= 'hub' and c.kind ~= 'vehicle' then chests = chests + c.n; rows[#rows+1] = c end
+        if c.kind == 'pad' then pads = pads + c.n; rows[#rows+1] = c
+        elseif c.kind == 'hub' then hubs = hubs + c.n; rows[#rows+1] = c
+        elseif c.kind ~= 'vehicle' then chests = chests + c.n; rows[#rows+1] = c end
       end
       table.sort(rows, function(x, y) if x.n ~= y.n then return x.n > y.n end return x.e.position.x < y.e.position.x end)
       local largest = {}
       for i = 1, math.min(3, #rows) do largest[i] = string.format('%s %s %d', at(rows[i].e.position), rows[i].e.name, rows[i].n) end
       local lacking = 0
       for _, u in ipairs(t.users) do if u.lab and u.has == 0 then lacking = lacking + 1 end end
-      local line = string.format('%s: made %d, used %d in 10 min; makers %d (%s%d working%s%s); chests %d, belts %d, labs %d',
+      local line = string.format('%s: made %d, used %d in 10 min; makers %d (%s%d working%s%s); chests %d%s%s, belts %d, labs %d',
         short(name), made, used, #t.makers, #names > 0 and table.concat(names, ', ') .. '; ' or '', working, #list > 0 and ', ' .. table.concat(list, ', ') or '',
-        t.outputs > 0 and '; ' .. t.outputs .. ' in their output' or '', chests, t.belts, t.labs)
+        t.outputs > 0 and '; ' .. t.outputs .. ' in their output' or '', chests, pads > 0 and ', landing pads ' .. pads or '',
+        hubs > 0 and ', platform hubs ' .. hubs or '', t.belts, t.labs)
       if needed[name] then line = line .. string.format(' (%d of %d labs have none)', lacking, labs)
       else line = line .. ' (the current research does not use it)' end
       if carried[name] then line = line .. '; carried: ' .. table.concat(carried[name], ', ') end
-      if #largest > 0 then line = line .. '; largest chests: ' .. table.concat(largest, ', ') end
+      if #largest > 0 then line = line .. '; largest holders: ' .. table.concat(largest, ', ') end
       -- The pack's recipe tree from the scan's crafters (supply.lua chain).
       local okc, chain = pcall(api.supply.chain, scan, force, surface, name)
       out[#out+1] = {pack=name, made_10min=made, used_10min=used, makers=#t.makers, makers_working=working, makers_states=#list > 0 and list or nil,
-        in_makers=t.outputs, chests=chests, belts=t.belts, labs=t.labs, labs_lacking=needed[name] and lacking or nil,
+        in_makers=t.outputs, chests=chests, landing_pads=pads > 0 and pads or nil, hubs=hubs > 0 and hubs or nil, belts=t.belts, labs=t.labs, labs_lacking=needed[name] and lacking or nil,
         carried=carried[name], largest=#largest > 0 and largest or nil, line=line, reach=api.supply.reach(t, scan, needed),
         chain=okc and chain and chain.line or nil, chain_tree=okc and chain and chain.tree or nil, chain_cut=okc and chain and chain.cut or nil}
     end
