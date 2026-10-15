@@ -272,6 +272,53 @@ do
   eq(sol('status').active.to.x,50)
   sol('stop')
   storage.agent_harness.damage=nil -- (these hits made attack #1 at (0,0), under attack now for a minute)
+  -- The spot away is outside every worm's range the map shows: a medium worm at (-30,0) holds the spot straight away
+  -- (-24,0) and those 45 degrees off it, so the walk goes 90 degrees off, to (0,-24).
+  prototypes=prototypes or {}; prototypes.entity=prototypes.entity or {}
+  prototypes.entity['medium-worm-turret']={attack_parameters={range=30}}
+  local worm={valid=true,name='medium-worm-turret',type='turret',position={x=-30,y=0},force=game.forces.enemy}
+  local find=surface.find_entities_filtered
+  surface.find_entities_filtered=function(f)
+    if f.area and f.type then
+      local a=f.area
+      if worm.position.x>=a[1][1] and worm.position.x<a[2][1] and worm.position.y>=a[1][2] and worm.position.y<a[2][2] then return {worm} end
+      return {}
+    end
+    return find(f)
+  end
+  storage.agent_harness.enemy_chunks=nil; storage.agent_harness.char_hits=nil
+  jump(700); body.position={x=0,y=0}; body.health=250
+  hit(spitter); advance(1)
+  local away=sol('status').active
+  eq(away.kind,'move_to'); eq(away.to.x,0); eq(away.to.y,-24)
+  sol('stop'); surface.find_entities_filtered=find; storage.agent_harness.enemy_chunks=nil; storage.agent_harness.damage=nil
+  -- Turret cover first: one of ours within 96 tiles that holds ammo and is not past the attacker, 3 tiles behind it;
+  -- one with no ammo, or past the attacker, is no cover.
+  defines.inventory.turret_ammo=defines.inventory.turret_ammo or 7
+  local function turret(x,y,ammo) return {valid=true,name='gun-turret',type='ammo-turret',position={x=x,y=y},force=force,
+    get_inventory=function() return {is_empty=function() return not ammo end} end} end
+  local turrets={turret(-40,0,true),turret(30,0,true),turret(-10,5,false)}
+  surface.find_entities_filtered=function(f)
+    if f.radius==96 then return turrets end
+    return find(f)
+  end
+  storage.agent_harness.char_hits=nil
+  jump(700); body.position={x=0,y=0}; body.health=250
+  hit(spitter); advance(1)
+  away=sol('status').active
+  eq(away.to.x,-43); eq(away.to.y,0)
+  assert(tostring(away.retreating):find('hit by big-spitter with no action running, to the cover of gun-turret (-40,0)',1,true),tostring(away.retreating))
+  -- On arrival, an enemy unit within 20 tiles: it walks on, from that one.
+  surface.find_entities_filtered=function(f)
+    if f.radius==20 and f.type=='unit' then return {{valid=true,name='big-spitter',type='unit',position={x=-35,y=0}}} end
+    if f.radius==96 then return {} end
+    return find(f)
+  end
+  body.position={x=-43,y=0}; advance(2)
+  away=sol('status').active
+  eq(away.kind,'move_to'); eq(away.to.x,-67)
+  assert(tostring(away.retreating):find('big-spitter 8 tiles away when the walk away ended',1,true),tostring(away.retreating))
+  sol('stop'); surface.find_entities_filtered=find; storage.agent_harness.damage=nil; storage.agent_harness.idle_fled=nil
 end
 fails(function() astra('move_to',{position={x=1,y=1},retreat={to={x=1,y=1},shield_below=2}}) end,'shield_below is a fraction between 0 and 1')
 fails(function() astra('move_to',{position={x=1,y=1},retreat='home'}) end,'retreat is {to: {x,y}')

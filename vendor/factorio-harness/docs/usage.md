@@ -286,6 +286,12 @@ fh call status
   < 1000 is not met (network 8 (its logistic area holds the centre): production-science-pack 1137) (not set by this
   call)`. `disabled` there comes from the conditions: on a copy of world n a condition's `fulfilled` was current the
   tick it was written, the entity's own `disabled` only the tick after. Ghosts are left out.
+  - A circuit condition counts only with a red or green wire on the entity: without one the game ignores it and the
+    entity runs (round1950a, Astra 21:00: a fast inserter on Fulgora set to `enable EM < 0` with no wire read
+    `disabled` and kept working). The read says `enable_ignored: no red or green wire connects it: the game ignores
+    this condition`, `disabled` and `stays_disabled` leave it out, and the warning line says `condition ignored:
+    fast-inserter (-65.5,95.5): its circuit condition ... is ignored: no red or green wire connects it, and the game
+    counts a circuit condition only with a circuit connection`.
 - `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests" switch.
 - `requests` shows each section's state: `off: true` for a section switched off (the GUI's checkbox; it requests
   nothing, and the reply's `note` names it), and on a platform hub the planet each request imports from, exact

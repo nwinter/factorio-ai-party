@@ -243,6 +243,8 @@ local function finish(index, outcome)
   if action and action.foes and action.foes.goal then action.position=action.foes.goal; action.tolerance=action.foes.tolerance or action.tolerance end
   -- A walk or drive back from a retreat (retreat.lua) that got there ends retreated.
   if action and action.retreated and (outcome=='arrived' or outcome=='arrived_near') then outcome='retreated' end
+  -- A walk away when hit that ends with enemies near walks on (round1950a; M.flee_on queues it for the next tick).
+  if action and action.retreated and action.retreated.idle and outcome=='retreated' then pcall(M.flee_on,index) end
   -- The goal lets a caller tell its own completion from one that replaced it.
   if action then s.last[index]={kind=action.kind, outcome=outcome, tick=game.tick, target=action.kind=='move_to' and action.position or nil} end
   -- An action's own report goes to last as it stands (clear_cliffs: thrown, destroyed, skipped, left).
@@ -2756,7 +2758,7 @@ function handlers.move_to(p,a)
   assert(a.unsafe_goal==nil or type(a.unsafe_goal)=='boolean','unsafe_goal must be true or false')
   local unsafe
   do
-    local mode=M.avoid.mode(a.avoid_enemies)
+    local mode=M.walk_mode(a)
     local from=p.position
     local goals={}
     for i,q in ipairs(via or {}) do goals[i]={q=q,label='via point '..i} end
@@ -2774,11 +2776,11 @@ function handlers.move_to(p,a)
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   local action={kind='move_to',position=target,tolerance=tolerance,off_belts=true,
     until_tick=game.tick+ticks,last_position=p.position,stalled=0,replans=0,direct=a.pathfind==false,pocket_check=true,squeeze=a.squeeze==true or nil,
-    avoid_mode=M.avoid.mode(a.avoid_enemies),reach_target=rt,near=a.near,limit_text=limit_text}
+    avoid_mode=M.walk_mode(a),reach_target=rt,near=a.near,limit_text=limit_text}
   -- The give-up's spots for a target count within its reach, to its box (pathing.lua).
   if rt then action.reach_r=rt.r; action.reach_box=rt.box; action.reach_label=rt.kind end
   if via then
-    action.via={points=via,final=target,tolerance=tolerance,legs={},mode=M.avoid.mode(a.avoid_enemies),args=a}
+    action.via={points=via,final=target,tolerance=tolerance,legs={},mode=M.walk_mode(a),args=a}
     M.via_leg(p,action,1)
   end
   -- combat: the combat channel fires at enemies in range for the walk (as
@@ -2799,7 +2801,7 @@ function handlers.move_to(p,a)
   local back=M.retreat.arm(p,action,M.retreat.config(p,a,'move_to'))
   local foes,in_reach
   if rt then in_reach=M.in_reach(p,rt)==true end
-  if not action.direct then foes=M.avoid.start(p,action,M.avoid.mode(a.avoid_enemies)); request_path(p,action) end
+  if not action.direct then foes=M.avoid.start(p,action,M.walk_mode(a)); request_path(p,action) end
   return {until_tick=game.tick+ticks,limit=limit_text,position=target,pathfinding=not action.direct,combat=combat,avoid_enemies=foes and M.avoid.describe(foes.mode) or nil,
     retreat=back and M.retreat.line(back) or nil,
     via=via and #via or nil,legs=via and #via+1 or nil,unsafe_goal=unsafe and table.concat(unsafe,'; ') or nil,
@@ -7219,8 +7221,17 @@ end
 -- and 263 damage inside one of its sleep's 1 s checks, so the sleep woke only as died). To the standing
 -- retreat_guard's to when set, else M.IDLE_GUARD.away tiles straight away from the attacker (or the nearest enemy
 -- within 40 tiles), on a free tile, by M.retreat_go (the queue pauses, the action ends retreated, the walk keeps out of
--- the reach the map shows). retreat_guard {idle: false} keeps it standing. Once a hit episode (10 s).
-M.IDLE_GUARD={away=24,episode=600,kinds={mine=true,gather=true,feed=true,pickup=true,repair=true,construct=true,build_path=true,
+-- the reach the map shows). retreat_guard {idle: false} keeps it standing. A hit after that walk has ended walks it
+-- away again, from where the attacker is then (on a copy of world n a big spitter ordered to attack followed it 24 tiles
+-- and killed it once it stood); at most once a second.
+-- A move_to's enemy check: avoid_enemies, without the areas under attack for a walk away when hit (flee: its own
+-- attackers' incidents lie round it).
+function M.walk_mode(a)
+  local mode=M.avoid.mode(a.avoid_enemies)
+  if mode and a.flee then mode.attacks=nil end
+  return mode
+end
+M.IDLE_GUARD={away=24,episode=60,kinds={mine=true,gather=true,feed=true,pickup=true,repair=true,construct=true,build_path=true,
   wait_ticks=true,wait_until=true,load_silo=true}}
 function M.idle_hit(event)
   local c=event.entity
@@ -7239,31 +7250,88 @@ function M.idle_hit(event)
   s.idle_fled=s.idle_fled or {}
   local was=s.idle_fled[index]
   if was and event.tick-was.tick<M.IDLE_GUARD.episode then return end
-  local pos=c.position
   local cause=event.cause and event.cause.valid and event.cause or nil
-  local from=cause and cause.position
+  M.flee(index,c,cause and cause.position,cause and cause.name or 'an enemy',
+    string.format('hit by %s %s',cause and cause.name or 'an enemy',action and 'during '..action.kind or 'with no action running'))
+end
+-- Where to walk away to and the walk itself (M.retreat_go next tick). from: the attacker's position, else the nearest
+-- enemy within 40 tiles. To: the standing retreat_guard's to; else one of our turrets within 96 tiles that holds ammo
+-- (or takes electricity or fluid), not past the attacker, 3 tiles behind it; else 24 tiles straight away from the
+-- attacker, or turned off that by 45, 90 then 135 degrees: the first free spot outside every worm's range and
+-- spawner's 40 tiles the map shows (on a copy of world n a blind hop west ended in a big worm's range).
+function M.flee(index,c,from,by,why)
+  local s=state()
+  local pos=c.position
   if not from then
     local okf,list=pcall(function() return c.surface.find_entities_filtered{position=pos,radius=40,force='enemy',type={'unit','turret','unit-spawner'},limit=64} end)
     local best
     for _,e in ipairs(okf and list or {}) do local d=distance(pos,e.position); if not best or d<best.d then best={e=e,d=d} end end
     from=best and best.e.position
   end
-  local to=g and g.to
+  local g=(s.retreat_guards or {})[index]
+  local to,cover=g and g.to,nil
   if not to then
     if not from then return end
-    local dx,dy=pos.x-from.x,pos.y-from.y
-    local L=math.sqrt(dx*dx+dy*dy)
-    if L<0.1 then dx,dy,L=1,0,1 end
-    to={x=math.floor((pos.x+dx/L*M.IDLE_GUARD.away)*2+0.5)/2,y=math.floor((pos.y+dy/L*M.IDLE_GUARD.away)*2+0.5)/2}
-    local okp,np=pcall(function() return c.surface.find_non_colliding_position('character',to,8,0.5) end)
-    if okp and np then to={x=np.x,y=np.y} end
+    local ux,uy=pos.x-from.x,pos.y-from.y
+    local L=math.sqrt(ux*ux+uy*uy)
+    if L<0.01 then ux,uy,L=1,0,1 end
+    ux,uy=ux/L,uy/L
+    local mode=M.avoid.mode(nil)
+    if mode then mode.attacks=nil end
+    local p=M.bots.lookup(index)
+    -- turret cover
+    local okt,turrets=pcall(function() return c.surface.find_entities_filtered{position=pos,radius=96,force=c.force,type={'ammo-turret','electric-turret','fluid-turret'},limit=256} end)
+    local best
+    for _,t in ipairs(okt and turrets or {}) do
+      local tx,ty=t.position.x-pos.x,t.position.y-pos.y
+      local d=math.sqrt(tx*tx+ty*ty)
+      local armed=t.type~='ammo-turret'
+      if not armed then local oka,empty=pcall(function() return t.get_inventory(defines.inventory.turret_ammo).is_empty() end); armed=oka and not empty end
+      if armed and d>4 and (tx*ux+ty*uy)>-0.2*d and (not best or d<best.d) then best={t=t,d=d} end
+    end
+    if best then
+      local q={x=math.floor((best.t.position.x+ux*3)*2+0.5)/2,y=math.floor((best.t.position.y+uy*3)*2+0.5)/2}
+      local okp,np=pcall(function() return c.surface.find_non_colliding_position('character',q,6,0.5) end)
+      if okp and np then q={x=np.x,y=np.y} end
+      local okg,danger=pcall(M.avoid.goal_check,p,pos,q,mode)
+      if okg and not danger then to=q; cover=string.format('%s (%g,%g)',best.t.name,best.t.position.x,best.t.position.y) end
+    end
+    if not to then
+      local base=(math.atan2 or math.atan)(uy,ux)
+      for _,turn in ipairs({0,math.pi/4,-math.pi/4,math.pi/2,-math.pi/2,3*math.pi/4,-3*math.pi/4}) do
+        local q={x=math.floor((pos.x+math.cos(base+turn)*M.IDLE_GUARD.away)*2+0.5)/2,y=math.floor((pos.y+math.sin(base+turn)*M.IDLE_GUARD.away)*2+0.5)/2}
+        local okp,np=pcall(function() return c.surface.find_non_colliding_position('character',q,8,0.5) end)
+        if okp and np then q={x=np.x,y=np.y} end
+        local okg,danger=pcall(M.avoid.goal_check,p,pos,q,mode)
+        to=to or q
+        if p and okg and not danger then to=q; break end
+      end
+    end
   end
-  local by=cause and cause.name or 'an enemy'
-  s.idle_fled[index]={tick=event.tick,from={x=pos.x,y=pos.y},to=to,by=by}
+  s.idle_fled=s.idle_fled or {}
+  local was=s.idle_fled[index]
+  local first=was and (was.first or was.tick)
+  local chain=first and game.tick-first<=3600 and (was.chain or 1)+1 or 1
+  s.idle_fled[index]={tick=game.tick,first=chain>1 and first or game.tick,chain=chain,from={x=pos.x,y=pos.y},to=to,by=by,cover=cover}
   M.retreat_pending=M.retreat_pending or {}
-  M.retreat_pending[#M.retreat_pending+1]={index=index,info={why=string.format('hit by %s %s',by,action and 'during '..action.kind or 'with no action running'),
+  M.retreat_pending[#M.retreat_pending+1]={index=index,info={why=why..(cover and ', to the cover of '..cover or ''),
     from={x=math.floor(pos.x*10+0.5)/10,y=math.floor(pos.y*10+0.5)/10},health=string.format('%d/%d',math.floor(c.health+0.5),math.floor(c.max_health+0.5)),
-    to=to,standing=g and g.to and true or nil,idle=true,tick=event.tick}}
+    to=to,standing=g and g.to and true or nil,idle=true,tick=game.tick}}
+end
+-- A walk away that ends with enemy units within 20 tiles walks on, from the nearest (round1950a: on a copy of world n a
+-- spitter followed and hit again once it stood); at most 6 walks a minute.
+function M.flee_on(index)
+  local s=state()
+  local was=s.idle_fled and s.idle_fled[index]
+  if was and (was.chain or 1)>=6 and game.tick-(was.first or was.tick)<=3600 then return end
+  local p=M.bots.lookup(index)
+  local c=p and p.character
+  if not (c and c.valid) or c.vehicle then return end
+  local okf,list=pcall(function() return c.surface.find_entities_filtered{position=c.position,radius=20,force='enemy',type='unit',limit=32} end)
+  local best
+  for _,e in ipairs(okf and list or {}) do local d=distance(c.position,e.position); if not best or d<best.d then best={e=e,d=d} end end
+  if not best then return end
+  M.flee(index,c,best.e.position,best.e.name,string.format('%s %.0f tiles away when the walk away ended',best.e.name,best.d))
 end
 -- The retreat itself: a queue or standing order pauses, what runs ends retreated (saying where it goes), and the
 -- agent goes back at once: the car or tank it drives (seated, or by remote view) is driven there with its guns on
@@ -7301,7 +7369,8 @@ function M.retreat_go(r)
     started,err=pcall(handlers.vehicle,p,args)
     if not started and args.combat then args.combat=nil; started,err=pcall(handlers.vehicle,p,args) end
   elseif on_foot then
-    local args={position=info.to,retreat=false,unsafe_goal=true}
+    -- (a walk away when hit: the areas under attack round it are its own attackers', no way through them is asked for)
+    local args={position=info.to,retreat=false,unsafe_goal=true,flee=info.idle or nil}
     local oka,ammo=pcall(kite.ammo_count,p)
     if oka and ammo>0 then args.combat=true end
     started,err=pcall(handlers.move_to,p,args)

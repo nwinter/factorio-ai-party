@@ -232,17 +232,27 @@ do
   local rr=astra('circuit_set',{position={x=2,y=0},enable='iron-plate < 1000'})
   eq(rr.circuit.disabled,true)
   eq(rr.stays_disabled,'inserter (2,0): its logistic condition iron-plate < 100 is not met (network 8 (its logistic area holds the centre): iron-plate 101) (not set by this call)')
-  -- the circuit condition, read on its wires
+  -- the circuit condition, read on its wires: only with a red or green wire (Astra 21:00: a fast inserter on Fulgora with
+  -- enable EM < 0 and no wire read disabled and kept working; the game ignores a circuit condition without a wire)
   inserter.get_signal=function(sig,red,green) eq(sig.name,'iron-plate'); return 1500 end
   inserter_cb.circuit_condition.fulfilled=false
   inserter_cb.logistic_condition.fulfilled=true
   rr=astra('circuit_set',{position={x=2,y=0},logistic='iron-plate < 1000'})
+  eq(rr.stays_disabled,nil); eq(rr.circuit.disabled,nil)
+  eq(rr.circuit.enable_ignored,'no red or green wire connects it: the game ignores this condition')
+  eq(rr.condition_ignored,'inserter (2,0): its circuit condition iron-plate < 1000 is ignored: no red or green wire connects it, and the game counts a circuit condition only with a circuit connection')
+  local W=defines.wire_connector_id
+  local red=inserter.get_wire_connector(W.circuit_red,true)
+  red.connect_to(chest.get_wire_connector(W.circuit_red,true))
+  rr=astra('circuit_set',{position={x=2,y=0},logistic='iron-plate < 1000'})
   eq(rr.stays_disabled,'inserter (2,0): its circuit condition iron-plate < 1000 is not met (iron-plate reads 1500 on its wires) (not set by this call)')
+  eq(rr.circuit.enable_ignored,nil); eq(rr.condition_ignored,nil); eq(rr.circuit.disabled,true)
   -- both met, or not known: no note
   inserter_cb.circuit_condition.fulfilled=true
   inserter_cb.disabled=true
   rr=astra('circuit_set',{position={x=2,y=0},logistic='iron-plate < 1000'})
   eq(rr.stays_disabled,nil); eq(rr.circuit.disabled,nil)
+  red.disconnect_from(chest.get_wire_connector(W.circuit_red,true))
   inserter.get_signal=nil; force.find_logistic_network_by_position=nil
   inserter_cb.disabled=nil
   astra('circuit_set',{position={x=2,y=0},logistic={signal='water',comparator='>=',signal2='signal-A'}})

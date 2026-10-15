@@ -349,9 +349,9 @@ return function(api)
     nav.foes = f
     return f
   end
-  -- An attack that started after the walk's plan, near its way on (the straight line from here to the walk's goal,
-  -- within the zone's disc), with here outside its zone: that disc, once (the walk plans again round it); else nil
-  -- (round1950a: Haiku's rearm tour walked on into attack #1550 and died).
+  -- An attack that started after the walk's plan, near its way on: the straight line from here to the walk's goal
+  -- passes within the zone's disc, nearer to its hit than here is: that disc, once (the walk plans again round it,
+  -- going no deeper into it); else nil (round1950a: Haiku's rearm tour walked on into attack #1550 and died).
   function M.attack_ahead(p, nav)
     local f = nav.foes
     if not (f and f.mode and f.mode.attacks and f.attacks_known) then return nil end
@@ -359,7 +359,7 @@ return function(api)
     for _, d in ipairs(M.attack_discs(p.surface, f.mode)) do
       if not f.attacks_known[d.id] then
         f.attacks_known[d.id] = true
-        if dist(here, d) >= d.range and seg_dist(here, f.goal, d) < d.r then return d end
+        if seg_dist(here, f.goal, d) < math.min(d.r, dist(here, d) - 0.5) then return d end
       end
     end
     return nil
@@ -395,7 +395,9 @@ return function(api)
     for bi, bl in ipairs(blobs) do
       for _, m in ipairs(bl.members) do
         local dh = dist(m, here)
-        if dh < m.range or dist(m, final) < m.range then
+        -- (an area under attack round here is not left out: it shrinks to just short of here below, so the way on
+        -- goes no deeper into it; round1950a)
+        if (dh < m.range and not m.attack) or dist(m, final) < m.range then
           skip[bi] = true
           if dist(m, f.origin or here) < m.r or dist(m, final) < m.r then at_ends(f, bl) end
           break

@@ -293,4 +293,30 @@ storage.agent_harness.damage={}
 astra('stop')
 last=astra('status').last
 eq(last.replanned,'attack #1550 at (70,2) started on the way: planned again round it')
+-- One that starts within 24 tiles of the walker, the way on passing nearer its hit than here: planned again too, the
+-- zone kept to just short of here so the way goes no deeper (on a copy of world n an attack 18 tiles off Haiku's way
+-- was walked through).
+asked={}
+astra('move_to',{position={x=120,y=0}})
+advance(3)
+answer({{0,0},{120,0}})
+advance(2)
+before=#asked
+storage.agent_harness.damage['nauvis:0,0']={id=1551,at={x=15,y=10},first=tick,last=tick,hits=1,damage=30,surface='nauvis',size=1}
+advance(31)
+nav=storage.agent_harness.active[runtime.bots.index_of('astra')]
+eq(nav.attack_replan,'attack #1551 at (15,10) started on the way: planned again round it')
+-- An attack behind, the way on going away from it: no new plan.
+astra('stop'); storage.agent_harness.damage={}; asked={}
+astra('move_to',{position={x=120,y=0}})
+advance(3)
+answer({{0,0},{120,0}})
+advance(2)
+before=#asked
+storage.agent_harness.damage['nauvis:-1,0']={id=1552,at={x=-15,y=0},first=tick,last=tick,hits=1,damage=30,surface='nauvis',size=1}
+advance(31)
+nav=storage.agent_harness.active[runtime.bots.index_of('astra')]
+eq(nav.attack_replan,nil,'no new plan')
+storage.agent_harness.damage={}
+astra('stop')
 print('avoid: ok')
