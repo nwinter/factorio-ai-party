@@ -124,9 +124,18 @@ function object(value: unknown, label: string): Record<string, unknown> {
  */
 function parseUntil(text: string): Record<string, unknown> {
   const trimmed = text.trim();
+  // Several conditions, whichever holds first (Muse, 21:20: the first of two or three chests to fill; Grok: `alert|
+  // platform_arrived NAME`): joined by |, or a JSON list.
+  if (trimmed.startsWith('[')) {
+    const list = JSON.parse(trimmed);
+    if (!Array.isArray(list) || list.length === 0) throw new Error('--until as a JSON list takes wait_until conditions: [{"until":...}, ...]');
+    return {until:'any', conditions:list.map(item => object(item,'--until'))};
+  }
   if (trimmed.startsWith('{')) return object(JSON.parse(trimmed),'--until');
+  const alternatives = splitAlternatives(trimmed);
+  if (alternatives.length > 1) return {until:'any', conditions:alternatives.map(part => parseUntil(part))};
   const [kind = '', ...rest] = trimmed.split(/\s+/);
-  const usage = '--until takes researched [TECH], crafting_done, alert [KIND ...], item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, platform_arrived PLATFORM [PLANET], platform_left PLATFORM [PLANET], or a wait_until condition as JSON';
+  const usage = '--until takes researched [TECH], crafting_done, alert [KIND ...], item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, platform_arrived PLATFORM [PLANET], platform_left PLATFORM [PLANET], or a wait_until condition as JSON; several joined by | (or a JSON list) wake on whichever holds first';
   if (kind === 'researched' || kind === 'research') {
     if (rest.length > 1) throw new Error(usage);
     return rest[0] ? {until:'researched', technology:rest[0]} : {until:'researched'};
@@ -182,21 +191,38 @@ function parseUntil(text: string): Record<string, unknown> {
   }
   return condition;
 }
+/** The parts of an --until joined by | (outside quotes), trimmed, empty ones dropped. */
+function splitAlternatives(text: string): string[] {
+  const parts: string[] = [];
+  let current = '', quote = '';
+  for (const ch of text) {
+    if (quote) { if (ch === quote) quote = ''; current += ch; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; current += ch; continue; }
+    if (ch === '|') { parts.push(current); current = ''; continue; }
+    current += ch;
+  }
+  parts.push(current);
+  return parts.map(part => part.trim()).filter(Boolean);
+}
+const TELL_WORDS = new Set(['tell','tells','mention','told']);
 /**
  * `fh wait --until EVENT`: tell (a tell or mention; any wait ends on those), alert (a new attack, enemy group or
- * enemy base alert; `alert KIND ...` for chosen kinds), or a sleep condition as for `fh sleep --until` (researched, item_count, crafting_done, ...).
+ * enemy base alert; `alert KIND ...` for chosen kinds), or a sleep condition as for `fh sleep --until` (researched, item_count, crafting_done, ...);
+ * several joined by | wake on whichever comes first (tell among them: every wait ends on a tell anyway).
  */
 function untilEvent(text: string | undefined): Record<string, unknown> | undefined {
-  const kind = (text ?? '').trim().split(/\s+/)[0];
-  if (!kind || kind === 'tell' || kind === 'tells' || kind === 'mention' || kind === 'told') return undefined;
-  return parseUntil(text!);
+  const trimmed = (text ?? '').trim();
+  if (trimmed.startsWith('[') || trimmed.startsWith('{')) return parseUntil(trimmed);
+  const parts = splitAlternatives(trimmed).filter(part => !TELL_WORDS.has(part.split(/\s+/)[0]!));
+  if (parts.length === 0) return undefined;
+  return parseUntil(parts.join(' | '));
 }
 /** The one line `fh wait --until` prints: what woke it, after how long, and what it was. */
 function wakeLine(reply: Reply): string {
   const r = reply.result ?? {};
   const said = (value: unknown) => String(value).replace(/\s*\n\s*/g, ' ');
   const detail = r.tell ?? r.mention ?? r.board ?? r.eggs ?? r.alert ?? r.queue
-    ?? (r.woke === 'condition' && r.saw !== undefined ? `saw ${typeof r.saw === 'string' ? r.saw : JSON.stringify(r.saw)}` : undefined)
+    ?? (r.woke === 'condition' && r.saw !== undefined ? `${r.met ? `${r.met}: ` : ''}saw ${typeof r.saw === 'string' ? r.saw : JSON.stringify(r.saw)}` : undefined)
     // (round1950a: and where the character walks away to when hit with nothing walking it)
     ?? (r.woke === 'damaged' ? `health ${r.health}${r.by ? `, hit by ${r.by}` : ''}${r.fled ? `; ${r.fled}` : ''}` : undefined) ?? r.note;
   const more = r.full ? '' : ['told','mentioned','board','eggs','alert','damaged'].includes(r.woke) ? '; your next reply\'s team block has the rest' : '';
@@ -1109,6 +1135,7 @@ async function main() {
     }
     if (!started.ok) {
       if (condition?.until === 'alert') return {...started, error:{...started.error, message:`${started.error?.message ?? 'sleep failed'}; the alert wake comes with the next harness deploy`}};
+      if (condition?.until === 'any') return {...started, error:{...started.error, message:`${started.error?.message ?? 'sleep failed'}; several conditions joined by | come with the next harness deploy`}};
       return started;
     }
     // A sleep within 10 s of a wake the agent read repeats that wake at once (waits.lua repeat_of, for shell loops of

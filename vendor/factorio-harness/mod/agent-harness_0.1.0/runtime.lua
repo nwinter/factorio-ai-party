@@ -9821,8 +9821,11 @@ M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.b
 function handlers.drops(p,a) return M.drops.read(p,a) end
 -- What each platform carried stop by stop and leg by leg, and where it is (freight.lua; Luna, shift12 12:47).
 M.freight=require('freight'){state=state,spoil=M.spoil}
+-- Each platform's flight over the last 60 and 180 s: speed, thruster fluids, tanks, pumps (engine.lua; Astra, 21:20).
+M.engine=require('engine'){state=state}
 space=space_module{freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
+  engine=function(pl) return M.engine.read(pl) end,
   state=state,thrust=function(pl) return M.thrust.read(pl) end,
   rocket=function(e) return M.silo.rocket(e) end,
   -- A full drop's pods waiting for a hatch: a channel of their own, as shoot's is, so the
@@ -10505,6 +10508,8 @@ function M.tick_body(event)
   if event.tick%600==0 then pcall(M.avoid.prune) end  -- enemy chunk records older than a minute (avoid.lua)
   if event.tick%60==0 and space then pcall(space.watch_stops,event.tick) end  -- when each platform stopped (space.lua stops)
   if event.tick%60==0 and M.freight then pcall(M.freight.tick,event.tick) end  -- each hub's items by stop and leg (freight.lua)
+  if event.tick%15==0 and M.freight then pcall(M.freight.pod_tick,event.tick) end  -- the cargo pods leaving hubs at stops
+  if event.tick%60==0 and M.engine then pcall(M.engine.tick,event.tick) end  -- each platform's speed, fluids and pumps
   -- The egg watch, a bounded stage a tick (spoil.lua); a fault is counted, never stops the tick.
   do
     local ok,err=pcall(M.spoil.tick,event.tick)

@@ -228,6 +228,28 @@ test('fh wait --until EVENT --max S: one sleep, peek reads only, one line out',a
     [30,undefined,true],[600,{until:'alert'},true],[300,{until:'alert',kinds:['low_power','starved']},true],[120,{until:'item_count',item:'coal',at_least:5},true],[60,undefined,true]]);
   const reads=seen.filter(isCheck); assert(reads.length>0 && reads.every(r=>r.args.peek===true),'the team block waits for the next reply');
 });
+test('fh wait/sleep --until A|B: whichever holds first (Grok: alert|platform_arrived NAME was a client_error; Muse: the first chest to fill)',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{
+    seen.push(request);
+    if(request.action==='sleep')return {ok:true,result:{while_asleep:'no queue and no action',sleeping_s:request.args.seconds}};
+    return {ok:true,result:{slept_s:7,woke:'condition',met:'item_count coal',saw:'coal 60 at (10,39)'}};
+  },async port=>{
+    await cli(port,['wait','--until','alert|platform_arrived Sunward gleba','--max','300'],'compact');
+    const {stdout}=await cli(port,['wait','--until','item_count coal>=50 at 10,39 | item_count iron-plate>=100 at 12,39 | tell','--max','120'],'compact');
+    assert.equal(stdout,'woke: condition after 7 s (item_count coal: saw coal 60 at (10,39))\n');
+    await cli(port,['wait','--until','tell|mention','--max','30'],'compact');
+    await cli(port,['wait','--until','[{"until":"crafting_done"},{"until":"alert","kinds":["no_power"]}]','--max','60'],'compact');
+    await cli(port,['sleep','45','--until','crafting_done | researched'],'compact');
+  });
+  const sleeps=seen.filter(r=>r.action==='sleep');
+  assert.deepEqual(sleeps.map(r=>[r.args.seconds,r.args.condition]),[
+    [300,{until:'any',conditions:[{until:'alert'},{until:'platform_arrived',platform:'Sunward',location:'gleba'}]}],
+    [120,{until:'any',conditions:[{until:'item_count',item:'coal',at_least:50,positions:[{x:10,y:39}]},{until:'item_count',item:'iron-plate',at_least:100,positions:[{x:12,y:39}]}]}],
+    [30,undefined],
+    [60,{until:'any',conditions:[{until:'crafting_done'},{until:'alert',kinds:['no_power']}]}],
+    [45,{until:'any',conditions:[{until:'crafting_done'},{until:'researched'}]}]]);
+});
 test('fh wait --max S waits for the action to end, at most S s; at once when idle; --until idle the same',async()=>{
   // friction1300 (Grok, Haiku): `fh wait --max 150` slept the whole 150 s while the walk had ended after 46.
   const seen:any[]=[];let polls=0;

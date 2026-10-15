@@ -1198,6 +1198,7 @@ fh sleep 900 --until researched                       # ...or until the research
     wait's last reply. Damage and death wakes keep repeating as above. Off in `turns` mode.
   - `{until: "alert"}` as the condition (`fh wait --until alert`) wakes on a new attack area, enemy group or enemy base for the team (`woke: alert`).
   - `{until: "alert", kinds: [...]}` (`fh wait --until "alert low_power starved"`, also `fh sleep --until`; commas also separate; Luna, 19:50) wakes on chosen kinds instead: a push alert group of one of those kinds (or its sub-kinds: `lost_source` covers `lost_source.boiler`) addressed to you, as the team alerts route them, that is new since the wait began or whose count grew (`alert` is its text); `starved`: an assembler or furnace in one of your own active claims whose status is `item_ingredient_shortage`, `fluid_ingredient_shortage` or `no_ingredients` and was not when the wait began, looked at every 10 s (at most 500 machines a claim). 1..16 kinds.
+  - Several conditions (Muse, 21:20: wake on whichever of two or three chests fills first; Grok, 21:20: `fh wait --until "alert|platform_arrived NAME planet"` was a client_error): joined by `|` (`fh wait --until "item_count coal>=50 at 10,39 | item_count iron-plate>=100 at 12,39"`, `fh sleep 300 --until "alert|platform_arrived Sunward gleba"`), or a JSON list, are sent as `{until: "any", conditions: [...]}` (the runtime also takes a plain list): 1..8 conditions, alerts among them (plain or with kinds), whichever holds first wakes it. `condition` reads `item_count coal | item_count iron-plate`, `saw` lists each one's reading while none holds, and a condition wake names the one that held (`met`; the wait's line: `woke: condition after 7 s (item_count coal: saw coal 60 at (10,39))`). One met at the start ends the sleep at once. `tell` among them is dropped (every wait ends on a tell). A runtime from before this deploy refuses until=any, and the CLI says so.
   - `fh call sleep --args '{"seconds":N}'` (with or without `--wait`, also in `fh run` and `fh stream`) is the same blocking wait; the raw action only starts a sleep.
   - Claude Code agents get a 20-minute Bash timeout (tools/clean-profile.py in the pog repo), above the longest sleep. Codex agents' `yield_time_ms` returns earlier and leaves the sleep running in the background.
 - A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works. A wait that ends `failed` names the call (`action: build`) and puts its error on the error line (Sol, shift09: the silo build hit trees after its craft and read only `Control ended: failed`): `error: action_interrupted: Control ended: failed: placement blocked by stingfrond (63.9375,11.375), stingfrond (68.125,12.4375); it needs the trees mined first (mine them, or place_ghosts marks them and construct clears them)`. A refused build names what is in the way the same way, direct or after a craft: trees and rocks need mining first, and a cliff takes cliff explosives (a character cannot mine one).
@@ -1640,7 +1641,29 @@ fh sleep 900 --until researched                       # ...or until the research
   a spoilable item's fall matched, in the same game second, to the rise of what it spoils into. Listed per stop: the
   items expected down or up, the rockets' cargo, what spoiled, and spoilable items whose count changed. Rockets: those
   whose cargo pod was sent to this platform's hub while it stopped there (the launch, as the game orders it). A stop
-  or leg under way when the harness first looked says so. `spoiling`: the hub's spoilable items (`agricultural-science-pack*795:
+  or leg under way when the harness first looked says so.
+  Cargo pods (Astra, 21:20: left the hub is not delivered; she reconciled late pods at five stops): while the
+  platform is at a stop, its surface is looked at every 15 ticks for cargo pods leaving its hub (a rocket's pod coming
+  aboard is not one), and each is followed while it exists (its surface, place and cargo, read while it is still on the
+  platform). A pod gone after reaching the planet's surface was received by the landing pad it was sent to, or landed
+  as a cargo pod container where no pad was; one gone before leaving the platform says so. The stop then adds
+  `cargo pods sent down 3 (agricultural-science-pack*300 iron-plate*50), received by landing pads 1
+  (agricultural-science-pack*200) at cargo-landing-pad (10.5,20.5) on nauvis, landed as cargo pod containers (no
+  landing pad) 1 (iron-plate*50) at (-3,8) on nauvis, in flight 1 (agricultural-science-pack*100): #503 to
+  cargo-landing-pad descending on nauvis (left the hub 12s ago)` (unit numbers of up to 8 pods in flight, and whether
+  each is still leaving the platform or descending), and the row's stop has `pods {sent, sent_items, received,
+  received_items, landed, gone, in_flight, in_flight_items, in_flight_pods}`. Pods that leave between two looks
+  (under 15 ticks on the platform) are not seen.
+- Engine telemetry, on the `platforms` row with `platform` set (Astra, 21:20: the instant speed looked settled at
+  38, 18 and 30 km/s and then rose to 55 under the same throttle; three tuning rounds went by it): `engine`, a line
+  for the last 60 s and one for the last 180 s, from a sample each game second (engine.lua) of the platform's speed,
+  the thruster fluids its surface's fluid statistics count used and made so far, what its thrusters' tanks hold, and
+  how many of its pumps (every pump on the platform) are working: `last 60 s: speed mean 46.5 km/s (lowest 38, highest
+  55; 38 -> 55); thruster-fuel used 1200, made 600, thruster tanks 2000 -> 2000; thruster-oxidizer used 1440, made 0,
+  thruster tanks 2000 -> 1410; 2 pumps working 50% of the time`. Used and made are the statistics' change over the
+  window; the tanks are the sum over its thrusters at the window's first and last second; the pumps' share is
+  pump-seconds working of all pump-seconds. With less history, `last 42 s (sampled that long)` and no 180 s line.
+  The thrusters and pumps are found again every minute. `spoiling`: the hub's spoilable items (`agricultural-science-pack*795:
   the first spoils in 1m10s (95% spoiled); all within 5 min`), and in flight `; arrival at nauvis in 3m30s: 200 spoil
   before it, 595 arrive, the next spoils 2m05s after arrival`.
 - `stops` on every `platforms` row (operator 10:53, Gemini): each stop of the schedule with its wait conditions in
