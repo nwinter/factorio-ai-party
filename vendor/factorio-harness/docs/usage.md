@@ -2381,7 +2381,8 @@ fh sleep 900 --until researched                       # ...or until the research
     `waiting.rate`, then `active.silo_wait` and `last.silo_wait` (also the compact `--wait` reply), report `parts`,
     `parts_added`, `observed_s`, `parts_per_min`, `rate_basis`, `last_part_ago_s`, `idle_window_s`, `gives_up_tick`.
     The rate counts part increases from this wait's start through its latest increase; it is absent until measured,
-    and resets if the part counter rolls over. It describes this wait, not the recipe's nominal crafting speed.
+    and survives the part counter rolling over when the rocket completes. It describes this wait, not the recipe's
+    nominal crafting speed.
     CLI `--wait` and `fh wait` follow the increasing deadline within their existing 15-minute computed-budget cap
     (45 minutes with slow-game overtime); explicit `--wait-timeout` or `fh wait --max` keeps its requested limit.
   - `fh call load_silo --args '{"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","position":{"x":65.5,"y":14.5},"to_total":true}'`

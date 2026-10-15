@@ -578,6 +578,7 @@ do
   game.tick=w.give_up-5;silo.rocket_parts=49;R.ready(p,action)
   eq(action.until_tick,w.give_up,'absolute cap never moves');eq(w.give_up,216100)
   silo.rocket_parts=0;game.tick=game.tick+1;R.ready(p,action)
-  eq(R.wait_report(action).parts_added,0,'counter rollover is not negative production')
+  eq(R.wait_report(action).parts_added,4,'counter rollover is not negative production and keeps the measured rate')
+  assert(R.wait_report(action).parts_per_min>0,'rocket completion retains the rate')
   game.tick,silo.rocket_parts,silo.rocket_silo_status,silo.no_rocket=oldtick,oldparts,oldstate,oldrocket
 end

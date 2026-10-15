@@ -349,10 +349,11 @@ return function(api)
     return {stall=ticks, idle_ticks=ticks, give_up=game.tick + math.max(ticks, M.MAX_WAIT), mark=progress_mark(silo),
       parts=try(function() return silo.rocket_parts end) or 0, part_tick=game.tick, parts_added=0, observed_ticks=0}
   end
-  -- The measured cadence belongs to this wait, not another silo or rocket.
+  -- The measured cadence belongs to this wait and this silo.
   -- A burst's spacing sets the idle window; its part count sets the rate.
   -- Never shrink the window after a faster burst, or extend it just because
-  -- a poll happened. Reset the measurement when the part counter rolls over.
+  -- a poll happened. A part-counter rollover adds nothing and retains the
+  -- measured rate: rocket completion must not erase it from the reply.
   function M.wait_report(action)
     local w=action.await_silo
     if not w then return nil end
@@ -377,7 +378,7 @@ return function(api)
         w.observed_ticks=(w.observed_ticks or 0)+gap
         w.part_tick=game.tick
         w.idle_ticks=math.max(w.idle_ticks,3*gap)
-      elseif not w.parts or parts<w.parts then
+      elseif not w.parts then
         w.parts_added,w.observed_ticks,w.part_tick=0,0,game.tick
       end
       w.parts=parts
