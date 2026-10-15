@@ -373,6 +373,7 @@ already targets your character.
   to_side}]`: set after every entry is placed, then the wires; the reply's `settings` and `settings_line` say what was
   set or refused (a refused setting leaves the entry placed); `dry_run` gives `settings_planned`. An entry's
   `settings: {...}` is read as those keys (`settings_alias`); a setting key such as `modules` at the entry's top level is refused with the shape.
+  `"check_inserters": true` checks every planned inserter's pickup, drop, power and filters first and places nothing if one would not work.
 - Turret ghosts from `place_ghosts` and `paste` request ammo, so the robots that build them bring it (`ammo`: a name,
   `{name, count}` or false; default 10 of what the logistic network there holds most of); so do the ghosts of turrets that died.
 - Water and Gleba wetland: `pole_route` shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost under

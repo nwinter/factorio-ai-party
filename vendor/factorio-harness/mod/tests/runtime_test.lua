@@ -3897,6 +3897,13 @@ end)()
     return out
   end
   p.surface.get_tile=function() return {name='grass-1',valid=true} end
+  -- check_inserters (Luna, d15): a bad inserter refuses the call before anything is placed; all good, the rows ride along.
+  local okc,errc=pcall(call,'place_ghosts',{check_inserters=true,entities={{name='inserter',position={x=2.5,y=0.5}},{name='inserter',position={x=6.5,y=0.5}}}})
+  assert(not okc and tostring(errc):find('check_inserters: 1 of 2 inserters would not work; nothing placed: #1 inserter (2.5,0.5): no pickup target, no drop target',1,true),tostring(errc))
+  eq(#made,0)
+  local rc=call('place_ghosts',{check_inserters=true,entities={{name='inserter',position={x=6.5,y=0.5}}}})
+  eq(rc.placed,1); eq(rc.inserter_check[1].ok,true); eq(rc.inserter_check[1].name,'inserter')
+  for i=#made,1,-1 do made[i]=nil end
   local r=call('place_ghosts',{entities={{name='inserter',position={x=2.5,y=0.5}},{name='inserter',position={x=6.5,y=0.5}}}})
   eq(r.placed,2); eq(#r.inserters_without_target,1); eq(r.inserters_without_target[1].position.x,2.5)
   eq(r.inserters_without_target[1].missing,'no pickup target, no drop target'); eq(r.inserters_without_target[1].drop,'none: the ground at (2.5,1.5)')
@@ -5047,5 +5054,18 @@ end)()
       {'mine',{count=5}},{'feed',{position={x=1,y=1},radius=5}},{'queue_submit',{mode='pending'}}}) do
     no_unknown(function() runtime.check_args(c[1],c[2]) end,'check_args '..c[1])
   end
+end)()
+;(function()
+  -- Cargo bay attachment and the tile grid (Astra, d15 07:50: "nothing found" for a bay that fit its cleared footprint).
+  local hub={valid=true,type='space-platform-hub',name='space-platform-hub',position={x=0,y=0},bounding_box={left_top={x=-4,y=-4},right_bottom={x=4,y=4}}}
+  local fake={surface={find_entities_filtered=function() return {hub} end},force=p.force}
+  local bay={name='cargo-bay',type='cargo-bay',tile_width=4,tile_height=4,collision_box={left_top={x=-1.9,y=-1.9},right_bottom={x=1.9,y=1.9}}}
+  local w=runtime.attach_why(fake,bay,{x=10,y=0},0)
+  assert(w:find('a cargo bay joins the platform hub or another cargo bay edge to edge; its box (8,-2)-(12,2) touches none; the nearest: space-platform-hub (0,0), box (-4,-4)-(4,4), 4 tiles from its edge',1,true),w)
+  w=runtime.attach_why(fake,bay,{x=6,y=0},0)
+  assert(w:find('touches space-platform-hub (0,0), and the game still refuses it there',1,true),w)
+  w=runtime.attach_why(fake,bay,{x=6.5,y=0},0)
+  assert(w:find('off the tile grid: a 4x4 cargo-bay centres on tile edges (x 6 or 7, y 0)',1,true),w)
+  eq(runtime.attach_why(fake,{name='chest',type='container',tile_width=1,tile_height=1},{x=1.5,y=1.5},0),nil)
 end)()
 print('runtime: '..assertions..' assertions passed')

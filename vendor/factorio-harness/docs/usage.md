@@ -306,6 +306,20 @@ fh call status
   - The reply adds `settings` `[{index, name, position, configure, requests, circuit, wires}]` (each `set`, or the
     game's refusal) and `settings_line`: `settings: 4 set, 1 refused: entry 2 configure: recipe incompatible with
     machine`. A refused setting leaves its entry placed. An entry that failed to place gets no settings.
+  - A refused placement with nothing in the way says what else breaks (Astra, d15 07:50: a cargo bay "fit the cleared
+    footprint" and the reply said nothing found). Off the tile grid: `off the tile grid: a 4x4 cargo-bay centres on tile
+    edges (x 6 or 7, y 0)` (even sizes centre on tile edges, odd sizes on tile centres). A cargo bay: `a cargo bay joins
+    the platform hub or another cargo bay edge to edge; its box (8,-2)-(12,2) touches none; the nearest:
+    space-platform-hub (0,0), box (-4,-4)-(4,4), 4 tiles from its edge`, or, when it touches one and the game still
+    refuses, that it touches it and that a bay joins only where its connection points line up. `build`, `place_ghosts`
+    and their dry runs give it.
+  - `check_inserters: true` on `build` or `place_ghosts` (Luna, d15: misaligned and blocked seed-feeder inserters took many
+    round trips) runs the call's dry run first. Each planned inserter's pickup and drop (what stands there: built,
+    planned in this call, a ghost), power (a pole's supply area, built or planned; a build only) and filters (one that
+    takes none) are checked. Any problem refuses the whole call before anything is placed: `check_inserters: 1 of 2
+    inserters would not work; nothing placed: #1 inserter (2.5,0.5): no pickup target, no drop target`. All good, the
+    call runs with its settings and `inserter_check` lists every inserter `[{index, name, position, pickup, drop,
+    filters, power, ok}]`.
   - `dry_run` makes the same check and adds `settings_planned` `[{index, name, position, would_set}]`
     (`would_set: "circuit (decider); 1 wire"`).
   - A `build` that waits (`awaiting_craft`, `stepping_aside`) sets the entries built so far; the rest are set when
