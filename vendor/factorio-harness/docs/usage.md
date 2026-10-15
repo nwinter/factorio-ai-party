@@ -1162,8 +1162,8 @@ fh sleep 900 --until researched                       # ...or until the research
 
 - `wait_until --wait` takes its timeout from `--wait-timeout MS` (up to 900000, 15 minutes) unless `args.timeout` (ticks, up to 54000) is given; without either it is 3600 ticks. The condition is checked every 10 ticks. Not met in time: exit 1, `error.code` `timed_out`, with the condition and what it last saw.
 - `wait_ticks {ticks: 1..54000}` holds the character idle (outcome `duration_elapsed`); like any character action it replaces the current one.
-- `wait_until {until: "rocket_ready", position}` (Luna, shift10 06:20: an `item_count` wait for the item `rocket` stayed 0 at a silo whose rocket was ready; that item is ammunition) is met when the rocket silo on that tile (any tile of it) has its rocket built and ready to launch, the GUI's rocket state. `saw`: `rocket-silo (65.5,14.5): rocket ready to launch, not launched, cargo agricultural-science-pack*45; the next rocket's parts 0/50`; no silo of ours there fails the wait. It works as a queue step, a sleep condition and an order's `when` too.
-- `item_count` with `positions` on a rocket silo counts its rocket cargo (the game counts it with the silo's inventories), and `saw` adds the silo's line: `agricultural-science-pack 45 in 1 entities; rocket-silo (65.5,14.5): rocket ready to launch, not launched, cargo agricultural-science-pack*45; the next rocket's parts 0/50`.
+- `wait_until {until: "rocket_ready", position}` (Luna, shift10 06:20: an `item_count` wait for the item `rocket` stayed 0 at a silo whose rocket was ready; that item is ammunition) is met when the rocket silo on that tile (any tile of it) has its rocket built and ready to launch, the GUI's rocket state. `saw`: `rocket-silo (65.5,14.5): rocket built (50/50 parts) and ready to launch, not launched, cargo agricultural-science-pack*45; parts for the rocket after it 0/50`; no silo of ours there fails the wait. It works as a queue step, a sleep condition and an order's `when` too.
+- `item_count` with `positions` on a rocket silo counts its rocket cargo (the game counts it with the silo's inventories), and `saw` adds the silo's line: `agricultural-science-pack 45 in 1 entities; rocket-silo (65.5,14.5): rocket built (50/50 parts) and ready to launch, not launched, cargo agricultural-science-pack*45; parts for the rocket after it 0/50`.
 - A direct `wait_ticks` or `wait_until` while the queue runs is refused (it would pause the queue: "wait_ticks would pause your queue (8 steps, repeating): ..."); `pause_queue: true` pauses it for the wait as before. A paused or empty queue is no reason to refuse. Queue steps are unchanged.
 - A tell or a teammate's mention that arrives during a direct `wait_ticks` or `wait_until` ends it (outcome `told` or `mentioned`, `last.why` `told by astra`; within 30 ticks); one pending from before the wait does not, nor an fyi tell, nor a viewer's `@mention` unless the wait was started with `wake_on_viewers: true`. `--wait` on any other action, and `fh wait`, end early the same way while the action keeps going: outcome `told` or `mentioned`, `from`, `still_running` and a note. The peek `status` polls carry the newest undelivered tell or teammate's mention as `inbox {tick, woke, from}` and the newest viewer's `@mention` as `inbox_viewer` (the CLI ends a wait on it only with `--wake-on-viewers`).
 - `fh wait --max S` (or `fh wait --until idle [--max S]`) waits for the running action and combat to end, as `fh wait`
@@ -1825,15 +1825,20 @@ fh sleep 900 --until researched                       # ...or until the research
   - `parts` (`15/50`, against the 2.0 `rocket_parts_required`) while the rocket is being built, `state` (the rocket's:
     `building_rocket`, `rocket_ready`, ...), `status` (the entity's: `working`, `item_ingredient_shortage`, `no_power`,
     ...), `rocket_ready`, and `rocket` in words (Astra 10:50: a ready rocket's 0/50 was read as launched or as a missing
-    kit): `rocket ready to launch, not launched; the next rocket's parts 13/50; last launch 4m10s ago to platform
-    Sunward`, `rocket built, rising into place (rocket rising), not launched; the next rocket's parts 0/50`, `rocket
-    launching (rocket flying); the next rocket's parts 3/50`, or `building the rocket: parts 15/50`, then the last
-    launch or `no launch seen`. The line starts with it.
-  - Once the rocket is built (ready, rising or launching), the 2.0 silo has used its parts and goes on making the next
-    rocket's: those are `next_parts` (`13/50`), and `parts` is left out (round1650d: Grok read `rocket built and ready:
-    parts consumed (13/50)` as a rocket still being built and held Sunward's cargo rockets 5 min). `inspect` of a silo
-    (compact too), the `platforms` silo rows and the read-back of configure and launch (`settings`) carry `parts` or
-    `next_parts`, `rocket_ready` and `rocket` side by side (inspect adds `last_launch`);
+    kit): `rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 13/50; last
+    launch 4m10s ago to platform Sunward`, `rocket built (50/50 parts), rising into place (rocket rising), not
+    launched; parts for the rocket after it 0/50`, `rocket launching (rocket flying); parts for the rocket after it
+    3/50`, or `building the rocket: parts 15/50`, then the last launch or `no launch seen`. The line starts with it.
+  - Once the rocket is built (ready, rising or launching), the 2.0 silo has used its parts and goes on making the
+    parts of the rocket after it: those are `next_parts` (`13/50`), the built rocket's are `built_parts` (`50/50`, ready
+    or rising), and `parts` is left out (round1650d: Grok read `rocket built and ready: parts consumed (13/50)` as a
+    rocket still being built and held Sunward's cargo rockets 5 min). `rocket_ready` is true only for a built rocket:
+    the silo goes on making parts while one waits, so 27 s after a launch the next rocket can stand ready with
+    `next_parts 6/50`, and it launches (Grok, shift14 04:19 UTC: read as a rocket with 6 of its parts). `inspect` of
+    a silo (compact too), the `platforms` silo rows and the read-back of configure and launch (`settings`) carry
+    `parts` or `built_parts` and `next_parts`, `rocket_ready` and `rocket` side by side (inspect adds `last_launch`).
+    `launch` before the rocket is built is refused with it: `rocket is not ready: building_rocket, building the
+    rocket: parts 35/50`;
   - `crafting {part_progress, parts_left, part_s, productivity, rocket_eta_s}`, where `rocket_eta_s` is the rest of
     the rocket at the silo's crafting speed while it works;
   - `ingredients [{name, per_part, in_silo, in_hands, at_sources, needed, short}]` for the parts left
@@ -1905,6 +1910,24 @@ fh sleep 900 --until researched                       # ...or until the research
     a launch); outcome `fed` (`last.result` holds the reply), `failed` (`last.error`) or `timed_out`. `--wait` follows
     it.
   - `fh call load_silo --args '{"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","position":{"x":65.5,"y":14.5},"to_total":true}'`
+  - `walk: true` with `from` (Luna, shift14 21:20: 930 agricultural science packs from a provider 64 tiles from the
+    silo took four walks and several calls): the chests anywhere on the silo's surface, in sight or on the map. One
+    timed call walks between the chests and the silo, as many trips as the load takes (at most 20):
+    - at each chest it takes what the rocket still needs, less what you hold and no more than fits under the lift
+      (up to your request max);
+    - at the silo it loads what you hold of the list;
+    - another trip while the rocket still needs some, a chest in `from` holds it and the trip loaded any.
+    - The reply: `op: load_silo`, `needs` (`agricultural-science-pack 930 (you hold 0)`), `chests` (what each holds of
+      the list), `trip`, `legs`, `rocket`, `until_tick` (`ticks` default 18000).
+    - Outcomes: `loaded`, `launched` (with `launch`: at the last silo stop when the rocket is ready then; not ready:
+      `loaded`, `last.why` `loaded, not launched: building the rocket: parts 35/50 (load_silo {launch: true} without walk
+      waits for it)`), `short` (`last.why`: the lift, the cargo slots, the chests empty, a trip that loaded none),
+      `no_rocket` (none at the silo on arrival: what you took stays with you), `unreached`, `timed_out`.
+    - `last`: `trips`, `taken`, `taken_items`, `loaded`, `stops [{position, name, trip, taken | loaded, full, note}]`,
+      `cargo`, `rocket_weight`, `launch`. Walks go round enemies as a tour's (`avoid_enemies`, `unsafe_goal`).
+    - The silo and every chest in reach: the load at once, as without `walk`. Nothing of what the rocket needs in the
+      chests or held, or none of it fits under the lift: refused, nothing walked.
+    - `fh call load_silo --args '{"items":{"agricultural-science-pack":930},"from":{"x":129.5,"y":14.5},"walk":true,"launch":true,"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`
 - `preflight {position, items?, platform?, surface?}` (read; Gemini, shift12) shows what the silo's rocket would carry,
   by remote view (a visible chunk):
   - `cargo {items, rows [{item, count, each_kg, kg, stacks}], kg, lift_kg, free_kg, over_kg, slots, free_slots}`,

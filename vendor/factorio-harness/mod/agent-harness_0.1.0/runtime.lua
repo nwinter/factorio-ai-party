@@ -586,6 +586,7 @@ local function finish(index, outcome)
       last.given=nil; last.transferred=action.got; last.direction=action.transfer.direction
       last.items=next(action.items) and action.items or nil; last.unreached=action.unreached
     end
+    if action.op=='load_silo' then M.rocketload.walk_last(action,last) end
   end
   -- repair over positions or an area: repaired against already full, and what was not reached.
   if action and action.kind=='repair' and action.targets then
@@ -4157,7 +4158,7 @@ function handlers.inspect(p,a)
   -- A silo's rocket in words, parts and rocket_ready side by side, and its last launch (silo.lua M.rocket; Astra 10:50).
   if e.type=='rocket-silo' then
     local okr,rk=pcall(M.silo.rocket,e)
-    if okr then out.parts=rk.parts; out.next_parts=rk.next_parts; out.rocket_ready=rk.rocket_ready; out.rocket=rk.rocket; out.last_launch=rk.last_launch end
+    if okr then out.parts=rk.parts; out.built_parts=rk.built_parts; out.next_parts=rk.next_parts; out.rocket_ready=rk.rocket_ready; out.rocket=rk.rocket; out.last_launch=rk.last_launch end
     -- Its inventories by transfer name, alias, what each holds and is for, and a call for each (Luna 12:20).
     local oki,rows=pcall(M.silo.inventories,e,M.aliases.encode)
     out.silo_inventories=oki and rows or nil
@@ -7184,6 +7185,10 @@ M.rocketload=require('rocketload'){cargo=M.cargo,remote_entity=remote_entity,rea
   rocket_weight=function(silo) return space.rocket_weight(silo) end,
   move_stacks=move_stacks,give_sources=give_sources,
   launch=function(p,a) return handlers.launch(p,a) end,
+  -- load_silo walk: the silo and chests in sight or on the map (a walk brings them into reach), and a take by hand
+  -- there (partial: up to the request max, as a walking take).
+  sight_entity=function(p,pos) local e=entity(p,{position=pos},true); friendly(p,e); return e end,
+  take=function(p,e,item,quality,count) return transfer_one(p,{direction='to_player',item=item,quality=quality,count=count,partial=true},nil,e) end,
   -- What a player sees moving items by hand, and the hauls and hand share they count, as transfer does.
   moved=function(p,silo,stacks)
     local parts={}
@@ -7196,6 +7201,22 @@ M.rocketload=require('rocketload'){cargo=M.cargo,remote_entity=remote_entity,rea
 -- No rocket yet, or launch=true before it is ready: a timed action until it is (kind feed; M.feed_ready asks
 -- rocketload.ready), then the same call runs whole in that tick.
 function handlers.load_silo(p,a)
+  -- walk with from (Luna, shift14 21:20): one timed tour between the chests and the silo (rocketload.lua walk_start);
+  -- the silo and every chest in reach: the load at once, as without walk.
+  if a.walk==true and not a.awaited then
+    local w=M.rocketload.walk_start(p,a)
+    if w then
+      local action,out=stock.start_tour(p,'load_silo',w.entities,integer(a.ticks,18000,1,36000,'ticks'),w.fields)
+      if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
+      state().active[p.index]=action
+      for k,v in pairs(w.reply) do out[k]=v end
+      out.until_tick=action.until_tick; out.legs,out.legs_more=M.legs(p,action.targets)
+      return out
+    end
+    local rest={}
+    for k,v in pairs(a) do rest[k]=v end
+    rest.walk=nil; rest.avoid_enemies=nil; rest.unsafe_goal=nil; a=rest
+  end
   local ticks=integer(a.ticks,3600,1,36000,'ticks')
   local r=M.rocketload.load(p,a)
   if not r.wait then return r end
@@ -8624,7 +8645,7 @@ handlers.equipment=function(p,a)
 end
 local timed={recover=true,walk=true,move_to=true,build_path=true,construct=true,kite=true,mine=true,pickup=true,repair=true,rearm=true,refuel=true,transfer=true,collect=true,feed=true,wait_until=true,wait_ticks=true,build=true,load_silo=true}
 -- The active action kind a step's handler starts, where it differs from its name.
-local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true,gather=true},build={feed=true},collect={gather=true},feed={gather=true},load_silo={feed=true},
+local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true,gather=true},build={feed=true},collect={gather=true},feed={gather=true},load_silo={feed=true,gather=true},
   recover={gather=true}}
 local conditions=conditions_module{known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
@@ -9321,6 +9342,12 @@ function M.moved_last(index,action,last)
       last.taken=action.taken or 0; last.delivered=math.max(0,n-(action.taken or 0)); last.picked=action.picked_line
       n=last.delivered
     end
+    -- load_silo walk: moved is what went into the rocket.
+    if action.op=='load_silo' then
+      n=action.loaded or 0
+      names={}
+      for _,g in ipairs(action.goals or {}) do names[#names+1]=g.name end
+    end
   else
     local r=last.result
     n=type(r)=='table' and (r.moved or r.transferred) or 0
@@ -9884,6 +9911,7 @@ end
 stock=stock_module{distance=distance,integer=integer,position=position,claims=M.claims,spoil=M.spoil,
   -- One stop of a rearm/refuel tour: top the entity up; stop when none is left.
   visit=function(p,action,e)
+    if action.op=='load_silo' then return M.rocketload.walk_visit(p,action,e) end
     if action.op=='feed' then
       -- A feed stop gives every want; the tour ends early once nothing the
       -- remaining machines want is left above the reserve.

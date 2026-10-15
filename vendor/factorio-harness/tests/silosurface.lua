@@ -113,7 +113,7 @@ body.can_reach_entity=function(e) return e.surface==body.surface end
 local r=astra('configure',{surface='vulcanus',position={x=12,y=138},auto_requests=true})
 eq(silo.use_transitional_requests,true); eq(r.settings.auto_requests,true); eq(r.settings.send_to_orbit_automatically,false)
 eq(r.settings.silo,'rocket-silo at (14.5,140.5) on vulcanus'); eq(r.settings.state,'rocket_ready'); eq(r.settings.next_parts,'50/50'); eq(r.remote,true)
-eq(r.settings.rocket_ready,true); eq(r.settings.rocket,"rocket ready to launch, not launched; the next rocket's parts 50/50; no launch seen")
+eq(r.settings.rocket_ready,true); eq(r.settings.rocket,"rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 50/50; no launch seen")
 -- Send to orbit automatically, and automatic requests off again (auto_launch and planet run as those names).
 r=astra('configure',{planet='vulcanus',position={x=14.5,y=140.5},auto_launch=true,auto_requests=false})
 eq(silo.send_to_orbit_automatically,true); eq(silo.use_transitional_requests,false)
