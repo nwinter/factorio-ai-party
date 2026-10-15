@@ -231,6 +231,21 @@ def codex_and_grok():
             assert "[agents]" not in texts["0"], texts["0"]
         except ImportError:
             pass
+        # agent/subagents-off.txt: a listed agent gets multi_agent off even with full tools, and the -nosub paragraph line.
+        off = os.path.join(tmp, "subagents-off.txt")
+        open(off, "w").write("# test\nhaiku\n")
+        shutil.rmtree(os.path.join(d, ".codex"), ignore_errors=True)
+        subprocess.run([sys.executable, os.path.join(ROOT, "tools", "clean-profile.py"), "codex", d],
+                       env=dict(os.environ, POG_FULL_TOOLS="1", POG_SUBAGENTS_OFF_FILE=off), check=True)
+        listed = open(os.path.join(d, ".codex", "config.toml")).read()
+        assert "multi_agent = false" in listed and 'web_search = "live"' in listed, listed
+        saved, full_tools.SUBAGENTS_OFF = full_tools.SUBAGENTS_OFF, off
+        try:
+            nosub = full_tools.paragraph("codex", "haiku")
+            assert "spawn_agent" not in nosub and "view_image" in nosub, nosub
+            assert "spawn_agent" in full_tools.paragraph("codex", "luna")
+        finally:
+            full_tools.SUBAGENTS_OFF = saved
         os.environ.pop("POG_TEAM", None)
         words = full_tools.grok_args(d)
         luna = os.path.join(tmp, "run", "luna")

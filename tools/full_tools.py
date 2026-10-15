@@ -42,6 +42,17 @@ PRIVATE_DIRS = ["tools", "shots", ".claude", ".codex", ".grok-home", ".muse"]
 # smoke-ft: Muse's sandbox refused writes through the team-tools symlink ("path escapes workspace"; the profile
 # setting for an extra writable folder is undocumented). Its team-tools is a real folder that `sync` mirrors.
 MIRRORED = {"muse"}
+# Agents whose subagents are off (one name per line; codex only so far: tools/clean-profile.py turns multi_agent off and
+# the "Your tools" paragraph uses the harness's "-nosub" line). 2026-10-15: Astra's four subagents used 104M of
+# its 153M input tokens in shift18, and personal Codex would have run out that night (operator default, 15:30).
+SUBAGENTS_OFF = os.environ.get("POG_SUBAGENTS_OFF_FILE") or os.path.join(ROOT, "agent", "subagents-off.txt")
+
+
+def subagents_off():
+    try:
+        return {l.split("#")[0].strip() for l in open(SUBAGENTS_OFF)} - {""}
+    except OSError:
+        return set()
 
 
 def sync_pair(a, b):
@@ -186,14 +197,15 @@ def kb_version():
     return os.environ.get("POG_KB") or ("space-age-2.0.77" if os.environ.get("POG_SPACE_AGE") == "1" else "base-2.0.77")
 
 
-def paragraph(kind):
+def paragraph(kind, name=None):
     """The "Your tools" text for AGENTS.md: what the agent has, not what to do with it."""
     text = open(os.path.join(ROOT, "agent", "full-tools.md")).read()
     lines = {}
     for line in text.split("<!-- harness -->", 1)[1].strip().splitlines():
         k, _, v = line.partition(":")
         lines[k.strip()] = v.strip()
-    return text.split("<!-- harness -->", 1)[0].replace("{{HARNESS}}", lines.get(kind, "")).replace(
+    line = lines.get(kind + "-nosub", lines.get(kind, "")) if name in subagents_off() else lines.get(kind, "")
+    return text.split("<!-- harness -->", 1)[0].replace("{{HARNESS}}", line).replace(
         "{{KB}}", kb_version()).rstrip("\n").replace("\n\n\n", "\n\n") + "\n"
 
 
@@ -226,7 +238,7 @@ def workspace(d, kind):
     path = os.path.join(d, "AGENTS.md")
     text = open(path).read()
     if "## Your tools" not in text:
-        add = paragraph(kind).rstrip("\n") + "\n\n"
+        add = paragraph(kind, os.path.basename(os.path.abspath(d))).rstrip("\n") + "\n\n"
         i = text.find("## Compact instructions")
         text = text[:i] + add + text[i:] if i >= 0 else text.rstrip("\n") + "\n\n" + add
         open(path, "w").write(text)
