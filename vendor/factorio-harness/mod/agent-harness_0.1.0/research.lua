@@ -352,6 +352,7 @@ return function(api)
       for _, x in ipairs(idle) do parts[#parts+1] = x.label .. ' (' .. table.concat(x.techs, ', ') .. ')' end
       out.researched_none_built = table.concat(parts, '; ')
     end
+    if api.use_lines then out.research_use=api.use_lines(p.force) end
     out.shift = string.format('shift %d, started %s ago', shift.number or shift.seq, ago(game.tick - shift.tick))
     return out
   end

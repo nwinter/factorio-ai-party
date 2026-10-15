@@ -141,6 +141,9 @@ return function(api)
       if st == defines.entity_status.low_power or st == defines.entity_status.no_power then job.starved = job.starved + 1 end
     end
     if SNAP[t] then job.where[s.name] = (job.where[s.name] or 0) + 1 end
+    -- Per-prototype planetary counts use this same pass, never a second find. Old in-flight jobs have no map.
+    local counts=job.building_counts and job.building_counts[s.index]
+    if counts and SNAP[t] then counts.entities[name]=(counts.entities[name] or 0)+1 end
     if MACH[t] then
       local r
       if t == 'assembling-machine' or t == 'furnace' or t == 'rocket-silo' then
@@ -255,7 +258,7 @@ return function(api)
     for _, s in ipairs(surfaces()) do list[#list+1] = s.index end
     local want_ore = st.ore_asked and tick - st.ore_asked <= ORE_WANT and (not st.ore_tick or tick - st.ore_tick >= ORE_EVERY)
     return {start=tick, surfaces=list, si=1, steps=0, every=walk.every(st.steps, PERIOD),
-      machines=0, starved=0, where={}, mach={}, silos={}, towers={},
+      machines=0, starved=0, where={}, mach={}, silos={}, towers={}, building_counts={},
       base={x={}, y={}, c={}, w={}, h={}, turrets={}, blocks={}, top=0, n=0}, want_ore=want_ore or nil, stage='walk'}
   end
   -- Bands of chunk rows over a tile box, at most `width` chunks a band: {X0, Y0, X1, Y1, first_x, last_x, first_y, last_y}.
@@ -294,6 +297,9 @@ return function(api)
       if job.si > #job.surfaces then job.stage = 'cells' return end
       local s = game.get_surface(job.surfaces[job.si])
       if not s then job.si = job.si + 1; job.walk, job.list = nil, nil return end
+      if job.building_counts and not s.platform and not job.building_counts[s.index] then
+        job.building_counts[s.index]={surface=s.name,entities={}}
+      end
       if job.list then
         local last = math.min(#job.list, job.at + SLICE - 1)
         for i = job.at, last do read_entity(job, s, job.list[i]) end
@@ -418,6 +424,7 @@ return function(api)
         w=has and (b.x1 - b.x0 + 1) or 0, h=has and (b.y1 - b.y0 + 1) or 0, rows=b.rows or {}, nests=b.nests or {},
         buildings=#b.x, core=b.core_out, turrets=has and b.turrets or {}}
       st.done = {start=job.start, tick=game.tick, steps=job.steps, extras={electric_machines=job.machines, starved=job.starved},
+        building_counts=job.building_counts,building_counts_as_of=job.building_counts and job.start or nil,
         where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start, towers=job.towers}
       if b.ore then st.ore = {start=job.start, ore=b.ore}; st.ore_tick = job.start end
       st.steps = job.steps
@@ -447,6 +454,12 @@ return function(api)
   function M.towers(force, surface)
     local d = (api.state().census or {}).done
     return d and d.towers and d.towers[surface.index] or {}, d and d.towers and d.start or nil
+  end
+
+  function M.buildings(force)
+    local d=(api.state().census or {}).done
+    if force.name~='player' or not d then return nil end
+    return d.building_counts,d.building_counts_as_of
   end
 
   -- The operator read: {part = extras | snapshot | machines | basemap, ore = true (basemap)}. Nothing yet: {ready=false}.

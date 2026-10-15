@@ -33,6 +33,16 @@ def main():
     assert all("snapshot tick 6000; ages at snapshot" in m for m in messages(REPORT))
     assert all(w not in text.lower() for w in ('consider', 'should', 'please', 'recommend'))
     assert 'No completed planetary surveys' in messages({})[0]
+    # Exactly the two runtime research/use facts survive halfway/manual delivery and UTF-8 packing.
+    use = ["Agent equipment: power-armor-mk2 researched; worn: modular-armor x6, light-armor x1",
+           "Building tiers: nauvis stone-furnace 140, steel-furnace 60, electric-furnace 0; vehicles researched / built: tank 0"]
+    with_use = dict(REPORT, research_use=use)
+    from factory_digest import facts
+    assert all(facts(with_use).count(line) == 1 for line in use)
+    joined = ' '.join(messages(with_use))
+    for text in ('power-armor-mk2', 'modular-armor x6', 'steel-furnace 60', 'electric-furnace 0', 'tank 0'):
+        assert text in joined, joined
+    assert all(len(m.encode()) <= LIMIT for m in messages(with_use))
     # Lua's JSON encoder may represent an empty table as an empty array.
     assert 'drills reporting no resources: 0' in ' '.join(messages({'surfaces': [{'surface': 'nauvis', 'machines': [], 'fuel': []}]}))
     huge = {'surfaces': [{'surface': 'é'*600, 'machines': {}}]}

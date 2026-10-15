@@ -123,6 +123,11 @@ assert(localstate.census.job.silos[1][1]==target,'existing walk registers the si
 list,asof=C.silos{surface=surface,force=force}; eq(asof,nil,'unfinished pass not published')
 localstate.census.job.stage='done'; localstate.census.job.base.x={}; C.tick(5003)
 list,asof=C.silos{surface=surface,force=force}; eq(#list,1); eq(asof,5000); eq(list[1],target)
+local counts,count_tick=C.buildings(force)
+eq(counts[1].entities['rocket-silo'],1); eq(count_tick,5000)
+localstate.census.done.start=7000 -- failed retry can postpone scheduling, never change the count observation age
+eq(select(2,C.buildings(force)),5000)
+eq(C.buildings(neutral),nil,'player census is not a different force census')
 list[1]=nil
 list=C.silos{surface=surface,force=force}; eq(#list,1,'caller sorting cannot change the index')
 target.valid=false; list=C.silos{surface=surface,force=force}; eq(#list,0)
@@ -132,11 +137,12 @@ print('census silo index: ok')
 
 -- A hot reload can resume a pass made by the old runtime: do not publish only its remaining silos as complete.
 target.surface=surface; first=true; localstate.census=nil
-C.tick(8000); localstate.census.job.silos=nil
+C.tick(8000); localstate.census.job.silos=nil; localstate.census.job.building_counts=nil
 C.tick(8001); C.tick(8002)
 eq(localstate.census.job.silos,nil)
 localstate.census.job.stage='done'; localstate.census.job.base.x={}; C.tick(8003)
 list,asof=C.silos{surface=surface,force=force}; eq(#list,0); eq(asof,nil)
+eq(C.buildings(force),nil,'a pre-installation pass does not publish partial tier counts')
 print('census silo index reload: ok')
 
 -- Crop towers and their ghosts use the same sliced census pass, and dispatch
