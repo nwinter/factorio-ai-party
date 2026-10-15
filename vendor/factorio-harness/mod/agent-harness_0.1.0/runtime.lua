@@ -1371,6 +1371,8 @@ function handlers.describe()
         ammo='in a vehicle: an ammo name (cannon-shell, explosive-cannon-shell, firearm-magazine, flamethrower-ammo, rocket, ...): the gun that takes it, its slot loaded from your inventory when empty or holding another kind',
         note='seated in a car, tank or spidertron as its gunner (the driver, unless driver_is_gunner is off and a passenger sits in) it fires the vehicle\'s selected gun from the vehicle\'s ammo slots; the turret turns toward the target as a player\'s cursor turns it; position= aims at the entity there (not our own), auto=true at the nearest enemy in radius; vehicle {drive} goes on while it fires; reply: vehicle, seat, gun, gun_slot, range, guns (each slot with its ammo), target, out_of_range',
         outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={slot='gun|ammo|armor',item='owned item name',index='optional exact slot; without it gun/ammo tries compatible empty slots in order, then slot 1; armor defaults to 1'},
+      danger={position='{x,y}: the destination',radius='8..128 tiles (default 64)',surface='optional surface name (default yours)',returns='line and lines (facts, no verdict): the destination and its distance from you; worms and spawners on charted chunks within radius by name, each kind\'s reach (a worm\'s range, a spawner\'s units\' sight) and the nearest; enemy units seen now within radius (chunks our force sees now) by name and the nearest; attacks on our structures, buildings lost and enemy groups heading there in the last 10 min; deaths of ours within radius; the worms and spawners whose reach the straight line from you passes (not the walk\'s path); you: health, armor, shield. Also spawners, worms, units {name=count}, distance, you {health, max_health, armor, shield, max_shield}'},
+      pipe_gaps={from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; axis-aligned legs, at most 512 tiles',returns='line (one line), segments [{from, to, tiles, first, last, segment_id, fluid, amount, extent, underground}] (runs of tiles whose fluid entities join, with the engine\'s fluid segment there), cuts [{between, line}] (two neighbouring entities that do not join, or where the line stops at a tile with nothing), empty [{from, to, tiles}] (no fluid entity of ours and no pipe-to-ground pair over it), ghosts [{position, name}], unknown [{from, to, tiles}] (chunks our force does not see now: not read); in sight or by remote view on your surface'},
       belt_gaps={from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; axis-aligned legs, at most 512 tiles',surface='optional surface name (default yours)',returns='missing and ghosts with observed_tick; unknown means no recorded observation, never a missing belt; observations lists each chunk and age/current flag; visible chunks refreshed (at most 4); otherwise the remembered layout, including observed underground spans; no live entity reads in fog. Memory starts when installed, up to 256 chunks, discovered by the census or this call, one visible chunk refreshed per second'},
       drill_sites=M.drill_sites.schema,
       agriculture={surface='optional surface name (default yours)',returns='towers [{name, position, state (built, ghost, destroyed), status, seeds, lost_tick, cause, line}], as_of (census discovery tick), pending, history; current visible towers and ghosts, plus up to 256 recorded tower deaths since this history was installed; rebuilt positions show the current tower'},
@@ -2687,7 +2689,7 @@ handlers.launch=function(p,a)
   end)
   return out
 end
-local views={belt_gaps=true,drill_sites=true,agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
+local views={danger=true,pipe_gaps=true,belt_gaps=true,drill_sites=true,agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
 function handlers.observe(p,a)
   -- Newer read-only views travel as observe scopes: an already loaded
   -- bootstrap treats unknown action names as cached mutations.
@@ -7186,6 +7188,16 @@ function M.feeds(p,e,mode)
     end
   end
 end
+-- Items in a logistic chest robots are on their way to pick up (the game's targeted pickups; 0 for other entities).
+function M.robot_reserved(e,item)
+  local ok,point=pcall(function() return e.get_logistic_point(defines.logistic_member_index.logistic_container) end)
+  local n=0
+  for _,st in ipairs(ok and point and point.targeted_items_pickup or {}) do
+    local name=type(st.name)=='table' and st.name.name or st.name
+    if name==item then n=n+(st.count or 0) end
+  end
+  return n
+end
 -- Delivery is the hand move at this tick. Inserters and logistics can remove it afterward.
 function M.delivery_note(p,e,item)
   local mode=e.prototype.logistic_mode
@@ -7410,30 +7422,40 @@ function M.pick_source(p,a,verb)
     if not ok then skipped[#skipped+1]={position=raw,error=reason(e)}
     else
       friendly(p,e)
-      local item,n=nil,0
+      local item,n,reserved,held_reserved=nil,0,0,nil
       for _,name in ipairs(items) do
         local k
         if a.outputs_only then
           local ok,_,inv=pcall(infer_inventory,e,{outputs_only=true})
           k=ok and inv.get_item_count{name=name,quality=a.quality or 'normal'} or 0
         else k=entity_holds(e,name,a.quality) end
-        if k>0 and (item==nil or (a.pick=='most_stock' and k>n)) then item,n=name,k end
+        -- What robots already reserved there is not there for a hand (Haiku, shift17 10:50: walked to a chest, then
+        -- "holds no X now"): only the rest counts, read before the walk.
+        local r=k>0 and M.robot_reserved(e,name) or 0
+        if k-r>0 and (item==nil or (a.pick=='most_stock' and k-r>n-reserved)) then item,n,reserved=name,k,r end
+        if k>0 and r>=k then held_reserved={name=name,count=k,reserved=r} end
         if item and a.pick=='first_with_stock' then break end
       end
-      if not item then skipped[#skipped+1]={position=e.position,name=e.name,holds=0}
-      elseif not best or (a.pick=='most_stock' and n>best.count) then best={entity=e,item=item,count=n} end
+      if not item then skipped[#skipped+1]={position=e.position,name=e.name,holds=held_reserved and held_reserved.count or 0,
+        reserved=held_reserved and held_reserved.reserved or nil,why=held_reserved and 'all of it reserved for robot pickup' or nil}
+      elseif not best or (a.pick=='most_stock' and n-reserved>best.count-best.reserved) then best={entity=e,item=item,count=n,reserved=reserved} end
     end
     if best and a.pick=='first_with_stock' then break end
   end
   local label=table.concat(items,' or ')
   if not best then
     return {moved=0,transferred=0,picked='none',skipped=#skipped,skipped_places=#skipped<=8 and skipped or nil,
-      note=string.format('none of the %d listed places holds %s now: nothing taken, nothing walked',#list,label)}
+      note=(function()
+        local res=0
+        for _,s in ipairs(skipped) do res=res+(s.reserved or 0) end
+        return res>0 and string.format('none of the %d listed places holds %s now that robots have not reserved for pickup (%d reserved): nothing taken, nothing walked',#list,label,res)
+          or string.format('none of the %d listed places holds %s now: nothing taken, nothing walked',#list,label)
+      end)()}
   end
   local e=best.entity
-  local picked={position=e.position,name=e.name,item=best.item,holds=best.count,rule=a.pick,
-    line=string.format('%s at (%g,%g) holds %d %s (%s; %d listed place%s skipped)',e.name,e.position.x,e.position.y,best.count,best.item,a.pick,
-      #skipped,#skipped==1 and '' or 's')}
+  local picked={position=e.position,name=e.name,item=best.item,holds=best.count,rule=a.pick,reserved=best.reserved>0 and best.reserved or nil,
+    line=string.format('%s at (%g,%g) holds %d %s%s (%s; %d listed place%s skipped)',e.name,e.position.x,e.position.y,best.count,best.item,
+      best.reserved>0 and string.format(', %d of them reserved for robot pickup',best.reserved) or '',a.pick,#skipped,#skipped==1 and '' or 's')}
   local take={direction='to_player',item=best.item,quality=a.quality,outputs_only=a.outputs_only,count=counts[best.item] or a.count,keep=a.keep,keep_max=a.keep_max,inventory=a.inventory,
     up_to=a.up_to==true and true or nil,ticks=a.ticks}
   -- With to, inventory goes with the place that has it (round1650d: Luna's and Grok's rocket_silo_rocket was tried on the
@@ -10228,7 +10250,7 @@ passive.circuit_set=true; passive.wire=true
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
 for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route','rail_route','train_stop','blueprint_save','blueprint_rename'}) do passive[name]=true end
-local reads={fuel_budget=true,belt_gaps=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
+local reads={fuel_budget=true,belt_gaps=true,pipe_gaps=true,danger=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
 M.reads=reads
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
 
@@ -10244,7 +10266,7 @@ local EXTRA_ARGS={attach={'offline'},build={'quality','entity'},collect={'count'
 EXTRA_ARGS.circuit_set=TARGET
 EXTRA_ARGS.trace=TARGET
 -- observe forwards to the scoped views; a scoped call is checked as that view.
-local VIEW_SCOPES={belt_gaps=true,drill_sites=true,agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
+local VIEW_SCOPES={danger=true,pipe_gaps=true,belt_gaps=true,drill_sites=true,agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
 local allowed_args
 function check_args(action,args)
   if not allowed_args then
@@ -11060,6 +11082,15 @@ end
 -- background pass; the operator read census returns the last complete one (census.lua; operator 22:00, task-slowreads).
 M.beltgaps=require('beltgaps'){state=state,position=position}
 function handlers.belt_gaps(p,a) return M.beltgaps.read(p,a) end
+-- pipe_gaps: a pipe line's segments and cuts along tiles (pipegaps.lua; Muse, shift17 10:50).
+M.pipegaps=require('pipegaps'){position=position,connections=function(e) return pipes.connections(e) end,
+  segment_box=function(e,i) return pipes.segment_box(e,i) end,visible=function(p,pos) return M.memory_visible(p,pos) end}
+function handlers.pipe_gaps(p,a) return M.pipegaps.read(p,a) end
+-- danger: a destination's nests, enemies seen, recent attacks and deaths, and the character's health and armor
+-- (danger.lua; Opus, shift17 10:51), facts only.
+M.danger=require('danger'){state=state,position=position,avoid=M.avoid,
+  surface=function(p,name) local s=game.surfaces[name]; assert(s and (s.platform==nil or s.platform.force==p.force),'unknown surface '..tostring(name)); return s end}
+function handlers.danger(p,a) return M.danger.read(p,a) end
 function M.memory_visible(p,pos)
   return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos))
 end
