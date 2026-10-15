@@ -502,4 +502,50 @@ do
   yfarm.inv.remove{name=A,count=50}
 end
 
+-- A take from one machine's output given straight into another (Muse, shift18 12:46: productivity modules collected
+-- from one machine piled up in the character, 78 and growing, because the next took no more). What the target's input
+-- takes is read before the take (one stack and 64 by hand, measured on 2.0.77): none, nothing taken or walked; else
+-- the take is at most that.
+do
+  prototypes.item['productivity-module']={name='productivity-module',type='module',stack_size=50}
+  prototypes.recipe=prototypes.recipe or {}
+  prototypes.recipe['production-science-pack']={name='production-science-pack',ingredients={{type='item',name='productivity-module',amount=1},
+    {type='item',name='iron-plate',amount=10}}}
+  defines.inventory.assembling_machine_input=2; defines.inventory.assembling_machine_output=3; defines.inventory.assembling_machine_modules=4
+  local function machine(pos,recipe)
+    local e=chest(pos)
+    local input,output,mods=inventory(4),inventory(1),inventory(2)
+    e.name='assembling-machine-2'; e.type='assembling-machine'; e.prototype={name='assembling-machine-2',type='assembling-machine'}
+    e.get_recipe=function() return recipe and prototypes.recipe[recipe] or nil end
+    e.get_inventory=function(i) return ({[2]=input,[3]=output,[4]=mods})[i] end
+    e.get_output_inventory=function() return output end
+    e.get_module_inventory=function() return mods end
+    e.input,e.output=input,output
+    return e
+  end
+  local maker=machine({x=46.5,y=26.5},'productivity-module')
+  local middle=machine({x=49.5,y=26.5},'production-science-pack')
+  maker.output.insert{name='productivity-module',count=40}
+  for _=1,3 do middle.input.insert{name='productivity-module',count=38} end
+  eq(middle.input.get_item_count('productivity-module'),114)
+  local r=luna('collect',{positions={maker.position},item='productivity-module',pick='first_with_stock',outputs_only=true,to=middle.position})
+  eq(r.transferred,0); eq(r.refused,'assembling-machine-2 at (49.5,26.5): its input holds 114 productivity-module, as much as a hand puts in (one stack and 64)')
+  eq(r.note,'assembling-machine-2 at (49.5,26.5) takes no productivity-module now: its input holds 114 productivity-module, as much as a hand puts in (one stack and 64); nothing taken, nothing walked')
+  eq(maker.output.get_item_count('productivity-module'),40); eq(main.get_item_count('productivity-module'),0)
+  -- 100 held: 14 taken, 14 given; the rest stays in the maker.
+  middle.input.remove{name='productivity-module',count=14}
+  r=luna('collect',{positions={maker.position},item='productivity-module',pick='first_with_stock',outputs_only=true,to=middle.position})
+  eq(r.to_takes,'assembling-machine-2 at (49.5,26.5) takes 14 productivity-module now (its input holds 100 of 114: one stack and 64); the take is at most that')
+  advance(120)
+  eq(maker.output.get_item_count('productivity-module'),26); eq(main.get_item_count('productivity-module'),0)
+  eq(middle.input.get_item_count('productivity-module'),114)
+  -- A recipe that does not use it: refused before the take.
+  local other=machine({x=52.5,y=26.5},'iron-gear-wheel')
+  prototypes.recipe['iron-gear-wheel']={name='iron-gear-wheel',ingredients={{type='item',name='iron-plate',amount=2}}}
+  r=luna('transfer',{positions={yumako.position},item='yumako-seed',pick='first_with_stock',to=other.position})
+  eq(r.transferred,0); eq(r.refused,'assembling-machine-2 at (52.5,26.5): its recipe iron-gear-wheel does not use yumako-seed')
+  -- A module its recipe does not use goes into its module slots, as the game puts it: no input cap read.
+  eq(runtime.machine_room(other,'productivity-module'),nil)
+end
+
 print('picksource: ok')

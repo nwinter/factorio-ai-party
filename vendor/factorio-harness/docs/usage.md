@@ -2042,6 +2042,16 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
       machines took nothing with spoilage their recipe does not take in their input says so on their rows (`spoilage`)
       and in `last.short` (`reason: input_spoilage`). `--wait` waits
       for it and shows `picked`, `taken`, `delivered`.
+    - A destination that is a crafting machine (Muse, shift18 12:46: productivity modules collected from one machine's
+      output piled up in the character, 78 and growing, because the next took no more): what its input takes by hand
+      now is read before the take. Measured on 2.0.77: an assembler's, chemical plant's or furnace's input takes up to
+      one stack plus 64 of each ingredient (50 -> 114, 100 -> 164, 200 -> 264), whatever the machine. None: nothing taken,
+      nothing walked (`refused: "assembling-machine-2 at (75.5,0.5): its input holds 114 productivity-module, as much as
+      a hand puts in (one stack and 64)"`, or `its recipe iron-gear-wheel does not use yumako-seed`); else the take is at
+      most that and `to_takes` says so (`... takes 14 productivity-module now (its input holds 100 of 114 ...)`), the rest
+      staying in the source. One step from a machine's output into the next machine: `collect {pick:
+      "first_with_stock", positions: [machine A], item, outputs_only: true, to: machine B}`, queueable. A module the
+      recipe does not use goes into the module slots, as the game puts it, with no input cap read.
   - Personal logistics (trash.lua; Astra, 01:53: two cargo hauls lost to auto-trash). The game moves what you hold over
     a personal request's max (and, with "trash unrequested" on, any item you do not request) from your inventory to
     your trash slots within a few ticks, logistic network or not. A `transfer` to you, `collect`, `pickup` and
