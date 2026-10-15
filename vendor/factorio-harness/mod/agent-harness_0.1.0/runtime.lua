@@ -1059,6 +1059,7 @@ end
 -- An assembler 10.19 tiles from its box was out though 9.78 from its selection box; a belt 10.25 from its centre was in
 -- at 9.70 from its box; trees 4.3 to 11 tiles from their box and stone ore 3.24 were out, ore at 2.31 in. Rocks
 -- (simple-entity) are taken as trees; a target the engine refuses inside the long reach gets the short one.
+-- Plants have their own type, distinct from trees (wild jellystems on Gleba).
 M.SHORT_REACH={resource=true,tree=true,plant=true,['simple-entity']=true,fish=true}
 function M.box_distance(pos,e)
   local ok,b=pcall(function() return e.bounding_box end)
@@ -2763,11 +2764,7 @@ function M.walk_target(p,a)
   end
   local reach=a.reach==nil and 'transfer' or a.reach
   local r,kind
-  if reach=='transfer' then
-    -- Use the same short-reach fallback as the refusal when the engine denies access.
-    -- Plants have their own type, distinct from trees (wild jellystems on Gleba).
-    local denied=not p.can_reach_entity(e)
-    r=M.reach_for(p,e,denied and M.box_distance(p.position,e) or nil); kind='transfer reach'
+  if reach=='transfer' then r=M.reach_for(p,e); kind='transfer reach'
   elseif reach=='build' then r=p.build_distance or 10; kind='build reach'
   else
     assert(type(reach)=='number' and reach>=0.5 and reach<=64,'reach is build, transfer or a number of tiles 0.5..64 (to the entity\'s box)')
