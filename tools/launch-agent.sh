@@ -43,10 +43,11 @@ turn() {
   case "\$q" in
     stop) exit 0 ;;
     "") started=1; [ "\$((\$(date +%s) - t0))" -ge 15 ] || sleep "\${POG_AGY_RETRY_WAIT:-30}" ;;
-    *) sleep "\$q"
-       # the next turn starts with how long it rested and that the game went on (operator 17:17); the rest is over
-       woke=\$(python3 '$root/tools/agy-quota.py' --woke '$dir') ;;
+    *) sleep "\$q" ;;
   esac
+  # after a sleep the next turn starts with how long it rested and that the game went on (operator 17:17); the rest
+  # is over (resting.json -> resting-last.json)
+  case "\$q" in ""|stop) ;; *) woke=\$(python3 '$root/tools/agy-quota.py' --woke '$dir') ;; esac
 }
 woke=""
 turn -p "\$(cat '$prompt')"
