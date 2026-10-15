@@ -210,6 +210,9 @@ return function(api)
       local unread = api.unread(ag.index) or {}
       local c = counts[ag.name] or {}
       local last_end = s.stand_end and s.stand_end[ag.index]
+      local ok_open, open_line = false, nil
+      if api.open then ok_open, open_line = pcall(api.open, ag.index, ag.name) end
+      if not ok_open then open_line = nil end
       out[#out+1] = {name=ag.name, display_name=ag.display_name,
         standing_s=since and math.floor((game.tick - since) / 60) or 0,
         alive=api.has_body(ag.index),
@@ -223,6 +226,8 @@ return function(api)
         -- Standing orders (orders.lua): {set, running, reason, paused}; a running order is a running queue, so not standing.
         orders=api.orders and api.orders(ag.index) or nil,
         counted=M.counted(ag.index, (a or {}).minutes),
+        -- What is open for it (open.lua; d15 H3): the idle nudge quotes it.
+        open=open_line,
         stand_ended=last_end and {s_ago=math.floor((game.tick - last_end.tick) / 60), why=last_end.why} or nil}
     end
     return {agents=out, tick=game.tick, idle='standing: no action and no running queue; a wait or sleep is standing; '

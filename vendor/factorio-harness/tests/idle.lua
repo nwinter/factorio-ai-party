@@ -106,8 +106,11 @@ q.current=nil; q.loop={{action='mine',args={}}}; q.interval=60*600; advance(60*2
 eq(report('astra').standing_s,0,'a repeating plan resting between cycles is work')
 storage.agent_harness.queues[ai]=nil; advance(60)
 -- a sleep with nothing running is standing (shift05: Sonnet's 25-minute sleeps), and the report shows the sleep
-astra('sleep',{seconds=900}); advance(60*30)
+-- (a condition keeps it at 900 s: one with nothing running and none is capped at 300, d15 H4)
+astra('sleep',{seconds=900,condition={['until']='alert'}}); advance(60*30)
 a=report('astra'); assert(a.standing_s>=29,a.standing_s); assert(a.sleeping_s>=29 and a.sleep_left_s>800,a.sleep_left_s)
+-- what is open for it (open.lua, d15 H3), quoted by the nudge
+assert(type(a.open)=='string' and a.open:find('^open for you: '),tostring(a.open))
 -- unread for it: chat, mentions, tells
 sol('say',{text='@astra the copper line is down'})
 grok('tell',{to='astra',text='need 40 plates'})
@@ -210,7 +213,7 @@ row=report('sol'); assert(row.standing_s<=11,row.standing_s); eq(row.stand_ended
 -- What was counted, for the nudge's text: actions, reads, messages, sleeps and waits by kind, the shares of time.
 local c=row.counted
 eq(c.minutes,10); eq(c.actions,1); eq(c.no_effect,2); assert(c.reads>=1 and c.messages>=1,c.text)
-assert(c.text:find('^last 10 min: 1 game action %(and 2 with no effect%), %d+ reads?, %d+ messages?; working %d+%%, asleep %d+%% %(sleep 600 x1, sleep 5 x1%), waiting %d+%% %(wait_ticks x%d, wait_until x%d%), standing %d+%%$'),c.text)
+assert(c.text:find('^last 10 min: 1 game action %(and 2 with no effect%), %d+ reads?, %d+ messages?; working %d+%%, asleep %d+%% %(sleep 300 x1, sleep 5 x1%), waiting %d+%% %(wait_ticks x%d, wait_until x%d%), standing %d+%%$'),c.text)
 assert(c.busy_s>=24 and c.standing_s>0,c.text)
 
 -- The agent's own review (selfview.lua, task-selfview): review and networks are reads (a running action goes on);

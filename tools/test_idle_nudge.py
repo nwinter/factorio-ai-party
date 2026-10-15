@@ -145,6 +145,10 @@ def main():
     # board lines show when there are any; no advice in the text
     t = N.nudge_text(row("opus", 11, unread_board=2))
     assert t.endswith("0 chat messages, 0 mentions, 0 tells, 2 board lines.") and "should" not in t and "please" not in t, t
+    # what is open for the agent (open.lua, d15 H3) ends the text; a harness before it sends none
+    t = N.nudge_text(row("sonnet", 12, open="open for you: 1 board item of yours (#425 purple science [doing])"))
+    assert t.endswith("0 tells. Open for you: 1 board item of yours (#425 purple science [doing])."), t
+    assert "Open for you" not in N.nudge_text(row("sonnet", 12))
     # the run's members and deadline from its files
     d = tempfile.mkdtemp()
     open(os.path.join(d, "panes.txt"), "w").write("astra w1:1 codex\nsonnet w1:2 claude\n")
