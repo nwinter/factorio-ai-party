@@ -8748,6 +8748,7 @@ function M.queue_brief(q)
     pending_count=#(q.pending or {}),recent=#recent>0 and recent or nil,
     last_failure=f and (step(f)..(type(f.result)=='table' and f.result.reason and ': '..tostring(f.result.reason) or '')) or nil,
     repeating=q.repeating or nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.orders_between_rounds,guards=q.guards and #q.guards or nil,
+    times=q.times,rounds_left=q.rounds_left,stops_tick=q.stops_tick,loop_done=q.loop_done,
     waiting=q.waiting,after_direct=q.after_direct,corrected=q.corrected,note='queue_status: the active step, the next one and the last 3 in full (history, pending: a count or "all")'}
 end
 for _,name in ipairs{'queue_submit','queue_repeat','queue_edit','queue_cancel','queue_resume'} do

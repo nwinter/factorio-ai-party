@@ -1527,15 +1527,29 @@ fh sleep 900 --until researched                       # ...or until the research
   before, so a steady loop says it once. A step with `up_to: true` or `on_short: "skip"` is left out of the line (its
   short was allowed for); `queue_status` history still marks it `short: true`. `on_fail: "skip"` does not count as
   allowing a short.
-- Standing orders between the rounds of a repeating plan (Opus, shift13: "orders never run while my queue repeats, so
-  turret rearm and boiler fuel orders never fire"): `queue_repeat {orders}` says which may run in the pause between
-  its rounds: `triggers` (the default: orders with `when`), `all` (the default routine too) or `none`.
-  - An order that starts there runs in the queue as at any other time; the next round loads once it ends (the round
-    waits for it, up to the order's `max_ticks`).
-  - Its `hold` counts from your own last request, not the round's last step, so a short pause still lets one start.
-  - During a round the orders line says `waiting for your repeating plan's round (orders run between its rounds:
-    triggered ones)`; with `none`, `waiting for your repeating plan (orders: none)`.
-  - `queue_status` and the queue write replies show `orders_between_rounds`.
+- A repeating plan (`queue_repeat {steps, interval_ticks?, name?, times?, for_ticks?, orders?}`) runs its steps in
+  rounds, with `interval_ticks` (60..36000, default 1800) between rounds.
+  - Its end (Muse, 21:20: refill loops):
+    - `times` (1..10000) runs that many rounds.
+    - `for_ticks` (60..432000) starts no round at or after that many ticks from the call; a round under way finishes.
+    - With both, the first to come ends it; with neither, the loop runs until `queue_cancel`.
+    - The brief reply and `queue_status` show `times`, `rounds_left` (after the current round) and `stops_tick`.
+  - When the loop ends, the queue is empty and free:
+    - the history gets `loop_done {rounds, reason}`, and `queue_status` shows `loop_done {name, rounds, reason, tick}`;
+    - the team block says it once under `queue`: `queue furnace refill done after 3 rounds: 3 of 3 rounds run (times 3)`
+      or `... done after 7 rounds: no round starts at or after tick 10370000 (for_ticks 600)`.
+  - Orders in the pause between rounds (Opus, shift13: "orders never run while my queue repeats, so turret rearm and
+    boiler fuel orders never fire"): `orders` says which standing orders may run there: `triggers` (the default:
+    orders with `when`), `all` (the default routine too) or `none`.
+    - An order that starts there runs in the queue as at any other time.
+    - The next round loads once the order's run ends: the round waits for it, up to the order's `max_ticks`.
+    - Its `hold` counts from your own last request, not the round's last step, so a short pause still lets one start.
+    - `for_ticks` still holds: a round an order held back to or past the end does not start, and the loop ends there.
+    - When the loop ends, its `orders` setting goes with it: the queue is free, and every order may run as at any free
+      time.
+  - The orders line, during a round: `waiting for your repeating plan's round (orders run between its rounds:
+    triggered ones)`; with `none`, `waiting for your repeating plan (orders: none)`. `queue_status` and the queue write
+    replies show `orders_between_rounds`.
 - `inspect` of an assembler or furnace whose recipe lacks an ingredient for one craft while another is stacked (5 crafts
   or more; Grok, shift11: an electromagnetic plant on electronic-circuit held 135 iron plates and no copper cable)
   says so in `input_imbalance` (`iron-plate 135 in input, copper-cable 0: item_ingredient_shortage on copper-cable`)

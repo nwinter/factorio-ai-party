@@ -217,7 +217,9 @@ already targets your character.
   every assembler and furnace output in the radius (output slots only). `position` and `positions` are interchangeable
   in these calls (`corrected` says how it ran). A repeating queue (`queue_repeat`, optional `name`) puts a `queue:`
   line in the team block when a round's short steps differ from the round before; steps with `up_to: true` or
-  `"on_short": "skip"` are left out of it. `transfer` is `{position, direction: "to_entity"|"to_player", item, count,
+  `"on_short": "skip"` are left out of it. `queue_repeat` takes `times` (rounds) and `for_ticks` (no round starts
+  after that); the loop then ends with one `queue:` line (`done after N rounds: ...`) and `loop_done` in `queue_status`;
+  its `orders` says which standing orders may run between its rounds (triggered ones by default). `transfer` is `{position, direction: "to_entity"|"to_player", item, count,
   inventory?}` on any container (`./fh help transfer` shows calls that work; an argument refusal ends with one built
   from your call, `launch`'s with the silos there); out of reach, it says the distance, your
   reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
