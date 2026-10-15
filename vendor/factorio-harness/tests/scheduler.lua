@@ -39,11 +39,13 @@ q=h.queue_status(p); check(#q.history==3 and not q.active)
 -- printed 60+); so does queue_status (Sol 10:50: a long done history hid the
 -- stalled step), with history: N or 'all' for more.
 h.queue_submit(p,{steps={{action='craft'}}}); tick()
-q=h.queue_submit(p,{steps={},start=false}); check(#q.history==3 and q.history_total==4 and q.history[3].action=='craft')
-check(#h.queue_status(p).history==3 and h.queue_status(p).history_total==4 and h.queue_status(p).history[3].action=='craft')
-check(#h.queue_status(p,{history='all'}).history==4 and #h.queue_status(p,{history=1}).history==1)
+-- (round2250a, Grok: the plan last submitted by default; an empty submit starts no plan)
+q=h.queue_submit(p,{steps={},start=false}); check(#q.history==1 and q.history_total==4 and q.history[1].action=='craft' and q.plan.id==2 and q.plan.done==1)
+check(#h.queue_status(p).history==1 and h.queue_status(p).history_total==4 and h.queue_status(p).history[1].action=='craft')
+check(#h.queue_status(p,{orders=true,history='all'}).history==4 and #h.queue_status(p,{orders=true}).history==3 and #h.queue_status(p,{history=1}).history==1)
 check(h.queue_status(p,{history=1}).history[1].action=='craft' and #h.queue_status(p,{history=0}).history==0)
 check(not pcall(h.queue_status,p,{history=-1}) and not pcall(h.queue_status,p,{history=65}) and not pcall(h.queue_status,p,{pending='some'}))
+check(not pcall(h.queue_status,p,{orders='yes'}))
 -- Edit only pending steps and reject stale revisions before side effects.
 q=h.queue_submit(p,{steps={{action='wait_ticks',args={ticks=10}},{action='craft'}}})
 tick(); q=h.queue_status(p)
@@ -267,5 +269,41 @@ do
   lh.queue_repeat(p,{interval_ticks=60,steps={{action='craft'}}})
   ltick(400); r=lh.queue_status(p); check(r.repeating and lcalls>=6 and r.times==nil and r.rounds_left==nil)
   lh.queue_cancel(p,{})
+end
+-- Grok, shift14 22:50: queue status showed hours of standing-order history, and a finished pickup plan read as a
+-- failure (an order's interrupted transfer was last_failure). By default: the plan last submitted, its entries and a
+-- summary; the orders' entries counted; orders=true lists every entry as before.
+do
+  h.queue_cancel(p,{})
+  for _=1,10 do tick() end
+  h.queue_submit(p,{steps={{action='craft',label='pick'},{action='craft',label='carry'}}})
+  for _=1,4 do tick() end
+  local s=h.queue_status(p)
+  check(s.plan and s.plan.steps==2 and s.plan.done==2 and s.plan.ok==2 and s.plan.failed==0 and s.plan.pending==0 and s.plan.kind=='submit')
+  -- a standing order runs after it, and fails
+  scheduler.run_order(1,'adv-free',{{action='broken'},{action='craft'}},'routine')
+  for _=1,4 do tick() end
+  s=h.queue_status(p)
+  check(#s.history==2 and s.history[1].label=='pick' and s.history[2].label=='carry' and s.last_failure==nil)
+  check(s.orders_history and s.orders_history:find('^%d+ entries from standing orders left out') ~= nil)
+  local all=h.queue_status(p,{orders=true,history='all'})
+  local seen_order=false
+  for _,e in ipairs(all.history) do if e.order=='adv-free' then seen_order=true end end
+  check(seen_order and all.last_failure and all.last_failure.order=='adv-free' and all.orders_history==nil)
+  -- a new plan replaces the view; the old plan's entries stay in orders=true
+  h.queue_cancel(p,{})
+  h.queue_submit(p,{steps={{action='craft',label='next'}}})
+  for _=1,3 do tick() end
+  s=h.queue_status(p)
+  check(#s.history==1 and s.history[1].label=='next' and s.plan.id>1)
+  -- a repeating plan's rounds stay in its plan
+  h.queue_cancel(p,{})
+  h.queue_repeat(p,{interval_ticks=60,times=2,steps={{action='craft',label='round'}}})
+  for _=1,200 do tick() end
+  s=h.queue_status(p)
+  local rounds=0
+  for _,e in ipairs(s.history) do if e.label=='round' then rounds=rounds+1 end end
+  check(rounds==2 and s.plan.kind=='repeat' and s.history[#s.history].action=='loop_done')
+  h.queue_cancel(p,{})
 end
 print('scheduler: '..assertions..' assertions passed')

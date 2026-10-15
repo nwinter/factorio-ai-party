@@ -107,8 +107,9 @@ const kids = {};
 // the cards' parts exist once made; any other selector gets an element
 const find = (s) => kids[s] || (/^#(cb-|map-|mm)/.test(s) ? null : (kids[s] = el(s)));
 function el(name) {
-  const e = { name, dataset: {}, textContent: '', value: '', hidden: false, classList: cls(), attrs: {}, _html: '',
-    setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k]; }, addEventListener() {},
+  const e = { name, dataset: {}, textContent: '', value: '', hidden: false, classList: cls(), attrs: {}, _html: '', style: {}, on: {},
+    setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k]; },
+    addEventListener(t, f) { (this.on[t] = this.on[t] || []).push(f); }, appendChild() {},
     querySelector: (s) => find(s), querySelectorAll: () => [], scrollTop: 0, scrollHeight: 0 };
   // ids in assigned HTML become elements, as a browser would make them
   Object.defineProperty(e, 'innerHTML', { get() { return this._html; }, set(v) { this._html = v; for (const m of String(v).matchAll(/id="([\w-]+)"/g)) kids['#' + m[1]] = kids['#' + m[1]] || el(m[1]); } });
@@ -123,7 +124,7 @@ global.window = global;
 global.addEventListener = () => {};
 global.requestAnimationFrame = (f) => setImmediate(f);
 global.document = { getElementById: (id) => (id === 'live-app' ? app : kids['#' + id] || null), hidden: false, documentElement: { dataset: {} },
-  addEventListener() {}, querySelector: () => null };
+  addEventListener() {}, querySelector: () => null, createElement: (t) => (kids['new:' + t] = el(t)) };
 global.matchMedia = () => ({ matches: true });
 global.location = { search: mode === 'demo' ? '?demo=1' : '', hostname: 'localhost' };
 global.localStorage = { getItem: () => null, setItem: () => {} };
@@ -138,7 +139,28 @@ global.fetch = (url, opts) => {
   return reply(url.indexOf('state') >= 0 ? state : { schema: 1 });
 };
 require(process.argv[2]);
-setTimeout(() => process.stdout.write(JSON.stringify({ dash: kids['#dash'].innerHTML, made, sets,
+// The portrait tip and the scroll to a plan line (viewer syndesis): a mouse hover, a click, then two taps on a phone.
+const fire = (type, ev) => (app.on[type] || []).forEach((f) => f(ev));
+const portraitOf = (name) => ({ dataset: { agent: name }, getBoundingClientRect: () => ({ left: 10, top: 10, bottom: 58 }), contains: () => false });
+const evOn = (p, extra) => Object.assign({ target: { closest: (sel) => (sel.indexOf('data-agent') >= 0 ? p : null) }, preventDefault() {} }, extra);
+const taps = {};
+setTimeout(() => {
+  const tip = kids['new:div'];
+  if (!tip || !(app.on.pointerover || []).length) return;
+  const sol = portraitOf('sol'), muse = portraitOf('muse');
+  fire('pointerover', evOn(sol, { pointerType: 'mouse' }));
+  taps.hover = { hidden: tip.hidden, html: tip.innerHTML };
+  fire('pointerdown', evOn(sol, { pointerType: 'mouse' }));
+  fire('click', evOn(sol, {}));
+  taps.click = { hidden: tip.hidden, flash: !!(kids['#plan-line-sol'] && kids['#plan-line-sol'].classList.contains('is-flash')) };
+  fire('pointerdown', evOn(muse, { pointerType: 'touch' }));
+  fire('click', evOn(muse, {}));
+  taps.tap1 = { hidden: tip.hidden, html: tip.innerHTML };
+  fire('pointerdown', evOn(muse, { pointerType: 'touch' }));
+  fire('click', evOn(muse, {}));
+  taps.tap2 = { hidden: tip.hidden, plan_card: !!(kids['.card-plan'] && kids['.card-plan'].classList.contains('is-flash')) };
+}, 200);
+setTimeout(() => process.stdout.write(JSON.stringify({ dash: kids['#dash'].innerHTML, made, sets, taps, plan: (kids['#cb-plan'] || {}).innerHTML,
   agents: (kids['#cb-agents'] || {}).innerHTML, cams: (kids['#map-cams'] || {}).innerHTML, board: (kids['#cb-board'] || {}).innerHTML,
   chronicle: (kids['#cb-chronicle'] || {}).innerHTML,
   watching: { text: kids['#watching'].textContent, hidden: kids['#watching'].hidden }, posts,
@@ -321,7 +343,7 @@ def map_tests():
         vc = lv["vchat"]
         assert vc.count('c-src-yt') == 2 and vc.index("Enginerd") < vc.index("Joonazan"), vc  # oldest first
         assert "&lt;b&gt;hi" in vc and "<b>hi" not in vc, vc  # escaped
-        assert lv["dash"].count('class="fx-panel live-card') == 7 and 'id="cb-map"' in lv["dash"] and 'id="cb-chronicle"' in lv["dash"]
+        assert lv["dash"].count('class="fx-panel live-card') == 8 and 'id="cb-map"' in lv["dash"] and 'id="cb-plan"' in lv["dash"] and 'id="cb-chronicle"' in lv["dash"]
         # the Chronicle card (viewers Alex and syndesis 22:24): the newest entry in the agent's words with its title, game
         # time, where and what it is filed beside; the harness's record (a platform lost with its cargo; research left out)
         cr = lv["chronicle"]
@@ -339,6 +361,26 @@ def map_tests():
         assert '<h4>Projects</h4><ul class="board-projects">' in bd and "<b>Nuclear power plant</b>" in bd, bd
         assert 'aria-valuenow="50"' in bd and "3 of 6 steps" in bd and "no owner" in bd and "--fx-value:25%" in bd, bd
         assert "finished a step of</span> Nuclear power plant" in bd and "3. Reactor and heat exchangers" in bd, bd
+        # the Team plan (viewer Alex, 22:12): the goals with when they were set, each agent's line with when it was set
+        # and by whom when not itself, the agents with no line, open projects with their next step, the request counts
+        pl = lv["plan"]
+        assert "<h4>Goals</h4>" in pl and "Blue science at 60/min" in pl and "set 3 min ago" in pl, pl
+        assert 'id="plan-line-sol"' in pl and "blue circuits line at (40,-20)" in pl and "set 6 min ago by Astra" in pl, pl
+        assert "set 25 min ago" in pl and "set 2 min ago" in pl, pl  # opus 25 game minutes ago, luna 90 s (2 min)
+        assert "No line: Astra, Opus" not in pl and "No line: Astra, Sonnet, Haiku, Grok the Unyielding Builder, Gemini, Muse" in pl, pl
+        assert '<span class="fx-muted">Next:</span> Reactor and heat exchangers' in pl and "Rails from (120,-300)" in pl, pl
+        assert "nobody on them" in pl and "in progress" in pl and "Plan last edited by astra, 6m ago." in pl, pl
+        # portraits of the team take focus and name the agent; any other portrait stays hidden from screen readers
+        assert 'data-agent="sol" tabindex="0" role="button" aria-label="Sol: plan line and job"' in pl, pl
+        assert 'data-agent="opus"' in lv["agents"], lv["agents"]
+        t = lv["taps"]
+        assert t["hover"]["hidden"] is False and "Sol" in t["hover"]["html"] and "blue circuits line at (40,-20)" in t["hover"]["html"], t
+        assert "(set 6 min ago)" in t["hover"]["html"] and "Click for its line" in t["hover"]["html"], t
+        assert t["click"] == {"hidden": True, "flash": True}, t  # the click scrolls to Sol's line and marks it
+        # a tap shows Muse's tip (no line on the plan; its job from its notes); a second tap goes to the plan card
+        assert t["tap1"]["hidden"] is False and "no line on the team plan" in t["tap1"]["html"], t
+        assert "Job (its notes):</span> refill the furnace row" in t["tap1"]["html"] and "Tap again" in t["tap1"]["html"], t
+        assert t["tap2"] == {"hidden": True, "plan_card": True}, t
         # watchers: the sample shows its YouTube reading; no heartbeat without an API
         assert lv["watching"] == {"text": "Watching: 41 YouTube", "hidden": False} and lv["posts"] == [], (lv["watching"], lv["posts"])
 

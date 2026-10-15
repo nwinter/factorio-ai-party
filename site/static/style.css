@@ -485,6 +485,7 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .card-board, .card-research { grid-column: span 6; }
 .card-chronicle { grid-column: span 12; }
 .card-charts { grid-column: span 12; }
+.card-plan { grid-column: span 12; }
 .card-chat { grid-column: span 12; }
 @media (max-width: 960px) { .live-dash > * { grid-column: 1 / -1; } }
 .agents-live { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 8px; }
@@ -601,6 +602,31 @@ ul.platforms .fx-progress { margin-top: 3px; }
 .board-projects li { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; overflow-wrap: anywhere; }
 .board-projects b { color: var(--fx-heading); }
 .project-progress { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin-top: 3px; }
+
+/* the team plan (viewer Alex, 22:12): goals, one line per agent in two columns on desktop, projects with next step */
+.plan-goals { margin: 0; font-weight: 600; color: var(--fx-heading); overflow-wrap: anywhere; }
+.plan-lines { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: 6px 14px; font-size: .9rem; }
+.plan-line { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; overflow-wrap: anywhere; padding: 4px 6px;
+  border-left: 3px solid var(--ac); border-radius: var(--fx-r-1); background: var(--fx-deep); box-shadow: var(--fx-inset-shadow);
+  scroll-margin: 80px; transition: background-color .4s; }
+.plan-line b { color: var(--fx-heading); }
+.plan-when { display: block; }
+.plan-line.is-flash, .card-plan.is-flash { background-color: rgba(var(--fx-orange-rgb), .22); }
+.plan-next { margin: 2px 0 0; overflow-wrap: anywhere; }
+/* a shift page's team plan, as the shift left it */
+.plan-shift { list-style: none; padding: 0; margin: 0 0 8px; display: grid; gap: 4px; }
+.plan-shift li { overflow-wrap: anywhere; }
+/* a team agent's portrait: its plan line and job on hover, focus or tap (viewer syndesis, 22:13) */
+.avatar[data-agent] { cursor: pointer; }
+.avatar[data-agent]:focus-visible { outline: 2px solid var(--fx-orange); outline-offset: 2px; }
+.plan-tip { position: fixed; z-index: 30; max-width: min(320px, calc(100vw - 16px)); font-size: .85rem; color: var(--fx-text);
+  background: rgba(30, 29, 30, .97); border: 1px solid #000; border-radius: var(--fx-r-1); padding: 0 0 6px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06), var(--fx-shadow-pop); pointer-events: none; }
+.plan-tip .t-head { color: var(--fx-heading); font-weight: 700; padding: 3px 9px; margin-bottom: 4px;
+  background: linear-gradient(180deg, #3b3a3b, #2f2e2f); border-bottom: 1px solid #000; }
+.plan-tip .t-line { padding: 1px 9px; overflow-wrap: anywhere; }
+.plan-tip .t-foot { padding: 4px 9px 0; font-size: .78rem; }
 .research-recent { margin: 0; padding-left: 1.3em; font-size: .9rem; }
 .game-chat { max-height: 360px; overflow-y: auto; }
 .live-card .chart { background: var(--fx-deep); box-shadow: var(--fx-inset-shadow); border: 0; }

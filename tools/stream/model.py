@@ -121,6 +121,13 @@ def lost_details(ev):
     return {k: v for k, v in out.items() if v is not None}
 
 
+def project_next(steps):
+    """A project's next step from a board row's next_steps ("[ ] build 8 furnaces"), the box left off; None if none."""
+    if not isinstance(steps, list) or not steps:
+        return None
+    return clean_text(re.sub(r"^\[[ x]\]\s*", "", str(steps[0]))) or None
+
+
 def project_steps(progress, done=None, total=None):
     """A project's steps done and in all, from an event's numbers or its progress text ("3 of 7 steps", "no steps
     yet": 0, 0); None, None when neither says."""
@@ -1165,19 +1172,35 @@ class Model:
             done, total = project_steps(it.get("progress"))
             out.append({"id": it.get("id"), "title": clean_text(it.get("title") or ""), "owner": it.get("owner"),
                         "agent": self._who(it.get("owner")), "status": it.get("status"),
-                        "progress": it.get("progress") or "", "done": done, "total": total})
+                        "progress": it.get("progress") or "", "done": done, "total": total,
+                        # its next step and goal for the site's Team plan (viewer Alex 22:12; a list row's next_steps)
+                        "next": project_next(it.get("next_steps")), "goal": clean_text(it.get("goal") or "") or None})
         return out
 
     def plan_snapshot(self):
-        """The team plan for the board widget: goals, each agent's line (agent name matched to its card), last edit."""
+        """The team plan for the board widget and the site's Team plan: goals, each agent's line (agent name matched to
+        its card), last edit; with a runtime that gives the plan's ticks (board plan_ticks), the tick each line was set
+        and who set it when not the agent itself (`by`), the goals' tick and the last edit's."""
         p = self.board.get("plan")
         if not isinstance(p, dict) or not (p.get("goals") or p.get("doing")):
             return None
+        ticks = {str(l.get("agent")): l for l in p.get("lines") or [] if isinstance(l, dict)}
         doing = []
         for line in p.get("doing") or []:
             name, _, text = str(line).partition(": ")
-            doing.append({"agent": self._who(name), "name": name, "text": clean_text(re.sub(r" \(set by [^)]*\)$", "", text))})
-        return {"goals": clean_text(p.get("goals") or ""), "doing": doing, "edited": p.get("edited")}
+            row = {"agent": self._who(name), "name": name, "text": clean_text(re.sub(r" \(set by [^)]*\)$", "", text))}
+            t = ticks.get(name)
+            if t:
+                row["tick"] = t.get("tick")
+                if t.get("by") and t.get("by") != name:
+                    row["by"] = t.get("by")
+            doing.append(row)
+        out = {"goals": clean_text(p.get("goals") or ""), "doing": doing, "edited": p.get("edited")}
+        if p.get("goals_tick") is not None:
+            out["goals_tick"] = p["goals_tick"]
+        if p.get("updated_tick") is not None:
+            out["updated_tick"] = p["updated_tick"]
+        return out
 
     def _ingest_power(self, p, now):
         self.power = p

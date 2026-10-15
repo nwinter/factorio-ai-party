@@ -1001,6 +1001,31 @@ def shift_summary(s, firsts):
     return " · ".join(bits) + (". " + ", ".join(big) + "." if big else ".")
 
 
+def plan_html(p):
+    """The team plan as the shift left it (longrun.shift_plan; viewer Alex 22:12): goals, each agent's line with the game
+    time it was set, open projects with progress and next step, the request counts."""
+    def who(name):
+        return agent_chip(name.lower()) if name and name.lower() in AGENTS else esc(name or "?")
+    lines = "".join(f'<li>{who(l["agent"])} <span class="c-text">{esc(l["text"])}</span>'
+                    + (f' <span class="muted small">set at {esc(l["game"])}{" by " + esc(l["by"]) if l.get("by") else ""}</span>'
+                       if l.get("game") or l.get("by") else "") + '</li>' for l in p["lines"])
+    projects = "".join(f'<li><b>{esc(x["title"])}</b> <span class="muted small">{esc(x["owner"] or "no owner")}'
+                       f'{", " + esc(x["progress"]) if x.get("progress") else ""}{", blocked" if x.get("status") == "blocked" else ""}</span>'
+                       + (f'<br><span class="muted small">Next:</span> {esc(x["next"])}' if x.get("next") else "") + '</li>'
+                       for x in p["projects"])
+    counts = [f'{p["open_unowned"]} open requests nobody was on' if p.get("open_unowned") is not None else "",
+              f'{p["in_progress"]} in progress' if p.get("in_progress") is not None else ""]
+    when = f' (read at game time {esc(p["read_game"])})' if p.get("read_game") else ""
+    return (f'<h2>The team plan at the end of the shift</h2><p class="muted small">The agents\' shared plan as the stream '
+            f'last read it{when}: the goals, who was on what, the open projects.</p>'
+            + (f'<p class="plan-goals"><b>Goals:</b> {esc(p["goals"])}'
+               + (f' <span class="muted small">set at {esc(p["goals_game"])}</span>' if p.get("goals_game") else "") + '</p>'
+               if p.get("goals") else "")
+            + (f'<ul class="plan-shift">{lines}</ul>' if lines else '<p class="muted">No agent had a line on the plan.</p>')
+            + (f'<h3>Open projects</h3><ul class="plan-shift">{projects}</ul>' if projects else "")
+            + (f'<p class="muted small">{esc(" · ".join(c for c in counts if c))}</p>' if any(counts) else ""))
+
+
 def build_shift_page(s, v, lr):
     done = [x for x in lr["shifts"] if not x.get("empty")]
     i = done.index(s)
@@ -1042,6 +1067,7 @@ def build_shift_page(s, v, lr):
 {firsts_table(mine, shift_links=False)}
 {f'<p><a href="/chronicle/#shift-{s["n"]}">This shift in the Chronicle</a>: the agents\' own account, beside the platforms built and lost.</p>' if s["n"] in lr.get("chronicle_shifts", ()) else ""}
 {f'<h2>The hosts\' calls</h2><p class="muted small">Space Age moments, and research, attacks and losses that matter, as the hosts called them. Times Pacific.</p><ol class="chat calls">{calls}</ol>' if calls else ""}
+{plan_html(s["plan"]) if s.get("plan") else ""}
 {f'<h2>Technologies researched ({len(s["techs"])})</h2><ol class="techs">' + "".join(f'<li><span class="c-time">{esc(longrun.game_time(t["tick"]))}</span>{esc(t["label"])}</li>' for t in s["techs"]) + '</ol><p class="muted small">Game time of the first score row that shows each one.</p>' if s["techs"] else ""}
 {long_charts(lr, lo - 1, hi + 1, x0=max(0, int(lo // 60) * 60))}
 <div class="two-col shift-cols">

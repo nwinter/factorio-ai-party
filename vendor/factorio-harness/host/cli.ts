@@ -48,6 +48,7 @@ const help = `fh — Factorio agent CLI
   fh sleep SECONDS [--until COND]           Wait up to 900 s (never past the deadline) while your action and queue keep going;
                                             wakes on damage, death, a teammate's mention, a tell, board news, your queue finishing or
                                             stalling, or COND: researched [TECH] | crafting_done | item_count ITEM>=N [at X,Y X,Y] | rocket_ready X,Y (a silo)
+                                            | rocket_parts>=N at X,Y (the rocket being built at that silo has N parts)
   fh view --out artifacts/map.png            Render a local schematic PNG, also works headless
   fh deploy [--file runtime.lua]             Validate and replace live Lua runtime
   fh watch [--file runtime.lua]              Deploy changed Lua; retain old code on invalid update
@@ -136,7 +137,7 @@ function parseUntil(text: string): Record<string, unknown> {
   const alternatives = splitAlternatives(trimmed);
   if (alternatives.length > 1) return {until:'any', conditions:alternatives.map(part => parseUntil(part))};
   const [kind = '', ...rest] = trimmed.split(/\s+/);
-  const usage = '--until takes researched [TECH], crafting_done, alert [KIND ...], item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, platform_arrived PLATFORM [PLANET], platform_left PLATFORM [PLANET], or a wait_until condition as JSON; several joined by | (or a JSON list) wake on whichever holds first';
+  const usage = '--until takes researched [TECH], crafting_done, alert [KIND ...], item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, rocket_parts>=N at X,Y, platform_arrived PLATFORM [PLANET], platform_left PLATFORM [PLANET], or a wait_until condition as JSON; several joined by | (or a JSON list) wake on whichever holds first';
   if (kind === 'researched' || kind === 'research') {
     if (rest.length > 1) throw new Error(usage);
     return rest[0] ? {until:'researched', technology:rest[0]} : {until:'researched'};
@@ -148,6 +149,13 @@ function parseUntil(text: string): Record<string, unknown> {
   if (kind === 'alert' || kind === 'alerts') {
     const kinds = rest.join(' ').split(/[\s,]+/).filter(Boolean);
     return kinds.length ? {until:'alert', kinds} : {until:'alert'};
+  }
+  // The rocket being built has at least N parts (Sonnet, shift14 22:50): rocket_parts>=N at X,Y (the silo); >N is N+1.
+  if (/^rocket_parts\b/.test(trimmed)) {
+    const m = trimmed.match(/^rocket_parts\s*(>=|>)?\s*(\d+)\s+(?:at\s+)?\(?(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\)?$/);
+    if (!m) throw new Error('--until rocket_parts takes a count and the silo position: rocket_parts>=40 at X,Y');
+    const n = Number(m[2]) + (m[1] === '>' ? 1 : 0);
+    return {until:'rocket_parts', at_least:n, position:{x:Number(m[3]), y:Number(m[4])}};
   }
   // A silo's rocket built and ready to launch (Luna, shift10: the rocket is no item to count).
   if (kind === 'rocket_ready') {
@@ -539,6 +547,12 @@ async function main() {
     const operation = positionals[1] ?? 'status';
     if (!['submit','repeat','status','edit','cancel','resume'].includes(operation)) throw new Error('queue expects submit, repeat, status, edit, cancel, or resume');
     let args = object(JSON.parse(values.args ?? '{}'),'args');
+    // fh queue status orders: the standing orders' history entries too (round2250a, Grok: by default the plan last
+    // submitted only).
+    if (operation === 'status' && positionals[2] !== undefined) {
+      if (positionals[2] !== 'orders' || positionals.length > 3) throw new Error('queue status takes nothing, or orders (the standing orders\' entries too)');
+      args.orders = true;
+    }
     if (values.file) {
       const steps: unknown = JSON.parse(await readFile(values.file,'utf8'));
       // An object (one step, or {steps:[...]}) would submit nothing silently.

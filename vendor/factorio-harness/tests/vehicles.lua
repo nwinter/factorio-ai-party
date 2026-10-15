@@ -176,6 +176,42 @@ local last=astra('status').last
 eq(last.kind,'drive'); eq(last.outcome,'arrived')
 assert(math.abs(car.position.x-60)<4 and math.abs(car.position.y-20)<4,car.position.x..','..car.position.y)
 eq(car.riding_state.acceleration,defines.riding.acceleration.nothing)
+-- As a queue step a drive waits for its end (eng/queuecliffs: the scheduler did not know vehicle drives, so a queued
+-- drive counted as done at once, and the next tick's lookup refused the seated character and paused the plan). A
+-- vehicle step runs seated; any other step needs the character on foot, so the plan gets out before its wait.
+do
+  local at,ori,spd=car.position,car.orientation,car.speed
+  -- (a seated character takes no queue call: the plan gets in first)
+  astra('vehicle',{exit=true})
+  local stood=a_body.position
+  a_body.position={x=at.x-2,y=at.y}  -- (the fake leaves the character where it got in)
+  astra('queue_submit',{steps={{action='vehicle',args={position=at,enter=true}},{action='vehicle',args={drive={x=75,y=20},pathfind=false}},
+    {action='vehicle',args={exit=true}},{action='wait_ticks',args={ticks=5}}}})
+  drive_ticks(3)
+  local q=astra('queue_status',{peek=true})
+  eq(q.active.action,'vehicle'); eq(q.active.args.drive.x,75)
+  drive_ticks(900)
+  q=astra('queue_status',{history=5,peek=true})
+  eq(q.paused,false); eq(q.active,false)
+  local d,x,w
+  for _,e in ipairs(q.history) do
+    if e.action=='vehicle' and e.result and e.result.outcome then d=e
+    elseif e.action=='vehicle' and e.args and e.args.exit then x=e
+    elseif e.action=='wait_ticks' then w=e end
+  end
+  eq(d.ok,true); eq(d.result.outcome,'arrived'); eq(w.ok,true)
+  -- A step that is no vehicle step while seated: refused, the plan paused (as before). The character stays in the car,
+  -- as the tests after this one expect.
+  car.position,car.orientation,car.speed=at,ori,spd
+  a_body.position={x=at.x-2,y=at.y}
+  astra('queue_submit',{steps={{action='vehicle',args={position=at,enter=true}},{action='wait_ticks',args={ticks=5}}}})
+  drive_ticks(3)
+  q=astra('queue_status',{history=2,peek=true})
+  eq(q.paused,true); eq(q.history[#q.history].action,'wait_ticks'); eq(q.history[#q.history].result.reason,'interrupted')
+  eq(a_body.vehicle,car)
+  astra('queue_cancel',{})
+  a_body.position=stood
+end
 -- A car that does not move (a wall): blocked after 3 seconds.
 blocked=true
 astra('vehicle',{drive={x=0,y=0},pathfind=false})

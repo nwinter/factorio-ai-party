@@ -39,11 +39,19 @@
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
 
   // Pixel portrait from the art kit (avatar.js); the renderer validates parts and colours and escapes the label.
+  // A team agent's portrait (viewer syndesis, 22:13) takes focus and carries data-agent: hovering, focusing or tapping
+  // it shows the agent's plan line and job (planTip below); a click, Enter or a second tap scrolls to its line in the
+  // Team plan.
+  var team = {};  // the agents of the last state, by name
   function avatar(a, size) {
-    var row = { name: String(a.name || a.agent || 'agent'), display_name: a.display_name, color: safeColor(a.color), avatar: a.avatar };
+    var name = String(a.name || a.agent || 'agent');
+    var row = { name: name, display_name: a.display_name, color: safeColor(a.color), avatar: a.avatar };
     var px = size || 24;
-    if (window.PogAvatar) return '<span class="fx-slot avatar' + (px <= 24 ? ' sm' : '') + '" aria-hidden="true">' + window.PogAvatar.svg(row, px, { title: '' }) + '</span>';
-    return '<span class="fx-slot avatar sm letter" aria-hidden="true">' + esc((a.display_name || a.name || '?').charAt(0)) + '</span>';
+    var cls = 'fx-slot avatar' + (px <= 24 ? ' sm' : '');
+    var who = team[name] ? ' data-agent="' + esc(name) + '" tabindex="0" role="button" aria-label="' +
+      esc((team[name].display_name || name) + ': plan line and job') + '"' : ' aria-hidden="true"';
+    if (window.PogAvatar) return '<span class="' + cls + '"' + who + '>' + window.PogAvatar.svg(row, px, { title: '' }) + '</span>';
+    return '<span class="fx-slot avatar sm letter"' + who + '>' + esc((a.display_name || a.name || '?').charAt(0)) + '</span>';
   }
 
   // ------------------------------------------------------------------ player and chat embeds
@@ -285,7 +293,7 @@
   var ALERT_TONES = { attack: 'danger', death: 'danger', low_power: 'warn', research: 'info' };
   var ALERT_ICONS = { attack: '⚔', death: '✝', low_power: '⚡', research: '⚗' };
   // The dashboard's cards are made once; each refresh fills their bodies (the map card keeps its viewer).
-  var CARDS = [['agents', 'Agents'], ['map', 'Map'], ['board', 'Board'], ['research', 'Research'], ['chronicle', 'Chronicle'], ['charts', 'Factory'], ['chat', 'Team chat']];
+  var CARDS = [['agents', 'Agents'], ['map', 'Map'], ['plan', 'Team plan'], ['board', 'Board'], ['research', 'Research'], ['chronicle', 'Chronicle'], ['charts', 'Factory'], ['chat', 'Team chat']];
   function cards() {
     if ($('#cb-agents')) return;
     $('#dash').innerHTML = CARDS.map(function (c) {
@@ -301,6 +309,7 @@
     ytLines = Array.isArray(s.youtube_chat) ? s.youtube_chat.filter(function (m) { return m && m.text && isFinite(m.t); }) : [];
     renderChat();
     var byName = {}; agents.forEach(function (a) { byName[a.name] = a; });
+    team = byName; lastState = s;
     var live = age != null && age <= LIVE_MAX_AGE;
 
     // status strip
@@ -401,12 +410,14 @@
     if (mapView) mapView.set(mapData(s));
     fill('#map-cams', s.cameras ? '<h4>On camera</h4><ul class="cam-lines">' + cameraLines(s.cameras, byName) + '</ul>' : '');
     fill('#map-space', spaceInset(s.space));
+    fill('#cb-plan', planHtml(s, byName));
     fill('#cb-board', boardHtml);
     fill('#cb-chronicle', chronicleHtml(s.chronicle, byName));
     fill('#cb-research', research);
     fill('#cb-charts', '<div class="chart-grid">' + chartHtml + '</div>');
     fill('#cb-chat', gchat ? '<ul class="game-chat">' + gchat + '</ul>' : '<p class="fx-muted">Quiet so far.</p>');
     app.classList.toggle('is-stale', !live);
+    if (tipFor) showTip(tipFor, tipAnchor());  // (the portrait under the tip was drawn again)
   }
 
   // The run's chronicle (state.chronicle, tools/stream/model.py; viewers Alex and syndesis 22:24): the agents' newest
@@ -434,6 +445,120 @@
       (events ? '<h4>The harness\'s record</h4><ul class="chron-events">' + events + '</ul>' : '') +
       '<p class="small"><a href="/chronicle/">The whole chronicle, by shift</a></p>';
   }
+
+  // ------------------------------------------------------------------ the team plan (viewer Alex, 22:12)
+  // state.board.plan (tools/stream/model.py plan_snapshot): the goals and each agent's line, with the game tick each was
+  // set (when the runtime gives it); state.board.projects with progress and next step; the open and taken request
+  // counts. "Set N min ago" is game time: the state's tick less the line's, at 60 ticks a second.
+  var lastState = null;
+  function lineId(name) { return 'plan-line-' + String(name || '').toLowerCase().replace(/[^a-z0-9_-]/g, '-'); }
+  function gameAgo(s, tick) {
+    if (tick == null || s.tick == null || !isFinite(tick) || !isFinite(s.tick)) return '';
+    return ago(Math.max(0, (s.tick - tick) / 60));
+  }
+  function planLine(plan, name) {
+    var hit = null;
+    ((plan && plan.doing) || []).forEach(function (l) { if (l.agent === name || (!l.agent && l.name === name)) hit = l; });
+    return hit;
+  }
+  function planHtml(s, byName) {
+    var board = s.board || {}, plan = board.plan || null;
+    if (board.available === false) return '<p class="fx-muted">The board is not running in this world.</p>';
+    var html = '';
+    if (plan && plan.goals) {
+      var gw = gameAgo(s, plan.goals_tick);
+      html += '<h4>Goals</h4><p class="plan-goals">' + esc(plan.goals) + '</p>' + (gw ? '<p class="fx-muted small plan-when">set ' + esc(gw) + '</p>' : '');
+    }
+    var lines = ((plan && plan.doing) || []).map(function (l) {
+      var name = l.agent || l.name, o = byName[name] || {}, when = gameAgo(s, l.tick);
+      var setter = l.by ? ((byName[l.by] || {}).display_name || l.by) : '';
+      return '<li class="plan-line" id="' + esc(lineId(name)) + '" style="--ac:' + acColor(o.color) + '">' + avatar(o.name ? o : { name: name }, 24) +
+        '<div><b>' + esc(o.display_name || l.name || name) + '</b> <span class="plan-text">' + esc(l.text) + '</span>' +
+        (when || setter ? '<span class="fx-muted small plan-when">' + esc([when ? 'set ' + when : '', setter ? 'by ' + setter : ''].filter(Boolean).join(' ')) + '</span>' : '') +
+        '</div></li>';
+    }).join('');
+    var without = Object.keys(byName).filter(function (n) { return !planLine(plan, n); }).map(function (n) { return byName[n].display_name || n; });
+    html += '<h4>Who is on what</h4>' + (lines ? '<ul class="plan-lines">' + lines + '</ul>' : '<p class="fx-muted">No agent has a line on the plan yet.</p>') +
+      (without.length && lines ? '<p class="fx-muted small">No line: ' + esc(without.join(', ')) + '</p>' : '');
+    var projects = (board.projects || []).map(function (p) {
+      var o = byName[p.agent] || {}, pct = p.total ? Math.round(100 * p.done / p.total) : 0;
+      return '<li>' + avatar(o.name ? o : { name: p.agent || p.owner || '?' }, 24) + '<div><span><b>' + esc(p.title) + '</b> ' +
+        '<span class="fx-muted">' + esc(p.owner ? (o.display_name || p.owner) : 'no owner') + (p.status === 'blocked' ? ', blocked' : '') + '</span></span>' +
+        '<div class="project-progress"><div class="fx-progress fx-progress--health fx-progress--thin" role="progressbar" aria-valuenow="' + pct +
+        '" aria-valuemin="0" aria-valuemax="100" aria-label="' + esc(p.title) + ' progress" style="--fx-value:' + pct + '%"></div>' +
+        '<span class="small">' + esc(p.progress || '') + '</span></div>' +
+        (p.next ? '<p class="small plan-next"><span class="fx-muted">Next:</span> ' + esc(p.next) + '</p>' : '') + '</div></li>';
+    }).join('');
+    var more = (board.projects_total || 0) - (board.projects || []).length;
+    html += '<h4>Open projects</h4>' + (projects ? '<ul class="board-projects">' + projects + '</ul>' +
+      (more > 0 ? '<p class="fx-muted small">+' + esc(more) + ' more</p>' : '') : '<p class="fx-muted">None open.</p>');
+    html += '<h4>Requests</h4><p class="board-counts"><span class="fx-chip fx-chip--grey">' + esc(board.open_unowned || 0) + ' open, nobody on them</span> ' +
+      '<span class="fx-chip fx-chip--orange">' + esc(board.in_progress || 0) + ' in progress</span></p>';
+    if (plan && plan.edited) html += '<p class="fx-muted small">Plan last edited ' + esc(plan.edited) + '.</p>';
+    return html;
+  }
+
+  // The portrait tip: the agent's plan line, its notes' "Now" line when that is its job, and what it does now.
+  var tip = document.createElement('div');
+  tip.className = 'plan-tip'; tip.setAttribute('role', 'tooltip'); tip.hidden = true;
+  app.appendChild(tip);
+  var tipFor = null, lastPointer = 'mouse';
+  function tipAnchor() { return tipFor ? app.querySelector('.avatar[data-agent="' + tipFor.replace(/["\\]/g, '') + '"]') : null; }
+  function tipHtml(name) {
+    var a = team[name] || {}, s = lastState || {}, line = planLine((s.board || {}).plan, name);
+    var act = a.activity || (a.alive === false ? 'dead' : 'idle');
+    var rows = '<div class="t-head">' + esc(a.display_name || name) + '</div>' +
+      '<div class="t-line"><span class="fx-muted">Plan:</span> ' + (line ? esc(line.text) + (line.tick != null ? ' <span class="fx-muted">(set ' + esc(gameAgo(s, line.tick)) + ')</span>' : '')
+        : '<span class="fx-muted">no line on the team plan</span>') + '</div>';
+    if (a.job && a.job_from === 'notes') rows += '<div class="t-line"><span class="fx-muted">Job (its notes):</span> ' + esc(a.job) + '</div>';
+    rows += '<div class="t-line"><span class="fx-muted">Now:</span> ' + esc(a.action || ACT_LABEL[act] || act) + '</div>';
+    rows += '<div class="t-foot fx-muted">' + (lastPointer === 'touch' ? 'Tap again' : 'Click') + ' for its line in the Team plan</div>';
+    return rows;
+  }
+  function showTip(name, el) {
+    if (!el || !team[name]) { hideTip(); return; }
+    tipFor = name;
+    tip.innerHTML = tipHtml(name);
+    tip.hidden = false;
+    var r = el.getBoundingClientRect(), w = tip.offsetWidth || 260, vw = window.innerWidth || 1024;
+    var left = Math.max(8, Math.min(r.left, vw - w - 8)), top = r.bottom + 6;
+    if (top + (tip.offsetHeight || 120) > (window.innerHeight || 800) - 8) top = Math.max(8, r.top - (tip.offsetHeight || 120) - 6);
+    tip.style.left = left + 'px'; tip.style.top = top + 'px';
+  }
+  function hideTip() { tipFor = null; tip.hidden = true; }
+  function toLine(name) {
+    hideTip();
+    var el = document.getElementById(lineId(name)) || $('.card-plan');
+    if (!el) return;
+    if (el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('is-flash');
+    setTimeout(function () { el.classList.remove('is-flash'); }, 1600);
+  }
+  function portrait(ev) { return ev.target && ev.target.closest ? ev.target.closest('.avatar[data-agent]') : null; }
+  app.addEventListener('pointerdown', function (ev) { lastPointer = ev.pointerType || 'mouse'; });
+  app.addEventListener('pointerover', function (ev) {
+    var p = portrait(ev);
+    if (p && ev.pointerType !== 'touch') showTip(p.dataset.agent, p);
+  });
+  app.addEventListener('pointerout', function (ev) {
+    var p = portrait(ev);
+    if (p && ev.pointerType !== 'touch' && !(ev.relatedTarget && p.contains(ev.relatedTarget))) hideTip();
+  });
+  app.addEventListener('focusin', function (ev) { var p = portrait(ev); if (p) showTip(p.dataset.agent, p); });
+  app.addEventListener('focusout', function (ev) { if (portrait(ev)) hideTip(); });
+  app.addEventListener('click', function (ev) {
+    var p = portrait(ev);
+    if (!p) { if (lastPointer === 'touch') hideTip(); return; }
+    var name = p.dataset.agent;
+    // a tap shows the tip first; a tap on the same portrait while its tip shows goes to the line
+    if (lastPointer === 'touch' && tipFor !== name) { ev.preventDefault(); showTip(name, p); return; }
+    toLine(name);
+  });
+  app.addEventListener('keydown', function (ev) {
+    var p = portrait(ev);
+    if (p && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); toLine(p.dataset.agent); }
+    if (ev.key === 'Escape') hideTip();
+  });
 
   // When this shift ends, or when the next starts (state.shift from start-team.sh: start, end, next, next_exact), in
   // the visitor's own time zone. Between shifts the line says when to come back.

@@ -21,7 +21,7 @@ import terrain  # noqa: E402  (site/terrain.py: the map frames the site publishe
 
 AGENT_KEYS = ("name", "kind", "display_name", "color", "glyph", "motto", "profile_set", "model", "harness", "role",
               "alive", "activity", "action", "active", "position", "location", "last_said", "camera", "avatar",
-              "combat", "died_at", "job", "attention",
+              "combat", "died_at", "job", "job_from", "attention",  # job_from: plan (its team-plan line) or notes
               "surface", "where", "on_platform", "travel")  # where the body is: the map lists agents off Nauvis at its edge
 TOP_KEYS = ("now", "tick", "paused", "game_time", "title", "subtitle", "research", "production", "science", "alerts",
             "board", "basemap", "shift",
