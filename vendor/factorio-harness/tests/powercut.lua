@@ -80,7 +80,7 @@ run(329); eq(#S.powercut.cuts,0,'not before 5.5 s')
 run(10)
 eq(#S.powercut.jobs,0); eq(#S.powercut.cuts,1)
 local cut=S.powercut.cuts[1]
-eq(pc.line(cut,'nauvis'),'power cut #1: small-electric-pole (14,0) destroyed by big-biter 5s ago: split electric network #57 in 2: #57 has power (60 kW); #212 has no power (2 poles, (21,0)-(28,0)): 3 electric-mining-drill, 1 inserter; no ghost of the pole there')
+eq(pc.line(cut,'nauvis'),'power cut #1: small-electric-pole (14,0) destroyed by big-biter 5s ago: split electric network #57 in 2: #57 had power at tick 1332 (60 kW); #212 had no power at tick 1332 (2 poles, (21,0)-(28,0)): 3 electric-mining-drill, 1 inserter; no ghost of the pole there')
 -- Told once to each agent, in team.alerts; status alerts has it too.
 local h={}
 eq(pc.lines({surface=surface},h)[1],pc.line(cut,'nauvis')); eq(pc.lines({surface=surface},h),nil)
@@ -89,7 +89,7 @@ eq(pc.since(0,'nauvis')[1],pc.line(cut,'nauvis'))
 has(pc.line(cut,'vulcanus'),'power cut #1 on nauvis: ')
 -- Rebuilt: the parts are one network again.
 for _,e in ipairs({p4,p5,d1,d2,d3,inserter}) do e.electric_network_id=57 end
-has(pc.line(cut,'nauvis'),'; joined again since (rebuilt or wired)')
+has(pc.line(cut,'nauvis'),'; fixed at tick ')
 
 -- A leaf pole that alone reached two drills: they have no network now.
 local q1,q2=pole(100,0,60),pole(107,0,60)
@@ -102,12 +102,12 @@ e1.electric_network_id=nil; e2.electric_network_id=nil
 entity({name='entity-ghost',type='entity-ghost',ghost_name='small-electric-pole',position={x=107,y=0}})
 run(400)
 eq(#S.powercut.cuts,2)
-eq(pc.line(S.powercut.cuts[2],'nauvis'),'power cut #2: small-electric-pole (107,0) destroyed by small-spitter 6s ago: 2 machines no other pole reaches have no power (106,-2)-(108,1): 2 electric-mining-drill; a ghost of the pole stands there')
+eq(pc.line(S.powercut.cuts[2],'nauvis'),'power cut #2: small-electric-pole (107,0) destroyed by small-spitter 6s ago: 2 machines no other pole reached had no power at tick '..S.powercut.cuts[2].checked..' (106,-2)-(108,1): 2 electric-mining-drill; a ghost of the pole stands there')
 -- An agent told before hears only the new one.
 eq(#pc.lines({surface=surface},h),1)
 -- Wired again: joined.
 e1.electric_network_id=60; e2.electric_network_id=60
-has(pc.line(S.powercut.cuts[2],'nauvis'),'; joined again since (rebuilt or wired)')
+has(pc.line(S.powercut.cuts[2],'nauvis'),'; fixed at tick ')
 
 -- A pole in a loop: its neighbours stay one network, no alert.
 local r1,r2,r3,r4=pole(200,0,70),pole(207,0,70),pole(207,7,70),pole(200,7,70)
@@ -134,7 +134,7 @@ run(400)
 eq(#S.powercut.cuts,3)
 has(pc.line(S.powercut.cuts[3],'nauvis'),'small-electric-pole (407,0) destroyed by big-biter')
 has(pc.line(S.powercut.cuts[3],'nauvis'),' (with small-electric-pole (414,0))')
-has(pc.line(S.powercut.cuts[3],'nauvis'),'#91 has no power (1 pole, around (421,0)): 1 electric-mining-drill')
+has(pc.line(S.powercut.cuts[3],'nauvis'),'#91 had no power at tick '..S.powercut.cuts[3].checked..' (1 pole, around (421,0)): 1 electric-mining-drill')
 -- A new reader hears only the cuts of the last 5 minutes.
 game.tick=game.tick+18001
 eq(pc.lines({surface=surface},{}),nil)

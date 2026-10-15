@@ -203,13 +203,23 @@ eq(r.order.state,'ready'); eq(r.order.failures,0)
 advance(200)
 eq(astra('orders').list[2].runs>=1,true)
 
+-- Base-wide triggers and area predicates carry a larger default budget.
+local wide=astra('order_set',{name='wide',steps={wait(5)},when={['until']='ammo_below',count=10,radius=256}})
+eq(wide.order.max_ticks,14400)
+astra('order_remove',{name='wide'})
+wide=astra('order_set',{name='wide',steps={wait(5)},when={['until']='fuel_below',count=10,area={{-128,-128},{128,128}}}})
+eq(wide.order.max_ticks,14400)
+astra('order_remove',{name='wide'})
+wide=astra('order_set',{name='wide',steps={{action='rearm',args={radius=256,ticks=36000}}},when={['until']='ammo_below',count=10,radius=256}})
+eq(wide.order.max_ticks,36600)
+astra('order_remove',{name='wide'})
 -- Limits and checks when the order is set.
 fails(function() astra('order_set',{name='two',steps={wait(5)}}) end,'one default routine (no when) per agent: broken')
 fails(function() astra('order_set',{name='bad name!',steps={wait(5)},when={['until']='crafting_done'}}) end,'name: 1..32')
 local many={}
 for i=1,33 do many[i]=wait(5) end
 fails(function() astra('order_set',{name='big',steps=many,when={['until']='crafting_done'}}) end,'steps: 1..32')
-fails(function() astra('order_set',{name='far',steps={wait(5)},when={['until']='no_enemies',radius=100}}) end,'when radius is at most 64')
+fails(function() astra('order_set',{name='far',steps={wait(5)},when={['until']='no_enemies',radius=257}}) end,'radius must be a number in 1..256')
 fails(function() astra('order_set',{name='cool',steps={wait(5)},when={['until']='crafting_done'},cooldown_ticks=100}) end,'cooldown_ticks must be an integer 300..216000')
 fails(function() astra('order_set',{name='mix',steps={wait(5)},when={['until']='crafting_done'},interval_ticks=600}) end,'interval_ticks is for the default routine')
 fails(function() astra('order_set',{name='nest',steps={{action='order_set',args={name='x'}}},when={['until']='crafting_done'}}) end,'action is not queueable')

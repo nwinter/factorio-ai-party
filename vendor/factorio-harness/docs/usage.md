@@ -1504,6 +1504,44 @@ fh sleep 900 --until researched                       # ...or until the research
   construction still completes what it can; an immediate build failure includes its pre-build material summary.
 - A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works. A wait that ends `failed` names the call (`action: build`) and puts its error on the error line (Sol, shift09: the silo build hit trees after its craft and read only `Control ended: failed`): `error: action_interrupted: Control ended: failed: placement blocked by stingfrond (63.9375,11.375), stingfrond (68.125,12.4375); it needs the trees mined first (mine them, or place_ghosts marks them and construct clears them)`. A refused build names what is in the way the same way, direct or after a craft: trees and rocks need mining first, and a cliff takes cliff explosives (a character cannot mine one).
 
+### Dated remote reads and factory alerts
+
+`inspect {position}` and `trace {position, forward?, all?}` save successful observations. With no current
+coverage they return a matching recorded reply with `by: "last seen memory"`, `observed_tick`, `age_ticks`,
+`age_s`, and `current: false`. Every field in that reply is historical, including inventory counts and
+machine status. Inspect's `positions` and `compact` forms use the same memory. Visible entity sightings
+also retain a basic summary; seeing a belt records its layout. A trace with no saved route can return that
+remembered belt layout, with each tile's age, direction and last item count. It stops at an unknown tile,
+a splitter/linked belt whose lane routing was not recorded, or 512 tiles. A live trace reaching fog stops its
+current route there and attaches available remembered layout. Unrecorded entities remain unknown. Memory
+holds at most 2,048 entity summaries and 256 detailed read observations (separate budgets, so background sightings do not evict detailed reads) and the existing 256 belt chunks; eviction loses old observations.
+
+`game_alerts {kind:"belt_cut"}` and the team alert digest name formerly item-carrying belt tiles missing in
+a later visible sample, with their observation ticks. An observed replacement clears the tile immediately.
+Census, scan/inspect and trace sightings register belt chunks. The background refresh processes at most 128 belt/ghost entities every 15 ticks, completing one chunk
+before starting the next (64..512 seconds per 256-chunk rotation). `belt_gaps` shares a 128-entity budget
+across up to four visible chunks per call. Large chunks complete across calls/background steps;
+`observations[].pending` gives the read/total counts, and replies keep the previous completed layout meanwhile. Fog preserves the dated observation without querying hidden entities. At most eight gap
+positions are written per chunk alert, with the count of any remaining tiles.
+
+`order_set.when.radius` accepts 1..256. `ammo_below` and `fuel_below` also accept
+`area: {left_top, right_bottom}` up to 256x256, excluding `position`/`radius`; these predicates cap their
+entity selection at 1,024 and report an error above it. The order's default `max_ticks` scales with scope and
+child action budgets (at least 3,600, at most 216,000); explicit `max_ticks` accepts 60..216000.
+Refuel's existing radius tour now estimates its default walking budget from the stops, as rearm does.
+Tours retain the existing enemy screening and arrival checks.
+
+Power-cut history reports the tick of its power sample. Once the recorded network ends rejoin and the
+recorded machines reconnect, the line says `fixed at tick T`, without repeating the old unpowered counts.
+Cached no-power, unconnected, low-power and no-fuel groups recheck up to 128 recorded entities before display;
+repaired or removed entities drop out. Hidden or capped parts retain an explicit last-observed tick.
+
+Each depleted-drill alert group adds `drill_site`: one representative drill's nearest checked same-resource
+placement within 24 tiles, or a bounded miss. It uses `drill_sites`' actual footprint, mining area, quality,
+visible tiles and engine placement checks. The result includes the representative drill, search radius,
+observation tick and any density/placement cap. One group is evaluated per background step and cached for
+60 seconds, including misses (128 group entries maximum). This is a placement for one drill, not a group layout.
+
 ### Fuel rounds, remembered belt gaps, and heating
 
 `refuel` accepts `from: "nearest"` or a chest position with `area` or `radius`. It uses carried fuel first, walks
@@ -1533,9 +1571,9 @@ it is not a claim about current fogged terrain. `unknown` means no complete stor
 remain distinct from built belts. Paired underground interiors are excluded from missing surface belts.
 
 Memory starts when this runtime is installed. The background census registers visible belt chunks, and one
-registered visible chunk is refreshed each second; at most 256 chunks are retained across surfaces/forces.
-An explicit read refreshes at most four visible chunks (or chunks wholly within 32 tiles of the character), then
-uses remembered data. `observations` lists per-chunk ticks and `current`; a chunk with more than 1024 matching
+registered visible chunk is refreshed in 128-entity steps every 15 ticks; at most 256 chunks are retained across surfaces/forces.
+An explicit read shares a 128-entity budget across at most four visible chunks (or chunks wholly within 32 tiles of the character), then
+uses remembered data. `observations` lists per-chunk ticks, `current`, and any `pending` read/total counts; a chunk with more than 1024 matching
 entities is marked `capped` and its previous snapshot is retained. No current entities are queried under fog.
 Previously unexplored or unrecorded stretches can therefore be `unknown`, even if the map was explored before
 this runtime was installed. This read never moves, repairs or places belts.
@@ -1560,7 +1598,7 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   character's sight), as the game's map shows it, and the reply says `by: remote view` (Astra, operator 04:57: inspect
   worked only within 32 tiles; `surface=` naming the character's own surface added nothing then). `surface=` another
   surface reads its visible chunks and says `by: remote view` too. The cargo weigh read (`cargo {position}`) does the
-  same (`from.by`). Out of sight and of every chunk our force sees, the refusal names the nearest radar coverage:
+  same (`from.by`). Inspect uses dated memory outside coverage; an unrecorded target is unknown. Other reads that require coverage name the nearest radar coverage:
   `target at (3.5,0.5) ((3.5,0.5) is 196.5 tiles from the character at (200.0,0.0)) is in no chunk our force sees now
   (radar coverage or a character's sight); the nearest radar coverage (or a character's sight) is chunk
   (96,0)-(127,31), 93 tiles away`; actions keep the 32-tile sight rule, and name the nearest coverage when the target
@@ -3158,11 +3196,9 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     lane` for one that skips it), `stop` (`belt ends at transport-belt (x,y): left lane empty, right lane 4
     oxide-asteroid-chunk (full); the front of the lane is oxide-asteroid-chunk, which no inserter on this route takes`,
     `joins route N at ...`, the cap) and `nobody_takes` (items the lane carries that no inserter on it takes). Past
-    radar coverage on charted ground (Grok 12:20: a copper line walked in three hops) the walk goes on by the layout the
-    map draws, marked in `path` as `out of sight from (x,y) (no radar coverage): layout as last seen, contents unknown`
-    (`back in sight at (x,y)` where coverage returns): no lane contents, inserter states or splitter filters there; it
-    stops at `the layout ends at <belt> (x,y), out of sight: nothing on the map at (x,y) after it`, or at `reaches
-    uncharted ground at (x,y)`. An inserter dropping onto nothing says `onto the ground` (on a
+    radar coverage the current walk stops with `out of sight at (x,y); current route unknown`.
+    Available recorded layout is attached as `remembered`, with observation ticks and ages; current hidden
+    entities and contents are not read. An inserter dropping onto nothing says `onto the ground` (on a
     platform over empty space `overboard`).
   - `{"position":{x,y},"forward":true}` on a belt tile (Opus, 06:26: ore fed into a plate bus): `belt`, `lanes` (what
     each lane holds on that tile) and `routes` from that tile, one per lane carrying something now (both when both are

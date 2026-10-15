@@ -71,6 +71,7 @@ return function(api)
     local cache, charted = {}, {}
     -- Charted chunks out of sight: the map draws the buildings there as last seen, not what they hold now.
     return function(pos)
+      if p.position and not (type(p)=='table' and rawget(p,'__remote')) and dist2(p.position,pos)<=32^2 then return true end
       local cx, cy = math.floor(pos.x / 32), math.floor(pos.y / 32)
       local key = cx .. ',' .. cy
       local v = cache[key]
@@ -587,22 +588,13 @@ return function(api)
       while true do
         if budget.tiles >= MAX_TILES then close(last and last.position or e.position); route.stop = 'walk capped at ' .. MAX_TILES .. ' belt tiles'; break end
         if seen and not seen(e.position) then
-          if not (budget.charted and budget.charted(e.position)) then
-            close(last and last.position or e.position)
-            route.stop = 'reaches uncharted ground at ' .. at(e.position) .. (dark and ' (out of sight from ' .. at(dark) .. ')' or '')
-            break
-          end
-          if not dark then
-            close(last and last.position or e.position)
-            dark = e.position
-            route.dark = true
-            route.path[#route.path+1] = 'out of sight from ' .. at(e.position) .. ' (no radar coverage): layout as last seen, contents unknown'
-          end
-        elseif dark then
           close(last and last.position or e.position)
-          route.path[#route.path+1] = 'back in sight at ' .. at(e.position)
-          dark = nil
+          route.dark=true
+          route.stop='out of sight at '..at(e.position)..'; current route unknown'
+          if api.memory_trace then route.remembered=api.memory_trace(p,{position=e.position}) end
+          break
         end
+        if api.observe then api.observe(e,p) end
         local key = tostring(e.unit_number) .. ':' .. k
         if visited[key] then
           close(last and last.position or e.position)
@@ -742,7 +734,7 @@ return function(api)
       stop = stop .. string.format('; the front of the lane is %s', route.front)
       if route.any_taker and not route.takes['*'] and not route.takes[route.front] then stop = stop .. ', which no inserter on this route takes' end
     end
-    return {route=route.n, from=route.from, path=table.concat(route.path, ' -> '), carries=#parts > 0 and table.concat(parts, ', ') or 'nothing now',
+    return {route=route.n, from=route.from, path=table.concat(route.path, ' -> '), remembered=route.remembered, carries=#parts > 0 and table.concat(parts, ', ') or 'nothing now',
       merges=#route.merges > 0 and route.merges or nil, takers=#route.takers > 0 and route.takers or nil, stop=stop,
       nobody_takes=route.any_taker and #nobody > 0 and table.concat(nobody, ', ') or nil}
   end
@@ -1035,7 +1027,7 @@ return function(api)
     return M.back(p, a)
   end
 
-  M.schema = {trace = {position='{x,y} of a machine or lab in sight (platform= for one on a platform); with forward also a belt tile',
+  M.schema = {trace = {memory='without coverage: recorded trace with observation tick and age, or remembered belt layout (up to 512 tiles; stops at unknown routing); current state unknown; a visible trace stops at fog and attaches recorded layout',position='{x,y} of a machine or lab in sight (platform= for one on a platform); with forward also a belt tile',
     all='boolean: every ingredient, not only those it lacks for its next craft',
     forward='boolean: follow its output instead: the inserters taking from it and the belts they load, lane by lane, to where they end; on a belt tile, that belt\'s lanes from there (those carrying something now, else both); every walk names where other items join its lanes (merges)',
     item='an item instead of position: the routes from every machine making it (and every mining drill on a resource that gives it, from where it drops) to the labs, machines and chests taking it',
