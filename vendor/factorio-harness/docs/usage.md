@@ -1108,6 +1108,10 @@ fh sleep 900 --until researched                       # ...or until the research
 - `inspect` gives the engine's status as a number (`status`) with its `defines.entity_status` name beside it
   (`status_name`), always the pair (Muse, shift10: `--format json` gave 14, 26, 27 to look up); an unpowered machine
   says so in `power`.
+- `inspect` of a heat pipe, heat exchanger, reactor, heating tower or heat interface (a ghost too) shows `heat`
+  (Sol, shift13 16:50): `connections`, each heat connection's side, the tile it joins and what is there (`south at
+  (128.5,41.5): heat-pipe (128.5,41.5)`, `east at (130.5,43.5): faces stone-wall (130.5,43.5) (no heat connection
+  back)`, `west at (126.5,43.5): nothing there`), and for a built one `temperature` and `max_temperature` (C).
 - A `transfer`, `collect` or `feed` that moved nothing says why in `nothing_moved` (also on the final `warning:`
   line): what the target holds (`wooden-chest at (3.5,3.5) holds no iron-plate in chest; it holds copper-plate*15`),
   `already holds N (up_to M)`, what you keep, or for `feed` per wanted item what you carry and the machines hold
@@ -1828,7 +1832,11 @@ fh sleep 900 --until researched                       # ...or until the research
     ghost over a machine it upgrades reads `ok` with `replaces ...`. What the call takes in its way follows the
     call: place_ghosts and a `forced` paste mark trees and rocks (`ok`, `marks tree-01 (5.5,0.5) for removal`), a
     `superforced` paste our own entities too, while a `normal` paste and a hand build take nothing (`blocked by
-    tree-01 ...`). Rails may cross rails.
+    tree-01 ...`). Rails may cross rails. A hand build over one of its fast-replace group that is off its centre or of
+    another size reads blocked, as the build refuses it (Astra, shift13 16:43: a splitter at (-6.5,554) over the belt
+    at (-6.5,554.5) read placeable): `blocked by transport-belt (-6.5,554.5): on these tiles, not on the same centre; a
+    build replaces one of its kind only on its own centre and of its size: mine it first`. On its centre and of its
+    size (a fast belt over a belt) it reads `ok` with `replaces transport-belt (-6.5,554.5)`.
   - `tiles`: `needed {item: n}` (the unlocked tile item that makes each tile buildable for that entity: landfill on
     water, foundation on lava, space-platform-foundation on empty space), `under_entities`, `positions` (up to 200
     tile centres, then `more`), and the plan's own tiles: `planned`, `already`, `refused` with `refused_rows`. Each
@@ -1922,6 +1930,19 @@ fh sleep 900 --until researched                       # ...or until the research
     as the engine places them (a long-handed inserter facing north picks up 2 tiles north and drops 2.2 south).
     `missing`: `no pickup target`, `no drop target`; `inserters_without_target` counts them. At most 64 rows (256 with
     `details`).
+  - `connections` (Sol, shift13 16:50: heat power planned by footprints, the joins unknown until built): one row per
+    planned boiler, heat exchanger, steam engine or turbine, reactor or heating tower, heat interface, pump, offshore
+    pump, storage tank, fusion machine, and assembling machine or furnace given a `recipe`: `{index, name, position,
+    direction, fluid, heat}`. Each fluid or heat connection point gives its side, the tile it joins and what is there:
+    another entry of the plan with a connection back (`input-output water west at (126.5,40.5): planned #5 pipe`,
+    `heat south at (128.5,41.5): planned #2 heat-pipe`), an entity or ghost of ours with one (`pipe (130.5,40.5)`),
+    something without one (`faces stone-wall (130.5,40.5) (no connection back)`, `faces planned #2 pipe-to-ground (no
+    connection back)`), or `nothing there`. Pipes, pipe-to-grounds and heat pipes get a row only for their joins to
+    what stands already and for an underground end with no partner (`underground: no pipe-to-ground facing back within
+    10 tiles`). `connections_open` counts the points of the other rows that join nothing. Fluid points are the ones
+    `ports` gives (a recipe opens and closes them); heat points come from the prototype, turned with the entity, as
+    2.0.77 joined them on a copy of world n (a heat exchanger's heat input is on its back). A flipped paste is not
+    read (`connections_note`). At most 64 rows (256 with `details`).
 - `ports {name, position, direction?, recipe?, mirror?, platform?}` (read; ports.lua, Gemini's request: a recipe moves
   which fluid an electromagnetic plant's ports carry) lists the fluid connections of an entity that is not built:
   `ports [{at, joins, direction, flow, fluid, box, there}]` (`at` the entity's tile with the port, `joins` the tile
@@ -2021,6 +2042,10 @@ fh sleep 900 --until researched                       # ...or until the research
   12%, ...; fh call flamers shows each one and what is in its arc`; observe rows' `fluids` start with `turret holds
   crude-oil 87/200`.
 - `collect` with `radius` skips stock inside another agent's active board claim and reports `skipped_claims` (`40 iron-plate in 2 places of #4 iron smelting (claim by sol); ask the owner`). `collect` on named positions still takes, and lists the claimed ones in `claimed`.
+- The `status` fuel warning names burners out of fuel or burning their last: `fuel: boiler 1/3 no_fuel, 1 burning their
+  last fuel`. Where some hold fuel that spoils within 60 s (a biochamber's nutrients), it says how many and the first,
+  from the stack that spoils first (Sol, shift13 16:50): `fuel: biochamber 0/18 no_fuel, fuel spoils within 60s in 11
+  (the first: nutrients in 12s at (77.5,60.5))`.
 - The `status` power warning appears only when some electric machine lacks power: `power: 3 of 78 machines low_power; 1 unconnected (fh call power lists them)` (`no_power` = connected to a network with no generation; `unconnected` = no pole reaches it).
 - `fh research` (`research` with no arguments; read): `current`, `progress`, `queue`, `pending`, and `entries`, one per
   queued technology then each pending one: `name`, `progress` (%; saved progress for one not running), `queued_by` (the
@@ -2488,7 +2513,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - Game alerts and warnings in `team.alerts` (pushalerts.lua): what a player's alert panel and entity status icons
   show, without pulling a full status.
   - Entity statuses on planet surfaces: `no power`, `not connected to power` (no pole reaches them), `low power`,
-    `out of fuel`, gun turrets `out of ammo`, flamethrower turrets `out of flamer oil`.
+    `out of fuel`, gun turrets `out of ammo`, flamethrower turrets `out of flamer oil`. Reactors and heating towers
+    are read too. An out-of-fuel line adds the spoiling fuel of the burners of those names in its cells and the cells
+    around them (Sol, shift13 16:50: biochambers starved with 20 nutrients loaded, the batch rotting within seconds):
+    `2 (1 biochamber, 1 heating-tower) out of fuel near (48,47); refuel; 3 biochamber around it burn spoiling fuel, 2
+    of them within 60s; the first: nutrients spoils in 4s at (43.5,34.5)` (`spoiled` once its time is past).
   - Lost sources on planet surfaces (Haiku, 04:52: an inserter with no source fails silently; a boiler went no_fuel
     when its feed chest was removed): an inserter that had a pickup target and has none now, or whose drop target is
     gone, by area and by what it feeds (kinds `lost_source.<fed>` and `lost_target.<fed>`; fed is boiler, furnace,

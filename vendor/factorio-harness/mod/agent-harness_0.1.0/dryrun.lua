@@ -95,6 +95,45 @@ return function(api)
     return list
   end
 
+  -- Heat connections of an entity of proto at pos facing dir: {x, y (its tile), dir (the way it faces), tx, ty (the
+  -- tile it joins)}, from the prototype's heat buffer (else its heat energy source), turned with the entity. 2.0.77 on
+  -- a copy of world n: heat exchangers in the four directions and a heating tower warmed from a heat interface on the
+  -- tile this predicts (818 and 604 C); one beside a side without a connection stayed at 15 C.
+  local STEP = {[0]={0,-1}, [4]={1,0}, [8]={0,1}, [12]={-1,0}}
+  function M.heat_points(proto, pos, dir)
+    local list = try(function() return proto.heat_buffer_prototype.connections end)
+      or try(function() return proto.heat_energy_source_prototype.connections end)
+    local out = {}
+    dir = dir or 0
+    for _, c in ipairs(list or {}) do
+      local rx, ry = c.position.x or c.position[1], c.position.y or c.position[2]
+      if dir == 4 then rx, ry = -ry, rx elseif dir == 8 then rx, ry = -rx, -ry elseif dir == 12 then rx, ry = ry, -rx end
+      local cd = ((c.direction or 0) + dir) % 16
+      local x, y = math.floor(pos.x + rx), math.floor(pos.y + ry)
+      if STEP[cd] then out[#out+1] = {x=x, y=y, dir=cd, tx=x+STEP[cd][1], ty=y+STEP[cd][2]} end
+    end
+    return out
+  end
+  -- What joins heat connection c of an entity (inspect): the entity of ours on the tile it faces with a heat
+  -- connection back, or what stands there without one, or nothing.
+  function M.heat_there(surface, force, c)
+    local function back(o)
+      local proto = o.type == 'entity-ghost' and o.ghost_prototype or o.prototype
+      for _, h in ipairs(M.heat_points(proto, o.position, o.direction)) do
+        if h.x == c.tx and h.y == c.ty and h.tx == c.x and h.ty == c.y then return true end
+      end
+    end
+    local other
+    for _, o in pairs(try(function() return surface.find_entities_filtered{area={{c.tx+0.1, c.ty+0.1}, {c.tx+0.9, c.ty+0.9}}, force=force} end) or {}) do
+      if o.valid and o.type ~= 'character' then
+        local label = (o.type == 'entity-ghost' and o.ghost_name..' ghost' or o.name)..' '..at(o.position)
+        if back(o) then return label end
+        other = other or label
+      end
+    end
+    return other and 'faces '..other..' (no heat connection back)' or 'nothing there'
+  end
+
   -- Tile items and the tiles each can be placed on (the game's own rule:
   -- a tile_condition list when given, then the collision condition, which
   -- invert turns into a requirement).
@@ -712,7 +751,7 @@ return function(api)
     for _, e in ipairs(plan.entities or {}) do
       local proto = prototypes.entity[e.name or '']
       local rec = {index=e.index, copy=e.copy, name=e.name, dir=e.direction or 0, quality=e.quality, item=e.item, requests=e.requests, ug_type=e.ug_type,
-        construction=e.construction}
+        construction=e.construction, recipe=e.recipe}
       recs[#recs+1] = rec
       local reasons = {}
       if not proto then
@@ -751,6 +790,16 @@ return function(api)
           -- join it (the game's check decides), characters walk over it, and
           -- the rest counts where its turned box reaches.
           local blockers, marked, ghosts, same, mine = {}, {}, {}, nil, false
+          -- A hand build replaces an entity of its fast-replace group only on its own centre and of its size; another
+          -- of the group on these tiles refuses it (runtime.lua build_direct; Astra, shift13 16:43: a splitter at
+          -- (-6.5,554) over the belt at (-6.5,554.5) read placeable, and the build refused it until the belt was mined).
+          local group = manual and try(function() return proto.fast_replaceable_group end)
+          local offset = {}
+          local function same_size(o)
+            local a, b = proto.collision_box, try(function() return o.prototype.collision_box end)
+            return a and b and math.abs((a.right_bottom.x-a.left_top.x)-(b.right_bottom.x-b.left_top.x)) < 0.01
+              and math.abs((a.right_bottom.y-a.left_top.y)-(b.right_bottom.y-b.left_top.y)) < 0.01
+          end
           local soft = {} -- (a hand build: water-cane and fish in the way, which landfill laid there takes away)
           local under_cliffs = {}
           local shape = rec.shape
@@ -767,6 +816,10 @@ return function(api)
           for _, o in pairs(s.find_entities_filtered{area=rec.box}) do
             if o.valid then
               local t = o.type
+              if group and t ~= 'entity-ghost' and o.force == force and try(function() return o.prototype.fast_replaceable_group end) == group
+                and not (math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 and same_size(o)) then
+                offset[#offset+1] = o.name..' '..at(o.position)
+              end
               if t == 'entity-ghost' then
                 if o.ghost_name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 and same_dir(o.direction) then same = same or o
                 elseif shape and RAILS[o.ghost_type] then -- crossing or joining
@@ -908,7 +961,10 @@ return function(api)
               cliffs[k] = cliffs[k] or {e=c, item=try(function() return c.prototype.cliff_explosive_prototype end) or 'cliff-explosives'}
             end
           end
-          if engine == true and not same then
+          if #offset > 0 then
+            reasons[#reasons+1] = string.format('blocked by %s: on these tiles, not on the same centre; a build replaces one of its kind only on its own centre and of its size: mine it first',
+              table.concat(offset, ', ', 1, math.min(3, #offset)))
+          elseif engine == true and not same then
             if #blockers > 0 then rec.note = 'replaces '..table.concat(blockers, ', ', 1, math.min(4, #blockers)) end
           elseif #blockers > 0 then reasons[#reasons+1] = 'blocked by '..table.concat(blockers, ', ', 1, math.min(4, #blockers)) end
           if broken then reasons[#reasons+1] = broken end
@@ -1656,6 +1712,124 @@ return function(api)
       out.inserters_without_target = without > 0 and without or nil
     end
     local function idx(r) return r.copy and (r.copy..'.'..r.index) or r.index end
+    -- Fluid and heat connections of the plan (Sol, shift13 16:50: Gleba's heat power planned by footprints, the
+    -- joins unknown until it was built): for each planned boiler, heat exchanger, turbine, reactor, heating tower,
+    -- pump, tank, and a machine given a fluid recipe, each connection point: the tile it joins and what is there to
+    -- join: another entry of the plan or a building or ghost of ours with a connection back, something without
+    -- one, or nothing. Pipes and heat pipes give only their joins to what is already built. Fluid points as the
+    -- ports read gives them (ports.lua), heat points from the prototype (M.heat_points).
+    local CONNECTS = {boiler=true, generator=true, reactor=true, ['heat-pipe']=true, ['heat-interface']=true, pipe=true,
+      ['pipe-to-ground']=true, pump=true, ['offshore-pump']=true, ['storage-tank']=true, ['fusion-reactor']=true,
+      ['fusion-generator']=true}
+    local LINES = {pipe=true, ['pipe-to-ground']=true, ['heat-pipe']=true}
+    local function tile_of(p0) return math.floor(p0.x), math.floor(p0.y) end
+    local by_tile = {}   -- 'f'|'h' .. tile key -> {{r, c}}
+    local with = {}
+    -- (a flipped paste: the game turns a storage tank or a fusion machine its own way, which the plan's directions
+    -- may not match)
+    if plan.flipped then out.connections_note = 'not read for a flipped paste' end
+    for _, r in ipairs(plan.flipped and {} or recs) do
+      local t = r.proto and r.proto.type
+      if t and r.pos and r.status ~= 'blocked' and r.status ~= 'exists' and (CONNECTS[t] or (r.recipe and (t == 'assembling-machine' or t == 'furnace'))) then
+        local e0 = {prototype=r.proto, position=r.pos, direction=r.dir}
+        local fl = {}
+        for _, c in ipairs(api.fluid_rows and try(function() return api.fluid_rows(e0, r.recipe) end) or {}) do
+          local x, y = tile_of(c.at)
+          local tx, ty = tile_of(c.joins)
+          fl[#fl+1] = {x=x, y=y, tx=tx, ty=ty, dir=c.direction, flow=c.flow, fluid=c.fluid, kind=c.kind or 'normal', reach=c.underground_reach}
+        end
+        local ht = M.heat_points(r.proto, r.pos, r.dir)
+        if #fl > 0 or #ht > 0 then
+          r.fl, r.ht = fl, ht
+          with[#with+1] = r
+          for _, c in ipairs(fl) do local k = 'f'..key(c.x, c.y); by_tile[k] = by_tile[k] or {}; table.insert(by_tile[k], {r=r, c=c}) end
+          for _, c in ipairs(ht) do local k = 'h'..key(c.x, c.y); by_tile[k] = by_tile[k] or {}; table.insert(by_tile[k], {r=r, c=c}) end
+        end
+      end
+    end
+    if #with > 0 then
+      local OPP = {north='south', south='north', east='west', west='east'}
+      -- What answers connection c of planned r: (text, joined, built): a planned entry with a connection back, else
+      -- an entity of ours there, else a planned entry without one.
+      local function partner(r, c, kind)
+        for _, q in ipairs(by_tile[kind..key(c.tx, c.ty)] or {}) do
+          local d = q.c
+          if q.r ~= r and d.tx == c.x and d.ty == c.y and (kind == 'h' or d.kind == 'normal') then
+            return 'planned #'..tostring(idx(q.r))..' '..q.r.name, true
+          end
+        end
+        local other
+        for _, o in pairs(try(function() return s.find_entities_filtered{area={{c.tx+0.1, c.ty+0.1}, {c.tx+0.9, c.ty+0.9}}, force=force} end) or {}) do
+          if o.valid and o.type ~= 'character' then
+            local label = (o.type == 'entity-ghost' and o.ghost_name..' ghost' or o.name)..' '..at(o.position)
+            local joined = false
+            if kind == 'h' then
+              local proto = o.type == 'entity-ghost' and o.ghost_prototype or o.prototype
+              for _, h in ipairs(M.heat_points(proto, o.position, o.direction)) do
+                if h.x == c.tx and h.y == c.ty and h.tx == c.x and h.ty == c.y then joined = true end
+              end
+            else
+              for _, oc in ipairs(api.fluid_connections and try(function() return api.fluid_connections(o) end) or {}) do
+                if (oc.kind or 'normal') == 'normal' and oc.x == c.tx and oc.y == c.ty and oc.tx == c.x and oc.ty == c.y then joined = true end
+              end
+            end
+            if joined then return label, true, true end
+            other = other or label
+          end
+        end
+        if other then return 'faces '..other..' (no connection back)' end
+        for _, q in ipairs(occupied[key(c.tx, c.ty)] or {}) do
+          if q ~= r then
+            return string.format('faces planned #%s %s (%s)', tostring(idx(q)), q.name, q.status == 'blocked' and 'blocked' or 'no connection back')
+          end
+        end
+        return 'nothing there'
+      end
+      -- A pipe-to-ground's underground end: the nearest one facing back within its reach, planned or built.
+      local function under(r, c)
+        local d = STEP[({north=0, east=4, south=8, west=12})[c.dir] or 0]
+        for n = 1, c.reach or 10 do
+          local x, y = c.x + d[1] * n, c.y + d[2] * n
+          for _, q in ipairs(by_tile['f'..key(x, y)] or {}) do
+            if q.r ~= r and q.c.kind == 'underground' and q.c.dir == OPP[c.dir] then return 'underground to planned #'..tostring(idx(q.r))..' '..q.r.name..' '..tile_text(x, y) end
+          end
+          for _, o in pairs(try(function() return s.find_entities_filtered{area={{x+0.1, y+0.1}, {x+0.9, y+0.9}}, force=force} end) or {}) do
+            for _, oc in ipairs(o.valid and api.fluid_connections and try(function() return api.fluid_connections(o) end) or {}) do
+              if oc.kind == 'underground' and oc.x == x and oc.y == y then
+                return 'underground to '..(o.type == 'entity-ghost' and o.ghost_name..' ghost' or o.name)..' '..at(o.position)
+              end
+            end
+          end
+        end
+        return string.format('underground: no pipe-to-ground facing back within %d tiles', c.reach or 10)
+      end
+      local rows, open = {}, 0
+      for _, r in ipairs(with) do
+        local line = LINES[r.proto.type]
+        local fluid, heat = {}, {}
+        for _, c in ipairs(r.fl) do
+          local there, joined, built
+          if c.kind == 'underground' then there = under(r, c); joined = there:find('^underground to') ~= nil
+          else there, joined, built = partner(r, c, 'f') end
+          if not line or built or (c.kind == 'underground' and not there:find('^underground to planned')) then
+            local what = (c.flow or 'fluid')..(c.fluid and c.fluid ~= 'none' and ' '..c.fluid or '')
+            fluid[#fluid+1] = string.format('%s %s at %s: %s', what, c.dir or '?', tile_text(c.tx, c.ty), there)
+          end
+          if not line and not joined then open = open + 1 end
+        end
+        for _, c in ipairs(r.ht) do
+          local there, joined, built = partner(r, c, 'h')
+          if not line or built then heat[#heat+1] = string.format('heat %s at %s: %s', NAMES[c.dir] or '?', tile_text(c.tx, c.ty), there) end
+          if not line and not joined then open = open + 1 end
+        end
+        if (#fluid > 0 or #heat > 0) and #rows < (plan.details and 256 or MAX_INSERTERS) then
+          rows[#rows+1] = {index=idx(r), name=r.name, position=r.pos, direction=r.dir ~= 0 and NAMES[r.dir] or nil,
+            fluid=#fluid > 0 and fluid or nil, heat=#heat > 0 and heat or nil}
+        end
+      end
+      out.connections = #rows > 0 and rows or nil
+      out.connections_open = open > 0 and open or nil
+    end
     -- Logistic chests no roboport's logistic area covers, roboports planned in
     -- this call counting (networks.lua; Sonnet, shift10).
     if api.coverage and not on_platform then

@@ -40,6 +40,18 @@ local entities={
   machine('boiler','boiler','working',6,{burner={inventory={is_empty=function() return false end},remaining_burning_fuel=10}}),
   machine('lab','lab','missing_science_packs',7,{electric_buffer_size=100,get_inventory=function() return lab_inv end}),
 }
+-- Spoilable fuel (Sol, shift13 16:50: biochambers starved with 20 nutrients loaded, the batch rotting within seconds):
+-- two biochambers, one whose nutrients spoil in 4 s, one in 2 minutes; and coal, which does not spoil.
+prototypes.item.nutrients={type='item'}
+local function fuel_inv(list)
+  local inv=setmetatable({is_empty=function() return #list==0 end},{__len=function() return #list end,__index=function(_,i) return list[i] end})
+  return inv
+end
+local function nutrients(ticks) return {valid_for_read=true,name='nutrients',spoil_tick=game.tick+ticks,prototype={get_spoil_ticks=function() return 18000 end}} end
+local coal={valid_for_read=true,name='coal',spoil_tick=0,prototype={get_spoil_ticks=function() return 0 end}}
+entities[#entities+1]=machine('biochamber','assembling-machine','working',30,{burner={inventory=fuel_inv({nutrients(7200),nutrients(240)}),remaining_burning_fuel=10}})
+entities[#entities+1]=machine('biochamber','assembling-machine','working',32,{burner={inventory=fuel_inv({nutrients(7200)}),remaining_burning_fuel=10}})
+entities[#entities+1]=machine('stone-furnace','furnace','working',34,{burner={inventory=fuel_inv({coal}),remaining_burning_fuel=10}})
 for i,n in ipairs{0,3,20} do
   entities[#entities+1]=machine('gun-turret','ammo-turret','working',10+i,{get_inventory=function() return {get_item_count=function() return n end} end})
 end
@@ -78,7 +90,8 @@ eq(s.factory.research,'automation 50% (queue ends)')
 eq(s.machines['assembling-machine-1'],'1/3 working, 1 item_ingredient_shortage, 1 low_power')
 eq(s.machines.boiler,'2/3 working, 1 no_fuel')
 eq(s.machine_positions,nil)
-has(s.warnings,'fuel: boiler 1/3 no_fuel, 1 burning their last fuel')
+has(s.warnings,'fuel: biochamber 0/2 no_fuel, fuel spoils within 60s in 1 (the first: nutrients in 4s at (30,0)); boiler 1/3 no_fuel, 1 burning their last fuel')
+assert(not has(s.warnings,'fuel:'):find('stone-furnace',1,true),'coal does not spoil: no stone-furnace part')
 has(s.warnings,'power: 1 of 4 machines low_power (fh call power lists them)')
 has(s.warnings,'ammo: gun-turret 1/3 empty at (11,0), 1 below 5 at (12,0); rearm radius=R')
 has(s.warnings,'flamer oil: flamethrower-turret 4 of 5 with oil (crude-oil 20 at (22,0), ...); 1/5 dry at (21,0), 1 below 25% at (22,0) 10%; fh call flamers')
