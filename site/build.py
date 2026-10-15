@@ -910,12 +910,16 @@ def long_charts(lr, lo=None, hi=None, x0=0):
     ps = pack_rate_series(lr["spm_packs"], lo, hi)
     opts = dict(x_label="game time (hours)", hours=True, marks=marks, clock=clock, x0=x0)
     charts = []
-    if ps:
-        charts.append(line_chart("Science packs per minute, by pack", ps, "packs per minute",
-                                 desc="10-game-minute windows.", **opts))
     tot = inside(lr["spm"])
     if tot:
-        charts.append(line_chart("Science packs per minute, all packs", [{"name": "All packs", "points": tot}],
+        charts.append(line_chart("Science per minute (SPM)", [{"name": "SPM", "points": tot}], "research units per minute",
+                                 desc="Research units a minute: the labs' use of packs in sets. 10-game-minute windows.", **opts))
+    if ps:
+        charts.append(line_chart("Science packs used by the labs per minute, by pack", ps, "packs per minute",
+                                 desc="10-game-minute windows.", **opts))
+    made = inside(lr.get("made_spm") or [])
+    if made:
+        charts.append(line_chart("Science packs made per minute, all colours", [{"name": "Packs made", "points": made}],
                                  "packs per minute", desc="10-game-minute windows.", **opts))
     charts.append(line_chart("Technologies researched", [{"name": "Technologies", "points": inside(lr["research"])}],
                              "technologies", step=True, **opts))
@@ -932,7 +936,8 @@ def shift_stats(s):
         stat("game time played", longrun.game_time(s["tick1"] - s["tick0"]), f'{s["game0"]} to {s["game1"]}'),
         stat("technologies", s["research"], f'+{s["research_new"]}' + (f' · at the end: {s["researching"]}' if s.get("researching") else "")),
         stat("rockets", s["rockets"], f'+{s["rockets_new"]}'),
-        stat("science / min", "–" if s["spm"] is None else fmt_num(s["spm"]), "shift average"),
+        stat("SPM", "–" if s["spm"] is None else fmt_num(s["spm"]), "research units a minute, shift average"),
+        stat("packs made / min", "–" if s.get("made_per_min") is None else fmt_num(s["made_per_min"]), "all colours, shift average"),
         stat("packs made", f'{s["made_total"]:,}'),
         stat("deaths / loss alerts", f'{s["deaths"]} / {s["losses"]}'),
         stat("viewer messages", s["viewer_lines"])])
@@ -1166,7 +1171,7 @@ def records(done):
     out = []
     for lab, key, fmt, low in [("Most rockets in a shift", "rockets_new", str, False),
                                ("Most technologies in a shift", "research_new", str, False),
-                               ("Best science / min (shift average)", "spm", fmt_num, False),
+                               ("Best SPM (shift average)", "spm", fmt_num, False),
                                ("Most packs made in a shift", "made_total", lambda v: f"{v:,}", False),
                                ("Most viewer messages in a shift", "viewer_lines", str, False),
                                ("Fewest deaths in a shift", "deaths", str, True)]:
@@ -1223,7 +1228,7 @@ def build_long_run(lr):
             f'<td data-l="When">{esc(_when(s["started"], s["ended"]))}</td>'
             f'<td data-l="Game time">{esc(s["game0"])} to {esc(s["game1"])}</td>'
             f'<td data-l="Technologies" class="num">{s["research"]} <span class="muted">+{s["research_new"]}</span></td>'
-            f'<td data-l="Science / min" class="num">{"–" if s["spm"] is None else fmt_num(s["spm"])}</td>'
+            f'<td data-l="SPM" class="num">{"–" if s["spm"] is None else fmt_num(s["spm"])}</td>'
             f'<td data-l="Packs made" class="num">{s["made_total"]:,}</td>'
             f'<td data-l="Rockets" class="num">{s["rockets"]} <span class="muted">+{s["rockets_new"]}</span></td>'
             f'<td data-l="Deaths / losses" class="num">{s["deaths"]} / {s["losses"]}</td>'
@@ -1254,10 +1259,10 @@ def build_long_run(lr):
 {packs_bars(lr["made"])}
 <h2 id="shifts">Shifts</h2>
 <div class="table-wrap"><table class="long-run wide"><thead><tr><th scope="col">Shift</th><th scope="col">When (Pacific)</th>
-<th scope="col">Game time</th><th scope="col">Technologies</th><th scope="col">Science / min</th><th scope="col">Packs made</th>
+<th scope="col">Game time</th><th scope="col">Technologies</th><th scope="col">SPM</th><th scope="col">Packs made</th>
 <th scope="col">Rockets</th><th scope="col">Deaths / losses</th><th scope="col">Viewers</th><th scope="col">Milestones</th>
 </tr></thead><tbody>{"".join(rows)}</tbody></table></div>
-<p class="muted small">Science / min: packs made over the shift's game time. Packs made: each counter's rises between score rows; a fall (a lost platform's counts) is not subtracted. Deaths and loss alerts: the ones the stream's director cut to.</p>
+<p class="muted small">SPM: research units a minute (the labs' use of packs in sets) over the shift's game time. Packs made: each counter's rises between score rows; a fall (a lost platform's counts) is not subtracted. Deaths and loss alerts: the ones the stream's director cut to.</p>
 {videos}
 """
     return page("The long run", body, "/runs/" if archive() else "/runs/long/",
@@ -1675,8 +1680,8 @@ def live_app(heading, sample_href):
   </div>
   <aside class="chat-panel live-panel fx-root fx-panel" aria-label="Chat">
     <div class="fx-tabs chat-tabs" role="tablist">
-      <button class="fx-tab is-selected" role="tab" aria-selected="true" data-tab="site" type="button">Site chat</button>
-      <button class="fx-tab" role="tab" aria-selected="false" data-tab="yt" type="button">YouTube chat</button>
+      <button class="fx-tab is-selected" role="tab" aria-selected="true" data-tab="site" type="button">Chat</button>
+      <button class="fx-tab" role="tab" aria-selected="false" data-tab="yt" type="button">YouTube</button>
     </div>
     <div class="fx-tab-body">
       <div data-pane="site" class="vchat-pane">
@@ -1693,6 +1698,7 @@ def live_app(heading, sample_href):
           <div><dt>@operator</dt><dd>harness suggestions: read, maybe built</dd></div>
           <div><dt>Several</dt><dd>one per person into the game at a time, up to 3 wait their turn</dd></div>
           <div><dt>Rules</dt><dd>no account, no links, be kind</dd></div>
+          <div><dt>YT · SITE</dt><dd>YouTube and site comments in one list, in time order; you write as a site comment</dd></div>
         </dl>
       </div>
       <div data-pane="yt" class="yt-pane" hidden>

@@ -124,7 +124,8 @@ class Segments:
             return self.replays.why(now) if self.replays else "replays are off (serve.py --no-replays, or the mock)"
         if snap is None:
             return "no game state yet"
-        if kind == "production" and not (snap.get("production") or (snap.get("science") or {}).get("packs")):
+        sci = snap.get("science") or {}
+        if kind == "production" and not (snap.get("production") or sci.get("packs") or (sci.get("made") or {}).get("packs")):
             return "nothing produced yet"
         if kind == "production" and not self.production_moves(snap):
             return "no item's rate moved by 25% in 10 minutes"

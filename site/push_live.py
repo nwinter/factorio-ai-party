@@ -15,7 +15,8 @@ from pathlib import Path
 SITE = Path(__file__).resolve().parent
 sys.path.insert(0, str(SITE))
 sys.dont_write_bytecode = True
-from build import clean, CONFIG  # noqa: E402  (same redaction rules as the static site)
+from build import clean, CONFIG, REPO  # noqa: E402  (same redaction rules as the static site)
+import moderation  # noqa: E402  (site/moderation.py: viewer lines deleted on YouTube or listed by hand)
 import terrain  # noqa: E402  (site/terrain.py: the map frames the site publishes under /live/terrain/)
 
 AGENT_KEYS = ("name", "kind", "display_name", "color", "glyph", "motto", "profile_set", "model", "harness", "role",
@@ -88,6 +89,43 @@ def public_clouds(rows):
     return out
 
 
+YOUTUBE_MAX = 60       # YouTube lines in the state for the live page's chat pane (newest kept)
+HIDDEN_EVERY = 60.0    # seconds between reads of the deletions and the hand-kept list
+_hidden = {"t": None, "h": None}
+
+
+def hidden_now(now=None):
+    """moderation.Hidden for runs/*/viewer-deletions.jsonl and site/hidden-viewers.json, read at most every minute."""
+    now = now or time.time()
+    if _hidden["h"] is None or now - (_hidden["t"] or 0) >= HIDDEN_EVERY:
+        try:
+            _hidden["h"] = moderation.load(os.environ.get("POG_RUNS_DIR") or REPO / "runs",
+                                           os.environ.get("POG_HIDDEN_VIEWERS") or SITE / "hidden-viewers.json")
+        except OSError:
+            _hidden["h"] = _hidden["h"] or moderation.Hidden()
+        _hidden["t"] = now
+    return _hidden["h"]
+
+
+def public_youtube(viewers, hidden=None):
+    """The YouTube lines of the stream service's viewer lane (tools/stream/viewers.py: only lines that passed its
+    moderation, YouTube deletions it saw taken out), oldest first, the newest YOUTUBE_MAX: {id, name, text, t, staff?}.
+    Lines the site hides (a deletion from an earlier run, the hand-kept list) are left out. The live page joins them
+    with the site's own comments in one time-ordered chat pane (Luna 13:54, a viewer's suggestion)."""
+    rows = []
+    for v in viewers or []:
+        if not isinstance(v, dict) or v.get("source") != "youtube" or not v.get("text") or not isinstance(v.get("t"), (int, float)):
+            continue
+        if hidden and hidden.hides(v.get("name"), v.get("text")):
+            continue
+        row = {"id": str(v.get("id") or ""), "name": str(v.get("name") or "viewer"), "text": str(v["text"]), "t": round(v["t"], 1)}
+        if v.get("staff"):
+            row["staff"] = True
+        rows.append(row)
+    rows.sort(key=lambda r: r["t"])
+    return rows[-YOUTUBE_MAX:]
+
+
 def public_state(s):
     out = {k: s[k] for k in TOP_KEYS if k in s}
     out["agents"] = [{k: a[k] for k in AGENT_KEYS if k in a} for a in s.get("agents", [])]
@@ -113,6 +151,9 @@ def public_state(s):
         out["fights"] = public_fights(s["fights"], s.get("now") or time.time())
     if s.get("clouds"):
         out["clouds"] = public_clouds(s["clouds"])
+    yt = public_youtube(s.get("viewers"), hidden_now())
+    if yt:
+        out["youtube_chat"] = yt
     # The broadcast the stream service's YouTube chat bridge follows, so the live page embeds the current one.
     yt = ((s.get("viewers_status") or {}).get("youtube") or {})
     if re.fullmatch(r"[\w-]{11}", str(yt.get("video") or "")):

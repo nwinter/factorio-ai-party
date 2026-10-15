@@ -158,4 +158,9 @@ eq(runtime.keeps('trace'),true)
 local paused=queue().paused
 r=astra('trace',{platform='Sunward',position={x=-2.5,y=-4.5},forward=true})
 eq(r.entity,'fast-inserter'); eq(r.note,'no inserter takes from it'); eq(queue().paused,paused)
+-- preflight is a read (rocketload.lua; shift12 15:20), and a queue dry run queues nothing and leaves the queue alone.
+eq(runtime.keeps('preflight'),true)
+local rev=queue().revision
+r=astra('queue_submit',{dry_run=true,steps={{action='wait_ticks',args={ticks=60}}}})
+eq(r.dry_run,true); eq(r.queued,false); eq(queue().paused,paused); eq(queue().revision,rev)
 print('remotepassive: ok')

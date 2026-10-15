@@ -211,6 +211,39 @@ class YoungGameTest(unittest.TestCase):
         self.assertAlmostEqual(it["h1"] / 60, 30)
 
 
+class SciencePerMinuteTest(unittest.TestCase):
+    """SPM as players say it (operator 15:51, viewer joonazan): research units a minute, the labs' use of packs in sets
+    (the most-used pack that does not spoil); packs made per minute, all colours, apart."""
+
+    def test_snapshot(self):
+        import game as G
+        snap = {"tick": 60 * 3600, "items": {
+            "automation-science-pack": {"total": 900, "m10": 300, "used10": 200},
+            "logistic-science-pack": {"total": 800, "m10": 250, "used10": 200},
+            "chemical-science-pack": {"total": 100, "m10": 50, "used10": 0},
+            "agricultural-science-pack": {"total": 500, "m10": 400, "used10": 380}}}
+        units, used = G.spm(snap)
+        self.assertEqual(units, 20.0)                     # 200 red and green in 10 min; agricultural's 38/min left out
+        self.assertEqual(used["agricultural-science-pack"], 38.0)
+        self.assertEqual(G.made_per_min(snap)[0], 100.0)  # 1000 made in 10 min, all colours
+        text = G.snapshot_text(snap)
+        self.assertIn("science per minute (SPM: research units a minute, the labs' use of packs in sets, 10-min average): 20.0", text)
+        self.assertIn("science packs made per minute (all colours summed, 10-min average): 100.0", text)
+        old = {"tick": 60 * 3600, "items": {"automation-science-pack": {"total": 900, "m10": 300, "used10": None}}}
+        self.assertEqual(G.spm(old), (None, {}))          # no lab counts: no SPM
+        self.assertNotIn("SPM", G.snapshot_text(old))
+
+    def test_history(self):
+        rows = [{"tick": 0, "produced": {"automation-science-pack": 0}},
+                {"tick": 10 * 3600, "produced": {"automation-science-pack": 600},
+                 "consumed": {"automation-science-pack": 300, "agricultural-science-pack": 700}}]
+        self.assertEqual(H.research_spm(rows, 10), 30.0)  # a row without consumed: none used yet
+        self.assertEqual(H.spm_text(rows, 10), ", SPM 30.0")
+        old = [{"tick": 0, "produced": {"automation-science-pack": 0}}, {"tick": 10 * 3600, "produced": {"automation-science-pack": 600}}]
+        self.assertIsNone(H.research_spm(old, 10))
+        self.assertEqual(H.spm_text(old, 10), ", packs made 60.0/min (all colours; no lab counts in this log)")
+
+
 class ViewerQuestionsTest(unittest.TestCase):
     def test_is_question(self):
         from analyst_board import is_question

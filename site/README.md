@@ -22,7 +22,7 @@ checkout without the shift folders) the page and its links are left out. Rebuild
 The page: totals, records (the best shift for each), a milestones table (first of each science pack, technologies
 that matter, rocket counts, the first platform, platform departures and arrivals, planets reached, the first death,
 the first building lost, the first viewer line in the game), charts on the save's game clock with shift starts
-marked and the Pacific time in the hover (science per minute by pack and in all, technologies, rockets), and the
+marked and the Pacific time in the hover (SPM, the labs' use of each pack, packs made in all, technologies, rockets), and the
 shift table. Every shift has a page, `/runs/long/shift-N/`: its numbers, milestones, charts, packs made, moments,
 deaths, its video and chapters when `videos.json` has one, and the viewer Q&A from `chat.jsonl` (viewer lines that
 reached the game, the agents' answers that name the viewer) and `caster.log` (the hosts' `viewer_reply` lines).
@@ -35,7 +35,10 @@ agents' and hosts' own lines stay. The shift videos' descriptions (`tools/shift_
 
 Times come from the score log (every 2 minutes), so a milestone's time is up to 2 minutes late. Science packs made
 add up each counter's rises between score rows and count a fall as 0 (a lost platform takes its production counts
-with it, which made the old per-minute chart go below 0); rates come from that total. Lines from the owner's channel
+with it, which made the old per-minute chart go below 0); the packs-made rates come from that total. SPM (science per
+minute as players say it) is research units a minute: the labs' use of packs in sets, from the score's `consumed`
+(packs the labs used); every 2.0 technology takes one of each of its packs per unit, so it is the most-used pack that
+does not spoil (the agricultural pack's count runs ahead of the others). Score logs without `consumed` show no SPM. Lines from the owner's channel
 account, or that name it, are left out (`keep_line` in `build.py`).
 
 With the long run come `/agents/` and `/timeline/` (`site/agents.py`). `/agents/`: a card per agent (model, maker,
@@ -182,7 +185,7 @@ No stream exists yet, so both YouTube keys are empty and the page shows a placeh
 
 `/live/` is the place to watch a run. Top: the YouTube player and a chat panel with two tabs, "YouTube chat" (the
 live chat embed, `embed_domain` set to the page's host) and "Site chat" (our own, no accounts). Below: a dashboard
-drawn from the stream service's state: a status strip (game time, technologies, science per minute, research
+drawn from the stream service's state: a status strip (game time, technologies, SPM, packs made a minute, research
 progress), alerts, one panel per agent (portrait, model and role, state, current action and place, last two chat
 lines, camera), a map of the base (`static/mapview.js`: buildings by category, ore, enemy nests, turret range and
 terrain frames as layers, from the stream service's once-a-minute `basemap` read; pan, zoom, full screen, follow an

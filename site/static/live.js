@@ -67,7 +67,7 @@
     // YouTube only serves the chat embed when embed_domain matches the page's host.
     ytChat.innerHTML = '<iframe class="yt-chat" title="YouTube live chat" src="https://www.youtube.com/live_chat?v=' +
       encodeURIComponent(videoId) + '&embed_domain=' + encodeURIComponent(location.hostname) + (dark ? '&dark_theme=1' : '') + '"></iframe>';
-    if (!store('chatTab')) selectTab('yt');
+    // (the joined pane already shows the YouTube lines: it stays the default; YouTube's own chat is the other tab)
   }
 
   // tabs: YouTube chat / site chat
@@ -86,13 +86,28 @@
 
   // ------------------------------------------------------------------ site chat
   var chatList = $('#vchat'), chatForm = $('#vchat-form'), chatNote = $('#vchat-note');
-  var lastSeq = null, chatTimer = null, chatMsgs = [];
+  // One pane, both chats in time order (Luna 13:54, a viewer's suggestion): the site's comments (/v1/chat, every 4 s)
+  // and the YouTube lines the stream service passed (state.youtube_chat, push_live.py), each with its source.
+  var lastSeq = null, chatTimer = null, chatMsgs = [], ytLines = [];
+  function joinedChat() {
+    var all = chatMsgs.map(function (m) { return { src: 'site', name: m.name, text: m.text, t: m.t, k: 's' + m.seq }; })
+      .concat(ytLines.map(function (m) { return { src: 'yt', name: m.name, text: m.text, t: m.t, k: 'y' + m.id }; }));
+    all.sort(function (a, b) { return (a.t || 0) - (b.t || 0) || (a.k < b.k ? -1 : 1); });
+    return all.slice(-150);
+  }
   function renderChat() {
-    chatList.innerHTML = chatMsgs.length ? chatMsgs.slice(-150).map(function (m) {
+    if (!chatList) return;
+    var all = joinedChat(), sig = all.map(function (m) { return m.k; }).join(',');
+    if (chatList.dataset.sig === sig) return;  // nothing new: keep the reader's scroll
+    chatList.dataset.sig = sig;
+    var atEnd = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
+    chatList.innerHTML = all.length ? all.map(function (m) {
       var t = new Date(m.t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      return '<li><span class="c-time">' + esc(t) + '</span> <b>' + esc(m.name) + '</b> <span class="c-text">' + esc(m.text) + '</span></li>';
+      return '<li class="c-' + m.src + '"><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-' + m.src + '">' +
+        (m.src === 'yt' ? 'YT' : 'SITE') + '</span> <b>' + esc(m.name) + '</b> <span class="c-text">' + esc(m.text) + '</span></li>';
     }).join('') : '<li class="fx-muted">No messages yet. Say hello.</li>';
-    chatList.scrollTop = chatList.scrollHeight;
+    if (atEnd || !chatList.dataset.seen) chatList.scrollTop = chatList.scrollHeight;
+    chatList.dataset.seen = '1';
   }
   function pollChat() {
     clearTimeout(chatTimer);
@@ -283,6 +298,8 @@
   function renderState(s, age) {
     var agents = s.agents || [], chat = s.chat || [], r = s.research || {}, sci = s.science || {}, board = s.board || {};
     if (s.stream) embedPlayer(s.stream.youtube_video_id, s.stream.youtube_channel_id);
+    ytLines = Array.isArray(s.youtube_chat) ? s.youtube_chat.filter(function (m) { return m && m.text && isFinite(m.t); }) : [];
+    renderChat();
     var byName = {}; agents.forEach(function (a) { byName[a.name] = a; });
     var live = age != null && age <= LIVE_MAX_AGE;
 
@@ -290,7 +307,8 @@
     var pct = Math.round((r.progress || 0) * 100);
     var strip = '<div class="strip-item"><span class="fx-label">Game time</span><b>' + esc(s.game_time || '–') + (s.paused ? ' (paused)' : '') + '</b></div>' +
       '<div class="strip-item"><span class="fx-label">Technologies</span><b>' + esc(r.done_count != null ? r.done_count : '–') + '</b></div>' +
-      '<div class="strip-item"><span class="fx-label">Science / min</span><b>' + esc(sci.spm != null ? fmt(sci.spm) : '–') + '</b></div>' +
+      '<div class="strip-item"><span class="fx-label">SPM</span><b>' + esc(sci.spm != null ? fmt(sci.spm) : '–') + '</b></div>' +
+      '<div class="strip-item"><span class="fx-label">Packs made / min</span><b>' + esc((sci.made || {}).per_min != null ? fmt(sci.made.per_min) : '–') + '</b></div>' +
       '<div class="strip-item"><span class="fx-label">Stage</span><b>' + esc(sci.stage_label || '–') + '</b></div>' +
       (r.current ? '<div class="strip-item strip-research"><div class="live-research-label"><span>Researching <strong>' + esc(r.label || label(r.current)) +
         '</strong></span><span class="live-research-pct">' + pct + '%</span></div><div class="fx-progress fx-progress--research fx-progress--thin" role="progressbar" aria-valuenow="' +
@@ -363,10 +381,10 @@
     var prodSeries = (s.production || []).slice(0, 4).map(function (p, i) {
       return { name: label(p.item), v: '--s' + (i + 1), values: (p.series || []).map(Number) };
     });
-    var sciSeries = [{ name: 'Science packs', v: '--s1', values: (sci.series || []).map(Number) }];
+    var sciSeries = [{ name: 'SPM', v: '--s1', values: (sci.series || []).map(Number) }];
     charts = {};
     var chartHtml = lineChart('Production', 'Items made per minute, last 30 minutes', prodSeries, 'per minute') +
-      lineChart('Science', 'All science packs per minute, last 30 minutes', sciSeries, 'packs per minute');
+      lineChart('Science', 'SPM: research units a minute (the labs\' use of packs in sets), last hour', sciSeries, 'research units per minute');
 
     // game chat
     var gchat = chat.slice(-12).map(function (c) {

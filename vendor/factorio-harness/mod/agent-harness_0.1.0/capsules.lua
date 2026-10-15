@@ -10,10 +10,15 @@ return function(api)
   local M = {handlers={}}
   local SUPPORTED = {throw=true, ['use-on-self']=true}
   M.schema = {
-    use_item = {item='a capsule you hold: grenade, cluster-grenade, poison-capsule, slowdown-capsule, defender-capsule, distractor-capsule, destroyer-capsule, raw-fish, ...',
+    use_item = {item='a capsule you hold: grenade, cluster-grenade, poison-capsule, slowdown-capsule, defender-capsule, distractor-capsule, destroyer-capsule, raw-fish, cliff-explosives, ...',
       position='{x,y} target for a thrown capsule: in sight, within its range (and beyond its minimum range); not for one used on yourself',
       quality='default normal',
-      returns='used, kind (throw|self), target, projectile, distance, range, cooldown_ticks, left (how many you still hold), healed (self). Refused: not held, not a capsule, out of range (with the range), too close, cooling down (ticks left)'},
+      walk='cliff-explosives only: true walks into range first (as clear_cliffs)',
+      returns='used, kind (throw|self), target, projectile, distance, range, cooldown_ticks, left (how many you still hold), healed (self). Refused: not held, not a capsule, out of range (with the range), too close, cooling down (ticks left). cliff-explosives: a timed call, as clear_cliffs with that one position'},
+    clear_cliffs = {position='{x,y} a cliff (as scan lists it) or a spot whose blast reaches cliffs', positions='or 1..16 of them, cleared in order',
+      walk='default true: walk into the explosives\' range of each spot first (pathfinding as move_to); false: a spot out of range ends out_of_range',
+      item='default cliff-explosives', quality='default normal', ticks='1..36000 (default 7200)',
+      returns='throws cliff explosives as a player does: the game\'s own capsule (range 10 tiles from the character, cooldown 30 ticks, blast radius 1.5), one per spot, each landing before the next; a timed call. Reply: until_tick, spots [{position, cliffs: the cliffs in its blast now}], range, held; refused at once when no listed spot has a cliff in its blast (the nearest cliff named). last: thrown, destroyed [{name, position}], skipped [{position, why}], left (explosives still held); outcomes cliffs_destroyed | nothing_destroyed | out_of_items | out_of_range | timed_out'},
   }
   local function ready_ticks()
     local s = api.state()
@@ -45,7 +50,13 @@ return function(api)
     local proto = prototypes.item[a.item]
     assert(proto, 'unknown item ' .. a.item)
     local ca = proto.capsule_action
-    assert(ca, a.item .. ' is not a capsule (grenades, poison and slowdown capsules, combat robot capsules, raw fish)')
+    assert(ca, a.item .. ' is not a capsule (grenades, poison and slowdown capsules, combat robot capsules, raw fish, cliff explosives)')
+    -- Cliff explosives (Sol 15:41: "destroy-cliffs not usable this way" at (82,38.5) on Gleba): a throw whose blast
+    -- destroys cliffs, timed until it lands (clear_cliffs).
+    if ca.type == 'destroy-cliffs' then
+      assert(a.position ~= nil, 'position is required: the cliff to blow up (as scan lists it)')
+      return M.handlers.clear_cliffs(p, {position=a.position, item=a.item, quality=a.quality, walk=a.walk == true})
+    end
     assert(SUPPORTED[ca.type], a.item .. ' (' .. tostring(ca.type) .. ') is not usable this way; use_item throws or uses capsules on yourself')
     local quality = a.quality or 'normal'
     local c = p.character
@@ -97,6 +108,137 @@ return function(api)
     ready_ticks()[p.index] = game.tick + cooldown
     out.left = have - 1
     return out
+  end
+  -- ---- cliff explosives -------------------------------------------------------------------------------------------
+  local function cliff_capsule(name)
+    local proto = prototypes.item[name]
+    assert(proto, 'unknown item ' .. name)
+    local ca = proto.capsule_action
+    assert(ca and ca.type == 'destroy-cliffs', name .. ' is not a cliff explosive (cliff-explosives)')
+    local ap = ca.attack_parameters or {}
+    local projectile = find(ap, 'projectile', 0) or name
+    return {range=ap.range or 10, cooldown=math.max(1, math.floor(ap.cooldown or 30)), radius=ca.radius or 1.5, projectile=projectile}
+  end
+  -- The cliffs a blast at pos destroys (the capsule's radius, cliff boxes touching it: a margin of half a tile).
+  local function in_blast(surface, pos, radius)
+    local out = {}
+    for _, e in ipairs(surface.find_entities_filtered{type='cliff', position=pos, radius=radius + 0.5, limit=16}) do
+      if e.valid then out[#out+1] = e end
+    end
+    return out
+  end
+  local function cliff_rows(list)
+    local out = {}
+    for _, e in ipairs(list) do if e.valid then out[#out+1] = {name=e.name, position={x=e.position.x, y=e.position.y}} end end
+    return out
+  end
+  function M.handlers.clear_cliffs(p, a)
+    local item = a.item or 'cliff-explosives'
+    local cap = cliff_capsule(item)
+    local quality = a.quality or 'normal'
+    local c = p.character
+    assert(c and c.valid, 'a living character is required')
+    local have = api.held(p, item, quality)
+    assert(have > 0, 'no ' .. item .. ' held')
+    local list
+    if a.positions ~= nil then
+      assert(a.position == nil, 'position or positions, not both')
+      assert(type(a.positions) == 'table' and #a.positions >= 1 and #a.positions <= 16, 'positions requires 1..16 {x,y}')
+      list = {}
+      for _, raw in ipairs(a.positions) do list[#list+1] = api.position(raw) end
+    else
+      assert(a.position ~= nil, 'position or positions is required: the cliffs to blow up (as scan lists them)')
+      list = {api.position(a.position)}
+    end
+    local spots, any = {}, false
+    for _, pos in ipairs(list) do
+      api.assert_visible(p, pos, 'cliff')
+      local cl = in_blast(p.surface, pos, cap.radius)
+      any = any or #cl > 0
+      spots[#spots+1] = {position=pos, cliffs=cliff_rows(cl)}
+    end
+    if not any then
+      local near = p.surface.find_entities_filtered{type='cliff', position=list[1], radius=32, limit=64}
+      local best, bd
+      for _, e in ipairs(near) do
+        local d = api.distance(list[1], e.position)
+        if not bd or d < bd then best, bd = e, d end
+      end
+      error(string.format('no cliff within the blast (radius %g) of (%g,%g)%s', cap.radius, list[1].x, list[1].y,
+        best and string.format('; nearest cliff: %s at (%g,%g), %.1f tiles away', best.name, best.position.x, best.position.y, bd) or '; none within 32 tiles'), 0)
+    end
+    local walk = a.walk ~= false
+    if not walk then
+      local d = api.distance(c.position, list[1])
+      if d > cap.range then
+        error(string.format('out of range: (%g,%g) is %.1f tiles away; %s reaches %g tiles (walk: true walks into range first)', list[1].x, list[1].y, d, item, cap.range), 0)
+      end
+    end
+    local ticks = api.integer(a.ticks, 7200, 1, 36000, 'ticks')
+    local action = {kind='clear_cliffs', item=item, quality=quality, spots=list, i=1, walk=walk, until_tick=game.tick + ticks,
+      report={thrown=0, destroyed={}, skipped={}, item=item}}
+    api.start(p, action)
+    return {until_tick=action.until_tick, spots=spots, range=cap.range, blast_radius=cap.radius, held=have,
+      timed='until tick ' .. action.until_tick .. ': last.destroyed says which cliffs went (status, fh --wait)'}
+  end
+  function M.tick_cliffs(p, action, tick)
+    local cap = cliff_capsule(action.item)
+    local r = action.report
+    local c = p.character
+    if not (c and c.valid) then return 'failed' end
+    r.left = api.held(p, action.item, action.quality)
+    local pend = action.pending
+    if pend then  -- the thrown capsule lands: which of its cliffs are gone
+      if tick < pend.check_tick then return nil end
+      for i, e in ipairs(pend.cliffs) do
+        if not e.valid then r.destroyed[#r.destroyed+1] = pend.rows[i] end
+      end
+      action.pending, action.i = nil, action.i + 1
+      return nil
+    end
+    local pos = action.spots[action.i]
+    if not pos then return #r.destroyed > 0 and 'cliffs_destroyed' or 'nothing_destroyed' end
+    local cl = in_blast(p.surface, pos, cap.radius)
+    if #cl == 0 then
+      r.skipped[#r.skipped+1] = {position=pos, why='no cliff left in the blast'}
+      action.i = action.i + 1
+      return nil
+    end
+    if r.left <= 0 then return 'out_of_items' end
+    local d = api.distance(c.position, pos)
+    if d > cap.range - 0.5 then
+      if not action.walk then return 'out_of_range' end
+      if not action.nav then
+        action.nav = {position=pos, tolerance=cap.range - 2, max_stalls=6, replans=0, stalled=0, last_position=p.position}
+        api.request_path(p, action.nav)
+      end
+      local outcome = api.navigate(p, action.nav)
+      if outcome then
+        api.stop_walking(p)
+        action.nav = nil
+        if outcome ~= 'arrived' and outcome ~= 'arrived_near' and api.distance(c.position, pos) > cap.range - 0.5 then
+          r.skipped[#r.skipped+1] = {position=pos, why='could not walk into range (' .. tostring(outcome) .. ')'}
+          action.i = action.i + 1
+        end
+      end
+      return nil
+    end
+    if action.nav then api.stop_walking(p); action.nav = nil end
+    if tick < (ready_ticks()[p.index] or 0) then return nil end
+    -- The game's own capsule: its projectile from the character, with it as the source (its blast destroys cliffs).
+    local made = p.surface.create_entity{name=cap.projectile, position=c.position, target=pos, source=c, force=p.force, speed=0.3, max_range=cap.range + 2}
+    if not made then
+      r.skipped[#r.skipped+1] = {position=pos, why='the game did not create ' .. tostring(cap.projectile)}
+      action.i = action.i + 1
+      return nil
+    end
+    local removed = p.get_main_inventory().remove{name=action.item, count=1, quality=action.quality}
+    if removed ~= 1 then return 'failed' end
+    ready_ticks()[p.index] = tick + cap.cooldown
+    r.thrown = r.thrown + 1
+    r.left = r.left - 1
+    action.pending = {cliffs=cl, rows=cliff_rows(cl), check_tick=tick + math.ceil(d / 0.3) + 15}
+    return nil
   end
   return M
 end
