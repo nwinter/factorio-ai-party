@@ -148,13 +148,14 @@ surface.can_place_entity=function(a)
 end
 fails(function() bot('build',{item='gun-turret',position={x=5,y=0}}) end,
   '; nearest spots where gun-turret fits within your build reach (game build check): (5,-2), (5,2), (4,-2)')
-fails(function() bot('build',{item='gun-turret',position={x=3,y=30}}) end,
+-- (walk: false: refused in place of the walk into reach a build makes by default, autowalk.lua)
+fails(function() bot('build',{item='gun-turret',position={x=3,y=30},walk=false}) end,
   'out of build reach: ')
-fails(function() bot('build',{item='gun-turret',position={x=3,y=30}}) end,
+fails(function() bot('build',{item='gun-turret',position={x=3,y=30},walk=false}) end,
   '; nearest spots where gun-turret fits within your build reach (game build check): (3,9), (2,9), (4,9); or walk closer (move_to) and build again')
 eq(c.items['gun-turret'],2)
 -- Other items out of reach: unchanged.
-ok,err=pcall(bot,'build',{item='stone-furnace',position={x=3,y=30}})
+ok,err=pcall(bot,'build',{item='stone-furnace',position={x=3,y=30},walk=false})
 assert(not ok and err:find('out of build reach',1,true) and not err:find('spots',1,true),err)
 -- The suggestion builds.
 eq(bot('build',{item='gun-turret',position={x=3,y=9}}).consumed,1)

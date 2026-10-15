@@ -117,7 +117,7 @@ eq(b.consumed,1); eq(c.items['stone-furnace'],0)
 local placed=created[#created].args
 eq(placed.name,'stone-furnace'); eq(placed.player,nil); eq(placed.force,force)
 fails(function() bot('build',{item='stone-furnace',position={x=3,y=1}}) end,'not in main inventory')
-fails(function() c.items['stone-furnace']=1; bot('build',{item='stone-furnace',position={x=20,y=0}}) end,'out of build reach')
+fails(function() c.items['stone-furnace']=1; bot('build',{item='stone-furnace',position={x=20,y=0},walk=false}) end,'out of build reach')
 -- Remnants go before a build: shake3's bots were refused by the stump a mined
 -- tree left ("placement blocked by tree-08-stump"). A character corpse stays.
 local stump={valid=true,type='corpse',name='tree-08-stump',position={x=3.2,y=0.1}}

@@ -114,11 +114,16 @@ for _=1,20 do game.tick=game.tick+10; if T.tick(p,action) then break end end
 eq(tile_at(192,59).name,'grass-1'); eq(tile_at(194,59).name,'grass-1'); eq(tile_at(193,59).name,'stone-path'); eq(mark.valid,false)
 fails(function() T.handle(p,{tiles=true,area={left_top={x=0,y=0},right_bottom={x=40,y=1}}}) end,'area must be 1..32 tiles a side')
 fails(function() T.handle(p,{tiles=true,area={left_top={x=160,y=40},right_bottom={x=170,y=45}}}) end,'no tile laid by a player in the area (50 natural tiles)')
--- Out of reach: refused without walk; with walk the action walks to each and mines it there.
+-- Out of reach: refused with walk: false; by default within 32 tiles (autowalk.lua), and with walk at any distance, the
+-- action walks to each and mines it there.
 lay(220,54,'landfill','wetland-yumako')
-fails(function() T.handle(p,{tiles=true,position={x=220,y=54}}) end,'landfill at (220,54) is out of reach: 24.9 tiles from the character at (195.1,54.6) to its edge, reach 10 (walk: true walks into reach)')
+fails(function() T.handle(p,{tiles=true,position={x=220,y=54},walk=false}) end,'landfill at (220,54) is out of reach: 24.9 tiles from the character at (195.1,54.6) to its edge, reach 10')
+reply,action=T.handle(p,{tiles=true,position={x=220,y=54}})
+eq(reply.walking,'landfill at (220,54) is 24.9 tiles away (to its edge), reach 10: walking into reach first (walk: false refuses instead)'); eq(action.walk,true)
+lay(240,54,'landfill','wetland-yumako')
+fails(function() T.handle(p,{tiles=true,position={x=240,y=54}}) end,'landfill at (240,54) is out of reach: 44.9 tiles from the character at (195.1,54.6) to its edge, reach 10; 44.9 tiles is past the 32 a call walks by default: walk: true walks there first')
 reply,action=T.handle(p,{tiles=true,position={x=220,y=54},walk=true})
-eq(reply.out_of_reach,1)
+eq(reply.out_of_reach,1); eq(reply.walking,nil)
 eq(T.tick(p,action),nil); eq(#navs,1); eq(navs[1].position.x,220.5); eq(navs[1].tolerance,8.5)
 navs[1].arrive='arrived'; p.position={x=212,y=54.5}
 eq(T.tick(p,action),nil); eq(action.nav,nil); eq(type(action.mining),'number')

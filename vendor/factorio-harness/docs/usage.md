@@ -925,6 +925,38 @@ fh call status
     cover, and lived; with no walk on, the spitter caught it once it stood.
 - Output is compact tables meant for reading. Use `--format json` for programs.
 
+### Out of reach: the call walks first
+
+`transfer`, `collect`, `feed`, `rearm`, `refuel`, `mine` (tiles too), `build`, `rotate` and `configure` (where it needs
+reach) take `walk` (autowalk.lua; Haiku 22:53, friction1300's 16 refusals in an hour).
+- `walk` omitted: a target out of reach within 32 tiles of the character (to its edge; a build position to the position)
+  is walked into reach first, and the call is made there. The reply's `walking` line says so, e.g. `iron-chest (59.5,19.5)
+  is 17.9 tiles away (to its edge), reach 10: walking into reach first (walk: false refuses instead)`.
+- Past 32 tiles the call is refused, and the refusal ends with the same call with `walk: true`: `...; 45.0 tiles is past
+  the 32 a call walks by default: transfer {"item":"coal","position":{"x":7.5,"y":70.5},"walk":true} walks there first`.
+- `walk: true` walks there from farther too. `walk: false` refuses out of reach, nothing walked, as before.
+- How each walks:
+  - `transfer`, `collect`, `feed` walk as their `walk: true` tours do (`legs`, `out_of_reach`, outcomes as there).
+  - `rearm` and `refuel` with `positions` walk the tour `radius` walks, over those turrets or burners. `below` leaves
+    the turrets holding enough (`held_enough`), and none of them is walked to.
+  - `mine`, `build`, `rotate`, `configure` walk as `move_to {target, reach}` does. Status shows `active.kind: move_to`
+    with `walking_for: mine`. On arrival the call is made: a mine goes on as a mine (`last.walked` names the walk); any
+    other ends with `last.outcome: done`, `last.result` (the call's reply) and `last.walked`, or `failed` with
+    `last.error`. A walk that does not get there leaves `last.not_made` (`build was not made: the walk into reach of
+    (20,0) ended unreachable`).
+  - `build` with `builds` builds the entries in order; an entry out of reach is walked to, and the rest is built from
+    there (the reply: `built` so far and `walking` for `entry N of M`).
+  - `configure` walks only where reach is needed: modules `by: hand`, and a recipe change on a machine holding items or
+    mid-craft, for one machine. Anything else out of reach still goes by remote view, nothing walked.
+- Safety: every such walk keeps the enemy checks. A goal inside a weapon's reach the map shows is refused unless
+  `unsafe_goal: true`; `avoid_enemies` goes round the nests as `move_to`'s does. The tours leave out and name a place
+  inside one. Tile mining skips such tiles. The train guard and a standing `retreat_guard` apply to the walk as to any
+  `move_to`.
+- `fh call` waits for a call that walks as `--wait` does, since the same call in reach would have been done at once.
+- A queue step waits for the walk and the call. The step succeeds on `done` or the call's own outcome, and fails when
+  the walk did not get there.
+- A call that walks replaces the running action, as any timed call does.
+
 ### Output shape, chat and time left
 
 ```sh
