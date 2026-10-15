@@ -119,6 +119,24 @@ game.tick=9600; r=Wk.handlers.sleep_check(p,{peek=true}); eq(r.woke,'alert'); eq
 game.tick=10000; r=Wk.handlers.sleep(p,{seconds=60,condition={['until']='alert',kinds='low_power'}}); eq(r.condition,'alert low_power')
 fails(function() Wk.handlers.sleep(p,{seconds=60,condition={['until']='alert',kinds={}}}) end,'kinds: 1..16 alert kinds')
 fails(function() Wk.handlers.sleep(p,{seconds=60,condition={['until']='alert',kinds={'low power!'}}}) end,'kinds are alert kind names')
+-- round1950a item 2 (Haiku 46h51m: a big spitter's acid, "hit 8 times by enemies"): a hit with no attacker named
+-- wakes too; and the health to fall from is the highest seen in the sleep (a sleep begun hurt heals meanwhile).
+p.character={valid=true,health=250,unit_number=7}; s.alert_seq=nil
+game.tick=11230; W.handlers.sleep(p,{seconds=60}); eq(W.handlers.sleep_check(p,{peek=true}).woke,nil)
+s.char_hits={[7]={hits=1,damage=40,last=11235}}; game.tick=11236
+r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'damaged'); eq(r.by,'enemies')
+s.char_hits=nil
+game.tick=11250; p.character.health=100; W.handlers.sleep(p,{seconds=60})
+game.tick=11260; p.character.health=250; eq(W.handlers.sleep_check(p,{peek=true}).woke,nil,'healed: no wake')
+game.tick=11270; p.character.health=200
+r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'damaged'); eq(r.lost,50); eq(r.health,200)
+p.character.health=250
+-- Walked away when hit (runtime.lua idle_hit): the wake says where.
+game.tick=11300; W.handlers.sleep(p,{seconds=60})
+s.idle_fled={[1]={tick=11301,from={x=151.2,y=-26},to={x=127,y=-26},by='big-spitter'}}; s.char_hits={[7]={hits=1,damage=40,last=11301,by='big-spitter'}}
+game.tick=11302; r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'damaged'); eq(r.fled,'hit by big-spitter at (151.2,-26.0): walking away to (127,-26)')
+s.idle_fled=nil; s.char_hits=nil
+mode='realtime'
 -- In turns mode the clock is asked to run for the sleep (advance caps at 36000).
 p.character={valid=true,health=250}; mode='turns'
 W.handlers.sleep(p,{seconds=900}); eq(advanced,36000)

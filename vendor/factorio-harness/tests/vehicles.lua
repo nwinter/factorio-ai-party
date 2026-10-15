@@ -190,7 +190,7 @@ local asked={}
 surface.request_path=function(a) asked[#asked+1]=a; return 900+#asked end
 car.position={x=60,y=20}; car.orientation=0.25; car.speed=0
 r=astra('vehicle',{drive={x=100,y=20}})
-eq(r.pathfinding,true); eq(r.avoid_enemies,'worms (range + 4)')
+eq(r.pathfinding,true); eq(r.avoid_enemies,'worms (range + 4), spawners (40 tiles + 4) and areas under attack now (24 tiles + 4)')
 -- first as wide as its diagonal plus a tile (1.22 + 0.5 for a 1.4 by 2.0 car)
 eq(#asked,1); assert(math.abs(asked[1].bounding_box[2][1]-1.7207)<0.001,asked[1].bounding_box[2][1]); eq(asked[1].collision_mask.layers.car,true); eq(asked[1].entity_to_ignore,car); eq(asked[1].radius,4)
 drive_ticks(30); eq(car.position.x,60) -- no path yet: it waits

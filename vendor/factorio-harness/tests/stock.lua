@@ -126,6 +126,33 @@ visits={}
 tour=stock.start_tour(p,'refuel',{t1,t2,t3},600,{item='coal',count=5,stop_at_two=true})
 eq(stock.tick(p,tour),'out_of_items'); eq(#visits,2)
 eq(stock.tick(p,stock.start_tour(p,'refuel',{},600,{item='coal'})),'nothing_to_do')
+-- Every tour walks with the enemy check (round1950a, Haiku 45h02m: a rearm tour walked into attack #1550 and died;
+-- its cluster lay in attack #1548): avoid_enemies as move_to's (default on; false: none), and a place inside a
+-- reach is left out and named unless unsafe_goal.
+do
+  local kv,kc,kt,km,ks,kr=api.visit,api.goal_check,api.goal_text,api.avoid_mode,api.avoid_start,reachable
+  local visited,started={},0
+  api.visit=function(_,_,e) visited[#visited+1]=e.position.x; return {transferred=5} end
+  api.avoid_mode=function(v) if v==false then return nil end return {pad=4,spawners=true,attacks=true,v=v} end
+  api.goal_check=function(_,_,goal) if goal.x==30 then return {m={name='attack #1548',attack=true,x=30,y=4,range=24},d=4} end end
+  api.goal_text=function(label,goal) return label..' ('..goal.x..','..goal.y..') is within 24 tiles of attack #1548 at (30,4)' end
+  api.avoid_start=function() started=started+1 end
+  local a1,a2,a3={valid=true,position={x=3,y=0}},{valid=true,position={x=30,y=0}},{valid=true,position={x=40,y=0}}
+  reachable={[a1]=true,[a3]=true}
+  local tour,info=stock.start_tour(p,'rearm',{a1,a2,a3},600,{item='firearm-magazine',count=10})
+  eq(tour.avoid_mode.pad,4); eq(tour.avoid_enemies,nil)
+  for _=1,4 do if stock.tick(p,tour) then break end end
+  eq(table.concat(visited,','),'3,40','the place in the attack left out'); eq(tour.danger,1)
+  eq(tour.dangers[1],'place (30,0) is within 24 tiles of attack #1548 at (30,4)')
+  eq(tour.first_unreached,'(30,0): place (30,0) is within 24 tiles of attack #1548 at (30,4) (unsafe_goal: true walks there)')
+  -- unsafe_goal walks there; avoid_enemies=false has no check
+  visited={}; reachable={[a1]=true,[a3]=true}
+  tour=stock.start_tour(p,'rearm',{a1,a2,a3},600,{item='firearm-magazine',count=10,unsafe_goal=true})
+  stock.tick(p,tour); eq(tour.danger,nil); assert(tour.nav and tour.nav.position.x==30,'walks to the place in the attack')
+  tour=stock.start_tour(p,'rearm',{a1},600,{item='firearm-magazine',avoid_enemies=false}); eq(tour.avoid_mode,nil)
+  tour=stock.start_tour(p,'rearm',{a1},600,{item='firearm-magazine',avoid_enemies=true}); eq(tour.avoid_mode.v,true)
+  api.visit,api.goal_check,api.goal_text,api.avoid_mode,api.avoid_start,reachable=kv,kc,kt,km,ks,kr
+end
 -- A courier whose take fails goes no further (round1650d: Luna's walked on to the give): failed, with the first error.
 do
   local kept=api.visit

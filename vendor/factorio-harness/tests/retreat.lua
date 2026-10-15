@@ -226,6 +226,100 @@ eq(#asked,1); eq(asked[1].goal.x,-40) -- the way back is asked for
 -- Not on a dry run.
 astra('vehicle',{drive={x=100,y=0},dry_run=true,retreat={to={x=-40,y=0}}})
 astra('vehicle',{exit=true})
+-- round1950a item 2 (Haiku 46h51m: a big spitter's acid killed it inside one 1 s check of its sleep; it woke only as
+-- died): a hit with nothing walking it walks the character away at once, 24 tiles straight from the attacker, and the
+-- sleep wakes damaged saying so. A hit with no attacker named (acid) goes from the nearest enemy within 40 tiles.
+-- retreat_guard {idle: false} keeps it standing; a move_to (its own retreat) is left alone.
+do
+  local idx=runtime.bots.index_of('sol')
+  local body=runtime.lookup(idx).character
+  body.position={x=0,y=0}; body.health=250
+  sol('stop'); asked={}
+  sol('sleep',{seconds=300})
+  local spitter={valid=true,name='big-spitter',type='unit',position={x=10,y=0},force=game.forces.enemy}
+  local function hit(cause) runtime.on_event{name=defines.events.on_entity_damaged,entity=body,force=game.forces.enemy,cause=cause,final_damage_amount=40,tick=tick} end
+  hit(spitter); body.health=210
+  advance(1)
+  local act=sol('status').active
+  eq(act.kind,'move_to'); eq(act.to.x,-24); eq(act.to.y,0)
+  assert(tostring(act.retreating or ''):find('hit by big-spitter with no action running; walking away to (-24,0)',1,true),tostring(act.retreating))
+  local w=sol('sleep_check',{peek=true})
+  eq(w.woke,'damaged'); eq(w.by,'big-spitter'); eq(w.fled,'hit by big-spitter at (0.0,0.0): walking away to (-24,0)')
+  -- arrived: retreated, away at the spot
+  body.position={x=-24,y=0}; advance(2)
+  local last=sol('status').last
+  eq(last.outcome,'retreated'); eq(last.retreated.going,'away at (-24,0)'); eq(last.retreated.why,'hit by big-spitter with no action running')
+  -- No attacker named (a spitter's acid): away from the nearest enemy within 40 tiles; the sleep wakes on it too.
+  jump(700); body.position={x=0,y=0}; body.health=250
+  storage.agent_harness.char_hits=nil -- (the hit record of a new incident: no attacker named yet)
+  local find=surface.find_entities_filtered
+  surface.find_entities_filtered=function(f) if f.force=='enemy' and f.radius then return {spitter} end return find(f) end
+  sol('sleep',{seconds=300})
+  hit(nil); advance(1)
+  eq(sol('status').active.to.x,-24)
+  w=sol('sleep_check',{peek=true}); eq(w.woke,'damaged'); eq(w.by,'enemies')
+  surface.find_entities_filtered=find
+  sol('stop')
+  -- idle: false keeps it standing; set and read back.
+  local g=sol('retreat_guard',{idle=false}); eq(g.idle,false); eq(g.retreat_guard,false)
+  assert(sol('status').retreat_guard:find('idle: false',1,true),sol('status').retreat_guard)
+  jump(700); hit(spitter); advance(1)
+  eq(sol('status').active,false)
+  sol('retreat_guard',{idle=true}); eq(sol('status').retreat_guard,nil)
+  -- A move_to has its own retreat: a hit leaves it walking where it was going.
+  jump(700); sol('move_to',{position={x=50,y=0},pathfind=false})
+  hit(spitter); advance(1)
+  eq(sol('status').active.to.x,50)
+  sol('stop')
+  storage.agent_harness.damage=nil -- (these hits made attack #1 at (0,0), under attack now for a minute)
+  -- The spot away is outside every worm's range the map shows: a medium worm at (-30,0) holds the spot straight away
+  -- (-24,0) and those 45 degrees off it, so the walk goes 90 degrees off, to (0,-24).
+  prototypes=prototypes or {}; prototypes.entity=prototypes.entity or {}
+  prototypes.entity['medium-worm-turret']={attack_parameters={range=30}}
+  local worm={valid=true,name='medium-worm-turret',type='turret',position={x=-30,y=0},force=game.forces.enemy}
+  local find=surface.find_entities_filtered
+  surface.find_entities_filtered=function(f)
+    if f.area and f.type then
+      local a=f.area
+      if worm.position.x>=a[1][1] and worm.position.x<a[2][1] and worm.position.y>=a[1][2] and worm.position.y<a[2][2] then return {worm} end
+      return {}
+    end
+    return find(f)
+  end
+  storage.agent_harness.enemy_chunks=nil; storage.agent_harness.char_hits=nil
+  jump(700); body.position={x=0,y=0}; body.health=250
+  hit(spitter); advance(1)
+  local away=sol('status').active
+  eq(away.kind,'move_to'); eq(away.to.x,0); eq(away.to.y,-24)
+  sol('stop'); surface.find_entities_filtered=find; storage.agent_harness.enemy_chunks=nil; storage.agent_harness.damage=nil
+  -- Turret cover first: one of ours within 96 tiles that holds ammo and is not past the attacker, 3 tiles behind it;
+  -- one with no ammo, or past the attacker, is no cover.
+  defines.inventory.turret_ammo=defines.inventory.turret_ammo or 7
+  local function turret(x,y,ammo) return {valid=true,name='gun-turret',type='ammo-turret',position={x=x,y=y},force=force,
+    get_inventory=function() return {is_empty=function() return not ammo end} end} end
+  local turrets={turret(-40,0,true),turret(30,0,true),turret(-10,5,false)}
+  surface.find_entities_filtered=function(f)
+    if f.radius==96 then return turrets end
+    return find(f)
+  end
+  storage.agent_harness.char_hits=nil
+  jump(700); body.position={x=0,y=0}; body.health=250
+  hit(spitter); advance(1)
+  away=sol('status').active
+  eq(away.to.x,-43); eq(away.to.y,0)
+  assert(tostring(away.retreating):find('hit by big-spitter with no action running, to the cover of gun-turret (-40,0)',1,true),tostring(away.retreating))
+  -- On arrival, an enemy unit within 20 tiles: it walks on, from that one.
+  surface.find_entities_filtered=function(f)
+    if f.radius==20 and f.type=='unit' then return {{valid=true,name='big-spitter',type='unit',position={x=-35,y=0}}} end
+    if f.radius==96 then return {} end
+    return find(f)
+  end
+  body.position={x=-43,y=0}; advance(2)
+  away=sol('status').active
+  eq(away.kind,'move_to'); eq(away.to.x,-67)
+  assert(tostring(away.retreating):find('big-spitter 8 tiles away when the walk away ended',1,true),tostring(away.retreating))
+  sol('stop'); surface.find_entities_filtered=find; storage.agent_harness.damage=nil; storage.agent_harness.idle_fled=nil
+end
 fails(function() astra('move_to',{position={x=1,y=1},retreat={to={x=1,y=1},shield_below=2}}) end,'shield_below is a fraction between 0 and 1')
 fails(function() astra('move_to',{position={x=1,y=1},retreat='home'}) end,'retreat is {to: {x,y}')
 print('retreat: ok')

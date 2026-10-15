@@ -241,7 +241,7 @@ g2.position={x=0,y=0}
 r=grok('recover',{})
 eq(r.places,1); eq(r.corpses[1],'(63.0,0.0) on nauvis: died 0m10s ago, holds 170 items')
 eq(r.legs[1].name,'character-corpse'); eq(r.legs[1].walk,63)
-eq(r.avoid_enemies,'worms (range + 4)')
+eq(r.avoid_enemies,'worms (range + 4), spawners (40 tiles + 4) and areas under attack now (24 tiles + 4)')
 eq(storage.agent_harness.active[index('grok')].kind,'gather')
 -- An item move: the reply ends with the inventory line; a deploy's note calls it recover.
 eq(r.inv,'free 4/4'); eq(r.moved,0)

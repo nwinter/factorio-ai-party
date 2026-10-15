@@ -38,7 +38,8 @@ return function(api)
     if r == false then return nil end
     if r == nil then
       r = (api.state().retreat_guards or {})[p.index]
-      if not r then return nil end
+      -- (a guard that only says idle: false has no retreat for actions)
+      if not (r and (r.to or r.retreat_to)) then return nil end
       standing = true
     end
     if type(r) ~= 'table' then error('retreat is {to: {x,y}, health_below: 0..1, shield_below: 0..1} (any one triggers), or false for none', 0) end
@@ -97,12 +98,25 @@ return function(api)
   M.schema = {
     retreat_guard={to='{x,y}: where to go back to',retreat_to='the same as to',health_below='0..1, default 0.4 when neither is given',shield_below='0..1 (the armor\'s, or the vehicle\'s grid when driving)',
       clear='true: no standing retreat any more',
+      idle='true (default) or false: when hit with no action running, or during a mine, a walking tour, pickup, repair, construct or a wait (with its guns off), the character walks away at once: to to when set, else 24 tiles straight away from the attacker; false keeps it standing',
       note='a standing retreat for move_to, shoot, kite and vehicle drive until cleared (a call\'s own retreat wins; retreat: false skips it); no arguments: shows it',
-      returns='retreat_guard: what is set, or false'},
+      returns='retreat_guard: what is set, or false; idle when set to false'},
   }
   function M.handlers.retreat_guard(p, a)
     local s = api.state()
     s.retreat_guards = s.retreat_guards or {}
+    -- idle (round1950a): walking away when hit with nothing walking it; kept with the guard, or alone.
+    if a.idle ~= nil then
+      if type(a.idle) ~= 'boolean' then error('idle must be true or false', 0) end
+      if a.clear ~= nil then error('clear goes alone', 0) end
+      if a.to == nil and a.retreat_to == nil and a.health_below == nil and a.shield_below == nil then
+        local g = s.retreat_guards[p.index] or {}
+        if a.idle == false then g.idle = false else g.idle = nil end
+        if next(g) == nil then s.retreat_guards[p.index] = nil else s.retreat_guards[p.index] = g end
+        return {retreat_guard=g.to and line({to=g.to, health_below=g.health_below, shield_below=g.shield_below, standing=true}) or false,
+          idle=a.idle}
+      end
+    end
     if a.clear ~= nil then
       if a.clear ~= true then error('clear must be true', 0) end
       if a.to ~= nil or a.retreat_to ~= nil or a.health_below ~= nil or a.shield_below ~= nil then error('clear goes alone', 0) end
@@ -111,13 +125,20 @@ return function(api)
     end
     if a.to == nil and a.retreat_to == nil and a.health_below == nil and a.shield_below == nil then
       local g = s.retreat_guards[p.index]
-      return {retreat_guard=g and line({to=g.to, health_below=g.health_below, shield_below=g.shield_below, standing=true}) or false}
+      local out = {retreat_guard=g and g.to and line({to=g.to, health_below=g.health_below, shield_below=g.shield_below, standing=true}) or false}
+      if g and g.idle == false then out.idle = false end
+      return out
     end
     local cfg = M.config(p, {retreat={to=a.to or a.retreat_to, health_below=a.health_below, shield_below=a.shield_below}})
     if api.check_goal then api.check_goal(p, cfg.to) end
-    s.retreat_guards[p.index] = {to=cfg.to, health_below=cfg.health_below, shield_below=cfg.shield_below, set_tick=game.tick}
+    local was = s.retreat_guards[p.index]
+    local g = {to=cfg.to, health_below=cfg.health_below, shield_below=cfg.shield_below, set_tick=game.tick}
+    if a.idle == false or (a.idle == nil and was and was.idle == false) then g.idle = false end
+    s.retreat_guards[p.index] = g
     cfg.standing = true
-    return {retreat_guard=line(cfg)}
+    local out = {retreat_guard=line(cfg)}
+    if g.idle == false then out.idle = false end
+    return out
   end
   return M
 end
