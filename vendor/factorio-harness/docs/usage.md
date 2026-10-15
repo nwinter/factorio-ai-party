@@ -3013,7 +3013,9 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     character. `closed_in` instead: `the character is closed in already where it stands ...` (nothing blamed on the
     plan). A build reply says the same after the fact: `closed_in: the character is closed in now where it stands
     (0.5,78.5): the last gap out was where pipe (-1.5,78.5) now stands; ...`. About 1 ms a check on a private 2.0.77
-    server (no way out within 16 tiles counts as closed in).
+    server (no way out within 16 tiles counts as closed in). It ends with the call that opens it (Gemini, d15 07:54:
+    twice closed in by accumulators, each time one mine and one move_to): `; mine {"position":{"x":-1.5,"y":78.5}}
+    takes pipe back and opens a way out`.
   - `build` dry runs also report `pockets` away from the character: up to four newly enclosed walkable areas, their
     `area`, approximate `walkable_tiles`, and `planned_boundary` entries (`index`, `name`, `position`, `tiles`, the
     inclusive tile-coordinate footprint). Existing closed pockets are excluded; ground made walkable by this plan

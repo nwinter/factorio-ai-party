@@ -4211,8 +4211,11 @@ function M.closed_in_note(p,built)
   local what=#list==1 and 'the last gap out was where '..list[1]..' now stands'
     or #list>1 and 'without any one of '..table.concat(list,', ')..(#built>#list and string.format(' (of %d built now)',#built) or '')..' a gap out would stay'
     or 'what this build placed closes it'
-  return string.format('the character is closed in now where it stands (%g,%g): %s; %s',math.floor(here.x*10+0.5)/10,math.floor(here.y*10+0.5)/10,
-    what,M.pathing.area_text(res.region,half))
+  -- The one call that opens it (Gemini, d15 07:54: twice closed in by accumulators; each time one mine and one move_to).
+  local g=res.gaps[1]
+  local fix=g and string.format('; mine {"position":{"x":%g,"y":%g}} takes %s back and opens a way out',g.position.x,g.position.y,g.name) or ''
+  return string.format('the character is closed in now where it stands (%g,%g): %s; %s%s',math.floor(here.x*10+0.5)/10,math.floor(here.y*10+0.5)/10,
+    what,M.pathing.area_text(res.region,half),fix)
 end
 -- After a build or a ghost placement: logistic chests that no roboport's logistic area covers (networks.lua;
 -- Sonnet, shift10: 8 chests with 31k copper sat outside roboport range for hours) and underground entrances fed

@@ -505,7 +505,8 @@ eq(wood.count,2); eq(p.cursor_stack.valid_for_read,false); eq(built.closed_in,ni
   placed=nil
   local walled=call('build',{item='wooden-chest',position={x=2,y=0}})
   eq(walled.closed_in,'the character is closed in now where it stands (0,0): the last gap out was where wooden-chest (2.5,0.5) now stands; '..
-    'the area (1,1)-(3,3) (about 10 tiles) has no gap the character (0.4 tiles wide) fits through; around it: wooden-chest')
+    'the area (1,1)-(3,3) (about 10 tiles) has no gap the character (0.4 tiles wide) fits through; around it: wooden-chest; '..
+    'mine {"position":{"x":2.5,"y":0.5}} takes wooden-chest back and opens a way out')
   runtime.pathing.closed_by=closed_by
   wood.count=2
 end)()
