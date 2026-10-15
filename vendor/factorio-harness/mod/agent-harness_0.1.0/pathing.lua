@@ -411,6 +411,19 @@ return function(api)
         nav.why = string.format('no path for the character to %s on the tile, half- or quarter-tile grid', at(nav.position))
       else
         nav.why = string.format('no path request found a way for the character to %s, nor to anywhere within %d tiles of it', at(nav.position), math.floor(nav.probe_radius or 0))
+        -- Walkable water between (oil ocean, shallow water, wetland) was ground to the requests (friction4: Gemini, shift14
+        -- 23:15, took a walk into its packed island for the oil ocean being impassable; on a copy of world n move_to
+        -- crossed shallow and deep oil ocean). The box from here to the goal, cut to 64 tiles round the goal.
+        if api.walkable_water then
+          local here, goal = p.position, nav.position
+          local function near_goal(v, c) return math.max(c - 64, math.min(c + 64, v)) end
+          local water = try(api.walkable_water, p.surface, {
+            {near_goal(math.min(here.x, goal.x) - 8, goal.x), near_goal(math.min(here.y, goal.y) - 8, goal.y)},
+            {near_goal(math.max(here.x, goal.x) + 8, goal.x), near_goal(math.max(here.y, goal.y) + 8, goal.y)}})
+          if water and #water > 0 then
+            nav.why = nav.why .. string.format(' (the path requests take %s as ground, as the character walks it: it was not what blocked the way)', table.concat(water, ', '))
+          end
+        end
       end
       return M.spot(p, nav)
     end
@@ -790,6 +803,9 @@ return function(api)
     ['solar-panel']=1, lamp=1, tree=1, plant=1, ['simple-entity']=1, ['simple-entity-with-owner']=1,
     ['transport-belt']=2, ['underground-belt']=2, splitter=2, ['lane-splitter']=2, loader=2, ['loader-1x1']=2,
     inserter=2, pipe=2, ['pipe-to-ground']=2, pump=2}
+  -- Never named to mine for a way (friction4: Gemini, shift14 23:13, was told to mine a rocket silo holding a ready
+  -- rocket and 1000 science packs): a silo, a landing pad, a platform hub.
+  local DIG_NEVER = {['rocket-silo']=true, ['cargo-landing-pad']=true, ['space-platform-hub']=true}
   local DIG_COST, DIG_SIDE = 16, 64
   M.DIG_WEIGHT = DIG_WEIGHT
   function M.dig(surface, start, half, opts)
@@ -813,7 +829,7 @@ return function(api)
         local kind = kinds[b[5]]
         if kind == nil then
           local ok, t, m = pcall(function() return e.type, e.minable end)
-          kind = ok and m and t ~= 'cliff' and (DIG_WEIGHT[t] or 3) or false
+          kind = ok and m and t ~= 'cliff' and not DIG_NEVER[t] and (DIG_WEIGHT[t] or 3) or false
           kinds[b[5]] = kind
         end
         if kind then

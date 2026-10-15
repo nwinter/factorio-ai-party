@@ -719,6 +719,18 @@ fh call status
     search spans both points and 8 tiles round them, at most 48 a side (a goal farther off is left alone): on a copy of
     world n's Fulgora island 1.4 to 2.3 ms for Gemini's accumulators, 9 ms at 41 by 46 tiles, once as the walk ends. On
     the copy, mining the 4 accumulators one answer named let the same walk arrive.
+  - friction4 (Gemini, shift14 23:13 and 23:15, walking into its packed island base on Fulgora: told to mine a rocket
+    silo holding a ready rocket, and the electromagnetic plant it walked to; it took the failure for the oil ocean
+    round the island being impassable):
+    - `mine_for_a_way` and `mine_to_get_out` never name a rocket silo, cargo landing pad or platform hub.
+    - When the goal point lies inside an entity, the way ends at that entity's edge (its half-size + 1 from the goal),
+      and the entity is not named.
+    - A walk no path request found a way for adds to its `why` the walkable water in the box from the character to the
+      goal (cut to 64 tiles round the goal): `... nor to anywhere within 15 tiles of it (the path requests take
+      oil-ocean-deep, oil-ocean-shallow as ground, as the character walks it: it was not what blocked the way)`. The
+      path requests walk over shallow water, wetland and both oil oceans: on a copy of world n, `move_to` crossed
+      `oil-ocean-shallow` and went into `oil-ocean-deep`. The read takes 0.1 to 1.3 ms on a copy of world n (emulated;
+      2.8 ms the first time), once as the walk ends.
   - A `build` batch that fails after some entries stand says what those entries closed in its refusal
     (`build 9/9 failed after 8 built: ...; the character is closed in now where it stands (50.5,108.5): ...`; Gemini's
     19:25 batch failed after 2 built, and those 2 had closed the last gap out). A real `place_ghosts` says
@@ -990,6 +1002,30 @@ fh call confessions --since 3                  # your own confessions
   `confessions [{seq,tick,from,text}]` oldest first and `cursor`; poll with `since` = the last cursor.
 - `efficiency` (operator only, the same `operator: true` dispatch; efficiency.lua; Nick 15:50): production credited
   to the agent who built the machine.
+
+### The chronicle
+
+```sh
+fh chronicle "Starling fell to the rocks halfway to Vulcanus." --title "Starling"   # text as for say
+```
+
+- `chronicle {text, title?}` (chronicle.lua; viewer Alex 22:24): an entry in the run's chronicle in the agent's own
+  words, `text` 1..600 characters, `title` 1..80, at most one every 60 s of game time per agent (passive: it never
+  drives the character). Stamped with the game tick and time, the agent, its planet or platform and position, and
+  `refs`: the harness events of the last 15 game minutes on its planet or platform (research: anywhere), or anywhere
+  when there are none there, at most 3, newest first. The reply: `seq, game_time, where, linked` (those events as
+  lines). The pog site shows the chronicle by shift (/chronicle/) and on the live page; the stream's hosts may read a
+  new entry.
+- The events (viewer syndesis 22:24): research finished, a rocket launched, a platform stopped at or left a planet,
+  a platform made (a new one in the force's list; `by`: who made it with `platform_create`), a platform lost (its hub
+  died: `where` it was or the leg it flew, `from`, `to`, `flown` %, `by` what killed the hub, `hit_by` the asteroid
+  kinds that hit it most, `cargo` the top 8 of its hub's items, `cargo_items`, `cargo_kinds`, `creator`), a platform
+  deleted (gone from the list with no hub death), an agent's death (`agent`, where, `by`). Lists are polled once a
+  second; deaths come with on_entity_died. Kept: the last 300 entries and 300 events.
+- The operator reads them with `{"operator":true,"action":"chronicle","args":{"since":0,"events_since":0,"limit":50}}`:
+  `entries` and `events` after their cursors, oldest first, at most `limit` (1..200) of each, each event with its
+  `line`, and `cursor`, `events_cursor`; describe lists it under `operator_reads`. The stream service appends them to
+  runs/RUN/chronicle.jsonl (tools/stream/chronicle_log.py).
   - Who built it: `LuaEntity.last_user` is nil for the agents' builds (bots have no player; every machine read on
     world n on 2026-10-14 had none), so the harness logs it. A machine built by hand (`build`, and `construct`'s
     revives) by its unit number and spot; a ghost an agent places (`place_ghosts`, the routes, `paste`,
@@ -1686,10 +1722,17 @@ fh sleep 900 --until researched                       # ...or until the research
   ghost on it, and on the hub `hub_slots` (`0 of 65 free`). `platforms` shows `hub_slots` per platform, and with
   `platform` set, `construction_blocked`: `hub full: 0 of 65 slots free; 1 marked for deconstruction wait for room
   (removed entities and their contents go to the hub)`, `ghosts wait for items the hub lacks: inserter (ghosts need 1, hub has 0)`.
-  Items count at the ghost's quality. Tile ghosts the game's foundation rules hold back get one line each: a tile
-  that would enclose empty space no ghost covers (`tile ghost (-7.5,8.5) space-platform-foundation: building it would
-  enclose 6 empty tiles with no ghost: (-6.5,8.5), ...`), one with no foundation or tile ghost beside it, one more than
-  200 tiles north of the hub, one in the 82 tiles south of a thruster. `inspect` on a tile ghost shows the same. Every
+  Items count at the ghost's quality. Tile ghosts the game's foundation rules hold back get one line each, by the rules
+  a copy of world n showed (platformtiles2): the hub builds one tile at a time and looks at its 8 neighbours only.
+  A run is the empty side neighbours (north, east, south, west) joined through the empty corners between them.
+  A ghost with two runs would split the empty space beside it and stays, even when each side stays open to space
+  (`tile ghost (-2.5,13.5) space-platform-foundation: building it would split the empty space beside it: (-2.5,12.5)
+  and (-2.5,14.5) meet only through it (...); on one side a hole of 3 empty tiles with no ghost: (-2.5,11.5), ...`:
+  Astra's three ghosts at (-3,12..14) on Sunward, shift14). With the hole's tiles ghosted too, the hub fills it from
+  the far end in (on the copy six ghosts in about 8 s), and such a ghost is not named. An enclosed one-tile hole fills,
+  and foundation at a corner is enough. Also named: one with no foundation among the 8 tiles round it, one more than
+  200 tiles north of the hub, one in the 82 tiles south of a thruster. Each check plays the ghosts out in turn, so a
+  ghost beside one that gets built is not named. `inspect` on a tile ghost shows the same (`tile_wait`). Every
   tile ghost on the platform counts, also past the 64 the check reads and under an entity ghost (Astra, shift12
   12:41: Starling had 336 tile ghosts, and the tile ghost at (-7.5,-0.5) under a belt ghost was named a hole); the
   dry run's hole count looks past the box it reads the same way.
@@ -1723,6 +1766,22 @@ fh sleep 900 --until researched                       # ...or until the research
   mining, building or crafting by hand, the inventory) is refused with that list.
 - `platforms` shows each platform's `defense`: `hub_health` (`637/1000`), `turrets` (`5 gun-turrets: 4 empty, 0 low
   (under 10 rounds)`) and `ammo`, the ammo flow (`turrets hold 6 rounds, the hub firearm-magazine 920`).
+- Every `platforms` row shows `hub_chunks`, the hub slots asteroid chunks take (Astra, shift14 22:50: a chunk backlog
+  hid in the raw stock; a chunk stacks to 1): `asteroid chunks take 22 of 99 slots (carbonic 9, metallic 9, oxide 4)`.
+  With `platform` set, and in `preflight` with `platform`:
+  - `ammo_rates`, one line per ammo type the hub or the turrets hold, or made or used in the window: made and used a
+    minute (the platform surface's item statistics, as the production screen counts them: made is crafted aboard;
+    used is the game's consumption, turret shots and ammo crafted into other items), then what the hub's main
+    inventory and the ammo turrets hold now. The window is the last leg: in flight this leg so far, stopped the leg
+    flown before it. In flight the line adds the reserve at the arrival at that rate, or when it runs out first:
+    `firearm-magazine: made 54/min, used 35/min over this leg nauvis->gleba (3m46s so far); hub 751, turrets 194; at
+    the arrival at gleba in 2m09s about 985 at that rate`, `...; runs out in 4m09s at that rate, before the arrival at
+    gleba in 75m00s`. A leg that began before the runtime kept these counts reads the game's last 10 minutes (`over
+    the last 10 min`).
+  - `incoming` and `incoming_cargo`: rockets launched to its hub whose cargo pod has not arrived yet, with their cargo
+    (`1 rocket on the way: firearm-magazine*20`; per rocket `a rocket from nauvis launched 3s ago: firearm-magazine*20
+    (rising over nauvis)`, then `(coming down onto the platform)`). On 2.0.77 a pod rose over the planet for about 25
+    s, came down onto the platform at about 30 s and was delivered by 35 s; a pod is counted for a minute at most.
 - Flight, on every `platforms` row and in `inspect` of a hub under `flight`: `speed_kms` (the hub GUI's km/s; the game's
   own value, `speed` with `platform` set, is km per tick), `next_stop` (the schedule's stop it flies to, or while it waits at its current stop, the
   one after it), and on a route `leg` in the way it is flown (`vulcanus->nauvis`), `heading_to`, `leg_km`,
@@ -2052,11 +2111,16 @@ fh sleep 900 --until researched                       # ...or until the research
     takes by weight and slots).
   - With `platform`: `platform {name, where, at, arrived, headed_here, next_stop, from, to, eta_to, eta_s,
     distance_left_km, connection_length_km, flown_fraction, speed_km_s, eta_basis, eta_unknown, arrival_unknown,
-    requests [{item, min, hub, aboard, lacks, lacks_after}], not_requested, line}`.
+    requests [{item, min, hub, aboard, lacks, lacks_after}], not_requested, incoming, incoming_cargo, ammo_rates,
+    hub_chunks, line}`.
     Requests are active hub sections importing from this planet, even before the platform departs for it; section
     multipliers apply, and item qualities are counted separately. `hub` includes main and trash inventories;
     `aboard` is this rocket's cargo. `lacks = max(0, min - hub)`; `lacks_after = max(0, min - hub - aboard)`
     (zero lacks fields omitted). `not_requested` is rocket cargo it does not request from here.
+    `incoming`/`incoming_cargo` list rockets already on their way to the hub, `ammo_rates` gives ammo per type over
+    the last leg, and `hub_chunks` counts hub slots occupied by asteroid chunks, as `platforms` does. Incoming cargo
+    is reported separately and is not subtracted from `lacks_after`. The line includes the incoming-cargo summary.
+    These destination diagnostics are read once per call, including when multiple silos are compared.
   - An ETA is game seconds at the current speed, rounded up: remaining connection distance / (`platform.speed * 60`).
     Remaining distance is `(1 - flown_fraction) * connection_length_km`, using the direction toward the current
     schedule stop (or the last visited endpoint when no matching schedule stop exists). `eta_basis` names the
@@ -2066,7 +2130,8 @@ fh sleep 900 --until researched                       # ...or until the research
     predicted. Already stopped here: `arrived: true`, `eta_s: 0`.
   - Without `platform`: `platforms` lists ours stopped here or flying/scheduled next here, arrived first then ETA,
     then name. A stopped platform paused at another planet is excluded. Each row has the same timing fields and
-    only requests from here unmet by its hub, plus what this rocket adds and `lacks_after`.
+    only requests from here unmet by its hub, plus what this rocket adds and `lacks_after`; destination diagnostics
+    (`incoming`, `incoming_cargo`, `ammo_rates`, `hub_chunks`) are included when a platform is named.
   - Without `position`: `surface`, `silos` (the above per-silo views, nearest your coordinates first), and
     `silos_as_of` (the start tick of the completed discovery pass). Each row has its position, readiness, parts,
     cargo kg and top items, and its own `platform`/`platforms` comparison; rockets are compared separately.
@@ -2747,6 +2812,32 @@ Some actions work at a distance, the way a player can through remote view:
   tiles under an entity that is not marked: robots take a tile once what stands on it is gone). With `tiles`, entities
   are marked only when `entity_names` or `entity_types` name them. `cancel_deconstruction {area, tiles}` clears tile
   marks (`tiles_cancelled`).
+- On a platform the hub removes a marked foundation tile only with exactly one run (as for tile ghosts, above). With
+  none, all four side neighbours foundation, it would open a new hole. With two it would join separate empty space.
+  A diagonal neighbour alone is not enough, and two holes joined far round still count as two (the copy's C-shaped
+  hole). The hub also needs room for the item it returns, and nothing may stand on the tile. Whether the rest of the
+  foundation stays joined is not looked at: a tile holding a one-tile peninsula on went, leaving it apart. Docked or
+  in flight is the same. A marked tile waits until its neighbours change: a chain marked from the edge in goes one
+  tile at a time (on the copy (-4,10), (-4,9), (-4,8), (-3,8) and Astra's (-2,8) in about 2 s). So deconstruct's
+  reply plays out every marked tile on the platform:
+  - `tiles_go`: `9 marked tiles on the platform go, one at a time, each once a side neighbour is empty space, in
+    this order: (-9.5,8.5), ...`;
+  - `tiles_waiting` and `waiting`, the first 8, each with why:
+    - `(-1.5,8.5): none of its four side neighbours (north, east, south, west) is empty space: the hub removes a
+      foundation tile only beside empty space`;
+    - `its empty side neighbours (5.5,-4.5) and (3.5,-4.5) do not meet through the tiles round it: removing it would
+      join separate empty space, which the hub does not do`;
+    - `the hub has no room for space-platform-foundation`;
+    - `fast-inserter (10.5,5.5) stands on it`;
+    - `; the marked tile beside it at (x,y) waits too`.
+  `platforms {platform}` shows the same as `tile_removals` (`marked`, `go`, `waiting`), and `inspect` of a marked
+  tile, its `deconstructible-tile-proxy`, says `tile_wait` (`marked for removal: nothing holds it; the hub removes it
+  next`, `... it goes once a tile beside it has gone (8 before it ...)`, or `... waits: ...`).
+- `deconstruct {..., dry_run: true}` marks nothing:
+  - with `tiles`: `tiles_would_mark` (not marked yet, nothing standing on them; `refused: {under_entity}` for the
+    rest, which the game refuses: an edge tile under an inserter on the copy) and `tile_ghosts_would_go`; on a
+    platform also `tiles_go` and `waiting` as if they were marked;
+  - entities: `would_mark` and `would_mark_by_name`.
 - The same call removes our tile ghosts of those tiles, as a planner over them does: `tiles: ["landfill"]` takes away
   landfill planned over water before robots build it (`tile_ghosts_removed`; Grok, shift10 06:20: it marked 0 there,
   and only an unfiltered deconstruct removed the 41 ghosts). Built landfill is minable in 2.0 and is marked like any
@@ -3336,7 +3427,14 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   Accumulators show their stored energy against their maximum (`accumulators 2 at 50% (5.0 MJ of 10.0 MJ)`; read:
   `acc_mj`, `acc_max_mj`; Gemini, 07:55, for Fulgora's lightning), read from them when the line is made, and their
   net flow over the last 30 s: `, falling 14.6 MW net over the last 30 s: empty in about 35s at that rate` or `, rising
-  10.7 MW net` (the game counts accumulators as producers while they discharge and consumers while they charge). The API exposes no storm state or schedule
+  10.7 MW net` (the game counts accumulators as producers while they discharge and consumers while they charge).
+  The read takes the accumulators' energy at the read, whatever the view's age (Astra, shift14 22:50: the read's sum
+  stayed put at dusk while an accumulator's inspect moved): `acc_mj`, `acc_max_mj`, `acc_pct` and the line's
+  accumulator part, from the accumulators the last view found (one built since counts from the next view). The 5 s
+  samples keep what they held: `acc_series` is one value every 15 s over the last 3 minutes, oldest first (`66% 52%
+  39% (every 15 s over the last 3 min, oldest first)`). `networks {fresh: true}` adds `draw_now_kw` per electric
+  network (its statistics over the last 5 s); `read_now` says which parts were read at the call and which are the
+  view's (`as_of`). The API exposes no storm state or schedule
   (checked on 2.0.77, world n, 2026-10-14: LuaSurface, LuaPlanet and Fulgora's LuaSpaceLocationPrototype have no
   lightning or storm key). Lightning strikes in the dark: one Fulgora day of samples (a 256x256 box, every 4 s) saw
   bolts at darkness 0.06 to 0.85, in all but one sample at 0.48 and over, and none in daylight. So the networks read's
@@ -3389,7 +3487,10 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   at that solar power (a planet's counts them at their output now). Read fields `platform` (per surface),
   `solar_power` (percent) and `solar_power_text` (per electric network). `power {platform}` (`fh call observe --args
   '{"scope":"power","platform":"Starling"}'`) reads that platform, 64 tiles round its hub unless an area, position
-  or radius is given; every `power` reply adds `solar_power` and `lines`, those networks' lines as above. A platform's poles are found at once each view (Astra, 14:05: Starling's network 475 was not found), and a platform network with no pole of ours gets a line from its panels and machines: `Lonely (platform) electric #475 (no pole of ours found near (3,-6)): capacity 900 kW; no draw figures (the game gives a network's statistics through its poles); ...`; `power` lists such a network from the machines in its area (`poles: 0`, `entities`, `note`).
+  or radius is given; every `power` reply adds `solar_power` and `lines`, those networks' lines as above, with
+  `lines_as_of` (the view's age; their accumulator part is read at the call). Per network `power` sums the
+  accumulators in its area at the call: `accumulators`, `acc_mj`, `acc_max_mj`, `acc_pct`; `power {fresh: true}`
+  passes `fresh` to the networks read (draw now). A platform's poles are found at once each view (Astra, 14:05: Starling's network 475 was not found), and a platform network with no pole of ours gets a line from its panels and machines: `Lonely (platform) electric #475 (no pole of ours found near (3,-6)): capacity 900 kW; no draw figures (the game gives a network's statistics through its poles); ...`; `power` lists such a network from the machines in its area (`poles: 0`, `entities`, `note`).
 - `inspect` on a producer or consumer of electricity adds `electricity`: `max_kw` at its quality (a machine's times
   its modules' consumption bonus, `consumption_bonus: "-60%"`, with `drain_kw`; a solar panel's at 100% and
   `at_solar_power_kw` where it is, with `solar_power`; a generator's maximum output; an accumulator's `stored_mj`,

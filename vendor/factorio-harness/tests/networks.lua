@@ -617,4 +617,36 @@ do
   eq(#acc_groups(),0)
   flows_in.accumulator=nil
 end
+-- 7. Accumulators read at the read (Astra, shift14 22:50: the view's sum stood still while each accumulator's inspect
+-- moved; a Fulgora day took ~15 single reads): acc_mj, acc_pct and the line's part read now, whatever the view's age;
+-- the 5 s samples keep what they held (a series every 15 s over 3 min); fresh: true reads the draw now too.
+do
+  storage.networks.views={}
+  N.lines(force,'nauvis',8)
+  local accs={}
+  for _,e in ipairs(list) do if e.type=='accumulator' then accs[#accs+1]=e end end
+  storage.networks.samples={}
+  for _,e in ipairs(accs) do e.energy=4e6 end
+  run(5)
+  eq(N.read({force=force},{}).surfaces[1].electric[1].acc_series,nil,'one value is no series')
+  for k=1,4 do
+    for _,e in ipairs(accs) do e.energy=(5-k)*1e6 end
+    run(15)
+  end
+  local r=N.read({force=force},{})
+  local e=r.surfaces[1].electric[1]
+  eq(e.acc_mj,2); eq(e.acc_max_mj,10); eq(e.acc_pct,20)
+  has(e.line,'accumulators 2 at 20% (2.0 MJ of 10.0 MJ)')
+  eq(e.acc_series,'80% 80% 60% 40% 20% (every 15 s over the last 3 min, oldest first)')
+  -- Three minutes on, the oldest values drop out.
+  run(150)
+  eq(N.read({force=force},{}).surfaces[1].electric[1].acc_series,'40% 20% 20% 20% 20% 20% 20% 20% 20% 20% 20% 20% (every 15 s over the last 3 min, oldest first)')
+  eq(e.draw_now_kw,nil,'with fresh only')
+  has(r.read_now,'accumulators (acc_mj, acc_pct, the line\'s part); the rest as of the view')
+  flows['steam-engine'],flows['solar-panel'],flows.accumulator=18e6/60,0.5e6/60,0
+  r=N.read({force=force},{fresh=true})
+  eq(r.surfaces[1].electric[1].draw_now_kw,18500)
+  has(r.read_now,'draw_now_kw (the last 5 s of each network\'s statistics)')
+  assert(not pcall(N.read,{force=force},{fresh='yes'}),'fresh is a boolean')
+end
 print('networks: ok')

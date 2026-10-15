@@ -188,3 +188,19 @@ eq(#r.silos,1,'hidden silo omitted'); eq(r.silos[1].position.x,14.5); eq(r.silos
 fails(function() astra('preflight',{surface='vulcanus',platform='Sunward',position=far.position}) end,'not visible')
 vulcanus.find_entities_filtered=old_find
 print('preflight remote surface: ok')
+
+-- The runtime adapters carry round2250b diagnostics alongside dispatch ETA and discovery, with surface+platform.
+local old_ammo,old_incoming=runtime.freight.ammo,runtime.freight.incoming
+runtime.freight.ammo=function(pl) eq(pl,sunward); return {'ammo reserve'} end
+runtime.freight.incoming=function(pl) eq(pl,sunward); return {rockets=1,cargo='calcite*20',lines={'incoming calcite'}} end
+defines.inventory.hub_main=13
+hub.get_inventory=function(id)
+  if id==13 then return {{valid_for_read=true,name='metallic-asteroid-chunk'},get_contents=function() return {} end} end
+end
+r=astra('preflight',{surface='vulcanus',platform='Sunward'})
+eq(r.silos[1].platform.eta_s,0); eq(r.silos[1].platform.incoming_cargo,'1 rocket on the way: calcite*20')
+eq(r.silos[1].platform.ammo_rates[1],'ammo reserve')
+eq(r.silos[1].platform.hub_chunks,'asteroid chunks take 1 of 1 slots (metallic 1)')
+assert(r.line:find('arrived',1,true) and r.line:find('1 rocket on the way',1,true),r.line)
+runtime.freight.ammo,runtime.freight.incoming=old_ammo,old_incoming
+print('preflight merged destination diagnostics: ok')

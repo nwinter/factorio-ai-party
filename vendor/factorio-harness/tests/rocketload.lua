@@ -234,6 +234,25 @@ silo.no_rocket=true
 f=R.preflight(p,{position={x=65.5,y=14.5}})
 eq(f.cargo.items,'no rocket to load yet'); eq(f.cargo.slots,'0/20')
 silo.no_rocket=nil
+-- Rockets on their way to the platform, its ammo over the last leg and the hub slots chunks take (Astra, shift14 22:50:
+-- reconciled by hand before each launch).
+api.incoming=function(x) assert(x==pl); return {rockets=2,cargo='firearm-magazine*40',lines={'a rocket from nauvis launched 3s ago: firearm-magazine*20 (rising over nauvis)','a rocket from nauvis launched 20s ago: firearm-magazine*20 (coming down onto the platform)'}} end
+api.ammo=function() return {'firearm-magazine: made 42/min, used 38/min over the last 10 min; hub 544, turrets 191'} end
+api.hub_chunks=function() return 'asteroid chunks take 22 of 99 slots (carbonic 9, metallic 9, oxide 4)' end
+f=R.preflight(p,{position={x=65.5,y=14.5},platform='Sunward'})
+eq(f.platform.incoming_cargo,'2 rockets on the way: firearm-magazine*40'); eq(#f.platform.incoming,2)
+eq(f.platform.ammo_rates[1],'firearm-magazine: made 42/min, used 38/min over the last 10 min; hub 544, turrets 191')
+eq(f.platform.hub_chunks,'asteroid chunks take 22 of 99 slots (carbonic 9, metallic 9, oxide 4)')
+assert(f.line:find('platform Sunward at nauvis; arrived; requests from nauvis:',1,true),f.line)
+assert(f.line:find('2 rockets on the way: firearm-magazine*40',1,true),f.line)
+eq(f.platform.requests[1].lacks_after,250, 'incoming cargo remains separate from this rocket')
+api.incoming=function() return {rockets=1,cargo='empty',lines={'a rocket from nauvis launched 3s ago: empty (rising over nauvis)'}} end
+eq(R.preflight(p,{position={x=65.5,y=14.5},platform='Sunward'}).platform.incoming_cargo,'1 rocket on the way: empty')
+api.incoming=function() return nil end; api.ammo=function() error('no stats') end
+f=R.preflight(p,{position={x=65.5,y=14.5},platform='Sunward'})
+eq(f.platform.incoming,nil); eq(f.platform.ammo_rates,nil,'a failing read is left out')
+assert(not f.line:find('on the way',1,true),f.line)
+api.incoming,api.ammo,api.hub_chunks=nil,nil,nil
 
 -- 6b. Dispatch: route direction, current-speed ETA, a departure not yet timed, and requests before arrival.
 local saved_where, saved_force = api.where, p.force
@@ -242,11 +261,18 @@ api.where=F.where
 defines.space_platform_state={on_the_path=3}
 pl.space_connection={from={name='nauvis'},to={name='gleba'},length=15000}
 pl.distance=0.27; pl.speed=0.05; pl.schedule={current=1,records={{station='nauvis'}}}; pl.state=3
+api.incoming=function() return {rockets=1,cargo='agricultural-science-pack*1000',lines={'a rocket from nauvis: agricultural-science-pack*1000'}} end
+api.ammo=function() return {'firearm-magazine: made 42/min, used 38/min'} end
+api.hub_chunks=function() return 'asteroid chunks take 22 of 99 slots' end
 f=R.preflight(p,{position=silo.position,platform='Sunward'})
 eq(f.platform.eta_s,1350); eq(f.platform.eta_to,'nauvis'); eq(f.platform.from,'gleba'); eq(f.platform.to,'nauvis')
 eq(f.platform.headed_here,true); eq(f.platform.arrived,false); eq(math.floor(f.platform.distance_left_km+0.5),4050)
 eq(f.platform.speed_km_s,3); assert(f.platform.eta_basis:find('60 ticks',1,true))
-eq(f.platform.requests[1].lacks_after,250,'same shortfall while approaching')
+eq(f.platform.requests[1].lacks_after,250,'same shortfall while approaching, incoming cargo reported separately')
+eq(f.platform.incoming_cargo,'1 rocket on the way: agricultural-science-pack*1000')
+assert(f.platform.ammo_rates[1]:find('made 42/min',1,true)); assert(f.platform.hub_chunks:find('22 of 99',1,true))
+assert(f.line:find('ETA to nauvis',1,true) and f.line:find('1 rocket on the way:',1,true),f.line)
+api.incoming,api.ammo,api.hub_chunks=nil,nil,nil
 pl.schedule.records[1].station='gleba'
 f=R.preflight(p,{position=silo.position,platform='Sunward'})
 eq(f.platform.eta_s,3650); eq(f.platform.eta_to,'gleba'); eq(f.platform.headed_here,false)
@@ -296,10 +322,20 @@ api.silos=function() return {far,hidden,silo},80 end
 p.force.is_chunk_visible=function(_,c) return c.x<10 end
 api.remote_entity=function(_,a) for _,e in ipairs({silo,far,hidden}) do if a.position==e.position then return e end end end
 api.rocket=function(e) return {rocket='rocket built and ready',built_parts='50/50',next_parts='10/50'} end
+local extra_reads={incoming=0,ammo=0,chunks=0}
+api.incoming=function() extra_reads.incoming=extra_reads.incoming+1; return {rockets=1,cargo='agricultural-science-pack*1000',lines={'incoming rocket'}} end
+api.ammo=function() extra_reads.ammo=extra_reads.ammo+1; return {'ammo rate'} end
+api.hub_chunks=function() extra_reads.chunks=extra_reads.chunks+1; return 'chunk slots' end
 f=R.preflight(p,{platform='Sunward'})
 eq(#f.silos,2); eq(f.silos[1].position.x,65.5); eq(f.silos[2].position.x,150)
 eq(f.silos[1].rocket_ready,true); eq(f.silos[1].built_parts,'50/50'); eq(f.silos[1].next_parts,'10/50')
 eq(f.silos[1].cargo.kg,800); eq(f.silos[1].platform.requests[1].lacks_after,250); eq(f.silos_as_of,80)
+eq(extra_reads.incoming,1); eq(extra_reads.ammo,1); eq(extra_reads.chunks,1)
+for _,row in ipairs(f.silos) do eq(row.platform.incoming_cargo,'1 rocket on the way: agricultural-science-pack*1000'); eq(row.platform.ammo_rates[1],'ammo rate'); eq(row.platform.hub_chunks,'chunk slots') end
+f=R.preflight(p,{})
+eq(#f.silos[1].platforms,2); eq(extra_reads.ammo,1,'platform discovery does not read named diagnostics')
+eq(f.silos[1].platforms[1].incoming,nil)
+api.incoming,api.ammo,api.hub_chunks=nil,nil,nil
 api.silos=function() return {} end
 f=R.preflight(p,{})
 eq(f.silos_pending,true); eq(#f.silos,0); eq(#f.platforms,2); assert(f.line:find('discovery pending',1,true))

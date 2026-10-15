@@ -667,8 +667,29 @@ return function(api)
       #lacking > 0 and table.concat(lacking, ', ') or (unmet_only and 'none unmet' or 'none')))
     return plat
   end
-  local function platforms(p, a, here, inv, held)
-    if a.platform ~= nil then return {platform_view(api.platform(p, a.platform), here, inv, held, false)} end
+  local function platforms(p, a, here, inv, held, extra_cache)
+    if a.platform ~= nil then
+      local pl = api.platform(p, a.platform)
+      local plat = platform_view(pl, here, inv, held, false)
+      -- Destination diagnostics (round2250b): shared within this call when comparing several silos.
+      -- Incoming cargo stays separate from lacks_after, which counts only the hub and this rocket.
+      local id = pl.index or pl.name
+      local extra = extra_cache[id]
+      if not extra then
+        extra = {}
+        local inc = api.incoming and try(function() return api.incoming(pl) end)
+        if inc then
+          extra.incoming = inc.lines
+          extra.incoming_cargo = string.format('%d rocket%s on the way: %s', inc.rockets, inc.rockets == 1 and '' or 's', inc.cargo)
+        end
+        extra.ammo_rates = api.ammo and try(function() return api.ammo(pl) end) or nil
+        extra.hub_chunks = api.hub_chunks and try(function() return api.hub_chunks(pl) end) or nil
+        extra_cache[id] = extra
+      end
+      for k, v in pairs(extra) do plat[k] = v end
+      if plat.incoming_cargo then plat.line = one_line(plat.line .. '; ' .. plat.incoming_cargo) end
+      return {plat}
+    end
     local out = {}
     for _, pl in pairs(p.force.platforms or {}) do
       if pl.valid then
@@ -683,13 +704,14 @@ return function(api)
     end)
     return out
   end
-  local function add_platforms(out, words, p, a, here, inv, held)
-    local list = platforms(p, a, here, inv, held)
+  local function add_platforms(out, words, p, a, here, inv, held, extra_cache)
+    local list = platforms(p, a, here, inv, held, extra_cache)
     if a.platform ~= nil then out.platform = list[1] else out.platforms = list end
     for _, pl in ipairs(list) do words[#words+1] = pl.line end
     if #list == 0 then words[#words+1] = 'no platforms stopped at or headed to ' .. here end
   end
-  function M.preflight(p, a)
+  function M.preflight(p, a, extra_cache)
+    extra_cache = extra_cache or {}
     if a.position == nil then
       -- Discovery reuses the census's existing sliced walk. A read never starts a surface scan.
       local found, as_of = api.silos(p)
@@ -705,14 +727,14 @@ return function(api)
       end)
       for _, silo in ipairs(found) do
         if silo.valid and p.force.is_chunk_visible(p.surface, {x=math.floor(silo.position.x/32), y=math.floor(silo.position.y/32)}) then
-          local row = M.preflight(p, {position=silo.position, platform=a.platform, items=a.items})
+          local row = M.preflight(p, {position=silo.position, platform=a.platform, items=a.items}, extra_cache)
           out.silos[#out.silos+1] = row
           words[#words+1] = row.line
         end
       end
       if #out.silos == 0 then words[#words+1] = 'no visible silos in the discovery index' end
       words[#words+1] = as_of and 'silo discovery as of tick ' .. as_of or 'silo discovery pending the background census'
-      if #out.silos == 0 then add_platforms(out, words, p, a, here, nil, {}) end
+      if #out.silos == 0 then add_platforms(out, words, p, a, here, nil, {}, extra_cache) end
       out.line = one_line(table.concat(words, '; '))
       return out
     end
@@ -764,7 +786,7 @@ return function(api)
       out.order = order
       words[#words+1] = #lacking > 0 and 'the list lacks ' .. table.concat(lacking, ', ') or 'the list is aboard'
     end
-    add_platforms(out, words, p, a, here, inv, held)
+    add_platforms(out, words, p, a, here, inv, held, extra_cache)
     -- What launch would refuse now.
     local refuse = {}
     if not out.rocket_ready then refuse[#refuse+1] = rk and rk.rocket_now or 'the rocket is not ready' end
@@ -960,9 +982,10 @@ return function(api)
     preflight = {position='optional rocket silo {x,y} (any tile of it), in a visible chunk (remote view); omitted: all visible silos in the background census index, nearest your coordinates first',
       surface='optional planet name (default yours); platform remains the rocket destination',
       items='optional item list (as load_silo items): what each rocket still lacks against the cargo aboard, and how much of that fits',
-      platform='optional platform name: location, arrival/next stop, current-connection ETA and its calculation, requests importing from this planet less its hub and this rocket; omitted: our platforms stopped here or flying/scheduled next here (paused departures excluded), with unmet requests from here',
+      platform='optional platform name: location, arrival/next stop, current-connection ETA and its calculation, requests importing from this planet less its hub and this rocket, incoming rockets, ammo per type over the last leg, and hub slots asteroid chunks take; omitted: our platforms stopped here or flying/scheduled next here (paused departures excluded), with unmet requests from here',
       returns='position, silo, rocket, rocket_ready, parts (building), built_parts (ready/rising), next_parts, auto_requests, cargo {items, rows [{item, count, each_kg, kg, stacks}], kg, lift_kg, free_kg, over_kg, slots, free_slots}, '
         .. 'order [{item, want, aboard, lacks, fits, you_hold}], platform (named) or platforms (discovery) [{name, where, at, arrived, headed_here, next_stop, from, to, distance_left_km, connection_length_km, flown_fraction, speed_km_s, eta_to, eta_s (game seconds at current speed), eta_basis, eta_unknown, arrival_unknown (current leg does not end here), requests [{item, min, hub, aboard, lacks, lacks_after}], not_requested, line}], '
+        .. 'With named platform: incoming (rockets launched to its hub not arrived yet), incoming_cargo, ammo_rates (per ammo type: made and used per minute over the last leg, current hub/turret stock and reserve at arrival), hub_chunks (slots asteroid chunks take); incoming cargo is separate from lacks_after. '
         .. 'launch_now (ok, or refused: what launch would refuse now), line (one line). No position: surface, silos [the same per-silo views, nearest first], silos_as_of (discovery tick; rocket/cargo read now), silos_pending (before first census); no visible silos: platform(s) still returned. Read only'},
   }
   return M
