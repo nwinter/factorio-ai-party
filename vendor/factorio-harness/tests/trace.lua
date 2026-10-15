@@ -143,7 +143,11 @@ A.get_inventory=function(id) if id==defines.inventory.crafter_input then return 
 r=trace.trace(p,{position={x=0.5,y=0.5}})
 eq(#r.ingredients,0); has(r.note,'every ingredient')
 eq(#trace.trace(p,{position={x=0.5,y=0.5},all=true}).ingredients,1)
-fails(function() trace.trace(p,{position={x=0.5,y=4.5}}) end,'has no recipe or research to trace')
+-- A chest (a drill, a belt) has nothing to trace back: it is traced forward, said so (friction3, Grok 23:02: a drill
+-- start was refused, naming forward=true).
+local fwd=trace.trace(p,{position={x=0.5,y=4.5}})
+has(fwd.note,'iron-chest has no recipe to trace back: traced forward (its output)'); eq(fwd.entity,'iron-chest')
+fails(function() trace.trace(p,{position={x=0.5,y=4.5},all=true}) end,'has no recipe or research to trace')
 
 -- 2. Astra: a collector's output down a belt run (one internal line), an underground pair (output_lines), to a belt end
 -- whose right lane is full of oxide chunks; the inserters on the way take metallic chunks and iron ore only.
@@ -300,4 +304,23 @@ fails(function() trace.trace(p,{position={x=0.5,y=0.5},near={x=1,y=1}}) end,'sur
 fails(function() trace.trace(p,{position={x=0.5,y=0.5},forward=true,all=true}) end,'all goes with a backward trace')
 fails(function() trace.trace(p,{item='unobtainium'}) end,'item must be an item name')
 fails(function() trace.trace(p,{}) end,'trace takes position')
+-- Ores come from mining drills (friction3, Grok 23:29: trace {item: copper-ore} read "nothing on nauvis makes
+-- copper-ore", and Grok followed the ore belts by hand): a drill on a resource that gives it is a maker, and where it
+-- drops is where its routes start.
+prototypes.item['copper-ore']={name='copper-ore'}
+local ore_box=chest(80.5,80.5,{['copper-ore']=5})
+local drill=ent{name='electric-mining-drill',type='mining-drill',position={x=80.5,y=78.5},status='working',
+  mining_target={prototype={mineable_properties={products={{type='item',name='copper-ore',amount=1}}}}},drop_target=ore_box,drop_position={x=80.5,y=80.3}}
+local idle=ent{name='burner-mining-drill',type='mining-drill',position={x=84,y=78},status='waiting_for_space_in_destination',
+  mining_target={prototype={mineable_properties={products={{type='item',name='copper-ore',amount=1}}}}},drop_position={x=84,y=79.3}}
+local other=ent{name='electric-mining-drill',type='mining-drill',position={x=88.5,y=78.5},status='working',
+  mining_target={prototype={mineable_properties={products={{type='item',name='iron-ore',amount=1}}}}}}
+r=trace.trace(p,{item='copper-ore'})
+has(r.makers,'2 making it (2 mining drills): ')
+local direct=table.concat(r.direct,' | ')
+has(direct,'electric-mining-drill (80.5,78.5) drops into iron-chest (80.5,80.5)')
+has(direct,'burner-mining-drill (84,78) waiting_for_space_in_destination: drops onto nothing at (84,79.3)')
+-- A drill start traces forward.
+has(trace.trace(p,{position={x=80.5,y=78.5}}).note,'electric-mining-drill has no recipe to trace back: traced forward (its output)')
+drill.valid=false; idle.valid=false; other.valid=false; ore_box.valid=false
 print('trace: ok')

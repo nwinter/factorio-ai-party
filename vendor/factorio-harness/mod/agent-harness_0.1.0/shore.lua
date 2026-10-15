@@ -12,6 +12,7 @@ return function(api)
   local M = {}
   local DIRS = {0, 4, 8, 12}
   local NAMES = {[0]='north', [4]='east', [8]='south', [12]='west'}
+  local DIRS_BY_NAME = {north=0, east=4, south=8, west=12}
   local MAX = 3
   -- can_place_entity calls per search, at most (~15 us each on world n).
   local MAX_CHECKS = 200
@@ -537,11 +538,11 @@ return function(api)
   M.schema = {
     placements={name='entity or item name (an item: the entity it places)',
       near='optional {x,y} centre (default you): in sight, or by remote view in a chunk our force sees now',position='the same as near',
-      radius='optional 1..24 (default 12 for an offshore-pump, else 10)',limit='optional 1..50 positions (default 10)',
+      radius='optional 1..24 (default 12 for an offshore-pump, else 10; past 24 searched at 24, said in note)',limit='optional 1..50 positions (default 10; past 50: 50)',
       direction='optional compass name or 0, 4, 8, 12: only this direction (default north, east, south, west; a building that does not turn has none)',
       separate='optional true: spots that do not overlap each other, so all of them can be built (each overlaps no spot nearer in the list); overlap: positions left out for that',
       powered='optional true: only spots with a tile in the supply area of one of our built electric poles (the game connects the machine there); unpowered: positions left out for that; poles: our poles whose area reaches the search',
-      returns='placements [{position, direction}]: where the entity fits now, nearest first, one per position, by the game\'s manual build check (as build and dry_run: water, cliffs, entities, tiles; no reach or item check); count; checked: positions the game checked (at most 200); blocked: positions an entity or tile was in the way of (a scan before the game check); unseen: positions in chunks our force does not see now (left out); more: true when positions were left unchecked'},
+      returns='placements [{position, direction}]: where the entity fits now, nearest first, one per position, by the game\'s manual build check (as build and dry_run: water, cliffs, entities, tiles; no reach or item check); count; checked: positions the game checked (at most 200); blocked: positions an entity or tile was in the way of (a scan before the game check); unseen: positions in chunks our force does not see now (left out); more: true when positions were left unchecked; in_the_way (nothing fits): what stands in the search square by name with the nearest one, and the tiles it cannot stand on by name; overlapping: how many pairs of the listed spots overlap each other (without separate); no_supply: how many listed spots lie in no pole\'s supply area (without powered, an entity that takes electricity)'},
   }
   M.handlers = {}
   -- Gemini 10:50 (accumulators, recyclers: radius 16 found nothing in 400
@@ -561,8 +562,15 @@ return function(api)
     local by
     if api.read_sight then by = api.read_sight(p, pos, 'near') else api.assert_visible(p, pos, 'position') end
     local pump = proto.type == 'offshore-pump'
-    local radius = api.integer(a.radius, pump and 12 or 10, 1, 24, 'radius')
-    local limit = api.integer(a.limit, 10, 1, 50, 'limit')
+    -- A radius or limit past the most is searched at the most, and said (friction3: Luna's radius 32 and Gemini's 30
+    -- were refused).
+    local notes = {}
+    local function clamped(v, d, hi, name)
+      if type(v) == 'number' and v > hi then notes[#notes+1] = string.format('%s %g is past the most, %d: searched at %d', name, v, hi, hi); return hi end
+      return api.integer(v, d, 1, hi, name)
+    end
+    local radius = clamped(a.radius, pump and 12 or 10, 24, 'radius')
+    local limit = clamped(a.limit, 10, 50, 'limit')
     local turns = try(function() return proto.supports_direction end) ~= false
     local dirs = turns and DIRS or {0}
     if a.direction ~= nil then
@@ -585,11 +593,105 @@ return function(api)
     assert(a.separate == nil or type(a.separate) == 'boolean', 'separate must be true or false')
     assert(a.powered == nil or type(a.powered) == 'boolean', 'powered must be true or false')
     local found, checked, info = M.find(p, proto, pos, radius, dirs, {limit=limit, seen=seen, separate=a.separate, powered=a.powered})
-    if not turns then for _, s in ipairs(found) do s.direction = nil end end
-    return {name=proto.name, near=pos, radius=radius, placements=found, count=#found, checked=checked, by=by,
+    local out = {name=proto.name, near=pos, radius=radius, placements=found, count=#found, checked=checked, by=by,
       blocked=info.blocked > 0 and info.blocked or nil, unseen=info.unseen > 0 and info.unseen or nil, more=info.more or nil,
       separate=a.separate or nil, overlap=a.separate and info.overlap or nil,
-      powered=a.powered or nil, unpowered=a.powered and info.unpowered or nil, poles=a.powered and info.poles or nil}
+      powered=a.powered or nil, unpowered=a.powered and info.unpowered or nil, poles=a.powered and info.poles or nil,
+      note=#notes > 0 and table.concat(notes, '; ') or nil}
+    -- friction3 (Gemini: 17 placements calls, 12 of them count 0, its accumulators built from overlapping spots): what is
+    -- in the way when nothing fits; spots of the list that overlap each other, and those no pole supplies.
+    if #found == 0 then out.in_the_way = M.in_the_way(p, proto, pos, radius) end
+    if #found > 1 and not a.separate then
+      local pairs_n = 0
+      for i = 1, #found do
+        local fi = found[i]
+        local bi = box_of(proto, DIRS_BY_NAME[fi.direction] or 0)
+        for j = i + 1, #found do
+          local fj = found[j]
+          local bj = box_of(proto, DIRS_BY_NAME[fj.direction] or 0)
+          if fi.position.x + bi[1] < fj.position.x + bj[3] - EPS and fj.position.x + bj[1] < fi.position.x + bi[3] - EPS
+            and fi.position.y + bi[2] < fj.position.y + bj[4] - EPS and fj.position.y + bj[2] < fi.position.y + bi[4] - EPS then pairs_n = pairs_n + 1 end
+        end
+      end
+      if pairs_n > 0 then out.overlapping = string.format('%d pair%s of these spots overlap each other (each fits alone): separate=true lists spots that do not', pairs_n, pairs_n == 1 and '' or 's') end
+    end
+    if #found > 0 and not a.powered and try(function() return proto.electric_energy_source_prototype end) then
+      local n = M.unpowered(p, proto, found)
+      if n and n > 0 then out.no_supply = string.format('%d of these spots lie in no pole\'s supply area: powered=true lists spots that do', n) end
+    end
+    if not turns then for _, s in ipairs(found) do s.direction = nil end end
+    return out
+  end
+  -- Built poles of ours whose supply area overlaps none of a spot's box: how many of the spots that is.
+  function M.unpowered(p, proto, found)
+    local x0, y0, x1, y1
+    for _, f in ipairs(found) do
+      x0 = math.min(x0 or f.position.x, f.position.x); y0 = math.min(y0 or f.position.y, f.position.y)
+      x1 = math.max(x1 or f.position.x, f.position.x); y1 = math.max(y1 or f.position.y, f.position.y)
+    end
+    local poles = {}
+    for _, e in pairs(p.surface.find_entities_filtered{area={left_top={x=x0 - 20, y=y0 - 20}, right_bottom={x=x1 + 20, y=y1 + 20}}, type='electric-pole', force=p.force, limit=2048}) do
+      if e.valid then
+        local q = try(function() return e.quality.name end)
+        local d = try(function() return e.prototype.get_supply_area_distance(q or 'normal') end) or try(function() return e.prototype.supply_area_distance end) or 0
+        if d > 0 then poles[#poles+1] = {x=e.position.x, y=e.position.y, d=d} end
+      end
+    end
+    local n = 0
+    for _, f in ipairs(found) do
+      local b = box_of(proto, DIRS_BY_NAME[f.direction] or 0)
+      local l, t, r, bt = f.position.x + b[1], f.position.y + b[2], f.position.x + b[3], f.position.y + b[4]
+      local fed = false
+      for _, q in ipairs(poles) do
+        if l < q.x + q.d and r > q.x - q.d and t < q.y + q.d and bt > q.y - q.d then fed = true; break end
+      end
+      if not fed then n = n + 1 end
+    end
+    return n
+  end
+  -- When nothing fits: what stands in the search square, by name with the nearest one, cliffs among them, and the
+  -- tiles it cannot stand on, by name (one entity and one tile read; at most 4000 each).
+  function M.in_the_way(p, proto, pos, radius)
+    local s = p.surface
+    local area = {left_top={x=pos.x - radius, y=pos.y - radius}, right_bottom={x=pos.x + radius, y=pos.y + radius}}
+    local mine = try(function() return proto.collision_mask end)
+    local list = {}
+    for layer in pairs(mine and mine.layers or {}) do list[#list+1] = layer end
+    if #list == 0 then return nil end
+    local by, order = {}, {}
+    for _, e in pairs(try(function() return s.find_entities_filtered{area=area, collision_mask=list, limit=4000} end) or {}) do
+      local ep = e.valid and not PASSABLE[e.type] and (e.position or try(function()
+        local bb = e.bounding_box
+        return {x=(bb.left_top.x + bb.right_bottom.x) / 2, y=(bb.left_top.y + bb.right_bottom.y) / 2}
+      end))
+      if ep then
+        local n = e.name
+        local b = by[n]
+        if not b then b = {n=0}; by[n] = b; order[#order+1] = n end
+        b.n = b.n + 1
+        local d = (ep.x - pos.x) ^ 2 + (ep.y - pos.y) ^ 2
+        if not b.d or d < b.d then b.d = d; b.at = ep end
+      end
+    end
+    table.sort(order, function(x, y) return by[x].n > by[y].n end)
+    local parts = {}
+    for i = 1, math.min(6, #order) do
+      local b = by[order[i]]
+      parts[i] = string.format('%s %d (nearest (%g,%g))', order[i], b.n, b.at.x, b.at.y)
+    end
+    local tiles, tnames = {}, {}
+    for _, t in pairs(try(function() return s.find_tiles_filtered{area=area, collision_mask=list, limit=4000} end) or {}) do
+      if not tiles[t.name] then tiles[t.name] = 0; tnames[#tnames+1] = t.name end
+      tiles[t.name] = tiles[t.name] + 1
+    end
+    table.sort(tnames, function(x, y) return tiles[x] > tiles[y] end)
+    local tparts = {}
+    for i = 1, math.min(4, #tnames) do tparts[i] = tnames[i] .. ' ' .. tiles[tnames[i]] end
+    local text = {}
+    if #parts > 0 then text[#text+1] = 'in the way: ' .. table.concat(parts, ', ') .. (#order > 6 and string.format(' and %d more kinds', #order - 6) or '') end
+    if #tparts > 0 then text[#text+1] = string.format('tiles %s cannot stand on: %s', proto.name, table.concat(tparts, ', ')) end
+    if #text == 0 then return nil end
+    return string.format('nothing fits within %g tiles of (%g,%g): %s', radius, pos.x, pos.y, table.concat(text, '; '))
   end
   return M
 end

@@ -193,7 +193,10 @@ local last=luna('status').last
 eq(last.outcome,'transferred'); eq(main.get_item_count('firearm-magazine'),70)
 body.position={x=50,y=32}
 -- friction2 (Sonnet: the nearest held 20 of the 300 asked; Grok took 40 iron plates from a requester feeding a machine):
--- a count more than the nearest holds comes from the next ones too, nearest first, requester and buffer chests last.
+-- a count more than the nearest holds comes from the next ones too, nearest first; one chest that holds it all and is
+-- no farther goes alone (friction3, Sonnet: 600 asked went 57 tiles west, then 107 east, past a chest holding 1000);
+-- chests that feed something are left out unless feeding: true (friction3: Sonnet's floor line input chests, Opus's
+-- turret feeders; Grok's requester in friction2).
 prototypes.item['iron-plate']={name='iron-plate',type='item',stack_size=100}
 local c1=chest({x=47.5,y=30.5},{['iron-plate']=20})
 local r1=chest({x=48.5,y=34.5},{['iron-plate']=100})
@@ -201,16 +204,27 @@ r1.name='requester-chest'; r1.type='logistic-container'; r1.prototype={name='req
 local c2=chest({x=44.5,y=36.5},{['iron-plate']=150})
 r=luna('transfer',{item='iron-plate',from='nearest',count=100})
 eq(r.moved,100); eq(main.get_item_count('iron-plate'),100)
-eq(c1.inv.get_item_count('iron-plate'),0); eq(c2.inv.get_item_count('iron-plate'),70); eq(r1.inv.get_item_count('iron-plate'),100)
-eq(r.from_nearest,'2 chests hold 170 of the 100 asked, nearest first, requester and buffer chests last: wooden-chest (47.5,30.5) 2.9 tiles, holds 20; '
-  ..'wooden-chest (44.5,36.5) 7.1 tiles, holds 150 (5 chests checked, 3 holding it)')
--- the requester only when the rest is short
-r=luna('transfer',{item='iron-plate',from='nearest',count=150})
-eq(r.moved,150); eq(c2.inv.get_item_count('iron-plate'),0); eq(r1.inv.get_item_count('iron-plate'),20)
-assert(r.from_nearest:find('wooden-chest (44.5,36.5) 7.1 tiles, holds 70; requester-chest (48.5,34.5) 2.9 tiles, holds 100 (requester)',1,true),r.from_nearest)
--- one chest that holds it all: as before
-r=luna('transfer',{item='iron-plate',from='nearest',count=10})
-eq(r.moved,10); eq(r.from_nearest,'requester-chest at (48.5,34.5), 2.9 tiles from you, holds 20 iron-plate (a requester chest: taken from last) (5 chests checked, 1 holding it)')
+eq(c1.inv.get_item_count('iron-plate'),20); eq(c2.inv.get_item_count('iron-plate'),50); eq(r1.inv.get_item_count('iron-plate'),100)
+eq(r.from_nearest,'wooden-chest at (44.5,36.5), 7.1 tiles from you, holds 150 iron-plate (5 chests checked, 3 holding it); '
+  ..'1 chest feeding something left out (feeding: true takes from them too): requester-chest (48.5,34.5) holds 100: a requester chest')
+-- none holds it all: nearest first, as many as it takes
+r=luna('transfer',{item='iron-plate',from='nearest',count=60})
+eq(r.moved,60); eq(c1.inv.get_item_count('iron-plate'),0); eq(c2.inv.get_item_count('iron-plate'),10)
+assert(r.from_nearest:find('^2 chests hold 70 of the 60 asked, nearest first: wooden%-chest %(47.5,30.5%) 2.9 tiles, holds 20; wooden%-chest %(44.5,36.5%) 7.1 tiles, holds 50'),r.from_nearest)
+-- feeding: true takes from it too
+r=luna('transfer',{item='iron-plate',from='nearest',count=50,feeding=true})
+eq(r.moved,50); eq(r1.inv.get_item_count('iron-plate'),50)
+assert(r.from_nearest:find('^requester%-chest at %(48.5,34.5%), 2.9 tiles from you, holds 100 iron%-plate %(a requester chest%)'),r.from_nearest)
+-- only chests that feed something hold it: refused, naming them; a machine's input chest (an inserter takes from it) too
+c2.inv.remove{name='iron-plate',count=10}
+local c3=chest({x=45.5,y=28.5},{['iron-plate']=40})
+local feeder={valid=true,name='inserter',type='inserter',position={x=45.5,y=27.5},force=force,pickup_target=c3,drop_target={valid=true,name='assembling-machine-2'},
+  bounding_box={left_top={x=45.15,y=27.15},right_bottom={x=45.85,y=27.85}}}
+world[#world+1]=feeder
+fails(function() luna('transfer',{item='iron-plate',from='nearest',count=10}) end,
+  'no chest in reach holds iron-plate (6 checked); 2 chests feeding something left out (feeding: true takes from them too): requester-chest (48.5,34.5) holds 50: a requester chest; wooden-chest (45.5,28.5) holds 40: inserter (45.5,27.5) takes from it into assembling-machine-2')
+fails(function() luna('transfer',{item='iron-plate',from='nearest',feeding='yes'}) end,'feeding must be true or false')
+feeder.valid=false; c3.valid=false
 -- walking (radius, up to 256): the count across the stops; the walk ends transferred once it is taken
 local f1=chest({x=80.5,y=32.5},{['iron-plate']=30})
 local f2=chest({x=84.5,y=32.5},{['iron-plate']=30})
@@ -220,8 +234,34 @@ body.position={x=82,y=32}
 advance(2)
 last=luna('status').last
 eq(last.outcome,'transferred'); eq(f1.inv.get_item_count('iron-plate')+f2.inv.get_item_count('iron-plate'),10)
-eq(main.get_item_count('iron-plate'),310)
+eq(main.get_item_count('iron-plate'),260)
 body.position={x=50,y=32}
+-- walking: a chest in a worm's reach the map shows is left out and named (friction3: Opus's tour along a turret line was
+-- killed by worms); the walk's legs go round them (stock.lua avoid).
+do
+  local check=runtime.avoid.goal_check
+  local w1=chest({x=90.5,y=32.5},{['iron-plate']=30})
+  local w2=chest({x=50.5,y=60.5},{['iron-plate']=30})
+  runtime.avoid.goal_check=function(_,_,goal,mode)
+    assert(mode,'an avoid mode')
+    if goal.x==90.5 then return {m={name='medium-worm-turret',x=95,y=30,range=30},d=5.1} end
+  end
+  r=luna('transfer',{item='iron-plate',from='nearest',count=20,radius=60})
+  assert(r.from_nearest:find('^wooden%-chest at %(50.5,60.5%)'),r.from_nearest)
+  assert(r.from_nearest:find('1 in enemy reach left out: wooden-chest (91,33) is inside medium-worm-turret (95,30) range 30 (5.1 tiles from it)',1,true),r.from_nearest)
+  local act=storage.agent_harness.active[runtime.bots.index_of('luna')]
+  assert(act and act.avoid,'the tour walks with avoid')
+  luna('stop')
+  w1.valid=false; w2.valid=false
+  runtime.avoid.goal_check=check
+end
+-- walk: true with no radius looks 32 tiles (Muse 23:42: refused, naming the chest 16.8 tiles off and radius=18)
+do
+  local w3=chest({x=66.5,y=32.5},{['iron-plate']=10})
+  r=luna('transfer',{item='iron-plate',from='nearest',count=10,walk=true})
+  assert(r.until_tick and r.from_nearest:find('^wooden%-chest at %(66.5,32.5%)'),tostring(r.from_nearest))
+  luna('stop'); w3.valid=false
+end
 -- with radius and every chest in reach: the count, not more (on a copy of world n it took 82 of 75 before)
 local g1=chest({x=52.5,y=30.5},{['iron-plate']=20})
 local g2=chest({x=53.5,y=34.5},{['iron-plate']=62})
