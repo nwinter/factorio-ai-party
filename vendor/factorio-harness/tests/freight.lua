@@ -161,10 +161,15 @@ on_platform={p3,rocketpod}; p1.surface=nauvis_s; p2.surface=nauvis_s; p2.positio
 quarter()
 on_platform={rocketpod}; p3.surface=nauvis_s
 p1.valid=false; p2.valid=false
+-- (Sonnet, shift14 22:50: the container the pod became, where it stands, not the pod's sighting rounded)
+local kept_surfaces=game.surfaces
+game.surfaces={nauvis={find_entities_filtered=function(f)
+  eq(f.name,'cargo-pod-container'); eq(f.radius,8); return {{valid=true,position={x=-3.5,y=7.5}}} end}}
 quarter()
+game.surfaces=kept_surfaces
 local fr7=F.read(sunward)[1]
 has(fr7.line,'; cargo pods sent down 3 (agricultural-science-pack*300 iron-plate*50), received by landing pads 1 (agricultural-science-pack*200) '
-  ..'at cargo-landing-pad (10.5,20.5) on nauvis, landed as cargo pod containers (no landing pad) 1 (iron-plate*50) at (-3,8) on nauvis, '
+  ..'at cargo-landing-pad (10.5,20.5) on nauvis, landed as cargo pod containers (no landing pad) 1 (iron-plate*50) at cargo-pod-container (-3.5,7.5) on nauvis, '
   ..'in flight 1 (agricultural-science-pack*100): #503 to cargo-landing-pad descending on nauvis (left the hub 1s ago)')
 eq(fr7.pods.sent,3); eq(fr7.pods.received,1); eq(fr7.pods.in_flight,1); eq(fr7.pods.received_items['agricultural-science-pack'],200)
 -- Gone from the platform without reaching the planet: said so. After the stop the last one is still followed.

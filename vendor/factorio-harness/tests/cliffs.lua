@@ -141,4 +141,43 @@ fails(function() astra('use_item',{item='cliff-explosives',position={x=100,y=38}
 body.items['cliff-explosives']=0
 fails(function() astra('clear_cliffs',{position={x=100,y=38}}) end,'no cliff-explosives held')
 assert(astra('describe',{}).actions.clear_cliffs.returns:find('cliffs_destroyed',1,true))
+-- As a queue step (Sol 22:45: job 17309 began and ended in tick 10668307 though its until_tick was 10675507; the next
+-- step, a move_to, stopped the throw and no cliff went): the step waits for the throw's end, then the plan goes on.
+body.items['cliff-explosives']=3
+local c6=cliff(81,41)
+made={}
+astra('queue_submit',{steps={{action='clear_cliffs',args={position={x=81,y=41}}},{action='move_to',args={position={x=76,y=38},pathfind=false}}}})
+advance(2)
+local q=astra('queue_status',{})
+eq(q.active.action,'clear_cliffs'); eq(#made,1)
+advance(10)
+eq(astra('queue_status',{}).active.action,'clear_cliffs')  -- the blast has not come yet: still the step
+c6.valid=false
+advance(40)
+q=astra('queue_status',{history=4})
+local done
+for _,e in ipairs(q.history) do if e.action=='clear_cliffs' then done=e end end
+eq(done.ok,true); eq(done.result.outcome,'cliffs_destroyed')  -- a success: the plan goes on
+local moved=q.active and q.active.action=='move_to'
+for _,e in ipairs(q.history) do if e.action=='move_to' then moved=true end end
+assert(moved,'the move_to ran after the throw')
+-- use_item with cliff explosives as a step: the same wait.
+astra('queue_cancel',{})
+local c7=cliff(80,39)
+made={}
+astra('queue_submit',{steps={{action='use_item',args={item='cliff-explosives',position={x=80,y=39}}},{action='wait_ticks',args={ticks=5}}}})
+advance(2)
+eq(astra('queue_status',{}).active.action,'use_item'); eq(#made,1)
+c7.valid=false
+advance(40)
+q=astra('queue_status',{history=4})
+for _,e in ipairs(q.history) do if e.action=='use_item' then done=e end end
+eq(done.ok,true); eq(done.result.outcome,'cliffs_destroyed')
+-- a grenade as a step is done at once (no timed action)
+body.items.grenade=1
+astra('queue_cancel',{})
+astra('queue_submit',{steps={{action='use_item',args={item='grenade',position={x=80,y=40}}}}})
+advance(1)
+q=astra('queue_status',{history=2})
+eq(q.active,false); eq(q.history[#q.history].action,'use_item'); eq(q.history[#q.history].ok,true)
 print('cliffs: ok')

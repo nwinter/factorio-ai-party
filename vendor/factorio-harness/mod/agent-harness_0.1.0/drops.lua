@@ -21,7 +21,10 @@ return function(api)
     return s.drops
   end
   local function xy(pos) return {x=math.floor(pos.x * 10 + 0.5) / 10, y=math.floor(pos.y * 10 + 0.5) / 10} end
-  local function at_text(pos) return string.format('(%d,%d)', math.floor(pos.x + 0.5), math.floor(pos.y + 0.5)) end
+  -- Exact, as the entity stands (Sonnet, shift14 22:50: "landed at (12,153)" sent a transfer to (12.5,153.5); the
+  -- container was at (11.5,152.5), another at (13.5,153.5)).
+  local function at_text(pos) return string.format('(%g,%g)', pos.x, pos.y) end
+  local NEARBY, MAX_NEARBY = 8, 4
   local function ago(ticks)
     local sec = math.floor(ticks / 60)
     if sec >= 60 then return string.format('%dm%02ds', math.floor(sec / 60), sec % 60) end
@@ -88,6 +91,20 @@ return function(api)
     if best then
       r.state, r.at, r.into, r.container, r.container_unit = 'landed', xy(best.position), best.name, best, best.unit_number
       r.landed_with = contents(best)
+      -- The other cargo pod containers near it, each where it stands and what it holds (pods scatter: two a tile apart).
+      local near = {}
+      for _, e in pairs(surface.find_entities_filtered{name='cargo-pod-container', position=best.position, radius=NEARBY}) do
+        if e.valid and e ~= best then near[#near+1] = e end
+      end
+      table.sort(near, function(x, y)
+        return (x.position.x - best.position.x) ^ 2 + (x.position.y - best.position.y) ^ 2 < (y.position.x - best.position.x) ^ 2 + (y.position.y - best.position.y) ^ 2
+      end)
+      r.nearby = {}
+      for i = 1, math.min(MAX_NEARBY, #near) do
+        r.nearby[i] = {position=xy(near[i].position), holds=contents(near[i])}
+      end
+      if #near > MAX_NEARBY then r.nearby_more = #near - MAX_NEARBY end
+      if #r.nearby == 0 then r.nearby = nil end
     elseif game.tick - (r.gone or game.tick) >= GIVE_UP then
       r.state, r.at = 'landed', seen and xy(seen) or nil
       r.note = string.format('no cargo pod container within %d tiles of %s (emptied already, or it landed farther off)', SEARCH,
@@ -119,8 +136,14 @@ return function(api)
     end
     if r.note then return string.format('drop #%d from %s to %s: %s; it held %s', r.id, r.platform, r.surface, r.note, items(r)) end
     local held = r.landed_with and #r.landed_with > 0 and table.concat(r.landed_with, ' ') or items(r)
-    return string.format('drop #%d landed at %s on %s: %s with %s (take them with transfer; it vanishes when empty)',
-      r.id, at_text(r.at), r.surface, r.into, held)
+    local others = {}
+    for _, n in ipairs(r.nearby or {}) do
+      others[#others+1] = string.format('%s holds %s', at_text(n.position), n.holds and #n.holds > 0 and table.concat(n.holds, ' ') or 'nothing')
+    end
+    return string.format('drop #%d landed at %s on %s: %s with %s (take them with transfer; it vanishes when empty)%s',
+      r.id, at_text(r.at), r.surface, r.into, held,
+      #others > 0 and string.format('; other cargo pod containers within %d tiles: %s%s', NEARBY, table.concat(others, '; '),
+        r.nearby_more and string.format(' (+%d more)', r.nearby_more) or '') or '')
   end
   -- Team block lines for the sender and the teammates named in `to`.
   function M.lines(p, h)
@@ -158,7 +181,8 @@ return function(api)
       if #rows >= limit then break end
       local r = s.list[i]
       local row = {id=r.id, by=r.by, to=#r.to > 0 and r.to or nil, platform=r.platform, surface=r.surface, items=r.sent,
-        ago=ago(game.tick - r.tick), state=r.state, aimed_near=r.pad or r.near, at=r.at, landed_in=r.into, note=r.note}
+        ago=ago(game.tick - r.tick), state=r.state, aimed_near=r.pad or r.near, at=r.at, landed_in=r.into, note=r.note,
+        nearby=r.nearby, nearby_more=r.nearby_more}
       if r.container then
         if try(function() return r.container.valid end) then
           row.container = {name=r.container.name, position=xy(r.container.position), holds=contents(r.container)}
@@ -171,7 +195,7 @@ return function(api)
     return {drops=rows, note=#rows == 0 and 'no drops yet' or nil}
   end
   M.schema = {
-    drops = {limit='1..20 (default 10)', returns='drops newest first: {id, by, to, platform, surface, items, ago, state (descending|landed), aimed_near, at, landed_in (cargo-pod-container or cargo-landing-pad), container {name, position, holds} or {gone}, note}. Read only'},
+    drops = {limit='1..20 (default 10)', returns='drops newest first: {id, by, to, platform, surface, items, ago, state (descending|landed), aimed_near, at, landed_in (cargo-pod-container or cargo-landing-pad), container {name, position, holds} or {gone}, nearby [{position, holds}] (other cargo pod containers within 8 tiles when it landed, nearest first, at most 4; nearby_more), note}. Positions as the entities stand (x.5 for a container). Read only'},
   }
   return M
 end

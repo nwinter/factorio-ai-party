@@ -50,7 +50,8 @@ def main():
     assert rows == [("posted", "sol", "0 of 3 steps", 0, 3, None), ("step", "astra", "1 of 4 steps", 1, 4, "1. mine uranium"),
                     ("step", "astra", "1 of 4 steps", 1, 4, "1. mine uranium")], rows
     assert b["projects"] == [{"id": 6, "title": "Nuclear plant", "owner": "sol", "agent": "sol", "status": "claimed",
-                              "progress": "1 of 4 steps", "done": 1, "total": 4}], b["projects"]
+                              "progress": "1 of 4 steps", "done": 1, "total": 4, "next": None, "goal": None}], b["projects"]
+    # (next and goal come from a board read's row: events carry neither)
     # a board read's rows (progress text only), the latest changed first; closed ones leave
     m.ingest({"board": {"items": [
         {"id": 7, "kind": "project", "title": "Robot mall", "owner": None, "status": "open", "progress": "no steps yet", "updated_tick": 500},

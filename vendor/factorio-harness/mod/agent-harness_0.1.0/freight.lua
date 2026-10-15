@@ -365,7 +365,19 @@ return function(api)
       if p.dest and p.dest.pad then
         tally(seg.pods, 'received', p.cargo, string.format('%s (%g,%g) on %s', p.dest.pad, p.dest.position.x, p.dest.position.y, p.dest.surface or here))
       else
-        tally(seg.pods, 'landed', p.cargo, string.format('(%d,%d) on %s', math.floor(p.last.position.x + 0.5), math.floor(p.last.position.y + 0.5), here))
+        -- The container it became, where it stands (Sonnet, shift14 22:50: a rounded spot sent a transfer a tile off);
+        -- else the pod's last sighting, to a tenth of a tile.
+        local pos = p.last.position
+        local box = try(function()
+          local best, d
+          for _, e in pairs(game.surfaces[here].find_entities_filtered{name='cargo-pod-container', position=pos, radius=8}) do
+            local dd = (e.position.x - pos.x) ^ 2 + (e.position.y - pos.y) ^ 2
+            if e.valid and (not d or dd < d) then best, d = e, dd end
+          end
+          return best
+        end)
+        tally(seg.pods, 'landed', p.cargo, box and string.format('cargo-pod-container (%g,%g) on %s', box.position.x, box.position.y, here)
+          or string.format('(%.1f,%.1f) on %s (the pod\'s last sighting; no cargo pod container within 8 tiles of it)', pos.x, pos.y, here))
       end
       seg.pods.last_tick = tick
     else

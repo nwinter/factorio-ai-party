@@ -2732,6 +2732,12 @@ end)()
   standing[1]={valid=true,name='transport-belt',type='transport-belt',position={x=5.5,y=5.5},direction=4,force=p.force,surface=vulcanus}
   local sc=call('scan',{surface='vulcanus',position={x=5,y=5},radius=4})
   eq(sc.entities[1].name,'transport-belt')
+  -- A cargo pod container: where it stands and what it holds, unasked (Sonnet, shift14 22:50).
+  standing[2]={valid=true,name='cargo-pod-container',type='container',position={x=6.5,y=6.5},force=p.force,surface=vulcanus,
+    get_inventory=function() return {get_contents=function() return {{name='advanced-circuit',count=1945,quality='normal'}} end} end}
+  sc=call('scan',{surface='vulcanus',position={x=5,y=5},radius=4})
+  eq(sc.entities[2].name,'cargo-pod-container'); eq(sc.entities[2].position.x,6.5); eq(sc.entities[2].holds,'advanced-circuit*1945')
+  standing[2]=nil
   fails(function() call('scan',{surface='vulcanus'}) end,'scan with surface needs position, area or positions there')
   prototypes.entity,game.get_surface,p.force.platforms,p.force.is_chunk_charted=entity_protos,get_surface,platforms,charted
 end)()
@@ -4228,6 +4234,21 @@ end)()
   local st=call('status',{})
   eq(st.active,false); eq(st.last.outcome,'fed'); eq(st.last.result.loaded[1].loaded,90); eq(st.last.result.complete,true)
   eq(cargo[1].count,90); eq(main[1].count,0)
+  -- Sonnet, shift14 22:50 (re-issued 3 times as the wait ran out each minute through the build): while the silo makes
+  -- parts the wait goes on; ticks with no new part ends it.
+  do
+    rocket_there=false; silo.rocket_parts=0
+    main[1]=stack('agricultural-science-pack',10)
+    local w=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=10},chests=false,ticks=60})
+    assert(w.waiting.note:find('^waits while the silo makes parts: it ends after 1s with no new part'),w.waiting.note)
+    eq(w.gives_up_tick,tick+216000)
+    for k=1,12 do advance(4); silo.rocket_parts=k*4; advance(3) end  -- 84 ticks, a part every 7
+    eq(call('status',{}).active.kind,'feed','past its 60 ticks while parts came')
+    advance(80)
+    local stl=call('status',{})
+    eq(stl.active,false); eq(stl.last.outcome,'timed_out','no new part for 60 ticks')
+    silo.rocket_parts=0; rocket_there=true; main[1]=stack(nil,0)
+  end
   -- With launch: the launch's refusal after loading says the cargo stays.
   main[1]=stack('agricultural-science-pack',10)
   fails(function() call('load_silo',{position=silo.position,items={['agricultural-science-pack']=100},to_total=true,chests=false,launch=true,platform='Nowhere'}) end,
@@ -4308,6 +4329,27 @@ end)()
   fails(function() call('load_silo',{position=silo.position,items={['agricultural-science-pack']=10},from={x=40.5,y=5.5},walk=true}) end,
     'nothing walked: the rocket still needs agricultural-science-pack 10 (you hold 0) and the chests in from hold none of it (iron-chest (40.5,5.5) holds 0 agricultural-science-pack)')
   fails(function() call('load_silo',{position=silo.position,items={['agricultural-science-pack']=10},walk=true}) end,'walk goes with from')
+  -- fresh_first (Luna, shift14 22:50): for an item that spoils, the least spoiled stacks of you and the chests first,
+  -- each moved whole; fresh_first=false: you first, then the chests.
+  do
+    far={}
+    for i=1,3 do cargo[i]=stack(nil,0) end
+    local kept_spoil=ag.get_spoil_ticks
+    ag.get_spoil_ticks=function() return 3600*60 end
+    local function aged(n,pct) local s=stack('agricultural-science-pack',n); s.spoil_percent=pct; return s end
+    main=inv(aged(50,0.6),stack(nil,0))
+    main.get_contents=function() local out={}; for _,s in ipairs(main) do if s.valid_for_read then out[#out+1]={name=s.name,count=s.count,quality='normal'} end end; return out end
+    held_inv[1]=aged(50,0.3); held_inv[2]=aged(50,0.1)
+    r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=80},from={x=40.5,y=5.5}})
+    eq(r.loaded[1].loaded,80); eq(r.loaded[1].order,'fresh first'); eq(r.loaded[1].from,'iron-chest (40.5,5.5) 80')
+    eq(held_inv[2].count,0,'the 10% stack first'); eq(held_inv[1].count,20,'then 30 of the 30% one'); eq(main[1].count,50,'yours (60%) stays')
+    -- fresh_first=false: you first
+    for i=1,3 do cargo[i]=stack(nil,0) end
+    r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=60},from={x=40.5,y=5.5},fresh_first=false})
+    eq(r.loaded[1].order,nil); eq(r.loaded[1].from,'you 50, iron-chest (40.5,5.5) 10'); eq(main[1].count,0)
+    ag.get_spoil_ticks=kept_spoil
+    held_inv[1]=stack(nil,0); held_inv[2]=stack(nil,0)
+  end
   p.can_reach_entity=reach_was
   -- A launch before the rocket is built names its parts (Grok, shift14 21:20).
   silo.rocket_silo_status=defines.rocket_silo_status.building_rocket; silo.rocket_parts=35
