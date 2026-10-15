@@ -102,6 +102,23 @@ silo.rocket_parts=13
 met,saw=check({['until']='rocket_ready',position={x=65.5,y=14.5}})
 eq(met,true); eq(saw,"rocket-silo (65.5,14.5): rocket built (50/50 parts) and ready to launch, not launched, cargo agricultural-science-pack*45; parts for the rocket after it 13/50")
 silo.rocket_parts=0
+-- rocket_parts (Sonnet, shift14 22:50): the rocket being built has at least N parts; a built one (rising or ready)
+-- has all of them.
+silo.rocket_silo_status=0; silo.rocket_parts=35
+met,saw=check({['until']='rocket_parts',at_least=40,position={x=65.5,y=14.5}})
+eq(met,false); eq(saw,'rocket parts 35/50 (at least 40); rocket-silo (65.5,14.5): building_rocket, parts 35/50, cargo agricultural-science-pack*45')
+silo.rocket_parts=40
+eq((check({['until']='rocket_parts',at_least=40,position={x=65.5,y=14.5}})),true)
+silo.rocket_silo_status=5; silo.rocket_parts=0
+met,saw=check({['until']='rocket_parts',at_least=50,position={x=65.5,y=14.5}})
+eq(met,true); assert(saw:find('^rocket parts 50/50 %(at least 50%)'),saw)
+silo.rocket_silo_status=7; silo.rocket_parts=6
+eq((check({['until']='rocket_parts',at_least=50,position={x=65.5,y=14.5}})),true,'a ready rocket has all its parts')
+silo.rocket_parts=0
+assert(not pcall(C.validate,{['until']='rocket_parts',position={x=1,y=1}}))
+assert(not pcall(C.validate,{['until']='rocket_parts',at_least=40}))
+assert(not pcall(C.validate,{['until']='rocket_parts',at_least=0,position={x=1,y=1}}))
+C.validate({['until']='rocket_parts',at_least=40,position={x=1,y=1}})
 -- One position is the same as positions with it (Haiku, 12:20: a level fallen under at one chest).
 met,saw=check({['until']='item_count',item='agricultural-science-pack',below=50,position={x=65.5,y=14.5}})
 eq(met,true); assert(saw:find('agricultural-science-pack 45 in 1 entities',1,true),saw)
