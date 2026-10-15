@@ -90,7 +90,8 @@ already targets your character.
   finish at the current lab throughput (or which pack it waits for). `./fh research done` lists what finished lately
   and what each unlocked. `./fh call science` (or `--args '{"pack":"logistic-science-pack"}'`) counts each pack the
   research needs over your whole surface, the same for everyone wherever they stand: made and used in 10 minutes,
-  the assemblers set to it and their states, packs in chests, on belts, in labs and carried, and the largest chests;
+  the assemblers set to it and their states, packs in chests, in landing pads and hubs, on belts, in labs and carried,
+  and the largest holders (landing pads included);
   its `reach` line says where else each pack sits (inserter hands, robots) and why it does not reach the labs; its
   `chain` line walks the pack's recipe tree down, each step with its makers and made and used per minute, following
   the ingredient most makers lack (`chemical-science-pack: 9 of 14 makers lack advanced-circuit, ...; plastic-bar:
