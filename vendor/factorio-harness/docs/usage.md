@@ -1950,6 +1950,11 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     (`reserved_note: robots have 20 copper-cable reserved to take at it now: they may empty it before you arrive`), and
     a take that finds none at a chest named to you in the last 10 minutes says what it held then: `...; it held 30
     copper-cable 41s ago when named to you, 5 of it then reserved for robots to take`.
+  - `transfer`, `collect`, `feed`, `refuel`, `rearm` and `pickup` take no `surface` (Grok, shift17 10:50, a requester on
+    Vulcanus and an empty silo chest): items move by hand only where the character stands, within its reach; remote
+    view has no hands, as in the game. The refusal says so and names what moves items on another surface: robots
+    between chests of a logistic network there (requests), inserters and belts between entities, rockets and space
+    platforms between surfaces.
   - `transfer` or `collect {positions, item | items, pick, to}` (Luna 07:57: a repeating seed courier walked 300+ tile
     laps from empty seed chests):
     - `pick: "first_with_stock"` reads every listed place as `inspect` does (in sight, or by remote view where our
