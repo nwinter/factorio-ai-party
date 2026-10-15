@@ -58,6 +58,8 @@ class Rcon:
 # (infinite levels completed per technology), planets (surfaces with our entities), platforms.
 # SCORE_LUA is sent as one line, so it must hold no "--" comments (one cut the score in shake8).
 # A platform row's hub is false while its record waits for a starter pack (the New platform button).
+# Building counts use LuaForce.get_entity_count, kept by the engine: the earlier per-surface count_entities_filtered
+# for ~45 names cost ~0.8 s a read on world n (2026-10-14 21:45: the game stalled ~450 ms every 3 s, the score read).
 SCORE_LUA = r"""
 local f = game.forces.player
 local all = {}
@@ -99,8 +101,7 @@ for _, n in ipairs({"burner-mining-drill","electric-mining-drill","stone-furnace
   "express-transport-belt"}) do
   if prototypes.entity[n] then
     counted[#counted+1] = n
-    local c = 0
-    for _, s in ipairs(all) do c = c + s.count_entities_filtered{force = f, name = n} end
+    local c = f.get_entity_count(n)
     if c > 0 then counts[n] = c end
   end
 end
