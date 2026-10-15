@@ -241,7 +241,7 @@ return function(api)
         if (n.seq or 0) <= from then break end
         if here(n.surface) and inside(f, n.position) and (not best_seq or n.seq > best_seq) then
           best_seq = n.seq
-          best = string.format('%s (%d,%d), %d spawner%s', n.kind == 'pollution_reached_nest' and 'pollution reached nest' or 'nest charted',
+          best = string.format('%s (%g,%g), %d spawner%s', n.kind == 'pollution_reached_nest' and 'pollution reached nest' or 'nest charted',
             n.position.x, n.position.y, n.spawners or 0, n.spawners == 1 and '' or 's')
         end
       end
