@@ -100,6 +100,16 @@ if [ "${POG_OBS:-1}" != 0 ]; then
   fi
 fi
 others=$("${pgrep_cmd[@]}" -f 'tools/start-team.sh' 2>/dev/null | tr '\n' ' ')
+# Only a start-team running in this checkout counts: engineers' test runs in their own worktrees run their copies of
+# tools/start-team.sh (2026-10-15 12:33: one blocked the shift18 change). Stubbed pgreps (tests) are taken as they are.
+if [ -z "${POG_SC_PGREP:-}" ]; then
+  mine=""
+  for p in $others; do
+    c=$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+    [ "$c" = "$root" ] && mine="$mine$p "
+  done
+  others=$mine
+fi
 check running "$([ -z "${others// /}" ] && echo 1 || echo 0)" "another start-team is running (pid ${others% })"
 lock=${runs:-$root/runs}/.shift-change.lock
 if [ $dry = 0 ]; then
