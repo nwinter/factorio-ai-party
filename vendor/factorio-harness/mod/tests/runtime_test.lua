@@ -4546,4 +4546,28 @@ end)()
   p.get_inventory,p.get_main_inventory=old_get,old_main
   defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor=old_gun,old_ammo,old_armor
 end)()
+-- Remote plans use a separate channel through the real dispatch boundary.
+;(function()
+  call('queue_cancel',{})
+  call('queue_submit',{lane='remote',steps={{action='wait_ticks',args={ticks=8}},{action='describe'}}})
+  call('walk',{direction='east',ticks=100})
+  advance(2)
+  local action=storage.agent_harness.active[1]
+  eq(action.kind,'walk'); eq(action.queued,nil)
+  local r=call('status',{brief=true})
+  eq(r.queues.remote.active.action,'wait_ticks'); eq(r.queues.body.paused,true)
+  call('walk',{direction='west',ticks=100})
+  action=storage.agent_harness.active[1]
+  advance(10)
+  local q=call('queue_status',{lane='remote'})
+  eq(q.paused,false); eq(q.active,false); eq(q.history[#q.history].action,'describe')
+  eq(storage.agent_harness.active[1],action); eq(action.queued,nil)
+  fails(function() call('queue_submit',{lane='remote',steps={{action='walk',args={direction='east',ticks=1}}}}) end,'steps[1]')
+  eq(storage.agent_harness.active[1],action)
+  call('queue_repeat',{lane='remote',steps={{action='wait_ticks',args={ticks=100}}}})
+  advance(1); call('queue_cancel',{lane='remote'})
+  eq(storage.agent_harness.active[1],action)
+  eq(call('queue_status',{}).lanes.remote.paused,true)
+  call('stop',{})
+end)()
 print('runtime: '..assertions..' assertions passed')

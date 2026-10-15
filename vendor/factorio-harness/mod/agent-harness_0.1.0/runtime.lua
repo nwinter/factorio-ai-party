@@ -1349,6 +1349,7 @@ function handlers.describe()
         ammo='in a vehicle: an ammo name (cannon-shell, explosive-cannon-shell, firearm-magazine, flamethrower-ammo, rocket, ...): the gun that takes it, its slot loaded from your inventory when empty or holding another kind',
         note='seated in a car, tank or spidertron as its gunner (the driver, unless driver_is_gunner is off and a passenger sits in) it fires the vehicle\'s selected gun from the vehicle\'s ammo slots; the turret turns toward the target as a player\'s cursor turns it; position= aims at the entity there (not our own), auto=true at the nearest enemy in radius; vehicle {drive} goes on while it fires; reply: vehicle, seat, gun, gun_slot, range, guns (each slot with its ammo), target, out_of_range',
         outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={slot='gun|ammo|armor',item='owned item name',index='optional exact slot; without it gun/ammo tries compatible empty slots in order, then slot 1; armor defaults to 1'},
+      drill_sites=M.drill_sites.schema,
       agriculture={surface='optional surface name (default yours)',returns='towers [{name, position, state (built, ghost, destroyed), status, seeds, lost_tick, cause, line}], as_of (census discovery tick), pending, history; current visible towers and ghosts, plus up to 256 recorded tower deaths since this history was installed; rebuilt positions show the current tower'},
       describe={}, inventory={full='true: the stacks as lists {name, quality, count}, as observe player has them',returns='the character\'s inventories as short lines (name*count, name@quality*count, or empty): inventory (main), free (slots), guns, ammo, armor, equipment (in the armor\'s grid), trash (trash slots, when any), cursor (the stack or ghost in hand, when any), crafting (hand queue), warnings (nearly full, hoarding); status {inventory=true} gives it in one line'},
       map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true: regions of water (a character cannot cross it), walkable water (shallow water, wetland, oil ocean: a character walks through) and lava',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={platform='optional owned platform: bounded schematic tile_runs [{x,y,count,name}], tile_count, entities with footprints and directions, centred on its hub or position; works aboard',position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)',returns='player, entities, resource_patches, ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the radius by item (rows for them only with entity_types/entity_names)'},
@@ -1778,7 +1779,7 @@ function handlers.status(p,a)
   -- running and the last results, none of the factory, threat or alert scans.
   -- The stream's overlay adds alerts (stored incidents, no scan).
   if a.brief==true then
-    return {brief=true,inventory=inv_line,active=active(p.index),retreat_guard=M.retreat_guard_line(p.index),last=state().last and state().last[p.index] or false,combat=M.combat_row(p.index,p),hurt=alive and M.hurt_row(p) or nil,
+    return {brief=true,queues=scheduler.lanes(p.index),inventory=inv_line,active=active(p.index),retreat_guard=M.retreat_guard_line(p.index),last=state().last and state().last[p.index] or false,combat=M.combat_row(p.index,p),hurt=alive and M.hurt_row(p) or nil,
       last_combat=state().last_combat and state().last_combat[p.index] or false,alive=alive or false,riding=p.driving or nil,connected=p.connected,
       drop_pending=M.drop_pending(p.index),last_drop=M.last_drop(p.index),
       surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,
@@ -1841,7 +1842,7 @@ function handlers.status(p,a)
   -- On Fulgora: its sky now and the lightning bolts near you (lightning.lua M.sky; Gemini 12:20).
   local oks,sky=false,nil
   if alive then oks,sky=pcall(M.lightning.sky,p.surface,p.position) end
-  return {storm=oks and sky or nil,crafting=alive and crafting_line(p) or nil,retreat_guard=M.retreat_guard_line(p.index),inv=factory.inv,inventory=inv_line,factory=factory.factory,machines=factory.machines,machine_positions=factory.machine_positions,warnings=factory.warnings,factory_as_of=factory.as_of,survey_error=factory.error,
+  return {queues=scheduler.lanes(p.index),storm=oks and sky or nil,crafting=alive and crafting_line(p) or nil,retreat_guard=M.retreat_guard_line(p.index),inv=factory.inv,inventory=inv_line,factory=factory.factory,machines=factory.machines,machine_positions=factory.machine_positions,warnings=factory.warnings,factory_as_of=factory.as_of,survey_error=factory.error,
     evolution=threats.evolution,pollution=threats.pollution,enemies=threats.enemies,chart=threats.chart,threats_as_of=threats.as_of,
     alerts=alerts,runtime_fault=state().runtime_fault or false,connected=p.connected,alive=p.character and p.character.valid or false,cheat_mode=p.cheat_mode,
     supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,active=now,order=M.orders.brief(p.index),
@@ -2612,7 +2613,7 @@ handlers.launch=function(p,a)
   end)
   return out
 end
-local views={agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
+local views={drill_sites=true,agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
 function handlers.observe(p,a)
   -- Newer read-only views travel as observe scopes: an already loaded
   -- bootstrap treats unknown action names as cached mutations.
@@ -8169,6 +8170,8 @@ M.details=require('details'){}
 M.modules=require('modules'){out_of_reach=function(p,e) return M.out_of_reach(p,e) end}
 -- Gleba farming reads and burner fuel (farm.lua).
 M.farm=require('farm'){}
+M.drill_sites=require('drill_sites'){state=state,integer=integer,entity=remote_entity,on_surface=function(p,name) return M.on_surface(p,name) end}
+function handlers.drill_sites(p,a) return M.drill_sites.read(p,a) end
 M.platformview=require('platformview'){platform=function(p,name) return space.platform(p,name) end}
 M.agriculture=require('agriculture'){state=state,towers=function(force,surface) return M.census.towers(force,surface) end}
 function handlers.agriculture(p,a) return M.agriculture.read(p,a) end
@@ -9368,7 +9371,7 @@ end
 local conditions=conditions_module{known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end}
-scheduler=scheduler_module{
+M.scheduler_api={
   state=state,player=player,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
   condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) return check_args(action,args) end,validate_condition=function(c) return conditions.validate(c) end,
@@ -9403,6 +9406,8 @@ scheduler=scheduler_module{
     return last and last[p.index] and last[p.index].outcome
   end
 }
+scheduler=scheduler_module(M.scheduler_api)
+scheduler=require('queue_lanes'){scheduler=scheduler,factory=scheduler_module,base=M.scheduler_api,is_read=function(action) return M.is_read(action) end}
 for name,handler in pairs(scheduler.handlers) do handlers[name]=handler end
 -- A direct action a harness update stopped, started again from the call that started it (carry.lua), ending by
 -- the tick it would have (until_tick: a pending fh --wait budgets for that).
@@ -9464,7 +9469,7 @@ function M.queue_brief(q)
     recent[#recent+1]=step(r)..(r.ok and ' ok' or ' failed')..(why and ': '..tostring(why) or '')
   end
   local f=q.last_failure
-  return {revision=q.revision,paused=q.paused,active=q.active and step(q.active) or false,pending=pending,
+  return {lane=q.lane,revision=q.revision,paused=q.paused,active=q.active and step(q.active) or false,pending=pending,
     pending_count=#(q.pending or {}),recent=#recent>0 and recent or nil,
     last_failure=f and (step(f)..(type(f.result)=='table' and f.result.reason and ': '..tostring(f.result.reason) or '')) or nil,
     repeating=q.repeating or nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.orders_between_rounds,guards=q.guards and #q.guards or nil,
@@ -9474,11 +9479,12 @@ end
 for _,name in ipairs{'queue_submit','queue_repeat','queue_edit','queue_cancel','queue_resume'} do
   local handler=handlers[name]
   if handler then handlers[name]=function(p,a)
-    local q=state().queues and state().queues[p.index]
+    local key=a and a.lane=='remote' and 'remote_queues' or 'queues'
+    local q=state()[key] and state()[key][p.index]
     local revision=q and q.revision
     local ok,result=pcall(handler,p,a)
     if not ok then
-      local after=state().queues and state().queues[p.index]
+      local after=state()[key] and state()[key][p.index]
       if (after and after.revision)==revision then passive_failed=game.tick end
       error(result,0)
     end
@@ -9743,7 +9749,7 @@ passive.circuit_set=true; passive.wire=true
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
 for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route','rail_route','train_stop','blueprint_save','blueprint_rename'}) do passive[name]=true end
-local reads={agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
+local reads={drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
 M.reads=reads
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
 
@@ -9759,7 +9765,7 @@ local EXTRA_ARGS={attach={'offline'},build={'quality','entity'},collect={'count'
 EXTRA_ARGS.circuit_set=TARGET
 EXTRA_ARGS.trace=TARGET
 -- observe forwards to the scoped views; a scoped call is checked as that view.
-local VIEW_SCOPES={agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
+local VIEW_SCOPES={drill_sites=true,agriculture=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
 local allowed_args
 function check_args(action,args)
   if not allowed_args then
@@ -10375,7 +10381,7 @@ dispatch_request=function(request)
   local handler=handlers[request.action]; assert(handler,'unsupported action; call describe')
   -- equipment too: the vehicle's grid and the armor's open seated, as their GUIs do (operator 09:13).
   M.seated_ok=(M.read_call(request.action,request.args) or passive[request.action] or M.away(request.args) or request.action=='vehicle' or request.action=='shoot'
-    or request.action=='equipment') and true or nil
+    or request.action=='equipment' or (request.action:match('^queue_') and (request.args or {}).lane=='remote')) and true or nil
   local args_ok,args_err=pcall(check_args,request.action,request.args)
   if not args_ok then
     local ok,hint=pcall(M.entity_args,request)
@@ -10426,7 +10432,7 @@ dispatch_request=function(request)
   local sleeping=request.action=='observe' and type(request.args)=='table' and request.args.scope=='sleep_check'
   if peek or sleeping or request.action=='status' or request.action=='queue_status' or request.action=='queue_cancel' then
     local p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
-    if request.action=='queue_cancel' then M.orders.on_drive(p.index) end
+    if request.action=='queue_cancel' and (request.args or {}).lane~='remote' then M.orders.on_drive(p.index) end
     return handler(body(p),request.args or {})
   end
   -- A dead bot's observe answers when it respawns, as sleep_check does
@@ -10450,6 +10456,7 @@ dispatch_request=function(request)
   end
   -- Passive, or acting on another surface or by remote view (M.remote): the action and queue go on.
   local quiet=passive[request.action] or M.read_call(request.action,request.args) or M.remote(p,request.action,request.args)
+    or (request.action:match('^queue_') and (request.args or {}).lane=='remote')
   -- A call refused by its own checks stops nothing: they run before the queue stops (M.preflight).
   if not reads[request.action] and not quiet and M.preflight and M.preflight[request.action] then
     local ok,err=pcall(M.preflight[request.action],p,request.args or {})
