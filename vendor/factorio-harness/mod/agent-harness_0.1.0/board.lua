@@ -527,19 +527,38 @@ return function(api)
   end
   -- Steps of open projects that nobody owns and the agent may take (Foobator, d15 08:17; joonazan 08:16): of projects
   -- with open_steps, or with no owner; the first `max`.
-  function M.open_steps(me, max)
-    local out = {}
+  -- near: the reader's position; steps of projects with areas nearest first, each with its distance (joonazan, d15
+  -- 08:16: "open for you" near an idle agent), then those of projects without areas.
+  function M.open_steps(me, max, near)
+    local rows = {}
     for _, i in ipairs(open_projects()) do
       if (i.open_steps or not i.owner) and i.owner ~= me then
+        local d
+        for _, ar in ipairs(near and i.areas or {}) do
+          local lt, rb = ar.left_top, ar.right_bottom
+          if lt and rb then
+            local dx = math.max(lt.x - near.x, 0, near.x - rb.x)
+            local dy = math.max(lt.y - near.y, 0, near.y - rb.y)
+            local k = math.sqrt(dx * dx + dy * dy)
+            if not d or k < d then d = k end
+          end
+        end
         for _, st in ipairs(i.steps or {}) do
           if not st.done_by and not st.owner then
-            out[#out+1] = string.format('#%d step %d: %s (%s; take it with board_update {id: %d, take_step: %d})', i.id, st.n, clip(st.text, 60),
-              i.owner and 'owner ' .. i.owner or 'no owner', i.id, st.n)
-            if #out >= (max or 5) then return out end
+            rows[#rows+1] = {d=d, id=i.id, n=st.n, text=string.format('#%d step %d: %s (%s%s; take it with board_update {id: %d, take_step: %d})', i.id, st.n, clip(st.text, 60),
+              i.owner and 'owner ' .. i.owner or 'no owner', d and string.format('; its area %d tiles from you', math.floor(d + 0.5)) or '', i.id, st.n)}
           end
         end
       end
     end
+    table.sort(rows, function(x, y)
+      if (x.d ~= nil) ~= (y.d ~= nil) then return x.d ~= nil end
+      if x.d and x.d ~= y.d then return x.d < y.d end
+      if x.id ~= y.id then return x.id < y.id end
+      return x.n < y.n
+    end)
+    local out = {}
+    for k = 1, math.min(max or 5, #rows) do out[k] = rows[k].text end
     return #out > 0 and out or nil
   end
   local function view(i, full, where)
@@ -899,6 +918,7 @@ return function(api)
     for k, x in pairs(v) do n = n + size(k) + size(x) + 1 end
     return n
   end
+  local reader_at
   local function read(by, a)
     expire()
     local b = store()
@@ -955,7 +975,7 @@ return function(api)
       assert(a.projects == nil or a.projects == 'compact' or a.projects == 'full', 'projects must be compact or full')
       local projects, form = M.project_lines(by, nil, a.projects)
       if projects then used = used + size(projects) end
-      local steps_open = M.open_steps(by)
+      local steps_open = M.open_steps(by, nil, reader_at)
       if steps_open then used = used + size(steps_open) end
       for n = 1, math.min(limit, #list) do
         local row = view(list[n], false, where)
@@ -1217,7 +1237,13 @@ return function(api)
     mention_counts = {returns='per agent: unread_mentions (not yet shown in a reply or chat read), at_mentions (@name or @everyone), oldest_tick, latest, fyi (fyi tells waiting, left out of the other counts: no reason to wake), last_request_tick (supervisors: wake idle mentioned agents)'},
   }
   -- Handlers take the acting agent's name, so the operator path can share them.
-  M.handlers.board = function(p, a) return read(who(p), a) end
+  M.handlers.board = function(p, a)
+    reader_at = type(p) == 'table' and p.valid ~= false and (function() local ok, pos = pcall(function() return p.position end); return ok and pos or nil end)() or nil
+    local ok, out = pcall(read, who(p), a)
+    reader_at = nil
+    if not ok then error(out, 0) end
+    return out
+  end
   M.handlers.board_post = function(p, a) return post(who(p), a, p) end
   M.handlers.board_update = function(p, a) return update(who(p), a) end
   M.handlers.board_events = function(_, a) return events(a) end

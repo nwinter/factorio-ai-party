@@ -1670,6 +1670,10 @@ a radius tour; `last.fuel_taken` and `sources` give each source, taken count, ou
 `from_radius` (1..128, default 64; Haiku, d15 06:20: boilers starved when no coal lay within 64 tiles) is how far
 round each refill stop the nearest chest or belt holding the fuel is looked for (`from: "nearest"` only; at most 256
 read each time).
+`feed_chests: true` (with `area` or `radius`; Haiku, d15 06:20: "a one-call fill of every boiler feed chest from the
+nearest coal source") tops up the chests that inserters take from to feed those burners, each to `count`, instead of
+the burners; the reply's `feed_chests` says how many (`3 chests that inserters feed those burners from, each topped up
+to 50 coal`). It is the same fuel round: carried fuel first, then the nearest source within `from_radius`.
 
 A rearm or refuel tour that runs out of the item with stops left ends `out_of_items` only while one of those stops
 still holds less than the tour's count; if none does, it ends `topped_up` (Haiku, d15 07:50: tours whose remaining
@@ -3765,7 +3769,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     picks one. Measured on shift16: the plain board read's `projects` was 1.46 KB at the median (35 reads, lines up
     to about 330 bytes with the handoff); the whole reply 3.7 KB at the median, 23 KB at most.
   - `open_steps` in the plain listing: up to 5 steps of projects with `open_steps` (or no owner) that nobody owns,
-    with the call that takes one.
+    with the call that takes one; steps of projects with `areas` first, nearest you first, each with `its area N tiles
+    from you`.
 - A project's events (`board_events`): `step_added`, `step_done`, `step_undone`, `step_removed`, `goal`, `handoff`,
   `areas`, each with `text` (the steps or what changed), and every project event carries the project's `progress`,
   `steps_done` and `steps_total` after the change. Its owner and poster hear of others' changes in `team.board`

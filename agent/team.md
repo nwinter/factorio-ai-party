@@ -391,7 +391,7 @@ already targets your character.
   `"dry_run":true`; a tile anything stands on is refused, naming it. `construct` mines tiles marked for deconstruction too.
   Entity `mine` takes one `position` per call or queue step; its `positions`/`area` require `tiles: true`.
   `mine {position, count: 200}` on ore, coal or stone mines 200 units in one call (outcome `mined`), going on to the next tile in reach.
-  `move_to {avoid_enemies: {distance: 12}}` keeps every worm and spawner 12 tiles off, their reach not counted. A walk back refused `no_safe_route` gets `last.walked_back`: the way you walked out, as via points. `feed` takes `position` with `radius` (its centre); `feed {area}` over 64 machines walks one tour; `refuel {from: "nearest", from_radius: 128}` looks farther for fuel.
+  `move_to {avoid_enemies: {distance: 12}}` keeps every worm and spawner 12 tiles off, their reach not counted. A walk back refused `no_safe_route` gets `last.walked_back`: the way you walked out, as via points. `feed` takes `position` with `radius` (its centre); `feed {area}` over 64 machines walks one tour; `refuel {from: "nearest", from_radius: 128}` looks farther for fuel. `refuel {radius, from: "nearest", feed_chests: true}` fills the chests that inserters feed boilers from.
 - `build {item: "rail-ramp", position, direction}` and `construct` on a ramp ghost build it by hand from one held ramp;
   the centre snaps to the ramp grid, with the same collision and reach checks.
 - A `craft` stock refusal names stocking chests and queue-step `on_fail`: `abort` pauses, `skip` continues,
