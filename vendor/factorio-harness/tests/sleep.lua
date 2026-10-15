@@ -312,4 +312,57 @@ fails(function() astra('sleep',{seconds=60,condition={['until']='bogus'}}) end,'
   eq(lines[1],'1 tell shown in an fh wait reply that the next wait followed 0.3 s later:')
   astra('stop')
 end)()
+-- Wait ETA integration: the predicate observation is also the rate sample, on all three wait paths.
+;(function()
+  runtime.operator.bot_create('eta'); local who=as('eta')
+  local index=runtime.bots.index_of('eta'); local p=runtime.lookup(index); local s=storage.agent_harness
+  local cond={['until']='item_count',item='iron-plate',at_least=50,positions={{x=3,y=3}}}
+  chest_items['iron-plate']=10
+  local start=who('sleep',{seconds=60,condition=cond})
+  eq(start.idle_s,0); assert(start.wait_estimates[1].no_estimate:find('two inventory',1,true))
+  advance(60); chest_items['iron-plate']=20
+  local out=check(who); eq(out.wait_estimates[1].eta_s,3); eq(out.idle_s,1)
+  who('status'); advance(60); chest_items['iron-plate']=30
+  out=check(who); eq(out.wait_estimates[1].eta_s,2); eq(out.idle_s,2)
+  -- A higher-priority tell still includes the latest condition estimate. Peeking freezes idle at the wake.
+  sol('tell',{to='eta',text='new delivery'}); out=check(who)
+  eq(out.woke,'told'); eq(out.wait_estimates[1].eta_s,2)
+  advance(60); chest_items['iron-plate']=40
+  out=who('sleep_check'); eq(out.woke,'told'); eq(out.wait_estimates[1].eta_s,1); eq(out.idle_s,2)
+  -- Work continues during sleep; only the portion without a body action is idle.
+  who('walk',{direction='east',ticks=120}); who('sleep',{seconds=60,condition=cond})
+  advance(60); eq(check(who).idle_s,0); who('stop'); advance(60); eq(check(who).idle_s,1)
+  -- All members get rates; the met member wins but other current readings remain visible.
+  who('sleep',{seconds=60,condition={['until']='any',conditions={cond,{['until']='researched',technology='automation'}}}})
+  advance(60); chest_items['iron-plate']=50; out=check(who)
+  eq(out.woke,'condition'); eq(#out.wait_estimates,2); eq(out.wait_estimates[1].eta_s,0)
+  who('sleep_check'); out=who('sleep',{seconds=60}); eq(out['repeat'],true); eq(out.idle_s,0)
+  eq(check(who).idle_s,0)
+  -- Direct waits expose the estimate in their acceptance, active status and final result, including timeout.
+  chest_items['iron-plate']=10; out=who('wait_until',cond); eq(out.idle_s,0)
+  advance(60); chest_items['iron-plate']=20; advance(60)
+  out=who('status',{brief=true}); assert(out.active.wait_estimates); eq(out.active.idle_s,2)
+  chest_items['iron-plate']=50; advance(10)
+  out=who('status',{brief=true}); eq(out.last.outcome,'met'); eq(out.last.wait_estimates[1].eta_s,0)
+  chest_items['iron-plate']=10
+  who('wait_until',{['until']='item_count',item='iron-plate',at_least=50,position={x=3,y=3},timeout=61})
+  advance(62); out=who('status',{brief=true}); eq(out.last.outcome,'timed_out')
+  eq(out.last.wait_estimates[1].as_of_tick,game.tick); eq(out.last.idle_s,1)
+  -- A queue wait is measured from its own start; samples stay internal, history retains the final estimate.
+  who('queue_submit',{steps={{action='wait_until',args=cond}}}); advance(62)
+  out=who('queue_status'); eq(out.waiting.idle_s,1); eq(out.active.wait_samples,nil)
+  assert(out.waiting.wait_estimates[1].no_estimate)
+  chest_items['iron-plate']=50; advance(10)
+  out=who('queue_status'); eq(out.history[#out.history].result.wait_estimates[1].eta_s,0)
+  assert(out.history[#out.history].result.idle_s>=1)
+  -- Real cached research throughput: four 10s samples, 10% progress per sample. No lab/production-stat read.
+  techs.automation.researched=false; techs.automation.research_unit_count=100; techs.automation.research_unit_energy=60
+  force.current_research=techs.automation; force.research_queue={techs.automation}; force.research_progress=0.3
+  s.research_rate={player={}}
+  for i=0,3 do s.research_rate.player[#s.research_rate.player+1]={tick=game.tick-1800+i*600,name='automation',progress=i/10,work=6000} end
+  out=who('sleep',{seconds=60,condition={['until']='researched',technology='automation'}})
+  eq(out.wait_estimates[1].eta_s,70); assert(out.wait_line:find('throughput measured over 30s',1,true))
+  force.research_progress=0.5; out=check(who); eq(out.wait_estimates[1].eta_s,50)
+  techs.automation.researched=true; out=check(who); eq(out.woke,'condition'); eq(out.wait_estimates[1].eta_s,0)
+end)()
 print('sleep: ok')
