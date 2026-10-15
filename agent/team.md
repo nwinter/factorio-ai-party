@@ -48,7 +48,8 @@ already targets your character.
   build in (`board post` with kind `claim` and the area; it is on your surface, or `"surface":"gleba"`): it shows teammates who works where, sends that area's
   alerts to you, and keeps teammates' `stock` sweeps out of its chests. Put shared infrastructure (power poles, main
   belts) on the board too. Own at least one job; when you hand one over, take a new one in the same message. Owning a job does not limit
-  you to it: anything on the board, in the alerts or in the factory is open to anyone.
+  you to it: anything on the board, in the alerts or in the factory is open to anyone. No permission is needed to fix,
+  build or change anything, unless a rule the team keeps on the board says to ask; tell the owner after.
 - Ownership is the team's to decide: who may remove, move or reconfigure a teammate's machines or a platform's
   settings, and whether to ask first, is a rule you agree among yourselves, keep on the board (a note or project) and
   change when it stops working. The harness enforces none of it; anyone may build or act anywhere.
