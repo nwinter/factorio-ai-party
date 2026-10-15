@@ -952,10 +952,19 @@ reach) take `walk` (autowalk.lua; Haiku 22:53, friction1300's 16 refusals in an 
   `unsafe_goal: true`; `avoid_enemies` goes round the nests as `move_to`'s does. The tours leave out and name a place
   inside one. Tile mining skips such tiles. The train guard and a standing `retreat_guard` apply to the walk as to any
   `move_to`.
+  Destination checks refresh the charted chunks around the target in the current tick; overlapping tour stops
+  share that read. Previously they reused the path cache for up to a minute, so a new worm in an area previously
+  read as empty could be missed. Path checks along the route still use the one-minute cache.
 - `fh call` waits for a call that walks as `--wait` does, since the same call in reach would have been done at once.
 - A queue step waits for the walk and the call. The step succeeds on `done` or the call's own outcome, and fails when
   the walk did not get there.
 - A call that walks replaces the running action, as any timed call does.
+- Engine check: on a private 2.0.77 Space Age copy, all nine call types completed from 12 and 31 tiles away with
+  `fh call` without `--wait`; targets at 40 tiles were refused with the `walk: true` call. A build at exactly 32
+  tiles, a four-entry build across 30 tiles, a queued build followed by a transfer, three-stop rearm/refuel tours,
+  tile mining, tree/ore mining and modules by hand completed. All nine refused a target inside a small worm's
+  25-tile range without moving the bot, including a worm added after an empty destination had been cached.
+  These checks used the deployed runtime with normal visibility checks.
 
 ### Output shape, chat and time left
 
@@ -3624,6 +3633,22 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   request against a full backlog); nothing runs per tick.
 
 ## Live reload
+
+Private engine regression checks, from the outer repository root:
+
+```sh
+# A disposable copy of a save, running 2.0.77 headless with Space Age and agent-harness enabled,
+# auto_pause=false, and RCON published only on localhost at a separate port (27197 here).
+npm --prefix vendor/factorio-harness run build
+POG_WORLD=autowalkcheck POG_RCON_PORT=27197 POG_RCON_PASSWORD_FILE=/absolute/path/private-rcon.pw bin/fh deploy
+python3 tools/test_autowalk_private.py --port 27197 --password-file /absolute/path/private-rcon.pw
+```
+
+`test_autowalk_private.py` creates a temporary bot and surface, supplies test items, and checks completed game
+effects as well as CLI replies. It finds a worm in the copied save and uses the same prototype for the enemy
+checks. The bot and surface are removed in its cleanup. It refuses the ports assigned to pog worlds. The copy's
+normal production continues; the script is for a disposable server, not the live world. Lua sent by this script
+is checked for one-line comments before sending. The server and copied save are removed separately after testing.
 
 ```sh
 fh deploy   # bundle runtime.lua and its sibling modules, validate, swap in
