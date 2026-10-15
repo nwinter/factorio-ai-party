@@ -138,7 +138,7 @@ return function(api)
     local defs=boxes(proto)
     local parts={}
     for i=1,count do
-      local fluid,amount,capacity,filter,segment
+      local fluid,amount,capacity,filter,segment,locked
       if not fb then
         fluid,amount,capacity=defs[i] and defs[i].filter and defs[i].filter.name,0,defs[i] and volume(defs[i]) or 0
       else
@@ -153,6 +153,12 @@ return function(api)
         if not f then
           local okf,flt=pcall(fb.get_filter,i)
           filter=okf and flt and flt.name or nil
+          -- An empty pipe's segment keeps the fluid it last carried (Grok, d15 09:20: an empty segment read only its
+          -- capacity): the game's locked fluid, which a different fluid cannot join.
+          if not filter then
+            local okl,lf=pcall(fb.get_locked_fluid,i)
+            locked=okl and lf and (type(lf)=='string' and lf or lf.name) or nil
+          end
         end
       end
       local words={}
@@ -169,7 +175,7 @@ return function(api)
           end
         end
       end
-      local head=fluid and fluid..' '..round(amount)..'/'..round(capacity) or 'empty'..(filter and ' ('..filter..' only)' or '')..'/'..round(capacity)
+      local head=fluid and fluid..' '..round(amount)..'/'..round(capacity) or 'empty'..(filter and ' ('..filter..' only)' or locked and ' (segment set to '..locked..')' or '')..'/'..round(capacity)
       if segment then head=head..' (segment holds up to '..round(segment)..')' end
       -- Pipes and tanks share a segment: its extent, flagged past the limit.
       local sb=fb and M.segment_box(e,i)

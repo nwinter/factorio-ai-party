@@ -3584,6 +3584,11 @@ Items on the ground:
   `last.skipped`; it stops after 8), `timed_out`; `last.picked {item: count}` and `last.left` (stacks still in the
   area). `pickup {}` still takes only what is in reach where you stand.
   A `pickup` step that ends `picked_up` is a success in a queue or a standing order (it counted as a failed step).
+- `pickup {belt: true, ..., to: {x,y}}` (Luna, d15 09:20: a belt-to-chest move took several calls, and belts past the
+  32-tile sight were refused): the area may be anywhere our force sees on the map now (the walk brings it into
+  reach); with `to` (a chest of ours, in sight or on the map) what is taken goes into that chest at the end of the same
+  walk: outcome `transferred`, `last.belt.delivered {item: count}`; what the chest does not take stays with you
+  (`last.why`); a chest that is gone ends `failed`.
 - `pickup {belt: true, item (or items), count?, position?, radius?, area?, ticks?}` (beltpick.lua; Grok, shift13
   18:20: the iron for a green circuit plant sat on a full belt at (90.5,-11.5) and `pickup` found "no items on the
   ground" three times, which turned the standing order off) takes items off the lanes of our belts (transport belts,
@@ -4132,7 +4137,16 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   or radius is given; every `power` reply adds `solar_power` and `lines`, those networks' lines as above, with
   `lines_as_of` (the view's age; their accumulator part is read at the call). Per network `power` sums the
   accumulators in its area at the call: `accumulators`, `acc_mj`, `acc_max_mj`, `acc_pct`; `power {fresh: true}`
-  passes `fresh` to the networks read (draw now). A platform's poles are found at once each view (Astra, 14:05: Starling's network 475 was not found), and a platform network with no pole of ours gets a line from its panels and machines: `Lonely (platform) electric #475 (no pole of ours found near (3,-6)): capacity 900 kW; no draw figures (the game gives a network's statistics through its poles); ...`; `power` lists such a network from the machines in its area (`poles: 0`, `entities`, `note`).
+  passes `fresh` to the networks read (draw now). Generators by state (Sol, d15 09:20: a 94 MW grid gave about 40 MW
+  and 177 machines low power while its boilers were dry): per network `generators {count, nameplate_kw, working_kw,
+  stopped_kw, stopped}` (each generator's maximum output; working: those working now, the most they give at full load;
+  stopped by name and status, e.g. `18 steam-engine no_input_fluid`) and `supply_line`: `generators in the area: 30,
+  nameplate 94.5 MW; working now 40.5 MW (the most they give at full load); stopped 54.0 MW (60 steam-engine
+  no_input_fluid); producing 39.8 MW; 177 machines in the area without full power`. `boilers`: the boilers in the area
+  by state (`boilers in the area: 32 (20 no_fuel, 12 working)`). A platform's poles are found at once each view (Astra, 14:05: Starling's network 475 was not found), and a platform network with no pole of ours gets a line from its panels and machines: `Lonely (platform) electric #475 (no pole of ours found near (3,-6)): capacity 900 kW; no draw figures (the game gives a network's statistics through its poles); ...`; `power` lists such a network from the machines in its area (`poles: 0`, `entities`, `note`).
+- An empty pipe, tank or machine box names the fluid its segment is set to (Grok, d15 09:20: an empty segment read only
+  its capacity): `empty (segment set to sulfuric-acid)/100` (the game's locked fluid, which another fluid cannot join),
+  next to a recipe's fixed fluid `empty (water only)/100`.
 - `inspect` on a producer or consumer of electricity adds `electricity`: `max_kw` at its quality (a machine's times
   its modules' consumption bonus, `consumption_bonus: "-60%"`, with `drain_kw`; a solar panel's at 100% and
   `at_solar_power_kw` where it is, with `solar_power`; a generator's maximum output; an accumulator's `stored_mj`,

@@ -110,6 +110,7 @@ already targets your character.
   the ingredient most makers lack (`chemical-science-pack: 9 of 14 makers lack advanced-circuit, ...; plastic-bar:
   4 of 4 working, made 30/min, used 52/min`), and `chain_tree` lists every step down to ores and fluids; a mined or pumped step names its drills or pumps, their states
   (working, output full, no resource left) and what they put into.
+- `power` (observe scope) gives per network `supply_line`: generators' nameplate, what the working ones can give, the stopped ones by status (dry steam engines), and `boilers` by state.
 - `./fh call fuel_budget` (optional `"surface"`): each fuel made and used per minute, and each group of fuel users (boilers, furnaces, burner drills, heating towers, `recipe plastic-bar`, ...) with what it burns per minute and the minutes its own fuel lasts, fewest first.
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
   `"surface"`) reads one item: where it sits (chests by kind, belts (`belt_lines`: the 5 belt lines holding the most, with their ends and the tile with the most), machine outputs, inserter hands, robots,
@@ -125,7 +126,7 @@ already targets your character.
   chest within 64 tiles holding what it lacks and one `transfer` call that carries it there; with `"per_min":30` each step's rate for that
   target, what it makes now, its makers' rate each and the machines the target takes.
   `./fh call pickup --args '{"belt":true,"item":"iron-plate","count":200,"position":{"x":90.5,"y":-11.5}}' --wait` takes
-  items off belt lanes by hand (from belts within 1 tile, walking to them). `inspect` on a machine gives its `rate` (crafts
+  items off belt lanes by hand (from belts within 1 tile, walking to them; areas on the map too; `"to":{x,y}` puts them in that chest at the end of the same walk). `inspect` on a machine gives its `rate` (crafts
   and output per minute, net of what goes back in), on an agricultural tower its `empty_cells` and why; a take from
   a chest names what robots have reserved there.
 - `./fh call turrets` (optional `"surface"` or `"area"`) lists every turret by front: its ammo (a flamer's oil with

@@ -134,4 +134,19 @@ belts[1].lines[2].items={iron(10)}
 space=3
 B.pickup(p,{belt=true,item='iron-plate',count=10,position={x=90.5,y=-11.5},radius=3})
 eq(run(),'inventory_full'); eq(action.taken,3)
+-- to (Luna, d15 09:20): a belt-to-chest move in one walk; the chest takes what was taken at the end.
+do
+  belts={}
+  belt(90.5,-11.5,{coal(4)},{iron(4)})
+  held,space={},1000
+  p.position={x=80,y=-11.5}
+  local chest={valid=true,name='wooden-chest',position={x=70.5,y=-11.5},got={}}
+  p.can_reach_entity=function(e) return api.distance(p.position,e.position)<=8 end
+  api.chest=function(_,pos) if pos.x==70.5 then return chest end end
+  api.give=function(_,e,name,n) local k=math.min(n,held[name] or 0); held[name]=(held[name] or 0)-k; e.got[name]=(e.got[name] or 0)+k; return {transferred=k} end
+  local r=B.pickup(p,{belt=true,item='iron-plate',count=4,position={x=90.5,y=-11.5},radius=3,to={x=70.5,y=-11.5}})
+  assert(r.to:find('wooden-chest (70.5,-11.5)',1,true),r.to)
+  eq(run(),'transferred'); eq(chest.got['iron-plate'],4); eq(action.delivered['iron-plate'],4); eq(held['iron-plate'],0)
+  fails(function() B.pickup(p,{belt=true,item='coal',position={x=90.5,y=-11.5},radius=3,to={x=1,y=1}}) end,'to: no chest of ours at (1,1)')
+end
 print('beltpick ok')
