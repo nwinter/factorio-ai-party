@@ -61,11 +61,18 @@ return function(api)
   local function load_snapshot()
     local s=game and storage and storage.agent_harness
     if not s then return end
-    local snap={tick=game.tick,queues={},active={},last={},combat={}}
+    local snap={tick=game.tick,queues={},remote_queues={},active={},last={},combat={}}
     for index,q in pairs(s.queues or {}) do
       if not q.paused then
         snap.queues[index]={current=q.current,pending=copy(q.pending),order=q.order,order_result=q.order_result,
           history_first=q.history[1],history_last=q.history[#q.history]}
+      end
+    end
+    -- The remote lane (queue_lanes.lua; Astra, d15 15:37: an install paused a remote wait_until platform_arrived
+    -- while the body queue's same wait ran on).
+    for index,q in pairs(s.remote_queues or {}) do
+      if not q.paused then
+        snap.remote_queues[index]={current=q.current,pending=copy(q.pending),history_first=q.history[1],history_last=q.history[#q.history]}
       end
     end
     for index,a in pairs(s.active or {}) do
@@ -137,6 +144,29 @@ return function(api)
         q.paused=false; q.revision=q.revision+1
         -- A finished queue is left unpaused and empty: nothing of it ran.
         if step or #was.pending>0 or was.order then carry(index,'queue') end
+      end
+    end
+    -- The remote lane holds no body action: a running wait (or a drop whose pods still wait) goes on as it was; any other
+    -- step (a read or a platform write, done in a tick) starts again at the head; the lane goes on.
+    for index,was in pairs(snap.remote_queues or {}) do
+      local q=s.remote_queues and s.remote_queues[index]
+      if q and q.paused then
+        local step=was.current
+        local last=q.history[#q.history]
+        if step and last and last~=was.history_last and last.id==step.id and last.result and last.result.reason=='interrupted' then
+          table.remove(q.history)
+          if was.history_first and q.history[1]~=was.history_first then table.insert(q.history,1,was.history_first) end
+        end
+        q.pending=was.pending
+        local dropping=step and step.action=='drop' and s.drop_jobs and s.drop_jobs[index]
+        if step and (waits(step) or dropping) then
+          q.current=step
+        elseif step then
+          table.insert(q.pending,1,{id=step.id,action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short})
+          q.current=nil
+        end
+        q.paused=false; q.revision=q.revision+1
+        if step or #was.pending>0 then carry(index,'remote queue') end
       end
     end
     for index,action in pairs(snap.active) do
