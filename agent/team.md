@@ -582,3 +582,5 @@ already targets your character.
   show building tiers per planet from the dated census, and researched vehicles against force-wide built counts.
 
 - Hand `build` applies each entry’s settings as placed; `inspect`/`trace` flag held-item refusal, and platform build dry runs report unwired pump enable conditions. Queue transfer steps accept `min_moved:1`; full `status` has cached boiler/feeder fuel, and feed-tour failures retain smaller-margin route facts.
+
+- Stream/live cards show current sleep/wait conditions, game-time estimates and measured idle time; the live page quotes a recent explicit wait statement from your own chat/aloud, when present.

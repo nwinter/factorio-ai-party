@@ -832,7 +832,7 @@ local function active(index)
     local combat=state().combat and state().combat[index]
     return combat and {kind='shoot',until_tick=combat.until_tick} or false
   end
-  local wait=action.kind=='wait_until' and M.waiteta and M.waiteta.info({},action) or {}
+  local wait=(action.kind=='wait_until' or action.kind=='wait_ticks') and M.waiteta and M.waiteta.info({},action) or {}
   return {kind=action.kind,until_tick=action.until_tick,direction=action.direction,
     wait_estimates=wait.wait_estimates,idle_s=wait.idle_s,wait_line=wait.wait_line,
     next_index=action.next_index,total=action.cells and #action.cells,placed=action.placed,skipped=action.skipped,

@@ -352,9 +352,18 @@ end)()
   who('queue_submit',{steps={{action='wait_until',args=cond}}}); advance(62)
   out=who('queue_status'); eq(out.waiting.idle_s,1); eq(out.active.wait_samples,nil)
   assert(out.waiting.wait_estimates[1].no_estimate)
+  local brief=who('status',{brief=true}).queues.body.waiting
+  eq(brief.idle_s,1); eq(brief.condition.item,'iron-plate'); assert(brief.wait_estimates[1].no_estimate)
   chest_items['iron-plate']=50; advance(10)
   out=who('queue_status'); eq(out.history[#out.history].result.wait_estimates[1].eta_s,0)
   assert(out.history[#out.history].result.idle_s>=1)
+  eq(who('status',{brief=true}).queues.body.waiting,nil)
+  who('wait_ticks',{ticks=180}); advance(60)
+  eq(who('status',{brief=true}).active.idle_s,1); who('stop')
+  who('queue_submit',{steps={{action='wait_ticks',args={ticks=180}}}}); advance(62)
+  brief=who('status',{brief=true}).queues.body.waiting
+  eq(brief.kind,'wait_ticks'); eq(brief.condition,nil); eq(brief.idle_s,1)
+  who('queue_cancel',{})
   -- Real cached research throughput: four 10s samples, 10% progress per sample. No lab/production-stat read.
   techs.automation.researched=false; techs.automation.research_unit_count=100; techs.automation.research_unit_energy=60
   force.current_research=techs.automation; force.research_queue={techs.automation}; force.research_progress=0.3

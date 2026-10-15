@@ -71,6 +71,8 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
                 "active": "construct", "position": {"x": -64.8, "y": -23.6}, "location": "iron smelting",
                 "last_said": {"text": "...", "tick": 144700}, "camera": "main|cam2|cam3|null", "combat": false,
                 "died_at": null, "kind": "bot", "profile_set": true,
+                "wait_line": "waiting: crafting done, ~2 min (idle 5 min)", "wait_reason": "I'm waiting for the gears.",
+                    // null when no fresh current wait; reason: own explicit chat/aloud statement, at most 5 min old
                 "job": "nuclear power plant: reactor", "job_from": "plan|notes",  // its team-plan line, else its
                     // notes.md "## Now" (null: neither); the live page's portrait tip shows it
                     // (viewer syndesis 22:13: hover or tap a portrait for its plan line and job)

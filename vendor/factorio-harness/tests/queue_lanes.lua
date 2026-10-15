@@ -22,6 +22,7 @@ local base={state=function() return s end,player=function(_,seated) eq(seated,tr
   claim=function() if s.active[1] then s.active[1].queued=true end end,
   direct_action=function() return s.active[1] and not s.active[1].queued and 'walk' end,
   condition=function() return arrived,'arrival' end,validate_condition=function(c) assert(c['until']) end,
+  wait_info=function(out,record) out.wait_estimates=record.wait_estimates; out.idle_s=math.floor((record.idle_ticks or 0)/60); return out end,
   outcome=function() return 'dropped' end}
 -- Body callback still applies its own actor rules; the remote one requests seated access.
 local make=require('scheduler')
@@ -39,9 +40,18 @@ h.queue_submit(p,remote{steps={{action='wait_until',args={['until']='platform_ar
   {action='platform_schedule',args={platform='Sunward'}},{action='platforms'}}})
 handlers.walk(); local walk=s.active[1]
 tick(); eq(status().active.action,'wait_until'); eq(s.active[1],walk)
+-- Brief status copies only the queue's cached wait facts; no condition read.
+local step=s.remote_queues[1].current
+step.wait_estimates={{condition='platform_arrived Sunward',eta_s=120,as_of_tick=game.tick}}
+step.idle_ticks=300*60
+local brief=q.lanes(1).remote.waiting
+eq(brief.condition.platform,'Sunward'); eq(brief.wait_estimates[1].eta_s,120); eq(brief.idle_s,300)
+eq(brief.until_tick,step.until_tick)
+
 body.pause(1); handlers.transfer(); tick(15); eq(status().paused,false); eq(s.active[1],walk)
 arrived=true; tick(10); eq(status().active.action,'drop'); eq(calls[3],'drop'); eq(s.active[1],walk); eq(walk.queued,nil)
 s.drop=false; tick(); eq(calls[4],'schedule'); eq(calls[5],'read'); eq(status().active,false)
+eq(q.lanes(1).remote.waiting,nil)
 eq(#status().history,5); eq(status().lanes.body.paused,true); eq(status().lanes.remote.pending,0)
 -- The body lane retains its wait-after-direct behavior and independent revision.
 local revision=status().revision
@@ -49,7 +59,7 @@ h.queue_submit(p,{steps={{action='transfer'}}}); tick(); eq(h.queue_status(p,{})
 eq(status().revision,revision)
 -- Cancels, failures and guards on remote never stop or claim the body.
 h.queue_submit(p,remote{steps={{action='wait_until',args={['until']='researched',technology='x',timeout=20}}}})
-tick(); h.queue_cancel(p,remote{clear=false}); eq(s.active[1],walk); eq(status().paused,true)
+tick(); h.queue_cancel(p,remote{clear=false}); eq(s.active[1],walk); eq(status().paused,true); eq(q.lanes(1).remote.waiting,nil)
 h.queue_resume(p,remote{}); tick(12); eq(s.active[1],walk)
 h.queue_submit(p,remote{steps={{action='inspect'},{action='platforms'}}}); tick()
 eq(status().paused,true); eq(status().last_failure.action,'inspect'); eq(s.active[1],walk)
