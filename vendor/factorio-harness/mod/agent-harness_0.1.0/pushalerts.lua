@@ -643,14 +643,25 @@ return function(api)
   -- Who hears a group: the owners of active board claims over its centre (on its surface),
   -- else agents who built in it, else the nearest agent on its surface.
   local ACTIVE = {open=true, claimed=true, doing=true, blocked=true}
-  local function owners(g, roster)
+  -- The claims over a point on the group's surface.
+  local function claims_over(g, pos)
     local out, board = {}, api.state().board
     for _, i in pairs(board and board.items or {}) do
       local a = i.area
-      if i.kind == 'claim' and ACTIVE[i.status] and i.owner and a and g.center.x >= a.left_top.x and g.center.x <= a.right_bottom.x
-        and g.center.y >= a.left_top.y and g.center.y <= a.right_bottom.y
-        and (api.claim_surface and api.claim_surface(i) or i.surface or 'nauvis') == g.surface then out[i.owner] = 'claim' end
+      if pos and i.kind == 'claim' and ACTIVE[i.status] and i.owner and a and pos.x >= a.left_top.x and pos.x <= a.right_bottom.x
+        and pos.y >= a.left_top.y and pos.y <= a.right_bottom.y
+        and (api.claim_surface and api.claim_surface(i) or i.surface or 'nauvis') == g.surface then out[#out+1] = i end
     end
+    table.sort(out, function(a, b) return a.id < b.id end)
+    return out
+  end
+  M.claims_over = claims_over
+  local function owners(g, roster)
+    local out = {}
+    for _, i in ipairs(claims_over(g, g.center)) do out[i.owner] = 'claim' end
+    -- A boiler's feed chest in someone's claim (Haiku, shift17 10:50: "an alert that names the owner of a claimed boiler
+    -- feed chest when it is empty, so the fuel owner is told directly"): that owner hears it too.
+    for _, i in ipairs(claims_over(g, g.chest_at)) do out[i.owner] = out[i.owner] or 'claim' end
     if next(out) then return out end
     for name in pairs(g.by) do if roster[name] then out[name] = 'built' end end
     if next(out) then return out end
@@ -760,7 +771,14 @@ return function(api)
   function M.text(g, here, was, plain)
     if g.line then
       local before = type(was) == 'string' and ' (was ' .. was .. ')' or was and string.format(' (was %d%s)', was, g.unit or '') or ''
-      return g.line .. (g.surface ~= here and ' on ' .. g.surface or '') .. before
+      -- whose claim the boiler's feed chest is in (Haiku, shift17 10:50)
+      local claim = ''
+      if g.chest_at then
+        local names = {}
+        for _, i in ipairs(claims_over(g, g.chest_at)) do names[#names+1] = string.format("%s's claim #%d", i.owner, i.id) end
+        if #names > 0 then claim = '; the chest is in ' .. table.concat(names, ', ') end
+      end
+      return g.line .. claim .. (g.surface ~= here and ' on ' .. g.surface or '') .. before
     end
     local lost, fed = g.kind:match('^lost_(%a+)%.(.+)$')
     if lost then

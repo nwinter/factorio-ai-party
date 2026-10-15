@@ -383,6 +383,22 @@ r=luna('transfer',{positions={coal_chest.position},item='coal',pick='first_with_
 advance(3)
 last=luna('status').last
 eq(last.outcome,'transferred'); eq(fuel_inv.get_item_count('coal'),10); eq(coal_chest.inv.get_item_count('coal'),10)
+-- Robot-reserved stock (Haiku, shift17 10:50: walked to a chest, then "holds no X now"): read before the walk; a place
+-- whose stock robots have all reserved for pickup is skipped, and the picked one says how many are reserved.
+do
+  defines.logistic_member_index=defines.logistic_member_index or {logistic_container=0}
+  body.position={x=50,y=32}
+  local reserved_all=chest({x=46.5,y=31.5},{['yumako-seed']=10})
+  reserved_all.get_logistic_point=function() return {targeted_items_pickup={{name='yumako-seed',count=10}}} end
+  local some=chest({x=45.5,y=31.5},{['yumako-seed']=12})
+  some.get_logistic_point=function() return {targeted_items_pickup={{name='yumako-seed',count=4}}} end
+  local r=luna('transfer',{positions={reserved_all.position,some.position},item='yumako-seed',pick='first_with_stock',count=3})
+  eq(r.picked.position.x,45.5); eq(r.picked.reserved,4); eq(r.skipped_places[1].why,'all of it reserved for robot pickup')
+  eq(r.picked.line,'wooden-chest at (45.5,31.5) holds 12 yumako-seed, 4 of them reserved for robot pickup (first_with_stock; 1 listed place skipped)')
+  main.remove{name='yumako-seed',count=3}
+  local none=luna('transfer',{positions={reserved_all.position},item='yumako-seed',pick='first_with_stock'})
+  eq(none.picked,'none'); eq(none.note,'none of the 1 listed places holds yumako-seed now that robots have not reserved for pickup (10 reserved): nothing taken, nothing walked')
+end
 -- A transfer on another surface (Grok, shift17 10:50): no hands there; the refusal says what moves items instead.
 fails(function() luna('transfer',{surface='vulcanus',position={x=1.5,y=1.5},direction='to_player',item='processing-unit'}) end,
   'transfer has no surface: items move by hand only where your character stands')
