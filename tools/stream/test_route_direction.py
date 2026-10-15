@@ -45,7 +45,7 @@ local sunward = {valid = true, name = "Sunward", hub = {valid = true},
 local starling = {valid = true, name = "Starling", hub = {valid = true}, space_location = {name = "vulcanus"}}
 game = {tick = 600, ticks_played = 600, tick_paused = false,
   surfaces = {{name = "nauvis", planet = {}, count_entities_filtered = function() return 1 end}},
-  forces = {player = {get_item_production_statistics = function() return stats end, technologies = {},
+  forces = {player = {get_item_production_statistics = function() return stats end, get_entity_count = function() return 1 end, technologies = {},
     platforms = {sunward, starling}, rockets_launched = 3}}}
 prototypes = {item = any, entity = any}
 helpers = {table_to_json = function(t) return t end}
