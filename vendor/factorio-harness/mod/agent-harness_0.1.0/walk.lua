@@ -47,7 +47,9 @@ return function(api)
 
   -- A new walk of surface s: {surface, box, x, y, rows, cols} (chunks), or
   -- {surface, whole=true} when nothing tells where to look.
-  function W.start(s)
+  -- extra: more positions on the surface the box reaches (MARGIN chunks around each), as the players' (census.lua: bot
+  -- characters, which are no players).
+  function W.start(s, extra)
     local built = boxes()[s.index]
     local box = {}
     if built and built.left then
@@ -62,6 +64,9 @@ return function(api)
         if ok and here then
           grow(box, chunk(here.x) - MARGIN, chunk(here.y) - MARGIN); grow(box, chunk(here.x) + MARGIN, chunk(here.y) + MARGIN)
         end
+      end
+      for _, here in ipairs(extra or {}) do
+        grow(box, chunk(here.x) - MARGIN, chunk(here.y) - MARGIN); grow(box, chunk(here.x) + MARGIN, chunk(here.y) + MARGIN)
       end
     end
     if not box.left then return {surface=s.index, whole=true} end
