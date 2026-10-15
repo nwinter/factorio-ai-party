@@ -287,6 +287,61 @@ NOT_CARGO = re.compile(r"magazine|ammo|rounds|repair-pack|cannon-shell|rocket$|^
 HITS_WINDOW_MIN = 5  # status alerts cover the last 5 game minutes (whole minutes): hits per minute over that
 
 
+AMMO_OUT = re.compile(r"^([\w-]+):.*?runs out in (?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)? at that rate, before the arrival")
+DANGER_HIT_S = 60     # a hit on the hub this recent (game seconds) is a platform under fire
+DANGER_LOSS_S = 120   # buildings lost this recently (seconds) too
+
+
+def ammo_runout(lines):
+    """The platforms read's ammo_rates lines (space.lua; round2250b) -> (seconds, ammo) for the ammo that runs out
+    first before the arrival ("firearm-magazine: made 0/min, used 35/min ...; runs out in 4m09s at that rate, before the
+    arrival at gleba in 75m00s"), or None when none does."""
+    best = None
+    for line in lines if isinstance(lines, list) else []:
+        m = AMMO_OUT.match(str(line))
+        if m:
+            s = int(m[2] or 0) * 3600 + int(m[3] or 0) * 60 + int(m[4] or 0)
+            if best is None or s < best[0]:
+                best = (s, m[1])
+    return best
+
+
+def minutes_text(s):
+    return "under a minute" if s < 60 else f"{math.ceil(s / 60)} min"
+
+
+def platform_danger(name, hits, losses, ammo_lines, tick, now, hub_pct=None):
+    """What puts a platform in danger now, for onecam's danger shot (viewer joonazan, d15 10:45: "show the ship only
+    when something happens, e.g. ammo running dry"); the facts urgent.lua wakes agents on, as the stream sees them:
+    - fire: its hub was hit in the last DANGER_HIT_S game seconds (status alerts' platform_hits: damage by entity), or
+      buildings on it were lost in the last DANGER_LOSS_S (loss events naming it) -> {kind: fire, reason: "Wayfarer under
+      fire: 3 buildings lost" / "Wayfarer under fire: hub hit, hub 62%", last (wall time of the latest), level};
+    - ammo: else, an ammo type that runs out before the arrival (ammo_rates) -> {kind: ammo, reason: "Wayfarer ammo for 2
+      min", runs_out_s, ammo, level}.
+    None otherwise."""
+    lost, lost_t = 0, None
+    for total, t in (losses or {}).values():
+        if now - t <= DANGER_LOSS_S:
+            lost += total
+            lost_t = max(lost_t or t, t)
+    hub_t = None
+    if hits and "space-platform-hub" in str(hits.get("entities") or "") and isinstance(hits.get("last_tick"), (int, float)) and tick:
+        ago = (tick - hits["last_tick"]) / 60
+        if 0 <= ago <= DANGER_HIT_S:
+            hub_t = now - ago
+    if lost or hub_t:
+        parts = [f"{lost} building{'s' if lost != 1 else ''} lost"] if lost else []
+        if hub_t:
+            parts.append("hub hit" + (f", hub {hub_pct}%" if isinstance(hub_pct, (int, float)) and hub_pct < 100 else ""))
+        return {"kind": "fire", "reason": f"{name} under fire: " + "; ".join(parts), "last": max(t for t in (lost_t, hub_t) if t),
+                "level": lost * 1000 + (100 - (hub_pct if isinstance(hub_pct, (int, float)) else 100))}
+    out = ammo_runout(ammo_lines)
+    if out:
+        return {"kind": "ammo", "reason": f"{name} ammo for {minutes_text(out[0])}", "runs_out_s": out[0], "ammo": out[1],
+                "level": -out[0]}
+    return None
+
+
 def platform_card(p, hits=None, aboard=(), working=()):
     """A platform row for the Space widget: platform_where plus its defence, repair packs, damaged count, cargo
     highlights, asteroid hits per minute and who is aboard or working on it from the ground. Unknown parts are left
@@ -547,6 +602,7 @@ class Model:
         self.rockets_at_start = None  # the shift's first rocket is a headline (seeded with the count at start)
         # Space widget: status alerts' platform_hits rows by platform (live.py), and platforms lost lately
         self.platform_hits, self.platforms_lost = {}, deque(maxlen=6)
+        self.platform_losses = {}  # platform name -> {loss key: (total, wall time it last grew)}: onecam's danger shot
         # the run's chronicle (live.py, the harness's chronicle read; viewers Alex and syndesis 22:24): the agents'
         # entries and the events the harness saw, the newest kept for the state; a platform's loss as the harness read
         # it at its hub's death (where, what killed it, its cargo), by name, for the stream's own loss line
@@ -1305,6 +1361,15 @@ class Model:
 
     def _ingest_event(self, e, now):
         e = self._on_platform(e)
+        if e["kind"] == "loss" and e.get("platform"):
+            m = re.match(r"(\d+) lost", e["text"])
+            seen = self.platform_losses.setdefault(e["platform"], {})
+            key = e.get("key") or e["text"]
+            total = int(m[1]) if m else 1
+            if key not in seen or total > seen[key][0]:  # re-reported every poll: the time only moves when it grows
+                seen[key] = (total, now)
+            for k in [k for k, v in seen.items() if now - v[1] > 600]:
+                del seen[k]
         if e["kind"] == "loss" and HUB_LOST.search(e["text"]):
             self.hub_losses.append((now, e.get("platform"), e["text"]))
         ag = self.agents.get(e.get("agent")) if e.get("agent") else None
@@ -1703,6 +1768,10 @@ class Model:
                               if w.get("platform") == p.get("name") and now - w["t"] < 120 and w["agent"] in self.agents}
                              - set(aboard))
             card = platform_card(p, self.platform_hits.get(p.get("name")), aboard, working)
+            danger = platform_danger(p.get("name"), self.platform_hits.get(p.get("name")), self.platform_losses.get(p.get("name")),
+                                     p.get("ammo_rates"), self.tick, now, (card.get("hub") or {}).get("pct"))
+            if danger:
+                card["danger"] = danger
             card["_i"] = i
             plats.append(card)
         # under fire first, then the score's order

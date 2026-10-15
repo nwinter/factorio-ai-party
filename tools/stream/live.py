@@ -427,7 +427,10 @@ class LiveSource:
                         # packs, damaged entities and hub cargo (eng/platformalerts)
                         detail[p.get("name")] = {k: p.get(k) for k in ("state", "at", "speed", "schedule", "paused",
                                                                        "thrusters", "weight", "defense", "repair_packs",
-                                                                       "damaged", "damaged_count", "hub_items")
+                                                                       "damaged", "damaged_count", "hub_items",
+                                                                       # ammo made/used and when it runs out in flight
+                                                                       # (onecam's danger shot; viewer joonazan, d15 10:45)
+                                                                       "ammo_rates")
                                                  if p.get(k) is not None}
                 except Exception as e:
                     errors["platforms"] = str(e)
