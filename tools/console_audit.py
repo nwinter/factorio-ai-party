@@ -60,17 +60,54 @@ def one_line(lua):
     return " ".join(l.strip() for l in lua.strip().splitlines() if l.strip())
 
 
+def lua_constants():
+    """[(name, text)] of the string constants in OPERATOR_SOURCES, every definition (one name can be in two files),
+    joins of them included (`pog.CENSUS_FN + r\"\"\"...\"\"\"`: the reads that ask the harness census first,
+    task-slowreads), parsed, not imported."""
+    found = []
+    for rel in OPERATOR_SOURCES:
+        path = os.path.join(ROOT, rel)
+        if os.path.exists(path):
+            for node in ast.walk(ast.parse(open(path).read())):
+                if isinstance(node, ast.Assign):
+                    for t in node.targets:
+                        if isinstance(t, ast.Name):
+                            found.append((t.id, node.value))
+    out = {}
+
+    def value(v):
+        if isinstance(v, ast.Constant) and isinstance(v.value, str):
+            return v.value
+        if isinstance(v, ast.Name):
+            return out.get(v.id)
+        if isinstance(v, ast.Attribute):  # pog.CENSUS_FN
+            return out.get(v.attr)
+        if isinstance(v, ast.BinOp) and isinstance(v.op, ast.Add):
+            a, b = value(v.left), value(v.right)
+            return a + b if isinstance(a, str) and isinstance(b, str) else None
+        return None
+    for _ in range(3):  # (a join can name a constant defined later or in another file)
+        for name, v in found:
+            text = value(v)
+            if isinstance(text, str) and name not in out:
+                out[name] = text
+    pairs = []
+    for name, v in found:
+        text = value(v)
+        if isinstance(text, str):
+            pairs.append((name, text))
+    return pairs
+
+
 def operator_shapes():
     """Shapes of the Lua our own tools send, from their source (parsed, not imported)."""
     texts = list(KNOWN_LINES)
-    for rel in OPERATOR_SOURCES:
-        path = os.path.join(ROOT, rel)
-        if not os.path.exists(path):
-            continue
-        for node in ast.walk(ast.parse(open(path).read())):
-            if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
-                    and any(isinstance(t, ast.Name) and "LUA" in t.id for t in node.targets)):
-                texts.append(node.value.value)
+    for name, text in lua_constants():
+        if "LUA" in name:
+            texts.append(text)
+            if "MAXCELLS" in text:  # the live map read as the stream sends it (harness.py basemap_lua), with ore and without
+                for ore in ("true", "false"):
+                    texts.append(text.replace("MAXCELLS", "128").replace("CMAX", "160").replace("CELL", "4").replace("WITHORE", ore))
     texts.append(AUDIT_CALL.format(since=0))
     out = set()
     for t in texts:

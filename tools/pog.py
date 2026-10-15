@@ -127,6 +127,25 @@ rcon.print(helpers.table_to_json{tick = game.tick, ticks_played = game.ticks_pla
 """
 
 
+# The harness census (mod census.lua; 2026-10-14 22:00, task-slowreads): the counts the periodic reads made with one
+# find over every surface in a single tick, from the harness's last complete background pass. census(part, ore)
+# returns its reply ({ready=true, ...}) or nil (no harness, a runtime without it, or no complete pass yet): the read
+# then counts as before. Defined first in a read's one-line Lua (no "--" comments in it).
+CENSUS_FN = r"""
+local function census(part, ore)
+  local ok, r = pcall(function()
+    local i = remote.interfaces.agent_harness
+    if not (i and i.dispatch) then return nil end
+    local req = helpers.table_to_json{id = "census-" .. part .. "-" .. game.tick .. "-" .. math.random(1, 1000000000), operator = true,
+      action = "census", args = {part = part, ore = ore or nil}}
+    return helpers.json_to_table(remote.call("agent_harness", "dispatch", req))
+  end)
+  if ok and type(r) == "table" and r.ok and type(r.result) == "table" and r.result.ready then return r.result end
+  return nil
+end
+"""
+
+
 # Space Age: each planet surface has its own peaceful/no-enemies flags and is created on first arrival. Copy Nauvis's
 # to every planet surface (a world setting, like the map seed). Run after a new planet appears (score lists planets).
 PEACEFUL_LUA = r"""
