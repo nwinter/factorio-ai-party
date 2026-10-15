@@ -884,7 +884,7 @@ fh call status
     - Via points are checked the same way (`via point 1 (55,10) is inside ...`).
     - `unsafe_goal: true` goes anyway; the reply says `unsafe_goal: goal (60,0) is inside ...`.
     - `avoid_enemies: false` checks nothing.
-  - A nest with the start in a weapon's range, or the goal with `unsafe_goal`, is not avoided. A start or goal in a
+  - With the default or `true` margin, a nest with the start in a weapon's range, or the goal with `unsafe_goal`, is not avoided. A start or goal in a
     nest's margin only (outside the weapon's own range) keeps that worm's disc just short of it, so the way there still
     keeps out of the range. Before, the whole nest went unchecked. `last.enemies_at_start_or_goal` names such
     nests.
