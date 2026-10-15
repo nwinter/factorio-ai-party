@@ -800,6 +800,25 @@ runtime.operator.shift_start()
 local sh=astra('status').team.shift
 eq(sh.projects[1],'#'..pj.id..' nuclear plant: 1 of 4 steps; owner astra (last request 0s ago); next 2. centrifuges; handoff: uranium mined at (120,110); centrifuges placed, no power yet')
 eq(#sh.projects,2)
+-- d15 (Foobator, joonazan): blocked_by and parent links, step owners, parallel steps, the compact line, open steps.
+do
+  local p3=sol('board_post',{kind='project',title='Aquilo landing',owner='sol',parent=pj.id,blocked_by={p2.id},open_steps=true,
+    steps={'stage the kit',{text='ride the rocket',parallel=true},{text='drop the heaters',parallel=true,owner='nick'},'build the base'}}).item
+  eq(p3.blocked_by[1],p2.id); eq(p3.parent,pj.id); eq(p3.open_steps,true)
+  sol('board_update',{id=p3.id,done=1})
+  local line
+  for _,l in ipairs(sol('board',{projects='compact'}).projects) do if l:find('Aquilo',1,true) then line=l end end
+  eq(line,'#'..p3.id..' Aquilo landing [sol] 1/4; next 2. ride the rocket | 3. drop the heaters @nick; blocked by #'..p2.id..' robot mall (claimed, 0 of 1 step); part of #'..pj.id..' nuclear plant; steps open to all')
+  local r3=grok('board',{})
+  assert(r3.open_steps and r3.open_steps[1]:find('#'..p3.id..' step 2: ride the rocket (owner sol; take it with board_update {id: '..p3.id..', take_step: 2})',1,true),tostring(r3.open_steps and r3.open_steps[1]))
+  local u=grok('board_update',{id=p3.id,take_step=2}); eq(u.changed[1],'step_taken')
+  fails(function() grok('board_update',{id=p3.id,take_step=3}) end,'step 3 of #'..p3.id..' is taken by nick')
+  sol('board_update',{id=p3.id,open_steps=false})
+  fails(function() astra('board_update',{id=p3.id,take_step=4}) end,'its owner opens the steps to all with open_steps: true')
+  fails(function() sol('board_update',{id=p3.id,blocked_by={p3.id}}) end,'does not wait for itself')
+  eq(sol('board_update',{id=p3.id,blocked_by={}}).item.blocked_by,nil)
+  sol('board_update',{id=p3.id,status='dropped'})
+end
 -- a finished project leaves the lines; the board keeps at most 30 open projects
 r=astra('board_update',{id=pj.id,status='done',note='4 reactors running'})
 eq(#astra('board',{}).projects,1)

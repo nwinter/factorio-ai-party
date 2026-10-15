@@ -26,7 +26,10 @@ return function(api)
   -- project has no owner or its owner has made no request for 30 min, and
   -- may then take it. Open projects are never pruned.
   local PROJECT_QUIET, MAX_PROJECTS, MAX_STEPS, STEP, MAX_AREAS, MAX_PROJECT_NOTES, MAX_PROJECT_LINES = 30 * 3600, 30, 40, 160, 8, 20, 8
-  local PROJECT_ARGS = {'step', 'done', 'undone', 'remove_step', 'goal', 'handoff', 'areas'}
+  local PROJECT_ARGS = {'step', 'done', 'undone', 'remove_step', 'goal', 'handoff', 'areas', 'take_step', 'release_step', 'open_steps'}
+  -- Links between items (Foobator, d15 06:38 and 08:17; joonazan 08:20): blocked_by (items this one waits for) and
+  -- parent (the project this one serves), on tasks, requests and projects; fields agents may use, not required.
+  local LINK_KINDS, MAX_LINKS, COMPACT_OVER = {task=true, request=true, project=true}, 8, 1200
   -- Step changes by others reach a project's owner as news: they wake nobody.
   local STEP_CHANGES = {step_added=true, step_done=true, step_undone=true, step_removed=true}
 
@@ -160,7 +163,8 @@ return function(api)
     return total > 0 and string.format('%d of %d step%s', done, total, total == 1 and '' or 's') or 'no steps yet'
   end
   local function step_text(s)
-    if not s.done_by then return string.format('[ ] %d. %s', s.n, s.text) end
+    local tail = (s.owner and ' (' .. s.owner .. ')' or '') .. (s.parallel and ' (parallel)' or '')
+    if not s.done_by then return string.format('[ ] %d. %s%s', s.n, s.text, tail) end
     return string.format('[x] %d. %s (done by %s, %s ago)', s.n, s.text, s.done_by, ago(game.tick - s.done_tick))
   end
   -- extra: prev_owner (an owner who lost the item in this change) and
@@ -328,21 +332,48 @@ return function(api)
     return out
   end
   -- Step texts: one text or an array of them.
+  -- A step is a text, or {text, owner?, parallel?} (Foobator, d15 08:17): its own owner, and parallel: no order between
+  -- it and the steps next to it that are parallel too.
   local function steps_arg(v, name)
-    if type(v) == 'string' then v = {v} end
-    assert(type(v) == 'table' and #v >= 1, name .. ' is a text or an array of texts, each 1..' .. STEP .. ' characters')
+    if type(v) == 'string' or (type(v) == 'table' and v.text ~= nil) then v = {v} end
+    assert(type(v) == 'table' and #v >= 1, name .. ' is a text or an array of texts (or {text, owner?, parallel?}), each 1..' .. STEP .. ' characters')
     local out = {}
-    for _, t in ipairs(v) do out[#out+1] = required_text(t, name, STEP) end
+    for _, t in ipairs(v) do
+      if type(t) == 'table' then
+        assert(t.parallel == nil or type(t.parallel) == 'boolean', name .. ': parallel must be true or false')
+        out[#out+1] = {text=required_text(t.text, name, STEP), owner=t.owner ~= nil and t.owner ~= '' and resolve(t.owner) or nil, parallel=t.parallel or nil}
+      else out[#out+1] = {text=required_text(t, name, STEP)} end
+    end
     return out
   end
   local function add_steps(item, texts, by)
     local added = {}
-    for _, text in ipairs(texts) do
-      item.steps[#item.steps+1] = {n=item.next_step, text=text, by=by, tick=game.tick}
-      added[#added+1] = item.next_step .. '. ' .. text
+    for _, st in ipairs(texts) do
+      local text = st.text
+      item.steps[#item.steps+1] = {n=item.next_step, text=text, by=by, tick=game.tick, owner=st.owner, parallel=st.parallel}
+      added[#added+1] = item.next_step .. '. ' .. text .. (st.owner and ' (' .. st.owner .. ')' or '') .. (st.parallel and ' (parallel)' or '')
       item.next_step = item.next_step + 1
     end
     return added
+  end
+  local function links_arg(v, self)
+    if v == false or v == '' then return {} end
+    if type(v) == 'number' then v = {v} end
+    assert(type(v) == 'table' and #v <= MAX_LINKS, 'blocked_by takes item numbers: a number or an array of up to ' .. MAX_LINKS .. ' ([] clears)')
+    local out, seen = {}, {}
+    for _, id in ipairs(v) do
+      assert(type(id) == 'number' and store().items[id], 'blocked_by: no board item #' .. tostring(id))
+      assert(id ~= self, 'blocked_by: an item does not wait for itself')
+      if not seen[id] then seen[id] = true; out[#out+1] = id end
+    end
+    return out
+  end
+  local function parent_arg(v, self)
+    if v == false or v == '' or v == 0 then return false end
+    local it = type(v) == 'number' and store().items[v]
+    assert(it and it.kind == 'project', 'parent is a project\'s item number (false clears it)')
+    assert(v ~= self, 'parent: a project is not its own parent')
+    return v
   end
   -- Steps of project `item` by number: a number or an array of them.
   local function step_numbers(v, name, item)
@@ -400,7 +431,54 @@ return function(api)
       areas=#i.areas > 0 and i.areas or nil,
       handoff=cut(i.handoff), handoff_edited=i.handoff and edited(i.handoff_by, i.handoff_tick) or nil,
       needs=i.needs, tags=i.tags, notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil,
+      blocked_by=i.blocked_by, parent=i.parent, open_steps=i.open_steps,
       history=full and history(i) or nil, created_tick=i.created_tick, updated_tick=i.updated_tick}
+  end
+  -- What blocks an item: each blocked_by link with its title and state, and what blocks that in turn (2 deep), as
+  -- "#497 Starling retrofit (claimed, 1 of 4) <- #510 steel for LDS (open)"; links to closed items are left out.
+  local function chain(i, depth, seen)
+    seen = seen or {[i.id]=true}
+    local parts = {}
+    for _, id in ipairs(i.blocked_by or {}) do
+      local o = store().items[id]
+      if o and ACTIVE[o.status] and not seen[id] then
+        seen[id] = true
+        local text = string.format('#%d %s (%s%s)', id, clip(o.title, 40), o.status, o.kind == 'project' and o.steps and ', ' .. progress(o) or '')
+        if depth > 1 and o.blocked_by then
+          local deeper = chain(o, depth - 1, seen)
+          if #deeper > 0 then text = text .. ' <- ' .. table.concat(deeper, ', ') end
+        end
+        parts[#parts+1] = text
+      end
+    end
+    return parts
+  end
+  -- The compact line (Foobator, d15 06:37: projects too large for the smaller models): goal (the title), owner, the
+  -- next steps not done (parallel ones together, each step's own owner), what blocks it and its parent.
+  local function project_compact(i)
+    local parts = {string.format('#%d %s [%s] %s', i.id, clip(i.title, 60), i.owner or 'no owner',
+      (function() local d, t = step_counts(i); return d .. '/' .. t end)())}
+    local nexts = {}
+    for _, st in ipairs(i.steps) do
+      if not st.done_by then
+        if #nexts == 0 or (st.parallel and nexts[#nexts].parallel) then
+          nexts[#nexts+1] = {text=string.format('%d. %s%s', st.n, clip(st.text, 60), st.owner and ' @' .. st.owner or ''), parallel=st.parallel}
+        else break end
+        if #nexts >= 3 then break end
+      end
+    end
+    if #nexts > 0 then
+      local t = {}
+      for k, x in ipairs(nexts) do t[k] = x.text end
+      parts[#parts+1] = 'next ' .. table.concat(t, ' | ')
+    end
+    local c = chain(i, 2)
+    if #c > 0 then parts[#parts+1] = 'blocked by ' .. table.concat(c, ', ')
+    elseif i.status == 'blocked' then parts[#parts+1] = 'blocked' end
+    local par = i.parent and store().items[i.parent]
+    if par then parts[#parts+1] = string.format('part of #%d %s', par.id, clip(par.title, 40)) end
+    if i.open_steps then parts[#parts+1] = 'steps open to all' end
+    return table.concat(parts, '; ')
   end
   -- One line per open project (the shift block, board reads): progress, its
   -- owner and that agent's last request, the first step not done, and the
@@ -422,17 +500,45 @@ return function(api)
   end
   -- Open projects as lines, those agent `me` owns first, then the newest;
   -- nil when there is none.
-  function M.project_lines(me, max)
+  -- form: 'compact', 'full', or nil: full while all its lines take at most COMPACT_OVER bytes, else compact.
+  function M.project_lines(me, max, form)
     max = max or MAX_PROJECT_LINES
     local list = open_projects()
     table.sort(list, function(x, y)
       if (x.owner == me) ~= (y.owner == me) then return x.owner == me end
       return x.updated_tick > y.updated_tick or (x.updated_tick == y.updated_tick and x.id > y.id)
     end)
+    local function lines(make)
+      local out = {}
+      for k, i in ipairs(list) do
+        if k > max then out[#out+1] = string.format('+%d more: board {kind: "project"}', #list - max); break end
+        out[k] = make(i)
+      end
+      return out
+    end
+    local out = lines(form == 'compact' and project_compact or project_line)
+    local chosen = form or 'full'
+    if form == nil then
+      local n = 0
+      for _, l in ipairs(out) do n = n + #l + 3 end
+      if n > COMPACT_OVER then out = lines(project_compact); chosen = 'compact' end
+    end
+    return #out > 0 and out or nil, #out > 0 and chosen or nil
+  end
+  -- Steps of open projects that nobody owns and the agent may take (Foobator, d15 08:17; joonazan 08:16): of projects
+  -- with open_steps, or with no owner; the first `max`.
+  function M.open_steps(me, max)
     local out = {}
-    for k, i in ipairs(list) do
-      if k > max then out[#out+1] = string.format('+%d more: board {kind: "project"}', #list - max); break end
-      out[k] = project_line(i)
+    for _, i in ipairs(open_projects()) do
+      if (i.open_steps or not i.owner) and i.owner ~= me then
+        for _, st in ipairs(i.steps or {}) do
+          if not st.done_by and not st.owner then
+            out[#out+1] = string.format('#%d step %d: %s (%s; take it with board_update {id: %d, take_step: %d})', i.id, st.n, clip(st.text, 60),
+              i.owner and 'owner ' .. i.owner or 'no owner', i.id, st.n)
+            if #out >= (max or 5) then return out end
+          end
+        end
+      end
     end
     return #out > 0 and out or nil
   end
@@ -446,7 +552,7 @@ return function(api)
       owner_active=claim and ago(game.tick - api.claims.activity(i)) .. ' ago' or nil, stale=claim and api.claims.stale(i) or nil,
       allow=i.kind == 'claim' and i.allow or nil,
       requested_by=i.requested_by, status=i.status, area=i.area, surface=i.kind == 'claim' and api.claims.surface_of(i) or nil,
-      needs=i.needs, tags=i.tags, problem=i.problem, proposal=i.proposal,
+      needs=i.needs, tags=i.tags, problem=i.problem, proposal=i.proposal, blocked_by=i.blocked_by, parent=i.parent,
       notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil,
       history=full and history(i) or nil, created_tick=i.created_tick, updated_tick=i.updated_tick}
   end
@@ -471,6 +577,9 @@ return function(api)
     assert(a.surface == nil or kind == 'claim', 'surface is for a claim (the surface its area is on)')
     assert(kind == 'project' or (a.goal == nil and a.steps == nil and a.areas == nil and a.handoff == nil),
       'goal, steps, areas and handoff are for kind project')
+    assert(kind == 'project' or a.open_steps == nil, 'open_steps is for kind project')
+    assert((a.blocked_by == nil and a.parent == nil) or LINK_KINDS[kind], 'blocked_by and parent are for a task, request or project')
+    assert(a.open_steps == nil or type(a.open_steps) == 'boolean', 'open_steps must be true or false')
     expire()
     local item = {kind=kind, title=required_text(a.title, 'title', TITLE), requested_by=by, area=area_arg(a.area),
       needs=needs_arg(a.needs), tags=tags_arg(a.tags), notes={}, created_tick=game.tick, updated_tick=game.tick}
@@ -492,7 +601,10 @@ return function(api)
       add_steps(item, texts, by)
       local handoff = optional_text(a.handoff, 'handoff', LONG)
       if handoff and handoff:find('%S') then item.handoff, item.handoff_by, item.handoff_tick = handoff, by, game.tick end
+      item.open_steps = a.open_steps or nil
     end
+    if a.blocked_by ~= nil then local l = links_arg(a.blocked_by); item.blocked_by = #l > 0 and l or nil end
+    if a.parent ~= nil then item.parent = parent_arg(a.parent) or nil end
     -- A first note (shake4: agents carried update's note over to posts).
     if a.note ~= nil then item.notes[1] = {tick=game.tick, by=by, text=required_text(a.note, 'note', NOTE)} end
     local warnings, over = {}, nil
@@ -536,6 +648,10 @@ return function(api)
     assert(item, 'no board item #' .. tostring(a.id) .. ' (pruned or never posted)')
     local project = item.kind == 'project'
     local given = a.status ~= nil or a.owner ~= nil or a.note ~= nil or a.allow ~= nil or a.title ~= nil or a.needs ~= nil or a.surface ~= nil
+      or a.blocked_by ~= nil or a.parent ~= nil
+    assert((a.blocked_by == nil and a.parent == nil) or LINK_KINDS[item.kind], 'blocked_by and parent are for a task, request or project')
+    local links = a.blocked_by ~= nil and links_arg(a.blocked_by, item.id) or nil
+    local parent = a.parent ~= nil and parent_arg(a.parent, item.id) or nil
     for _, k in ipairs(PROJECT_ARGS) do
       assert(project or a[k] == nil, k .. ' is for a project (#' .. item.id .. ' is a ' .. item.kind .. ')'
         .. (k == 'done' and '; status "done" finishes an item' or ''))
@@ -607,6 +723,28 @@ return function(api)
         string.format('a project holds at most %d steps; #%d has %d', MAX_STEPS, item.id, #item.steps))
       if a.goal ~= nil or a.handoff ~= nil or a.areas ~= nil then owner_only('only the owner edits the goal, handoff and areas of #' .. item.id) end
       if a.goal ~= nil then pj.goal = optional_text(a.goal, 'goal', PLAN_GOALS) end
+      -- take_step / release_step (Foobator, d15 08:17): a step's own owner. Yours to take when you lead the project,
+      -- added the step, or the project has open_steps (its owner's choice); release: the step's owner or a lead.
+      if a.open_steps ~= nil then
+        assert(type(a.open_steps) == 'boolean', 'open_steps must be true or false')
+        owner_only('only the owner opens or closes the steps of #' .. item.id)
+        pj.open_steps = a.open_steps
+      end
+      if a.take_step ~= nil then
+        pj.take = step_numbers(a.take_step, 'take_step', item)
+        for _, st in ipairs(pj.take) do
+          if not (lead or st.by == by or item.open_steps or pj.open_steps) then
+            error(string.format('step %d of #%d is %s\'s project\'s: its owner opens the steps to all with open_steps: true, or gives you one with step {text, owner}', st.n, item.id, item.owner), 0)
+          end
+          assert(not st.owner or st.owner == by or lead, string.format('step %d of #%d is taken by %s', st.n, item.id, tostring(st.owner)))
+        end
+      end
+      if a.release_step ~= nil then
+        pj.release = step_numbers(a.release_step, 'release_step', item)
+        for _, st in ipairs(pj.release) do
+          assert(st.owner == by or lead, string.format('step %d of #%d is %s\'s to release (or a lead\'s)', st.n, item.id, tostring(st.owner or 'nobody')))
+        end
+      end
       if a.handoff ~= nil then pj.handoff = optional_text(a.handoff, 'handoff', LONG) end
       if a.areas ~= nil then pj.areas = areas_arg(a.areas) end
     end
@@ -690,6 +828,30 @@ return function(api)
       item.handoff = pj.handoff:find('%S') and pj.handoff or nil
       item.handoff_by, item.handoff_tick = item.handoff and by, item.handoff and game.tick
       changed('handoff', item.handoff or 'handoff cleared')
+    end
+    if pj.take then
+      local names = {}
+      for _, st in ipairs(pj.take) do if st.owner ~= by then st.owner = by; names[#names+1] = st.n .. '. ' .. st.text end end
+      if #names > 0 then changed('step_taken', by .. ': ' .. table.concat(names, '; ')) end
+    end
+    if pj.release then
+      local names = {}
+      for _, st in ipairs(pj.release) do if st.owner then st.owner = nil; names[#names+1] = st.n .. '. ' .. st.text end end
+      if #names > 0 then changed('step_released', table.concat(names, '; ')) end
+    end
+    if pj.open_steps ~= nil and (item.open_steps == true) ~= pj.open_steps then
+      item.open_steps = pj.open_steps or nil
+      changed('open_steps', pj.open_steps and 'steps open to all' or 'steps closed')
+    end
+    if links then
+      item.blocked_by = #links > 0 and links or nil
+      local ids = {}
+      for _, id in ipairs(links) do ids[#ids+1] = '#' .. id end
+      changed('blocked_by', #ids > 0 and 'blocked by ' .. table.concat(ids, ', ') or 'blocked_by cleared')
+    end
+    if parent ~= nil then
+      item.parent = parent or nil
+      changed('parent', parent and 'part of #' .. parent or 'parent cleared')
     end
     if pj.areas then
       item.areas = pj.areas
@@ -787,8 +949,11 @@ return function(api)
           more='board_plan shows the plan in full'}
         used = size(plan)
       end
-      local projects = M.project_lines(by)
+      assert(a.projects == nil or a.projects == 'compact' or a.projects == 'full', 'projects must be compact or full')
+      local projects, form = M.project_lines(by, nil, a.projects)
       if projects then used = used + size(projects) end
+      local steps_open = M.open_steps(by)
+      if steps_open then used = used + size(steps_open) end
       for n = 1, math.min(limit, #list) do
         local row = view(list[n], false, where)
         if row.notes and #row.notes > 1 then row.note_count = row.note_count or #list[n].notes; row.notes = {row.notes[#row.notes]} end
@@ -798,7 +963,8 @@ return function(api)
         out[n] = row; used = used + s
       end
       local more = #list - #out
-      return {plan=plan, projects=projects, items=out, matched=#list, open_unowned=unowned, tick=game.tick,
+      return {plan=plan, projects=projects, projects_form=form and (form == 'compact' and 'compact (board {projects: "full"} for the full lines)' or 'full') or nil,
+        open_steps=steps_open, items=out, matched=#list, open_unowned=unowned, tick=game.tick,
         more=more > 0 and string.format('%d more: board {full=true}, or narrow with kind, mine, status, since_tick; {id} shows one item in full', more) or nil}
     end
     for n = 1, math.min(limit, #list) do out[n] = view(list[n], false, where) end
@@ -1005,6 +1171,7 @@ return function(api)
       kind='task|request|claim|note|project|harness|plan', since_tick='items updated after this tick', limit='1..100 (default 30), newest first',
       id='one item in full (all notes; a project with all its steps)',
       plan_ticks='boolean: the plan also as lines [{agent, text, by, tick}] (the tick each line was set), goals_tick and updated_tick',
+      projects='compact | full: the open projects\' lines in the plain listing; default full while they take at most 1200 bytes, else compact (projects_form says which): "#476 Aquilo landing [sol] 2/5; next 3. Ride the rocket | 4. Drop the kit @luna; blocked by #497 Starling retrofit (claimed, 1 of 4); part of #400 Aquilo; steps open to all". The listing also has open_steps: steps of projects with open_steps or no owner that nobody owns, and how to take one',
       returns='plan (the team plan: goals, doing lines, last edit), projects (the plain listing: one line per open project, yours first: progress, owner, next step, handoff; the rows leave them out), items, matched, open_unowned (open task/request items nobody owns); a project row has progress ("3 of 7 steps"), goal, next_steps, areas, handoff and owner_state (its owner\'s last request); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus"); an open claim has owner_active (when its owner last posted, updated it, or made a request standing in it or acting on a position in it), stale=true after 30 min of that (labelled stale; teammates\' stock sweeps include its chests) and allow (agents its labels name as allowed; their stock sweeps include it while it is fresh); the harness enforces no other rule on a claim (who may remove or rebuild what is the team\'s own); after 2 h with no such activity the harness closes it (dropped)'},
     board_plan = {goals='the team goals, 1..600 characters, replace the current ones ("" clears them)',
       doing='one line of what an agent is on, 1..160 characters ("" removes the line)', agent='whose line doing sets (default you)',
@@ -1015,7 +1182,9 @@ return function(api)
       surface='claim only: the surface its area is on (default yours; nauvis, gleba, platform-1, ...); positions on other surfaces are never in it',
       tags='up to 8 short strings', note='optional first note, 1..200 characters',
       allow='claim only: agents its labels name as allowed, whose stock sweeps include its chests while it is fresh (array or "luna,sol"), or "everyone"; the harness enforces nothing else',
-      goal='project only: what it is for, 1..600 characters', steps='project only: its checklist, an array of texts (1..160 characters each, at most 40)',
+      goal='project only: what it is for, 1..600 characters', steps='project only: its checklist, an array of texts (1..160 characters each, at most 40), or of {text, owner? (that step\'s own owner), parallel? (true: no order between it and the parallel steps next to it)}',
+      blocked_by='task, request or project: item numbers it waits for (1..8); the compact project line shows them and what blocks those', parent='task, request or project: the project it serves (a long-term goal such as "Aquilo landing")',
+      open_steps='project only: true lets anyone take an unowned step (board_update take_step)',
       areas='project only: up to 8 areas {left_top, right_bottom} (area takes one)', handoff='project only: where it stands for whoever goes on with it, 1..1000 characters',
       returns='the item; warnings for overlapping claims (with where the owner is when not with you: claim #128 by sol (on Vulcanus), its age, owner activity and state, stale) or an unowned request'},
     board_update = {id='item number', status='open|claimed|doing|done|blocked|dropped (owner or requester only)',
@@ -1023,10 +1192,13 @@ return function(api)
       note='1..200 characters, anyone may add (last 10 kept; 20 on a project)',
       allow='claim owner only: agents its labels name as allowed, whose stock sweeps include its chests while it is fresh (names or "everyone"; [] or "" clears it)',
       surface='claim owner only: the surface its area is on',
-      step='project: add steps, a text or an array of texts (anyone)', done='project: mark steps done by number, a number or an array (anyone; done_by is you)',
+      step='project: add steps, a text or an array of texts or {text, owner?, parallel?} (anyone)', done='project: mark steps done by number, a number or an array (anyone; done_by is you)',
       undone='project: mark steps not done (anyone)', remove_step='project: remove steps by number (the agent who added one, or the owner)',
       goal='project: replace the goal ("" clears it)', handoff='project: replace the handoff text, 1..1000 characters ("" clears it)',
       areas='project: replace its areas (array; [] clears them)',
+      take_step='project: take steps by number for yourself (you lead it, added the step, or it has open_steps)', release_step='project: give up a step\'s owner (that owner or a lead)',
+      open_steps='project owner: true lets anyone take an unowned step, false stops it',
+      blocked_by='task, request or project: replace the items it waits for (numbers; [] clears)', parent='task, request or project: the project it serves (false clears)',
       title='replace the title, 1..120 characters (its poster, owner or the operator; anyone once the owner, or the poster of an unowned item, has made no request for 20 min, 30 on a project; a project with no owner: anyone)',
       needs='replace what it asks for: text, an array of item names or {name,count}, or {item: count} ("" or [] clears it); who may: as title',
       returns='the item in full and changed; on a project the goal, handoff and areas are its owner\'s to edit, and anyone\'s when it has no owner or its owner has made no request for 30 min (who may then also take it with owner); a title or needs change is kept in the item\'s history ("title changed by astra: \'old\' -> \'new\'", last 10) and told to its owner and poster'},

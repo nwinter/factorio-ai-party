@@ -9958,7 +9958,7 @@ reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
 -- that document results rather than inputs are not arguments.
-local DOC_ONLY={returns=true,note=true,reports=true,outcomes=true,status=true,usage=true,checked=true,max=true,examples=true}
+local DOC_ONLY={returns=true,note=true,reports=true,outcomes=true,status=true,usage=true,checked=true,max=true,examples=true,produced=true,platform_built=true}
 local TARGET={'name','unit_number'}
 local EXTRA_ARGS={attach={'offline'},build={'quality','entity'},collect={'count','quality'},rearm={'quality'},refuel={'quality'},
   move_to={'within'},shoot={'auto'},transfer=TARGET,mine={'unit_number'},repair=TARGET,inspect=TARGET,rotate=TARGET,

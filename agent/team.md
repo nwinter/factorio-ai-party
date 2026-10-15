@@ -96,7 +96,8 @@ already targets your character.
 - A `project` (`"goal"`, `"steps":["...","..."]`, `"areas"`) stays on the board across shifts. Anyone adds steps and
   marks them done (`./fh board update --args '{"id":N,"step":"...","done":[2,3]}'`); the owner writes `goal` and
   `handoff`, and anyone may once the owner has made no request for 30 minutes (and may then take it). `./fh board
-  projects` lists the open ones with progress.
+  projects` lists the open ones with progress. Optional fields: `blocked_by` (item numbers it waits for), `parent` (the project it serves), steps as
+  `{text, owner, parallel}`, `open_steps: true` (anyone may `take_step`); a long project list shows one compact line each (`board {projects: "full"}` for more).
 - `./fh research` shows the research queue: each technology's progress, who queued it, its packs, and when it should
   finish at the current lab throughput (or which pack it waits for). `./fh research done` lists what finished lately
   and what each unlocked. `./fh call science` (or `--args '{"pack":"logistic-science-pack"}'`) counts each pack the
@@ -230,7 +231,7 @@ already targets your character.
   done, ok, failed; `history`: its own results); `./fh queue status orders` lists the standing orders' steps too;
   `--args '{"history":"all","pending":10}'` shows more.
   `queue_submit` into a repeat requires explicit `mode`: `replace` stops it, `ahead` interrupts/restarts an absolute-goal step, `append` waits behind this round; refusal names the job.
-  `mode: "replace"` stops the active step of any plan (a running `load_silo` too). A `place_ghosts` or `build` step with failed entries fails (`reason: place_ghosts: 3 entries failed (37 placed); first: ...`) and its `on_fail` applies.
+  `mode: "replace"` stops the active step of any plan (a running `load_silo` too). `mode: "pending"` replaces only the pending steps; `queue_edit {id: "job-12"}` deletes a pending step (`steps`: replace it, `to: N`: move it), the active step untouched. A `place_ghosts` or `build` step with failed entries fails (`reason: place_ghosts: 3 entries failed (37 placed); first: ...`) and its `on_fail` applies.
   `queue_repeat {condition: {until: ...}}` ends at a round boundary when met (before round one too); `feed up_to:true` ending `out_of_items` exits 0 from `--wait`/`fh wait`, with moved and stops left.
 - `transfer {position, direction, items:{"iron-plate":50,"coal":10}, walk?}` moves multiple items at one target, with per-item `entries`; `trace {surface, position}` and `labs {surface, position?, radius?}` read that surface; `supply {item:"lubricant"}` reads fluid stock/flow and makers/users.
 - Raw `fh call wait_until` accepts word-form `until` and `ticks`/`timeout_ticks` aliases; queue errors name the step path. Aboard, queues accept allowed remote steps, `configure {platform}` works, and `observe` reports surroundings with `player.body:"none"`.

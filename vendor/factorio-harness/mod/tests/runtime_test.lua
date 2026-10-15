@@ -4988,4 +4988,29 @@ end)()
   assert(r.pump_circuits[1]:find('no red or green wire declared',1,true))
   runtime.dryrun.check,p.surface.platform,p.surface.find_entities_filtered,prototypes.entity.pump=check,platform,find,pump
 end)()
+-- Every field the d15 conditions take passes argument checks in each place a condition goes (Sol 10:01: a queue step
+-- wait_until {until: platform_built, platform, entities: true} was refused as an unknown argument).
+;(function()
+  local conds={{['until']='platform_built',platform='Wayfarer',entities=true},
+    {['until']='produced',item='iron-plate',at_least=5,positions={{x=1,y=1}}},{['until']='produced',at_least=1,position={x=1,y=1}}}
+  local function no_unknown(fn,where)
+    local ok,err=pcall(fn)
+    assert(ok or not tostring(err):find('unknown argument',1,true),where..': '..tostring(err))
+  end
+  for i,c in ipairs(conds) do
+    local step={}; for k,v in pairs(c) do step[k]=v end; step.timeout=3600
+    no_unknown(function() runtime.check_args('wait_until',step) end,'check_args '..i)
+    no_unknown(function() call('queue_submit',{start=false,steps={{action='wait_until',args=step}}}) end,'queue step '..i)
+    no_unknown(function() call('queue_submit',{start=false,steps={},guards={{when=c}}}) end,'guard '..i)
+    no_unknown(function() call('wait_until',step) end,'direct '..i)
+    call('queue_cancel',{})
+  end
+  -- the other arguments the d15 batch added, each through the same check
+  for _,c in ipairs({{'load_silo',{up_to=true}},{'refuel',{from_radius=128}},{'queue_edit',{id='job-1',to=1}},{'circuit_set',{set_requests=true}},
+      {'requests',{remove={'coal'},force=true}},{'board',{projects='compact'}},{'board_post',{blocked_by={1},parent=1,open_steps=true}},
+      {'board_update',{take_step=1,release_step=1,open_steps=true,blocked_by={},parent=false}},{'fuel_budget',{surface='nauvis'}},
+      {'mine',{count=5}},{'feed',{position={x=1,y=1},radius=5}},{'queue_submit',{mode='pending'}}}) do
+    no_unknown(function() runtime.check_args(c[1],c[2]) end,'check_args '..c[1])
+  end
+end)()
 print('runtime: '..assertions..' assertions passed')
