@@ -477,6 +477,7 @@ already targets your character.
 - Turret targeting: `configure {position | positions, platform?, priority_targets: ["big-metallic-asteroid", ...],
   ignore_unprioritised: true}` sets a turret's (or ghost's) priority list as its GUI does; inspect reads it back;
   blueprints keep it.
+- Artillery: `./fh call artillery` lists our artillery with shells, automatic targeting and the spawners and worms in range, nearest first; `configure {position, auto_targeting: false}` switches automatic targeting; `use_item {"item":"artillery-targeting-remote","position":{...}}` puts a flare there for the pieces in range.
 - The team blueprint library, kept in the save across shifts: `blueprint_save {name, area | positions, description,
   anchor}` stores what the team built; `blueprint_list` lists entries (author, size, counts, last used);
   `blueprint_place {name, position, direction, dry_run}` pastes one; `blueprint_rename` and `blueprint_delete {name}`:

@@ -316,3 +316,56 @@ do
   prototypes,defines=nil,nil
 end
 print('d15_batch endurance: ok')
+
+-- Artillery (Grok, d15 14:07): the spawners and worms in range nearest first, the automatic targeting switch, and the
+-- targeting remote's flare. ---------------------------------------------------------------------------------------
+do
+  defines={inventory={artillery_turret_ammo=1,artillery_wagon_ammo=2}}
+  local cannon={attack_parameters={range=224,min_range=32}}
+  local force={artillery_range_modifier=0.25,technologies={artillery={researched=false}},is_chunk_charted=function(s,c) return c.x<20 end}
+  local made={}
+  local enemies={{name='biter-spawner',position={x=100,y=0}},{name='small-worm-turret',position={x=10,y=0}},{name='spitter-spawner',position={x=60,y=0}},
+    {name='biter-spawner',position={x=800,y=0}}}
+  local surface
+  local function piece(x,shells,auto)
+    return {valid=true,name='artillery-turret',type='artillery-turret',position={x=x,y=0},force=force,artillery_auto_targeting=auto,prototype={guns={c=cannon}},
+      get_inventory=function() return {get_contents=function() return shells>0 and {{name='artillery-shell',count=shells}} or {} end} end,
+      surface=nil}
+  end
+  local a1,a2=piece(0,5,true),piece(1000,0,true)
+  surface={name='nauvis',find_entities_filtered=function(f)
+    if f.force=='enemy' then
+      local out={}
+      for _,e in ipairs(enemies) do if math.sqrt((e.position.x-f.position.x)^2+(e.position.y-f.position.y)^2)<=f.radius then out[#out+1]=e end end
+      return out
+    end
+    return {a2,a1}
+  end,create_entity=function(spec) made[#made+1]=spec; return {valid=true} end}
+  a1.surface,a2.surface=surface,surface
+  local held=0
+  local A=require('artillery'){position=function(v) return v end,held=function() return held end}
+  local p={surface=surface,position={x=0,y=0},force=force}
+  local r=A.read(p,{})
+  eq(r.count,2); eq(r.artillery[1].position.x,0,'nearest you first'); eq(r.artillery[1].range,280,'224 with a 25% bonus')
+  eq(r.artillery[1].in_range,2,'the worm inside the minimum range and the spawner past the range are left out')
+  eq(r.artillery[1].nearest[1].name,'spitter-spawner'); eq(r.artillery[1].nearest[1].distance,60)
+  has(r.lines[1],'artillery-turret (0,0): 5 shells; automatic targeting on; range 280 (minimum 32); 2 enemy spawners and worms in range, the nearest spitter-spawner (60,0) 60 tiles away')
+  eq(r.artillery[2].in_range,0,'a spawner on an uncharted chunk is left out'); has(r.lines[2],'no shells')
+  -- the switch, read back
+  local c=A.configure(a1,false)
+  eq(a1.artillery_auto_targeting,false); eq(c.auto_targeting,false); eq(c.auto_targeting_before,true); has(c.line,'automatic targeting off')
+  local ok,err=pcall(A.configure,{type='ammo-turret',name='gun-turret',position={x=1,y=1}},false)
+  assert(not ok and err:find('is a ammo-turret',1,true),err)
+  -- the remote: neither held nor researched, refused; researched, a flare and the pieces that reach it
+  ok,err=pcall(A.remote,p,{item='artillery-targeting-remote',position={x=200,y=0}},{type='artillery-remote',flare='artillery-flare'})
+  assert(not ok and err:find('not researched',1,true),err); eq(#made,0)
+  force.technologies.artillery.researched=true
+  local u=A.remote(p,{item='artillery-targeting-remote',position={x=200,y=0}},{type='artillery-remote',flare='artillery-flare'})
+  eq(#made,1); eq(made[1].name,'artillery-flare'); eq(made[1].position.x,200)
+  eq(#u.in_range,1); has(u.line,'flare at (200,0); in range with shells: artillery-turret (0,0) 200 tiles, 5 shells')
+  eq(u.out_of_range,1); eq(u.by,'shortcut (artillery researched)')
+  ok,err=pcall(A.remote,p,{item='artillery-targeting-remote',position={x=900,y=0}},{type='artillery-remote',flare='artillery-flare'})
+  assert(not ok and err:find('not charted',1,true),err)
+  defines=nil
+end
+print('d15_batch artillery: ok')

@@ -227,7 +227,8 @@ fh call status
   distractor or destroyer capsule) at a position in sight: the game's own projectile from the capsule's action, from
   your character, so damage and kills are the game's. The item prototype's range, minimum range and cooldown apply
   (`out of range ... reaches N tiles`, `cooling down: N ticks left`); one item is used. `use_item {item: "raw-fish"}`
-  uses a capsule on yourself (the heal). Capsules of other kinds (remotes) are refused. Cliff explosives: `use_item
+  uses a capsule on yourself (the heal). The artillery targeting remote: see `artillery` below. Capsules of other kinds
+  (other remotes) are refused. Cliff explosives: `use_item
   {item: "cliff-explosives", position, walk?}` and `clear_cliffs {position | positions (1..16), walk (default true),
   item?, ticks?}` throw the game's capsule as a player does (range 10 from the character, cooldown 30 ticks, blast radius
   1.5), one per spot, each landing before the next, walking into range with walk; a timed call. The reply lists each
@@ -791,7 +792,7 @@ fh call status
   listed kinds only. Either may come alone; nothing else may come with them (no recipe or filters).
   - It works on gun, rocket, railgun, laser, tesla and flamethrower turrets and their ghosts, in reach, by remote view,
     on another planet with `surface` and on a platform with `platform`, as configure does. Artillery turrets have no
-    priority list (2.0.77: `Entity is not turret`).
+    priority list (2.0.77: `Entity is not turret`); they have automatic targeting (`artillery` below).
   - `positions` (1..64) sets several turrets alike in one call: `turrets` has a row each (one that fails says why),
     with `configured` and `failed`.
   - The reply reads both back: `priority_targets`, `ignore_unprioritised` and `targeting` (`priority targets:
@@ -804,6 +805,25 @@ fh call status
     `blueprint_save` and `blueprint_place`, and a game blueprint place ghosts that keep them, and the turret a ghost
     becomes keeps them (2.0.77, on a copy of world n). A paste over a built turret does not list them in
     `settings_differ`.
+- Artillery (Grok, d15 14:07: a turret fired at the nearest nest in range as soon as a shell went in, which woke the
+  next nest):
+  - `artillery {position?, radius?, surface?}` (read) lists our artillery turrets and wagons, nearest the centre (you)
+    first, at most 8 (`more` counts the rest). Each row has `shells`, `auto_targeting`, `range` and `min_range` (the
+    cannon's: 224 and 32 on 2.0.77, the range times 1 + the force's artillery range bonus), `in_range` (enemy spawners
+    and worms in its range on charted chunks) and `nearest` (the 3 nearest: name, position, distance), and a `line`:
+    `artillery-turret (0,0): 5 shells; automatic targeting on; range 280 (minimum 32); 2 enemy spawners and worms in
+    range, the nearest spitter-spawner (60,0) 60 tiles away` (a 25% range bonus). The game does not say which target
+    it picks next. On world n one turret's search took 1.4 ms (111 spawners and worms in its range).
+  - `configure {position, auto_targeting: false}` is the turret's (or wagon's, or a ghost's) automatic targeting
+    switch, as in its GUI (LuaEntity `artillery_auto_targeting`), in reach or by remote view. Off, it fires only at
+    flares. The reply is the read's row for it with `auto_targeting_before`.
+  - `use_item {item: "artillery-targeting-remote", position}` puts an artillery flare at the position, as the remote
+    does (any charted tile, no range from you; the remote is not used up). It needs the remote held or the artillery
+    technology researched (the shortcut gives the remote). Our pieces with shells that reach the spot fire at it. The
+    reply lists them (`in_range`), the ones in range with no shells, and how many are out of range: `flare at
+    (200,0); in range with shells: artillery-turret (0,0) 200 tiles, 5 shells`. The flare is made with
+    the game's create_entity, as the capsule's flare (`artillery-flare`); this path was not run on a live world before
+    the deploy.
 - `flush {position, fluid?, index?, platform?}` is the fluid GUI's flush: it empties the fluid segment (the connected
   pipes, tanks, pumps and machine fluidboxes) the entity at `position` belongs to, every fluid or only `fluid`.
   An entity with several segments holding fluid (a chemical plant's input and output) needs `fluid` or `index`; the

@@ -10,7 +10,7 @@ return function(api)
   local M = {handlers={}}
   local SUPPORTED = {throw=true, ['use-on-self']=true}
   M.schema = {
-    use_item = {item='a capsule you hold: grenade, cluster-grenade, poison-capsule, slowdown-capsule, defender-capsule, distractor-capsule, destroyer-capsule, raw-fish, cliff-explosives, ...',
+    use_item = {item='a capsule you hold: grenade, cluster-grenade, poison-capsule, slowdown-capsule, defender-capsule, distractor-capsule, destroyer-capsule, raw-fish, cliff-explosives, artillery-targeting-remote (held, or by the shortcut once artillery is researched; not used up: an artillery flare at position, any charted tile, and our artillery with shells that reaches it fires there; the reply lists those pieces), ...',
       position='{x,y} target for a thrown capsule: in sight, within its range (and beyond its minimum range); not for one used on yourself',
       quality='default normal',
       walk='cliff-explosives only: true walks into range first (as clear_cliffs)',
@@ -57,6 +57,8 @@ return function(api)
       assert(a.position ~= nil, 'position is required: the cliff to blow up (as scan lists it)')
       return M.handlers.clear_cliffs(p, {position=a.position, item=a.item, quality=a.quality, walk=a.walk == true})
     end
+    -- The artillery targeting remote (Grok, d15 14:07): a flare at the position (artillery.lua).
+    if ca.type == 'artillery-remote' and api.artillery_remote then return api.artillery_remote(p, a, ca) end
     assert(SUPPORTED[ca.type], a.item .. ' (' .. tostring(ca.type) .. ') is not usable this way; use_item throws or uses capsules on yourself')
     local quality = a.quality or 'normal'
     local c = p.character
