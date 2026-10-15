@@ -23,6 +23,9 @@ PACKS = [("automation-science-pack", "Red"), ("logistic-science-pack", "Green"),
          ("electromagnetic-science-pack", "Electromagnetic"), ("agricultural-science-pack", "Agricultural"),
          ("cryogenic-science-pack", "Cryogenic"), ("promethium-science-pack", "Promethium")]
 PACK_LABEL = dict(PACKS)
+# a shift's output a minute, by group (the score's produced totals; tools/pog.py SCORE_LUA's item list)
+KEY_PRODUCTS = {"plates": {"iron-plate", "copper-plate", "steel-plate"},
+                "circuits": {"electronic-circuit", "advanced-circuit", "processing-unit"}}
 # Science per minute as players say it (operator 15:51, viewer joonazan): research units a minute, the labs' use of
 # packs in sets. Every 2.0 technology takes one of each of its packs per unit and one runs at a time, so the units are
 # the count of the pack the labs used most; the agricultural pack spoils and its count runs ahead (tools/stream/model.py).
@@ -160,6 +163,9 @@ def scores(path):
                      "done": set(done if isinstance(done, list) else done),
                      "science": sum(v for k, v in produced.items() if SCIENCE.search(k)),
                      "packs": {k: v for k, v in produced.items() if SCIENCE.search(k) and isinstance(v, (int, float))},
+                     # key products made (plates, circuits) for a shift's output a minute (Nick 15:50)
+                     "key": {g: sum(v for k, v in produced.items() if k in names and isinstance(v, (int, float)))
+                             for g, names in KEY_PRODUCTS.items()},
                      # the labs' use of each pack (score logs since Space Age; absent from older ones and before any use)
                      "used": {k: v for k, v in (s.get("consumed") or {}).items() if isinstance(v, (int, float))}
                      if isinstance(s.get("consumed"), dict) else None,
@@ -453,6 +459,8 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
                    # SPM: research units a minute over the shift (the labs' use); packs made a minute, all colours
                    spm=round(research_units(used_between(a, b)) / mins, 1) if mins > 0 and used_between(a, b) is not None else None,
                    made_per_min=round(sum(own.values()) / mins, 1) if mins > 0 else None,
+                   output_per_min={g: round(max(0, b["key"].get(g, 0) - a["key"].get(g, 0)) / mins, 1) for g in KEY_PRODUCTS}
+                   if mins > 0 else None,
                    rockets=b["rockets"], rockets_new=b["rockets"] - base["rockets"],
                    platforms=b["platforms"], planets=b["planets"], deaths=deaths, losses=losses,
                    made=shift_made, made_total=sum(shift_made.values()), platforms_built=built, platforms_lost=lost,

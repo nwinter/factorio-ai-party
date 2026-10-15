@@ -329,6 +329,9 @@ return function(api)
     if r.hauls_text then lines[#lines+1] = r.hauls_text end
     lines[#lines+1] = r.failed_text
     local me = api.name and api.name(p.index)
+    -- What the machines this agent built made this shift (efficiency.lua; Nick 15:50).
+    local okm, made = pcall(function() return me and api.efficiency_line and api.efficiency_line(me) end)
+    if okm and made then lines[#lines+1] = made end
     local areas = me and api.claims and api.claims(me) or {}
     if #areas == 0 then lines[#lines+1] = 'open alerts in your claims: no claims'
     else
@@ -442,9 +445,12 @@ return function(api)
     .. 'took that item from (none: not taken from an entity in the window) and the spot it went to, each within 10 tiles; '
     .. 'listed at 5 or more. failed: requests that failed, queue steps that failed, direct timed actions that ended other '
     .. 'than done, by action and reason (numbers shown as N). losses near your work: incidents within 64 tiles of where '
-    .. 'your character was (sampled once a minute) or in your claims'
+    .. 'your character was (sampled once a minute) or in your claims. machines you built: the items the machines you built '
+    .. 'or planned (ghosts robots built) made this shift, by their crafts, how many there are and how many were working when '
+    .. 'last read, and that against the items you moved by hand this shift'
   M.schema = {
     review = {returns='lines (the review block: review (last 2h): actions by kind and time by kind; repeated hauls; failed; '
+      .. 'machines you built made N items this shift (M of your machines, K running; P% of your items this shift moved by machines); '
       .. 'open alerts in your claims; losses near your work), minutes (the window: 120, or since your first request), actions, '
       .. 'queue_steps, counts {kind: requests and queue steps}, time_s and time_pct {kind: seconds, share}, hauls [{item, from, '
       .. 'to, to_name, surface, times}] (5 or more), failed, note (how each is counted). Kinds: item moves, walking, building, '

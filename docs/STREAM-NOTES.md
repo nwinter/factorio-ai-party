@@ -1040,6 +1040,23 @@ with the director service moving cam3 is the fair one. If the saving holds, rest
 config.ini on every start, so nothing on the box needs editing by hand. To go back: `git revert` the
 start-client.ps1 commit and restart the client.
 
+## Machines at work (2026-10-14, eng/efficiency)
+
+Nick (15:50): production credited fairly to the agents who build machines; viewers Enginerd and Foobator asked for
+automation over hand work. The harness's operator read `efficiency` (efficiency.lua; vendor docs/usage.md) credits each
+machine's output to the agent who built or planned it, read one 128-tile block every other tick.
+
+- `live.py observe_efficiency` reads it every 5 minutes once `describe` lists it and appends the read to
+  `runs/RUN/efficiency.jsonl` (`efficiency.py`). The shift's numbers are the runtime's own.
+- The "efficiency" card ("Machines at work this shift", every 30 minutes, the first a third of a period in): items the
+  team's machines made this shift, machines and how many working, the share moved by machines (against hand hauling),
+  and one agent's line, the next agent each card ("Machines Sol built made 12k items this shift; 82% of Sol's items
+  moved by machines"). No ranking.
+- The hosts: the card's facts with a neutral call; and `machines_news` when, against the read 30 minutes before, the
+  machines working moved by a fifth (10 or more) or the share moved by machines by 10 points.
+- Machines built before the build log are "built before the count" until `tools/efficiency_seed.py --send` (from the
+  agents' journals: hand builds by unit, batch builds and ghost placements by spot) names their builders.
+
 ## Science per minute (2026-10-14, eng/spm)
 
 Viewer joonazan (15:49): the sidebar's "science per minute" was packs made per minute, all colours summed (168/min at

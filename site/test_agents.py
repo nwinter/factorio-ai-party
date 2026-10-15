@@ -137,6 +137,11 @@ def make(root):
     (b / "hauling.jsonl").write_text(
         json.dumps(haul_row(1, 100, 10, 100, 0, 0, 40, [dict(coal, times=2, items=20)])) + "\n"
         + json.dumps(haul_row(2, 400, 30, 250, 120, 30, 540, [dict(coal, times=14, items=140)])) + "\n")
+    # the stream's reads of the game's machine credit (tools/stream/efficiency.py): the shift's last read counts
+    (b / "efficiency.jsonl").write_text(json.dumps({"t": 1, "tick": 1, "team": {"items_shift": 10}, "agents": []}) + "\n" + json.dumps({
+        "t": 2, "tick": 2, "team": {"items_shift": 5000, "machine_share_pct": 94, "machines": 40, "running": 30, "ore_shift_about": 900},
+        "agents": [{"name": "opus", "items_shift": 4700, "machine_share_pct": 94, "machines": 12, "running": 9, "ore_shift_about": 300},
+                   {"name": "built before the count", "before": True, "items_shift": 300, "machines": 28}]}) + "\n")
     (b / "stream-service.log").write_text("")
     # basemap snapshots (tools/stream/basemap_log.py): two in shift 1, one in shift 2, and a file that is none
     for d_, tick, rows in ((a, 36000, ["A."]), (a, 72000, ["AS"]), (b, 400000, ["ASM", "E.."])):
@@ -207,6 +212,10 @@ def main():
         assert (g["haul_items"], g["haul_calls"], g["haul_direct_items"], g["haul_queue_items"], g["haul_order_items"],
                 g["haul_carry"], g["haul_from"]) == (300, 20, 150, 120, 30, 500, "game"), g
         assert g["haul_top"]["item"] == "coal" and g["haul_top"]["times"] == 12 and g["haul_top"]["items"] == 120, g
+        # machines opus built (efficiency.jsonl, shift 2's last read); shift 1 has no reads
+        assert (g["made_items"], g["made_share_pct"], g["machines"], g["machines_working"]) == (4700, 94, 12, 9), g
+        assert o.get("made_items") is None and c["machines_team"] is None, o
+        assert agent_stats.compute(root / "sb", ["Opus"])["machines_team"]["made_items"] == 5000
         assert o["failed"] == 1 and o["built"] == 2 + 5 + 3 and o["mined"] == 1, o
         assert o["walked"] == 50 and o["moves"] == 3, o  # 0,0 to 30,40; the 2970-tile hop left out
         assert (o["research"], o["research_done"], s["research"], s["research_done"]) == (2, 1, 1, 1), (o, s)
@@ -291,6 +300,15 @@ def main():
         hrec = page.split("Most items hauled by hand in a shift</span>")[1].split("</li>")[0]
         assert '<span class="r-value">300</span>' in hrec and "shift 2" in hrec, hrec
         assert "Tiles carried" in page.split('id="notes"')[1]
+        # machines built: opus's row (4700 made; 300 hauled in shift 2: 94%), the team by shift (shift 2 only)
+        mc = page.split('<h2 id="machines">Machines built</h2>')[1].split('<h2 ')[0]
+        mrow = mc.split('href="#opus"')[1].split("</tr>")[0]
+        for want in ('data-v="4700">4,700<', ">94%<", 'data-v="12">12<', 'data-v="9">9<'):
+            assert want in mrow, (want, mrow)
+        assert 'href="#sol"' not in mc.split('class="compare machines"')[1].split("</table>")[0], mc  # no reads: no row
+        team_rows = mc.split('id="machines-shifts"')[1]
+        assert '<th scope="row">2</th><td data-v="5000">5,000</td><td data-v="94">94%</td>' in team_rows, team_rows
+        assert "Moved by machines" in page.split('id="notes"')[1]
         # by maker, per agent-shift: Anthropic is Opus on two shifts (10 and 7 built), OpenAI is Sol on one
         mk = page.split('<h2 id="makers">')[1].split("</table>")[0]
         anth = mk.split('<th scope="row">Anthropic</th>')[1].split("</tr>")[0]

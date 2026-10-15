@@ -938,6 +938,8 @@ def shift_stats(s):
         stat("rockets", s["rockets"], f'+{s["rockets_new"]}'),
         stat("SPM", "–" if s["spm"] is None else fmt_num(s["spm"]), "research units a minute, shift average"),
         stat("packs made / min", "–" if s.get("made_per_min") is None else fmt_num(s["made_per_min"]), "all colours, shift average"),
+        stat("plates / min", "–" if not s.get("output_per_min") else fmt_num(s["output_per_min"]["plates"]), "iron, copper, steel, shift average"),
+        stat("circuits / min", "–" if not s.get("output_per_min") else fmt_num(s["output_per_min"]["circuits"]), "green, red, blue, shift average"),
         stat("packs made", f'{s["made_total"]:,}'),
         stat("deaths / loss alerts", f'{s["deaths"]} / {s["losses"]}'),
         stat("viewer messages", s["viewer_lines"])])

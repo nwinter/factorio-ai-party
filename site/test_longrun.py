@@ -19,8 +19,8 @@ sys.path.insert(0, str(SITE))
 import longrun  # noqa: E402
 
 
-def score(t, tick, done, science, rockets=0, platforms=(), planets=("nauvis",), space=None, at=None, used=None):
-    produced = {"automation-science-pack": science, "iron-plate": 999}
+def score(t, tick, done, science, rockets=0, platforms=(), planets=("nauvis",), space=None, at=None, used=None, iron=999):
+    produced = {"automation-science-pack": science, "iron-plate": iron}
     if space is not None:
         produced["space-science-pack"] = space
     return json.dumps({"t": t, "world": "n", "score": {"tick": tick, "research_done": list(done), "rockets": rockets,
@@ -62,14 +62,14 @@ def make(root):
     # with a lost one): never a negative rate
     # the labs' use (consumed): 400 red sets each 20 minutes; the agricultural count runs ahead (it spoils)
     use = lambda k: {"automation-science-pack": 300 + 400 * k, "agricultural-science-pack": 1000 * k}  # noqa: E731
-    shift("s3", "s2", [score("2026-10-11T05:00:00", 3600 * 62, ["automation", "oil-processing"], 610, used=use(0)),
+    shift("s3", "s2", [score("2026-10-11T05:00:00", 3600 * 62, ["automation", "oil-processing"], 610, used=use(0), iron=1000),
                        score("2026-10-11T05:20:00", 3600 * 82, ["automation", "oil-processing"], 1010, space=100,
                              platforms=["Solstice"], at="nauvis", used=use(1)),
                        score("2026-10-11T05:40:00", 3600 * 102, ["automation", "oil-processing", "rocket-silo"], 1410,
                              space=40, rockets=1, platforms=["Solstice"], at="in transit", used=use(2)),
                        score("2026-10-11T06:00:00", 3600 * 122, ["automation", "oil-processing", "rocket-silo"], 1810,
                              rockets=2, platforms=["Solstice"], at="vulcanus", planets=("nauvis", "vulcanus"), space=60,
-                             used=use(3))],
+                             used=use(3), iron=1600)],
           caster="05:30:00 [Vale] (space_moment, or:x, 1s) Platform's named. Solstice.\n"
                  "05:31:00 [Rook] (camera, or:x, 1s) Nothing to see.\n")
     shift("old", None, [score("2026-10-09T01:00:00", 100, [], 0)])  # an unrelated run: not in the chain
@@ -93,6 +93,7 @@ def main():
         assert s1["research_new"] == 1 and s1["moments"] == ["researched oil processing"], s1
         assert s3["research_new"] == 1 and s3["rockets_new"] == 2 and s3["made_per_min"] == 22.0, s3  # (1200 red + 120 space: 100, a fall to 40 as 0, 20) / 60
         assert s3["spm"] == 20.0, s3  # 1200 red sets in 60 min; agricultural's 50 a minute left out
+        assert s3["output_per_min"] == {"plates": 10.0, "circuits": 0.0}, s3  # 600 iron plates in 60 min
         assert lr["spm"] == [(82.0, 20.0), (102.0, 20.0), (122.0, 20.0)], lr["spm"]  # s3's 20-minute windows only
         assert [v for _, v in lr["spm_packs"]["agricultural-science-pack"]] == [50.0, 50.0, 50.0], lr["spm_packs"]
         assert min(v for _, v in lr["made_spm"]) >= 0 and all(v >= 0 for pts in lr["spm_packs"].values() for _, v in pts)

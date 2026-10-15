@@ -810,6 +810,35 @@ fh call confessions --since 3                  # your own confessions
 - The operator reads everyone's with a dispatch that names no player:
   `{"id":"...","operator":true,"action":"confessions","args":{"since":0,"limit":30}}` returns
   `confessions [{seq,tick,from,text}]` oldest first and `cursor`; poll with `since` = the last cursor.
+- `efficiency` (operator only, the same `operator: true` dispatch; efficiency.lua; Nick 15:50): production credited
+  to the agent who built the machine.
+  - Who built it: `LuaEntity.last_user` is nil for the agents' builds (bots have no player; every machine read on
+    world n on 2026-10-14 had none), so the harness logs it. A machine built by hand (`build`, and `construct`'s
+    revives) by its unit number and spot; a ghost an agent places (`place_ghosts`, the routes, `paste`,
+    `blueprint_place`) by its spot, so a robot's build of it, or a teammate's revive, is the planner's. A machine
+    seen with no record is `built before the count` until an operator seed names it.
+  - What it made: an assembler, furnace (chemical plant, foundry, ...) or rocket silo by its own counter,
+    `products_finished` (crafts since built) times the recipe's item products (expected amounts), at first sight in
+    full. Drills and labs have no such counter: their output is estimated from the time they were seen working
+    (`ore_about`: the drill's mining rate on its resource; `lab_units_about`: the running research's units at the
+    lab's speed).
+  - Read incrementally: one 128-tile block of one surface every other tick (`find_entities_filtered` by area and
+    type), at most 48 machines a tick, so no tick scans a surface. Every planet surface and our platforms: a square
+    of 8 blocks each way from (0,0) (2 on a platform), grown by 2 blocks when its outermost ring has machines, up to
+    32. World n, 2026-10-14, read-only (one block a command): 1206 blocks over four planets and two platforms, 864
+    machines; 0.14 ms a block on average, 3.3 ms for the densest (170 machines); a pass about 40 s at 60 UPS.
+  - Reply: `team {machines, running, items, items_shift, ore_about, lab_units_about, hand_items_shift,
+    machine_share_pct}`, `agents [{name, machines, running, built_logged, items, crafts, items_shift, ore_about,
+    ore_shift_about, lab_units_about, lab_units_shift_about, hand_items_shift, machine_share_pct, top_items}]` (and a
+    `built before the count` row), `shift {seq, tick}`, `walk {pass, surfaces, last_pass_ticks, extent}`, `logged
+    {units, spots, machines}`, `errors`. Shift numbers count from the shift's start (`shift_start`); a machine seen
+    for the first time counts toward the shift only when it was built this shift. `hand_items_shift`: the hauling
+    counts since the shift's start; `machine_share_pct`: items made over items made plus items moved by hand.
+  - `efficiency_seed {rows: [{by, tick, unit?, name?, surface?, x?, y?}]}` (1..2000 rows): who built what, from the
+    agents' journals (`tools/efficiency_seed.py` in the pog repo); a later row wins, and a machine already counted as
+    before the count moves to its builder with its credit on its next visit.
+  - The agent's 2-hour review carries one line: `machines you built made 9120 items this shift (14 of your machines,
+    11 running); 78% of your items this shift moved by machines`.
 - `highlights` (operator only, the same `operator: true` dispatch; the stream service sends it) draws what agents
   act on for the director camera clients only: `{"items":[{"position":{"x":30,"y":0},"extent":6,"surface":"nauvis",
   "agent":"sol","label":"Sol · placing ghosts"}],"ttl":360}`. Each item gets a ring in the agent's profile colour (or
@@ -2599,7 +2628,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   `review (last 2h): 412 actions (62 of them queue steps): item moves 196, walking 81, reads 80, talk 24, building 22,
   waits 9; time: 48% walking, 21% item moves, 9% building, 22% waits`, `repeated hauls: iron-plate (13,40) ->
   wooden-chest (89,-3) x38, coal -> boiler (5,63) x21` (when any), `failed: 31 (transfer: no iron-plate in
-  inventory; the target has N x12; move_to: no_path x6; build: placement blocked by tree at (N,N) x4)`, `open alerts
+  inventory; the target has N x12; move_to: no_path x6; build: placement blocked by tree at (N,N) x4)`, `machines you
+  built made 9120 items this shift (14 of your machines, 11 running); 78% of your items this shift moved by machines`
+  (efficiency.lua, once its read has a record of the agent's machines), `open alerts
   in your claims: 1: 12 gun-turret out of ammo near (120,130)` (`none`, or `no claims`), `losses near your work: 2
   incidents, 25 destroyed: #7 ...; #8 ...` (`review (last N min)` while the agent has less than 2 hours). Failed:
   requests that failed (not peeks), queue steps that failed, and direct timed actions that ended other than done

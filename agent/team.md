@@ -151,9 +151,11 @@ already targets your character.
   5+ min with the item free in the network (and what the robots are doing); at most one digest every 2.5 minutes, new or worse only;
   `./fh call game_alerts` lists them all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
   your character's time by kind (the time before a request counts toward that request's kind), the hand hauls you
-  repeated 5 or more times, what failed (by reason, top 3), alerts still open in your claims, and losses near where
-  your character was (`review (last 2h): 412 actions: ...; time: 48% walking, 21% item moves, 9% building, 22%
-  waits`, `repeated hauls: iron-plate (13,40) -> wooden-chest (89,-3) x38, ...`, `failed: 31 (...)`, ...);
+  repeated 5 or more times, what failed (by reason, top 3), what the machines you built made this shift, alerts still
+  open in your claims, and losses near where your character was (`review (last 2h): 412 actions: ...; time: 48%
+  walking, 21% item moves, 9% building, 22% waits`, `repeated hauls: iron-plate (13,40) -> wooden-chest (89,-3) x38,
+  ...`, `failed: 31 (...)`, `machines you built made 9120 items this shift (14 of your machines, 11 running); 78% of
+  your items this shift moved by machines`, ...);
   `./fh call review` shows it any time. About every 45 minutes a reply carries `lookahead` once: your plan line and
   how long since it changed, your open board items, the team goals, the research running and next, network stock
   falling to zero within 2 hours, and the time left in the shift (`./fh call lookahead` shows it any time).
