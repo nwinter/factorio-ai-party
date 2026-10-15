@@ -293,7 +293,7 @@
   var ALERT_TONES = { attack: 'danger', death: 'danger', low_power: 'warn', research: 'info' };
   var ALERT_ICONS = { attack: '⚔', death: '✝', low_power: '⚡', research: '⚗' };
   // The dashboard's cards are made once; each refresh fills their bodies (the map card keeps its viewer).
-  var CARDS = [['agents', 'Agents'], ['map', 'Map'], ['plan', 'Team plan'], ['board', 'Board'], ['research', 'Research'], ['charts', 'Factory'], ['chat', 'Team chat']];
+  var CARDS = [['agents', 'Agents'], ['map', 'Map'], ['plan', 'Team plan'], ['board', 'Board'], ['research', 'Research'], ['chronicle', 'Chronicle'], ['charts', 'Factory'], ['chat', 'Team chat']];
   function cards() {
     if ($('#cb-agents')) return;
     $('#dash').innerHTML = CARDS.map(function (c) {
@@ -412,11 +412,38 @@
     fill('#map-space', spaceInset(s.space));
     fill('#cb-plan', planHtml(s, byName));
     fill('#cb-board', boardHtml);
+    fill('#cb-chronicle', chronicleHtml(s.chronicle, byName));
     fill('#cb-research', research);
     fill('#cb-charts', '<div class="chart-grid">' + chartHtml + '</div>');
     fill('#cb-chat', gchat ? '<ul class="game-chat">' + gchat + '</ul>' : '<p class="fx-muted">Quiet so far.</p>');
     app.classList.toggle('is-stale', !live);
     if (tipFor) showTip(tipFor, tipAnchor());  // (the portrait under the tip was drawn again)
+  }
+
+  // The run's chronicle (state.chronicle, tools/stream/model.py; viewers Alex and syndesis 22:24): the agents' newest
+  // entries in their own words, newest first, with what each is filed beside, and the harness's newest notable events
+  // (platforms built and lost with where, what destroyed them and the cargo; rockets; deaths). The whole run, by
+  // shift: /chronicle/.
+  var CHRON_EVENTS = { platform_created: 'Built', platform_lost: 'Lost', platform_deleted: 'Deleted', rocket: 'Rocket', death: 'Death' };
+  function chronicleHtml(ch, byName) {
+    ch = ch || {};
+    var entries = (ch.entries || []).slice().reverse().map(function (e) {
+      var o = byName[e.agent] || {};
+      return '<li class="chron-entry" style="--ac:' + acColor(o.color) + '">' + avatar(o.name ? o : { name: e.agent || e.name || '?' }, 24) +
+        '<div><b>' + esc(o.display_name || e.name || e.agent || '?') + '</b>' + (e.title ? ' <span class="chron-title">' + esc(e.title) + '</span>' : '') +
+        ' <span class="fx-muted small">' + esc([e.game_time, e.where].filter(Boolean).join(' · ')) + '</span>' +
+        '<p class="chron-text">' + esc(e.text) + '</p>' +
+        ((e.about || []).length ? '<p class="fx-muted small">Beside: ' + esc(e.about.join('; ')) + '</p>' : '') + '</div></li>';
+    }).join('');
+    var events = (ch.events || []).filter(function (x) { return CHRON_EVENTS[x.kind]; }).slice(-6).reverse().map(function (x) {
+      var cargo = x.kind === 'platform_lost' ? (x.cargo && x.cargo.length ? x.cargo.map(function (c) { return c.count + ' ' + label(c.name).toLowerCase(); }).join(', ') : 'nothing in its hub') : '';
+      return '<li><span class="fx-chip fx-chip--grey">' + esc(CHRON_EVENTS[x.kind]) + '</span> ' + esc(x.line || '') +
+        (cargo ? ' <span class="fx-muted">· cargo lost: ' + esc(cargo) + '</span>' : '') +
+        (x.game_time ? ' <span class="fx-muted small">' + esc(x.game_time) + '</span>' : '') + '</li>';
+    }).join('');
+    return (entries ? '<ul class="chron-entries">' + entries + '</ul>' : '<p class="fx-muted">No entries yet this shift.</p>') +
+      (events ? '<h4>The harness\'s record</h4><ul class="chron-events">' + events + '</ul>' : '') +
+      '<p class="small"><a href="/chronicle/">The whole chronicle, by shift</a></p>';
   }
 
   // ------------------------------------------------------------------ the team plan (viewer Alex, 22:12)

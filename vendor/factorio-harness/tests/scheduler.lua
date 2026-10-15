@@ -324,6 +324,7 @@ do
   bad({steps={{action='craft'},{action='inspect',label='checkpoint'}}},'steps[2] (inspect, label "checkpoint"): action is not queueable')
   bad({steps={{action='craft',args={on_short='skip'}}}},'steps[1] (craft): args: unknown argument on_short')
   bad({steps={{action='craft',label=string.rep('x',65)}}},'label must be a string of at most 64 bytes')
+  bad({steps={{action='craft',label=string.rep('箱',22)}}},'label 66 bytes')
   bad({steps={},guards={{when={['until']='bad'}}}},'guards[1]: when: until must be ready')
   bad({steps={},guards={{when={['until']='ready'},steps={{action='inspect'}}}}},'guards[1]: steps[1] (inspect)')
   local q=h.queue_submit(p,{steps={{action='wait_ticks',args={ticks_alias=5}}}})

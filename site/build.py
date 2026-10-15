@@ -46,6 +46,7 @@ import avatar as avatar_art  # noqa: E402  (tools/stream/avatar.py, reads the pa
 sys.path.insert(0, str(SITE))
 import longrun  # noqa: E402  (site/longrun.py: the long run's shifts from runs/)
 import moderation  # noqa: E402  (site/moderation.py: viewer lines deleted on YouTube or listed by hand)
+import chronicle as chron  # noqa: E402  (site/chronicle.py: /chronicle/ from runs/RUN/chronicle.jsonl)
 import agents as agent_pages  # noqa: E402  (site/agents.py: /agents/ and /timeline/ from tools/agent_stats.py)
 import highlights  # noqa: E402  (site/highlights.py: /chat/, the agents' spoken lines and confessions)
 import search as site_search  # noqa: E402  (site/search.py: /search/ and its index)
@@ -515,7 +516,7 @@ def nav_items():
     if archive():
         return [("/", "Live"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies"),
                 ("/about/", "About")]
-    return [("/", "Live")] + ([("/runs/long/", "The run"), ("/agents/", "Agents"), ("/timeline/", "Timeline"),
+    return [("/", "Live")] + ([("/runs/long/", "The run"), ("/agents/", "Agents"), ("/timeline/", "Timeline"), ("/chronicle/", "Chronicle"),
                                ("/chat/", "Chat"), ("/search/", "Search")]
                               if LONG else []) + [("/about/", "About")]
 
@@ -1064,6 +1065,7 @@ def build_shift_page(s, v, lr):
 {video}
 <h2>Milestones</h2>
 {firsts_table(mine, shift_links=False)}
+{f'<p><a href="/chronicle/#shift-{s["n"]}">This shift in the Chronicle</a>: the agents\' own account, beside the platforms built and lost.</p>' if s["n"] in lr.get("chronicle_shifts", ()) else ""}
 {f'<h2>The hosts\' calls</h2><p class="muted small">Space Age moments, and research, attacks and losses that matter, as the hosts called them. Times Pacific.</p><ol class="chat calls">{calls}</ol>' if calls else ""}
 {plan_html(s["plan"]) if s.get("plan") else ""}
 {f'<h2>Technologies researched ({len(s["techs"])})</h2><ol class="techs">' + "".join(f'<li><span class="c-time">{esc(longrun.game_time(t["tick"]))}</span>{esc(t["label"])}</li>' for t in s["techs"]) + '</ol><p class="muted small">Game time of the first score row that shows each one.</p>' if s["techs"] else ""}
@@ -1100,9 +1102,11 @@ def long_run_row(lr):
             f'<p class="run-final">{last["research"]} techs, {last["rockets"]} rockets by {esc(last["game1"])}</p></a>')
 
 
-def platforms_table(plats):
+def platforms_table(plats, losses=None):
+    """losses: {name: the harness's loss line} (site/chronicle.py platform_losses: where, what destroyed it, cargo)."""
     if not plats:
         return ""
+    losses = losses or {}
     rows = "".join(
         f'<tr><th scope="row">{esc(p["name"])}</th>'
         f'<td data-l="Built">{esc(_pt(p["built"]))} <span class="muted">({esc(longrun.game_time(p["built_tick"]))}, '
@@ -1110,12 +1114,15 @@ def platforms_table(plats):
         f'<td data-l="Stopped at">{esc(", ".join(x.capitalize() for x in p["places"]) or "–")}</td>'
         f'<td data-l="Lost">' + (f'{esc(_pt(p["lost"]))} <span class="muted">({esc(longrun.game_time(p["lost_tick"]))}, '
                                  f'<a href="/runs/long/shift-{p["lost_shift"]}/">shift {p["lost_shift"]}</a>)</span>'
+                                 + (f'<br><span class="small">{esc(clean(losses[p["name"]]))}</span>' if losses.get(p["name"]) else "")
                                  if p["lost"] else f'active{", at " + esc(p["at"].capitalize()) if p["at"] else ""}') + '</td></tr>'
         for p in plats)
     return (f'<h2 id="platforms">Space platforms</h2><div class="table-wrap"><table class="long-run platforms"><thead><tr>'
             f'<th scope="col">Platform</th><th scope="col">Built (Pacific)</th><th scope="col">Stopped at</th>'
             f'<th scope="col">Lost</th></tr></thead><tbody>{rows}</tbody></table></div>'
-            f'<p class="muted small">From the score log every 2 minutes. Lost: gone from the game\'s platform list.</p>')
+            f'<p class="muted small">From the score log every 2 minutes. Lost: gone from the game\'s platform list; where it '
+            f'was, what destroyed it and the cargo lost as the harness read them at its hub\'s death (the '
+            f'<a href="/chronicle/">Chronicle</a>).</p>')
 
 
 def live_banner():
@@ -1280,7 +1287,7 @@ def build_long_run(lr):
 {records(done)}
 <h2 id="milestones">Milestones</h2>
 {firsts_table(lr["firsts"], filters=True)}
-{platforms_table(lr["platforms"])}
+{platforms_table(lr["platforms"], lr.get("platform_losses"))}
 <h2 id="charts">Charts</h2>
 <p class="muted small">Game time on the x axis; S1, S2 ...: shift starts. Hover for the Pacific time.</p>
 {long_charts(lr)}
@@ -1794,6 +1801,8 @@ def main():
     if LONG:
         global VIDEOS
         VIDEOS = load_videos(args.videos)
+        LONG["platform_losses"] = chron.platform_losses(LONG, args.runs_dir)  # the platform table's loss details
+        LONG["chronicle_shifts"] = {c["n"] for c in chron.by_shift(LONG, args.runs_dir, clean, keep_line)}  # shift pages link it
         lapse = timelapse.frames(LONG, args.runs_dir, game_time)  # site/timelapse.py: the base over time
         if lapse:
             # with the terrain frames (site/terrain.py): each snapshot draws those up to its tick
@@ -1813,10 +1822,16 @@ def main():
         write("agents/index.html", page("Agents", body, "/agents/", "Each agent's numbers across the run's shifts.",
                                         extra_head=head, path="/agents/"))
         events = agent_pages.timeline_events(LONG, args.runs_dir, team,
-                                             lambda t: longrun.MILESTONES.get(t, t.replace("-", " ")).capitalize(), stats)
+                                             lambda t: longrun.MILESTONES.get(t, t.replace("-", " ")).capitalize(), stats,
+                                             platforms=chron.timeline_rows(LONG, args.runs_dir))
         body, head = agent_pages.build_timeline(events, agent, avatar, esc, game_time)
         write("timeline/index.html", page("Timeline", body, "/timeline/", "The run's events in game time.",
                                           extra_head=head, path="/timeline/"))
+        # the run's chronicle: the agents' entries beside the harness's record (viewers Alex and syndesis 22:24)
+        body, head = chron.build_page(chron.by_shift(LONG, args.runs_dir, clean, keep_line), agent, avatar, esc, game_time, team)
+        write("chronicle/index.html", page("Chronicle", body, "/chronicle/",
+                                           "The run's story in the agents' own words, beside the platforms built and lost.",
+                                           extra_head=head, path="/chronicle/"))
         chat_lines = highlights.lines(stats, team, clean, keep_line)
         body, head = highlights.build_chat(chat_lines, agent, avatar, esc, game_time, team, highlights.load_moments(clean))
         write("chat/index.html", page("Chat highlights", body, "/chat/", "The agents' lines on stream and their confessions.",

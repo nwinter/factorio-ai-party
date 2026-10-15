@@ -414,7 +414,57 @@ do
   target.inv.insert{name='wood',count=1600}
   r=luna('transfer',{position=target.position,direction='to_entity',items={['iron-plate']=1,coal=1}})
   eq(r.transferred,0); eq(r.short.missing,2); assert(r.entries[1].entity_full)
-  r=luna('transfer',{position=target.position,direction='to_entity',inventory='rocket_silo_rocket',items={['iron-plate']=1,coal=1}})
-  eq(r.transferred,0); assert(r.entries[1].error and r.entries[2].error)
+  fails(function() luna('transfer',{position=target.position,direction='to_entity',inventory='rocket_silo_rocket',items={['iron-plate']=1,coal=1}}) end,
+    'all 2 items failed, nothing moved; first coal:')
 end
+
+-- The moved batch's spoilage (Sol, 22:25: choosing 2000 fresh agricultural packs for Aquilo): the spread of what moved,
+-- and for a pack the running research takes, how many a unit it takes and its units left. A take, then a courier tour.
+do
+  local A='agricultural-science-pack'
+  prototypes.item[A]={name=A,type='tool',stack_size=200}
+  local packs=chest({x=50.5,y=31.5},{})
+  local function put(i,count,pct,left)
+    local s=packs.inv[i]
+    s.valid_for_read=true; s.name=A; s.quality={name='normal'}; s.count=count; s.spoil_percent=pct; s.spoil_tick=game.tick+left
+  end
+  put(1,200,0.9,5*3600); put(2,200,0.3,40*3600); put(3,100,0.1,58*3600)
+  force.current_research={name='agricultural-science-pack-research',research_unit_count=1000,research_unit_ingredients={{name=A,amount=1}}}
+  force.research_progress=0.25
+  local t=luna('transfer',{position=packs.position,item=A,count=500,direction='to_player'})
+  eq(t.transferred,500); eq(t.fresh,nil,'made into lines')
+  eq(t.freshness[1],'agricultural-science-pack*500: spoiled 10-90%, 50% by count; under 25% 100, 25-50% 200, 50-75% 0, 75%+ 200; '
+    ..'spoil within 10 min 200, 30 min 200, 60 min 500; the running research agricultural-science-pack-research takes 1 a unit, 750 units left')
+  -- A courier: the take leg's batch, on last.
+  main.remove{name=A,count=500}
+  put(1,50,0.2,90*3600)
+  luna('transfer',{positions={packs.position},item=A,pick='first_with_stock',count=50,to=yfarm.position})
+  advance(3)
+  last=luna('status').last
+  eq(last.delivered,50)
+  eq(last.freshness[1]:match('^[^;]*'),'agricultural-science-pack*50: spoiled 20%, 20% by count')
+  assert(last.freshness[1]:find('takes 1 a unit, 750 units left',1,true),last.freshness[1])
+  -- An inventory's spread as lines (Sol, 22:52: a platform's hub, a drop's items, a rocket's cargo), only the items named.
+  put(2,100,0.4,30*3600)
+  local fl=runtime.fresh_inv(force,packs.inv,{[A]=true})
+  eq(fl[1]:match('^[^;]*'),'agricultural-science-pack*100: spoiled 40%, 40% by count')
+  assert(fl[1]:find('the running research agricultural-science-pack-research takes 1 a unit',1,true),fl[1])
+  eq(runtime.fresh_inv(force,packs.inv,{coal=true}),nil,'none of the named items')
+  -- friction6 batches preserve the merged freshness reply, directly and after one walk.
+  local batch=luna('transfer',{position=packs.position,direction='to_player',items={[A]=100,coal=1},up_to=true})
+  eq(batch.transferred,100); eq(batch.entries[1].fresh,nil)
+  assert(batch.freshness[1]:find(A..'*100: spoiled 40%',1,true),batch.freshness[1])
+  main.remove{name=A,count=100}; put(1,40,0.2,90*3600)
+  body.position={x=0,y=32}
+  luna('transfer',{position=packs.position,direction='to_player',items={[A]=40,coal=1},up_to=true,walk=true})
+  body.position={x=50,y=32}; advance(3)
+  last=luna('status').last
+  eq(last.transferred,40)
+  assert(last.freshness[1]:find(A..'*40: spoiled 20%',1,true),last.freshness[1])
+  main.remove{name=A,count=40}
+  packs.inv[2].clear()
+  force.current_research=nil
+  yfarm.inv.remove{name=A,count=50}
+end
+
 print('picksource: ok')

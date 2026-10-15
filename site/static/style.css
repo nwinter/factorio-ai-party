@@ -483,6 +483,7 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .card-agents { grid-column: span 6; }
 .card-map { grid-column: span 6; }
 .card-board, .card-research { grid-column: span 6; }
+.card-chronicle { grid-column: span 12; }
 .card-charts { grid-column: span 12; }
 .card-plan { grid-column: span 12; }
 .card-chat { grid-column: span 12; }
@@ -673,3 +674,13 @@ html { scroll-padding-top: 76px; }
   .chart-svg .mark-label { font-size: 15px; }
   .chart-svg .dlabel { display: none; }
 }
+
+/* the run's chronicle on the live page (viewer Alex 22:24): the agents' entries and the harness's record */
+.chron-entries, .chron-events { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: .9rem; }
+.chron-entries li { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; overflow-wrap: anywhere;
+  border-left: 3px solid var(--ac); padding: 4px 6px; border-radius: var(--fx-r-1); background: var(--fx-deep); box-shadow: var(--fx-inset-shadow); }
+.chron-entries b, .chron-title { color: var(--fx-heading); }
+.chron-title { font-weight: 600; }
+.chron-text { margin: 2px 0 0; }
+.chron-events li { overflow-wrap: anywhere; }
+.chron-events .fx-chip { font-size: .8rem; padding: 0 5px; }

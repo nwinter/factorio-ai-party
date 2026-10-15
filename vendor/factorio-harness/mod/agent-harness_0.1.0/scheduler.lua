@@ -32,7 +32,8 @@ return function(api)
     for i,step in ipairs(a.steps) do
       local where=path..'['..i..']'
       if type(step)=='table' then
-        where=where..' ('..tostring(step.action)..(type(step.label)=='string' and ', label '..string.format('%q',step.label:sub(1,64)) or '')..')'
+        local label=type(step.label)=='string' and (#step.label<=64 and string.format('%q',step.label) or #step.label..' bytes')
+        where=where..' ('..tostring(step.action)..(label and ', label '..label or '')..')'
       end
       checked(where,function()
         assert(type(step)=='table' and type(step.action)=='string','each step needs an action')

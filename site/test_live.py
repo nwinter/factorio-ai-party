@@ -162,6 +162,7 @@ setTimeout(() => {
 }, 200);
 setTimeout(() => process.stdout.write(JSON.stringify({ dash: kids['#dash'].innerHTML, made, sets, taps, plan: (kids['#cb-plan'] || {}).innerHTML,
   agents: (kids['#cb-agents'] || {}).innerHTML, cams: (kids['#map-cams'] || {}).innerHTML, board: (kids['#cb-board'] || {}).innerHTML,
+  chronicle: (kids['#cb-chronicle'] || {}).innerHTML,
   watching: { text: kids['#watching'].textContent, hidden: kids['#watching'].hidden }, posts,
   vchat: (kids['#vchat'] || {}).innerHTML }), () => process.exit(0)), 300);
 """
@@ -342,7 +343,14 @@ def map_tests():
         vc = lv["vchat"]
         assert vc.count('c-src-yt') == 2 and vc.index("Enginerd") < vc.index("Joonazan"), vc  # oldest first
         assert "&lt;b&gt;hi" in vc and "<b>hi" not in vc, vc  # escaped
-        assert lv["dash"].count('class="fx-panel live-card') == 7 and 'id="cb-map"' in lv["dash"] and 'id="cb-plan"' in lv["dash"]
+        assert lv["dash"].count('class="fx-panel live-card') == 8 and 'id="cb-map"' in lv["dash"] and 'id="cb-plan"' in lv["dash"] and 'id="cb-chronicle"' in lv["dash"]
+        # the Chronicle card (viewers Alex and syndesis 22:24): the newest entry in the agent's words with its title, game
+        # time, where and what it is filed beside; the harness's record (a platform lost with its cargo; research left out)
+        cr = lv["chronicle"]
+        assert "<b>Sol</b>" in cr and "Oil at last" in cr and "The pumpjacks are breathing." in cr and "1h03m · nauvis" in cr, cr
+        assert "Beside: research finished: oil-processing" in cr, cr
+        assert ">Lost</span> platform Starling lost flying nauvis-&gt;vulcanus 40%" in cr and "cargo lost: 450 iron plate, 20 rocket fuel" in cr, cr
+        assert "plastics" not in cr and 'href="/chronicle/"' in cr, cr
         assert len(lv["made"]) == 1 and lv["made"][0]["host"] == "mm", lv["made"]  # one viewer, kept across refreshes
         got = lv["sets"][-1]
         assert got["base"]["rows"] and got["core"]["cell"] == 1 and len(got["turrets"]) == 3 and got["nests"] == [[90, 10, "s"]]

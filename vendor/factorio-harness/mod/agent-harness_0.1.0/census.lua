@@ -125,6 +125,11 @@ return function(api)
   local function read_entity(job, s, e)
     if not e.valid then return end
     local t, name = e.type, e.name
+    -- A pass already running before this index was installed stays incomplete for silo discovery.
+    if t == 'rocket-silo' and job.silos then
+      job.silos[s.index] = job.silos[s.index] or {}
+      job.silos[s.index][#job.silos[s.index]+1] = e
+    end
     if STREAM[t] and electric(name) then
       job.machines = job.machines + 1
       local st = e.status
@@ -245,7 +250,7 @@ return function(api)
     for _, s in ipairs(surfaces()) do list[#list+1] = s.index end
     local want_ore = st.ore_asked and tick - st.ore_asked <= ORE_WANT and (not st.ore_tick or tick - st.ore_tick >= ORE_EVERY)
     return {start=tick, surfaces=list, si=1, steps=0, every=walk.every(st.steps, PERIOD),
-      machines=0, starved=0, where={}, mach={},
+      machines=0, starved=0, where={}, mach={}, silos={},
       base={x={}, y={}, c={}, w={}, h={}, turrets={}, blocks={}, top=0, n=0}, want_ore=want_ore or nil, stage='walk'}
   end
   -- Bands of chunk rows over a tile box, at most `width` chunks a band: {X0, Y0, X1, Y1, first_x, last_x, first_y, last_y}.
@@ -408,7 +413,7 @@ return function(api)
         w=has and (b.x1 - b.x0 + 1) or 0, h=has and (b.y1 - b.y0 + 1) or 0, rows=b.rows or {}, nests=b.nests or {},
         buildings=#b.x, core=b.core_out, turrets=has and b.turrets or {}}
       st.done = {start=job.start, tick=game.tick, steps=job.steps, extras={electric_machines=job.machines, starved=job.starved},
-        where=job.where, machines=job.mach, basemap=map}
+        where=job.where, machines=job.mach, basemap=map, silos=job.silos, silos_as_of=job.start}
       if b.ore then st.ore = {start=job.start, ore=b.ore}; st.ore_tick = job.start end
       st.steps = job.steps
       st.job = nil
@@ -422,6 +427,16 @@ return function(api)
       st.errors = {count=((st.errors or {}).count or 0) + 1, last=tostring(err), tick=tick}
       if st.done then st.done.start = tick end  -- (the last pass is kept another PERIOD)
     end
+  end
+
+  -- Only entity references are cached; preflight reads their current rocket/cargo state.
+  function M.silos(p)
+    local d = (api.state().census or {}).done
+    local out = {}
+    for _, e in ipairs(d and d.silos and d.silos[p.surface.index] or {}) do
+      if e.valid and e.surface == p.surface and e.force == p.force then out[#out+1] = e end
+    end
+    return out, d and d.silos and (d.silos_as_of or d.start) or nil
   end
 
   -- The operator read: {part = extras | snapshot | machines | basemap, ore = true (basemap)}. Nothing yet: {ready=false}.

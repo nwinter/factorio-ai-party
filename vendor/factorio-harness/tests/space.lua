@@ -40,6 +40,14 @@ local p={index=1,force={platforms={platform},recipes={}},character={get_logistic
 local space_state={}
 local space=dofile('mod/agent-harness_0.1.0/space.lua'){
   state=function() return space_state end,
+  -- The spread lines (runtime.lua fresh_inv, tested in tests/picksource.lua): which inventory and items were asked.
+  fresh_inv=function(force,inv,names)
+    local list={}
+    for name in pairs(names or {}) do list[#list+1]=name end
+    table.sort(list)
+    _G.fresh_asked={inv=inv,names=#list>0 and table.concat(list,',') or nil}
+    return {'spread of '..(#list>0 and table.concat(list,',') or 'all')}
+  end,
   position=function(v) return v end,
   integer=function(v,d,lo,hi,name) v=v==nil and d or v; assert(type(v)=='number' and v>=lo and v<=hi,name..' out of range'); return v end,
   remote_entity=function(_,a) assert(a.position.x==20.5,'no entity of ours at that position'); return silo end,
@@ -170,6 +178,8 @@ local tank=function(fuel,ox) return setmetatable({get_capacity=function() return
 platform.surface.find_entities_filtered=function(f) if f.type=='thruster' then return {{fluidbox=tank(800,500)},{fluidbox=tank(1000,900)}} end return {} end
 platform.surface.count_entities_filtered=function() return 7 end
 local one=space.platforms(p,{platform='alpha'}).platforms[1]
+-- Sol, 22:52: the hub's spread on the row, so cargo is judged before departure.
+eq(one.freshness[1],'spread of all')
 eq(one.speed_kms,0.7); eq(one.speed,0.012); eq(one.damaged_tiles,1); eq(one.asteroid_chunks,'metallic-asteroid-chunk*2 oxide-asteroid-chunk*1')
 eq(one.thrusters,'2, lowest tank 50%'); eq(one.unbuilt_ghosts,7)
 platform.find_asteroid_chunks_filtered=function() error('no chunks API') end
@@ -266,6 +276,8 @@ local l=space.launch(p,{position={x=20.5,y=20.5},platform='alpha',allow_empty=tr
 -- Cargo goes to the hub as a station (a surface destination on a platform
 -- makes the game refuse: shift04 07:17, Peregrine paused in orbit).
 eq(l.to,'platform alpha'); eq(launched.type,2); eq(launched.station,platform.hub); eq(launched.surface,nil); eq(l.cargo,'empty')
+-- Sol, 22:52: the rocket cargo's spread, read before it goes.
+eq(l.freshness[1],'spread of all'); eq(fresh_asked.inv,silo_cargo)
 -- A new platform waiting for its starter pack: the space_platform destination.
 platform.state=0
 space.launch(p,{position={x=20.5,y=20.5},platform='alpha',allow_empty=true})
@@ -490,6 +502,8 @@ local kit={{item='iron-plate',count=1200},{item='coal',count=300}}
 platform.hub.cargo_hatches={{is_output_compatible=false},{is_output_compatible=true},{is_output_compatible=true},{is_output_compatible=true}}
 local dry=space.drop(p,{platform='alpha',items=kit,dry_run=true})
 eq(dry.dry_run,true); eq(#dry.pods,2); eq(dry.pods[1],'pod 1 (10 slots): iron-plate*1000'); eq(dry.pods[2],'pod 2 (8 slots): iron-plate*200 coal*300')
+-- Sol, 22:52: the hub's stacks of the items to drop, their spread.
+eq(dry.freshness[1],'spread of coal,iron-plate'); eq(fresh_asked.inv,hub_inv)
 eq(dry.pod_slots,'a cargo pod holds 10 slots (no weight limit); the list takes 18 stacks')
 eq(dry.hatches,'3 output hatches: up to 3 pods leave at once, each hatch sends its next 2 s after its last')
 assert(dry.sends:find('full: true sends all 2 pods',1,true),dry.sends); eq(dry.short,nil)
@@ -702,5 +716,32 @@ do
   hub_sections.get_section(2).active=false
   eq(space3.requests(p,{platform='alpha'}).construction_overlap,nil,'a section that is off requests nothing')
   hub_sections.get_section(2).active=true
+end
+-- Hub slots asteroid chunks take, one a slot (Astra, shift14 22:50: a chunk backlog hid in raw stock).
+do
+  local function chunk(name) return {valid_for_read=true,name=name,count=1} end
+  local empty={valid_for_read=false}
+  local inv={chunk('metallic-asteroid-chunk'),empty,chunk('carbonic-asteroid-chunk'),chunk('metallic-asteroid-chunk'),
+    {valid_for_read=true,name='iron-plate',count=50}}
+  inv.get_contents=function() return {{name='iron-plate',count=50}} end
+  local hub={get_inventory=function(i) assert(i==defines.inventory.hub_main); return inv end}
+  eq(space.hub_chunks(hub),'asteroid chunks take 3 of 5 slots (metallic 2, carbonic 1)')
+  local kept=platform.hub.get_inventory
+  platform.hub.get_inventory=function(i) if i==defines.inventory.hub_main then return inv end end
+  eq(space.platforms(p,{}).platforms[1].hub_chunks,'asteroid chunks take 3 of 5 slots (metallic 2, carbonic 1)','every row')
+  inv[1],inv[3],inv[4]=empty,empty,empty
+  eq(space.hub_chunks(hub),nil,'no chunk in the hub')
+  platform.hub.get_inventory=kept
+  -- With platform set, per ammo type over the last leg and the rockets on their way up (freight.lua's reads).
+  local real=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return space_state end}
+  local fake=setmetatable({ammo=function(pl) assert(pl==platform); return {'firearm-magazine: made 42/min, used 38/min over the last 10 min; hub 544, turrets 191'} end,
+    incoming=function() return {rockets=1,cargo='firearm-magazine*20',lines={'a rocket from nauvis launched 3s ago: firearm-magazine*20 (rising over nauvis)'}} end},{__index=real})
+  local space4=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return space_state end,position=function(v) return v end,
+    integer=function(v,d) return v==nil and d or v end,remote_entity=function() return silo end,real=function(q) return q end,freight=fake}
+  local row=space4.platforms(p,{platform='alpha'}).platforms[1]
+  eq(row.ammo_rates[1],'firearm-magazine: made 42/min, used 38/min over the last 10 min; hub 544, turrets 191')
+  eq(row.incoming_cargo,'1 rocket on the way: firearm-magazine*20'); eq(row.incoming[1],'a rocket from nauvis launched 3s ago: firearm-magazine*20 (rising over nauvis)')
+  row=space4.platforms(p,{}).platforms[1]
+  eq(row.ammo_rates,nil,'details only for one named platform'); eq(row.incoming_cargo,nil)
 end
 print('space: ok')

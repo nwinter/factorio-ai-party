@@ -131,10 +131,25 @@ for _,ok in ipairs({{'tell',{to='sol',text='x'}},{'operator',{text='x'}},{'board
   {'wait_until',{['until']='platform_arrived',platform='alpha'}},{'wait_until',{['until']='platform_left',platform='alpha'}},
   {'wait_until',{['until']='researched'}},{'wait_until',{['until']='item_count',item='coal',at_least=5,positions={{x=0,y=0}}}},
   {'dry_run',{action='scan',args={}}}}) do bots.check_action(b.index,ok[1],ok[2]) end
--- The refusal names what works.
+-- Sol, 23:13: every remote-view call with platform= or surface= works aboard (place_ghosts with surface=nauvis and its
+-- dry run were refused), as runtime.lua wraps them; without either, it is refused.
+for _,name in ipairs(bots.PLATFORM_ACTIONS) do bots.check_action(b.index,name,{platform='alpha'}) end
+for _,name in ipairs(bots.SURFACE_ACTIONS) do bots.check_action(b.index,name,{surface='nauvis',position={x=0,y=0}}) end
+for _,ok in ipairs({{'place_ghosts',{surface='nauvis'}},{'dry_run',{action='place_ghosts',args={surface='nauvis'}}},{'deconstruct',{surface='nauvis'}},
+  {'cancel_deconstruction',{surface='nauvis'}},{'configure',{surface='nauvis'}},{'circuit_set',{surface='nauvis'}},{'trace',{surface='nauvis',item='coal'}},
+  -- Sol, 23:20: modules into a lab on Nauvis from Sunward (an item request: robots bring them).
+  {'configure',{surface='nauvis',positions={{x=37.5,y=44.5}},modules={'productivity-module','productivity-module'}}}}) do
+  bots.check_action(b.index,ok[1],ok[2])
+end
+for _,no in ipairs({{'deconstruct',{}},{'configure',{}},{'circuit_set',{}},{'place_ghosts',{}}}) do
+  fails(function() bots.check_action(b.index,no[1],no[2]) end,'remote view only')
+end
+-- The refusal names what works, from the same lists.
 local ok,err=pcall(bots.check_action,b.index,'move_to',{})
 assert(not ok and tostring(err):find('every read',1,true) and tostring(err):find('tell, chat, say, operator, board',1,true)
   and tostring(err):find('wait_until on platform_arrived, platform_left',1,true),tostring(err))
+assert(tostring(err):find('by remote view with platform=NAME: '..table.concat(bots.PLATFORM_ACTIONS,', '),1,true),tostring(err))
+assert(tostring(err):find('with surface=NAME (a planet): '..table.concat(bots.SURFACE_ACTIONS,', '),1,true),tostring(err))
 -- Landing needs the platform stopped at a planet.
 platform.space_location=nil
 fails(function() bots.land(b) end,'not stopped at a planet')

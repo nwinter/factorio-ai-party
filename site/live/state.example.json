@@ -336,6 +336,7 @@
    "position": null
   }
  ],
+ "chronicle": {"entries": [{"seq": 7, "tick": 229420, "game_time": "1h03m", "agent": "sol", "name": "sol", "title": "Oil at last", "text": "The pumpjacks are breathing. Plastic by nightfall, if the biters let us.", "where": "nauvis", "about": ["research finished: oil-processing"]}], "events": [{"id": 12, "kind": "platform_lost", "tick": 230620, "game_time": "1h04m", "platform": "Starling", "where": "flying nauvis->vulcanus 40%", "by": "medium-metallic-asteroid", "cargo": [{"name": "iron-plate", "count": 450}, {"name": "rocket-fuel", "count": 20}], "cargo_items": 470, "line": "platform Starling lost flying nauvis->vulcanus 40% (medium-metallic-asteroid), 470 items in its hub"}, {"id": 13, "kind": "research", "tick": 230920, "game_time": "1h04m", "line": "research finished: plastics"}]},
  "board": {
   "available": true,
   "plan": {"goals": "Blue science at 60/min, then the rocket silo; keep the north wall stocked with ammo.", "goals_tick": 220420, "doing": [{"agent": "opus", "name": "opus", "text": "nuclear power plant: reactor and heat exchangers", "tick": 141220}, {"agent": "sol", "name": "sol", "text": "blue circuits line at (40,-20)", "tick": 209620, "by": "astra"}, {"agent": "luna", "name": "luna", "text": "ammo for the north wall turrets", "tick": 225820}], "edited": "by astra, 6m ago", "updated_tick": 209620},

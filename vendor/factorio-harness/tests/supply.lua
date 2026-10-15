@@ -417,4 +417,33 @@ do
   assert(r.scope:find('including parts outside',1,true)); eq(r.unit,'fluid units')
 end
 
+
+-- The spread (Sol, 22:25: a chest of 1846 agricultural packs showed the oldest at 91% while hundreds were at
+-- 15-30%): over every place read, and each of the largest chests' own.
+do
+  local A='agricultural-science-pack'
+  prototypes.item[A]={type='tool',get_spoil_ticks=function() return 3600*60 end}
+  local function packs_inv(list)
+    local t={valid=true}
+    for i,s in ipairs(list) do t[i]={valid_for_read=true,name=A,count=s[1],spoil_percent=s[2],spoil_tick=game.tick+s[3]*3600,quality={name='normal'}} end
+    t.get_item_count=function(name) local n=0 for i=1,#t do if t[i].name==name then n=n+t[i].count end end return n end
+    t.get_contents=function() return {{name=A,count=t.get_item_count(A),quality='normal'}} end
+    t.is_empty=function() return #t==0 end
+    return t
+  end
+  local big=entity{name='steel-chest',type='container',position={x=300,y=300}}
+  local bi=packs_inv({{200,0.91,5},{200,0.15,50},{200,0.3,40}})
+  big.get_inventory=function(id) if id==defines.inventory.chest then return bi end end
+  local small=entity{name='wooden-chest',type='container',position={x=310,y=300}}
+  local si=packs_inv({{100,0.5,30}})
+  small.get_inventory=function(id) if id==defines.inventory.chest then return si end end
+  local S3=dofile('mod/agent-harness_0.1.0/supply.lua'){status_name=function(e) return e.status end,position=function(v) return v end,
+    integer=function(v,d) return v==nil and d or v end,spoil=dofile('mod/agent-harness_0.1.0/spoil.lua'){state=function() return {} end}}
+  game.tick=game.tick+600
+  local t=S3.supply(p,{item=A})
+  eq(t.freshness,'agricultural-science-pack*700: spoiled 15-91%, 46% by count; under 25% 200, 25-50% 200, 50-75% 100, 75%+ 200; '
+    ..'spoil within 10 min 200, 30 min 300, 60 min 700')
+  eq(t.chests[1],'(300,300) steel-chest 600 (spoiled 15-91%, 45% by count)'); eq(t.chests[2],'(310,300) wooden-chest 100 (spoiled 50%, 50% by count)')
+  big.valid=false; small.valid=false
+end
 print('supply: ok')

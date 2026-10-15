@@ -220,6 +220,17 @@ return function(api)
           t.spoil_count = (t.spoil_count or 0) + r.count
           local f = t.spoil_first
           if not f or r.tick < f.tick then t.spoil_first = {tick=r.tick, percent=r.percent, name=e.name, position=e.position, kind=kind} end
+          -- The spread over every place (Sol, 22:25), and each chest's own (top_chests).
+          if sp.merge then
+            t.spread = t.spread or {}
+            sp.merge(t.spread, r)
+            local unit = e.unit_number
+            if unit and r.min then
+              t.spread_of = t.spread_of or {}
+              t.spread_of[unit] = t.spread_of[unit] or {}
+              sp.merge(t.spread_of[unit], r)
+            end
+          end
         end
       end
     end
@@ -696,6 +707,13 @@ return function(api)
         local row = c.e.unit_number and t.request_of[c.e.unit_number]
         local note = not row and request_note(c.e, t.item)
         text = text .. (row and (' (requests ' .. row.want .. ')') or ' (no request for it' .. (note and ': ' .. note or '') .. ')')
+      end
+      -- Its spread (Sol, 22:25): least and most spoiled stack, count-weighted.
+      local s = c.e.unit_number and t.spread_of and t.spread_of[c.e.unit_number]
+      local r = s and s[1]
+      if r and r.count > 0 then
+        local lo, hi = math.floor(r.min * 100 + 0.5), math.floor(r.max * 100 + 0.5)
+        text = text .. string.format(' (spoiled %s, %d%% by count)', lo == hi and lo .. '%' or lo .. '-' .. hi .. '%', math.floor(r.wsum / r.count * 100 + 0.5))
       end
       out[i] = text
     end
@@ -1220,7 +1238,7 @@ return function(api)
 
   M.schema = {supply = {item='item or fluid name; fluids return 10-minute flow, connected segment stock/capacity, makers and users by status', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole; fluid segments touching it include their whole connected stock',
     radius='with near: 1..512 tiles (default 64); alone: that far around you, on your surface',
-    returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); chests (largest 5; what a requester or buffer chest asks for); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
+    returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); chests (largest 5; what a requester or buffer chest asks for); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); freshness (its spread over every place read: count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; chests adds each one\'s least and most spoiled and count-weighted %); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
 
   function M.supply(p, a)
     local item = a.item
@@ -1277,6 +1295,9 @@ return function(api)
         f.name, at(f.position), f.kind, api.spoil.secs(f.tick - game.tick), math.floor(f.percent * 100 + 0.5), t.spoil_soon or 0, t.spoil_count or 0)
       if h then out.hatch = string.format('%s hatch into enemies (%s, %s): %s', item, h.entity, api.spoil.per_text(h), text) else out.spoil = text end
     end
+    -- The spread over every place read (Sol, 22:25: the oldest at 91% while hundreds were at 15-30%).
+    local spread = t.spread and t.spread[1]
+    if spread and api.spoil and api.spoil.spread_text then out.freshness = api.spoil.spread_text(spread) end
     return out
   end
   -- The fluid GUI shows the whole connected segment. Count it once even when

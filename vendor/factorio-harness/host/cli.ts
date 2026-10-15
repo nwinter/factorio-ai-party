@@ -70,6 +70,7 @@ const help = `fh — Factorio agent CLI
        [--look platform:NAME|agent:NAME|X,Y[@SURFACE]|X1,Y1,X2,Y2[@SURFACE]]  what the stream camera might show
   fh chat [--since SEQ] [--limit N] [--peek] Your unread messages (newest N; remaining=K are still unread), or all after SEQ
   fh confess "text"                         A line for the stream audience only (teammates never see it); input as for say
+  fh chronicle "text" [--title T]           An entry in the run's chronicle in your own words (the pog site, by shift); input as for say
   fh operator "text"                        A request to the operator (harness bugs, tools, viewer asks); input as for say
   fh tell NAME[,NAME]|team "text"           A line to teammates outside chat: their next reply's team block, wakes them; input as for say
                                             --fyi: no answer needed; it waits for their next reply and wakes nobody
@@ -514,7 +515,7 @@ async function main() {
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
     full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'}, look:{type:'string'}, fyi:{type:'boolean'},
     'text-file':{type:'string'}, 'deadline-file':{type:'string'}, until:{type:'string'},
-    max:{type:'string'},
+    max:{type:'string'}, title:{type:'string'},
   }});
   let command = positionals[0];
   // fh help ACTION (or fh call ACTION --help): that action's arguments, about 1 KB.
@@ -658,11 +659,11 @@ async function main() {
     command = 'call';
   }
   // `fh call say words...` used to drop the words and send {} ("text is required").
-  if (command === 'call' && ['say','confess','tell','operator'].includes(positionals[1] ?? '') && (positionals.length > 2 || !values.args)) {
+  if (command === 'call' && ['say','confess','tell','operator','chronicle'].includes(positionals[1] ?? '') && (positionals.length > 2 || !values.args)) {
     command = positionals[1]!;
     positionals.splice(0, 2, command);
   }
-  if (command === 'say' || command === 'confess' || command === 'tell' || command === 'operator') {
+  if (command === 'say' || command === 'confess' || command === 'tell' || command === 'operator' || command === 'chronicle') {
     // Text as arguments, a file or stdin: no JSON quoting, apostrophes are fine.
     const args = object(JSON.parse(values.args ?? '{}'),'args');
     // fh tell NAME[,NAME]|team text...: the first word names the recipients.
@@ -680,7 +681,7 @@ async function main() {
     const usage = command === 'tell' ? 'tell NAME' : command;
     if (typeof args.text !== 'string' || !args.text) throw new Error(`${command} needs text: fh ${usage} "text", fh ${usage} --text-file F, or fh ${usage} - with the text on stdin`);
     if (values.aloud) {
-      if (command !== 'say') throw new Error(`--aloud applies to say; ${command === 'tell' ? 'a tell stays off the chat and the voice' : command === 'operator' ? 'an operator request goes to the operator, not the voice' : 'a confession always goes to the stream'}`);
+      if (command !== 'say') throw new Error(`--aloud applies to say; ${command === 'tell' ? 'a tell stays off the chat and the voice' : command === 'operator' ? 'an operator request goes to the operator, not the voice' : command === 'chronicle' ? 'a chronicle entry goes to the site\'s chronicle' : 'a confession always goes to the stream'}`);
       args.aloud = true;
     }
     if (values.look !== undefined) {
@@ -690,6 +691,10 @@ async function main() {
     if (values.fyi) {
       if (command !== 'tell') throw new Error('--fyi applies to tell');
       args.fyi = true;
+    }
+    if (values.title !== undefined) {
+      if (command !== 'chronicle') throw new Error('--title applies to chronicle');
+      args.title = values.title;
     }
     values.args = JSON.stringify(args);
     positionals.splice(1, positionals.length - 1, command);
