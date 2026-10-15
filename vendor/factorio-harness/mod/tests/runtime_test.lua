@@ -4721,6 +4721,18 @@ end)()
   eq(dr.launches[1].would_refuse[1],'min_cargo not met: agricultural-science-pack 60 of 100 (40 short)')
   eq(call('queue_status',{}).revision,before,'nothing queued')
   fails(function() call('queue_submit',{dry_run='yes',steps={}}) end,'dry_run must be true or false')
+  -- A step's arguments checked at submit as the live call reads them (Sol, shift17 19:06): modules (a map too), by, and
+  -- a transfer of an item with no direction.
+  fails(function() call('queue_submit',{dry_run=true,steps={{action='configure',args={position=silo.position,modules={['agricultural-science-pack']=2}}}}}) end,
+    'steps[1] (configure): args: not a module: agricultural-science-pack')
+  fails(function() call('queue_submit',{steps={{action='configure',args={position=silo.position,modules={'agricultural-science-pack'}}}}}) end,'not a module')
+  fails(function() call('queue_submit',{dry_run=true,steps={{action='configure',args={position=silo.position,by='robot'}}}}) end,'by is hand')
+  fails(function() call('queue_submit',{dry_run=true,steps={{action='transfer',args={position=silo.position,item='agricultural-science-pack',count=5}}}}) end,
+    'steps[1] (transfer): args: a queued transfer of an item needs direction: to_entity (from your inventory into the target) or to_player')
+  fails(function() call('queue_submit',{dry_run=true,steps={{action='transfer',args={position=silo.position,item='agricultural-science-pack',direction='in'}}}}) end,
+    'direction must be to_entity or to_player')
+  eq(call('queue_submit',{dry_run=true,steps={{action='transfer',args={position=silo.position,item='agricultural-science-pack',count=5,direction='to_entity'}}}}).steps,1)
+  eq(call('queue_status',{}).revision,before,'nothing queued')
   -- walk with from (Luna, shift14 21:20: 930 agricultural science packs from a provider 64 tiles from the silo took four
   -- walks and several calls): a chest out of reach; one timed tour takes there and loads at the silo.
   local chest={valid=true,name='iron-chest',type='container',position={x=40.5,y=5.5},force=p.force,surface=p.surface,unit_number=78}

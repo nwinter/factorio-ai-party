@@ -705,6 +705,8 @@ fh call status
   foundation) never takes its place as the target.
 - `configure {position | positions, modules, by?}` sets a machine's module slots in one call (Astra and Gemini, shift12
   15:10: Sunward's module swaps took three blueprint round trips, Fulgora's upgrades four). `modules` is one of:
+  - A map of module names to counts (`{"efficiency-module": 3}`; Sol, shift17 19:06): that list, the names in
+    alphabetical order, each count times (1..16).
   - A list of modules (`["speed-module-2","efficiency-module"]`, or `{name, count, quality}`): the machine ends up
     holding these. The modules it holds, or has on their way in, that the list names stay in their slots; the rest go
     into the other slots in slot order; slots left over end up empty. (Astra, shift13 19:40: applied slot by slot, that
@@ -1434,7 +1436,14 @@ fh queue repeat --file plan.json
   (out of reach, an unknown entity, a timed-out tour) still follow `on_fail`.
 - `queue edit` needs the current revision, so you can't accidentally edit a plan that has already moved on.
 - `fh queue submit --file plan.json --args '{"dry_run":true}'` checks the plan as a submit does and queues nothing (the
-  queue, its revision and a running standing order are left as they are; Luna, shift12 15:20). It counts the silo
+  queue, its revision and a running standing order are left as they are; Luna, shift12 15:20). A submit, a dry run,
+  `order_set` and `plan_save` check each step's arguments as the live call reads them where no world is needed (Sol,
+  shift17 19:06: a modules map passed the dry run and failed live in 8 steps): `configure` its `modules` (as below),
+  `by` and a recipe name; `transfer` its `direction` and item name, and an item with no `direction` is refused (`a
+  queued transfer of an item needs direction: to_entity (from your inventory into the target) or to_player (from the
+  target into your inventory) ...`: a direct call infers it from who holds the item at the call; a queued step runs
+  later; `pick`, `from`, `to` and `items` forms aside, `items` needing a direction as live). A standing order set before
+  this runs as it was set; a saved plan is checked again at `plan_run` (a submit), which refuses such a step. It counts the silo
   cargo the steps would leave, from what you, the chests and the silos hold now through `transfer`, `load_silo` and
   `launch` steps (waits move nothing): `launches [{step, label, silo, cargo (before that launch), kg, min_cargo,
   platform_now, would_refuse}]`, `silos_after`, and `notes` for steps whose item moves are not counted (`collect`,

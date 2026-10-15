@@ -5138,6 +5138,26 @@ function M.configure_approach(p,a,e,f)
   return M.autowalk.approach(p,'configure',a,{entity=e},why..': '..M.autowalk.line({f},1,f))
 end
 M.preflight=M.preflight or {}
+-- A queued step's arguments checked at submit and in dry_run as the live call reads them, with no world (Sol, shift17
+-- 19:06: a modules map passed the dry run and failed live in 8 steps; a transfer with no direction failed 3 times).
+M.step_checks={
+  configure=function(a)
+    if a.modules~=nil then M.modules.parse(a.modules) end
+    assert(a.by==nil or a.by=='hand' or a.by=='robots','by is hand (in reach, from your inventory) or robots (an item request)')
+    if type(a.recipe)=='string' and a.recipe~='' and prototypes.recipe then assert(prototypes.recipe[a.recipe],'unknown recipe: '..a.recipe) end
+  end,
+  transfer=function(a)
+    assert(a.direction==nil or a.direction=='to_entity' or a.direction=='to_player','direction must be to_entity or to_player')
+    if type(a.item)=='string' and prototypes.item then assert(prototypes.item[a.item],'unknown item '..a.item) end
+    if a.items~=nil then assert(a.direction~=nil,'items requires direction to_entity or to_player') end
+    -- A direct call infers it from who holds the item at the call; a queued step runs later.
+    if a.direction==nil and a.item~=nil and a.pick==nil and a.from==nil and a.items==nil and a.to==nil then
+      error('a queued transfer of an item needs direction: to_entity (from your inventory into the target) or to_player '..
+        '(from the target into your inventory). A direct call infers it from who holds the item at the call; a queued '..
+        'step runs later, and fails when both sides hold it or neither does',0)
+    end
+  end,
+}
 M.preflight.configure=function(p,a)
   if a.modules~=nil then M.modules.parse(a.modules) end
   if a.positions~=nil then return end
@@ -9856,7 +9876,7 @@ M.waiteta=require('waiteta'){state=state,check=function(p,c,record) return condi
 M.scheduler_api={
   state=state,player=player,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
-  condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) return check_args(action,args) end,validate_condition=function(c) return conditions.validate(c) end,
+  condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end end,validate_condition=function(c) return conditions.validate(c) end,
   wait_check=function(p,c,record) return M.waiteta.check(p,c,record) end,
   wait_info=function(out,record) return M.waiteta.info(out,record) end,
   fix_args=function(action,args) return M.aliases.fix(action,args,M.takes) end,
