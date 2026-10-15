@@ -527,19 +527,38 @@ return function(api)
   end
   -- Steps of open projects that nobody owns and the agent may take (Foobator, d15 08:17; joonazan 08:16): of projects
   -- with open_steps, or with no owner; the first `max`.
-  function M.open_steps(me, max)
-    local out = {}
+  -- near: the reader's position; steps of projects with areas nearest first, each with its distance (joonazan, d15
+  -- 08:16: "open for you" near an idle agent), then those of projects without areas.
+  function M.open_steps(me, max, near)
+    local rows = {}
     for _, i in ipairs(open_projects()) do
       if (i.open_steps or not i.owner) and i.owner ~= me then
+        local d
+        for _, ar in ipairs(near and i.areas or {}) do
+          local lt, rb = ar.left_top, ar.right_bottom
+          if lt and rb then
+            local dx = math.max(lt.x - near.x, 0, near.x - rb.x)
+            local dy = math.max(lt.y - near.y, 0, near.y - rb.y)
+            local k = math.sqrt(dx * dx + dy * dy)
+            if not d or k < d then d = k end
+          end
+        end
         for _, st in ipairs(i.steps or {}) do
           if not st.done_by and not st.owner then
-            out[#out+1] = string.format('#%d step %d: %s (%s; take it with board_update {id: %d, take_step: %d})', i.id, st.n, clip(st.text, 60),
-              i.owner and 'owner ' .. i.owner or 'no owner', i.id, st.n)
-            if #out >= (max or 5) then return out end
+            rows[#rows+1] = {d=d, id=i.id, n=st.n, text=string.format('#%d step %d: %s (%s%s; take it with board_update {id: %d, take_step: %d})', i.id, st.n, clip(st.text, 60),
+              i.owner and 'owner ' .. i.owner or 'no owner', d and string.format('; its area %d tiles from you', math.floor(d + 0.5)) or '', i.id, st.n)}
           end
         end
       end
     end
+    table.sort(rows, function(x, y)
+      if (x.d ~= nil) ~= (y.d ~= nil) then return x.d ~= nil end
+      if x.d and x.d ~= y.d then return x.d < y.d end
+      if x.id ~= y.id then return x.id < y.id end
+      return x.n < y.n
+    end)
+    local out = {}
+    for k = 1, math.min(max or 5, #rows) do out[k] = rows[k].text end
     return #out > 0 and out or nil
   end
   local function view(i, full, where)
@@ -899,6 +918,7 @@ return function(api)
     for k, x in pairs(v) do n = n + size(k) + size(x) + 1 end
     return n
   end
+  local reader_at
   local function read(by, a)
     expire()
     local b = store()
@@ -927,10 +947,13 @@ return function(api)
     -- board read was 18 KB, and Codex drops the middle of long output).
     -- full=true, a limit or a filter list them as before.
     local brief = by ~= OPERATOR and a.full ~= true and a.limit == nil and a.kind == nil and a.mine == nil and a.status == nil and a.since_tick == nil
-    local list = {}
+    local list, finished = {}, 0
     for _, i in pairs(b.items) do
+      -- The plain listing holds active items only (Foobator, d15 09:46: done and dropped ones filled it); the finished
+      -- ones are counted.
+      if brief and i.kind ~= 'plan' and not ACTIVE[i.status] then finished = finished + 1
       -- The plan is shown on its own (plan below), not as a row; so are open projects in the plain listing.
-      if i.kind ~= 'plan' and not (brief and i.kind == 'project' and ACTIVE[i.status])
+      elseif i.kind ~= 'plan' and not (brief and i.kind == 'project' and ACTIVE[i.status])
           and (not want or want[i.status]) and (not a.kind or i.kind == a.kind) and (not a.since_tick or i.updated_tick > a.since_tick)
           and (a.mine ~= true or i.owner == by or i.requested_by == by) then
         list[#list+1] = i
@@ -952,7 +975,7 @@ return function(api)
       assert(a.projects == nil or a.projects == 'compact' or a.projects == 'full', 'projects must be compact or full')
       local projects, form = M.project_lines(by, nil, a.projects)
       if projects then used = used + size(projects) end
-      local steps_open = M.open_steps(by)
+      local steps_open = M.open_steps(by, nil, reader_at)
       if steps_open then used = used + size(steps_open) end
       for n = 1, math.min(limit, #list) do
         local row = view(list[n], false, where)
@@ -965,6 +988,7 @@ return function(api)
       local more = #list - #out
       return {plan=plan, projects=projects, projects_form=form and (form == 'compact' and 'compact (board {projects: "full"} for the full lines)' or 'full') or nil,
         open_steps=steps_open, items=out, matched=#list, open_unowned=unowned, tick=game.tick,
+        finished_left_out=finished > 0 and string.format('%d finished (done or dropped) left out: board {"status": "done"} (or "dropped", or {"full": true}) lists them', finished) or nil,
         more=more > 0 and string.format('%d more: board {full=true}, or narrow with kind, mine, status, since_tick; {id} shows one item in full', more) or nil}
     end
     for n = 1, math.min(limit, #list) do out[n] = view(list[n], false, where) end
@@ -1182,7 +1206,7 @@ return function(api)
       id='one item in full (all notes; a project with all its steps)',
       plan_ticks='boolean: the plan also as lines [{agent, text, by, tick}] (the tick each line was set), goals_tick and updated_tick',
       projects='compact | full: the open projects\' lines in the plain listing; default full while they take at most 1200 bytes, else compact (projects_form says which): "#476 Aquilo landing [sol] 2/5; next 3. Ride the rocket | 4. Drop the kit @luna; blocked by #497 Starling retrofit (claimed, 1 of 4); part of #400 Aquilo; steps open to all". The listing also has open_steps: steps of projects with open_steps or no owner that nobody owns, and how to take one',
-      returns='plan (the team plan: goals, doing lines, last edit), projects (the plain listing: one line per open project, yours first: progress, owner, next step, handoff; the rows leave them out), items, matched, open_unowned (open task/request items nobody owns); a project row has progress ("3 of 7 steps"), goal, next_steps, areas, handoff and owner_state (its owner\'s last request); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus"); an open claim has owner_active (when its owner last posted, updated it, or made a request standing in it or acting on a position in it), stale=true after 30 min of that (labelled stale; teammates\' stock sweeps include its chests) and allow (agents its labels name as allowed; their stock sweeps include it while it is fresh); the harness enforces no other rule on a claim (who may remove or rebuild what is the team\'s own); after 2 h with no such activity the harness closes it (dropped)'},
+      returns='the plain read (no filter, no limit) lists active items only (open, claimed, doing, blocked) and says how many finished ones it left out (finished_left_out); plan (the team plan: goals, doing lines, last edit), projects (the plain listing: one line per open project, yours first: progress, owner, next step, handoff; the rows leave them out), items, matched, open_unowned (open task/request items nobody owns); a project row has progress ("3 of 7 steps"), goal, next_steps, areas, handoff and owner_state (its owner\'s last request); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus"); an open claim has owner_active (when its owner last posted, updated it, or made a request standing in it or acting on a position in it), stale=true after 30 min of that (labelled stale; teammates\' stock sweeps include its chests) and allow (agents its labels name as allowed; their stock sweeps include it while it is fresh); the harness enforces no other rule on a claim (who may remove or rebuild what is the team\'s own); after 2 h with no such activity the harness closes it (dropped)'},
     board_plan = {goals='the team goals, 1..600 characters, replace the current ones (empty is refused, naming the current goals; clear: true clears them)',
       clear='boolean: true clears the goals (fh board plan goals "")',
       doing='one line of what an agent is on, 1..160 characters ("" removes the line)', agent='whose line doing sets (default you)',
@@ -1224,7 +1248,13 @@ return function(api)
     mention_counts = {returns='per agent: unread_mentions (not yet shown in a reply or chat read), at_mentions (@name or @everyone), oldest_tick, latest, fyi (fyi tells waiting, left out of the other counts: no reason to wake), last_request_tick (supervisors: wake idle mentioned agents)'},
   }
   -- Handlers take the acting agent's name, so the operator path can share them.
-  M.handlers.board = function(p, a) return read(who(p), a) end
+  M.handlers.board = function(p, a)
+    reader_at = type(p) == 'table' and p.valid ~= false and (function() local ok, pos = pcall(function() return p.position end); return ok and pos or nil end)() or nil
+    local ok, out = pcall(read, who(p), a)
+    reader_at = nil
+    if not ok then error(out, 0) end
+    return out
+  end
   M.handlers.board_post = function(p, a) return post(who(p), a, p) end
   M.handlers.board_update = function(p, a) return update(who(p), a) end
   M.handlers.board_events = function(_, a) return events(a) end

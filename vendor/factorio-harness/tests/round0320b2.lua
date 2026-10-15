@@ -84,7 +84,8 @@ do
     give=function(_,e,_,_,count) return {transferred=give(e,math.max(0,count-e.n))} end,
     start_tour=S.start_tour,screen=S.screen,tick=S.tick,start=function(_,a) action=a end,stop=function() end,
     take=function(_,e,_,_,n) local k=math.min(n,e.n,capacity-carried);e.n=e.n-k;carried=carried+k;return {transferred=k,inventory_full=carried==capacity} end,
-    belt_count=function(e) return e.n end,belt_take=function(_,e,_,n) local k=math.min(n,e.n,capacity-carried);e.n=e.n-k;carried=carried+k;return k,k==0 and 'inventory_full' or nil end}
+    belt_count=function(e) return e.n end,belt_take=function(_,e,_,n) local k=math.min(n,e.n,capacity-carried);e.n=e.n-k;carried=carried+k;return k,k==0 and 'inventory_full' or nil end,
+    chest_inventory=inv,give_chest=function(_,e,_,_,count) return {transferred=give(e,count)} end,feed_chests=function(_,b) return b.feeders or {} end}
   local function step(n) local result;for _=1,n or 1 do game.tick=game.tick+1;result=F.tick(p,action);if result then break end end;return result end
   local function start(from) return F.start(p,{radius=64,from=from or 'nearest'},'coal',10) end
   targets={entity(20,0),entity(40,0)};sources={entity(-20,50,'container')};game.tick=0
@@ -105,5 +106,14 @@ do
   carried=0;targets={entity(8,0)};sources={entity(6,10,'container'),entity(12,10,'container')};danger[6]={};start();step();eq(action.fuel_round.source.targets[1].entity.position.x,12)
   danger[8]={};fails(start,'enemy reach');danger={}
   carried=0;targets={entity(8,0)};sources={};start();eq(step(),'out_of_items')
+  -- feed_chests (Haiku, d15 06:20): the chests inserters feed the boilers from are topped up, not the boilers.
+  carried=30;capacity=100;danger={};p.position={x=0,y=0}
+  local boiler=entity(3,0,'boiler');local fc=entity(4,2,'container');boiler.feeders={fc,fc}
+  targets={boiler};sources={}
+  local out=F.start(p,{radius=64,from='nearest',feed_chests=true},'coal',10)
+  eq(out.feed_chests,'1 chest that inserters feed those burners from, each topped up to 10 coal')
+  eq(#action.targets,1); eq(action.targets[1].entity,fc)
+  for _=1,10 do if step() then break end end
+  eq(fc.n,10); eq(boiler.n,0)
 end
 print('round0320b2: ok')
