@@ -4,7 +4,12 @@
 - team_bots: a resumed save keeps its bots and creates only the members it lacks; a fresh one creates all.
 - new-run.sh: each workspace starts from the previous shift's notes.md, under a one-line header naming that shift.
 - launch-agent.sh: the resume sentence is added to the prompt.
-- start-team.sh: the dry run prints the plan (notes found or not, tools to carry, the resume check) and touches nothing.
+- start-team.sh: the dry run prints the plan (notes found or not, tools to carry, the resume check, the previous run's
+  stop record) and touches nothing.
+- stop_save.py: the run's own save by game.server_save and its stop record; /server-save when that save never appears.
+- resume_guard.py: the tick resumed at against the previous run's last; refused when it went back (operator 17:00:
+  after a crash restart under shift12r the 15:55 change took shift12.zip from 10:48, 3 game hours back).
+  (tools/win/resume-save.ps1 itself is checked on the Windows box: tools/test_resume_save.py.)
 """
 import json
 import os
@@ -132,6 +137,14 @@ def dry_run():
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "shake4", "10"], env=env,
                            capture_output=True, text=True, cwd=ROOT)
         assert r.returncode != 0 and "needs a new run id" in r.stderr, r.stderr
+        # The previous run's stop record goes to resume-save; without one, the newest save is taken.
+        assert "no stop record in " + prev + " (stopped.json): resume-save takes the newest save" in out, out
+        json.dump({"run": "shake4", "world": "n", "stop_utc": "2026-10-15T02:55:00.123Z", "save": "shake4.zip",
+                   "tick": 236100, "via": "game.server_save"}, open(os.path.join(prev, "stopped.json"), "w"))
+        r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "resume-dry-test", "10"], env=env,
+                           capture_output=True, text=True, cwd=ROOT)
+        assert ("stop record " + prev + "/stopped.json: tick 236100, save shake4.zip at 2026-10-15T02:55:00.123Z: resume-save "
+                "gets -StopUtc 2026-10-15T02:55:00.123Z -StopSave shake4.zip") in r.stdout, r.stdout
     finally:
         shutil.rmtree(tmp)
     print("start-team dry run: ok")
@@ -158,7 +171,79 @@ def check():
     print("resume_check compare: ok")
 
 
+class SaveRcon:
+    def __init__(self, reply="tick 9800000\n"):
+        self.sent, self.reply = [], reply
+
+    def command(self, cmd):
+        self.sent.append(cmd)
+        return self.reply if "server_save" in cmd else "Saving the map"
+
+
+def stop_save_record():
+    import datetime
+    import stop_save
+    t0 = datetime.datetime(2026, 10, 15, 2, 55, 0)
+    s3 = t0 + datetime.timedelta(seconds=3)
+    looks = iter([None, (s3, 1000), (s3, 10232571), (s3, 10232571)])   # not yet, still writing, written, steady
+    r = SaveRcon()
+    rec = stop_save.stop_save(r, "shift13", "n", now=lambda: t0, info=lambda w, n: next(looks), sleep=lambda s: None)
+    assert r.sent == ["/silent-command game.server_save('shift13') rcon.print('tick ' .. game.tick)"], r.sent
+    assert rec == {"run": "shift13", "world": "n", "stop_utc": "2026-10-15T02:55:00.000Z", "clock": "windows",
+                   "save": "shift13.zip", "tick": 9800000, "save_utc": "2026-10-15T02:55:03.000Z", "save_bytes": 10232571,
+                   "via": "game.server_save"}, rec
+    # An older shift13.zip (the stale copy) never counts: the named save does not appear, so /server-save.
+    r = SaveRcon()
+    rec = stop_save.stop_save(r, "shift13", "n", now=lambda: t0, info=lambda w, n: (t0 - datetime.timedelta(hours=8), 9044085),
+                              sleep=lambda s: None, wait_s=6)
+    assert r.sent[-1] == "/server-save" and rec["save"] is None and rec["via"] == "server-save", rec
+    assert rec["tick"] == 9800000 and "shift13.zip not written within 6 s" in rec["note"], rec
+    # The box's clock unreadable: the Mac's, a minute back.
+    def boom():
+        raise OSError("ssh: no route")
+    rec = stop_save.stop_save(SaveRcon(), "shift13", "n", now=boom, info=lambda w, n: None, sleep=lambda s: None, wait_s=0)
+    assert rec["clock"].startswith("mac (ssh: no route)"), rec
+    try:
+        stop_save.stop_save(SaveRcon(), "shift13'); game.print('x", "n")
+        raise AssertionError("a run name with quotes must be refused")
+    except SystemExit:
+        pass
+    print("stop_save: ok")
+
+
+def guard():
+    import resume_guard
+    tmp = tempfile.mkdtemp()
+    try:
+        assert resume_guard.previous(tmp)[0] is None
+        open(os.path.join(tmp, "scores.jsonl"), "w").write(
+            "\n".join(json.dumps({"score": {"tick": t}}) for t in (9700000, 9790000)) + "\nnot json\n")
+        assert resume_guard.previous(tmp) == (9790000, "its last score in scores.jsonl")
+        json.dump({"tick": 9800000, "save": "shift13.zip"}, open(os.path.join(tmp, "stopped.json"), "w"))
+        tick, source = resume_guard.previous(tmp)
+        assert (tick, source) == (9800000, "stopped.json: its stop save shift13.zip"), source
+        # The 15:55 change: shift13 started from the 10:48 save, 3 game hours behind shift12r's stop.
+        ok, line = resume_guard.check(9800000 - 3 * 216000, tick, source, "shift13.zip")
+        assert not ok and "the world went back 3h00m of game time, more than 10m: an old save; refusing" in line, line
+        assert line.startswith("resumed at tick 9152000 (game 42h22m) from shift13.zip; the previous run's last tick 9800000"), line
+        # The stop save itself, or an autosave a few minutes older: on.
+        assert resume_guard.check(9800000, tick, source)[0] and resume_guard.check(9800000 - 6 * 3600, tick, source)[0]
+        assert resume_guard.check(9800000 + 120, tick, source)[1].endswith(": +120 ticks")
+        assert resume_guard.check(5, None, "no stopped.json")[0]
+        r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "resume_guard.py"), tmp, "9152000"], capture_output=True,
+                           text=True)
+        assert r.returncode == 1 and "went back 3h00m" in r.stdout, r.stdout
+        r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "resume_guard.py"), tmp, "9800010", "shift13.zip"],
+                           capture_output=True, text=True)
+        assert r.returncode == 0 and r.stdout.strip().endswith("+10 ticks"), r.stdout
+    finally:
+        shutil.rmtree(tmp)
+    print("resume_guard: ok")
+
+
 if __name__ == "__main__":
+    stop_save_record()
+    guard()
     check()
     for script in ("start-team.sh", "new-run.sh", "launch-agent.sh", "stop-team.sh"):
         subprocess.run(["bash", "-n", os.path.join(ROOT, "tools", script)], check=True)
