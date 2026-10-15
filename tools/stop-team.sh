@@ -19,7 +19,11 @@ python3 tools/console_audit.py --world "$world" --out "$rundir/console-audit.jso
 python3 tools/bplibrary.py --world "$world" --run-dir "$rundir" once || true
 # POG_BROKER=1 runs: what the RCON broker forwarded and refused (it stopped with the helpers above).
 [ -f "$rundir/broker.log" ] && { sleep 1; python3 tools/fh_broker.py summary "$rundir/broker.log" || true; }
-python3 tools/pog.py --world "$world" save
+# The run's own save, whatever save the server loaded (operator 17:00: after a crash restart under shift12r, the stop's
+# /server-save went into shift12r.zip and the next shift resumed from shift12.zip, 3 game hours back): saves\RUN.zip
+# by game.server_save, and runs/RUN/stopped.json (tick, save, the stop's time on the Windows box) for the next shift
+# (tools/stop_save.py; tools/start-team.sh reads it). It falls back to /server-save itself; this one is for an error.
+python3 tools/stop_save.py --world "$world" --run "$run" --run-dir "$rundir" || python3 tools/pog.py --world "$world" save
 # The run's copy of the world password is only for its agents' fh: gone with the shift, so later agents cannot read
 # it (docs/LAUNCH-NOTES.md). A resumed shift copies it again (tools/new-run.sh).
 rm -rf "$rundir/.keys"

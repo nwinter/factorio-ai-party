@@ -127,16 +127,31 @@ tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_ha
 `POG_RESUME=PREVIOUS_RUN tools/start-team.sh RUN MINUTES [--stream]`:
 
 1. `tools/win/resume-save.ps1 -Name n -From PREVIOUS_RUN -Check` (read-only, the world may be running) reports the
-   save it would take and the instance's mods. The save is the newest of `saves\PREVIOUS_RUN.zip` (stop-team's
-   `/server-save`) and the `_autosave*.zip` written after it, unless another run's save is newer than
-   `PREVIOUS_RUN.zip` (another run used the world since; its autosaves are not ours), then `PREVIOUS_RUN.zip`.
+   save it would take and the instance's mods. Which save (2026-10-14 17:00, eng/resumefix: after a crash restart
+   under `shift12r`, stop-team's `/server-save` went into `shift12r.zip`, and the 15:55 change took `shift12.zip`
+   from 10:48, 3 game hours back, because "another save is newer than shift12.zip: autosaves ignored"):
+   - stop-team saves under the run's own name whatever save the server loaded: `game.server_save(RUN)` writes
+     `saves\RUN.zip` (2.0.77, checked on a private headless server, paused too; `/save NAME` also works but fails
+     while another save is being written), and `runs/RUN/stopped.json` records the tick, the save and the stop's
+     time on the Windows box (`tools/stop_save.py`; it falls back to `/server-save` and says so);
+   - start-team passes that record (`-StopUtc`, `-StopSave`): the stop save when written at or after the stop, else
+     the newest save written after the stop, whatever its name; with no record (an older stop-team, or a crash
+     restart mid-run) the newest save, whatever its name;
+   - refused (`refuse=REASON`, start-team stops) when no save was written after the stop, or the one taken is older
+     than the newest autosave or the stop by more than 10 minutes (the world ran on after its stop).
+   A copy keeps its source's time (`shift13b.zip`, restored from `shift12r.zip` at 16:57, reads 15:56), so step 3
+   checks the tick too. `POG_WIN_TESTS=1 tools/test_resume_save.py` runs the script on the box against a scratch
+   instance (`D:\pog\inst\zz-resumetest`); `POG_DRY_RUN=1 POG_DRY_RUN_PICK=1` start-team prints what it would take.
    start-team refuses when the instance's `space-age` mod differs from `POG_SPACE_AGE` ("refusing: world n's mods
    have space-age on but POG_SPACE_AGE=0; run again with POG_SPACE_AGE=1").
 2. Stop world n; copy the harness mod to `D:\pog\mods`; `resume-save.ps1 -To RUN` copies that save to
    `saves\RUN.zip` (so this shift saves under its own name and the previous run's save stays as it was) and
    refreshes the instance's harness mod (the directors copy the instance's mods). No new instance.
 3. The server starts on `RUN.zip`; describe + deploy as before; then `pog.py resume` (a save made while tick-paused
-   would load paused) and the log line `world n: resumed at tick T (game Nm)`.
+   would load paused) and the log line from `tools/resume_guard.py`: `world n: resumed at tick T (game Nm) from SAVE;
+   the previous run's last tick P (stopped.json: its stop save RUN.zip): +D ticks` (else its last score). A world
+   more than `POG_RESUME_TICK_SLACK` ticks behind (default 36000, 10 game minutes) is paused and start-team stops
+   before any agent starts: `the world went back 3h00m of game time, more than 10m: an old save; refusing ...`.
 4. Directors join as before. `tools/team_bots.py` lists the save's bots (operator `bots`) and creates only members
    it lacks ("haiku kept (alive, at -24,-13)", "luna created ..."; bots not in the team are listed and left alone).
    Fresh worlds go through the same script (every member created).
