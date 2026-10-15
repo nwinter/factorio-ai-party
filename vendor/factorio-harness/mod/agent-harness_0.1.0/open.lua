@@ -11,6 +11,11 @@
 return function(api)
   local M = {}
   local EXAMPLES, TELL_WINDOW = 3, 30 * 3600
+  -- d15 trajectory analysis (Sonnet saw the same three stale items 92 times and never its 61 starved assemblers; Muse,
+  -- with no claims, only its own blocked item): items unchanged for STALE ticks are counted apart, and with no fresh
+  -- claim the machines idle or starved within NEAR tiles of the agent on its surface stand in for those in its claims;
+  -- unowned open board items and project steps open to it are listed.
+  local STALE, NEAR = 2 * 3600 * 60, 200
   local ACTIVE = {open=true, claimed=true, doing=true, blocked=true}
   local IDLE = {item_ingredient_shortage='ingredient shortage', fluid_ingredient_shortage='fluid ingredient shortage',
     no_ingredients='no ingredients', no_input_fluid='no input fluid', full_output='output full',
@@ -53,16 +58,24 @@ return function(api)
     for _, c in ipairs(claims) do if c.surface == surface and inside(c.item.area, pos) then return c.item end end
   end
   -- Parts as {count, examples}; M.line joins them.
-  function M.parts(me, force)
+  function M.parts(me, force, where)
     local board = api.state().board
     local items = {}
     for _, i in pairs(board and board.items or {}) do items[#items+1] = i end
     table.sort(items, function(a, b) return a.id < b.id end)
     -- Own active items (claims are the areas below; plans and harness requests are not jobs).
-    local own, own_ex = 0, {}
+    local own, own_ex, own_stale = 0, {}, 0
     local asked, asked_ex = 0, {}
+    local unowned, unowned_ex = 0, {}
+    local function stale(i) return i.updated_tick and game.tick - i.updated_tick > STALE end
     for _, i in ipairs(items) do
-      if i.owner == me and ACTIVE[i.status] and i.kind ~= 'claim' and i.kind ~= 'plan' and i.kind ~= 'harness' and i.kind ~= 'note' then
+      if not i.owner and ACTIVE[i.status] and (i.kind == 'task' or i.kind == 'request') and not stale(i) then
+        unowned = unowned + 1
+        if #unowned_ex < EXAMPLES then unowned_ex[#unowned_ex+1] = string.format('#%d %s %s', i.id, i.kind, clip(i.title, 50)) end
+      end
+      if i.owner == me and ACTIVE[i.status] and i.kind ~= 'claim' and i.kind ~= 'plan' and i.kind ~= 'harness' and i.kind ~= 'note' and stale(i) then
+        own_stale = own_stale + 1
+      elseif i.owner == me and ACTIVE[i.status] and i.kind ~= 'claim' and i.kind ~= 'plan' and i.kind ~= 'harness' and i.kind ~= 'note' then
         own = own + 1
         if #own_ex < EXAMPLES then own_ex[#own_ex+1] = string.format('#%d %s [%s]', i.id, clip(i.title, 60), i.status) end
         if i.kind == 'request' and i.requested_by and i.requested_by ~= me then
@@ -91,8 +104,33 @@ return function(api)
         end
       end
     end
-    -- Machines idle or starved in a fresh claim (the survey's cached positions).
-    local idle, idle_ex = 0, {}
+    -- Machines idle or starved in a fresh claim (the survey's cached positions); with no fresh claim, those within NEAR
+    -- tiles of the agent on its surface, nearest first.
+    local idle, idle_ex, idle_near = 0, {}, false
+    if #claims == 0 and where and where.surface and where.position then
+      idle_near = true
+      local index = try(function() return game.surfaces[where.surface].index end)
+      local entry = index and (api.state().survey_cache or {})[force.name .. '/' .. index]
+      local found = {}
+      for machine, by in pairs(entry and entry.positions or {}) do
+        if machine ~= 'belt_ends' then
+          for status, list in pairs(by) do
+            if IDLE[status] then
+              for _, pos in ipairs(list) do
+                local d = math.sqrt((pos.x - where.position.x) ^ 2 + (pos.y - where.position.y) ^ 2)
+                if d <= NEAR then found[#found+1] = {machine=machine, pos=pos, status=status, d=d} end
+              end
+            end
+          end
+        end
+      end
+      table.sort(found, function(a, b) if a.d ~= b.d then return a.d < b.d end return a.machine < b.machine end)
+      idle = #found
+      for k = 1, math.min(EXAMPLES, #found) do
+        local f = found[k]
+        idle_ex[k] = string.format('%s %s %s, %d tiles', f.machine, at(f.pos), IDLE[f.status], math.floor(f.d + 0.5))
+      end
+    end
     if #claims > 0 then
       local cache = api.state().survey_cache or {}
       local surfaces = {}
@@ -142,20 +180,31 @@ return function(api)
         end
       end
     end
-    return {board={own, own_ex}, alerts={alerts, alerts_ex}, machines={idle, idle_ex}, unanswered={asked, asked_ex}, claims=#claims}
+    -- Project steps open to it (board.lua open_steps: of projects with open_steps or no owner), nearest first.
+    local steps = where and api.open_steps and try(function() return api.open_steps(me, EXAMPLES, where.position) end) or nil
+    return {board={own, own_ex}, board_stale=own_stale, alerts={alerts, alerts_ex}, machines={idle, idle_ex}, machines_near=idle_near,
+      unanswered={asked, asked_ex}, unowned={unowned, unowned_ex}, steps=steps, claims=#claims}
   end
-  function M.line(me, force)
-    local x = M.parts(me, force)
+  function M.line(me, force, where)
+    local x = M.parts(me, force, where)
     local parts = {}
-    for _, p in ipairs{part(x.board[1], 'board item of yours', 'board items of yours', x.board[2]),
-      part(x.alerts[1], 'alert group in your claims', 'alert groups in your claims', x.alerts[2]),
-      part(x.machines[1], 'machine idle or starved in your claims', 'machines idle or starved in your claims', x.machines[2]),
-      part(x.unanswered[1], 'request or tell to you unanswered', 'requests or tells to you unanswered', x.unanswered[2])} do
-      if p then parts[#parts+1] = p end
+    local mine = part(x.board[1], 'board item of yours', 'board items of yours', x.board[2])
+    if x.board_stale > 0 then
+      mine = (mine and mine .. ', ' or '') .. string.format('%d more of yours unchanged for 2h+ left out', x.board_stale)
     end
+    local here = x.machines_near and 'near you (you hold no fresh claim)' or 'in your claims'
+    -- (a list with gaps: ipairs stopped at the first part with nothing in it, so an agent with no alert group in its
+    -- claims never saw its idle machines or unanswered tells)
+    local list = {mine,
+      part(x.alerts[1], 'alert group in your claims', 'alert groups in your claims', x.alerts[2]),
+      part(x.machines[1], 'machine idle or starved ' .. here, 'machines idle or starved ' .. here, x.machines[2]),
+      part(x.unanswered[1], 'request or tell to you unanswered', 'requests or tells to you unanswered', x.unanswered[2]),
+      part(x.unowned[1], 'unowned board item open to take', 'unowned board items open to take', x.unowned[2]),
+      x.steps and #x.steps > 0 and ('project steps open to take: ' .. table.concat(x.steps, '; ')) or nil}
+    for k = 1, 6 do if list[k] then parts[#parts+1] = list[k] end end
     if #parts == 0 then
-      return 'open for you: none (no board items of yours, ' .. (x.claims == 0 and 'no fresh claims' or 'no alert groups or idle machines in your claims')
-        .. ', no unanswered requests or tells)'
+      return 'open for you: none (no board items of yours, ' .. (x.claims == 0 and (x.machines_near and 'no fresh claims and no idle machines near you' or 'no fresh claims')
+        or 'no alert groups or idle machines in your claims') .. ', no unanswered requests or tells)'
     end
     return 'open for you: ' .. table.concat(parts, '; ')
   end

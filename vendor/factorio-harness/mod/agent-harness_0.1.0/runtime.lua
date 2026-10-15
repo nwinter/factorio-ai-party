@@ -10095,7 +10095,7 @@ M.waits=require('waits'){state=state,integer=integer,
   alert_line=function(p,from,filter) return M.urgent.alert(p,from,filter) end,alert_filter=function(m,p) return M.urgent.filter(m,p) end,
   alert_filter_text=function(f) return M.urgent.filter_text(f) end,
   -- what is open for the sleeper (open.lua), on the sleep's first and last replies
-  open_line=function(p) return M.open.line(M.board.who(p),p.force) end}
+  open_line=function(p) return M.open.line(M.board.who(p),p.force,{surface=p.surface.name,position=p.position}) end}
 for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
@@ -10154,7 +10154,7 @@ M.factory_digest=require('factory_digest'){state=state,use_lines=function(force)
 -- Idle characters for the operator's nudge (idle.lua): idle_report, and the
 -- standing clock idle_tick keeps.
 M.idle=require('idle'){state=state,agents=function() return M.board.agents() end,
-  open=function(index,name) local p=M.lookup(index); return p and M.open.line(name,p.force) or nil end,
+  open=function(index,name) local p=M.lookup(index); return p and M.open.line(name,p.force,p.valid and {surface=p.surface.name,position=p.position} or nil) or nil end,
   mention_counts=function() return M.board.operator('mention_counts',{}) end,
   unread=function(index) return M.chat.unread(index,'peek') end,
   orders=function(index) return M.orders.report(index) end,
@@ -11283,7 +11283,8 @@ M.urgent=require('urgent'){state=state,who=function(p) return M.board.who(p) end
 -- What is open for an agent (open.lua; d15 H3): its board items, alert groups and idle machines in its fresh claims,
 -- requests and tells it has not answered; on a sleep's replies and in the idle report (the idle nudge).
 M.open=require('open'){state=state,claim_surface=function(i) return M.claims.surface_of(i) end,claim_stale=function(i) return M.claims.stale(i) end,
-  alert_groups=function(f) return M.pushalerts.cached_groups(f) end,alert_text=function(g) return M.pushalerts.text(g,g.surface,nil,true) end}
+  alert_groups=function(f) return M.pushalerts.cached_groups(f) end,alert_text=function(g) return M.pushalerts.text(g,g.surface,nil,true) end,
+  open_steps=function(me,max,pos) return M.board.open_steps(me,max,pos) end}
 space=space_module{chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,
