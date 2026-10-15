@@ -165,7 +165,7 @@ return function(api)
   end
   -- Without an item (Gemini, after the courier tools): every assembler and furnace output in the radius, all items,
   -- output slots only (never inputs or fuel); count caps the total.
-  local OUTPUT={['assembling-machine']='assembling_machine_output',furnace='furnace_result'}
+  local OUTPUT={['assembling-machine']='assembling_machine_output',furnace='furnace_result',['agricultural-tower']='agricultural_tower_output'}
   function M.start_all(p,a,ticks)
     assert(a.chests==nil or a.chests==false,'collect with radius and no item takes machine outputs only; name an item to take from chests')
     assert(a.quality==nil,'quality goes with item')
@@ -199,7 +199,7 @@ return function(api)
     -- Another agent's claimed stock stays put; the result says whose it is.
     local skipped
     s.places,skipped=unclaimed(p,s.places,a.item)
-    local action={kind='gather',item=a.item,quality=a.quality,want=want,got=0,visited=0,
+    local action={kind='gather',item=a.item,quality=a.quality,outputs_only=a.outputs_only,want=want,got=0,visited=0,
       targets=route(p.position,s.places),index=1,until_tick=game.tick+ticks,avoid_enemies=a.avoid_enemies,unsafe_goal=a.unsafe_goal}
     M.guard(action)
     local left=M.screen_action(p,action,'every place holding '..a.item..' there')
@@ -552,7 +552,7 @@ return function(api)
         else
           -- tally: what each take puts over the personal request max (trash.lua)
           action.trash_tally=action.trash_tally or {}
-          ok,out=pcall(api.take,p,t.entity,action.item,action.quality,math.min(10000,action.want-action.got),action.all and OUTPUT[t.entity.type] or nil,action.trash_tally)
+          ok,out=pcall(api.take,p,t.entity,action.item,action.quality,math.min(10000,action.want-action.got),(action.all or action.outputs_only) and OUTPUT[t.entity.type] or nil,action.trash_tally)
         end
         action.index=action.index+1; action.nav=nil; action.visited=action.visited+1
         if ok then

@@ -2565,7 +2565,7 @@ p.get_main_inventory=function() return slots(10,1) end
 local seen=call('status'); eq(seen.survey_error,nil); eq(seen.inv,'free=7/80')
 local chests=stack('iron-chest',2); chests.prototype.place_result={type='container',name='iron-chest'}
 chests.clear=function() chests.count=0; chests.valid_for_read=false end
-body.get_main_inventory=function() return {find_item_stack=function() return chests end} end
+body.get_main_inventory=function() return {find_item_stack=function() return chests end,get_item_count=function(f) return f.name=='iron-chest' and chests.count or 0 end} end
 p.cursor_stack=stack('iron-plate',5) -- the user's map-view cursor is left alone
 local created
 p.surface.find_entities_filtered=function() return {} end
@@ -2590,7 +2590,7 @@ eq(ghost_chest.valid,false); eq(chests.valid_for_read,false)
 local ug_proto={name='underground-belt',type='underground-belt',max_underground_distance=5}
 local ugs=stack('underground-belt',10); ugs.prototype.place_result=ug_proto
 ugs.clear=function() ugs.count=0; ugs.valid_for_read=false end
-body.get_main_inventory=function() return {find_item_stack=function() return ugs end} end
+body.get_main_inventory=function() return {find_item_stack=function() return ugs end,get_item_count=function(f) return f.name=='underground-belt' and ugs.count or 0 end} end
 local entrance={valid=true,name='underground-belt',type='underground-belt',position={x=-3.5,y=-27.5},direction=12,belt_to_ground_type='input',force=p.force}
 local reverse={valid=true,name='underground-belt',type='underground-belt',position={x=-4.5,y=-27.5},direction=4,belt_to_ground_type='output',force=p.force}
 local made_ug
@@ -2919,6 +2919,7 @@ do
   p.surface.can_place_entity=function(a) eq(a.build_check_type,0); eq(a.forced,nil); return true end
   local px,py=math.floor(p.position.x),math.floor(p.position.y)
   local far=call('build',{builds={{item='gun-turret',position={x=px+2,y=py}},{item='gun-turret',position={x=px+30,y=py}}},dry_run=true})
+  eq(far.materials[1].item,'gun-turret');eq(far.materials[1].need,2)
   eq(far.action,'build'); assert(far.build_note:find('entry #2 (out of reach: ',1,true),far.build_note)
   -- Entries naming what to place by name (round1820a, Opus 00:42: 12 drills refused "item is required"): name is item.
   do
@@ -4546,4 +4547,88 @@ end)()
   p.get_inventory,p.get_main_inventory=old_get,old_main
   defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor=old_gun,old_ammo,old_armor
 end)()
+
+
+;(function()
+  -- outputs_only never falls through to fuel, even if an output drains during a walk.
+  call('queue_cancel',{}); call('stop',{})
+  local saved={main=main,find=p.surface.find_entities_filtered,reach=p.can_reach_entity,pos=p.position}
+  local output,fuel=inv(stack(nil,0)),inv(stack('coal',9))
+  local e={valid=true,name='stone-furnace',type='furnace',force=p.force,position={x=20,y=0},
+    get_output_inventory=function() return output end,get_fuel_inventory=function() return fuel end}
+  e.get_inventory=function(id) if id==defines.inventory.furnace_result then return output elseif id==defines.inventory.fuel then return fuel end end
+  p.surface.find_entities_filtered=function(f) return f.position and {e} or {} end
+  p.can_reach_entity=function() return math.abs(p.position.x-20)<=10 end
+  main=inv(stack(nil,0),stack(nil,0)); p.position={x=15,y=0}
+  local r=call('collect',{position=e.position,item='coal',outputs_only=true,up_to=true})
+  eq(r.transferred,0); eq(fuel[1].count,9)
+  r=call('collect',{positions={e.position},items={'coal'},pick='first_with_stock',outputs_only=true})
+  eq(r.picked,'none'); eq(fuel[1].count,9)
+  r=call('collect',{radius=32,item='coal',outputs_only=true})
+  eq(r.stock,0); advance(1); eq(fuel[1].count,9)
+  p.position={x=0,y=0}
+  call('collect',{position=e.position,item='coal',outputs_only=true,walk=true,up_to=true,avoid_enemies=false})
+  advance(1); p.position={x=15,y=0}; advance(2)
+  eq(fuel[1].count,9); eq(call('status').last.outcome,'nothing_collected')
+  output[1]=stack('coal',3)
+  r=call('collect',{position=e.position,item='coal',outputs_only=true})
+  eq(r.transferred,3); eq(fuel[1].count,9)
+  main=saved.main; p.surface.find_entities_filtered=saved.find; p.can_reach_entity=saved.reach; p.position=saved.pos
+end)()
+
+;(function()
+  -- feed cleanup runs at the walked-to stop, before the input is topped up.
+  call('queue_cancel',{});call('stop',{})
+  local saved={main=main,get_main=p.get_main_inventory,find=p.surface.find_entities_filtered,reach=p.can_reach_entity,pos=p.position,burnt=defines.inventory.burnt_result}
+  p.get_main_inventory=function() return main end
+  defines.inventory.burnt_result=83
+  prototypes.item['iron-ore']={type='item',name='iron-ore'}
+  prototypes.item.spoilage={type='item',name='spoilage'}
+  local function listing(t)
+    t.get_contents=function() local out={} for _,st in ipairs(t) do if st.valid_for_read then out[#out+1]={name=st.name,count=st.count,quality=st.quality.name} end end return out end
+    return t
+  end
+  local source=listing(inv(stack('spoilage',4)))
+  local output=listing(inv(stack('spoilage',3)))
+  local fuel=listing(inv(stack('spoilage',2)))
+  local burnt=listing(inv(stack('spoilage',5)))
+  local slots={[defines.inventory.furnace_source]=source,[defines.inventory.furnace_result]=output,[defines.inventory.fuel]=fuel,[83]=burnt}
+  local recipe={name='iron-plate',ingredients={{type='item',name='iron-ore',amount=1}},products={{type='item',name='iron-plate',amount=1}}}
+  local e={valid=true,name='stone-furnace',type='furnace',position={x=20,y=0},force=p.force,
+    get_recipe=function() return recipe end,get_inventory=function(id) return slots[id] end,get_fuel_inventory=function() return fuel end,
+    get_burnt_result_inventory=function() return burnt end}
+  p.surface.find_entities_filtered=function(f) return f.position and {e} or {} end
+  p.can_reach_entity=function() return math.abs(p.position.x-20)<=10 end
+  main=listing(inv(stack('iron-ore',10),stack(nil,0),stack(nil,0)))
+  p.position={x=0,y=0}
+  local r=call('feed',{position=e.position,item='iron-ore',count=3,clear_spoilage=true,avoid_enemies=false})
+  eq(call('status').active.kind,'gather');eq(source[1].name,'spoilage','no remote clearing')
+  advance(1);p.position={x=15,y=0};advance(2)
+  eq(source[1].name,'iron-ore');eq(source[1].count,3);eq(output[1].valid_for_read,false);eq(fuel[1].valid_for_read,false);eq(burnt[1].valid_for_read,false)
+  local last=call('status').last
+  eq(#last.entities[1].cleared,4);eq(last.given,3);eq(main.get_item_count{name='spoilage'},14)
+  -- With no supply left, a dirty-only stop is still selected by a radius tour.
+  main=listing(inv(stack(nil,0),stack(nil,0)))
+  output[1]=stack('spoilage',2);p.position={x=15,y=0}
+  call('feed',{radius=32,items={'iron-ore'},clear_spoilage=true,avoid_enemies=false})
+  advance(2);eq(output[1].valid_for_read,false);eq(call('status').last.entities[1].cleared[1].taken,2)
+  main=saved.main;p.surface.find_entities_filtered=saved.find;p.can_reach_entity=saved.reach;p.position=saved.pos;defines.inventory.burnt_result=saved.burnt;p.get_main_inventory=saved.get_main
+end)()
+;(function()
+  -- Construct's material-only preview is a read: no marking, walking or crafting.
+  call('queue_cancel',{});call('stop',{})
+  local saved={find=p.surface.find_entities_filtered,main=main,get_main=p.get_main_inventory}
+  p.get_main_inventory=function() return main end
+  local ghost={valid=true,type='entity-ghost',force=p.force,position={x=1,y=1},ghost_name='iron-chest',
+    ghost_prototype={items_to_place_this={{name='iron-chest',count=2}}}}
+  p.surface.find_entities_filtered=function(f) return f.limit==1025 and {ghost} or {} end
+  main=inv(stack('iron-chest',1))
+  call('queue_submit',{steps={{action='wait_ticks',args={ticks=100}}}});advance(1)
+  local r=call('construct',{area={left_top={x=0,y=0},right_bottom={x=2,y=2}},dry_run=true})
+  eq(r.materials[1].need,2);eq(r.materials[1].missing,1);eq(r.dry_run,true)
+  eq(call('queue_status').paused,false);eq(call('queue_status').active.action,'wait_ticks')
+  call('queue_cancel',{});call('stop',{})
+  main=saved.main;p.surface.find_entities_filtered=saved.find;p.get_main_inventory=saved.get_main
+end)()
+
 print('runtime: '..assertions..' assertions passed')

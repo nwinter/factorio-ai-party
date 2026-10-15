@@ -722,6 +722,7 @@ return function(api)
   end
   function M.preflight(p, a, extra_cache)
     extra_cache = extra_cache or {}
+    assert(a.from == nil or a.items ~= nil, 'from requires items')
     if a.position == nil then
       -- Discovery reuses the census's existing sliced walk. A read never starts a surface scan.
       local found, as_of = api.silos(p)
@@ -737,7 +738,7 @@ return function(api)
       end)
       for _, silo in ipairs(found) do
         if silo.valid and p.force.is_chunk_visible(p.surface, {x=math.floor(silo.position.x/32), y=math.floor(silo.position.y/32)}) then
-          local row = M.preflight(p, {position=silo.position, platform=a.platform, items=a.items}, extra_cache)
+          local row = M.preflight(p, {position=silo.position, platform=a.platform, items=a.items, from=a.from}, extra_cache)
           out.silos[#out.silos+1] = row
           words[#words+1] = row.line
         end
@@ -783,7 +784,19 @@ return function(api)
     -- An item list: what it still lacks against what is aboard, and how much of that fits.
     if a.items ~= nil then
       local list = M.items(a.items, 'items')
-      local order, lacking = {}, {}
+      local order, lacking, sources, seen = {}, {}, {}, {}
+      for _, pos in ipairs(a.from and from_list(a.from) or {}) do
+        local e = api.remote_entity(p, {position=pos})
+        assert(e.force == p.force and e.surface == silo.surface, 'from must be our chest on the silo surface')
+        local ci = chest_inventory(e)
+        assert(ci, 'from: ' .. e.name .. ' has no chest inventory')
+        local id = e.unit_number or at(e.position)
+        if not seen[id] then
+          seen[id] = true
+          sources[#sources+1] = {name=e.name, position={x=e.position.x,y=e.position.y}, inv=ci, items={}}
+        end
+      end
+      local manifest_g, manifest_slots, after_g, after_slots = 0, 0, g, used
       for _, r in ipairs(list) do
         local n = aboard(inv, r)
         local lacks = math.max(0, r.count - n)
@@ -793,7 +806,34 @@ return function(api)
           row.fits = math.min(lacks, fits(r))
           lacking[#lacking+1] = string.format('%s %d (%d fit)', row.item, lacks, row.fits)
         end
+        row.kg = kg(weight(r.name) * r.count)
+        row.slots = math.ceil(r.count / stack_size(r.name))
+        manifest_g = manifest_g + weight(r.name) * r.count
+        manifest_slots = manifest_slots + row.slots
+        after_g = after_g + weight(r.name) * lacks
+        after_slots = after_slots + math.ceil((n+lacks)/stack_size(r.name)) - math.ceil(n/stack_size(r.name))
+        if a.from then
+          row.from_held = 0
+          for _, src in ipairs(sources) do
+            local count = src.inv.get_item_count{name=r.name,quality=r.quality}
+            src.items[row.item] = count
+            row.from_held = row.from_held + count
+          end
+          row.from_short = math.max(0, lacks-row.from_held)
+          row.short = math.max(0, lacks-row.from_held-row.you_hold)
+        end
         order[#order+1] = row
+      end
+      for _, src in ipairs(sources) do src.inv = nil end
+      out.from = a.from and sources or nil
+      out.manifest = {kg=kg(manifest_g), slots=manifest_slots, lift_kg=kg(lift), cargo_slots=slots,
+        after_kg=kg(after_g), after_slots=after_slots, fits=after_g<=lift and after_slots<=slots}
+      words[#words+1] = string.format('manifest %g kg, %d slots; cargo after filling it %g/%g kg, %d/%d slots',
+        kg(manifest_g),manifest_slots,kg(after_g),kg(lift),after_slots,slots)
+      if a.from then
+        local counts = {}
+        for _, row in ipairs(order) do counts[#counts+1] = string.format('%s: chests hold %d, short %d (short %d after your inventory)',row.item,row.from_held,row.from_short,row.short) end
+        words[#words+1] = table.concat(counts,'; ')
       end
       out.order = order
       words[#words+1] = #lacking > 0 and 'the list lacks ' .. table.concat(lacking, ', ') or 'the list is aboard'
@@ -991,7 +1031,7 @@ return function(api)
       min_cargo='with launch: as launch min_cargo', arrived='with launch: as launch arrived',
       ticks='1..36000 (default 3600): how long to wait for the rocket (no rocket yet, or not ready for a launch) with no new rocket part: the wait goes on while the silo makes parts (or the rocket moves on to ready), 1 game hour at most in all (gives_up_tick); with walk, the whole tour (default 18000)',
       returns='silo, loaded [{item, asked, aboard_before, loaded, aboard, from (you N, iron-chest (x,y) N), freshness (a spoilable item: the loaded batch\'s spread and, for a pack the running research takes, how many a unit the running research takes and its units left), short, why (weight, slots, or what you and the chests held)}], cargo, rocket_weight, slots (used/total), chests (how many were read), complete, short; launch (the launch reply) with launch=true. No rocket yet, or launch=true before the rocket is ready: a timed action (until_tick, waiting {why, rocket}; outcome fed | failed | timed_out; last.result holds the reply). Into the rocket only what fits under its 1000 kg lift and in its cargo slots; a silo with automatic requests on is refused'},
-    preflight = {position='optional rocket silo {x,y} (any tile of it), in a visible chunk (remote view); omitted: all visible silos in the background census index, nearest your coordinates first',
+    preflight = {from='with items: one chest position or 1..16, readable in sight or remote view; per-chest stock, order.from_held, from_short (less what is aboard), short (also less you_hold); repeated chests counted once; nothing moved',position='optional rocket silo {x,y} (any tile of it), in a visible chunk (remote view); omitted: all visible silos in the background census index, nearest your coordinates first',
       surface='optional planet name (default yours); platform remains the rocket destination',
       items='optional item list (as load_silo items): what each rocket still lacks against the cargo aboard, and how much of that fits',
       platform='optional platform name: location, arrival/next stop, current-connection ETA and its calculation, requests importing from this planet less its hub and this rocket, incoming rockets, ammo per type over the last leg, and hub slots asteroid chunks take; omitted: our platforms stopped here or flying/scheduled next here (paused departures excluded), with unmet requests from here',

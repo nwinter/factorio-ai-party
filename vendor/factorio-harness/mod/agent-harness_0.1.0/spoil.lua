@@ -460,6 +460,18 @@ return function(api)
       if mark > (before and before.mark or 0) then w.seq = (w.seq or 0) + 1; before = {mark=mark, seq=w.seq, tick=f.tick} end
       if before then told[f.key] = before; f.news = before.seq end
     end
+    -- Keep old timer sites for ten minutes after their predicted expiry. They
+    -- remain history even if the eggs were carried away or used before then.
+    local recent,seen={},{}
+    for _,list in ipairs({w.places or {},w.recent or {}}) do
+      for _,old in ipairs(list) do
+        local key=old.surface..'|'..at(old.position)
+        if old.tick>=game.tick-36000 and old.tick<=game.tick+M.WARN_TICKS and not seen[key] and #recent<64 then
+          recent[#recent+1]=old;seen[key]=true
+        end
+      end
+    end
+    w.recent=recent
     w.places, w.told, w.tick, w.job = places, told, job.start, nil
   end
   -- The places hatching soon an agent hears of: on its surface, or built by it.
@@ -495,6 +507,12 @@ return function(api)
     for _, place in ipairs(w.places or {}) do
       if place.news and place.news > seq and place.tick > game.tick and mine(p, name, place) then return 'eggs hatching: ' .. M.place_text(place, here) end
     end
+  end
+  local nearby=require('eggnear'){}
+  function M.nearby(p)
+    local w,sites=watch(),{}
+    for _,list in ipairs({w.places or {},w.recent or {}}) do for _,s in ipairs(list) do sites[#sites+1]=s end end
+    return nearby.read(p,sites)
   end
   function M.seq() return watch().seq or 0 end
   -- The watch's last sweep, for a read: places, earliest first.

@@ -105,6 +105,7 @@ already targets your character.
   characters), each logistic network's stock of it (free and reserved, and which requesters the reserved stock is for),
   its robots, every unmet requester with the reason (`inventory full: all 48 slots taken (spoilage 494 in 10 slots,
   ...)` first when its slots are all taken; `inspect` of the chest shows `slots_full` and `requests_blocked`), the
+  `surplus_chest` names the largest unreserved plain/storage/provider stock, excluding requester/buffer chests;
   machines that make and use it by status (the worst 3 with positions), and the inserters feeding them; `throughput` names a machine whose inserters carry less than its
   recipe at full speed, each inserter's rate a minute, and how many inserters like its fastest it takes (`trace
   {position}` on a machine gives the same).
@@ -224,6 +225,8 @@ already targets your character.
   `configure` (modules by hand, a recipe change on a stocked machine) walk into reach first and then act, the reply's
   `walking` line saying so; past 32 tiles the refusal names the same call with `"walk": true`; `"walk": false` refuses.
   The destination is checked for enemies again when the call starts; a new worm in a previously clear area is included.
+- `feed {clear_spoilage:true}` clears spoiled recipe waste and burnt results before top-ups, also walking; `entities.cleared` reports taken/left. `collect {outputs_only:true}` reads/takes machine outputs only, never fuel.
+- `build`/`construct` report pre-action `materials` (need, held, missing, queued, hand_craftable). Build's existing `dry_run` includes them; `construct {dry_run:true}` checks ghost materials without acting.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` (and `feed` or `collect {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one
@@ -541,3 +544,6 @@ already targets your character.
 - When the game runs slow, sleeps and `--wait` keep waiting while it advances (`slow_game: 18 ticks/s, 30% of normal`,
   also on the clock line) and end `paused` when it stops. `game_unreachable` means nothing was sent; after a server
   restart from a save, one reply says `rolled_back` and lists in `redo` what you changed since, which is gone.
+
+- `preflight {position,items,from}` reads source chest stock and shorts; `manifest` checks combined kg/slots including existing cargo. `from` is one chest position or up to 16; nothing moves.
+- Full `status` rechecks nearby recorded egg sites: enemies visible now, future/elapsed timer, and gun range coverage with ammo. An old timer alone is not a live hatch.
