@@ -3988,7 +3988,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   Belt contents cover at most 128 remembered traced endpoints, only observations from the last 5 game minutes:
   full/empty lane counts, positions (up to 3 per condition), and ages. Missing surveys or endpoint contents are
   unknown, not zero; cached surveys from before this feature are explicitly unknown until refreshed.
-  Facts are packed into tells of at most 480 UTF-8 bytes each. `runs/RUN/factory-digest.json` stores the delivery
+  Facts are packed into tells of at most 480 UTF-8 bytes each; each names the snapshot tick (ages are at that
+  snapshot, including on a delayed retry). `runs/RUN/factory-digest.json` stores the delivery
   cursor across restarts; `factory-digest.jsonl` records sent parts, failures and dry runs. Retries reuse request IDs
   for harness deduplication while those IDs remain in its response cache. A manual send does not consume the
   scheduled send; adjusting a deadline after delivery does not send another scheduled digest.

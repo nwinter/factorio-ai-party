@@ -79,18 +79,19 @@ def facts(report):
 
 def messages(report):
     """Pack facts without truncating a UTF-8 tell. Long facts split at spaces."""
-    out, text = [], PREFIX
+    prefix = f"Factory digest (snapshot tick {report['tick']}; ages at snapshot): " if report.get("tick") is not None else PREFIX
+    out, text = [], prefix
     for fact in facts(report):
         for word in fact.split():
             # Prototype/surface names may be arbitrary strings in a modded game.
-            while len((PREFIX + word).encode()) > LIMIT:
-                if text != PREFIX: out.append(text.rstrip()); text = PREFIX
-                cut = word.encode()[:LIMIT-len(PREFIX.encode())].decode('utf-8', 'ignore')
-                out.append(PREFIX + cut); word = word[len(cut):]
+            while len((prefix + word).encode()) > LIMIT:
+                if text != prefix: out.append(text.rstrip()); text = prefix
+                cut = word.encode()[:LIMIT-len(prefix.encode())].decode('utf-8', 'ignore')
+                out.append(prefix + cut); word = word[len(cut):]
             if len((text + word + ' ').encode()) > LIMIT:
-                out.append(text.rstrip()); text = PREFIX
+                out.append(text.rstrip()); text = prefix
             text += word + ' '
-    if text != PREFIX: out.append(text.rstrip())
+    if text != prefix: out.append(text.rstrip())
     return out
 
 

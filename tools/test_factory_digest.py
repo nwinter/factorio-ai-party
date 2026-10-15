@@ -30,6 +30,7 @@ def main():
         assert fragment in text, (fragment, text)
     assert 'biochamber' not in text
     assert all(len(m.encode()) <= LIMIT < 500 for m in messages(REPORT))
+    assert all("snapshot tick 6000; ages at snapshot" in m for m in messages(REPORT))
     assert all(w not in text.lower() for w in ('consider', 'should', 'please', 'recommend'))
     assert 'No completed planetary surveys' in messages({})[0]
     # Lua's JSON encoder may represent an empty table as an empty array.
