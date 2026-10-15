@@ -31,7 +31,7 @@ return function(api)
   end
   local function visible(c,f,s,p)
     if f.is_chunk_visible(s,{x=c.x,y=c.y}) then return true end
-    if not (p and p.position) then return false end
+    if not (p and p.position) or type(p)=='table' and rawget(p,'__remote') then return false end
     for _,x in ipairs({c.x*32+.5,c.x*32+31.5}) do
       for _,y in ipairs({c.y*32+.5,c.y*32+31.5}) do
         if (x-p.position.x)^2+(y-p.position.y)^2>32^2 then return false end
@@ -59,17 +59,15 @@ return function(api)
         row.paired_with={x=other.position.x,y=other.position.y}
       end
     end
-    local observing=tiles==nil
     c.tiles=c.tiles or {};tiles=tiles or c.tiles
     local b=e.bounding_box
     for x=math.floor(b.left_top.x),math.ceil(b.right_bottom.x)-1 do
       for y=math.floor(b.left_top.y),math.ceil(b.right_bottom.y)-1 do
         if math.floor(x/32)==c.x and math.floor(y/32)==c.y then
           local k=key(x,y)
-          if observing and ghost and tiles[k] and tiles[k].carried_tick then
-            c.cuts=c.cuts or {};c.cuts[k]={position={x=x+.5,y=y+.5},carried_tick=tiles[k].carried_tick,tick=game.tick,by=tiles[k].by}
-          end
-          if observing or not tiles[k] or not ghost then tiles[k]=row end
+          -- A ghost can overlap a built belt. Only a complete visible refresh
+          -- establishes that the real belt is absent; keep its prior observation.
+          if not tiles[k] or not ghost or tiles[k].ghost then tiles[k]=row end
           if not ghost and c.cuts then c.cuts[k]=nil end
         end
       end
@@ -190,13 +188,14 @@ return function(api)
         table.sort(points,function(a,b) return a.position.y<b.position.y or a.position.y==b.position.y and a.position.x<b.position.x end)
         local text={}
         for _,v in ipairs(points) do
-          g.n=g.n+1
+          g.n=g.n+1;g.rank=math.max(g.rank or 0,v.tick)
           if v.by then g.by[v.by]=(g.by[v.by] or 0)+1 end
           if #text<8 then
             g.at[#g.at+1]=v.position
             text[#text+1]=string.format('(%g,%g), carried items at tick %d, missing at tick %d',v.position.x,v.position.y,v.carried_tick,v.tick)
           end
         end
+        g.rank=g.rank*1025+g.n
         g.line=string.format('belt cut: %d formerly carrying belt tiles missing: %s%s; layout last observed tick %d',g.n,table.concat(text,'; '),g.n>8 and '; +'..(g.n-8)..' more' or '',c.tick or 0)
         out[#out+1]=g
       end

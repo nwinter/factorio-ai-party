@@ -28,14 +28,17 @@ b0.get_item_count=function() return 0 end
 game.tick=200;B.read(p,{from={0,0},to={2,0}})
 b0.valid=false;b2.valid=false
 game.tick=300;B.read(p,{from={0,0},to={2,0}})
-local groups=B.alert_groups(force);eq(#groups,1);eq(groups[1].n,1);eq(groups[1].at[1].x,.5);eq(groups[1].by.opus,1)
+local groups=B.alert_groups(force);local old_rank=groups[1].rank;eq(#groups,1);eq(groups[1].n,1);eq(groups[1].at[1].x,.5);eq(groups[1].by.opus,1)
 has(groups[1].line,'carried items at tick 100');has(groups[1].line,'missing at tick 300')
 shown=false;local before=reads;game.tick=400
 B.read(p,{from={0,0},to={2,0}});eq(reads,before);eq(#B.alert_groups(force),1)
 shown=true;b0.valid=true;B.observe(b0);eq(#B.alert_groups(force),0,'observed rebuild clears immediately')
+b1.valid=false;game.tick=410;B.read(p,{from={0,0},to={2,0}})
+local replacement=B.alert_groups(force)[1];eq(replacement.n,1);assert(replacement.rank>old_rank,'a different one-tile gap is new alert news')
+b1.valid=true;B.observe(b1)
 -- Local sightings, without radar, seed remembered layout; hidden trace reads no engine data.
 shown=true;B.read(p,{from={0,0},to={2,0}});shown=false
-local r=B.trace(p,{position={x=.5,y=.5}});eq(#r.layout,2);eq(r.current,false);eq(reads,before+1)
+local r=B.trace(p,{position={x=.5,y=.5}});eq(#r.layout,2);eq(r.current,false);eq(reads,before+2)
 -- Cached inspect is independent of the source object and every returned copy.
 local R=require('readmemory'){state=function() return state end,position=pos,visible=function() return shown end,status_name=function() return 'working' end,
   belt_trace=B.trace,belt_observe=B.observe}
@@ -46,7 +49,7 @@ local function live() live_calls=live_calls+1;return value end
 R.read(p,{position=value.position},'inspect',live)
 value.inventories.chest[1].count=99;shown=false;game.tick=460
 r=R.read(p,{position=value.position},'inspect',live)
-eq(r.by,'last seen memory');eq(r.current,false);eq(r.age_ticks,60);eq(r.in_reach,nil);eq(r.inventories.chest[1].count,10);eq(live_calls,1)
+eq(r.by,'last seen memory');eq(r.current,false);eq(r.age_ticks,50);eq(r.in_reach,nil);eq(r.inventories.chest[1].count,10);eq(live_calls,1)
 r.inventories.chest[1].count=0
 eq(R.read(p,{position=value.position},'inspect',live).inventories.chest[1].count,10)
 fails(function() R.read(p,{position={90,90}},'inspect',live) end,'no recorded inspect observation')
@@ -112,13 +115,14 @@ end end
 surface.find_entities_filtered=function() assert(shown,'hidden dense query');return entities end
 local arg={from={0,0},to={15,0}}
 local partial=DB.read(p,arg);eq(items_read,128);eq(partial.observations[1].pending.total,256);eq(partial.belts,0)
-shown=false;DB.read(p,arg);eq(items_read,128);eq(dense_state.belt_memory.chunks['player|nauvis|0,0'].pending,nil)
+shown=false;DB.read({force=force,surface=surface,position={x=16,y=16},__remote=true},arg);eq(items_read,128);eq(dense_state.belt_memory.chunks['player|nauvis|0,0'].pending,nil)
 shown=true;DB.read(p,arg);eq(items_read,256)
 local full=DB.read(p,arg);eq(items_read,384);eq(full.belts,16);eq(full.observations[1].pending,nil)
 -- A ghost sighting after an item-carrying belt is a gap, not a lost history.
 local ghost={valid=true,type='entity-ghost',ghost_type='transport-belt',ghost_name='transport-belt',name='entity-ghost',force=force,surface=surface,
   position={x=.5,y=.5},direction=4,bounding_box={left_top={x=.1,y=.1},right_bottom={x=.9,y=.9}}}
-DB.observe(ghost);eq(DB.alert_groups(force)[1].n,1)
+DB.observe(ghost);eq(#DB.alert_groups(force),0,'an overlapping ghost alone does not establish a cut')
+entities[1]=ghost;DB.read(p,arg);DB.read(p,arg);eq(DB.alert_groups(force)[1].n,1)
 DB.read(p,arg);game.surfaces={}
 DB.tick(15);eq(dense_state.belt_memory.chunks['player|nauvis|0,0'].pending,nil,'deleted surface releases pending refresh')
 game.surfaces={nauvis=surface}
