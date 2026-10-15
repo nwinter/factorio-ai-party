@@ -506,7 +506,13 @@ local function finish(index, outcome)
   end
   if action and action.kind=='wait_until' then
     local last=s.last[index]
+    -- An interrupt/timeout can fall between predicate polls. Refresh once on ending, reusing a poll from this tick.
+    if M.waiteta and not (action.wait_estimates and action.wait_estimates[1] and action.wait_estimates[1].as_of_tick==game.tick) then
+      local ok,_,saw=pcall(function() return M.waiteta.check(M.lookup(index),action.condition,action) end)
+      if ok then action.saw=saw end
+    end
     last.condition=action.condition['until']; last.saw=action.saw; last.error=action.error
+    if M.waiteta then M.waiteta.info(last,action) end
   end
   -- A direct wait ended by a tell or mention says from whom (the reply's team block has it in full).
   if action and action.told then s.last[index].why=action.told end
@@ -823,7 +829,9 @@ local function active(index)
     local combat=state().combat and state().combat[index]
     return combat and {kind='shoot',until_tick=combat.until_tick} or false
   end
+  local wait=action.kind=='wait_until' and M.waiteta and M.waiteta.info({},action) or {}
   return {kind=action.kind,until_tick=action.until_tick,direction=action.direction,
+    wait_estimates=wait.wait_estimates,idle_s=wait.idle_s,wait_line=wait.wait_line,
     next_index=action.next_index,total=action.cells and #action.cells,placed=action.placed,skipped=action.skipped,
     cleared=action.kind=='build_path' and action.mined or nil,mining=action.kind=='build_path' and action.mining and action.mining.entity.valid and action.mining.entity.name or nil,
     next_position=action.cells and action.cells[action.next_index] and action.cells[action.next_index].position,
@@ -9453,10 +9461,16 @@ end
 local conditions=conditions_module{known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end}
+M.waiteta=require('waiteta'){state=state,check=function(p,c) return conditions.check(p,c,true) end,
+  research_rate=function(name) return M.research.rate(name) end,crafting_left=crafting_left,
+  busy=function(s,index) return M.idle.busy(s,index) end,
+  has_body=function(index) local p=M.lookup(index); return p and p.valid and p.character and p.character.valid end}
 M.scheduler_api={
   state=state,player=player,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
   condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) return check_args(action,args) end,validate_condition=function(c) return conditions.validate(c) end,
+  wait_check=function(p,c,record) return M.waiteta.check(p,c,record) end,
+  wait_info=function(out,record) return M.waiteta.info(out,record) end,
   fix_args=function(action,args) return M.aliases.fix(action,args,M.takes) end,
   simulate=function(p,items) return M.rocketload.simulate(p,items) end,
   busy=function(p,action)
@@ -9585,7 +9599,8 @@ M.waits=require('waits'){state=state,integer=integer,
   dead_until=function(index) local b=M.bots.record(index); return b and not b.travel and not M.bots.alive(b) and b.dead_until_tick or nil end,
   board_seq=function() return M.board.seq() end,board_news=function(p,seq) return M.board.news(p,seq) end,
   egg_seq=function() return M.spoil.seq() end,egg_news=function(p,seq) return M.spoil.news(p,seq,M.board.who(p)) end,
-  condition=function(p,c) return conditions.check(p,c) end,validate_condition=function(c) return conditions.validate(c) end,
+  condition=function(p,c,record) return M.waiteta.check(p,c,record) end,validate_condition=function(c) return conditions.validate(c) end,
+  wait_info=function(out,record) return M.waiteta.info(out,record) end,
   -- chosen alert kinds (Luna, 19:50): the push alert groups of those kinds for p, and machines starving in its claims
   alert_levels=function(p,kinds) return M.pushalerts.levels(p,kinds) end,starved=function(p) return M.pushalerts.starved(p) end}
 for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
@@ -9813,14 +9828,15 @@ function handlers.wait_until(p,a)
   local condition={}
   for k,v in pairs(a) do if k~='timeout' and k~='pause_queue' then condition[k]=v end end
   -- Met already: done at once, like construct with nothing to do.
-  local ok,met,saw=pcall(conditions.check,p,condition)
+  local record={kind='wait_until',condition=condition,until_tick=game.tick+timeout,next_check=game.tick+FEED_CHECK,start_tick=game.tick,
+    wake_viewers=viewers,wake_messages=messages}
+  local ok,met,saw=pcall(M.waiteta.check,p,condition,record)
   -- error, not assert: Factorio's Lua 5.2 assert puts the source line in front of the reason.
   if not ok then error(met,0) end
-  if met then return {outcome='met',saw=saw,until_tick=game.tick} end
+  if met then return M.waiteta.info({outcome='met',saw=saw,until_tick=game.tick},record) end
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
-  state().active[p.index]={kind='wait_until',condition=condition,saw=saw,until_tick=game.tick+timeout,next_check=game.tick+FEED_CHECK,start_tick=game.tick,
-    wake_viewers=viewers,wake_messages=messages}
-  return {until_tick=game.tick+timeout,condition=condition['until'],saw=saw,wake_on_messages=messages}
+  record.saw=saw; state().active[p.index]=record
+  return M.waiteta.info({until_tick=game.tick+timeout,condition=condition['until'],saw=saw,wake_on_messages=messages},record)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
@@ -10235,6 +10251,7 @@ end
 local function idle_tick()
   local s=state()
   for index,c in pairs(s.clocks or {}) do
+    M.waiteta.idle_tick(index)
     if not M.idle.busy(s,index) then
       c.idle=c.idle+1
       local kind=M.idle.waiting(s,index)
@@ -11249,7 +11266,7 @@ function M.tick_action(index,action,event)
   elseif action.kind=='wait_until' then
     if event.tick>=action.next_check then
       action.next_check=event.tick+FEED_CHECK
-      local ok,met,saw=pcall(conditions.check,p,action.condition)
+      local ok,met,saw=pcall(M.waiteta.check,p,action.condition,action)
       action.saw=ok and saw or nil
       if not ok then action.error=reason(met); finish(index,'failed')
       elseif met then finish(index,'met') end

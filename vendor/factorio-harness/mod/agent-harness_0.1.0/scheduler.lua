@@ -169,11 +169,19 @@ return function(api)
       plan={id=q.plan.id,kind=q.plan.kind,name=q.plan.name,submitted_s_ago=math.floor((game.tick-q.plan.tick)/60),steps=q.plan.steps,
         done=done,ok=ok_n,failed=failed,pending=left,running=q.current and q.current.plan==q.plan.id or nil}
     end
-    return {revision=q.revision,paused=q.paused,pending=q.pending,active=q.current or false,history=history,plan=plan,
+    local current=q.current
+    local waiting=current and current.action=='wait_until' and {condition=current.args,saw=current.saw,until_tick=current.until_tick} or nil
+    if waiting and api.wait_info then
+      api.wait_info(waiting,current)
+      local copy={}
+      for k,v in pairs(current) do if k~='wait_samples' then copy[k]=v end end
+      api.wait_info(copy,current); current=copy
+    end
+    return {revision=q.revision,paused=q.paused,pending=q.pending,active=current or false,history=history,plan=plan,
       order=q.order and {name=q.order.name,reason=q.order.reason,steps=q.order.total} or nil,
       orders_history=from_orders>0 and string.format('%d entries from standing orders left out (queue_status {"orders": true} lists them)',from_orders) or nil,
       history_total=history~=q.history and #q.history or nil,
-      waiting=q.current and q.current.action=='wait_until' and {condition=q.current.args,saw=q.current.saw,until_tick=q.current.until_tick} or nil,
+      waiting=waiting,
       guards=q.guards and #q.guards>0 and q.guards or nil,last_failure=failure,after_direct=q.after_direct,
       repeating=q.loop~=nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.loop and (q.orders or 'triggers') or nil,
       times=q.loop and q.times or nil,rounds_left=q.loop and q.times and math.max(0,q.times-(q.cycle or 1)) or nil,
@@ -250,6 +258,7 @@ return function(api)
     return lines
   end
   local function record(q,step,ok,result)
+    if step.action=='wait_until' and api.wait_info then api.wait_info(result,step) end
     tally(q,step,result)
     q.history[#q.history+1]={id=step.id,action=step.action,label=step.label,ok=ok,result=result,started_tick=step.started_tick,finished_tick=game.tick,order=step.order,
       plan=not step.order and (step.plan or q.plan_seq) or nil}
@@ -445,7 +454,7 @@ return function(api)
     s.history_total=#q.history
     if q.current then
       local active={}
-      for k,v in pairs(q.current) do active[k]=v end
+      for k,v in pairs(s.active) do active[k]=v end
       if q.current.started_tick then active.running_s=math.floor((game.tick-q.current.started_tick)/60) end
       s.active=active
     end
@@ -605,12 +614,13 @@ return function(api)
             local step=q.current
             if game.tick>=step.next_check then
               step.next_check=game.tick+CHECK_TICKS
-              local ok,met,saw=pcall(timed,'scheduler.wait_until',api.condition,p,step.args)
+              local ok,met,saw=pcall(timed,'scheduler.wait_until',api.wait_check or api.condition,p,step.args,step)
               step.saw=ok and saw or nil
               q.current=nil
-              if not ok then fail(q,p,step,{reason=tostring(met)})
-              elseif met then record(q,step,true,{outcome='met',saw=saw})
-              elseif game.tick>=step.until_tick then fail(q,p,step,{outcome='timed_out',saw=saw})
+              local result={saw=step.saw}
+              if not ok then result.reason=tostring(met); fail(q,p,step,result)
+              elseif met then result.outcome='met'; record(q,step,true,result)
+              elseif game.tick>=step.until_tick then result.outcome='timed_out'; fail(q,p,step,result)
               else q.current=step end
             end
           elseif q.current then
@@ -675,6 +685,11 @@ return function(api)
               -- sees the world that action changed.
               step.until_tick=game.tick+(step.args.timeout or 3600)
               step.next_check=game.tick+1
+              if api.wait_info then
+                local text=step.args['until']
+                step.wait_estimates={{condition=text,as_of_tick=game.tick,no_estimate='first condition observation pending',
+                  line=text..': no estimate (first condition observation pending)'}}
+              end
               q.current=step
             else
               -- What the step moves by hand is the queue's or its standing order's (hauling.lua).
@@ -718,7 +733,7 @@ return function(api)
     wait_ticks={ticks='1..54000 simulation ticks: a queue step, or a direct timed action (fh call wait_ticks --wait)',pause_queue=PAUSE_QUEUE,
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
       wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
-    wait_until={['until']='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left; a queue step, a standing order\'s when, a queue guard\'s when, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw',
+    wait_until={['until']='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left; a queue step, a standing order\'s when, a queue guard\'s when, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw, wait_estimates (ETA/rate basis or no_estimate), idle_s (character idle seconds in this wait), wait_line (one line)',
       position='area predicates: centre (default character); rocket_ready: the rocket silo (any tile of it), met when its rocket is built and ready to launch (saw: rocket state, parts, cargo); rocket_parts: the silo, met when the rocket being built has at_least parts (a built rocket, rising or ready, has all of them; while one launches, the next one\'s count; saw: rocket parts N/50 and the silo line)',radius='1..128 (default 32)',count='ammo_below: per-turret ammo items; fuel_below: fuel items per burner machine (furnaces, drills, boilers, burner inserters, ...)',fraction='health_*: 0..1; damaged: our buildings under this health fraction (default 1: any damage)',
       item='item_count',at_least='item_count; rocket_parts: parts 1..required; ghosts_waiting: ghosts (entity and tile) in the area (default 1)',below='item_count',positions='item_count: 1..64 {x,y} of our entities (chests, machines) to count in, summed over all their inventories (a rocket silo\'s rocket cargo too; saw adds each silo\'s rocket state and cargo: the rocket is no item, the item rocket is ammunition); default the character\'s inventory',technology='researched',platform='item_count: count landed items in the named platform hub main inventory (not incoming cargo or hub trash); no positions or surface; platform_arrived, platform_left: a platform of ours by name; platform_arrived is met while it is stopped at a space location (the platform list shows it there, not on its path or a route); platform_left while it is not (Gemini, 16:50: departure)',location='platform_arrived, platform_left: optional planet name; default any stop',timeout='ticks 1..54000 (default 3600; fh call wait_until --wait takes it from --wait-timeout); timing out fails the step (timed_out)',
       checked='every 10 ticks; enemies count only if known from the chart (units only in visible chunks)',pause_queue=PAUSE_QUEUE,
