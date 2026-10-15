@@ -411,6 +411,13 @@ do
   eq(last.delivered,50)
   eq(last.freshness[1]:match('^[^;]*'),'agricultural-science-pack*50: spoiled 20%, 20% by count')
   assert(last.freshness[1]:find('50 of them from packs that do not spoil within 60 min',1,true),last.freshness[1])
+  -- An inventory's spread as lines (Sol, 22:52: a platform's hub, a drop's items, a rocket's cargo), only the items named.
+  put(2,100,0.4,30*3600)
+  local fl=runtime.fresh_inv(force,packs.inv,{[A]=true})
+  eq(fl[1]:match('^[^;]*'),'agricultural-science-pack*100: spoiled 40%, 40% by count')
+  assert(fl[1]:find('100 research units of agricultural-science-pack-research',1,true),fl[1])
+  eq(runtime.fresh_inv(force,packs.inv,{coal=true}),nil,'none of the named items')
+  packs.inv[2].clear()
   force.current_research=nil
   yfarm.inv.remove{name=A,count=50}
 end

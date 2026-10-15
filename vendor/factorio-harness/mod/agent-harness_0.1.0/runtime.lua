@@ -4981,6 +4981,19 @@ function M.fresh_lines(force,acc)
   end
   return out
 end
+-- An inventory's spoilable items as those lines (names: only these items), nil when none (Sol, 22:52: a platform's
+-- hub before departure, a drop's items, a rocket's cargo).
+function M.fresh_inv(force,inv,names)
+  if not inv then return nil end
+  local acc=M.spoil.inventory(inv,{})
+  if names then
+    local keep={}
+    for _,r in ipairs(acc) do if names[r.name] then keep[#keep+1]=r end end
+    acc=keep
+  end
+  if #acc==0 then return nil end
+  return M.fresh_lines(force,acc)
+end
 -- Batch rows merged (transfer over several targets, a tour's stops).
 function M.fresh_merge(into,acc)
   for _,r in ipairs(acc or {}) do M.spoil.merge(into,r) end
@@ -10162,6 +10175,7 @@ M.freight=require('freight'){state=state,spoil=M.spoil,pods=M.pods}
 M.engine=require('engine'){state=state}
 space=space_module{freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
+  fresh_inv=function(force,inv,names) return M.fresh_inv(force,inv,names) end,
   engine=function(pl) return M.engine.read(pl) end,
   state=state,thrust=function(pl) return M.thrust.read(pl) end,
   rocket=function(e) return M.silo.rocket(e) end,
