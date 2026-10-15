@@ -406,6 +406,37 @@ do
   eq(st9.push_turrets.player.ready,true)
   force.players={}; game.forces=nil; ents.nauvis={}
 end
+-- 7b. The networks stage in steps (operator 18:12: networks.alert_groups 58-60 ms in one tick on world n): the api's
+-- cursor stepped NET_SLICE networks a step on ticks of their own; each step a profile part by kind (api.timed).
+do
+  local st11={board={items={}}}
+  local calls,labels,ticks_seen=0,{},{}
+  local NS=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){
+    state=function() return st11 end,
+    agents=function() return {{index=1,name='astra'}} end,
+    who=function(p) return p.name end,
+    place=function(index) return {key='nauvis',position={x=200,y=10}} end,
+    network_cursor=function(f) return {left=3} end,
+    network_step=function(cur,max)
+      calls=calls+1; eq(max,2); ticks_seen[game.tick]=true
+      cur.left=cur.left-1
+      if cur.left>0 then return false end
+      return true,{{key='power_high|nauvis|7',kind='power_high',surface='nauvis',n=90,names={},by={},at={},center={x=0,y=0},line='electric #7'}}
+    end,
+    timed=function(label,fn,...) labels[label]=(labels[label] or 0)+1; return fn(...) end}
+  force.players={{}}; game.forces={player=force}
+  game.tick=game.tick+1; NS.tick(game.tick)
+  local n=0
+  repeat game.tick=game.tick+1; NS.tick(game.tick); n=n+1 until not st11.push_jobs.player or n>5000
+  eq(calls,3,'the networks stage in three steps')
+  local distinct=0; for _ in pairs(ticks_seen) do distinct=distinct+1 end
+  eq(distinct,3,'each on a tick of its own')
+  eq(labels['pushalerts.networks'],3); eq(labels['pushalerts.alerts'],1); eq(labels['pushalerts.merge'],1)
+  assert(labels['pushalerts.band'],'the bands timed')
+  local keys={}; for _,g in ipairs(st11.push_alerts.player.groups) do keys[g.key]=true end
+  assert(keys['power_high|nauvis|7'],'the stepped groups are in the read')
+  force.players={}; game.forces=nil
+end
 -- 8. A claim routes the groups on its own surface only (Sol 07:52: Astra's Nauvis claim #212 labelled Gleba furnaces
 -- at (62,22)).
 do

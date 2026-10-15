@@ -86,4 +86,16 @@ assert(not pcall(profile.start,{seconds=601}))
 profile.start({seconds=5}); tick(); profile.start({seconds=5})
 assert(find('agent-harness profile done','(restarted)'))
 profile.start({stop=true})
+-- A labelled part from inside a module (a background job's step by kind): idle, just the call; in a run, timed as
+-- that part; an error still raises.
+local made=created
+local a,b=profile.part('pushalerts.band',function(x,y) now=now+4; return x+y,'z' end,1,2)
+eq(a,3); eq(b,'z'); eq(created,made,'idle: no profiler')
+profile.start({seconds=5})
+profile.part('pushalerts.band',function() now=now+4 end)
+profile.part('pushalerts.band',function() now=now+2 end)
+ok,err=pcall(profile.part,'pushalerts.merge',function() error('merge broke',0) end)
+eq(ok,false); eq(err,'merge broke')
+profile.start({stop=true})
+eq(find('agent-harness profile total','key=part pushalerts.band'),'agent-harness profile total ticks=0 n=2 key=part pushalerts.band time=6ms')
 print('profile: ok')

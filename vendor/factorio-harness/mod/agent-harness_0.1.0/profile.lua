@@ -84,6 +84,11 @@ return function()
     if not out[1] then error(out[2], 0) end
     return table.unpack(out, 2, out.n)
   end
+  -- fn(...) timed as part `label` while a run is on (a background job's steps by kind, runtime M.timed).
+  function M.part(label, fn, ...)
+    if not run then return fn(...) end
+    return timed('part ' .. label, false, fn, ...)
+  end
   -- Wraps R.dispatch, R.on_event and R.tick, and each {table, field, label}
   -- of parts. Idle cost: one check per call.
   function M.wrap(R, parts)

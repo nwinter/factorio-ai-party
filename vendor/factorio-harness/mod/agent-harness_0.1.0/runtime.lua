@@ -108,10 +108,12 @@ M.claims=require('claims'){state=state,where_from=function(me) return M.where.fr
     return out
   end}
 M.belt=require('belt')()
+-- A background job's step timed as its own part while the operator profile runs (profile.lua part); else just the call.
+M.timed=function(label,fn,...) if M.profile then return M.profile.part(label,fn,...) end return fn(...) end
 -- Waits, queues and actions carried over a hot install (carry.lua: notes them while this loads).
 M.carry=require('carry'){state=state,restart=function(index,call,until_tick) return M.restart_call(index,call,until_tick) end,
   resume=function(index,action) return M.resume_carried(index,action) end}
-M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,crafting=M.crafting,
+M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,crafting=M.crafting,timed=M.timed,
   -- Whether a hand-laid tile goes on a tile, what blocks it and what it takes away (dryrun.lua hand_tile).
   hand_tile=function(surface,force,item,x,y) return M.dryrun and M.dryrun.hand_tile(surface,force,item,x,y) end,
   removes_text=function(list) return M.dryrun and M.dryrun.removes_text(list) end,
@@ -7987,7 +7989,7 @@ local conditions=conditions_module{known=known,position=position,passing=functio
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end}
 scheduler=scheduler_module{
-  state=state,player=player,handlers=handlers,
+  state=state,player=player,handlers=handlers,timed=M.timed,
   condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) return check_args(action,args) end,validate_condition=function(c) return conditions.validate(c) end,
   fix_args=function(action,args) return M.aliases.fix(action,args,M.takes) end,
   simulate=function(p,items) return M.rocketload.simulate(p,items) end,
@@ -9075,7 +9077,7 @@ local function waypoint_goal(p,action,goal)
 end
 kite=kite_module{position=position,distance=distance,integer=integer,visible=visible,directions=directions}
 threat=threat_module{state=state,known=known,distance=distance,on_character_hit=function(event) M.board.on_character_hit(event) end}
-survey=survey_module{state=state,status_name=function(e) return entity_status_names[e.status] end,
+survey=survey_module{state=state,timed=M.timed,status_name=function(e) return entity_status_names[e.status] end,
   research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
 M.supply=require('supply'){integer=integer,position=position,status_name=function(e) return entity_status_names[e.status] end,spoil=M.spoil,
@@ -9110,7 +9112,7 @@ function M.one_planet(force)
   s.one_planet[force.name]={tick=game.tick,yes=yes}
   return yes
 end
-M.networks=require('networks'){state=state,one_planet=function(f) return M.one_planet(f) end,
+M.networks=require('networks'){state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
   sky=function(surface) return M.lightning and M.lightning.sky(surface) end}
 -- Fulgora's row carries its sky now (lightning.lua M.sky; Gemini 12:20): storm while dark, the times to dusk and dawn.
 function handlers.networks(p,a)
@@ -9127,7 +9129,7 @@ M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.netw
 -- The game's alerts and key warnings, pushed to the agents they concern (pushalerts.lua).
 -- Lightning attractors on Fulgora whose catches have nowhere to go, and full accumulators beside them (lightning.lua).
 M.lightning=require('lightning'){}
-M.pushalerts=require('pushalerts'){state=state,agents=function() return M.board.agents() end,who=M.board.who,
+M.pushalerts=require('pushalerts'){state=state,timed=M.timed,agents=function() return M.board.agents() end,who=M.board.who,
   claim_surface=function(i) return M.claims.surface_of(i) end,
   place=function(index) return M.where.place(index) end,targets=M.targets,
   network_groups=function(force)
@@ -9139,6 +9141,24 @@ M.pushalerts=require('pushalerts'){state=state,agents=function() return M.board.
     local oks,idle=pcall(M.scienceline.alert_groups,force)
     if oks then for _,g in ipairs(idle) do out[#out+1]=g end end
     return out
+  end,
+  -- The same in steps for the background read: max networks a step, then lightning, then science (networks.alert_step).
+  network_cursor=function(force) return {nets=M.networks.alert_cursor(force),phase='nets'} end,
+  network_step=function(cur,max)
+    local out=cur.nets.out
+    if cur.phase=='nets' then
+      if M.networks.alert_step(cur.nets,max) then cur.phase='lightning' end
+      return false
+    elseif cur.phase=='lightning' then
+      cur.phase='science'
+      local ok,more=pcall(M.lightning.alert_groups,game.forces[cur.nets.force])
+      if ok then for _,g in ipairs(more) do out[#out+1]=g end
+      else local s=state(); s.lightning_errors={count=((s.lightning_errors or {}).count or 0)+1,last=tostring(more),tick=game.tick} end
+      return false
+    end
+    local oks,idle=pcall(M.scienceline.alert_groups,game.forces[cur.nets.force])
+    if oks then for _,g in ipairs(idle) do out[#out+1]=g end end
+    return true,out
   end,
   -- an agent player's alert panel (camera players have theirs switched off: cameras.lua)
   alert_reader=function(force)
@@ -10026,6 +10046,10 @@ M.profile=require('profile')()
   for _,part in ipairs{{M.idle,'request','idle.request'},{M.tells,'operator_lines','tells.operator_lines'},{M.orders,'line','orders.line'},{M.platalerts,'note','platalerts.note'},{M.visuals,'worked','visuals.worked'},{M.claims,'worked','claims.worked'},{M.carry,'carry','carry.carry'},{M.supply,'scan','supply.scan'},{M.supply,'chain','supply.chain'},{M.networks,'read','networks.read'}} do parts[#parts+1]=part end
   for _,part in ipairs{{M.pushalerts,'tick','pushalerts.tick'},{survey,'tick','survey.tick'},{threat,'tick','threat.tick'}} do parts[#parts+1]=part end
   for _,part in ipairs{{M.scienceline,'tick','scienceline.tick'},{M.scienceline,'lines','scienceline.lines'},{M.networks,'view_tick','networks.view_tick'}} do parts[#parts+1]=part end
+  -- Inside the tick, so its unprofiled share has names (operator 18:12: tick totals 300 ms over their parts at 17:53);
+  -- the background jobs' steps are parts by kind through M.timed.
+  for _,part in ipairs{{M.networks,'alert_step','networks.alert_step'},{M.bots,'travel_tick','bots.travel_tick'},{M.drops,'tick','drops.tick'},{M,'drop_jobs_tick','drop_jobs_tick'},{M.ores,'tick','ores.tick'},{M.spoil,'tick','spoil.tick'},{M,'tick_action','tick_action'}} do parts[#parts+1]=part end
+  if M.crafting and M.crafting.tick then parts[#parts+1]={M.crafting,'tick','crafting.tick'} end
   M.profile.wrap(M,parts)
 end)()
 return M

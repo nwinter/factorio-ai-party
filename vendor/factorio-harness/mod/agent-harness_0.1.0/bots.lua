@@ -452,6 +452,11 @@ return function(api)
   end
   -- Deaths and respawns, like a player's: the normal respawn delay, then a
   -- fresh character at the spawn point with what a respawning player gets.
+  -- A call timed as its own profile part while the operator profile runs (runtime M.timed); else just the call.
+  local function timed(label, fn, ...)
+    if api.timed then return api.timed(label, fn, ...) end
+    return fn(...)
+  end
   function M.tick(tick)
     for _, b in pairs(bots().by_index) do
       if b.travel then
@@ -464,18 +469,18 @@ return function(api)
           if c.surface.name ~= b.surface then b.surface = c.surface.name end
           if c.surface.planet then b.planet = c.surface.name; b.spots = b.spots or {}; b.spots[c.surface.name] = c.position end
         end
-        if (tick + b.index) % SIGHT_TICKS == 0 then look(b.character) end
+        if (tick + b.index) % SIGHT_TICKS == 0 then timed('bots.look', look, b.character) end
         if api.crafting then api.crafting.tick(b, tick) end
       elseif not b.dead_until_tick then
         b.character = nil
         b.dead_until_tick = tick + RESPAWN_TICKS
         b.deaths = (b.deaths or 0) + 1
         -- Its corpse, for recover (runtime.lua): never fatal to the tick.
-        pcall(M.note_corpse, b, tick)
+        pcall(timed, 'bots.note_corpse', M.note_corpse, b, tick)
         if api.crafting then api.crafting.forget(b) end
         if api.stop then api.stop(b.index, 'died') end
       elseif tick >= b.dead_until_tick then
-        spawn(b, 'respawn')
+        timed('bots.respawn', spawn, b, 'respawn')
       end
     end
   end
