@@ -62,7 +62,9 @@ fh call status
   check by the runtime test.
 - Common wrong argument names run as meant, and the reply's `corrected` (also on the final `warning:` line) shows the
   call as it ran: `craft` `item` is `recipe`, `move_to` `target` is `position`, `scan` `names`/`types`/`range` are
-  `name`/`type`/`radius`, `chat`/`tells` `count` is `limit`, `build` `placements` is `builds`, `board_post` `text` is
+  `name`/`type`/`radius`, `chat`/`tells` `count` is `limit`, `build` `placements` (and `items`, a list of entries) is
+  `builds`, a `build` entry's `name` is `item` (round1820a, Opus: a 12-drill batch refused `item is required`; also
+  `entity` with no `item`, which otherwise names a rail planner's rail), `board_post` `text` is
   `title`, `recipes`/`technologies` `search`/`name` are `prefix`, `transfer` `to_player: true` is `direction`, and a
   `board` call with an `id` and a `note`, `owner` or `status` is `board_update`. A valid argument is never renamed; a
   corrected call that still fails says `[ran as ...]`; any other unknown argument fails with the valid list and the

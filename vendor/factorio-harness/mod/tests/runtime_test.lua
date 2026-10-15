@@ -2631,6 +2631,12 @@ do
   local px,py=math.floor(p.position.x),math.floor(p.position.y)
   local far=call('build',{builds={{item='gun-turret',position={x=px+2,y=py}},{item='gun-turret',position={x=px+30,y=py}}},dry_run=true})
   eq(far.action,'build'); assert(far.build_note:find('entry #2 (out of reach: ',1,true),far.build_note)
+  -- Entries naming what to place by name (round1820a, Opus 00:42: 12 drills refused "item is required"): name is item.
+  do
+    local named=call('build',{builds={{name='gun-turret',position={x=px+2,y=py}},{name='gun-turret',position={x=px+30,y=py}}},dry_run=true})
+    eq(named.action,'build'); assert(named.build_note:find('entry #2 (out of reach: ',1,true),named.build_note)
+    assert(tostring(named.corrected):find('(name is item)',1,true),tostring(named.corrected))
+  end
   p.surface.can_place_entity=ghost_engine
   -- A plan past the bounds is refused before any check.
   local twenty={}
