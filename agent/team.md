@@ -99,8 +99,9 @@ already targets your character.
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
   `"surface"`) reads one item: where it sits (chests by kind, belts, machine outputs, inserter hands, robots,
   characters), each logistic network's stock of it (free and reserved, and which requesters the reserved stock is for),
-  its robots, every unmet requester with the reason, the machines that make and use it by status (the worst 3 with
-  positions), and the inserters feeding them; `throughput` names a machine whose inserters carry less than its
+  its robots, every unmet requester with the reason (`inventory full: all 48 slots taken (spoilage 494 in 10 slots,
+  ...)` first when its slots are all taken; `inspect` of the chest shows `slots_full` and `requests_blocked`), the
+  machines that make and use it by status (the worst 3 with positions), and the inserters feeding them; `throughput` names a machine whose inserters carry less than its
   recipe at full speed, each inserter's rate a minute, and how many inserters like its fastest it takes (`trace
   {position}` on a machine gives the same).
 - `./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
@@ -232,6 +233,8 @@ already targets your character.
   (a tour: outcome `failed`, `last.first_error`). Item moves (`transfer`, `collect`, `feed`, `pickup`,
   `rearm`, `refuel`, `mine`, `craft`, `cancel_craft`, a `configure` recipe change) say `moved` and end with `inv` (free
   slots, what you hold of the items moved); a move over time says `timed`, and `last.moved`/`last.inv` when it ends;
+  a give the target could not take all of (full), or a courier that delivered less than it took, ends with a `short`
+  warning naming what fills the target's slots and what you still carry;
   queue and standing-order history entries carry both. `feed`, `collect` and `transfer` take `area {left_top,
   right_bottom}` for every machine (or chest) inside it; `inspect` of a machine shows `output_fill` (and `full`).
   `feed` gives a burner fuel when its fuel slots are empty, or with `fuel` (`true` or a fuel name); a furnace with no
