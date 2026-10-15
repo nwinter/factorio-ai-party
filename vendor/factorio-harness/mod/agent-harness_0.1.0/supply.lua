@@ -1054,10 +1054,14 @@ return function(api)
   -- science line's chain reads it (one supply scan, mining drills and pumps included), the line that follows the
   -- ingredient most of a step's makers lack down to its root, and on each step of that line up to 3 makers that are
   -- not working, with position, state and what they lack. Kept 10 s like supply.
+  -- per_min (Sonnet, shift13 18:20): the rate each step needs for that many of the item a minute (ratechain.lua).
+  local ratechain
   function M.bottleneck_item(p, a)
     local item = a.item
     assert(type(item) == 'string' and (prototypes.item[item] or (prototypes.fluid and prototypes.fluid[item])),
       'item must be an item or fluid name (processing-unit, plastic-bar, petroleum-gas, ...)')
+    assert(a.per_min == nil or (type(a.per_min) == 'number' and a.per_min > 0 and a.per_min <= 1000000),
+      'per_min must be a rate above 0 (items a minute, up to 1000000)')
     local surface = p.surface
     if a.surface ~= nil then
       assert(type(a.surface) == 'string', 'surface must be a surface name')
@@ -1065,7 +1069,7 @@ return function(api)
       assert(surface, 'no surface ' .. a.surface)
     end
     local force = p.force
-    local key = string.format('bottleneck|%s|%s|%s', tostring(surface.index or surface.name), force.name, item)
+    local key = string.format('bottleneck|%s|%s|%s|%s', tostring(surface.index or surface.name), force.name, item, tostring(a.per_min))
     return M.reuse(key, function()
       local names = prototypes.item[item] and {[item]=true} or {}
       local scan = M.scan(surface, force, names, {packs=M.packs_of(force), miners=true})
@@ -1083,8 +1087,15 @@ return function(api)
         end
         if #rows > 0 then where[#where+1] = name .. ': ' .. table.concat(rows, '; ') end
       end
+      local target
+      if a.per_min then
+        ratechain = ratechain or require('ratechain'){}
+        local made = {}
+        for _, row in ipairs(chain.tree or {}) do made[row.item] = row.made_per_min end
+        target = ratechain.plan(scan.by_product or {}, item, a.per_min, force, function(name) return made[name] end)
+      end
       return {item=item, surface=surface.name, line=chain.line, path=chain.path, root=chain.last, not_working=#where > 0 and where or nil,
-        steps=chain.tree, cut=chain.cut}
+        steps=chain.tree, cut=chain.cut, target=target}
     end)
   end
   local function packs_of(force)
