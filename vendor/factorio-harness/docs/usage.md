@@ -2923,7 +2923,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   counted from the traced poles' supply areas. `2 machines no other pole reaches have no power (x,y)-(x,y): ...` when
   the pole alone reached them. The poles one raid kills next to each other count as one gap (`(with ...)`). The end
   says `a ghost of the pole stands there`, `no ghost of the pole there`, or `joined again since (rebuilt or wired)`. A
-  split with power on every side, or with no machine on a side without, is no alert; full landing pads spilling and piles of items on the ground
+  split with power on every side, or with no machine on a side without, is no alert, nor is a pole whose network made
+  no power in the 5 s before (a part cut off already); full landing pads spilling and piles of items on the ground
   near our buildings, once each and again when grown by half; then up to 6 platform lines, below) and `reminders`
   (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
   request leaves the hints for later.

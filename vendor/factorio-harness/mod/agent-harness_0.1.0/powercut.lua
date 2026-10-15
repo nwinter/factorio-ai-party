@@ -8,7 +8,7 @@
 -- neighbours' networks. Two or more: a split. Each part's power is its network's production over the last 5 s (the
 -- network's statistics, as its GUI graph); a part without any is traced along copper wires (up to TRACE poles, STEP
 -- a tick) and its machines counted from the traced poles' supply areas. The machines the pole alone reached have no
--- network at all. A cut nobody could act on (every part powered, or none holding a machine, and no machine left
+-- network at all. A pole whose network made no power in the 5 s before is not checked. A cut nobody could act on (every part powered, or none holding a machine, and no machine left
 -- alone) is no alert. One line per cut, told once to every agent in team.alerts (with whether it has joined again
 -- since), and in status alerts.
 return function(api)
@@ -34,6 +34,18 @@ return function(api)
   local function copper(e) return try(function() return e.get_wire_connector(defines.wire_connector_id.pole_copper, false) end) end
   local function net(e) return try(function() return e.electric_network_id end) end
 
+  -- A network's production over the last 5 s, in kW, by producer name (input is consumption in electric statistics).
+  local function power(pole)
+    local stats = pole.valid and try(function() return pole.electric_network_statistics end)
+    if not stats then return 0, {} end
+    local total, by = 0, {}
+    for name in pairs(try(function() return stats.output_counts end) or {}) do
+      local v = try(function() return stats.get_flow_count{name=name, category='output', precision_index=defines.flow_precision_index.five_seconds} end)
+      local kw = (v or 0) * 60 / 1000
+      if kw >= 0.5 then by[name] = kw; total = total + kw end
+    end
+    return total, by
+  end
   -- The pole died: what it joined and what it reached (the engine's wires and networks still hold it).
   function M.on_died(e, by)
     if not (e and e.valid and e.type == 'electric-pole') then return end
@@ -57,24 +69,15 @@ return function(api)
         if m ~= e and machine(m) then machines[#machines+1] = m end
       end
     end
-    -- A pole with one wire or none splits nothing; with nothing in its area it leaves nothing alone.
+    -- A pole with one wire or none splits nothing; with nothing in its area it leaves nothing alone. A network that
+    -- made no power in the last 5 s loses none (a pole of a part cut off before: copy of world n, a second pole of
+    -- a cut line told the same 15 drills again).
     if #nbs < 2 and #machines == 0 then return end
+    if power(e) < 0.5 then return end
     st.jobs[#st.jobs+1] = {tick=game.tick, name=e.name, position=e.position, surface=e.surface.name, force=e.force.name, net=net(e), by=by,
       unit=unit, neighbours=nbs, machines=machines}
   end
 
-  -- A network's production over the last 5 s, in kW, by producer name (input is consumption in electric statistics).
-  local function power(pole)
-    local stats = pole.valid and try(function() return pole.electric_network_statistics end)
-    if not stats then return 0, {} end
-    local total, by = 0, {}
-    for name in pairs(try(function() return stats.output_counts end) or {}) do
-      local v = try(function() return stats.get_flow_count{name=name, category='output', precision_index=defines.flow_precision_index.five_seconds} end)
-      local kw = (v or 0) * 60 / 1000
-      if kw >= 0.5 then by[name] = kw; total = total + kw end
-    end
-    return total, by
-  end
   local function grow(box, q)
     if not box.x0 then box.x0, box.y0, box.x1, box.y1 = q.x, q.y, q.x, q.y; return end
     box.x0, box.y0, box.x1, box.y1 = math.min(box.x0, q.x), math.min(box.y0, q.y), math.max(box.x1, q.x), math.max(box.y1, q.y)

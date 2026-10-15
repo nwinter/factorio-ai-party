@@ -139,10 +139,16 @@ has(pc.line(S.powercut.cuts[3],'nauvis'),'#91 has no power (1 pole, around (421,
 game.tick=game.tick+18001
 eq(pc.lines({surface=surface},{}),nil)
 
+-- A pole of a network that made no power in the 5 s before (a part cut off already) is not checked.
+local z1,z2,z3=pole(450,0,93),pole(457,0,93),pole(464,0,93)
+wire(z1,z2); wire(z2,z3); drill(464,2,93)
+kill(z2,'big-biter')
+eq(#S.powercut.jobs,0,'no power to lose')
 -- A fault drops the job and is counted; the tick goes on.
 local bad=pole(500,0,95); local bad2=pole(507,0,95); local bad3=pole(493,0,95)
 wire(bad,bad2); wire(bad,bad3)
 drill(500,1,95)
+made[95]={generator=100}
 kill(bad,'x')
 S.powercut.jobs[1].neighbours={'not an entity'}
 run(340)
