@@ -2618,6 +2618,53 @@ end
   prototypes.entity=entity_protos
   p.surface.can_place_entity,p.surface.create_entity,p.surface.find_entities_filtered=can,create,find
 end)()
+-- Settings on place_ghosts entries (entryset.lua; Sol, shift13 19:50: a bio cell took about 10 configure and wire
+-- round trips): argument names checked before anything is placed; set after every entry stands, by the real
+-- configure; a refused setting is that entry's row and its ghost stays.
+;(function()
+  local entity_protos=prototypes.entity
+  local can,create,find=p.surface.can_place_entity,p.surface.create_entity,p.surface.find_entities_filtered
+  local am={name='assembling-machine-2',type='assembling-machine',items_to_place_this={{name='assembling-machine-2',count=1}},crafting_categories={crafting=true}}
+  prototypes.entity={['assembling-machine-2']=am}
+  local saved_recipes=p.force.recipes
+  p.force.recipes={['iron-gear-wheel']={name='iron-gear-wheel',enabled=true,category='crafting'},sulfur={name='sulfur',enabled=true,category='chemistry'}}
+  local made={}
+  p.surface.can_place_entity=function() return true end
+  p.surface.create_entity=function(a)
+    local g={valid=true,name='entity-ghost',type='entity-ghost',ghost_type='assembling-machine',ghost_name=a.inner_name,ghost_prototype=am,
+      position=a.position,surface=p.surface,force=p.force}
+    g.set_recipe=function(r) g.recipe=r; return {} end
+    g.get_recipe=function() return g.recipe and {name=g.recipe} or nil end
+    made[#made+1]=g; return g
+  end
+  p.surface.find_entities_filtered=function(f)
+    local out={}
+    for _,g in ipairs(made) do
+      if f.position and math.abs(g.position.x-f.position.x)<=(f.radius or 0.5) and math.abs(g.position.y-f.position.y)<=(f.radius or 0.5)
+        and (f.name==nil or f.name==g.name) and (f.ghost_name==nil or f.ghost_name==g.ghost_name) then out[#out+1]=g end
+    end
+    return out
+  end
+  fails(function() call('place_ghosts',{entities={{name='assembling-machine-2',position={x=20.5,y=4.5},circuit={bogus=1}}}}) end,'unknown argument bogus for circuit_set')
+  fails(function() call('place_ghosts',{entities={{name='assembling-machine-2',position={x=20.5,y=4.5},configure={position={x=1,y=1},recipe='iron-gear-wheel'}}}}) end,
+    'entry 1: configure takes the entry\'s position')
+  eq(#made,0,'refused before anything is placed')
+  local dry=call('place_ghosts',{dry_run=true,entities={{name='assembling-machine-2',position={x=20.5,y=4.5},configure={recipe='iron-gear-wheel'}}}})
+  eq(dry.settings_planned[1].would_set,'configure (recipe)'); eq(#made,0)
+  local r=call('place_ghosts',{entities={{name='assembling-machine-2',position={x=20.5,y=4.5},configure={recipe='iron-gear-wheel'}},
+    {name='assembling-machine-2',position={x=24.5,y=4.5},configure={recipe='sulfur'}},{name='assembling-machine-2',position={x=28.5,y=4.5}}}})
+  eq(r.placed,3); eq(made[1].recipe,'iron-gear-wheel'); eq(made[2].recipe,nil); eq(#r.settings,2)
+  eq(r.settings[1].configure,'set'); eq(r.settings[2].index,2); eq(r.settings[2].configure,'recipe incompatible with machine')
+  eq(r.settings_line,'settings: 1 set, 1 refused: entry 2 configure: recipe incompatible with machine')
+  -- build: a single build's own settings and a batch's entries, checked before anything is built.
+  fails(function() call('build',{item='assembling-machine-2',position={x=30.5,y=4.5},circuit={bogus=1}}) end,'unknown argument bogus for circuit_set')
+  fails(function() call('build',{builds={{item='assembling-machine-2',position={x=30.5,y=4.5}},{item='assembling-machine-2',position={x=34.5,y=4.5},
+    wires={{to={x=30.5,y=4.5},colour='red'}}}}}) end,'entry 2 wire 1: {to {x,y}, color red|green')
+  eq(#made,3,'nothing built')
+  p.force.recipes=saved_recipes
+  prototypes.entity=entity_protos
+  p.surface.can_place_entity,p.surface.create_entity,p.surface.find_entities_filtered=can,create,find
+end)()
 ;(function()
   -- place_ghosts, its dry run and scan on another planet by remote view (Astra 12:33: laying out a Vulcanus chain while
   -- Sonnet builds there by hand; in 2.0 a player places ghosts on another planet from the map).
