@@ -10343,6 +10343,15 @@ function check_args(action,args)
         return row[#y]
       end
       local k,closest,best=tostring(key),nil,3
+      -- Hands on another surface (Grok, shift17 10:50: processing units in a Vulcanus requester and an empty silo chest,
+      -- "transfer has no surface argument"): a player moves items by hand only where the character stands; remote view
+      -- has none. The refusal says so and names what the game moves items with there.
+      if k=='surface' and (action=='transfer' or action=='collect' or action=='feed' or action=='refuel' or action=='rearm' or action=='pickup') then
+        error(action..' has no surface: items move by hand only where your character stands, within its reach (remote view '..
+          'has no hands, as in the game). On another surface, construction and logistic robots carry items between chests '..
+          'of a logistic network there (a requester or buffer chest\'s requests, filled from provider and storage chests), '..
+          'inserters and belts move them between entities, and rockets and space platforms carry them between surfaces',0)
+      end
       for _,v in ipairs(valid) do
         local d=(v==k..'s' or k==v..'s') and 0 or (#k>=3 and v:sub(1,#k)==k) and 1 or (#k>=4 and apart(k,v)) or 3
         if d<best then closest,best=v,d end
