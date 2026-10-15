@@ -2409,6 +2409,27 @@ eq(#pw.networks,3); eq(pw.networks[1].id,1); eq(pw.networks[1].poles,3); eq(pw.n
 eq(pw.networks[1].production_kw,300); eq(pw.networks[1].consumption_kw,75); eq(pw.networks[1].producers[1].name,'steam-engine')
 eq(#pw.unpowered,2); eq(pw.unpowered[2].status,'unconnected'); eq(pw.unpowered_total,nil)
 eq(#call('observe',{scope='power',area={left_top={x=-1,y=-5},right_bottom={x=40,y=5}},limit=1}).unpowered,1)
+-- Accumulators in the area read now, per network (Astra, shift14 22:50: the networks view's sum stood still at dusk).
+do
+  local n=#world
+  for i,j in ipairs({1e6,4e6}) do
+    world[#world+1]={valid=true,type='accumulator',name='accumulator',position={x=4+i,y=2},force=p.force,electric_network_id=1,
+      energy=j,electric_buffer_size=5e6,prototype={electric_energy_source_prototype={}}}
+  end
+  -- The lines come from the networks read, with the view's age; fresh goes to it.
+  local kept_read,asked=runtime.networks.read,nil
+  runtime.networks.read=function(_,b) asked=b; return {as_of='40s ago',surfaces={{electric={{id=1,line='nauvis electric #1: ...'},{id=99,line='other'}}}}} end
+  local whole=call('observe',{scope='power',area={left_top={x=-1,y=-5},right_bottom={x=40,y=5}}})
+  eq(#whole.lines,1); eq(whole.lines_as_of,'40s ago (the networks view; its accumulator part read now)'); eq(asked.fresh,nil)
+  local acc=whole.networks[1]
+  eq(acc.accumulators,2); eq(acc.acc_mj,5); eq(acc.acc_max_mj,10); eq(acc.acc_pct,50); eq(acc.unpowered,1)
+  world[n+1].energy=0
+  eq(call('observe',{scope='power',area={left_top={x=-1,y=-5},right_bottom={x=40,y=5}},fresh=true}).networks[1].acc_pct,40)
+  eq(asked.fresh,true)
+  runtime.networks.read=kept_read
+  fails(function() call('observe',{scope='power',area={left_top={x=-1,y=-5},right_bottom={x=40,y=5}},fresh='yes'}) end,'fresh must be true or false')
+  while #world>n do table.remove(world) end
+end
 -- On a platform by name or index (Astra, 13:10): its surface, 64 tiles round its hub unless an area is given.
 do
   local kept=p.force.platforms
@@ -2702,6 +2723,11 @@ end)()
   eq(dry.dry_run,true); eq(#made,1,'nothing placed')
   fails(function() call('place_ghosts',{surface='vulcanus',platform='Sunward',entities={{name='transport-belt',position={x=6.5,y=5.5}}}}) end,
     'give platform or surface, not both')
+  -- preflight's platform is where the rocket goes, as launch's (Astra, shift14 03:09 and 04:24: refused here): the
+  -- call reaches the silo lookup there.
+  for _,name in ipairs({'preflight','launch'}) do
+    fails(function() call(name,{surface='vulcanus',platform='Sunward',position={x=5.5,y=5.5}}) end,'no entity of ours at (5.5,5.5) on vulcanus')
+  end
   -- scan there: centred on a place there.
   standing[1]={valid=true,name='transport-belt',type='transport-belt',position={x=5.5,y=5.5},direction=4,force=p.force,surface=vulcanus}
   local sc=call('scan',{surface='vulcanus',position={x=5,y=5},radius=4})

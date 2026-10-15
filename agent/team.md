@@ -198,7 +198,8 @@ already targets your character.
   and what its requesters ask (`holds iron-plate 4200, ...; requesters ask iron-plate 400 (300 short), ...`); on
   Fulgora, `networks` and `status` carry `storm`: lightning in the dark, the phase, darkness and the seconds to dusk,
   full dark, brightening and dawn; `./fh platform NAME` shows one space platform (hub free
-  slots, cargo, speed, next stop, ETA);
+  slots, cargo, speed, next stop, ETA; `hub_chunks`, `ammo_rates` per ammo type made and used over the last leg with
+  the reserve at arrival, `incoming` rockets);
   `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
   open board items) and the last 3 shifts' team numbers (`progress shift13: SPM ... | packs .../min | techs ... |
@@ -421,8 +422,9 @@ already targets your character.
   loads the list into the rocket from your inventory and our chests in reach (any chest kind, logistic chests and a
   landing pad too, nearest first; `from` for given chests) and launches
   in the same tick once every count is aboard; before the rocket is ready it waits for it. `./fh call preflight` (silo
-  `position`, optional `items`, `platform`) shows the cargo against 1000 kg and 20 slots, what a list lacks, and the
-  platform's requests from this planet less its hub and this rocket. `launch` takes `min_cargo` and `arrived: true`,
+  `position`, optional `items`, `platform`, `surface`) shows the cargo against 1000 kg and 20 slots, what a list lacks, the
+  platform's requests from this planet less its hub and this rocket, rockets already on their way to it, its ammo per
+  type over the last leg (`ammo_rates`) and the hub slots asteroid chunks take, as `fh platform NAME` does. `launch` takes `min_cargo` and `arrived: true`,
   read in the tick it launches; `fh queue submit --file plan.json --args '{"dry_run":true}'` queues nothing and shows
   the silo cargo before each launch step. `load_silo` with `"walk": true` and `from` (chests anywhere on the silo's
   surface) walks between them and the silo as many trips as the load takes, in one timed call (outcomes `loaded`,
@@ -460,7 +462,8 @@ already targets your character.
   your planet. `./fh call freight_audit --args '{"item":"agricultural-science-pack"}'` shows one item across every
   planet and platform: stock, spoil times, silo room, unmet lab and requester demand.
 - `./fh call networks --args '{"platform":"Starling"}'` gives a platform's electric network line (capacity, draw, solar
-  power where it is and its panels' output, accumulators, machines on low power); `power` takes `platform` too, and
+  power where it is and its panels' output, accumulators, machines on low power); accumulators are read at the call
+  (`acc_mj`, `acc_pct`, `acc_series` every 15 s over 3 min) and `"fresh":true` adds `draw_now_kw`; `power` takes `platform` too, and
   `inspect` on a machine, solar panel or accumulator shows its maximum under `electricity`.
 - `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list
   takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first and the landing pad's room
