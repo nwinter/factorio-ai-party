@@ -27,7 +27,8 @@ class Param {
   linearRampToValueAtTime(v) { if (v === 0) note(`fade ${this.owner}`); this.value = v; }
 }
 class FakeCtx {
-  constructor() { this.state = "running"; this.currentTime = 0; this.destination = {}; }
+  constructor() { this.state = "running"; this.t0 = Date.now(); this.destination = {}; }
+  get currentTime() { return (Date.now() - this.t0) / 1000; }  // the audio clock: the page measures what it played
   createGain() { return { gain: new Param(1), connect() {} }; }
   resume() { return Promise.resolve(); }
   async decodeAudioData(buf) {
@@ -111,6 +112,9 @@ const checks = {
     order.join(" ") === "A1 U G A2 B1",
   "an expired clip is dropped": !order.includes("X"),
   "all reports in, nothing left playing": s2.playing.length === 0 && !!s2.last_report,
+  // (viewer syndesis, shift14 23:04) the page's own measure: every clip played its length, none counted early
+  "the service counts them played whole, none ended early": !!s2.voice && !!s0.voice &&
+    s2.voice.played_last_hour - s0.voice.played_last_hour === 5 && s2.voice.ended_early_last_hour === s0.voice.ended_early_last_hour,
 };
 let ok = true;
 for (const [k, v] of Object.entries(checks)) { console.log(`${v ? "PASS" : "FAIL"} ${k}`); ok &&= v; }

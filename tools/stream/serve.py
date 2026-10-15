@@ -15,6 +15,7 @@ tools/stream/logs/director-<start>.jsonl. Only read actions, the operator `camer
 `highlights` drawing (seen by the camera clients alone, highlights.py; --no-highlights turns it off) are ever sent.
 """
 import argparse, json, mimetypes, os, sys, threading, time, traceback
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -77,8 +78,15 @@ class AudioHub:
     """
 
     MAX_CLIPS = 120
+    # Clips that ended early (viewer syndesis, shift14 23:04: "spoken lines cut off abruptly"): each report is logged
+    # (log_path, beside stream.json) and a clip counts as ended early when it played EARLY_S or more short of its
+    # length: cut (a line that mattered more), error, reload (the page loaded again while it played), no_end (no end
+    # report within its length + 5 s: the page went away), or short_end (the page reported its end early: the audio
+    # stopped by itself). The last hour's count is in the stream state (voice) and /audio/status.
+    EARLY_S = 0.5
+    WINDOW = 3600.0
 
-    def __init__(self):
+    def __init__(self, log_path=None):
         self.cond = threading.Condition()
         self.clips = {}  # id -> (bytes, ctype, meta)
         self.order = []
@@ -86,6 +94,88 @@ class AudioHub:
         self.playing = {}  # id -> {meta, started}
         self.listeners = 0
         self.last_report = None
+        self.log_path = log_path
+        self.ended = deque()  # (t, row) of the last hour's ends: {id, channel, speaker, agent, state, played, duration, early, reason}
+        self.loads = deque()  # times the page loaded
+        self._reload_log()
+
+    def _reload_log(self):
+        """The last hour's ends and page loads from the log (a service restart keeps the counter)."""
+        if not self.log_path or not os.path.exists(self.log_path):
+            return
+        cutoff = time.time() - self.WINDOW
+        try:
+            with open(self.log_path) as f:
+                lines = f.readlines()[-2000:]
+        except OSError:
+            return
+        for line in lines:
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if (r.get("t") or 0) < cutoff:
+                continue
+            if r.get("state") == "load":
+                self.loads.append(r["t"])
+            elif r.get("ended"):
+                self.ended.append((r["t"], r))
+
+    def _log(self, row):
+        if not self.log_path:
+            return
+        try:
+            with open(self.log_path, "a") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+
+    def _end(self, cid, v, state, now, played=None, duration=None, reason=None):
+        """A clip's end: how long it played against its length, logged and counted (caller holds the lock)."""
+        length = duration if duration is not None else v.get("audio_s") or v.get("duration")
+        if state == "no_end":  # how long it played is not known: the page never said
+            played = None
+        elif not played:  # no page measure (or an audio clock that did not move): the time between its reports
+            played = round(now - v["started"], 2)
+        early = state in ("cut", "error", "reload", "no_end") or (length is not None and played < float(length) - self.EARLY_S)
+        if state == "end" and early:
+            reason = "short_end"
+        row = {"t": round(now, 2), "id": cid, "ended": True, "state": state, "channel": v.get("channel"), "speaker": v.get("speaker"),
+               "agent": v.get("agent"), "played": round(float(played), 2) if played is not None else None,
+               "duration": round(float(length), 2) if length is not None else None,
+               "early": bool(early), "reason": (reason or state) if early else None}
+        self.ended.append((now, row))
+        self._log(row)
+
+    def _trim(self, now):
+        while self.ended and now - self.ended[0][0] > self.WINDOW:
+            self.ended.popleft()
+        while self.loads and now - self.loads[0] > self.WINDOW:
+            self.loads.popleft()
+
+    def early(self, now=None):
+        """The last hour: clips played, those that ended early (by reason, the agents' apart), the newest 5 of them,
+        the page's loads, and skips (expired in the queue, never played)."""
+        now = now or time.time()
+        with self.cond:
+            self._trim(now)
+            rows = [r for _, r in self.ended]
+            loads = len(self.loads)
+        early = [r for r in rows if r["early"] and r["state"] != "skip"]
+        played = [r for r in rows if r["state"] != "skip"]
+        by_reason = {}
+        for r in early:
+            by_reason[r["reason"]] = by_reason.get(r["reason"], 0) + 1
+        agents = [r for r in early if r.get("channel") == "agent"]
+        newest = [{"ago_s": round(now - r["t"]), "speaker": r.get("speaker"), "channel": r.get("channel"),
+                   "played": r["played"], "duration": r["duration"], "reason": r["reason"]} for r in early[-5:]][::-1]
+        return {"ended_early_last_hour": len(early), "agent_ended_early_last_hour": len(agents), "played_last_hour": len(played),
+                "agent_played_last_hour": sum(1 for r in played if r.get("channel") == "agent"),
+                "by_reason": by_reason, "skipped_last_hour": sum(1 for r in rows if r["state"] == "skip"),
+                "page_loads_last_hour": loads, "newest": newest,
+                "line": f"voice: {len(early)} of {len(played)} clips ended early in the last hour"
+                        + (f" ({', '.join(f'{k} {n}' for k, n in sorted(by_reason.items()))})" if by_reason else "")
+                        + f"; agents {len(agents)} of {sum(1 for r in played if r.get('channel') == 'agent')}"}
 
     def push(self, meta, audio, ctype):
         with self.cond:
@@ -105,18 +195,39 @@ class AudioHub:
             self.cond.wait_for(lambda: self.seq != seq, timeout=timeout)
             return self.seq, [self.clips[c][2] for c in self.order if int(c.split("-")[1]) > seq and c in self.clips]
 
-    def played(self, report):
+    def played(self, report, now=None):
         cid, st = report.get("id"), report.get("state")
+        now = now or time.time()
+
+        def num(k):
+            v = report.get(k)
+            return float(v) if isinstance(v, (int, float)) else None
         with self.cond:
-            self.last_report = time.time()
-            if cid in self.clips and st == "start":
-                self.playing[cid] = {"started": time.time(), **self.clips[cid][2]}
-            elif st in ("end", "skip", "error", "cut"):  # cut: a line that mattered more faded this one out
+            self.last_report = now
+            if st == "load":  # the page (re)loaded: what it was playing ended there
+                self.loads.append(now)
+                self._log({"t": round(now, 2), "state": "load"})
+                for k, v in list(self.playing.items()):
+                    self._end(k, v, "reload", now)
+                    self.playing.pop(k)
+            elif cid in self.clips and st == "start":
+                self.playing[cid] = {"started": now, **self.clips[cid][2], "audio_s": num("duration")}
+            elif st in ("end", "error", "cut"):  # cut: a line that mattered more faded this one out
+                v = self.playing.pop(cid, None)
+                if v:
+                    self._end(cid, v, st, now, num("played"), num("duration"))
+            elif st == "skip":  # expired in the page's queue: never played
                 self.playing.pop(cid, None)
-            # a page that reloads mid-clip never reports the end; forget clips well past their length
-            now = time.time()
+                meta = self.clips.get(cid, (None, None, {}))[2]
+                row = {"t": round(now, 2), "id": cid, "ended": True, "state": "skip", "channel": meta.get("channel"),
+                       "speaker": meta.get("speaker"), "agent": meta.get("agent"), "played": 0.0,
+                       "duration": meta.get("duration"), "early": False, "reason": None}
+                self.ended.append((now, row))
+                self._log(row)
+            # a page that goes away mid-clip never reports the end; forget clips well past their length
             for k, v in list(self.playing.items()):
-                if now - v["started"] > float(v.get("duration") or 20) + 5:
+                if now - v["started"] > float(v.get("audio_s") or v.get("duration") or 20) + 5:
+                    self._end(k, v, "no_end", now, played=None)
                     self.playing.pop(k)
 
     def status(self):
@@ -125,8 +236,10 @@ class AudioHub:
             playing = [{"id": k, "channel": v.get("channel"), "speaker": v.get("speaker"),
                         "ends_in": round(max(0.0, v["started"] + float(v.get("duration") or 0) - now), 2)}
                        for k, v in self.playing.items() if now - v["started"] <= float(v.get("duration") or 20) + 5]
-            return {"listeners": self.listeners, "playing": playing, "last_report": self.last_report,
-                    "clips": len(self.order)}
+            out = {"listeners": self.listeners, "playing": playing, "last_report": self.last_report,
+                   "clips": len(self.order)}
+        out["voice"] = self.early(now)
+        return out
 
 
 def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None, director=None):
@@ -428,7 +541,9 @@ def main():
     if feed:
         feed.start()
     analyst = AnalystBoard()
-    audio = AudioHub()  # the voice clips; the director reads which agent line is playing (say look= cues)
+    # the voice clips; the director reads which agent line is playing (say look= cues). The page's playback reports go
+    # to audio-played.jsonl beside stream.json (the clips that ended early, and why)
+    audio = AudioHub(os.path.join(os.path.dirname(os.path.abspath(a.run)), "audio-played.jsonl") if a.run and not a.mock else None)
     follow = None
     if mode == "onecam":  # an operator follow, kept beside stream.json so a restart keeps it (follow.py)
         from follow import FollowControl
@@ -470,6 +585,7 @@ def main():
                     follow.sync(now)
                 with audio.cond:  # agent lines playing now (the page's start reports): onecam cues their looks
                     snap["voiced"] = [dict(v, id=k) for k, v in audio.playing.items() if v.get("channel") == "agent"]
+                snap["voice"] = audio.early(now)  # clips that ended early in the last hour, and why (operator read)
                 cams = director.step(snap, now, segments.camera())
                 if follow:
                     snap["follow"] = director.follow_info(now)  # the hosts: who the operator pinned on air, and why
