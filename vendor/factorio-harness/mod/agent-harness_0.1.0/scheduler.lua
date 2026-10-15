@@ -20,39 +20,52 @@ return function(api)
   local function revision(q,a)
     if a.expected_revision~=nil then assert(a.expected_revision==q.revision,'queue revision conflict; inspect queue_status') end
   end
-  local function steps(a)
+  local function checked(path, fn)
+    local ok, result = pcall(fn)
+    if not ok then error(path..': '..tostring(result):gsub('^[^:]*:%d+: ', ''), 0) end
+    return result
+  end
+  local function steps(a,p,path)
+    path=path or 'steps'
     assert(type(a.steps)=='table' and #a.steps<=MAX_PENDING,'steps must be an array of at most 128 entries')
     local out,corrected={},{}
     for i,step in ipairs(a.steps) do
-      assert(type(step)=='table' and type(step.action)=='string','each step needs an action')
-      -- Wrong argument names and position/positions mix-ups run as a direct call would (aliases.lua).
-      local action,args=step.action,step.args
-      if api.fix_args and type(args)=='table' then
-        local ok,fixed_action,fixed_args,fix=pcall(api.fix_args,action,args)
-        if ok and fix then
-          action,args=fixed_action,fixed_args
-          if not fix.quiet then corrected[#corrected+1]='step '..i..': '..fix.call..' ('..table.concat(fix.notes,'; ')..')' end
-        elseif ok and fixed_args~=args then action,args=fixed_action,fixed_args end
+      local where=path..'['..i..']'
+      if type(step)=='table' then
+        where=where..' ('..tostring(step.action)..(type(step.label)=='string' and ', label '..string.format('%q',step.label:sub(1,64)) or '')..')'
       end
-      assert(not action:match('^queue_') and not forbidden[action],'action is not queueable')
-      assert(action=='wait_ticks' or action=='wait_until' or api.handlers[action],'unknown action in plan')
-      assert(args==nil or type(args)=='table','step args must be an object')
-      if api.check_args then api.check_args(action,args) end
-      assert(step.wait==nil or type(step.wait)=='boolean','step wait must be boolean')
-      assert(step.label==nil or (type(step.label)=='string' and #step.label<=64),'step label must be a short string')
-      local on_fail=step.on_fail
-      assert(step.on_short==nil or step.on_short=='skip','on_short must be skip')
-      assert(on_fail==nil or on_fail=='abort' or on_fail=='skip' or (type(on_fail)=='string' and on_fail:match('^goto:.+')),'on_fail must be abort, skip or goto:<label>')
-      if step.action=='wait_ticks' then
-        local ticks=step.args and step.args.ticks
-        assert(type(ticks)=='number' and ticks==math.floor(ticks) and ticks>=1 and ticks<=54000,'wait_ticks requires ticks 1..54000')
-      end
-      if step.action=='wait_until' then
-        local timeout=step.args and step.args.timeout
-        assert(timeout==nil or (type(timeout)=='number' and timeout==math.floor(timeout) and timeout>=1 and timeout<=54000),'wait_until timeout must be 1..54000 ticks')
-        api.validate_condition(step.args)
-      end
-      out[#out+1]={action=action,args=args or {},wait=step.wait~=false,label=step.label,on_fail=on_fail,on_short=step.on_short}
+      checked(where,function()
+        assert(type(step)=='table' and type(step.action)=='string','each step needs an action')
+        -- Wrong argument names and position/positions mix-ups run as a direct call would (aliases.lua).
+        local action,args=step.action,step.args
+        if api.fix_args and type(args)=='table' then
+          local ok,fixed_action,fixed_args,fix=pcall(api.fix_args,action,args)
+          if ok and fix then
+            action,args=fixed_action,fixed_args
+            if not fix.quiet then corrected[#corrected+1]='step '..i..': '..fix.call..' ('..table.concat(fix.notes,'; ')..')' end
+          elseif ok and fixed_args~=args then action,args=fixed_action,fixed_args end
+        end
+        assert(not action:match('^queue_') and not forbidden[action],'action is not queueable')
+        assert(action=='wait_ticks' or action=='wait_until' or api.handlers[action],'unknown action in plan')
+        assert(args==nil or type(args)=='table','step args must be an object')
+        if api.check_args then checked('args',function() api.check_args(action,args) end) end
+        if p and api.check_action then api.check_action(p.index,action,args) end
+        assert(step.wait==nil or type(step.wait)=='boolean','step wait must be boolean')
+        assert(step.label==nil or (type(step.label)=='string' and #step.label<=64),'label must be a string of at most 64 bytes')
+        local on_fail=step.on_fail
+        assert(step.on_short==nil or step.on_short=='skip','on_short must be skip')
+        assert(on_fail==nil or on_fail=='abort' or on_fail=='skip' or (type(on_fail)=='string' and on_fail:match('^goto:.+')),'on_fail must be abort, skip or goto:<label>')
+        if action=='wait_ticks' then
+          local ticks=args and args.ticks
+          assert(type(ticks)=='number' and ticks==math.floor(ticks) and ticks>=1 and ticks<=54000,'wait_ticks requires ticks 1..54000')
+        end
+        if action=='wait_until' then
+          local timeout=args and args.timeout
+          assert(timeout==nil or (type(timeout)=='number' and timeout==math.floor(timeout) and timeout>=1 and timeout<=54000),'wait_until timeout must be 1..54000 ticks')
+          checked('args',function() api.validate_condition(args) end)
+        end
+        out[#out+1]={action=action,args=args or {},wait=step.wait~=false,label=step.label,on_fail=on_fail,on_short=step.on_short}
+      end)
     end
     return out,#corrected>0 and corrected or nil
   end
@@ -95,16 +108,19 @@ return function(api)
     for _,step in ipairs(items) do step.plan=q.plan_seq end
   end
   -- Guards: {when=<condition>, goto='label' | steps=[...] | neither (abort)}.
-  local function guards(a)
+  local function guards(a,p)
     if a.guards==nil then return {} end
     assert(type(a.guards)=='table' and #a.guards<=MAX_GUARDS,'guards must be an array of at most '..MAX_GUARDS)
     local out={}
-    for _,g in ipairs(a.guards) do
-      assert(type(g)=='table','each guard is {when, goto|steps}')
-      api.validate_condition(g.when)
-      assert(g['goto']==nil or type(g['goto'])=='string','guard goto must be a label')
-      assert(not (g['goto'] and g.steps),'a guard takes goto or steps, not both')
-      out[#out+1]={when=g.when,['goto']=g['goto'],steps=g.steps and steps({steps=g.steps}) or nil}
+    for i,g in ipairs(a.guards) do
+      checked('guards['..i..']',function()
+        assert(type(g)=='table','each guard is {when, goto|steps}')
+        checked('when',function() api.validate_condition(g.when) end)
+        if p and api.check_action then api.check_action(p.index,'wait_until',g.when) end
+        assert(g['goto']==nil or type(g['goto'])=='string','guard goto must be a label')
+        assert(not (g['goto'] and g.steps),'a guard takes goto or steps, not both')
+        out[#out+1]={when=g.when,['goto']=g['goto'],steps=g.steps and steps({steps=g.steps},p) or nil}
+      end)
     end
     return out
   end
@@ -444,8 +460,8 @@ return function(api)
     -- cargo its steps would leave before each launch (rocketload.lua M.simulate).
     assert(a.dry_run==nil or type(a.dry_run)=='boolean','dry_run must be true or false')
     if a.dry_run then
-      local items,corrected=steps(a)
-      guards(a)
+      local items,corrected=steps(a,p)
+      guards(a,p)
       assert(#items<=MAX_PENDING,'queue capacity exceeded')
       local out={dry_run=true,queued=false,steps=#items}
       if api.simulate then
@@ -455,8 +471,8 @@ return function(api)
       return with(out,corrected)
     end
     local q=queue(p.index); revision(q,a)
-    local items,corrected=steps(a)
-    local new_guards=guards(a)
+    local items,corrected=steps(a,p)
+    local new_guards=guards(a,p)
     preempt(p,q)
     assert(a.mode==nil or a.mode=='append' or a.mode=='replace','mode must be append or replace')
     assert((a.mode=='replace' and 0 or #q.pending)+#items<=MAX_PENDING,'queue capacity exceeded')
@@ -476,7 +492,7 @@ return function(api)
   end
   function M.handlers.queue_repeat(p,a)
     local q=queue(p.index); revision(q,a)
-    local items,corrected=steps(a)
+    local items,corrected=steps(a,p)
     assert(#items>0,'repeating plan must not be empty')
     assert(total(items)<=MAX_BYTES,'queue argument byte budget exceeded')
     local interval=a.interval_ticks or 1800
@@ -508,7 +524,7 @@ return function(api)
     assert(type(index)=='number' and index==math.floor(index) and index>=1 and index<=#q.pending+1,'index outside pending queue (1-based)')
     local remove=a.remove or 0
     assert(type(remove)=='number' and remove==math.floor(remove) and remove>=0 and remove<=#q.pending-index+1,'invalid remove count')
-    local items,corrected=steps(a)
+    local items,corrected=steps(a,p)
     assert(#q.pending-remove+#items<=MAX_PENDING,'queue capacity exceeded')
     local size=total(q.pending)+total(items)
     for n=index,index+remove-1 do size=size-bytes(q.pending[n],0) end
@@ -603,7 +619,11 @@ return function(api)
             q.revision=q.revision+1
             -- Every step started counts as the agent's (selfview.lua my_hour).
             if api.on_step then pcall(api.on_step,index,step.action) end
-            if step.action=='wait_ticks' then
+            local allowed,why=true,nil
+            if api.check_action then allowed,why=pcall(api.check_action,index,step.action,step.args) end
+            if not allowed then
+              fail(q,p,step,{reason=api.reason and api.reason(why) or tostring(why)})
+            elseif step.action=='wait_ticks' then
               step.until_tick=game.tick+step.args.ticks
               q.current=step
             elseif step.action=='wait_until' then

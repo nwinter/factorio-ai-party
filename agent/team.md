@@ -208,6 +208,8 @@ already targets your character.
   `./fh queue status` shows the active step (`running_s`), the next one, and the plan you last submitted (`plan`: steps
   done, ok, failed; `history`: its own results); `./fh queue status orders` lists the standing orders' steps too;
   `--args '{"history":"all","pending":10}'` shows more.
+- `transfer {position, direction, items:{"iron-plate":50,"coal":10}, walk?}` moves multiple items at one target, with per-item `entries`; `trace {surface, position}` and `labs {surface, position?, radius?}` read that surface; `supply {item:"lubricant"}` reads fluid stock/flow and makers/users.
+- Raw `fh call wait_until` accepts word-form `until` and `ticks`/`timeout_ticks` aliases; queue errors name the step path. Aboard, queues accept allowed remote steps, `configure {platform}` works, and `observe` reports surroundings with `player.body:"none"`.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` (and `feed` or `collect {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one

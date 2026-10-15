@@ -5,7 +5,8 @@
 return function(api)
   local M = {}
   local MAX_LABS, MAX_GROUPS, NEAR = 256, 8, 5.5
-  M.schema = {labs = {position='optional charted centre (default character)', radius='1..256 (default 96)',
+  M.schema = {labs = {surface='optional surface name: visible labs there, up to 256; position limits the read to an area',
+    position='optional charted centre (default character without surface; with surface, all visible labs there)', radius='1..256 (default 96); on another surface requires position',
     returns='research line (name, progress, eta at the working labs) and per lab group: labs working, packs missing (labs lacking each), feeders idle/starved and why, what their belts/chests hold'}}
   local function short(name) return (name:gsub('%-science%-pack$', '')) end
   local function fmt(s)
@@ -30,24 +31,55 @@ return function(api)
   end
   local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
   function M.view(p, a)
-    local centre = api.center(p, a)
-    local radius = api.integer(a.radius, 96, 1, 256, 'radius')
     local force, surface = p.force, p.surface
+    if a.surface~=nil then
+      assert(type(a.surface)=='string','surface must be a surface name')
+      surface=game.get_surface(a.surface)
+      assert(surface,'no surface '..a.surface)
+    end
+    local centre
+    if a.position~=nil or a.surface==nil or a.radius~=nil then
+      assert(surface==p.surface or a.position~=nil,'radius on another surface requires position')
+      local view=setmetatable({surface=surface},{__index=p})
+      centre=api.center(view,a)
+    end
+    local radius = api.integer(a.radius, 96, 1, 256, 'radius')
     local tech = force.current_research
     local packs = {}
     for _, ing in ipairs(tech and tech.research_unit_ingredients or {}) do packs[#packs+1] = ing.name end
-    local labs = surface.find_entities_filtered{position=centre, radius=radius, type='lab', force=force, limit=MAX_LABS}
+    local found = surface.find_entities_filtered{position=centre, radius=centre and radius or nil, type='lab', force=force, limit=MAX_LABS}
+    local labs, visible = {}, {}
+    local platform=surface.platform
+    local own_platform=platform and platform.force==force
+    local function seen(e)
+      if a.surface==nil or own_platform then return true end
+      local cx,cy=math.floor(e.position.x/32),math.floor(e.position.y/32)
+      visible[cx]=visible[cx] or {}
+      if visible[cx][cy]==nil then visible[cx][cy]=force.is_chunk_visible(surface,{x=cx,y=cy}) end
+      return visible[cx][cy]
+    end
+    for _,e in ipairs(found) do if seen(e) then labs[#labs+1]=e end end
     -- Groups: labs within NEAR tiles of one another (chains of adjacent labs).
-    local group_of, groups = {}, {}
+    local group_of, groups, cells, positions = {}, {}, {}, {}
+    for i,e in ipairs(labs) do
+      local pos=e.position; positions[i]=pos
+      local cx,cy=math.floor(pos.x/NEAR),math.floor(pos.y/NEAR)
+      cells[cx]=cells[cx] or {}; cells[cx][cy]=cells[cx][cy] or {}
+      local cell=cells[cx][cy]; cell[#cell+1]=i
+    end
     for i, e in ipairs(labs) do
       if not group_of[i] then
         local g = {i}; group_of[i] = g; groups[#groups+1] = g
         local k = 1
         while k <= #g do
-          local x = labs[g[k]].position
-          for j, f in ipairs(labs) do
-            if not group_of[j] and math.abs(f.position.x - x.x) <= NEAR and math.abs(f.position.y - x.y) <= NEAR then group_of[j] = g; g[#g+1] = j end
-          end
+          local x = positions[g[k]]
+          local cx,cy=math.floor(x.x/NEAR),math.floor(x.y/NEAR)
+          for dy=-1,1 do for dx=-1,1 do
+            for _,j in ipairs(cells[cx+dx] and cells[cx+dx][cy+dy] or {}) do
+              local pos=positions[j]
+              if not group_of[j] and math.abs(pos.x-x.x)<=NEAR and math.abs(pos.y-x.y)<=NEAR then group_of[j]=g; g[#g+1]=j end
+            end
+          end end
           k = k + 1
         end
       end
@@ -77,9 +109,10 @@ return function(api)
         local feeders, idle, sources, chained = 0, {}, {}, 0
         for _, ins in pairs(surface.find_entities_filtered{area=box, type='inserter', force=force, limit=128}) do
           local ok, target = pcall(function() return ins.drop_target end)
-          if ok and target and target.type == 'lab' and member[target.unit_number] then
+          if ok and target and target.type == 'lab' and member[target.unit_number] and seen(ins) then
             feeders = feeders + 1
             local src = ins.pickup_target
+            if src and not seen(src) then src=nil end
             if src and src.type == 'lab' then chained = chained + 1
             elseif src and not sources[src.unit_number or at(src.position)] then
               sources[src.unit_number or at(src.position)] = src; sources[#sources+1] = src
@@ -100,14 +133,14 @@ return function(api)
         for _, name in ipairs(packs) do
           if (seen[name] or 0) > 0 then carried[#carried+1] = short(name) .. ' ' .. seen[name] else absent[#absent+1] = short(name) end
         end
-        if feeders == 0 then feed[1] = 'no inserters feed these labs (hand feed: feed radius=R)'
+        if feeders == 0 then feed[1] = 'no visible inserters feed these labs'
         elseif #absent > 0 and #sources > 0 then feed[#feed+1] = 'no ' .. table.concat(absent, ', ') .. ' on their ' .. #sources .. ' belts/chests' end
         if #carried > 0 then feed[#feed+1] = 'sources hold ' .. table.concat(carried, ', ') end
         lines[#lines+1] = table.concat(parts, ', ') .. '; feeders: ' .. table.concat(feed, '; ')
       end
     end
     local research
-    if not tech then research = 'none: nothing queued (fh call research technology=NAME)'
+    if not tech then research = 'none: nothing queued'
     else
       local progress = force.research_progress or 0
       local names = {}
@@ -120,7 +153,9 @@ return function(api)
         research = research .. string.format(', eta %s at %d working labs', fmt(math.ceil(left)), working)
       else research = research .. ', stalled: no lab is working' end
     end
-    return {research=research, labs=#labs .. (#labs >= MAX_LABS and '+' or '') .. ' in ' .. #groups .. ' groups' .. (#groups > MAX_GROUPS and ' (largest ' .. MAX_GROUPS .. ' shown)' or ''), groups=lines}
+    return {surface=surface.name,position=centre,radius=centre and radius or nil,research=research,
+      labs=#labs .. ' in ' .. #groups .. ' groups' .. (#groups > MAX_GROUPS and ' (largest ' .. MAX_GROUPS .. ' shown)' or ''), groups=lines,
+      limited=#found>=MAX_LABS and 'lab search reached 256 entities; counts cover the visible labs among those found' or nil}
   end
 
   -- science: one science pack's flow over the whole surface, counted the same

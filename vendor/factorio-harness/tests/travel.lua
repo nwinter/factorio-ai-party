@@ -224,6 +224,36 @@ eq(b.travel.state,'aboard')
 cameras.set{player=2,position={x=5,y=5},surface='vulcanus',smooth=false}
 eq(director.surface,surfaces.vulcanus); eq(cameras.describe(2).surface,'vulcanus')
 fails(function() cameras.set{player=2,position={x=5,y=5},surface='moon'} end,'no surface named moon')
+-- friction6: aboard plans accept bodyless steps, reject body actions before queuing,
+-- and check again at execution if the agent's travel state changes.
+do
+  local before=b.travel
+  b.travel={state='aboard',platform='alpha-2'}
+  bots.check_action(b.index,'configure',{platform='alpha-2'})
+  bots.check_action(b.index,'configure',{surface='nauvis'})
+  bots.check_action(b.index,'queue_submit',{})
+  fails(function() bots.check_action(b.index,'configure',{}) end,'remote view only')
+  local state,dropped={},0
+  local s=dofile('mod/agent-harness_0.1.0/scheduler.lua'){
+    state=function() return state end,player=function() return {index=b.index} end,
+    handlers={drop=function() dropped=dropped+1; return {} end,craft=function() error('body action ran') end},
+    check_action=bots.check_action,validate_condition=function() end,condition=function() return true end,
+    stop=function() end,busy=function() return false end}
+  local p={index=b.index}
+  local steps={{action='wait_until',args={['until']='platform_arrived',platform='alpha-2'}},{action='drop',args={platform='alpha-2'}}}
+  s.handlers.queue_submit(p,{steps=steps})
+  s.tick(); game.tick=game.tick+1; s.tick()
+  eq(dropped,1)
+  local rev=s.handlers.queue_status(p).revision
+  fails(function() s.handlers.queue_submit(p,{steps={steps[1],{action='craft',args={recipe='iron-gear-wheel'}}}}) end,'steps[2] (craft)')
+  eq(s.handlers.queue_status(p).revision,rev)
+  fails(function() s.handlers.queue_submit(p,{steps={},guards={{when={['until']='crafting_done'}}}}) end,'guards[1]')
+  s.handlers.queue_submit(p,{steps={{action='drop'}}})
+  b.travel.state='descending'; game.tick=game.tick+1; s.tick()
+  eq(dropped,1); eq(s.handlers.queue_status(p).paused,true)
+  b.travel=before
+end
+
 -- Removing a bot in transit drops its kit.
 bots.remove('astra'); eq(kits[#kits].valid,false)
 print('travel: ok')

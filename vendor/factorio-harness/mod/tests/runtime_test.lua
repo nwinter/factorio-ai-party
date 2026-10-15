@@ -2072,7 +2072,7 @@ end
 -- radius alone: around the character (round1650d: Grok, twice in shift13).
 eq(call('observe',{scope='supply',item='transport-belt',radius=5}).item,'transport-belt')
 fails(function() call('observe',{scope='supply',item='transport-belt',pack='x'}) end,'unknown argument pack for supply; valid: item, near, radius, surface')
-fails(function() call('observe',{scope='supply',item='nope'}) end,'item must be an item name')
+fails(function() call('observe',{scope='supply',item='nope'}) end,'item must be an item or fluid name')
 -- nearest sorts by distance, skips fogged chunks and the character itself.
 p.position={x=0,y=0}
 p.force.is_chunk_visible=function(_,chunk) return chunk.x<1 end
@@ -4110,7 +4110,7 @@ end)()
   -- to on another entity than position's (Muse 17:18:55 named the silo twice; on its own tiles the call runs as a
   -- give there): a move between the two, which pick makes.
   fails(function() call('transfer',{position={x=15.5,y=59.5},item='rocket-fuel',count=50,direction='to_entity',to={x=30.5,y=60.5},inventory='rocket_silo_rocket'}) end,
-    [[items and to go with pick (pick + positions + item or items + to: take at the first listed place holding it, give at to); for this call: fh call transfer --args '{"count":50,"item":"rocket-fuel","pick":"first_with_stock","positions":[{"x":15.5,"y":59.5}],"to":{"x":30.5,"y":60.5}}']])
+    [[to goes with pick (pick + positions + item or items + to: take at the first listed place holding it, give at to); for this call: fh call transfer --args '{"count":50,"item":"rocket-fuel","pick":"first_with_stock","positions":[{"x":15.5,"y":59.5}],"to":{"x":30.5,"y":60.5}}']])
   -- items: one item a call.
   fails(function() call('transfer',{position={x=35.5,y=35.5},direction='to_player',items={pipe=16,['small-electric-pole']=8}}) end,
     [[for this call: fh call transfer --args '{"count":16,"direction":"to_player","item":"pipe","position":{"x":35.5,"y":35.5}}' (transfer moves one item a call: 2 named, one call each; or pick with items, the first a place holds)]])

@@ -175,4 +175,41 @@ eq(astra('configure',{surface='vulcanus',position={x=2.5,y=135.5},recipe='rocket
 recipe_now=nil; assembler.crafting_progress=0.4
 fails(function() astra('configure',{surface='vulcanus',position={x=2.5,y=135.5},recipe='rocket-fuel'}) end,'remote recipe change')
 assembler.crafting_progress=0
+-- friction6: position traces select the named surface, including while aboard.
+do
+  local b=runtime.bots.record(runtime.bots.index_of('astra'))
+  local saved=b.character
+  prototypes.entity.character={name='character',type='character'}
+  prototypes.space_location={vulcanus={}}
+  b.character=nil; b.surface='platform-1'; b.position={x=0,y=0}; surfaces['platform-1']=sunward.surface
+  b.travel={state='aboard',platform='Sunward',platform_index=1}
+  sunward.surface.platform=sunward; hub.position={x=0,y=0}; hub.surface=sunward.surface
+  sunward.surface.find_entities_filtered=function() return {} end
+  local r=astra('observe',{radius=1,limit=1,exclude_resources=true,entity_types={'character'},peek=true})
+  eq(r.player.body,'none'); eq(r.player.surface,'platform-1'); eq(r.player.inventory,nil); eq(r.player.health,nil)
+  local plan=astra('queue_submit',{start=false,steps={{action='wait_until',args={['until']='platform_arrived',platform='Sunward',location='vulcanus'}},
+    {action='drop',args={platform='Sunward',items={['solid-fuel']=1}}}}})
+  eq(plan.pending_count,2)
+  fails(function() astra('queue_submit',{steps={{action='craft',args={recipe='rocket-fuel'}}}}) end,'steps[1] (craft)')
+  eq(astra('queue_status',{}).pending_count,2)
+  astra('queue_cancel',{})
+  -- A remote configure genuinely reaches its handler (a planet and a platform).
+  r=astra('configure',{surface='vulcanus',position=silo.position,auto_requests=true})
+  eq(r.settings.auto_requests,true)
+  local find=sunward.surface.find_entities_filtered
+  sunward.surface.find_entities_filtered=function() return {assembler} end
+  recipe_now=nil
+  r=astra('configure',{platform='Sunward',position=assembler.position,recipe='rocket-fuel'})
+  eq(r.recipe,'rocket-fuel')
+  sunward.surface.find_entities_filtered=find
+  -- Trace's handler sees a proxy on the target surface; no body required.
+  local trace=runtime.trace.trace
+  local called=0
+  runtime.trace.trace=function(p,a) called=called+1; eq(p.surface,vulcanus); eq(a.surface,nil); return {surface=p.surface.name} end
+  r=astra('trace',{surface='vulcanus',position=assembler.position}); eq(r.surface,'vulcanus'); eq(called,1)
+  fails(function() astra('trace',{surface='vulcanus',platform='Sunward',position=assembler.position}) end,'give platform or surface, not both')
+  runtime.trace.trace=trace
+  b.character=saved; b.travel=nil
+end
+
 print('silosurface: ok')

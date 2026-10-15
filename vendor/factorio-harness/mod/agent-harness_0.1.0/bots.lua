@@ -382,11 +382,11 @@ return function(api)
   -- Aboard, the bot does what a player in the hub can: remote view.
   local ABOARD = {status=true, describe=true, platforms=true, platform_create=true, platform_schedule=true, land=true, drop=true, drops=true, game_alerts=true,
     review=true, networks=true, boilers=true, research=true, research_next=true, technologies=true, recipes=true, say=true, chat=true, confess=true, confessions=true,
-    profile=true, clock=true, advance=true, sleep=true, sleep_check=true, wait_ticks=true, queue_status=true, queue_cancel=true,
+    profile=true, clock=true, advance=true, sleep=true, sleep_check=true, wait_ticks=true, queue_status=true, queue_cancel=true, queue_submit=true, queue_repeat=true, queue_edit=true, queue_resume=true,
     blueprint_import=true, blueprint_list=true, blueprint_export=true, blueprint_delete=true, cameras=true, profiles=true, ports=true, cargo=true}
   local ON_PLATFORM = {place_ghosts=true, deconstruct=true, cancel_deconstruction=true, paste=true, blueprint_place=true, grid=true, scan=true}
   -- Remote view of a platform or a planet by name (platform= or surface=).
-  local REMOTE = {inspect=true, circuit_set=true, circuit=true, wire=true, trace=true, ores=true, preflight=true}
+  local REMOTE = {configure=true, inspect=true, circuit_set=true, circuit=true, wire=true, trace=true, ores=true, preflight=true}
   local VIEWS = {platforms=true, sleep_check=true}
   -- Astra, 18:16: aboard, tell, operator, scan with platform, science and wait_until platform_arrived were refused while
   -- the refusal said grid/scan work. The team's calls work aboard, as every read does (the runtime's read-only list,
