@@ -87,9 +87,21 @@ return function(api)
       if x.count ~= y.count then return x.count > y.count end
       return x.position.x < y.position.x
     end)
+    -- Cargo pods from our platforms still in the air toward this surface (pods.lua; Grok, shift13: 519 packs were in
+    -- the air while where_is and the pad showed none): each with its platform, state, count and where it lands.
+    local flying = {}
+    for _, r in ipairs(api.pods and api.pods.in_flight(p.force.name, surface.name) or {}) do
+      local n = 0
+      for k, v in pairs(r.items) do if k == item or k:match('^([^@]+)') == item then n = n + v end end
+      if n > 0 then
+        add('in_flight', n)
+        flying[#flying+1] = {platform=r.platform, state=r.state, count=n,
+          lands=r.pad and string.format('landing pad (%g,%g)', r.pad.x, r.pad.y) or 'the ground (no pad takes it)'}
+      end
+    end
     local total = 0
     for _, n in pairs(totals) do total = total + n end
-    local out = {item=item, surface=surface.name, total=total, by_kind=totals, places={}, more=0}
+    local out = {item=item, surface=surface.name, total=total, by_kind=totals, places={}, more=0, in_flight=#flying > 0 and flying or nil}
     for i, e in ipairs(places) do
       if i <= limit then out.places[i] = e else out.more = out.more + 1 end
     end
@@ -99,7 +111,7 @@ return function(api)
   end
   M.schema = {
     where_is = {item='item name', limit='1..50 places (default 15)', surface='optional surface name (default yours)',
-      returns='total and by_kind (chest, lab, machine, vehicle, pad, hub, roboport, belts, inserter_hands, characters); places: each chest, lab, machine, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, distance}, nearest first (belts and inserter hands as totals only); more: places past the limit. Read only'},
+      returns='total and by_kind (chest, lab, machine, vehicle, pad, hub, roboport, belts, inserter_hands, characters, in_flight); places: each chest, lab, machine, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, distance}, nearest first (belts and inserter hands as totals only); more: places past the limit; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
   }
   return M
 end

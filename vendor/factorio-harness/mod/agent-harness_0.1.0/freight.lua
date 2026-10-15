@@ -15,8 +15,8 @@
 -- spoilable item's fall matched, in the same second, to the rise of what it
 -- spoils into. The last KEEP segments are kept per platform.
 -- Cargo pods (Astra, 21:20: left the hub is not delivered; she reconciled late pods at five stops): while a platform is
--- at a stop its surface is looked at every POD_TICKS for cargo pods leaving its hub, each followed (its surface, place
--- and cargo) while it exists, as drops.lua follows a drop's pod. Gone after reaching the planet's surface: received by
+-- at a stop, the cargo pods leaving its hub (pods.lua's look at its surface once a second; without pods.lua, a look of
+-- our own) are each followed (its surface, place and cargo) while it exists, as drops.lua follows a drop's pod. Gone after reaching the planet's surface: received by
 -- the landing pad it was sent to, or landed as a cargo pod container where none was; gone before leaving the
 -- platform: said so. A stop then says how many pods went down with what, what each pad received, and the pods still
 -- in flight (their unit numbers and cargo).
@@ -30,7 +30,7 @@ return function(api)
     return s .. 's'
   end
   M.secs = secs
-  local POD_TICKS, POD_PENDING = 15, 64
+  local POD_TICKS, POD_PENDING = 60, 64
   local function xy(pos) return {x=math.floor(pos.x * 10 + 0.5) / 10, y=math.floor(pos.y * 10 + 0.5) / 10} end
 
   -- Where a platform is ------------------------------------------------------
@@ -255,8 +255,10 @@ return function(api)
     local out = {}
     for _, e in ipairs(ev.list) do
       if e.seq > since and e.at == planet and e.force == force and game.tick - e.tick <= EVENT_TICKS then
+        -- An arrival names its cargo pods still in the air toward this planet (pods.lua; Grok, shift13).
+        local pods = e.kind == 'arrived' and api.pods and try(function() return api.pods.line(force, e.at, e.platform) end)
         out[#out+1] = e.kind == 'arrived'
-          and string.format('platform %s stopped at %s, your planet, %s ago', e.platform, e.at, secs(game.tick - e.tick))
+          and string.format('platform %s stopped at %s, your planet, %s ago%s', e.platform, e.at, secs(game.tick - e.tick), pods and '; ' .. pods or '')
           or string.format('platform %s left %s, your planet, %s ago%s', e.platform, e.at, secs(game.tick - e.tick), e.to and ', flying to ' .. e.to or '')
       end
     end
@@ -367,7 +369,10 @@ return function(api)
     if not (seg and seg.kind == 'stop' and not seg['end']) then return end
     local s, hub = try(function() return pl.surface end), try(function() return pl.hub end)
     if not (s and hub) then return end
-    for _, pod in ipairs(try(function() return s.find_entities_filtered{type='cargo-pod'} end) or {}) do
+    local found
+    if api.pods and api.pods.from then found = try(function() return api.pods.from(pl.force.name, pl.name) end)
+    else found = try(function() return s.find_entities_filtered{type='cargo-pod'} end) end
+    for _, pod in ipairs(found or {}) do
       local known = false
       for _, p in ipairs(rec.pods) do if try(function() return p.pod == pod end) then known = true; break end end
       if not known and #rec.pods < POD_PENDING and is_mine(pod, pl, hub) then

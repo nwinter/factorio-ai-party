@@ -115,11 +115,15 @@ return function(api)
     local ready = st ~= nil and st == defines.rocket_silo_status.rocket_ready
     local parts = try(function() return e.rocket_parts end) or 0
     local required = try(function() return e.prototype.rocket_parts_required end) or 0
-    local now, next_parts
+    -- A built rocket's own parts are said with it (shift14 21:20: Grok read rocket_ready beside next_parts 6/50, 27 s
+    -- after a launch, as a rocket with 6 of its parts; it was the rocket whose 50 parts the silo had made while the one
+    -- before waited, and it launched): built_parts, and the count after it as the rocket after it's.
+    local now, next_parts, built
+    if ready or RISING[state] then built = required .. '/' .. required end
     if ready then
-      now = 'rocket ready to launch, not launched'
+      now = string.format('rocket built (%s parts) and ready to launch, not launched', built)
     elseif RISING[state] then
-      now = string.format('rocket built, rising into place (%s), not launched', (state:gsub('_', ' ')))
+      now = string.format('rocket built (%s parts), rising into place (%s), not launched', built, (state:gsub('_', ' ')))
     elseif LAUNCHING[state] then
       now = string.format('rocket launching (%s)', (state:gsub('_', ' ')))
     else
@@ -127,12 +131,12 @@ return function(api)
     end
     if ready or RISING[state] or LAUNCHING[state] then
       next_parts = parts .. '/' .. required
-      now = now .. '; the next rocket\'s parts ' .. next_parts
+      now = now .. '; parts for the rocket after it ' .. next_parts
     end
     local last = records()[try(function() return e.unit_number end) or -1]
     local last_text = last and string.format('last launch %s ago%s', ago(game.tick - last.tick), last.to and ' to ' .. last.to or '')
       or 'no launch seen'
-    return {rocket_ready=ready, parts=not next_parts and parts .. '/' .. required or nil, next_parts=next_parts,
+    return {rocket_ready=ready, parts=not next_parts and parts .. '/' .. required or nil, next_parts=next_parts, built_parts=built,
       rocket=now .. '; ' .. last_text, rocket_now=now, last=last_text,
       last_launch=last and {ago=ago(game.tick - last.tick), tick=last.tick, to=last.to, cargo=last.cargo, by=last.by} or nil}
   end
@@ -225,7 +229,7 @@ return function(api)
     local ready = e.rocket_silo_status == defines.rocket_silo_status.rocket_ready
     local status = api.status_name(e) or 'unknown'
     local rk = M.rocket(e)
-    local row = {name=e.name, position=e.position, surface=e.surface.name, parts=rk.parts, next_parts=rk.next_parts, rocket_ready=ready,
+    local row = {name=e.name, position=e.position, surface=e.surface.name, parts=rk.parts, built_parts=rk.built_parts, next_parts=rk.next_parts, rocket_ready=ready,
       rocket=rk.rocket, state=state, status=status}
     -- A built rocket's parts are consumed: none are left to make for it.
     local left = (ready or RISING[state]) and 0 or math.max(0, required - parts)
@@ -328,7 +332,7 @@ return function(api)
     return {silo = string.format('%s at (%g,%g) on %s', e.name, e.position.x, e.position.y, e.surface.name),
       auto_requests = try(function() return e.use_transitional_requests end) and true or false,
       send_to_orbit_automatically = try(function() return e.send_to_orbit_automatically end) and true or false,
-      requesting_for = target, parts = rk.parts, next_parts = rk.next_parts, rocket_ready = rk.rocket_ready, rocket = rk.rocket,
+      requesting_for = target, parts = rk.parts, built_parts = rk.built_parts, next_parts = rk.next_parts, rocket_ready = rk.rocket_ready, rocket = rk.rocket,
       state = try(function() return silo_states[e.rocket_silo_status] end)}
   end
   function M.read(p, a)
@@ -356,7 +360,7 @@ return function(api)
       note=#silos >= MAX_SILOS and 'the first ' .. MAX_SILOS .. ' silos' or nil}
   end
   M.schema = {silo = {position='optional {x,y}: the silo nearest it (default every silo on the surface)', surface='optional surface name (default yours)',
-    returns='silos [{name, position, surface, parts (X/required, the 2.0 rocket_parts_required, while the rocket is being built), next_parts (once it is built: ready, rising or launching; the parts the silo makes for the next rocket), rocket_ready, rocket ("rocket ready to launch, not launched; the next rocket\'s parts 13/50; last launch 4m10s ago to platform X"; rising into place; launching; or building, parts X/Y), state (the silo\'s rocket state), status, '
+    returns='silos [{name, position, surface, parts (X/required, the 2.0 rocket_parts_required, while the rocket is being built), built_parts (ready or rising: the built rocket\'s, 50/50), next_parts (once it is built: ready, rising or launching; the parts the silo makes for the rocket after it: a ready rocket with next_parts 6/50 is built and launches), rocket_ready (true only for a built rocket), rocket ("rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 13/50; last launch 4m10s ago to platform X"; rising into place; launching; or building, parts X/Y), state (the silo\'s rocket state), status, '
       .. 'crafting {part_progress, parts_left, part_s, productivity, rocket_eta_s (at this speed, while working)}, ingredients [{name, per_part, in_silo, in_hands '
       .. '(feeding inserters\' hands), at_sources (what their belts and chests hold), needed (for the parts left), short}], lacks (ingredients the silo holds too few '
       .. 'of for the next part), feeders {inserters, idle, sources}, cargo {kg, lift_kg, stacks, slots, items, over_kg}, trash, auto_requests and send_to_orbit_automatically (the GUI checkboxes; configure sets them), '

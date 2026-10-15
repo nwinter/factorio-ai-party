@@ -99,4 +99,15 @@ eq(B.last({gi, go, chest}), 'underground-belt (12.5,8.5): moves items south to (
 eq(B.last({chest}), nil)
 eq(B.line(chest), nil)
 eq(B.line(belt(0.5, 0.5, 2)), nil, 'a direction belts do not take')
+
+-- 8. Every belt of a list (a build batch, placed ghosts; Grok, shift13: three belts of a batch faced south and only the
+-- last was read), the first `limit`, and how many more; anything else is left out.
+local lines, more = B.lines({gi, chest, go})
+eq(#lines, 2); eq(more, 0)
+eq(lines[1], 'underground-belt (12.5,4.5): moves items south underground; fed from (12.5,3.5)')
+eq(lines[2], 'underground-belt (12.5,8.5): moves items south to (12.5,9.5); fed underground')
+lines, more = B.lines({gi, go, gi}, 2)
+eq(#lines, 2); eq(more, 1)
+lines, more = B.lines({chest})
+eq(#lines, 0); eq(more, 0)
 print('beltflow: ok')

@@ -648,7 +648,7 @@ return function(api)
       local okr,rk=pcall(function() return api.rocket and api.rocket(e) end)
       silos[#silos+1]={position=e.position,status=silo_states[e.rocket_silo_status],
         parts=not (okr and rk and rk.next_parts) and e.rocket_parts..'/'..e.prototype.rocket_parts_required or nil,
-        next_parts=okr and rk and rk.next_parts or nil,
+        built_parts=okr and rk and rk.built_parts or nil,next_parts=okr and rk and rk.next_parts or nil,
         rocket_ready=e.rocket_silo_status==defines.rocket_silo_status.rocket_ready,rocket=okr and rk and rk.rocket or nil,
         cargo=cargo and top_items(cargo,8) or nil,
         trash=trash and top_items(trash,8) or nil,auto_requests=e.use_transitional_requests or nil,
@@ -775,7 +775,13 @@ return function(api)
       switched.trash=trash and top_items(trash,8) or nil
       if a.platform==nil and a.orbit==nil then return switched end
     end
-    assert(silo.rocket_silo_status==defines.rocket_silo_status.rocket_ready,'rocket is not ready: '..tostring(silo_states[silo.rocket_silo_status])..', parts '..silo.rocket_parts..'/'..silo.prototype.rocket_parts_required)
+    -- Not ready: the rocket in words (silo.lua M.rocket), so a rising rocket's count reads as the rocket after it's
+    -- (shift14 21:20: Grok); a rocket being built names its parts.
+    if silo.rocket_silo_status~=defines.rocket_silo_status.rocket_ready then
+      local okr,rk=pcall(function() return api.rocket and api.rocket(silo) end)
+      error('rocket is not ready: '..tostring(silo_states[silo.rocket_silo_status])..', '..(okr and rk and rk.rocket_now
+        or 'parts '..silo.rocket_parts..'/'..silo.prototype.rocket_parts_required),0)
+    end
     local cargo=top_items(silo.get_inventory(defines.inventory.rocket_silo_rocket),8)
     local heavy=overweight(silo)
     if heavy then error('launch refused, '..heavy,0) end
