@@ -142,9 +142,10 @@ for _,ok in ipairs({{'place_ghosts',{surface='nauvis'}},{'dry_run',{action='plac
   {'configure',{surface='nauvis',positions={{x=37.5,y=44.5}},modules={'productivity-module','productivity-module'}}}}) do
   bots.check_action(b.index,ok[1],ok[2])
 end
-for _,no in ipairs({{'deconstruct',{}},{'configure',{}},{'circuit_set',{}},{'place_ghosts',{}}}) do
+for _,no in ipairs({{'deconstruct',{}},{'circuit_set',{}},{'place_ghosts',{}}}) do
   fails(function() bots.check_action(b.index,no[1],no[2]) end,'remote view only')
 end
+bots.check_action(b.index,'configure',{}) -- the aboard surface's GUI, no body inventory
 -- The refusal names what works, from the same lists.
 local ok,err=pcall(bots.check_action,b.index,'move_to',{})
 assert(not ok and tostring(err):find('every read',1,true) and tostring(err):find('tell, chat, say, operator, board',1,true)
@@ -248,7 +249,7 @@ do
   bots.check_action(b.index,'configure',{platform='alpha-2'})
   bots.check_action(b.index,'configure',{surface='nauvis'})
   bots.check_action(b.index,'queue_submit',{})
-  fails(function() bots.check_action(b.index,'configure',{}) end,'remote view only')
+  bots.check_action(b.index,'configure',{})
   local state,dropped,departed={},0,false
   local s=dofile('mod/agent-harness_0.1.0/scheduler.lua'){
     state=function() return state end,player=function() return {index=b.index} end,

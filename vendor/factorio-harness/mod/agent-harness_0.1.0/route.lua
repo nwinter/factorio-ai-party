@@ -591,18 +591,57 @@ return function(api)
     local ctx={t=t,s=s,underground=underground,reach=reach,budget=budget,planned_under={},to_direction=to_direction,clear_to={},alone={},
       limit={checks=M.BUDGET.checks,expansions=M.BUDGET.expansions}}
 
-    -- The start: a free tile, or the tile an existing belt end outputs into.
+    -- Follow the existing, directed chain to its open end. These tiles are
+    -- reused, never rotated/replaced. A side input follows the receiving belt.
     local start_din,extends=-1,nil
-    s.ensure(fx,fy)
-    local first=s.at[key(fx,fy)]
-    if first then
-      local kind=belt_type(first)
-      assert(kind=='transport-belt' or kind=='underground-belt' and underground_kind(first)~='input','from holds a belt that cannot be extended; start on a free tile or a belt end')
-      extends={x=first.position.x,y=first.position.y}
-      start_din=first.direction
-      fx,fy=fx+STEP[start_din][1],fy+STEP[start_din][2]
-      points[1]={x=fx,y=fy}
+    local existing,seen={},{}
+    while true do
+      assert(t.is_charted(fx,fy),'from chain tile '..fmt(fx,fy)..' is not charted')
+      if danger then
+        local why=danger(fx,fy)
+        assert(not why,'from chain tile '..fmt(fx,fy)..' is inside enemy clearance: '..tostring(why))
+      end
+      s.ensure(fx,fy)
+      local first=s.at[key(fx,fy)]
+      if not first then break end
+      local kind,d=belt_type(first),first.direction
+      assert(not seen[key(fx,fy)],'from chain loops at '..fmt(fx,fy)..'; no open end')
+      assert(#existing<256,'from chain exceeds 256 existing belt tiles at '..fmt(fx,fy))
+      assert(STEP[d],'from chain tile '..fmt(fx,fy)..' has no cardinal belt direction')
+      local input=kind=='underground-belt' and underground_kind(first)=='input'
+      assert(kind=='transport-belt' or kind=='underground-belt',
+        'from chain tile '..fmt(fx,fy)..' holds '..belt_name(first)..'; no single belt output to follow')
+      if start_din>=0 then
+        assert(start_din~=opposite(d),'from chain blocked at '..fmt(fx,fy)..': '..belt_name(first)..' faces '..NAME[d]..' against incoming '..NAME[start_din]..' (opposing outputs)')
+        assert(not input or start_din==d,'from chain blocked at '..fmt(fx,fy)..': underground entrance accepts a straight input only')
+      end
+      extends=extends or {x=first.position.x,y=first.position.y}
+      existing[#existing+1]={name=belt_name(first),position=centre(fx,fy),direction=NAME[d]}
+      seen[key(fx,fy)]=true
+      if fx==tx and fy==ty then
+        assert(not a.via and not a['return'] and not a.lane,'from already connects to to; via, return and lane require a new segment')
+        return {route='',tiles=0,belts=0,undergrounds=0,items={},entities={},extends=extends,existing=existing,connected=true,
+          arrival={mode='connected',into=centre(tx,ty)},cost=budget}
+      end
+      if input then
+        local ok,exit=pcall(function() return first.neighbours end)
+        assert(ok and exit and exit.valid and exit.force==p.force and underground_kind(exit)=='output',
+          'from chain blocked at '..fmt(fx,fy)..': underground entrance has no paired exit of ours')
+        local ex,ey=tile(exit.position)
+        if danger then
+          local length=math.abs(ex-fx)+math.abs(ey-fy)
+          for n=1,length do
+            local why=danger(fx+STEP[d][1]*n,fy+STEP[d][2]*n)
+            assert(not why,'from underground span at '..fmt(fx+STEP[d][1]*n,fy+STEP[d][2]*n)..' is inside enemy clearance: '..tostring(why))
+          end
+        end
+        fx,fy=ex,ey
+      else fx,fy=fx+STEP[d][1],fy+STEP[d][2] end
+      start_din=d
     end
+    points[1]={x=fx,y=fy}
+    local next_point=points[2]
+    assert(math.abs(fx-next_point.x)+math.abs(fy-next_point.y)<=MAX_LEG,'the open end '..fmt(fx,fy)..' is more than '..MAX_LEG..' tiles from the next route point')
 
     if danger then
       for i,v in ipairs(points) do
@@ -654,7 +693,7 @@ return function(api)
       elseif kind=='underground-belt' and underground_kind(target)=='input' then
         assert(not a.lane,'lane needs a plain belt at to')
         allowed={[d]=true}
-      else error('to holds '..belt_name(target)..'; it can be fed only at a plain belt or an underground entrance') end
+      else error('to '..fmt(tx,ty)..' holds '..belt_name(target)..'; it can be fed only at a plain belt or an underground entrance') end
     else
       assert(not a.lane,'lane needs an existing belt at to')
     end
@@ -695,7 +734,7 @@ return function(api)
         local ax,ay=tx-STEP[d][1],ty-STEP[d][2]
         if (ax==fx and ay==fy) or t.kind(ax,ay) then closed=nil; break end
         local c=centre(ax,ay)
-        closed[#closed+1]=string.format('%g,%g %s',c.x,c.y,s.feeds[key(ax,ay)] and 'is fed by another belt' or 'is blocked or not charted')
+        closed[#closed+1]=string.format('%g,%g is %s',c.x,c.y,blocked_text(ax,ay))
       end
       assert(not closed,closed and 'no way into to: '..table.concat(closed,'; '))
     end
@@ -721,6 +760,13 @@ return function(api)
         if #names>0 then text[#text+1]='near it: '..table.concat(names,', ') end
         if #tl>0 then text[#text+1]='tiles there: '..table.concat(tl,', ') end
       end
+      local focus=c or goal_pt
+      local blocked={}
+      for _,d in ipairs(DIRS) do
+        local x,y=focus.x+STEP[d][1],focus.y+STEP[d][2]
+        if not t.kind(x,y) then blocked[#blocked+1]=fmt(x,y)..' '..blocked_text(x,y) end
+      end
+      if #blocked>0 then text[#text+1]='blocked adjacent tiles: '..table.concat(blocked,', ') end
       local ok,line=pcall(function() return api.tiles and api.tiles.line_tiles(p.surface,p.force,belt,centre(from_pt.x,from_pt.y),centre(goal_pt.x,goal_pt.y)) end)
       if ok and line then text[#text+1]=line end
       text[#text+1]=string.format('the search keeps within %d tiles of each leg\'s ends; %d placement checks, %d expansions',margin,budget.checks,budget.expansions)
@@ -754,7 +800,7 @@ return function(api)
     local items={[belt.name]=main.belts}
     if main.undergrounds>0 then items[underground.name]=main.undergrounds*2 end
     for item,n in pairs(main.fill) do items[item]=(items[item] or 0)+n end
-    local out={route=main.route,tiles=main.tiles,belts=main.belts,undergrounds=main.undergrounds,items=items,entities=main.entities,extends=extends,
+    local out={route=main.route,tiles=main.tiles,belts=main.belts,undergrounds=main.undergrounds,items=items,entities=main.entities,extends=extends,existing=#existing>0 and existing or nil,
       legs=#legs>1 and legs or nil,over_trees_or_plants=main.clear>0 and main.clear or nil,landfill=next(main.fill) and main.fill or nil}
     if target then
       out.arrival=arrival(target,ctx.goal_din,s.feeds)
