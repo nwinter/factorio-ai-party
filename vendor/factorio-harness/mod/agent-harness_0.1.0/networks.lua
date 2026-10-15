@@ -1391,6 +1391,8 @@ return function(api)
       fed=best.fed, low=best.fuel_low and #best.fuel_low or 0, low_min=best.fuel_low and best.fuel_low[1] and best.fuel_low[1].min or nil,
       feed=feed}
   end
+  -- The last view as it is, never computed here (urgent.lua reads it on every sleep check): nil before the first.
+  function M.cached_view(f) return store().views[f.name] end
   -- The lines, the agent's surface first; at most `max` (the rest counted).
   -- While Nauvis is the only planet in play (runtime one_planet; Nick 12:35, item 4) a line names no planet.
   local function plain_line(f, line)

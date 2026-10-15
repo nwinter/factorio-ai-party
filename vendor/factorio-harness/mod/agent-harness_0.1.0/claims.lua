@@ -3,11 +3,14 @@
 -- A claim lives on its owner's activity (shift07: 67 claims open at the end,
 -- 60 untouched all shift): posting it, the owner's board updates on it, and
 -- the owner's requests made inside its area or acting on a position in it.
--- Anyone may build in a claim (team.md); removing or rebuilding a teammate's
--- machines takes a notice first. After STALE without any activity it is
--- stale: no notice needed (stock no longer skips it, the label says so).
--- After EXPIRE the board closes it (board.lua). An `allow` list names agents
--- (or everyone) who need no notice while it is fresh.
+-- The harness enforces no ownership: anyone may build or act anywhere, and who
+-- may remove, move or reconfigure what is the team's own rule (team.md, d15
+-- 06:25). What a claim does here: positions in it are labelled `claimed`, its
+-- area's alerts go to its owner, and teammates' `stock` sweeps leave its chests
+-- alone while it is fresh. After STALE without any activity it is stale (the
+-- label says so and stock sweeps include it); after EXPIRE the board closes it
+-- (board.lua). An `allow` list names agents (or everyone) its labels show as
+-- allowed, whose own stock sweeps include it while it is fresh.
 -- A claim is on one surface (Sol 07:52: Astra's Nauvis claim #212 labelled
 -- Gleba furnaces at (62,22)): the poster's when posted (or `surface`); one
 -- posted before claims had one, the first time it is read: the one planet its
@@ -69,7 +72,7 @@ return function(api)
     for _, n in ipairs(i.allow or {}) do if n == name or n == 'everyone' then return true end end
     return false
   end
-  -- Whether claim i asks agent `name` to keep out (ask its owner first).
+  -- Whether agent `name`'s stock sweeps skip claim i (fresh, someone else's, not allowing `name`).
   function M.binding(i, name) return i.owner ~= name and not M.stale(i) and not M.allows(i, name) end
   -- Claims by others at pos on p's surface.
   local function claims_at(p, pos)
@@ -85,13 +88,13 @@ return function(api)
       until not k
     end
   end
-  -- The claim by someone else that asks p to keep out of pos (fresh, not
-  -- allowing p), or nil.
+  -- The claim by someone else whose chests p's stock sweeps skip at pos (fresh,
+  -- not allowing p), or nil.
   function M.other(p, pos)
     for i in claims_at(p, pos) do if M.binding(i, p.name) then return i end end
   end
   -- Any open claim by someone else at pos, a binding one first (collect's
-  -- `claimed`: its label says when no notice is needed).
+  -- `claimed` label: whose, fresh or stale, whom it allows).
   function M.find(p, pos)
     local any
     for i in claims_at(p, pos) do
@@ -126,7 +129,7 @@ return function(api)
     local st = api.owner_state and api.owner_state(i.owner)
     if st then parts[#parts+1] = i.owner .. ' ' .. st end
     if #(i.allow or {}) > 0 then parts[#parts+1] = 'allows ' .. table.concat(i.allow, ', ') end
-    if M.stale(i) then parts[#parts+1] = 'stale: no notice needed to remove or rebuild; closes ' .. ago(M.EXPIRE - (game.tick - M.activity(i))) .. ' from now unless its owner works on it'
+    if M.stale(i) then parts[#parts+1] = 'stale: stock sweeps include it; closes ' .. ago(M.EXPIRE - (game.tick - M.activity(i))) .. ' from now unless its owner works on it'
     elseif p and M.allows(i, p.name) then parts[#parts+1] = 'you are allowed' end
     return table.concat(parts, ', ')
   end
