@@ -204,9 +204,13 @@ storage.agent_harness.enemy_chunks=nil
 astra('move_to',{position={x=100,y=0}})
 advance(3)
 answer({{0,0},{100,0}})
-advance(3)
+advance(33)
 last=astra('status').last
 eq(last.outcome,'no_safe_route')
+eq(#last.smaller_margins.tested,4)
+eq(last.smaller_margins.largest_verified_margin,nil)
+assert(last.smaller_margins.line:find('no complete route verified',1,true))
+eq(me.position.x,0); eq(me.position.y,0)
 assert(last.why:find('no way to (100,0) around',1,true),last.why)
 -- avoid_enemies=false: no check, the engine's path as it is.
 asked={}

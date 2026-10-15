@@ -88,9 +88,28 @@ reset()
 belt(0,0,4)
 r=R.plan(p,{from={x=0,y=0},to={x=4,y=0}})
 eq(r.extends.x,0.5); eq(r.route,'E4'); eq(at(r,0,0),nil); eq(at(r,1,0).direction,'east')
--- ... unless one of our belts already stands there: the error says so.
+-- A side input follows the receiving belt to its open output.
 belt(1,0,8)
-fails(function() R.plan(p,{from={x=0,y=0},to={x=4,y=0}}) end,'the start tile (1.5,0.5) is taken by our transport-belt')
+r=R.plan(p,{from={x=0,y=0},to={x=4,y=0}})
+eq(#r.existing,2); eq(at(r,0,0),nil); eq(at(r,1,0),nil); assert(at(r,1,1))
+-- Opposing outputs do not carry items into one another.
+belt(1,0,12)
+fails(function() R.plan(p,{from={x=0,y=0},to={x=4,y=0}}) end,'from chain blocked at (1.5,0.5)')
+reset()
+for x=0,4 do belt(x,0,4) end
+r=R.plan(p,{from={x=0,y=0},to={x=8,y=0}})
+eq(#r.existing,5); eq(r.tiles,4); eq(at(r,4,0),nil); eq(at(r,5,0).direction,'east')
+r=R.plan(p,{from={x=0,y=0},to={x=4,y=0}})
+eq(r.connected,true); eq(r.tiles,0); eq(#r.entities,0)
+reset()
+belt(0,0,4); belt(1,0,8); belt(1,1,12); belt(0,1,0)
+fails(function() R.plan(p,{from={x=0,y=0},to={x=8,y=0}}) end,'from chain loops at (0.5,0.5)')
+reset()
+local entry=belt(0,0,4,'underground-belt','input')
+fails(function() R.plan(p,{from={x=0,y=0},to={x=8,y=0}}) end,'underground entrance has no paired exit')
+local exit=belt(4,0,4,'underground-belt','output'); exit.force=mine; entry.neighbours=exit
+r=R.plan(p,{from={x=0,y=0},to={x=8,y=0}})
+eq(#r.existing,2); eq(r.route,'E4')
 reset()
 -- Only charted ground is used; bad inputs are refused.
 uncharted=1

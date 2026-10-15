@@ -49,7 +49,7 @@ return function(api)
     if v == nil then return {spawners=true, attacks=true, pad=M.WORM_PAD} end
     if v == true then return {spawners=true, attacks=true, pad=M.PAD} end
     assert(type(v) == 'number' and v >= 0 and v <= 32, 'avoid_enemies must be true, false or a margin 0..32 tiles')
-    return {spawners=true, attacks=true, pad=v}
+    return {spawners=true, attacks=true, pad=v, strict=true}
   end
   function M.describe(mode)
     if not mode then return nil end
@@ -375,7 +375,19 @@ return function(api)
   -- When the padded route is blocked or takes a large detour, test the actual
   -- reaches with half a tile of clearance. Every returned engine path is still
   -- checked against actual reach, and margin crossings are recorded on last.
-  function M.route(a, b, blobs, skip)
+  function M.route(a, b, blobs, skip, strict)
+    if strict then
+      local route=M.detour(a,b,blobs,skip)
+      if not route then return nil end
+      if #route==0 then route={b} end
+      local legs,prev={},a
+      for _,v in ipairs(route) do
+        local n=math.max(1,math.ceil(dist(prev,v)/16))
+        for i=1,n do legs[#legs+1]={x=prev.x+(v.x-prev.x)*i/n,y=prev.y+(v.y-prev.y)*i/n} end
+        prev=v
+      end
+      return legs
+    end
     local full = M.detour(a,b,blobs,skip)
     local function length(vias)
       if not vias then return math.huge end
@@ -465,6 +477,7 @@ return function(api)
   end
   local function fit(blobs, here, final, f)
     local skip = {}
+    if f.mode.strict then return skip end
     for bi, bl in ipairs(blobs) do
       for _, m in ipairs(bl.members) do
         local dh = dist(m, here)
@@ -554,7 +567,7 @@ return function(api)
     -- The retry budget must not reject a path solely for crossing a margin.
     -- crossing chose the deepest pass relative to actual reach, across every disc.
     local function margin_only()
-      if d < m.range then return false end
+      if f.mode.strict or d < m.range then return false end
       passed(f,m,d)
       return true
     end
@@ -562,7 +575,7 @@ return function(api)
     if f.detours >= M.MAX_DETOURS then
       if margin_only() then return true end
       nav.path_state = 'unsafe'
-      f.why = string.format('path still passes within reach of %s; %d detours tried', f.crossed, f.detours)
+      f.why = string.format('path still crosses the requested clearance of %s; %d detours tried', f.crossed, f.detours)
       return false
     end
     f.detours = f.detours + 1
@@ -580,7 +593,7 @@ return function(api)
       m.r = math.max(m.r, radius); f.grow[member_key(m)] = m.r
     end
     local vias, narrow
-    if nav.vehicle then vias=M.detour(here,final,blobs,skip) else vias,narrow=M.route(here,final,blobs,skip) end
+    if nav.vehicle then vias=M.detour(here,final,blobs,skip) else vias,narrow=M.route(here,final,blobs,skip,f.mode.strict) end
     if narrow then f.margin_route=true end
     -- The straight line is clear and the engine's path bends into the reach
     -- (water or cliffs in the way): the disc it entered grows past the line,
@@ -617,7 +630,7 @@ return function(api)
     local last = #f.vias == 0
     nav.position = v
     nav.tolerance = last and f.tolerance or (nav.vehicle and 3 or 0.25)
-    nav.precise_corner = not nav.vehicle and not last and f.margin_route or nil
+    nav.precise_corner = not nav.vehicle and not last and (f.margin_route or (f.mode and f.mode.strict)) or nil
     nav.leg = not last or nil
     f.legs = (f.legs or 0) + 1
     return true
@@ -812,6 +825,23 @@ return function(api)
     return string.format('; the nearest safe spot toward it: %s, %d tiles from it, outside every worm\'s range, spawner\'s %d tiles and area under attack (%d tiles), + %g, the map shows',
       at(c.spot), math.floor(dist(c.spot, goal) + 0.5), M.SPAWNER_REACH, M.ATTACK_R, mode.pad)
   end
+  function M.step_clear(p,nav,to)
+    local mode=nav.foes and nav.foes.mode or nav.avoid_mode
+    if not (mode and mode.strict) or p.surface.platform then return true end
+    local pts={p.position,to}
+    local near=M.chunks_near(pts,48+mode.pad)
+    -- A path supplies the cache; direct steering waits for the same bounded reads.
+    local need=M.missing(p.surface,near)
+    if #need>0 then M.scan(p.surface,p.force,need,M.CHUNKS_PER_TICK); return false end
+    local _,m,d=M.crossing(pts,M.blobs(p.surface,near,mode),{})
+    if m then
+      nav.path_state='unsafe'
+      nav.foes=nav.foes or {mode=mode,goal=nav.position,tolerance=nav.tolerance}
+      nav.foes.why=string.format('next walking step crosses avoid_enemies=%g: %s %s at %.2f tiles; minimum %.2f',mode.pad,m.name,at(m),d,m.range+mode.pad)
+      return false
+    end
+    return true
+  end
   -- The facts for last: what was gone around, what lies at the start or goal.
   function M.report(last, nav)
     local f = nav.foes
@@ -825,6 +855,7 @@ return function(api)
       last.passed_within_margin = list
     end
     if f.why then last.why = f.why end
+    if nav.margin_probe then last.smaller_margins=nav.margin_probe.result or {line="smaller-margin check interrupted; no complete route verified"} end
     if nav.attack_replan then last.replanned = nav.attack_replan end
   end
   return M

@@ -10,6 +10,7 @@ defines={events={on_script_path_request_finished=10,on_entity_died=11},shooting=
 local p={index=1,valid=true,connected=true,controller_type=1,physical_controller_type=1,character={valid=true},position={x=0,y=0},cheat_mode=false,driving=false}
 p.force={name='player',is_chunk_visible=function() return true end,is_chunk_charted=function() return true end,get_spawn_position=function() return {x=0,y=0} end}
 p.surface={name='nauvis'}
+p.character.surface=p.surface
 p.character.prototype={collision_mask={layers={player=true}}}
 local path_requests={}
 p.surface.request_path=function(args) path_requests[#path_requests+1]=args; return #path_requests end
@@ -679,6 +680,36 @@ fails(function() call('build',{item='rail',entity='curved-rail-a',position={x=5,
 eq(rail.count,1)
 main=saved_main; prototypes=saved_prototypes
 end
+-- A held ramp uses direct placement even while ticks run, and revives the
+-- ghost construct supplies. Refusals consume none; snapped centres match ghosts.
+do
+  local saved_main,saved_prototypes=main,prototypes
+  local saved_find=p.surface.find_entities_filtered
+  local proto={name='rail-ramp',type='rail-ramp',items_to_place_this={{name='rail-ramp',count=1}}}
+  local ramp=stack('rail-ramp',2);ramp.prototype={place_result=proto}
+  ramp.clear=function() ramp.count=0;ramp.valid_for_read=false end
+  main={ramp};main.find_item_stack=function() return ramp end
+  main.get_item_count=function(f) return f.name=='rail-ramp' and ramp.count or 0 end
+  prototypes={entity={['rail-ramp']=proto},item={['rail-ramp']=ramp.prototype}}
+  game.tick_paused=false
+  local ghost={valid=true,name='entity-ghost',ghost_name='rail-ramp',position={x=1,y=0},force=p.force}
+  ghost.revive=function(a)
+    eq(a.raise_revive,true);ghost.valid=false
+    return {},{valid=true,name='rail-ramp',type='rail-ramp',position=ghost.position,force=p.force}
+  end
+  p.surface.find_entities_filtered=function(f) return f.ghost_name and ghost.valid and {ghost} or {} end
+  eq(call('build',{item='rail-ramp',position={x=0,y=-1},direction=3}).consumed,1)
+  eq(ghost.valid,false);eq(ramp.count,1)
+  fails(function() call('build',{item='rail-ramp',position={x=9,y=0}}) end,'placement blocked')
+  eq(ramp.count,1)
+  local made=call('build',{item='rail-ramp',position={x=4,y=0},direction='north'})
+  eq(made.consumed,1);eq(made.entity.position.x,5);eq(ramp.count,0)
+  p.surface.find_entities_filtered=saved_find
+  main,prototypes=saved_main,saved_prototypes
+end
+-- Entity batches are explicitly refused, before walking or selecting a target.
+fails(function() call('mine',{positions={{x=1,y=0},{x=2,y=0}}}) end,'mine positions and area require tiles: true (laid tiles only); entity mining takes one position {x,y} per call or queue step')
+fails(function() call('mine',{area={{0,0},{2,2}}}) end,'mine positions and area require tiles: true')
 game.tick_paused=false; p.surface.can_place_entity=nil; p.surface.create_entity=nil
 wood.prototype.place_result.name=nil; wood.count=1
 p.build_from_cursor=function() p.cursor_stack.count=0; p.cursor_stack.valid_for_read=false end
@@ -1082,7 +1113,7 @@ local gear_stack=stack('iron-gear-wheel',3)
 plate_stack.clear=function() plate_stack.count=0; plate_stack.valid_for_read=false end
 gear_stack.clear=function() gear_stack.count=0; gear_stack.valid_for_read=false end
 local current_recipe={name='iron-gear-wheel'}
-local am={valid=true,name='assembling-machine-1',type='assembling-machine',position={x=3,y=0},force=p.force,fluidbox={},
+local am={surface=p.surface,valid=true,name='assembling-machine-1',type='assembling-machine',position={x=3,y=0},force=p.force,fluidbox={},
   prototype={crafting_categories={crafting=true}}}
 local am_slots={[5]=inv(plate_stack),[6]=inv(gear_stack)}
 am.get_inventory=function(i) return am_slots[i] end
@@ -1113,7 +1144,7 @@ local remote_change=call('configure',{position=am.position,recipe='copper-cable'
 eq(remote_change.recipe,'copper-cable'); eq(remote_change.remote,true)
 eq(call('queue_status').paused,false); eq(call('queue_status').active.action,'wait_ticks')
 plate_stack.name,plate_stack.count,plate_stack.valid_for_read='iron-plate',4,true
-fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel',walk=false}) end,'remote recipe change: the machine at (3,0) holds items')
+fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel',walk=false}) end,'assembling_machine_input holds items')
 -- By default the character walks into reach first and changes it there (autowalk.lua): the call is character work.
 ;(function()
   am.bounding_box={left_top={x=1.5,y=-1.5},right_bottom={x=4.5,y=1.5}}

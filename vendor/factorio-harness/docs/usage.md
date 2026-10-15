@@ -379,7 +379,12 @@ fh call status
     its locomotives`. A stop's readback adds `rail` (the rail it is beside, or none).
 - Belts: `belt_route {from, to, via?, belt?, undergrounds?, lane?, to_direction?, landfill?, return?, return_side?,
   dry_run?, details?}` lays a belt line as ghosts (`construct` builds it).
-  - `from`: a free tile, or the end of one of our belts to extend. `to`: a free tile for the last belt, or one of our
+  - `from`: a free tile, or any tile on one of our belt chains. Existing belts are followed in their output
+    direction to an open end (at most 256 tiles, including paired undergrounds); the new segment starts there.
+    Side inputs follow the receiving belt. `existing` lists the reused tiles; none is rotated or rebuilt.
+    If the chain already reaches `to`, `connected: true` and zero new tiles are returned. Loops, opposing outputs,
+    unpaired underground entrances and blocked connections name the tile and reason.
+    `to`: a free tile for the last belt, or one of our
     belts (or an underground entrance) to feed: straight, as a curve, or side-loaded onto `lane` (left or right).
   - The search (Sol, 07:52: a 600-tile Gleba seed return planned by hand) is a weighted A* over tiles. It keeps to
     charted ground within 24 tiles of each leg's ends, and each leg (from, `via` points in order, to) is at most 1000
@@ -395,7 +400,7 @@ fh call status
     nearby hazards were read).
     `belt_route {"from":{"x":0.5,"y":0.5},"to":{"x":480.5,"y":0.5},"avoid_enemies":12,"dry_run":true}`
     plans with 12 tiles beyond those ranges. Pipes, poles and rails use separate planners and do not accept this option.
-  - It never uses a tile one of our belts holds or outputs into. Turns cost a little; an underground pair costs more
+  - Apart from the endpoint connections, new tiles never occupy a tile one of our belts holds or outputs into. Turns cost a little; an underground pair costs more
     and hops anything but lava and empty space, never over one of the same kind on its axis.
   - Trees, rocks and wild plants are passed over at a small cost: the ghosts mark them for removal and `construct`
     mines them (`over_trees_or_plants` counts the tiles). Cliffs are passed over the same way: the ghost marks the
@@ -457,7 +462,9 @@ fh call status
     standing spots that reach every piece, items against what you hold); `rail_route` holds the plan. Its signals show
     `after_rails`: the game takes a rail signal only beside a rail or rail ghost, so they are checked as placed.
   - `build` with the rail item and `entity` places one piece; a curve takes 3 rails and a half-diagonal 2, as the game
-    charges them.
+    charges them. `build {item: "rail-ramp", position, direction}` and `construct` on a ramp ghost also build by
+    hand, consuming one held ramp. The ramp centre snaps to its 2-tile grid, as ghost placement does; collision
+    and reach checks still apply, and a refused placement consumes no ramp.
 - `train_stop {position, name, direction?, limit?, ghosts?}` puts a stop beside the nearest straight north-south or
   east-west rail or rail ghost of yours within 6 tiles, on the right of the trains it serves: east of a north-south
   rail for trains heading north, west for south; south of an east-west rail for trains heading east, north for west.
@@ -831,12 +838,23 @@ fh call status
     as legs around it: octagon corners and points through narrow gaps, the shortest way along them. Intermediate
     corners use 0.25-tile arrival tolerance. A rejected intermediate leg is replanned to that corner and keeps its
     remaining legs. Repeated crossings widen only the crossed disc, preserving existing gaps to other discs.
-    If the padded route is absent or over 1.5 times the direct distance, a route using half a tile beyond actual
+    With the default or `true` margin, if the padded route is absent or over 1.5 times the direct distance, a route using half a tile beyond actual
     worm/spawner reach is checked too; it is used if at least 20% shorter, in legs of at most 16 tiles. These
     intermediate goals use the same 0.25-tile radius in the engine path request. Attack zones keep their full margin.
-    Each engine path is checked again (up to 4 detours); a path outside every actual reach may cross only a margin
+    Each engine path is checked again (up to 4 detours); with the default or `true`, a path outside every actual reach may cross only a margin
     even at the retry limit. `last.passed_within_margin` names those crossings and their distances. `last.avoided_enemies` names each nest gone around (`2
     big-worm-turret, 3 biter-spawner, 3 medium-worm-turret, 2 small-worm-turret around (-12,359)`).
+  - A numeric `avoid_enemies: N` is a hard minimum beyond each charted hazard's reach. Engine paths,
+    corner cuts and walking sidesteps are checked; numeric margins are never relaxed or shrunk at the endpoints.
+    A start already inside that minimum cannot produce an accepted path with that margin, including with `unsafe_goal`.
+  - When a walk reaches `no_safe_route`, the character waits while the planner tests smaller integer margins in
+    descending order (below the requested margin, through zero). `last.smaller_margins` reports the largest
+    tested margin with a complete verified route, the nest and distance at its closest clearance, and the checked
+    remaining leg's `from`, `to`, and intermediate points. The engine finds each diagnostic leg and every returned
+    segment is checked against charted hazards. The diagnostic does not walk the route or change the requested margin.
+    It is bounded by 32 nearby hazards, 192 path requests and 1800 ticks, with at most eight hazard chunks read
+    per tick. `tested` records failures; budget exhaustion or failure to verify a route is stated explicitly,
+    without claiming that no route exists. Fractional margins are not searched.
   - A goal inside a worm's range, within 40 tiles of a spawner or in an area under attack now (on the chunks the map
     draws) is refused before the walk starts (`goal (-163,-53) is within 40 tiles of spitter-spawner (-190,-31), its
     units' reach (34.9 tiles from it): ...`; `goal (-112,-96) is within 24 tiles of attack #1696 at (-114,-98), an area
@@ -868,7 +886,7 @@ fh call status
     - Via points are checked the same way (`via point 1 (55,10) is inside ...`).
     - `unsafe_goal: true` goes anyway; the reply says `unsafe_goal: goal (60,0) is inside ...`.
     - `avoid_enemies: false` checks nothing.
-  - A nest with the start in a weapon's range, or the goal with `unsafe_goal`, is not avoided. A start or goal in a
+  - With the default or `true` margin, a nest with the start in a weapon's range, or the goal with `unsafe_goal`, is not avoided. A start or goal in a
     nest's margin only (outside the weapon's own range) keeps that worm's disc just short of it, so the way there still
     keeps out of the range. Before, the whole nest went unchecked. `last.enemies_at_start_or_goal` names such
     nests.
@@ -1487,6 +1505,8 @@ fh sleep 900 --until researched                       # ...or until the research
   (73.5,-54.5) is mined out; the nearest stone within 8 tiles is out of reach: entity is out of reach: ...` with its
   spot; none left: `stone at (73.5,-54.5) is mined out and no stone is left within 8 tiles of it`. A position never
   mined and given no `name` fails as before (`entity not found at ...`).
+- Entity `mine` takes one `position` per call or queue step. `positions` and `area` without `tiles: true` are
+  refused explicitly: these selectors apply only to laid tiles.
 - `mine {tiles: true, position | positions | area, name?, walk?, dry_run?}` (minetile; Sol 15:28: landfill under an old
   pole at (194,58) kept a 3x3 planting cell off the yumako farm, with no robots there) mines tiles laid by a player by
   hand, as a player mines them:
@@ -2244,7 +2264,12 @@ fh sleep 900 --until researched                       # ...or until the research
     buffer chest's (or a landing pad's) requests there the same way and reads them back: `target: "requester-chest at
     (5.5,135.5) on vulcanus"`, `sections`. With `surface` it needs `position` (never your character's requests).
   - `configure {surface, position, recipe}` sets an assembler's recipe there as a remote recipe change does in reach
-    of nothing: an empty, idle machine takes it (`remote: true`); one holding items or mid-craft is refused.
+    of nothing: an empty, idle machine takes it (`remote: true`); occupied input, output or module slots,
+    or crafting progress, produce a refusal naming the machine, surface and blocking state. Fluids require
+    `force: true` to discard them. Recipe changes on `platform` or another `surface` never walk the character,
+    including with `walk: true`, and never return items to its inventory or spill at its position. Aboard,
+    `configure {position, recipe}` uses the current platform's remote view without needing `platform` again.
+    A recipe already set is unchanged, even when the machine holds items.
 - `cargo {items: {name: count}}` (or `[{name, count, quality}]`, or `position` of a chest, rocket silo (its loaded
   cargo), landing pad, platform hub, wagon or vehicle in sight; `platform` for one on a platform) weighs a rocket cargo
   list before it is staged (cargo.lua; Sol rebuilt three kits into two after working the weights out offline). A
