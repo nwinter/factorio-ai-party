@@ -1655,12 +1655,16 @@ fh sleep 900 --until researched                       # ...or until the research
   rocket cargo in one call. The silo must be within reach.
   - `items`: `{"agricultural-science-pack":1000}` or `[{item, count, quality}]`, 1..20 items. Each count is loaded on top
     of what the rocket holds; with `to_total: true` each count is what it should hold in all.
-  - Sources: your inventory first, then our chests within reach, nearest first (at most 16); `from` (a chest `{x,y}` or
-    up to 16) reads only those after your inventory; `chests: false` your inventory only.
+  - Sources: your inventory first, then our chests within reach, nearest first (at most 16): every chest kind (chests;
+    requester, buffer, provider and storage chests; linked and infinity chests) and a cargo landing pad; `from` (a chest
+    `{x,y}` or up to 16) reads only those after your inventory; `chests: false` your inventory only. (Gemini, shift13
+    18:21: before the fix of 2026-10-15 no stack matched in the game, held or in a chest: an item stack's quality is a
+    LuaQualityPrototype, and only a table's name was read.)
   - Only what fits under the 1000 kg lift and in the rocket's 20 cargo slots goes in. A silo with automatic requests
     on is refused (the game takes no cargo by hand then).
   - Reply: `loaded [{item, asked, aboard_before, loaded, aboard, from ("you 300, iron-chest (61.5,10.5) 400"), short,
-    why}]` (`why`: weight, the cargo slots, or `you and the 2 chests read held only 200`), `cargo`, `rocket_weight`,
+    why}]` (`why`: weight, the cargo slots, or what each source held of it before the move: `you held 0;
+    requester-chest (-63.5,96.5) held 0; iron-chest (60.5,10.5) held 200`, the first 4 chests), `cargo`, `rocket_weight`,
     `slots` (used/total), `chests`, `complete`, `short`.
   - `launch: true` with `platform` (or `orbit: true`) launches in the same tick, once every count is aboard;
     `min_cargo` and `arrived` are checked as `launch` checks them. Any count short: `not launched: ...; what was loaded
