@@ -534,6 +534,20 @@ fh call status
     spoil within 5 min: `chest: yumako*20: the first spoils in 29m53s (50% spoiled)`. An item that hatches says so:
     `chest: pentapod-egg*15: the first hatches in 4m23s into big-wriggler-pentapod-premature (71% spoiled); all within
     5 min`, and `hatch_warning` sums those up.
+  - The spread, not only the oldest stack (Sol, 22:25: a chest of 1846 agricultural packs showed the oldest at 91%
+    while hundreds were at 15-30%): `inspect`'s `freshness`, per inventory and item, `chest:
+    agricultural-science-pack*846: spoiled 15-91%, 47% by count; under 25% 246, 25-50% 200, 50-75% 200, 75%+ 200;
+    spoil within 10 min 200, 30 min 400, 60 min 846` (the least and most spoiled stack, the spoiled share weighted by
+    count, the counts by share, and how many spoil within 10, 30 and 60 minutes; one value when every stack is alike).
+    `supply`'s `freshness` is the same over every place it read, and each of its `chests` adds that chest's own
+    (`(300,300) steel-chest 600 (spoiled 15-91%, 45% by count)`).
+  - The moved batch: `transfer` and `collect` (and the moves `rearm` and `refuel` make) add `freshness`, the spread of
+    what moved, per item; a timed one (walk, a courier's take) has it on `last.freshness`; `load_silo`'s `loaded`
+    rows each have `freshness`. A science pack the running research takes adds the research units it covers, the units
+    left, and how many of those come from packs that do not spoil within 60 min: `; 500 research units of
+    agricultural-science-pack-research (1 a unit, 750 units left), 0 of them from packs that do not spoil within 60
+    min`. The units count every pack until it spoils: the 2.0.77 binary shows no link between a pack's spoil level and
+    the research it gives (a lab moves spoiled items out).
   - `inspect` on an assembler, furnace or biochamber whose products spoil adds `output_spoil`, what its next products
     start at: `bioflux start about 53% spoiled (recipe bioflux: the count-weighted spoilage of yumako-mash*15 at 80%,
     jelly*12 at 20%)`, or `pentapod-egg start fresh (recipe pentapod-egg resets freshness)`.

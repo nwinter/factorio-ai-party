@@ -927,6 +927,11 @@ do
   local seen=call('inspect',{position={x=3,y=0}})
   eq(seen.trash,'40 space-platform-foundation, 7 solar-panel, 1 inserter (in rocket_silo_trash, put there by the game; take: transfer {position, direction=to_player, inventory=rocket_silo_trash}, item= for one kind)')
   eq(seen.inventories.rocket_silo_trash[1].count,40)
+  -- Each spoilable item's spread, per inventory (Sol, 22:25).
+  silo_trash[1].spoil_tick=game.tick+600; silo_trash[1].spoil_percent=0.5
+  eq(call('inspect',{position={x=3,y=0}}).freshness[1],'rocket_silo_trash: space-platform-foundation*40: spoiled 50%, 50% by count; '
+    ..'under 25% 0, 25-50% 0, 50-75% 40, 75%+ 0; spoil within 10 min 40, 30 min 40, 60 min 40')
+  silo_trash[1].spoil_tick=nil
   local kept=main
   main=inv(stack(nil,0),stack(nil,0),stack(nil,0),stack(nil,0))
   local took=call('transfer',{position={x=3,y=0},item='solar-panel'})

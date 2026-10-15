@@ -384,4 +384,35 @@ advance(3)
 last=luna('status').last
 eq(last.outcome,'transferred'); eq(fuel_inv.get_item_count('coal'),10); eq(coal_chest.inv.get_item_count('coal'),10)
 
+-- The moved batch's spoilage (Sol, 22:25: choosing 2000 fresh agricultural packs for Aquilo): the spread of what moved,
+-- and for a pack the running research takes, the research units it covers. A take, then a courier tour.
+do
+  local A='agricultural-science-pack'
+  prototypes.item[A]={name=A,type='tool',stack_size=200}
+  local packs=chest({x=50.5,y=31.5},{})
+  local function put(i,count,pct,left)
+    local s=packs.inv[i]
+    s.valid_for_read=true; s.name=A; s.quality={name='normal'}; s.count=count; s.spoil_percent=pct; s.spoil_tick=game.tick+left
+  end
+  put(1,200,0.9,5*3600); put(2,200,0.3,40*3600); put(3,100,0.1,58*3600)
+  force.current_research={name='agricultural-science-pack-research',research_unit_count=1000,research_unit_ingredients={{name=A,amount=1}}}
+  force.research_progress=0.25
+  local t=luna('transfer',{position=packs.position,item=A,count=500,direction='to_player'})
+  eq(t.transferred,500); eq(t.fresh,nil,'made into lines')
+  eq(t.freshness[1],'agricultural-science-pack*500: spoiled 10-90%, 50% by count; under 25% 100, 25-50% 200, 50-75% 0, 75%+ 200; '
+    ..'spoil within 10 min 200, 30 min 200, 60 min 500; 500 research units of agricultural-science-pack-research (1 a unit, 750 units left), '
+    ..'0 of them from packs that do not spoil within 60 min')
+  -- A courier: the take leg's batch, on last.
+  main.remove{name=A,count=500}
+  put(1,50,0.2,90*3600)
+  luna('transfer',{positions={packs.position},item=A,pick='first_with_stock',count=50,to=yfarm.position})
+  advance(3)
+  last=luna('status').last
+  eq(last.delivered,50)
+  eq(last.freshness[1]:match('^[^;]*'),'agricultural-science-pack*50: spoiled 20%, 20% by count')
+  assert(last.freshness[1]:find('50 of them from packs that do not spoil within 60 min',1,true),last.freshness[1])
+  force.current_research=nil
+  yfarm.inv.remove{name=A,count=50}
+end
+
 print('picksource: ok')

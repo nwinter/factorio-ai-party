@@ -233,7 +233,7 @@ return function(api)
       local want = a.to_total and math.max(0, r.count - before) or r.count
       local room = api.rocket_room(silo, r.name)
       local goal = math.min(want, room)
-      local moved, from = 0, {}
+      local moved, from, fresh = 0, {}, nil
       local function match(s) return s.name == r.name and quality_of(s) == r.quality end
       -- what each source held of it before the move, for a shortfall's why
       local function count(source) return source and try(function() return source.get_item_count{name=r.name, quality=r.quality} end) or 0 end
@@ -247,13 +247,19 @@ return function(api)
       if #chests == 0 then held[#held+1] = a.chests == false and 'chests not read (chests=false)' or 'no chest of ours in reach' end
       local function take(source, name)
         if moved >= goal or not source then return end
-        local n = api.move_stacks(source, inv, match, goal - moved)
+        local n, _, fr = api.move_stacks(source, inv, match, goal - moved)
         if n > 0 then moved = moved + n; from[#from+1] = name .. ' ' .. n end
+        if fr and api.merge_fresh then fresh = api.merge_fresh(fresh or {}, fr) end
       end
       for _, source in ipairs(api.give_sources(p, r.name)) do take(source, 'you') end
       for _, c in ipairs(chests) do take(chest_inventory(c), c.name .. ' ' .. at(c.position)) end
       local row = {item=label(r), asked=r.count, aboard_before=before, loaded=moved, aboard=before + moved,
         from=#from > 0 and table.concat(from, ', ') or nil}
+      -- The loaded batch's spoilage (Sol, 22:25): its spread, and for a science pack the research units it covers.
+      if fresh and api.fresh_lines then
+        local ok, lines = pcall(api.fresh_lines, p, fresh)
+        if ok and lines[1] then row.freshness = lines[1] end
+      end
       if moved < want then
         row.short = want - moved
         if room < want and moved >= room then
@@ -794,7 +800,7 @@ return function(api)
       platform='with launch: the platform in orbit to send it to', orbit='with launch: true for no platform',
       min_cargo='with launch: as launch min_cargo', arrived='with launch: as launch arrived',
       ticks='1..36000 (default 3600): how long to wait for the rocket (no rocket yet, or not ready for a launch); with walk, the whole tour (default 18000)',
-      returns='silo, loaded [{item, asked, aboard_before, loaded, aboard, from (you N, iron-chest (x,y) N), short, why (weight, slots, or what you and the chests held)}], cargo, rocket_weight, slots (used/total), chests (how many were read), complete, short; launch (the launch reply) with launch=true. No rocket yet, or launch=true before the rocket is ready: a timed action (until_tick, waiting {why, rocket}; outcome fed | failed | timed_out; last.result holds the reply). Into the rocket only what fits under its 1000 kg lift and in its cargo slots; a silo with automatic requests on is refused'},
+      returns='silo, loaded [{item, asked, aboard_before, loaded, aboard, from (you N, iron-chest (x,y) N), freshness (a spoilable item: the loaded batch\'s spread and, for a pack the running research takes, the research units it covers), short, why (weight, slots, or what you and the chests held)}], cargo, rocket_weight, slots (used/total), chests (how many were read), complete, short; launch (the launch reply) with launch=true. No rocket yet, or launch=true before the rocket is ready: a timed action (until_tick, waiting {why, rocket}; outcome fed | failed | timed_out; last.result holds the reply). Into the rocket only what fits under its 1000 kg lift and in its cargo slots; a silo with automatic requests on is refused'},
     preflight = {position='the rocket silo {x,y} (any tile of it), in a visible chunk (remote view)', surface='optional planet name: the silo there by remote view',
       items='optional item list (as load_silo items): what it still lacks against the cargo aboard, and how much of that fits',
       platform='optional platform name: where it is, whether it has arrived here, and its requests from this planet less its hub and this rocket',
