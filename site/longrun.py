@@ -2,8 +2,9 @@
 
 Read-only, from each shift's folder: scores.jsonl (game time, research, science packs made, rockets, platforms and
 where they are, planets), start.log (only its timestamps: the rest names accounts and quotas), stream-service.log (the
-director's lines: deaths and losses it cut to), caster.log (the hosts' Space Age lines and their answers to viewers)
-and chat.jsonl (viewer lines that reached the game, and the agents' answers that name them). No journals.
+director's lines: deaths and losses it cut to), caster.log (the hosts' Space Age lines and their answers to viewers),
+chat.jsonl (viewer lines that reached the game, and the agents' answers that name them) and plan.json (the team plan
+as the stream last read it: tools/stream/planlog.py). No journals.
 
 Science packs made: the game's production counters can fall (a platform's own counts go with it when it is lost, and
 a counter can restart), so every pack is counted from the rise between consecutive score rows, a fall counted as 0.
@@ -347,6 +348,40 @@ def chat_lines(path):
     return out
 
 
+def shift_plan(path, clean=lambda s: s, keep=lambda s: True, game=lambda tick: None):
+    """The team plan a shift left (viewer Alex 22:12; its plan.json from the stream, tools/stream/planlog.py): goals,
+    each agent's line, the open projects with progress and next step, the request counts, and when each was set as game
+    time (game(tick): the run's clock); text through clean, and what keep refuses left out. None without the file or a
+    plan in it."""
+    try:
+        rec = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(rec, dict):
+        return None
+    text = lambda v: clean(str(v)) if isinstance(v, str) and v.strip() and keep(v) else None  # noqa: E731
+    lines = []
+    for l in rec.get("lines") or []:
+        if isinstance(l, dict) and text(l.get("text")) and isinstance(l.get("agent"), str):
+            by = l.get("by") if isinstance(l.get("by"), str) and l.get("by") != l.get("agent") else None
+            lines.append({"agent": l["agent"], "text": text(l["text"]), "by": by,
+                          "game": game(l["tick"]) if isinstance(l.get("tick"), (int, float)) else None})
+    projects = []
+    for p in rec.get("projects") or []:
+        if isinstance(p, dict) and text(p.get("title")):
+            projects.append({"title": text(p["title"]), "owner": p.get("owner") if isinstance(p.get("owner"), str) else None,
+                             "status": p.get("status"), "progress": text(p.get("progress")), "next": text(p.get("next"))})
+    goals = text(rec.get("goals"))
+    if not goals and not lines and not projects:
+        return None
+    num = lambda v: v if isinstance(v, int) and v >= 0 else None  # noqa: E731
+    return {"goals": goals, "goals_game": game(rec["goals_tick"]) if isinstance(rec.get("goals_tick"), (int, float)) else None,
+            "lines": lines, "projects": projects, "open_unowned": num(rec.get("open_unowned")),
+            "in_progress": num(rec.get("in_progress")),
+            "read_game": game(rec["tick"]) if isinstance(rec.get("tick"), (int, float)) else None,
+            "read_t": datetime.datetime.fromtimestamp(rec["t"]).isoformat(timespec="seconds") if isinstance(rec.get("t"), (int, float)) else None}
+
+
 def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=(), hide=lambda name, text: False):
     """{"shifts": [row per shift], "research": [(game minute, technologies)], "spm": [(game minute, research units/min)],
     "spm_packs": {pack: [(game minute, packs the labs used/min)]}, "made_spm": [(game minute, packs made/min, all
@@ -571,6 +606,8 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
             q["t"] = time_at(q["tick"])
         row["qa"] = qa
         row["viewer_lines"] = sum(1 for q in qa if q["kind"] == "viewer")
+        # the team plan as the shift left it (plan ticks are the world's: on the run's clock as the rows are)
+        row["plan"] = shift_plan(d / "plan.json", clean, keep, lambda tk: game_time(tk - (origin["tick"] if origin else 0)))
         shifts.append(row)
 
         # chart series on the run's game clock: research and rockets at every row (thinned to one per 5 game

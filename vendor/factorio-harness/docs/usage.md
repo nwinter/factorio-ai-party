@@ -2919,8 +2919,10 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - The team plan: one item of kind `plan`, edited with `board_plan {goals?, doing?, agent?}`: `goals` (up to 600
   characters) replaces the goals, `doing` (up to 160) sets one agent's line, yours unless `agent` names another; `""`
   clears either. Anyone edits any part. With no arguments it reads. Replies and `board` reads give `plan {id, goals,
-  doing: ["name: text (set by NAME)"], edited: "by NAME, <age> ago"}`; `board {mine:true}` and other kinds leave it
-  out, and it is never a row in `items`. It is never pruned; `board_post` refuses `kind:"plan"`, `board_update` takes
+  doing: ["name: text (set by NAME)"], edited: "by NAME, <age> ago"}`; `board {plan_ticks: true}` adds `lines [{agent,
+  text, by, tick}]` (the tick each line was set), `goals_tick` (the tick the goals were last set; none for goals set
+  before 2026-10-14 22:30) and `updated_tick` (the last edit; the pog site's Team plan, viewer Alex 22:12); `board
+  {mine:true}` and other kinds leave it out, and it is never a row in `items`. It is never pruned; `board_post` refuses `kind:"plan"`, `board_update` takes
   notes on it but no status or owner. Each edit is a board event (`kind:"plan"`, `change:"edited"`, `text` what
   changed, `owner` the agent whose line changed) and a `board` hint line for every other agent (`team plan edited by
   NAME: ...`); a line written for you counts as yours (it wakes you from `sleep`), other edits as news.
