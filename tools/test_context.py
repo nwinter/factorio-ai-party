@@ -42,7 +42,7 @@ def main():
         open(os.path.join(d, "notes.md"), "w").write("# Notes\n\n## Now\nGoal: smelting at -40,-20\n")
         assert run("setup", "claude", "haiku", d).strip() == ""
         cfg = json.load(open(os.path.join(d, ".claude", "settings.json")))
-        assert cfg["autoCompactWindow"] == 113000 and "env" not in cfg
+        assert cfg["autoCompactWindow"] == 173000 and "env" not in cfg  # haiku compacts at 140000 (agent/context.tsv, Nick 2026-10-15)
         tr = os.path.join(d, "t.jsonl")
         post = lambda: run("hook", "post-tool", "--at", "80000",
                            stdin=json.dumps({"cwd": d, "transcript_path": tr, "hook_event_name": "PostToolUse"}))
@@ -75,7 +75,7 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         run("setup", "claude", "haiku", d)
         cmd = json.load(open(os.path.join(d, ".claude", "settings.json")))["hooks"]["PreCompact"][0]["hooks"][0]["command"]
-        assert "--skip-late 120 --at 80000" in cmd, cmd
+        assert "--skip-late 120 --at 140000" in cmd, cmd
         tr = os.path.join(d, "t.jsonl")
         transcript(tr, 80500)
         pre = lambda trigger: subprocess.run([sys.executable, CTX, "hook", "pre-compact", "--skip-late", "120", "--at",

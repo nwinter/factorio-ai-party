@@ -6,7 +6,7 @@
 # model	kind	window	compact_at
 opus	claude	1000000	250000
 sonnet	claude	1000000	200000
-haiku	claude	1000000	80000
+haiku	claude	1000000	140000
 *	claude	1000000	200000
 gpt-6-astra	codex	272000	140000
 gpt-6.1-sol	codex	272000	140000

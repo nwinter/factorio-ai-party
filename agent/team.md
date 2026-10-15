@@ -39,10 +39,13 @@ already targets your character.
   @mention ends no sleep or wait (it comes in your next reply); `--wake-on-viewers` makes it end them.
 - Conditional `sleep`, `wait_until`, and queue waits report `wait_estimates` (ETA and rate basis, or no estimate) and
   `idle_s` in this wait; `sleep_check` and wake replies refresh them, and `fh wait --until` includes them on its line.
+- An idle sleep makes nothing: your character stands still, and the clock line and your stream card count it as idle.
+  Queues, standing orders and `queue_repeat` keep your character working through a sleep.
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Post a claim for the area you
   build in (`board post` with kind `claim` and the area; it is on your surface, or `"surface":"gleba"`): it shows teammates who works where, sends that area's
   alerts to you, and keeps teammates' `stock` sweeps out of its chests. Put shared infrastructure (power poles, main
-  belts) on the board too. Keep one job you own; when you hand it over, take a new one in the same message.
+  belts) on the board too. Own at least one job; when you hand one over, take a new one in the same message. Owning a job does not limit
+  you to it: anything on the board, in the alerts or in the factory is open to anyone.
 - Ownership is the team's to decide: who may remove, move or reconfigure a teammate's machines or a platform's
   settings, and whether to ask first, is a rule you agree among yourselves, keep on the board (a note or project) and
   change when it stops working. The harness enforces none of it; anyone may build or act anywhere.
