@@ -11,7 +11,7 @@ import { loadPace, savePace, seeTick, seeDown, slowNote, rolledBack, Pacer, over
 import { Harness, type Reply } from './harness.js';
 import { renderMap } from './view.js';
 import { parseLook } from './look.js';
-import { writeFileSync, readFileSync, rmSync, appendFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, rmSync, appendFileSync, existsSync } from 'node:fs';
 import { formatCompact, finalLine, actionHelp, paginate } from './format.js';
 import { parseDeadline, deadlineText, timeLeftText } from './deadline.js';
 import { lookaheadDue } from './lookahead.js';
@@ -94,6 +94,7 @@ Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT),
          --wait-through-tells (a tell or mention does not end the wait; told_during_wait lists them at the end)
          --wake-on-viewers (fh sleep, fh wait, --wait: a viewer's @mention ends it too; by default it waits for your next reply)
          --no-urgent (fh sleep, fh wait --until, direct wait_ticks/wait_until: an urgent alert does not end it; by default it does)
+         --operator-repeat (FH_OPERATOR_REPEAT=1: print an operator message on every reply that carries it; by default once)
          Exit codes: 0 done, 1 failed, 3 the wait ended while the action still runs (a tell or mention, or the wait timeout)
          --full (after --wait: the whole status instead of outcome, position and inventory change)
          --since SEQ (chat, board events), --limit N, --deadline-file PATH (FH_DEADLINE_FILE: time left on the clock line)
@@ -343,12 +344,24 @@ let operatorFile: string | undefined;
 function agoText(seconds: number): string {
   return seconds >= 120 ? `${Math.floor(seconds/60)} min ago` : `${seconds} s ago`;
 }
+// Shown once per message (Muse, shift17 10:50: "operator repeat banners flood stdout and bury command output when
+// piped"): a tell an earlier fh call already filed in the operator file is left out of this call's output; the
+// workspace hook (pog tools/context.py) shows each new one in the model's context once. --operator-repeat (or
+// FH_OPERATOR_REPEAT=1) prints it on every reply that carries it, as before; so does a workspace without the hook
+// (no .context-hooks beside the operator file) or a call without an operator file.
+let operatorRepeat = false;
+function operatorFiled(seq: number): boolean {
+  if (!operatorFile || operatorRepeat) return false;
+  try { return readFileSync(operatorFile, 'utf8').includes(`"seq":${seq},`); } catch { return false; }
+}
 function noteOperator(reply: unknown) {
   const lines = reply && typeof reply === 'object' ? (reply as Reply).result?.operator : undefined;
   if (!Array.isArray(lines)) return;
   for (const o of lines) {
     if (typeof o?.seq !== 'number' || typeof o.text !== 'string' || operatorLines.has(o.seq)) continue;
-    const line = `OPERATOR: ${o.text} (sent ${agoText(Number(o.ago_s ?? 0))}; repeated on every reply until your next game action or message)`;
+    if (operatorFiled(o.seq)) { operatorLines.set(o.seq, ''); operatorPrinted.add(o.seq); continue; }
+    const line = `OPERATOR: ${o.text} (sent ${agoText(Number(o.ago_s ?? 0))}; ${operatorFile && !operatorRepeat
+      ? 'shown once: later replies leave it out' : 'repeated on every reply until your next game action or message'})`;
     operatorLines.set(o.seq, line);
     // JSON keeps the tell in result.operator and leaves stderr without it: scripts read `--format json 2>&1`
     // (Muse, shift12: an OPERATOR line ahead of the document on every data call until the next game action).
@@ -552,7 +565,7 @@ async function main() {
     format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
     host:{type:'string'}, port:{type:'string'}, timeout:{type:'string'}, id:{type:'string'},
     file:{type:'string'}, out:{type:'string'}, mods:{type:'string'}, journal:{type:'string'},
-    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'},
+    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
@@ -863,6 +876,10 @@ async function main() {
     client = rcon;
   }
   operatorFile = process.env.FH_OPERATOR_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.operator-tells.jsonl') : undefined);
+  // A workspace without the post-tool hook (no .context-hooks beside the operator file; Gemini's) keeps the repeats:
+  // nothing else would put a missed tell in front of the model.
+  operatorRepeat = values['operator-repeat'] === true || process.env.FH_OPERATOR_REPEAT === '1'
+    || (operatorFile !== undefined && !existsSync(resolve(dirname(operatorFile), '.context-hooks')));
   paceFile = process.env.FH_PACE_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-pace.json') : undefined);
   journalPath = values.journal ? resolve(values.journal) : undefined;
   retriedId = values.id;
