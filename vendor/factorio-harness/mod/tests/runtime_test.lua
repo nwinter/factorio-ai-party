@@ -3976,6 +3976,29 @@ end)()
   fails(function() call('load_silo',{position=silo.position,items={['agricultural-science-pack']=100},to_total=true,chests=false,launch=true,platform='Nowhere'}) end,
     'loaded, then the launch was refused: no platform named Nowhere')
   eq(cargo[1].count,100)
+  -- Astra 18:33 (tick 9965693) and 23:53, Gemini 18:21: with the game's item stacks (quality a LuaQualityPrototype,
+  -- userdata) load_silo matched nothing and said held 0. Your own inventory (chests=false), as a queue step (Astra's
+  -- followed a wait_until item_count) and as a direct call; it fails on the rocketload.lua before the fix (0 of 50).
+  local qn=io.tmpfile(); debug.setmetatable(qn,{__index={name='normal'}})
+  local function game_stack(name,n) local s=stack(name,n); s.quality=qn; return s end
+  for i=1,3 do cargo[i]=stack(nil,0) end
+  main=inv(game_stack('agricultural-science-pack',80),stack(nil,0))
+  main.get_contents=function() return {{name='agricultural-science-pack',count=main[1].count,quality='normal'}} end
+  call('queue_cancel',{})
+  call('queue_submit',{steps={{action='load_silo',args={position=silo.position,items={['agricultural-science-pack']=50},chests=false}}}})
+  advance(3)
+  local qs=call('queue_status',{history=2})
+  local last=qs.history[#qs.history]
+  eq(last.action,'load_silo'); eq(last.ok,true,'the queued load_silo step')
+  eq(last.result.loaded[1].loaded,50); eq(last.result.loaded[1].from,'you 50')
+  eq(cargo[1].count,50); eq(main[1].count,30)
+  -- the same as a direct call
+  r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=30},chests=false})
+  eq(r.loaded[1].loaded,30); eq(r.complete,true); eq(cargo[1].count,80); eq(main[1].count,0)
+  -- none held: the why says what you held
+  main[1]=game_stack('agricultural-science-pack',0)
+  r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=5},chests=false})
+  eq(r.loaded[1].why,'you held 0; chests not read (chests=false)')
   -- A queue dry run: the cargo before the launch step, queued nothing.
   cargo[1].count=60
   local before=call('queue_status',{}).revision
