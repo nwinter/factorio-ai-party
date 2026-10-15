@@ -137,6 +137,9 @@ already targets your character.
 - `./fh confess "..."` is a confessional: viewers hear it on the stream, and your teammates never see it. Use it
   whenever viewers would want your private take (on the plan, a teammate, a mistake); like `--aloud`, viewers like
   hearing from each of you every few minutes.
+- `./fh chronicle "..."` (`--title T`; text as for `say`) writes an entry in the run's chronicle: the team's own
+  narrative history, in your words, for when something notable happens. Viewers read it on the site by shift, beside
+  the platforms built and lost; the reply names the harness events it is filed beside.
 - `./fh tell luna "29 plates in the chest at (3,4)"` (or `luna,sol`, or `team`; text as for `say`) reaches only
   them, outside the game chat: it appears in their next reply under `team: tells` and wakes them from `sleep`.
   Add `--fyi` when no answer is needed: it waits for their next reply, marked `(fyi)`, and wakes nobody.

@@ -231,7 +231,7 @@ PRIORITY = {"headline": 10, "attack": 9, "death": 10, "loss": 8, "segment": 7, "
             "arrival": 6,  # a platform's later arrival (a ferry's round trip): below battles; firsts are "space"
             "viewer_reply": 7,
             "power": 6,
-            "harness": 5, "plan": 5, "operator_request": 5,
+            "harness": 5, "plan": 5, "operator_request": 5, "chronicle": 6,
             "board": 4,
             "chat": 4, "info": 3, "research_start": 3, "camera": 2, "open": 8, "lull": 1}
 URGENT = 8
@@ -349,6 +349,7 @@ class Differ:
     def __init__(self):
         self.prev = None
         self.alert_ids, self.chat_keys, self.board_seqs, self.segments_seen = set(), set(), set(), set()
+        self.chronicle_seen = set()  # chronicle entries already news (by seq)
         self.recent_viewers = {}  # lower-case name -> {name, text, t}: viewers who wrote in the last 10 minutes
 
     def answers_viewer(self, text, now, window=600):
@@ -434,6 +435,16 @@ class Differ:
             if not first and x.get("answer") and now - float(x.get("t") or now) < 90:
                 ev.append({"kind": "viewer", "viewer": x.get("viewer"), "text": x.get("question"),
                            "answer": x["answer"], "answer_facts": x.get("facts") or {}, "prio": PRIORITY["viewer"] + 1})
+        # an agent's chronicle entry (fh chronicle; viewer Alex 22:24): the hosts read it while it is new
+        for c in (s.get("chronicle") or {}).get("entries") or []:
+            if c.get("seq") is None or c["seq"] in self.chronicle_seen:
+                continue
+            self.chronicle_seen.add(c["seq"])
+            if not first and now - float(c.get("t") or now) < 120:
+                ev.append({"kind": "chronicle", "agent": c.get("agent") or c.get("name"), "title": c.get("title"),
+                           # (the template ends the line with its own period)
+                           "text": (c.get("text") or "").strip().rstrip("."), "about": c.get("about") or [],
+                           "where": c.get("where")})
         seg = s.get("segment") or {}
         if seg.get("id") and seg.get("state") in ("starting", "live") and seg["id"] not in self.segments_seen:
             self.segments_seen.add(seg["id"])  # eng/stream2 shows a segment: talk over it (docs/AUDIO-NOTES "Segments")
@@ -903,6 +914,12 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         f["agent_answer"] = spoken(voices.speakable(e.get("text") or "", 220))
         f["how_to_call_it"] = ("an agent just answered a viewer: Rook says who asked what, Vale says what the agent "
                                "answered, in the hosts' words, and enjoys that the agents talk to the audience")
+    if e["kind"] == "chronicle":  # an agent wrote the run's history in its own words (the site's Chronicle)
+        f["chronicle_entry"] = {k: v for k, v in {"title": e.get("title"), "text": spoken(voices.speakable(e.get("text") or "", 300)),
+                                                  "where": e.get("where"), "about": e.get("about") or None}.items() if v}
+        f["how_to_call_it"] = ("an agent just wrote an entry in the run's chronicle, its own history of the run (viewers "
+                               "read it on the site): Rook reads its words or the heart of them, and Vale says what it "
+                               "is about if the facts say; briefly")
     if e["kind"] == "operator_request":  # task-operator: an agent asked the people running the show for something
         f["how_to_call_it"] = ("an agent just sent the operator (the people running the harness and the stream) a "
                                "request: say who asked for what, briefly; nobody has answered it yet")
@@ -1614,6 +1631,8 @@ class TemplateWriter:
                    "color": ["Good question from {viewer_message_from}. {analyst_answer}"]},
         "harness": {"pbp": ["Tool request on the board: {title}. Status: {change}."],
                     "color": ["When the agents ask for better tools, that's the meta-game."]},
+        "chronicle": {"pbp": ["{agent_name} writes in the chronicle: {text}."],
+                      "color": ["The agents keep their own history of this run. That entry goes on the site."]},
         "operator_request": {"pbp": ["{agent_name} has a request for the operator: {text}."],
                      "color": ["The agents can ask the people running the show for things. We'll see if it lands."]},
         "camera": {"pbp": ["Let's check in on {cam_name}, {cam_doing}.", "Over to {cam_name} now: {cam_doing}.",
@@ -2468,7 +2487,7 @@ class Caster:
         if e["kind"] in ("chat", "camera", "board") and self.rng.random() < self.a.naturalist:
             e["naturalist"] = True
         first = "pbp" if e["prio"] >= PRIORITY["research"] or e["kind"] in (
-            "camera", "board", "harness", "operator_request", "research_start", "viewer", "viewer_reply") else "color"
+            "camera", "board", "harness", "operator_request", "research_start", "viewer", "viewer_reply", "chronicle") else "color"
         if e["kind"] == "lull" or e.get("naturalist"):
             first = "color" if self.last_speaker == "pbp" or e.get("naturalist") else "pbp"
         lo, hi = self.a.lines

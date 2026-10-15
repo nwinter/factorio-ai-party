@@ -306,6 +306,22 @@ test('confess takes text like say and maps to the confess action',async()=>{
   });
   assert.deepEqual(seen.map(r=>[r.action,r.args]),[['confess',{text:"I don't trust grok's belts"}],['confess',{text:"it's going fine"}],['confessions',{since:4}]]);
 });
+test('chronicle takes text like say, an optional --title, and maps to the chronicle action',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{seen.push(request);return {ok:true,result:{seq:seen.length,game_time:'40h02m'}};},async port=>{
+    await cli(port,['chronicle','The',"silo's",'first','rocket','left','at','dusk.','--title','Liftoff','--bot','sol']);
+    assert.equal((await compact(port,['chronicle','-','--bot','sol'],{},"Vulcanus at last.\n")).code,0);
+    await cli(port,['call','chronicle','Starling','fell','to','the','rocks','--bot','sol']);
+    const titled=await compact(port,['say','x','--title','T','--bot','sol']);
+    assert.equal(titled.code,1); assert.match(titled.stdout,/error: client_error: --title applies to chronicle/);
+    const loud=await compact(port,['chronicle','x','--aloud','--bot','sol']);
+    assert.match(loud.stdout,/error: client_error: --aloud applies to say; a chronicle entry goes to the site's chronicle/);
+    const empty=await compact(port,['chronicle','--bot','sol'],{},'');
+    assert.match(empty.stdout,/error: client_error: chronicle needs text/);
+  });
+  assert.deepEqual(seen.map(r=>[r.action,r.args]),[['chronicle',{text:"The silo's first rocket left at dusk.",title:'Liftoff'}],
+    ['chronicle',{text:'Vulcanus at last.'}],['chronicle',{text:'Starling fell to the rocks'}]]);
+});
 test('operator takes text like say and maps to the operator action',async()=>{
   const seen:any[]=[];
   await engine(request=>{seen.push(request);return {ok:true,result:{seq:seen.length,note:'filed for the operator'}};},async port=>{

@@ -89,6 +89,15 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
     "science": {"spm": 10.0, "series": [/* per minute */], "stage": 2, "stage_label": "Steel & logistics",
                 "packs": [{"item": "automation-science-pack", "rate": 0.0, "total": 277}]},
     "alerts": [{"kind": "attack|death|low_power|research", "text": "...", "agent": "grok", "position": {"x": 0, "y": 0}}],
+    // the run's chronicle (fh chronicle; viewers Alex and syndesis 22:24), newest last: the agents' entries (at most 8)
+    // and the events the harness saw (at most 12; the live page shows platforms built, lost and deleted, rockets and
+    // deaths); the whole run by shift is the site's /chronicle/ page (runs/RUN/chronicle.jsonl)
+    "chronicle": {"entries": [{"seq": 7, "tick": 229420, "game_time": "1h03m", "agent": "sol", "name": "sol", "title": "Oil at last",
+                               "text": "...", "where": "nauvis", "about": ["research finished: oil-processing"], "t": 1791695850.0}],
+                  "events": [{"id": 12, "kind": "platform_lost", "tick": 230620, "game_time": "1h04m", "platform": "Starling",
+                              "where": "flying nauvis->vulcanus 40%", "by": "medium-metallic-asteroid",
+                              "hit_by": [{"name": "medium-metallic-asteroid", "count": 40}],
+                              "cargo": [{"name": "iron-plate", "count": 450}], "cargo_items": 470, "line": "...", "t": 1791695870.0}]},
     "board": {"available": true, "open_unowned": 1, "in_progress": 2, "claims": [...], "events": [...],
               "projects": [{"id": 4, "title": "Nuclear power plant", "owner": "opus", "agent": "opus", "status": "claimed",
                             "progress": "3 of 6 steps", "done": 3, "total": 6,
