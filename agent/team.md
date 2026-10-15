@@ -403,7 +403,10 @@ already targets your character.
   `position`, optional `items`, `platform`) shows the cargo against 1000 kg and 20 slots, what a list lacks, and the
   platform's requests from this planet less its hub and this rocket. `launch` takes `min_cargo` and `arrived: true`,
   read in the tick it launches; `fh queue submit --file plan.json --args '{"dry_run":true}'` queues nothing and shows
-  the silo cargo before each launch step.
+  the silo cargo before each launch step. `load_silo` with `"walk": true` and `from` (chests anywhere on the silo's
+  surface) walks between them and the silo as many trips as the load takes, in one timed call (outcomes `loaded`,
+  `launched`, `short`, `no_rocket`; `last.trips`, `last.stops`). A silo's `rocket_ready` is true only for a built
+  rocket (`built_parts` 50/50); `next_parts` counts parts for the rocket after it.
 - `./fh platform NAME` also shows `freight` (per stop what was expected down and up, what left the hub, came aboard
   and spoiled, the rockets sent to it; per leg what spoiled on the way) and `spoiling` (when its spoilable items spoil,
   against the arrival). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when
