@@ -706,7 +706,15 @@ local function stop_combat(index,outcome)
   end
   state().last_combat=state().last_combat or {}
   if combat and combat.retreated and outcome=='move_ended' then outcome='retreated' end
+  -- Nothing fired on foot: why, as the start read it, or no enemy in reach (Sol, d15 07:50).
+  local why_none
+  if combat and not combat.vehicle and used==0 then
+    local w=combat.why_start
+    why_none=w and (w.no_compatible_ammo and 'no_compatible_ammo: '..w.no_compatible_ammo or w.out_of_range and 'out_of_range: '..w.out_of_range)
+      or (combat.auto and string.format('nothing fired: no enemy the gun could reach within radius %d',combat.radius or 24)) or 'nothing fired'
+  end
   state().last_combat[index]={outcome=outcome,tick=game.tick,ammo_used=used,reloads=combat and combat.reloads,equipped=combat and combat.equipped,
+    gun_used=combat and combat.gun_used,why_none=why_none,
     vehicle=combat and combat.vehicle,gun=combat and combat.gun,guns=guns,kills=combat and combat.kills,retreated=combat and combat.retreated,
     why=combat and combat.retreated and (combat.retreated.why..(combat.retreated.going and '; '..combat.retreated.going or '')) or nil}
 end
@@ -7859,6 +7867,22 @@ function handlers.equipment(p,a)
   end
   return {removed=removed.name,where=where,grid=M.grids.view(grid)}
 end
+-- The character's gun slots: each gun, the ammo slot beside it and its count, and the gun's range (its attack
+-- parameters, as the tooltip gives it).
+function M.gun_rows(p)
+  local guns=p.get_inventory(defines.inventory.character_guns)
+  local ammo=p.get_inventory(defines.inventory.character_ammo)
+  local out={}
+  for i=1,guns and #guns or 0 do
+    local g,am=guns[i],ammo and ammo[i]
+    if g.valid_for_read then
+      local okr,range=pcall(function() return prototypes.item[g.name].attack_parameters.range end)
+      local loaded=am and am.valid_for_read
+      out[#out+1]={index=i,gun=g.name,ammo=loaded and am.name or nil,count=loaded and am.count or 0,range=okr and range or nil}
+    end
+  end
+  return out
+end
 function handlers.shoot(p,a)
   local ticks=integer(a.ticks,60,1,MAX_TICKS,'ticks')
   -- vehicle=: a vehicle's guns (operator 08:32). Seated in it, as below; by remote view the game fires them for a
@@ -7893,11 +7917,35 @@ function handlers.shoot(p,a)
   local equipped=kite.ammo_count(p)==0 and kite.auto_equip(p) or nil
   local ammo=kite.ammo_count(p)
   assert(ammo>0,'no ammunition in the ammo slots and none carried that fits a gun: craft firearm-magazine')
+  -- The gun that fires (Sol, d15 07:50: the aggregated ammo count hid an empty rocket launcher; 10 s shoots used 0):
+  -- the selected gun slot, the ammo slot beside it and its count, the gun's range, and why it will not fire.
+  local gun_row,why
+  local okg,guns=pcall(M.gun_rows,p)
+  local sel=p.character and p.character.selected_gun_index
+  for _,g in ipairs(okg and guns or {}) do if g.index==sel then gun_row=g end end
+  local gun
+  if gun_row then
+    gun={slot=gun_row.index,name=gun_row.gun,range=gun_row.range,ammo_slot=gun_row.index,ammo=gun_row.ammo,count=gun_row.count}
+    if gun_row.count==0 then
+      local others={}
+      for _,g in ipairs(guns) do if g.count>0 then others[#others+1]=string.format('slot %d %s has %s*%d',g.index,g.gun,g.ammo,g.count) end end
+      why={no_compatible_ammo=string.format('gun slot %d (%s) has nothing in ammo slot %d%s',gun_row.index,gun_row.gun,gun_row.index,
+        #others>0 and '; '..table.concat(others,', ')..' (gun_slot picks it)' or '')}
+    elseif pos and gun_row.range and distance(p.position,pos)>gun_row.range then
+      why={out_of_range=string.format('%s reaches %g tiles; the target is %.1f away',gun_row.gun,gun_row.range,distance(p.position,pos))}
+    end
+  else
+    gun={slot=sel,name='empty'}
+    why={no_compatible_ammo=string.format('gun slot %s holds no gun',tostring(sel))}
+  end
   state().combat=state().combat or {}
   combat_targets()[p.index]=nil
-  state().combat[p.index]={until_tick=game.tick+ticks,position=pos,auto=a.auto==true,radius=integer(a.radius,24,1,32,'radius'),ammo_start=ammo}
+  state().combat[p.index]={until_tick=game.tick+ticks,position=pos,auto=a.auto==true,radius=integer(a.radius,24,1,32,'radius'),ammo_start=ammo,
+    gun_used=gun,why_start=why}
   M.retreat.arm(p,state().combat[p.index],back)
-  return {until_tick=game.tick+ticks,ammo=ammo,equipped=equipped,retreat=back and M.retreat.line(back) or nil}
+  local out={until_tick=game.tick+ticks,ammo=ammo,gun=gun,equipped=equipped,retreat=back and M.retreat.line(back) or nil}
+  for k,v in pairs(why or {}) do out[k]=v end
+  return out
 end
 function handlers.equip(p,a)
   local names={gun='character_guns',ammo='character_ammo',armor='character_armor'}
@@ -7906,6 +7954,15 @@ function handlers.equip(p,a)
   local index=a.index~=nil and integer(a.index,nil,1,#inv,'index') or nil
   assert(type(a.item)=='string','item required')
   local source=p.get_main_inventory().find_item_stack(a.item)
+  -- A gun already in a gun slot (Sol, d15 07:50): equip selects it.
+  if not source and a.slot=='gun' then
+    for i=1,#inv do
+      if inv[i].valid_for_read and inv[i].name==a.item and (index==nil or index==i) then
+        p.character.selected_gun_index=i
+        return {selected=a.item,slot='gun',index=i,note='already in gun slot '..i..': selected'}
+      end
+    end
+  end
   assert(source,'item is not in inventory')
   -- An omitted index tries compatible empty slots first. An explicit index
   -- always means that slot; failed swaps leave both stacks unchanged.
@@ -7919,8 +7976,27 @@ function handlers.equip(p,a)
   index=index or 1
   if not inv[index].swap_stack(source) then
     local held=inv[index].valid_for_read and inv[index].name or 'empty'
-    error(string.format('%s cannot swap into %s slot %d (holds %s): incompatible item or displaced stack cannot fit; nothing moved',a.item,a.slot,index,held),0)
+    -- An occupied slot with room in the main inventory (Sol, d15 07:50: a pistol slot refused while main had room): the
+    -- old stack goes to main, the new one in; put back when the game refuses the new one there.
+    local main=p.get_main_inventory()
+    local moved_out
+    local okc,fits=pcall(function() return main.can_insert({name=inv[index].name,count=inv[index].count,quality=inv[index].quality}) end)
+    if inv[index].valid_for_read and okc and fits then
+      local old={name=inv[index].name,count=inv[index].count,quality=inv[index].quality}
+      local n=main.insert(old)
+      if n==old.count then
+        inv[index].clear()
+        if inv[index].transfer_stack(source) then moved_out=old
+        else inv[index].set_stack(old); main.remove(old) end
+      elseif n>0 then main.remove({name=old.name,count=n,quality=old.quality}) end
+    end
+    if not moved_out then
+      error(string.format('%s cannot swap into %s slot %d (holds %s): incompatible item or displaced stack cannot fit; nothing moved',a.item,a.slot,index,held),0)
+    end
+    if a.slot=='gun' then p.character.selected_gun_index=index end
+    return {equipped=a.item,slot=a.slot,index=index,replaced=moved_out.name..'*'..moved_out.count..' (to your inventory)'}
   end
+  if a.slot=='gun' then pcall(function() p.character.selected_gun_index=index end) end
   return {equipped=a.item,slot=a.slot,index=index}
 end
 -- Why a ghost was not placed, and settings a pasted-over entity lacks (placewhy.lua).

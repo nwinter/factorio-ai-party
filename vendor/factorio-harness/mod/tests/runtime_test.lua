@@ -1905,6 +1905,27 @@ call('shoot',{position={x=3,y=0},ticks=30}); advance(2); ammo_left=7; advance(2)
 eq(p.shooting_state.state,1); ammo_left=0; advance(1)
 eq(p.shooting_state.state,0); eq(call('status').combat,false)
 eq(call('status').last_combat.outcome,'out_of_ammo'); eq(call('status').last_combat.ammo_used,10)
+-- The gun that fires (Sol, d15 07:50): the selected slot, its ammo slot and count, its range, and why nothing would fire.
+do
+  defines.inventory.character_guns=defines.inventory.character_guns or 41; defines.inventory.character_ammo=defines.inventory.character_ammo or 42
+  local GI,AI=defines.inventory.character_guns,defines.inventory.character_ammo
+  prototypes.item.pistol={attack_parameters={range=15}}; prototypes.item['rocket-launcher']={attack_parameters={range=36}}
+  local function slot(name,count) return {valid_for_read=name~=nil,name=name,count=count or 0} end
+  local guns={slot('pistol'),slot('rocket-launcher'),slot(nil)}
+  local ammo={slot('firearm-magazine',10),slot(nil),slot(nil)}
+  ammo.get_item_count=function() return 10 end; ammo.get_contents=function() return {} end
+  local kept=p.get_inventory
+  p.get_inventory=function(i) if i==GI then return guns elseif i==AI then return ammo end return kept(i) end
+  p.character.selected_gun_index=2
+  local r=call('shoot',{position={x=3,y=0},ticks=4})
+  eq(r.gun.slot,2); eq(r.gun.name,'rocket-launcher'); eq(r.gun.count,0); eq(r.gun.range,36)
+  eq(r.no_compatible_ammo,'gun slot 2 (rocket-launcher) has nothing in ammo slot 2; slot 1 pistol has firearm-magazine*10 (gun_slot picks it)')
+  advance(5); eq(call('status').last_combat.why_none:sub(1,19),'no_compatible_ammo:')
+  r=call('shoot',{position={x=30,y=0},ticks=4,gun_slot=1})
+  eq(r.gun.slot,1); eq(r.gun.ammo,'firearm-magazine'); eq(r.gun.count,10); eq(r.out_of_range,'pistol reaches 15 tiles; the target is '..string.format('%.1f',math.sqrt((30-p.position.x)^2+p.position.y^2))..' away')
+  advance(5)
+  p.get_inventory=kept; p.character.selected_gun_index=1
+end
 ammo_left=10
 call('detach'); p.connected=false; fails(function() call('walk',{direction='east'}) end,'join a graphical Factorio client')
 -- Direct intervention cancels queued controls while preserving pending work.
@@ -4836,6 +4857,20 @@ end)()
   eq(source.count,1)
   source=stack('heavy-armor',1)
   r=call('equip',{slot='armor',item='heavy-armor'}); eq(r.index,1); eq(source.name,'light-armor')
+  -- d15 (Sol 07:50): a gun already in a gun slot is selected; an occupied slot swaps when the main inventory has room.
+  source=stack(nil,0)
+  r=call('equip',{slot='gun',item='rocket-launcher'}); eq(r.selected,'rocket-launcher'); eq(r.index,2); eq(p.character.selected_gun_index,2)
+  local held={}
+  source=stack('submachine-gun',1)
+  p.get_main_inventory=function() return {find_item_stack=function(name) return source.valid_for_read and source.name==name and source or nil end,
+    can_insert=function() return true end,insert=function(st) held[st.name]=(held[st.name] or 0)+st.count; return st.count end,
+    remove=function(st) held[st.name]=(held[st.name] or 0)-st.count; return st.count end} end
+  local g1=gun_slots[1]
+  g1.clear=function() g1.name,g1.count,g1.valid_for_read=nil,0,false end
+  g1.transfer_stack=function(o) g1.name,g1.count,g1.valid_for_read=o.name,o.count,true; o.name,o.count,o.valid_for_read=nil,0,false; return true end
+  g1.set_stack=function(st) g1.name,g1.count,g1.valid_for_read=st.name,st.count,true end
+  r=call('equip',{slot='gun',item='submachine-gun',index=1})
+  eq(r.index,1); eq(g1.name,'submachine-gun'); eq(held.pistol,1); eq(r.replaced,'pistol*1 (to your inventory)'); eq(p.character.selected_gun_index,1)
   p.get_inventory,p.get_main_inventory=old_get,old_main
   defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor=old_gun,old_ammo,old_armor
 end)()

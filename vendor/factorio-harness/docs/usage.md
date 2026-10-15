@@ -191,6 +191,14 @@ fh call status
 - `equip {slot, item, index?}`: an explicit index selects exactly that slot. Without it, gun/ammo tries compatible
   empty slots in ascending order, then slot 1; armor defaults to slot 1. A refusal names the item, slot index, and
   current occupant. Failed swaps move nothing.
+  - A gun already in a gun slot and not in your inventory is selected (`selected`, `index`; Sol, d15 07:50). A slot
+    the item cannot swap into while it is occupied takes it when the main inventory has room for the old stack, which
+    goes there (`replaced: pistol*1 (to your inventory)`); a gun put in is selected.
+- `shoot` on foot says which gun fires (Sol, d15 07:50: the summed ammo count hid an empty rocket launcher; 10 s shoots
+  used 0): `gun {slot, name, range, ammo_slot, ammo, count}` for the selected gun slot (`gun_slot` picks one), and why
+  it will not fire: `no_compatible_ammo` (`gun slot 2 (rocket-launcher) has nothing in ammo slot 2; slot 1 pistol has
+  firearm-magazine*10 (gun_slot picks it)`) or `out_of_range` (`pistol reaches 15 tiles; the target is 22.3 away`).
+  `last_combat` has `gun_used`, and `why_none` when nothing was fired (those reasons, or no enemy in reach for `auto`).
 - `equipment {operation: insert|remove|list, item, position, quality, vehicle}` works the armor's equipment grid, or with
   `vehicle` (a unit_number or `{x,y}` on it) a vehicle's (operator 09:13, a viewer via Astra: equipment worked only on
   the armor's grid). Read on world n:
