@@ -227,6 +227,8 @@ already targets your character.
   The destination is checked for enemies again when the call starts; a new worm in a previously clear area is included.
 - `sleep --until "tell|alert"` and `wait --until` accept the same joined events; `wait_until {until:"item_count", platform, item, at_least}` waits for landed hub stock in sleep, queue steps and guards (incoming cargo and hub trash excluded).
   `feed {area, walk:true}` already tours successive groups; `out_of_reach` is the initial count, `last.visited` the stops reached; exhausted carried items and fuel slots holding another fuel limit delivery.
+- `order_set` can take fuel from a named chest then `feed {area, walk:true}` over several furnace areas on `fuel_below`; the complete `keep-furnaces-fueled` call is in usage.md.
+  `belt_route {avoid_enemies: N}` keeps belts, underground spans and returns outside charted enemy reach plus N tiles (0..32; true=8; omitted/false disables); endpoints inside are refused.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` (and `feed` or `collect {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one

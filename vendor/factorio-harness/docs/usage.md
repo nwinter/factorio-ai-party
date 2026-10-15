@@ -385,6 +385,16 @@ fh call status
     charted ground within 24 tiles of each leg's ends, and each leg (from, `via` points in order, to) is at most 1000
     tiles. The line may spend 8000 placement checks and 8000 expansions; with its return line, 12000 and 13000 in all.
     One call lays at most 2048 belts and undergrounds (both lines; a dry run checks as many).
+  - `avoid_enemies: true` keeps the line outside charted worms' range + 8 tiles, spawners' 40 + 8 tiles,
+    and current attack areas' 24 + 8 tiles. A number `0..32` sets that extra clearance; omitted or `false`
+    leaves the existing placement-only search. The check includes every underground span and the return line.
+    A start, end or via point inside the clearance is refused with the hazard named. Search windows expand to
+    `max(24, 50 + clearance)` tiles around each leg's ends; placement/expansion budgets remain unchanged.
+    The existing detour geometry supplies automatic waypoints (at most 64, with at most 32 nearby hazards per
+    leg). The reply includes `avoid_enemies`, `avoidance_waypoints` and `cost.hazard_chunks` (tile chunks whose
+    nearby hazards were read).
+    `belt_route {"from":{"x":0.5,"y":0.5},"to":{"x":480.5,"y":0.5},"avoid_enemies":12,"dry_run":true}`
+    plans with 12 tiles beyond those ranges. Pipes, poles and rails use separate planners and do not accept this option.
   - It never uses a tile one of our belts holds or outputs into. Turns cost a little; an underground pair costs more
     and hops anything but lava and empty space, never over one of the same kind on its axis.
   - Trees, rocks and wild plants are passed over at a small cost: the ghosts mark them for removal and `construct`
@@ -1654,6 +1664,33 @@ fh sleep 900 --until researched                       # ...or until the research
     {"action":"feed","args":{"radius":20,"types":["boiler"],"item":"coal","up_to":true}}]}`.
     The feed radius is around the character after the take. For a chest-to-one-entity move, `transfer {from,to,item,count}`
     is already one take-and-give action. `from:"nearest"` includes feeding chests only with `feeding:true`.
+  - A single `order_set` installs a recurring chest-to-furnaces routine using existing steps. This example
+    triggers when any of our burners within 48 tiles of `(0,0)` holds fewer than 5 fuel items; it takes coal
+    from the chest at `(0,10)` up to 1200 carried, then tops furnaces in two fixed areas up to 20 coal each.
+    The trigger circle includes both areas and also counts any other burners in that circle. The feed steps
+    target only furnaces in the two rectangles, including ones above 5 but below 20. Each area accepts at most
+    64 targets. The character carries the fuel; no fuel is created or taken remotely.
+
+    ```sh
+    fh call order_set --args '{
+      "name":"keep-furnaces-fueled",
+      "when":{"until":"fuel_below","count":5,"position":{"x":0,"y":0},"radius":48},
+      "cooldown_ticks":1800,"max_ticks":18000,
+      "steps":[
+        {"action":"transfer","args":{"position":{"x":0,"y":10},"direction":"to_player",
+          "item":"coal","count":1200,"up_to":1200,"walk":true,"ticks":3600}},
+        {"action":"feed","args":{"area":{"left_top":{"x":-30,"y":-20},"right_bottom":{"x":-2,"y":20}},
+          "types":["furnace"],"fuel":"coal","fuel_count":20,"walk":true,"ticks":6000,"up_to":true}},
+        {"action":"feed","args":{"area":{"left_top":{"x":2,"y":-20},"right_bottom":{"x":30,"y":20}},
+          "types":["furnace"],"fuel":"coal","fuel_count":20,"walk":true,"ticks":6000,"up_to":true}}
+      ]}'
+    ```
+
+    The order starts while the character is free, after the existing hold (default 20 seconds); after a run it
+    checks again following the 30-second cooldown. Own character work interrupts it. A short chest load moves
+    what exists; a feed with `up_to:true` keeps its short count and continues. Fuel slots occupied by another fuel
+    are not replaced. Walking uses the usual enemy checks and the per-step tick budgets; the order's overall
+    budget here is 5 minutes. `orders` reports the run and last result; three failed runs disable the order.
   - `feed` rows (`entities`): each machine fed `{position, name, gave, fuel}`, `fuel` being its fuel slots after
     (`coal 10`, `solid-fuel 3`, `empty`); with `positions` or `area` also each machine that got nothing (`got:
     "nothing"`). Haiku's boilers in one call: `feed {"area": {...}, "types": ["boiler"], "fuel": true}` tops up every

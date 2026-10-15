@@ -1550,6 +1550,51 @@ eq(boilers.entities[2].gave.coal,10); eq(boilers.entities[3].fuel,'coal 10')
 local topped_all=call('feed',{area=area,types={'boiler'},fuel=true})
 eq(topped_all.items.coal,8); eq(b1.fuel[1].count,10)
 eq(topped_all.entities[1].gave.coal,8); eq(topped_all.entities[1].fuel,'coal 10'); eq(topped_all.entities[2].got,'nothing'); eq(topped_all.entities[3].got,'nothing')
+-- One standing-order registration takes from its named chest, then tops up two furnace areas.
+;(function()
+  local find,old_main,old_orders=p.surface.find_entities_filtered,main,storage.agent_harness.orders
+  local old_clock=storage.agent_harness.clocks
+  local old_counts={f1.slots[2][1].count,f2.slots[2][1].count}
+  local old_names={f1.slots[2][1].name,f2.slots[2][1].name}
+  local a,b=f1.slots[2],f2.slots[2]
+  local ac,bc=a.get_item_count,b.get_item_count
+  a.get_item_count=function(q) return q and ac(q) or a[1].count end
+  b.get_item_count=function(q) return q and bc(q) or b[1].count end
+  f1.burner={}; f2.burner={}
+  for _,f in ipairs({f1,f2}) do f.slots[2][1].name='coal'; f.slots[2][1].count=1; f.slots[2][1].valid_for_read=true end
+  main=inv(stack(nil,0),stack(nil,0),stack(nil,0))
+  local source=inv(stack('coal',100))
+  local chest={valid=true,name='iron-chest',type='container',position={x=8,y=0},force=p.force,
+    get_inventory=function(id) return id==defines.inventory.chest and source or nil end}
+  p.surface.find_entities_filtered=function(q)
+    if q.position and (q.radius or 0)<1 then
+      for _,e in ipairs({f1,f2,chest}) do if e.position.x==q.position.x then return {e} end end
+      return {}
+    end
+    if q.area then
+      local lt=q.area.left_top or q.area[1]; local rb=q.area.right_bottom or q.area[2]
+      local out={}
+      for _,e in ipairs({f1,f2}) do if e.position.x>=lt.x and e.position.x<=rb.x then out[#out+1]=e end end
+      return out
+    end
+    return {f1,f2}
+  end
+  call('order_set',{name='test-fueled',when={['until']='fuel_below',count=5,position={x=3,y=0},radius=10},
+    cooldown_ticks=300,max_ticks=3600,steps={
+      {action='transfer',args={position={x=8,y=0},direction='to_player',item='coal',count=40,up_to=40,walk=true}},
+      {action='feed',args={area={left_top={x=2,y=-1},right_bottom={x=3.5,y=1}},types={'furnace'},fuel='coal',fuel_count=20,walk=true}},
+      {action='feed',args={area={left_top={x=3.5,y=-1},right_bottom={x=5,y=1}},types={'furnace'},fuel='coal',fuel_count=20,walk=true}}}})
+  -- A recent request keeps orders enabled; no further driving call is needed.
+  storage.agent_harness.clocks=storage.agent_harness.clocks or {}
+  storage.agent_harness.clocks[1]={call_tick=game.tick,idle=0}
+  call('orders_resume',{hold_s=0}); advance(120)
+  eq(f1.slots[2][1].count,20); eq(f2.slots[2][1].count,20); eq(source[1].count,60)
+  advance(400); eq(source[1].count,60,'a satisfied trigger does not take another chest load')
+  call('order_remove',{name='test-fueled'}); call('queue_cancel',{})
+  p.surface.find_entities_filtered,main,storage.agent_harness.orders,storage.agent_harness.clocks=find,old_main,old_orders,old_clock
+  a.get_item_count,b.get_item_count=ac,bc; f1.burner,f2.burner=nil,nil
+  for i,f in ipairs({f1,f2}) do f.slots[2][1].count=old_counts[i]; f.slots[2][1].name=old_names[i] end
+end)()
 -- The same as a walking tour (radius): last names each stop.
 b1.fuel[1].count=4; b3.fuel[1].count=7
 call('feed',{radius=20,types={'boiler'},fuel=true}); advance(1)
