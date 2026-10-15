@@ -133,8 +133,8 @@ return function(api)
   -- fills[k] says which item); false (blocked, outside the window, taken by
   -- or fed by one of our belts, uncharted). taken: tiles the route itself
   -- holds (the return line keeps off the first).
-  local function tiles(p,a,belt,s,budget)
-    local t={kinds={},fills={},taken={},fed={},charted={},budget=budget,box=nil}
+  local function tiles(p,a,belt,s,budget,danger)
+    local t={kinds={},fills={},taken={},fed={},charted={},budget=budget,box=nil,danger=danger}
     local stands=api.tiles and api.tiles.stands_fn(p.surface,belt) or function() return true end
     local tile_info=api.tile_info
     local only_obstacles=api.only_obstacles
@@ -162,7 +162,7 @@ return function(api)
       local b=t.box
       if b and (x<b.left or x>b.right or y<b.top or y>b.bottom) then return false end
       local k=key(x,y)
-      if taken[k] or fed[k] then return false end
+      if taken[k] or fed[k] or (danger and danger(x,y)) then return false end
       local v=kinds[k]
       if v==nil then
         -- (its chunk's belts surveyed first: feeds and at are then known here)
@@ -190,6 +190,7 @@ return function(api)
     -- What an underground can not pass under: by tile name once, by tile once.
     local under,under_at={},{}
     function t.passes_under(x,y)
+      if danger and danger(x,y) then return false end
       local k=key(x,y)
       local v=under_at[k]
       if v~=nil then return v end
@@ -557,6 +558,10 @@ return function(api)
   end
 
   function M.plan(p,a)
+    local danger,avoid_note,margin,hazard_cost,guide
+    if api.route_guard then danger,avoid_note,margin,hazard_cost,guide=api.route_guard(p,a.avoid_enemies)
+    else assert(a.avoid_enemies==nil or a.avoid_enemies==false,'enemy clearance is unavailable') end
+    margin=math.max(MARGIN,margin or MARGIN)
     local belt,underground=tier(a.belt or 'transport-belt')
     if a.undergrounds==false then underground=nil end
     local reach=underground and underground.max_underground_distance or 0
@@ -582,7 +587,7 @@ return function(api)
     assert(a.to_direction==nil or STEP[to_direction or -1],'to_direction must be north, east, south or west')
     local budget={checks=0,expansions=0}
     local s=survey(p)
-    local t=tiles(p,a,belt,s,budget)
+    local t=tiles(p,a,belt,s,budget,danger)
     local ctx={t=t,s=s,underground=underground,reach=reach,budget=budget,planned_under={},to_direction=to_direction,clear_to={},alone={},
       limit={checks=M.BUDGET.checks,expansions=M.BUDGET.expansions}}
 
@@ -597,6 +602,38 @@ return function(api)
       start_din=first.direction
       fx,fy=fx+STEP[start_din][1],fy+STEP[start_din][2]
       points[1]={x=fx,y=fy}
+    end
+
+    if danger then
+      for i,v in ipairs(points) do
+        local why=danger(v.x,v.y)
+        if why then error(string.format('%s %s is inside enemy clearance: %s',i==1 and 'from' or i==#points and 'to' or 'via '..(i-1),fmt(v.x,v.y),why),0) end
+      end
+    end
+
+    local automatic=0
+    if guide then
+      local guided={points[1]}
+      for i=2,#points do
+        local prev,pt=points[i-1],points[i]
+        local vias=guide(centre(prev.x,prev.y),centre(pt.x,pt.y))
+        for j=1,math.max(0,#vias-1) do
+          local vx,vy=tile(vias[j])
+          local free
+          for radius=0,4 do
+            for dx=-radius,radius do for dy=-radius,radius do
+              if not free and (math.abs(dx)==radius or math.abs(dy)==radius) and t.kind(vx+dx,vy+dy) then free={x=vx+dx,y=vy+dy} end
+            end end
+            if free then break end
+          end
+          assert(free,'no buildable tile near automatic enemy-clearance waypoint '..fmt(vx,vy))
+          local last=guided[#guided]
+          if free.x~=last.x or free.y~=last.y then guided[#guided+1]=free; automatic=automatic+1 end
+          assert(automatic<=64,'enemy clearance requires more than 64 automatic waypoints')
+        end
+        guided[#guided+1]=pt
+      end
+      points=guided
     end
 
     -- The goal: an empty `to` gets the last belt; an existing belt at `to`
@@ -622,9 +659,11 @@ return function(api)
       assert(not a.lane,'lane needs an existing belt at to')
     end
 
-    local function window(ax,ay,bx,by) return {left=math.min(ax,bx)-MARGIN,top=math.min(ay,by)-MARGIN,right=math.max(ax,bx)+MARGIN,bottom=math.max(ay,by)+MARGIN} end
+    local function window(ax,ay,bx,by) return {left=math.min(ax,bx)-margin,top=math.min(ay,by)-margin,right=math.max(ax,bx)+margin,bottom=math.max(ay,by)+margin} end
     -- Why an end or via tile takes no belt: what holds it, or its tile.
     local function blocked_text(x,y)
+      local hazard=danger and danger(x,y)
+      if hazard then return 'inside enemy clearance: '..hazard end
       if not t.is_charted(x,y) then return 'not charted' end
       local k=key(x,y)
       if s.at[k] then return 'taken by our '..belt_name(s.at[k]) end
@@ -684,7 +723,7 @@ return function(api)
       end
       local ok,line=pcall(function() return api.tiles and api.tiles.line_tiles(p.surface,p.force,belt,centre(from_pt.x,from_pt.y),centre(goal_pt.x,goal_pt.y)) end)
       if ok and line then text[#text+1]=line end
-      text[#text+1]=string.format('the search keeps within %d tiles of each leg\'s ends; %d placement checks, %d expansions',MARGIN,budget.checks,budget.expansions)
+      text[#text+1]=string.format('the search keeps within %d tiles of each leg\'s ends; %d placement checks, %d expansions',margin,budget.checks,budget.expansions)
       error('no route: '..table.concat(text,'; '),0)
     end
 
@@ -779,8 +818,8 @@ return function(api)
       end
       local wide={left=math.huge,top=math.huge,right=-math.huge,bottom=-math.huge}
       for _,st in ipairs(steps) do
-        wide.left,wide.top=math.min(wide.left,st.x-MARGIN),math.min(wide.top,st.y-MARGIN)
-        wide.right,wide.bottom=math.max(wide.right,st.x+MARGIN),math.max(wide.bottom,st.y+MARGIN)
+        wide.left,wide.top=math.min(wide.left,st.x-margin),math.min(wide.top,st.y-margin)
+        wide.right,wide.bottom=math.max(wide.right,st.x+margin),math.max(wide.bottom,st.y+margin)
       end
       local function near(ax,ay,bx,by,m) return {left=math.min(ax,bx)-m,top=math.min(ay,by)-m,right=math.max(ax,bx)+m,bottom=math.max(ay,by)+m} end
       local taken0={}
@@ -859,8 +898,8 @@ return function(api)
           while true do
             local j=ri+RETURN_STEP
             local last=the_end
-            local tries=j<#r and {{j,RETURN_NEAR,LEG_CAP[1]},{j,MARGIN,LEG_CAP[2]},{j+2*RETURN_STEP,MARGIN,LEG_CAP[2]}}
-              or {{#r,RETURN_NEAR,LEG_CAP[1]},{#r,MARGIN,LEG_CAP[2]}}
+            local tries=j<#r and {{j,RETURN_NEAR,LEG_CAP[1]},{j,margin,LEG_CAP[2]},{j+2*RETURN_STEP,margin,LEG_CAP[2]}}
+              or {{#r,RETURN_NEAR,LEG_CAP[1]},{#r,margin,LEG_CAP[2]}}
             local goal
             node=nil
             for _,tr in ipairs(tries) do
@@ -973,7 +1012,9 @@ return function(api)
       for _,e in ipairs(r.entities) do out.entities[#out.entities+1]=e end
       assert(#out.entities<=MAX_ENTITIES,string.format('the line and its return line need %d belts and undergrounds; one call lays at most %d (split it into parts by from and to)',#out.entities,MAX_ENTITIES))
     end
-    out.cost={placement_checks=budget.checks,expansions=budget.expansions}
+    out.avoid_enemies=avoid_note
+    out.avoidance_waypoints=automatic>0 and automatic or nil
+    out.cost={placement_checks=budget.checks,expansions=budget.expansions,hazard_chunks=hazard_cost and hazard_cost.chunks or nil}
     return out
   end
   return M

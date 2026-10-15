@@ -343,6 +343,23 @@ do
   structures={}; advance(1)
   eq(A.inside(p,goal,mode),nil,'a removed worm does not keep refusing the destination')
 end
+-- Belt clearance shares the current charted hazard reads, memoized per tile chunk.
+do
+  storage.agent_harness.enemy_chunks={}
+  local p=runtime.bots.lookup(runtime.bots.index_of('astra'))
+  structures={{valid=true,name='medium-worm-turret',type='turret',position={x=40,y=0},force=enemy}}
+  local block,note,margin,cost=A.route_guard(p,8)
+  assert(note:find('range + 8',1,true)); assert(margin>=56)
+  assert(block(9,0)); eq(block(0,0),nil)
+  local reads=surface.find_entities_filtered
+  surface.find_entities_filtered=function() error('tile in same chunk rescanned hazards') end
+  assert(block(10,1)); eq(cost.chunks,1)
+  surface.find_entities_filtered=reads
+  eq(A.route_guard(p,false),nil); eq(A.route_guard(p,nil),nil)
+  fails(function() A.route_guard(p,33) end,'0..32')
+  structures={}; advance(1)
+  local fresh=A.route_guard(p,8); eq(fresh(9,0),nil)
+end
 print('avoid: ok')
 
 -- Opus, shift14/15 far-east mine. Real charted coordinates copied into a fixture;
