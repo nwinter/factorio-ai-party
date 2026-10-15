@@ -54,7 +54,10 @@ order_remove {name}     orders_pause {seconds?}     orders_resume {hold_s?}     
 body on the map (not dead, riding or aboard), the agent in the game (a request of its own or an fh sleep poll in the
 last 30 min, so a world left running between shifts does not play on for absent agents), and 20 s after the agent's own last character request or queue call
 (`orders_resume {hold_s}` sets 0..600), so an agent acting step by step keeps its character between requests. Then
-the highest-priority trigger that holds and is off cooldown runs, else the default. An order runs as a plan in the
+the highest-priority trigger that holds and is off cooldown runs, else the default. Between the rounds of a repeating
+plan (Opus, shift13), triggered orders run too, and the default routine with `queue_repeat {orders: "all"}`
+(`"none"` keeps every order out); the hold then counts from the agent's own last request, and the next round waits
+for the order's run to end. An order runs as a plan in the
 agent's own queue, marked with its name (`queue_status` shows `order`).
 
 **Preemption.** Any request that drives the character (a direct action, `queue_submit`, `queue_repeat`, `plan_run`,

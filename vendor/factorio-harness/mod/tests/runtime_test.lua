@@ -1003,7 +1003,8 @@ do
     silo.rocket_silo_status,silo.rocket_parts=7,0
     local si=call('inspect',{position={x=3,y=0}})
     eq(si.rocket_ready,true); assert(si.next_parts:find('^0/'),si.next_parts); eq(si.parts,nil)
-    assert(si.rocket:find("^rocket ready to launch, not launched; the next rocket's parts 0/%d+; no launch seen$"),si.rocket)
+    assert(si.rocket:find("^rocket built %((%d+)/%1 parts%) and ready to launch, not launched; parts for the rocket after it 0/%1; no launch seen$"),si.rocket)
+    assert(si.built_parts and si.built_parts:find('^(%d+)/%1$'),tostring(si.built_parts))
     silo.rocket_silo_status,silo.rocket_parts=nil,nil; defines.rocket_silo_status=kept_def
   end
   local kept=main
@@ -4239,6 +4240,53 @@ end)()
   eq(dr.launches[1].would_refuse[1],'min_cargo not met: agricultural-science-pack 60 of 100 (40 short)')
   eq(call('queue_status',{}).revision,before,'nothing queued')
   fails(function() call('queue_submit',{dry_run='yes',steps={}}) end,'dry_run must be true or false')
+  -- walk with from (Luna, shift14 21:20: 930 agricultural science packs from a provider 64 tiles from the silo took four
+  -- walks and several calls): a chest out of reach; one timed tour takes there and loads at the silo.
+  local chest={valid=true,name='iron-chest',type='container',position={x=40.5,y=5.5},force=p.force,surface=p.surface,unit_number=78}
+  local held_inv=inv(stack('agricultural-science-pack',100),stack('agricultural-science-pack',50))
+  chest.get_inventory=function(i) if i==defines.inventory.chest then return held_inv end end
+  p.surface.find_entities_filtered=function(f)
+    if f.position and math.abs(f.position.x-40.5)<1 then return {chest} end
+    if f.type=='rocket-silo' or f.position then return {silo} end
+    return {}
+  end
+  for i=1,3 do cargo[i]=stack(nil,0) end
+  main=inv(stack(nil,0),stack(nil,0))
+  main.get_contents=function() local out={}; for _,s in ipairs(main) do if s.valid_for_read then out[#out+1]={name=s.name,count=s.count,quality='normal'} end end; return out end
+  local reach_was=p.can_reach_entity
+  local far={[chest]=true}
+  p.can_reach_entity=function(e) return not far[e] end
+  r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=120},from={x=40.5,y=5.5},walk=true})
+  eq(r.op,'load_silo'); eq(r.walk,true); eq(r.needs,'agricultural-science-pack 120 (you hold 0)'); eq(r.trip,'1 chest, then the silo')
+  eq(#r.legs,2); eq(r.legs[1].name,'iron-chest'); eq(r.legs[2].name,'rocket-silo'); eq(call('status',{}).active.kind,'gather')
+  far={}; advance(1)
+  st=call('status',{})
+  eq(st.active,false); eq(st.last.outcome,'loaded'); eq(st.last.loaded,120); eq(st.last.taken,120); eq(st.last.trips,1)
+  eq(st.last.stops[1].taken,120); eq(st.last.stops[2].loaded,120); eq(st.last.moved,120)
+  eq(cargo[1].count+(cargo[2].count or 0),120); eq(held_inv.get_item_count{name='agricultural-science-pack'},30)
+  -- as a queue step: loaded is a success
+  for i=1,3 do cargo[i]=stack(nil,0) end
+  far={[chest]=true}
+  call('queue_cancel',{})
+  call('queue_submit',{steps={{action='load_silo',args={position=silo.position,items={['agricultural-science-pack']=20},from={x=40.5,y=5.5},walk=true}}}})
+  advance(1); far={}; advance(3)
+  local qh=call('queue_status',{history=1}).history
+  eq(qh[#qh].action,'load_silo'); eq(qh[#qh].ok,true,'the queued walking load_silo step'); eq(cargo[1].count,20)
+  held_inv[1]=stack('agricultural-science-pack',30); held_inv[2]=stack(nil,0)
+  -- the chest and the silo in reach: the load at once, as without walk (standing between them)
+  p.position={x=22,y=5}
+  r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=30},from={x=40.5,y=5.5},walk=true})
+  eq(r.complete,true); eq(r.loaded[1].loaded,30); eq(r.op,nil)
+  -- nothing in the chest: refused, nothing walked
+  far={[chest]=true}
+  fails(function() call('load_silo',{position=silo.position,items={['agricultural-science-pack']=10},from={x=40.5,y=5.5},walk=true}) end,
+    'nothing walked: the rocket still needs agricultural-science-pack 10 (you hold 0) and the chests in from hold none of it (iron-chest (40.5,5.5) holds 0 agricultural-science-pack)')
+  fails(function() call('load_silo',{position=silo.position,items={['agricultural-science-pack']=10},walk=true}) end,'walk goes with from')
+  p.can_reach_entity=reach_was
+  -- A launch before the rocket is built names its parts (Grok, shift14 21:20).
+  silo.rocket_silo_status=defines.rocket_silo_status.building_rocket; silo.rocket_parts=35
+  fails(function() call('launch',{position=silo.position,platform='Nowhere'}) end,', building the rocket: parts 35/50')
+  silo.rocket_silo_status=defines.rocket_silo_status.rocket_ready; silo.rocket_parts=0
   p.surface.find_entities_filtered,main,defines.rocket_silo_status,p.position,p.force.platforms=kept_find,kept_main,kept_rss,kept_pos,kept_platforms
   ag.weight,ag.stack_size=kept_w,kept_s; p.get_main_inventory=kept_gmi
 end)()
