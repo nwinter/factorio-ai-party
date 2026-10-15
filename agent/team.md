@@ -197,7 +197,8 @@ already targets your character.
   slots, cargo, speed, next stop, ETA);
   `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
-  open board items). `projects` lists the open projects, one line each with progress, next step and handoff.
+  open board items) and the last 3 shifts' team numbers (`progress shift13: SPM ... | packs .../min | techs ... |
+  rockets ... | plates, circuits .../min | deaths ...`, as `./fh progress` counts them). `projects` lists the open projects, one line each with progress, next step and handoff.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
   `./fh queue status` shows the active step (`running_s`), the next one and the last 3 results; `--args
   '{"history":"all","pending":10}'` shows more.

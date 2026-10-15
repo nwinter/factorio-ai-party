@@ -248,6 +248,30 @@ def trend_line(tr):
             f" | circuits/min {seq(tr['circuits_per_min'])} | deaths {seq(tr['deaths'])}")
 
 
+def compact_line(r):
+    """A shift's team numbers for the shift block's retro (tools/start-team.sh -> shift_start): SPM, packs made a
+    minute, technologies, rockets, plates and circuits a minute, deaths."""
+    out = r.get("output_per_min") or {}
+    parts = [f"{r['shift']}: SPM {num(r['spm'])}", f"packs {num(r['packs_made_per_min'])}/min",
+             f"techs +{r['research_new']} ({r['research']})", f"rockets +{r['rockets_new']} ({r['rockets']})",
+             f"plates {num(out.get('plates'))}/min, circuits {num(out.get('circuits'))}/min", f"deaths {num(r.get('deaths'))}"]
+    if r.get("rolled_back"):
+        parts.append("began from an earlier save")
+    return " | ".join(parts)
+
+
+# The shift_start argument is a Lua long string on one RCON line, built in bash: none of these may appear in it.
+SEP = " ~ "
+UNSAFE = str.maketrans("", "", "~[]\"'`$\\\n\r")
+
+
+def shift_lines(data, n=TREND):
+    """The last n played shifts' compact lines, one string joined by SEP (shift_start's second argument)."""
+    # a shift just begun (a first score row, under a game minute) has no numbers yet
+    rows = [r for r in data["shifts"] if r.get("played") and (r.get("game_minutes") or 0) >= 1][-n:]
+    return SEP.join(compact_line(r).translate(UNSAFE) for r in rows)
+
+
 def full_block(r):
     lines = [shift_line(r)]
     if not r.get("played"):
@@ -295,6 +319,8 @@ def main(argv=None):
     ap.add_argument("--full", action="store_true", help="each shift in full: technologies, labs' use and packs made, platforms, tokens")
     ap.add_argument("--last", type=int, help="only the last N shifts (totals and trend cover the run)")
     ap.add_argument("--format", choices=("text", "json"), default="text")
+    # tools/start-team.sh: the last 3 shifts' team numbers on one line for shift_start (each agent's shift retro)
+    ap.add_argument("--shift-lines", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--runs", default=os.environ.get("POG_RUNS_DIR") or str(ROOT / "runs"), help=argparse.SUPPRESS)
     # the workspace wrapper (runs/RUN/BOT/fh) appends these to every fh command
     ap.add_argument("--bot", help=argparse.SUPPRESS)
@@ -305,6 +331,9 @@ def main(argv=None):
     if a.last is not None and a.last < 1:
         ap.error("--last takes 1 or more")
     data = load(a.runs)
+    if a.shift_lines:
+        print(shift_lines(data) if data else "")
+        return 0
     if data is None:
         print("no recorded shifts yet (no score log in the run's shifts)")
         return 0

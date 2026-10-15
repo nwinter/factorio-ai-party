@@ -122,6 +122,19 @@ def main():
         data = json.loads(js)
         assert data["totals"]["rockets"] == 12 and len(data["shifts"]) == 3
         assert "/Users/" not in js and "sources" not in js
+        # --shift-lines (tools/start-team.sh -> shift_start -> each agent's shift retro): the last 3 played shifts, team
+        # numbers, one line joined by " ~ ", nothing that would break the Lua long string or the bash quoting
+        sl = run(["--runs", root, "--shift-lines", "--bot", "astra"]).strip()
+        assert sl == ("s1: SPM 11.7 | packs 20/min | techs +2 (2) | rockets +3 (3) | plates 1000/min, circuits 100/min | deaths 3 ~ "
+                      "s2: SPM 10 | packs 115/min | techs +1 (3) | rockets +12 (15) | plates 2000/min, circuits 200/min | deaths 0 ~ "
+                      "s3: SPM 10 | packs 33.3/min | techs +2 (4) | rockets +3 (12) | plates 2000/min, circuits 200/min | deaths 1 | began from an earlier save"), sl
+        assert not any(c in sl for c in "[]\"'`$\\\n")
+        # a shift just begun (one score row, under a game minute) is left out; the 3 before it stay
+        write(root, "s4", "s3", [score("2026-10-12T14:15:00", 648100, 12, ["automation"], {}, {}, 0, 0, [])])
+        sl = run(["--runs", root, "--shift-lines"]).strip()
+        assert sl.startswith("s1: ") and sl.count(" ~ ") == 2 and "s4" not in sl, sl
+        # no recorded shift: an empty line (shift_start gets no progress)
+        assert run(["--runs", os.path.join(tmp, "none-yet"), "--shift-lines"]).strip() == ""
         # facts only: no ranking words in any form
         for word in ("best", "worst", "better", "worse", "improv", "declin", "should", "consider"):
             assert word not in (full + js).lower(), word

@@ -3082,6 +3082,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   stone-wall); largest: #11 ...`, `failed (team): 6 (transfer: no coal in inventory x5 (astra 4, sol 1); ...)` (the
   top 3, with who; failures are kept 12 hours), `open board items: 3 (1 harness, 1 request, 1 task); oldest: #21 task
   "rail to the north ore" (sol, doing, 3h00m old); ...` (tasks, requests and harness requests open now, not claims).
+  Then the last 3 shifts' team numbers from the recorded data, the same measures as `fh progress`: `progress shift13:
+  SPM 9.8 | packs 192/min | techs +4 (171) | rockets +66 (250) | plates 2045/min, circuits 599/min | deaths 6 | began
+  from an earlier save`, one line a shift. pog's `tools/start-team.sh` passes them to `shift_start` (operator:
+  `remote.call("agent_harness","shift_start",N,"line ~ line ~ line")`, at most 3 lines of 300 characters); a shift
+  with no previous one on record gets the progress lines alone.
 - The look-ahead (lookahead.lua, Nick 12:35): `lookahead` (read, `fh call lookahead`) and, about every 45 real
   minutes per agent, once in a reply as `lookahead` (fh: the real clock, which holds when the game runs slow; never in
   the first 20 minutes after the workspace's first call; offset by the agent's name so agents do not all get it at

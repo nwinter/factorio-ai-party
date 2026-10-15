@@ -201,7 +201,10 @@ if [ -n "$resume" ]; then
   # The shift's number in the world, counted as the stream hosts count it (tools/shift_times.py, resumed-from chain):
   # the agents' shift block says the same number.
   shift_n=$(python3 tools/shift_times.py number "$rundir" 2>/dev/null || echo 0)
-  closed=$(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.print(remote.call(\"agent_harness\",\"shift_start\",$shift_n))" 2>&1)
+  # The last 3 shifts' team numbers (tools/progress.py, fh progress's measures; viewers Alex and Foobator): every
+  # agent's shift retro carries them. One line, no quotes or brackets (progress.py strips them).
+  progress=$(python3 tools/progress.py --shift-lines 2>/dev/null | tr -d '\n' || true)
+  closed=$(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.print(remote.call(\"agent_harness\",\"shift_start\",$shift_n,[==[$progress]==]))" 2>&1)
   log "world $world: shift_start $closed"
 fi
 

@@ -26,6 +26,9 @@ KNOWN_LINES = [
     "rcon.print(remote.call(\"agent_harness\",\"bot_create\",\"x\"))",
     "rcon.print(remote.call(\"agent_harness\",\"bot_remove\",\"x\"))",
     "rcon.print(remote.call(\"agent_harness\",\"shift_start\"))",
+    "rcon.print(remote.call(\"agent_harness\",\"shift_start\",1))",
+    # tools/start-team.sh: the shift's number and the last shifts' progress lines (tools/progress.py --shift-lines)
+    "rcon.print(remote.call(\"agent_harness\",\"shift_start\",1,[==[x]==]))",
     "rcon.print(remote.call(\"agent_harness\",\"cameras\"))",
     "game.tick_paused = true rcon.print('paused at ' .. game.tick)",
     "game.tick_paused = false rcon.print('resumed at ' .. game.tick)",
