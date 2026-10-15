@@ -2519,7 +2519,10 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
   - `rocket_silo_trash`: take-only, as above.
 
   `inspect` of a silo lists them as `silo_inventories [{inventory, alias, holds, what, example}]` (the example is a
-  transfer call for that silo). An alias works on a silo only; the reply's `inventory` names the inventory it stands
+  transfer call for that silo). The cargo row also has `take_example` while the rocket holds anything: the rocket's
+  cargo comes out by hand without a launch, as the silo's GUI allows (`transfer {position, direction: "to_player",
+  inventory: "rocket_silo_rocket", item}`; Luna, shift17: 447 spoilage in Gleba's rocket, "no way to clear it"; the
+  same call moved 648 iron plates out at 18:46), spoilage first, and `spoilage` counts the spoilage aboard. An alias works on a silo only; the reply's `inventory` names the inventory it stands
   for. A rocket-part ingredient put into the cargo says so: `cargo_note: "50 processing-unit went into
   rocket_silo_rocket (cargo), which goes up with the rocket; processing-unit is a rocket-part ingredient, and the
   rocket-part recipe takes its ingredients from assembling_machine_input (parts)"`. An inventory name the entity does
