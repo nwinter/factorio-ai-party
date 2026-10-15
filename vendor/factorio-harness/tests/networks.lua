@@ -220,6 +220,15 @@ for _,x in ipairs(N.alert_groups(force)) do by[x.kind]=x end
 eq(by.power_high.n,90); eq(by.power_high.unit,'%')
 eq(by.power_high.line,'electric #7 draw at or above 85% of capacity for 2 min: 20.0 MW of 22.1 MW now; 3 machines on low power')
 eq(by.robots_busy.line,'logistic #3: no idle logistic robot for 12 min (147 robots; 1 requests unfilled 60+ s)')
+-- The same groups in steps, one network a step (pushalerts' background read; operator 18:12: networks.alert_groups
+-- 58-60 ms in one tick on world n).
+do
+  local cur,steps=N.alert_cursor(force),1
+  while not N.alert_step(cur,1) do steps=steps+1 end
+  local all=N.alert_groups(force)
+  eq(#cur.out,#all); for i,x in ipairs(all) do eq(cur.out[i].line,x.line) end
+  eq(steps,2,'two networks, two steps')
+end
 -- One sample under 85% ends it.
 flows['steam-engine']=10e6/60; run(5); storage.networks.views={}
 for _,x in ipairs(N.alert_groups(force)) do assert(x.kind~='power_high','below 85% now') end
@@ -260,6 +269,20 @@ do
   eq(whole,0,'no whole-surface find once the box is known')
   v=storage.networks.views.player
   eq(v.surfaces[1].electric[1].machines,30); eq(#v.surfaces[1].electric[1].boilers,11)
+  -- The logistic networks one a step (operator 18:12): their rows as the view made at once has them.
+  local bg_lines={}
+  for _,r in ipairs(v.surfaces[1].logistic) do bg_lines[#bg_lines+1]=r.line end
+  assert(#bg_lines>0,'a logistic row')
+  storage.networks.view_bg=nil; storage.networks.views={}
+  nauvis.find_entities_filtered=find
+  local now={}
+  for _,r in ipairs(N.read({force=force},{}) and storage.networks.views.player.surfaces[1].logistic) do now[#now+1]=r.line end
+  eq(#now,#bg_lines); for i,l in ipairs(bg_lines) do eq(now[i],l) end
+  storage.networks.view_bg=true; storage.networks.views.player=v
+  nauvis.find_entities_filtered=function(f)
+    if not f.position then per_tick=per_tick+1; if not f.area then whole=whole+1 end end
+    return find(f)
+  end
   game.tick=game.tick+5000; per_tick=0
   N.lines(force,'nauvis',8); N.read({force=force},{})
   eq(per_tick,0,'a reply reads the last view')

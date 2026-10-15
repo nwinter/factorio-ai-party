@@ -13,11 +13,14 @@
 -- roboport's construction area is under 2 chunks). With no box yet, a walk
 -- covers the generated chunks the threat chart saw (threat.lua), else it is
 -- one whole-surface find, once per surface.
+-- A band covers at most MAX_CHUNKS chunks (operator 18:12: at 17:53 survey.tick took 66 ms in one game second; on
+-- world n a find of the survey's types over one 34-chunk row of the base found 1346 in 6.7 ms with their positions
+-- read, and a band grown to 8 such rows over a sparse edge would find them all in one step).
 -- pace: one step every N ticks, N from the steps the last pass took, so a
 -- pass spreads over SPREAD of its period instead of its first seconds.
 return function(api)
   local W = {}
-  local TARGET, MARGIN, ROWS_MAX, SPREAD, FIRST_EVERY, MAX_EVERY = 250, 4, 8, 0.8, 4, 600
+  local TARGET, MARGIN, ROWS_MAX, SPREAD, FIRST_EVERY, MAX_EVERY, MAX_CHUNKS = 250, 4, 8, 0.8, 4, 600, 32
   local function boxes()
     local s = api.state()
     s.walk_box = s.walk_box or {}
@@ -62,7 +65,7 @@ return function(api)
       end
     end
     if not box.left then return {surface=s.index, whole=true} end
-    return {surface=s.index, box=box, x=box.left, y=box.top, rows=1, band_rows=1, cols=box.right - box.left + 1}
+    return {surface=s.index, box=box, x=box.left, y=box.top, rows=1, band_rows=1, cols=math.min(MAX_CHUNKS, box.right - box.left + 1)}
   end
 
   -- The next band's entities (a table, maybe empty), or nil when the walk is
@@ -98,8 +101,8 @@ return function(api)
     if #list > TARGET then
       w.rows, w.cols = 1, math.max(1, math.floor(w.cols / 2))
     elseif #list * 4 < TARGET then
-      if w.cols < width then w.cols = math.min(width, w.cols * 2)
-      elseif w.rows < ROWS_MAX then w.rows = w.rows * 2 end
+      if w.cols < width then w.cols = math.min(width, w.cols * 2, math.max(1, math.floor(MAX_CHUNKS / w.rows)))
+      elseif w.rows < ROWS_MAX and w.rows * 2 * w.cols <= MAX_CHUNKS then w.rows = w.rows * 2 end
     end
     w.x = x1 + 1
     if w.x > b.right then w.x = b.left; w.y = y1 + 1 end

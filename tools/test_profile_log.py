@@ -16,6 +16,8 @@ LOG = '\n'.join([
     P + 'second tick=660 n=1 key=dispatch defense time=Duration: 640.000000ms',
     P + 'second tick=660 n=1 key=part board.team time=Duration: 600.000000ms',
     P + 'second tick=660 n=61 key=* time=Duration: 648.000000ms',
+    P + 'heap tick=600 kb=40960 grew_kb=3072 fell_kb=0',
+    P + 'heap tick=660 kb=20480 grew_kb=1024 fell_kb=21504',
     P + 'total ticks=120 n=2 key=dispatch observe/sleep_check time=Duration: 1.500000ms',
     P + 'total ticks=120 n=1 key=dispatch defense time=Duration: 640.000000ms',
     P + 'total ticks=120 n=1 key=part board.team time=Duration: 600.000000ms',
@@ -37,7 +39,10 @@ class ProfileLogTest(unittest.TestCase):
         self.assertTrue(out[3].startswith('part board.team'))
         self.assertTrue(out[5].startswith('event 97'))
         self.assertNotIn('* ', '\n'.join(out[2:6]))
-        self.assertIn('  tick 660: 648.00 ms over 61 calls; dispatch defense 640.00 ms (n=1), part board.team 600.00 ms (n=1)', out)
+        self.assertIn('  tick 660: 648.00 ms over 61 calls; dispatch defense 640.00 ms (n=1), part board.team 600.00 ms (n=1); '
+                      'heap fell 21.0 MB (a garbage collection finished)', out)
+        self.assertIn('  tick 600: 9.70 ms over 63 calls; dispatch observe/sleep_check 1.50 ms (n=2), event 97 0.20 ms (n=1)', out)
+        self.assertEqual(out[-1], 'Lua heap: 20.0-40.0 MB, grew 2.00 MB a second; it fell in 1 of 2 seconds: tick 660 (21.0 MB)')
 
     def test_unfinished_run_sums_its_seconds(self):
         out = profile_log.report(profile_log.runs(LOG)[-1], 5)
