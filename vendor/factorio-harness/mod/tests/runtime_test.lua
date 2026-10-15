@@ -4016,4 +4016,32 @@ end)()
   prototypes.entity['assembling-machine-2'].type=kept_type
   table_size=kept_ts
 end)()
+-- Grok, shift13 18:20 (beltpick.lua): pickup {belt: true, item, count} takes items off belt lanes; item and count go with
+-- belt; a queued pickup that ends picked_up is a success (it counted as a failed step, and standing orders' pickups with it).
+;(function()
+  local kept_find=p.surface.find_entities_filtered
+  p.surface.find_entities_filtered=function() return {} end
+  fails(function() call('pickup',{belt=true,item='iron-plate',position={x=0,y=0},radius=3}) end,'no iron-plate on our belts in (-3,-3)-(3,3): no belt of ours there')
+  fails(function() call('pickup',{item='iron-plate',position={x=0,y=0}}) end,'item and count go with belt=true')
+  fails(function() call('pickup',{belt='yes',item='iron-plate'}) end,'belt must be true')
+  p.surface.find_entities_filtered=kept_find
+  local kept_pick,kept_tick=runtime.beltpick.pickup,runtime.beltpick.tick
+  local ticks_seen=0
+  runtime.beltpick.pickup=function(pp,a)
+    storage.agent_harness.active[pp.index]={kind='pickup',belt=true,items={a.item},count=a.count,taken=0,until_tick=game.tick+600,picked={}}
+    return {until_tick=game.tick+600}
+  end
+  runtime.beltpick.tick=function(_,action)
+    ticks_seen=ticks_seen+1
+    if ticks_seen>=3 then action.taken=action.count; action.picked={['iron-plate']=action.count}; return 'picked_up' end
+  end
+  call('queue_cancel',{})
+  call('queue_submit',{steps={{action='pickup',args={belt=true,item='iron-plate',count=5,position={x=0,y=0}}}}})
+  advance(6)
+  local qs=call('queue_status',{history=1})
+  local last=qs.history[#qs.history]
+  eq(last.action,'pickup'); eq(last.ok,true,'picked_up is a success'); eq(last.result.outcome,'picked_up')
+  eq(call('status',{}).last.belt.taken,5)
+  runtime.beltpick.pickup,runtime.beltpick.tick=kept_pick,kept_tick
+end)()
 print('runtime: '..assertions..' assertions passed')

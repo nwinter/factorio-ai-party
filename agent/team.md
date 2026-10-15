@@ -98,7 +98,10 @@ already targets your character.
   its robots, every unmet requester with the reason, the machines that make and use it by status (the worst 3 with
   positions), and the inserters feeding them.
 - `./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
-  starts, naming each step's makers, their states and what they lack. `inspect` on a machine gives its `rate` (crafts
+  starts, naming each step's makers, their states and what they lack; with `"per_min":30` each step's rate for that
+  target, what it makes now, its makers' rate each and the machines the target takes.
+  `./fh call pickup --args '{"belt":true,"item":"iron-plate","count":200,"position":{"x":90.5,"y":-11.5}}' --wait` takes
+  items off belt lanes by hand (from belts within 1 tile, walking to them). `inspect` on a machine gives its `rate` (crafts
   and output per minute, net of what goes back in), on an agricultural tower its `empty_cells` and why; a take from
   a chest names what robots have reserved there.
 - `./fh call turrets` (optional `"surface"` or `"area"`) lists every turret by front: its ammo (a flamer's oil with
