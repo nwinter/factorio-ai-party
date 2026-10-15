@@ -1917,12 +1917,18 @@ def talk_kind(spoken_text):
     return None
 
 
-def talk_pick(m, label=None, limit=200):
-    """(voice?, label, text) for one chat line: `aloud` lines always (their text tidied); else a line that reads well
-    and is a plan, request or reaction, or one Clef called banter/strategy/emotion."""
-    text = talk_text(m["text"], limit, m.get("agent"))
+ALOUD_LIMIT = 500  # fh say's own cap: an aloud line is voiced whole
+
+
+def talk_pick(m, label=None, limit=200, aloud_limit=ALOUD_LIMIT):
+    """(voice?, label, text) for one chat line: `aloud` lines always (their text tidied, cut only past aloud_limit);
+    else a line that reads well and is a plan, request or reaction, or one Clef called banter/strategy/emotion (cut at
+    a sentence near limit). Viewer syndesis, shift14 23:04 ("Astra's spoken lines cut off abruptly"): aloud lines were
+    cut at the 200 of chat lines, 46 of 126 voiced tonight, Astra 16 of 30, a median 86 characters (38%) unsaid."""
     if m.get("aloud"):
+        text = talk_text(m["text"], aloud_limit, m.get("agent"))
         return bool(text), "aloud", text
+    text = talk_text(m["text"], limit, m.get("agent"))
     fault = talk_fault(m["text"], text)
     if fault:
         return False, fault, text
@@ -1947,8 +1953,9 @@ class TalkPicker:
     `dup_window` seconds, or like another waiting line, is dropped."""
     RANK = {"aloud": 5, "emotion": 4, "reaction": 4, "banter": 3, "strategy": 3, "plan": 3, "request": 2}
 
-    def __init__(self, gap=12, cooldown=50, stale=30, dup_window=600, limit=200):
+    def __init__(self, gap=12, cooldown=50, stale=30, dup_window=600, limit=200, aloud_limit=ALOUD_LIMIT):
         self.gap, self.cooldown, self.stale, self.dup_window, self.limit = gap, cooldown, stale, dup_window, limit
+        self.aloud_limit = aloud_limit
         self.last, self.agent_last = 0.0, {}
         self.aired = deque(maxlen=60)  # (t, agent, text)
         self.waiting = []  # [(m, label, text)]
@@ -1958,7 +1965,7 @@ class TalkPicker:
         out = []
         for m in msgs:
             v = (verdict or {}).get(m.get("seq"))
-            ok, label, text = talk_pick(m, v[1] if v else None, self.limit)
+            ok, label, text = talk_pick(m, v[1] if v else None, self.limit, self.aloud_limit)
             if ok and any(near_same(text, x) for t, _, x in self.aired if now - t < self.dup_window) or \
                     ok and any(near_same(text, w[2]) for w in self.waiting):
                 ok, label = False, "repeat"
@@ -2094,7 +2101,8 @@ class Caster:
         self.tts_fallback = voices.TTS(a.tts_fallback, ai=ai) if a.tts_fallback and not a.dry_run else None
         self.breakers = {k: Breaker(k, cool=a.backoff) for k in ("writer", "classifier", "tts")}
         self.classifier = Classifier(a.classifier, ai=ai)
-        self.talk = TalkPicker(a.agent_gap, a.agent_cooldown, a.chat_stale, limit=a.max_chars)
+        self.talk = TalkPicker(a.agent_gap, a.agent_cooldown, a.chat_stale, limit=a.max_chars,
+                               aloud_limit=getattr(a, "aloud_max_chars", ALOUD_LIMIT))
         self.yielding = None  # {until, event}: the hosts yield to the agent line that just aired (yield_to)
         os.makedirs(a.log_dir, exist_ok=True)
         self.log_path = os.path.join(a.log_dir, time.strftime("caster-%Y%m%d-%H%M%S.jsonl"))
@@ -3018,7 +3026,9 @@ def parser():
     ap.add_argument("--react", type=float, default=0.3, help="share of agent lines the hosts react to")
     ap.add_argument("--talk-gap", type=float, default=6,
                     help="extra seconds between host beats per agent line in the last 5 minutes (at most 4 counted)")
-    ap.add_argument("--max-chars", type=int, default=200, help="voiced agent lines are cut at a sentence near this")
+    ap.add_argument("--max-chars", type=int, default=200, help="voiced agent chat lines are cut at a sentence near this")
+    ap.add_argument("--aloud-max-chars", type=int, default=ALOUD_LIMIT,
+                    help="an agent's aloud line (fh say aloud) is voiced whole up to this (default: say's own 500)")
     ap.add_argument("--no-chat", action="store_true", help="casters only, never voice agent chat")
     ap.add_argument("--always", action="store_true", help="synthesise even when no overlay page is listening")
     ap.add_argument("--dry-run", action="store_true", help="write lines and log them; no TTS, nothing pushed")

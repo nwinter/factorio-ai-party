@@ -1003,8 +1003,11 @@ service passes it through), or when the classifier calls it banter, strategy or 
 new messages of a poll in one call (one `choice` question per message: banter / strategy / emotion / logistics).
 Without Cloudflare the local heuristic is used; on the mock's labelled lines it voices 14/18 banter lines and skips
 32/36 logistics lines. Limits: one voiced line per agent per 60 s (`--agent-cooldown`), 15 s between voiced lines
-(`--agent-gap`, `aloud` included), lines older than 20 s are dropped, text is cut at a sentence near 200 characters,
-emoji, markdown, URLs and `@` signs are removed.
+(`--agent-gap`, `aloud` included), lines older than 20 s are dropped, a chat line's text is cut at a sentence near
+200 characters (`--max-chars`), an `aloud` line's only past 500 (`--aloud-max-chars`, `fh say`'s own cap, so it is
+voiced whole), emoji, markdown, URLs and `@` signs are removed. (Viewer syndesis, shift14 23:04: "Astra's spoken lines
+cut off abruptly". Aloud lines were cut at the 200 too: 46 of the 126 voiced from 20:00 to 23:08, 37%, Astra 16 of
+30, a median 86 characters (38% of the line) never said; the caption showed the cut text as well.)
 
 Clef live (three runs, 102 mock messages): 65 logistics, 9 strategy, 11 banter, none emotion, and 17 marked `aloud`
 by the mock (not classified). Its calls were right on the lines checked by hand: "Labs are hungry and I'm the only one feeding them!"
@@ -1112,6 +1115,15 @@ running, so stop the old `factorio-cam1.exe` first (as `rejoin.sh` does).
 - After restarting `serve.py`, reload the overlay sources (`obs.py reload-overlay`, or the source's Refresh button):
   a page loaded from an older service keeps its board running but never loads `audio.js`, so it plays nothing. The
   service's `/audio/status` `listeners` count shows how many pages are listening (2 with `audio-test` built).
+- Clips that ended early (eng/voicecut): the page reports each clip's start, end, cut, error and skip, with its own
+  measure (`played`, `duration`: the audio clock and the decoded buffer), and a `load` when it (re)loads. The service
+  logs them to `runs/RUN/audio-played.jsonl` (beside stream.json) and counts the last hour in the stream state
+  (`state.json` `voice`) and `/audio/status` `voice`: `voice: 2 of 61 clips ended early in the last hour (cut 1,
+  reload 1); agents 1 of 24`, with `by_reason`, `skipped_last_hour` (expired in the queue, never played),
+  `page_loads_last_hour` and the newest 5. Reasons: `cut` (a line that mattered more), `error`, `reload` (the page
+  loaded while one played), `no_end` (no end report within its length + 5 s), `short_end` (the page says it ended
+  0.5 s or more short of its length: the audio stopped by itself). The overlay's own reload on new page files waits for
+  a playing clip (90 s at most).
 - Music slot: "stream music bed" plays `D:\pog\music\bed.mp3` on loop at -24 dB, disabled in the scene until an
   original track is there; enable the scene item when it is.
 - Test without touching the stream scene: `$PY tools/obs.py audio-test --url http://HOST:PORT/ [--game-url URL]`
@@ -1125,7 +1137,7 @@ running, so stop the old `factorio-cam1.exe` first (as `rejoin.sh` does).
 ## Knobs
 
 `caster.py`: `--gap 20 40`, `--urgent-gap 8`, `--lull 50`, `--stale 45`, `--agent-gap 15`, `--agent-cooldown 60`,
-`--chat-stale 20`, `--max-chars 200`, `--no-chat`, `--writer cf|claude|template`, `--model ID`,
+`--chat-stale 20`, `--max-chars 200`, `--aloud-max-chars 500`, `--no-chat`, `--writer cf|claude|template`, `--model ID`,
 `--tts aura2|aura1|melotts|say|tone`, `--tts-fallback BACKEND`, `--classifier clef|heuristic`, `--backoff 120`,
 `--claude-bin PATH`, `--always`, `--dry-run`, `--duration S`. Model-specific request arguments (thinking off for
 Gemma, low reasoning for gpt-oss) are in `MODEL_ARGS`. A backend that fails three times in a row is skipped
