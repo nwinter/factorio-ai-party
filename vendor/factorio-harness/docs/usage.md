@@ -2353,7 +2353,10 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     `firearm-magazine: made 54/min, used 35/min over this leg nauvis->gleba (3m46s so far); hub 751, turrets 194; at
     the arrival at gleba in 2m09s about 985 at that rate`, `...; runs out in 4m09s at that rate, before the arrival at
     gleba in 75m00s`. A leg that began before the runtime kept these counts reads the game's last 10 minutes (`over
-    the last 10 min`).
+    the last 10 min`). Every line then adds the game's last 1 and 5 minutes for the platform surface (Astra, shift17
+    10:50: parked over Aquilo the leg average hid whether the orbit keeps up): `; last 1 min: made 3.0/min, used
+    12/min; last 5 min: made 4.0/min, used 12/min`, and while stopped, when it uses more than it makes, `; at the last
+    5 min rate the 540 in the hub and turrets last 67m30s`.
   - `incoming` and `incoming_cargo`: rockets launched to its hub whose cargo pod has not arrived yet, with their cargo
     (`1 rocket on the way: firearm-magazine*20`; per rocket `a rocket from nauvis launched 3s ago: firearm-magazine*20
     (rising over nauvis)`, then `(coming down onto the platform)`). On 2.0.77 a pod rose over the planet for about 25

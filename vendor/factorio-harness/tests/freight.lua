@@ -237,6 +237,15 @@ do
   -- A leg seen first before the counts were kept (a runtime update): the game's last 10 minutes.
   for _,seg in ipairs(st2.freight[7].segs) do seg.ammo0=nil end
   eq(F2.ammo(pl)[1],'firearm-magazine: made 30/min, used 20/min over the last 10 min; hub 500, turrets 40')
+  -- The last 1 and 5 minutes from the game's counts (Astra, shift17 10:50: parked, the leg average hid whether the orbit
+  -- keeps up), and while stopped how long the stock lasts at the last 5 minutes' rate.
+  defines.flow_precision_index={one_minute=0,five_minutes=1,ten_minutes=2}
+  local counts={[0]={input=3,output=12},[1]={input=20,output=60},[2]={input=300,output=200}}
+  stats.get_flow_count=function(f) if f.name~='firearm-magazine' then return 0 end return counts[f.precision_index][f.category] end
+  eq(F2.ammo(pl)[1],'firearm-magazine: made 30/min, used 20/min over the last 10 min; hub 500, turrets 40; last 1 min: made 3.0/min, used 12/min; last 5 min: made 4.0/min, used 12/min; at the last 5 min rate the 540 in the hub and turrets last 67m30s')
+  counts[1]={input=60,output=20}  -- making more than it uses: no lasts line
+  assert(not F2.ammo(pl)[1]:find('in the hub and turrets last',1,true),F2.ammo(pl)[1])
+  defines.flow_precision_index={ten_minutes=2}
   -- A rocket launched to its hub: on the way until its pod is gone (2.0.77: about 35 s).
   local pod={valid=true,cargo_pod_destination={station={surface={platform=pl}}},surface={name='nauvis'},
     get_inventory=function() return inv({['firearm-magazine']=20}) end}
