@@ -369,8 +369,20 @@ function exitCode(reply: Reply): number {
   if (ends.some(r => r && typeof r === 'object' && r.still_running !== undefined && r.still_running !== false)) return STILL_RUNNING_EXIT;
   return reply.ok ? 0 : 1;
 }
+// fh ACTION run as fh call ACTION (round1650d: Haiku's fh transfer, Luna's fh move_to): said once, in corrected (or on
+// the error).
+let cliCorrected: string | undefined;
+function withCliNote(value: unknown): unknown {
+  if (!cliCorrected || !value || typeof value !== 'object') return value;
+  const note = cliCorrected;
+  cliCorrected = undefined;
+  const reply = value as Reply;
+  if (!reply.ok && reply.error) return {...reply, error:{...reply.error, message:`${reply.error.message} [${note}]`}};
+  const result = reply.result && typeof reply.result === 'object' ? reply.result as Record<string, unknown> : {};
+  return {...reply, result:{...result, corrected:typeof result.corrected === 'string' ? `${note}; ${result.corrected}` : note}};
+}
 function output(value: unknown) {
-  value = withPace(withDeadline(value));
+  value = withPace(withDeadline(withCliNote(value)));
   if (outputFormat === 'compact') writePaged(operatorHead() + formatCompact(withoutOperator(value)));
   else process.stdout.write(JSON.stringify(value) + '\n');
   // JSON stays one document on stdout; the error:/warning: line goes to stderr
@@ -661,6 +673,11 @@ async function main() {
     values.args = JSON.stringify(args);
   }
   const known = new Set(['doctor','describe','observe','call','view','deploy','watch','stream','run','wait','sleep','help']);
+  if (!known.has(command) && /^[a-z][a-z0-9_]*$/.test(command)) {
+    cliCorrected = `fh ${command} runs as fh call ${command}`;
+    positionals.splice(0, 1, 'call', command);
+    command = 'call';
+  }
   if (!known.has(command)) throw new Error(`Unknown command ${command}; use fh help`);
   // A bot is a script-driven character addressed by name (FH_BOT for wrappers).
   const bot = values.bot ?? (values.player ? undefined : process.env.FH_BOT || undefined);
@@ -887,6 +904,8 @@ async function main() {
       // stopped before, a squeeze it walked out of, what to mine when closed in; enemies gone around (avoid.lua).
       ...(last?.kind === 'move_to' ? {nearest_reachable: last.nearest_reachable, reachable_gap: last.reachable_gap, off_belt: last.off_belt,
         path: last.path, steered: last.steered, pocket: last.pocket, escaped: last.escaped, mine_to_get_out: last.mine_to_get_out,
+        // not closed in, yet no way to the target: what to mine for one (round1820a)
+        mine_for_a_way: last.mine_for_a_way,
         // a spot it reaches within build reach when it gave up, a squeeze walked along gaps, each leg of a via walk (round0620c)
         build_spot: last.build_spot, build_spot_note: last.build_spot_note, build_spot_squeeze: last.build_spot_squeeze, squeezed: last.squeezed,
         legs: legLines(last.legs),
@@ -1034,7 +1053,9 @@ async function main() {
     const why = typeof last.why === 'string' ? last.why : typeof last.error === 'string' ? last.error : undefined;
     if (last.outcome !== 'timed_out') return {code:'action_interrupted',message:`Control ended: ${last.outcome}${why !== undefined ? `: ${why}` : ''}`};
     const what = action === 'wait_until' ? `wait_until timed_out: ${last.condition ?? 'condition'} not met${last.saw !== undefined ? ` (saw ${JSON.stringify(last.saw)})` : ''}; `+
-      `the timeout comes from --wait-timeout MS (up to 900000) or args.timeout ticks (up to 54000)` : `${action} timed_out at its own tick limit`;
+      `the timeout comes from --wait-timeout MS (up to 900000) or args.timeout ticks (up to 54000)`
+      // and why, when the action says it (round1820a: a move_to's limit and the leg it ran out on)
+      : `${action} timed_out at its own tick limit${why !== undefined ? `: ${why}` : ''}`;
     return {code:'timed_out',message:what};
   }
   // The sleep request's own reply carries the team hints pending when it

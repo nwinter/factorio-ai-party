@@ -291,7 +291,10 @@ hubinv=inv({})
 eq(supply_read(p,{item=AC,surface='vulcanus'}).where,'none on vulcanus')
 -- Checks.
 local ok,err=pcall(S.supply,p,{item='advanced-circuitt'}); assert(not ok and tostring(err):find('item must be an item name',1,true),err)
-ok,err=pcall(S.supply,p,{item=AC,radius=10}); assert(not ok and tostring(err):find('radius needs near',1,true),err)
+-- radius alone looks around you (round1650d: Grok's supply {item, radius: 120} was refused twice in shift13);
+-- on another surface it still needs near.
+ok,err=pcall(S.supply,p,{item=AC,radius=10}); assert(ok and type(err)=='table' and err.item==AC,tostring(err))
+ok,err=pcall(S.supply,p,{item=AC,radius=10,surface='vulcanus'}); assert(not ok and tostring(err):find('radius needs near {x,y} on another surface',1,true),err)
 ok,err=pcall(S.supply,p,{item=AC,surface='mars'}); assert(not ok and tostring(err):find('no surface mars',1,true),err)
 assert(S.schema.supply.near and S.schema.supply.radius and S.schema.supply.item and S.schema.supply.surface and S.schema.supply.returns)
 -- task-statuscost: the same read within 10 s is the same reply with as_of, and scans nothing; a later one, another item

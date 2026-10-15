@@ -494,4 +494,29 @@ do
   l=R.lines(sol,h); eq(#l,1); eq(l[1],'1 gun-turret out of ammo near (304,300); rearm')
   ents.nauvis={}
 end
+-- Spoiling fuel (Sol, shift13 16:50: biochambers starved with 20 nutrients loaded, the batch rotting within seconds; on
+-- a copy of world n most held nutrients 85-99% spoiled): an out-of-fuel group says how many burners of its names
+-- around it burn spoiling fuel, how many within 60 s, and the first to spoil, worked out when shown. Heating towers
+-- (type reactor) are read too.
+do
+  local st={board={items={}}}
+  local R=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,
+    agents=function() return {{index=2,name='sol'}} end, who=function(p) return p.name end,
+    place=function() return {key='nauvis',position={x=50,y=40}} end,
+    first_spoil=function(inv) return inv.spoil_tick, inv.item end}
+  ents.nauvis={}; ents.vulcanus={}
+  local function fuel(ticks) return {burner={inventory=ticks and {spoil_tick=game.tick+ticks, item='nutrients'} or {}}} end
+  ent('nauvis','biochamber','assembling-machine',49.5,44.5,{status=3,burner={inventory={}}})
+  ent('nauvis','biochamber','assembling-machine',43.5,34.5,fuel(240))
+  ent('nauvis','biochamber','assembling-machine',55.5,26.5,fuel(1800))
+  ent('nauvis','biochamber','assembling-machine',60.5,54.5,fuel(9000))
+  ent('nauvis','heating-tower','reactor',46.5,48.5,{status=3,burner={inventory={}}})
+  local r=R.read(sol,{kind='no_fuel'}).groups
+  eq(#r,1)
+  eq(r[1].line,'2 (1 biochamber, 1 heating-tower) out of fuel near (48,47); refuel; 3 biochamber around it burn spoiling fuel, 2 of them within 60s; '
+    ..'the first: nutrients spoils in 4s at (43.5,34.5)')
+  game.tick=game.tick+600
+  eq(R.read(sol,{kind='no_fuel'}).groups[1].line:match('the first: .*$'),'the first: nutrients spoiled at (43.5,34.5)', 'worked out when shown')
+  ents.nauvis={}
+end
 print('pushalerts: ok')

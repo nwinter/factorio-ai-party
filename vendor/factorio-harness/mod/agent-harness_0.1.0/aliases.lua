@@ -11,11 +11,11 @@ return function(api)
     craft = {item='recipe', name='recipe'},
     move_to = {to='position', pos='position', destination='position', waypoints='via', through='via'},
     map = {center='position', centre='position'},
-    scan = {names='name', entity_names='name', entity='name', types='type', range='radius', field='fields', center='position'},
+    scan = {names='name', entity_names='name', entity='name', entities='name', types='type', range='radius', field='fields', center='position'},
     nearest = {entity='name', names='name', types='type', center='position'},
     chat = {count='limit', n='limit'},
     tells = {count='limit', n='limit'},
-    build = {placements='builds', entities='builds', dryrun='dry_run', ['dry-run']='dry_run'},
+    build = {placements='builds', entities='builds', items='builds', dryrun='dry_run', ['dry-run']='dry_run'},
     place_ghosts = {dryrun='dry_run', ['dry-run']='dry_run'},
     paste = {dryrun='dry_run', ['dry-run']='dry_run'},
     blueprint_place = {dryrun='dry_run', ['dry-run']='dry_run'},
@@ -23,13 +23,17 @@ return function(api)
     ores = {name='resource', ore='resource', resources='resource', center='position', centre='position', min='min_amount', amount='min_amount'},
     board_post = {text='title', name='title', step='steps'},
     board_update = {steps='step'},
-    recipes = {search='prefix', name='prefix', recipe='prefix', filter='prefix', item='prefix'},
+    recipes = {search='prefix', name='prefix', names='prefix', recipe='prefix', filter='prefix', item='prefix'},
     -- observe scope=craftable {item} (Gemini, shift10: 5 refusals): the recipes asked about.
     craftable = {item='recipes', recipe='recipes', name='recipes'},
     technologies = {search='prefix', name='prefix', filter='prefix', technology='prefix'},
     mine = {entity='name'},
     transfer = {target='position', amount='count', quantity='count', qty='count'},
-    inspect = {target='position'},
+    inspect = {target='position', names='name'},
+    -- round1650d: fh view {center} (Opus), stock {names} (Gemini), tell {message} (Gemini).
+    observe = {center='position', centre='position'},
+    stock = {names='item', name='item'},
+    tell = {message='text', msg='text'},
     configure = {target='position', auto_launch='send_to_orbit_automatically', planet='surface', mode='filter_mode', filter='filters'},
     launch = {planet='surface'},
     silo = {planet='surface'},
@@ -42,7 +46,7 @@ return function(api)
   -- A project's changes (board.lua board_update).
   local PROJECT_CHANGES = {'step', 'done', 'undone', 'remove_step', 'goal', 'handoff', 'areas'}
   -- A one-name list given where a name is taken: its name; one name given where a list is taken: a list of it.
-  local SINGLE = {prefix=true}
+  local SINGLE = {prefix=true, name=true, item=true}
   local LISTED = {recipes=true}
   -- Actions whose positions is a list of targets of the same move or read.
   local LISTS = {transfer=true, collect=true, feed=true, inspect=true, rearm=true, refuel=true, repair=true}
@@ -242,6 +246,38 @@ return function(api)
       out.position, out.target = out.target, nil
       notes[#notes+1] = 'target is position'
     end
+    -- round1650d near-misses (Sol, Astra, Sonnet; also in the 23:00 sweep): the form each meant.
+    -- wait_until item_count {count}: the count to reach (at_least).
+    if action == 'wait_until' and out['until'] == 'item_count' and type(out.count) == 'number' and out.at_least == nil and out.below == nil then
+      out.at_least, out.count = out.count, nil
+      notes[#notes+1] = 'count is at_least for item_count'
+    end
+    -- circuit_set settings {circuit_mode_of_operation}: the chest's circuit_exclusive_mode_of_operation.
+    if action == 'circuit_set' and type(out.settings) == 'table' and out.settings.circuit_mode_of_operation ~= nil
+      and out.settings.circuit_exclusive_mode_of_operation == nil then
+      local st = {}
+      for k, v in pairs(out.settings) do st[k] = v end
+      st.circuit_exclusive_mode_of_operation, st.circuit_mode_of_operation = st.circuit_mode_of_operation, nil
+      out.settings = st
+      notes[#notes+1] = 'settings.circuit_mode_of_operation is circuit_exclusive_mode_of_operation'
+    end
+    -- status {alerts} without brief: the brief status, which is where alerts goes.
+    if action == 'status' and out.alerts ~= nil and out.brief == nil then
+      out.brief = true
+      notes[#notes+1] = 'alerts goes with brief: brief=true'
+    end
+    -- fh view {area}: its centre as position and half its longer side as radius.
+    if action == 'observe' and out.scope == nil and type(out.area) == 'table' and out.position == nil and out.radius == nil
+      and not takes('observe', 'area') then
+      local lt, rb = out.area.left_top or out.area[1], out.area.right_bottom or out.area[2]
+      if is_pos(lt) and is_pos(rb) then
+        lt, rb = xy(lt), xy(rb)
+        out.position = {x=(lt.x + rb.x) / 2, y=(lt.y + rb.y) / 2}
+        out.radius = math.max(1, math.ceil(math.max(math.abs(rb.x - lt.x), math.abs(rb.y - lt.y)) / 2))
+        out.area = nil
+        notes[#notes+1] = 'area is position (its centre) and radius (half its longer side)'
+      end
+    end
     -- fh sends scan, nearest, map ... as observe {scope}: the view's own names.
     local view = action == 'observe' and type(out.scope) == 'string' and out.scope or action
     for wrong, right in pairs(RENAME[view] or {}) do
@@ -252,6 +288,31 @@ return function(api)
         out[right], out[wrong] = v, nil
         notes[#notes+1] = wrong .. ' is ' .. right
       end
+    end
+    -- build entries name what to place by name (round1820a, Opus 00:42: a 12-drill batch refused "item is required";
+    -- Haiku 00:52, Grok 00:25, Gemini 23:10): name is item, and so is entity outside a rail planner (with no item).
+    if action == 'build' then
+      local renamed = {}
+      local function entry(e, default)
+        if type(e) ~= 'table' or e.item ~= nil then return e end
+        local key = type(e.name) == 'string' and 'name' or (default == nil and type(e.entity) == 'string' and 'entity') or nil
+        if not key then return e end
+        local c = {}
+        for k, v in pairs(e) do c[k] = v end
+        c.item, c[key] = c[key], nil
+        renamed[key] = true
+        return c
+      end
+      if type(out.builds) == 'table' and #out.builds > 0 then
+        local list, changed = {}, false
+        for i, e in ipairs(out.builds) do list[i] = entry(e, out.item); changed = changed or list[i] ~= e end
+        if changed then out.builds = list end
+      elseif out.item == nil and out.builds == nil then
+        local c = entry(out, nil)
+        if c ~= out then out.item, out.name, out.entity = c.item, c.name, c.entity end
+      end
+      if renamed.name then notes[#notes+1] = 'name is item' end
+      if renamed.entity then notes[#notes+1] = 'entity is item (entity names a rail planner\'s rail, with item)' end
     end
     if #notes == 0 then return action, silent and out or args, nil end
     table.sort(notes)

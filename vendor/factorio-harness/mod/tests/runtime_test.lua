@@ -218,7 +218,9 @@ do
   eq(b.alerts.losses['stone-furnace'],1); eq(b.alerts.latest[1],alerts.latest[1]); eq(b.surface,'nauvis'); eq(b.connected,true)
   eq(b.factory,nil); eq(b.enemies,nil); eq(scans,0)
   eq(call('status',{brief=true,peek=true}).alerts,nil)
-  fails(function() call('status',{alerts=true}) end,'alerts is an option of brief')
+  -- alerts without brief runs as the brief status (round1650d: Astra's {inventory, machines: false, alerts: false})
+  local nb=call('status',{alerts=true,peek=true})
+  eq(nb.brief,true); assert(tostring(nb.corrected):find('alerts goes with brief: brief=true',1,true),tostring(nb.corrected))
   p.surface.find_entities_filtered=find
 end
 -- A wipe larger than any entry cap is counted whole, per area, and pushed once
@@ -517,6 +519,29 @@ wood.count=5
 local skipped=call('build',{item='wooden-chest',skip_failed=true,builds={{position={x=4,y=0}},{position={x=8,y=0}},{position={x=9,y=0}}}})
 eq(skipped.built,2); eq(skipped.placed[2].x,9.5); eq(#skipped.failed,1); eq(skipped.failed[1].index,2); eq(skipped.failed[1].position.x,8)
 assert(skipped.failed[1].error:find('placement blocked',1,true),skipped.failed[1].error); eq(wood.count,3)
+-- all (Muse, shift13): the same as skip_failed, with each row's item and a summary.
+;(function()
+wood.count=5
+local every=call('build',{item='wooden-chest',all=true,builds={{position={x=4,y=0}},{position={x=8,y=0}},{position={x=9,y=0}}}})
+eq(every.built,2); eq(#every.failed,1); eq(every.failed[1].index,2); eq(every.failed[1].item,'wooden-chest')
+eq(every.summary,'2 of 3 built; 1 not built (failed)'); eq(wood.count,3)
+fails(function() call('build',{item='wooden-chest',all='yes',builds={{position={x=4,y=0}}}}) end,'all must be true or false')
+-- Without it, the refusal names the entries not tried.
+wood.count=5
+fails(function() call('build',{item='wooden-chest',builds={{position={x=4,y=0}},{position={x=8,y=0}},{position={x=9,y=0}},{position={x=10,y=0}}}}) end,
+  'build 2/4 failed after 1 built: placement blocked')
+fails(function() call('build',{item='wooden-chest',builds={{position={x=8,y=0}},{position={x=9,y=0}},{position={x=10,y=0}}}}) end,
+  '; entries 2-3 were not tried (all: true tries every entry)')
+fails(function() call('build',{item='wooden-chest',builds={{position={x=4,y=0}},{position={x=8,y=0}},{position={x=9,y=0}}}}) end,
+  '; entry 3 was not tried (all: true tries every entry)')
+-- An entry blocked by one this batch placed says which (Muse: a pole inside the assembler's footprint).
+eq(runtime.own_blockers('placement blocked by medium-electric-pole (20.5,64.5)',{{name='medium-electric-pole',position={x=20.5,y=64.5},index=1}}),
+  'placement blocked by medium-electric-pole (20.5,64.5); medium-electric-pole (20.5,64.5) is entry 1 of this batch')
+eq(runtime.own_blockers('placement blocked by tree-01 (3,4), medium-electric-pole (20.5,64.5)',{{name='medium-electric-pole',position={x=20.5,y=64.5},index=4}}),
+  'placement blocked by tree-01 (3,4), medium-electric-pole (20.5,64.5); medium-electric-pole (20.5,64.5) is entry 4 of this batch')
+eq(runtime.own_blockers('placement blocked by tree-01 (3,4)',{{name='medium-electric-pole',position={x=20.5,y=64.5},index=1}}),'placement blocked by tree-01 (3,4)')
+eq(runtime.own_blockers('item is not in main inventory',{{name='medium-electric-pole',position={x=20.5,y=64.5},index=1}}),'item is not in main inventory')
+end)()
 wood.count=3
 -- The engine refills the hand from inventory after the last item; that still counts as consumed.
 local spare=stack('wooden-chest',4); main[2]=spare
@@ -977,8 +1002,8 @@ do
     defines.rocket_silo_status=kept_def or {building_rocket=0,create_rocket=1,rocket_ready=7,launch_started=14}
     silo.rocket_silo_status,silo.rocket_parts=7,0
     local si=call('inspect',{position={x=3,y=0}})
-    eq(si.rocket_ready,true); assert(si.parts:find('^0/'),si.parts)
-    assert(si.rocket:find('^rocket built and ready: parts consumed %(0/%d+%), not launched; no launch seen$'),si.rocket)
+    eq(si.rocket_ready,true); assert(si.next_parts:find('^0/'),si.next_parts); eq(si.parts,nil)
+    assert(si.rocket:find("^rocket ready to launch, not launched; the next rocket's parts 0/%d+; no launch seen$"),si.rocket)
     silo.rocket_silo_status,silo.rocket_parts=nil,nil; defines.rocket_silo_status=kept_def
   end
   local kept=main
@@ -1942,7 +1967,8 @@ do
   local sup=call('observe',{scope='supply',item='transport-belt'})
   eq(sup.item,'transport-belt'); assert(sup.where and sup.counted and sup.flow,'supply reply')
 end
-fails(function() call('observe',{scope='supply',item='transport-belt',radius=5}) end,'radius needs near')
+-- radius alone: around the character (round1650d: Grok, twice in shift13).
+eq(call('observe',{scope='supply',item='transport-belt',radius=5}).item,'transport-belt')
 fails(function() call('observe',{scope='supply',item='transport-belt',pack='x'}) end,'unknown argument pack for supply; valid: item, near, radius, surface')
 fails(function() call('observe',{scope='supply',item='nope'}) end,'item must be an item name')
 -- nearest sorts by distance, skips fogged chunks and the character itself.
@@ -2631,6 +2657,12 @@ do
   local px,py=math.floor(p.position.x),math.floor(p.position.y)
   local far=call('build',{builds={{item='gun-turret',position={x=px+2,y=py}},{item='gun-turret',position={x=px+30,y=py}}},dry_run=true})
   eq(far.action,'build'); assert(far.build_note:find('entry #2 (out of reach: ',1,true),far.build_note)
+  -- Entries naming what to place by name (round1820a, Opus 00:42: 12 drills refused "item is required"): name is item.
+  do
+    local named=call('build',{builds={{name='gun-turret',position={x=px+2,y=py}},{name='gun-turret',position={x=px+30,y=py}}},dry_run=true})
+    eq(named.action,'build'); assert(named.build_note:find('entry #2 (out of reach: ',1,true),named.build_note)
+    assert(tostring(named.corrected):find('(name is item)',1,true),tostring(named.corrected))
+  end
   p.surface.can_place_entity=ghost_engine
   -- A plan past the bounds is refused before any check.
   local twenty={}
@@ -3530,6 +3562,41 @@ end)()
   eq(r.entities[1].holds,'empty; 0 of 32 slots'); eq(r.entities[2].holds,'iron-plate*150 coal*20; 2 of 32 slots')
   eq(r.entities[3].holds,'in: copper-cable*8'); eq(r.entities[3].recipe,'electronic-circuit'); eq(r.entities[1].status_name,nil,'a chest has none')
   eq(r.not_in_sight,'1 more in the area in chunks our force does not see now (radar coverage or a character\'s sight lights a chunk)')
+  -- compact (Muse, shift13: ~10 inspects over positions read as tables or JSON): one line per entity, the same
+  -- reading order; health where the entity has it.
+  c.health=320; c.max_health=350; a.health=200; a.max_health=200
+  local short=call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}},compact=true})
+  eq(short.entities,nil); eq(short.count,3); eq(#short.lines,3)
+  eq(short.lines[1],'iron-chest (1.5,1.5): empty; 0 of 32 slots')
+  eq(short.lines[2],'iron-chest (2.5,1.5): health 200/200; holds iron-plate*150 coal*20; 2 of 32 slots')
+  eq(short.lines[3],'assembling-machine-2 (1.5,4.5): health 320/350; recipe electronic-circuit; in: copper-cable*8')
+  -- Over positions, in the order given; an entry that fails is its position and why.
+  p.surface.find_entities_filtered=function(f)
+    if f.area and f.force then return list end
+    local out={}
+    for _,e in ipairs(f.position and list or {}) do
+      if math.abs(e.position.x-f.position.x)<=(f.radius or 0.5) and math.abs(e.position.y-f.position.y)<=(f.radius or 0.5) then out[#out+1]=e end
+    end
+    return out
+  end
+  -- An inserter: its hand; a pole (no inventory): no holds.
+  local ins={valid=true,name='inserter',type='inserter',position={x=3.5,y=4.5},force=p.force,health=150,max_health=150,
+    held_stack={valid_for_read=true,name='copper-cable',count=2},get_inventory=function() return nil end}
+  local pole={valid=true,name='small-electric-pole',type='electric-pole',position={x=4.5,y=4.5},force=p.force,health=100,max_health=100,
+    get_inventory=function() return nil end}
+  list[#list+1]=ins; list[#list+1]=pole
+  short=call('inspect',{positions={c.position,a.position,{x=20,y=20},ins.position,pole.position},compact=true})
+  eq(short.count,5); eq(short.lines[1],'assembling-machine-2 (1.5,4.5): health 320/350; recipe electronic-circuit; in: copper-cable*8')
+  eq(short.lines[2],'iron-chest (2.5,1.5): health 200/200; holds iron-plate*150 coal*20; 2 of 32 slots')
+  assert(short.lines[3]:find('^%(20,20%): '),short.lines[3])
+  eq(short.lines[4],'inserter (3.5,4.5): health 150/150; hand: copper-cable*2')
+  eq(short.lines[5],'small-electric-pole (4.5,4.5): health 100/100')
+  list[#list]=nil; list[#list]=nil
+  -- One position: one line.
+  short=call('inspect',{position=a.position,compact=true})
+  eq(short.count,1); eq(short.lines[1],'iron-chest (2.5,1.5): health 200/200; holds iron-plate*150 coal*20; 2 of 32 slots')
+  fails(function() call('inspect',{position=a.position,compact='yes'}) end,'compact must be true or false')
+  p.surface.find_entities_filtered=function(f) if f.area and f.force then return list end return {} end
   fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=200,y=10}}}) end,'at most 128x128')
   fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=9,y=9}},position={x=1,y=1}}) end,'give area, positions or position: one of them')
   fails(function() call('inspect',{position={x=1.5,y=1.5},types={'container'}}) end,'types goes with area')
@@ -3636,6 +3703,21 @@ end)()
   last=call('status').last
   eq(last.outcome,'timed_out'); eq(last.target.x,10); eq(last.legs[1].outcome,'timed_out'); eq(last.legs[1].to.x,3)
   eq(last.legs[2].outcome,'not walked'); eq(last.legs[3].outcome,'not walked'); eq(last.legs[3].to.x,10)
+  -- The limit (round1820a, Opus: 400-tile via trips timed out at the fixed 3600 ticks four times while walking fine):
+  -- ticks as given, else scaled to the planned route, said in limit and in the why of a timeout.
+  eq(last.limit,'5 ticks (0s), as given')
+  assert(last.why:find('time ran out at (9.8,0), 0.2 tiles from the target: its limit, 5 ticks (0s), as given, ran out on leg 1 of 3 (to (3,0))',1,true),last.why)
+  p.position={x=0,y=0}
+  local kept_speed=p.character_running_speed
+  p.character_running_speed=0.15
+  r=call('move_to',{position={x=400,y=0},via={{x=200,y=100},{x=300,y=-100}},pathfind=false})
+  -- 223.6 + 223.6 + 141.4 = 588.6 tiles; at 0.15 tiles a tick, 1.5 times that and 600 ticks more: 6487.
+  eq(r.limit,'6487 ticks (1m48s) for the planned route, 589 tiles in straight lines through the via points at 0.15 tiles a tick')
+  eq(r.until_tick-game.tick,6487)
+  call('stop',{})
+  r=call('move_to',{position={x=10,y=0},pathfind=false})
+  eq(r.limit,'3600 ticks (1m00s)'); call('stop',{})
+  p.character_running_speed=kept_speed
   fails(function() call('move_to',{position={x=10,y=0},via={}}) end,'via takes 1..16 points')
   fails(function() call('move_to',{position={x=10,y=0},via={{x=600,y=0}}}) end,'via point 1 (600,0) must be within 512 tiles of the point before it')
   -- waypoints is read as via.
@@ -4038,5 +4120,33 @@ end)()
   assert(found,table.concat(lines,' | '))
   prototypes.entity['assembling-machine-2'].type=kept_type
   table_size=kept_ts
+end)()
+-- Grok, shift13 18:20 (beltpick.lua): pickup {belt: true, item, count} takes items off belt lanes; item and count go with
+-- belt; a queued pickup that ends picked_up is a success (it counted as a failed step, and standing orders' pickups with it).
+;(function()
+  local kept_find=p.surface.find_entities_filtered
+  p.surface.find_entities_filtered=function() return {} end
+  fails(function() call('pickup',{belt=true,item='iron-plate',position={x=0,y=0},radius=3}) end,'no iron-plate on our belts in (-3,-3)-(3,3): no belt of ours there')
+  fails(function() call('pickup',{item='iron-plate',position={x=0,y=0}}) end,'item and count go with belt=true')
+  fails(function() call('pickup',{belt='yes',item='iron-plate'}) end,'belt must be true')
+  p.surface.find_entities_filtered=kept_find
+  local kept_pick,kept_tick=runtime.beltpick.pickup,runtime.beltpick.tick
+  local ticks_seen=0
+  runtime.beltpick.pickup=function(pp,a)
+    storage.agent_harness.active[pp.index]={kind='pickup',belt=true,items={a.item},count=a.count,taken=0,until_tick=game.tick+600,picked={}}
+    return {until_tick=game.tick+600}
+  end
+  runtime.beltpick.tick=function(_,action)
+    ticks_seen=ticks_seen+1
+    if ticks_seen>=3 then action.taken=action.count; action.picked={['iron-plate']=action.count}; return 'picked_up' end
+  end
+  call('queue_cancel',{})
+  call('queue_submit',{steps={{action='pickup',args={belt=true,item='iron-plate',count=5,position={x=0,y=0}}}}})
+  advance(6)
+  local qs=call('queue_status',{history=1})
+  local last=qs.history[#qs.history]
+  eq(last.action,'pickup'); eq(last.ok,true,'picked_up is a success'); eq(last.result.outcome,'picked_up')
+  eq(call('status',{}).last.belt.taken,5)
+  runtime.beltpick.pickup,runtime.beltpick.tick=kept_pick,kept_tick
 end)()
 print('runtime: '..assertions..' assertions passed')

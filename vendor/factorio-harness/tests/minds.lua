@@ -140,6 +140,25 @@ do
   _,f=A.fix('recipes',{item='pentapod-egg'},takes); eq(f.prefix,'pentapod-egg')
   _,f=A.fix('observe',{scope='craftable',item='roboport'},takes); eq(f.recipes[1],'roboport'); eq(#f.recipes,1)
 end
+-- round1820a item 3: build entries name what to place by name (Opus 00:42, Haiku 00:52, Grok 00:25, Gemini 23:10).
+do
+  local A=dofile('mod/agent-harness_0.1.0/aliases.lua')({})
+  local takes=function(action,k) return action=='build' and ({builds=true,item=true,entity=true,position=true,direction=true,dry_run=true})[k]==true end
+  local list={{name='electric-mining-drill',position={x=1,y=2}},{item='pipe',position={x=3,y=2}}}
+  local _,f,n=A.fix('build',{builds=list},takes)
+  eq(f.builds[1].item,'electric-mining-drill'); eq(f.builds[1].name,nil); eq(f.builds[2].item,'pipe'); eq(n.notes[1],'name is item')
+  eq(list[1].name,'electric-mining-drill','the caller\'s list is left as it was')
+  _,f,n=A.fix('build',{name='gun-turret',position={x=149,y=-26}},takes)
+  eq(f.item,'gun-turret'); eq(f.name,nil); eq(n.notes[1],'name is item')
+  _,f,n=A.fix('build',{entity='passive-provider-chest',position={x=-72.5,y=87.5}},takes)
+  eq(f.item,'passive-provider-chest'); eq(f.entity,nil); eq(n.notes[1],"entity is item (entity names a rail planner's rail, with item)")
+  -- A rail planner's entity stays: it names which rail.
+  _,f,n=A.fix('build',{item='rail',entity='curved-rail-a',position={x=0,y=0}},takes); eq(n,nil)
+  _,f,n=A.fix('build',{item='rail',builds={{entity='half-diagonal-rail',position={x=0,y=0}}}},takes); eq(n,nil)
+  -- items as a list of entries is builds (Grok 00:25).
+  _,f,n=A.fix('build',{items={{item='iron-chest',position={x=1,y=1}}}},takes)
+  eq(f.builds[1].item,'iron-chest'); eq(f.items,nil); eq(n.notes[1],'items is builds')
+end
 sol('stop')
 -- A scoped read (fh sends scan as observe {scope}): the view's own names.
 r=sol('observe',{scope='scan',names='wooden-chest',radius=5})
@@ -242,4 +261,35 @@ eq(#r.pending,5); eq(r.pending_count,7); assert(r.pending[1]:find('wait_ticks [w
 eq(r.note,'queue_status: the active step, the next one and the last 3 in full (history, pending: a count or "all")')
 eq(#sol('queue_status').pending,1); eq(sol('queue_status').pending_count,7); eq(#sol('queue_status',{pending='all'}).pending,7)
 eq(sol('queue_cancel').pending_count,0)
+-- round1650d near-misses (Opus, Sonnet, Sol, Astra, Gemini): the form each meant, in corrected.
+do
+  local A=dofile('mod/agent-harness_0.1.0/aliases.lua')({})
+  local T={observe={position=true,radius=true,scope=true},tell={to=true,text=true},inspect={position=true,name=true,area=true},
+    recipes={prefix=true},stock={item=true},scan={name=true,position=true,radius=true,fields=true,area=true},
+    wait_until={['until']=true,item=true,at_least=true,below=true,count=true},circuit_set={position=true,settings=true},
+    status={brief=true,alerts=true,inventory=true,machines=true}}
+  local takes=function(action,k) return (T[action] or {})[k]==true end
+  local _,f,n=A.fix('observe',{center={x=410,y=-270},radius=25},takes)
+  eq(f.position.x,410); eq(f.center,nil); eq(n.notes[1],'center is position')
+  _,f,n=A.fix('observe',{area={left_top={x=0,y=0},right_bottom={x=30,y=20}}},takes)
+  eq(f.position.x,15); eq(f.position.y,10); eq(f.radius,15); eq(f.area,nil); eq(n.notes[1],'area is position (its centre) and radius (half its longer side)')
+  _,f=A.fix('observe',{scope='scan',area={left_top={x=0,y=0},right_bottom={x=30,y=20}}},takes)
+  eq(f.position,nil,'scan takes area')
+  _,f,n=A.fix('tell',{to='astra',message='Understood'},takes)
+  eq(f.text,'Understood'); eq(f.message,nil); eq(n.notes[1],'message is text')
+  _,f=A.fix('inspect',{area={left_top={x=0,y=0},right_bottom={x=9,y=9}},names={'chemical-plant'}},takes)
+  eq(f.name,'chemical-plant')
+  _,f=A.fix('recipes',{names={'lightning-rod'}},takes); eq(f.prefix,'lightning-rod')
+  _,f=A.fix('stock',{names={'heat-exchanger'}},takes); eq(f.item,'heat-exchanger')
+  _,f=A.fix('observe',{scope='scan',entities={'chemical-plant'},position={x=1,y=2}},takes); eq(f.name,'chemical-plant')
+  _,f,n=A.fix('wait_until',{['until']='item_count',item='nutrients',count=250},takes)
+  eq(f.at_least,250); eq(f.count,nil); eq(n.notes[1],'count is at_least for item_count')
+  _,f=A.fix('wait_until',{['until']='item_count',item='nutrients',count=250,below=10},takes); eq(f.count,250,'below given: left alone')
+  _,f,n=A.fix('circuit_set',{position={x=1,y=2},settings={circuit_mode_of_operation='set_requests'}},takes)
+  eq(f.settings.circuit_exclusive_mode_of_operation,'set_requests'); eq(f.settings.circuit_mode_of_operation,nil)
+  eq(n.notes[1],'settings.circuit_mode_of_operation is circuit_exclusive_mode_of_operation')
+  _,f,n=A.fix('status',{inventory=true,machines=false,alerts=false},takes)
+  eq(f.brief,true); eq(n.notes[1],'alerts goes with brief: brief=true')
+  _,f,n=A.fix('status',{brief=true,alerts=true},takes); eq(n,nil)
+end
 print('minds: ok')

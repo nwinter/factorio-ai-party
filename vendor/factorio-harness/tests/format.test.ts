@@ -21,6 +21,13 @@ test('fh help ACTION: one action in about 1 KB; an unknown name lists the action
   assert.match(help, /^launch: fh call launch --args '\{\.\.\.\}'\nexample: fh call launch --args '\{"platform":"Sunward","position":\{"x":65\.5,"y":14\.5\}\}'\n/);
   assert.ok(!help.includes('[object Object]'));
 });
+test("a reply's lines (inspect compact) print one to a line, unquoted (Muse, shift13)", () => {
+  const out = formatCompact({ok:true, id:'x', result:{lines:['gun-turret (57,-182): working; health 400/400; ammo: firearm-magazine*10',
+    '(5,5): entity not found at (5,5)'], count:2}});
+  assert.equal(out, 'lines[2]:\n  gun-turret (57,-182): working; health 400/400; ammo: firearm-magazine*10\n  (5,5): entity not found at (5,5)\ncount: 2\n');
+  // Other string lists stay inline.
+  assert.equal(formatCompact({ok:true, id:'x', result:{clusters:['a b', 'c d']}}), 'clusters: ["a b", "c d"]\n');
+});
 test('long compact replies come in pages; the final error:/warning: line stays last', () => {
   assert.deepEqual(paginate('short\n'), {shown:'short\n'});
   const lines = Array.from({length:600}, (_, i) => `row ${i}: ${'z'.repeat(40)}`);

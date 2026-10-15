@@ -98,9 +98,11 @@ return function(api)
   end
 
   -- The rocket in words (Astra 10:50: teammates read a ready rocket's 0/50 parts, and a rising one, as launched or as
-  -- a missing kit three times): built and ready, or rising into place, with its parts consumed and not launched;
-  -- launching; or building, parts X/Y. Then the last launch. {rocket_ready, parts, rocket (all of it), rocket_now,
-  -- last (the last-launch part)}.
+  -- a missing kit three times): ready to launch, or rising into place, not launched; launching; or building, parts
+  -- X/Y. Then the last launch. A built rocket's parts are used, and the silo goes on making the next one's: those are
+  -- next_parts, said as the next rocket's (round1650d: Grok read "rocket built and ready: parts consumed (13/50)" as a
+  -- rocket still being built and held Sunward's cargo rockets 5 min). {rocket_ready, parts (while building),
+  -- next_parts (once built), rocket (all of it), rocket_now, last (the last-launch part)}.
   local silo_states
   local RISING = {create_rocket=true, lights_blinking_open=true, doors_opening=true, doors_opened=true, rocket_rising=true,
     arms_advance=true}
@@ -113,20 +115,25 @@ return function(api)
     local ready = st ~= nil and st == defines.rocket_silo_status.rocket_ready
     local parts = try(function() return e.rocket_parts end) or 0
     local required = try(function() return e.prototype.rocket_parts_required end) or 0
-    local now
+    local now, next_parts
     if ready then
-      now = string.format('rocket built and ready: parts consumed (%d/%d), not launched', parts, required)
+      now = 'rocket ready to launch, not launched'
     elseif RISING[state] then
-      now = string.format('rocket built, rising into place (%s): parts consumed (%d/%d), not launched', (state:gsub('_', ' ')), parts, required)
+      now = string.format('rocket built, rising into place (%s), not launched', (state:gsub('_', ' ')))
     elseif LAUNCHING[state] then
-      now = string.format('rocket launching (%s); parts %d/%d are for the next rocket', (state:gsub('_', ' ')), parts, required)
+      now = string.format('rocket launching (%s)', (state:gsub('_', ' ')))
     else
       now = string.format('building the rocket: parts %d/%d', parts, required)
+    end
+    if ready or RISING[state] or LAUNCHING[state] then
+      next_parts = parts .. '/' .. required
+      now = now .. '; the next rocket\'s parts ' .. next_parts
     end
     local last = records()[try(function() return e.unit_number end) or -1]
     local last_text = last and string.format('last launch %s ago%s', ago(game.tick - last.tick), last.to and ' to ' .. last.to or '')
       or 'no launch seen'
-    return {rocket_ready=ready, parts=parts .. '/' .. required, rocket=now .. '; ' .. last_text, rocket_now=now, last=last_text,
+    return {rocket_ready=ready, parts=not next_parts and parts .. '/' .. required or nil, next_parts=next_parts,
+      rocket=now .. '; ' .. last_text, rocket_now=now, last=last_text,
       last_launch=last and {ago=ago(game.tick - last.tick), tick=last.tick, to=last.to, cargo=last.cargo, by=last.by} or nil}
   end
 
@@ -218,7 +225,7 @@ return function(api)
     local ready = e.rocket_silo_status == defines.rocket_silo_status.rocket_ready
     local status = api.status_name(e) or 'unknown'
     local rk = M.rocket(e)
-    local row = {name=e.name, position=e.position, surface=e.surface.name, parts=parts .. '/' .. required, rocket_ready=ready,
+    local row = {name=e.name, position=e.position, surface=e.surface.name, parts=rk.parts, next_parts=rk.next_parts, rocket_ready=ready,
       rocket=rk.rocket, state=state, status=status}
     -- A built rocket's parts are consumed: none are left to make for it.
     local left = (ready or RISING[state]) and 0 or math.max(0, required - parts)
@@ -321,7 +328,7 @@ return function(api)
     return {silo = string.format('%s at (%g,%g) on %s', e.name, e.position.x, e.position.y, e.surface.name),
       auto_requests = try(function() return e.use_transitional_requests end) and true or false,
       send_to_orbit_automatically = try(function() return e.send_to_orbit_automatically end) and true or false,
-      requesting_for = target, parts = rk.parts, rocket_ready = rk.rocket_ready, rocket = rk.rocket,
+      requesting_for = target, parts = rk.parts, next_parts = rk.next_parts, rocket_ready = rk.rocket_ready, rocket = rk.rocket,
       state = try(function() return silo_states[e.rocket_silo_status] end)}
   end
   function M.read(p, a)
@@ -349,7 +356,7 @@ return function(api)
       note=#silos >= MAX_SILOS and 'the first ' .. MAX_SILOS .. ' silos' or nil}
   end
   M.schema = {silo = {position='optional {x,y}: the silo nearest it (default every silo on the surface)', surface='optional surface name (default yours)',
-    returns='silos [{name, position, surface, parts (X/required, the 2.0 rocket_parts_required), rocket_ready, rocket ("rocket built and ready: parts consumed (0/50), not launched; last launch 4m10s ago to platform X": a built rocket has consumed its parts; rising into place; launching, parts for the next; or building, parts X/Y), state (the silo\'s rocket state), status, '
+    returns='silos [{name, position, surface, parts (X/required, the 2.0 rocket_parts_required, while the rocket is being built), next_parts (once it is built: ready, rising or launching; the parts the silo makes for the next rocket), rocket_ready, rocket ("rocket ready to launch, not launched; the next rocket\'s parts 13/50; last launch 4m10s ago to platform X"; rising into place; launching; or building, parts X/Y), state (the silo\'s rocket state), status, '
       .. 'crafting {part_progress, parts_left, part_s, productivity, rocket_eta_s (at this speed, while working)}, ingredients [{name, per_part, in_silo, in_hands '
       .. '(feeding inserters\' hands), at_sources (what their belts and chests hold), needed (for the parts left), short}], lacks (ingredients the silo holds too few '
       .. 'of for the next part), feeders {inserters, idle, sources}, cargo {kg, lift_kg, stacks, slots, items, over_kg}, trash, auto_requests and send_to_orbit_automatically (the GUI checkboxes; configure sets them), '

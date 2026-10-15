@@ -1087,10 +1087,14 @@ return function(api)
   -- science line's chain reads it (one supply scan, mining drills and pumps included), the line that follows the
   -- ingredient most of a step's makers lack down to its root, and on each step of that line up to 3 makers that are
   -- not working, with position, state and what they lack. Kept 10 s like supply.
+  -- per_min (Sonnet, shift13 18:20): the rate each step needs for that many of the item a minute (ratechain.lua).
+  local ratechain
   function M.bottleneck_item(p, a)
     local item = a.item
     assert(type(item) == 'string' and (prototypes.item[item] or (prototypes.fluid and prototypes.fluid[item])),
       'item must be an item or fluid name (processing-unit, plastic-bar, petroleum-gas, ...)')
+    assert(a.per_min == nil or (type(a.per_min) == 'number' and a.per_min > 0 and a.per_min <= 1000000),
+      'per_min must be a rate above 0 (items a minute, up to 1000000)')
     local surface = p.surface
     if a.surface ~= nil then
       assert(type(a.surface) == 'string', 'surface must be a surface name')
@@ -1098,7 +1102,7 @@ return function(api)
       assert(surface, 'no surface ' .. a.surface)
     end
     local force = p.force
-    local key = string.format('bottleneck|%s|%s|%s', tostring(surface.index or surface.name), force.name, item)
+    local key = string.format('bottleneck|%s|%s|%s|%s', tostring(surface.index or surface.name), force.name, item, tostring(a.per_min))
     return M.reuse(key, function()
       local names = prototypes.item[item] and {[item]=true} or {}
       local scan = M.scan(surface, force, names, {packs=M.packs_of(force), miners=true})
@@ -1116,8 +1120,15 @@ return function(api)
         end
         if #rows > 0 then where[#where+1] = name .. ': ' .. table.concat(rows, '; ') end
       end
+      local target
+      if a.per_min then
+        ratechain = ratechain or require('ratechain'){}
+        local made = {}
+        for _, row in ipairs(chain.tree or {}) do made[row.item] = row.made_per_min end
+        target = ratechain.plan(scan.by_product or {}, item, a.per_min, force, function(name) return made[name] end)
+      end
       return {item=item, surface=surface.name, line=chain.line, path=chain.path, root=chain.last, not_working=#where > 0 and where or nil,
-        steps=chain.tree, cut=chain.cut}
+        steps=chain.tree, cut=chain.cut, target=target}
     end)
   end
   local function packs_of(force)
@@ -1131,7 +1142,7 @@ return function(api)
     main=function(e) return inventory(e, MAIN[e.type] or 'chest') end}
 
   M.schema = {supply = {item='item name', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole',
-    radius='with near: 1..512 tiles (default 64)',
+    radius='with near: 1..512 tiles (default 64); alone: that far around you, on your surface',
     returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); chests (largest 5; what a requester or buffer chest asks for); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
 
   function M.supply(p, a)
@@ -1145,7 +1156,12 @@ return function(api)
     end
     local area
     if a.near ~= nil then area = {position=api.position(a.near), radius=api.integer(a.radius, 64, 1, 512, 'radius')}
-    else assert(a.radius == nil, 'radius needs near {x,y}') end
+    elseif a.radius ~= nil then
+      -- radius alone: around you, on your surface (round1650d: Grok's supply {item, radius: 120} was refused, "radius
+      -- needs near", twice in shift13; Luna too).
+      assert(surface == p.surface, 'radius needs near {x,y} on another surface')
+      area = {position={x=math.floor(p.position.x + 0.5), y=math.floor(p.position.y + 0.5)}, radius=api.integer(a.radius, 64, 1, 512, 'radius')}
+    end
     local force = p.force
     local key = string.format('supply|%s|%s|%s|%s', tostring(surface.index or surface.name), force.name, item,
       area and string.format('%g,%g,%g', area.position.x, area.position.y, area.radius) or '')

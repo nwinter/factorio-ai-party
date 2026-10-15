@@ -26,7 +26,7 @@ return function(api)
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local TYPES = {'assembling-machine', 'furnace', 'mining-drill', 'lab', 'inserter', 'beacon', 'radar', 'roboport',
     'pump', 'electric-turret', 'ammo-turret', 'fluid-turret', 'boiler', 'rocket-silo', 'agricultural-tower',
-    'asteroid-collector', 'lamp', 'loader', 'loader-1x1', 'cargo-landing-pad', 'car', 'spider-vehicle'}
+    'asteroid-collector', 'lamp', 'loader', 'loader-1x1', 'cargo-landing-pad', 'car', 'spider-vehicle', 'reactor'}
   -- Kinds and how a line says them; game alert types not listed read as their name.
   local LABEL = {no_power='no power', unconnected='not connected to power (no pole reaches them)', low_power='low power',
     no_fuel='out of fuel', no_ammo='out of ammo', flamer_dry='out of flamer oil', rebuilt_empty='rebuilt empty',
@@ -215,11 +215,33 @@ return function(api)
     return try(function() return s.find_entities_filtered{force=force, type=t, limit=budget} end) or {}
   end
   -- Entities from..to of a found list into the groups (mem: the inserter memory; tmem: the turret memory).
+  -- Spoilable fuel in burners (Sol, shift13 16:50: biochambers starved with 20 nutrients loaded, the batch rotting
+  -- within seconds): per cell and name, in mining['rot|surface|cx,cy'][name], how many burn it, how many of those
+  -- spoil within ROT_SOON ticks, and the first to spoil (its stack's spoil_tick, item and position). An out-of-fuel
+  -- group says it for its names (M.text, worked out when shown).
+  local ROT_SOON = 3600
+  local function spoiling(e, s, mining)
+    if not (mining and api.first_spoil) then return end
+    local burner = e.burner
+    local inv = burner and burner.inventory
+    if not inv then return end
+    local tick, item = api.first_spoil(inv)
+    if not tick then return end
+    local rk = 'rot|' .. s.name .. '|' .. math.floor(e.position.x / CELL) .. ',' .. math.floor(e.position.y / CELL)
+    local cell = mining[rk] or {}
+    mining[rk] = cell
+    local r = cell[e.name] or {n=0, soon=0}
+    cell[e.name] = r
+    r.n = r.n + 1
+    if tick - game.tick < ROT_SOON then r.soon = r.soon + 1 end
+    if not r.tick or tick < r.tick then r.tick, r.item, r.at = tick, item, {x=e.position.x, y=e.position.y} end
+  end
   local function read_list(groups, s, list, from, to, mem, tmem, mining, dmem)
     local st = statuses()
     for i = from or 1, to or #list do
       local e = list[i]
       if e.valid and mem and e.type == 'inserter' then watch_inserter(groups, s, e, mem) end
+      if e.valid then pcall(spoiling, e, s, mining) end
       if e.valid then
         local kind = st[e.status]
         local detail
@@ -349,8 +371,10 @@ return function(api)
         -- Drills still mining that ore in the area's cells and the cells around them.
         local near = ore and {}
         if ore then area.ore, area.still = ore, 0 end
+        local fuel_cells = kind == 'no_fuel' and {} or nil
         while #queue > 0 do
           local c = table.remove(queue)
+          if fuel_cells then fuel_cells[#fuel_cells+1] = c end
           local k = kind .. '|' .. surface .. '|' .. c[1] .. ',' .. c[2]
           local part = groups[k]
           if near then
@@ -379,6 +403,27 @@ return function(api)
         area.center = {x=math.floor(area.sx / area.n + 0.5), y=math.floor(area.sy / area.n + 0.5)}
         area.sx, area.sy = nil, nil
         if ore and ore ~= 'unknown' and force then area.untapped = try(function() return untapped(force.name, surface, ore, area.center) end) end
+        -- Out of fuel: the spoiling fuel of the same names in its cells and the cells around them (spoiling above).
+        if fuel_cells and mining then
+          local rot, seen = {}, {}
+          for _, c in ipairs(fuel_cells) do
+            for dx = -1, 1 do for dy = -1, 1 do
+              local rk = 'rot|' .. surface .. '|' .. (c[1] + dx) .. ',' .. (c[2] + dy)
+              if not seen[rk] then
+                seen[rk] = true
+                for name, r in pairs(mining[rk] or {}) do
+                  if area.names[name] then
+                    local a = rot[name] or {n=0, soon=0}
+                    rot[name] = a
+                    a.n, a.soon = a.n + r.n, a.soon + r.soon
+                    if not a.tick or r.tick < a.tick then a.tick, a.item, a.at = r.tick, r.item, r.at end
+                  end
+                end
+              end
+            end end
+          end
+          if next(rot) then area.rot = rot end
+        end
         out[#out+1] = area
       end
     end
@@ -637,8 +682,20 @@ return function(api)
         not plain and '; rearm' or '')
     end
     local hint = not plain and HINT[g.kind]
-    return string.format('%s %s near (%d,%d)%s%s%s', what(g), LABEL[g.kind] or g.kind:gsub('_', ' '), g.center.x, g.center.y,
-      g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '', hint and '; ' .. hint or '')
+    -- Spoiling fuel of those burners around it (merge): how many still burn it, how many spoil within ROT_SOON, the first.
+    local rot = {}
+    local names = {}
+    for name in pairs(g.rot or {}) do names[#names+1] = name end
+    table.sort(names)
+    for _, name in ipairs(names) do
+      local r = g.rot[name]
+      local left = r.tick - game.tick
+      rot[#rot+1] = string.format('%d %s around it burn spoiling fuel, %d of them within %ds; the first: %s %s at (%g,%g)', r.n, name, r.soon,
+        ROT_SOON / 60, r.item, left > 0 and string.format('spoils in %ds', math.floor(left / 60 + 0.5)) or 'spoiled', r.at.x, r.at.y)
+    end
+    return string.format('%s %s near (%d,%d)%s%s%s%s', what(g), LABEL[g.kind] or g.kind:gsub('_', ' '), g.center.x, g.center.y,
+      g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '', hint and '; ' .. hint or '',
+      #rot > 0 and '; ' .. table.concat(rot, '; ') or '')
   end
 
   -- Team block lines for p: at most one digest every DIGEST_TICKS, groups
@@ -729,7 +786,7 @@ return function(api)
       note=#rows == 0 and 'no alerts or warnings' or nil}
   end
   M.schema = {
-    game_alerts = {surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel, no_ammo, flamer_dry; out_of_ore (mining drills whose patch under them is used up, by ore: out_of_ore.iron-ore, ...; each with ore, still_mining (our drills still mining that ore in the area) and untapped (the nearest patch of it no drill of ours is on, from the ores read\'s last survey: x, y, d tiles, amount));rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), feed_chest_low (a boiler\'s feed chest under 20 of its fuel with nothing put into it for 5 min: boiler, chest, count, feeder); robots_busy (no idle logistic robot for 10 min); accumulators_draining (a network\'s accumulators empty within 10 min at their net flow of the last 30 s, again under 5 and 2 min; kept 10 min after, so a Fulgora storm between lulls is not news; on Fulgora with the time to the next storm or to dawn); construction_wait (ghosts in a network\'s construction area waiting 5+ min since first seen while their items are in the network, with the construction robots and whether busy); deliveries_wait (requests unfilled 5+ min while providers or storage hold the item free, with what the logistic robots are doing);science_idle (a pack the research needs whose makers on the science surface all stood still at two science-line builds 5+ min apart, with their states and the chain\'s first short step); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
+    game_alerts = {surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel (its line adds the spoiling fuel of burners of those names around it: how many burn it, how many within 60 s, the first to spoil and when), no_ammo, flamer_dry; out_of_ore (mining drills whose patch under them is used up, by ore: out_of_ore.iron-ore, ...; each with ore, still_mining (our drills still mining that ore in the area) and untapped (the nearest patch of it no drill of ours is on, from the ores read\'s last survey: x, y, d tiles, amount));rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), feed_chest_low (a boiler\'s feed chest under 20 of its fuel with nothing put into it for 5 min: boiler, chest, count, feeder); robots_busy (no idle logistic robot for 10 min); accumulators_draining (a network\'s accumulators empty within 10 min at their net flow of the last 30 s, again under 5 and 2 min; kept 10 min after, so a Fulgora storm between lulls is not news; on Fulgora with the time to the next storm or to dawn); construction_wait (ghosts in a network\'s construction area waiting 5+ min since first seen while their items are in the network, with the construction robots and whether busy); deliveries_wait (requests unfilled 5+ min while providers or storage hold the item free, with what the logistic robots are doing);science_idle (a pack the research needs whose makers on the science surface all stood still at two science-line builds 5+ min apart, with their states and the chain\'s first short step); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
       returns='groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest)}; scanned (the scan is at most 30 s old). What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
   }
   return M

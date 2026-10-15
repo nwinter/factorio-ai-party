@@ -11,6 +11,30 @@ return function(api)
   local SURVEY_TYPES={'assembling-machine','furnace','mining-drill','lab','boiler','inserter','burner-generator','reactor','ammo-turret','fluid-turret'}
   -- Flamer oil under a quarter is low (shift 5: the outer flame line held 19.9 oil and burnt out before anyone saw).
   local LOW_OIL=0.25
+  -- Spoilable fuel (Sol, shift13 16:50: biochambers starved with 20 nutrients loaded, the batch rotting within
+  -- seconds; on a copy of world n most biochambers held nutrients 85-99% spoiled): the burners whose fuel spoils within
+  -- ROT_SOON ticks, and the one whose fuel spoils first (its stack's spoil_tick).
+  local ROT_SOON=3600
+  local SPOILS={}
+  local function first_spoil(inv)
+    local best,item
+    for i=1,#inv do
+      local st=inv[i]
+      if st.valid_for_read then
+        local name=st.name
+        if SPOILS[name]==nil then
+          local ok,t=pcall(function() return st.prototype.get_spoil_ticks() end)
+          SPOILS[name]=ok and type(t)=='number' and t>0 or false
+        end
+        if SPOILS[name] then
+          local ok,tick=pcall(function() return st.spoil_tick end)
+          if ok and type(tick)=='number' and tick>0 and (not best or tick<best) then best,item=tick,name end
+        end
+      end
+    end
+    return best,item
+  end
+  M.first_spoil=first_spoil
   local MACHINE_TYPES={['assembling-machine']=true,furnace=true,['mining-drill']=true,lab=true,boiler=true}
   local PLATES={'iron-plate','copper-plate','steel-plate','stone-brick','plastic-bar'}
   local function round(v) return math.floor(v+0.5) end
@@ -222,6 +246,11 @@ return function(api)
           f.total=f.total+1
           if e.status==status_ids.no_fuel then f.empty=f.empty+1
           elseif burner.inventory.is_empty() and (burner.remaining_burning_fuel or 0)>0 then f.low=f.low+1 end
+          local tick,item=first_spoil(burner.inventory)
+          if tick then
+            if tick-game.tick<ROT_SOON then f.rot=(f.rot or 0)+1 end
+            if not f.first or tick<f.first.tick then f.first={tick=tick,item=item,at=at(e)} end
+          end
         elseif e.electric_buffer_size and e.electric_buffer_size>0 and e.type~='boiler' then
           a.powered=a.powered+1
           if e.status==status_ids.low_power then a.starved=a.starved+1
@@ -289,8 +318,10 @@ return function(api)
     local fuel_parts={}
     for _,name in ipairs(fuel_order) do
       local f=fuel[name]
-      if f.empty>0 or f.low>0 then
+      if f.empty>0 or f.low>0 or (f.rot or 0)>0 then
         fuel_parts[#fuel_parts+1]=string.format('%s %d/%d no_fuel',name,f.empty,f.total)..(f.low>0 and ', '..f.low..' burning their last fuel' or '')
+          ..(f.first and (f.rot or 0)>0 and string.format(', fuel spoils within %ds in %d (the first: %s in %s at %s)',ROT_SOON/60,f.rot,f.first.item,
+            duration(math.max(0,f.first.tick-game.tick)),f.first.at) or '')
       end
     end
     if #fuel_parts>0 then warnings[#warnings+1]='fuel: '..table.concat(fuel_parts,'; ') end
