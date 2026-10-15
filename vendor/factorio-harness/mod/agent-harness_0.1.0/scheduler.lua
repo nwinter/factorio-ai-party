@@ -27,7 +27,7 @@ return function(api)
         local ok,fixed_action,fixed_args,fix=pcall(api.fix_args,action,args)
         if ok and fix then
           action,args=fixed_action,fixed_args
-          corrected[#corrected+1]='step '..i..': '..fix.call..' ('..table.concat(fix.notes,'; ')..')'
+          if not fix.quiet then corrected[#corrected+1]='step '..i..': '..fix.call..' ('..table.concat(fix.notes,'; ')..')' end
         elseif ok and fixed_args~=args then action,args=fixed_action,fixed_args end
       end
       assert(not action:match('^queue_') and not forbidden[action],'action is not queueable')

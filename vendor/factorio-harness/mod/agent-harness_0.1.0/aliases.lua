@@ -85,7 +85,9 @@ return function(api)
   -- tells whether an action takes an argument (describe's schema).
   function M.fix(action, args, takes)
     if type(args) ~= 'table' or type(action) ~= 'string' then return action, args, nil end
-    local notes, silent = {}, false
+    -- documented: notes for forms the docs give (take-and-give, requests set as a map; friction3: Haiku and Grok read
+    -- "warning: corrected" on each of them): kept for a failed call's "[ran as ...]", no `corrected` on success.
+    local notes, silent, documented = {}, false, 0
     local out = {}
     for k, v in pairs(args) do out[k] = v end
     -- board with an item id and a change is an update; with a title, a post.
@@ -134,6 +136,7 @@ return function(api)
           for _, k in ipairs{'from', 'from_entity', 'position', 'to_entity', 'direction'} do out[k] = nil end
           out.pick = 'first_with_stock'
           notes[#notes+1] = src .. ' and ' .. dst .. ' without pick: a take there and a give at ' .. dst .. ' (pick="first_with_stock")'
+          documented = documented + 1
         end
       end
       -- from {x,y} is the position (from: "nearest" is transfer's own: the nearest chest holding the item), a take
@@ -188,6 +191,7 @@ return function(api)
         end
         out.set = list
         notes[#notes+1] = 'set as a map {item: min} is the list [{item, min}]'
+        documented = documented + 1
       end
     end
     -- circuit is circuit_set's old name.
@@ -251,7 +255,7 @@ return function(api)
     end
     if #notes == 0 then return action, silent and out or args, nil end
     table.sort(notes)
-    return action, out, {notes=notes, call=action .. ' ' .. encode(out)}
+    return action, out, {notes=notes, call=action .. ' ' .. encode(out), quiet=documented == #notes or nil}
   end
   return M
 end

@@ -1148,6 +1148,8 @@ async function main() {
   // for a wait on the walk; it slept the whole 150 s, the walk done after 46).
   async function waitForIdle(capMs?: number): Promise<Reply> {
     const started = Date.now();
+    // The newest reply's tick before this wait (the pace file): an action that ended before it is not this wait's.
+    const priorTick = paceFile ? pace().tick : undefined;
     let first = await poll();
     if (!first.ok) return first;
     const since = typeof first.tick === 'number' ? first.tick + 1 : undefined;
@@ -1166,6 +1168,19 @@ async function main() {
     while (!stopping) {
       if (!status.result?.active && !status.result?.combat) {
         const last = status.result?.last;
+        // Nothing running when the wait began, and the last action ended before the call before this one (friction3:
+        // Haiku's two waits after a rearm had ended printed its old timed_out as a fresh error, exit 1; Luna and Muse took
+        // a walk's and a collect's old outcome as the wait's): said so, exit 0.
+        if (status === first && typeof last?.tick === 'number' && typeof priorTick === 'number' && last.tick < priorTick) {
+          const ago = typeof status.tick === 'number' ? Math.max(0, Math.round((status.tick - last.tick)/60)) : undefined;
+          const note = `nothing was running when this wait began: the last action, ${last.kind ?? 'an action'}, ended ${last.outcome ?? 'earlier'}`
+            + `${ago !== undefined ? ` ${ago} s ago` : ''}, before your previous call`;
+          const quiet = {...status, ok:true, result:{...status.result, last:undefined, note}};
+          if (compactWaits) return withSlow(withTells(await brief(quiet, started)));
+          const full = await finalReply(quiet);
+          return withSlow(withTells({...full, result:{idle:true, nothing_running:true, note, last, last_combat:status.result?.last_combat,
+            waited_ms:Date.now()-started, team:full.result?.team, clock:full.result?.clock, orders:full.result?.orders, chat:full.result?.chat}}));
+        }
         const ok = !last?.outcome || successfulOutcomes.includes(last.outcome);
         const ended = {...status, ok, ...(ok ? {} : {error:endedError(last.kind ?? 'the action',last)})};
         if (compactWaits) return withSlow(withTells(await brief(ended, started)));

@@ -274,10 +274,13 @@ fh call status
   requests too (`calcite=500 from vulcanus`). `requests {platform, section: 1, active: true}` (or `false`) switches a
   section on or off; `changed_section` says which section a call changed, only when a slot was set or cleared or the
   section switched (else `unchanged: this call set, cleared and switched nothing in section 1`). `set` as a map
-  `{"low-density-structure": 100}` runs as the list `[{"item":"low-density-structure","min":100}]` and the reply's
-  `corrected` says so (friction2: Muse's map set nothing and the reply said `changed_section: 1`; the silo requester
-  stayed at min 4 for 11.7 min); a value that is an object gives that item's fields (`{"coal": {"min": 5, "max":
-  10}}`). `stored` (Luna, shift12 12:47) echoes each
+  `{"low-density-structure": 100}` runs as the list `[{"item":"low-density-structure","min":100}]` (friction2: Muse's
+  map set nothing and the reply said `changed_section: 1`; the silo requester stayed at min 4 for 11.7 min); a value
+  that is an object gives that item's fields (`{"coal": {"min": 5, "max": 10}}`). A `set` entry without `max` keeps
+  the slot's max while it is at least the new min, as the GUI does when only min is edited (friction3: Grok's map sets
+  turned `copper-cable 200..400` into `40..inf`): `copper-cable 40..400 (max kept: not named in this edit) (was
+  copper-cable 200..400)`; a max under the new min is dropped, said (`(max 10 dropped: under min 20)`); `"max":
+  "inf"` sets none. `stored` (Luna, shift12 12:47) echoes each
   item the call set or cleared as read back from its slot: `processing-unit 0..400 from vulcanus (import planet kept:
   not named in this edit) (was 0..200 from vulcanus)`, `coal: cleared (was coal=500 from vulcanus)`. A `set` entry
   without `from` keeps the import planet the slot already has (before, the game stored its default, nauvis: three of
@@ -1003,6 +1006,12 @@ fh sleep 900 --until researched                       # ...or until the research
   does, for at most S seconds, and returns at once when nothing runs (friction1300: Grok and Haiku read `fh wait --max
   150` as that; it slept the whole 150 s while the walk had ended after 46). Out of time it ends as a timed-out wait
   (`wait_timeout`, `still_running`).
+  - Nothing running when the wait begins, and the last action ended before your previous call's reply (friction3:
+    Haiku's two waits after a rearm had ended printed its old `timed_out` as a fresh error, exit 1): `outcome: idle`,
+    `note: nothing was running when this wait began: the last action, gather, ended timed_out 90 s ago, before your
+    previous call` (JSON: `nothing_running: true`), exit 0. An action that ended after it (a fast walk between its
+    start and the wait) is still the wait's outcome, a failure exit 1. The tick of the previous reply comes from the
+    pace file (`.fh-pace.json` next to the journal).
 - `fh wait --until tell|alert|COND [--max S]` is one blocking wait with one line out: `woke: told after 42 s (astra: coal please); your next reply's team block has the rest`. It is a sleep (S seconds, default 600, up to 900) whose requests peek, so the team block stays for the agent's next reply: it ends on what ends a sleep (a tell or mention, damage, death, board news, the queue finishing or stalling), on `alert` (a new attack area, enemy group or enemy base: `woke: alert`) or on a sleep `--until` condition. `--format json` adds the line as `result.line`.
 - `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), a teammate's chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`; a viewer's `@mention` only with `--wake-on-viewers`, else it waits for the next reply), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), eggs of ours on your surface or in a holder you built will hatch within 5 minutes (`eggs`, with the line; delivered in `team.alerts`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second. Past 1.25 x SECONDS + 10 s of real time it goes on while the game still advances below 55 ticks/s (Luna, Astra, Sol, 13:41: after the crash world n ran at 7-10 ticks/s and 12 game s took 85 real s), up to 3 x SECONDS + 60 s, and then exits 1 with `timed_out` (`the game advanced 12 of the 60 s asked in 240 s of real time (slow_game: 3 ticks/s, 5% of normal)`); when no game tick passed for 20 s it exits 1 with `paused` (`no game tick passed for 20 s (the game is paused or stopped)`). A sleep that ran in a slow game carries `slow_game: 18 ticks/s, 30% of normal`. The same holds for `--wait` on actions and `fh wait`: a computed wait budget (the action's ticks at 60/s x 1.25 + 5 s) goes on while a slow game advances, up to 3 x those ticks' time + 60 s (45 min at most), names `slow_game` in its reply, and a `wait_timeout` says whether the game stopped or ran slow; an explicit `--wait-timeout MS` stays as given.
   - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory; also `>`, `<=` and the words `below`, `under`, `above`, `at_least`), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64; a level fallen under at one chest, Haiku 12:20: `item_count coal below 20 at 10,39`, then one feed), `rocket_ready X,Y` (the silo at X,Y has its rocket built and ready to launch), `platform_arrived PLATFORM [PLANET]`, any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
@@ -1147,17 +1156,28 @@ fh sleep 900 --until researched                       # ...or until the research
     says which: `wooden-chest at (56.5,34.5), 7.0 tiles from you, holds 200 firearm-magazine (2 chests checked, 1
     holding it)`. None: refused, naming the nearest within 32 tiles (`radius=24 walks there`); with `up_to: true`,
     moved 0 and a short. `from: {x,y}` is still the position.
-    - Requester and buffer chests come last (they feed machines), and a `count` more than the first chest holds comes
-      from the next ones too, in that order, up to 16 chests (friction2: Sonnet's nearest held 20 of the 300 asked;
-      Grok took 40 iron plates from a requester feeding a machine): `3 chests hold 210 of the 150 asked, nearest first,
-      requester and buffer chests last: steel-chest (10.5,63.5) 10.2 tiles, holds 12; requester-chest (9.5,59.5) 6.9
-      tiles, holds 100 (requester); ...`. Walking (`radius`), the walk takes what is still missing at each chest and
-      ends `transferred` once the count is taken.
+    - A `count` more than the first chest holds comes from the next ones too, in that order, up to 16 chests
+      (friction2: Sonnet's nearest held 20 of the 300 asked): `2 chests hold 210 of the 150 asked, nearest first:
+      steel-chest (10.5,63.5) 10.2 tiles, holds 12; wooden-chest (9.5,52.5) 14.0 tiles, holds 198 (...)`. Walking
+      (`radius`), the walk takes what is still missing at each chest and ends `transferred` once the count is taken.
+      One chest that holds the whole count, no farther than the farthest of those, goes alone (friction3: Sonnet's
+      600 take walked 57 tiles west, then 107 east, past a chest holding 1000).
+    - Chests that feed something are left out unless `feeding: true` (friction3: Sonnet took 1130 cable back out of the
+      input chests of the line it had just filled; Opus's tour took 20 rounds from each of 5 chests feeding turrets;
+      friction2: Grok took 40 iron plates from a requester feeding a machine): requester and buffer chests, and a chest
+      an inserter takes from. `from_nearest` or the refusal names them: `2 chests feeding something left out (feeding:
+      true takes from them too): requester-chest (9.5,59.5) holds 100: a requester chest; iron-chest (20.5,33.5) holds
+      40: inserter (20.5,34.5) takes from it into gun-turret`. With `feeding: true` they come last.
+    - Walking (`radius`, or `walk: true` alone, which looks 32 tiles; friction3: Muse's `walk: true` was refused), a
+      chest in a worm's or a spawner's reach the map shows is left out and named (`1 in enemy reach left out:
+      wooden-chest (91,33) is inside medium-worm-turret (95,30) range 30 (5.1 tiles from it)`), and the walk's legs go
+      round the worms as `move_to`'s do (friction3: Opus's tour along the south turret line was killed by worms).
   - A take at one place and a give at another in one call (friction2: Grok's `from_entity` and `to_entity`, refused
     three times as unknown arguments; Luna's `position` then `to`): `{from | from_entity | position | positions, to |
-    to_entity, item | items, count}` with no `pick` runs as the pick courier below (`pick: "first_with_stock"`), and
-    the reply's `corrected` says so. A give named with `direction: "to_entity"` and a `to` elsewhere is still refused
-    (which side is meant is not said).
+    to_entity, item | items, count}` with no `pick` runs as the pick courier below (`pick: "first_with_stock"`); a
+    failed call's error says so (`[ran as transfer {...}: from_entity and to_entity without pick: ...]`), a call that
+    works has no `corrected` for it (friction3). A give named with `direction: "to_entity"` and a `to` elsewhere is
+    still refused (which side is meant is not said).
   - A take from a named chest that holds none of the item says where the nearest chest holding it is, in
     `nothing_moved`: `...; the nearest holding firearm-magazine: wooden-chest at (56.5,34.5), 7.0 tiles from you,
     holds 180 (transfer from: "nearest")`.
@@ -1960,6 +1980,17 @@ fh sleep 900 --until researched                       # ...or until the research
     its supply area distance, by quality; a machine there connects); `unpowered` counts the positions left out for
     that, `poles` our poles whose area reaches the search.
   - `direction` takes a compass name or the number inspect prints (0, 4, 8, 12).
+  - friction3 (Gemini: 17 placements calls in an hour, 12 of them count 0; its accumulators built from overlapping
+    spots; Luna's radius 32 refused):
+    - `radius` past 24 is searched at 24 and `limit` past 50 at 50, said in `note` (`radius 32 is past the most, 24:
+      searched at 24`).
+    - Count 0: `in_the_way` names what stands in the search square, by name with the nearest one, and the tiles the
+      entity cannot stand on: `nothing fits within 10 tiles of (-60,85): in the way: accumulator 12 (nearest
+      (-58.5,84.5)), lightning-rod 3 (nearest (-61.5,86.5)); tiles accumulator cannot stand on: oil-ocean-deep 280`.
+    - Without `separate`, `overlapping` counts the pairs of listed spots that overlap each other (`3 pairs of these
+      spots overlap each other (each fits alone): separate=true lists spots that do not`); for an entity that takes
+      electricity, without `powered`, `no_supply` counts the spots in no pole's supply area (`4 of these spots lie in
+      no pole's supply area: powered=true lists spots that do`).
 - Directions as numbers: `build` (and its `builds`), `place_ghosts` entries (and its dry run) take the number inspect and
   scan print (0..15, 4 is east) as well as a compass name; `paste`, `blueprint_place` and `plan` take 0, 4, 8 or 12
   (friction1300: Gemini's script sent `"direction": 0` in 18 place_ghosts dry runs, read only the summary of the
@@ -2126,6 +2157,9 @@ fh sleep 900 --until researched                       # ...or until the research
     further along its lane, since items move; a side-load or an inserter onto the other lane is not this lane's, and
     a lane that carried nothing yet names no inserter. A belt run in `path` ends where the lane goes onto another belt
     from the side.
+  - A start with nothing to trace back (a mining drill, a belt, a chest; not with `"all":true`) is traced forward, said
+    in `note`: `electric-mining-drill has no recipe to trace back: traced forward (its output)` (friction3: Grok's
+    drill start was refused, naming `forward=true`).
   - `{"item":"chemical-science-pack"}` (optional `"surface"`, `"near":{x,y}` with `"radius"` 1..512, default 64:
     makers and labs in that circle): `makers` (how many make it and their states; the nearest 48 traced), `direct`
     (a maker's inserter straight into a lab, machine or chest; a logistic chest says robots carry it on), `routes` from
@@ -2134,6 +2168,11 @@ fh sleep 900 --until researched                       # ...or until the research
     named), `reaches` (the labs and machines it gets to, by which inserter and route), and when the research needs the
     pack, `labs_short` and `labs`: each lab holding none with the route reaching it, else its own inserters and what
     they read (a requester chest's request) and the nearest route tile.
+  - An ore, stone, coal or any item a resource gives (friction3: Grok's `trace {item: copper-ore}` read `nothing on
+    nauvis makes copper-ore`, and it followed the ore belts by hand for 8 min): the mining drills on that resource are
+    makers (`12 making it (12 mining drills): ...`); a drill dropping onto a belt starts a route there, one dropping into
+    a chest or a machine is a note (`electric-mining-drill (30,0) drops into iron-chest (30,-2)`), one dropping onto
+    nothing says so (`... drops onto nothing at (29.5,-1.5)`).
   - Bounded: 3000 belt tiles, 6 inserter hops, 24 routes, 48 makers, 1024 labs per read; `cost` says what was walked.
     Measured on a private copy of shift09's world (x86 emulated): a machine 2-3 ms, forward 3-8 ms, an item over
     the whole of Nauvis 22-41 ms, with `near` (radius 64) about 20 ms.

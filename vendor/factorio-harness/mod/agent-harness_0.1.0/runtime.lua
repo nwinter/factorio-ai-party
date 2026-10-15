@@ -8865,7 +8865,7 @@ function M.dispatch_inner(request)
     result=r
   end
   M.seated_ok=nil
-  if corrected and type(result)=='table' then
+  if corrected and type(result)=='table' and not corrected.quiet then
     result.corrected=corrected.call..' ('..table.concat(corrected.notes,'; ')..')'..(result.corrected and '; '..result.corrected or '')
   end
   -- Item moves: moved, and the inventory line after the move (Muse 06:27).
