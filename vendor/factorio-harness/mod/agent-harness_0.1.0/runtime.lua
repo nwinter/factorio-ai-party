@@ -7299,10 +7299,17 @@ function M.pick_source(p,a,verb)
   assert(a.total==nil and a.area==nil and a.radius==nil,'pick goes with positions (not total, area or radius)')
   local list=a.positions or (a.position~=nil and {a.position}) or nil
   assert(type(list)=='table' and #list>=1 and #list<=64,'pick needs positions: 1..64 places to take from')
-  local items={}
-  if type(a.items)=='table' then for _,n in ipairs(a.items) do items[#items+1]=n end elseif a.items~=nil then items[1]=a.items end
+  local items,counts={},{}
+  -- items as {name: count} (Luna, shift17 10:50: {"items":{"bioflux":5}} was refused, and items:["bioflux"] then moved the
+  -- whole 24-item stack): the picked item's count caps the take, as count does.
+  if type(a.items)=='table' and a.items[1]==nil and next(a.items)~=nil then
+    local names={}
+    for n in pairs(a.items) do names[#names+1]=n end
+    table.sort(names)
+    for _,n in ipairs(names) do items[#items+1]=n; counts[n]=integer(a.items[n],nil,1,100000,'items count for '..tostring(n)) end
+  elseif type(a.items)=='table' then for _,n in ipairs(a.items) do items[#items+1]=n end elseif a.items~=nil then items[1]=a.items end
   if a.item~=nil then table.insert(items,1,a.item) end
-  assert(#items>=1 and #items<=16,'pick needs item or items (1..16 item names)')
+  assert(#items>=1 and #items<=16,'pick needs item or items (1..16 item names, or {name: count})')
   for _,n in ipairs(items) do assert(type(n)=='string' and prototypes.item[n],'unknown item '..tostring(n)) end
   -- The destination per item: one {x,y} for all, or a map item -> {x,y}.
   local function is_pos(v) return type(v)=='table' and ((type(v.x)=='number' and type(v.y)=='number') or (type(v[1])=='number' and type(v[2])=='number')) end
@@ -7345,7 +7352,7 @@ function M.pick_source(p,a,verb)
   local picked={position=e.position,name=e.name,item=best.item,holds=best.count,rule=a.pick,
     line=string.format('%s at (%g,%g) holds %d %s (%s; %d listed place%s skipped)',e.name,e.position.x,e.position.y,best.count,best.item,a.pick,
       #skipped,#skipped==1 and '' or 's')}
-  local take={direction='to_player',item=best.item,quality=a.quality,outputs_only=a.outputs_only,count=a.count,keep=a.keep,keep_max=a.keep_max,inventory=a.inventory,
+  local take={direction='to_player',item=best.item,quality=a.quality,outputs_only=a.outputs_only,count=counts[best.item] or a.count,keep=a.keep,keep_max=a.keep_max,inventory=a.inventory,
     up_to=a.up_to==true and true or nil,ticks=a.ticks}
   -- With to, inventory goes with the place that has it (round1650d: Luna's and Grok's rocket_silo_rocket was tried on the
   -- chest taken from, "inventory is not applicable", and the courier ended nothing_collected): the give's for a silo or

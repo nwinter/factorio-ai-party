@@ -1949,7 +1949,9 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     laps from empty seed chests):
     - `pick: "first_with_stock"` reads every listed place as `inspect` does (in sight, or by remote view where our
       force sees the chunk) and takes at the first in list order that holds a listed item now (its first listed item
-      it holds); `pick: "most_stock"` takes at the place holding the most. `items` lists up to 16 items to look for
+      it holds); `pick: "most_stock"` takes at the place holding the most. `items` as a map `{"bioflux": 5}` (Luna,
+      shift17 10:50: that form was refused, and a list then moved the whole stack) caps the take at the picked item's
+      count, as `count` does. `items` lists up to 16 items to look for
       (`item` too); the item picked is the one taken (`count`, `up_to`, `keep` as in a plain take). The take walks
       there when out of reach (as `walk`).
     - Empty places are skipped: `skipped` counts them and `skipped_places` lists up to 8 (`holds: 0`, or the
