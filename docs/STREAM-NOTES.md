@@ -471,6 +471,23 @@ size/threshold be dynamic".
 
 - Operator follow: `POST /follow {agent, seconds <= 1800, label?, by}`, `DELETE /follow`; kept in
   runs/RUN/director-follow.json. The camera stays on that agent; other agents' urgent events become insets.
+- Operator platform hold (eng/platformview): `POST /platform {name, seconds?, label?, by?}`, `DELETE /platform`.
+  For example, `curl -X POST http://127.0.0.1:8788/platform -d '{"name":"Sunward","seconds":300,"label":"Asteroid crossing","by":"operator"}'`.
+  Names are case-insensitive; seconds defaults to 600 and is clamped to 1–1800. Unknown names return 400; no
+  platform snapshot or no surface/view returns 409. Non-numeric or non-finite seconds return 400.
+  `runs/RUN/director-platform.json` stores `{name, until, label, by}` (until is epoch seconds); edits/deletion and
+  restarts work like `/follow`. An expired file does not restart the hold. The platform snapshot supplies the view;
+  this adds no game reads. If a saved platform is temporarily absent, normal directing runs until it returns.
+  A platform hold takes priority over `/follow`; an unexpired follow resumes when the platform hold ends. `/cloud`
+  returns 409 while a platform hold is active. Other urgent events use insets; segments, cues, rotation and new
+  replays do not cut away. A followed agent aboard a platform also gets the whole-ship view, returning to character
+  framing on landing. The on-air label and the hosts' `on_screen_platform` identify the platform, current route,
+  agent aboard and optional operator label; `snapshot.platform_hold` includes its deadline and requester.
+  The shared platform framing fits the build and the on-air crop, adding 32 tiles ahead and 8 aft/on either side
+  while in transit (north on the platform surface, in either direction of the space connection). Held frames
+  refresh on departure, arrival and bounds changes; label/progress updates alone send no camera command. The
+  existing camera minimum zoom of 0.3 still limits how much a very large platform can fit. Offline regression:
+  `python3 tools/stream/test_platformhold.py` (no arguments; HTTP test uses an ephemeral local port).
 - Threat scores (`threats.py`): an enemy group or a fight scores on its size against the run's last 30 (percentile,
   squared), a unit tier above the usual mix (double the first 3 times), and what it is aimed at (near an agent, an
   outpost outside the base map's core, a new direction). A fight also scores for an agent in it and how long it has

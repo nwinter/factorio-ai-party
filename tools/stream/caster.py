@@ -1028,9 +1028,15 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         f["on_screen_platform"] = {
             "platform": plat.get("name"), "shown_as": plat.get("label"), "why": plat.get("why"),
             "note": {"departure": "viewers watch this platform leave for another planet now: a moment to mark",
+                     "operator": "the operator has held the camera on this whole platform; in flight the view "
+                                 "includes space ahead for approaching asteroids",
+                     "follow": "viewers see the whole platform the followed agent is aboard; in flight the view "
+                               "includes space ahead for approaching asteroids",
                      "work": "viewers see the platform this agent is building on from the ground (remote view)"}.get(
-                         plat.get("why"), "viewers see this space platform in orbit now: a moment to say what it is for "
+                         plat.get("why"), "viewers see this space platform now: a moment to say what it is for "
                                           "and how it is coming along")}
+        if plat.get("why") == "operator" and s.get("platform_hold"):
+            f["on_screen_platform"]["hold"] = s["platform_hold"]
     onair = (s.get("onair") or {}).get("agent")
     if onair and e["kind"] in ("lull", "camera", "chat", "board", "plan", "research_start"):
         # one camera on air (onecam.py): the regular beats lean on the agent viewers are watching

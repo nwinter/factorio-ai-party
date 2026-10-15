@@ -354,17 +354,22 @@ def notes_job(md, limit=90):
     return pick if len(pick) <= limit else pick[:limit - 1].rsplit(" ", 1)[0] + "…"
 
 
-def platform_shot(view, margin=10.0):
+def platform_shot(view, margin=10.0, *, travelling=False, frac=1.0):
     """A camera shot of a whole platform from its view (live.py PLATFORM_LUA): the centre of its entities' bounds on
     its surface, at the zoom that fits them. A director client at zoom 1 shows ~60x34 tiles (1920x1080 at 32 px per
     tile), so the zoom is what fits the bounds plus a margin, clamped to cameras.lua's 0.3..4. exact_zoom: the
-    director sends it as is (no main/side scaling, which would crop the platform)."""
+    director sends it as is (no main/side scaling, which would crop the platform). In flight, include 32 extra
+    tiles ahead and 8 aft and on each side for approaching asteroids. Forward on the platform surface is north
+    on either leg of a space connection; reversing the route does not turn the build around. frac is the width
+    the on-air crop actually shows."""
     b = view.get("bounds") or {}
     hub = view.get("hub") or {"x": 0, "y": 0}
     left, top = b.get("left", hub["x"] - 6), b.get("top", hub["y"] - 6)
     right, bottom = b.get("right", hub["x"] + 6), b.get("bottom", hub["y"] + 6)
+    if travelling:
+        left, top, right, bottom = left - 8, top - 32, right + 8, bottom + 8
     w, h = right - left + margin, bottom - top + margin
-    zoom = max(0.3, min(2.0, 60.0 / w, 34.0 / h))
+    zoom = max(0.3, min(2.0, 60.0 * frac / w, 34.0 / h))
     return {"position": {"x": round((left + right) / 2, 1), "y": round((top + bottom) / 2, 1)}, "surface": view["surface"],
             "zoom": round(zoom, 2), "exact_zoom": True}
 

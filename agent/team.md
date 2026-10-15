@@ -152,6 +152,8 @@ already targets your character.
   Add `--fyi` when no answer is needed: it waits for their next reply, marked `(fyi)`, and wakes nobody.
   Viewers see tells on the stream's logistics ticker. `./fh tells` lists the last 30 tells you received
   (time, sender, fyi), shown before or not; `./fh tells --since N` lists the ones you sent and received after N.
+- The stream's operator-only `POST /platform` holds a whole platform on air; an operator follow of an agent aboard
+  also shows the whole ship, with space ahead in flight. This is a stream control, not an `./fh` action.
 - `./fh operator "..."` sends a request to the operator, the people running the harness and the stream: a tool that
   fails or is missing, or something viewers asked for that you can't do yourselves. The operator may answer in the
   game chat as `server:`. It is not for help with the game. Viewers see it on the ticker. Up to 2000 bytes, filed whole;
