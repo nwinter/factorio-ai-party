@@ -22,10 +22,14 @@ return function(api)
     end
     return n
   end
-  local function turrets(p,c)
+  local function selected(p,c,types)
     local centre,radius=area(p,c)
-    return p.surface.find_entities_filtered{position=centre,radius=radius,type=OUR_TURRETS,force=p.force}
+    local filter={position=not c.area and centre or nil,radius=not c.area and radius or nil,area=c.area,type=types,force=p.force,limit=1025}
+    local list=p.surface.find_entities_filtered(filter)
+    assert(#list<=1024,'condition area exceeds 1024 entities')
+    return list
   end
+  local function turrets(p,c) return selected(p,c,OUR_TURRETS) end
   local function ammo(e)
     local inv=e.type=='ammo-turret' and e.get_inventory(defines.inventory.turret_ammo)
     return inv and inv.get_item_count() or nil
@@ -224,7 +228,7 @@ return function(api)
     fuel_below=function(p,c)
       local centre,radius=area(p,c)
       local n,near,best=0,nil,nil
-      for _,e in pairs(p.surface.find_entities_filtered{position=centre,radius=radius,force=p.force,type=BURNERS}) do
+      for _,e in pairs(selected(p,c,BURNERS)) do
         local inv=e.valid and e.burner and e.get_fuel_inventory()
         if inv and inv.get_item_count()<c.count then
           n=n+1
@@ -240,8 +244,14 @@ return function(api)
   function M.validate(c)
     assert(type(c)=='table' and checks[c['until']],'until must be one of '..NAMES)
     if c.position~=nil then api.position(c.position) end
-    if c.radius~=nil then number(c.radius,1,128,'radius') end
+    if c.radius~=nil then number(c.radius,1,256,'radius') end
     local kind=c['until']
+    if c.area~=nil then
+      assert(kind=='ammo_below' or kind=='fuel_below','area applies to ammo_below or fuel_below')
+      assert(c.radius==nil and c.position==nil,'area excludes position and radius')
+      local l,r=api.position(c.area.left_top or c.area[1]),api.position(c.area.right_bottom or c.area[2])
+      assert(r.x>l.x and r.y>l.y and r.x-l.x<=256 and r.y-l.y<=256,'area must be nonempty and at most 256x256')
+    end
     if kind=='ammo_below' then number(c.count,1,1000,'count') end
     if kind=='health_below' or kind=='health_above' then number(c.fraction,0,1,'fraction') end
     if kind=='item_count' then

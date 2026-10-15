@@ -130,6 +130,26 @@ return function(api)
       e.name,origin.x,origin.y,#out.sites,resource,search,r,out.truncated and '; placement check limit reached' or '')
     return out
   end
+  function M.group(force,g)
+    if not g.drill or not g.ore or g.ore=='unknown' then return nil end
+    local surface=game.surfaces[g.surface];if not surface then return nil end
+    local q=g.drill.position
+    if not force.is_chunk_visible(surface,{x=math.floor(q.x/32),y=math.floor(q.y/32)}) then return nil end
+    local st=api.state();st.drill_site_cache=st.drill_site_cache or {entries={},order={}}
+    local cache=st.drill_site_cache
+    local key=force.name..'|'..g.key..'|'..tostring(g.drill.unit_number)..'|'..g.ore
+    local old=cache.entries[key]
+    if old and game.tick-old.tick<3600 then return old end
+    local p={force=force,surface=surface,position=q,__remote=true}
+    local result=M.read(p,{position=q,name=g.drill.name,unit_number=g.drill.unit_number,resource=g.ore,radius=24,limit=1})
+    local out={tick=game.tick,drill=result.drill,origin=result.position,radius=result.searched_radius or result.radius,
+      site=result.sites[1],truncated=result.truncated,radius_reduced=result.radius_reduced}
+    if not cache.entries[key] then
+      if #cache.order>=128 then cache.entries[table.remove(cache.order,1)]=nil end
+      cache.order[#cache.order+1]=key
+    end
+    cache.entries[key]=out;return out
+  end
   M.schema={position='required: depleted mining drill of ours',surface='optional surface name (default yours)',
     resource='optional resource entity name when the last mining target was not recorded; a recorded target must match',
     radius='2..24 (default 16); reduced on dense patches to keep the resource read at 1024 tiles',limit='1..8 sites (default 3)',

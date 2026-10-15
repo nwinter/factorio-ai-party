@@ -80,4 +80,16 @@ eq(r.footprint.width,4);eq(r.footprint.height,2)
 for _,c in ipairs(r.sites) do eq(c.position.x%1,0);eq(c.position.y%1,0) end
 e.status=0; fails(function() D.read(p,{position=e.position}) end,'no_minable_resources')
 e.status=5;e.mining_target={valid=true};fails(function() D.read(p,{position=e.position}) end,'no mining target')
+-- Group lookup reuses the same placement implementation once, then caches both
+-- hits and misses; the selected ore cannot silently change to an adjacent one.
+game.surfaces={vulcanus=surface};hidden=false;blocked=false;e.status=5;e.mining_target=nil
+e.position={x=.5,y=.5};e.prototype.tile_width=3;e.prototype.tile_height=3;e.direction=0
+tiles={};for x=4,8 do tile(x,0) end
+s.push_drills={player={[10]='coal'}}
+local group={key='out_of_ore.coal|vulcanus|0,0',surface='vulcanus',ore='coal',drill={position=e.position,name=e.name,unit_number=10}}
+local g=D.group(force,group);eq(g.site.position.x,3.5);eq(g.radius,24)
+local nreads=reads;eq(D.group(force,group).site.position.x,3.5);eq(reads,nreads)
+game.tick=game.tick+3600;blocked=true
+g=D.group(force,group);eq(g.site,nil);nreads=reads
+D.group(force,group);eq(reads,nreads)
 print('drill sites: ok')

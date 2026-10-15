@@ -201,7 +201,7 @@ force.players={{}}; game.forces={player=force}
 local function run(n) for _=1,n do game.tick=game.tick+1; finds={}; C.tick(game.tick); assert(#finds<=1,'at most one find a tick') end end
 run(1); eq(#finds,0,'the job starts'); assert(st5.push_jobs.player)
 local stages=#st5.push_jobs.player.stages
-eq(stages,2+3,'each of 2 planets, then alerts, networks, merge')
+eq(stages,2+4,'each of 2 planets, then alerts, networks, merge, drill sites')
 local function pass()
   local ticks,steps=0,0
   repeat

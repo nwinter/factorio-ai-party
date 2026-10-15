@@ -18,13 +18,13 @@
 -- come back as order_result `interrupted`); the order resumes when the
 -- character is free again (a trigger only if its condition still holds).
 -- Limits: 6 orders of 32 steps; each agent looked at once a second (staggered
--- by index) with at most one condition checked; when radius 64, 16 positions;
+-- by index) with at most one condition checked; when radius 256, 16 positions;
 -- a run stops after max_ticks; 3 failed runs in a row switch an order off.
 -- The operator's switch (orders_kill, operator dispatch only) stops every
 -- agent's running order and starts none until it is switched off again.
 return function(api)
   local M={handlers={},operator={}}
-  local MAX_ORDERS,MAX_STEPS,MAX_RADIUS,MAX_POSITIONS,MAX_FAILS=6,32,64,16,3
+  local MAX_ORDERS,MAX_STEPS,MAX_RADIUS,MAX_POSITIONS,MAX_FAILS=6,32,256,16,3
   local CHECK,HOLD=60,1200
   local function int(v,default,low,high,name)
     if v==nil then return default end
@@ -272,8 +272,27 @@ return function(api)
     assert(when or a.cooldown_ticks==nil,'cooldown_ticks is for an order with when; the default routine takes interval_ticks')
     assert(not when or a.interval_ticks==nil,'interval_ticks is for the default routine (no when); an order with when takes cooldown_ticks')
     assert(when or a.priority==nil,'priority is for an order with when; the default routine runs when no trigger holds')
+    -- A base-wide tour has the same walking speed as a small one. Default
+    -- order budget covers its widest scope and explicit child action budgets.
+    local span=when and (when.radius or 32) or 32
+    if when and when.area then
+      local l,r=when.area.left_top or when.area[1],when.area.right_bottom or when.area[2]
+      span=math.max(span,math.abs((r.x or r[1])-(l.x or l[1])),math.abs((r.y or r[2])-(l.y or l[2])))
+    end
+    local budget=0
+    for _,step in ipairs(items) do
+      local a=step.args or {}
+      span=math.max(span,a.radius or 0)
+      if a.area then
+        local l,r=a.area.left_top or a.area[1],a.area.right_bottom or a.area[2]
+        if l and r then span=math.max(span,math.abs((r.x or r[1])-(l.x or l[1])),math.abs((r.y or r[2])-(l.y or l[2]))) end
+      end
+      local tour=(step.action=='rearm' or step.action=='refuel') and (a.area or (a.radius or 0)>64 or a.from)
+      budget=budget+(a.ticks or (tour and 36000) or 0)
+    end
+    local default_ticks=math.min(216000,math.max(3600,math.ceil(span/64)*3600,budget+600))
     local o={name=name,steps=items,when=when,priority=int(a.priority,5,1,9,'priority'),cooldown=int(a.cooldown_ticks,600,300,216000,'cooldown_ticks'),
-      interval=int(a.interval_ticks,1800,60,36000,'interval_ticks'),max_ticks=int(a.max_ticks,3600,60,18000,'max_ticks'),
+      interval=int(a.interval_ticks,1800,60,36000,'interval_ticks'),max_ticks=int(a.max_ticks,default_ticks,60,216000,'max_ticks'),
       failures=0,runs=0,next_tick=game.tick}
     local b=book(p.index,true)
     local old,at=find(b,name)
@@ -356,11 +375,11 @@ return function(api)
   M.schema={
     order_set={name='1..32 letters, digits, - or _; the same name replaces that order (and switches one that went off back on)',
       steps='1..32 plan steps, as queue_submit (action, args, wait, label, on_fail)',
-      when='optional condition, as wait_until: until=ammo_below|item_count|ghosts_waiting|damaged|fuel_below|health_below|no_enemies|platform_arrived|platform_left|...; radius at most 64, positions at most 16. The order runs when it holds. Without when: your default routine (one), run every interval_ticks while no trigger holds',
+      when='optional condition, as wait_until: until=ammo_below|item_count|ghosts_waiting|damaged|fuel_below|health_below|no_enemies|platform_arrived|platform_left|...; radius at most 256; ammo_below/fuel_below also take area up to 256x256, positions at most 16. The order runs when it holds. Without when: your default routine (one), run every interval_ticks while no trigger holds',
       priority='with when: 1..9 (default 5). The highest holding trigger runs first; a holding trigger stops a running order of lower priority (the default routine counts 0), which resumes after',
       cooldown_ticks='with when: 300..216000 (default 600) after a run before the trigger can fire again',
       interval_ticks='default routine: 60..36000 (default 1800) from the end of a run to the next',
-      max_ticks='60..18000 (default 3600): a run that takes longer is stopped and counts as failed',
+      max_ticks='60..216000 (default scales with scope and child ticks, at least 3600): a run that takes longer is stopped and counts as failed',
       returns='order, list. Orders run only while your character is free (no action, your queue empty and not repeating, a body on the map; between the rounds of a repeating queue, triggered orders, and the default routine with queue_repeat orders=all) and hold_s after your own last action. Your own character request or queue call stops a running order at once; it resumes after (a trigger only if it still holds). 3 failed runs in a row switch an order off. Every reply carries the orders line (which runs and why, or what they wait for)'},
     order_remove={name='order name'},
     orders={returns='your standing orders: state (running, ready, holds, not holding, cooling N s, next in N s, resumes when free, off), runs, failures, last'},
