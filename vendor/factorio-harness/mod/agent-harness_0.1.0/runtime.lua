@@ -7385,7 +7385,7 @@ function handlers.silo(p,a) return M.silo.read(p,a) end
 -- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),
 -- launch's min_cargo and arrived guard and a queue dry run's cargo (Luna).
 M.rocketload=require('rocketload'){cargo=M.cargo,remote_entity=remote_entity,reason=reason,
-  where=function(pl) return M.freight.where(pl) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
+  where=function(pl) return M.freight.where(pl) end,silos=function(p) return M.census.silos(p) end,
   reach_entity=function(p,pos) return entity(p,{position=pos}) end,
   platform=function(p,name) return space.platform(p,name) end,
   rocket=function(e) return M.silo.rocket(e) end,ingredients=function(e) return M.silo.ingredients(e) end,
@@ -8568,8 +8568,8 @@ do
     local handler=handlers[name]
     handlers[name]=function(p,a)
       if a.surface==nil then return handler(p,a) end
-      -- launch's platform is where the rocket goes, not where the call acts.
-      assert(name=='launch' or a.platform==nil,'give platform or surface, not both')
+      -- launch/preflight's platform is where the rocket goes, not where the call acts.
+      assert(name=='launch' or name=='preflight' or a.platform==nil,'give platform or surface, not both')
       -- requests on another surface acts on an entity there (a chest, a landing pad), never on your character.
       assert(name~='requests' or a.position~=nil,'requests with surface needs position (a requester or buffer chest, landing pad there)')
       -- a scan there is centred on a place there: your character stands on another surface.

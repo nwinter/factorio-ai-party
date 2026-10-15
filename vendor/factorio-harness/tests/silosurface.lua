@@ -176,3 +176,15 @@ recipe_now=nil; assembler.crafting_progress=0.4
 fails(function() astra('configure',{surface='vulcanus',position={x=2.5,y=135.5},recipe='rocket-fuel'}) end,'remote recipe change')
 assembler.crafting_progress=0
 print('silosurface: ok')
+
+-- Preflight's platform is the destination even with a remote planet; no-position discovery uses the census index.
+local old_find=vulcanus.find_entities_filtered
+vulcanus.find_entities_filtered=function(f) assert(f.position, 'preflight never scans a whole surface'); return old_find(f) end
+r=astra('preflight',{surface='vulcanus',platform='Sunward',position=silo.position})
+eq(r.platform.name,'Sunward'); eq(r.platform.arrived,true); eq(r.built_parts,'50/50'); eq(r.position.x,14.5)
+storage.agent_harness.census={done={start=99,silos={[3]={far,silo}}}}
+r=astra('preflight',{surface='vulcanus',platform='Sunward'})
+eq(#r.silos,1,'hidden silo omitted'); eq(r.silos[1].position.x,14.5); eq(r.silos_as_of,99)
+fails(function() astra('preflight',{surface='vulcanus',platform='Sunward',position=far.position}) end,'not visible')
+vulcanus.find_entities_filtered=old_find
+print('preflight remote surface: ok')

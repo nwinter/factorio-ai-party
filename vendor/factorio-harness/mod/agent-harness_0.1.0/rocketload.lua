@@ -583,18 +583,139 @@ return function(api)
           local v = f.value
           local name = type(v) == 'table' and v.name or v
           local quality = type(v) == 'table' and v.quality or 'normal'
+          quality = quality or 'normal'
           local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
-          if type(name) == 'string' and from == planet and (f.min or 0) > 0 then
+          if type(name) == 'string' and from == planet and (f.min or 0) > 0 and (sec.multiplier or 1) > 0 then
             local k = key(name, quality)
             if not out[k] then out[k] = {name=name, quality=quality, min=0}; order[#order+1] = out[k] end
-            out[k].min = out[k].min + f.min
+            out[k].min = out[k].min + math.floor(f.min * (sec.multiplier or 1))
           end
         end
       end
     end
     return order
   end
+  local function one_line(s) return (s:gsub('[%c]+', ' ')) end
+  -- The next scheduled stop is a fact, not a departure time. A stopped ship has no flight ETA.
+  local function platform_view(pl, here, inv, held, unmet_only, route_only)
+    local w = where(pl)
+    local plat = {name=pl.name, where=w.text, at=w.at, arrived=w.stopped == true and w.at == here}
+    local l = w.leg
+    local sch = try(function() return pl.schedule end)
+    local records = sch and sch.records or {}
+    local current = sch and sch.current or 1
+    local rec = records[current]
+    local next_stop = rec and rec.station
+    if not l and next_stop == w.at and #records > 1 then next_stop = records[current % #records + 1].station end
+    plat.next_stop = l and l.to or next_stop
+    plat.headed_here = not plat.arrived and plat.next_stop == here and
+      (l ~= nil or try(function() return pl.paused end) ~= true) or false
+    local timing
+    if plat.arrived then
+      plat.eta_s, plat.eta_to = 0, here
+      timing = 'arrived'
+    elseif l then
+      plat.from, plat.to, plat.distance_left_km = l.from, l.to, l.left_km
+      plat.connection_length_km, plat.flown_fraction = l.length, l.flown
+      local speed = try(function() return pl.speed end)
+      plat.speed_km_s = type(speed) == 'number' and speed * 60 or nil
+      plat.eta_to = l.to
+      if type(speed) == 'number' and speed > 0 and type(l.left_km) == 'number' then
+        plat.eta_s = math.ceil(math.max(0, l.left_km) / speed / 60)
+        plat.eta_basis = 'distance_left_km = (1 - flown_fraction) * connection_length_km; eta_s = ceil(distance_left_km / speed_km_s); speed_km_s = game speed * 60 ticks per game second; excludes waits and later legs'
+        timing = string.format('ETA to %s %ds (%g km left / %g km/s, current speed)', l.to, plat.eta_s, l.left_km, plat.speed_km_s)
+      else
+        plat.eta_unknown = 'current speed is zero or unavailable'
+        timing = 'ETA to ' .. l.to .. ' unknown: ' .. plat.eta_unknown
+      end
+    else
+      plat.eta_unknown = 'not on a connection; departure time and flight speed are unknown'
+      timing = 'ETA unknown: ' .. plat.eta_unknown .. (plat.next_stop and '; next scheduled stop ' .. plat.next_stop or '')
+    end
+    if not plat.arrived and plat.eta_to ~= here then
+      plat.arrival_unknown = 'no timed current connection to ' .. here
+      timing = timing .. '; arrival at ' .. here .. ' unknown'
+    end
+    if route_only then return plat end
+    -- Keep qualities separate, including cargo moved to the hub's trash inventory.
+    local hub = {}
+    for _, id in ipairs({'hub_main', 'hub_trash'}) do
+      local hinv = defines.inventory[id] and try(function() return pl.hub.get_inventory(defines.inventory[id]) end)
+      for _, r in ipairs(contents(hinv)) do
+        local k = key(r.name, r.quality); hub[k] = (hub[k] or 0) + r.count
+      end
+    end
+    local asks, lacking, asked = {}, {}, {}
+    for _, r in ipairs(hub_requests(pl, here)) do
+      local k = key(r.name, r.quality)
+      asked[k] = true
+      local n, h = aboard(inv, r), hub[k] or 0
+      local lack = math.max(0, r.min - h)
+      local row = {item=label(r), min=r.min, hub=h, aboard=n, lacks=lack > 0 and lack or nil,
+        lacks_after=math.max(0, lack - n)}
+      if row.lacks_after == 0 then row.lacks_after = nil end
+      if not unmet_only or lack > 0 then
+        asks[#asks+1] = row
+        lacking[#lacking+1] = string.format('%s lacks %d (rocket %d, lacks_after %d)', row.item, lack, n, row.lacks_after or 0)
+      end
+    end
+    plat.requests = #asks > 0 and asks or nil
+    local extra = {}
+    for _, r in ipairs(held) do if not asked[key(r.name, r.quality)] then extra[#extra+1] = label(r) .. '*' .. r.count end end
+    plat.not_requested = #extra > 0 and table.concat(extra, ' ') or nil
+    plat.line = one_line(string.format('platform %s %s; %s; requests from %s: %s', pl.name, w.text, timing, here,
+      #lacking > 0 and table.concat(lacking, ', ') or (unmet_only and 'none unmet' or 'none')))
+    return plat
+  end
+  local function platforms(p, a, here, inv, held)
+    if a.platform ~= nil then return {platform_view(api.platform(p, a.platform), here, inv, held, false)} end
+    local out = {}
+    for _, pl in pairs(p.force.platforms or {}) do
+      if pl.valid then
+        local v = platform_view(pl, here, inv, held, true, true)
+        if v.arrived or v.headed_here then out[#out+1] = platform_view(pl, here, inv, held, true) end
+      end
+    end
+    table.sort(out, function(x, y)
+      if x.arrived ~= y.arrived then return x.arrived end
+      if x.eta_s ~= y.eta_s then return (x.eta_s or math.huge) < (y.eta_s or math.huge) end
+      return x.name < y.name
+    end)
+    return out
+  end
+  local function add_platforms(out, words, p, a, here, inv, held)
+    local list = platforms(p, a, here, inv, held)
+    if a.platform ~= nil then out.platform = list[1] else out.platforms = list end
+    for _, pl in ipairs(list) do words[#words+1] = pl.line end
+    if #list == 0 then words[#words+1] = 'no platforms stopped at or headed to ' .. here end
+  end
   function M.preflight(p, a)
+    if a.position == nil then
+      -- Discovery reuses the census's existing sliced walk. A read never starts a surface scan.
+      local found, as_of = api.silos(p)
+      local here = try(function() return p.surface.planet.name end) or p.surface.name
+      local out = {surface=p.surface.name, silos={}, silos_as_of=as_of, silos_pending=as_of == nil or nil}
+      local words = {'preflight on ' .. here}
+      table.sort(found, function(x, y)
+        local dx = (x.position.x - p.position.x)^2 + (x.position.y - p.position.y)^2
+        local dy = (y.position.x - p.position.x)^2 + (y.position.y - p.position.y)^2
+        if dx ~= dy then return dx < dy end
+        if x.position.x ~= y.position.x then return x.position.x < y.position.x end
+        return x.position.y < y.position.y
+      end)
+      for _, silo in ipairs(found) do
+        if silo.valid and p.force.is_chunk_visible(p.surface, {x=math.floor(silo.position.x/32), y=math.floor(silo.position.y/32)}) then
+          local row = M.preflight(p, {position=silo.position, platform=a.platform, items=a.items})
+          out.silos[#out.silos+1] = row
+          words[#words+1] = row.line
+        end
+      end
+      if #out.silos == 0 then words[#words+1] = 'no visible silos in the discovery index' end
+      words[#words+1] = as_of and 'silo discovery as of tick ' .. as_of or 'silo discovery pending the background census'
+      if #out.silos == 0 then add_platforms(out, words, p, a, here, nil, {}) end
+      out.line = one_line(table.concat(words, '; '))
+      return out
+    end
     local silo = api.remote_entity(p, {position=a.position, name=a.name, unit_number=a.unit_number})
     assert(silo.type == 'rocket-silo', silo.name .. ' at ' .. at(silo.position) .. ' is not a rocket silo')
     local here = planet_of(silo)
@@ -604,7 +725,8 @@ return function(api)
     local g = grams(held)
     local used = used_slots(inv)
     local rk = api.rocket and try(function() return api.rocket(silo) end)
-    local out = {silo=string.format('%s at %s on %s', silo.name, at(silo.position), tostring(here)), rocket=rk and rk.rocket or nil,
+    local out = {position={x=silo.position.x, y=silo.position.y}, parts=rk and rk.parts, built_parts=rk and rk.built_parts, next_parts=rk and rk.next_parts,
+      silo=string.format('%s at %s on %s', silo.name, at(silo.position), tostring(here)), rocket=rk and rk.rocket or nil,
       rocket_ready=ready(silo), auto_requests=try(function() return silo.use_transitional_requests end) and true or false}
     local rows = {}
     for _, r in ipairs(held) do
@@ -614,7 +736,7 @@ return function(api)
     table.sort(rows, function(x, y) if x.kg ~= y.kg then return x.kg > y.kg end return x.item < y.item end)
     out.cargo = {items=inv and list_text(held) or 'no rocket to load yet', rows=#rows > 0 and rows or nil, kg=kg(g), lift_kg=kg(lift),
       free_kg=kg(math.max(0, lift - g)), over_kg=g > lift and kg(g - lift) or nil, slots=used .. '/' .. slots, free_slots=math.max(0, slots - used)}
-    local words = {string.format('%s: cargo %s, %g/%g kg, %d/%d slots', out.silo, out.cargo.items, kg(g), kg(lift), used, slots)}
+    local words = {string.format('%s: %s; cargo %s, %g/%g kg, %d/%d slots', out.silo, out.rocket or 'rocket state unknown', out.cargo.items, kg(g), kg(lift), used, slots)}
     -- How many more of an item the rocket takes: by weight, and by slots (a part stack's room counted).
     local function fits(r)
       local each = weight(r.name)
@@ -642,30 +764,7 @@ return function(api)
       out.order = order
       words[#words+1] = #lacking > 0 and 'the list lacks ' .. table.concat(lacking, ', ') or 'the list is aboard'
     end
-    -- A platform: where it is, and its requests from this planet less its hub and this rocket.
-    if a.platform ~= nil then
-      local pl = api.platform(p, a.platform)
-      local w = where(pl)
-      local plat = {name=pl.name, where=w.text, arrived=w.stopped == true and w.at == here}
-      local hub = api.hub_counts and try(function() return api.hub_counts(pl) end) or {}
-      local asks, lacking, asked = {}, {}, {}
-      for _, r in ipairs(hub_requests(pl, here)) do
-        asked[r.name] = true
-        local n = aboard(inv, r)
-        local h = hub[r.name] or 0
-        local row = {item=label(r), min=r.min, hub=h, aboard=n, lacks_after=math.max(0, r.min - h - n)}
-        if row.lacks_after == 0 then row.lacks_after = nil else lacking[#lacking+1] = string.format('%s %d', row.item, row.lacks_after) end
-        asks[#asks+1] = row
-      end
-      plat.requests = #asks > 0 and asks or nil
-      local extra = {}
-      for _, r in ipairs(held) do if not asked[r.name] then extra[#extra+1] = label(r) .. '*' .. r.count end end
-      plat.not_requested = #extra > 0 and table.concat(extra, ' ') or nil
-      out.platform = plat
-      words[#words+1] = string.format('platform %s %s%s', pl.name, w.text, plat.arrived and '' or ' (not stopped at ' .. tostring(here) .. ')')
-      if #asks == 0 then words[#words+1] = 'it requests nothing from ' .. tostring(here)
-      else words[#words+1] = #lacking > 0 and 'after this rocket its requests from ' .. tostring(here) .. ' lack ' .. table.concat(lacking, ', ') or 'this rocket covers its requests from ' .. tostring(here) end
-    end
+    add_platforms(out, words, p, a, here, inv, held)
     -- What launch would refuse now.
     local refuse = {}
     if not out.rocket_ready then refuse[#refuse+1] = rk and rk.rocket_now or 'the rocket is not ready' end
@@ -674,7 +773,7 @@ return function(api)
     if out.platform and not out.platform.arrived then refuse[#refuse+1] = 'platform ' .. out.platform.name .. ' is not stopped at ' .. tostring(here) end
     out.launch_now = #refuse > 0 and 'refused: ' .. table.concat(refuse, '; ') or 'ok'
     words[#words+1] = 'launch now: ' .. out.launch_now
-    out.line = table.concat(words, '; ')
+    out.line = one_line(table.concat(words, '; '))
     return out
   end
 
@@ -858,12 +957,13 @@ return function(api)
       min_cargo='with launch: as launch min_cargo', arrived='with launch: as launch arrived',
       ticks='1..36000 (default 3600): how long to wait for the rocket (no rocket yet, or not ready for a launch) with no new rocket part: the wait goes on while the silo makes parts (or the rocket moves on to ready), 1 game hour at most in all (gives_up_tick); with walk, the whole tour (default 18000)',
       returns='silo, loaded [{item, asked, aboard_before, loaded, aboard, from (you N, iron-chest (x,y) N), short, why (weight, slots, or what you and the chests held)}], cargo, rocket_weight, slots (used/total), chests (how many were read), complete, short; launch (the launch reply) with launch=true. No rocket yet, or launch=true before the rocket is ready: a timed action (until_tick, waiting {why, rocket}; outcome fed | failed | timed_out; last.result holds the reply). Into the rocket only what fits under its 1000 kg lift and in its cargo slots; a silo with automatic requests on is refused'},
-    preflight = {position='the rocket silo {x,y} (any tile of it), in a visible chunk (remote view)', surface='optional planet name: the silo there by remote view',
-      items='optional item list (as load_silo items): what it still lacks against the cargo aboard, and how much of that fits',
-      platform='optional platform name: where it is, whether it has arrived here, and its requests from this planet less its hub and this rocket',
-      returns='silo, rocket, rocket_ready, auto_requests, cargo {items, rows [{item, count, each_kg, kg, stacks}], kg, lift_kg, free_kg, over_kg, slots, free_slots}, '
-        .. 'order [{item, want, aboard, lacks, fits, you_hold}], platform {name, where, arrived, requests [{item, min (from this planet), hub, aboard, lacks_after}], not_requested (cargo it does not request from here)}, '
-        .. 'launch_now (ok, or refused: what launch would refuse now), line. Read only'},
+    preflight = {position='optional rocket silo {x,y} (any tile of it), in a visible chunk (remote view); omitted: all visible silos in the background census index, nearest your coordinates first',
+      surface='optional planet name (default yours); platform remains the rocket destination',
+      items='optional item list (as load_silo items): what each rocket still lacks against the cargo aboard, and how much of that fits',
+      platform='optional platform name: location, arrival/next stop, current-connection ETA and its calculation, requests importing from this planet less its hub and this rocket; omitted: our platforms stopped here or flying/scheduled next here (paused departures excluded), with unmet requests from here',
+      returns='position, silo, rocket, rocket_ready, parts (building), built_parts (ready/rising), next_parts, auto_requests, cargo {items, rows [{item, count, each_kg, kg, stacks}], kg, lift_kg, free_kg, over_kg, slots, free_slots}, '
+        .. 'order [{item, want, aboard, lacks, fits, you_hold}], platform (named) or platforms (discovery) [{name, where, at, arrived, headed_here, next_stop, from, to, distance_left_km, connection_length_km, flown_fraction, speed_km_s, eta_to, eta_s (game seconds at current speed), eta_basis, eta_unknown, arrival_unknown (current leg does not end here), requests [{item, min, hub, aboard, lacks, lacks_after}], not_requested, line}], '
+        .. 'launch_now (ok, or refused: what launch would refuse now), line (one line). No position: surface, silos [the same per-silo views, nearest first], silos_as_of (discovery tick; rocket/cargo read now), silos_pending (before first census); no visible silos: platform(s) still returned. Read only'},
   }
   return M
 end

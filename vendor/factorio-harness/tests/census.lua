@@ -105,3 +105,36 @@ r=op('census',{part='basemap',ore=true})
 eq(r.ready,true); eq(r.basemap.buildings,0); eq(r.ore_pending,true)
 r=op('census',{part='machines'}); eq(r.ready,true)
 print('census: ok')
+
+-- Silo discovery is published only by the existing census pass. Reads filter deleted/moved/other-force entities
+-- and return a fresh list; the entities' rocket contents remain live, not a cargo snapshot.
+local target={valid=true,type='rocket-silo',name='rocket-silo',unit_number=42,position={x=0,y=0},surface=surface,force=force,
+  get_recipe=function() return nil end,status=0}
+local localstate={}
+local first=true
+local C=dofile('mod/agent-harness_0.1.0/census.lua'){
+  state=function() return localstate end,
+  walk={every=function() return 1 end,due=function() return true end,start=function() return {} end,
+    band=function() if first then first=false return {target} end end}}
+game.surfaces={surface}
+local list,asof=C.silos{surface=surface,force=force}; eq(#list,0); eq(asof,nil)
+C.tick(5000); C.tick(5001); C.tick(5002)
+assert(localstate.census.job.silos[1][1]==target,'existing walk registers the silo')
+list,asof=C.silos{surface=surface,force=force}; eq(asof,nil,'unfinished pass not published')
+localstate.census.job.stage='done'; localstate.census.job.base.x={}; C.tick(5003)
+list,asof=C.silos{surface=surface,force=force}; eq(#list,1); eq(asof,5000); eq(list[1],target)
+list[1]=nil
+list=C.silos{surface=surface,force=force}; eq(#list,1,'caller sorting cannot change the index')
+target.valid=false; list=C.silos{surface=surface,force=force}; eq(#list,0)
+target.valid=true; target.force=neutral; list=C.silos{surface=surface,force=force}; eq(#list,0)
+target.force=force; target.surface={}; list=C.silos{surface=surface,force=force}; eq(#list,0)
+print('census silo index: ok')
+
+-- A hot reload can resume a pass made by the old runtime: do not publish only its remaining silos as complete.
+target.surface=surface; first=true; localstate.census=nil
+C.tick(8000); localstate.census.job.silos=nil
+C.tick(8001); C.tick(8002)
+eq(localstate.census.job.silos,nil)
+localstate.census.job.stage='done'; localstate.census.job.base.x={}; C.tick(8003)
+list,asof=C.silos{surface=surface,force=force}; eq(#list,0); eq(asof,nil)
+print('census silo index reload: ok')
