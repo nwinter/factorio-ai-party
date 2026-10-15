@@ -29,7 +29,7 @@ local function box_distance(pos,e)
   local dy=math.max(b.left_top.y-pos.y,0,pos.y-b.right_bottom.y)
   return (dx*dx+dy*dy)^0.5
 end
-local SHORT={resource=true,tree=true}
+local SHORT={resource=true,tree=true,plant=true}
 local function character(pos)
   local c={valid=true,name='character',type='character',force=force,surface=surface,position=pos,unit_number=501,health=250,max_health=250,
     driving=false,build_distance=10,reach_distance=10,resource_reach_distance=2.7,character_running_speed=0.15,walking_state={walking=false},
@@ -38,6 +38,7 @@ local function character(pos)
   c.get_main_inventory=function() return inv end
   c.get_item_count=function() return 0 end
   c.insert=function(s) return s.count end
+  c.can_insert=function() return true end
   -- The engine's rule, as read on world n.
   c.can_reach_entity=function(e) return box_distance(c.position,e)<=(SHORT[e.type] and 2.7 or 10) end
   c.destroy=function() c.valid=false end
@@ -99,10 +100,10 @@ local tree=thing('tree-04','tree',-69.5625,-115.063,0.4)
 body.position={x=-65.7734375,y=-115.36328125}
 local ok,err=pcall(grok,'mine',{position={x=-69.5625,y=-115.063},ticks=120,walk=false})
 eq(ok,false)
-assert(tostring(err):find('entity is out of reach: tree-04 at (-69.5625,-115.063) is 3.4 tiles away (to its edge), reach 2.7 (ore, trees and rocks)',1,true),tostring(err))
+assert(tostring(err):find('entity is out of reach: tree-04 at (-69.5625,-115.063) is 3.4 tiles away (to its edge), reach 2.7 (ore, trees, plants and rocks)',1,true),tostring(err))
 -- By default (autowalk.lua) the call walks into reach first and mines on arrival.
 local walking=grok('mine',{position={x=-69.5625,y=-115.063},ticks=120})
-eq(walking.walking_for,'mine'); eq(walking.walking,'tree-04 (-69.5625,-115.063) is 3.4 tiles away (to its edge), reach 2.7 (ore, trees and rocks): walking into reach first (walk: false refuses instead)')
+eq(walking.walking_for,'mine'); eq(walking.walking,'tree-04 (-69.5625,-115.063) is 3.4 tiles away (to its edge), reach 2.7 (ore, trees, plants and rocks): walking into reach first (walk: false refuses instead)')
 eq(grok('status').active.kind,'move_to'); grok('stop',{})
 local spot=spot_of(tostring(err)); assert(spot,'a spot is named: '..tostring(err))
 assert(box_distance(spot,tree)<=2.7,'the spot reaches the tree: '..box_distance(spot,tree))
@@ -113,7 +114,7 @@ eq(grok('status').active.kind,'mine')
 body.position={x=-60,y=-115.3}
 advance(1)
 local last=grok('status').last
-eq(last.outcome,'out_of_reach'); assert(last.error and last.error:find('reach 2.7 (ore, trees and rocks)',1,true),tostring(last.error))
+eq(last.outcome,'out_of_reach'); assert(last.error and last.error:find('reach 2.7 (ore, trees, plants and rocks)',1,true),tostring(last.error))
 tree.valid=false
 
 -- 2. Grok's stone ore at (72.5,-54.5), 3.8 tiles off (08:21:00): reach 2.7; the spot reaches it.
@@ -138,7 +139,7 @@ asm.valid=false
 local rock=thing('big-rock','simple-entity',4,0,0.9)
 body.can_reach_entity=function(e) return box_distance(body.position,e)<=(SHORT[e.type] and 2.7 or e.type=='simple-entity' and 2.7 or 10) end
 ok,err=pcall(grok,'mine',{position={x=4,y=0},walk=false})
-eq(ok,false); assert(tostring(err):find('big-rock at (4,0) is 3.1 tiles away (to its edge), reach 2.7 (ore, trees and rocks)',1,true),tostring(err))
+eq(ok,false); assert(tostring(err):find('big-rock at (4,0) is 3.1 tiles away (to its edge), reach 2.7 (ore, trees, plants and rocks)',1,true),tostring(err))
 rock.valid=false
 
 -- 4. Rotate: one call is one 90-degree turn clockwise; reverse counter-clockwise; direction turns until it faces that
@@ -169,4 +170,53 @@ under.rotate=function() under.direction=(under.direction+8)%16; return true end
 r=grok('rotate',{position={x=3.5,y=2.5},direction='east'})
 eq(r.after,'east'); eq(r.turns,1)
 fails(function() grok('rotate',{position={x=3.5,y=2.5},direction='north'}) end,'underground-belt at (3.5,2.5) faces')
+-- Sol's shift15 failure: a wild jellystem 7.5 tiles from its box must approach
+-- resource reach before mining, by default, with explicit walk, and in a queue.
+body.mine_entity=function(e)
+  assert(body.can_reach_entity(e),'the engine cannot mine outside its reach')
+  e.valid=false
+  return true
+end
+for _,spec in ipairs({{'jellystem','plant'},{'iron-ore','resource'}}) do
+  for _,mode in ipairs({'default','explicit','queue'}) do
+    local e=thing(spec[1],spec[2],100.5,0,0.5,{amount=1})
+    body.position={x=92.5,y=0}
+    eq(box_distance(body.position,e),7.5)
+    local args={position=e.position,ticks=120,avoid_enemies=false}
+    if mode~='default' then args.walk=true end
+    if mode=='queue' then
+      grok('queue_submit',{steps={{action='mine',args=args},{action='wait_ticks',args={ticks=2}}}})
+      advance(1)
+    else
+      eq(grok('mine',args).walking_for,'mine')
+    end
+    -- The old plant walk arrived here (tolerance 8.5), then the mine failed.
+    advance(1)
+    eq(grok('status').active.kind,'move_to',spec[1]..' '..mode..' still approaching')
+    local nav=storage.agent_harness.active[runtime.bots.index_of('grok')]
+    eq(nav.reach_target.r,2.7)
+    body.position={x=97.6,y=0}
+    advance(1)
+    eq(grok('status').active.kind,'mine')
+    advance(65)
+    eq(e.valid,false,spec[1]..' '..mode..' mined')
+    if mode=='queue' then
+      local q=grok('queue_status',{history='all'})
+      eq(q.plan.done,2); eq(q.plan.failed,0); eq(q.pending_count,0)
+    else
+      eq(grok('status').last.outcome,'target_mined')
+    end
+  end
+end
+-- Plants farther than transfer reach still need the short pathfinding radius.
+local farplant=thing('yumako-tree','plant',130,0,0.5)
+body.position={x=100,y=0}
+grok('mine',{position=farplant.position,avoid_enemies=false})
+eq(storage.agent_harness.active[runtime.bots.index_of('grok')].reach_target.r,2.7)
+grok('stop',{}); farplant.valid=false
+-- Buildings at 7.5 tiles begin mining immediately, using normal entity reach.
+local chest=thing('iron-chest','container',100.5,0,0.5)
+body.position={x=92.5,y=0}
+grok('mine',{position=chest.position,avoid_enemies=false})
+eq(grok('status').active.kind,'mine'); advance(61); eq(chest.valid,false)
 print('minerotate: ok')

@@ -220,6 +220,7 @@ already targets your character.
   `queue_repeat {condition: {until: ...}}` ends at a round boundary when met (before round one too); `feed up_to:true` ending `out_of_items` exits 0 from `--wait`/`fh wait`, with moved and stops left.
 - `transfer {position, direction, items:{"iron-plate":50,"coal":10}, walk?}` moves multiple items at one target, with per-item `entries`; `trace {surface, position}` and `labs {surface, position?, radius?}` read that surface; `supply {item:"lubricant"}` reads fluid stock/flow and makers/users.
 - Raw `fh call wait_until` accepts word-form `until` and `ticks`/`timeout_ticks` aliases; queue errors name the step path. Aboard, queues accept allowed remote steps, `configure {platform}` works, and `observe` reports surroundings with `player.body:"none"`.
+- Mining walks use resource reach (2.7 tiles) for ore, trees, plants and rocks; buildings and laid tiles use entity reach (10). Queue steps use the same reaches.
 - Out of reach within 32 tiles, `transfer`, `collect`, `feed`, `rearm`, `refuel`, `mine`, `build`, `rotate` and
   `configure` (modules by hand, a recipe change on a stocked machine) walk into reach first and then act, the reply's
   `walking` line saying so; past 32 tiles the refusal names the same call with `"walk": true`; `"walk": false` refuses.

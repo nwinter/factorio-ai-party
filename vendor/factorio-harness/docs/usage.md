@@ -887,7 +887,7 @@ fh call status
     asks for `{position, unit_number}`.
   - Reach is measured with a quarter tile to spare:
     - `transfer` (default): to the entity's box, as the engine measures it, and the engine's own test too, 10 tiles;
-      for ore, trees and rocks 2.7.
+      for ore, trees, plants and rocks 2.7.
     - `build`: `build_distance` (10) to the entity's centre, as `build` measures the position it builds at (friction2,
       Sol 14:43: a walk ended 9.7 tiles from a chest's edge, and the build there failed at 10.1 from its centre; on a
       copy of world n the walk now ends 9.6 tiles from the centre: `iron-chest (13.5,53.5): 9.6 tiles to its centre
@@ -1390,11 +1390,13 @@ fh sleep 900 --until researched                       # ...or until the research
   (96,0)-(127,31), 93 tiles away`; actions keep the 32-tile sight rule, and name the nearest coverage when the target
   is out of it.
 - Reach is the game's: the distance from the character to the entity's collision box (its edge, not its centre),
-  within 10 tiles (`reach_distance`) for buildings and within 2.7 (`resource_reach_distance`) for ore, trees and rocks
+  within 10 tiles (`reach_distance`) for buildings and within 2.7 (`resource_reach_distance`) for ore, trees, plants and rocks
   (read on the shift world: a tree 4.3 tiles from its edge was out of reach; a belt 10.25 from its centre, 9.7 from its
-  edge, in reach). An action on a target out of reach fails at once, without walking, with the distance to its edge,
+  edge, in reach). Mining approaches use the same reach, including wild jellystems and yumako plants;
+  queued mines and explicit `walk: true` do too. Laid tiles keep `reach_distance` (10). With `walk: false`, an action
+  on a target out of reach fails at once with the distance to its edge,
   the reach for it and a free spot on the line toward you from which it is in reach by that rule: `entity is out of
-  reach: tree-04 at (-69.5625,-115.063) is 3.4 tiles away (to its edge), reach 2.7 (ore, trees and rocks); in reach
+  reach: tree-04 at (-69.5625,-115.063) is 3.4 tiles away (to its edge), reach 2.7 (ore, trees, plants and rocks); in reach
   from (-67.5,-115.5)` (the spot is left out when none is free). A mine that loses reach mid-way ends `out_of_reach`
   with the same line in `last.error`.
 - A mined-out resource tile (Grok 03:20: a repeating `mine` step stalled its loop three times on one stone patch):
