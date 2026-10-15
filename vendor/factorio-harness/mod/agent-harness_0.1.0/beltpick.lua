@@ -100,7 +100,7 @@ return function(api)
       for _, d in ipairs(detailed) do
         if got >= n then return got end
         local st = d.stack
-        if st and try(function() return st.valid_for_read end) and wanted[st.name] then
+        if st and try(function() return st.valid_for_read end) and wanted[st.name] and (not action.quality or quality_of(st.quality)==action.quality) then
           local name, q = st.name, quality_of(st.quality)
           local spoil = try(function() return st.spoil_percent end)
           local k = math.min(n - got, st.count)
@@ -191,6 +191,16 @@ return function(api)
       end
     end
     return nil
+  end
+  M.take = take
+  function M.count(e,item,quality)
+    local n=0
+    for i=1,try(function() return e.get_max_transport_line_index() end) or 0 do
+      for _,c in ipairs(e.get_transport_line(i).get_contents()) do
+        if c.name==item and quality_of(c.quality)==(quality or 'normal') then n=n+c.count end
+      end
+    end
+    return n
   end
   M.at = at
   return M
