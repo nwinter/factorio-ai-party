@@ -525,29 +525,70 @@ fh call status
   `ghost` and its name. `name` may be what the ghost builds (`fast-inserter`); a tile ghost under it (platform
   foundation) never takes its place as the target.
 - `configure {position | positions, modules, by?}` sets a machine's module slots in one call (Astra and Gemini, shift12
-  15:10: Sunward's module swaps took three blueprint round trips, Fulgora's upgrades four): `modules` lists module
-  names one a slot (`["speed-module-2","speed-module-2"]`, or `{name, count, quality}`); the slots past the list end up
-  empty; `[]` or `false` empties them. Assemblers, furnaces, drills, labs, beacons and silos, built or ghost; with
-  `recipe` the recipe changes first; `positions` sets 1..64 alike (`machines` rows, `configured`, `failed`).
+  15:10: Sunward's module swaps took three blueprint round trips, Fulgora's upgrades four). `modules` is one of:
+  - A list of modules (`["speed-module-2","efficiency-module"]`, or `{name, count, quality}`): the machine ends up
+    holding these. The modules it holds, or has on their way in, that the list names stay in their slots; the rest go
+    into the other slots in slot order; slots left over end up empty. (Astra, shift13 19:40: applied slot by slot, that
+    list on 9 drills holding speed-module-2 in slots 1 and 2 and efficiency-module in slot 3 took the efficiency module
+    out of slot 3 and asked for one in slot 2, with none in the network, and the drills drew more power. Replayed on a
+    copy of world n, it now takes one speed-module-2 out of slot 2 and the efficiency modules never leave.)
+  - A list with `"keep"` and `"empty"` entries goes slot by slot, entry i for slot i: `["keep","efficiency-module",
+    "empty"]`. `keep` leaves the slot as it is, a request on it too; slots past the list end up empty.
+  - Numbered slots change only the slots named: `{"2":"efficiency-module","3":"empty"}`.
+
+  `[]` or `false` empties them all. Assemblers, furnaces, drills, labs, beacons and silos, built or ghost; with
+  `recipe` the recipe changes first; `positions` sets 1..64 alike (`machines` rows, `configured`, `failed`). Each row
+  has `by_slot`, every slot numbered with what it holds and what is requested or coming out: `["1 speed-module-2",
+  "2 speed-module-2 (speed-module-2 coming out)", "3 efficiency-module"]`; `unchanged` when the call asks for nothing
+  the machine does not hold or have requested already.
   - In reach (by hand): the old modules go to your inventory (`returned`), the new ones come from it; short of them, it
     is refused with what is missing and nothing changes (`speed-module-2: 2 needed, you hold 0; by="robots" requests
     them instead`).
   - Out of reach, by remote view, with `surface` or `platform`, or `by: "robots"`: an item request on the machine, as
-    remote view's ghost cursor makes, `requested` and `removing` slot by slot. On a private copy of world n
+    remote view's ghost cursor makes, slot by slot; `requested` and `removing` are the whole module request on the
+    machine after the call. A slot set by hand loses the robot request on it. On a private copy of world n
     construction robots swapped two modules in about 8 s; on Starling and Sunward the platform hub did it (`by: hub`),
     the removed ones going into the hub. The reply's `note` names who brings them: the logistic network whose
     construction area covers the machine, what it holds of each (`none comes for quality-module until it holds it`),
     its idle construction robots, and a storage chest's room for the removed ones: a swap went ahead with no room
     (the old modules rode in a robot), while a removal alone waited until a storage chest had room (`no storage chest
     has room for speed-module: no robot takes them out until one has`); or that no construction area covers it.
-  - A ghost: its module requests (`by: ghost`), which the robots that build it bring; its other requests stay.
+  - A ghost: its module requests by slot (`by: ghost`), which the robots that build it bring; its other requests
+    stay.
   - A module the machine or its recipe does not take is refused: `productivity-module does not go in
     assembling-machine-2 (79.5,0.5) making electric-furnace: its recipe electric-furnace allows no productivity`. The
     rule (checked against the engine in 5892 machine, recipe and module cases on 2.0.77): a module category the
     machine or recipe lists is required, and each effect the module improves (speed, productivity, quality up;
     consumption, pollution down) must be allowed by both; what it worsens does not count, so a speed module goes under
     a recipe that allows no quality.
-  - `inspect` reads them back: `modules {slots, contents, requested, removing}` (a ghost: `slots`, `requested`).
+  - `inspect` reads them back: `modules {slots, contents, requested, removing, by_slot}` (a ghost: `slots`, `requested`,
+    `by_slot`).
+- `configure {position, storage_filter}` sets a storage chest's filter, as its GUI's filter slot (Astra, shift13 18:58:
+  scrap overflow filled every storage chest and a construction robot kept removed modules with nowhere to put them):
+  an item name or `{name, quality}`; `false` or `"none"` clears it; `filters` with one name does the same. The reply
+  gives `storage_filter` and `storage_filter_before`; `inspect` shows `storage_filter` (`none` when clear). On a copy of
+  world n with 2.0.77, robots stored all 20 iron plates in a storage chest filtered to iron plate and all 20 coal in an
+  unfiltered one. With only the filtered chest left, ten robots kept carrying their coal until an unfiltered chest was
+  built, then stored it there: robots put no other item in a filtered chest. Items already in the chest stay. A ghost
+  keeps the filter for the chest it becomes (2.0.77 reads it back only from a blueprint of the ghost, which the harness
+  does). Anything else is refused: `assembling-machine-2 (71.5,0.5) is not a storage chest: storage_filter is a storage
+  chest's filter`.
+- `configure {position, input_priority?, output_priority?, filter?}` sets a splitter's settings, built or ghost, as its
+  GUI does (Muse, shift13: a plate split could not favour the steel branch). Left and right are as seen facing the way
+  items move; the reply's `line` (and `inspect`'s `splitter {input_priority, output_priority, filter, line}`) names the
+  belt tiles: `input priority: right (the right input (73.5,-3.5) first, the other when it has none); output priority:
+  left; filter: iron-plate to the left output (72.5,-5.5) only, other items to the right output (73.5,-5.5)`. What each
+  does, measured with belts on 2.0.77 on a copy of world n:
+  - `input_priority` left|right|none: the splitter takes from that input while it has items, the other only then (with
+    one output blocked, the left input emptied 94, 48, 2, 0 while the right stayed 94, 90, 90, then fell; with none
+    both fell alike).
+  - `output_priority` left|right|none: items go to that output while it takes them, to the other when it is full.
+  - `filter` (an item name or `{name, quality}`; `false` or `"none"` clears it; `filters` with one name too): its items
+    go only to the output priority side and every other item only to the other side. A filtered item waits when its
+    side is full and holds up the lane behind it (iron and coal on one lane: the coal stopped behind a waiting iron
+    plate). With output priority none a filter does nothing (items split evenly), so a filter without a side is refused:
+    `splitter (73,-4.5): a filter sends its items to the output priority side and the other items to the other side;
+    with output priority none it does nothing (items split evenly): set output_priority left or right in the same call`.
 - `configure {position, priority_targets, ignore_unprioritised}` sets a turret's priority list and its Ignore
   unprioritised targets checkbox, as the turret GUI does (Astra, shift12 15:02: Sunward's rocket turrets on big
   metallic, carbonic and oxide asteroids only, to save rockets). `priority_targets` is entity names in priority order

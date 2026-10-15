@@ -7,16 +7,19 @@
 return function(api)
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- An item filter as 'name' or 'name@quality'. 2.0.77 gives inserters' and loaders' as {name, quality} strings and a
+  -- storage chest's as {name=LuaItemPrototype, quality=LuaQualityPrototype} (userdata, read by their name).
   local function item_name(f)
     if type(f) == 'string' then return f end
     if type(f) ~= 'table' then return nil end
     local n = f.name
-    if type(n) == 'table' then n = n.name end
+    if type(n) ~= 'string' then n = try(function() return n.name end) end
     if type(n) ~= 'string' then return nil end
     local q = f.quality
-    if type(q) == 'table' then q = q.name end
+    if q ~= nil and type(q) ~= 'string' then q = try(function() return q.name end) end
     return n .. (type(q) == 'string' and q ~= 'normal' and '@' .. q or '')
   end
+  M.item_name = item_name
   local function collector(e)
     return e.type == 'asteroid-collector' or (e.type == 'entity-ghost' and try(function() return e.ghost_type end) == 'asteroid-collector')
   end
@@ -67,6 +70,129 @@ return function(api)
     end
     return out
   end
+  -- A storage chest (logistic container in storage mode) or its ghost.
+  local function storage_chest(e)
+    local proto = e.type == 'entity-ghost' and try(function() return e.ghost_prototype end) or try(function() return e.prototype end)
+    return proto ~= nil and proto.type == 'logistic-container' and try(function() return proto.logistic_mode end) == 'storage'
+  end
+  M.storage_chest = storage_chest
+  -- A storage chest's filter, 'name' or 'name@quality', or nil (Astra, shift13 01:58: scrap overflow filled every
+  -- storage chest and a construction robot held removed modules with nowhere to go). 2.0.77 on a copy of world n:
+  -- storage_filter and set_filter(1) are the same slot; a ghost keeps one set on it for the chest it becomes and reads
+  -- nil, so a ghost's is read from a blueprint of it (request_filters, about 6 ms there).
+  function M.storage_filter(e)
+    if e.type ~= 'entity-ghost' then return item_name(try(function() return e.storage_filter end)) end
+    return try(function()
+      local inv = game.create_inventory(1)
+      local ok, f = pcall(function()
+        inv.insert{name='blueprint'}
+        local bp = inv[1]
+        bp.create_blueprint{surface=e.surface, force=e.force, area=e.bounding_box}
+        for _, be in ipairs(bp.get_blueprint_entities() or {}) do
+          if be.name == e.ghost_name and math.abs(be.position.x - e.position.x) < 0.01 and math.abs(be.position.y - e.position.y) < 0.01 then
+            local sec = be.request_filters and be.request_filters.sections and be.request_filters.sections[1]
+            local row = sec and sec.filters and sec.filters[1]
+            return row and row.name and {name=row.name, quality=row.quality} or nil
+          end
+        end
+      end)
+      inv.destroy()
+      return ok and item_name(f) or nil
+    end)
+  end
+  -- configure {storage_filter}: an item name, {name, quality?}, or false/"none" to clear (a ghost's applies when built).
+  function M.configure_storage_filter(e, v)
+    local name = e.type == 'entity-ghost' and e.ghost_name or e.name
+    if not storage_chest(e) then
+      error(string.format('%s (%g,%g) is not a storage chest: storage_filter is a storage chest\'s filter', name, e.position.x, e.position.y), 0)
+    end
+    local before = M.storage_filter(e)
+    local want
+    if v ~= false and v ~= 'none' and v ~= '' then
+      local item, quality = v, 'normal'
+      if type(v) == 'table' then item, quality = v.name, v.quality or 'normal' end
+      if not (type(item) == 'string' and prototypes.item[item]) then error('storage_filter: unknown item ' .. tostring(item), 0) end
+      if not prototypes.quality[quality] then error('unknown quality ' .. tostring(quality), 0) end
+      want = {name=item, quality=quality}
+    end
+    e.storage_filter = want
+    local now = M.storage_filter(e)
+    return {name=name, position=e.position, ghost=e.type == 'entity-ghost' or nil, storage_filter=now or 'none', storage_filter_before=before or 'none'}
+  end
+
+  -- A splitter's settings as its GUI shows them, with the belt tiles they name (Muse, shift13: a plate split could not
+  -- favour the steel branch). Left and right are as seen facing the way items move. 2.0.77 on a copy of world n:
+  -- output priority sends items to that output while it takes them, the other when it is full; input priority takes
+  -- from that input while it has items, the other only then; with a filter, the filter's items go only to the output
+  -- priority side (waiting there when it is full, which holds up the lane behind them) and the other items only to the
+  -- other side; with output priority none the filter does nothing (items split evenly). Ghosts take all three.
+  local STEPS = {[0]={0, -1}, [4]={1, 0}, [8]={0, 1}, [12]={-1, 0}}
+  local function splitter_entity(e)
+    return e.type == 'splitter' or (e.type == 'entity-ghost' and try(function() return e.ghost_type end) == 'splitter')
+  end
+  M.splitter_entity = splitter_entity
+  -- The input and output tiles of a side ('left' or 'right'): {input={x,y}, output={x,y}}.
+  local function sides(e, side)
+    local d = STEPS[e.direction] or STEPS[0]
+    local lx, ly = d[2], -d[1]
+    if side == 'right' then lx, ly = -lx, -ly end
+    local cx, cy = e.position.x + lx * 0.5, e.position.y + ly * 0.5
+    return {input={x=cx - d[1], y=cy - d[2]}, output={x=cx + d[1], y=cy + d[2]}}
+  end
+  local function at(p) return string.format('(%g,%g)', p.x, p.y) end
+  local OTHER = {left='right', right='left'}
+  function M.splitter(e)
+    if not splitter_entity(e) then return nil end
+    local inp = try(function() return e.splitter_input_priority end) or 'none'
+    local outp = try(function() return e.splitter_output_priority end) or 'none'
+    local f = try(function() return e.splitter_filter end)
+    local filter = item_name(f)
+    if filter and f.comparator and f.comparator ~= '=' then filter = filter .. ' (quality ' .. tostring(f.comparator) .. ')' end
+    local parts = {}
+    if inp == 'none' then parts[#parts+1] = 'input priority: none (both inputs alike)'
+    else parts[#parts+1] = string.format('input priority: %s (the %s input %s first, the other when it has none)', inp, inp, at(sides(e, inp).input)) end
+    if filter and outp ~= 'none' then
+      parts[#parts+1] = string.format('output priority: %s; filter: %s to the %s output %s only, other items to the %s output %s', outp, filter, outp,
+        at(sides(e, outp).output), OTHER[outp], at(sides(e, OTHER[outp]).output))
+    else
+      if outp == 'none' then parts[#parts+1] = 'output priority: none (items split evenly)'
+      else parts[#parts+1] = string.format('output priority: %s (the %s output %s first, the other when it is full)', outp, outp, at(sides(e, outp).output)) end
+      if filter then parts[#parts+1] = 'filter: ' .. filter .. ' (does nothing while output priority is none)' end
+    end
+    return {input_priority=inp, output_priority=outp, filter=filter, line=table.concat(parts, '; ')}
+  end
+  local PRIORITY = {left=true, right=true, none=true}
+  -- configure {input_priority?, output_priority?, filter?} on a splitter or its ghost.
+  function M.configure_splitter(e, a)
+    local name = e.type == 'entity-ghost' and e.ghost_name or e.name
+    local where = string.format('%s (%g,%g)', name, e.position.x, e.position.y)
+    for _, k in ipairs({'input_priority', 'output_priority'}) do
+      if a[k] ~= nil and not PRIORITY[a[k]] then error(k .. ' is left, right or none (as seen facing the way items move)', 0) end
+    end
+    local filter, clear = nil, false
+    if a.filter ~= nil then
+      if a.filter == false or a.filter == 'none' or a.filter == '' then clear = true
+      else
+        local item, quality = a.filter, nil
+        if type(a.filter) == 'table' then item, quality = a.filter.name, a.filter.quality end
+        if not (type(item) == 'string' and prototypes.item[item]) then error('filter: unknown item ' .. tostring(item), 0) end
+        if quality ~= nil and not prototypes.quality[quality] then error('unknown quality ' .. tostring(quality), 0) end
+        filter = {name=item, quality=quality or 'normal'}
+      end
+    end
+    local before = M.splitter(e)
+    local outp = a.output_priority or before.output_priority
+    if filter and outp == 'none' then
+      error(string.format('%s: a filter sends its items to the output priority side and the other items to the other side; with output priority none it does nothing (items split evenly): set output_priority left or right in the same call', where), 0)
+    end
+    if a.input_priority ~= nil then e.splitter_input_priority = a.input_priority end
+    if a.output_priority ~= nil then e.splitter_output_priority = a.output_priority end
+    if clear then e.splitter_filter = nil elseif filter then e.splitter_filter = filter end
+    local now = M.splitter(e)
+    return {name=name, position=e.position, ghost=e.type == 'entity-ghost' or nil, input_priority=now.input_priority, output_priority=now.output_priority,
+      filter=now.filter or 'none', line=now.line, before=before.line}
+  end
+
   M.COLLECTOR_NOTE = 'filters are asteroid chunk names (configure {position, filters}); the game has no whitelist/blacklist mode for collectors'
   -- configure {filters} on an asteroid collector, as its GUI's chunk filter
   -- slots: chunk names in slots 1.., [] clears. filter_slot_count is not
@@ -184,8 +310,13 @@ return function(api)
   end
   function M.inspect(e, out)
     pcall(M.holds, e, out)
-    local f = filters(e)
-    if f then out.filters = f.filters; out.filter_mode = f.filter_mode; out.use_filters = f.use_filters; out.filter_slots = f.filter_slots end
+    -- A storage chest's one filter slot is its storage filter (robots store only that item in it).
+    if storage_chest(e) then out.storage_filter = M.storage_filter(e) or 'none'
+    else
+      local f = filters(e)
+      if f then out.filters = f.filters; out.filter_mode = f.filter_mode; out.use_filters = f.use_filters; out.filter_slots = f.filter_slots end
+    end
+    if splitter_entity(e) then out.splitter = M.splitter(e) end
     -- A collector: chunks its arms hold on the way in (output is in inventories).
     if e.type == 'asteroid-collector' then
       out.arm = try(function() return e.get_inventory(defines.inventory.asteroid_collector_arm).get_contents() end)
