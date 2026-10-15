@@ -610,6 +610,25 @@ ul.platforms .fx-progress { margin-top: 3px; }
 .board-jobs { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: .9rem; overflow-wrap: anywhere; }
 .board-jobs b { color: var(--fx-heading); }
 .board-projects li { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; overflow-wrap: anywhere; }
+/* a project opens to its steps (d15): the summary keeps the portrait-and-text layout, the steps sit under it */
+.board-projects > li:has(> details.project) { display: block; }
+.board-projects > li > details.project { grid-column: 1 / -1; }
+.board-projects details.project > summary { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; cursor: pointer; list-style: none; }
+.board-projects details.project > summary::-webkit-details-marker { display: none; }
+.board-projects details.project > summary .project-head { display: block; }
+.board-projects details.project > summary .project-head::after { content: "▸ steps"; font-size: .75rem; color: var(--fx-muted, #999); }
+.board-projects details.project[open] > summary .project-head::after { content: "▾ steps"; }
+.board-projects .plan-next { display: block; }
+.project-progress .fx-progress { display: block; }
+.project-body { margin: 4px 0 2px 32px; font-size: .85rem; }
+.project-steps { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 2px; }
+.project-steps .step { display: block; }
+.project-steps .step-done { color: var(--fx-muted, #9a9a9a); }
+.project-steps .step-next { font-weight: 600; }
+.project-steps .step-mark { display: inline-block; width: 1.1em; text-align: center; }
+.project-steps .step-tag { font-size: .7rem; padding: 0 4px; }
+.projects-all { margin-top: 6px; }
+.projects-more h5 { margin: 8px 0 4px; font-size: .8rem; color: var(--fx-muted, #999); }
 .board-projects b { color: var(--fx-heading); }
 .project-progress { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin-top: 3px; }
 

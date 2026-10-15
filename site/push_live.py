@@ -151,8 +151,39 @@ def public_replies(rows, hidden=None):
     return out[-REPLY_MAX:]
 
 
+BOARD_BYTES = 48 * 1024  # the board's share of the state (MAX_STATE_BYTES 256 KB in the worker)
+
+
+def public_board(board):
+    """The board as the stream service gives it, its projects' steps kept within BOARD_BYTES (d15: steps for the live
+    page's projects): over it, the finished projects' steps go first, then the hidden ones' (they keep progress and next
+    step), then the card's own are cut to their next 5."""
+    if not isinstance(board, dict):
+        return board
+    b = dict(board)
+    size = lambda: len(json.dumps(b, ensure_ascii=False))
+    for key, keep in (("projects_done", 0), ("projects_more", 0), ("projects", 5)):
+        if size() <= BOARD_BYTES:
+            break
+        rows = []
+        for p in b.get(key) or []:
+            p = dict(p)
+            if p.get("steps"):
+                steps = [x for x in p["steps"] if not x.get("done")][:keep] if keep else []
+                p["steps"] = steps
+                p["steps_cut"] = True
+                if not steps:
+                    del p["steps"]
+            rows.append(p)
+        if key in b:
+            b[key] = rows
+    return b
+
+
 def public_state(s):
     out = {k: s[k] for k in TOP_KEYS if k in s}
+    if "board" in out:
+        out["board"] = public_board(out["board"])
     out["agents"] = [{k: a[k] for k in AGENT_KEYS if k in a} for a in s.get("agents", [])]
     for a in out["agents"]:  # the map's line from the character to where it last looked or worked
         t = a.get("attention")
