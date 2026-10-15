@@ -275,8 +275,11 @@ fh call status
 - Settings in the placing call (Sol, shift13 19:50: a bio cell took about 10 `configure`, `circuit_set` and `wire`
   calls after its `build`): a `place_ghosts` entry, a `build` `builds` entry and a single `build` take `configure`,
   `requests` and `circuit` (the arguments of `configure`, `requests` and `circuit_set`, without `position`) and
-  `wires: [{to, color, from_side, to_side}]` (from the entry; at most 16). The call places every entry, then sets them
-  in entry order (configure, requests, circuit), then the wires, on the call's platform or surface. A ghost holds the
+  `wires: [{to, color, from_side, to_side}]` (from the entry; at most 16). A hand `build` applies configure, requests
+  and circuit settings immediately after each placement, before attempting the next entry. A later placement
+  failure leaves those settings applied. Wires wait until the batch finishes, so later endpoints can exist; a
+  stopped batch can leave its declared wires unconnected. Ghost calls place all entries, then apply settings and
+  wires in entry order, on the call's platform or surface. A ghost holds the
   settings and the building it becomes keeps them.
   `fh call place_ghosts --args '{"entities":[{"name":"decider-combinator","position":{"x":47.5,"y":43},"direction":"north","circuit":{"decider":{"first":"pentapod-egg","comparator":">","constant":20,"output":"pentapod-egg"}},"wires":[{"to":{"x":43.5,"y":48.5},"color":"green","from_side":"output"}]},{"name":"requester-chest","position":{"x":43.5,"y":48.5},"circuit":{"settings":{"circuit_exclusive_mode_of_operation":"set_requests"}}}]}'`
   - Argument names and shapes are checked before anything is placed (`unknown argument bogus for circuit_set`,
@@ -4124,3 +4127,38 @@ fh watch    # deploy on every change
   whose range covers the site, with ammo and inactive state. An elapsed timer is not evidence of a hatch. Old timer
   sites are retained for ten minutes; enemies can have moved, and eggs can have been consumed or carried away.
   The bounded reads show their check tick and report caps (33 enemies, 65 guns); brief status does not run them.
+
+
+### 04:50 build, transfer and fuel facts
+
+- A queue `transfer` step accepts `min_moved: 1` **on the step**, alongside `action` and `args`:
+  `{"action":"transfer","args":{"position":{"x":14.5,"y":140.5},"direction":"to_entity","item":"iron-plate","count":100},"min_moved":1}`.
+  The integer range is 1..10000 and `wait` must be true (the default). The scheduler checks reported `moved` or
+  `transferred` after completion, including walks and craft waits. A lower count or an unknown count fails the
+  step with the observed count and uses its existing `on_fail` policy (abort, skip, goto). This requirement also
+  applies with `up_to:true` or `on_short:"skip"`. Without it, existing short-transfer behavior is unchanged.
+  Counts are the action's reported total, across targets and courier legs, not a guarantee that items remain in
+  the destination. A failed minimum does not roll back items already moved.
+- `inspect` (full and compact) and `trace` feeder/taker reads add `held_blocked` or a corresponding line when an
+  inserter holds an item that its current drop target cannot accept even one of now. The fact names the inserter,
+  item, quality, target and current recipe when present. It reports current refusal, which can be full inventory
+  or incompatibility; it does not claim the blockage is permanent. Belt targets and unavailable reads are omitted;
+  an out-of-sight target is not queried for acceptance. No additional entity scan is made.
+- Full `status` adds one `boilers` line from the completed network cache: boilers under 20 minutes of their own
+  fuel at their equal share of sampled generator draw, up to six positions with their already-read feeder chest
+  and fuel contents (or feeder description), the count unlisted and sample age. Boilers with fuel at their feeders
+  still appear when their own fuel is below the threshold. Missing samples/draw estimates are explicit. The line
+  performs no new scan; brief status omits it. Existing `boilers`, `game_alerts kind=boiler_fuel`, `networks` and
+  `team.science` retain their fuller reads and alert conditions.
+- `feed`, `refuel` and walking transfers already use `move_to`'s enemy corridor planner and per-leg path checks.
+  They now retain up to eight `last.route_failures` before skipping unreachable stops: the stop position, avoidance
+  reason and `smaller_margins` with the largest verified smaller margin or the diagnostic's budget/failure fact.
+  `first_unreached` also includes that line, and compact `--wait` keeps these facts. No smaller margin is chosen
+  automatically, and there is no promise that a route exists. A stop inside enemy reach remains subject to the
+  existing goal check; `unsafe_goal` and `avoid_enemies` keep their existing meanings.
+- Platform `build` / `place_ghosts` dry runs add `pump_circuits` for pumps in the plan with an enable condition but
+  no currently connected circuit network. Conditions declared in the entry and existing built pump conditions
+  count. Red/green wires declared from either endpoint are named as planned, not yet connected; copper wires and
+  disconnect declarations do not count as new circuit connections. This reads at most 64 planned pump
+  positions (further pumps counted as unchecked), not a full-platform circuit audit or a proof that a declared wire will connect. Existing `circuit`
+  and `circuit_set` reads already report `enable_ignored` for an enabled condition without a circuit connection.

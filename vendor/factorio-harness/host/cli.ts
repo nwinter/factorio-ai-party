@@ -1047,7 +1047,7 @@ async function main() {
       ...(last?.kind === 'gather' && last?.took !== undefined ? {took: last.took, made: last.made, inserters_took: last.inserters_took,
         crafts: last.crafts, waited_s: last.waited_s, counted_from: last.counted_from} : {}),
       // An item move that ran over time: what it moved and the inventory line after (Muse 06:27).
-      moved: last?.moved, inv: last?.inv,
+      moved: last?.moved, inv: last?.inv, route_failures: last?.route_failures,
       // A short feed still says how many stops remain when up_to makes its exit successful.
       ...(last?.kind === 'gather' ? {left:last.left, short_allowed:last.short_allowed, short:last.short} : {}),
       ...(last?.fuel_taken !== undefined ? {fuel_taken:last.fuel_taken, sources:last.sources, source_read_capped:last.source_read_capped} : {}),

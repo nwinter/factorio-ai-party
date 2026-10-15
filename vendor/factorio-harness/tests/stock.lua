@@ -305,3 +305,24 @@ do
   assert(not ok and tostring(err):find('is not ours',1,true),err)
 end
 print('stock: ok')
+
+-- Feed tours use the shared avoidance legs and retain the no-route diagnostic
+-- before discarding a stop's nav (Haiku's former bare no_safe_route).
+do
+  local oldnav,oldavoid,oldreport,oldleg,oldmode=api.navigate,api.avoid_start,api.avoid_report,api.leg_done,api.avoid_mode
+  local saved_reachable=reachable
+  reachable={}
+  local legs=0
+  api.avoid_mode=function() return {pad=4} end
+  api.avoid_start=function(_,nav) nav.foes={mode={pad=4}} end
+  api.navigate=function() return legs==0 and 'arrived' or 'no_safe_route' end
+  api.leg_done=function(_,nav,outcome) if outcome=='arrived' then legs=legs+1;return true end end
+  api.avoid_report=function(out) out.why='no route at margin 4';out.smaller_margins={largest_verified_margin=2,line='largest verified margin 2 tiles'} end
+  local e={valid=true,position={x=40,y=0}}
+  local tour=stock.start_tour(p,'feed',{e},600,{item='coal',count=10})
+  stock.tick(p,tour);eq(tour.index,1);eq(legs,1)
+  stock.tick(p,tour);eq(tour.index,2);eq(tour.route_failures[1].smaller_margins.largest_verified_margin,2)
+  assert(tour.first_unreached:find('largest verified margin 2 tiles',1,true))
+  api.navigate,api.avoid_start,api.avoid_report,api.leg_done,api.avoid_mode=oldnav,oldavoid,oldreport,oldleg,oldmode
+  reachable=saved_reachable
+end

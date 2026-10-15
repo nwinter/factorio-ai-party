@@ -604,7 +604,15 @@ return function(api)
     -- Arrived yet still out of reach, or blocked (or no way round the worms): skip this place (the first one's why in
     -- first_unreached).
     if outcome then
-      if outcome=='no_safe_route' then action.unsafe=(action.unsafe or 0)+1 end
+      if outcome=='no_safe_route' then
+        action.unsafe=(action.unsafe or 0)+1
+        local report={}
+        if api.avoid_report then api.avoid_report(report,action.nav) end
+        action.route_failures=action.route_failures or {}
+        if #action.route_failures<8 then report.position=t.position;action.route_failures[#action.route_failures+1]=report end
+        action.nav.why=report.why or action.nav.why
+        if report.smaller_margins then action.nav.why=(action.nav.why or 'no route at requested clearance')..'; '..report.smaller_margins.line end
+      end
       action.first_unreached=action.first_unreached or string.format('(%g,%g): %s%s',t.position.x,t.position.y,outcome,
         action.nav.why and ': '..action.nav.why or '')
       action.index=action.index+1; action.nav=nil; action.unreached=(action.unreached or 0)+1; api.stop_walking(p)

@@ -574,3 +574,5 @@ already targets your character.
 - Numeric `move_to {avoid_enemies:N}` keeps a hard margin; `no_safe_route` adds `last.smaller_margins` with the largest smaller integer margin whose engine route was verified, its closest nest pass, or the check's failure/budget reason. The check leaves the character stationary.
 
 - The operator factory digest arrives by `tell` at deadline minus 2 hours, or on operator request: cached planetary machine/fuel counts and sampled belt ends, with observation ages; missing data is unknown.
+
+- Hand `build` applies each entry’s settings as placed; `inspect`/`trace` flag held-item refusal, and platform build dry runs report unwired pump enable conditions. Queue transfer steps accept `min_moved:1`; full `status` has cached boiler/feeder fuel, and feed-tour failures retain smaller-margin route facts.
