@@ -45,7 +45,7 @@ wait_join() {  # CAM -> 0 once joined, 1 after wait_s
 }
 
 bad=0
-for cam in cam1 cam2 cam3; do
+for cam in ${POG_CAMS:-cam1 cam2 cam3}; do  # POG_CAMS: a subset when the box is short of memory (2026-10-14 19:30)
   if joined "pog-$cam"; then say "$cam: already in the game"; continue; fi
   say "$cam: starting"
   start "$cam"

@@ -62,7 +62,9 @@ fh call status
   check by the runtime test.
 - Common wrong argument names run as meant, and the reply's `corrected` (also on the final `warning:` line) shows the
   call as it ran: `craft` `item` is `recipe`, `move_to` `target` is `position`, `scan` `names`/`types`/`range` are
-  `name`/`type`/`radius`, `chat`/`tells` `count` is `limit`, `build` `placements` is `builds`, `board_post` `text` is
+  `name`/`type`/`radius`, `chat`/`tells` `count` is `limit`, `build` `placements` (and `items`, a list of entries) is
+  `builds`, a `build` entry's `name` is `item` (round1820a, Opus: a 12-drill batch refused `item is required`; also
+  `entity` with no `item`, which otherwise names a rail planner's rail), `board_post` `text` is
   `title`, `recipes`/`technologies` `search`/`name` are `prefix`, `transfer` `to_player: true` is `direction`, and a
   `board` call with an `id` and a `note`, `owner` or `status` is `board_update`. round1650d added (Opus, Sonnet, Sol,
   Astra, Gemini, Haiku, Luna): `fh view` (observe) `center` is `position`, and `area` is its centre as `position` with
@@ -88,8 +90,8 @@ fh call status
   in `types` as a name (`types_note`).
 - `transfer`, `collect`, `feed`, `inspect`, `rearm` and `refuel` run `position` and `positions` as one list and say so
   in `corrected`: one `{x,y}` given as `positions`, a list given as `position`, a `position` where only `positions` is
-  taken (`collect`, `feed`, `rearm`, `refuel`), or both at once (`position` first). A plain `position` where it is
-  taken stays as it is; with `radius` neither is touched. Queue steps (`queue_submit`, `queue_repeat`, `queue_edit`)
+  taken (`collect`, `feed`, `refuel`), or both at once (`position` first). A plain `position` where it is
+  taken stays as it is (`rearm`: the turret there); with `radius` neither is touched (`rearm`: the radius's centre). Queue steps (`queue_submit`, `queue_repeat`, `queue_edit`)
   are corrected the same way, and the reply lists each in `corrected` (`step 1: collect {...} (position is positions
   (a list))`).
 - `transfer` is `{position, direction: "to_entity"|"to_player", item, count, inventory?}` at one entity
@@ -165,6 +167,13 @@ fh call status
   categories: ...)`, or `recipe: stone-furnace (type furnace) takes no recipe; only assembling machines ... do` refuse the
   call (in a batch or a ghost list, that entry), and nothing of it is placed. Dry runs make the same check (`recipes`,
   `recipes_refused`, and `; N refused for the recipe` in the summary).
+- A `builds` batch stops at the first entry that fails (the entries before it stay built), and the error names the
+  entries not tried: `build 2/5 failed after 1 built: placement blocked by medium-electric-pole (99.5,2.5);
+  medium-electric-pole (99.5,2.5) is entry 1 of this batch; entries 3-5 were not tried (all: true tries every entry)`.
+  `all: true` (or `skip_failed: true`; Muse, shift13: a pole placed inside the assembler's footprint stopped the
+  batch, and three calls followed) builds every entry that can be built and lists the rest in `failed` `{index, item,
+  position, error}`, with `summary: 4 of 5 built; 1 not built (failed)`. An entry blocked by what an earlier entry of
+  the same batch placed says which entry.
 - `inventory` (read, `fh call inventory`; Gemini, 06:20: held items without a full observe) is one small reply of
   short item lines (`name*count`, `name@quality*count`, or `empty`): `inventory` (main), `free` (`free=62/100`),
   `guns`, `ammo`, `armor`, `equipment` (in the armor's grid), `trash` (trash slots, when any), `cursor` (the stack in
@@ -428,11 +437,26 @@ fh call status
   assemblers'; `feed` tops a tower up with the seed kinds it holds, else every kind you carry.
 - `rearm` with `radius`, `area` or `surface: true` (your whole surface) walks one tour through every turret there that
   takes the ammo and holds under `below` rounds of any ammo (items in its ammo slots; default `count`), topping each
-  up to `count` (Opus, shift12 13:50). Turrets within 24 tiles of each other are one cluster, as the `turrets` read
-  groups fronts; the nearest cluster comes first from where you stand, then the nearest from where the last ended,
-  nearest first inside one. The reply lists `clusters` (`2 turrets around (22,1), 20 tiles from you, holding 0-3
-  rounds`), `places` (up to 128 a call; `skipped` the rest), `below`, `count`, and `other_ammo` (turrets there that take
-  other ammo, such as rocket turrets). Timed like the radius tour (`ticks`, default 3600; `--wait` waits).
+  up to `count` (Opus, shift12 13:50). `radius` is round you, or round `position` (Haiku, shift13: `{"position":
+  {"x":142,"y":-27},"radius":20,"below":8}` was refused, and areas were made by hand). Turrets within 24 tiles of each
+  other are one cluster, as the `turrets` read groups fronts; the nearest cluster comes first from where you stand,
+  then the nearest from where the last ended, nearest first inside one. The reply lists `clusters` (`2 turrets around
+  (22,1), 20 tiles from you, holding 0-3 rounds`), `places` (up to 128 a call; `skipped` the rest), `below`, `count`,
+  and `other_ammo` (turrets there that take other ammo, such as rocket turrets). Timed like the radius tour (`--wait`
+  waits).
+  - `ticks` defaults by the tour's length (Haiku, shift13: surface tours of about 520 and 820 tiles ended `timed_out`
+    at 60 s with 4 turrets left). The default is the walk from you through every turret in order, at your running
+    speed, half again for turns, plus 1 s a turret and 10 s; at least 3600 (60 s), at most 36000 (10 min). The reply's
+    `ticks` and `ticks_note` say what it came to: `the default for this tour: 1929 tiles from you through 13 turrets at
+    your running speed (9.0 tiles/s), half again for turns, 1 s a turret and 10 s` (20675 ticks). A `ticks` given
+    stays as given.
+  - A turret under `below` whose ammo slots hold other ammo with no room for the call's (a gun turret's one slot
+    holding piercing rounds takes no firearm magazines) is left out of the walk and named in `no_room`: `1 turret under
+    8 rounds with no room for firearm-magazine (its ammo slots hold other ammo): gun-turret (145,-33) holds
+    piercing-rounds-magazine*5` (Haiku, shift13: three walks to (88,47) gave nothing).
+- `below` works on every form of `rearm`: in reach and at `positions` (or one `position`), a turret holding `below`
+  rounds or more is left as it is and named in `held_enough` (`1 turret holds 10 rounds or more: gun-turret (22,6)
+  12`); the others get topped up to `count` (at least `below`).
 - Burner fuel by category: `feed` without `fuel` gives a burner the fuel it burns (coal for chemical burners; a
   biochamber burns nutrients, so it gets nutrients); `refuel` skips burners of another category in a radius and refuses
   one named by position (`biochamber at (-20.5,-20.5) burns nutrients fuel, not coal (chemical)`).
@@ -611,6 +635,15 @@ fh call status
     kind: chests, accumulators, walls, gates, solar panels, lamps, trees and rocks 1; belts, pipes, inserters and pumps
     2; poles, machines and the rest 3; cliffs, tiles and others' entities never; at most 16. On a copy of world n's
     Fulgora island a search took 2 to 8 ms (the old one, which stopped at the first pocket, 1.3 to 3.3).
+  - Not closed in, yet no way to the target (round1820a, Astra on Fulgora: packed accumulators, 6 failed walks in
+    about 4 game minutes; lifting 2 of them, then `pathfind: false`, got through): a walk that ends `unreachable` or
+    `blocked`, or a near walk (`arrived_near`) to a goal point no entity covers, names the fewest of our entities
+    (trees, rocks) to mine for a way from where the character can get to (the give-up's nearest reachable spot, or
+    where it stands) to the target, by the same costs: `last.mine_for_a_way`, and in `why` (or `near_walk`): `...;
+    mining accumulator (-53,108) and accumulator (-53,106) opens a way from (-54.5,112.5) to (-53.5,104.5)`. The
+    search spans both points and 8 tiles round them, at most 48 a side (a goal farther off is left alone): on a copy of
+    world n's Fulgora island 1.4 to 2.3 ms for Gemini's accumulators, 9 ms at 41 by 46 tiles, once as the walk ends. On
+    the copy, mining the 4 accumulators one answer named let the same walk arrive.
   - A `build` batch that fails after some entries stand says what those entries closed in its refusal
     (`build 9/9 failed after 8 built: ...; the character is closed in now where it stands (50.5,108.5): ...`; Gemini's
     19:25 batch failed after 2 built, and those 2 had closed the last gap out). A real `place_ghosts` says
@@ -710,6 +743,15 @@ fh call status
   - A via point counts as reached within 1 tile (or `within` when larger), and only the last leg steps off a belt.
   - `ticks` covers the whole walk; the reply says `via: 2, legs: 3`; `status` shows `active.leg: 2 of 3` and
     `active.to`, the leg's goal.
+  - Without `ticks` the limit scales with the planned route (round1820a, Opus: 400-tile via trips timed out at the
+    fixed 3600 ticks four times in shift13 while walking fine): straight lines from you through the via points to
+    `position`, at your speed, 1.5 times that and 10 s more, at least 3600 and at most 36000 ticks. Any `move_to`
+    reply says it: `limit: 6487 ticks (1m48s) for the planned route, 589 tiles in straight lines through the via points
+    at 0.15 tiles a tick` (`3600 ticks (1m00s)` for a short walk, `..., as given` with `ticks`). A walk that runs out
+    names the limit and the leg in `why`: `time ran out at (265.4,-251.7), 160.2 tiles from the target: its limit,
+    3600 ticks (1m00s), ran out on leg 4 of 7 (to (300,-260))`, and `last.limit`; `--wait`'s error line ends with
+    that why (`move_to timed_out at its own tick limit: time ran out at ...`), as it does for any timed action that
+    says one.
   - A leg that does not arrive ends the walk with its outcome, and `last.why` (and `build_spot`) describe that leg.
   - `last.legs` lists each leg, `{to, outcome, s, why, avoided_enemies}`, then the legs `not walked`; `last.target`
     is `position`.
@@ -1334,6 +1376,15 @@ fh sleep 900 --until researched                       # ...or until the research
     `feed {"area": {...}, "recipe": "advanced-circuit", "crafts": 5}` loads every advanced circuit assembler in it.
   - `inspect {"positions": [...]}` (1..32 entries, each may carry `name` or `unit_number`): one inspect per entry in one
     call, `entities` in order and `count`; an entry that fails is `{position, error}`.
+  - `compact: true` with `position`, `positions` or `area` (Muse, shift13: about 10 inspects over positions read as
+    tables or JSON): one line per entity in `lines`, in the same order: name, position, status, health, recipe and what
+    it holds (as the area rows: a chest's items and slots, a machine's `in`, `out`, `fuel`, `ammo`), a requester's
+    `requests`, an inserter's hand; a ghost reads `ghost of NAME`. `assembling-machine-2 (72.5,-12.5):
+    item_ingredient_shortage; health 350/350; recipe production-science-pack; in: rail*38 productivity-module*1`,
+    `requester-chest (75.5,-12.5): health 350/350; empty; 0 of 48 slots; requests rail 0/100`, `inserter (78.5,-10.5):
+    waiting_for_source_items; health 150/150; hand empty`, `gun-turret (145,-33): working; health 400/400; ammo:
+    piercing-rounds-magazine*4`. An entry that fails is its position and the error. The CLI prints `lines` one to a
+    line.
   - `inspect {"area": {...}, "types"?: [...]}` (Gemini, shift10: dozens of single inspects to check buffer chests): our
     chests and machines (every type with an inventory by default: chests, machines, labs, silos, boilers, drills,
     turrets, wagons, vehicles, landing pads, hubs, roboports, towers) with their centre in the area (up to 128x128)
@@ -2218,6 +2269,17 @@ fh sleep 900 --until researched                       # ...or until the research
   item_ingredient_shortage (lacks advanced-circuit)`), `steps` (every step of the tree: made and used per minute,
   makers, working, states, what they lack; miners with their states and where they put their output). Kept 10 s like
   supply. Without `item`, `bottleneck` is the area read it was.
+  - `per_min` (Sonnet, shift13 18:20: the rate each step needs, rebuilt by hand over about 20 supply calls): `target
+    {per_min, line, steps}`: per step of the item's tree, the rate it needs for `per_min` of the item (an item two
+    steps need adds up), what it made a minute over the last 10 minutes, the recipe most of its makers run, their
+    crafts a minute each at their own speed (modules and beacons in it) and productivity (theirs plus the recipe's
+    research; a product marked ignored_by_productivity gets none), the machines that rate takes and what the makers
+    there make at full speed: `electronic-circuit: need 60/min, made 22/min; 4 assembling-machine-2 on
+    electronic-circuit, 90/min each: 0.7 for the target, 360/min at full speed`. Mining drills by their mining speed
+    on the resource (mining productivity in it), offshore pumps by pumping speed; a pumpjack's yield is not counted.
+    A step no maker on the surface makes is followed through the recipe of that name (`no maker on the surface
+    (recipe copper-plate)`).
+  - `fh call bottleneck --args '{"item":"electronic-circuit","per_min":60}'`
 - `fh call trace` (a read; remote view: a machine in a visible chunk, the whole of a platform with `platform`):
   - `{"position":{x,y}}` on a machine or lab: `crafting` (its recipe, or the research a lab runs); per ingredient it
     lacks for its next craft (`"all":true`: every one) a line `stone-brick: has 0 of 5; long-handed-inserter (12,42)
@@ -2431,6 +2493,22 @@ Items on the ground:
   area holds none. Outcomes `picked_up` (none left), `inventory_full`, `blocked` (stacks it could not walk to,
   `last.skipped`; it stops after 8), `timed_out`; `last.picked {item: count}` and `last.left` (stacks still in the
   area). `pickup {}` still takes only what is in reach where you stand.
+  A `pickup` step that ends `picked_up` is a success in a queue or a standing order (it counted as a failed step).
+- `pickup {belt: true, item (or items), count?, position?, radius?, area?, ticks?}` (beltpick.lua; Grok, shift13
+  18:20: the iron for a green circuit plant sat on a full belt at (90.5,-11.5) and `pickup` found "no items on the
+  ground" three times, which turned the standing order off) takes items off the lanes of our belts (transport belts,
+  undergrounds, splitters, loaders) in the area, as the pickup key does: from belts within your pickup distance
+  (1 tile), about one item a tick, walking to the nearest belt in the area that carries one. Each item keeps its
+  spoilage; only the items named are taken.
+  - `count` 1..10000 in all (default 100); the area as for the ground pickup (position and radius, default you and 8;
+    or `area` up to 64x64).
+  - Refused when no belt there carries one, naming what they carry: `no iron-plate on our belts in (87.5,-14.5)-
+    (93.5,-8.5): they carry coal*11 stone-brick*2` (or `no belt of ours there`). Reply: `belt_tiles`, `on_belts`,
+    `count`, `rate`.
+  - Outcomes: `picked_up` (the count taken; or what it took when no belt in the area has carried one for 3 s),
+    `nothing_on_belts` (none by then), `inventory_full`, `blocked` (belts it could not walk to), `timed_out`;
+    `last.picked {item: count}`, `last.belt {taken, count}`. `item` and `count` go with `belt: true`.
+  - `fh call pickup --args '{"belt":true,"item":"iron-plate","count":200,"position":{"x":90.5,"y":-11.5},"radius":8}' --wait`
 
 Not supported yet: elevated rails and rail ramps, the selector combinator, and fluid transfers by hand. See docs/HARNESS-COVERAGE.md in the pog
 repo for the feature-by-feature list.

@@ -797,6 +797,9 @@ return function(api)
     local w = opts.area or {start.x - WINDOW, start.y - WINDOW, start.x + WINDOW, start.y + WINDOW}
     local tx0, ty0 = math.floor(math.max(w[1], start.x - DIG_SIDE / 2)), math.floor(math.max(w[2], start.y - DIG_SIDE / 2))
     local tx1, ty1 = math.ceil(math.min(w[3], start.x + DIG_SIDE / 2)) - 1, math.ceil(math.min(w[4], start.y + DIG_SIDE / 2)) - 1
+    -- goal_only (M.corridor): the window as given (the caller bounds it), and the search ends near the goal only.
+    if opts.goal_only then tx0, ty0, tx1, ty1 = math.floor(w[1]), math.floor(w[2]), math.ceil(w[3]) - 1, math.ceil(w[4]) - 1 end
+    local goal_only, near2 = opts.goal_only, (opts.near or 1.5) ^ 2
     local boxes = boxes_in(surface, {{tx0, ty0}, {tx1 + 1, ty1 + 1}}, opts.ignore)
     local h = half + PAD
     local force = opts.force
@@ -846,7 +849,9 @@ return function(api)
           local i = math.floor((k + 32768) / 65536)
           local j = k - i * 65536
           local here = on[k]
-          if level > 0 and not here and not stop[k] and (k == gk or i <= tx0 or j <= ty0 or i >= tx1 or j >= ty1) then target = k; break end
+          if goal_only then
+            if not stop[k] and (i + 0.5 - opts.goal.x) ^ 2 + (j + 0.5 - opts.goal.y) ^ 2 <= near2 then target = k; break end
+          elseif level > 0 and not here and not stop[k] and (k == gk or i <= tx0 or j <= ty0 or i >= tx1 or j >= ty1) then target = k; break end
           -- (the start tile counts as stood on nothing: the character is beside what its tile holds)
           if k == sk then here = nil end
           for n = 1, 4 do
@@ -903,7 +908,24 @@ return function(api)
     end
     if #mine == 0 then return nil end
     local ti = math.floor((target + 32768) / 65536)
-    return {mine=mine, to={x=ti + 0.5, y=target - ti * 65536 + 0.5}, cost=level, goal=target == gk or nil}
+    return {mine=mine, to={x=ti + 0.5, y=target - ti * 65536 + 0.5}, cost=level, goal=(goal_only or target == gk) or nil}
+  end
+  -- Not closed in, yet no way to the goal (round1820a, Astra on Fulgora: packed accumulators, 6 failed walks in about 4
+  -- game minutes; lifting 2 of them, then pathfind=false, got through): the fewest of our entities, trees or rocks to
+  -- mine for a way from where the character can get to (from) to within near of the goal, as for a pocket (M.dig,
+  -- ending at the goal only). The window spans both and 8 tiles round them, at most 48 a side (on a copy of world n's
+  -- Fulgora island 1.4 to 2.3 ms for Gemini's accumulators, 9 ms at 41 by 46); a goal farther than that is left alone.
+  -- Returns M.dig's answer with from, or nil (nothing to mine, or no way within DIG_COST).
+  local CORRIDOR_SIDE = 48
+  function M.corridor(p, from, goal, near)
+    if not (from and goal and p.character and p.character.valid) then return nil end
+    local x0, y0 = math.min(from.x, goal.x) - 8, math.min(from.y, goal.y) - 8
+    local x1, y1 = math.max(from.x, goal.x) + 8, math.max(from.y, goal.y) + 8
+    if x1 - x0 > CORRIDOR_SIDE or y1 - y0 > CORRIDOR_SIDE then return nil end
+    local dug = M.dig(p.surface, from, M.half(p.character), {ignore=p.character, force=p.force, area={x0, y0, x1, y1}, goal=goal,
+      goal_only=true, near=math.max(1.5, near or 1.5)})
+    if dug then dug.from = {x=from.x, y=from.y} end
+    return dug
   end
 
   -- The tick after a closed-in give-up: the way out by mining, then unreachable.

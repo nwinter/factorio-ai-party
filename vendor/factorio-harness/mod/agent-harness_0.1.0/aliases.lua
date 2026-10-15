@@ -15,7 +15,7 @@ return function(api)
     nearest = {entity='name', names='name', types='type', center='position'},
     chat = {count='limit', n='limit'},
     tells = {count='limit', n='limit'},
-    build = {placements='builds', entities='builds', dryrun='dry_run', ['dry-run']='dry_run'},
+    build = {placements='builds', entities='builds', items='builds', dryrun='dry_run', ['dry-run']='dry_run'},
     place_ghosts = {dryrun='dry_run', ['dry-run']='dry_run'},
     paste = {dryrun='dry_run', ['dry-run']='dry_run'},
     blueprint_place = {dryrun='dry_run', ['dry-run']='dry_run'},
@@ -288,6 +288,31 @@ return function(api)
         out[right], out[wrong] = v, nil
         notes[#notes+1] = wrong .. ' is ' .. right
       end
+    end
+    -- build entries name what to place by name (round1820a, Opus 00:42: a 12-drill batch refused "item is required";
+    -- Haiku 00:52, Grok 00:25, Gemini 23:10): name is item, and so is entity outside a rail planner (with no item).
+    if action == 'build' then
+      local renamed = {}
+      local function entry(e, default)
+        if type(e) ~= 'table' or e.item ~= nil then return e end
+        local key = type(e.name) == 'string' and 'name' or (default == nil and type(e.entity) == 'string' and 'entity') or nil
+        if not key then return e end
+        local c = {}
+        for k, v in pairs(e) do c[k] = v end
+        c.item, c[key] = c[key], nil
+        renamed[key] = true
+        return c
+      end
+      if type(out.builds) == 'table' and #out.builds > 0 then
+        local list, changed = {}, false
+        for i, e in ipairs(out.builds) do list[i] = entry(e, out.item); changed = changed or list[i] ~= e end
+        if changed then out.builds = list end
+      elseif out.item == nil and out.builds == nil then
+        local c = entry(out, nil)
+        if c ~= out then out.item, out.name, out.entity = c.item, c.name, c.entity end
+      end
+      if renamed.name then notes[#notes+1] = 'name is item' end
+      if renamed.entity then notes[#notes+1] = 'entity is item (entity names a rail planner\'s rail, with item)' end
     end
     if #notes == 0 then return action, silent and out or args, nil end
     table.sort(notes)

@@ -98,14 +98,18 @@ already targets your character.
   its robots, every unmet requester with the reason, the machines that make and use it by status (the worst 3 with
   positions), and the inserters feeding them.
 - `./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
-  starts, naming each step's makers, their states and what they lack. `inspect` on a machine gives its `rate` (crafts
+  starts, naming each step's makers, their states and what they lack; with `"per_min":30` each step's rate for that
+  target, what it makes now, its makers' rate each and the machines the target takes.
+  `./fh call pickup --args '{"belt":true,"item":"iron-plate","count":200,"position":{"x":90.5,"y":-11.5}}' --wait` takes
+  items off belt lanes by hand (from belts within 1 tile, walking to them). `inspect` on a machine gives its `rate` (crafts
   and output per minute, net of what goes back in), on an agricultural tower its `empty_cells` and why; a take from
   a chest names what robots have reserved there.
 - `./fh call turrets` (optional `"surface"` or `"area"`) lists every turret by front: its ammo (a flamer's oil with
   its buffer), health, and what feeds it (an inserter and its belt or chest, robots, a pipe, power, or nothing:
   hand-fed); the hand-fed and low ones first.
-- `./fh call rearm --args '{"surface":true,"below":5}'` (or `"area"`, `"radius"`) tops up every turret under 5 rounds
-  in one walking tour, nearest cluster first. refuel, feed and rearm that find nothing name the nearest one outside.
+- `./fh call rearm --args '{"surface":true,"below":5}'` (or `"area"`, `"radius"` round you or round `"position"`) tops
+  up every turret under 5 rounds in one walking tour, nearest cluster first, its `ticks` set by the tour's length;
+  `below` works in reach and at positions too. refuel, feed and rearm that find nothing name the nearest one outside.
 - `./fh call trace --args '{"position":{"x":0,"y":0}}'` (a machine or lab; `"platform"` on a platform) lists per
   ingredient it lacks each feeding inserter, what that inserter reads and how much is there, and a container within 10
   tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
@@ -206,7 +210,7 @@ already targets your character.
   ammo, armor and equipment, trash and cursor in one small reply (`status {"inventory": true}`: one line); `feed`
   skips a burner whose fuel slots all hold another fuel (`other_fuel`), with no warning under `up_to`; `feed {"recipe": NAME,
   "crafts": N, "positions": [...]}` loads each machine set to that recipe for N crafts; `feed` takes `item` or `items`;
-  `inspect {"positions": [...]}` inspects up to 32 entities in one call; `collect {"radius": N}` without `item` takes
+  `inspect {"positions": [...]}` inspects up to 32 entities in one call (`"compact": true`: one line each); `collect {"radius": N}` without `item` takes
   every assembler and furnace output in the radius (output slots only). `position` and `positions` are interchangeable
   in these calls (`corrected` says how it ran). A repeating queue (`queue_repeat`, optional `name`) puts a `queue:`
   line in the team block when a round's short steps differ from the round before; steps with `up_to: true` or
@@ -272,6 +276,7 @@ already targets your character.
   to its centre, as `build` measures it); in reach, at once. `{"position":{x,y},"reach":"build"}` does the same for a point.
 - `move_to --args '{"position":{"x":40,"y":5},"via":[{"x":10,"y":30},{"x":30,"y":30}]}'` walks the via points in order
   in one call, each leg pathfound and checked for enemies like a single `move_to`; `last.legs` gives each leg's outcome.
+  Without `ticks` its time limit scales with the route's length (the reply's `limit` says it).
 - `move_to` keeps out of the range of the worms the map shows, plus 4 tiles; `"avoid_enemies":true` also keeps out of
   spawners' units' sight, 8 tiles more, walking legs around a nest (`last.avoided_enemies`); no way round: `no_safe_route`.
   A goal inside such a range is refused, naming the worm and the nearest safe spot toward it; `"unsafe_goal":true` goes anyway.
@@ -281,9 +286,11 @@ already targets your character.
   corpse keeps what you carried when you died and does not expire. One inside a worm's range is left out (`left_out`).
 - A target in a narrow gap no path leads into ends the walk `arrived_near` before it (`last.pocket`; `"squeeze":true`
   walks in). Squeezed in, the walk gets out along the gaps first (`last.escaped`); closed in, `last.mine_to_get_out`
-  names everything to mine to open ground (chests, accumulators, walls, trees and rocks before poles and machines). A
+  names everything to mine to open ground (chests, accumulators, walls, trees and rocks before poles and machines); not
+  closed in but with no way to the target, `last.mine_for_a_way` names the fewest to mine for one. A
   `build` batch that fails part way, and a real `place_ghosts`, say on the `warning:` line when what they place closes
-  you in. `circuit_set` says `stays disabled` there when one of the entity's conditions is not met after the call;
+  you in. A `build` batch with `"all": true` builds every entry it can and lists the rest in `failed` with why.
+  `circuit_set` says `stays disabled` there when one of the entity's conditions is not met after the call;
   `requests` `set` takes a map `{item: min}` too; an entry without `max` keeps the slot's max (`"max": "inf"` sets none).
 - Turret ghosts from `place_ghosts` and `paste` request ammo, so the robots that build them bring it (`ammo`: a name,
   `{name, count}` or false; default 10 of what the logistic network there holds most of); so do the ghosts of turrets that died.

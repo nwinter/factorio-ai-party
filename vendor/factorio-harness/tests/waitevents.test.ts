@@ -280,6 +280,15 @@ test('fh wait with nothing running: the last action ended before the previous ca
     assert.equal(json.ok,true); assert.equal(json.result.last.outcome,'arrived'); assert.equal(json.result.nothing_running,undefined);
   });
 });
+test('a timed_out error line carries the action\'s why (round1820a: a move_to\'s limit and leg)',async()=>{
+  const why='time ran out at (265.4,-251.7), 160.2 tiles from the target: its limit, 3600 ticks (1m00s), ran out on leg 4 of 7 (to (300,-260))';
+  await engine(()=>({ok:true,tick:700,result:{active:false,combat:false,last:{kind:'move_to',outcome:'timed_out',tick:640,why}}}),async port=>{
+    await assert.rejects(cli(port,['wait','--max','5']),(error:any)=>{
+      const reply=JSON.parse(error.stdout);
+      assert.equal(reply.error.code,'timed_out'); assert.equal(reply.error.message,`move_to timed_out at its own tick limit: ${why}`); return true;
+    });
+  });
+});
 test('fh ACTION runs as fh call ACTION, said in corrected (round1650d: Haiku\'s fh transfer, Luna\'s fh move_to)',async()=>{
   const seen:any[]=[];
   await engine(request=>{seen.push(request); return request.action==='mine' ? {ok:false,error:{code:'action_failed',message:'nothing to mine'}} : {ok:true,result:{moved:5}};},async port=>{

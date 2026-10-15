@@ -363,4 +363,18 @@ has(nav.why,'; mining pipe ('); has(nav.why,') and accumulator ('); has(nav.why,
 local cliffs={{0,0,4,0.8,'cliff','cliff'},{0,3.2,4,4,'cliff','cliff'},{0,0.8,0.8,3.2,'cliff','cliff'},{3.2,0.8,4,3.2,'cliff','cliff'}}
 local cs=box_surface(cliffs)
 eq(P.dig(cs,{x=2,y=2},0.2,{force='ours'}),nil)
+-- Not closed in, yet no way to the goal (round1820a, Astra on Fulgora: packed accumulators): the fewest of ours to mine
+-- for a corridor from where the character can get to, to the goal; nothing when a way is free; a goal past the window
+-- is left alone.
+local field={}
+for _,x in ipairs({4,6}) do for y=-20,18,2 do field[#field+1]={x,y,x+2,y+2,'accumulator','accumulator'} end end
+local fs=box_surface(field)
+local walker={index=11,position={x=0,y=0},surface=fs,force='ours',character=sol.character}
+local way=P.corridor(walker,{x=0,y=0},{x=12,y=0},1.5)
+assert(way and #way.mine==2,'two accumulators: '..(way and #way.mine or 'none'))
+eq(way.mine[1].name,'accumulator'); eq(way.mine[1].position.x,5); eq(way.mine[2].position.x,7); eq(way.mine[1].position.y,way.mine[2].position.y)
+eq(way.goal,true); eq(way.from.x,0); eq(way.cost,2)
+assert((way.to.x-12)^2+(way.to.y)^2<=1.5^2,'ends within 1.5 of the goal: '..way.to.x..','..way.to.y)
+eq(P.corridor(walker,{x=0,y=0},{x=2,y=0},1.5),nil,'a free way: nothing to mine')
+eq(P.corridor(walker,{x=0,y=0},{x=70,y=0},1.5),nil,'past the window')
 print('pathing: ok')
