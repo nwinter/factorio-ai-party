@@ -187,6 +187,9 @@ fh call status
   as lists `{name, quality, count}`, as observe's `player` has them. `status {inventory: true}` (brief or full) adds
   `inventory`, the same in one line: `main iron-plate*50 (free=1/2); ammo firearm-magazine*10; armor modular-armor*1
   with solar-panel-equipment*3; trash iron-plate@uncommon*308; cursor transport-belt*50` (empty parts left out).
+- `equip {slot, item, index?}`: an explicit index selects exactly that slot. Without it, gun/ammo tries compatible
+  empty slots in ascending order, then slot 1; armor defaults to slot 1. A refusal names the item, slot index, and
+  current occupant. Failed swaps move nothing.
 - `equipment {operation: insert|remove|list, item, position, quality, vehicle}` works the armor's equipment grid, or with
   `vehicle` (a unit_number or `{x,y}` on it) a vehicle's (operator 09:13, a viewer via Astra: equipment worked only on
   the armor's grid). Read on world n:
@@ -1233,7 +1236,10 @@ fh sleep 900 --until researched                       # ...or until the research
   take it; `fh sleep 600 --until "rocket_parts>=40 at 65.5,14.5"` (`>39` is the same).
 - `item_count` with `positions` on a rocket silo counts its rocket cargo (the game counts it with the silo's inventories), and `saw` adds the silo's line: `agricultural-science-pack 45 in 1 entities; rocket-silo (65.5,14.5): rocket built (50/50 parts) and ready to launch, not launched, cargo agricultural-science-pack*45; parts for the rocket after it 0/50`.
 - A direct `wait_ticks` or `wait_until` while the queue runs is refused (it would pause the queue: "wait_ticks would pause your queue (8 steps, repeating): ..."); `pause_queue: true` pauses it for the wait as before. A paused or empty queue is no reason to refuse. Queue steps are unchanged.
-- A tell or a teammate's mention that arrives during a direct `wait_ticks` or `wait_until` ends it (outcome `told` or `mentioned`, `last.why` `told by astra`; within 30 ticks); one pending from before the wait does not, nor an fyi tell, nor a viewer's `@mention` unless the wait was started with `wake_on_viewers: true`. `--wait` on any other action, and `fh wait`, end early the same way while the action keeps going: outcome `told` or `mentioned`, `from`, `still_running` and a note. The peek `status` polls carry the newest undelivered tell or teammate's mention as `inbox {tick, woke, from}` and the newest viewer's `@mention` as `inbox_viewer` (the CLI ends a wait on it only with `--wake-on-viewers`).
+- Direct `wait_ticks` and `wait_until` accept `wake_on_messages: false`: tells and mentions stay pending for the
+  next reply while the wait runs to its duration, condition, or timeout. This overrides `wake_on_viewers`.
+  Default `true` preserves message wakes; queue steps already ignore message wakes. Death and cancellation still end actions.
+- By default, a tell or a teammate's mention that arrives during a direct `wait_ticks` or `wait_until` ends it (outcome `told` or `mentioned`, `last.why` `told by astra`; within 30 ticks); one pending from before the wait does not, nor an fyi tell, nor a viewer's `@mention` unless the wait was started with `wake_on_viewers: true`. `--wait` on any other action, and `fh wait`, end early the same way while the action keeps going: outcome `told` or `mentioned`, `from`, `still_running` and a note. The peek `status` polls carry the newest undelivered tell or teammate's mention as `inbox {tick, woke, from}` and the newest viewer's `@mention` as `inbox_viewer` (the CLI ends a wait on it only with `--wake-on-viewers`).
 - `fh wait --max S` (or `fh wait --until idle [--max S]`) waits for the running action and combat to end, as `fh wait`
   does, for at most S seconds, and returns at once when nothing runs (friction1300: Grok and Haiku read `fh wait --max
   150` as that; it slept the whole 150 s while the walk had ended after 46). Out of time it ends as a timed-out wait
@@ -2121,21 +2127,48 @@ fh sleep 900 --until researched                       # ...or until the research
     - The silo and every chest in reach: the load at once, as without `walk`. Nothing of what the rocket needs in the
       chests or held, or none of it fits under the lift: refused, nothing walked.
     - `fh call load_silo --args '{"items":{"agricultural-science-pack":930},"from":{"x":129.5,"y":14.5},"walk":true,"launch":true,"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`
-- `preflight {position, items?, platform?, surface?}` (read; Gemini, shift12) shows what the silo's rocket would carry,
-  by remote view (a visible chunk):
-  - `cargo {items, rows [{item, count, each_kg, kg, stacks}], kg, lift_kg, free_kg, over_kg, slots, free_slots}`,
-    `rocket`, `rocket_ready`, `auto_requests`;
-  - with `items`: `order [{item, want, aboard, lacks, fits, you_hold}]` (`fits`: how many of what it lacks the rocket
-    takes by weight and slots);
-  - with `platform`: `platform {name, where, arrived, requests [{item, min, hub, aboard, lacks_after}], not_requested,
-    incoming, incoming_cargo, ammo_rates, hub_chunks}`: its hub's requests importing from this planet (active sections),
-    what the hub holds, what this rocket carries, and what they lack after it; `not_requested` is cargo it does not
-    request from here; the rockets already on their way to it, its ammo per type over the last leg and the hub slots
-    asteroid chunks take, as `platforms` gives them (the line adds `2 rockets on the way: firearm-magazine*40`). With
-    `surface` (a silo on another planet) `platform` still names where the rocket goes, as with `launch` (it was
-    refused as `give platform or surface, not both`);
-  - `launch_now`: `ok`, or `refused: ` and what `launch` would refuse now (the rocket not ready, overweight, empty, the
-    platform not stopped here); `line`, all of it in one line.
+- `preflight {position?, items?, platform?, surface?}` (read; Gemini, shift12/14) combines rocket cargo and
+  platform dispatch facts, by remote view in visible chunks. `surface` selects the planet (default yours);
+  `platform` remains the destination and can be given with `surface`:
+  - With `position`: `silo`, `position`, `rocket`, `rocket_ready`, `parts` while building, `built_parts` when
+    ready/rising, `next_parts` for the rocket after it, and `auto_requests`;
+    `cargo {items, rows [{item, count, each_kg, kg, stacks}], kg, lift_kg, free_kg, over_kg, slots, free_slots}`.
+  - With `items`: `order [{item, want, aboard, lacks, fits, you_hold}]` (`fits`: how many of what it lacks the rocket
+    takes by weight and slots).
+  - With `platform`: `platform {name, where, at, arrived, headed_here, next_stop, from, to, eta_to, eta_s,
+    distance_left_km, connection_length_km, flown_fraction, speed_km_s, eta_basis, eta_unknown, arrival_unknown,
+    requests [{item, min, hub, aboard, lacks, lacks_after}], not_requested, incoming, incoming_cargo, ammo_rates,
+    hub_chunks, line}`.
+    Requests are active hub sections importing from this planet, even before the platform departs for it; section
+    multipliers apply, and item qualities are counted separately. `hub` includes main and trash inventories;
+    `aboard` is this rocket's cargo. `lacks = max(0, min - hub)`; `lacks_after = max(0, min - hub - aboard)`
+    (zero lacks fields omitted). `not_requested` is rocket cargo it does not request from here.
+    `incoming`/`incoming_cargo` list rockets already on their way to the hub, `ammo_rates` gives ammo per type over
+    the last leg, and `hub_chunks` counts hub slots occupied by asteroid chunks, as `platforms` does. Incoming cargo
+    is reported separately and is not subtracted from `lacks_after`. The line includes the incoming-cargo summary.
+    These destination diagnostics are read once per call, including when multiple silos are compared.
+  - An ETA is game seconds at the current speed, rounded up: remaining connection distance / (`platform.speed * 60`).
+    Remaining distance is `(1 - flown_fraction) * connection_length_km`, using the direction toward the current
+    schedule stop (or the last visited endpoint when no matching schedule stop exists). `eta_basis` names the
+    calculation, and `eta_to` names the endpoint. A leg to another planet has that planet's ETA, with
+    `arrival_unknown` for this planet. Zero speed, no connection, or a departure still pending: `eta_unknown`, with
+    no invented arrival time. Wait conditions, acceleration, later legs and cargo sent in the meantime are not
+    predicted. Already stopped here: `arrived: true`, `eta_s: 0`.
+  - Without `platform`: `platforms` lists ours stopped here or flying/scheduled next here, arrived first then ETA,
+    then name. A stopped platform paused at another planet is excluded. Each row has the same timing fields and
+    only requests from here unmet by its hub, plus what this rocket adds and `lacks_after`; destination diagnostics
+    (`incoming`, `incoming_cargo`, `ammo_rates`, `hub_chunks`) are included when a platform is named.
+  - Without `position`: `surface`, `silos` (the above per-silo views, nearest your coordinates first), and
+    `silos_as_of` (the start tick of the completed discovery pass). Each row has its position, readiness, parts,
+    cargo kg and top items, and its own `platform`/`platforms` comparison; rockets are compared separately.
+    Discovery uses the existing background census, without a surface scan during the call; newly built silos
+    appear after its next completed pass. Cargo, parts and visibility are read now. Before the first pass with
+    the index, `silos_pending: true`; no visible indexed silos still returns platform timing/requests.
+  - `launch_now`: `ok`, or `refused: ` and the current checks (rocket not ready, overweight, empty, named platform
+    not stopped here). This does not select a destination. `line` is one line, including platform names containing
+    newlines; every silo and platform also has a one-line summary.
+  - `fh call preflight --args '{"surface":"fulgora","platform":"Sunward"}'`
+  - `fh call preflight --args '{"position":{"x":-65.5,"y":90.5}}'`
   - `fh call preflight --args '{"items":{"agricultural-science-pack":1000},"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`
 - supply and science count a silo's rocket once, as silo cargo (`silo rockets N`); its output inventory is that rocket,
   which was also counted under machine outputs (Astra, 06:29: 90 counted for 45 in the rocket).
@@ -3557,7 +3590,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   once. The operator path returns every tell, which
   the stream shows on its logistics ticker (`-> Sol: text`, never voiced). CLI: `fh tell luna "text"`,
   `fh tell luna,sol - <<'EOF'`, `fh tell team "text"`, `fh tells`, `fh tells --since N`, `fh tells --limit 10`.
-- `operator {text}` (1..500 characters, one line; longer is cut and the reply carries `cut {length, kept}`) files a
+- `operator {text}` (1..2000 bytes after whitespace normalization, one line; longer is refused without filing
+  or consuming a rate-limit slot) files a
   request to the operator: harness bugs, tool requests, things viewers asked for that the agents cannot do. The reply:
   `seq`. At most one a minute and 10 an hour per agent; a refusal names the wait. No teammate sees it. The operator
   path `operator_requests {since?, limit?}` returns `{seq,tick,from,text}` oldest first and `cursor`; the stream

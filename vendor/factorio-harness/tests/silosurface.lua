@@ -176,3 +176,31 @@ recipe_now=nil; assembler.crafting_progress=0.4
 fails(function() astra('configure',{surface='vulcanus',position={x=2.5,y=135.5},recipe='rocket-fuel'}) end,'remote recipe change')
 assembler.crafting_progress=0
 print('silosurface: ok')
+
+-- Preflight's platform is the destination even with a remote planet; no-position discovery uses the census index.
+local old_find=vulcanus.find_entities_filtered
+vulcanus.find_entities_filtered=function(f) assert(f.position, 'preflight never scans a whole surface'); return old_find(f) end
+r=astra('preflight',{surface='vulcanus',platform='Sunward',position=silo.position})
+eq(r.platform.name,'Sunward'); eq(r.platform.arrived,true); eq(r.built_parts,'50/50'); eq(r.position.x,14.5)
+storage.agent_harness.census={done={start=99,silos={[3]={far,silo}}}}
+r=astra('preflight',{surface='vulcanus',platform='Sunward'})
+eq(#r.silos,1,'hidden silo omitted'); eq(r.silos[1].position.x,14.5); eq(r.silos_as_of,99)
+fails(function() astra('preflight',{surface='vulcanus',platform='Sunward',position=far.position}) end,'not visible')
+vulcanus.find_entities_filtered=old_find
+print('preflight remote surface: ok')
+
+-- The runtime adapters carry round2250b diagnostics alongside dispatch ETA and discovery, with surface+platform.
+local old_ammo,old_incoming=runtime.freight.ammo,runtime.freight.incoming
+runtime.freight.ammo=function(pl) eq(pl,sunward); return {'ammo reserve'} end
+runtime.freight.incoming=function(pl) eq(pl,sunward); return {rockets=1,cargo='calcite*20',lines={'incoming calcite'}} end
+defines.inventory.hub_main=13
+hub.get_inventory=function(id)
+  if id==13 then return {{valid_for_read=true,name='metallic-asteroid-chunk'},get_contents=function() return {} end} end
+end
+r=astra('preflight',{surface='vulcanus',platform='Sunward'})
+eq(r.silos[1].platform.eta_s,0); eq(r.silos[1].platform.incoming_cargo,'1 rocket on the way: calcite*20')
+eq(r.silos[1].platform.ammo_rates[1],'ammo reserve')
+eq(r.silos[1].platform.hub_chunks,'asteroid chunks take 1 of 1 slots (metallic 1)')
+assert(r.line:find('arrived',1,true) and r.line:find('1 rocket on the way',1,true),r.line)
+runtime.freight.ammo,runtime.freight.incoming=old_ammo,old_incoming
+print('preflight merged destination diagnostics: ok')

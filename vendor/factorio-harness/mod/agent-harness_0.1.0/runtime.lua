@@ -1308,7 +1308,7 @@ function handlers.describe()
         gun='in a vehicle: a gun name (tank-cannon, tank-machine-gun, tank-flamethrower, vehicle-machine-gun, spidertron-rocket-launcher-1..4)',
         ammo='in a vehicle: an ammo name (cannon-shell, explosive-cannon-shell, firearm-magazine, flamethrower-ammo, rocket, ...): the gun that takes it, its slot loaded from your inventory when empty or holding another kind',
         note='seated in a car, tank or spidertron as its gunner (the driver, unless driver_is_gunner is off and a passenger sits in) it fires the vehicle\'s selected gun from the vehicle\'s ammo slots; the turret turns toward the target as a player\'s cursor turns it; position= aims at the entity there (not our own), auto=true at the nearest enemy in radius; vehicle {drive} goes on while it fires; reply: vehicle, seat, gun, gun_slot, range, guns (each slot with its ammo), target, out_of_range',
-        outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={slot='gun|ammo|armor',item='owned item name',index='default 1'},
+        outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={slot='gun|ammo|armor',item='owned item name',index='optional exact slot; without it gun/ammo tries compatible empty slots in order, then slot 1; armor defaults to 1'},
       describe={}, inventory={full='true: the stacks as lists {name, quality, count}, as observe player has them',returns='the character\'s inventories as short lines (name*count, name@quality*count, or empty): inventory (main), free (slots), guns, ammo, armor, equipment (in the armor\'s grid), trash (trash slots, when any), cursor (the stack or ghost in hand, when any), crafting (hand queue), warnings (nearly full, hoarding); status {inventory=true} gives it in one line'},
       map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true: regions of water (a character cannot cross it), walkable water (shallow water, wetland, oil ocean: a character walks through) and lava',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)',returns='player, entities, resource_patches, ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the radius by item (rows for them only with entity_types/entity_names)'},
       status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
@@ -7385,11 +7385,24 @@ function handlers.equip(p,a)
   local names={gun='character_guns',ammo='character_ammo',armor='character_armor'}
   assert(names[a.slot],'slot must be gun, ammo, or armor')
   local inv=p.get_inventory(defines.inventory[names[a.slot]])
-  local index=integer(a.index,1,1,#inv,'index')
+  local index=a.index~=nil and integer(a.index,nil,1,#inv,'index') or nil
   assert(type(a.item)=='string','item required')
   local source=p.get_main_inventory().find_item_stack(a.item)
   assert(source,'item is not in inventory')
-  assert(inv[index].swap_stack(source),'item incompatible with slot or displaced item cannot fit')
+  -- An omitted index tries compatible empty slots first. An explicit index
+  -- always means that slot; failed swaps leave both stacks unchanged.
+  if index==nil and a.slot~='armor' then
+    for i=1,#inv do
+      if not inv[i].valid_for_read and inv[i].swap_stack(source) then
+        return {equipped=a.item,slot=a.slot,index=i}
+      end
+    end
+  end
+  index=index or 1
+  if not inv[index].swap_stack(source) then
+    local held=inv[index].valid_for_read and inv[index].name or 'empty'
+    error(string.format('%s cannot swap into %s slot %d (holds %s): incompatible item or displaced stack cannot fit; nothing moved',a.item,a.slot,index,held),0)
+  end
   return {equipped=a.item,slot=a.slot,index=index}
 end
 -- Why a ghost was not placed, and settings a pasted-over entity lacks (placewhy.lua).
@@ -7494,7 +7507,7 @@ function handlers.silo(p,a) return M.silo.read(p,a) end
 -- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),
 -- launch's min_cargo and arrived guard and a queue dry run's cargo (Luna).
 M.rocketload=require('rocketload'){cargo=M.cargo,remote_entity=remote_entity,reason=reason,
-  where=function(pl) return M.freight.where(pl) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
+  where=function(pl) return M.freight.where(pl) end,silos=function(p) return M.census.silos(p) end,
   ammo=function(pl) return M.freight.ammo(pl) end,incoming=function(pl) return M.freight.incoming(pl) end,
   hub_chunks=function(pl) return pl.hub and pl.hub.valid and space.hub_chunks(pl.hub) or nil end,
   reach_entity=function(p,pos) return entity(p,{position=pos}) end,
@@ -9338,10 +9351,12 @@ function handlers.cameras() return M.cameras.list() end
 -- clock runs for it like any timed action).
 function handlers.wait_until(p,a)
   assert(a.wake_on_viewers==nil or type(a.wake_on_viewers)=='boolean','wake_on_viewers must be true or false')
+  assert(a.wake_on_messages==nil or type(a.wake_on_messages)=='boolean','wake_on_messages must be true or false')
   local viewers=a.wake_on_viewers==true or nil
-  if a.pause_queue~=nil or a.wake_on_viewers~=nil then
+  local messages=a.wake_on_messages
+  if a.pause_queue~=nil or a.wake_on_viewers~=nil or messages~=nil then
     local copy={}
-    for k,v in pairs(a) do if k~='pause_queue' and k~='wake_on_viewers' then copy[k]=v end end
+    for k,v in pairs(a) do if k~='pause_queue' and k~='wake_on_viewers' and k~='wake_on_messages' then copy[k]=v end end
     a=copy
   end
   conditions.validate(a)
@@ -9355,8 +9370,8 @@ function handlers.wait_until(p,a)
   if met then return {outcome='met',saw=saw,until_tick=game.tick} end
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   state().active[p.index]={kind='wait_until',condition=condition,saw=saw,until_tick=game.tick+timeout,next_check=game.tick+FEED_CHECK,start_tick=game.tick,
-    wake_viewers=viewers}
-  return {until_tick=game.tick+timeout,condition=condition['until'],saw=saw}
+    wake_viewers=viewers,wake_messages=messages}
+  return {until_tick=game.tick+timeout,condition=condition['until'],saw=saw,wake_on_messages=messages}
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
@@ -10744,7 +10759,7 @@ function M.tick_action(index,action,event)
     finish(index,'player_unavailable')
   elseif action.retreat and event.tick%5==0 and M.retreat_due(index,p,action) then
     -- Hurt below its retreat (retreat.lua): it goes back after this loop.
-  elseif (action.kind=='wait_ticks' or action.kind=='wait_until') and not action.queued and action.start_tick
+  elseif (action.kind=='wait_ticks' or action.kind=='wait_until') and not action.queued and action.start_tick and action.wake_messages~=false
     and event.tick%30==0 and (M.board.inbox_tick(index,action.wake_viewers) or -1)>=action.start_tick then
     -- A tell or mention ends a direct wait (agent-minds study, fix 5: agents
     -- moved to waits nobody could interrupt; Grok chose wait_until for that);
