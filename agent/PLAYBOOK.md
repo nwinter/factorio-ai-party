@@ -82,7 +82,8 @@ Your character stands still while you think, and the clock does not.
   ...)`): it ends on a tell or mention, a new attack/enemy alert (`alert`), a `--until` condition as for sleep, or
   after `--max` seconds (up to 900); the team block comes with your next reply.
 - `./fh wait --max 150` (or `--until idle`) waits for your running action (and combat) to end, at most 150 s, and
-  returns at once when nothing runs.
+  returns at once when nothing runs (`outcome: idle`, exit 0, naming the last action and how long ago it ended when
+  that was before your previous call).
 - A tell or mention ends any wait early: a direct `wait_ticks`/`wait_until` (outcome `told` or `mentioned`), and
   `--wait` or `./fh wait` on an action (outcome `told`, `still_running`: the action keeps going).
 - A direct action that drives your character (walk, `move_to`, build, mine, transfer, collect, feed and the like)

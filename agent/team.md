@@ -109,8 +109,8 @@ already targets your character.
 - `./fh call trace --args '{"position":{"x":0,"y":0}}'` (a machine or lab; `"platform"` on a platform) lists per
   ingredient it lacks each feeding inserter, what that inserter reads and how much is there, and a container within 10
   tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
-  they end and what blocks them (on a belt tile: that belt from there), naming where other items join a lane (`joins
-  transport-belt (12,5) carrying iron-plate on the left lane: your iron-ore mixes in`); `{"item":"chemical-science-pack"}` follows every route from its makers to the labs.
+  they end and what blocks them (on a belt tile, a drill or a chest: from there, forward), naming where other items join a lane (`joins
+  transport-belt (12,5) carrying iron-plate on the left lane: your iron-ore mixes in`); `{"item":"chemical-science-pack"}` follows every route from its makers to the labs (for an ore, from the drills mining it).
 - `./fh call belt_route --args '{"from":{"x":0,"y":0},"to":{"x":600,"y":40},"return":true}'` lays a belt line as ghosts (via points, legs up to
   1000 tiles, over trees and wild plants it marks, water only with `"landfill":true`; `return` adds the line back beside it,
   crossing under it where its side is blocked). Belts, undergrounds and splitters say where items go in `belt` (inspect,
@@ -194,7 +194,9 @@ already targets your character.
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` (and `feed` or `collect {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one
   call; `legs` lists the route); `transfer {item, "from": "nearest"}` (`radius` up to 256 to walk) takes from the nearest chest
-  holding the item and says which, a `count` it lacks from the next ones, requester and buffer chests last; `transfer
+  holding the item and says which, a `count` it lacks from the next ones (one holding it all goes alone); chests that
+  feed something (requester and buffer chests, a chest an inserter takes from) only with `"feeding": true`, and walking
+  (`"walk": true` looks 32 tiles) none in a worm's reach, each named when left out; `transfer
   {from: {x,y}, to: {x,y}, item, count}` takes at one place and gives at the other in one call; `transfer`/`collect {positions,
   item | items, pick: "first_with_stock" | "most_stock"}` takes at one listed place that holds the item now (empty
   ones are `skipped`, not short; none: nothing walked), and `to` (`{x,y}` or `{item: {x,y}}`) carries it on to that
@@ -280,7 +282,7 @@ already targets your character.
   names everything to mine to open ground (chests, accumulators, walls, trees and rocks before poles and machines). A
   `build` batch that fails part way, and a real `place_ghosts`, say on the `warning:` line when what they place closes
   you in. `circuit_set` says `stays disabled` there when one of the entity's conditions is not met after the call;
-  `requests` `set` takes a map `{item: min}` too.
+  `requests` `set` takes a map `{item: min}` too; an entry without `max` keeps the slot's max (`"max": "inf"` sets none).
 - Turret ghosts from `place_ghosts` and `paste` request ammo, so the robots that build them bring it (`ammo`: a name,
   `{name, count}` or false; default 10 of what the logistic network there holds most of); so do the ghosts of turrets that died.
 - Water and Gleba wetland: `pole_route` shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost under
@@ -315,7 +317,8 @@ already targets your character.
 - `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'` lists up to 10 (`limit`
   up to 50) positions where it fits now, nearest first, by the game's build check (`blocked`: positions something
   stands in); `"separate":true` lists spots that do not overlap each other, `"powered":true` only spots in one of our
-  poles' supply areas. `build_path` mines the trees and rocks in its way by hand as it goes (`last.cleared`, `cleared_names`).
+  poles' supply areas; without them `overlapping` and `no_supply` count such spots, and count 0 names what is in the way
+  (`in_the_way`). `build_path` mines the trees and rocks in its way by hand as it goes (`last.cleared`, `cleared_names`).
 - `build`, `place_ghosts` and `placements` take a direction as the number inspect prints (0, 4, 8, 12) or a compass
   name. `map` and `grid` tell `walkable water` (`,` on the grid: shallow water, wetland, Fulgora's oil ocean, deep too)
   from water a character cannot cross (`~`).
