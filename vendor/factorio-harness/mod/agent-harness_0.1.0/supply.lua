@@ -43,6 +43,7 @@ return function(api)
   local KIND_ORDER = {'requester', 'passive-provider', 'active-provider', 'storage', 'buffer', 'chest', 'pad', 'pod', 'hub', 'vehicle'}
   local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
   local function try(fn, ...) local ok, v = pcall(fn, ...); if ok then return v end end
+  local slots = require('slots')()
   -- No closure per call: these run for every belt, chest and inserter.
   local function inventory(e, name)
     local id = defines.inventory[name]
@@ -582,7 +583,11 @@ return function(api)
         row.state, row.short = 'unmet', short
         local free = st.free_main + (row.buffers and st.free_buffer or 0)
         local held = st.held_main + (row.buffers and st.held_buffer or 0)
+        -- Every slot taken (Sol, 22:08: 494 spoilage among a requester's 48 slots read as "no idle robots"): before
+        -- any robot reason.
+        local full = not row.off and slots.full_of(row.e, t.item)
         if row.off then row.why = row.off
+        elseif full then row.why = 'inventory full: ' .. full.text; row.full = full
         elseif free > 0 and robots.idle == 0 then row.why = 'no idle robots'
         elseif free > 0 and row.min and row.min > short then row.why = 'short ' .. short .. ', below its minimum delivery ' .. row.min
         elseif free > 0 then row.why = 'free stock and idle robots'
@@ -1152,7 +1157,10 @@ return function(api)
           local state = m.e.valid and (api.status_name(m.e) or 'unknown')
           if state and state ~= 'working' then
             local lack = (not m.miner) and missing(m.e, m, nil) or {}
-            rows[#rows+1] = string.format('%s %s %s%s', m.e.name, at(m.e.position), state, #lack > 0 and ' (lacks ' .. table.concat(lack, ', ') .. ')' or '')
+            -- Its input holding spoilage its recipe does not take (Sol, 22:08).
+            local sp = (not m.miner) and slots.input_spoilage(m.e)
+            rows[#rows+1] = string.format('%s %s %s%s%s', m.e.name, at(m.e.position), state, #lack > 0 and ' (lacks ' .. table.concat(lack, ', ') .. ')' or '',
+              sp and '; ' .. sp.text or '')
             for _, ing in ipairs(SHORT[state] and lack or {}) do
               if #fixes < FIX_MAX then fixes[#fixes+1] = fix_line(surface, force, m, ing) end
             end
@@ -1210,7 +1218,7 @@ return function(api)
 
   M.schema = {supply = {item='item name', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole',
     radius='with near: 1..512 tiles (default 64); alone: that far around you, on your surface',
-    returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); chests (largest 5; what a requester or buffer chest asks for); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
+    returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); chests (largest 5; what a requester or buffer chest asks for); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
 
   function M.supply(p, a)
     local item = a.item

@@ -220,6 +220,25 @@ for _,x in ipairs(N.alert_groups(force)) do by[x.kind]=x end
 eq(by.power_high.n,90); eq(by.power_high.unit,'%')
 eq(by.power_high.line,'electric #7 draw at or above 85% of capacity for 2 min: 20.0 MW of 22.1 MW now; 3 machines on low power')
 eq(by.robots_busy.line,'logistic #3: no idle logistic robot for 12 min (147 robots; 1 requests unfilled 60+ s)')
+eq(by.requester_full,nil,'a requester with room is no requester_full')
+-- Every slot of the short requester taken (Sol, 22:08: 494 spoilage among a requester's 48 slots, robots could not
+-- deliver bioflux): requester_full, with what fills it.
+do
+  local owner=ln.requester_points[1].owner
+  local slots={{'spoilage',50},{'spoilage',44},{'iron-plate',20}}
+  local inv={count_empty_stacks=function() return 0 end,can_insert=function() return false end}
+  for i,s in ipairs(slots) do inv[i]={valid_for_read=true,name=s[1],count=s[2]} end
+  owner.type='logistic-container'; owner.name='requester-chest'; owner.valid=true; owner.position={x=48.5,y=34.5}
+  owner.get_inventory=function() return inv end
+  run(5); storage.networks.views={}
+  by={}
+  for _,x in ipairs(N.alert_groups(force)) do by[x.kind]=x end
+  eq(by.requester_full.n,1); eq(by.requester_full.center.x,49)
+  eq(by.requester_full.line,'requester chests with every slot taken while a request is short 60+ s: 1 in network 3 (spoilage 94 among their slots): '
+    ..'requester-chest (48.5,34.5) asks iron-plate: all 3 slots taken (spoilage 94 in 2 slots, iron-plate 20 in 1 slot)')
+  owner.type=nil; owner.get_inventory=nil
+  run(5); storage.networks.views={}
+end
 -- The same groups in steps, one network a step (pushalerts' background read; operator 18:12: networks.alert_groups
 -- 58-60 ms in one tick on world n).
 do

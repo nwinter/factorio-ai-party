@@ -543,4 +543,32 @@ do
   eq(R.starved(agent('sol',nauvis))[31],'stone-furnace (105,5) in your claim "6" no ingredients')
   ents.nauvis={}
 end
+-- Spoilage in the input of a machine short of ingredients (Sol, 22:08; Gleba): a group naming each machine.
+do
+  defines.entity_status.item_ingredient_shortage=7; defines.inventory.assembling_machine_input=22
+  local st={board={items={}}}
+  local R=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,
+    agents=function() return {{index=2,name='sol'}} end, who=function(p) return p.name end,
+    place=function() return {key='nauvis',position={x=40,y=10}} end}
+  ents.nauvis={}; ents.vulcanus={}
+  local function input(stacks)
+    local t={}
+    for i,s in ipairs(stacks) do t[i]={valid_for_read=true,name=s[1],count=s[2]} end
+    t.get_item_count=function(name) local n=0 for _,s in ipairs(stacks) do if s[1]==name then n=n+s[2] end end return n end
+    return t
+  end
+  local recipe={ingredients={{name='yumako-mash',amount=15},{name='jelly',amount=12}}}
+  local function chamber(x,status,stacks)
+    local inv=input(stacks)
+    return ent('nauvis','biochamber','assembling-machine',x,10,{status=status,get_recipe=function() return recipe end,
+      get_inventory=function(id) eq(id,22); return inv end})
+  end
+  chamber(40.5,7,{{'spoilage',50},{'yumako-mash',3}})
+  chamber(44.5,7,{{'yumako-mash',3}})
+  chamber(48.5,0,{{'spoilage',20}})
+  local g=R.read(sol,{kind='input_spoilage'}).groups
+  eq(#g,1); eq(g[1].count,1)
+  eq(g[1].line,'1 biochamber short of ingredients with spoilage in their input near (41,10): biochamber (40.5,10): input holds spoilage 50 in 1 of its 2 slots (its recipe does not take spoilage)')
+  ents.nauvis={}
+end
 print('pushalerts: ok')
