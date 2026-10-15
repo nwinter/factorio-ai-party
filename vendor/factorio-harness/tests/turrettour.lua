@@ -236,9 +236,15 @@ eq(r.nothing,'no turret there holds under 10 rounds')
 -- position alone: the turret there.
 r=opus('rearm',{position={x=22,y=6},below=10})
 eq(r.held_enough,'1 turret holds 10 rounds or more: gun-turret (22,6) 12')
--- Only the one under below goes on to the transfer (out of reach here, so the call fails naming it alone).
-ok2,err2=pcall(opus,'rearm',{positions={{x=22,y=6},{x=20,y=0}},below=10})
+-- Only the one under below goes on to the transfer (out of reach here: with walk: false the call fails naming it alone).
+ok2,err2=pcall(opus,'rearm',{positions={{x=22,y=6},{x=20,y=0}},below=10,walk=false})
 assert(not ok2 and tostring(err2):find('the first (20,0): entity is out of reach',1,true) and not tostring(err2):find('(22,6)',1,true),tostring(err2))
-ok2,err2=pcall(opus,'rearm',{positions={{x=22,y=6}},ticks=60})
-assert(not ok2 and tostring(err2):find('ticks applies with radius, area or surface',1,true),tostring(err2))
+-- By default (autowalk.lua) the one out of reach is walked to, as the radius tour walks; the one holding enough is left.
+r=opus('rearm',{positions={{x=22,y=6},{x=20,y=0}},below=10})
+eq(r.places,1); eq(r.held_enough,'1 turret holds 10 rounds or more: gun-turret (22,6) 12'); has(r.walking,'gun-turret (20,0) is ')
+has(r.walking,': walking into reach first (walk: false refuses instead)')
+eq(active('opus').kind,'gather'); eq(active('opus').targets[1].entity.position.x,20)
+opus('stop',{})
+ok2,err2=pcall(opus,'rearm',{positions={{x=22,y=6}},ticks=60,walk=false})
+assert(not ok2 and tostring(err2):find('ticks applies with radius, area, surface or walk',1,true),tostring(err2))
 print('turrettour: ok')

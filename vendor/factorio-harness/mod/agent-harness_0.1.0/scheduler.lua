@@ -7,7 +7,9 @@ return function(api)
     -- load_silo walk (Luna, shift14 21:20): the list aboard, and launched
     loaded=true,launched=true,
     -- clear_cliffs and use_item with cliff explosives (Sol 22:45), and a vehicle drive's dry run
-    cliffs_destroyed=true,previewed=true}
+    cliffs_destroyed=true,previewed=true,
+    -- a call made after its walk into reach (autowalk.lua)
+    done=true}
   -- construct's 'incomplete' (ghosts left for lack of items, or failures) is a failure.
   local forbidden = {attach=true, detach=true, recipes=true, technologies=true, inspect=true, blueprint_export=true, blueprint_list=true, stop=true, describe=true, status=true, observe=true, screenshot=true, map=true, nearest=true, craftable=true, scan=true, power=true, grid=true, rates=true, bottleneck=true, stock=true, platforms=true,
     order_set=true, order_remove=true, orders=true, orders_pause=true, orders_resume=true}

@@ -319,4 +319,28 @@ nav=storage.agent_harness.active[runtime.bots.index_of('astra')]
 eq(nav.attack_replan,nil,'no new plan')
 storage.agent_harness.damage={}
 astra('stop')
+-- Private 2.0.77 autowalk check: a worm added after a clear destination was cached must be seen on the next
+-- call, before the minute-long path cache expires. Tour stops and move_to goals use the same fresh local read.
+do
+  storage.agent_harness.enemy_chunks={}
+  structures={}
+  local p=runtime.bots.lookup(runtime.bots.index_of('astra'))
+  local goal={x=20,y=0}
+  local mode=A.mode(nil)
+  eq(A.inside(p,goal,mode),nil)
+  structures[1]={valid=true,name='medium-worm-turret',type='turret',position={x=40,y=0},force=enemy}
+  advance(1)
+  local c=A.inside(p,goal,mode)
+  assert(c,'the next call sees a new worm on a previously empty charted chunk')
+  eq(c.m.name,'medium-worm-turret'); eq(c.d,20)
+  local check=A.goal_check(p,{x=0,y=0},goal,mode)
+  eq(check.m.name,'medium-worm-turret'); assert(check.spot and check.spot.x<10)
+  -- Multiple nearby tour stops in one tick share the refreshed chunks.
+  local find=surface.find_entities_filtered
+  surface.find_entities_filtered=function() error('same-tick goal repeated a chunk scan') end
+  eq(A.inside(p,goal,mode).m.name,'medium-worm-turret')
+  surface.find_entities_filtered=find
+  structures={}; advance(1)
+  eq(A.inside(p,goal,mode),nil,'a removed worm does not keep refusing the destination')
+end
 print('avoid: ok')
