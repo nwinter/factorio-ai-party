@@ -45,20 +45,27 @@ turn() {
     "") started=1; [ "\$((\$(date +%s) - t0))" -ge 15 ] || sleep "\${POG_AGY_RETRY_WAIT:-30}" ;;
     *) sleep "\$q" ;;
   esac
+  # after a sleep the next turn starts with how long it rested and that the game went on (operator 17:17); the rest
+  # is over (resting.json -> resting-last.json)
+  case "\$q" in ""|stop) ;; *) woke=\$(python3 '$root/tools/agy-quota.py' --woke '$dir') ;; esac
 }
+woke=""
 turn -p "\$(cat '$prompt')"
 ${POG_ONE_TURN:+exit 0  # POG_ONE_TURN: smoke tests run the first turn only}
 while [ "\$(date +%s)" -lt "\$((deadline - 20))" ]; do
   # (POG_AGY_TOKENS_CMD: tools/test_quota.py's stand-in for the context size)
   tokens=\$(\${POG_AGY_TOKENS_CMD:-python3 '$root/tools/context.py' agy-tokens} '$dir')
   left=\$(( (deadline - \$(date +%s) + 59) / 60 ))
+  pre="\${woke:+\$woke }"; woke=""
   # No fresh start in the last 2 minutes: it costs a re-read of notes.md (shake3: Grok's compaction 39 s before its
   # deadline ended its play).
   if [ "\$started" = 0 ]; then
-    turn -p "\$(cat '$prompt') The deadline is \$left minutes away."
+    turn -p "\$(cat '$prompt') \${pre}The deadline is \$left minutes away."
   elif [ "$limit" -gt 0 ] && [ "\$tokens" -ge "$limit" ] && [ "\$((deadline - \$(date +%s)))" -gt 120 ]; then
     echo "{\"time\": \"\$(date '+%Y-%m-%d %H:%M:%S')\", \"event\": \"agy-fresh\", \"tokens\": \$tokens}" >> context.log
-    turn -p "\$(cat '$prompt') This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat. The deadline is \$left minutes away."
+    turn -p "\$(cat '$prompt') \${pre}This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat. The deadline is \$left minutes away."
+  elif [ -n "\$pre" ]; then
+    turn -c -p "\${pre}The deadline is \$left minutes away (deadline.txt; the clock: line shows it), the only stop condition."
   elif [ "\$timed_out" = 1 ]; then
     turn -c -p "Continue where you were: the harness paused this turn to check your context size; nothing else changed. The deadline is \$left minutes away."
   else

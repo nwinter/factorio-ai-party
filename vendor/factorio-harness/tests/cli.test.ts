@@ -116,6 +116,41 @@ test('--wait on a pickup that took everything succeeds (picked_up)',async()=>{
     assert.equal(JSON.parse(stdout).ok,true);
   });
 });
+// Cliff explosives by hand (Sol 17:21 and 17:32): clear_cliffs --wait (and use_item cliff-explosives --wait) waits for
+// the throws to land, and cliffs_destroyed ends it as a success; fh wait after it too.
+const cliffCalls: Array<[string, string]> = [['clear_cliffs','{"positions":[{"x":82,"y":38.5}]}'],['use_item','{"item":"cliff-explosives","position":{"x":82,"y":38.5}}']];
+for (const [action,args] of cliffCalls) {
+  test(`--wait on ${action} with cliff explosives waits for the blast and succeeds (cliffs_destroyed)`,async()=>{
+    let polls=0;
+    await engine(request=>{
+      if(request.action===action)return {ok:true,result:{until_tick:7260,spots:[{position:{x:82,y:38.5},cliffs:[{name:'cliff-gleba'}]}],range:10}};
+      assert.equal(request.action,'status');polls++;
+      return {ok:true,result:polls===1?{active:{kind:'clear_cliffs',until_tick:7260}}:
+        {active:false,last:{kind:'clear_cliffs',outcome:'cliffs_destroyed',tick:70,thrown:1,destroyed:[{name:'cliff-gleba',position:{x:82,y:38.5}}],left:3}}};
+    },async port=>{
+      const {stdout}=await cli(port,['call',action,'--args',args,'--wait']);
+      const reply=JSON.parse(stdout);
+      assert.equal(reply.ok,true); assert.equal(reply.result.completion.last.outcome,'cliffs_destroyed'); assert.equal(polls,3);
+    });
+  });
+}
+test('fh wait after clear_cliffs: cliffs_destroyed is a success (exit 0)',async()=>{
+  await engine(()=>({ok:true,result:{active:false,last:{kind:'clear_cliffs',outcome:'cliffs_destroyed',tick:70,thrown:1,left:3}}}),async port=>{
+    const {stdout}=await cli(port,['wait']);
+    assert.equal(JSON.parse(stdout).ok,true);
+  });
+});
+test('use_item with a grenade is not waited for (no until_tick)',async()=>{
+  let statuses=0;
+  await engine(request=>{
+    if(request.action==='use_item')return {ok:true,result:{used:'grenade',kind:'throw',left:3}};
+    statuses++;
+    return {ok:true,result:{active:false}};
+  },async port=>{
+    const {stdout}=await cli(port,['call','use_item','--args','{"item":"grenade","position":{"x":5,"y":0}}','--wait']);
+    assert.equal(JSON.parse(stdout).ok,true); assert.ok(statuses<=1,String(statuses));
+  });
+});
 test('--wait on a transfer that is awaiting a hand craft waits for the feed to land',async()=>{
   let polls=0;
   await engine(request=>{

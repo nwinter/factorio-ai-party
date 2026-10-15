@@ -762,7 +762,9 @@ async function main() {
   // target_destroyed: a shoot at an entity ended because it is gone.
   // transferred: a transfer that walked (walk, pick, a courier's to) moved items (Astra 07:53: exit 1 'Control ended:
   // transferred' after moving 200 solid fuel); unreached and nothing_collected still fail.
-  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear','dropped','transferred','previewed'];
+  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear','dropped','transferred','previewed',
+    // clear_cliffs (use_item cliff-explosives): the explosives destroyed cliffs (Sol 17:21/17:32: fh wait exited 1 on it)
+    'cliffs_destroyed'];
   // How long to wait: an explicit --wait-timeout, else until the action's own
   // end tick (at 60 ticks/s plus a margin), never less than 30 s nor more than 15 min.
   // ownEnd: the action's end tick already reflects --wait-timeout (wait_until), so
@@ -952,7 +954,7 @@ async function main() {
       // as 'drive' (request #5: the wait returned the previous action's result). A transfer that walks (walk, pick)
       // runs as 'gather' too.
       const kinds = action === 'collect' || action === 'feed' || action === 'recover' ? ['gather'] : ['rearm','refuel','transfer'].includes(action) ? ['gather','feed'] : action === 'build' || action === 'load_silo' ? ['feed']
-        : action === 'vehicle' ? ['drive'] : [action];
+        : action === 'vehicle' ? ['drive'] : action === 'use_item' ? ['clear_cliffs'] : [action];
       const stillRunning = active && (action === 'shoot' || action === 'drop' || kinds.includes(active.kind));
       if (status.ok && stillRunning && told(status, acceptedTick) && action !== 'wait_ticks' && action !== 'wait_until') {
         if (!throughTells) return {...status, result:{...status.result, interrupted:{inbox:wakeInbox(status, acceptedTick), active}}};
@@ -1265,7 +1267,10 @@ async function main() {
         || (action === 'collect' && (args.wait_ticks !== undefined || args.keep_taking !== undefined) && reply.result?.until_tick !== undefined)
         || (action === 'vehicle' && args.drive !== undefined)
         // drop full: pods past the free hatches go as each hatch frees up (space.lua).
-        || (action === 'drop' && reply.result?.until_tick !== undefined);
+        || (action === 'drop' && reply.result?.until_tick !== undefined)
+        // cliff explosives thrown by hand: each lands before the next (clear_cliffs; use_item cliff-explosives runs it;
+        // Sol 17:21/17:32: --wait returned at once with until_tick)
+        || (['clear_cliffs','use_item'].includes(action) && reply.result?.until_tick !== undefined);
     if (wait && reply.ok && waits) {
       onAccepted?.(reply);
       const completion = await waitForAction(action, reply.result?.until_tick, reply.tick, before);

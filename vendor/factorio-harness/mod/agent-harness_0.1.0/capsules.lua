@@ -18,7 +18,7 @@ return function(api)
     clear_cliffs = {position='{x,y} a cliff (as scan lists it) or a spot whose blast reaches cliffs', positions='or 1..16 of them, cleared in order',
       walk='default true: walk into the explosives\' range of each spot first (pathfinding as move_to); false: a spot out of range ends out_of_range',
       item='default cliff-explosives', quality='default normal', ticks='1..36000 (default 7200)',
-      returns='throws cliff explosives as a player does: the game\'s own capsule (range 10 tiles from the character, cooldown 30 ticks, blast radius 1.5), one per spot, each landing before the next; a timed call. Reply: until_tick, spots [{position, cliffs: the cliffs in its blast now}], range, held; refused at once when no listed spot has a cliff in its blast (the nearest cliff named). last: thrown, destroyed [{name, position}], skipped [{position, why}], left (explosives still held); outcomes cliffs_destroyed | nothing_destroyed | out_of_items | out_of_range | timed_out'},
+      returns='throws cliff explosives as a player does: the game\'s own capsule (range 10 tiles from the character, cooldown 30 ticks, blast radius 1.5), one per spot, each landing before the next; a timed call. Reply: until_tick, spots [{position, cliffs: the cliffs in its blast now}], range, held; refused at once when no listed spot has a cliff in its blast (the nearest cliff named). last: thrown, destroyed [{name, position}], skipped [{position, why}], left (explosives still held); outcomes cliffs_destroyed | nothing_to_do (every spot was clear already) | nothing_destroyed | out_of_items | out_of_range | timed_out; fh --wait waits for the end'},
   }
   local function ready_ticks()
     local s = api.state()
@@ -197,7 +197,8 @@ return function(api)
       return nil
     end
     local pos = action.spots[action.i]
-    if not pos then return #r.destroyed > 0 and 'cliffs_destroyed' or 'nothing_destroyed' end
+    -- every spot clear already, nothing thrown: nothing_to_do (a success); thrown and nothing gone: nothing_destroyed
+    if not pos then return #r.destroyed > 0 and 'cliffs_destroyed' or (r.thrown == 0 and 'nothing_to_do') or 'nothing_destroyed' end
     local cl = in_blast(p.surface, pos, cap.radius)
     if #cl == 0 then
       r.skipped[#r.skipped+1] = {position=pos, why='no cliff left in the blast'}

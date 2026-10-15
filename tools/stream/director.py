@@ -136,6 +136,8 @@ class Director:
         for a in agents:
             if not a["alive"] or not a.get("position") or not a.get("seen", True):
                 continue
+            if a.get("activity") == "resting":  # between turns, pacing its quota (pacing.py): its character stands
+                continue
             off_air = now - self.last_on_air.get(a["name"], self.started)
             bonus = min(self.cfg["airtime_cap"], off_air * self.cfg["airtime_bonus"])
             idle_penalty = 0.5 if a["activity"] == "idle" else 1.0

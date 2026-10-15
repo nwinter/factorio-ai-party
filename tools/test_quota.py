@@ -101,10 +101,15 @@ def agy_loop():
         r = subprocess.run([os.path.join(ws, ".agy-loop.sh")], env=env, capture_output=True, text=True, timeout=60)
         assert r.returncode == 0, r.stderr
         calls = open(os.path.join(d, "calls.log")).read().splitlines()
-        # The first prompt again after the quota wait (no conversation began), then Continue; the last 429 stops it.
-        assert calls == ["-p Play.", "-p Play. The deadline is 30 minutes away.", "-c -p"] or \
-            (len(calls) == 3 and calls[0] == "-p Play." and calls[1].startswith("-p Play. The deadline is")
-             and calls[2] == "-c -p"), calls
+        # The first prompt again after the quota wait (no conversation began), saying it waited (eng/pacing), then
+        # Continue; the last 429 stops it.
+        assert len(calls) == 3 and calls[0] == "-p Play." and calls[2] == "-c -p", calls
+        assert calls[1].startswith("-p Play. You waited 1 min for your quota to reset; the game went on meanwhile") \
+            and calls[1].endswith("The deadline is 30 minutes away.") or \
+            calls[1].endswith("The deadline is 29 minutes away."), calls
+        # the rest was on record while it slept, and over once the next turn began (resting.json -> resting-last.json)
+        last = json.load(open(os.path.join(ws, "resting-last.json")))
+        assert last["reason"] == "quota" and last["until"] >= last["since"] and not os.path.exists(os.path.join(ws, "resting.json")), last
         events = [json.loads(l) for l in open(os.path.join(ws, "context.log"))]
         assert [e["event"] for e in events] == ["agy-quota", "agy-quota-stop"], events
         assert "Individual quota reached" in events[0]["error"] and events[0]["sleep"] >= 1, events
@@ -203,7 +208,16 @@ def agy_pace():
             write(89.0)        # 2% above the line now: the sleep is longer, up to the cap
             w2 = m.pace(d, since, now + 4 * 3600)
             assert w2 > w1 and w2 <= m.MAX_SLEEP, (w1, w2)
+            # the rest on record for the stream and the supervisor (eng/pacing): resting.json, until it wakes
+            rs = json.load(open(os.path.join(d, "resting.json")))
+            assert rs["reason"] == "pace" and rs["sleep_s"] == w2 and rs["used"] == 89.0 and rs["resets"], rs
+            assert rs["until"] - rs["since"] == w2, rs
+            line = m.woke(d, now=rs["until"])
+            assert line == (f"You rested {round(w2 / 60)} min to pace your weekly quota (it resets {rs['resets']}); the game "
+                            "went on meanwhile: check what changed (./fh call status, chat, board) before acting."), line
+            assert not os.path.exists(os.path.join(d, "resting.json")) and m.woke(d) == ""  # over: said once
             assert m.pace(d, since, now + 600) == "stop"   # the sleep would pass the deadline
+            assert not os.path.exists(os.path.join(d, "resting.json"))  # (a stop is no rest)
             os.environ["POG_AGY_PACE"] = "off"
             assert m.pace(d, since, now + 4 * 3600) is None
             events = [json.loads(l)["event"] for l in open(os.path.join(d, "context.log"))]
