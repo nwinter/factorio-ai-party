@@ -32,7 +32,7 @@ return function(api)
       base.area={lt,rb}
     else base.position=a.position and api.position(a.position) or p.position;base.radius=api.integer(a.radius,32,1,256,'radius') end
     local found,note=api.find_kinds(p,base,a.types)
-    assert(#found<=1024,'more than 1024 entities in the refuel area; use a smaller area or types')
+    assert(#found<=1024,'refuel area read exceeds the 1024-entity limit')
     local targets,hidden={},0
     for _,e in ipairs(found) do
       if e.valid and e.force==p.force then
@@ -43,7 +43,7 @@ return function(api)
         end
       end
     end
-    assert(#targets<=128,'more than 128 burners need fuel; use a smaller area')
+    assert(#targets<=128,'more than 128 burners need fuel; the tour limit is 128')
     local from
     if type(a.from)=='table' then
       from=api.entity(p,{position=api.position(a.from)})

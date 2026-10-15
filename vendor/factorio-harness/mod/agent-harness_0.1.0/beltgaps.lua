@@ -82,7 +82,7 @@ return function(api)
     for i=2,#points do
       local x,y=math.floor(points[i-1].x),math.floor(points[i-1].y)
       local tx,ty=math.floor(points[i].x),math.floor(points[i].y)
-      assert(x==tx or y==ty,'each belt line leg must be horizontal or vertical; use via for corners')
+      assert(x==tx or y==ty,'each belt line leg must be horizontal or vertical; via supplies corner positions')
       local dx,dy=tx>x and 1 or tx<x and -1 or 0,ty>y and 1 or ty<y and -1 or 0
       while true do
         local k=key(x,y)
