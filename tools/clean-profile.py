@@ -89,13 +89,16 @@ def codex(d):
     # POG_FULL_TOOLS=1 (tools/full_tools.py): live web search, the multi-agent tools (spawn_agent and the rest) and the
     # run's shared team-tools folder writable; view_image is on either way.
     full = os.environ.get("POG_FULL_TOOLS") == "1"
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from full_tools import subagents_off
+    sub = full and os.path.basename(os.path.abspath(d)) not in subagents_off()   # agent/subagents-off.txt
     text += ('# clean-profile: no personal developer instructions, skills, plugins or multi-agent roles; readable '
              'reasoning summaries\n'
              'developer_instructions = ""\n'
              'model_reasoning_summary = "concise"\n'
              + ('web_search = "live"\n' if full else '') +
              '[features]\n'
-             f'multi_agent = {"true" if full else "false"}\n'
+             f'multi_agent = {"true" if sub else "false"}\n'
              'skip_host_skill_discovery = true\n'
              'skill_search = false\n'
              'plugins = false\n'
