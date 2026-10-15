@@ -39,6 +39,20 @@ return function(api)
   local FULL = {waiting_for_space_in_destination=true, full_output=true, not_enough_space_in_output=true}
 
   local function try(fn, ...) local ok, v = pcall(fn, ...); if ok then return v end end
+  -- Items a resource gives when mined (ores, stone, coal, scrap): only those have drills among their makers. Read from
+  -- the resource prototypes once (on a copy of world n the drill search cost 6 ms a call, for any item).
+  local MINED
+  function M.mined(item)
+    if not MINED then
+      MINED = {}
+      local list = try(function() return prototypes.get_entity_filtered{{filter='type', type='resource'}} end) or {}
+      for _, r in pairs(list) do
+        local mp = try(function() return r.mineable_properties end)
+        for _, prod in ipairs(mp and mp.products or {}) do if prod.name then MINED[prod.name] = true end end
+      end
+    end
+    return MINED[item] == true
+  end
   local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
   local function place(e) return e.name .. ' ' .. at(e.position) end
   local function side(i) return i % 2 == 1 and 'left' or 'right' end
@@ -820,11 +834,24 @@ return function(api)
       if area then f.position, f.radius = area.position, area.radius end
       return surface.find_entities_filtered(f)
     end
-    -- Makers: crafters whose recipe makes it, nearest to you first.
-    local makers, states = {}, {}
+    -- Makers: crafters whose recipe makes it, nearest to you first; and mining drills on a resource that gives it (an
+    -- ore, stone, coal, scrap: friction3, Grok 23:29: trace {item: copper-ore} read "nothing on nauvis makes copper-ore",
+    -- and it followed the ore belts by hand for 8 min): what a drill drops onto is where its routes start.
+    local makers, states, drills = {}, {}, {}
     for _, e in ipairs(find{type={'assembling-machine', 'furnace', 'rocket-silo'}, limit=4096}) do
       local r = seen(e.position) and recipe_of(e)
       for _, prod in ipairs(r and r.products or {}) do if prod.name == item then makers[#makers+1] = e; break end end
+    end
+    if M.mined(item) then
+      for _, e in ipairs(find{type='mining-drill', limit=4096}) do
+        if seen(e.position) then
+          local res = try(function() return e.mining_target end)
+          local mp = res and try(function() return res.prototype.mineable_properties end)
+          for _, prod in ipairs(mp and mp.products or {}) do
+            if prod.name == item then makers[#makers+1] = e; drills[e] = true; break end
+          end
+        end
+      end
     end
     local origin = area and area.position or surface == p.surface and p.position or {x=0, y=0}
     table.sort(makers, function(x, y) return dist2(x.position, origin) < dist2(y.position, origin) end)
@@ -837,6 +864,20 @@ return function(api)
       local st = status(m)
       states[st] = (states[st] or 0) + 1
       local taken = false
+      if drills[m] then
+        -- A drill drops straight onto a belt, into a chest or a machine (no inserter takes from it).
+        local t = try(function() return m.drop_target end)
+        taken = true
+        if t and t.valid and BELT[t.type] then
+          starts[#starts+1] = {e=t, k=drop_lane(t, m), from=string.format('%s %s drops onto %s', m.name, at(m.position), place(t)), hops=0}
+        elseif t and t.valid then
+          notes[#notes+1] = string.format('%s %s drops into %s%s', m.name, at(m.position), place(t), CONTAINER[t.type] and container_full(t, item) and ' (full)' or '')
+          if CONTAINER[t.type] then budget.boxes[#budget.boxes+1] = {e=t, route=0, hops=0} end
+        else
+          local dp = try(function() return m.drop_position end)
+          notes[#notes+1] = string.format('%s %s %s: drops onto nothing%s', m.name, at(m.position), st, dp and ' at ' .. at(dp) or '')
+        end
+      end
       for _, row in ipairs(idx_of(m).by_pick[m.unit_number] or {}) do
         local i, t = row.e, row.drop
         if allows(filters_of(i), item) then
@@ -859,11 +900,14 @@ return function(api)
       end
       if not taken then notes[#notes+1] = string.format('%s %s %s: no inserter takes %s from it', m.name, at(m.position), st, item) end
     end
+    local n_drills = 0
+    for _ in pairs(drills) do n_drills = n_drills + 1 end
     local parts = {}
     for st, n in pairs(states) do parts[#parts+1] = n .. ' ' .. st end
     table.sort(parts)
     out.makers = total_makers == 0 and ('nothing on ' .. surface.name .. ' makes ' .. item) or
-      string.format('%d making it%s: %s', total_makers, total_makers > MAX_MAKERS and ' (the nearest ' .. MAX_MAKERS .. ' traced)' or '', table.concat(parts, ', '))
+      string.format('%d making it%s%s: %s', total_makers, n_drills > 0 and string.format(' (%d mining drill%s)', n_drills, n_drills == 1 and '' or 's') or '',
+        total_makers > MAX_MAKERS and ' (the nearest ' .. MAX_MAKERS .. ' traced)' or '', table.concat(parts, ', '))
     walk(starts, idx_of, p, item, budget, pk)
     -- On through chests: their own inserters take it further (each chest once).
     local done = {}
@@ -965,13 +1009,21 @@ return function(api)
       assert(a.all == nil, 'all goes with a backward trace (no forward)')
       return M.forward(p, a)
     end
+    -- A start with nothing to trace back (a drill, a belt, a chest; friction3, Grok 23:02: a drill start was refused,
+    -- naming forward=true): its output, forward, said so.
+    local e = target(p, a)
+    if (e.type == 'mining-drill' or BELT[e.type] or CONTAINER[e.type]) and a.all == nil and not wants(e, p) then
+      local out = M.forward(p, a)
+      out.note = (out.note and out.note .. '; ' or '') .. string.format('%s has no recipe to trace back: traced forward (its output)', e.name)
+      return out
+    end
     return M.back(p, a)
   end
 
   M.schema = {trace = {position='{x,y} of a machine or lab in sight (platform= for one on a platform); with forward also a belt tile',
     all='boolean: every ingredient, not only those it lacks for its next craft',
     forward='boolean: follow its output instead: the inserters taking from it and the belts they load, lane by lane, to where they end; on a belt tile, that belt\'s lanes from there (those carrying something now, else both); every walk names where other items join its lanes (merges)',
-    item='an item instead of position: the routes from every machine making it to the labs, machines and chests taking it',
+    item='an item instead of position: the routes from every machine making it (and every mining drill on a resource that gives it, from where it drops) to the labs, machines and chests taking it',
     surface='with item: a surface name (default yours)',
     near='with item: optional {x,y}: makers and labs in this area only (cheaper than the whole surface)', radius='with near: 1..512 tiles (default 64)',
     platform='optional platform name: trace on that platform (platform coordinates, hub at 0,0)',

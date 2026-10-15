@@ -179,8 +179,10 @@ eq(#bot('placements',{name='offshore-pump',direction='north'}).placements,0)
 -- No water around: no pump candidate, nothing checked.
 p=bot('placements',{name='offshore-pump',near={x=-20,y=0}})
 eq(#p.placements,0); eq(p.checked,0)
-fails(function() bot('placements',{name='offshore-pump',radius=25}) end,'radius out of range')
-fails(function() bot('placements',{name='offshore-pump',limit=51}) end,'limit out of range')
+-- Past the most: searched at the most and said (friction3: Luna's radius 32 and Gemini's 30 were refused).
+p=bot('placements',{name='offshore-pump',radius=25,limit=51})
+eq(p.radius,24); eq(p.note,'radius 25 is past the most, 24: searched at 24; limit 51 is past the most, 50: searched at 50')
+fails(function() bot('placements',{name='offshore-pump',radius=0}) end,'radius out of range')
 fails(function() bot('placements',{name='offshore-pump',direction='northeast'}) end,'direction is north, east, south or west')
 -- A number as inspect prints it.
 p=bot('placements',{name='offshore-pump',direction=4,limit=2})
@@ -252,6 +254,9 @@ assert(at['0,0'] and at['1,-2'] and not at['2,2'] and not at['-1,1'])
 -- separate (friction1300: Gemini built accumulators from one placements list, and the third was blocked by the
 -- second, 1 tile apart): each spot overlaps none nearer in the list, so all of them can be built.
 local all=p
+-- friction3 (Gemini built accumulators from overlapping spots): a list whose spots overlap each other says so, and
+-- names separate; with separate, it does not.
+assert(all.overlapping and all.overlapping:find('pairs of these spots overlap each other (each fits alone): separate=true lists spots that do not',1,true),tostring(all.overlapping))
 asked={}
 p=bot('placements',{name='accumulator',near={x=1,y=1},radius=3,limit=50,separate=true})
 eq(p.separate,true); assert(#p.placements>1 and #p.placements<#all.placements,#p.placements)
@@ -294,6 +299,14 @@ for _,s in ipairs(p.placements) do at0[s.position.x..','..s.position.y]=true end
 -- within 3 tiles of (1,1): (0,0), (0,-1), (-1,-1); (-1,0) is on the tree
 eq(#p.placements,3); assert(at0['0,0'] and at0['0,-1'] and at0['-1,-1'],'powered spots')
 eq(#asked,#p.placements)
+-- without powered: the spots no pole supplies are counted, naming powered (an accumulator takes electricity)
+prototypes.entity.accumulator.electric_energy_source_prototype={}
+p=bot('placements',{name='accumulator',near={x=1,y=1},radius=3,limit=50,separate=true})
+eq(p.overlapping,nil)
+local outside=0
+for _,sp in ipairs(p.placements) do if not (sp.position.x<=0 and sp.position.y<=0) then outside=outside+1 end end
+assert(outside>0)
+eq(p.no_supply,outside..' of these spots lie in no pole\'s supply area: powered=true lists spots that do')
 -- both: powered spots that do not overlap
 p=bot('placements',{name='accumulator',near={x=1,y=1},radius=3,limit=50,powered=true,separate=true})
 for i,s in ipairs(p.placements) do
@@ -362,6 +375,10 @@ end
 asked={}
 p=bot('placements',{name='accumulator',near={x=14,y=0},radius=6,limit=50})
 eq(reads,0)
+-- nothing fits: what is in the way, the tiles by name (friction3: Gemini's 12 count-0 replies said only how many were blocked)
+local none=bot('placements',{name='accumulator',near={x=15,y=0},radius=2,limit=5})
+eq(none.count,0)
+assert(none.in_the_way and none.in_the_way:find('^nothing fits within 2 tiles of %(15,0%): tiles accumulator cannot stand on: water %d+'),tostring(none.in_the_way))
 assert(p.blocked and p.blocked>0)
 for _,a in ipairs(asked) do assert(a.position.x+1<=10,'over the lake: '..a.position.x) end
 surface.count_tiles_filtered=nil; surface.find_tiles_filtered=find_tiles
