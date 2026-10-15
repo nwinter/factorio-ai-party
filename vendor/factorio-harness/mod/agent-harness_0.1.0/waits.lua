@@ -10,11 +10,16 @@ return function(api)
   -- has stalled (shake4: Muse's move job stuck pathfinding through a sleep).
   local STILL_TICKS = 1800
   local STARVED_TICKS = 600 -- a starved wake looks at the sleeper's claims every 10 s
+  local MAX_ANY = 8         -- conditions in one until=any
+  -- A condition in words: its kind and what it names.
+  local function texts_of(c)
+    return c['until'] .. (c.technology and ' ' .. c.technology or c.item and ' ' .. c.item or c.platform and ' ' .. c.platform or '')
+  end
   local MOVING = {walk=true, move_to=true, build_path=true, kite=true, collect=true, feed=true, rearm=true, refuel=true}
   local WAKE_VIEWERS = 'optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too; without it a viewer\'s @mention waits for your next reply (team block) and wakes nothing'
   M.schema = {
     wait_ticks = {ticks='1..54000 simulation ticks: the character stands idle that long (a direct timed action, outcome duration_elapsed, or told|mentioned when a tell or a teammate\'s mention ends it early; use --wait), or a queue step', wake_on_viewers=WAKE_VIEWERS, pause_queue='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'},
-    sleep = {seconds='1..900', condition='optional wait_until condition {until=researched|item_count|rocket_ready|crafting_done|..., ...}: the sleep also ends when it holds (woke=condition, saw); researched without technology means the research running now; item_count may take positions (chests); {until=alert}: a new attack, enemy group or enemy base alert (woke=alert); {until=alert, kinds=[low_power, no_power, no_fuel, ..., starved]}: a new or grown alert group of those kinds addressed to you, or (starved) a machine in your claims newly lacking ingredients (woke=alert, alert=its text)',
+    sleep = {seconds='1..900', condition='optional wait_until condition {until=researched|item_count|rocket_ready|crafting_done|..., ...}: the sleep also ends when it holds (woke=condition, saw); researched without technology means the research running now; item_count may take positions (chests); {until=alert}: a new attack, enemy group or enemy base alert (woke=alert); {until=alert, kinds=[low_power, no_power, no_fuel, ..., starved]}: a new or grown alert group of those kinds addressed to you, or (starved) a machine in your claims newly lacking ingredients (woke=alert, alert=its text); {until=any, conditions=[...]} (or a list): 1..8 conditions, alerts among them, whichever holds first wakes it (met names it)',
       peek='boolean: the reply leaves the team block for your next reply (fh wait --until)', wake_on_viewers=WAKE_VIEWERS,
       note='fh sleep SECONDS [--until ...]: waits while the game runs (in turns mode it advances the game); your current action and queue keep going, and the reply says first which (while_asleep). Returns early when your character takes damage or dies, a teammate\'s message mentions you (a viewer\'s @mention waits for your next reply unless wake_on_viewers), a teammate tells you something (tell), a board item of yours is assigned or changed by someone else, eggs of ours on your surface or built by you will hatch within 5 minutes (eggs), your running queue finishes or stalls (a step fails, or a walking step has not moved you for 30 s), or the condition holds; a dead bot sleeps until it respawns. sleep_check reports woke=damaged|died|respawned|mentioned|told|board|eggs|alert|queue_done|queue_stalled|condition|elapsed'},
     sleep_check = {peek='boolean: leave mentions unread (the CLI polls with peek, then reads once)', returns='woke (nil while sleeping), slept_s, health/lost when damaged, mention, tell, board, eggs, queue (what finished or stalled), saw (the condition), queue_steps (steps your queue finished during the sleep)'},
@@ -96,42 +101,67 @@ return function(api)
     -- A sleep with its own condition says what it waits for: never a repeat.
     local again = a.condition == nil and repeat_of(p, seconds)
     if again then return again end
-    local condition, alert
+    -- Several conditions (Muse, 21:20: wake on whichever of two or three chests fills first; Grok: `alert|platform_arrived
+    -- NAME`): {until=any, conditions=[...]} (or a list), whichever holds first wakes it.
+    local members
     if a.condition ~= nil then
       assert(type(a.condition) == 'table', 'condition is a wait_until condition: {until=..., ...}')
+      if a.condition['until'] == 'any' or a.condition[1] ~= nil then
+        members = a.condition['until'] == 'any' and a.condition.conditions or a.condition
+        assert(type(members) == 'table' and #members >= 1 and #members <= MAX_ANY,
+          'until=any takes conditions: 1..' .. MAX_ANY .. ' wait_until conditions (alert among them); whichever holds first wakes it')
+      else
+        members = {a.condition}
+      end
     end
     -- until=alert (fh wait --until alert): a new attack, enemy group or enemy base alert for the team; with kinds
     -- (Luna, 19:50: low power, starvation in a claim), a new or grown alert group of those kinds addressed to you, or
     -- starved: a machine in one of your claims that lacks ingredients and did not when the sleep began.
-    local kinds
-    if a.condition ~= nil and a.condition['until'] == 'alert' then
-      alert = true
-      if a.condition.kinds ~= nil then
-        kinds = type(a.condition.kinds) == 'string' and {a.condition.kinds} or a.condition.kinds
-        assert(type(kinds) == 'table' and #kinds >= 1 and #kinds <= 16, 'kinds: 1..16 alert kinds (game_alerts names them: low_power, no_power, no_fuel, boiler_fuel, ...; starved: machines lacking ingredients in your claims)')
-        for _, k in ipairs(kinds) do assert(type(k) == 'string' and k:match('^[%w_.-]+$'), 'kinds are alert kind names') end
+    local conditions, texts, alert, plain, kinds = {}, {}, nil, nil, nil
+    for _, m in ipairs(members or {}) do
+      assert(type(m) == 'table' and type(m['until']) == 'string', 'each condition is a wait_until condition: {until=..., ...}')
+      if m['until'] == 'alert' then
+        alert = true
+        if m.kinds ~= nil then
+          local list = type(m.kinds) == 'string' and {m.kinds} or m.kinds
+          assert(type(list) == 'table' and #list >= 1 and #list <= 16, 'kinds: 1..16 alert kinds (game_alerts names them: low_power, no_power, no_fuel, boiler_fuel, ...; starved: machines lacking ingredients in your claims)')
+          kinds = kinds or {}
+          for _, k in ipairs(list) do
+            assert(type(k) == 'string' and k:match('^[%w_.-]+$'), 'kinds are alert kind names')
+            kinds[#kinds+1] = k
+          end
+          assert(#kinds <= 16, 'kinds: 1..16 alert kinds')
+          texts[#texts+1] = 'alert ' .. table.concat(list, ' ')
+        else
+          plain = true
+          texts[#texts+1] = 'alert'
+        end
+      else
+        assert(m['until'] ~= 'any', 'until=any takes plain conditions, not another any')
+        local condition = {}
+        for k, v in pairs(m) do condition[k] = v end
+        if condition['until'] == 'researched' and condition.technology == nil then
+          local research = p.force.current_research
+          assert(research, 'no research is running; name the technology')
+          condition.technology = research.name
+        end
+        api.validate_condition(condition)
+        conditions[#conditions+1] = condition
+        texts[#texts+1] = texts_of(condition)
       end
-    elseif a.condition ~= nil then
-      condition = {}
-      for k, v in pairs(a.condition) do condition[k] = v end
-      if condition['until'] == 'researched' and condition.technology == nil then
-        local research = p.force.current_research
-        assert(research, 'no research is running; name the technology')
-        condition.technology = research.name
-      end
-      api.validate_condition(condition)
     end
+    local condition = #conditions > 0
     assert(a.wake_on_viewers == nil or type(a.wake_on_viewers) == 'boolean', 'wake_on_viewers must be true or false')
     local c = p.character
-    local record = {start_tick=game.tick, until_tick=game.tick + seconds * 60, health=c and c.valid and c.health or nil, condition=condition,
-      wake_viewers=a.wake_on_viewers == true or nil}
+    local record = {start_tick=game.tick, until_tick=game.tick + seconds * 60, health=c and c.valid and c.health or nil,
+      conditions=condition and conditions or nil, wake_viewers=a.wake_on_viewers == true or nil}
     -- A dead bot sleeps until it respawns (or a mention, or time up).
     record.dead_until = api.dead_until and api.dead_until(p.index) or nil
     record.board_seq = api.board_seq and api.board_seq() or nil
     record.egg_seq = api.egg_seq and api.egg_seq() or nil
     local q = queue_of(p.index)
     if running(q) then record.queue = true end
-    if alert and not kinds then record.alert_seq = api.state().alert_seq or 0 end
+    if plain then record.alert_seq = api.state().alert_seq or 0 end
     if kinds then
       local starved, rest = false, {}
       for _, k in ipairs(kinds) do if k == 'starved' then starved = true else rest[#rest+1] = k end end
@@ -151,17 +181,20 @@ return function(api)
     record.while_asleep = out.while_asleep
     out.sleeping_s = seconds
     out.until_tick = record.until_tick
-    if condition then
-      local ok, met, saw = pcall(api.condition, p, condition)
+    if #texts > 0 then out.condition = table.concat(texts, ' | ') end
+    local saws = {}
+    for i, cond in ipairs(conditions) do
+      local ok, met, saw = pcall(api.condition, p, cond)
       assert(ok, met)
-      out.condition = condition['until'] .. (condition.technology and ' ' .. condition.technology or condition.item and ' ' .. condition.item or '')
-      out.saw = saw
+      saws[#saws+1] = saw
       -- Met already: the first check ends the sleep.
-      if met then
+      if met and not record.woke then
         record.woke = 'condition'; out.already_met = true
-        record.out = {while_asleep=record.while_asleep, slept_s=0, until_tick=record.until_tick, woke='condition', saw=saw}
+        record.out = {while_asleep=record.while_asleep, slept_s=0, until_tick=record.until_tick, woke='condition', saw=saw,
+          met=#members > 1 and texts_of(cond) or nil}
       end
     end
+    if #saws == 1 then out.saw = saws[1] elseif #saws > 1 then out.saw = saws end
     sleeps()[p.index] = record
     -- In turns mode time only runs when asked to.
     if api.clock_mode() == 'turns' and not record.woke then api.advance(p, math.min(seconds * 60, 36000)) end
@@ -172,8 +205,8 @@ return function(api)
       out.wakes_on = 'respawn, ' .. mentions .. ', a tell, a board item of yours'
     else
       out.wakes_on = 'damage, death, ' .. mentions .. ', a tell, a board item of yours' ..
-        (record.queue and ', your queue finishing or stalling' or '') .. (condition and ', the condition' or '') .. (alert and ', a new alert' or '')
-      if alert then out.condition = kinds and 'alert ' .. table.concat(kinds, ' ') or 'alert' end
+        (record.queue and ', your queue finishing or stalling' or '') .. (condition and (#conditions > 1 and ', any of the conditions' or ', the condition') or '')
+        .. (alert and ', a new alert' or '')
     end
     return out
   end
@@ -276,10 +309,20 @@ return function(api)
         if not record.starved_base[unit] then out.alert = line; return 'alert' end
       end
     end
-    if record.condition and c and c.valid then
-      local ok, met, saw = pcall(api.condition, p, record.condition)
-      if ok then out.saw = saw end
-      if ok and met then return 'condition' end
+    -- (record.condition: a sleep begun before until=any)
+    local list = record.conditions or (record.condition and {record.condition})
+    if list and c and c.valid then
+      local saws = {}
+      for _, cond in ipairs(list) do
+        local ok, met, saw = pcall(api.condition, p, cond)
+        if ok then saws[#saws+1] = saw end
+        if ok and met then
+          out.saw = saw
+          if #list > 1 then out.met = texts_of(cond) end
+          return 'condition'
+        end
+      end
+      if #saws == 1 then out.saw = saws[1] elseif #saws > 1 then out.saw = saws end
     end
     if record.queue then
       local reason = queue_why(p, record, out)

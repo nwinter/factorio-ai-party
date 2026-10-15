@@ -415,8 +415,10 @@ already targets your character.
   `launched`, `short`, `no_rocket`; `last.trips`, `last.stops`). A silo's `rocket_ready` is true only for a built
   rocket (`built_parts` 50/50); `next_parts` counts parts for the rocket after it.
 - `./fh platform NAME` also shows `freight` (per stop what was expected down and up, what left the hub, came aboard
-  and spoiled, the rockets sent to it; per leg what spoiled on the way) and `spoiling` (when its spoilable items spoil,
-  against the arrival). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when
+  and spoiled, the rockets sent to it, the cargo pods sent down with what each landing pad received and the pods still
+  in flight; per leg what spoiled on the way), `spoiling` (when its spoilable items spoil, against the arrival) and
+  `engine` (the last 60 and 180 s: mean, lowest and highest speed, thruster fuel and oxidizer used and made, the
+  thrusters' tanks at start and end, the pumps' share of time working). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when
   `from` is not given.
 - `./fh sleep 600 --until "rocket_ready 65.5,14.5"` (or `wait_until {"until":"rocket_ready","position":...}`) waits for
   that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
@@ -424,6 +426,8 @@ already targets your character.
   `above`; several `X,Y` are summed). `./fh wait --until "alert low_power starved"` wakes on a new or grown alert
   group of those kinds addressed to you (`low_power`, `no_power`, `no_fuel`, ... as `game_alerts` names them), or
   `starved`: an assembler or furnace in your own claims that lacks ingredients and did not when the wait began.
+  Several joined by `|` wake on whichever holds first: `./fh wait --until "alert|platform_arrived Sunward gleba"`,
+  `"item_count coal>=50 at 10,39 | item_count iron-plate>=100 at 12,39"` (the wake names the one that held).
 - `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the
   patches on the charted map nearest first: amount left (oil: yield), distance from you and from our nearest building,
   enemy spawners and worms within 50 tiles, and how many of our drills are on it.
