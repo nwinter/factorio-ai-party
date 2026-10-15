@@ -402,6 +402,54 @@ return function(api)
     if action == 'observe' and VIEWS[args.scope] then return end
     error(no_body(b), 0)
   end
+  -- A bot's corpse (Opus, shift12 15:20: a corpse recovery call). The game leaves a character-corpse where the
+  -- character died, stamped with the tick of death; for a bot it names no player (player index 65536, no unit
+  -- number), so it is found the tick the death is seen: near the last spot (kept every 30 ticks; within 32 tiles, else
+  -- 128 for a fast vehicle), died within the last 2 s, no player's and no other bot's, the newest, then the nearest
+  -- (two bots dying the same tick). Kept newest first, up to 5; recover walks to them and takes everything (an emptied
+  -- corpse goes, as a player's).
+  function M.note_corpse(b, tick)
+    local surface = b.surface and game.get_surface(b.surface)
+    if not (surface and b.position) then return end
+    local taken = {}
+    for _, o in pairs(bots().by_index) do
+      for _, c in ipairs(o.corpses or {}) do taken[c.surface .. '|' .. c.position.x .. ',' .. c.position.y .. '|' .. c.tick] = true end
+    end
+    for _, radius in ipairs{32, 128} do
+      local best, bt, bd
+      for _, k in pairs(surface.find_entities_filtered{type='character-corpse', position=b.position, radius=radius, limit=64}) do
+        local t, who = k.character_corpse_tick_of_death, k.character_corpse_player_index
+        local dx, dy = k.position.x - b.position.x, k.position.y - b.position.y
+        local d = dx * dx + dy * dy
+        local okp, player = pcall(function() return who and game.get_player(who) end)
+        if not okp then player = nil end
+        if t and t <= tick and tick - t <= 120 and not player and not taken[surface.name .. '|' .. k.position.x .. ',' .. k.position.y .. '|' .. t]
+          and (not bt or t > bt or (t == bt and d < bd)) then best, bt, bd = k, t, d end
+      end
+      if best then
+        b.corpses = b.corpses or {}
+        table.insert(b.corpses, 1, {surface=surface.name, position={x=best.position.x, y=best.position.y}, tick=bt})
+        while #b.corpses > 5 do table.remove(b.corpses) end
+        return
+      end
+    end
+  end
+  -- A bot's corpses still there: {entity, surface, position, tick}, newest first; ones gone are forgotten.
+  function M.corpses(index)
+    local b = bots().by_index[index]
+    if not b then return {} end
+    local out, keep = {}, {}
+    for _, c in ipairs(b.corpses or {}) do
+      local surface = game.get_surface(c.surface)
+      local found
+      for _, k in pairs(surface and surface.find_entities_filtered{type='character-corpse', position=c.position, radius=0.5, limit=8} or {}) do
+        if k.character_corpse_tick_of_death == c.tick then found = k end
+      end
+      if found then keep[#keep+1] = c; out[#out+1] = {entity=found, surface=c.surface, position=c.position, tick=c.tick} end
+    end
+    b.corpses = #keep > 0 and keep or nil
+    return out
+  end
   -- Deaths and respawns, like a player's: the normal respawn delay, then a
   -- fresh character at the spawn point with what a respawning player gets.
   function M.tick(tick)
@@ -422,6 +470,8 @@ return function(api)
         b.character = nil
         b.dead_until_tick = tick + RESPAWN_TICKS
         b.deaths = (b.deaths or 0) + 1
+        -- Its corpse, for recover (runtime.lua): never fatal to the tick.
+        pcall(M.note_corpse, b, tick)
         if api.crafting then api.crafting.forget(b) end
         if api.stop then api.stop(b.index, 'died') end
       elseif tick >= b.dead_until_tick then

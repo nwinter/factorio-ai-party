@@ -428,4 +428,39 @@ do
   eq(by.nauvis.to[1],'luna (claim)'); eq(by.vulcanus.to[1],'luna (nearest)')
   ents.nauvis={}; ents.vulcanus={}
 end
+-- 9. A turret group is read again when it is about to be shown (Haiku, shift12 15:20: two empty-ammo alerts sent it to
+-- guns that were already full): only turrets still empty count; refilled, the group is not shown, in the team block or
+-- the read, and when they run dry again it is news. The background job keeps its read until the next one is done.
+do
+  local st11={board={items={}}}
+  local R=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){
+    state=function() return st11 end,
+    agents=function() return {{index=2,name='sol'}} end,
+    who=function(p) return p.name end,
+    place=function(index) return {key='nauvis',position={x=300,y=300}} end}
+  ents.nauvis={}; ents.vulcanus={}
+  local guns={}
+  for i=1,3 do guns[i]=ent('nauvis','gun-turret','ammo-turret',300+i*2,300,{unit_number=700+i}) end
+  local h={}
+  game.tick=game.tick+1800
+  local l=R.lines(sol,h); eq(#l,1); eq(l[1],'3 gun-turret out of ammo near (304,300); rearm')
+  st11.push_bg=true   -- that read stays the current one
+  -- Two refilled since the read: the read counts the one left; one built since is not in this read.
+  ent('nauvis','gun-turret','ammo-turret',320,300,{unit_number=799})
+  guns[1].rounds=10; guns[2].rounds=10
+  game.tick=game.tick+151*60
+  local r=R.read(sol,{kind='no_ammo'}).groups
+  eq(#r,1); eq(r[1].count,1); eq(r[1].at[1].x,306); eq(r[1].line,'1 gun-turret out of ammo near (304,300); rearm')
+  eq(#R.lines(sol,h),0,'fewer than told: not news'); eq(h.push.told[next(h.push.told)],1)
+  -- All refilled: nothing shown, and forgotten as told.
+  guns[3].rounds=10
+  eq(#R.read(sol,{kind='no_ammo'}).groups,0,'the read drops it')
+  game.tick=game.tick+151*60
+  eq(#R.lines(sol,h),0); eq(next(h.push.told),nil,'refilled: told forgotten')
+  -- Dry again (the same read): news again.
+  guns[1].rounds=0
+  game.tick=game.tick+151*60
+  l=R.lines(sol,h); eq(#l,1); eq(l[1],'1 gun-turret out of ammo near (304,300); rearm')
+  ents.nauvis={}
+end
 print('pushalerts: ok')
