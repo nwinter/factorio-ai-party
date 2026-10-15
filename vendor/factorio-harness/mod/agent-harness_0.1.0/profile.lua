@@ -33,6 +33,24 @@ return function()
       line({'', 'agent-harness profile second tick=', run.second * 60, ' n=', b.n, ' key=', key, ' time=', b.p})
     end
     run.bucket = {}
+    -- The harness's Lua heap that second (operator 18:33: one inspect took 287 ms and the same one 3.4 ms two seconds
+    -- later; world n's heap went 72 MB to 42 MB between two reads): KB now, KB it grew and fell between ticks (a fall is
+    -- a garbage collection finishing), read once a tick.
+    if run.heap then
+      line({'', 'agent-harness profile heap tick=', run.second * 60, ' kb=', math.floor(run.heap), ' grew_kb=', math.floor(run.grew),
+        ' fell_kb=', math.floor(run.fell)})
+      run.grew, run.fell = 0, 0
+    end
+  end
+  local function heap_sample()
+    if type(collectgarbage) ~= 'function' then return end
+    local ok, kb = pcall(collectgarbage, 'count')
+    if not (ok and type(kb) == 'number') then return end
+    if run.heap then
+      local d = kb - run.heap
+      if d >= 0 then run.grew = run.grew + d else run.fell = run.fell - d end
+    end
+    run.heap = kb
   end
   local function slot(t, key)
     local b = t[key]
@@ -71,7 +89,7 @@ return function()
     assert(seconds >= 1 and seconds <= MAX_SECONDS, 'seconds must be 1..' .. MAX_SECONDS)
     seconds = math.floor(seconds)
     if run then finish('restarted') end
-    run = {start_tick=game.tick, until_tick=game.tick + seconds * 60, second=math.floor(game.tick / 60), bucket={}, total={}, lines=0, dropped=0}
+    run = {start_tick=game.tick, until_tick=game.tick + seconds * 60, second=math.floor(game.tick / 60), bucket={}, total={}, lines=0, dropped=0, grew=0, fell=0}
     return {ok=true, tick=game.tick, until_tick=run.until_tick,
       note='lines "agent-harness profile ..." land in the server log (factorio-current.log); rank them with tools/profile_log.py'}
   end
@@ -83,6 +101,11 @@ return function()
     if run then add(key, timer, top) end
     if not out[1] then error(out[2], 0) end
     return table.unpack(out, 2, out.n)
+  end
+  -- fn(...) timed as part `label` while a run is on (a background job's steps by kind, runtime M.timed).
+  function M.part(label, fn, ...)
+    if not run then return fn(...) end
+    return timed('part ' .. label, false, fn, ...)
   end
   -- Wraps R.dispatch, R.on_event and R.tick, and each {table, field, label}
   -- of parts. Idle cost: one check per call.
@@ -113,6 +136,7 @@ return function()
     end
     R.tick = function(event)
       if not run then return tick(event) end
+      heap_sample()
       timed('tick', true, tick, event)
       if run and game.tick >= run.until_tick then finish('elapsed') end
     end

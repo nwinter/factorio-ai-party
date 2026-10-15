@@ -151,6 +151,19 @@ eq(#trace.trace(p,{position={x=0.5,y=0.5},all=true}).ingredients,1)
 local fwd=trace.trace(p,{position={x=0.5,y=4.5}})
 has(fwd.note,'iron-chest has no recipe to trace back: traced forward (its output)'); eq(fwd.entity,'iron-chest')
 fails(function() trace.trace(p,{position={x=0.5,y=4.5},all=true}) end,'has no recipe or research to trace')
+-- throughput (Sol, 19:50): the inserters into and out of the machine go to craftrate.feed (tests/craftrate.lua), its
+-- line shown when a side is short.
+do
+  local seen
+  local tr=require('trace'){supply=supply,entity=lookup,remote_entity=lookup,status_name=function(e) return e.status end,
+    position=function(v) return {x=v.x,y=v.y} end,integer=function(v,d) return v or d end,
+    feed=function(e,into,from) seen={e=e,into=into,from=from}; return {line='short'} end}
+  local out=inserter(0.5,-2.5,'inserter',A,C1)
+  r=tr.trace(p,{position={x=0.5,y=0.5}})
+  eq(seen.e,A); eq(#seen.into,1); eq(seen.into[1].name,'long-handed-inserter'); eq(#seen.from,1); eq(seen.from[1],out); eq(r.throughput,'short')
+  eq(trace.trace(p,{position={x=0.5,y=0.5}}).throughput,nil,'without feed')
+  out.valid=false
+end
 
 -- 2. Astra: a collector's output down a belt run (one internal line), an underground pair (output_lines), to a belt end
 -- whose right lane is full of oxide chunks; the inserters on the way take metallic chunks and iron ore only.

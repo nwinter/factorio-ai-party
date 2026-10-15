@@ -999,13 +999,10 @@ return function(api)
     end
   end
   M.order_finds = order_finds
-  local function logistic(n, f, surface, defer)
-    local rows, by_id = {}, {}
-    orders_store(n, f)
-    local others = not defer and other_networks(f) or nil
-    for _, ln in ipairs(logistic_networks(f, surface)) do
+  -- One logistic network's row (nil: no id); its line is made by logistic_done, with every row of the surface.
+  local function logistic_row(n, f, surface, ln, defer, others)
       local id = try(function() return ln.network_id end)
-      if id then
+      if not id then return nil end
         local v = M.logistic_view(ln)
         local r = {id=id, roboports=v.roboports, personal=v.personal, center=v.center, view=v,
           logistic=v.logistic.total, logistic_idle=v.logistic.idle, construction=v.construction.total, construction_idle=v.construction.idle,
@@ -1040,13 +1037,22 @@ return function(api)
           r.ghosts = r.backlog.ghosts
         end
         r.deliveries = deliveries(n, ln, v, short)
-        rows[#rows+1] = r; by_id[id] = r
-      end
-    end
-    if #rows == 0 then return rows end
+        return r
+  end
+  local function logistic_done(surface, rows)
     for _, r in ipairs(rows) do logistic_line(surface, r) end
     table.sort(rows, function(a, b) return a.roboports > b.roboports or (a.roboports == b.roboports and a.id < b.id) end)
     return rows
+  end
+  local function logistic(n, f, surface, defer)
+    local rows = {}
+    orders_store(n, f)
+    local others = not defer and other_networks(f) or nil
+    for _, ln in ipairs(logistic_networks(f, surface)) do
+      local r = logistic_row(n, f, surface, ln, defer, others)
+      if r then rows[#rows+1] = r end
+    end
+    return logistic_done(surface, rows)
   end
   -- A view that has read every network: the orders it saw are the ones remembered (gone ones are dropped).
   local function orders_seen(n, f)
@@ -1140,6 +1146,12 @@ return function(api)
       end
     end
   end
+  -- A call timed as its own profile part while the operator profile runs (runtime M.timed); else just the call.
+  local function timed(label, fn, ...)
+    if api.timed then return api.timed(label, fn, ...) end
+    return fn(...)
+  end
+  local view_do
   function M.view_step(n, f, tick)
     local job = n.view_jobs[f.name]
     local v = n.views[f.name]
@@ -1158,6 +1170,12 @@ return function(api)
     if not job or not walk.due(job, tick, VIEW_TICKS) then return end
     job.n = job.n + 1
     local step = job.steps[job.i]
+    -- (each kind of step its own profile part, networks.view.<step>: operator 18:12, networks.view_tick 186 ms in one
+    -- game second at 17:53 with no part to say which step)
+    local kind = step.step == 'walk' and (job.list and 'walk_slice' or 'walk_band') or step.step
+    return timed('networks.view.' .. kind, view_do, n, f, tick, job, step)
+  end
+  view_do = function(n, f, tick, job, step)
     if step.step == 'done' then
       local v2 = {tick=job.start, surfaces={}}
       for _, s in ipairs(surfaces()) do
@@ -1215,9 +1233,34 @@ return function(api)
       else finish_orders(n, f, surface, row.logistic or {}, q.found); job.orders = nil end
       return
     end
+    -- The logistic networks one a step (by id: found again each step), then their lines.
+    if step.step == 'logistic' then
+      local q = job.logi
+      if not q then
+        q = {ids={}, i=1, rows={}}
+        for _, ln in ipairs(logistic_networks(f, surface)) do
+          local id = try(function() return ln.network_id end)
+          if id then q.ids[#q.ids+1] = id end
+        end
+        orders_store(n, f)
+        job.logi = q
+      end
+      local id = q.ids[q.i]
+      if id then
+        for _, ln in ipairs(logistic_networks(f, surface)) do
+          if try(function() return ln.network_id end) == id then
+            local r = logistic_row(n, f, surface, ln, true)
+            if r then q.rows[#q.rows+1] = r end
+          end
+        end
+        q.i = q.i + 1
+      end
+      if q.i <= #q.ids then job.i = job.i - 1   -- (the step repeats until every network is read)
+      else row.logistic = logistic_done(surface, q.rows); job.logi = nil end
+      return
+    end
     if not ctx then
       if step.step == 'turrets' then row.turrets = turrets(f, surface, {}) end
-      if step.step == 'logistic' then row.logistic = logistic(n, f, surface, true) end
     elseif step.step == 'boilers' then
       for _, e in ipairs(ctx.boiler_list) do e_boiler(ctx, e) end
       ctx.boiler_list = nil
@@ -1233,7 +1276,6 @@ return function(api)
       if ctx.supply_at <= #ctx.supply then job.i = job.i - 1   -- (the step repeats until every boiler is read)
       else ctx.supplied, ctx.supply, ctx.walked = true, nil, nil end
     elseif step.step == 'rows' then row.electric = e_rows(ctx, n, surface, f)
-    elseif step.step == 'logistic' then row.logistic = logistic(n, f, surface, true)
     elseif step.step == 'turrets' then row.turrets = turrets(f, surface, ctx.turrets); job.ctx[step.surface] = nil end
   end
   -- Plain rows (no entities) for the read.
@@ -1736,12 +1778,11 @@ return function(api)
       n=100 - math.floor(math.min(w.t, ACC_WARN) / 6), rank=w.rank, names={accumulator=r.acc}, by={}, at={}, center=center,
       now_text=w.empty and w.last == game.tick and 'empty' or span(w.t) .. ' from empty', line=line .. sky_text(s.name)}
   end
-  function M.alert_groups(f)
-    local v = view(f)
-    local n = store()
-    local out = {}
-    for _, s in ipairs(v.surfaces) do
-      for _, r in ipairs(s.electric) do
+  -- The alert groups of the networks, in steps (operator 18:12: pushalerts' networks stage ran them all in one tick,
+  -- networks.alert_groups 58-60 ms on world n at 17:53). alert_cursor lists the view's networks; alert_step does up to
+  -- `max` of them (each network's groups as alert_groups made them) and returns true when all are done, the groups in
+  -- cur.out. alert_groups runs every step at once (replies, scan, tests).
+  local function electric_groups(out, n, f, s, r)
         if r.acc and r.acc > 0 and r.center then
           local g = acc_group(n, s, r)
           if g then out[#out+1] = g end
@@ -1778,8 +1819,8 @@ return function(api)
                 math.floor(FEED_TICKS / 3600), x.feeder)}
           end
         end
-      end
-      for _, r in ipairs(s.logistic) do
+  end
+  local function logistic_groups(out, s, r)
         local center = r.center and {x=math.floor(r.center.x + 0.5), y=math.floor(r.center.y + 0.5)}
         -- Ghosts waiting 5+ min on robots with their items in the network (Nick 12:35).
         local k = r.backlog
@@ -1805,10 +1846,33 @@ return function(api)
             line=string.format('logistic #%d: no idle logistic robot for %d min (%d robots; %d requests unfilled 60+ s)',
               r.id, math.floor((game.tick - r.busy_since) / 3600), r.logistic, r.unfilled)}
         end
-      end
+  end
+  function M.alert_cursor(f)
+    local v = view(f)
+    local rows = {}
+    for _, s in ipairs(v.surfaces) do
+      for _, r in ipairs(s.electric) do rows[#rows+1] = {s=s, r=r, electric=true} end
+      for _, r in ipairs(s.logistic) do rows[#rows+1] = {s=s, r=r} end
     end
+    return {force=f.name, rows=rows, i=1, out={}}
+  end
+  function M.alert_step(cur, max)
+    local n = store()
+    local f = game.forces[cur.force]
+    local last = math.min(#cur.rows, cur.i + (max or #cur.rows) - 1)
+    for i = cur.i, last do
+      local row = cur.rows[i]
+      if row.electric then electric_groups(cur.out, n, f, row.s, row.r) else logistic_groups(cur.out, row.s, row.r) end
+    end
+    cur.i = last + 1
+    if cur.i <= #cur.rows then return false end
     for id, w in pairs(n.acc_watch or {}) do if game.tick - w.last > ACC_HOLD then n.acc_watch[id] = nil end end
-    return out
+    return true
+  end
+  function M.alert_groups(f)
+    local cur = M.alert_cursor(f)
+    M.alert_step(cur)
+    return cur.out
   end
   -- boilers (Haiku, 06:20: "a 'boilers' read that lists each boiler's position, state and fuel (and its feeder), so
   -- the no_fuel one is named. I hit this every 3-4 min"): every boiler on a surface as its GUI and a look at it show,

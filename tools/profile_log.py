@@ -6,7 +6,9 @@ line per key per game second and one total per key; this reads them from the
 server log (factorio-current.log) and prints the worst keys by total time with
 their count, average and worst second, then the game seconds where the harness
 spent the most. Part keys run inside a dispatch or the tick and are already in
-its time.
+its time. Heap lines (the harness's Lua heap each second: KB, grown, fallen) mark
+the seconds a garbage collection finished (the heap fell), beside the busiest
+seconds and in a summary line.
 
   python3 tools/profile_log.py factorio-current.log [--top 20] [--run -1]
 """
@@ -15,29 +17,36 @@ import re
 import sys
 
 LINE = re.compile(r'agent-harness profile (second|total) ticks?=(\d+) n=(\d+) key=(.+) time=\D*?([\d.]+) ?ms\s*$')
+HEAP = re.compile(r'agent-harness profile heap tick=(\d+) kb=(\d+) grew_kb=(\d+) fell_kb=(\d+)')
 DONE = re.compile(r'agent-harness profile done from_tick=(\d+) to_tick=(\d+) \((\w+)\)(.*)$')
 
 
 def runs(text):
-    """Each finished run: (done match, second rows, total rows). Rows are (tick_or_ticks, n, key, ms)."""
-    out, seconds, totals = [], [], []
+    """Each finished run: (done match, second rows, total rows, heap rows). Rows are (tick_or_ticks, n, key, ms);
+    heap rows (tick, kb, grew_kb, fell_kb)."""
+    out, seconds, totals, heaps = [], [], [], []
     for raw in text.splitlines():
         m = LINE.search(raw)
         if m:
             row = (int(m.group(2)), int(m.group(3)), m.group(4), float(m.group(5)))
             (seconds if m.group(1) == 'second' else totals).append(row)
             continue
+        h = HEAP.search(raw)
+        if h:
+            heaps.append(tuple(int(h.group(i)) for i in range(1, 5)))
+            continue
         d = DONE.search(raw)
         if d:
-            out.append((d, seconds, totals))
-            seconds, totals = [], []
+            out.append((d, seconds, totals, heaps))
+            seconds, totals, heaps = [], [], []
     if seconds or totals:
-        out.append((None, seconds, totals))
+        out.append((None, seconds, totals, heaps))
     return out
 
 
 def report(run, top):
-    done, seconds, totals = run
+    done, seconds, totals = run[:3]
+    heaps = {row[0]: row for row in (run[3] if len(run) > 3 else [])}
     lines = []
     if done:
         lines.append(f'run from tick {done.group(1)} to {done.group(2)} ({done.group(3)}){done.group(4)}')
@@ -63,7 +72,16 @@ def report(run, top):
         lines.append('busiest game seconds (all harness work, parts excluded):')
         for tick, n, _, ms in busiest:
             keys = sorted((r for r in seconds if r[0] == tick and r[2] != '*'), key=lambda r: -r[3])[:3]
-            lines.append(f'  tick {tick}: {ms:.2f} ms over {n} calls; ' + ', '.join(f'{k} {m:.2f} ms (n={c})' for _, c, k, m in keys))
+            h = heaps.get(tick)
+            fell = f'; heap fell {h[3] / 1024:.1f} MB (a garbage collection finished)' if h and h[3] > 0 else ''
+            lines.append(f'  tick {tick}: {ms:.2f} ms over {n} calls; ' + ', '.join(f'{k} {m:.2f} ms (n={c})' for _, c, k, m in keys) + fell)
+    if heaps:
+        rows = sorted(heaps.values())
+        kb = [r[1] for r in rows]
+        falls = [r for r in rows if r[3] > 0]
+        grew = sum(r[2] for r in rows) / max(1, len(rows))
+        lines.append(f'Lua heap: {min(kb) / 1024:.1f}-{max(kb) / 1024:.1f} MB, grew {grew / 1024:.2f} MB a second; it fell in '
+                     f'{len(falls)} of {len(rows)} seconds' + (': ' + ', '.join(f'tick {r[0]} ({r[3] / 1024:.1f} MB)' for r in falls[:10]) if falls else ''))
     return '\n'.join(lines)
 
 

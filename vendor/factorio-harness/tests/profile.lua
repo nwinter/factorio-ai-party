@@ -64,6 +64,9 @@ eq(find('agent-harness profile second','key=tick time='),'agent-harness profile 
 -- 10+8+1(encode observe)*2+40+1+7+0+29.5
 eq(find('agent-harness profile second','key=*'),'agent-harness profile second tick=600 n=68 key=* time=97.5ms')
 eq(lines('agent-harness profile total')[1],nil)
+-- The Lua heap that second, read once a tick: KB now, grown and fallen.
+local heap=find('agent-harness profile heap','tick=600 kb=')
+assert(heap and heap:match('^agent%-harness profile heap tick=600 kb=%d+ grew_kb=%d+ fell_kb=%d+$'),tostring(heap))
 -- At until_tick: the last second's lines, then totals per key and a done line; afterwards idle again.
 for _=1,60 do tick() end
 assert(not profile.running())
@@ -86,4 +89,16 @@ assert(not pcall(profile.start,{seconds=601}))
 profile.start({seconds=5}); tick(); profile.start({seconds=5})
 assert(find('agent-harness profile done','(restarted)'))
 profile.start({stop=true})
+-- A labelled part from inside a module (a background job's step by kind): idle, just the call; in a run, timed as
+-- that part; an error still raises.
+local made=created
+local a,b=profile.part('pushalerts.band',function(x,y) now=now+4; return x+y,'z' end,1,2)
+eq(a,3); eq(b,'z'); eq(created,made,'idle: no profiler')
+profile.start({seconds=5})
+profile.part('pushalerts.band',function() now=now+4 end)
+profile.part('pushalerts.band',function() now=now+2 end)
+ok,err=pcall(profile.part,'pushalerts.merge',function() error('merge broke',0) end)
+eq(ok,false); eq(err,'merge broke')
+profile.start({stop=true})
+eq(find('agent-harness profile total','key=part pushalerts.band'),'agent-harness profile total ticks=0 n=2 key=part pushalerts.band time=6ms')
 print('profile: ok')
