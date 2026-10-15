@@ -4825,8 +4825,9 @@ local function transfer_one(p,a,pos,e)
           local key=p.index..'/'..a.item..'@'..quality
           if c[key]==nil then
             local ok,near=pcall(M.nearest_holding,p,a.item,quality,32,e)
-            c[key]=ok and near and string.format('; the nearest holding %s: %s at (%g,%g), %.1f tiles from you, holds %d%s (transfer from: "nearest")',
-              label,near.entity.name,near.entity.position.x,near.entity.position.y,near.distance,near.count,M.reserved_text(near.reserved)) or false
+            c[key]=ok and near and string.format('; the nearest holding %s: %s at (%g,%g), %.1f tiles from you, holds %d%s%s',
+              label,near.entity.name,near.entity.position.x,near.entity.position.y,near.distance,near.count,M.reserved_text(near.reserved),
+              near.feeds and ' ('..near.feeds..'; transfer from: "nearest" with feeding: true)' or ' (transfer from: "nearest")') or false
           end
           if c[key] then out.nothing_moved=out.nothing_moved..c[key] end
         end
@@ -5912,8 +5913,9 @@ function M.transfer_walk(p,a)
       local okn,near=pcall(M.nearest_holding,p,args.item,args.quality,32,nil)
       local text=string.format('%s no %s now: nothing walked%s%s',#entities==1 and string.format('%s at (%g,%g) holds',e.name,e.position.x,e.position.y)
         or string.format('the %d places hold',#entities),args.item,#entities==1 and (M.stock_then(e,args.item) or '') or '',
-        okn and near and string.format('; the nearest holding it: %s at (%g,%g), %.1f tiles from you, holds %d%s (transfer from: "nearest")',
-          near.entity.name,near.entity.position.x,near.entity.position.y,near.distance,near.count,M.reserved_text(near.reserved)) or '; none within 32 tiles of you holds any')
+        okn and near and string.format('; the nearest holding it: %s at (%g,%g), %.1f tiles from you, holds %d%s%s',
+          near.entity.name,near.entity.position.x,near.entity.position.y,near.distance,near.count,M.reserved_text(near.reserved),
+          near.feeds and ' ('..near.feeds..'; transfer from: "nearest" with feeding: true)' or ' (transfer from: "nearest")') or '; none within 32 tiles of you holds any')
       if args.partial then return {transferred=0,moved=0,direction='to_player',short={asked=args.count or 'all',moved=0,reason='source_empty'},note=text} end
       error(text,0)
     end

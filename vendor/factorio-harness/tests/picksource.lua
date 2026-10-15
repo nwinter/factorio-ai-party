@@ -316,6 +316,12 @@ fails(function() luna('transfer',{position=far_empty.position,item='yumako-seed'
 assert(not luna('status').active,'nothing started')
 r=luna('transfer',{position=far_empty.position,item='yumako-seed',count=5,direction='to_player',walk=true,up_to=true})
 eq(r.moved,0); eq(r.short.reason,'source_empty'); assert(r.note:find('nothing walked',1,true),r.note)
+-- A hinted chest that feeds something says so, as from: "nearest" would leave it out without feeding: true.
+local feeder={valid=true,name='inserter',type='inserter',position={x=55.5,y=37.5},force=force,pickup_target=yfarm,drop_target={valid=true,name='agricultural-tower'}}
+world[#world+1]=feeder
+fails(function() luna('transfer',{position=far_empty.position,item='yumako-seed',count=5,direction='to_player',walk=true}) end,
+  'holds 76 (inserter (55.5,37.5) picks from it into agricultural-tower; transfer from: "nearest" with feeding: true)')
+feeder.valid=false
 -- An end that moved nothing says why on its error line: a give to a chest that took none (Sol 00:05: nothing_to_do).
 main.insert{name='iron-plate',count=5}
 far_empty.inv.insert{name='wood',count=100*16}

@@ -1160,7 +1160,8 @@ fh sleep 900 --until researched                       # ...or until the research
     refused before walking too, naming the nearest chest holding it (round1650d: Sonnet walked 66 tiles to an empty
     provider chest): `wooden-chest at (95.5,32.5) holds no yumako-seed now: nothing walked; the nearest holding it:
     wooden-chest at (55.5,36.5), 7.1 tiles from you, holds 76 (transfer from: "nearest")`; with `up_to: true` a short
-    (`source_empty`). Machines are walked to (they may make it meanwhile). An end that moved nothing says why in
+    (`source_empty`). A hinted chest that feeds something says so, here and in `nothing_moved`: `holds 76 (inserter
+    (55.5,37.5) picks from it into agricultural-tower; transfer from: "nearest" with feeding: true)`. Machines are walked to (they may make it meanwhile). An end that moved nothing says why in
     `last.why`, which the CLI puts on the error line: the first place's error, else the places that were full or held
     none (`Control ended: nothing_to_do: wooden-chest (95.5,32.5) is full`). Not with `total`. As a queue step it runs until the tour
     ends; `transferred` counts as done. The reply's `legs` lists the route (Opus 10:50): each stop in the order it
