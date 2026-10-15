@@ -360,8 +360,13 @@ already targets your character.
 - Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`), and
   so do tell, chat, say, operator, the board, research, platform calls and waits on `platform_arrived`/`platform_left`.
 - Modules: `configure {position | positions, modules: ["speed-module-2","speed-module-2"], by?}` sets a machine's module
-  slots (past the list: empty); in reach by hand (old ones to your inventory), else (remote, `surface`, `platform`, or
-  `by: "robots"`) an item request robots or the platform hub carry out; on a ghost its requests. `inspect` reads them back.
+  slots: the modules it already holds that the list names stay in their slots, the rest go into the other slots (past
+  the list: empty); `["keep","efficiency-module","empty"]` goes slot by slot and `{"2":"efficiency-module"}` changes
+  only slot 2. In reach by hand (old ones to your inventory), else (remote, `surface`, `platform`, or `by: "robots"`) an
+  item request robots or the platform hub carry out; on a ghost its requests. `inspect` reads them back (`by_slot`).
+- `configure {position, storage_filter: "efficiency-module"}` sets a storage chest's filter (robots store no other item
+  in it); `configure {position, input_priority, output_priority, filter}` sets a splitter's (left and right facing the
+  way items move); `inspect` shows both.
 - Turret targeting: `configure {position | positions, platform?, priority_targets: ["big-metallic-asteroid", ...],
   ignore_unprioritised: true}` sets a turret's (or ghost's) priority list as its GUI does; inspect reads it back;
   blueprints keep it.
