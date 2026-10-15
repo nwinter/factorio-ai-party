@@ -107,7 +107,11 @@ The relay adds these rules:
 - Rate limits: one line every 20 s overall, one per viewer every 45 s (2 minutes until shift01, where it dropped
   half of one viewer's questions), and nothing older than 90 s; behind them, the harness's own (20 s per viewer, 6 a
   minute).
-- A cap of 120 characters.
+- The whole message (Astra 17:17: a cap of 120 characters cut long viewer requests at an ellipsis, and the agents never
+  saw the rest): the lane shows 200 characters, the relay sends the message whole (up to 600, the filters and Clef
+  read all of it) in one game line of 300 with the `@AGENT` in front, or, longer, in parts split between words and
+  labelled ` (1/2)`, ` (2/2)` (the `@AGENT` on the first), posted one after the other (`viewer_say` takes `part` and
+  `parts`: a continuation within 10 s of the viewer's line is no new line for its rate limits).
 - Muted viewers (the agents' vote) are skipped.
 - Every relayed line wakes an agent with `@AGENT ` in front of the viewer's words, unchanged (eng/relay2, shift01
   16:31-16:39). `viewer_say` takes only name and text, and a viewer line wakes a sleeping agent only for an `@name` in

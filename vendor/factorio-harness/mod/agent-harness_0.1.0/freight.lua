@@ -209,13 +209,50 @@ return function(api)
     local key = key_of(w)
     local seg = rec.segs[#rec.segs]
     if key and key ~= rec.key then
-      if seg and not seg['end'] then seg['end'], seg.last = tick, copy(rec.prev or counts) end
+      local was = seg and not seg['end'] and seg or nil
+      if was then was['end'], was.last = tick, copy(rec.prev or counts) end
+      -- Arrivals and departures for the team alert (Gemini, 16:50); not the first look's stop.
+      if was and was.kind == 'stop' then M.event(pl, 'left', was.at, tick, w.leg and w.leg.to) end
       seg = open(rec, pl, w, counts, tick, rec.key == nil)
+      if rec.key ~= nil and seg.kind == 'stop' then M.event(pl, 'arrived', seg.at, tick) end
       rec.key = key
     elseif seg and not seg['end'] and rec.prev then
       spoil_step(seg, rec.prev, counts)
     end
     rec.prev, rec.tick = counts, tick
+  end
+  -- A platform's arrivals at and departures from space locations (Gemini, 16:50: a team alert when one arrives at or
+  -- leaves the agent's planet), the last EVENTS: {seq, platform, force, kind arrived|left, at, to, tick}.
+  local EVENTS, EVENT_TICKS = 40, 5 * 3600
+  local function events()
+    local st = api.state()
+    st.platform_events = st.platform_events or {seq=0, list={}}
+    return st.platform_events
+  end
+  function M.event(pl, kind, at, tick, to)
+    local ev = events()
+    ev.seq = ev.seq + 1
+    ev.list[#ev.list+1] = {seq=ev.seq, platform=pl.name, force=try(function() return pl.force.name end), kind=kind, at=at, to=to, tick=tick}
+    while #ev.list > EVENTS do table.remove(ev.list, 1) end
+  end
+  -- The lines for agent p (h: its hint state): platforms of its force that stopped at or left its planet since it was
+  -- last told (its first look: the last 5 minutes).
+  function M.event_lines(p, h)
+    local ev = events()
+    local since = h.platform_event_seq or 0
+    h.platform_event_seq = ev.seq
+    local planet = try(function() return p.surface.planet.name end)
+    if not planet then return nil end
+    local force = try(function() return p.force.name end)
+    local out = {}
+    for _, e in ipairs(ev.list) do
+      if e.seq > since and e.at == planet and e.force == force and game.tick - e.tick <= EVENT_TICKS then
+        out[#out+1] = e.kind == 'arrived'
+          and string.format('platform %s stopped at %s, your planet, %s ago', e.platform, e.at, secs(game.tick - e.tick))
+          or string.format('platform %s left %s, your planet, %s ago%s', e.platform, e.at, secs(game.tick - e.tick), e.to and ', flying to ' .. e.to or '')
+      end
+    end
+    return #out > 0 and out or nil
   end
   -- Every game second (runtime tick): each platform of each force with one.
   function M.tick(tick)

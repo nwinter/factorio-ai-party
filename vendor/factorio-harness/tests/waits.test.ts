@@ -214,7 +214,10 @@ test('fh sleep --until sends a wait_until condition: words or JSON',async()=>{
       'platform_arrived platform=Sunward location=nauvis',
       // Haiku, 12:20: a level fallen under at a chest, and the other operators.
       'item_count coal below 20 at 10,39','item_count coal under 20 at 10,39','item_count coal <= 19 at 10,39',
-      'item_count coal > 9','item_count coal above 9']) {
+      'item_count coal > 9','item_count coal above 9',
+      // Gemini, 16:50: departure, a quoted name with spaces, at/from before the planet.
+      'platform_left Sunward','platform_departed Sunward from nauvis','platform_arrived "Big Ship" at gleba',
+      "platform_left 'Big Ship'"]) {
       assert.equal(JSON.parse((await cli(port,['sleep','30','--until',until])).stdout).result.woke,'condition');
     }
     await assert.rejects(cli(port,['sleep','30','--until','item_count iron-plate']),(error:any)=>/--until takes/.test(error.stdout));
@@ -230,7 +233,9 @@ test('fh sleep --until sends a wait_until condition: words or JSON',async()=>{
     {until:'platform_arrived',platform:'Sunward',location:'gleba'},{until:'platform_arrived',platform:'Sunward',location:'nauvis'},
     {until:'item_count',item:'coal',below:20,positions:[{x:10,y:39}]},{until:'item_count',item:'coal',below:20,positions:[{x:10,y:39}]},
     {until:'item_count',item:'coal',below:20,positions:[{x:10,y:39}]},
-    {until:'item_count',item:'coal',at_least:10},{until:'item_count',item:'coal',at_least:10}]);
+    {until:'item_count',item:'coal',at_least:10},{until:'item_count',item:'coal',at_least:10},
+    {until:'platform_left',platform:'Sunward'},{until:'platform_left',platform:'Sunward',location:'nauvis'},
+    {until:'platform_arrived',platform:'Big Ship',location:'gleba'},{until:'platform_left',platform:'Big Ship'}]);
   assert.equal(seen.filter(r=>r.action==='sleep')[0].args.seconds,30);
 });
 test('fh sleep keeps the team hints the sleep request carried, and prints what keeps going first (compact)',async()=>{
