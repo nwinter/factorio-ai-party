@@ -168,7 +168,7 @@ return function(api)
       what=string.format("the rocket's cargo: it goes up with the rocket at launch (lift %g kg); not used for parts", api.cargo.kg(lift)),
       example=call{position=pos, direction='to_entity', item=loaded[1] and loaded[1].name or 'space-platform-foundation', count=10, inventory='rocket_silo_rocket'}}
     -- Cargo comes out again by hand, as the silo's GUI allows, without a launch (Luna, shift17 10:50: 447 spoilage in
-    -- Gleba's rocket "and no way to clear it"; her transfer to_player from it at 18:46 moved 648 iron plates out).
+    -- Gleba's rocket "and no way to clear it"; her transfer to_player from it at 11:46 moved 648 iron plates out).
     local spoiled = 0
     for _, s in ipairs(loaded) do if s.name == 'spoilage' then spoiled = spoiled + s.count end end
     if rocket_inv and #loaded > 0 then

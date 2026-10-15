@@ -1,6 +1,6 @@
 -- Run from repository root: lua tests/silocargo.lua
 -- A silo's rocket cargo comes out by hand without a launch (Luna, shift17 10:50: 447 spoilage in Gleba's rocket "and no
--- way to clear it"; transfer to_player with inventory rocket_silo_rocket did it at 18:46): silo.lua's inventory rows
+-- way to clear it"; transfer to_player with inventory rocket_silo_rocket did it at 11:46): silo.lua's inventory rows
 -- give the take, spoilage first, and count the spoilage aboard.
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
