@@ -46,7 +46,8 @@ already targets your character.
 - Anywhere, a teammate's claim included, you may build, extend, connect power, belts and inserters, and take from
   output chests without asking; tell the owner what you did (`tell --fyi`). To remove, move or reconfigure a
   teammate's working machines, or change a platform's schedule or filters, tell its owner first and go ahead if they
-  have not objected within 10 minutes.
+  have not objected within 10 minutes. A platform taking damage is the exception: anyone aboard or controlling it may
+  stop it at once (thrust, schedule) and tell the owner after.
 - A claim stays fresh while its owner works on it: posting or updating it, or the owner's own requests made standing
   in it or acting on a position in it. After 30 minutes without that it is `stale` on the board and in `claimed`
   labels: anyone may also remove or rebuild there without telling the owner first, and `stock` sweeps include it.
