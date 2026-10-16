@@ -243,7 +243,7 @@ class AudioHub:
 
 
 def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None, director=None,
-                 platform=None):
+                 platform=None, look=None, show=None):
     audio = audio or AudioHub()
     segments = segments or Segments()
     analyst = analyst or AnalystBoard()
@@ -346,9 +346,25 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                     return self.send(409, b'{"error": "platform needs the onecam director"}', "application/json")
                 code, reply = platform.request(body)
                 return self.send(code, json.dumps(reply).encode(), "application/json")
+            if path == "/look":  # the operator points the camera on air at a charted spot (lookcam.py)
+                if not look:
+                    return self.send(409, b'{"error": "look needs the onecam director"}', "application/json")
+                code, reply = look.request(body)
+                return self.send(code, json.dumps(reply).encode(), "application/json")
+            if path == "/show":  # the operator puts a PNG from runs/ over the main camera (show.py)
+                if not show:
+                    return self.send(409, b'{"error": "show needs OBS (not in --mock)"}', "application/json")
+                code, reply = show.request(body)
+                return self.send(code, json.dumps(reply, ensure_ascii=False).encode(), "application/json")
             self.send(404, b"not found", "text/plain")
 
         def do_DELETE(self):
+            if self.path.split("?", 1)[0] == "/show" and show:
+                code, reply = show.clear()
+                return self.send(code, json.dumps(reply).encode(), "application/json")
+            if self.path.split("?", 1)[0] == "/look" and look:
+                code, reply = look.clear()
+                return self.send(code, json.dumps(reply).encode(), "application/json")
             if self.path.split("?", 1)[0] == "/platform" and platform:
                 code, reply = platform.clear()
                 return self.send(code, json.dumps(reply).encode(), "application/json")
@@ -519,6 +535,12 @@ def main():
         from obsws import OBS
         host, _, port = a.obs.partition(":")
         replays = Replays(segments, obs=OBS(host, int(port or 4455)), **(run.get("replays") or {}))
+    show = None
+    if not a.mock and run.get("show", True) is not False:  # an image over the main camera (POST /show)
+        from obsws import OBS
+        from show import Show
+        host, _, port = a.obs.partition(":")
+        show = Show(OBS(host, int(port or 4455)), json.load(open(os.path.join(STATIC, "layout.json"))))
     night = None
     if (a.night if a.night is not None else not a.mock) and run.get("night", True) is not False:
         from obsws import OBS
@@ -553,7 +575,7 @@ def main():
     # the voice clips; the director reads which agent line is playing (say look= cues). The page's playback reports go
     # to audio-played.jsonl beside stream.json (the clips that ended early, and why)
     audio = AudioHub(os.path.join(os.path.dirname(os.path.abspath(a.run)), "audio-played.jsonl") if a.run and not a.mock else None)
-    follow = platform = None
+    follow = platform = look = None
     if mode == "onecam":  # an operator follow, kept beside stream.json so a restart keeps it (follow.py)
         from follow import FollowControl
         from platformcam import PlatformControl
@@ -561,6 +583,11 @@ def main():
                                if a.run and not a.mock else None, roster)
         platform = PlatformControl(director, os.path.join(os.path.dirname(os.path.abspath(a.run)), "director-platform.json")
                                    if a.run and not a.mock else None)
+        import lookcam  # the chart check reads the game; the mock has no chart, so every spot counts as charted
+        h = getattr(source, "h", None)
+        chart = lookcam.harness_chart(h) if h else (lookcam.mock_chart if a.mock else None)
+        look = lookcam.LookControl(director, os.path.join(os.path.dirname(os.path.abspath(a.run)), "director-look.json")
+                                   if a.run and not a.mock else None, chart)
     lock = threading.Lock()
     source_info = {"source": getattr(source, "name", "mock"), "poll_ok": None, "poll_error": None}
 
@@ -597,6 +624,8 @@ def main():
                     follow.sync(now)
                 if platform:
                     platform.sync(now)
+                if look:
+                    look.sync(now)
                 with audio.cond:  # agent lines playing now (the page's start reports): onecam cues their looks
                     snap["voiced"] = [dict(v, id=k) for k, v in audio.playing.items() if v.get("channel") == "agent"]
                 snap["voice"] = audio.early(now)  # clips that ended early in the last hour, and why (operator read)
@@ -605,15 +634,21 @@ def main():
                     snap["follow"] = director.follow_info(now)  # the hosts: who the operator pinned on air, and why
                 if platform:
                     snap["platform_hold"] = director.platform_info(now)
+                if look:
+                    snap["look"] = director.look_info(now)
+                if show:
+                    snap["show"] = show.public()  # an image over the main camera: the page's caption, the hosts
                 if hasattr(director, "battle_info"):
                     snap["battle"] = director.battle_info(now)  # a key battle held on air (replays.py covers it)
                 if director.last_attack_cut == now:  # main just cut to a fight or death: the segment gives way
                     segments.attack_cut(now)
                     snap["segment"] = segments.public()
-                    if replays and not (getattr(director, "fol", None) or getattr(director, "plat", None)):
+                    if replays and not (getattr(director, "fol", None) or getattr(director, "plat", None)
+                                        or getattr(director, "look", None)):
                         replays.on_attack_cut(director.last_attack_alert, snap, now, director.last_attack_framed)
                 if replays:
-                    replays.hold = bool(getattr(director, "fol", None) or getattr(director, "plat", None))
+                    replays.hold = bool(getattr(director, "fol", None) or getattr(director, "plat", None)
+                                        or getattr(director, "look", None))
                     replays.tick(snap, cams, now)
                     snap["replay"] = replays.public()
                 if night:
@@ -661,7 +696,8 @@ def main():
     try:
         server = ThreadingHTTPServer((a.host, a.port), make_handler(hub, decisions, segments=segments, replays=replays,
                                                                     analyst=analyst, follow=follow, audio=audio,
-                                                                    director=director, platform=platform))
+                                                                    director=director, platform=platform, look=look,
+                                                                    show=show))
     except OSError as e:
         sys.exit(f"cannot listen on {a.host}:{a.port}: {e}. Pick another --port and point the reverse tunnel at it: "
                  f"ssh -N -R 8787:127.0.0.1:PORT pogwin")

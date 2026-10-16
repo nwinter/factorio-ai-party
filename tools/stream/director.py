@@ -54,7 +54,7 @@ DEFAULTS = {
     "work_fresh": 20.0,      # a work item older than this is no longer news
     "work_zoom": 0.9,        # a far ghost/paste/deconstruct position on the body's surface (scaled like other views)
 }
-HOLDS = ("@attack", "@segment", "@work", "@map", "@platform")  # fixed shots a camera keeps until their `until`
+HOLDS = ("@attack", "@segment", "@work", "@map", "@platform", "@look")  # fixed shots a camera keeps until their `until`
 FIGHT = {"shoot", "attack", "kite"}
 BUILD = {"build", "place", "construct", "blueprint", "build_blueprint", "build_path", "rotate", "repair", "deconstruct"}
 WORK = {"mine", "craft", "insert", "take", "feed", "gather", "research", "fuel"}

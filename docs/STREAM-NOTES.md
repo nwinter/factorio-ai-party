@@ -483,6 +483,39 @@ size/threshold be dynamic".
   replays do not cut away. A followed agent aboard a platform also gets the whole-ship view, returning to character
   framing on landing. The on-air label and the hosts' `on_screen_platform` identify the platform, current route,
   agent aboard and optional operator label; `snapshot.platform_hold` includes its deadline and requester.
+- Operator position shot (eng/d16-stream7; viewers LimeLight555 11:33 "the upcycler", 12:24 "the western wall"):
+  `POST /look {surface, x, y, zoom?, seconds?, label?, by?}`, `DELETE /look` (lookcam.py). For example,
+  `curl -X POST http://127.0.0.1:8788/look -d '{"surface":"nauvis","x":-180,"y":40,"seconds":30,"label":"The western wall","by":"operator"}'`.
+  The main camera shows that spot (fixed view, exact zoom) for `seconds` (1–60, default 30), then the director
+  returns to the story it left (or to an unexpired `/platform` hold or `/follow`). `surface` is a surface name (any
+  case) or one of our platforms' names; `zoom` 0.3–3, default 0.75 (higher is closer). Only charted ground: one
+  read checks that every 32-tile chunk the on-air frame covers at that zoom is charted by the team; otherwise 409
+  with the reason ("(500, 0) on nauvis is not charted: the team has not seen that ground", or "12 of the 28
+  chunks the frame at zoom 0.3 covers ... are not charted", where a closer zoom frames less). An unknown surface is
+  400, a failed read 503. The read costs 0.9 ms in the game (LuaProfiler on world n, a zoom 0.3 frame, 16 chunks).
+  `runs/RUN/director-look.json` stores `{surface, position, zoom, until, label, by}`; restarts and hand edits work
+  like `/follow` and are chart-checked too. Precedence: **look > platform hold > follow** (test_look.py
+  precedence): a look takes the camera from both, and each resumes when the one above it ends if its time is not up.
+  During a look, other urgent events go in the inset; segments, cues, rotation, the trio, base map, cloud and
+  platform shots and new replays wait; `POST /cloud` is refused. The caption on air is "📍 label" (or the spot,
+  "Vulcanus · (120, -40)"); `snapshot.look` has its deadline and requester and the hosts get `on_screen_look`.
+  There is no operator chat command for `/follow` or `/platform`, so none for `/look` either.
+- An image on air (eng/d16-stream7; Sol 15:30 for viewer LimeLight, done by hand at 15:31): `POST /show {file,
+  seconds?, label?, by?}`, `DELETE /show` (show.py). For example,
+  `curl -X POST http://127.0.0.1:8788/show -d '{"file":"runs/shift24/sol/tools/aethera-design24.png","seconds":45,"label":"Aethera design (Sol, for LimeLight)","by":"operator"}'`.
+  `file` is a PNG under runs/ (repo-relative or absolute; a symlink out of runs/ is refused), checked by its header,
+  at most 10 MB and 32–4096 px a side; `seconds` 1–60 (default 30); `label` defaults to the file name. The service
+  copies it to the box (`scp` to D:/pog/overlay/show-HASH.png) and adds a dark backdrop and the image to scene
+  "stream", both bounded to the main hole (layout.json `main`, letterboxed), just below "stream overlay": above
+  every camera (cuts.py only restacks the cameras among their own places, so a cut does not cover it), under the
+  overlay, whose main caption reads "🖼️ label" meanwhile. The time counts only while "stream" is on program, so a
+  replay in the middle pauses it, and an image that left the scene is put back. After it, both inputs are removed
+  and the copy deleted. One at a time (409 while one is on; DELETE ends it early); a failed copy or OBS call is 502.
+  OBS removes an input a moment after RemoveInput, so each show makes inputs with their own tag, and at start any
+  leftover "pog show ..." input is removed. `snapshot.show` and the hosts' `on_screen_image` say what is on.
+  Agents ask with `./fh operator "..."` and the file path, as Sol did; the operator runs the curl. Checked on the box's
+  OBS 32.2.2 in a scratch scene (never on program, removed after): the calls, the order below a browser source, two
+  shows in a row.
   The shared platform framing fits the build and the on-air crop, adding 32 tiles ahead and 8 aft/on either side
   while in transit (north on the platform surface, in either direction of the space connection). Held frames
   refresh on departure, arrival and bounds changes; label/progress updates alone send no camera command. The
