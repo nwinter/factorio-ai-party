@@ -5267,3 +5267,8 @@ fh watch    # deploy on every change
 - The status fuel line names each burner burning its last fuel (Luna 04:51: two low-fuel biochambers, one named):
   `burner-mining-drill 0/1 no_fuel, 1 burning their last fuel ((-35,-50) 559s left)`, up to 8 a name, the time at
   its full draw. Seen on the copy of world n.
+- The `power` read ranks each network's draw by kind (Opus 04:11: after a blackout, roboports recharging drew 11-16 MW
+  and starved the boilers' feeders): `draw_line: electric #2 draws 4.5 MW: roboport 2.2 MW (roboport); electric-turret
+  1.1 MW (laser-turret); assembling-machine 631 kW (assembling-machine-2, foundry, chemical-plant); ...` and
+  `draw_by_kind` [{kind, kw, names}], from the game's 5 s statistics (by prototype, under its entity type). No harness
+  switch turns a consumer off; power switches and circuit-enabled machines are the game's own.

@@ -2664,6 +2664,22 @@ function handlers.power(p,a)
         n.unpowered>0 and string.format('; %d machines in the area without full power',n.unpowered) or '')
       n.gen=nil
     end
+    -- Its draw ranked, by prototype and by kind (Opus 04:11: roboports recharging after a blackout drew 11-16 MW and
+    -- starved the boilers' feeders): the game's 5 s statistics, each prototype under its entity type.
+    if n.consumers and #n.consumers>0 then
+      local kinds,korder={},{}
+      for _,c in ipairs(n.consumers) do
+        local kind=(prototypes.entity[c.name] and prototypes.entity[c.name].type) or c.name
+        if not kinds[kind] then kinds[kind]={kind=kind,kw=0,names={}}; korder[#korder+1]=kinds[kind] end
+        kinds[kind].kw=kinds[kind].kw+c.kw; kinds[kind].names[#kinds[kind].names+1]=c.name
+      end
+      table.sort(korder,function(x,y) return x.kw>y.kw end)
+      n.draw_by_kind=korder
+      local function mw(kw) return kw>=1000 and string.format('%.1f MW',kw/1000) or string.format('%d kW',kw) end
+      local parts={}
+      for i,k in ipairs(korder) do if i>6 then break end; parts[#parts+1]=string.format('%s %s (%s)',k.kind,mw(k.kw),table.concat(k.names,', ',1,math.min(3,#k.names))) end
+      n.draw_line=string.format('electric #%s draws %s: %s',tostring(n.id),mw(n.consumption_kw or 0),table.concat(parts,'; '))
+    end
     if n.accumulators then
       n.acc_mj,n.acc_max_mj=math.floor(n.acc_j/1e5+0.5)/10,math.floor(n.acc_buf/1e5+0.5)/10
       n.acc_pct=n.acc_buf>0 and math.floor(100*n.acc_j/n.acc_buf+0.5) or nil
