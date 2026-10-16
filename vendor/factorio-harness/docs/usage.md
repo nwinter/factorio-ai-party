@@ -5443,3 +5443,8 @@ fh watch    # deploy on every change
   (29.5,202.5)`); flags: reservations while robots are idle, orders to a chest with no room, requesters with deliveries
   on the way and no room. Releasing a reservation is no player action: nothing changes. On the copy: Fulgora's #96, 832
   robots, 532 orders, 17 ms in the container (about 3.5 ms on n); the robots read stop at 1024.
+- `supply {item, compact: true}` and `science {compact: true}` (Muse 06:21: the replies run to thousands of tokens, a
+  dozen reads a shift): lines only. supply: flow, where, makers, the three stopped makers and users by position, the
+  chests holding most, the surplus chest; science: the research and one line a pack (made and used in 10 min, makers
+  and their states, labs lacking), no holders or reach. On the copy: supply iron-gear-wheel 10.3k characters to 2.1k;
+  science 38.5k to 1.7k.

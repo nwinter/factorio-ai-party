@@ -76,3 +76,5 @@
   chest, each requester short or with deliveries on the way (its request, what it holds, what is coming, no room when
   every slot is taken), the robots' orders by item and target, and `flags` (reservations while robots are idle, orders
   to a chest with no room for the item).
+- `supply {item, compact: true}` and `science {compact: true}`: lines only (supply: flow, where, makers, the stopped
+  makers and users by position, the chests holding most; science: one line a pack), about a fifth of the full reply.

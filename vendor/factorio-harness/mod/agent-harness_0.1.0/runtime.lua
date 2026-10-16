@@ -12230,7 +12230,34 @@ survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
 M.supply=require('supply'){timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
-function handlers.supply(p,a) return M.supply.supply(p,a) end
+-- compact (Muse 06:21: supply and science run to thousands of tokens, a dozen times a shift): lines with the places and
+-- the minutes only.
+function M.compact_supply(out)
+  if type(out)~='table' then return out end
+  local lines={out.flow,out.where and ('where: '..out.where) or nil,out.makers}
+  local function first(list,n,cut)
+    local parts={}
+    for i,l in ipairs(list or {}) do if i<=n then parts[#parts+1]=cut and (tostring(l):gsub(';.*$','')) or tostring(l) end end
+    return #parts>0 and table.concat(parts,' | ') or nil
+  end
+  local mk=first(out.makers_worst,3); if mk then lines[#lines+1]='makers stopped: '..mk end
+  local us=first(out.users_worst,3,true); if us then lines[#lines+1]='users stopped: '..us end
+  local ch=first(out.chests,3); if ch then lines[#lines+1]='chests: '..ch end
+  if out.surplus_chest and out.surplus_chest.line then lines[#lines+1]='surplus: '..(tostring(out.surplus_chest.line):gsub(';.*$','')) end
+  local kept={}
+  for _,l in ipairs(lines) do if l then kept[#kept+1]=l end end
+  return {item=out.item,surface=out.surface,compact=true,lines=kept,clock=out.clock,team=out.team,chat=out.chat}
+end
+function handlers.supply(p,a)
+  if a.compact~=nil then
+    assert(type(a.compact)=='boolean','compact must be true or false')
+    local args={}
+    for k,v in pairs(a) do if k~='compact' then args[k]=v end end
+    local out=M.supply.supply(p,args)
+    return a.compact and M.compact_supply(out) or out
+  end
+  return M.supply.supply(p,a)
+end
 -- throughput's inserters against recipes (craftrate.feed; Sol, 19:50)
 M.supply.feed=function(e,into,from) return M.craftrate.feed(e,into,from) end
 -- trace: a machine's feeders and their sources, its output followed to where it ends, an item's routes (trace.lua).
@@ -12248,7 +12275,21 @@ M.trace=require('trace'){state_text=function(e) return M.thrust.state_text(e) en
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,supply=M.supply,spoil=M.spoil}
 function handlers.labs(p,a) return M.labs.view(p,a) end
-function handlers.science(p,a) return M.labs.science(p,a) end
+function handlers.science(p,a)
+  if a.compact~=nil then
+    assert(type(a.compact)=='boolean','compact must be true or false')
+    local args={}
+    for k,v in pairs(a) do if k~='compact' then args[k]=v end end
+    local out=M.labs.science(p,args)
+    if not a.compact or type(out)~='table' then return out end
+    -- compact: one line a pack (made and used in 10 min, makers and their states, labs lacking), largest holders left out.
+    local lines={}
+    if out.research then lines[1]='research: '..tostring(out.research) end
+    for _,pk in ipairs(out.packs or {}) do lines[#lines+1]=(tostring(pk.line or pk.pack):gsub('; largest holders:.*$','')) end
+    return {surface=out.surface,compact=true,lines=lines,clock=out.clock,team=out.team}
+  end
+  return M.labs.science(p,a)
+end
 rates=rates_module{position=position,status_name=function(e) return M.machine_status(e) end}
 -- Electric and logistic networks and turrets, one line each (networks.lua):
 -- the shift block, the networks read, and the network push alerts.
