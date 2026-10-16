@@ -5448,3 +5448,6 @@ fh watch    # deploy on every change
   chests holding most, the surplus chest; science: the research and one line a pack (made and used in 10 min, makers
   and their states, labs lacking), no holders or reach. On the copy: supply iron-gear-wheel 10.3k characters to 2.1k;
   science 38.5k to 1.7k.
+- A hand-built inserter (Muse 07:51: three backwards inserters, about 30 minutes) says what its pickup and drop sides
+  touch in the build reply, as check_inserters reads them: `pickup: requester-chest (44.5,190.5)`, `drop: none: the
+  ground at (42.5,190.5)`, beside `inserter` (the direction in words) and `io_warning`. Checked on the copy.

@@ -4490,6 +4490,8 @@ local function built_summary(e)
   if e.type=='inserter' and M.targets then
     local ok,t=pcall(M.targets.plan,e.surface,e.prototype,e.position,e.direction)
     out.io_warning=ok and t and t.missing or nil
+    -- What its pickup and drop sides touch (Muse 07:51: three backwards inserters, about 30 min), as check_inserters reads them.
+    if ok and t then out.pickup=t.pickup; out.drop=t.drop end
   end
   if e.type=='inserter' then
     local ok,line=pcall(M.inserter_sides,e)

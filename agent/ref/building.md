@@ -92,3 +92,5 @@
   that serves trains heading one way; `train {position}` reads a train's state and why it waits.
 - `build {item: "rail-ramp", position, direction}` and `construct` on a ramp ghost build it by hand from one held ramp;
   the centre snaps to the ramp grid, with the same collision and reach checks.
+- A `build` of an inserter says what its sides touch: `pickup` and `drop` (`requester-chest (44.5,190.5)`, `none: the
+  ground at (42.5,190.5)`), with `inserter` (its direction in words) and `io_warning`.
