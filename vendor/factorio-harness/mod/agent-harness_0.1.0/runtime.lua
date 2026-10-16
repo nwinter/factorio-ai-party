@@ -1555,6 +1555,7 @@ function handlers.describe()
   for name,schema in pairs(M.flush and M.flush.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circuits and M.circuits.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.trains and M.trains.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.outpost and M.outpost.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.rails and M.rails.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.vehicles and M.vehicles.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.shore and M.shore.schema or {}) do description.actions[name]=schema end
@@ -11615,6 +11616,9 @@ M.supply.feed=function(e,into,from) return M.craftrate.feed(e,into,from) end
 M.fragile=require('fragile'){position=position,integer=integer}
 M.personal=require('personal'){}
 M.reqchest=require('reqchest'){}
+-- outpost {area | position}: one queued tour that rebuilds ghosts, rearms turrets and wires cut-off poles (outpost.lua).
+M.outpost=require('outpost'){position=position,integer=integer,submit=function(p,a) return handlers.queue_submit(p,a) end}
+function handlers.outpost(p,a) return M.outpost.read(p,a) end
 M.trace=require('trace'){state_text=function(e) return M.thrust.state_text(e) end,fluid_upstream=function(box,i) return M.thrust.upstream(box,i) end,held_blocked=M.details.held_blocked,observe=function(e,p) return M.readmemory.observe(e,p) end,memory_trace=function(p,a) return M.beltgaps.trace(p,a) end,end_seen=M.factory_digest.end_seen,supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
 -- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,

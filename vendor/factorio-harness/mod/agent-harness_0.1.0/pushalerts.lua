@@ -40,7 +40,9 @@ return function(api)
     no_platform_storage='platform hub storage full', platform_tile_building_blocked='platform tile building blocked',
     input_spoilage='short of ingredients with spoilage in their input (their recipes do not take it)',
     requester_full='requester chests with every slot taken while a request is short',
-    heat_no_fuel='heating towers out of fuel and under 500 C (heat exchangers take 500 C and more)'}
+    heat_no_fuel='heating towers out of fuel and under 500 C (heat exchangers take 500 C and more)',
+    outpost_ammo_low='turrets no construction robots reach, under 20% of their ammo slots',
+    outpost_turret_lost='turrets no construction robots reached destroyed in the last 10 minutes'}
   local HINT = {no_power='fh call power', unconnected='fh call power', low_power='more power: fh call power', no_fuel='refuel', heat_no_fuel='refuel',
     no_ammo='rearm', flamer_dry='fh call flamers', no_material_for_construction='craft or bring the items for the ghosts',
     not_enough_construction_robots='more construction robots in the roboports', not_enough_repair_packs='repair packs into a roboport or storage chest',
@@ -284,7 +286,13 @@ return function(api)
         if e.type == 'ammo-turret' then
           local inv = try(function() return e.get_inventory(defines.inventory.turret_ammo) end)
           local tk, td = turret_kind(e, inv and inv.get_item_count() == 0, tmem)
-          if tk then kind, detail = tk, td end
+          if tk then kind, detail = tk, td
+          else
+            -- Under 20% of its ammo slots where no construction robot reaches (Opus, d15 15:20: the south copper
+            -- outpost 550 tiles out, cut 5+ times a shift).
+            local low = M.outpost_low(e, inv)
+            if low then kind, detail = 'outpost_ammo_low', low end
+          end
         elseif e.type == 'reactor' and e.burner then
           -- Heating towers (Gemini, d15 07:54: a dedicated warning when they run out of fuel): a burner reactor with an
           -- empty fuel slot and nothing burning, under HEAT_WARN C; one still hotter is not said (feeds gated by its
@@ -609,20 +617,53 @@ return function(api)
       s.push_jobs[force.name] = nil
     end
   end
-  -- One of our turrets died (the runtime's on_entity_died): marked built since, for when its ghost is built again.
+  -- Whether no construction robot reaches e (no logistic network's construction area covers it).
+  function M.remote(e)
+    local nets = try(function() return e.surface.find_logistic_networks_by_construction_area(e.position, e.force) end)
+    return nets ~= nil and #nets == 0
+  end
+  -- An ammo turret with ammo under LOW_SHARE of what its slots hold, where no construction robot reaches: its line.
+  local LOW_SHARE, LOST_KEEP = 0.2, 36000
+  function M.outpost_low(e, inv)
+    if not inv then return nil end
+    local n = try(function() return inv.get_item_count() end) or 0
+    if n <= 0 then return nil end
+    local cap, name = 0, nil
+    for i = 1, try(function() return #inv end) or 0 do
+      local st = inv[i]
+      if st.valid_for_read then name = name or st.name; cap = cap + (try(function() return prototypes.item[st.name].stack_size end) or 0)
+      else cap = cap + (name and (try(function() return prototypes.item[name].stack_size end) or 0) or 0) end
+    end
+    if cap <= 0 or n >= LOW_SHARE * cap or not M.remote(e) then return nil end
+    return string.format('%s %s: %d of %d %s (%d%%)', e.name, at_text(e.position), n, cap, name or 'ammo', math.floor(100 * n / cap))
+  end
+  -- One of our turrets died (the runtime's on_entity_died): marked built since, for when its ghost is built again; one
+  -- no construction robot reached is kept LOST_KEEP ticks for the outpost_turret_lost group.
   function M.turret_died(e)
     local s = api.state()
     local mem = s.push_turrets and s.push_turrets[e.force.name]
     local unit = mem and e.unit_number
     if unit then mem.units[unit] = {new=true, g=mem.gen} end
+    if M.remote(e) then
+      s.push_lost = s.push_lost or {}
+      table.insert(s.push_lost, {tick=game.tick, force=e.force.name, surface=e.surface.name, name=e.name, position={x=e.position.x, y=e.position.y}})
+      while #s.push_lost > 64 do table.remove(s.push_lost, 1) end
+    end
   end
   -- The last finished read; with the background job running it never reads
   -- in a reply, except a force's very first (and tests without the job).
   local function with_belts(c,force)
-    if not api.belt_groups then return c end
+    local lost = {}
+    for _, l in ipairs(api.state().push_lost or {}) do
+      if l.force == force.name and game.tick - l.tick <= LOST_KEEP then
+        add(lost, 'outpost_turret_lost', l.surface, nil, l.position, l.name, nil, string.format('%s %s destroyed %ds ago', l.name, at_text(l.position), math.floor((game.tick - l.tick) / 60)))
+      end
+    end
+    if not api.belt_groups and not next(lost) then return c end
     local out={tick=c.tick,groups={}}
     for _,g in ipairs(c.groups) do out.groups[#out.groups+1]=g end
-    for _,g in ipairs(api.belt_groups(force)) do out.groups[#out.groups+1]=g end
+    for _,g in ipairs(api.belt_groups and api.belt_groups(force) or {}) do out.groups[#out.groups+1]=g end
+    for _,g in pairs(lost) do g.observed_tick=game.tick; out.groups[#out.groups+1]=g end
     return out
   end
   local function current(force)

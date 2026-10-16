@@ -4958,4 +4958,20 @@ fh watch    # deploy on every change
   nothing left over`.
   - `top_up: "low-density-structure"` then fills the room left with as many of that item as fit.
   - Without these, `cargo` weighs a list and splits it into rockets, as before.
+- Remote outposts (Opus, 15:20: the south copper outpost 550 tiles out was cut by biters 5+ times a shift).
+  - game_alerts and team.alerts have two new kinds, for turrets no construction robot reaches (no logistic network's
+    construction area covers them): `outpost_ammo_low`, ammo turrets under 20% of their ammo slots (`gun-turret
+    (408,-248): 1 of 100 piercing-rounds-magazine (1%)`, seen on a copy of world n); and `outpost_turret_lost`, such
+    turrets destroyed in the last 10 minutes.
+  - `outpost {area | position, radius?, ammo?, below?, dry_run?}` reads the area and submits one plan to your queue,
+    each step skipped if it fails:
+    - `construct {area}`: its ghosts;
+    - `rearm {area, ammo, below}`: ammo turrets under `below` rounds (default 20; the ammo the turrets there hold
+      most of, else firearm-magazine);
+    - `wire` (copper): each network there with no power, joined to the nearest pole of a powered network that a
+      copper wire reaches.
+    - `plan` says each step, what you hold of the ghosts' items and of the ammo (`short of gun-turret 5 (you hold
+      0)`), and `not_reached` names cut-off networks no wire reaches. `dry_run: true` queues nothing.
+    - On the copy: `construct: 13 ghosts (...); rearm: 1 of 23 ammo turrets under 20 rounds, with
+      piercing-rounds-magazine`, 31 ms in the container for the read (about 6 ms on n).
 

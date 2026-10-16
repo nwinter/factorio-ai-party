@@ -527,3 +527,48 @@ do
   eq(r.line,'one rocket: iron-plate 200 (200 kg) = 200 of 1000 kg, 2 of 20 slots; room left 800 kg, 18 slots; nothing left over')
 end
 print('d15_batch4 14 cargo: ok')
+
+-- 15 (Opus): outpost: one queued tour (construct, rearm, wire); turrets out of robot reach under 20% ammo. ----------
+do
+  defines={inventory={turret_ammo=1},wire_connector_id={pole_copper=5},flow_precision_index={five_seconds=1}}
+  prototypes={item={['firearm-magazine']={type='ammo',stack_size=200},['gun-turret']={}}}
+  local world={}
+  local function connector(e) return {can_wire_reach=function(o) return true end,owner=e} end
+  local function pole(x,y,net,made)
+    local e={valid=true,type='electric-pole',name='small-electric-pole',position={x=x,y=y},electric_network_id=net,
+      electric_network_statistics={output_counts=made and {['steam-engine']=1} or {},get_flow_count=function() return made and 10 or 0 end}}
+    e.get_wire_connector=function() return connector(e) end
+    world[#world+1]=e; return e
+  end
+  pole(0,0,1,true); pole(6,0,2,false)
+  local tinv={get_item_count=function() return 5 end,get_contents=function() return {{name='firearm-magazine',count=5}} end}
+  world[#world+1]={valid=true,type='ammo-turret',name='gun-turret',position={x=3,y=3},get_inventory=function() return tinv end}
+  world[#world+1]={valid=true,type='entity-ghost',ghost_name='gun-turret',position={x=4,y=4},ghost_prototype={items_to_place_this={{name='gun-turret',count=1}}}}
+  local surface={find_entities_filtered=function(f)
+    local out={}
+    for _,e in ipairs(world) do if e.type==f.type then out[#out+1]=e end end
+    return out
+  end}
+  local submitted
+  local O=dofile('mod/agent-harness_0.1.0/outpost.lua'){position=function(v) return v end,
+    integer=function(v,d,lo,hi,name) v=v==nil and d or v; assert(v>=lo and v<=hi,name); return v end,
+    submit=function(_,a) submitted=a; return {plan={id=7,steps=#a.steps}} end}
+  local p={surface=surface,force='player',get_item_count=function(n) return n=='firearm-magazine' and 100 or 0 end}
+  local r=O.read(p,{position={x=0,y=0},radius=16,dry_run=true})
+  eq(r.ghosts,1); eq(r.turrets_low,1); eq(r.unpowered_networks,1)
+  eq(r.plan[1],'construct: 1 ghosts (1 gun-turret); short of gun-turret 1 (you hold 0)')
+  eq(r.plan[2],'rearm: 1 of 1 ammo turrets under 20 rounds, with firearm-magazine (you hold 100)')
+  eq(r.plan[3],'wire: small-electric-pole (6,0) (network 2, no power) to small-electric-pole (0,0) (network 1)')
+  eq(submitted,nil,'dry run queues nothing')
+  r=O.read(p,{position={x=0,y=0},radius=16})
+  eq(r.queued,3); eq(submitted.steps[3].action,'wire'); eq(submitted.steps[2].args.ammo,'firearm-magazine'); eq(submitted.steps[1].on_fail,'skip')
+  -- pushalerts: a turret with 30 of 400 rounds where no construction robot reaches.
+  local PA=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return {} end}
+  local slots={{valid_for_read=true,name='firearm-magazine'},{valid_for_read=false}}
+  local inv=setmetatable({get_item_count=function() return 30 end},{__index=function(_,k) return slots[k] end,__len=function() return 2 end})
+  local t={name='gun-turret',position={x=-15,y=558},force='player',surface={find_logistic_networks_by_construction_area=function() return {} end}}
+  eq(PA.outpost_low(t,inv),'gun-turret (-15,558): 30 of 400 firearm-magazine (7%)')
+  t.surface.find_logistic_networks_by_construction_area=function() return {{}} end
+  eq(PA.outpost_low(t,inv),nil,'robots reach it')
+end
+print('d15_batch4 15 outpost: ok')
