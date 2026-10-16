@@ -4838,6 +4838,8 @@ function handlers.inspect(p,a)
         if name and (f.count or 0)>0 and e.get_item_count(name)<f.count and M.slots.full_of(e,name) then blocked[#blocked+1]=name end
       end
       if #blocked>0 then out.requests_blocked=table.concat(blocked,', ')..': requested, and no slot takes them' end
+      local oki,one=pcall(M.reqchest.one_item,e)
+      if oki and one then out.one_item=one.line end
       -- A full chest (Astra, Luna, shift19): the machines whose output waits on it, and the nearest chests with a free slot.
       if e.type=='container' or e.type=='logistic-container' then
         local fc=M.supply.fullchest
@@ -7487,6 +7489,12 @@ function M.delivery_note(p,e,item)
   end
   if count>4 then parts[#parts+1]=string.format('+%d local inserters',count-4) end
   if #list==32 then parts[#parts+1]='local inserter read capped at 32' end
+  -- What the game does with what is over the request (Sonnet, d15: robots took a hand-fed item back), and one item in
+  -- every slot while others are requested (reqchest.lua).
+  local oko,over=pcall(M.reqchest.over,e,item)
+  if oko and over then parts[#parts+1]=over end
+  local oki,one=pcall(M.reqchest.one_item,e)
+  if oki and one then parts[#parts+1]=one.line end
   return table.concat(parts,'; ')
 end
 -- friction2 and friction3: the chests holding it, nearest first; each says what it feeds (M.feeds), and those come
@@ -11451,6 +11459,7 @@ M.supply.feed=function(e,into,from) return M.craftrate.feed(e,into,from) end
 -- trace: a machine's feeders and their sources, its output followed to where it ends, an item's routes (trace.lua).
 M.fragile=require('fragile'){position=position,integer=integer}
 M.personal=require('personal'){}
+M.reqchest=require('reqchest'){}
 M.trace=require('trace'){state_text=function(e) return M.thrust.state_text(e) end,fluid_upstream=function(box,i) return M.thrust.upstream(box,i) end,held_blocked=M.details.held_blocked,observe=function(e,p) return M.readmemory.observe(e,p) end,memory_trace=function(p,a) return M.beltgaps.trace(p,a) end,end_seen=M.factory_digest.end_seen,supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
 -- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
@@ -11504,7 +11513,7 @@ M.census=require('census'){state=state,timed=M.timed,observe_entity=function(e) 
 M.burnerfuel=require('burnerfuel'){state=state,fuel_users=function(s) return M.census.fuel_users(s) end}
 M.fuelbudget=require('fuelbudget'){fuel_users=function(s) return M.census.fuel_users(s) end,status_name=function(e) return M.machine_status(e) end}
 function handlers.fuel_budget(p,a) return M.fuelbudget.read(p,a) end
-M.networks=require('networks'){state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
+M.networks=require('networks'){reqchest=function() return M.reqchest end,state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
   sky=function(surface) return M.lightning and M.lightning.sky(surface) end}
 -- One item across every planet and platform (packaudit.lua; Luna, 16:50).
 M.packaudit=require('packaudit'){reuse=function(key,fn) return M.supply.reuse(key,fn) end,spoil=M.spoil,

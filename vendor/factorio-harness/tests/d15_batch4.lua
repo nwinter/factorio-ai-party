@@ -353,3 +353,32 @@ do
   eq(B.lines({force=force},h),nil,'told once')
 end
 print('d15_batch4 5 burner fuel: ok')
+
+-- 6 (Sonnet): requester chests: what is over the request leaves; one item in every slot. ----------------------------
+do
+  defines={logistic_member_index={logistic_container=1},inventory={chest=1}}
+  local items={['iron-plate']=100}
+  local slots=48
+  local inv={get_item_count=function(n) return items[n] or 0 end,count_empty_stacks=function() return 0 end,
+    get_contents=function() local out={} for n,c in pairs(items) do out[#out+1]={name=n,count=c} end table.sort(out,function(a,b) return a.name<b.name end) return out end}
+  setmetatable(inv,{__len=function() return slots end})
+  local pt={trash_not_requested=false,filters={{name='iron-plate',count=10,max_count=20},{name='copper-plate',count=10}}}
+  local ins={drop_target=nil,name='fast-inserter',position={x=1.5,y=0.5},pickup_target={valid=true,name='transport-belt',position={x=2.5,y=0.5}}}
+  local e={valid=true,prototype={logistic_mode='requester'},position={x=0.5,y=0.5},force='player',
+    get_inventory=function() return inv end,get_logistic_point=function() return pt end,
+    surface={find_entities_filtered=function() return {ins} end}}
+  ins.drop_target=e
+  local R=dofile('mod/agent-harness_0.1.0/reqchest.lua'){}
+  eq(R.over(e,'iron-plate'),'iron-plate: the chest holds 100, over its request max 20: the game moves the 80 over it to the chest\'s trash slots, and robots carry them to storage')
+  items['copper-plate']=100
+  eq(R.over(e,'copper-plate'),nil,'no max, trash unrequested off: it stays')
+  pt.trash_not_requested=true
+  has(R.over(e,'copper-plate'),'over its request 10 with trash unrequested on: the game moves the 90 over it')
+  items.coal=5
+  has(R.over(e,'coal'),'coal is not requested here and trash unrequested is on: the game moves all 5')
+  items={['iron-plate']=4800}
+  eq(R.one_item(e).line,'one item fills every slot: iron-plate 4800 in all 48 slots (it requests 10..20), so copper-plate cannot come in; put in by fast-inserter (1.5,0.5) from transport-belt (2.5,0.5)')
+  items={['iron-plate']=4000,['copper-plate']=5}
+  eq(R.one_item(e),nil,'two items')
+end
+print('d15_batch4 6 requester chests: ok')

@@ -975,7 +975,9 @@ return function(api)
         looked = looked + 1
         local ok, f = pcall(slots.full_of, e, x.name)
         if ok and f and e.valid then
-          out[#out+1] = {e=e, item=x.name, text=f.text, spoilage=f.spoilage}
+          -- One item in every slot (reqchest.lua; Sonnet, d15): which, and what puts it there.
+          local one = api.reqchest and try(function() return api.reqchest().one_item(e) end)
+          out[#out+1] = {e=e, item=x.name, text=one and one.line or f.text, spoilage=f.spoilage}
         end
       end
     end

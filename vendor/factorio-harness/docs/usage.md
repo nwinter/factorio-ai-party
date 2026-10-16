@@ -4867,4 +4867,17 @@ fh watch    # deploy on every change
   - Groups are by name and 64-tile cell. A group is told once, and again after 10 minutes if still so. `out of fuel
     now` counts only machines the pass saw working with fuel before.
   - Cost on the copy: 49 ms in 60 s in the container, at most 1.8 ms a step (about 0.4 ms on n).
+- Requester and buffer chests (Sonnet: hours of starvation twice).
+  - A hand `transfer` or `feed` into one adds to `delivery_note` what the game does with that item now.
+  - Over the request's max: `iron-plate: the chest holds 100, over its request max 20: the game moves the 80 over it to
+    the chest's trash slots, and robots carry them to storage`.
+  - With trash unrequested on: an item with no max, over its min, goes the same way, and so does an item the chest
+    does not request at all.
+  - An item it does not request, with trash unrequested off, stays in its slots.
+  - Seen on a 2.0.77 copy of world n: a chest asking 10..20 iron plate given 100 kept 20 and moved 80 to its trash, and
+    robots took 78 within seconds. With trash unrequested on, copper plate with no max fell to its min of 10, and the
+    coal went to the trash.
+  - One item in every slot while the chest requests others it lacks: `one item fills every slot: stone 2400 in all 48
+    slots (it does not request it), so iron-plate, copper-plate cannot come in; put in by ...`. This appears in that
+    delivery note, in `inspect` (`one_item`), and in the `requester_full` alert line in place of the slot list.
 
