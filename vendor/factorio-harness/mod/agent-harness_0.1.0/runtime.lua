@@ -7450,8 +7450,9 @@ function M.feeds(p,e,mode,item)
   -- A requester or buffer chest: its request for the item (Luna, d15: from nearest kept picking a requester).
   if mode=='requester' or mode=='buffer' then
     local okp,pt=pcall(function() return e.get_logistic_point(defines.logistic_member_index.logistic_container) end)
-    local min=item and okp and pt and M.reqchest and M.reqchest.request(pt,item) or 0
-    return 'a '..mode..' chest'..(item and (min>0 and string.format(' requesting %d %s: robots bring it there for that request',min,item) or ' with no request for '..item) or '')
+    if not (item and okp and pt and M.reqchest) then return 'a '..mode..' chest' end
+    local min=M.reqchest.request(pt,item) or 0
+    return 'a '..mode..' chest'..(min>0 and string.format(' requesting %d %s: robots bring it there for that request',min,item) or ' with no request for '..item)
   end
   local b=e.bounding_box
   local ok,list=pcall(function() return p.surface.find_entities_filtered{area={{b.left_top.x-3,b.left_top.y-3},{b.right_bottom.x+3,b.right_bottom.y+3}},type='inserter',force=p.force} end)
