@@ -6943,7 +6943,7 @@ end
 local feeding={TYPES={'assembling-machine','furnace','lab','boiler','burner-generator','mining-drill','inserter','agricultural-tower'}}
 -- The recipe an assembler or furnace is set to (a furnace's last one when idle), by name, or nil.
 function feeding.recipe_of(e)
-  if e.type~='assembling-machine' and e.type~='furnace' then return nil end
+  if e.type~='assembling-machine' and e.type~='furnace' and e.type~='rocket-silo' then return nil end
   local ok,r=pcall(e.get_recipe)
   if ok and r then return r.name end
   if e.type=='furnace' then
@@ -7049,7 +7049,7 @@ function feeding.wants(p,e,a)
   local fuel=feeding.fuel_want(p,e,a)
   if fuel then out[#out+1]=fuel end
   local recipe
-  if e.type=='assembling-machine' or e.type=='furnace' then
+  if e.type=='assembling-machine' or e.type=='furnace' or e.type=='rocket-silo' then
     local ok,r=pcall(e.get_recipe); recipe=ok and r or nil
     if not recipe and e.type=='furnace' then
       local okp,prev=pcall(function() return e.previous_recipe end)
@@ -7206,8 +7206,13 @@ function feeding.why(p,es,a)
   end
   if blocked.n>0 then notes[#notes+1]=M.other_fuel_line(blocked.n,blocked.holds,blocked.item) end
   if #order==0 and blocked.n>0 then return table.concat(notes,'; ') end
+  -- A silo's rocket cargo is not a recipe input: the calls that fill it.
+  local silos=0
+  for _,e in ipairs(es) do if e.type=='rocket-silo' then silos=silos+1 end end
+  if silos>0 then notes[#notes+1]='feed fills a rocket silo\'s rocket-part ingredients; its rocket cargo: load_silo, or transfer {inventory: "rocket_silo_rocket"}' end
   if #order==0 then
-    local base=string.format('none of the %d machines wants an item (no recipe set, or not a machine feed fills)',#es)
+    local base=silos==#es and string.format('the rocket silo%s rocket-part recipe takes none of what was named',silos==1 and '\'s' or 's\'')
+      or string.format('none of the %d machines wants an item (no recipe set, or not a machine feed fills)',#es)
     return #notes>0 and base..'; '..table.concat(notes,'; ') or base
   end
   local parts={}
@@ -7249,7 +7254,8 @@ function handlers.feed(p,a)
     assert(a.items==nil,'give recipe or items (or item), not both')
     a.crafts=integer(a.crafts,1,1,1000,'crafts')
   end
-  local types=a.types or (a.recipe and {'assembling-machine','furnace'}) or feeding.TYPES
+  -- A rocket silo's fixed rocket-part recipe is fed as a machine's (Muse, twice: feed {recipe} refused it as "no recipe set").
+  local types=a.types or (a.recipe and {'assembling-machine','furnace','rocket-silo'}) or feeding.TYPES
   if a.position~=nil then
     assert(a.positions==nil,'give position or positions, not both')
     if a.radius==nil then

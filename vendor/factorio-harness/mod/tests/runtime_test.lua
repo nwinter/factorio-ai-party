@@ -992,6 +992,17 @@ do
   r=call('feed',{recipe='logistic-science-pack',crafts=10,positions={{x=1,y=5},{x=2,y=5}}})
   eq(r.entities[1].loaded,nil); eq(r.entities[1].short,nil)
   eq(r.entities[2].loaded.inserter,2); eq(r.entities[2].short.inserter,3)
+  -- A rocket silo's fixed rocket-part recipe (d15 batch5 A4, Muse twice: "no recipe set").
+  prototypes.recipe['rocket-part']={name='rocket-part',ingredients={{type='item',name='inserter',amount=1},{type='item',name='transport-belt',amount=1}}}
+  local silo=assembler(4,'rocket-part'); silo.name='rocket-silo'; silo.type='rocket-silo'
+  machines[4]=silo
+  main=inv(stack('inserter',20),stack('transport-belt',20))
+  r=call('feed',{recipe='rocket-part',crafts=5,positions={{x=4,y=5}}})
+  eq(r.entities[1].loaded.inserter,5); eq(r.entities[1].loaded['transport-belt'],5)
+  prototypes.item['iron-plate']={}
+  main=inv(stack('iron-plate',20),stack(nil,0))
+  r=call('feed',{item='iron-plate',positions={{x=4,y=5}}})
+  eq(r.nothing_moved,'nothing given: the rocket silo\'s rocket-part recipe takes none of what was named; feed fills a rocket silo\'s rocket-part ingredients; its rocket cargo: load_silo, or transfer {inventory: "rocket_silo_rocket"}')
   fails(function() call('feed',{recipe='nope',positions={{x=1,y=5}}}) end,'unknown recipe nope')
   fails(function() call('feed',{crafts=2,positions={{x=1,y=5}}}) end,'crafts goes with recipe')
   fails(function() call('feed',{recipe='logistic-science-pack',items={'inserter'},positions={{x=1,y=5}}}) end,'recipe or items')
