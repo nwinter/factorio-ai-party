@@ -51,16 +51,32 @@ def index():
             word = c.replace("./fh ", "").split()[0]
             assert re.search(r"(?<![\w-])" + re.escape(word) + r"(?![\w-])", text), f"{topic}: index names {c}, the file does not"
     print(f"index: {len(topics)} topics, {len(brief.commands())} commands")
-    found = sorted(glob.glob(os.path.join(brief.ROOT, "runs", "*", "*", "describe.json")), key=os.path.getmtime)
-    if not found:
-        print("documented actions: skipped (no runs/*/*/describe.json)")
+    actions, source = describe_actions()
+    if not actions:
+        print("documented actions: skipped (no runs/*/*/describe.json with actions)")
         return
-    actions = set(json.load(open(found[-1])).get("actions", {}))
     listed = set(brief.commands())
     docs = "".join(open(p).read() for p in glob.glob(os.path.join(brief.REF, "*.md")) if not p.endswith("index.md"))
     missing = sorted(a for a in actions - listed - CORE if re.search(r"`(\./fh call |\./fh )?" + a + r"\b", docs))
     assert not missing, f"documented in a topic file but not in agent/ref/index.md: {missing}"
-    print(f"documented actions: ok ({found[-1].split('/runs/')[1]})")
+    print(f"documented actions: ok ({source})")
+
+
+def describe_actions():
+    """The action names of the newest runs/*/*/describe.json that has them: agents rewrite the file, plain or as a
+    whole reply (result.actions), and one being written is not JSON yet."""
+    for path in sorted(glob.glob(os.path.join(brief.ROOT, "runs", "*", "*", "describe.json")), key=os.path.getmtime,
+                       reverse=True):
+        try:
+            d = json.load(open(path))
+        except (OSError, ValueError):
+            continue
+        acts = d.get("actions") if isinstance(d, dict) else None
+        if not isinstance(acts, dict) and isinstance(d, dict) and isinstance(d.get("result"), dict):
+            acts = d["result"].get("actions")
+        if isinstance(acts, dict) and acts:
+            return set(acts), path.split(os.sep + "runs" + os.sep, 1)[-1]
+    return set(), ""
 
 
 def write():
