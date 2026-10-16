@@ -1117,6 +1117,21 @@ local function entity(p,args,read_only)
     found = cover
   end
   found = found or others[2] or others[3] or others[4] or others[5]
+  -- A tile corner (Muse 09:24: a position copied from an alert, rounded to integers, missed the chest at x.5 beside it):
+  -- the one entity of a tile touching that corner is the target; several are named.
+  if not found and pos.x == math.floor(pos.x) and pos.y == math.floor(pos.y) then
+    local touch = {}
+    for _, e in pairs(p.surface.find_entities_filtered{position=pos, radius=0.75, name=args.name}) do
+      if wanted(e) and e.type ~= 'resource' and e.type ~= 'item-entity' and M.target_rank(e, args) == 1
+        and math.abs(e.position.x - pos.x) <= 0.5 and math.abs(e.position.y - pos.y) <= 0.5 then touch[#touch+1] = e end
+    end
+    if #touch == 1 then found = touch[1]
+    elseif #touch > 1 then
+      local parts = {}
+      for i, e in ipairs(touch) do if i <= 4 then parts[#parts+1] = string.format('%s (%g,%g)', e.name, e.position.x, e.position.y) end end
+      error(string.format('(%g,%g) is a tile corner %d entities touch: %s; give the one meant by its position', pos.x, pos.y, #touch, table.concat(parts, ', ')), 0)
+    end
+  end
   if not found then
     -- Say what is close instead (shake3: 23 of Gemini's inspect misses were a
     -- tile or so from a pole, inserter or belt, or empty).
@@ -7203,12 +7218,23 @@ function handlers.collect(p,a)
     local list=a.positions or (a.position~=nil and {a.position}) or nil
     assert(type(list)=='table' and #list>=1 and #list<=64,'walk goes with positions (1..64 places to collect from)')
     local entities,far={},0
-    for i,pos in ipairs(list) do
-      local e=entity(p,{position=pos,name=type(pos)=='table' and pos.name or a.name,unit_number=type(pos)=='table' and pos.unit_number or nil},true)
-      friendly(p,e)
-      entities[i]=e
-      if not p.can_reach_entity(e) then far=far+1 end
+    -- A stop that does not resolve is left out and named (skipped), as transfer's walk does.
+    local skipped={}
+    for _,pos in ipairs(list) do
+      local ok,e=pcall(function()
+        local e=entity(p,{position=pos,name=type(pos)=='table' and pos.name or a.name,unit_number=type(pos)=='table' and pos.unit_number or nil},true)
+        friendly(p,e)
+        return e
+      end)
+      if ok then
+        entities[#entities+1]=e
+        if not p.can_reach_entity(e) then far=far+1 end
+      else
+        local okp,q=pcall(position,pos)
+        skipped[#skipped+1]=string.format('%s: %s',okp and string.format('(%g,%g)',q.x,q.y) or '?',(tostring(e):gsub('^[^:]*:%d+: ','')))
+      end
     end
+    if #entities==0 then error(#skipped>1 and string.format('none of the %d positions resolves; the first: %s',#skipped,skipped[1]) or skipped[1],0) end
     if far>0 then
       assert(a.keep_max==nil or type(a.keep_max)=='boolean','keep_max must be true or false')
       local take={direction='to_player',item=a.item,quality=a.quality,partial=a.up_to==true or nil,keep_max=a.keep_max,outputs_only=a.outputs_only,
@@ -7220,6 +7246,7 @@ function handlers.collect(p,a)
       out.until_tick=action.until_tick; out.out_of_reach=far
       out.legs,out.legs_more=M.legs(p,action.targets)
       out.walking=walking
+      out.skipped=#skipped>0 and skipped or nil
       return out
     end
   end
@@ -7755,13 +7782,34 @@ function M.transfer_walk(p,a)
   args.walk=nil; args.ticks=nil
   local ticks=integer(a.ticks,3600,1,36000,'ticks')
   local entities,far={},0
-  for i,pos in ipairs(list) do
+  -- A stop that does not resolve (Muse 06:21 and 09:24, 4+ times: one bad position aborted the whole tour) is left out
+  -- and named (skipped); none left: refused with the first reason.
+  local skipped={}
+  for _,pos in ipairs(list) do
     -- Seen, not yet in reach (a read's sight): the walk brings it into reach.
-    local e=entity(p,{position=pos,name=pos.name or a.name,unit_number=pos.unit_number or a.unit_number},true)
-    friendly(p,e)
-    entities[i]=e
-    if not p.can_reach_entity(e) then far=far+1 end
+    local ok,e=pcall(function()
+      local e=entity(p,{position=pos,name=pos.name or a.name,unit_number=pos.unit_number or a.unit_number},true)
+      friendly(p,e)
+      return e
+    end)
+    if ok then
+      entities[#entities+1]=e
+      if not p.can_reach_entity(e) then far=far+1 end
+    else
+      local okp,q=pcall(position,pos)
+      skipped[#skipped+1]=string.format('%s: %s',okp and string.format('(%g,%g)',q.x,q.y) or '?',(tostring(e):gsub('^[^:]*:%d+: ','')))
+    end
   end
+  if #entities==0 then error(#skipped>1 and string.format('none of the %d positions resolves; the first: %s',#skipped,skipped[1]) or skipped[1],0) end
+  if #skipped>0 then
+    if a.positions then args.positions={} for _,e in ipairs(entities) do args.positions[#args.positions+1]={x=e.position.x,y=e.position.y,name=e.name} end end
+    local out=M.transfer_walk_go(p,a,args,entities,far,fill,ticks)
+    if type(out)=='table' then out.skipped=skipped end
+    return out
+  end
+  return M.transfer_walk_go(p,a,args,entities,far,fill,ticks)
+end
+function M.transfer_walk_go(p,a,args,entities,far,fill,ticks)
   -- All in reach: the transfer at once (a fill is its total there).
   if far==0 then
     args.avoid=nil

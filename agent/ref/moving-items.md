@@ -2,7 +2,7 @@
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` (and `feed` or `collect {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one
-  call; `legs` lists the route); `transfer {item, "from": "nearest"}` (`radius` up to 256 to walk) takes from the nearest chest
+  call; `legs` lists the route; a position that resolves to nothing is left out and named in `skipped`, the rest go on); `transfer {item, "from": "nearest"}` (`radius` up to 256 to walk) takes from the nearest chest
   holding the item and says which, a `count` it lacks from the next ones (one holding it all goes alone); chests that
   feed something (requester and buffer chests, a chest an inserter takes from) only with `"feeding": true`, and walking
   (`"walk": true` looks 32 tiles) none in a worm's reach, each named when left out; `transfer
@@ -17,7 +17,8 @@
   "crafts": N, "positions": [...]}` loads each machine set to that recipe for N crafts; `feed` takes `item` or `items`;
   `inspect {"positions": [...]}` inspects up to 32 entities in one call (`"compact": true`: one line each); `collect {"radius": N}` without `item` takes
   every assembler and furnace output in the radius (output slots only). `position` and `positions` are interchangeable
-  in these calls (`corrected` says how it ran). A repeating queue (`queue_repeat`, optional `name`) puts a `queue:`
+  in these calls (`corrected` says how it ran). A position on a tile corner (whole numbers) picks the one entity of a
+  tile touching it, or names those that do; alert lines give a single entity's own position (`near (16.5,23.5)`). A repeating queue (`queue_repeat`, optional `name`) puts a `queue:`
   line in the team block when a round's short steps differ from the round before; steps with `up_to: true` or
   `"on_short": "skip"` are left out of it. `queue_repeat` takes `times` (rounds) and `for_ticks` (no round starts
   after that); the loop then ends with one `queue:` line (`done after N rounds: ...`) and `loop_done` in `queue_status`;

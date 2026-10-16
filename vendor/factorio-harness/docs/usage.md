@@ -5391,3 +5391,11 @@ fh watch    # deploy on every change
 - A `wait_until` on `platform_arrived` or `platform_left` with no `timeout` (Luna 07:50: a queued one timed out at the
   default 60 s with the ETA at 77 s), queued or direct, goes on at its default end while its ETA is known: to the ETA
   plus a quarter and 10 s, at most 54000 ticks from its start (`extended` says so). A timeout given is kept.
+- Walking tours over positions (Muse 06:21 and 09:24, 4+ times: the first bad position aborted the whole tour):
+  `transfer {positions, walk}` and `collect {positions, walk}` leave out a position that resolves to nothing (not
+  found, not ours, not in sight) and name it in `skipped` with why; the rest go on, with their rows and the tally. None
+  left: refused with the first reason. Checked on the copy (two of three stops skipped, the third done).
+- Alert positions (Muse 09:24: alert coordinates rounded to integers while chests sit at x.5, so a copied position
+  missed): a group of one entity says its own position (`near (16.5,23.5)`); bigger groups keep their centre. A target
+  position on a tile corner (whole numbers on both axes) picks the one entity of a tile touching that corner, or names
+  those that do (`(49,191) is a tile corner 2 entities touch: fast-inserter (48.5,191.5), requester-chest (48.5,190.5)`).
