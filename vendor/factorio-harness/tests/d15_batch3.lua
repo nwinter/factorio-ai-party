@@ -189,6 +189,13 @@ do
   out=RC.check(p,{{x=0,y=0},{x=500,y=0}},A.mode(nil))
   eq(out.reachable,'no: closed in at the goal'); eq(out.mine_for_a_way_in[1],'steel-chest (23,16)')
   has(out.closed_in_goal,'the goal: the area')
+  -- a goal in deep water: no spot to stand there, no dig (measured on a copy of world n: (350,900) read "closed in, about 0 tiles")
+  P.region=function(_,q) return q.x==500 and {closed=true,stuck=true,tiles=0} or {} end
+  P.dig=function() error('no dig for a goal with no spot to stand') end
+  surface.get_tile=function() return {name='deepwater'} end
+  out=RC.check(p,{{x=0,y=0},{x=500,y=0}},A.mode(nil))
+  eq(out.reachable,'no: no spot to stand at the goal'); eq(out.closed_in_goal,'the goal: no spot the character stands on within a tile of (500,0) (the tile there: deepwater)')
+  eq(out.mine_for_a_way_in,nil)
 end
 print('d15_batch3 4 route check: ok')
 
