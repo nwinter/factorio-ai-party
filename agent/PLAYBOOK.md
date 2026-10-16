@@ -17,6 +17,9 @@ Record each milestone you reach in `notes.md` with the game time printed in fh's
 
 - `describe.json` lists every action with its arguments, one action per line: `grep '"build"' describe.json`. (If it
   is missing, make it with `./fh call describe --format json > describe.json`.) Check it before guessing arguments.
+  `./fh help ACTION` prints one action's arguments (`./fh help transfer` shows calls that work).
+- Reference: every command's details are in `ref/`, one file per topic (listed at the end of this file with their
+  commands); `./fh help TOPIC` prints one. An argument refusal or an unknown action names the call's topic.
 - Look: `./fh observe`, `./fh call map`, `./fh call scan`, `./fh call nearest`, `./fh call status`,
   `./fh call rates`, `./fh call bottleneck`, `./fh call recipes`, `./fh call technologies`.
 - Act: `./fh call ACTION --args '{...}'`. Timed actions (move_to, mine, build_path, construct, ...) take `--wait`,
@@ -25,26 +28,6 @@ Record each milestone you reach in `notes.md` with the game time printed in fh's
 - Plans: `./fh queue submit --file plan.json` runs a multi-step plan inside the game with no round trips.
 - Pictures: `./fh view --out view.png` draws a schematic map; `./shot NAME` saves a real game screenshot to
   `shots/NAME.png` that you can open and look at. Use pictures to check layouts (inserter directions, belt flow).
-- Tools for features beyond hand building (what each action does; see describe.json for arguments):
-  - Trains: rails with build {item: rail, entity: straight-rail|curved-rail-a|curved-rail-b|half-diagonal-rail};
-    stops, locomotives and wagons with build; train {position: stop, station, limit}; train {position: locomotive,
-    schedule, automatic}.
-  - Logistics: roboports with build, robots into them with transfer; requester and buffer chests' requests with
-    requests {position, set}; your own requests with requests (needs logistic robotics).
-  - Circuits: circuit_set {position, platform?, enable | logistic | read | settings | signals | arithmetic | decider |
-    selector}; wire {from, to, color: red|green, or none for copper}; inspect reads both back (in reach or by remote
-    view, all of a platform).
-  - Modules and beacons: transfer {position, item: <module>} puts it in the machine's or beacon's module slots.
-  - Nuclear: build the reactor and heat pipes; transfer or refuel with uranium-fuel-cell.
-  - Quality: configure {recipe, quality}; quality on build, transfer and requests.
-  - Grenades and capsules: use_item {item, position}.
-  - Vehicles: vehicle {position, enter: true} gets into a car, tank, spidertron, locomotive or wagon; vehicle {exit:
-    true}; vehicle {drive: {x,y}} drives a car or tank (timed); vehicle {position, go_to: {x,y}} walks a spidertron.
-  - Items on the ground: scan and observe sum them up by item (ground_items); status alerts.ground_items names full
-    landing pads that spill and piles near buildings; deconstruct {area, items_on_ground: true} marks them for
-    construction robots; pickup {area | position, radius, items} picks them up by hand (timed).
-  - Placement: a refused build of an offshore pump, or of anything onto water, lists the nearest valid placements;
-    placements {name, near, radius, limit} lists where it fits now, nearest first, without building.
 - More detail: `../../../vendor/factorio-harness/docs/usage.md`.
 
 ## Pace
@@ -65,58 +48,31 @@ Your character stands still while you think, and the clock does not.
 
 ## Harness notes
 
-- `--wait` lasts until the action's own end tick. A nonzero exit means it failed or is still running: read
+- After `--wait`, a nonzero exit means it failed or is still running: read
   `error.code`. On `wait_timeout`, run `./fh wait` (never a new move/mine/build, which would interrupt it) until it
-  reports `idle`. In-game queue plans (`./fh queue submit --file plan.json`, a JSON array of steps) avoid round trips.
-- `./fh call wait_until --args '{"until":"researched","technology":"automation"}' --wait` (also `item_count`,
-  `crafting_done`) lets the factory run until a condition holds, without polling. Add `--wait-timeout 600000` to
-  wait up to 10 minutes (15 at most); hitting the limit fails with `timed_out`.
+  reports `idle`.
 - `./fh sleep 120` waits up to 120 s; the game runs in real time either way. Your current action and queue keep going,
-  and nothing new starts: the reply's first line says whether your queue keeps running, your action keeps going until
-  a tick, or your character stands idle. It returns early when you are hit, mentioned or told something, when someone
+  and nothing new starts. It returns early when you are hit, mentioned or told something, when someone
   changes your board item, when your running queue finishes or stalls, and with `--until` when a condition holds:
   `--until "researched"` (the research running now, or `researched TECH`), `--until crafting_done`,
-  `--until "item_count iron-plate>=200"` (your inventory) or `"item_count iron-plate>=200 at -18.5,-34.5 -16.5,-34.5"`
-  (chests). It does not return when a machine starves, and never runs past your deadline. With no queue running, no
+  `--until "item_count iron-plate>=200"` (your inventory). It does not return when a machine starves, and never runs past your deadline. With no queue running, no
   action running and no `--until` it lasts at most 300 s (`capped at 300 s: no queue, action or condition`); up to 900 s
-  otherwise. Its first reply and the one that reads the wake carry `open for you: ...` (your board items, alert groups
-  and idle or starved machines in your fresh claims, requests and tells to you unanswered). `./fh call sleep` is the
-  same wait. A tell or mention wakes it once.
+  otherwise. `./fh call sleep` is the same wait. A tell or mention wakes it once.
 - `./fh wait --until "tell|alert|COND" --max 600` is the same wait with one line out (`woke: told after 42 s (astra:
   ...)`): it ends on a tell or mention, a new attack/enemy alert (`alert`), a `--until` condition as for sleep, or
   after `--max` seconds (up to 900; 300 with nothing running and no condition); the team block comes with your next
   reply, and the line ends with `open for you: ...`.
-- `./fh wait --max 150` (or `--until idle`) waits for your running action (and combat) to end, at most 150 s, and
-  returns at once when nothing runs (`outcome: idle`, exit 0, naming the last action and how long ago it ended when
-  that was before your previous call).
-- A tell or mention ends any wait early: a direct `wait_ticks`/`wait_until` (outcome `told` or `mentioned`), and
-  `--wait` or `./fh wait` on an action (outcome `told`, `still_running`: the action keeps going).
 - A direct action that drives your character (walk, `move_to`, build, mine, transfer, collect, feed and the like)
   pauses your running queue at once; `./fh queue resume` continues it. A direct `wait_ticks` or `wait_until` while
-  your queue runs is refused (it would pause the queue): use `./fh sleep` or `./fh wait --until`, or pass
-  `"pause_queue":true`. Reads, `sleep`, `say`, `tell`, the board, `craft` and `research` leave the queue running.
-- The waits: a queue plan for rounds that keep going while you think (refuel, rearm; `./fh plan save` once, then
-  `./fh plan run` to repeat it); `wait_until` for one condition, with a timeout of a few minutes; `./fh sleep` or
-  `./fh wait --until` for a wait that leaves the queue running.
-- The clock line counts a wait or sleep as idle: `character idle 5m00s of it (100%, 4m30s of that in wait_ticks)`.
-  The operator's idle nudge uses the same count.
-- An `OPERATOR:` line (on stderr, and first on stdout) is a message from the operator. fh prints each message once;
-  later replies that still carry it leave it out (`--operator-repeat` prints it on every reply). With `--format json`
-  it is only in the reply's `result.operator`.
-- `./fh call labs` says which labs lack which packs, which inserters feeding them are idle and why, and the research ETA.
-- `feed` tops up every machine in reach (or `"radius":20` to walk a line) with its recipe ingredients, lab science
-  packs and burner fuel; `keep` holds back a reserve. Use it instead of one `transfer` per machine.
-- `collect` takes machine outputs only; it leaves chests alone unless you name their positions or pass `chests:true`.
-- `build` errors name the blocker (tree, rock, the character, water). Trees and rocks: `place_ghosts` + `construct`
-  clears them, or `mine` them. `build` works while the clock is paused.
-- `pole_route` with `from` (a powered pole) and `to` lays pole ghosts along a line and reports how many poles you are
-  `short`; craft those, then `construct --wait`.
-- `inspect` shows inserter pickup/drop tiles and fluid connection tiles (`fluid_connections[].joins` is where a pipe
-  must go). `research` with no arguments reports progress and the queue.
-- Hand-mining ore yields one ore per cycle (2 s for iron); `last.mined` counts it. Rocks give stone and coal fast.
-- A burner's fuel slot holds one fuel type: you cannot add coal while wood remains.
+  your queue runs runs as a sleep and the queue keeps going (`as_sleep`; `"pause_queue":true` pauses it). Reads, `sleep`, `say`, `tell`, the board, `craft` and `research` leave the queue running.
+- An `OPERATOR:` line (on stderr, and first on stdout) is a message from the operator.
 - Small electric poles supply only a 5x5 area. Inserters pick up from the tile behind and drop on the tile in front;
-  check the edge tiles of 3x3 machines.
+  check the edge tiles of 3x3 machines. An inserter's `direction` is the side it picks up from (`direction: east` takes
+  from the east, drops west; a belt's is where items go); `build` replies say it in words.
+- Every sleep and wait ends on an urgent alert (`woke: urgent`, naming it): our structures attacked within 40 tiles of
+  you, an enemy group heading within 40 tiles of you, enemies destroying buildings in your fresh claims or near you, a
+  platform you hear about losing a building or its hub hit, a teammate dying on your surface, a network on your surface
+  half on low or no power; `--no-urgent` opts out.
 - Use `--format json` when you need exact fields; the default output is a compact table.
 
 ## Rules

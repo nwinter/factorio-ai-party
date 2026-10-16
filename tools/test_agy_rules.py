@@ -2,34 +2,32 @@
 """tools/agy_rules.py (d15 trajectory analysis: agy cuts AGENTS.md to 24000 bytes, and each of Gemini's turns started
 with no memory): python3 tools/test_agy_rules.py
 
-1. rules: an AGENTS.md over 24000 bytes becomes a compact one under the cut (everything before "## Team", where the rest
-   is, every action with its arguments, then the team section's start), the full text in AGENTS-full.md; one that fits
-   is left alone.
+1. rules: an AGENTS.md over 24000 bytes gets a warning on stderr and stays as it is (agy gets the same core and ref/
+   topic files as every agent, tools/brief.py); one that fits: no warning.
 2. digest: notes.md with its "## Now" first, how old it is, the end of the last turn's output; no notes: says so.
 """
-import json, os, sys, tempfile, time
+import contextlib, io, os, sys, tempfile, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.dont_write_bytecode = True
 import agy_rules  # noqa: E402
 
 with tempfile.TemporaryDirectory() as d:
-    head = "# You are playing Factorio\n\n## Goal\n\nPlay.\n\n## Your interface: `./fh`\n\nCall actions.\n\n"
-    team = "## Team\n\n" + "".join(f"- Action example {i}: ./fh call feed --args '{{}}' does a thing.\n\n" for i in range(900))
-    full = head + team + "## Space Age\n\nPlanets.\n\n## Compact instructions\n\nKeep notes.\n"
+    head = "# You are playing Factorio\n\n## Goal\n\nPlay.\n\n"
+    full = head + "## Team\n\n" + "".join(f"- Action example {i}: ./fh call feed does a thing.\n\n" for i in range(900))
     open(os.path.join(d, "AGENTS.md"), "w").write(full)
-    json.dump({"actions": {"feed": {"position": "x", "radius": "r", "returns": "doc"}, "status": {}}}, open(os.path.join(d, "describe.json"), "w"))
-    assert agy_rules.rules(d)
-    text = open(os.path.join(d, "AGENTS.md")).read()
-    assert len(text.encode()) <= agy_rules.LIMIT, len(text.encode())
-    assert text.startswith(head) and "## Full instructions" in text and "AGENTS-full.md" in text, text[:400]
-    assert "- feed: position, radius\n- status\n" in text, "every action with its arguments, doc keys left out"
-    assert "Action example 0:" in text and "(The team section goes on in AGENTS-full.md.)" in text
-    assert "## Space Age" not in text
-    assert open(os.path.join(d, "AGENTS-full.md")).read() == full
-    # one that fits stays as it is
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        assert agy_rules.rules(d)
+    assert "over agy's 24000-byte cut" in err.getvalue(), err.getvalue()
+    assert open(os.path.join(d, "AGENTS.md")).read() == full, "the guard changes nothing"
+    assert not os.path.exists(os.path.join(d, "AGENTS-full.md"))
+    # one that fits: no warning
     open(os.path.join(d, "AGENTS.md"), "w").write(head)
-    assert not agy_rules.rules(d) and open(os.path.join(d, "AGENTS.md")).read() == head
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        assert not agy_rules.rules(d)
+    assert err.getvalue() == "" and open(os.path.join(d, "AGENTS.md")).read() == head
     print("rules: ok")
 
     # digest

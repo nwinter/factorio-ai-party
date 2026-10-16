@@ -66,9 +66,11 @@ def wrapper():
     try:
         for d in ("tools", "agent", "bin"):
             os.makedirs(os.path.join(tmp, d))
-        shutil.copy(os.path.join(ROOT, "tools", "new-run.sh"), os.path.join(tmp, "tools"))
+        for f in ("new-run.sh", "brief.py"):
+            shutil.copy(os.path.join(ROOT, "tools", f), os.path.join(tmp, "tools"))
         for f in ("PLAYBOOK.md", "time-realtime.md", "compact.md"):
             shutil.copy(os.path.join(ROOT, "agent", f), os.path.join(tmp, "agent"))
+        shutil.copytree(os.path.join(ROOT, "agent", "ref"), os.path.join(tmp, "agent", "ref"))
         fh = os.path.join(tmp, "bin", "fh")
         open(fh, "w").write(FAKE_FH)
         os.chmod(fh, 0o755)

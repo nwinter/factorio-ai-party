@@ -1,0 +1,67 @@
+- `./fh progress` prints the run so far by shift from the recorded data (technologies, SPM, packs and plates a minute,
+  rockets, deaths, loss alerts, machines running, made by machines and moved by hand), a run line and the last 3
+  shifts; `--full` for each shift's technologies and packs, `--format json`.
+- `./fh research` shows the research queue: each technology's progress, who queued it, its packs, and when it should
+  finish at the current lab throughput (or which pack it waits for). `./fh research done` lists what finished lately
+  and what each unlocked. `./fh call science` (or `--args '{"pack":"logistic-science-pack"}'`) counts each pack the
+  research needs over your whole surface, the same for everyone wherever they stand: made and used in 10 minutes,
+  the assemblers set to it and their states, packs in chests, in landing pads and hubs, on belts, in labs and carried,
+  and the largest holders (landing pads included); spoilable packs add effective research units from freshness and remaining durability, before lab bonuses.
+  `platforms` and `preflight` cargo freshness give the same value, plus the current leg's arrival value when its ETA is known;
+  its `reach` line says where else each pack sits (inserter hands, robots) and why it does not reach the labs; its
+  `chain` line walks the pack's recipe tree down, each step with its makers and made and used per minute, following
+  the ingredient most makers lack (`chemical-science-pack: 9 of 14 makers lack advanced-circuit, ...; plastic-bar:
+  4 of 4 working, made 30/min, used 52/min`), and `chain_tree` lists every step down to ores and fluids; a mined or pumped step names its drills or pumps, their states
+  (working, output full, no resource left) and what they put into.
+- Shift and factory-digest `research_use` lines compare researched gear with current worn/fitted/carried gear,
+  show building tiers per planet from the dated census, and researched vehicles against force-wide built counts.
+- `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
+  `"surface"`) reads one item: where it sits (chests by kind, belts (`belt_lines`: the 5 belt lines holding the most, with their ends and the tile with the most), machine outputs, inserter hands, robots,
+  characters), each logistic network's stock of it (free and reserved, and which requesters the reserved stock is for),
+  its robots, every unmet requester with the reason (`inventory full: all 48 slots taken (spoilage 494 in 10 slots,
+  ...)` first when its slots are all taken; `inspect` of the chest shows `slots_full` and `requests_blocked`), the
+  `surplus_chest` names the largest unreserved plain/storage/provider stock, excluding requester/buffer chests;
+  machines that make and use it by status (the worst 3 with positions), and the inserters feeding them; `throughput` names a machine whose inserters carry less than its
+  recipe at full speed, each inserter's rate a minute, and how many inserters like its fastest it takes (`trace
+  {position}` on a machine gives the same).
+  `full_chests` names chests with every slot used that the makers' output waits on (slots used/total, what fills them,
+  the machines waiting); `chests` rows give free slots; `inspect` of a full chest names the nearest chests with free slots.
+- `./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
+  starts, naming each step's makers, their states and what they lack; `fixes` gives, for a starved maker, the nearest
+  chest within 64 tiles holding what it lacks and one `transfer` call that carries it there; with `"per_min":30` each step's rate for that
+  target, what it makes now, its makers' rate each and the machines the target takes.
+- `inspect` on a machine gives its `rate` (crafts
+  and output per minute, net of what goes back in), on an agricultural tower its `empty_cells` and why; a take from
+  a chest names what robots have reserved there.
+- `./fh call trace --args '{"position":{"x":0,"y":0}}'` (a machine or lab; `"platform"` on a platform) lists per
+  ingredient it lacks each feeding inserter, what that inserter reads and how much is there, and a container within 10
+  tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
+  they end and what blocks them (on a belt tile, a drill or a chest: from there, forward), naming where other items join a lane (`joins
+  transport-belt (12,5) carrying iron-plate on the left lane: your iron-ore mixes in`); `{"item":"chemical-science-pack"}` follows every route from its makers to the labs (for an ore, from the drills mining it).
+  `"upstream":true` goes the other way: from a machine, lab, thruster, hub or belt tile back along what feeds it, naming per ingredient the first place it stops or goes elsewhere (a filter, a circuit condition, an inserter taking it onto another belt, a jammed mixed lane, a splitter filter, where another item joins); `"item"` picks one.
+- `./fh call labs` says which labs lack which packs, which inserters feeding them are idle and why, and the research ETA.
+- `inspect` shows inserter pickup/drop tiles and fluid connection tiles (`fluid_connections[].joins` is where a pipe
+  must go).
+- `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}}}'` lists every chest's
+  and machine's contents in the area (where inspect reads, up to 64) as one table: `holds`, `requests`, `recipe`, `status_name`.
+  `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north",
+  "recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid the recipe puts there;
+  `inspect` of a ghost shows the same.
+- A burner whose burnt-result slot is full and that burns nothing reads `burnt_result_full` in scan, supply,
+  bottleneck and the status warning, and `inspect` says what fills it, whatever the game's status reads.
+- `power` (observe scope) gives per network `supply_line`: generators' nameplate, what the working ones can give, the stopped ones by status (dry steam engines), and `boilers` by state.
+- `power {position, fragile: true, radius?}` lists the poles of that network whose loss alone would cut machines off from all generation, with how many machines and where (centre it on an outpost: wires leaving the radius count as power).
+- `./fh call fuel_budget` (optional `"surface"`): each fuel made and used per minute, and each group of fuel users (boilers, furnaces, burner drills, heating towers, `recipe plastic-bar`, ...) with what it burns per minute and the minutes its own fuel lasts, fewest first.
+- `game_alerts {kind:"no_power"}` groups connected machines without power by electric network, including isolated drill networks; `move_to` reports narrow-corridor margin crossings in `last.passed_within_margin`.
+- `game_alerts {kind:"belt_cut"}` names observed gaps in previously carrying belts; rebuilt gaps clear. `inspect`/`trace` return dated last-seen memory under fog. `order_set` supports radius 256 and ammo/fuel trigger areas up to 256x256; depleted-drill alerts include one cached same-resource placement.
+- `belt_gaps {from,to,via?,surface?}` reads remembered belt gaps/ghosts with observation ticks; unrecorded tiles are unknown. `pipe_gaps {from,to,via?}` reads a pipe line live: its fluid segments (fluid, amount, extent) and the cuts where neighbours do not join or the line stops. `danger {position, radius?}` reads a destination before a trip: worms and spawners near it with their reach, enemy units seen now, recent attacks, losses and deaths there, the nests the straight line passes, and your health, armor and shield. `inspect.heating` and build dry_run report freezing, demand, adjacent heat buffers and actual/proposed heat connections.
+- `drill_sites {position,surface?}` lists nearest visible same-resource placements for one depleted drill, with mining-area amounts and placement checks; `resource` supplies the name if no previous mining target was recorded. Spots where a drill or drill ghost already stands are left out and named (`occupied_by`).
+- `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the
+  patches on the charted map nearest first: amount left (oil: yield), distance from you and from our nearest building,
+  enemy spawners and worms within 50 tiles, and how many of our drills are on it.
+- `inspect` reads any entity on your surface in a chunk our radars see, by remote view (`by: remote view`); out of
+  sight and coverage, the refusal names the nearest radar coverage.
+- `./fh call construction_robots` (or `{"network":N}`) reads the construction robots of the network you stand in: each
+  in the air with its charge, cargo, orders and what holds it up (no storage for what it holds, target out of the
+  area, waiting to charge).
+- The operator factory digest arrives by `tell` at deadline minus 2 hours, or on operator request: cached planetary machine/fuel counts and sampled belt ends, with observation ages; missing data is unknown.

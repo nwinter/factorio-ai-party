@@ -19,6 +19,7 @@ import { bundleRuntime } from './bundle.js';
 import { startSession, stopSession, sessionConnection, connectSession, type SessionConnection } from './session.js';
 import { BridgeClient, BridgeOutcomeUnknown } from './bridge.js';
 import { BrokerTransport } from './broker.js';
+import { refDir, topicText, topicsLine, commandTopics, addReference } from './reference.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const modPath = resolve(root, 'mod/agent-harness_0.1.0');
@@ -35,6 +36,7 @@ const help = `fh — Factorio agent CLI
   fh doctor                                 Check connection and available actions
   fh describe                               Discover action arguments from the runtime
   fh help ACTION                            One action's arguments, about 1 KB (also fh call ACTION --help)
+  fh help TOPIC                             A reference topic of the workspace's ref/ (FH_REF_DIR); fh help lists them
   fh more                                   The next page of the last long reply (replies over ~10 KB come in 8 KB pages)
   fh observe [--args '{"radius":24}']        Bounded local world state
   fh call ACTION [--args JSON] [--id ID]      Execute an action; keep ID on uncertain outcomes
@@ -594,7 +596,20 @@ async function main() {
   let command = positionals[0];
   // fh help ACTION (or fh call ACTION --help): that action's arguments, about 1 KB.
   if (values.help && command === 'call' && positionals[1]) { command = 'help'; positionals.splice(0, 2, 'help', positionals[1]); }
-  if (!command || (values.help && command !== 'help') || (command === 'help' && !positionals[1])) { process.stdout.write(help); return; }
+  if (!command || (values.help && command !== 'help') || (command === 'help' && !positionals[1])) {
+    const dir = refDir();
+    process.stdout.write(help + (dir ? topicsLine(dir) : ''));
+    return;
+  }
+  // fh help TOPIC: the workspace's reference topic (no game call); journaled, so lookups can be counted.
+  if (command === 'help') {
+    const dir = refDir(), text = dir ? topicText(dir, positionals[1]!) : undefined;
+    if (values.journal) {
+      try { appendFileSync(values.journal, JSON.stringify({at:new Date().toISOString(), event:'help', [text ? 'topic' : 'action']:positionals[1]})+'\n'); }
+      catch { /* the journal is best effort here */ }
+    }
+    if (text !== undefined) { process.stdout.write(text); return; }
+  }
   // fh more: the next page of the last long reply (no game call).
   if (command === 'more') {
     let rest: string;
@@ -1712,7 +1727,10 @@ async function main() {
     } else if (command === 'help') {
       const reply = await execute('describe',{});
       if (!reply.ok) { output(reply); process.exitCode=1; }
-      else process.stdout.write(actionHelp(reply.result, positionals[1] ?? ''));
+      else {
+        const dir = refDir(), topic = dir ? commandTopics(dir).get(positionals[1] ?? '') : undefined;
+        process.stdout.write(actionHelp(reply.result, positionals[1] ?? '') + (topic && topic !== 'core' ? `documented in: ./fh help ${topic}\n` : ''));
+      }
     } else if (command === 'doctor') {
       const runtime = await execute('describe',{});
       const player = runtime.ok ? await execute('status',{}) : undefined;
@@ -1731,6 +1749,8 @@ async function main() {
           // The completion carries the clock line.
           ...(compactWaits && accepted.result ? {result:{...accepted.result, clock:undefined}} : {})}) : undefined);
       // The look-ahead: fh call lookahead with the time left in the shift; on any other reply when it is due.
+      // An argument refusal or an unknown action names the reference topic of the call (host/reference.ts).
+      addReference(reply, action);
       if (action === 'lookahead' && reply.ok && reply.result) reply.result = {lines:lookaheadLines(reply.result)};
       else await addLookahead(reply, action, args);
       if (reply.ok && action === 'blueprint_export' && !args.layout && values.out) {

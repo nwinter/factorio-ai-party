@@ -58,8 +58,15 @@ fh call status
   launch --args '{"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`; transfer has a give, a take and a pick;
   describe's `examples`). An argument refusal ends with one: for transfer built from the call itself (`; for this
   call:` and the call), else the action's own (`; e.g. fh call technologies --args '{"prefix":"automation"}'`); a number out of range says its range and the value (`radius out of range: a whole
-  number 1..128, got 500`). Refusals no longer start with the runtime's line (`agent-harness/runtime:31061: `). Every example, in describe, this file and agent/team.md, is checked against the argument
+  number 1..128, got 500`). Refusals no longer start with the runtime's line (`agent-harness/runtime:31061: `). Every example, in describe, this file and the agents' brief (agent/ref/), is checked against the argument
   check by the runtime test.
+- `fh help TOPIC` prints a reference topic of the workspace (`ref/TOPIC.md`, from pog's agent/ref/ by tools/brief.py;
+  the fh wrapper sets `FH_REF_DIR`) with no game call, and `fh help` ends with the list of topics. An argument refusal
+  (`unknown argument`, `must be`, `is required`, `out of range`, `goes with`, ...) or an unknown action ends with the
+  topic that documents the call, from `ref/commands.tsv`: `unknown argument ghosts for build; valid: ... (reference:
+  ./fh help building)`, `unsupported action; call describe (similar: build; reference: ./fh help building)`; a queue
+  step's refusal names its step's topic. `fh help ACTION` adds `documented in: ./fh help TOPIC`. The journal records
+  each `fh help` as `{"event":"help","topic"|"action":NAME}`.
 - Common wrong argument names run as meant, and the reply's `corrected` (also on the final `warning:` line) shows the
   call as it ran: `craft` `item` is `recipe`, `move_to` `target` is `position`, `scan` `names`/`types`/`range` are
   `name`/`type`/`radius`, `chat`/`tells` `count` is `limit`, `build` `placements` (and `items`, a list of entries) is

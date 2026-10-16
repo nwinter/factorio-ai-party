@@ -8,7 +8,7 @@ harness (votes.lua) and tested there: tests/players.lua, tests/viewers.lua, test
   `/ban`, trust moves the player with the operator `player_group`, a protected name is cancelled, a bad name is
   refused, a failure to run leaves the vote carried for the next pass, --dry-run acts on nothing.
 - The operator request form, and the direct trust, guest and trust-names commands.
-- agent/team.md describes the tools only (no should, must, try, when you, if you).
+- agent/ref/stream-people.md describes the tools only (no should, must, try, when you, if you).
 - Vote notices take their own lane, shown in the overlay's chat feed.
 """
 import io
@@ -157,8 +157,8 @@ def stream_lane():
 
 
 def docs():
-    text = open(os.path.join(ROOT, "agent", "team.md")).read()
-    section = text.split("### Human players and viewers", 1)[1]
+    text = open(os.path.join(ROOT, "agent", "ref", "stream-people.md")).read()
+    section = text[text.index("- `./fh players`"):]   # the human players' part
     for tool in ("./fh players", "./fh vote mute", "./fh vote kick", "./fh vote no", "./fh vote list", "./fh restore"):
         assert tool in section, tool
     assert text.count("./fh vote mute") == 1, "one place describes fh vote"

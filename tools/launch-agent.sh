@@ -114,8 +114,8 @@ fi
 # own settings follow in its case below.
 full=${POG_FULL_TOOLS:-0}
 [ "$full" = 1 ] && python3 "$root/tools/full_tools.py" workspace "$dir" "$kind"
-# agy reads only the first 24000 bytes of AGENTS.md (d15 trajectory analysis: Gemini never saw the action reference):
-# over that, the full text goes to AGENTS-full.md and AGENTS.md becomes a compact one (tools/agy_rules.py rules).
+# agy reads only the first 24000 bytes of AGENTS.md (d15 trajectory analysis: Gemini never saw the action reference);
+# the core (tools/brief.py) stays under 20 KB, and tools/agy_rules.py rules warns on stderr if it ever grows past 24000.
 [ "$kind" = agy ] && python3 "$root/tools/agy_rules.py" rules "$dir" >/dev/null
 prompt="$root/runs/$run/prompt.md"
 if [ ! -f "$prompt" ]; then
