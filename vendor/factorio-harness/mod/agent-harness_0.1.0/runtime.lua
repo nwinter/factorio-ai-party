@@ -2938,7 +2938,22 @@ function handlers.stock(p,a)
     local limit=integer(a.limit,16,1,64,'limit')
     local parts={}
     for i,s in ipairs(items) do if i>limit then break end; parts[#parts+1]=s.name..(s.quality and '@'..s.quality or '')..' '..s.count end
+    -- The robots each roboport holds (Haiku 07:50: which roboport to take robots from, as its GUI shows): most first.
+    local ports={}
+    for _,cell in ipairs(ln.cells or {}) do
+      local e=cell.owner
+      local inv=e and e.valid and e.type=='roboport' and e.get_inventory(defines.inventory.roboport_robot)
+      if inv then
+        local parts,n={},0
+        for _,s in ipairs(inv.get_contents()) do parts[#parts+1]=s.name..' '..s.count; n=n+s.count end
+        if n>0 then ports[#ports+1]={n=n,line=string.format('roboport (%g,%g): %s',e.position.x,e.position.y,table.concat(parts,', '))} end
+      end
+    end
+    table.sort(ports,function(x,y) return x.n>y.n end)
+    local port_lines={}
+    for i,r in ipairs(ports) do if i<=16 then port_lines[i]=r.line end end
     return {network=a.network,surface=surface.name,items=items[limit+1] and {table.unpack(items,1,limit)} or items,more=#items>limit and #items-limit or nil,
+      roboports=#port_lines>0 and port_lines or nil,roboports_more=#ports>16 and #ports-16 or nil,
       robots=string.format('%d logistic robots (%d idle), %d construction robots',ln.all_logistic_robots,ln.available_logistic_robots,ln.all_construction_robots),
       line=string.format('logistic network #%d on %s holds %s%s',a.network,surface.name,#parts>0 and table.concat(parts,', ') or (a.item and 'no '..a.item or 'nothing'),
         #items>limit and string.format(' (+%d more items)',#items-limit) or '')}

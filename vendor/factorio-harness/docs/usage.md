@@ -5426,3 +5426,8 @@ fh watch    # deploy on every change
   `direction: to_player`, `to_inventory` with `to_entity`. Checked on the copy: 5 copper cable from an assembler's
   input into a requester chest. A courier whose take place is never reached now ends `unreached` with nothing given
   (on the copy it had given one from the character's inventory).
+- Robots per roboport (Haiku 07:50: needed 20 robots and fell back to inserter feeds): `stock {network}` adds
+  `roboports`, the robots each roboport of the network holds, most first (`roboport (64,209): logistic-robot 131,
+  construction-robot 6`; on the copy Fulgora's #96, 17 roboports, 1.3 ms in the container). Taking robots out of a
+  roboport with `transfer {direction: to_player, item: logistic-robot}` already worked (inventory `roboport_robot`);
+  area `inspect` with `types: ["roboport"]` lists each one's robots too. Both are now in the brief.
