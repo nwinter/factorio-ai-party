@@ -15,7 +15,7 @@ return function(api)
   -- with no claims, only its own blocked item): items unchanged for STALE ticks are counted apart, and with no fresh
   -- claim the machines idle or starved within NEAR tiles of the agent on its surface stand in for those in its claims;
   -- unowned open board items and project steps open to it are listed.
-  local STALE, NEAR = 2 * 3600 * 60, 200
+  local STALE, NEAR, FULL_LOOK = 2 * 3600 * 60, 200, 6
   local ACTIVE = {open=true, claimed=true, doing=true, blocked=true}
   local IDLE = {item_ingredient_shortage='ingredient shortage', fluid_ingredient_shortage='fluid ingredient shortage',
     no_ingredients='no ingredients', no_input_fluid='no input fluid', full_output='output full',
@@ -131,6 +131,9 @@ return function(api)
         idle_ex[k] = string.format('%s %s %s, %d tiles', f.machine, at(f.pos), IDLE[f.status], math.floor(f.d + 0.5))
       end
     end
+    -- Chests with every slot used that a machine's output waits on, in a fresh claim (Astra, Luna, shift19: Gleba's
+    -- providers 48/48 slots used for hours): read from up to FULL_LOOK full_output machines of the survey's positions.
+    local full_look, full, full_ex, full_seen = {}, 0, {}, {}
     if #claims > 0 then
       local cache = api.state().survey_cache or {}
       local surfaces = {}
@@ -148,12 +151,24 @@ return function(api)
           for _, status in ipairs(statuses) do
             for _, pos in ipairs(entry.positions[machine][status]) do
               if claim_at(claims, name, pos) then
+                if status == 'full_output' and #full_look < FULL_LOOK then full_look[#full_look+1] = {surface=name, machine=machine, pos=pos} end
                 idle = idle + 1
                 if #idle_ex < EXAMPLES then idle_ex[#idle_ex+1] = string.format('%s %s %s', machine, at(pos), IDLE[status]) end
               end
             end
           end
         end
+      end
+    end
+    for _, f in ipairs(api.fullchest and full_look or {}) do
+      local surface = game.surfaces[f.surface]
+      local m = surface and try(function() return surface.find_entity(f.machine, f.pos) end)
+      local r = m and try(function() return api.fullchest.of_machine(m) end)
+      local key = r and string.format('%s|%g|%g', f.surface, r.position.x, r.position.y)
+      if r and not full_seen[key] then
+        full_seen[key] = true
+        full = full + 1
+        if #full_ex < EXAMPLES then full_ex[#full_ex+1] = string.format('%s %s %d/%d slots used (%s)', r.name, at(r.position), r.used, r.total, clip(r.fills, 60)) end
       end
     end
     -- Tells to me in the window that I have not answered (told the sender or the team since).
@@ -183,7 +198,7 @@ return function(api)
     -- Project steps open to it (board.lua open_steps: of projects with open_steps or no owner), nearest first.
     local steps = where and api.open_steps and try(function() return api.open_steps(me, EXAMPLES, where.position) end) or nil
     return {board={own, own_ex}, board_stale=own_stale, alerts={alerts, alerts_ex}, machines={idle, idle_ex}, machines_near=idle_near,
-      unanswered={asked, asked_ex}, unowned={unowned, unowned_ex}, steps=steps, claims=#claims}
+      full_chests={full, full_ex}, unanswered={asked, asked_ex}, unowned={unowned, unowned_ex}, steps=steps, claims=#claims}
   end
   function M.line(me, force, where)
     local x = M.parts(me, force, where)
@@ -198,10 +213,11 @@ return function(api)
     local list = {mine,
       part(x.alerts[1], 'alert group in your claims', 'alert groups in your claims', x.alerts[2]),
       part(x.machines[1], 'machine idle or starved ' .. here, 'machines idle or starved ' .. here, x.machines[2]),
+      part(x.full_chests[1], 'full chest in your claims that output waits on', 'full chests in your claims that output waits on', x.full_chests[2]),
       part(x.unanswered[1], 'request or tell to you unanswered', 'requests or tells to you unanswered', x.unanswered[2]),
       part(x.unowned[1], 'unowned board item open to take', 'unowned board items open to take', x.unowned[2]),
       x.steps and #x.steps > 0 and ('project steps open to take: ' .. table.concat(x.steps, '; ')) or nil}
-    for k = 1, 6 do if list[k] then parts[#parts+1] = list[k] end end
+    for k = 1, 7 do if list[k] then parts[#parts+1] = list[k] end end
     if #parts == 0 then
       return 'open for you: none (no board items of yours, ' .. (x.claims == 0 and (x.machines_near and 'no fresh claims and no idle machines near you' or 'no fresh claims')
         or 'no alert groups or idle machines in your claims') .. ', no unanswered requests or tells)'

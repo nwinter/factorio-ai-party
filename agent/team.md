@@ -123,6 +123,8 @@ already targets your character.
   machines that make and use it by status (the worst 3 with positions), and the inserters feeding them; `throughput` names a machine whose inserters carry less than its
   recipe at full speed, each inserter's rate a minute, and how many inserters like its fastest it takes (`trace
   {position}` on a machine gives the same).
+  `full_chests` names chests with every slot used that the makers' output waits on (slots used/total, what fills them,
+  the machines waiting); `chests` rows give free slots; `inspect` of a full chest names the nearest chests with free slots.
 - `./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
   starts, naming each step's makers, their states and what they lack; `fixes` gives, for a starved maker, the nearest
   chest within 64 tiles holding what it lacks and one `transfer` call that carries it there; with `"per_min":30` each step's rate for that

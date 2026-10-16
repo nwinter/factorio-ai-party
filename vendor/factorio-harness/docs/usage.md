@@ -4689,3 +4689,15 @@ fh watch    # deploy on every change
   disconnect declarations do not count as new circuit connections. This reads at most 64 planned pump
   positions (further pumps counted as unchecked), not a full-platform circuit audit or a proof that a declared wire will connect. Existing `circuit`
   and `circuit_set` reads already report `enable_ignored` for an enabled condition without a circuit connection.
+
+## d15 batch3 (operator 18:30, shifts 18-19)
+
+- Full chests (Astra, Luna: Gleba's nutrient, yumako and bioflux providers had 48/48 slots used, mostly spoilage,
+  and the machines feeding them stopped): `supply {item}` adds `full_chests`, the chests with every slot used that
+  the item's makers' output inserters wait on or that hold the item: `passive-provider-chest (10.5,4.5): 48/48 slots
+  used (spoilage 4000 in 40 slots, nutrients 240 in 8 slots); output waits on it: biochamber (7.5,4.5) full_output
+  (1 inserter waiting)`. Its `chests` rows add each non-requester chest's free slots (`, 0/48 slots free`).
+  `bottleneck {item}` adds the chest to a not-working maker stopped by its output (`; output into ... 48/48 slots
+  used (...)`) and lists those chests in `full_chests`. `open for you` counts full chests in your fresh claims that
+  a full_output machine's output waits on. `inspect` of such a chest adds `slots_used`, `output_waits` and
+  `free_chests_near` (the nearest 3 chests of ours within 32 tiles with a free slot).
