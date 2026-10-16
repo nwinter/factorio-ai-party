@@ -5090,3 +5090,10 @@ fh watch    # deploy on every change
   says `N where the labs are (nauvis: labs 120, logistic networks 5451)`; stock on surfaces with no labs follows as
   `2288 elsewhere, no labs there (aquilo: logistic networks 2288)`. With none where the labs are, the entry
   `waits_for` the pack (the clock stops there) and names what is elsewhere.
+- A platform capture keeps every entity where it stands (Astra 05:15: Tern saved with the hub at (0,0) and everything
+  else 2 tiles off in Y; a hub-anchored paste collided 7 times). The engine keeps a blueprint's space-platform-hub at
+  (0,0) whatever positions it is given, and `blueprint_save` / `blueprint_capture` rebased a capture by an even shift
+  about the area's centre (2 in Y for y -35..40), which moved everything but the hub. A capture holding a hub is now
+  rebased on the hub. Checked on a copy of world n: Tern saved with y -35..40, then pasted as a dry run on Tern: 214 of
+  214 entities and 732 tiles already there. An entry saved with a hub before this deploy is off by its area's shift
+  (`astra.tern-inner-freighter.v1`: 2 in Y); saving it again fixes it.
