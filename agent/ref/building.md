@@ -72,6 +72,9 @@
   crossing under it where its side is blocked). Belts, undergrounds and splitters say where items go in `belt` (inspect,
   observe rows, build replies; `last_belt` for a batch): `moves items south to (-22.5,-28.5); fed from (-22.5,-30.5)`.
   `belt_route {avoid_enemies: N}` keeps belts, underground spans and returns outside charted enemy reach plus N tiles (0..32; true=8; omitted/false disables); endpoints inside are refused.
+  `belt_route` goes round cliffs (an underground passes under one; `cliffs: true` passes over and marks them), names what its
+  ghosts mark for mining (`to_mine`: trees, rocks, cliffs with positions), and extends an existing chain from a belt
+  end followed up to 4096 tiles (`existing_count`).
 - `pole_route` with `from` (a powered pole) and `to` lays pole ghosts along a line and reports how many poles you are
   `short`; craft those, then `construct --wait`.
 - `heat_budget {position, add_pipes?}` reads a heat network's mean temperature, heat capacity and heat above 30 C, and with add_pipes the mean after that many new cold heat pipes join.

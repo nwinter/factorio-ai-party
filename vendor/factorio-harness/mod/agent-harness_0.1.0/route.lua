@@ -23,6 +23,8 @@ return function(api)
   M.BUDGET={checks=8000,expansions=8000,total_checks=12000,total_expansions=13000}
   -- Belts and undergrounds one call lays, the return line's included.
   local MAX_ENTITIES=2048
+  -- An existing chain followed from from to its open end (Haiku 06:20: a coal line past 256 tiles was refused twice).
+  M.CHAIN=4096
   local RETURN_STEP,RETURN_NEAR,LEG_CAP,RETURN_SLACK,RETURN_SHORT=12,6,{600,1500},2,24
   -- A leg still searching after POCKET_AFTER expansions checks whether its
   -- goal is closed in (up to POCKET tiles around it).
@@ -178,7 +180,12 @@ return function(api)
             local ti=tile_info and info(x,y) or {collides=false}
             if ti.collides and not stands(x,y) then
               if a.landfill and ti.item and check(x,y,true) then v='fill'; t.fills[k]=ti.item end
-            elseif check(x,y,true) then v='clear'
+            elseif check(x,y,true) then
+              -- A cliff (Haiku 09:22: cliffs on every belt line): routed round unless cliffs=true (marked, one cliff
+              -- explosive each); an underground pair still passes under it.
+              local okc,nc=pcall(function() return p.surface.count_entities_filtered{area={{x,y},{x+1,y+1}},type='cliff',limit=1} end)
+              local cliff=not a.cliffs and okc and nc>0
+              v=not cliff and 'clear' or false
             elseif only_obstacles and only_obstacles(p.surface,belt,centre(x,y),0) then v='clear' end
           end
         end
@@ -606,7 +613,7 @@ return function(api)
       if not first then break end
       local kind,d=belt_type(first),first.direction
       assert(not seen[key(fx,fy)],'from chain loops at '..fmt(fx,fy)..'; no open end')
-      assert(#existing<256,'from chain exceeds 256 existing belt tiles at '..fmt(fx,fy))
+      assert(#existing<M.CHAIN,'from chain exceeds '..M.CHAIN..' existing belt tiles at '..fmt(fx,fy)..': give from nearer its open end')
       assert(STEP[d],'from chain tile '..fmt(fx,fy)..' has no cardinal belt direction')
       local input=kind=='underground-belt' and underground_kind(first)=='input'
       assert(kind=='transport-belt' or kind=='underground-belt',
@@ -800,8 +807,34 @@ return function(api)
     local items={[belt.name]=main.belts}
     if main.undergrounds>0 then items[underground.name]=main.undergrounds*2 end
     for item,n in pairs(main.fill) do items[item]=(items[item] or 0)+n end
-    local out={route=main.route,tiles=main.tiles,belts=main.belts,undergrounds=main.undergrounds,items=items,entities=main.entities,extends=extends,existing=#existing>0 and existing or nil,
+    -- A long chain followed: its first and last tiles and the count (the reply stays short).
+    local shown=existing
+    if #existing>8 then shown={existing[1],existing[2],existing[3],existing[#existing-2],existing[#existing-1],existing[#existing]} end
+    local out={route=main.route,tiles=main.tiles,belts=main.belts,undergrounds=main.undergrounds,items=items,entities=main.entities,extends=extends,existing=#existing>0 and shown or nil,
+      existing_count=#existing>8 and #existing or nil,
       legs=#legs>1 and legs or nil,over_trees_or_plants=main.clear>0 and main.clear or nil,landfill=next(main.fill) and main.fill or nil}
+    -- What the line passes over and the ghosts mark for mining (Haiku 09:22: the trees to mine, listed): trees, rocks and
+    -- (with cliffs=true) cliffs on its tiles.
+    if main.clear>0 then
+      local by,first,seen2,nseen={},{},{},0
+      for _,e in ipairs(main.entities) do
+        local ex,ey=tile(e.position)
+        if t.kinds[key(ex,ey)]=='clear' then
+          local okf,found=pcall(function() return p.surface.find_entities_filtered{area={{ex,ey},{ex+1,ey+1}},type={'tree','simple-entity','cliff','plant'},limit=8} end)
+          for _,o in ipairs(okf and found or {}) do
+            local ok=o.valid and o.unit_number or (o.position.x..','..o.position.y)
+            if not seen2[ok] then
+              seen2[ok]=true; nseen=nseen+1
+              by[o.type]=(by[o.type] or 0)+1
+              if #first<12 then first[#first+1]=string.format('%s (%g,%g)',o.name,o.position.x,o.position.y) end
+            end
+          end
+        end
+      end
+      local parts={}
+      for _,k in ipairs({'tree','simple-entity','plant','cliff'}) do if by[k] then parts[#parts+1]=by[k]..' '..({tree='trees',['simple-entity']='rocks',plant='plants',cliff='cliffs'})[k] end end
+      if #parts>0 then out.to_mine=table.concat(parts,', ')..': '..table.concat(first,', ')..(nseen>#first and ', ...' or '') end
+    end
     if target then
       out.arrival=arrival(target,ctx.goal_din,s.feeds)
       out.arrival.into={x=target.position.x,y=target.position.y}

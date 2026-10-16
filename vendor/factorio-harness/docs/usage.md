@@ -5457,3 +5457,15 @@ fh watch    # deploy on every change
   (48,186), accumulator (48,188)`. One read of the area's entities and tiles, the spots tried in Lua. On the copy: a
   roboport at radius 1 in Fulgora's accumulators 1.5 ms in the container; the worst case seen, a rocket silo at radius
   24 in the base, 30 ms in the container (about 6 ms on n; 93 ms before the 12-tile cap).
+- `belt_route` (Haiku 06:20 and 09:22: a coal line past 256 tiles of existing belt refused twice; cliffs and trees on
+  every belt line): `from` on an existing chain is followed to its open end up to 4096 tiles (was 256; the reply lists
+  its first and last tiles and `existing_count`); cliffs are routed round by default, an underground pair still
+  passing under one (`cliffs: true` passes over them as before, the ghost marking each); `to_mine` names the trees,
+  rocks, plants and cliffs the ghosts mark (`2 trees, 1 rocks: tree-03 (-113.75,517.438), ...`), dry runs too.
+  Checked on the copy at Haiku's cliffs: default `S4 W1 S6 uS5 S5 E1 S2` (under the cliff), `cliffs: true` `S4 W1 S17
+  E1 S2` (over it, one cliff marked).
+- `move_to {mine_out: true}` (Haiku 06:20: closed in among machines, `last.mine_to_get_out` named the way and the agent
+  mined it by hand): a walk that ends closed in, or with no way that mining would open (`mine_for_a_way`), marks the
+  fewest blockers it names for deconstruction, mines them by hand as a timed construct over them (their contents go to
+  the inventory), and walks again once; a queue step waits through it. Checked on the copy: Astra walled in on
+  Fulgora, the pipe and provider chest it named mined by hand, then the walk left the ring.
