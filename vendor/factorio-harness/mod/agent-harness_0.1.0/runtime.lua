@@ -1596,6 +1596,7 @@ function handlers.describe()
   for name,schema in pairs(M.reminders and M.reminders.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platplan and M.platplan.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platsupply and M.platsupply.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.reservations and M.reservations.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.research and M.research.schema or {}) do description.actions[name]=schema end
@@ -11424,7 +11425,7 @@ passive.circuit_set=true; passive.wire=true
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
 for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route','rail_route','train_stop','blueprint_save','blueprint_rename'}) do passive[name]=true end
-local reads={nearest_water=true,platform_supply=true,platform_plan=true,reminders=true,fuel_budget=true,artillery=true,platform_endurance=true,belt_gaps=true,pipe_gaps=true,danger=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
+local reads={reservations=true,nearest_water=true,platform_supply=true,platform_plan=true,reminders=true,fuel_budget=true,artillery=true,platform_endurance=true,belt_gaps=true,pipe_gaps=true,danger=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
 M.reads=reads
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
 reads.heat_budget=true
@@ -12236,6 +12237,9 @@ M.supply.feed=function(e,into,from) return M.craftrate.feed(e,into,from) end
 M.fragile=require('fragile'){position=position,integer=integer}
 M.personal=require('personal'){}
 M.reqchest=require('reqchest'){}
+-- A logistic network's reservations, read only (reservations.lua; Luna 06:20).
+M.reservations=require('reservations'){}
+function handlers.reservations(p,a) return M.reservations.read(p,a) end
 -- outpost {area | position}: one queued tour that rebuilds ghosts, rearms turrets and wires cut-off poles (outpost.lua).
 M.outpost=require('outpost'){position=position,integer=integer,submit=function(p,a) return handlers.queue_submit(p,a) end}
 function handlers.outpost(p,a) return M.outpost.read(p,a) end

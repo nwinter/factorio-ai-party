@@ -5435,3 +5435,11 @@ fh watch    # deploy on every change
   default, 32 with `limit`): `holders` keeps only those kinds of place (provider, storage, requester, buffer, chest,
   machine, wagon, pad, vehicle); each place now says its `kind` and `reserved` (robots' pickup reservations there). On
   the copy: copper cable, providers and storage, 4 places in 3 ms in the container.
+- `reservations {network, item?, surface?}` (Luna 06:20: on Gleba 23 nutrients were all reserved across 14
+  requesters, 245 short, while 44 robots sat idle; the cause was chests full of seeds and spoilage), read only: pickup
+  reservations at each provider and storage chest; each requester or buffer short or with deliveries on the way (per
+  item its request, what it holds, what is on the way, `no room for it` when every slot is taken; free slots); the
+  logistic robots' orders grouped by item and target (`35 robots with 91 iron-gear-wheel for requester-chest
+  (29.5,202.5)`); flags: reservations while robots are idle, orders to a chest with no room, requesters with deliveries
+  on the way and no room. Releasing a reservation is no player action: nothing changes. On the copy: Fulgora's #96, 832
+  robots, 532 orders, 17 ms in the container (about 3.5 ms on n); the robots read stop at 1024.

@@ -177,3 +177,35 @@ do
   eq(out,'unreached'); eq(given,0,'no give without the take')
 end
 print('d16_batch6 C3 courier take unreached: ok')
+
+-- D3 (Luna 06:20: 23 nutrients reserved across 14 requesters, 245 short, 44 robots idle; chests full of seeds): a
+-- network's reservations, read only, flagged when robots sit idle or a target has no room.
+do
+  defines={inventory={chest=1}}
+  prototypes={item={nutrients={},seeds={}}}
+  local function inv(t,free)
+    return {get_item_count=function(n) return t[n] or 0 end,count_empty_stacks=function() return free end,can_insert=function() return free>0 end}
+  end
+  local provider={valid=true,name='passive-provider-chest',type='logistic-container',unit_number=1,position={x=0.5,y=0.5}}
+  local full={valid=true,name='requester-chest',type='logistic-container',unit_number=2,position={x=10.5,y=0.5},get_inventory=function() return inv({nutrients=0,seeds=4800},0) end}
+  local ok={valid=true,name='requester-chest',type='logistic-container',unit_number=3,position={x=20.5,y=0.5},get_inventory=function() return inv({nutrients=5},10) end}
+  local robot={valid=true,robot_order_queue={{target_item={name='nutrients'},target_count=4,target=full}}}
+  local ln={network_id=7,available_logistic_robots=44,all_logistic_robots=60,logistic_robots={robot},
+    provider_points={{owner=provider,targeted_items_pickup={{name='nutrients',count=23}}}},storage_points={},
+    requester_points={{owner=full,targeted_items_deliver={{name='nutrients',count=4}},filters={{name='nutrients',count=200}}},
+      {owner=ok,targeted_items_deliver={},filters={{name='nutrients',count=50}}}}}
+  local p={surface={name='gleba'},force={logistic_networks={gleba={ln}}}}
+  local R=dofile('mod/agent-harness_0.1.0/reservations.lua'){}
+  local r=R.read(p,{network=7,item='nutrients'})
+  eq(r.reserved_for_pickup,23); eq(r.idle,44)
+  eq(r.flags[1],'23 reserved for pickup while 44 of 60 logistic robots are idle')
+  eq(r.flags[2],'1 robot order goes to a chest with no room for the item')
+  eq(r.flags[3],'1 requester with deliveries on the way and no room for them')
+  eq(r.pickups[1],'passive-provider-chest (0.5,0.5): nutrients 23 reserved for pickup')
+  eq(r.requesters[1],'requester-chest (10.5,0.5): nutrients asks 200, holds 0, 4 on the way (no room for it: every slot taken); 0 free slots')
+  eq(r.requesters[2],'requester-chest (20.5,0.5): nutrients asks 50, holds 5, 0 on the way; 10 free slots')
+  eq(r.robots[1],'1 robot with 4 nutrients for requester-chest (10.5,0.5): its target has no room for it (every slot taken)')
+  assert(not pcall(R.read,p,{network=8}),'no such network')
+  prototypes,defines=nil,nil
+end
+print('d16_batch6 D3 reservations: ok')
