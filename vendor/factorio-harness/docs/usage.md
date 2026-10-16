@@ -5299,3 +5299,7 @@ fh watch    # deploy on every change
   stock's count-weighted spoiled share, in steps of 10%, then by distance; `fresh: false` keeps the nearest first. The
   reply's `source_freshness` names each: `freshest first: requester-chest (57.5,58.5) 56% spoiled, requester-chest
   (36.5,65.5) 59% spoiled, ...`. Checked on the copy (nutrients on Gleba).
+- `trace {position}` of a maker stopped by its full output adds `downstream` (Luna 00:20: trace showed only the
+  input side): each inserter taking from it and where it puts, a chest with its free slots: `inserter (-6.5,47.5)
+  waiting_for_space_in_destination filter copper-plate -> passive-provider-chest (-6.5,48.5) (full) (0 of 48 slots
+  free)`. `trace {forward: true}` names every chest destination's free slots too. Checked on Gleba on the copy.
