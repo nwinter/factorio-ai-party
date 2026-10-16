@@ -31,7 +31,8 @@
   `rearm`, `refuel`, `mine`, `craft`, `cancel_craft`, a `configure` recipe change) say `moved` and end with `inv` (free
   slots, what you hold of the items moved); a move over time says `timed`, and `last.moved`/`last.inv` when it ends;
   a give the target could not take all of (full), or a courier that delivered less than it took, ends with a `short`
-  warning naming what fills the target's slots and what you still carry;
+  warning naming what fills the target's slots; a `craft` that queued nothing for a recipe says `nothing_queued` with what
+  is short (that recipe is left out of `started`) and what you still carry;
   queue and standing-order history entries carry both. `feed`, `collect` and `transfer` take `area {left_top,
   right_bottom}` for every machine (or chest) inside it; `inspect` of a machine shows `output_fill` (and `full`) and `output_stop`: where each product stops it, and whether a `full_output` is a full output or a machine short of an ingredient holding a few crafts' worth (the game reads it so).
   `feed` gives a burner fuel when its fuel slots are empty, or with `fuel` (`true` or a fuel name); a furnace with no

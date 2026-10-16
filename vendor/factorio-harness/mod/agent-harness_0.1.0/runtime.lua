@@ -4002,7 +4002,9 @@ function handlers.craft(p,a)
     local fromq={}
     local started=begin_craft(p,a.recipe,a.count,a.force,notes,shorts,fromq)
     local hand_s,queue_s,assemblers=craft_cost(p,{[a.recipe]=started})
-    return craft_facts(p,{started=started,short=shorts[a.recipe],stock=next(notes) and notes or nil,from_queue=next(fromq) and fromq or nil,
+    -- Nothing queued, said plainly (Sonnet 07:50: "started: cargo-bay=0" read as a partial start).
+    local none=started==0 and string.format('nothing was queued for %s: %s',tostring(a.recipe),shorts[a.recipe] or 'not hand-craftable now') or nil
+    return craft_facts(p,{started=started,nothing_queued=none,short=shorts[a.recipe],stock=next(notes) and notes or nil,from_queue=next(fromq) and fromq or nil,
       hand_s=hand_s,queue_s=queue_s,assemblers=assemblers},{[a.recipe]=started})
   end
   assert(type(a.recipes)=='table' and #a.recipes>=1 and #a.recipes<=32,'recipes requires 1..32 {recipe,count} entries')
@@ -4017,7 +4019,10 @@ function handlers.craft(p,a)
     else errors[key]=reason(result) end
   end
   local hand_s,queue_s,assemblers=craft_cost(p,started)
-  return craft_facts(p,{started=started,errors=next(errors) and errors or nil,short=next(shorts) and shorts or nil,stock=next(notes) and notes or nil,
+  -- An entry that queued nothing leaves started and is said plainly (Sonnet 07:50).
+  local none={}
+  for key,n in pairs(started) do if n==0 then none[key]=string.format('nothing was queued for %s: %s',key,shorts[key] or 'not hand-craftable now'); started[key]=nil end end
+  return craft_facts(p,{started=started,nothing_queued=next(none) and none or nil,errors=next(errors) and errors or nil,short=next(shorts) and shorts or nil,stock=next(notes) and notes or nil,
     from_queue=next(fromq) and fromq or nil,hand_s=hand_s,queue_s=queue_s,assemblers=assemblers},started)
 end
 -- Hand-craftable counts from current inventory, including intermediates.

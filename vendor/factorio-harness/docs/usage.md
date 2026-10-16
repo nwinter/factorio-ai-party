@@ -5399,3 +5399,6 @@ fh watch    # deploy on every change
   missed): a group of one entity says its own position (`near (16.5,23.5)`); bigger groups keep their centre. A target
   position on a tile corner (whole numbers on both axes) picks the one entity of a tile touching that corner, or names
   those that do (`(49,191) is a tile corner 2 entities touch: fast-inserter (48.5,191.5), requester-chest (48.5,190.5)`).
+- `craft` that queues nothing for a recipe (Sonnet 07:50: `started: cargo-bay=0` read as a partial start) says
+  `nothing_queued: nothing was queued for cargo-bay: copper-plate short 400 (held 0), ...`; in a `recipes` batch that
+  recipe leaves `started` and is listed under `nothing_queued`. Checked on the copy.
