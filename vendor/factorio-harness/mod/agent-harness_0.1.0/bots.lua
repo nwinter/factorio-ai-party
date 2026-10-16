@@ -217,7 +217,8 @@ return function(api)
   -- (a planet, or a platform by its surface's name) with surface=NAME. Aboard they all work (Sol, 23:13: place_ghosts
   -- with surface=nauvis, and its dry run, were refused as no-body while a player aboard places ghosts on a planet by
   -- remote view); the refusal lists them from here.
-  M.PLATFORM_ACTIONS = {'place_ghosts', 'deconstruct', 'cancel_deconstruction', 'paste', 'blueprint_place', 'grid', 'scan', 'inspect',
+  -- blueprint_save and blueprint_capture (Astra, d15 18:35: cloning platform Starling into a new platform Swift).
+  M.PLATFORM_ACTIONS = {'place_ghosts', 'deconstruct', 'cancel_deconstruction', 'paste', 'blueprint_place', 'blueprint_save', 'blueprint_capture', 'grid', 'scan', 'inspect',
     'configure', 'flush', 'circuit_set', 'circuit', 'wire', 'ports', 'cargo', 'trace', 'power', 'conflicts', 'placements'}
   M.SURFACE_ACTIONS = {'inspect', 'circuit_set', 'circuit', 'wire', 'ores', 'launch', 'configure', 'silo', 'preflight', 'requests',
     'place_ghosts', 'scan', 'conflicts', 'deconstruct', 'cancel_deconstruction', 'trace'}

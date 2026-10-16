@@ -4719,3 +4719,6 @@ fh watch    # deploy on every change
   the gun slot beside each. `equip {slot: ammo, item}` moves ammo held only in the ammo slots: to `index`, or beside
   the selected gun when it fits it, else beside the first gun it fits (`moved_from`, `swapped`, `fired_by`). `equip`
   without `slot` takes it from the item's kind.
+- `blueprint_save` and `blueprint_capture` take `platform=NAME` (Astra, cloning platform Starling into a new platform
+  Swift): they capture on that space platform by remote view, in platform coordinates (hub at 0,0), as `paste` and
+  `blueprint_place` already place there. Aboard a platform they act on it as before.

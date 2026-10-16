@@ -127,6 +127,7 @@ already targets your character.
   the machines waiting); `chests` rows give free slots; `inspect` of a full chest names the nearest chests with free slots.
 - - `mine {position, dry_run: true}` and `deconstruct` (dry run and live) read `heat_loss`: heat-network parts cut off from every reactor and heating tower, and on Aquilo freezable pipes and machines that lose their last heater at 30 C or more.
 - Gun slot N fires only from ammo slot N: `inventory` shows guns and ammo per slot; `equip {slot: "ammo", item, index}` moves ammo between ammo slots.
+- `blueprint_save {name, area, platform: "Starling"}` and `blueprint_capture` take `platform=NAME` like `paste` and `blueprint_place`: save a platform's layout from anywhere, then `blueprint_place {name, platform: "Swift"}`.
 `./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
   starts, naming each step's makers, their states and what they lack; `fixes` gives, for a starved maker, the nearest
   chest within 64 tiles holding what it lacks and one `transfer` call that carries it there; with `"per_min":30` each step's rate for that
