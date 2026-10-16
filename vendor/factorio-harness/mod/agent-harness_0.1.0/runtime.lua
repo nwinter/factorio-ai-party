@@ -8909,6 +8909,7 @@ M.rocketload=require('rocketload'){last_launch=function(silo) return M.silo.last
   hub_chunks=function(pl) return pl.hub and pl.hub.valid and space.hub_chunks(pl.hub) or nil end,
   reach_entity=function(p,pos) return entity(p,{position=pos}) end,
   platform=function(p,name) return space.platform(p,name) end,
+  empty_turrets=function(pl) return M.platalerts.empty_turrets(pl) end,
   rocket=function(e) return M.silo.rocket(e) end,ingredients=function(e) return M.silo.ingredients(e) end,auto_wait=function(e,f,loaded) return M.silo.auto_wait(e,f,loaded) end,
   inventory_name=function(e,name) return M.inventory_name(e,name) end,
   rocket_room=function(silo,item) return space.rocket_room(silo,item) end,

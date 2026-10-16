@@ -5208,3 +5208,10 @@ fh watch    # deploy on every change
   inserter and the like by remote view, as remote view's R does (Astra, Sol: Petrel's corners were deconstructed and
   ghosted again by hand about 6 times). The reply says `by: remote view`. Checked on the copy of world n: a belt on
   Tern turned east to south and back.
+- An empty platform turret that takes ammo the hub holds (Sol, Astra 00:21-00:23: Starling's rear rocket turret
+  starved while the ammo assembler's other output arm won). The platform alert's turret line now ends with each such
+  turret (up to 4): `rocket-turret (-14.5,-16.5) is empty while the hub holds rocket*250 it takes: fed by fast-inserter
+  (-16.5,-16.5) from transport-belt (-17.5,-16.5) carrying 0 ammo`, and `; taking from it too: fast-inserter
+  (-12.5,-20.5) into iron-chest (-11.5,-20.5)` when other inserters take from the same source, or `no inserter drops
+  into it`. `preflight {platform}` adds the same rows (`empty_turrets`) to the platform's row, whatever the hub holds.
+  Checked on the copy of world n: Petrel's two empty rocket turrets, with 250 rockets in the hub.

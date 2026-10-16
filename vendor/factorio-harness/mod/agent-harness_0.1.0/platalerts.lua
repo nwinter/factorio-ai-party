@@ -131,7 +131,8 @@ return function(api)
       local inv = try(function() return t.get_inventory(defines.inventory.turret_ammo) end)
       local n = inv and try(function() return inv.get_item_count() end) or 0
       sc.turrets = sc.turrets + 1; sc.rounds = sc.rounds + n
-      if n == 0 then sc.empty = sc.empty + 1 elseif n < LOW_AMMO then sc.low = sc.low + 1 end
+      if n == 0 then sc.empty = sc.empty + 1; sc.empty_list = sc.empty_list or {}; if #sc.empty_list < 8 then sc.empty_list[#sc.empty_list+1] = t end
+      elseif n < LOW_AMMO then sc.low = sc.low + 1 end
       if sc.turret_name and sc.turret_name ~= t.name then sc.turret_name = 'turret' else sc.turret_name = t.name end
     end
     local hub = pl.hub
@@ -145,6 +146,75 @@ return function(api)
       end
     end
     return sc
+  end
+  -- The ammo items a turret takes (its ammo categories), of those the hub holds.
+  local function takes(turret, hub_ammo)
+    local cats = {}
+    for _, c in ipairs(try(function() return turret.prototype.attack_parameters.ammo_categories end) or {}) do cats[c] = true end
+    local out = {}
+    for name, n in pairs(hub_ammo) do
+      local cat = try(function() local c = prototypes.item[name].ammo_category; return type(c) == 'string' and c or c.name end)
+      if cat and cats[cat] and n > 0 then out[#out+1] = name .. '*' .. n end
+    end
+    table.sort(out)
+    return out
+  end
+  local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
+  -- What feeds an empty turret (Sol, Astra 00:21-00:23: Starling's rear rocket turret starved while an ammo assembler's
+  -- other output arm won): each inserter dropping into it, its pickup and what that holds of the turret's ammo, and the
+  -- other inserters taking from the same source; or that no inserter feeds it.
+  function M.turret_feed(turret)
+    local s = turret.surface
+    local p0 = turret.position
+    local box = {left_top={x=p0.x-5, y=p0.y-5}, right_bottom={x=p0.x+5, y=p0.y+5}}
+    local parts = {}
+    for _, i in ipairs(try(function() return s.find_entities_filtered{type='inserter', area=box, force=turret.force} end) or {}) do
+      if try(function() return i.drop_target end) == turret then
+        local src = try(function() return i.pickup_target end)
+        local belt = src and src.valid and (src.type == 'transport-belt' or src.type == 'underground-belt' or src.type == 'splitter')
+        local held = src and src.valid and (try(function()
+          local n = 0
+          local lists = {}
+          if belt then for k = 1, src.get_max_transport_line_index() do lists[#lists+1] = src.get_transport_line(k).get_contents() end
+          else lists[1] = src.get_output_inventory().get_contents() end
+          for _, list in ipairs(lists) do
+            for _, st in ipairs(list) do
+              if try(function() return prototypes.item[st.name].type end) == 'ammo' then n = n + st.count end
+            end
+          end
+          return n
+        end) or 0) or 0
+        local text = string.format('%s %s from %s', i.name, at(i.position), src and src.valid and (src.name .. ' ' .. at(src.position) ..
+          string.format(belt and ' carrying %d ammo' or ' holding %d ammo', held)) or 'nothing (no pickup target)')
+        if src and src.valid then
+          local sp = src.position
+          local others = {}
+          for _, o in ipairs(try(function() return s.find_entities_filtered{type='inserter', area={left_top={x=sp.x-4, y=sp.y-4}, right_bottom={x=sp.x+4, y=sp.y+4}}, force=turret.force} end) or {}) do
+            if o ~= i and try(function() return o.pickup_target end) == src then
+              local d = try(function() return o.drop_target end)
+              others[#others+1] = string.format('%s %s into %s', o.name, at(o.position), d and d.valid and (d.name .. ' ' .. at(d.position)) or 'nothing')
+            end
+          end
+          if #others > 0 then text = text .. '; taking from it too: ' .. table.concat(others, ', ', 1, math.min(3, #others)) end
+        end
+        parts[#parts+1] = text
+      end
+    end
+    return #parts > 0 and 'fed by ' .. table.concat(parts, ' | ') or 'no inserter drops into it'
+  end
+  -- Empty turrets that take ammo the hub holds: each with where it is and what feeds it (at most 4).
+  function M.empty_turrets(pl, sc)
+    sc = sc or read(pl)
+    local out = {}
+    for _, t in ipairs(sc.empty_list or {}) do
+      if t.valid and #out < 4 then
+        local hub_has = takes(t, sc.hub_ammo)
+        if #hub_has > 0 then
+          out[#out+1] = string.format('%s %s is empty while the hub holds %s it takes: %s', t.name, at(t.position), table.concat(hub_has, ' '), M.turret_feed(t))
+        end
+      end
+    end
+    return out
   end
   -- Ammo flow: what the turrets hold against what waits in the hub.
   local function ammo_text(sc)
@@ -283,8 +353,9 @@ return function(api)
         local level = sc.empty * 1000 + sc.low
         if level > 0 then
           if level > (seen.turrets or 0) or game.tick - (seen.turrets_tick or -REPEAT) >= REPEAT then
-            lines[#lines+1] = string.format('platform %s: %d of %d %s%s empty%s; %s', name, sc.empty, sc.turrets, sc.turret_name or 'turret', sc.turrets == 1 and '' or 's',
-              sc.low > 0 and string.format(', %d low (under %d rounds)', sc.low, LOW_AMMO) or '', ammo_text(sc))
+            local feeds = sc.empty > 0 and try(function() return M.empty_turrets(pl, sc) end) or {}
+            lines[#lines+1] = string.format('platform %s: %d of %d %s%s empty%s; %s%s', name, sc.empty, sc.turrets, sc.turret_name or 'turret', sc.turrets == 1 and '' or 's',
+              sc.low > 0 and string.format(', %d low (under %d rounds)', sc.low, LOW_AMMO) or '', ammo_text(sc), #feeds > 0 and '; ' .. table.concat(feeds, '; ') or '')
             seen.turrets, seen.turrets_tick = level, game.tick
           end
         else seen.turrets = nil end

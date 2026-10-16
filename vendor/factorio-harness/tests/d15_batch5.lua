@@ -204,3 +204,25 @@ do
   assert(on_platform and on_surface,'rotate with platform= and surface=')
 end
 print('d15_batch5 D4 rotate by remote view: ok')
+
+-- D2 (Sol, Astra): an empty platform turret that takes ammo the hub holds: where it is and what feeds it. -------------
+do
+  prototypes={item={rocket={type='ammo',ammo_category={name='rocket'}},['firearm-magazine']={type='ammo',ammo_category={name='bullet'}}}}
+  local surface={}
+  local force={name='player'}
+  local turret={valid=true,name='rocket-turret',position={x=-14.5,y=-16.5},surface=surface,force=force,prototype={attack_parameters={ammo_categories={'rocket'}}}}
+  local asm={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=-14.5,y=-20.5},
+    get_output_inventory=function() return {get_contents=function() return {} end} end}
+  local chest={valid=true,name='iron-chest',position={x=-11.5,y=-20.5}}
+  local arm={valid=true,name='long-handed-inserter',position={x=-14.5,y=-18.5},drop_target=turret,pickup_target=asm}
+  local rival={valid=true,name='fast-inserter',position={x=-12.5,y=-20.5},drop_target=chest,pickup_target=asm}
+  surface.find_entities_filtered=function(f) if f.type=='inserter' then return {arm,rival} end return {} end
+  local P=dofile('mod/agent-harness_0.1.0/platalerts.lua'){state=function() return {} end}
+  local rows=P.empty_turrets({},{empty_list={turret},hub_ammo={rocket=250,['firearm-magazine']=900}})
+  eq(#rows,1)
+  eq(rows[1],'rocket-turret (-14.5,-16.5) is empty while the hub holds rocket*250 it takes: fed by long-handed-inserter (-14.5,-18.5) from assembling-machine-2 (-14.5,-20.5) holding 0 ammo; taking from it too: fast-inserter (-12.5,-20.5) into iron-chest (-11.5,-20.5)')
+  eq(#P.empty_turrets({},{empty_list={turret},hub_ammo={['firearm-magazine']=900}}),0,'the hub holds none it takes')
+  arm.drop_target=nil
+  has(P.empty_turrets({},{empty_list={turret},hub_ammo={rocket=5}})[1],'no inserter drops into it')
+end
+print('d15_batch5 D2 empty platform turrets: ok')
