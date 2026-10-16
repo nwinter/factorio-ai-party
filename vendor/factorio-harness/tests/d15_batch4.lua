@@ -310,3 +310,46 @@ do
   has(P.lines(p,h)[1],'repair-pack 2 of 10')
 end
 print('d15_batch4 4 personal: ok')
+
+-- 5 (Opus): burner machines no inserter feeds, running dry within 10 minutes. ----------------------------------------
+do
+  defines={entity_status={working=1,low_power=2,no_fuel=3},inventory={chest=1}}
+  prototypes={item={coal={fuel_value=4e6},['copper-ore']={fuel_value=0}}}
+  game={tick=0,surfaces={}}
+  local st={}
+  local surface={index=1,name='nauvis'}
+  local list={}
+  local all_inserters={}
+  surface.find_entities_filtered=function(f) local out={} for _,i in ipairs(all_inserters) do if (i.position.x-f.position.x)^2+(i.position.y-f.position.y)^2<=f.radius^2 then out[#out+1]=i end end return out end
+  game.surfaces={nauvis=surface}
+  local force={name='player'}
+  local function furnace(x,y,coal,status)
+    local e={valid=true,type='furnace',name='stone-furnace',unit_number=#list+1,position={x=x,y=y},surface=surface,force=force,status=1,coal=30,
+      burner={remaining_burning_fuel=0},prototype={get_max_energy_usage=function() return 90000/60 end,burner_prototype={effectivity=1}},
+      bounding_box={left_top={x=x-1,y=y-1},right_bottom={x=x+1,y=y+1}}}
+    e.later={coal,status or 1}
+    e.get_fuel_inventory=function() return {get_contents=function() return e.coal>0 and {{name='coal',count=e.coal}} or {} end} end
+    list[#list+1]=e; return e
+  end
+  -- 90 kW on coal (4 MJ): 1.35 coal a minute. 5 coal: about 3.7 min; 20 coal: about 14.8 min.
+  for k=1,4 do furnace(k*2,0,5) end
+  furnace(10,0,20)
+  furnace(12,0,0,3)
+  furnace(16,0,0,3).status=3  -- never seen working with fuel: an abandoned one is not counted
+  list[#list].coal=0
+  local fed=furnace(14,0,5)
+  all_inserters[1]={position={x=14,y=-1.5},drop_target=fed,held_stack={valid_for_read=true,name='coal',count=1},filter_slot_count=0}
+  local B=dofile('mod/agent-harness_0.1.0/burnerfuel.lua'){state=function() return st end,fuel_users=function() return list end}
+  game.tick=60; B.tick(60)
+  eq(#st.burnerfuel.alerts,0,'30 coal each: over 10 minutes')
+  for _,e in ipairs(list) do if e.unit_number~=7 then e.coal,e.status=e.later[1],e.later[2] end end
+  local m=B.minutes(list[1]); assert(m>3.6 and m<3.8,m)
+  for t=120,600,60 do game.tick=t; B.tick(t) end
+  local h={}
+  local l=B.lines({force=force},h)
+  eq(l[1],'stone-furnace near (6,0), fed by hand or by order (no inserter brings them fuel): 4 run dry within 10 min at full use (coal; the first in about 3 min); 1 is out of fuel now')
+  eq(#l,1)
+  for t=660,6000,60 do game.tick=t; B.tick(t) end
+  eq(B.lines({force=force},h),nil,'told once')
+end
+print('d15_batch4 5 burner fuel: ok')

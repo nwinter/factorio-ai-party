@@ -1633,6 +1633,11 @@ return function(api)
       local ok, list = pcall(api.power_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
+    -- Hand-fed burner machines running dry within 10 minutes (burnerfuel.lua).
+    if api.burner_lines then
+      local ok, list = pcall(api.burner_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     -- A personal request unfilled in a network with no logistic robots (personal.lua).
     if api.personal_lines then
       local ok, list = pcall(api.personal_lines, p, h)

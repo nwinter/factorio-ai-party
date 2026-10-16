@@ -4853,4 +4853,18 @@ fh watch    # deploy on every change
     hold none)`, read on a copy of world n as Haiku.
   - Alert (team.alerts): a personal request unfilled for 60 s or more in a network with 0 logistic robots. Checked
     every 5 s an agent replies; told once per network and item, and again after 10 minutes.
+- Burner fuel alert (Opus: 30 stone furnaces ran out of coal and copper fell from 1000 to 560 a minute). team.alerts
+  names a group of burner machines that no inserter brings fuel to (fed by hand or by order) when they will run dry
+  within 10 minutes: `stone-furnace near (108,-168), fed by hand or by order (no inserter brings them fuel): 21 run dry
+  within 10 min at full use (coal; the first in about 3 min)` (on a copy of world n).
+  - A background pass goes over the census's fuel users: furnaces, burner drills, burner assemblers, heating towers and
+    burner generators. Boilers have their own alert in the networks view, and burner inserters are left out. It reads
+    24 machines a second.
+  - Minutes left: the fuel slots' fuel value plus the rest of the item burning, over the burn at full use (energy use
+    with the consumption bonus, over the burner's effectivity).
+  - Fed by an inserter: one dropping into it holds a fuel item, reads a belt, chest or output holding one, or is
+    filtered to one. This is read again every 5 minutes.
+  - Groups are by name and 64-tile cell. A group is told once, and again after 10 minutes if still so. `out of fuel
+    now` counts only machines the pass saw working with fuel before.
+  - Cost on the copy: 49 ms in 60 s in the container, at most 1.8 ms a step (about 0.4 ms on n).
 
