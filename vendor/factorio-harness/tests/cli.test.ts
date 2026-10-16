@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { tempDir } from './tmp.js';
 const exec = promisify(execFile);
 async function engine(reply: (request:any)=>any, run:(port:number)=>Promise<void>) {
   const sockets = new Set<Socket>();
@@ -81,7 +82,7 @@ test('queue submit rejects a plan file that is not an array before contacting th
   const {writeFile,mkdtemp}=await import('node:fs/promises');
   const {tmpdir}=await import('node:os');
   const {join}=await import('node:path');
-  const dir=await mkdtemp(join(tmpdir(),'fh-plan-'));
+  const dir=await tempDir('fh-plan-');
   const file=join(dir,'plan.json');
   await writeFile(file,JSON.stringify({action:'walk',args:{direction:'east',ticks:10}}));
   await engine(()=>{assert.fail('no request expected');},async port=>{
@@ -742,7 +743,7 @@ test('fh view platform=NAME writes a platform schematic PNG',async()=>{
   const {mkdtemp,readFile,rm}=await import('node:fs/promises');
   const {tmpdir}=await import('node:os');
   const {join}=await import('node:path');
-  const dir=await mkdtemp(join(tmpdir(),'fh-platform-view-'));
+  const dir=await tempDir('fh-platform-view-');
   try {
     await engine(request=>{
       assert.equal(request.action,'observe');assert.equal(request.args.platform,'Sunward');assert.equal(request.args.tiles,true);
@@ -758,7 +759,7 @@ test('fh view platform=NAME writes a platform schematic PNG',async()=>{
 });
 
 test('CLI waits follow a silo deadline extension; explicit timeouts still stop',async()=>{
-  const dir=await mkdtemp(join(tmpdir(),'fh-silo-clock-'));
+  const dir=await tempDir('fh-silo-clock-');
   const preload=join(dir,'clock.cjs');
   // Accelerate the wall clock only. Real one-second polling crosses the old
   // 30-second budget, so this catches a wait that keeps its acceptance limit.

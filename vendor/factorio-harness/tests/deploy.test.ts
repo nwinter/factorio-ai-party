@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { Harness, luaString, utf8Chunks, LEGACY_INSTALL_BYTES } from '../host/harness.js';
+import { tempDir } from './tmp.js';
 const lua = process.env.LUA_BIN ?? 'lua';
 // Decode a luaString literal the way Lua does (the opening newline is dropped).
 function unwrap(literal: string): string {
@@ -58,7 +59,7 @@ test('the chunked commands deploy has control.lua install the exact runtime', as
   const { writeFile, mkdtemp } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
-  const dir = await mkdtemp(join(tmpdir(), 'fh-deploy-'));
+  const dir = await tempDir('fh-deploy-');
   await writeFile(join(dir, 'expected.lua'), source);
   // control.lua under a minimal engine; every command runs as /silent-command would.
   const runner = [`package.path='mod/agent-harness_0.1.0/?.lua;'..package.path`,

@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { tempDir } from './tmp.js';
 const exec = promisify(execFile);
 // sleep_check goes over the wire as observe {scope: sleep_check} (host/harness.ts).
 const isCheck=(r:any)=>r.action==='sleep_check'||(r.action==='observe'&&r.args?.scope==='sleep_check');
@@ -49,7 +50,7 @@ function cli(port:number,args:string[],format:'json'|'compact'='json',extra:Reco
 }
 const OPERATOR={seq:7,ago_s:30,text:'Operator (automatic, facts only): your character has stood idle for 12 min.'};
 test('an operator tell prints an OPERATOR: line on stderr and first on stdout, and is filed once for the hook',async()=>{
-  const dir=await mkdtemp(join(tmpdir(),'fh-operator-'));
+  const dir=await tempDir('fh-operator-');
   await writeFile(join(dir,'.context-hooks'),'claude haiku 140000\n');  // a workspace with the post-tool hook
   await engine(request=>({ok:true,result:{clock:'game 1s',position:{x:1,y:2},...(request.action==='status'?{operator:[OPERATOR]}:{})}}),async port=>{
     // shown once per message (Muse, shift17 10:50: repeated banners buried piped output): the first call prints it, a
@@ -71,7 +72,7 @@ test('an operator tell prints an OPERATOR: line on stderr and first on stdout, a
     const env=await cli(port,['call','status','--journal',join(dir,'journal.jsonl')],'compact',{FH_OPERATOR_REPEAT:'1'});
     assert.match(env.stdout.split('\n')[0]!,/^OPERATOR: /);
     // a workspace without the hook (no .context-hooks; Gemini's): every call prints it, as before
-    const bare=await mkdtemp(join(tmpdir(),'fh-operator-bare-'));
+    const bare=await tempDir('fh-operator-bare-');
     for (let i=0;i<2;i++) assert.match((await cli(port,['call','status','--journal',join(bare,'journal.jsonl')],'compact')).stdout.split('\n')[0]!,/^OPERATOR: .*repeated on every reply/);
     // no operator file (no journal, no FH_OPERATOR_FILE): every call prints it, as before
     for (let i=0;i<2;i++) assert.match((await cli(port,['call','status'],'compact')).stdout.split('\n')[0]!,/^OPERATOR: .*repeated on every reply/);
@@ -85,7 +86,7 @@ test('an operator tell prints an OPERATOR: line on stderr and first on stdout, a
   });
 });
 test('open projects from the shift block, board reads and project items are filed for the post-compaction brief',async()=>{
-  const dir=await mkdtemp(join(tmpdir(),'fh-projects-'));
+  const dir=await tempDir('fh-projects-');
   const lines=['#12 nuclear plant: 1 of 4 steps; owner astra (last request 0s ago); next 2. centrifuges','#15 robot mall: 0 of 1 step; owner grok (last request 3m00s ago); next 1. roboports'];
   const replies:Record<string,any>={
     status:{team:{shift:{shift:'shift 3, started 0s ago',projects:lines}}},
@@ -302,7 +303,7 @@ test('fh wait --max S waits for the action to end, at most S s; at once when idl
 test('fh wait with nothing running: the last action ended before the previous call is not the wait\'s, exit 0',async()=>{
   // friction3 (Haiku 23:03): two waits after a rearm had ended printed its old timed_out as a fresh error, exit 1;
   // Luna and Muse took a walk's and a collect's old outcome as the wait's.
-  const dir=await mkdtemp(join(tmpdir(),'fh-idle-'));
+  const dir=await tempDir('fh-idle-');
   const pace=join(dir,'.fh-pace.json');
   await engine(()=>({ok:true,tick:6040,result:{active:false,combat:false,last:{kind:'gather',outcome:'timed_out',tick:640}}}),async port=>{
     // No call before it on record: the outcome is the wait's, as before (a failure exits 1).

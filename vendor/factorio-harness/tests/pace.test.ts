@@ -11,6 +11,7 @@ import { mkdtemp, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { seeTick, seeDown, slowNote, Pacer, overtime, rolledBack, speedText, STALL_MS, clockTime, type PaceState } from '../host/pace.js';
+import { tempDir } from './tmp.js';
 const exec = promisify(execFile);
 
 test('speed between calls, a rollback once, an outage while it lasts and when it ends', () => {
@@ -61,7 +62,7 @@ test('a wait goes on while a slow game advances, ends paused when it stops, and 
 });
 
 test('rolledBack lists the changes a journal shows after the tick the game went back to', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'fh-pace-'));
+  const dir = await tempDir('fh-pace-');
   const file = join(dir, 'journal.jsonl');
   const at = (hms: string) => `2026-10-14T${hms}.000Z`;
   const lines: unknown[] = [];
@@ -125,7 +126,7 @@ function cli(port: number, args: string[], extra: Record<string,string> = {}) {
 }
 
 test('the CLI: the clock names a slow game, a rollback is said once with redo, an outage with since when and how long', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'fh-pace-cli-'));
+  const dir = await tempDir('fh-pace-cli-');
   const journal = join(dir, 'journal.jsonl');
   let tick = 100000;
   await engine(request => ({ok:true, tick, result:{clock:'game 27h46m'}}), async port => {
@@ -167,7 +168,7 @@ test('the CLI: the clock names a slow game, a rollback is said once with redo, a
 });
 
 test('a sleep in a slow game goes on past its usual end while the game advances, then wakes normally', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'fh-pace-sleep-'));
+  const dir = await tempDir('fh-pace-sleep-');
   // 2 game seconds at 30 ticks/s take 4 real seconds; the usual end is 2 x 1.25 + 10 = 12.5 s, so make the game slower:
   // 6 ticks/s, 20 s for the 120 ticks; it wakes once the ticks reach its end.
   const start = Date.now();

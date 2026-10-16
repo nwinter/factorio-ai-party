@@ -4,6 +4,7 @@ import { createServer, type Socket } from 'node:net';
 import { once } from 'node:events';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { tempDir } from './tmp.js';
 const exec = promisify(execFile);
 // A fake RCON server answering dispatch requests (as in cli.test.ts).
 async function engine(reply: (request:any)=>any, run:(port:number)=>Promise<void>) {
@@ -349,7 +350,7 @@ test('fh call sleep blocks like fh sleep (with or without --wait)',async()=>{
 test('a sleep never runs past the deadline: cut to the time left, or none after it',async()=>{
   const { mkdtemp, writeFile } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
-  const dir=await mkdtemp(`${tmpdir()}/fh-deadline-`);
+  const dir=await tempDir('fh-deadline-');
   const stamp=(ms:number)=>new Date(ms).toISOString().replace('T',' ').replace(/\.\d+Z$/,' UTC');
   const run=(port:number,args:string[],file:string)=>exec(process.execPath,['dist/host/cli.js','--format','json','--port',String(port),...args],
     {env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only',FH_DEADLINE_FILE:file}});

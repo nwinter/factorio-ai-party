@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { compactLua } from '../host/compact.js';
 import { bundleRuntime } from '../host/bundle.js';
+import { tempDir } from './tmp.js';
 const lua = process.env.LUA_BIN ?? 'lua';
 test('compactLua drops comments and indentation, keeps strings and line numbers', () => {
   const source = [
@@ -40,7 +41,7 @@ test('compactLua drops comments and indentation, keeps strings and line numbers'
   assert.throws(() => compactLua('--[[ open'), /unfinished/);
 });
 test('every Lua suite passes against the compacted modules, and the compacted bundle compiles', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'fh-compact-'));
+  const dir = await tempDir('fh-compact-');
   await cp('mod', join(dir, 'mod'), {recursive: true});
   await mkdir(join(dir, 'tests'));
   await cp('tests/fixtures', join(dir, 'tests/fixtures'), {recursive:true});

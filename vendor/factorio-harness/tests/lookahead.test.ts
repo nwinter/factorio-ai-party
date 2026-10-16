@@ -8,6 +8,7 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { lookaheadDue, lookaheadOffset, LOOKAHEAD_MS, LOOKAHEAD_QUIET_MS } from '../host/lookahead.js';
+import { tempDirSync } from './tmp.js';
 const exec = promisify(execFile);
 // A fake RCON server answering dispatch requests (as in cli.test.ts).
 async function engine(reply: (request:any)=>any, run:(port:number)=>Promise<void>) {
@@ -49,7 +50,7 @@ test('the look-ahead comes 20 min plus an offset by agent after the first call, 
   assert.equal(lookaheadDue({started:0, last:5000}, 'astra'), 5000 + 45 * 60000);
 });
 test('a reply carries the look-ahead once when it is due, read with peek, with the time left in the shift', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'lookahead-'));
+  const dir = tempDirSync('lookahead-');
   const file = join(dir, '.lookahead.json'), deadlineFile = join(dir, 'deadline.txt');
   const at = new Date(Date.now() + 90 * 60000 + 30000);
   const pad = (n:number) => String(n).padStart(2, '0');
