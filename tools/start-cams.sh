@@ -30,8 +30,8 @@ joined() {  # NAME: the player is connected to the server now
   out=$("${rcon[@]}" "/silent-command local p=game.get_player('$1') rcon.print(p and p.connected and 'joined' or 'not yet')" 2>/dev/null)
   grep -q joined <<<"$out"
 }
-running() {  # CAM: its client process is up on the box
-  "${winps[@]}" tools/win/client-running.ps1 -Slot "-$1" 2>/dev/null | tr -d '\r' | grep -q '^running'
+running() {  # CAM: its client process is up on the box (an unknown answer counts as up: only "stopped" is acted on)
+  ! "${winps[@]}" tools/win/client-running.ps1 -Slot "-$1" 2>/dev/null | tr -d '\r' | grep -q '^stopped'
 }
 start() {  # CAM
   local sound=(); [ "$1" = cam1 ] && sound=(-Sound)  # stream audio: only the main director is audible
