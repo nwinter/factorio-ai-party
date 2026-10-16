@@ -259,13 +259,28 @@ return function(api)
     if a.from ~= nil then from_list(a.from) end
     if a.min_cargo ~= nil then M.items(a.min_cargo, 'min_cargo') end
   end
+  -- A silo with automatic requests on takes no cargo by hand (Sonnet, 3 times: the auto rocket stalled 4+ minutes short
+  -- of 1000 kg and the reply only said how to turn them off): what is aboard, and that launch sends it as it is.
+  function M.auto_text(silo)
+    local inv = M.rocket_inventory(silo)
+    local held = {}
+    for _, s in ipairs(inv and try(function() return inv.get_contents() end) or {}) do if #held < 6 then held[#held+1] = s.name .. '*' .. s.count end end
+    local g = 0
+    for _, s in ipairs(inv and try(function() return inv.get_contents() end) or {}) do g = g + weight(s.name) * s.count end
+    local lift = api.cargo and try(function() return api.cargo.limits(silo) end)
+    local kg = string.format('%g%s kg', math.floor(g / 100 + 0.5) / 10, lift and string.format(' of %g', math.floor(lift / 100 + 0.5) / 10) or '')
+    return 'the silo at ' .. at(silo.position) .. ' has automatic requests on: the game fills its rocket for the platforms\' requests and takes no cargo by hand; '
+      .. 'its rocket holds ' .. (#held > 0 and table.concat(held, ' ') or 'nothing') .. (kg and (' (' .. kg .. ')') or '')
+      .. '; launch {position, platform} launches the rocket with what is aboard now, and automatic requests stay on; '
+      .. 'launch {position, auto_requests=false} turns them off to load by hand'
+  end
   -- Returns the reply, or {wait=...} when the rocket is not there (or not ready for a launch) yet.
   function M.load(p, a)
     M.check(a)
     local silo = api.reach_entity(p, a.position)
     assert(silo.type == 'rocket-silo', silo.name .. ' at ' .. at(silo.position) .. ' is not a rocket silo')
     if try(function() return silo.use_transitional_requests end) then
-      error('the silo at ' .. at(silo.position) .. ' has automatic requests on: the game fills its rocket for the platforms\' requests and takes no cargo by hand; launch {position, auto_requests=false} turns them off', 0)
+      error(M.auto_text(silo), 0)
     end
     local list = M.items(a.items, 'items')
     local inv = M.rocket_inventory(silo)
@@ -515,7 +530,7 @@ return function(api)
     local silo = api.sight_entity(p, a.position)
     assert(silo.type == 'rocket-silo', silo.name .. ' at ' .. at(silo.position) .. ' is not a rocket silo')
     if try(function() return silo.use_transitional_requests end) then
-      error('the silo at ' .. at(silo.position) .. ' has automatic requests on: the game fills its rocket for the platforms\' requests and takes no cargo by hand; launch {position, auto_requests=false} turns them off', 0)
+      error(M.auto_text(silo), 0)
     end
     local chests, far = {}, try(function() return p.can_reach_entity(silo) end) ~= true
     for _, pos in ipairs(from_list(a.from)) do

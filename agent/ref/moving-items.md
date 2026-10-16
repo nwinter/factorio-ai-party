@@ -2,7 +2,9 @@
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` (and `feed` or `collect {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one
-  call; `legs` lists the route; a position that resolves to nothing is left out and named in `skipped`, the rest go on); `transfer {item, "from": "nearest"}` (`radius` up to 256 to walk) takes from the nearest chest
+  call; `legs` lists the route; a position that resolves to nothing is left out and named in `skipped`, the rest go on);
+  `transfer {position, to, item, from_inventory, to_inventory}` takes at position and gives at to, each end its own
+  inventory (a machine's `assembling_machine_output` into another's `assembling_machine_input`); a take not reached ends `unreached`, nothing given; `transfer {item, "from": "nearest"}` (`radius` up to 256 to walk) takes from the nearest chest
   holding the item and says which, a `count` it lacks from the next ones (one holding it all goes alone); chests that
   feed something (requester and buffer chests, a chest an inserter takes from) only with `"feeding": true`, and walking
   (`"walk": true` looks 32 tiles) none in a worm's reach, each named when left out; `transfer

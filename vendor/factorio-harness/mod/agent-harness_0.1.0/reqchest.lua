@@ -41,11 +41,11 @@ return function(api)
     local min, max, named = M.request(pt, item)
     local trash_unrequested = try(function() return pt.trash_not_requested end) == true
     if named and max and held > max then
-      return string.format('%s: the chest holds %d, over its request max %d: the game moves the %d over it to the chest\'s trash slots, and robots carry them to storage', item, held, max, held - max)
+      return string.format('%s: the chest holds %d, over its request max %d: the game moves the %d over it to the chest\'s trash slots, and logistic robots take them out of the chest', item, held, max, held - max)
     elseif named and trash_unrequested and not max and held > min then
-      return string.format('%s: the chest holds %d, over its request %d with trash unrequested on: the game moves the %d over it to the trash slots, and robots carry them to storage', item, held, min, held - min)
+      return string.format('%s: the chest holds %d, over its request %d with trash unrequested on: the game moves the %d over it to the trash slots, and logistic robots take them out of the chest', item, held, min, held - min)
     elseif not named and trash_unrequested and held > 0 then
-      return string.format('%s is not requested here and trash unrequested is on: the game moves all %d to the trash slots, and robots carry them to storage', item, held)
+      return string.format('%s is not requested here and trash unrequested is on: the game moves all %d to the trash slots, and logistic robots take them out of the chest', item, held)
     elseif not named and held > 0 then
       return string.format('%s is not requested here: it stays in the chest\'s slots (trash unrequested is off)', item)
     end

@@ -159,3 +159,21 @@ do
   eq(table.concat(calls,','),'walk,give,craft,walk,craft','the next round has no give')
 end
 print('d16_batch6 B2 queue_submit mode next: ok')
+
+-- C3 found on the copy: a courier whose take place is never reached gave from the character's inventory anyway; now it
+-- ends unreached with nothing given.
+do
+  game={tick=0}
+  local api={distance=function(a,b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end,request_path=function() end,
+    navigate=function() return 'unreachable' end,stop_walking=function() end}
+  local given=0
+  api.visit=function() given=given+1; return {transferred=1} end
+  local S=dofile('mod/agent-harness_0.1.0/stock.lua')(api)
+  local p={position={x=0,y=0},reach_distance=10,can_reach_entity=function() return false end}
+  local a1,a2={valid=true,position={x=50,y=0}},{valid=true,position={x=60,y=0}}
+  local legs=S.start_legs(p,{{entity=a1,position=a1.position},{entity=a2,position=a2.position}},600,{legs={{},{}},item='iron-stick',rows={},items={}})
+  local out
+  for _=1,5 do out=S.tick(p,legs); if out then break end end
+  eq(out,'unreached'); eq(given,0,'no give without the take')
+end
+print('d16_batch6 C3 courier take unreached: ok')
