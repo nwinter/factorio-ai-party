@@ -293,3 +293,38 @@ do
   has(q.history[#q.history].result.resumed_from,'the take is done (50 iron-plate); requeued as the give at (30.5,4.5)')
 end
 print('d15_batch3 7 resume: ok')
+
+-- 8 (Sonnet): a fast replace of an inserter keeps what its hand holds in the new inserter's hand. ----------------
+do
+  prototypes={item={['iron-plate']={stack_size=100},inserter={stack_size=50},['fast-inserter']={stack_size=50}}}
+  defines={inventory={chest=1}}
+  local function stack(name,count)
+    local s={name=name,count=count,valid_for_read=name~=nil,quality='normal'}
+    s.clear=function() s.name=nil; s.count=0; s.valid_for_read=false end
+    s.transfer_stack=function(o) s.name,s.count,s.valid_for_read=o.name,o.count,true; o.clear(); return true end
+    return s
+  end
+  -- the character's inventory: its one slot full of iron plates; the build uses its last fast inserter
+  local main={stack('iron-plate',100)}
+  main.supports_filters=function() return false end
+  local p={get_main_inventory=function() return main end,insert=function() return 0 end,surface={spill_item_stack=function() error('nothing spills') end},position={x=0,y=0}}
+  local old={valid=true,name='inserter',type='inserter',position={x=3.5,y=4.5},held_stack=stack('iron-plate',5),get_max_inventory_index=function() return 0 end,
+    prototype={mineable_properties={products={{type='item',name='inserter',amount=1}}}},quality='normal'}
+  local RP=require('replace'){}
+  local plan=RP.plan(p,old,{type='inserter',name='fast-inserter'},'normal',1)
+  eq(plan.error,nil); eq(plan.hand.name,'iron-plate'); eq(plan.hand.count,5)
+  -- after the build: the hold has the old inserter and its hand; the new one's hand takes the plates
+  local hold={stack('inserter',1),stack('iron-plate',5)}
+  hold.destroy=function() end
+  local got={}
+  p.insert=function(s) got[#got+1]=s.name; return s.count end
+  local new={valid=true,name='fast-inserter',held_stack=stack()}
+  local line=RP.give(p,new,hold,plan)
+  eq(new.held_stack.name,'iron-plate'); eq(new.held_stack.count,5)
+  has(line,"kept 5 iron-plate in the new fast-inserter's hand")
+  -- an inserter hand that would need room it does not have is named in the refusal
+  main[1]=stack('copper-plate',100)
+  plan=RP.plan(p,old,{type='container',name='wooden-chest'},'normal',0)
+  has(plan.error,'your inventory has no room for'); has(plan.error,'5 iron-plate')
+end
+print('d15_batch3 8 fast replace hand: ok')
