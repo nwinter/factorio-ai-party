@@ -4740,3 +4740,10 @@ fh watch    # deploy on every change
   `wait_ticks` or `keep_taking` takes from the chests those inserters fill when they hold the item, instead of
   waiting (`followed` says so; none holding it: the wait at the machine). `collect {positions, dry_run: true}` adds
   `outputs_taken` for each machine among the positions.
+- Build dry runs (Astra: a Fulgora roboport's dry run named the accumulators and a pole in its way; after mining them
+  the build met shallow oil): an entry blocked by entities also says the tiles it needs (`tiles: stands on 4
+  oil-ocean-shallow tiles: needs 4 foundation first`). On a platform, a ghost or build refused over empty space says
+  whether foundation tile ghosts stand under it not built yet (`placement blocked by tiles: empty-space under it, with
+  tile ghosts of space-platform-foundation at (15,-2) not built yet: the game's ghost check refuses this entity's
+  ghost while they are ghosts, and takes it once the foundation under it is built ...`) or that no foundation or
+  foundation ghost is there. The shore hint is only given for water tiles.

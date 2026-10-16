@@ -3931,8 +3931,24 @@ local function placement_error(p,proto,pos,direction,near)
     if (layers.water_tile or layers.empty_space or layers.lava_tile) and not tiles[tile.name] then tiles[tile.name]=true; tiles[#tiles+1]=tile.name end
   end
   if #tiles>0 then
+    -- On a platform (Astra, shift19: three belts at the foundation's edge refused until the foundation under them was
+    -- built, though its tile ghosts were placed): the tile ghosts on the footprint, and that the game refuses the
+    -- entity ghost over them until that foundation is built.
+    if p.surface.platform then
+      local tg={}
+      for _,g in pairs(p.surface.find_entities_filtered{area=area,type='tile-ghost',limit=8}) do
+        if g.valid and g.type=='tile-ghost' then tg[#tg+1]=string.format('(%g,%g)',math.floor(g.position.x),math.floor(g.position.y)) end
+      end
+      if #tg>0 then
+        return ' by tiles: '..table.concat(tiles,', ')..' under it, with tile ghosts of '..(items[1] or 'space-platform-foundation')..' at '..table.concat(tg,' ')
+          ..' not built yet: the game\'s ghost check refuses this entity\'s ghost while they are ghosts, and takes it once the foundation under it is built (the hub builds foundation ghosts from hub items)'
+      end
+      return ' by tiles: '..table.concat(tiles,', ')..' under it, with no foundation or foundation tile ghost there (needs '..(#items>0 and table.concat(items,' or ') or 'space-platform-foundation')..')'
+    end
+    local wet=false
+    for _,t in ipairs(tiles) do if t:find('water',1,true) or t:find('wetland',1,true) or t:find('ocean',1,true) then wet=true end end
     return ' by tiles: '..table.concat(tiles,', ')..' (needs '..(#items>0 and table.concat(items,' or ') or 'landfill')
-      ..', or a shore position: scan fields=fluids / grid ~ marks water)'
+      ..(wet and ', or a shore position: scan fields=fluids / grid ~ marks water)' or ')')
   end
   local okw,why=pcall(M.attach_why,p,proto,pos,direction)
   if okw and why then return why end

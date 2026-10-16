@@ -449,6 +449,16 @@ do
   local ok,err=pcall(call,'build',{item='wooden-chest',position={x=2,y=0}})
   assert(not ok and tostring(err):find('placement blocked by tiles: wetland-blue-slime (needs landfill',1,true) and not tostring(err):find('ghost',1,true),tostring(err))
 end
+-- On a platform (Astra, shift19): empty space under it holding foundation tile ghosts not built yet is said so.
+;(function()
+  p.surface.platform={name='Starling'}
+  footprint={{valid=true,type='tile-ghost',ghost_name='space-platform-foundation',position={x=2.5,y=0.5}}}
+  tiles={{name='empty-space',prototype={collision_mask={layers={empty_space=true}}}}}
+  local ok,err=pcall(call,'build',{item='wooden-chest',position={x=2,y=0}})
+  assert(not ok and tostring(err):find('placement blocked by tiles: empty-space under it, with tile ghosts of space-platform-foundation at (2,0) not built yet',1,true)
+    and not tostring(err):find('shore',1,true),tostring(err))
+  p.surface.platform=nil
+end)()
 -- Another entity's ghost on the footprint still blocks, and is named.
 footprint={{valid=true,type='entity-ghost',ghost_name='iron-chest',position={x=2,y=0}}}
 fails(function() call('build',{item='wooden-chest',position={x=2,y=0}}) end,'placement blocked by ghost iron-chest (2,0)')
