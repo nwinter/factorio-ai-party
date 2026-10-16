@@ -5285,3 +5285,9 @@ fh watch    # deploy on every change
   on (each chunk it moves into is news); a goal or via point inside one is refused unless `unsafe_goal`. The dry run's
   `enemies` lists them: `enemy group of 6 heading for (100,200) at (100,0), seen now (24 tiles): closest pass ...`. A
   group in a chunk no one sees now is not read.
+- The `labs` read adds `lacking`, one row a lab lacking a pack the research needs (up to 8; Luna 03:20: 4 of 43 labs
+  had no military science while 8,754 packs sat in storage): `lab (27.5,44.5) lacks military-science-pack: fed by
+  long-handed-inserter (30.5,44.5) from lab (32.5,44.5) holding 0; no logistic network there`. A requester source says
+  what it asks of the pack (`asking 0` / `no request for it`); with a logistic network there, what it holds and the
+  chest its robots would take the pack from (the network's own pickup point). On the copy of world n, 13-24 ms in the
+  container for Nauvis's 43 labs (about 3-5 ms on n).
