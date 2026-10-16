@@ -4975,3 +4975,11 @@ fh watch    # deploy on every change
     - On the copy: `construct: 13 ghosts (...); rearm: 1 of 23 ammo turrets under 20 rounds, with
       piercing-rounds-magazine`, 31 ms in the container for the read (about 6 ms on n).
 
+## d15 batch4 follow-ups (operator 22:55)
+
+- `deconstruct {area, entity_types: ["entity-ghost"]}` (Astra, 3 times: one ghost removed, then `LuaEntity API call
+  when LuaEntity was invalid.`). A ghost given a deconstruction order is removed at once; the call read it after that.
+  Now everything read of an entity is read before the order, and an entity gone by the time it is reached is skipped
+  and counted (`gone`). The reply adds `ghosts_removed` and `ghosts_removed_by_name`. The call no longer fails for an
+  entity that went away.
+

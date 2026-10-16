@@ -572,3 +572,43 @@ do
   eq(PA.outpost_low(t,inv),nil,'robots reach it')
 end
 print('d15_batch4 15 outpost: ok')
+
+-- F1 (Astra, 3 times): deconstruct of ghosts: a removed ghost is invalid at once; never fail for an entity gone. -----
+do
+  defines={input_action={}}
+  game={create_inventory=function() return {[1]={},destroy=function() end} end}
+  prototypes={entity={}}
+  local force={name='player',is_chunk_charted=function() return true end}
+  local list={}
+  local function ghost(name,also)
+    local g={valid=true,type='entity-ghost',name='entity-ghost',ghost_name=name,force=force,minable=true}
+    setmetatable(g,{__index=function(t,k) if not rawget(t,'alive') then error('LuaEntity API call when LuaEntity was invalid.') end end})
+    g.alive=true
+    local real={}
+    for k,v in pairs(g) do real[k]=v end
+    -- Every field read errors once it is gone, as the engine's do.
+    local e=setmetatable({},{__index=function(_,k)
+      if k=='valid' then return real.alive end
+      if not real.alive then error('LuaEntity API call when LuaEntity was invalid.') end
+      if k=='to_be_deconstructed' then return function() return false end end
+      if k=='order_deconstruction' then return function() real.alive=false; if also then also() end; return true end end
+      return real[k]
+    end})
+    return e,real
+  end
+  local g1,r1=ghost('transport-belt')
+  local g2,r2=ghost('inserter')
+  local g3,r3=ghost('inserter')
+  -- Removing g2 takes g3 with it (a ghost under another).
+  getmetatable(g2).__index=(function(old) return function(t,k)
+    if k=='order_deconstruction' and r2.alive then return function() r2.alive=false; r3.alive=false; return true end end
+    return old(t,k) end end)(getmetatable(g2).__index)
+  list={g1,g2,g3}
+  local p={index=1,position={x=0,y=0},force=force,surface={find_entities_filtered=function() return list end}}
+  local B=dofile('mod/agent-harness_0.1.0/blueprints.lua'){position=function(v) return v end,real=function(q) return q end}
+  local r=B.handlers and B.handlers.deconstruct or B.deconstruct
+  local out=r(p,{area={left_top={x=48,y=217},right_bottom={x=49,y=218}},entity_types={'entity-ghost'}})
+  eq(out.changed,2); eq(out.ghosts_removed,2); eq(out.ghosts_removed_by_name,'1 inserter, 1 transport-belt')
+  has(out.gone,'1 found in the area were gone by the time they were reached')
+end
+print('d15_batch4 F1 deconstruct ghosts: ok')
