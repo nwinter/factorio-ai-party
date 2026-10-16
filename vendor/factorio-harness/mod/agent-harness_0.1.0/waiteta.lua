@@ -97,7 +97,13 @@ return function(api)
         if est and est.eta_s then seconds=est.eta_s; basis='before departure: '..est.line:gsub('^ETA [%a ]-%d+s before departure: ','')
         elseif est then unknown=est.line
         else unknown='platform has not departed'..(why and '; '..why or '') end
-      elseif c.location and leg.to~=c.location then unknown='current flight leg ends at '..leg.to..', not '..c.location
+      elseif c.location and leg.to~=c.location then
+        -- Its later legs through the schedule (Sonnet: "current flight leg ends at gleba, not vulcanus").
+        local est,why
+        if api.before_departure and o.platform then est,why=api.before_departure(o.platform,c.location) end
+        if est and est.eta_s then seconds=est.eta_s; basis='through its schedule: '..est.line:gsub('^ETA [%a ]-%d+s: ','')
+        elseif est then unknown=est.line
+        else unknown='current flight leg ends at '..leg.to..', not '..c.location..(why and '; '..why or '') end
       elseif o.paused then unknown='platform is paused; arrival rate is unavailable'
       elseif not leg.eta_ticks or leg.eta_ticks<=0 then unknown='current platform speed is zero or unavailable'
       else seconds=leg.eta_ticks/60; basis='distance left on current connection / current speed; unchanged speed, excludes later legs' end

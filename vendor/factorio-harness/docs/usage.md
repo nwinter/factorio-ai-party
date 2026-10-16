@@ -5167,3 +5167,40 @@ fh watch    # deploy on every change
   - Project steps show each step's own owner (`· Luna`) and a `parallel` marker. A board step line keeps its owner and
     `(parallel)` once done too: `[x] 1. Lay foundation (sol) (parallel) (done by sol, 2m00s ago)`. The parallel steps
     right after the next one are marked next as well.
+- `requests {platform, set: [{item, min, from, min_payload}]}`: the GUI's custom minimum payload per request on a
+  platform hub (LogisticFilter `minimum_delivery_count`; Astra 03:59, Sonnet). An edit that does not name it keeps
+  the slot's (`min payload kept: not named in this edit`); `false` (or 0) clears it. Request lines read `stone
+  50..inf from fulgora min payload 10`. What it does, seen on 2.0.77 on the copy of world n, Swift above Fulgora with
+  the silos' automatic requests on:
+  - `stone min 50, min_payload 10`: the silos sent three rockets, of 28, 10 and 12 stone, 50 in all.
+  - `concrete min 50`, no minimum payload: one full rocket, 100 concrete.
+  - So `min` is how much the hub asks for; `min_payload` is how little one rocket may carry for it.
+- Why automatic loading has not sent an item (Sol 04:50: Petrel stalled ~15 min with a ready silo, 9 free hub slots and
+  4,500 foundation in providers). The `silo` read's `auto_waits` and `preflight {position}` (`auto_waits`, and the
+  line's `automatic loading: ...`) give, for a silo with automatic requests on, each request of the platforms stopped
+  above that asks this planet for something they lack: `Swift asks space-platform-foundation 50 (holds 0, lacks 50),
+  no min payload: a rocket waits for a full one, 50 by weight, the silo's network holds 0, under the 50 a rocket waits
+  for, that payload takes 1 hub slot, the hub has 45 free`. The payload a rocket waits for is the request's min
+  payload, else a full rocket by weight (both seen on 2.0.77). While the silo fills a rocket for one platform, the
+  others' requests follow as `waiting meanwhile: ...`. The game's choice among several eligible requests is not read.
+- `drop {platform, items, up_to: true}` (Astra, twice: automatic pad requests emptied Tern's hub just before a queued
+  drop, which failed and paused the route; 885 agricultural packs at Nauvis): drops what the hub holds now of each
+  item, up to its count, and says `up_to: the hub held agricultural-science-pack 120 of 885`. Holding none of any, it
+  is done with nothing sent (`nothing_to_drop: true`), so a queue step goes on. Without `up_to` a short hub still
+  refuses, as before.
+- Arrival estimates through the schedule (Sonnet, Astra).
+  - Between two stops with no space connection of their own, the estimate takes the shortest way through the
+    connections, e.g. `fulgora->vulcanus 30000 km via nauvis (as short through gleba)`. Before, it said "no space
+    connection". This covers `platform_arrived` waits, the platforms row and `platform_endurance`, where each hop is
+    a leg: `(on the way fulgora->vulcanus)`.
+  - In flight toward somewhere else, a `platform_arrived` wait's estimate goes on through the schedule: `flying
+    fulgora->gleba: 5000 km left at its speed now: 42s; stops at gleba (time 20s); gleba->vulcanus 15000 km at 120
+    km/s (its last speed): 125s`. Before, it said `current flight leg ends at gleba, not vulcanus`.
+  - `cargo {incoming: true, planet?}`: our platforms headed for your planet (flying to it, or with it in their
+    schedule), soonest first, each with where it is, its ETA through the schedule and what its hub holds.
+  - `cargo {items, silo: {x,y}, to_platform?}` adds `dependency`, when the list can go up: the rockets it takes,
+    your own queued launches ahead of it at that silo, the parts still to make at the silo's full speed (with the
+    surface's measured rocket-part rate beside it), the platform's arrival through its schedule, and `earliest_s`,
+    the later of the two. `9 rockets for the list; building the rocket: parts 17/50; 433 parts to make (50 a
+    rocket); at the silo's full speed (48.0 parts/min) in 542s; rocket parts made on vulcanus in the last 10 min:
+    8.5/min; ...`.
