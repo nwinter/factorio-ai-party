@@ -48,7 +48,9 @@ return function(api)
   end
   local function tell(told, key, level)
     told[key] = {tick=game.tick, level=level}
-    for k, t in pairs(told) do if game.tick - t.tick > KEEP then told[k] = nil end end
+    for k, t in pairs(told) do if k ~= 'gatherings' and game.tick - t.tick > KEEP then told[k] = nil end end
+    local g = told.gatherings
+    for i = #(g or {}), 1, -1 do if game.tick - g[i].seen > KEEP then table.remove(g, i) end end
   end
   local function names_text(map, n)
     local list = {}
@@ -121,6 +123,37 @@ return function(api)
     end
     return base
   end
+  -- A gathering (enemy groups staging at one spot, within SPOT tiles) told to an agent wakes it again only when it changed
+  -- since: its target CLOSER tiles nearer the agent, its size at least GROW times and GROW_MIN more than the largest
+  -- told, or our structures within SPOT tiles of its target took damage since it was told. Returns wake, why (nil the
+  -- first time). Each gathering is kept KEEP ticks after it was last seen.
+  M.SPOT, M.CLOSER, M.GROW, M.GROW_MIN = 24, 15, 1.5, 5
+  function M.again(told, g, d, surface, s)
+    told.gatherings = told.gatherings or {}
+    local m
+    for _, x in ipairs(told.gatherings) do
+      if x.surface == surface and dist(x.at, g.position) <= M.SPOT then m = x; break end
+    end
+    local size = g.size or 0
+    if not m then
+      table.insert(told.gatherings, {surface=surface, at={x=g.position.x, y=g.position.y}, d=d, size=size, tick=game.tick, seen=game.tick})
+      while #told.gatherings > 32 do table.remove(told.gatherings, 1) end
+      return true, nil
+    end
+    m.seen = game.tick
+    local why = {}
+    if d <= m.d - M.CLOSER then why[#why+1] = string.format('it heads %d tiles nearer you than before (%d, was %d)', round(m.d - d), round(d), round(m.d)) end
+    if size >= m.size * M.GROW and size >= m.size + M.GROW_MIN then why[#why+1] = string.format('it is larger: %d (the largest told was %d)', size, m.size) end
+    for _, v in pairs(s.damage or {}) do
+      if v.at and (v.damage or 0) > 0 and (v.last or 0) > m.tick and (v.surface or 'nauvis') == surface and dist(v.at, g.target) <= M.SPOT then
+        why[#why+1] = string.format('our structures near its target took damage since at (%d,%d)', v.at.x, v.at.y)
+        break
+      end
+    end
+    if #why == 0 then return false end
+    m.d, m.size, m.tick = math.min(m.d, d), math.max(m.size, size), game.tick
+    return true, table.concat(why, '; ')
+  end
   -- The urgent line that wakes p now, or nil; once returned, that event is told to p.
   function M.check(p, base)
     local s = api.state()
@@ -150,9 +183,14 @@ return function(api)
           local key = 'group|' .. tostring(g.seq)
           if d <= group_near and news(told, key, g.size or 0) then
             tell(told, key, g.size or 0)
-            return string.format('enemy group of %d%s gathered at (%d,%d), %d tiles from you, heading for (%d,%d), %d tiles from you',
-              g.size or 0, g.kinds and ' (' .. g.kinds .. ')' or '', g.position.x, g.position.y, round(dist(g.position, pos)),
-              g.target.x, g.target.y, round(d))
+            -- The same staging spot again (Muse, d15 shift 20, a dozen wakes: groups re-gathering at (187,-14) for (96,-30)
+            -- while 31 turrets held with no damage): told again only when it changed (M.again).
+            local again, why = M.again(told, g, d, surface, s)
+            if again then
+              return string.format('enemy group of %d%s gathered at (%d,%d), %d tiles from you, heading for (%d,%d), %d tiles from you%s',
+                g.size or 0, g.kinds and ' (' .. g.kinds .. ')' or '', g.position.x, g.position.y, round(dist(g.position, pos)),
+                g.target.x, g.target.y, round(d), why and '; again: ' .. why or '')
+            end
           end
         end
       end

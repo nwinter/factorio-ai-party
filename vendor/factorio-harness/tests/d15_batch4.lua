@@ -612,3 +612,35 @@ do
   has(out.gone,'1 found in the area were gone by the time they were reached')
 end
 print('d15_batch4 F1 deconstruct ghosts: ok')
+
+-- F2 (Muse): a gathering already told wakes again only when it changes. ----------------------------------------------
+do
+  game={tick=1000}
+  local s={active={}}
+  local U=dofile('mod/agent-harness_0.1.0/urgent.lua'){state=function() return s end,who=function(p) return p.name end,
+    attack_line=function(v) return 'attack' end,claim_surface=function() return 'nauvis' end,claim_stale=function() return false end,
+    platform_hears=function() return false end,power_view=function() return nil end}
+  local p={index=1,name='muse',surface={name='nauvis'},character={valid=true,position={x=82,y=-4},health=250},force={platforms={}}}
+  s.attack_groups={}
+  local seq=0
+  local function gather(size,at,target)
+    game.tick=game.tick+600; seq=seq+1
+    s.attack_groups[#s.attack_groups+1]={seq=seq,tick=game.tick,size=size,position=at,target=target,surface='nauvis'}
+    return U.check(p,U.base(p,40) and {tick=game.tick-1,hub={},radius=40})
+  end
+  has(gather(8,{x=187,y=-14},{x=96,y=-30}),'enemy group of 8')
+  eq(gather(12,{x=187,y=-14},{x=96,y=-30}),nil,'same spot, not much larger')
+  eq(gather(4,{x=191,y=1},{x=96,y=-30}),nil,'within 24 tiles of the spot')
+  has(gather(21,{x=187,y=-14},{x=96,y=-30}),'again: it is larger: 21 (the largest told was 8)')
+  eq(gather(19,{x=187,y=-14},{x=96,y=-38}),nil)
+  -- Its target 15+ tiles nearer.
+  has(gather(19,{x=187,y=-14},{x=90,y=-8}),'again: it heads 21 tiles nearer you than before (9, was 30)')
+  -- Our structures near its target hit since (49 tiles from the character: no attack wake of its own).
+  s.damage={a={id=5,at={x=130,y=-20},damage=40,hits=2,last=game.tick+300,surface='nauvis'}}
+  game.tick=game.tick+300
+  has(gather(19,{x=187,y=-14},{x=110,y=-20}),'again: our structures near its target took damage since at (130,-20)')
+  -- Another spot is a new gathering.
+  s.damage=nil
+  has(gather(5,{x=100,y=60},{x=90,y=10}),'enemy group of 5')
+end
+print('d15_batch4 F2 gatherings: ok')

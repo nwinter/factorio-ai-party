@@ -4982,4 +4982,12 @@ fh watch    # deploy on every change
   Now everything read of an entity is read before the order, and an entity gone by the time it is reached is skipped
   and counted (`gone`). The reply adds `ghosts_removed` and `ghosts_removed_by_name`. The call no longer fails for an
   entity that went away.
+- Repeated urgent wakes (Muse, a dozen this shift: groups re-gathering at (187,-14) for (96,-30) while 31 turrets held
+  with no damage). An urgent group wake is now kept per gathering: enemy groups staging within 24 tiles of a spot this
+  agent was already told of. Such a gathering wakes again only when:
+  - its target is 15+ tiles nearer the agent;
+  - it is at least 1.5 times and 5 more than the largest told;
+  - our structures within 24 tiles of its target took damage since.
+  The line then ends with why: `...; again: it is larger: 21 (the largest told was 8)`. A gathering is kept 30 minutes
+  after it was last seen. `wait --until alert` still names every new group.
 
