@@ -58,11 +58,12 @@ def workspace():
     try:
         for d in ("tools", "agent", "bin"):
             os.makedirs(os.path.join(tmp, d))
-        for f in ("new-run.sh",):
+        for f in ("new-run.sh", "brief.py"):
             shutil.copy(os.path.join(ROOT, "tools", f), os.path.join(tmp, "tools"))
         for f in os.listdir(os.path.join(ROOT, "agent")):
             if f.endswith(".md"):
                 shutil.copy(os.path.join(ROOT, "agent", f), os.path.join(tmp, "agent"))
+        shutil.copytree(os.path.join(ROOT, "agent", "ref"), os.path.join(tmp, "agent", "ref"))
         prev = os.path.join(tmp, "runs", "shake4", "haiku")
         os.makedirs(prev)
         open(os.path.join(prev, "notes.md"), "w").write("# Notes (haiku, world n)\n\n## Now\nGoal: iron row at -40,12\n")

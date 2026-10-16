@@ -56,6 +56,35 @@ test('fh help ACTION and fh call ACTION --help print that action from describe (
     }
   });
 });
+test('fh help TOPIC prints the workspace reference topic and is journaled; fh help lists the topics; an argument refusal names the topic',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'fh-ref-'));
+  try {
+    const ref=join(dir,'ref');
+    await exec('mkdir',['-p',ref]);
+    await writeFile(join(ref,'building.md'),'# building\n\n- `build` places things.\n');
+    await writeFile(join(ref,'commands.tsv'),'build\tbuilding\nplace_ghosts\tbuilding\ntransfer\tmoving-items\n');
+    const env={...process.env,FH_REF_DIR:ref,FACTORIO_RCON_PASSWORD:'test-only'};
+    const journal=join(dir,'journal.jsonl');
+    const {stdout}=await exec(process.execPath,['dist/host/cli.js','help','building','--journal',journal],{env});
+    assert.equal(stdout,'# building\n\n- `build` places things.\n');
+    const line=JSON.parse((await import('node:fs')).readFileSync(journal,'utf8').trim());
+    assert.equal(line.event,'help');assert.equal(line.topic,'building');
+    const list=await exec(process.execPath,['dist/host/cli.js','help'],{env});
+    assert.match(list.stdout,/Reference topics \(\.\/fh help TOPIC prints one\): building\n$/);
+    await engine(request=>{
+      if(request.action==='build') return {ok:false,error:{code:'action_failed',message:'unknown argument ghosts for build; valid: position, item'}};
+      if(request.action==='queue_submit') return {ok:false,error:{code:'action_failed',message:'steps[2] (transfer): direction is required (to_entity|to_player)'}};
+      if(request.action==='buld') return {ok:false,error:{code:'action_failed',message:'unsupported action; call describe'}};
+      return {ok:false,error:{code:'action_failed',message:'entity not found at (1,2)'}};
+    },async port=>{
+      const run=async(args:string[])=>JSON.parse((await exec(process.execPath,['dist/host/cli.js','--format','json','--port',String(port),...args],{env}).catch(e=>e)).stdout).error.message;
+      assert.equal(await run(['call','build','--args','{"ghosts":1}']),'unknown argument ghosts for build; valid: position, item (reference: ./fh help building)');
+      assert.equal(await run(['call','queue_submit','--args','{"steps":[]}']),'steps[2] (transfer): direction is required (to_entity|to_player) (reference: ./fh help moving-items)');
+      assert.equal(await run(['call','buld']),'unsupported action; call describe (similar: build; reference: ./fh help building)');
+      assert.equal(await run(['call','inspect']),'entity not found at (1,2)', 'a refusal of the game state gets no reference');
+    });
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
 test('queue command maps to runtime protocol with JSON-only stdout',async()=>{
   await engine(request=>{
     assert.equal(request.action,'queue_status');assert.equal(request.player,2);

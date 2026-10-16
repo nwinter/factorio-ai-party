@@ -7,7 +7,7 @@ tested in the harness: vendor/factorio-harness/tests/blueprints.lua and mod/test
   revision it holds and writes only what changed; a deleted entry's file moves to deleted/; a missing file asks for
   every string again; a name that is not a library name is never written.
 - The operator request form.
-- start-team.sh starts the watch with the helpers; stop-team.sh runs a last pass before the save; the team.md line
+- start-team.sh starts the watch with the helpers; stop-team.sh runs a last pass before the save; the agent/ref/building.md line
   describes the tools only.
 """
 import io
@@ -104,10 +104,10 @@ def main():
     stop = open(os.path.join(ROOT, "tools", "stop-team.sh")).read()
     assert "tools/bplibrary.py --world \"$world\" --run-dir \"$rundir\" watch" in start, "start-team starts the watch"
     assert stop.index("tools/bplibrary.py") < stop.index("pog.py --world \"$world\" save"), "a last pass before the save"
-    team = open(os.path.join(ROOT, "agent", "team.md")).read().lower()
-    line = next(l for l in team.splitlines() if "blueprint_save" in l)
+    ref = open(os.path.join(ROOT, "agent", "ref", "building.md")).read().lower()
+    line = next(l for l in ref.splitlines() if "blueprint_save" in l)
     for word in ("should", "consider", "try ", "when you", "if you"):
-        assert word not in line, f"team.md blueprint line has {word!r}: {line}"
+        assert word not in line, f"ref/building.md blueprint line has {word!r}: {line}"
     print("wiring: ok")
 
 

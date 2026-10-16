@@ -101,21 +101,13 @@ dir=$("$root/tools/new-run.sh" "$run" "$world" "$player" "$minutes")
 "$dir/fh" call describe --format json 2>/dev/null | python3 "$root/tools/describe-lines.py" > "$dir/describe.json" 2>/dev/null \
   || rm -f "$dir/describe.json"
 # Harness-specific notes (agent/harness-KIND.md) go before the compaction instructions at the end of AGENTS.md.
-if [ -f "$root/agent/harness-$kind.md" ]; then
-  python3 - "$dir/AGENTS.md" "$root/agent/harness-$kind.md" <<'EOP'
-import sys
-path, extra = sys.argv[1:]
-text, add = open(path).read(), open(extra).read().rstrip("\n") + "\n\n"
-i = text.find("## Compact instructions")
-open(path, "w").write(text[:i] + add + text[i:] if i >= 0 else text.rstrip("\n") + "\n\n" + add)
-EOP
-fi
+python3 "$root/tools/brief.py" harness "$dir" "$kind"
 # POG_FULL_TOOLS=1: tools/, team-tools/, gamedata/ and the "Your tools" paragraph (tools/full_tools.py); each harness's
 # own settings follow in its case below.
 full=${POG_FULL_TOOLS:-0}
 [ "$full" = 1 ] && python3 "$root/tools/full_tools.py" workspace "$dir" "$kind"
-# agy reads only the first 24000 bytes of AGENTS.md (d15 trajectory analysis: Gemini never saw the action reference):
-# over that, the full text goes to AGENTS-full.md and AGENTS.md becomes a compact one (tools/agy_rules.py rules).
+# agy reads only the first 24000 bytes of AGENTS.md (d15 trajectory analysis: Gemini never saw the action reference);
+# the core (tools/brief.py) stays under 20 KB, and tools/agy_rules.py rules warns on stderr if it ever grows past 24000.
 [ "$kind" = agy ] && python3 "$root/tools/agy_rules.py" rules "$dir" >/dev/null
 prompt="$root/runs/$run/prompt.md"
 if [ ! -f "$prompt" ]; then
