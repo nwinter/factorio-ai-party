@@ -71,3 +71,54 @@ do
   has(O.line('luna',force),'1 full chest in your claims that output waits on (passive-provider-chest (10.5,4.5) 48/48 slots used (spoilage 4000 in 40 slots, nutrients 240 in 8 slots))')
 end
 print('d15_batch3 1 full chests: ok')
+
+-- 2 (Sol): what removing heat pipes does to heat: freezable entities losing their last warm heater, parts cut off. --
+do
+  local all={}
+  local function proto(type,w,h,heating,buf) return {type=type,w=w,h=h,heating_energy=heating or 0,heat_buffer_prototype=buf and {specific_heat=1e6,max_temperature=1000,min_working_temperature=15,max_transfer=1e9} or nil} end
+  local surface={planet={prototype={entities_require_heating=true}}}
+  local n=0
+  local function ent(name,pr,x,y,temp)
+    n=n+1
+    local e={valid=true,unit_number=n,name=name,type=pr.type,prototype=pr,position={x=x,y=y},direction=0,temperature=temp,heat_neighbours={}}
+    all[#all+1]=e; return e
+  end
+  local function link(a,b) table.insert(a.heat_neighbours,b); table.insert(b.heat_neighbours,a) end
+  surface.find_entities_filtered=function(f)
+    local out={}
+    local types=f.type and (type(f.type)=='table' and f.type or {f.type})
+    for _,e in ipairs(all) do
+      local ok=true
+      if types then ok=false; for _,t in ipairs(types) do if t==e.type then ok=true end end end
+      local a=f.area
+      local w,h=(e.prototype.w or 1)/2,(e.prototype.h or 1)/2
+      if ok and a and not (e.position.x+w>a[1][1] and e.position.x-w<a[2][1] and e.position.y+h>a[1][2] and e.position.y-h<a[2][2]) then ok=false end
+      if ok then out[#out+1]=e end
+    end
+    return out
+  end
+  local H=require('heating'){footprint=function(pr,pos) return {left_top={x=pos.x-pr.w/2,y=pos.y-pr.h/2},right_bottom={x=pos.x+pr.w/2,y=pos.y+pr.h/2}} end}
+  local tower=ent('heating-tower',proto('reactor',3,3,0,true),1.5,1.5,300)
+  local pipe=proto('heat-pipe',1,1,0,true)
+  local p1=ent('heat-pipe',pipe,3.5,1.5,280); local p2=ent('heat-pipe',pipe,4.5,1.5,270); local p3=ent('heat-pipe',pipe,5.5,1.5,260)
+  link(tower,p1); link(p1,p2); link(p2,p3)
+  local ug=ent('pipe-to-ground',proto('pipe-to-ground',1,1,50),5.5,2.5)
+  local turbine=ent('steam-turbine',proto('generator',3,5,100),7.5,1.5)
+  local loss=H.loss(surface,{name='player'},{p2})
+  eq(loss.cut_off,'1 heat-network part cut off from every nuclear reactor and heating tower (1 heat-pipe; first at (5.5,1.5)); they keep their heat and cool')
+  eq(loss.freeze_count,2)
+  has(table.concat(loss.freeze,' | '),'pipe-to-ground (5.5,2.5): keeps only heaters cut off from every reactor and heating tower, which cool (heat-pipe (5.5,1.5) 260 C)')
+  has(table.concat(loss.freeze,' | '),'steam-turbine (7.5,1.5): keeps only heaters cut off from every reactor and heating tower, which cool (heat-pipe (5.5,1.5) 260 C)')
+  -- removing the end pipe: nothing cut; the turbine loses its last heater
+  loss=H.loss(surface,{name='player'},{p3})
+  eq(loss.cut_off,nil); eq(loss.freeze_count,1); has(table.concat(loss.freeze,' | '),'steam-turbine (7.5,1.5): loses its last heater at 30 C or more (heat-pipe (5.5,1.5) 260 C)')
+  -- a pipe whose neighbours stay warm from another heater: nothing
+  local p4=ent('heat-pipe',pipe,4.5,3.5,250); link(p4,tower)
+  loss=H.loss(surface,{name='player'},{p2})
+  eq(loss.freeze_count,1,'the underground keeps p4'); has(loss.freeze[1],'steam-turbine')
+  -- no heating needed and nothing cut: none
+  surface.planet.prototype.entities_require_heating=false
+  eq(H.loss(surface,{name='player'},{p3}).none,'no entity loses its last heater at 30 C or more and no heat-network part is cut off')
+  eq(H.loss(surface,{name='player'},{ug}),nil,'no heat part removed')
+end
+print('d15_batch3 2 heat: ok')

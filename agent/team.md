@@ -125,7 +125,8 @@ already targets your character.
   {position}` on a machine gives the same).
   `full_chests` names chests with every slot used that the makers' output waits on (slots used/total, what fills them,
   the machines waiting); `chests` rows give free slots; `inspect` of a full chest names the nearest chests with free slots.
-- `./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
+- - `mine {position, dry_run: true}` and `deconstruct` (dry run and live) read `heat_loss`: heat-network parts cut off from every reactor and heating tower, and on Aquilo freezable pipes and machines that lose their last heater at 30 C or more.
+`./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
   starts, naming each step's makers, their states and what they lack; `fixes` gives, for a starved maker, the nearest
   chest within 64 tiles holding what it lacks and one `transfer` call that carries it there; with `"per_min":30` each step's rate for that
   target, what it makes now, its makers' rate each and the machines the target takes.

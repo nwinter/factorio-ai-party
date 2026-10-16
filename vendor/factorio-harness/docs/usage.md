@@ -4701,3 +4701,13 @@ fh watch    # deploy on every change
   used (...)`) and lists those chests in `full_chests`. `open for you` counts full chests in your fresh claims that
   a full_output machine's output waits on. `inspect` of such a chest adds `slots_used`, `output_waits` and
   `free_chests_near` (the nearest 3 chests of ours within 32 tiles with a free slot).
+- Heat (Sol: reclaiming "spare" heat pipes twice froze an ammonia underground pipe and the only steam turbine on
+  Aquilo): `mine {position, dry_run: true}` on an entity mines nothing and reads `heat_loss`; `deconstruct` (dry run
+  and live) reads it for the heat-network parts it marks; a live `mine` of a heat part carries it when it is not
+  `none`. `heat_loss.cut_off`: the heat-network parts (by the engine's heat links) whose part of the network keeps no
+  nuclear reactor or heating tower without the removed ones (`1 heat-network part cut off from every nuclear reactor
+  and heating tower (1 heat-pipe; first at (5.5,1.5)); they keep their heat and cool`). `heat_loss.freeze` (a surface
+  whose entities need heating): freezable entities beside a removed heater, or beside a cut-off one, that keep no
+  heater at 30 C or more (`pipe-to-ground (4.5,2.5): loses its last heater at 30 C or more (heat-pipe (4.5,1.5) 270
+  C)`, or `keeps only heaters cut off from every reactor and heating tower, which cool`). Up to 64 freezable
+  entities are read; a heat network is followed up to 2000 parts.
