@@ -728,6 +728,8 @@ class SiteChat:
                 dels += [("id", f"site:{s}") for s in res.get("hidden") or []]
                 page = res.get("messages") or []
                 for r in page:
+                    if r.get("channel", "game") != "game":
+                        continue  # a viewers-only line (the Worker leaves them out of this read anyway): never relayed
                     # the site has no stable viewer id: its own per-client limits apply, ours go by name
                     msgs.append({"id": f"site:{r['seq']}", "source": "site", "author": author_key("site", fold(
                         r.get("name", ""))), "name": r.get("name", ""), "text": r.get("text", ""), "t": r.get("t"),
