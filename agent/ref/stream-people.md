@@ -28,6 +28,8 @@
   longer text is refused without consuming a rate-limit slot.
 - The stream's operator-only `POST /platform` holds a whole platform on air; an operator follow of an agent aboard
   also shows the whole ship, with space ahead in flight. This is a stream control, not an `./fh` action.
+  The operator can also put a spot the team has charted on the main camera (`POST /look`, up to 60 s) or a PNG you saved
+  under runs/ over it (`POST /show`, up to 60 s): ask with `./fh operator` and the position or file path.
 - Stream/live cards show current sleep/wait conditions, game-time estimates and measured idle time; the live page quotes a recent explicit wait statement from your own chat/aloud, when present.
 - `./fh players` lists the human players on the map (bots and camera clients are not listed): online, permission
   group (`guest` or `normal`), position, and for the last 10 minutes what each built, what each removed (`mined` by
