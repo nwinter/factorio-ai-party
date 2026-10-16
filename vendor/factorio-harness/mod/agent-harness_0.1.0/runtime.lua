@@ -11991,6 +11991,11 @@ function M.dispatch_inner(request)
       if okm then missed_kind,missed_late=k,l end
     end
     if p and p.valid then result.clock=clock_line(p,peek) end
+    -- Lessons whose keys the call matches (board.lua M.lessons_for; Sol and Astra 10:51): at most 2 lines.
+    if p and p.valid and not peek and type(request.args)=='table' then
+      local okl,ls=pcall(M.board.lessons_for,p,request.action,request.args)
+      if okl and ls then result.lessons=ls end
+    end
     if p and p.valid and not M.is_director(p.index) then
       -- Operator tells ride on every reply until a game action or message (tells.lua operator_lines).
       -- helper (host harness.ts helperThread: a subagent sharing the character): tells stay for the main session.

@@ -5469,3 +5469,14 @@ fh watch    # deploy on every change
   fewest blockers it names for deconstruction, mines them by hand as a timed construct over them (their contents go to
   the inventory), and walks again once; a queue step waits through it. Checked on the copy: Astra walled in on
   Fulgora, the pipe and provider chest it named mined by hand, then the walk left the ring.
+- Lessons (Group G; viewer Foobator's idea, the design Sol's and Astra's 10:51-10:52): board items of kind `lesson`.
+  `lesson_add {rule (160), cause?, fix?, evidence_tick?, invalidated_when?, owner?, keys: item | recipe | entity |
+  action, surface?, position | area?, supersedes?}`; `lesson_edit {id, ...}` (any teammate; the earlier versions kept,
+  last 8; `status: dropped` retires); `lesson_verify {id, evidence_tick?}`; `lessons {item | recipe | entity | action |
+  near | surface, all?, limit?}`. A lesson a call matches (its names: any of item, recipe, entity, action; its place and
+  surface narrow them; for inspect, trace, build, place_ghosts, transfer, feed, collect, configure, load_silo, launch,
+  craft, mine, rearm, refuel, or any call when it names that action) rides on the reply as up to 2 lines in `lessons`:
+  `lesson #649 (astra; evidence tick 18358542, verified 0m ago): ...`. One not verified for 12 game hours reads stale;
+  a superseded one is retired, kept with its link; at most 150 active; the board's plain listing leaves lessons out
+  (`board {kind: "lesson"}` lists them). Checked on the copy: a lesson on a requester at (48.5,190.5) rode on an
+  inspect there and not elsewhere; an inspect with the check took about 1 ms in the container.

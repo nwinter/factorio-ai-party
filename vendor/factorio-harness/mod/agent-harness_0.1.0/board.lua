@@ -9,7 +9,7 @@ return function(api)
   local TITLE, NOTE, LONG = 120, 200, 1000
   local UNOWNED_AGE, REMIND_EVERY, FIRST_ALERTS = 7200, 3600, 3600
   local MAX_BOARD_LINES, MAX_ALERT_LINES, REPEAT_ATTACK = 5, 8, 7200
-  local KINDS = {task=true, request=true, claim=true, note=true, harness=true, plan=true, project=true}
+  local KINDS = {task=true, request=true, claim=true, note=true, harness=true, plan=true, project=true, lesson=true}
   -- The team plan: one living item (kind plan) with goals and a line per agent.
   local PLAN_GOALS, PLAN_LINE, PLAN_LINES, PLAN_HISTORY = 600, 160, 24, 10
   local STATUSES = {open=true, claimed=true, doing=true, done=true, blocked=true, dropped=true}
@@ -190,7 +190,7 @@ return function(api)
     while b.count > MAX_ITEMS do
       local victim
       for _, pass in ipairs{function(i) return i.status == 'done' or i.status == 'dropped' end,
-          function(i) return i.kind == 'note' end, function(i) return i.kind ~= 'plan' and not (i.kind == 'project' and ACTIVE[i.status]) end,
+          function(i) return i.kind == 'note' end, function(i) return i.kind ~= 'plan' and i.kind ~= 'lesson' and not (i.kind == 'project' and ACTIVE[i.status]) end,
           function(i) return i.kind ~= 'plan' end} do
         for _, i in pairs(b.items) do
           if pass(i) and (not victim or i.updated_tick < victim.updated_tick or (i.updated_tick == victim.updated_tick and i.id < victim.id)) then victim = i end
@@ -997,9 +997,9 @@ return function(api)
     for _, i in pairs(b.items) do
       -- The plain listing holds active items only (Foobator, d15 09:46: done and dropped ones filled it); the finished
       -- ones are counted.
-      if brief and i.kind ~= 'plan' and not ACTIVE[i.status] then finished = finished + 1
+      if brief and i.kind ~= 'plan' and i.kind ~= 'lesson' and not ACTIVE[i.status] then finished = finished + 1
       -- The plan is shown on its own (plan below), not as a row; so are open projects in the plain listing.
-      elseif i.kind ~= 'plan' and not (brief and i.kind == 'project' and ACTIVE[i.status])
+      elseif i.kind ~= 'plan' and (i.kind ~= 'lesson' or a.kind == 'lesson') and not (brief and i.kind == 'project' and ACTIVE[i.status])
           and (not want or want[i.status]) and (not a.kind or i.kind == a.kind) and (not a.since_tick or i.updated_tick > a.since_tick)
           and (a.mine ~= true or i.owner == by or i.requested_by == by) then
         list[#list+1] = i
@@ -1288,6 +1288,17 @@ return function(api)
       returns='the item in full and changed; on a project the goal, handoff and areas are its owner\'s to edit, and anyone\'s when it has no owner or its owner has made no request for 30 min (who may then also take it with owner); a title or needs change is kept in the item\'s history ("title changed by astra: \'old\' -> \'new\'", last 10) and told to its owner and poster'},
     board_review = {id='optional: one item (a project) and the items under it; default every active item',
       returns='flags [{id, kind, line}]: gone_platform (a title or open step naming a platform of ours no longer there), stale_handoff (a handoff unchanged for 2 h while its owner was active in the last 30 min), superseded (another item supersedes it and it is still active), needs_differ (the same item needed in different counts by items of one project); reviewed, lines, gone_platforms. Read only'},
+    lesson_add = {rule='1..160 characters: the rule or symptom, short', cause='optional root cause (240)', fix='optional fix (240)',
+      evidence_tick='optional game tick of the evidence (default now)', invalidated_when='optional: when it no longer holds, in words (160)',
+      owner='optional teammate (default you)', item='key: an item name', recipe='key: a recipe name', entity='key: an entity name',
+      action='key: an action (inspect, build, transfer, launch, ...)', surface='narrows the keys to one surface', position='key: {x,y} (within 8 tiles)',
+      area='key: {left_top, right_bottom}', supersedes='optional item numbers it replaces (a lesson so replaced is retired)',
+      returns='lesson {id, rule, cause, fix, evidence_tick, last_verified, keys, line}; a lesson is a board item of kind lesson (board {kind: "lesson"} lists them); at most 150 active; one not verified for 12 game hours reads stale'},
+    lesson_edit = {id='a lesson\'s number', rule='as lesson_add', cause='as lesson_add', fix='as lesson_add', invalidated_when='as lesson_add', item='as lesson_add', recipe='as lesson_add', entity='as lesson_add', action='as lesson_add', surface='as lesson_add', position='as lesson_add', area='as lesson_add',
+      status='open | dropped (retired)', supersedes='item numbers', returns='lesson and history (the earlier versions, last 8); any teammate edits'},
+    lesson_verify = {id='a lesson\'s number', evidence_tick='optional: a newer evidence tick', returns='lesson with last_verified now and verified_by you'},
+    lessons = {item='as lesson_add', recipe='as lesson_add', entity='as lesson_add', action='as lesson_add', surface='as lesson_add', near='{x,y}', all='true: retired ones too', limit='1..64 (default 20)',
+      returns='lessons matching (none given: every active one), most recently verified first: rows and lines (the rule, who, evidence tick, verified how long ago, stale, cause, fix, when it no longer holds); a call that matches a lesson\'s keys (inspect, trace, build, place_ghosts, transfer, feed, collect, configure, load_silo, launch, craft, mine, rearm, refuel on that item, recipe, entity or place, or the action it names) carries up to 2 lines in lessons'},
     board_retire = {ids='1..32 board item numbers', reason='1..200 characters: the note each gets', returns='retired (dropped, the reason as a note), failed [{id, why}] (board_update\'s rules: its owner or poster, or anyone once they have been quiet), line'},
     board_events = {since_seq='return events after this sequence number (default 0)', limit='1..200 (default 100), oldest first',
       returns='events {seq,tick,by,id,change,title,kind,owner,requested_by,status,text; a project\'s also progress, steps_done, steps_total} and cursor (pass it back as since_seq)'},
@@ -1300,6 +1311,231 @@ return function(api)
     mention_counts = {returns='per agent: unread_mentions (not yet shown in a reply or chat read), at_mentions (@name or @everyone), oldest_tick, latest, fyi (fyi tells waiting, left out of the other counts: no reason to wake), last_request_tick (supervisors: wake idle mentioned agents)'},
   }
   -- Handlers take the acting agent's name, so the operator path can share them.
+  -- Lessons (viewer Foobator's idea; the design Sol's and Astra's, 10:51-10:52): short rules someone tested, kept as
+  -- board items of kind lesson with their evidence and when they were last verified, retired by supersedes, and shown
+  -- on a reply whose call matches their keys (an item, recipe, entity, action, surface, place). Facts someone
+  -- recorded: each line names its evidence tick and when it was last verified; never more than 2 a reply.
+  local LESSON = {rule=160, cause=240, fix=240, invalidated_when=160}
+  local MAX_LESSONS, LESSON_STALE, LESSON_HISTORY, NEAR_LESSON = 150, 12 * 216000, 8, 8
+  M.LESSON_STALE = LESSON_STALE
+  local function lesson_keys(a, old)
+    local k = {}
+    for name, v in pairs(old or {}) do k[name] = v end
+    local function str(name, check, what)
+      if a[name] == nil then return end
+      if a[name] == false or a[name] == '' then k[name] = nil; return end
+      assert(type(a[name]) == 'string' and (not check or check(a[name])), name .. ' must be ' .. what)
+      k[name] = a[name]
+    end
+    str('item', function(v) return prototypes.item[v] ~= nil end, 'an item name')
+    str('recipe', function(v) return prototypes.recipe[v] ~= nil end, 'a recipe name')
+    str('entity', function(v) return prototypes.entity[v] ~= nil end, 'an entity name')
+    str('action', nil, 'an action name (inspect, build, transfer, launch, ...)')
+    str('surface', nil, 'a surface name')
+    if a.position == false then k.position = nil
+    elseif a.position ~= nil then
+      assert(type(a.position) == 'table' and type(a.position.x) == 'number' and type(a.position.y) == 'number', 'position is {x,y}')
+      k.position = {x=a.position.x, y=a.position.y}
+    end
+    if a.area == false then k.area = nil elseif a.area ~= nil then k.area = area_arg(a.area) end
+    assert(k.item or k.recipe or k.entity or k.action or k.position or k.area,
+      'a lesson needs a key it applies to: item, recipe, entity, action, position or area (surface narrows them)')
+    return k
+  end
+  local function lesson_of(id)
+    assert(type(id) == 'number', 'id is required (a lesson\'s board item number)')
+    local i = store().items[id]
+    assert(i and i.kind == 'lesson', 'no lesson #' .. tostring(id))
+    return i
+  end
+  local function lesson_count()
+    local n = 0
+    for _, i in pairs(store().items) do if i.kind == 'lesson' and ACTIVE[i.status] then n = n + 1 end end
+    return n
+  end
+  local function lesson_ago(ticks)
+    local m = math.floor(math.max(0, ticks) / 3600)
+    return m >= 120 and string.format('%dh', math.floor(m / 60)) or string.format('%dm', m)
+  end
+  local function lesson_line(i, short)
+    local stale = game.tick - (i.last_verified or i.created_tick) > LESSON_STALE
+    local base = string.format('lesson #%d (%s; evidence tick %d, verified %s ago%s): %s', i.id, tostring(i.owner or i.requested_by),
+      i.evidence_tick or i.created_tick, lesson_ago(game.tick - (i.last_verified or i.created_tick)), stale and ', stale: not verified for 12 game hours' or '', i.title)
+    if short then return base end
+    return base .. (i.cause and '; cause: ' .. i.cause or '') .. (i.fix and '; fix: ' .. i.fix or '')
+      .. (i.invalidated_when and '; no longer holds when: ' .. i.invalidated_when or '')
+      .. (i.superseded_by and string.format('; superseded by #%d', i.superseded_by) or '')
+  end
+  local function lesson_view(i)
+    return {id=i.id, rule=i.title, cause=i.cause, fix=i.fix, evidence_tick=i.evidence_tick, last_verified=i.last_verified, verified_by=i.verified_by,
+      invalidated_when=i.invalidated_when, owner=i.owner, keys=i.keys, status=i.status, supersedes=i.supersedes, superseded_by=i.superseded_by,
+      stale=game.tick - (i.last_verified or i.created_tick) > LESSON_STALE or nil, edits=i.history and #i.history or nil, line=lesson_line(i)}
+  end
+  local function lesson_add(by, a)
+    assert(lesson_count() < MAX_LESSONS, string.format('the board holds at most %d lessons: retire one (lesson_edit {id, status: "dropped"}) or supersede it', MAX_LESSONS))
+    local i = {kind='lesson', title=required_text(a.rule, 'rule', LESSON.rule), cause=optional_text(a.cause, 'cause', LESSON.cause),
+      fix=optional_text(a.fix, 'fix', LESSON.fix), invalidated_when=optional_text(a.invalidated_when, 'invalidated_when', LESSON.invalidated_when),
+      requested_by=by, owner=a.owner ~= nil and resolve(a.owner) or by, status='open', notes={}, created_tick=game.tick, updated_tick=game.tick,
+      last_verified=game.tick, verified_by=by, keys=lesson_keys(a)}
+    if a.evidence_tick ~= nil then
+      assert(type(a.evidence_tick) == 'number' and a.evidence_tick >= 0 and a.evidence_tick <= game.tick, 'evidence_tick is a game tick, not in the future')
+      i.evidence_tick = math.floor(a.evidence_tick)
+    else i.evidence_tick = game.tick end
+    local sup = a.supersedes ~= nil and supersedes_arg(a.supersedes) or nil
+    local b = store()
+    i.id = b.next_id; b.next_id = b.next_id + 1
+    b.items[i.id] = i; b.count = b.count + 1
+    if sup and #sup > 0 then
+      i.supersedes = sup
+      -- A lesson it supersedes is retired (dropped), kept with the link.
+      for _, id in ipairs(sup) do
+        local o = b.items[id]
+        o.superseded_by = i.id
+        if o.kind == 'lesson' and ACTIVE[o.status] then o.status = 'dropped'; o.updated_tick = game.tick end
+      end
+    end
+    event(by, i, 'posted', i.title)
+    prune()
+    return {lesson=lesson_view(i)}
+  end
+  local function lesson_edit(by, a)
+    local i = lesson_of(a.id)
+    local before = {tick=game.tick, by=by, rule=i.title, cause=i.cause, fix=i.fix, invalidated_when=i.invalidated_when, keys=i.keys, status=i.status}
+    local changed = false
+    if a.rule ~= nil then i.title = required_text(a.rule, 'rule', LESSON.rule); changed = true end
+    for _, f in ipairs({'cause', 'fix', 'invalidated_when'}) do
+      if a[f] ~= nil then i[f] = optional_text(a[f], f, LESSON[f]); if i[f] == '' then i[f] = nil end; changed = true end
+    end
+    if a.item ~= nil or a.recipe ~= nil or a.entity ~= nil or a.action ~= nil or a.surface ~= nil or a.position ~= nil or a.area ~= nil then
+      i.keys = lesson_keys(a, i.keys); changed = true
+    end
+    if a.status ~= nil then
+      assert(a.status == 'open' or a.status == 'dropped', 'a lesson\'s status is open or dropped (retired)')
+      i.status = a.status; changed = true
+    end
+    if a.supersedes ~= nil then
+      local sup = supersedes_arg(a.supersedes, i.id)
+      i.supersedes = #sup > 0 and sup or nil
+      for _, id in ipairs(sup) do
+        local o = store().items[id]
+        o.superseded_by = i.id
+        if o.kind == 'lesson' and ACTIVE[o.status] then o.status = 'dropped'; o.updated_tick = game.tick end
+      end
+      changed = true
+    end
+    assert(changed, 'nothing to change: give rule, cause, fix, invalidated_when, a key, status or supersedes')
+    i.history = i.history or {}
+    table.insert(i.history, before)
+    while #i.history > LESSON_HISTORY do table.remove(i.history, 1) end
+    i.updated_tick = game.tick
+    event(by, i, 'lesson_edited', i.title)
+    return {lesson=lesson_view(i), history=i.history}
+  end
+  local function lesson_verify(by, a)
+    local i = lesson_of(a.id)
+    assert(ACTIVE[i.status], 'lesson #' .. i.id .. ' is retired (dropped)')
+    i.last_verified, i.verified_by, i.updated_tick = game.tick, by, game.tick
+    if a.evidence_tick ~= nil then
+      assert(type(a.evidence_tick) == 'number' and a.evidence_tick >= 0 and a.evidence_tick <= game.tick, 'evidence_tick is a game tick, not in the future')
+      i.evidence_tick = math.floor(a.evidence_tick)
+    end
+    event(by, i, 'lesson_verified', i.title)
+    return {lesson=lesson_view(i)}
+  end
+  -- Whether lesson i's keys match a call: what it names (item, recipe, entity, action) or where (within its area, or
+  -- NEAR_LESSON tiles of its position), on its surface when it names one.
+  -- The names (item, recipe, entity, action): any of them; a place (position, area) and a surface: each narrows them.
+  local function lesson_matches(i, q)
+    local k = i.keys or {}
+    if k.surface and q.surface and k.surface ~= q.surface then return false end
+    local named = k.action or k.item or k.recipe or k.entity
+    if named then
+      local hit = (k.action and k.action == q.action) or (k.item and q.items and q.items[k.item]) or (k.recipe and q.recipes and q.recipes[k.recipe])
+        or (k.entity and q.entities and q.entities[k.entity])
+      if not hit then return false end
+    end
+    if k.position or k.area then
+      for _, pos in ipairs(q.positions or {}) do
+        if k.area and pos.x >= k.area.left_top.x and pos.x <= k.area.right_bottom.x and pos.y >= k.area.left_top.y and pos.y <= k.area.right_bottom.y then return true end
+        if k.position and (pos.x - k.position.x) ^ 2 + (pos.y - k.position.y) ^ 2 <= NEAR_LESSON ^ 2 then return true end
+      end
+      return false
+    end
+    return named ~= nil
+  end
+  local function lessons_read(a)
+    local q = {surface=a.surface, action=a.action, items=a.item and {[a.item]=true}, recipes=a.recipe and {[a.recipe]=true},
+      entities=a.entity and {[a.entity]=true}, positions=a.near and {{x=a.near.x, y=a.near.y}} or nil}
+    local any = a.item or a.recipe or a.entity or a.action or a.near or a.surface
+    local list = {}
+    for _, i in pairs(store().items) do
+      if i.kind == 'lesson' and (a.all == true or ACTIVE[i.status]) then
+        -- a read lists a lesson when any filter given matches one of its keys (a surface given narrows them)
+        local k = i.keys or {}
+        local near = a.near and ((k.area and a.near.x >= k.area.left_top.x and a.near.x <= k.area.right_bottom.x and a.near.y >= k.area.left_top.y and a.near.y <= k.area.right_bottom.y)
+          or (k.position and (a.near.x - k.position.x) ^ 2 + (a.near.y - k.position.y) ^ 2 <= NEAR_LESSON ^ 2))
+        local hit = (a.item and k.item == a.item) or (a.recipe and k.recipe == a.recipe) or (a.entity and k.entity == a.entity)
+          or (a.action and k.action == a.action) or near
+        local only_surface = a.surface and not (a.item or a.recipe or a.entity or a.action or a.near)
+        local keep = not any or (only_surface and k.surface == a.surface) or (hit and (not a.surface or not k.surface or k.surface == a.surface))
+        if keep then list[#list+1] = i end
+      end
+    end
+    table.sort(list, function(x, y) return (x.last_verified or 0) > (y.last_verified or 0) or ((x.last_verified or 0) == (y.last_verified or 0) and x.id > y.id) end)
+    local lines, rows = {}, {}
+    local limit = math.min(64, math.max(1, math.floor(tonumber(a.limit) or 20)))
+    for n, i in ipairs(list) do if n <= limit then lines[n] = lesson_line(i); rows[n] = lesson_view(i) end end
+    return {lessons=rows, lines=lines, count=#list, more=#list > limit and #list - limit or nil,
+      note=#list == 0 and 'no lesson matches' or nil}
+  end
+  -- The lessons a call matches (inspect, trace, build, place_ghosts, transfer, feed, collect, configure; any action a
+  -- lesson names): at most 2 lines, most recently verified first. q: what the call names and where.
+  local LESSON_CALLS = {inspect=true, trace=true, build=true, place_ghosts=true, transfer=true, feed=true, collect=true, configure=true,
+    load_silo=true, launch=true, craft=true, mine=true, rearm=true, refuel=true}
+  function M.lessons_for(p, action, args)
+    local b = store()
+    if not b.items then return nil end
+    local any = false
+    for _, i in pairs(b.items) do if i.kind == 'lesson' then any = true; break end end
+    if not any or type(args) ~= 'table' then return nil end
+    local q = {action=action, surface=try(function() return p.surface.name end), items={}, recipes={}, entities={}, positions={}}
+    local named = LESSON_CALLS[action]
+    if named then
+      if type(args.item) == 'string' then q.items[args.item] = true end
+      if type(args.items) == 'table' then for k, v in pairs(args.items) do q.items[type(k) == 'string' and k or tostring(v)] = true end end
+      if type(args.recipe) == 'string' then q.recipes[args.recipe] = true end
+      if type(args.name) == 'string' then q.entities[args.name] = true end
+      local list = type(args.positions) == 'table' and args.positions or (type(args.position) == 'table' and {args.position}) or {}
+      for n, pos in ipairs(list) do
+        if n > 8 then break end
+        local x, y = type(pos) == 'table' and (pos.x or pos[1]), type(pos) == 'table' and (pos.y or pos[2])
+        if type(x) == 'number' and type(y) == 'number' then
+          q.positions[#q.positions+1] = {x=x, y=y}
+          -- the entity there and its recipe
+          local e = try(function() return p.surface.find_entities_filtered{position={x, y}, limit=1}[1] end)
+          if e and e.valid then
+            q.entities[e.name] = true
+            local r = try(function() return e.get_recipe() end)
+            if r then q.recipes[r.name] = true end
+          end
+        end
+      end
+    end
+    local hits = {}
+    for _, i in pairs(b.items) do
+      if i.kind == 'lesson' and ACTIVE[i.status] and (named or (i.keys and i.keys.action == action)) and lesson_matches(i, q) then hits[#hits+1] = i end
+    end
+    if #hits == 0 then return nil end
+    table.sort(hits, function(x, y) return (x.last_verified or 0) > (y.last_verified or 0) end)
+    local out = {}
+    for n = 1, math.min(2, #hits) do out[n] = lesson_line(hits[n], true) end
+    if #hits > 2 then out[#out+1] = string.format('+%d more: lessons {...}', #hits - 2) end
+    return out
+  end
+  M.handlers.lesson_add = function(p, a) return lesson_add(who(p), a) end
+  M.handlers.lesson_edit = function(p, a) return lesson_edit(who(p), a) end
+  M.handlers.lesson_verify = function(p, a) return lesson_verify(who(p), a) end
+  M.handlers.lessons = function(_, a) return lessons_read(a) end
   M.handlers.board = function(p, a)
     reader_at = type(p) == 'table' and p.valid ~= false and (function() local ok, pos = pcall(function() return p.position end); return ok and pos or nil end)() or nil
     local ok, out = pcall(read, who(p), a)
@@ -1307,7 +1543,10 @@ return function(api)
     if not ok then error(out, 0) end
     return out
   end
-  M.handlers.board_post = function(p, a) return post(who(p), a, p) end
+  M.handlers.board_post = function(p, a)
+    assert(a.kind ~= 'lesson', 'a lesson goes with lesson_add {rule, item | recipe | entity | action | position | area, ...}')
+    return post(who(p), a, p)
+  end
   M.handlers.board_update = function(p, a) return update(who(p), a) end
   -- board_review {id?} (Astra 03:45, after a viewer asked for planning help): facts on active items (or one project and
   -- the items under it) a planner reads by hand now: steps and titles naming a platform of ours no longer there, a
