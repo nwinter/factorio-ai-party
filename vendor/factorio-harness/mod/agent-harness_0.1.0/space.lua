@@ -115,6 +115,77 @@ return function(api)
     end
     return free or sec.filters_count+1,false
   end
+  -- A max: a whole number at least min, or "inf" (also "infinity", "none") for none. Returns max, inf.
+  local function max_arg(v,min)
+    if v==nil then return nil,false end
+    local w=type(v)=='string' and v:lower() or nil
+    if w=='inf' or w=='infinity' or w=='none' then return nil,true end
+    assert(type(v)=='number' and v==math.floor(v) and v>=min,
+      string.format('max must be at least min (%d) and a whole number, or "inf" for none: %s is not',min,type(v)=='string' and '"'..v..'"' or tostring(v)))
+    return v,false
+  end
+  M.max_arg=max_arg
+  -- Every argument of a requests call, checked before anything changes (Sol, d15 04:16: max "inf" on Starling's
+  -- magazines set the slot, then failed with "attempt to compare string with number"). Returns the set entries
+  -- read: {name, quality, min, max (nil: not named or "inf"), inf, from}.
+  function M.check_requests(p,a,label,chest,secs)
+    assert(a.from_buffers==nil or type(a.from_buffers)=='boolean','from_buffers must be boolean')
+    assert(a.from_buffers==nil or (chest and chest.type=='logistic-container'),'from_buffers is a requester chest setting')
+    if a.construction_requests~=nil then
+      assert(type(a.construction_requests)=='boolean','construction_requests must be true or false (the hub\'s Request missing construction materials)')
+      local hub=a.platform~=nil and M.platform(p,a.platform).hub or (chest and chest.type=='space-platform-hub' and chest) or nil
+      assert(hub and hub.valid,'construction_requests is a platform hub setting (Request missing construction materials)')
+      assert(api.keep and api.keep(),'construction_requests is not available in this runtime')
+    end
+    assert(a.active==nil or type(a.active)=='boolean','active must be true or false: switch the section on or off')
+    assert(a.clear_all==nil or type(a.clear_all)=='boolean','clear_all must be true or false')
+    local changing=a.set~=nil or a.clear~=nil or a.clear_all~=nil or a.active~=nil
+    if changing and a.section~=nil then
+      local sec=secs.get_section(api.integer(a.section,1,1,100,'section'))
+      assert(sec,'section '..a.section..' does not exist (sections_count '..secs.sections_count..')')
+      assert(sec.is_manual,'section '..sec.index..' is controlled by the game')
+    end
+    assert(a.clear==nil or type(a.clear)=='table','clear is a list of item names: ["coal"]')
+    for _,name in ipairs(a.clear or {}) do item_name(name) end
+    local listed=type(a.set)=='table'
+    if listed then local n=0; for _ in pairs(a.set) do n=n+1 end; listed=n==#a.set end
+    assert(a.set==nil or (listed and #a.set<=100),'set requires an array of {item,min,max?,quality?,from?}: [{"item":"iron-plate","min":100}]')
+    local entries={}
+    for k,r in ipairs(a.set or {}) do
+      assert(type(r)=='table','each request is {item,min,max?,quality?,from?}')
+      -- {name, count} (Luna, shift11: "unknown item: nil", 4 times): the entry as it is written.
+      if r.item==nil and (r.name~=nil or r.count~=nil) then
+        error(string.format('each set entry is {item, min, max?, quality?, from?}: {"item":"%s","min":%s} for {name, count}',
+          tostring(r.name or 'ITEM'),tostring(r.count or r.min or 0)),0)
+      end
+      local name,quality=item_name(r.item),r.quality or 'normal'
+      assert(type(quality)=='string' and (quality=='normal' or (prototypes.quality and prototypes.quality[quality])),'unknown quality: '..tostring(r.quality))
+      local min=api.integer(r.min,0,0,1000000000,'min')
+      local max,inf=max_arg(r.max,min)
+      -- A personal max under what the character holds (Opus, d15 09:20: max 0 to clear a request sent 6 pumpjacks and
+      -- 30 steel to the trash, and robots carried them off): the game moves what is over a max to the trash. Refused
+      -- unless force.
+      if label=='character' and max and not a.force then
+        local held=try(function() return p.get_main_inventory().get_item_count{name=name,quality=quality} end)
+          or try(function() return p.get_item_count(name) end) or 0
+        if held>max then
+          error(string.format('%s max %d: you hold %d; the game moves what you hold over a personal max to your trash, and robots take it to storage. clear (or remove): ["%s"] deletes the request and keeps what you hold; force: true sets the max anyway',
+            name,max,held,name),0)
+        end
+      end
+      -- The import planet named.
+      local from=r.from
+      if from~=nil then
+        local names={}
+        for n in pairs(prototypes.space_location or {}) do names[#names+1]=n end
+        table.sort(names)
+        assert(type(from)=='string' and prototypes.space_location[from],
+          'from is the planet a platform hub imports the item from, a space location ('..table.concat(names,', ')..'): '..tostring(from)..' is not one')
+      end
+      entries[k]={name=name,quality=quality,min=min,max=max,inf=inf,from=from}
+    end
+    return entries
+  end
   function M.requests(p,a)
     -- remove: the same as clear (Opus, d15 09:20: max 0 was his way to clear a request, and it sent what he held to
     -- the trash).
@@ -129,11 +200,10 @@ return function(api)
     end
     assert(a.force==nil or type(a.force)=='boolean','force must be true or false')
     local label,secs,chest=sections_of(p,a)
+    local entries=M.check_requests(p,a,label,chest,secs)
     -- A requester chest's "request from buffer chests" switch.
     local buffers
     if a.from_buffers~=nil then
-      assert(type(a.from_buffers)=='boolean','from_buffers must be boolean')
-      assert(chest and chest.type=='logistic-container','from_buffers is a requester chest setting')
       local ok,err=pcall(function() chest.request_from_buffers=a.from_buffers end)
       assert(ok,'the game refused from_buffers: '..tostring(err))
     end
@@ -144,14 +214,10 @@ return function(api)
     local keep=api.keep and api.keep()
     local switched
     if a.construction_requests~=nil then
-      assert(type(a.construction_requests)=='boolean','construction_requests must be true or false (the hub\'s Request missing construction materials)')
-      assert(hub and hub.valid,'construction_requests is a platform hub setting (Request missing construction materials)')
-      assert(keep,'construction_requests is not available in this runtime')
       local on=keep.set_construction(hub,a.construction_requests)
       assert(on==a.construction_requests,'the game kept Request missing construction materials '..(on and 'on' or 'off'))
       switched=true
     end
-    assert(a.active==nil or type(a.active)=='boolean','active must be true or false: switch the section on or off')
     local changing=a.set~=nil or a.clear~=nil or a.clear_all~=nil or a.active~=nil
     -- changed: a slot set or cleared, or the section switched (friction2: a set the call read as nothing still said
     -- changed_section).
@@ -217,52 +283,25 @@ return function(api)
           stored[#stored+1]=name..': cleared'..(was and ' (was '..was..')' or '')
         else stored[#stored+1]=name..': no request to clear in section '..csec.index end
       end
-      local listed=type(a.set)=='table'
-      if listed then local n=0; for _ in pairs(a.set) do n=n+1 end; listed=n==#a.set end
-      assert(a.set==nil or (listed and #a.set<=100),'set requires an array of {item,min,max?,quality?,from?}: [{"item":"iron-plate","min":100}]')
-      for _,r in ipairs(a.set or {}) do
-        assert(type(r)=='table','each request is {item,min,max?,quality?,from?}')
-        -- {name, count} (Luna, shift11: "unknown item: nil", 4 times): the entry as it is written.
-        if r.item==nil and (r.name~=nil or r.count~=nil) then
-          error(string.format('each set entry is {item, min, max?, quality?, from?}: {"item":"%s","min":%s} for {name, count}',
-            tostring(r.name or 'ITEM'),tostring(r.count or r.min or 0)),0)
-        end
-        local name,quality=item_name(r.item),r.quality or 'normal'
-        local min=api.integer(r.min,0,0,1000000000,'min')
+      for k in ipairs(a.set or {}) do
+        local e=entries[k]
+        local name,quality,min=e.name,e.quality,e.min
         local ssec=sec or for_item(name,quality)
         touch(ssec)
         local i,found=slot_of(ssec,name,quality)
         local old=found and ssec.get_slot(i) or nil
         -- The max: the one named ("inf" for none), else the one the slot already has while it is at least min, as the
         -- GUI keeps it when only min is edited (friction3: Grok's map sets turned copper-cable 200..400 into 40..inf).
-        local max,max_note=r.max,''
-        if max=='inf' then max=nil
+        local max,max_note=e.max,''
+        if e.inf then max=nil
         elseif max==nil and old and type(old.max)=='number' then
           if old.max>=min then max=old.max; max_note=' (max kept: not named in this edit)'
           else max_note=string.format(' (max %d dropped: under min %d)',old.max,min) end
         end
-        assert(max==nil or (type(max)=='number' and max>=min),'max must be at least min ("inf" for none)')
-        -- A personal max under what the character holds (Opus, d15 09:20: max 0 to clear a request sent 6 pumpjacks and
-        -- 30 steel to the trash, and robots carried them off): the game moves what is over a max to the trash. Refused
-        -- unless force.
-        if label=='character' and type(max)=='number' and not a.force then
-          local held=try(function() return p.get_main_inventory().get_item_count{name=name,quality=quality} end)
-            or try(function() return p.get_item_count(name) end) or 0
-          if held>max then
-            error(string.format('%s max %d: you hold %d; the game moves what you hold over a personal max to your trash, and robots take it to storage. clear (or remove): ["%s"] deletes the request and keeps what you hold; force: true sets the max anyway',
-              name,max,held,name),0)
-          end
-        end
         -- The import planet: the one named, else the one the slot already has (Luna, shift12 19:30: an edit of min
         -- and max without from turned three requests from vulcanus into from nauvis).
-        local from,kept=r.from,false
-        if from~=nil then
-          local names={}
-          for n in pairs(prototypes.space_location or {}) do names[#names+1]=n end
-          table.sort(names)
-          assert(type(from)=='string' and prototypes.space_location[from],
-            'from is the planet a platform hub imports the item from, a space location ('..table.concat(names,', ')..'): '..tostring(from)..' is not one')
-        elseif old and old.import_from then
+        local from,kept=e.from,false
+        if from==nil and old and old.import_from then
           from=type(old.import_from)=='string' and old.import_from or try(function() return old.import_from.name end)
           kept=from~=nil
         end
@@ -316,9 +355,9 @@ return function(api)
       if hub and hub.valid then
         local over={}
         local main=try(function() return hub.get_inventory(defines.inventory.hub_main) end)
-        for _,r in ipairs(a.set or {}) do
-          local held=r.max and main and try(function() return main.get_item_count({name=item_name(r.item),quality=r.quality or 'normal'}) end) or 0
-          if r.max and held>r.max then over[#over+1]=string.format('%s: the hub holds %d, %d over the max %d',item_name(r.item),held,held-r.max,r.max) end
+        for _,e in ipairs(entries) do
+          local held=e.max and main and try(function() return main.get_item_count({name=e.name,quality=e.quality}) end) or 0
+          if e.max and held>e.max then over[#over+1]=string.format('%s: the hub holds %d, %d over the max %d',e.name,held,held-e.max,e.max) end
         end
         local trash=defines.inventory.hub_trash and try(function() return hub.get_inventory(defines.inventory.hub_trash) end)
         out.hub_trash=trash and top_items(trash,12) or nil

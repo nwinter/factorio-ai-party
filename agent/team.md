@@ -112,6 +112,7 @@ already targets your character.
   4 of 4 working, made 30/min, used 52/min`), and `chain_tree` lists every step down to ores and fluids; a mined or pumped step names its drills or pumps, their states
   (working, output full, no resource left) and what they put into.
 - `power` (observe scope) gives per network `supply_line`: generators' nameplate, what the working ones can give, the stopped ones by status (dry steam engines), and `boilers` by state.
+- `power {position, fragile: true, radius?}` lists the poles of that network whose loss alone would cut machines off from all generation, with how many machines and where (centre it on an outpost: wires leaving the radius count as power).
 - `./fh call fuel_budget` (optional `"surface"`): each fuel made and used per minute, and each group of fuel users (boilers, furnaces, burner drills, heating towers, `recipe plastic-bar`, ...) with what it burns per minute and the minutes its own fuel lasts, fewest first.
 - `./fh call platform_endurance --args '{"platform":"Wayfarer"}'` (optional `"route":["fulgora","aquilo"]`, default its schedule): each leg's km and minutes at its speed, and each ammunition, repair pack and thruster fluid aboard with its stock, made and used per minute, and the leg it runs out on; hub slots free, power, solar power at the stops. Stopped, the rates come from the last leg (or read `flight use unknown`); on a leg under 10 minutes old, from a window inside the leg; an item made aboard is capped by the ingredients aboard, two levels down and fluids included (`ingredient-limited`).
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
@@ -153,6 +154,7 @@ already targets your character.
   tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
   they end and what blocks them (on a belt tile, a drill or a chest: from there, forward), naming where other items join a lane (`joins
   transport-belt (12,5) carrying iron-plate on the left lane: your iron-ore mixes in`); `{"item":"chemical-science-pack"}` follows every route from its makers to the labs (for an ore, from the drills mining it).
+  `"upstream":true` goes the other way: from a machine, lab, thruster, hub or belt tile back along what feeds it, naming per ingredient the first place it stops or goes elsewhere (a filter, a circuit condition, an inserter taking it onto another belt, a jammed mixed lane, a splitter filter, where another item joins); `"item"` picks one.
 - `./fh call belt_route --args '{"from":{"x":0,"y":0},"to":{"x":600,"y":40},"return":true}'` lays a belt line as ghosts (via points, legs up to
   1000 tiles, over trees and wild plants it marks, water only with `"landfill":true`; `return` adds the line back beside it,
   crossing under it where its side is blocked). Belts, undergrounds and splitters say where items go in `belt` (inspect,

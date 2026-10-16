@@ -378,6 +378,10 @@ fh call status
     fast-inserter (-65.5,95.5): its circuit condition ... is ignored: no red or green wire connects it, and the game
     counts a circuit condition only with a circuit connection`.
 - `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests" switch.
+- `requests` checks every argument before it changes anything (Sol, d15 04:16: `max: "inf"` on Starling's magazines
+  set the slot, then failed with `attempt to compare string with number`): the switches, `section`, every `clear` name
+  and every `set` entry (item, quality, min, max, from, a personal max under what is held). One bad argument refuses the
+  call and nothing is set. `max` is a whole number at least `min`, or `"inf"` (also `"infinity"`, `"none"`) for none.
 - Personal requests (Opus, d15 09:20: max 0 to clear a request sent 6 pumpjacks and 30 steel to the trash, and robots
   carried them off): a `set` whose `max` is under what the character holds of the item is refused (`pumpjack max 0: you
   hold 6; the game moves what you hold over a personal max to your trash, and robots take it to storage. clear (or
@@ -4789,3 +4793,50 @@ fh watch    # deploy on every change
     ingredients aboard (sulfuric-acid 80)`). A fluid ingredient is counted in the storage tanks and in the makers'
     fluid boxes (`ingredient_limited.fluid`, `ingredient_limited.below`).
   - `tools/read_cost.py` has `platform_endurance` (`--platform NAME`, default Aegis) and `artillery`.
+
+## d15 batch4 (operator 21:25; shifts 19-20)
+
+- `trace {position, upstream: true}` (Sol, Luna, Astra, Grok: Starling drifted backwards ~8 min while an arm at
+  (9.5,2.5) sent all its ore onto a furnace belt; Swift's ammo starved behind a jammed mixed return; Grok walked a coal
+  tour while coal sat on the copper ore lane): from the target back along what feeds it. Per ingredient it lacks
+  (`all: true`: every one; `item`: that one), `ingredients[] {item, has, needs, line, feeders, lanes, makers}`:
+  - a feeder whose filter does not let it through, or that is off by its circuit condition (the condition and the
+    signal on its wires, as thrust reads it);
+  - each lane a feeder picks, walked back tile by tile through undergrounds, splitters and side-loads
+    (`lanes[] {from, at_feeder, jammed, path_back, line}`). The line says, in the order items move: an inserter
+    taking it elsewhere first (onto another belt, into a chest, into a machine with another recipe; its status,
+    filter and what it holds; inserters feeding machines like the target are counted), the first tile back where it
+    is on the lane, where it comes onto the lane (an inserter and what it reads, a drill, a side-loading belt), the
+    first tile where another item joins and from what (`which it burns as fuel` when the target does), a splitter
+    filter sending it to the other output, and where the walk ended (the lane's start, out of sight, the cap);
+  - `jammed`: the lane at the feeder full with none of it (`the left lane at transport-belt (15.5,2.5) is full and
+    holds no iron-ore (left lane 4 coal, right lane empty), front item coal`);
+  - a chest a feeder reads with none: what fills it; a machine making it that is not working: traced the same way one
+    level down (`makers`).
+  - A thruster: each fluid by pipe and pump (thrust.lua's walk) to the machines making it, each traced as above, so
+    oxidizer goes back through its iron ore belt to the crushers and their chunk belt to the collectors. A machine's
+    fluid ingredient it lacks goes the same way (water to the ice melting plant).
+  - A hub, chest or belt tile with no `item`: every lane feeding it, with the items coming onto it, first first.
+  - Bounds: 800 belt tiles, 500 a lane, 16 lane walks, two machine levels. `cost` says what it walked. Measured on a
+    copy of world n in a private 2.0.77 container: 184 tiles back along the south copper line 21 ms there (about 4 ms
+    on n), Swift's oxidizer plant with every ingredient (6 lanes, the ice melter one level down) 18 ms.
+  - `line` gives each ingredient's first problem per lane (a jam, a taker elsewhere, a splitter filter, no source
+    found); `lanes[].line` has every finding.
+  - A requester or buffer chest a feeder reads names its request (`a requester chest requesting 40 (robots fill
+    it)`). An inserter that would take it elsewhere but is off by its circuit condition is named as off.
+- `power {position, fragile: true, radius?}` (Opus: one small pole at (-72.5,-114.5) cut 142 poles of oil and drills;
+  NW oil lost its one link pole twice): the network of the pole nearest `position` (within 12 tiles), its poles within
+  `radius` (8..512, default 96) and their copper wires.
+  - Sources: a pole covering a generator of the network (steam engine or turbine, solar panel, fusion or burner
+    generator), and the network beyond the radius when a wire leaves it (`wires_out`). Centre an outpost read on the
+    outpost and its link to the base counts as power.
+  - `fragile` (the 8 cutting most; `fragile_total` all): each pole whose loss leaves a group of poles with no source,
+    and the machines only that group and the pole cover: `small-electric-pole (20,0): its loss cuts 3 poles and 3
+    machines (2 electric-mining-drill, 1 pumpjack) around (30.5,6.5), from (20,1) to (41,12), off from all
+    generation`. The one pole covering the only generator is listed too.
+  - A pole whose loss cuts only machines in its own supply area is not a cut of the network and is not listed.
+  - `unreached`: poles of it in the area with no wire path to a source now. Bounded: 200 supply-area
+    searches (`cost`). Machines are counted for the 16 cuts with the most poles; the 1000 poles nearest are read and
+    wires to the rest count as power (`capped`). Measured on the copy of world n in the container: 297 poles 20-27 ms
+    there (about 5 ms on n), 1000 poles (radius 512 round Opus's oil pole) 78-82 ms (about 16 ms on n).
+

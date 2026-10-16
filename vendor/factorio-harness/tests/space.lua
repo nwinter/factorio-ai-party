@@ -79,7 +79,7 @@ eq(r.stored[1],'coal 20..inf (max 10 dropped: under min 20) (was coal 7..10)')
 r=space.requests(p,{set={{item='coal',min=5,max=10}}})
 r=space.requests(p,{set={{item='coal',min=5,max='inf'}}})
 eq(r.stored[1],'coal 5..inf (was coal 5..10)')
-fails(function() space.requests(p,{set={{item='coal',min=5,max='lots'}}}) end,'max must be at least min ("inf" for none)')
+fails(function() space.requests(p,{set={{item='coal',min=5,max='lots'}}}) end,'max must be at least min (5) and a whole number, or "inf" for none: "lots" is not')
 space.requests(p,{clear_all=true})
 -- set as a map (friction2: Muse's {"low-density-structure": 100} set nothing and the reply said changed_section 1; the
 -- silo requester stayed at min 4 for 11.7 min): the call runs as the list (aliases.lua, the reply's corrected says so);

@@ -107,6 +107,7 @@ return function(api)
       no_ingredients='no ingredients', no_input_fluid='no input fluid', waiting_for_space_in_destination='waiting for space'}
     return words[st] or st:gsub('_', ' ')
   end
+  M.state_text = state_text
   local function recipe_of(e)
     local r = try(function() return e.get_recipe() end)
     if not r and e.type == 'furnace' then r = try(function() return e.previous_recipe end) end
