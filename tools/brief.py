@@ -3,6 +3,7 @@
 
     python3 tools/brief.py write DIR PLAYER TIME_TEXT COOP TEAMMATE MATE_NOTES ROLE        # tools/new-run.sh
     python3 tools/brief.py team TEAM_FILE PLAYER MODEL      # the team section for POG_TEAM (stdout)
+    python3 tools/brief.py harness DIR KIND                 # agent/harness-KIND.md into DIR/AGENTS.md (launch-agent.sh)
     python3 tools/brief.py sample KIND [DIR]                # an assembled core as a nine-agent Space Age launch writes
                                                               it for KIND, with its harness and full-tools paragraphs
     python3 tools/brief.py sizes                            # bytes of each harness kind's assembled core
@@ -167,6 +168,11 @@ def main(argv):
     if len(argv) == 9 and argv[1] == "write":
         d, player, time_text, coop, mate, mate_notes, role = argv[2:]
         write(d, player, time_text, coop, mate, mate_notes, role)
+        return 0
+    if len(argv) == 4 and argv[1] == "harness":
+        path = os.path.join(argv[2], "AGENTS.md")
+        text = open(path).read()
+        open(path, "w").write(harness_note(text, argv[3]))
         return 0
     if len(argv) == 5 and argv[1] == "team":
         sys.stdout.write(team_text(*argv[2:]))

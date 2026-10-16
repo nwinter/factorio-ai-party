@@ -20,8 +20,8 @@ Each topic, when to read it, and the commands it documents:
   and `research done`, `science` (packs), `supply` (one item), `bottleneck`, `trace`, `labs`, `inspect` (areas,
   remote view), `ports`, `power` (networks, fragile poles), `fuel_budget`, `game_alerts`, `belt_gaps`, `pipe_gaps`,
   `danger`, `drill_sites`, `ores`, `stock` (where an item is), `construction_robots`; the factory digest.
-- `waits-queues`, for waits past the basics above or work that repeats: `wait_until` and `sleep --until` conditions,
-  `wait_ticks`, `sleep_check`, `queue_status`, `queue_edit`, `queue_cancel`, `queue_repeat`, `plan save`, `plan run`,
+- `waits-queues`, for waits past the sleep and wait basics, or work that repeats: `wait_until` and `sleep --until` conditions,
+  `wait_ticks`, `sleep_check`, `queue_submit` (modes), `queue_status`, `queue_edit`, `queue_cancel`, `queue_repeat`, `plan save`, `plan run`,
   `plan list`, `stop`, `order_set`, `orders`, `order_remove`, `orders_pause`, `orders_resume` (standing orders),
   `reminder_add`, `reminder_ack`, `reminders`; urgent wakes, slow game, harness updates.
 - `team`, when you edit board items or read a `team:` or `team: shift` block or an `OPERATOR:` line: claims, `board projects`, `review`,
@@ -30,4 +30,4 @@ Each topic, when to read it, and the commands it documents:
   `profile`, `profiles`, `confess`, `chronicle`, `operator`, `players`, `vote`, `votes`, `restore`.
 - `space-age`, for rockets, platforms and other planets: `platforms` and `platform NAME`, `platform_create`,
   `platform_schedule`, `platform_endurance`, `launch`, `silo`, `cargo`, `load_silo`, `preflight`, `land`, `drop`,
-  `freight_audit`, `where_is`, `agriculture`, `queue_submit` remote lane; spoilage, Gleba.
+  `freight_audit`, `where_is`, `agriculture`, the remote queue lane; spoilage, Gleba.
