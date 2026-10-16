@@ -183,3 +183,66 @@ do
   _=arm
 end
 print('d15_batch4 2 upstream: ok')
+
+-- 3 (Opus): power {position, fragile}: the poles whose loss alone cuts machines off from all generation. -------------
+do
+  defines={wire_connector_id={pole_copper=5}}
+  local world={}
+  local function ent(e)
+    e.valid=true; e.unit_number=#world+1; e.electric_network_id=e.net or 7
+    local w=(e.size or 1)/2
+    e.bounding_box={left_top={x=e.position.x-w,y=e.position.y-w},right_bottom={x=e.position.x+w,y=e.position.y+w}}
+    e.prototype=e.prototype or {electric_energy_source_prototype=e.type~='container' and {} or nil}
+    world[#world+1]=e; return e
+  end
+  local function pole(x,y)
+    local e=ent{name='small-electric-pole',type='electric-pole',position={x=x,y=y},prototype={get_supply_area_distance=function() return 2.5 end}}
+    e.wires={}
+    e.get_wire_connector=function(id) assert(id==5); local c={connections={}}; for _,o in ipairs(e.wires) do c.connections[#c.connections+1]={target={owner=o}} end; return c end
+    return e
+  end
+  local function wire(a,b) a.wires[#a.wires+1]=b; b.wires[#b.wires+1]=a end
+  local surface={find_entities_filtered=function(f)
+    local out={}
+    local types=f.type and (type(f.type)=='table' and f.type or {f.type})
+    for _,e in ipairs(world) do
+      local ok=true
+      if types then ok=false; for _,t in ipairs(types) do if e.type==t then ok=true end end end
+      local q=e.position
+      if ok and f.radius then ok=((q.x-f.position.x)^2+(q.y-f.position.y)^2)<=f.radius^2 end
+      if ok and f.area then local b=e.bounding_box; ok=b.right_bottom.x>f.area[1][1] and b.left_top.x<f.area[2][1] and b.right_bottom.y>f.area[1][2] and b.left_top.y<f.area[2][2] end
+      if ok then out[#out+1]=e end
+    end
+    return out
+  end}
+  local G,A,B,C,D,E,F=pole(0,0),pole(10,0),pole(20,0),pole(30,0),pole(30,10),pole(40,0),pole(10,5)
+  wire(G,A); wire(A,B); wire(G,F); wire(F,B); wire(B,C); wire(C,D); wire(C,E)
+  ent{name='steam-engine',type='generator',position={x=1.5,y=0},size=3}
+  ent{name='electric-mining-drill',type='mining-drill',position={x=20,y=2},size=3}
+  ent{name='pumpjack',type='mining-drill',position={x=30,y=12},size=3}
+  ent{name='electric-mining-drill',type='mining-drill',position={x=41,y=1},size=3}
+  ent{name='inserter',type='inserter',position={x=9.5,y=1.5}}  -- covered by A alone; A is not a cut (F runs beside it)
+  local fragile=dofile('mod/agent-harness_0.1.0/fragile.lua'){position=function(v) return v end,
+    integer=function(v,d,lo,hi,name) v=v==nil and d or v; assert(v>=lo and v<=hi,name); return v end}
+  local p={surface=surface,force='player'}
+  local r=fragile.read(p,{position={x=0,y=0}})
+  eq(r.fragile_total,3); eq(r.poles,7); eq(r.generators,1)
+  -- G is the one pole covering the steam engine: its loss cuts everything.
+  eq(r.fragile[1].line,'small-electric-pole (0,0): its loss cuts 6 poles and 4 machines (2 electric-mining-drill, 1 inserter, 1 pumpjack) around (25.3,6.5), from (9.5,1) to (41,12), off from all generation')
+  table.remove(r.fragile,1)
+  eq(r.fragile[1].line,'small-electric-pole (20,0): its loss cuts 3 poles and 3 machines (2 electric-mining-drill, 1 pumpjack) around (30.5,6.5), from (20,1) to (41,12), off from all generation')
+  eq(r.fragile[2].line,'small-electric-pole (30,0): its loss cuts 2 poles and 2 machines (1 electric-mining-drill, 1 pumpjack) around (35.5,6.5), from (30,1) to (41,12), off from all generation')
+  eq(r.line,'network 7, 7 poles in the area, 1 generators: 3 poles whose loss alone cuts machines off from all generation')
+  -- An outpost read: the area around it, the wires to the base counted as power.
+  r=fragile.read(p,{position={x=30,y=0},radius=15})
+  eq(r.wires_out,2); eq(r.poles,4); eq(r.fragile_total,2); eq(r.fragile[1].machines_cut,3)
+  -- No generator and no wire out.
+  pole(60,0)
+  r=fragile.read(p,{position={x=60,y=0},radius=8})
+  has(r.line,'no generator in 1 poles\' areas and no wire leaving the area')
+  -- A second link beside B: no cut left at B; C still cuts.
+  local B2=pole(20,5); wire(F,B2); wire(B2,C)
+  r=fragile.read(p,{position={x=0,y=0}})
+  eq(r.fragile_total,2); has(r.fragile[2].line,'small-electric-pole (30,0)')
+end
+print('d15_batch4 3 fragile: ok')

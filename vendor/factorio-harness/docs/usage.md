@@ -4818,4 +4818,17 @@ fh watch    # deploy on every change
     fluid ingredient it lacks goes the same way (water to the ice melting plant).
   - A hub, chest or belt tile with no `item`: every lane feeding it, with the items coming onto it, first first.
   - Bounds: 3000 belt tiles, 600 a lane, 16 lane walks, two machine levels. `cost` says what it walked.
+- `power {position, fragile: true, radius?}` (Opus: one small pole at (-72.5,-114.5) cut 142 poles of oil and drills;
+  NW oil lost its one link pole twice): the network of the pole nearest `position` (within 12 tiles), its poles within
+  `radius` (8..512, default 96) and their copper wires.
+  - Sources: a pole covering a generator of the network (steam engine or turbine, solar panel, fusion or burner
+    generator), and the network beyond the radius when a wire leaves it (`wires_out`). Centre an outpost read on the
+    outpost and its link to the base counts as power.
+  - `fragile` (the 8 cutting most; `fragile_total` all): each pole whose loss leaves a group of poles with no source,
+    and the machines only that group and the pole cover: `small-electric-pole (20,0): its loss cuts 3 poles and 3
+    machines (2 electric-mining-drill, 1 pumpjack) around (30.5,6.5), from (20,1) to (41,12), off from all
+    generation`. The one pole covering the only generator is listed too.
+  - A pole whose loss cuts only machines in its own supply area is not a cut of the network and is not listed.
+  - `unreached`: poles of it in the area with no wire path to a source now. Bounded: 3000 poles, 600 supply-area
+    searches (`cost`).
 
