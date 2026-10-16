@@ -70,4 +70,5 @@
 - `stock {network: 96}` (the number `networks` and an `inspect` of a roboport give): what a logistic network holds,
   its robots, and `roboports`: the robots each roboport holds, most first. `transfer {position: a roboport,
   direction: "to_player", item: "logistic-robot", count}` takes robots out of it, as its GUI does. `stock {item,
-  surface}` gives a planet's whole stock of an item.
+  surface}` gives a planet's whole stock of an item. `stock {item, holders: ["provider", "storage"], limit: 32}` lists only those kinds of place;
+  each place says its `kind` and what robots have `reserved` there.

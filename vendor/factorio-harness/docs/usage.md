@@ -5431,3 +5431,7 @@ fh watch    # deploy on every change
   construction-robot 6`; on the copy Fulgora's #96, 17 roboports, 1.3 ms in the container). Taking robots out of a
   roboport with `transfer {direction: to_player, item: logistic-robot}` already worked (inventory `roboport_robot`);
   area `inspect` with `types: ["roboport"]` lists each one's robots too. Both are now in the brief.
+- `stock {item, holders}` (Muse 09:24: 3-4 calls to find a provider robots had not committed; places stop at 8 by
+  default, 32 with `limit`): `holders` keeps only those kinds of place (provider, storage, requester, buffer, chest,
+  machine, wagon, pad, vehicle); each place now says its `kind` and `reserved` (robots' pickup reservations there). On
+  the copy: copper cable, providers and storage, 4 places in 3 ms in the container.
