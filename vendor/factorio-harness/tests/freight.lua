@@ -120,18 +120,26 @@ eq(met,false); eq(saw,'Sunward at gleba, on its path (not stopped)')
 sunward.state=6
 met,saw=C.check(p,{['until']='platform_arrived',platform='Sunward',location='gleba'})
 eq(met,true); eq(saw,'Sunward at gleba')
--- Departure (Gemini, 16:50): met while it is not stopped there (or at no stop).
-eq(C.check(p,{['until']='platform_left',platform='Sunward',location='gleba'}),false)
-eq(C.check(p,{['until']='platform_left',platform='Sunward',location='nauvis'}),true)
-eq(C.check(p,{['until']='platform_left',platform='Sunward'}),false)
+-- Departure (Gemini, 16:50; Grok 07:51: in flight it was met at once, an earlier departure counting and the location
+-- left out): the next departure, met once it was seen stopped there (at any stop without a location) during the wait.
+local rec_gleba,rec_nauvis,rec_any={},{},{}
+met,saw=C.check(p,{['until']='platform_left',platform='Sunward',location='gleba'},nil,rec_gleba)
+eq(met,false); eq(saw,'Sunward at gleba (met when it leaves)')
+met,saw=C.check(p,{['until']='platform_left',platform='Sunward',location='nauvis'},nil,rec_nauvis)
+eq(met,false); eq(saw,'Sunward at gleba; met when it stops at nauvis and leaves again (a departure before this wait does not count)')
+eq(C.check(p,{['until']='platform_left',platform='Sunward'},nil,rec_any),false)
 C.validate({['until']='platform_left',platform='Sunward',location='nauvis'})
 assert(not pcall(C.validate,{['until']='platform_left'}),'needs platform')
 sunward.space_location=nil; sunward.state=3; sunward.space_connection={from={name='nauvis'},to={name='gleba'},length=15000}; sunward.distance=0.25
 sunward.schedule={records={{station='nauvis'}},current=1}
 met,saw=C.check(p,{['until']='platform_arrived',platform='Sunward',location='nauvis'})
 eq(met,false); eq(saw,'Sunward flying gleba->nauvis 75%')
-met,saw=C.check(p,{['until']='platform_left',platform='Sunward'})
-eq(met,true); eq(saw,'Sunward flying gleba->nauvis 75%')
+met,saw=C.check(p,{['until']='platform_left',platform='Sunward',location='gleba'},nil,rec_gleba)
+eq(met,true); eq(saw,'Sunward left gleba; now flying gleba->nauvis 75%')
+eq(C.check(p,{['until']='platform_left',platform='Sunward'},nil,rec_any),true)
+eq(C.check(p,{['until']='platform_left',platform='Sunward',location='nauvis'},nil,rec_nauvis),false,'it never stopped at nauvis in this wait')
+met,saw=C.check(p,{['until']='platform_left',platform='Sunward'},nil,{})
+eq(met,false,'a wait begun in flight waits for the next stop and departure')
 -- 7. Cargo pods (Astra, 21:20: left the hub is not delivered): at a stop the pods leaving the hub are followed down;
 -- a stop says what went down, what each landing pad received, and the pods still in flight. (Found by a look of its
 -- own here; in the runtime they come from pods.lua, below.)
@@ -210,7 +218,23 @@ do
     get_flow_count=function(f) if f.category=='input' then return f.name=='firearm-magazine' and 300 or 0 end return f.name=='firearm-magazine' and 200 or 0 end}
   local tinv=inv({['firearm-magazine']=40})
   local turret={get_inventory=function(id) assert(id==9); return tinv end}
-  local surf={name='platform-7',find_entities_filtered=function(f) if f.type=='ammo-turret' then return {turret} end return {} end}
+  -- On belts (Sol, Astra 06:21-09:37: Tern's 344 rockets on belts went uncounted): a belt, an underground pair whose
+  -- output reports the input's buried lines as its own (counted once), and an inserter's hand.
+  local function line(t2) local l={t=t2}; l.get_contents=function() return inv(l.t).get_contents() end; l.line_equals=function(o) return o==l end; return l end
+  local belt_items={['firearm-magazine']=4}
+  local belt={type='transport-belt',get_max_transport_line_index=function() return 2 end,get_transport_line=function(i) return i==2 and line(belt_items) or line({}) end}
+  local buried=line({['firearm-magazine']=3})
+  local ug_in={type='underground-belt',belt_to_ground_type='input',get_max_transport_line_index=function() return 4 end,
+    get_transport_line=function(i) return i==4 and buried or line({}) end}
+  local ug_out={type='underground-belt',belt_to_ground_type='output',neighbours=ug_in,valid=true,get_max_transport_line_index=function() return 4 end,
+    get_transport_line=function(i) return i==4 and buried or line({}) end}
+  ug_in.valid=true
+  local hand={type='inserter',held_stack={valid_for_read=true,name='firearm-magazine',count=1}}
+  local surf={name='platform-7',find_entities_filtered=function(f)
+    if f.type=='ammo-turret' then return {turret} end
+    if f.type=='inserter' then return {hand} end
+    if type(f.type)=='table' and f.type[1]=='transport-belt' then return {belt,ug_in,ug_out} end
+    return {} end}
   local pf={name='player'}
   pf.get_item_production_statistics=function(s) assert(s==surf); return stats end
   local pl={valid=true,index=7,name='Skylark',hub=hub,state=6,space_location={name='nauvis'},surface=surf,force=pf,schedule={records={{station='gleba'}},current=1}}
@@ -223,28 +247,31 @@ do
   game.tick=game.tick+60; F2.track(pl,game.tick)
   game.tick=game.tick+7200
   made['firearm-magazine'],used['firearm-magazine']=1100,960
+  -- 50 moved from the hub onto the belt meanwhile: a move, not use.
+  main['firearm-magazine']=450; belt_items['firearm-magazine']=54
   local a=F2.ammo(pl)
-  eq(a[1],'firearm-magazine: made 50/min, used 30/min over this leg nauvis->gleba (2m00s so far); hub 500, turrets 40; at the arrival at gleba in 75m00s about 2040 at that rate')
+  eq(a[1],'firearm-magazine: made 50/min, used 30/min (fired or crafted into another item; moves between places are not use) over this leg nauvis->gleba (2m00s so far); 548 aboard: hub 450, turrets 40, belts 57, hands 1; since this leg began: hub -50, belts +50; at the arrival at gleba in 75m00s about 2048 at that rate')
+  main['firearm-magazine']=500; belt_items['firearm-magazine']=4
   eq(a[2],nil,'no rocket held, made or used over the leg: not listed')
   -- Used faster than made: when it runs out, before the arrival.
   game.tick=game.tick+7200
   used['firearm-magazine']=1520
-  eq(F2.ammo(pl)[1],'firearm-magazine: made 25/min, used 155/min over this leg nauvis->gleba (4m00s so far); hub 500, turrets 40; runs out in 4m09s at that rate, before the arrival at gleba in 75m00s')
+  eq(F2.ammo(pl)[1],'firearm-magazine: made 25/min, used 155/min (fired or crafted into another item; moves between places are not use) over this leg nauvis->gleba (4m00s so far); 548 aboard: hub 500, turrets 40, belts 7, hands 1; since this leg began: no change by place; runs out in 4m13s at that rate, before the arrival at gleba in 75m00s')
   -- Stopped at Gleba: the leg just flown, no arrival to come.
   pl.space_connection=nil; pl.space_location={name='gleba'}; pl.state=6
   game.tick=game.tick+60; F2.track(pl,game.tick)
-  eq(F2.ammo(pl)[1],'firearm-magazine: made 25/min, used 154/min over the last leg nauvis->gleba (4m01s); hub 500, turrets 40')
+  eq(F2.ammo(pl)[1],'firearm-magazine: made 25/min, used 154/min (fired or crafted into another item; moves between places are not use) over the last leg nauvis->gleba (4m01s); 548 aboard: hub 500, turrets 40, belts 7, hands 1; since the last leg began: no change by place')
   -- A leg seen first before the counts were kept (a runtime update): the game's last 10 minutes.
   for _,seg in ipairs(st2.freight[7].segs) do seg.ammo0=nil end
-  eq(F2.ammo(pl)[1],'firearm-magazine: made 30/min, used 20/min over the last 10 min; hub 500, turrets 40')
+  eq(F2.ammo(pl)[1],'firearm-magazine: made 30/min, used 20/min (fired or crafted into another item; moves between places are not use) over the last 10 min; 548 aboard: hub 500, turrets 40, belts 7, hands 1')
   -- The last 1 and 5 minutes from the game's counts (Astra, shift17 10:50: parked, the leg average hid whether the orbit
   -- keeps up), and while stopped how long the stock lasts at the last 5 minutes' rate.
   defines.flow_precision_index={one_minute=0,five_minutes=1,ten_minutes=2}
   local counts={[0]={input=3,output=12},[1]={input=20,output=60},[2]={input=300,output=200}}
   stats.get_flow_count=function(f) if f.name~='firearm-magazine' then return 0 end return counts[f.precision_index][f.category] end
-  eq(F2.ammo(pl)[1],'firearm-magazine: made 30/min, used 20/min over the last 10 min; hub 500, turrets 40; last 1 min: made 3.0/min, used 12/min; last 5 min: made 4.0/min, used 12/min; at the last 5 min rate the 540 in the hub and turrets last 67m30s')
+  eq(F2.ammo(pl)[1],'firearm-magazine: made 30/min, used 20/min (fired or crafted into another item; moves between places are not use) over the last 10 min; 548 aboard: hub 500, turrets 40, belts 7, hands 1; last 1 min: made 3.0/min, used 12/min; last 5 min: made 4.0/min, used 12/min; at the last 5 min rate the 548 aboard last 68m30s')
   counts[1]={input=60,output=20}  -- making more than it uses: no lasts line
-  assert(not F2.ammo(pl)[1]:find('in the hub and turrets last',1,true),F2.ammo(pl)[1])
+  assert(not F2.ammo(pl)[1]:find('aboard last',1,true),F2.ammo(pl)[1])
   defines.flow_precision_index={ten_minutes=2}
   -- A rocket launched to its hub: on the way until its pod is gone (2.0.77: about 35 s).
   local pod={valid=true,cargo_pod_destination={station={surface={platform=pl}}},surface={name='nauvis'},

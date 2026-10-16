@@ -18,7 +18,8 @@
   Personal requests: `clear` (or `remove`): `["pumpjack"]` deletes the request and keeps what you hold; a `max` under what you hold is refused without `force: true` (the game trashes the rest).
 - `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without
   a planet); it is also a `wait_until` condition, a queue guard and an order's `when`.
-  `platform_left Sunward [nauvis]` waits for its departure; the team alerts say when a platform stops at or leaves
+  `platform_left Sunward [nauvis]` waits for its next departure (from nauvis, or from any stop): seen stopped there
+  during the wait, then gone; one begun in flight waits for the next stop and departure; the team alerts say when a platform stops at or leaves
   your planet. `./fh call freight_audit --args '{"item":"agricultural-science-pack"}'` shows one item across every
   planet and platform: stock, spoil times, silo room, unmet lab and requester demand.
 - `./fh platform NAME` also shows `freight` (per stop what was expected down and up, what left the hub, came aboard
@@ -27,7 +28,7 @@
   `engine` (the last 60 and 180 s: mean, lowest and highest speed, thruster fuel and oxidizer used and made, the
   thrusters' tanks at start and end, the pumps' share of time working). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when
   `from` is not given.
-- `./fh call platform_endurance --args '{"platform":"Wayfarer"}'` (optional `"route":["fulgora","aquilo"]`, default its schedule): each leg's km and minutes at its speed, and each ammunition, repair pack and thruster fluid aboard with its stock, made and used per minute, and the leg it runs out on; hub slots free, power, solar power at the stops. Stopped, the rates come from the last leg (or read `flight use unknown`); on a leg under 10 minutes old, from a window inside the leg; an item made aboard is capped by the ingredients aboard, two levels down and fluids included (`ingredient-limited`).
+- `./fh call platform_endurance --args '{"platform":"Wayfarer"}'` (optional `"route":["fulgora","aquilo"]`, default its schedule): each leg's km and minutes at its speed, and each ammunition, repair pack and thruster fluid aboard with its stock, made and used per minute, and the leg it runs out on; hub slots free, power, solar power at the stops. Stopped, the rates come from the last leg (or read `flight use unknown`); on a leg under 10 minutes old, from a window inside the leg; an item made aboard is capped by the ingredients aboard, two levels down and fluids included (`ingredient-limited`), and the cap grows at the rate its ingredients are made aboard now (`more_per_min`); stock counts every place aboard: hub, turrets, belts (an underground pair once), inserter hands and machines' outputs (`by_place`), with what moved between places since the leg began (`since this leg began: hub -300, belts +300`; moves are not use); a line gives the asteroid chunks collected a minute. `ammo_rates` (preflight, `fh platform`) counts the same places.
 - `platform_supply {platform}`: the supply chain from collectors to guns, with the first stop named.
 - `platform_plan {platform}`: foundation islands, belt loops, head-on belts and side-loads across built entities and ghosts.
 - `./fh call networks --args '{"platform":"Starling"}'` gives a platform's electric network line (capacity, draw, solar
@@ -65,7 +66,7 @@
   A spoiling item goes in fresh first (the least
   spoiled stacks of you and the chests; `"fresh_first": false` for the old order).
 - `preflight {position,items,from}` reads source chest stock and shorts; `manifest` checks combined kg/slots including existing cargo. `from` is one chest position or up to 16; nothing moves.
-- `launch {position, wait_ready: true}` waits for the rocket and launches when it is ready (a queue step too); a queued `load_silo` your own build or transfer interrupts is requeued and goes on.
+- `launch {position, wait_ready: true}` waits for the rocket and launches when it is ready (a queue step too); a tell does not end that wait (one with `wake: true` or an urgent alert does), and a wait that ends before the rocket is ready ends `not_launched` with `launch_error`; a queued `load_silo` your own build or transfer interrupts is requeued and goes on.
 - A drop's landing line gives the container's exact position and the other cargo pod containers within 8 tiles with
   what each holds; `scan` lists a cargo pod container with `holds`.
 - `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list

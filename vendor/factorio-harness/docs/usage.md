@@ -5358,3 +5358,47 @@ fh watch    # deploy on every change
   `outpost_turret_lost` group was live (a turret no construction robot reached, destroyed in the last 10 min): that
   group had no centre. Every group now gets one (the mean of its positions, else its first; with none, its line says
   `no position recorded`), and a group that fails to read is listed with why while the rest of the read goes on.
+
+## d16 batch6 (operator 09:45; agents' requests 06:20-09:37)
+- Ammunition aboard a platform by place (Sol and Astra 06:21-09:37: Tern's endurance read 42 rockets while 344 more sat
+  on about 310 belt tiles, and 15 minutes went into a needless rescue design). `platform_endurance` and `ammo_rates`
+  (preflight, `fh platform`, the platforms row) count the hub, the turrets, belts (each transport line; an
+  underground's buried part once), inserter hands and machines' outputs: `rocket: 389 now (hub 30, turrets 12, belts
+  344, hands 2, machines 1)`. Each platform's stock by place is kept when a stop or leg opens and closes, so the reads
+  say what moved between places since the leg began (`since this leg began: hub -340, belts +340`) apart from what was
+  used (the game's consumption count: fired, or crafted into another item; moves are not in it).
+- `platform_endurance`'s ingredient cap (Astra 07:51: the cap counted the ore on hand while the collectors and crushers
+  kept making more) grows at the rate each ingredient is made aboard now (`more_per_min`), an ingredient with makers
+  aboard by what they can make by then; a line gives the asteroid chunks collected a minute (`chunks_collected`).
+- Area inspect of belts (Astra 09:37: it said `holds empty` for loaded belts; a belt's items are on its transport
+  lines, not in an inventory): with `types` naming belt types, each belt's `holds` (and its compact line) is its lanes,
+  `right lane: rocket*4`, an underground's buried part as `left lane underground: ...`, or `empty`. Checked on the copy
+  of world n on Tern.
+- `launch {wait_ready: true}` (Astra, board #635, twice: with --wait it returned success while the rocket was still
+  building): a tell ended the wait, so nothing launched and the wait read as done. A tell no longer ends that wait (a
+  tell with `wake: true` and an urgent alert still do), and a wait that ends before the rocket is ready ends with outcome
+  `not_launched` and `launch_error` (`the wait for the rocket ended timed_out before it was ready: nothing launched`),
+  which `--wait` reports as a failure. Checked on the copy of world n: a tell during the rise left the wait running and
+  the rocket launched when ready; a 2 s timeout at 25/50 parts ended `not_launched`.
+- `wait_until platform_left {platform, location?}` (Grok 07:51: in flight it was met at once, an earlier departure
+  counting and the location ignored) waits for the next departure: met once the platform, seen stopped at `location`
+  (any stop without one) during the wait, is not stopped there; a wait begun in flight waits for the next stop and
+  departure.
+- `mine` at a tile of a building's footprint away from its centre (Muse 07:51: a mine on what Muse took for an empty
+  tile mined its own assembler at (62.5,9.5)) is refused unless the entity is named: `(63.5,9.5) is a tile of
+  assembling-machine-2's footprint, its centre at (62.5,9.5): nothing mined; ...`. `mine {dry_run: true}` names the
+  pick as `off_centre`. Resources, trees, rocks and items on the ground pick as before. Checked on the copy.
+- A `wait_until` on `platform_arrived` or `platform_left` with no `timeout` (Luna 07:50: a queued one timed out at the
+  default 60 s with the ETA at 77 s), queued or direct, goes on at its default end while its ETA is known: to the ETA
+  plus a quarter and 10 s, at most 54000 ticks from its start (`extended` says so). A timeout given is kept.
+- Walking tours over positions (Muse 06:21 and 09:24, 4+ times: the first bad position aborted the whole tour):
+  `transfer {positions, walk}` and `collect {positions, walk}` leave out a position that resolves to nothing (not
+  found, not ours, not in sight) and name it in `skipped` with why; the rest go on, with their rows and the tally. None
+  left: refused with the first reason. Checked on the copy (two of three stops skipped, the third done).
+- Alert positions (Muse 09:24: alert coordinates rounded to integers while chests sit at x.5, so a copied position
+  missed): a group of one entity says its own position (`near (16.5,23.5)`); bigger groups keep their centre. A target
+  position on a tile corner (whole numbers on both axes) picks the one entity of a tile touching that corner, or names
+  those that do (`(49,191) is a tile corner 2 entities touch: fast-inserter (48.5,191.5), requester-chest (48.5,190.5)`).
+- `craft` that queues nothing for a recipe (Sonnet 07:50: `started: cargo-bay=0` read as a partial start) says
+  `nothing_queued: nothing was queued for cargo-bay: copper-plate short 400 (held 0), ...`; in a `recipes` batch that
+  recipe leaves `started` and is listed under `nothing_queued`. Checked on the copy.

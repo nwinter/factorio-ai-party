@@ -823,6 +823,8 @@ return function(api)
               local result={saw=step.saw}
               if not ok then result.reason=tostring(met); fail(q,p,step,result)
               elseif met then result.outcome='met'; record(q,step,true,result)
+              elseif game.tick>=step.until_tick and step.args.timeout==nil and api.extend_wait and api.extend_wait(step,step.args,step.wait_started) then
+                step.until_tick=api.extend_wait(step,step.args,step.wait_started); q.current=step
               elseif game.tick>=step.until_tick then result.outcome='timed_out'; fail(q,p,step,result)
               else q.current=step end
             end
@@ -889,6 +891,7 @@ return function(api)
               -- Checked from the next tick, so a wait placed after an action
               -- sees the world that action changed.
               step.until_tick=game.tick+(step.args.timeout or 3600)
+              step.wait_started=game.tick
               step.next_check=game.tick+1
               if api.wait_info then
                 local text=step.args['until']

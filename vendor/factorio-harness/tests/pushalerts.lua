@@ -275,11 +275,11 @@ do
   chest.valid=false; a.pickup_target=nil; b.pickup_target=nil; d.pickup_target=nil
   local g=lost(read())
   eq(g['lost_source.boiler'].count,1); eq(g['lost_source.furnace'].count,1); eq(g['lost_source.lab'].count,1)
-  eq(g['lost_source.boiler'].line,'1 inserter feeding boiler lost its pickup target near (61,15): burner-inserter (60.5,14.5) read wooden-chest (41.5,13.5), puts into boiler (60,16.5)')
+  eq(g['lost_source.boiler'].line,'1 inserter feeding boiler lost its pickup target near (60.5,14.5): burner-inserter (60.5,14.5) read wooden-chest (41.5,13.5), puts into boiler (60,16.5)')
   eq(g['lost_source.boiler'].lost[1],'burner-inserter (60.5,14.5) read wooden-chest (41.5,13.5), puts into boiler (60,16.5)')
   eq(#D.read(astra,{kind='lost_source'}).groups,3,'kind lost_source: every fed kind')
   local told=D.lines(astra,ha6)
-  assert(has(told,'1 inserter feeding furnace lost its pickup target near (45,15): inserter (44.5,14.5) read wooden-chest (41.5,13.5), puts into stone-furnace (44,16)'),table.concat(told,' | '))
+  assert(has(told,'1 inserter feeding furnace lost its pickup target near (44.5,14.5): inserter (44.5,14.5) read wooden-chest (41.5,13.5), puts into stone-furnace (44,16)'),table.concat(told,' | '))
   -- Still lost a read later: kept with what it read then; not told again.
   g=lost(read())
   eq(g['lost_source.boiler'].count,1); assert(g['lost_source.boiler'].line:find('read wooden-chest (41.5,13.5)',1,true))
@@ -294,7 +294,7 @@ do
   a.pickup_target=chest2; b.pickup_target=chest2; furnace.valid=false; b.drop_target=nil
   g=lost(read())
   eq(g['lost_source.boiler'],nil,'a reads again')
-  eq(g['lost_target.furnace'].line,'1 inserter feeding furnace lost its drop target near (45,15): inserter (44.5,14.5) put into stone-furnace (44,16), reads iron-chest (41.5,13.5)')
+  eq(g['lost_target.furnace'].line,'1 inserter feeding furnace lost its drop target near (44.5,14.5): inserter (44.5,14.5) put into stone-furnace (44,16), reads iron-chest (41.5,13.5)')
   -- An inserter that is gone is forgotten.
   b.valid=false
   g=lost(read())
@@ -481,7 +481,7 @@ do
   guns[1].rounds=10; guns[2].rounds=10
   game.tick=game.tick+151*60
   local r=R.read(sol,{kind='no_ammo'}).groups
-  eq(#r,1); eq(r[1].count,1); eq(r[1].at[1].x,306); eq(r[1].line,'1 gun-turret out of ammo near (304,300); rearm')
+  eq(#r,1); eq(r[1].count,1); eq(r[1].at[1].x,306); eq(r[1].line,'1 gun-turret out of ammo near (306,300); rearm')
   eq(#R.lines(sol,h),0,'fewer than told: not news'); eq(h.push.told[next(h.push.told)],1)
   -- All refilled: nothing shown, and forgotten as told.
   guns[3].rounds=10
@@ -491,7 +491,7 @@ do
   -- Dry again (the same read): news again.
   guns[1].rounds=0
   game.tick=game.tick+151*60
-  l=R.lines(sol,h); eq(#l,1); eq(l[1],'1 gun-turret out of ammo near (304,300); rearm')
+  l=R.lines(sol,h); eq(#l,1); eq(l[1],'1 gun-turret out of ammo near (302,300); rearm')
   ents.nauvis={}
 end
 -- Spoiling fuel (Sol, shift13 16:50: biochambers starved with 20 nutrients loaded, the batch rotting within seconds; on
@@ -523,7 +523,7 @@ do
   game.tick=game.tick+1801
   local h=R.read(sol,{kind='heat_no_fuel'}).groups
   eq(#h,1)
-  eq(h[1].line,'1 heating-tower out of fuel and under 500 C near (147,49): heating-tower (146.5,48.5): 320 C, fuel slot empty; refuel')
+  eq(h[1].line,'1 heating-tower out of fuel and under 500 C near (146.5,48.5): heating-tower (146.5,48.5): 320 C, fuel slot empty; refuel')
   ents.nauvis={}
 end
 -- A burner its full burnt-result slot stopped (Sol, shift14 03:54: two agricultural science biochambers read working and
@@ -596,7 +596,7 @@ do
   chamber(48.5,0,{{'spoilage',20}})
   local g=R.read(sol,{kind='input_spoilage'}).groups
   eq(#g,1); eq(g[1].count,1)
-  eq(g[1].line,'1 biochamber short of ingredients with spoilage in their input near (41,10): biochamber (40.5,10): input holds spoilage 50 in 1 of its 2 slots (its recipe does not take spoilage)')
+  eq(g[1].line,'1 biochamber short of ingredients with spoilage in their input near (40.5,10): biochamber (40.5,10): input holds spoilage 50 in 1 of its 2 slots (its recipe does not take spoilage)')
   ents.nauvis={}
 end
 -- A boiler's feed chest in someone's claim (Haiku, shift17 10:50): the line names the claim, and that owner hears it.

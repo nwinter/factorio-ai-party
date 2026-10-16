@@ -135,11 +135,17 @@ return function(api)
       return math.max(0, b.made - a.made) / m, math.max(0, b.used - a.used) / m, string.format('this leg so far, %s', mins(m))
     end
     local hub = try(function() return pl.hub.get_inventory(defines.inventory.hub_main) end)
-    local held = {}
-    for _, r in ipairs(hub and try(function() return hub.get_contents() end) or {}) do held[r.name] = (held[r.name] or 0) + r.count end
-    for _, t in ipairs(try(function() return pl.surface.find_entities_filtered{type='ammo-turret', force=pl.force} end) or {}) do
-      local inv = try(function() return t.get_inventory(defines.inventory.turret_ammo) end)
-      for _, r in ipairs(inv and try(function() return inv.get_contents() end) or {}) do held[r.name] = (held[r.name] or 0) + r.count end
+    -- Stock in every place aboard (Sol, Astra 06:21-09:37: Tern read 42 rockets in the hub and turrets while 344 more
+    -- sat on its belts): the hub, the turrets, belts (an underground pair once), inserter hands and machines' outputs,
+    -- every item (an ingredient on a belt counts too).
+    local places = api.stock_places and try(function() return api.stock_places(pl, setmetatable({}, {__index=function() return true end})) end)
+    local held = places and places.total or {}
+    if not places then
+      for _, r in ipairs(hub and try(function() return hub.get_contents() end) or {}) do held[r.name] = (held[r.name] or 0) + r.count end
+      for _, t in ipairs(try(function() return pl.surface.find_entities_filtered{type='ammo-turret', force=pl.force} end) or {}) do
+        local inv = try(function() return t.get_inventory(defines.inventory.turret_ammo) end)
+        for _, r in ipairs(inv and try(function() return inv.get_contents() end) or {}) do held[r.name] = (held[r.name] or 0) + r.count end
+      end
     end
     local rows = {}
     -- What the machines aboard can still make of an item from the ingredients aboard (Astra, d15 15:39: parked Aegis
@@ -171,23 +177,39 @@ return function(api)
         end
       end
       if not rec then return nil end
-      local best
+      -- Each ingredient: what is aboard, what its own makers aboard can still make (one level down), and the rate it is
+      -- made aboard now (Astra 07:51: the cap counted the ore on hand only, while the collectors and crushers kept
+      -- making more): over t minutes the ingredient on hand grows by what its makers below can make by then, else by
+      -- its measured rate.
+      local ings = {}
       for _, ing in ipairs(try(function() return rec.ingredients end) or {}) do
         if (ing.amount or 0) > 0 then
           local fluid = ing.type == 'fluid'
           local have
           if fluid then have = (fluid_stock(pl, {[ing.name]=true})[ing.name] or 0) + (fluids_in[ing.name] or 0)
           else have = (held[ing.name] or 0) + (inputs[ing.name] or 0) end
-          local below = not fluid and depth < 2 and ceiling(ing.name, depth + 1) or nil
-          local more = math.floor((have + (below and below.more or 0)) / ing.amount) * per
-          if not best or more < best.more then
-            best = {more=math.floor(more), item=ing.name, have=round(have, 0), per_craft=ing.amount, fluid=fluid or nil,
-              below=below and {more=below.more, item=below.item, have=below.have} or nil}
-          end
+          ings[#ings+1] = {item=ing.name, have=have, amount=ing.amount, fluid=fluid or nil,
+            below=not fluid and depth < 2 and ceiling(ing.name, depth + 1) or nil,
+            made=rate(fluid and fluid_stats or items_stats, ing.name, 'input')}
         end
       end
-      if best then best.ingredient_made_per_min = round(rate(best.fluid and fluid_stats or items_stats, best.item, 'input'), 1) end
-      return best
+      if #ings == 0 then return nil end
+      local cap = {per=per, ings=ings}
+      function cap.at(t)
+        local best, which
+        for _, g in ipairs(ings) do
+          local more = math.floor((g.have + (g.below and g.below.at(t) or g.made * t)) / g.amount) * per
+          if not best or more < best then best, which = more, g end
+        end
+        return math.floor(best), which
+      end
+      local more, g = cap.at(0)
+      cap.more, cap.item, cap.have, cap.per_craft, cap.fluid = more, g.item, round(g.have, 0), g.amount, g.fluid
+      cap.below = g.below and {more=g.below.more, item=g.below.item, have=g.below.have} or nil
+      cap.ingredient_made_per_min = round(g.made, 1)
+      -- more a minute at the rates now: over the next hour
+      cap.more_per_min = round((cap.at(60) - more) / 60, 1)
+      return cap
     end
     -- A rate measured where it is now: flying, the last 10 minutes; stopped, the last finished leg's (ammunition, from
     -- freight.lua's counts at its ends), else unknown (Astra, d15 15:39: parked, thruster fuel read 0 made and 0 used,
@@ -207,27 +229,47 @@ return function(api)
       local a, b = last_leg.ammo0[name] or {made=0, used=0}, last_leg.ammo1[name] or {made=0, used=0}
       return math.max(0, b.made - a.made) / m, math.max(0, b.used - a.used) / m, string.format('over the last leg %s->%s, %s', last_leg.from or '?', last_leg.to or '?', mins(m))
     end
+    -- The leg the rates come from (flying: this one; stopped: the last finished one), for what moved between places.
+    local function moved(name)
+      local sg = open_leg or last_leg
+      if not (sg and sg.places0 and api.moved_text and places) then return nil end
+      return try(function() return api.moved_text(sg.places0, open_leg and places or sg.places1, name) end)
+    end
     local function project(name, stock, made, used, unit, from, unknown)
       local row = {name=name, stock=round(stock, 0), made_per_min=round(made, 1), used_per_min=round(used, 1), rate_from=from}
+      if unit == nil and places and api.places_text then
+        row.by_place = {}
+        for _, place in ipairs({'hub', 'turrets', 'belts', 'hands', 'machines'}) do row.by_place[place] = places[place][name] or 0 end
+        row.places = api.places_text(places, name)
+        row.moved = moved(name)
+      end
       unit = unit or ''
       if unknown then
         row.flight_rate = 'unknown'
-        row.line = string.format('%s: %s%s now; flight use unknown: %s (at the stop, last 10 min: made %g/min, used %g/min)', name, row.stock, unit, from, row.made_per_min, row.used_per_min)
+        row.line = string.format('%s: %s%s now%s; flight use unknown: %s (at the stop, last 10 min: made %g/min, used %g/min)', name, row.stock, unit,
+          row.places and ' (' .. row.places .. ')' or '', from, row.made_per_min, row.used_per_min)
         rows[#rows+1] = row
         return
       end
       local cap = made > 0 and unit == '' and ceiling(name) or nil
-      if cap then row.ingredient_limited = cap end
-      local more = cap and cap.more or math.huge
-      local function at(t) return stock + math.min(made * t, more) - used * t end
+      if cap then
+        row.ingredient_limited = {more=cap.more, item=cap.item, have=cap.have, per_craft=cap.per_craft, fluid=cap.fluid, below=cap.below,
+          ingredient_made_per_min=cap.ingredient_made_per_min, more_per_min=cap.more_per_min}
+      end
+      local function at(t) return stock + math.min(made * t, cap and cap.at(t) or math.huge) - used * t end
       if total_min then row.at_end = round(at(total_min), 0) end
       if used > 0 then
-        -- when the stock reaches 0: before the ingredients run out, or after (then at the use rate alone)
-        local t1 = made > 0 and more / made or 0
-        local net = made - used
+        -- when the stock reaches 0 (at most a day ahead): the first quarter minute it is gone, then halved to a second
         local lasts
-        if net < 0 and stock / -net <= t1 then lasts = stock / -net
-        elseif more < math.huge or made == 0 then local s1 = at(t1); lasts = t1 + math.max(0, s1) / used end
+        local net = made - used
+        if not cap then
+          if net < 0 then lasts = stock / -net end
+        elseif at(1440) <= 0 then
+          local lo, hi = 0, 0.25
+          while at(hi) > 0 do lo, hi = hi, hi + 0.25 end
+          for _ = 1, 8 do local mid = (lo + hi) / 2; if at(mid) > 0 then lo = mid else hi = mid end end
+          lasts = hi
+        end
         if lasts then
           row.lasts_min = round(lasts, 1)
           local t = 0
@@ -237,11 +279,13 @@ return function(api)
           end
         end
       end
-      row.line = string.format('%s: %s%s now, made %g/min, used %g/min (%s)%s%s%s', name, row.stock, unit, row.made_per_min, row.used_per_min, from,
-        cap and string.format('; ingredient-limited: the ingredients aboard make at most %d more (%s %d%s aboard%s, %g a craft%s)', cap.more, cap.item, cap.have,
+      row.line = string.format('%s: %s%s now%s, made %g/min, used %g/min (%s)%s%s%s%s', name, row.stock, unit, row.places and ' (' .. row.places .. ')' or '',
+        row.made_per_min, row.used_per_min, from, row.moved and (open_leg and '; since this leg began: ' or '; over the last leg: ') .. row.moved or '',
+        cap and string.format('; ingredient-limited: the ingredients aboard make at most %d more now (%s %d%s aboard%s, %g a craft%s)%s', cap.more, cap.item, cap.have,
           cap.fluid and ' units' or '',
           cap.below and string.format(' and at most %d more from its own ingredients aboard (%s %d)', cap.below.more, cap.below.item, cap.below.have) or '',
-          cap.per_craft, cap.ingredient_made_per_min > 0 and string.format('; %s made %g/min aboard', cap.item, cap.ingredient_made_per_min) or '') or '',
+          cap.per_craft, cap.ingredient_made_per_min > 0 and string.format('; %s made %g/min aboard', cap.item, cap.ingredient_made_per_min) or '',
+          cap.more_per_min > 0 and string.format(', and about %g more a minute at the rates its ingredients are made aboard now', cap.more_per_min) or '') or '',
         row.lasts_min and string.format('; lasts %s at that rate%s', mins(row.lasts_min), row.runs_out_on and ' (runs out on ' .. row.runs_out_on .. ')'
           or (total_min and row.lasts_min >= total_min and ' (past the route\'s end)' or '')) or '',
         row.at_end and string.format('; at the route\'s end about %d%s', math.max(0, row.at_end), unit) or '')
@@ -302,6 +346,15 @@ return function(api)
         end
       end
     end
+    -- Asteroid chunks the collectors brought in (the production statistics: made), a minute over the rates' window.
+    local chunks = {}
+    for name in pairs(prototypes.item) do
+      if name:find('%-asteroid%-chunk$') then
+        local m = rate(items_stats, name, 'input')
+        if m > 0 then chunks[#chunks+1] = string.format('%s %g/min', name, round(m, 1)) end
+      end
+    end
+    table.sort(chunks)
     local legs_text = {}
     for _, l in ipairs(legs) do
       legs_text[#legs_text+1] = string.format('%s->%s %s km, %s%s', l.from, l.to, l.km and tostring(l.km) or '?', l.minutes and mins(l.minutes) or 'time unknown',
@@ -312,10 +365,13 @@ return function(api)
       speed_km_per_min=v and round(v, 1) or nil, speed_from=v_by or 'unknown: stopped, and no finished leg on record (times unknown)',
       resources=rows, hub_slots=string.format('%d of %d free', free, slots), power=power, solar_power=#solar > 0 and table.concat(solar, ', ') or nil,
       lines={'route: ' .. (#legs_text > 0 and table.concat(legs_text, '; ') or 'no legs') .. (total_min and '; in all ' .. mins(total_min) or ''),
-        'hub: ' .. string.format('%d of %d slots free', free, slots) .. (power and '; power ' .. power or '') .. (#solar > 0 and '; solar power ' .. table.concat(solar, ', ') or '')},
+        'hub: ' .. string.format('%d of %d slots free', free, slots) .. (power and '; power ' .. power or '') .. (#solar > 0 and '; solar power ' .. table.concat(solar, ', ') or ''),
+        'asteroid chunks collected: ' .. (#chunks > 0 and table.concat(chunks, ', ') or 'none') .. ' (' .. (win_text or 'last 10 min') .. ')'
+          .. (places and places.capped and string.format('; belts past the first %d not counted', places.capped) or '')},
+      chunks_collected=#chunks > 0 and chunks or nil,
       note='rates: flying, the platform\'s production statistics over the last 10 minutes (on a leg younger than that, the last 5 or 1 minute within the leg, and ammunition from the leg\'s own counts); stopped, the last finished leg\'s for ammunition (rate_from), else the flight rate is unknown and nothing is projected; a rate that changes on the way (fights near a planet, thrust) changes the projection'}
   end
   M.schema = {platform_endurance = {platform='platform name', route='optional list of space locations to fly through in order (default: its schedule from the current stop round to it again)',
-    returns='legs [{from, to, km, minutes}], total_km, total_minutes, speed_km_per_min and speed_from (now while flying, else the last finished leg\'s average), resources [{name, stock, made_per_min, used_per_min, rate_from, flight_rate (unknown: stopped with no flight rate on record; nothing projected), ingredient_limited {more, item, have, per_craft, fluid, below {more, item, have}, ingredient_made_per_min} (made from ingredients aboard, two levels down, fluids in tanks and the makers counted: at most more), lasts_min, runs_out_on, at_end, line}] for each ammunition and repair pack aboard or used, thruster-fuel and thruster-oxidizer, hub_slots, power, solar_power at the stops, lines; read only'}}
+    returns='legs [{from, to, km, minutes}], total_km, total_minutes, speed_km_per_min and speed_from (now while flying, else the last finished leg\'s average), resources [{name, stock (every place aboard), by_place {hub, turrets, belts (an underground pair once), hands (inserters), machines (outputs)}, places, moved (each place\'s change since the leg the rates come from began: loading told from use), made_per_min, used_per_min, rate_from, flight_rate (unknown: stopped with no flight rate on record; nothing projected), ingredient_limited {more, item, have, per_craft, fluid, below {more, item, have}, ingredient_made_per_min, more_per_min} (made from ingredients aboard, two levels down, fluids in tanks and the makers counted: at most more now, growing by more_per_min at the rates the ingredients are made aboard now), lasts_min, runs_out_on, at_end, line}] for each ammunition and repair pack aboard or used, thruster-fuel and thruster-oxidizer, hub_slots, power, solar_power at the stops, chunks_collected (asteroid chunks made a minute), lines; read only'}}
   return M
 end

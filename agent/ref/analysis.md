@@ -44,6 +44,8 @@
   must go).
 - `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}}}'` lists every chest's
   and machine's contents in the area (where inspect reads, up to 64) as one table: `holds`, `requests`, `recipe`, `status_name`.
+  With `types` naming belts (`transport-belt`, `underground-belt`, `splitter`, loaders), each belt's `holds` is its lanes
+  (`right lane: rocket*4`; an underground's buried part as `... lane underground`), or `empty`.
   `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north",
   "recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid the recipe puts there;
   `inspect` of a ghost shows the same.

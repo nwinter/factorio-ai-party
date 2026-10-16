@@ -80,6 +80,10 @@ return function(api)
     error(string.format('no rocket silo of ours at (%g,%g) on %s',pos.x,pos.y,p.surface.name),0)
   end
   -- Each returns met, and a short description of what it saw.
+  -- A condition's own memory where no wait record is given (queue step conditions, orders): kept while the condition
+  -- table lives.
+  local seen=setmetatable({},{__mode='k'})
+  local function seen_by(c) seen[c]=seen[c] or {}; return seen[c] end
   local checks={
     no_enemy_structures=function(p,c)
       local n=enemies(p,c,ENEMY_STRUCTURES); return n==0,n..' enemy structures'
@@ -281,7 +285,9 @@ return function(api)
     end,
     -- Its departure (Gemini, 16:50): met while it is not stopped at `location` (a planet), else at no stop (flying, or
     -- still at a location but on its path). The same rule as platform_arrived and the platforms row.
-    platform_left=function(p,c)
+    -- The next departure (Grok 07:51: in flight it was met at once, an earlier departure counting and the location left
+    -- out): met once the platform, seen stopped at location (any stop without one) since the wait began, is not.
+    platform_left=function(p,c,_,record)
       local pl
       for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each end end
       if not pl then error('no platform of ours named '..tostring(c.platform),0) end
@@ -290,7 +296,11 @@ return function(api)
         local loc=pl.space_location and pl.space_location.name
         w={at=loc,stopped=loc~=nil,text=loc and ('at '..loc) or 'not at a stop'}
       end
-      return not (w.stopped==true and (c.location==nil or w.at==c.location)),c.platform..' '..w.text
+      local holder=record or seen_by(c)
+      local there=w.stopped==true and (c.location==nil or w.at==c.location)
+      if there then holder.platform_was_there=w.at; return false,c.platform..' '..w.text..' (met when it leaves)' end
+      if holder.platform_was_there then return true,c.platform..' left '..holder.platform_was_there..'; now '..w.text end
+      return false,c.platform..' '..w.text..'; met when it stops '..(c.location and 'at '..c.location or 'somewhere')..' and leaves again (a departure before this wait does not count)'
     end,
     -- Our burner machines (furnaces, drills, boilers, burner inserters...) holding under count fuel items.
     fuel_below=function(p,c)

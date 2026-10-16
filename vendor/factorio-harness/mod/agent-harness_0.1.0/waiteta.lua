@@ -128,6 +128,20 @@ return function(api)
     record.wait_estimates={row}
     return met,saw,row
   end
+  -- A platform wait with no timeout given (Luna 07:50: a queued platform_arrived timed out at the default 60 s with the
+  -- ETA at 77 s): at its end while the ETA is known it goes on to the ETA plus a quarter and 10 s, at most 54000 ticks
+  -- from its start; the new end tick, or nil.
+  local EXTEND = {platform_arrived=true, platform_left=true}
+  function M.extend(record, c, started)
+    local row = record.wait_estimates and record.wait_estimates[1]
+    if not (c and EXTEND[c['until']] and row and row.eta_s and started) then return nil end
+    local limit = started + 54000
+    if game.tick >= limit then return nil end
+    local to = math.min(limit, game.tick + math.ceil(row.eta_s * 60 * 1.25) + 600)
+    if to <= game.tick then return nil end
+    record.extended = string.format('no timeout given: extended to the ETA %ds plus a quarter and 10 s (at most 54000 ticks from the start)', row.eta_s)
+    return to
+  end
   function M.info(out,record)
     out.idle_s=math.floor((record.idle_ticks or 0)/60)
     out.wait_estimates=record.wait_estimates

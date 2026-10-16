@@ -2,7 +2,7 @@
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` (and `feed` or `collect {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one
-  call; `legs` lists the route); `transfer {item, "from": "nearest"}` (`radius` up to 256 to walk) takes from the nearest chest
+  call; `legs` lists the route; a position that resolves to nothing is left out and named in `skipped`, the rest go on); `transfer {item, "from": "nearest"}` (`radius` up to 256 to walk) takes from the nearest chest
   holding the item and says which, a `count` it lacks from the next ones (one holding it all goes alone); chests that
   feed something (requester and buffer chests, a chest an inserter takes from) only with `"feeding": true`, and walking
   (`"walk": true` looks 32 tiles) none in a worm's reach, each named when left out; `transfer
@@ -17,7 +17,8 @@
   "crafts": N, "positions": [...]}` loads each machine set to that recipe for N crafts; `feed` takes `item` or `items`;
   `inspect {"positions": [...]}` inspects up to 32 entities in one call (`"compact": true`: one line each); `collect {"radius": N}` without `item` takes
   every assembler and furnace output in the radius (output slots only). `position` and `positions` are interchangeable
-  in these calls (`corrected` says how it ran). A repeating queue (`queue_repeat`, optional `name`) puts a `queue:`
+  in these calls (`corrected` says how it ran). A position on a tile corner (whole numbers) picks the one entity of a
+  tile touching it, or names those that do; alert lines give a single entity's own position (`near (16.5,23.5)`). A repeating queue (`queue_repeat`, optional `name`) puts a `queue:`
   line in the team block when a round's short steps differ from the round before; steps with `up_to: true` or
   `"on_short": "skip"` are left out of it. `queue_repeat` takes `times` (rounds) and `for_ticks` (no round starts
   after that); the loop then ends with one `queue:` line (`done after N rounds: ...`) and `loop_done` in `queue_status`;
@@ -30,7 +31,8 @@
   `rearm`, `refuel`, `mine`, `craft`, `cancel_craft`, a `configure` recipe change) say `moved` and end with `inv` (free
   slots, what you hold of the items moved); a move over time says `timed`, and `last.moved`/`last.inv` when it ends;
   a give the target could not take all of (full), or a courier that delivered less than it took, ends with a `short`
-  warning naming what fills the target's slots and what you still carry;
+  warning naming what fills the target's slots; a `craft` that queued nothing for a recipe says `nothing_queued` with what
+  is short (that recipe is left out of `started`) and what you still carry;
   queue and standing-order history entries carry both. `feed`, `collect` and `transfer` take `area {left_top,
   right_bottom}` for every machine (or chest) inside it; `inspect` of a machine shows `output_fill` (and `full`) and `output_stop`: where each product stops it, and whether a `full_output` is a full output or a machine short of an ingredient holding a few crafts' worth (the game reads it so).
   `feed` gives a burner fuel when its fuel slots are empty, or with `fuel` (`true` or a fuel name); a furnace with no
@@ -43,7 +45,8 @@
 - Reach is measured to an entity's edge. `rotate` is one
   90-degree turn clockwise (`reverse` counter-clockwise, `direction` a facing to turn to) and replies `before`/`after`.
   `mine` at a mined-out resource tile mines the nearest tile of the same resource within `radius` (default 8), one in
-  reach first, and names it in `instead`. `fh research` times (`done_in`) use the last minute's lab throughput.
+  reach first, and names it in `instead`. `mine` at a tile of a building's footprint away from its centre is refused,
+  naming the building and its centre (give `name` to mine it); `mine {dry_run: true}` says what a position picks (`off_centre`). `fh research` times (`done_in`) use the last minute's lab throughput.
   `repair` on an undamaged entity is ok with `unchanged: "not damaged"`; `repair` takes `positions` or `area` and
   reports `repaired` and `already_full`.
 - Items on the ground: scan and observe sum them up by item (ground_items); status alerts.ground_items names full

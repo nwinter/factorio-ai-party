@@ -892,6 +892,12 @@ return function(api)
   end
   -- plain: without the hint (the review block, selfview.lua).
   -- was: the count told before, or (a group with now_text) what its now_text said then.
+  -- Where a group is: one entity at its own position as the game gives it (Muse 09:24: alert coordinates rounded to
+  -- integers while chests sit at x.5, so a copied position missed the chest); more, the centre of the group.
+  local function near_text(g)
+    if g.n == 1 and g.at and g.at[1] then return at_text(g.at[1]) end
+    return string.format('(%d,%d)', g.center.x, g.center.y)
+  end
   function M.text(g, here, was, plain)
     centred(g)
     if not g.line and not g.center then
@@ -912,8 +918,8 @@ return function(api)
     if lost then
       -- '2 inserters feeding boiler lost their pickup target near (60,14): burner-inserter (60,14) read wooden-chest (41,13), puts into boiler (60,16); ...'
       local one = g.n == 1
-      return string.format('%d inserter%s feeding %s lost %s %s target near (%d,%d)%s%s: %s%s', g.n, one and '' or 's', fed,
-        one and 'its' or 'their', lost == 'source' and 'pickup' or 'drop', g.center.x, g.center.y,
+      return string.format('%d inserter%s feeding %s lost %s %s target near %s%s%s: %s%s', g.n, one and '' or 's', fed,
+        one and 'its' or 'their', lost == 'source' and 'pickup' or 'drop', near_text(g),
         g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '')
     end
@@ -925,33 +931,33 @@ return function(api)
       local site_text=site and (site.site and string.format('; nearest checked %s site with room for %s (%g,%g), %.1f tiles from drill (%g,%g), %g ore; checked tick %d within %d tiles',
         g.ore,site.drill,site.site.position.x,site.site.position.y,site.site.distance,site.origin.x,site.origin.y,site.site.amount,site.tick,site.radius)
         or string.format('; no checked free %s site within %d tiles of drill (%g,%g); checked tick %d%s',g.ore,site.radius,site.origin.x,site.origin.y,site.tick,site.truncated and '; lookup capped' or '')) or ''
-      return string.format('%s out of ore near (%d,%d)%s%s: %s; %d still mining there%s', what(g), g.center.x, g.center.y,
+      return string.format('%s out of ore near %s%s%s: %s; %d still mining there%s', what(g), near_text(g),
         g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         g.ore == 'unknown' and 'ore not seen' or g.ore, g.still or 0,
         (u and string.format('; nearest untapped %s (%d,%d) %d tiles, about %s ore', g.ore, u.x, u.y, u.d, amount) or '')..site_text)
     end
     if g.kind == 'input_spoilage' then
       -- '2 biochamber short of ingredients with spoilage in their input near (40,12): biochamber (40,12): input holds spoilage 50 in 1 of its 3 slots (...); ...'
-      return string.format('%s short of ingredients with spoilage in their input near (%d,%d)%s%s: %s%s', what(g), g.center.x, g.center.y,
+      return string.format('%s short of ingredients with spoilage in their input near %s%s%s: %s%s', what(g), near_text(g),
         g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '')
     end
     if g.kind == 'heat_no_fuel' then
       -- '2 heating-tower out of fuel and under 500 C near (40,12): heating-tower (40.5,12.5): 412 C, fuel slot empty; ...; refuel'
-      return string.format('%s out of fuel and under 500 C near (%d,%d)%s%s: %s%s%s', what(g), g.center.x, g.center.y,
+      return string.format('%s out of fuel and under 500 C near %s%s%s: %s%s%s', what(g), near_text(g),
         g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '',
         not plain and '; refuel' or '')
     end
     if g.kind == 'burnt_full' then
       -- '2 biochamber stopped by a full burnt-result slot near (57,61): biochamber (45.5,72.5): burnt-result slot spoilage*200; fuel slot spoilage*3 (not a fuel it burns: it burns nutrients); ...'
-      return string.format('%s stopped by a full burnt-result slot near (%d,%d)%s%s: %s%s', what(g), g.center.x, g.center.y,
+      return string.format('%s stopped by a full burnt-result slot near %s%s%s: %s%s', what(g), near_text(g),
         g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '')
     end
     if g.kind == 'rebuilt_empty' then
       -- '2 gun-turret rebuilt empty near (61,15): no ammo since built, 60+ s: gun-turret (60,14) requests 10 firearm-magazine; ...'
-      return string.format('%s rebuilt empty near (%d,%d)%s%s: no ammo since built, 60+ s: %s%s%s', what(g), g.center.x, g.center.y,
+      return string.format('%s rebuilt empty near %s%s%s: no ammo since built, 60+ s: %s%s%s', what(g), near_text(g),
         g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '',
         not plain and '; rearm' or '')
@@ -968,7 +974,7 @@ return function(api)
       rot[#rot+1] = string.format('%d %s around it burn spoiling fuel, %d of them within %ds; the first: %s %s at (%g,%g)', r.n, name, r.soon,
         ROT_SOON / 60, r.item, left > 0 and string.format('spoils in %ds', math.floor(left / 60 + 0.5)) or 'spoiled', r.at.x, r.at.y)
     end
-    return string.format('%s %s near (%d,%d)%s%s%s%s', what(g), LABEL[g.kind] or g.kind:gsub('_', ' '), g.center.x, g.center.y,
+    return string.format('%s %s near %s%s%s%s%s', what(g), LABEL[g.kind] or g.kind:gsub('_', ' '), near_text(g),
       g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '', hint and '; ' .. hint or '',
       (#rot > 0 and '; ' .. table.concat(rot, '; ') or '')..(g.stale and '; last observed tick '..(g.observed_tick or 0)..'; current state partly unknown' or ''))
   end

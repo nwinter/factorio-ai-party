@@ -696,6 +696,11 @@ local function finish(index, outcome)
   if action and action.then_launch and outcome=='met' and s.last[index] then
     local ok,r=pcall(M.launch_now,M.lookup(index),action.then_launch)
     if ok then s.last[index].launch=r else s.last[index].outcome='launch_failed'; s.last[index].launch_error=(tostring(r):gsub('^[^:]*:%d+: ','')) end
+  elseif action and action.then_launch and s.last[index] then
+    -- Ended before the rocket was ready (Astra, board #635, twice: a tell ended the wait and --wait read it as done):
+    -- nothing launched, said as the outcome.
+    s.last[index].outcome='not_launched'
+    s.last[index].launch_error=string.format('the wait for the rocket ended %s%s before it was ready: nothing launched',outcome,action.told and ' ('..action.told..')' or '')
   end
   if action and action.borrowed_cursor then
     local p=M.lookup(index)
@@ -1112,6 +1117,21 @@ local function entity(p,args,read_only)
     found = cover
   end
   found = found or others[2] or others[3] or others[4] or others[5]
+  -- A tile corner (Muse 09:24: a position copied from an alert, rounded to integers, missed the chest at x.5 beside it):
+  -- the one entity of a tile touching that corner is the target; several are named.
+  if not found and pos.x == math.floor(pos.x) and pos.y == math.floor(pos.y) then
+    local touch = {}
+    for _, e in pairs(p.surface.find_entities_filtered{position=pos, radius=0.75, name=args.name}) do
+      if wanted(e) and e.type ~= 'resource' and e.type ~= 'item-entity' and M.target_rank(e, args) == 1
+        and math.abs(e.position.x - pos.x) <= 0.5 and math.abs(e.position.y - pos.y) <= 0.5 then touch[#touch+1] = e end
+    end
+    if #touch == 1 then found = touch[1]
+    elseif #touch > 1 then
+      local parts = {}
+      for i, e in ipairs(touch) do if i <= 4 then parts[#parts+1] = string.format('%s (%g,%g)', e.name, e.position.x, e.position.y) end end
+      error(string.format('(%g,%g) is a tile corner %d entities touch: %s; give the one meant by its position', pos.x, pos.y, #touch, table.concat(parts, ', ')), 0)
+    end
+  end
   if not found then
     -- Say what is close instead (shake3: 23 of Gemini's inspect misses were a
     -- tile or so from a pole, inserter or belt, or empty).
@@ -2962,7 +2982,9 @@ handlers.launch=function(p,a)
         local now=state().active[p.index]
         if not now then return handlers.launch(p,rest) end
         now.then_launch=rest
-        out.waiting_to_launch=string.format('the rocket at (%g,%g) is not ready: it launches when it is (within %d s)',silo.position.x,silo.position.y,math.floor(timeout/60))
+        -- No tell ends it (a tell with wake: true and an urgent alert do; then nothing launches: outcome not_launched).
+        now.wake_messages=false
+        out.waiting_to_launch=string.format('the rocket at (%g,%g) is not ready: it launches when it is (within %d s); a tell does not end this wait (one with wake: true does, and an urgent alert: then nothing launches, outcome not_launched)',silo.position.x,silo.position.y,math.floor(timeout/60))
         return out
       end
     end
@@ -3515,6 +3537,18 @@ local function next_tile(p,a,pos)
   end
   return best,name,radius
 end
+-- A position that is a tile of a building's footprint away from its centre (Muse 07:51: mine on what it took for an
+-- empty tile mined its own assembler there): said, and mine refuses it unless the entity is named.
+function M.mine_snap(a,e)
+  local pos=position(a.position)
+  if a.name or a.unit_number or e.type=='resource' or e.type=='item-entity' or e.type=='tree' or e.type=='simple-entity' then return nil end
+  if math.abs(e.position.x-pos.x)<=0.5 and math.abs(e.position.y-pos.y)<=0.5 then return nil end
+  return string.format('(%g,%g) is a tile of %s\'s footprint, its centre at (%g,%g)',pos.x,pos.y,e.name,e.position.x,e.position.y)
+end
+function M.mine_refuse_snap(a,e)
+  local snap=M.mine_snap(a,e)
+  if snap then error(snap..': nothing mined; to mine it give name="'..e.name..'" (or its centre as the position); mine {dry_run: true} says what a position picks',0) end
+end
 function handlers.mine(p,a)
   -- Tiles laid by a player, by hand (tilemine.lua).
   if a.tiles~=nil then
@@ -3534,11 +3568,11 @@ function handlers.mine(p,a)
     assert(e.minable,'entity is not mineable')
     local ok,loss=pcall(M.heating.loss,p.surface,p.force,{e})
     return {dry_run=true,name=e.name,position={x=e.position.x,y=e.position.y},in_reach=p.can_reach_entity(e),
-      heat_loss=ok and loss or nil,heat_error=not ok and tostring(loss) or nil,note='mined nothing'}
+      heat_loss=ok and loss or nil,heat_error=not ok and tostring(loss) or nil,off_centre=M.mine_snap(a,e),note='mined nothing'}
   end
   -- Seen out of reach (autowalk.lua; Astra, shift12: a tree 5.4 tiles off refused, and as a queue step it paused the
   -- plan): within 32 tiles the character walks into reach first, then mines it.
-  local walking=M.walk_first(p,'mine',a,nil,function(e) assert(e.minable,'entity is not mineable'); hand_minable(p,e) end)
+  local walking=M.walk_first(p,'mine',a,nil,function(e) assert(e.minable,'entity is not mineable'); M.mine_refuse_snap(a,e); hand_minable(p,e) end)
   if walking then return walking end
   local found,e=pcall(entity,p,a)
   local instead
@@ -3567,6 +3601,7 @@ function handlers.mine(p,a)
   end
   friendly(p,e)
   assert(e.minable,'entity is not mineable')
+  if not instead then M.mine_refuse_snap(a,e) end
   -- Where it mines: inside a worm's range, within 40 tiles of a spawner or in an area under attack now is refused unless
   -- unsafe_goal (round1950a item 1, Haiku 45h57m: a dry tree 38 tiles from a nest; big spitters killed it within 5 s).
   if not a.unsafe_goal then
@@ -3967,7 +4002,9 @@ function handlers.craft(p,a)
     local fromq={}
     local started=begin_craft(p,a.recipe,a.count,a.force,notes,shorts,fromq)
     local hand_s,queue_s,assemblers=craft_cost(p,{[a.recipe]=started})
-    return craft_facts(p,{started=started,short=shorts[a.recipe],stock=next(notes) and notes or nil,from_queue=next(fromq) and fromq or nil,
+    -- Nothing queued, said plainly (Sonnet 07:50: "started: cargo-bay=0" read as a partial start).
+    local none=started==0 and string.format('nothing was queued for %s: %s',tostring(a.recipe),shorts[a.recipe] or 'not hand-craftable now') or nil
+    return craft_facts(p,{started=started,nothing_queued=none,short=shorts[a.recipe],stock=next(notes) and notes or nil,from_queue=next(fromq) and fromq or nil,
       hand_s=hand_s,queue_s=queue_s,assemblers=assemblers},{[a.recipe]=started})
   end
   assert(type(a.recipes)=='table' and #a.recipes>=1 and #a.recipes<=32,'recipes requires 1..32 {recipe,count} entries')
@@ -3982,7 +4019,10 @@ function handlers.craft(p,a)
     else errors[key]=reason(result) end
   end
   local hand_s,queue_s,assemblers=craft_cost(p,started)
-  return craft_facts(p,{started=started,errors=next(errors) and errors or nil,short=next(shorts) and shorts or nil,stock=next(notes) and notes or nil,
+  -- An entry that queued nothing leaves started and is said plainly (Sonnet 07:50).
+  local none={}
+  for key,n in pairs(started) do if n==0 then none[key]=string.format('nothing was queued for %s: %s',key,shorts[key] or 'not hand-craftable now'); started[key]=nil end end
+  return craft_facts(p,{started=started,nothing_queued=next(none) and none or nil,errors=next(errors) and errors or nil,short=next(shorts) and shorts or nil,stock=next(notes) and notes or nil,
     from_queue=next(fromq) and fromq or nil,hand_s=hand_s,queue_s=queue_s,assemblers=assemblers},started)
 end
 -- Hand-craftable counts from current inventory, including intermediates.
@@ -5202,8 +5242,29 @@ do
     {'rocket_silo_rocket','cargo'},{'turret_ammo','ammo'},{'artillery_turret_ammo','ammo'},{'fuel','fuel'},{'burnt_result','burnt'},
     {'roboport_robot','robots'},{'roboport_material','repair packs'}}
   local CHESTS={container=true,['logistic-container']=true,['linked-container']=true}
+  -- A belt's items are on its transport lines, not in an inventory (Astra 09:37: area inspect said "holds empty" for
+  -- loaded belts): each lane as the game holds it; an underground's buried part (lines 3 and 4) said apart.
+  local BELT_ROW={['transport-belt']=true,['underground-belt']=true,splitter=true,loader=true,['loader-1x1']=true,['linked-belt']=true}
+  local LANE={'left lane','right lane','left lane underground','right lane underground'}
+  local function lanes(e)
+    local parts={}
+    for i=1,e.get_max_transport_line_index() do
+      local items={}
+      for _,st in ipairs(e.get_transport_line(i).get_contents()) do
+        local q=type(st.quality)=='table' and st.quality.name or st.quality
+        items[#items+1]=st.name..(q and q~='normal' and '@'..q or '')..'*'..st.count
+      end
+      if #items>0 then parts[#parts+1]=(e.type=='splitter' and 'lane '..i or LANE[i] or 'lane '..i)..': '..table.concat(items,' ') end
+    end
+    return #parts>0 and table.concat(parts,'; ') or 'empty'
+  end
   local function row(e)
     local r={name=e.name,position=e.position}
+    if BELT_ROW[e.type] then
+      local ok,h=pcall(lanes,e)
+      r.holds=ok and h or nil
+      return r
+    end
     -- A chest, wagon, trunk, landing pad or hub: holds as inspect writes it (details.lua), and a requester's asks.
     local held={inventories={}}
     for _,name in ipairs(STORES) do
@@ -5254,6 +5315,8 @@ do
       parts[#parts+1]=okhs and hs and hs.valid_for_read and string.format('hand: %s*%d',hs.name,hs.count) or 'hand empty'
       local blocked=M.details.held_blocked(e)
       if blocked then parts[#parts+1]=blocked end
+    elseif BELT_ROW[e.type] and r.holds then
+      parts[#parts+1]=r.holds=='empty' and 'lanes empty' or r.holds
     elseif r.holds and not (r.holds=='empty' and not has_inventory(e)) then
       local h=r.holds
       if h=='empty' then h='holds nothing' elseif CHESTS[e.type] and not h:find('^empty') then h='holds '..h end
@@ -7160,12 +7223,23 @@ function handlers.collect(p,a)
     local list=a.positions or (a.position~=nil and {a.position}) or nil
     assert(type(list)=='table' and #list>=1 and #list<=64,'walk goes with positions (1..64 places to collect from)')
     local entities,far={},0
-    for i,pos in ipairs(list) do
-      local e=entity(p,{position=pos,name=type(pos)=='table' and pos.name or a.name,unit_number=type(pos)=='table' and pos.unit_number or nil},true)
-      friendly(p,e)
-      entities[i]=e
-      if not p.can_reach_entity(e) then far=far+1 end
+    -- A stop that does not resolve is left out and named (skipped), as transfer's walk does.
+    local skipped={}
+    for _,pos in ipairs(list) do
+      local ok,e=pcall(function()
+        local e=entity(p,{position=pos,name=type(pos)=='table' and pos.name or a.name,unit_number=type(pos)=='table' and pos.unit_number or nil},true)
+        friendly(p,e)
+        return e
+      end)
+      if ok then
+        entities[#entities+1]=e
+        if not p.can_reach_entity(e) then far=far+1 end
+      else
+        local okp,q=pcall(position,pos)
+        skipped[#skipped+1]=string.format('%s: %s',okp and string.format('(%g,%g)',q.x,q.y) or '?',(tostring(e):gsub('^[^:]*:%d+: ','')))
+      end
     end
+    if #entities==0 then error(#skipped>1 and string.format('none of the %d positions resolves; the first: %s',#skipped,skipped[1]) or skipped[1],0) end
     if far>0 then
       assert(a.keep_max==nil or type(a.keep_max)=='boolean','keep_max must be true or false')
       local take={direction='to_player',item=a.item,quality=a.quality,partial=a.up_to==true or nil,keep_max=a.keep_max,outputs_only=a.outputs_only,
@@ -7177,6 +7251,7 @@ function handlers.collect(p,a)
       out.until_tick=action.until_tick; out.out_of_reach=far
       out.legs,out.legs_more=M.legs(p,action.targets)
       out.walking=walking
+      out.skipped=#skipped>0 and skipped or nil
       return out
     end
   end
@@ -7712,13 +7787,34 @@ function M.transfer_walk(p,a)
   args.walk=nil; args.ticks=nil
   local ticks=integer(a.ticks,3600,1,36000,'ticks')
   local entities,far={},0
-  for i,pos in ipairs(list) do
+  -- A stop that does not resolve (Muse 06:21 and 09:24, 4+ times: one bad position aborted the whole tour) is left out
+  -- and named (skipped); none left: refused with the first reason.
+  local skipped={}
+  for _,pos in ipairs(list) do
     -- Seen, not yet in reach (a read's sight): the walk brings it into reach.
-    local e=entity(p,{position=pos,name=pos.name or a.name,unit_number=pos.unit_number or a.unit_number},true)
-    friendly(p,e)
-    entities[i]=e
-    if not p.can_reach_entity(e) then far=far+1 end
+    local ok,e=pcall(function()
+      local e=entity(p,{position=pos,name=pos.name or a.name,unit_number=pos.unit_number or a.unit_number},true)
+      friendly(p,e)
+      return e
+    end)
+    if ok then
+      entities[#entities+1]=e
+      if not p.can_reach_entity(e) then far=far+1 end
+    else
+      local okp,q=pcall(position,pos)
+      skipped[#skipped+1]=string.format('%s: %s',okp and string.format('(%g,%g)',q.x,q.y) or '?',(tostring(e):gsub('^[^:]*:%d+: ','')))
+    end
   end
+  if #entities==0 then error(#skipped>1 and string.format('none of the %d positions resolves; the first: %s',#skipped,skipped[1]) or skipped[1],0) end
+  if #skipped>0 then
+    if a.positions then args.positions={} for _,e in ipairs(entities) do args.positions[#args.positions+1]={x=e.position.x,y=e.position.y,name=e.name} end end
+    local out=M.transfer_walk_go(p,a,args,entities,far,fill,ticks)
+    if type(out)=='table' then out.skipped=skipped end
+    return out
+  end
+  return M.transfer_walk_go(p,a,args,entities,far,fill,ticks)
+end
+function M.transfer_walk_go(p,a,args,entities,far,fill,ticks)
   -- All in reach: the transfer at once (a fill is its total there).
   if far==0 then
     args.avoid=nil
@@ -10838,6 +10934,7 @@ M.scheduler_api={
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
   condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end end,validate_condition=function(c) return conditions.validate(c) end,
   wait_check=function(p,c,record) return M.waiteta.check(p,c,record) end,
+  extend_wait=function(step,c,started) return M.waiteta.extend(step,c,started) end,
   wait_info=function(out,record) return M.waiteta.info(out,record) end,
   fix_args=function(action,args) return M.aliases.fix(action,args,M.takes) end,
   takes=function(action,key) return M.takes(action,key) end,
@@ -11265,7 +11362,7 @@ function handlers.wait_until(p,a)
   for k,v in pairs(a) do if k~='timeout' and k~='pause_queue' then condition[k]=v end end
   -- Met already: done at once, like construct with nothing to do.
   local record={kind='wait_until',condition=condition,until_tick=game.tick+timeout,next_check=game.tick+FEED_CHECK,start_tick=game.tick,
-    wake_viewers=viewers,wake_messages=messages,urgent=urgent}
+    wake_viewers=viewers,wake_messages=messages,urgent=urgent,default_timeout=a.timeout==nil or nil}
   local ok,met,saw=pcall(M.waiteta.check,p,condition,record)
   -- error, not assert: Factorio's Lua 5.2 assert puts the source line in front of the reason.
   if not ok then error(met,0) end
@@ -12222,7 +12319,8 @@ M.freight=require('freight'){state=state,spoil=M.spoil,pods=M.pods}
 -- power and hub space come to over it at today's rates (endurance.lua; Astra, d15: Wayfarer lost at Aquilo).
 M.endurance=require('endurance'){platform=function(p,name) return space.platform(p,name) end,
   leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,ammo_counts=function(pl) return M.freight.ammo_counts(pl) end,
-  path=function(a,b) return M.freight.path(a,b) end}
+  path=function(a,b) return M.freight.path(a,b) end,stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,
+  places_text=function(sp,name) return M.freight.places_text(sp,name) end,moved_text=function(a,b,name) return M.freight.moved_text(a,b,name) end}
 function handlers.platform_endurance(p,a) return M.endurance.read(p,a) end
 -- A platform as planned, built and ghosts together: foundation islands, belt loops, head-on belts, side-loads (platplan.lua).
 M.platplan=require('platplan'){platform=function(p,name) return space.platform(p,name) end}
@@ -12815,6 +12913,8 @@ function M.tick_action(index,action,event)
     and M.urgent.waking(p,action) then
     -- An urgent alert ends a direct wait as it ends a sleep (urgent.lua; last.why names it).
     finish(index,'urgent')
+  elseif event.tick>action.until_tick and action.kind=='wait_until' and action.default_timeout and M.waiteta.extend(action,action.condition,action.start_tick) then
+    action.until_tick=M.waiteta.extend(action,action.condition,action.start_tick)
   elseif event.tick>action.until_tick then
     finish(index,(action.kind=='move_to' or action.kind=='build_path' or action.kind=='construct' or (action.kind=='mine' and action.tiles) or action.kind=='kite' or action.kind=='feed' or action.kind=='gather' or action.kind=='wait_until' or action.kind=='drive' or action.area~=nil or (action.kind=='repair' and action.targets~=nil)) and 'timed_out' or 'duration_elapsed')
   elseif action.kind=='wait_until' then

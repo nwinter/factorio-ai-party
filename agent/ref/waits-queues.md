@@ -1,6 +1,8 @@
 - `./fh call wait_until --args '{"until":"researched","technology":"automation"}' --wait` (also `item_count`,
   `crafting_done`) lets the factory run until a condition holds, without polling. Add `--wait-timeout 600000` to
   wait up to 10 minutes (15 at most); hitting the limit fails with `timed_out`.
+  A `platform_arrived` or `platform_left` wait with no `timeout` (queued or direct) goes on past its default 60 s while
+  its ETA is known: to the ETA plus a quarter and 10 s, at most 54000 ticks (`extended` says so).
 - A sleep's reply's first line says whether your queue keeps running, your action keeps going until a tick, or your
   character stands idle.
 - `--until "item_count iron-plate>=200 at -18.5,-34.5 -16.5,-34.5"` counts those chests.
