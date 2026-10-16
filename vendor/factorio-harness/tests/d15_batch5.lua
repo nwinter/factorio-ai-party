@@ -150,3 +150,46 @@ do
   fails(function() space.requests({index=2,force={platforms={}},get_main_inventory=function() return main end,get_requester_point=function() return nil end},{set={{item='coal',min=5,min_payload=3}}}) end,'')
 end
 print('d15_batch5 C1 min payload: ok')
+
+-- C4 (Sonnet, Astra): arrival estimates through the schedule: the shortest way through the connections, and in flight
+-- the rest of the leg, then the stops after it. -------------------------------------------------------------------------
+do
+  defines={space_platform_state={on_the_path=9},inventory={hub_main=1,hub_trash=2}}
+  prototypes={space_connection={a={from={name='nauvis'},to={name='fulgora'},length=15000},b={from={name='nauvis'},to={name='vulcanus'},length=15000},
+    c={from={name='nauvis'},to={name='gleba'},length=15000},d={from={name='vulcanus'},to={name='gleba'},length=15000},e={from={name='gleba'},to={name='fulgora'},length=15000},
+    f={from={name='fulgora'},to={name='aquilo'},length=30000}}}
+  game={tick=10000}
+  local st={}
+  local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return st end}
+  local r=F.path('fulgora','vulcanus')
+  eq(r.km,30000); eq(#r.via,1); eq(r.also~=nil,true,'as short the other way')
+  eq(F.path('aquilo','vulcanus').km,60000); eq(F.path('nauvis','nauvis').km,0)
+  -- At Fulgora, its schedule to Vulcanus: the way through Nauvis or Gleba.
+  local pl={valid=true,index=4,name='Tern',state=1,paused=false,space_location={name='fulgora'},
+    schedule={current=1,records={{station='fulgora',wait_conditions={{type='time',ticks=600}}},{station='vulcanus',wait_conditions={{type='time',ticks=600}}}}}}
+  st.freight={[4]={segs={{kind='stop',at='fulgora',start=10000}},speed=2}}
+  r=F.before_departure(pl,'vulcanus')
+  eq(r.eta_s,10+250)
+  has(r.line,'fulgora->vulcanus 30000 km via ')
+  -- In flight on its first leg toward Gleba (schedule: gleba, then vulcanus), 5000 km left at 2 km a tick.
+  pl.space_location=nil
+  pl.space_connection={from={name='fulgora'},to={name='gleba'},length=15000}; pl.distance=2/3; pl.speed=2
+  pl.last_visited_space_location={name='fulgora'}
+  pl.schedule={current=1,records={{station='gleba',wait_conditions={{type='time',ticks=1200}}},{station='vulcanus',wait_conditions={}}}}
+  r=F.before_departure(pl,'vulcanus')
+  -- 2500 ticks of flight left (42 s), 20 s at Gleba, 15000 km at 2 km a tick (125 s)
+  eq(r.eta_s,math.ceil(2500/60+20+125))
+  has(r.line,'flying fulgora->gleba: 5000 km left at its speed now: 42s; stops at gleba (time 20s); gleba->vulcanus 15000 km at 120 km/s (its last speed): 125s')
+  local W=dofile('mod/agent-harness_0.1.0/waiteta.lua'){before_departure=function(a,b) return F.before_departure(a,b) end}
+  local row=W.estimate({},{['until']='platform_arrived',platform='Tern',location='vulcanus'},false,{platform=pl,leg=F.leg(pl)},{})
+  eq(row.eta_s,r.eta_s); has(row.line,'through its schedule: flying fulgora->gleba')
+  -- cargo {incoming}: the platforms headed for vulcanus, with the ETA and the hub's cargo.
+  local hubinv={get_contents=function() return {{name='tungsten-plate',count=400,quality='normal'},{name='calcite',count=900,quality='normal'}} end}
+  pl.hub={valid=true,get_inventory=function() return hubinv end}
+  local stay={valid=true,index=5,name='Petrel',hub={valid=true,get_inventory=function() return hubinv end},space_location={name='vulcanus'},state=1,
+    schedule={current=1,records={{station='vulcanus'}}}}
+  local rows=F.headed({platforms={pl,stay}},'vulcanus',8)
+  eq(#rows,1,'a platform at the planet now is not headed for it'); eq(rows[1].platform,'Tern'); eq(rows[1].eta_s,r.eta_s)
+  has(rows[1].line,'Tern (flying fulgora->gleba 67%): ETA '); has(rows[1].line,'hub: calcite*900 tungsten-plate*400')
+end
+print('d15_batch5 C4 arrival through the schedule: ok')

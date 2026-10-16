@@ -5188,3 +5188,19 @@ fh watch    # deploy on every change
   item, up to its count, and says `up_to: the hub held agricultural-science-pack 120 of 885`. Holding none of any, it
   is done with nothing sent (`nothing_to_drop: true`), so a queue step goes on. Without `up_to` a short hub still
   refuses, as before.
+- Arrival estimates through the schedule (Sonnet, Astra).
+  - Between two stops with no space connection of their own, the estimate takes the shortest way through the
+    connections, e.g. `fulgora->vulcanus 30000 km via nauvis (as short through gleba)`. Before, it said "no space
+    connection". This covers `platform_arrived` waits, the platforms row and `platform_endurance`, where each hop is
+    a leg: `(on the way fulgora->vulcanus)`.
+  - In flight toward somewhere else, a `platform_arrived` wait's estimate goes on through the schedule: `flying
+    fulgora->gleba: 5000 km left at its speed now: 42s; stops at gleba (time 20s); gleba->vulcanus 15000 km at 120
+    km/s (its last speed): 125s`. Before, it said `current flight leg ends at gleba, not vulcanus`.
+  - `cargo {incoming: true, planet?}`: our platforms headed for your planet (flying to it, or with it in their
+    schedule), soonest first, each with where it is, its ETA through the schedule and what its hub holds.
+  - `cargo {items, silo: {x,y}, to_platform?}` adds `dependency`, when the list can go up: the rockets it takes,
+    your own queued launches ahead of it at that silo, the parts still to make at the silo's full speed (with the
+    surface's measured rocket-part rate beside it), the platform's arrival through its schedule, and `earliest_s`,
+    the later of the two. `9 rockets for the list; building the rocket: parts 17/50; 433 parts to make (50 a
+    rocket); at the silo's full speed (48.0 parts/min) in 542s; rocket parts made on vulcanus in the last 10 min:
+    8.5/min; ...`.

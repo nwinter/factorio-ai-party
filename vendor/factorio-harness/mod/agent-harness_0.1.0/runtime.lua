@@ -1459,7 +1459,7 @@ function handlers.describe()
         dry_run='plan only, place nothing',details='list every entity',
         returns='route (runs like E12 N3, uE10 = pipe-to-ground pair east spanning 10), tiles, items, missing (vs inventory), joins {from,to: name, ghost?, position, fluid} for ends joined to an entity (a pipe ghost there is joined as part of its line: name is what it builds, ghost=true), placed/failed/bounds (construct defaults to them), segment_extent (tiles, with joined pipes; a joined ghost line counts as built) and, past the limit, extent_warning + pumps [{position,direction}]',
         note='plain pipe connects on every side, so it never goes where another pipe, machine connection or ghost would connect to it (only at a joined end); pipe-to-ground pairs pass beside or under those, belts and obstacles, never along another underground pipe axis or beneath lava/space; free ends stay plain pipe; refuses an end two entities connect to, a machine with several connections (give the tile), and joining two different known fluids; searches charted ground within 16 tiles around from and to'},
-      cargo={one_rocket='optional true, with items as a list: one rocket loaded in the list\'s order, each item as many as still fit by weight and slots: items with kg, kg, slots, room_kg, room_slots, left_over (what of the list does not fit), line',top_up='optional item name: after the list, fill the room left with as many of it as fit (implies one_rocket)',items='{name: count} or [{name, count, quality}]: a rocket cargo list (items, not fluids)',position='or a chest, rocket silo (its loaded cargo), landing pad, platform hub, wagon or vehicle in sight: what it holds',platform='optional platform name (a hub or chest there)',returns='lift (kg and cargo slots a rocket), items [{name, quality, count, each_kg, kg, stacks, per_rocket (alone in one rocket: by weight and by slots), share (of a rocket\'s lift)}] heaviest first, total_kg, stacks, fewest (rockets by total weight and stacks), rockets and split [{rocket, kg, slots, items}] (one split: heaviest first, each into the first rocket with room), too_heavy; a read, nothing moves'},
+      cargo={silo='optional {x,y} of a rocket silo, with items: dependency {rockets, queued_ahead (your queued launches at it), parts_now, parts_needed, parts_per_min_full_speed, rocket_parts_made_per_min (the surface, last 10 min), parts_ready_in_s, platform_eta_s (to_platform: through its schedule), earliest_s, line}: when the list can go up',to_platform='with silo: the platform the list goes to (its arrival through its schedule)',incoming='optional true: our platforms headed for your planet (planet= another), flying to it or with it in their schedule: platforms [{platform, where, eta_s, eta (through its schedule: the leg it flies, its stops\' waits, the shortest way between stops), hub (its cargo, the largest stacks first), line}], soonest first (limit 1..32, default 8)',planet='with incoming: a planet name',limit='with incoming: 1..32',one_rocket='optional true, with items as a list: one rocket loaded in the list\'s order, each item as many as still fit by weight and slots: items with kg, kg, slots, room_kg, room_slots, left_over (what of the list does not fit), line',top_up='optional item name: after the list, fill the room left with as many of it as fit (implies one_rocket)',items='{name: count} or [{name, count, quality}]: a rocket cargo list (items, not fluids)',position='or a chest, rocket silo (its loaded cargo), landing pad, platform hub, wagon or vehicle in sight: what it holds',platform='optional platform name (a hub or chest there)',returns='lift (kg and cargo slots a rocket), items [{name, quality, count, each_kg, kg, stacks, per_rocket (alone in one rocket: by weight and by slots), share (of a rocket\'s lift)}] heaviest first, total_kg, stacks, fewest (rockets by total weight and stacks), rockets and split [{rocket, kg, slots, items}] (one split: heaviest first, each into the first rocket with room), too_heavy; a read, nothing moves'},
       conflicts={name='the entity to build (or the item that places it), e.g. pumpjack',position='{x,y} where it would stand (snapped like a build), e.g. a well\'s position',direction='optional compass name or 0..15 (default north)',surface='optional planet name (remote view there)',platform='optional platform name (platform coordinates)',returns='a read, nothing changes: name, position (snapped), footprint; remove [{name, position, kind (ours, ghost, tree or rock, cliff, force NAME), note}]: every entity whose collision meets it there, ours first; resource (under it: a drill\'s mining area, a pumpjack\'s centre tile; yield for wells); fluid (each fluid segment our fluid entities in the way are in: its fluid, what joins them, and whether taking them away splits it: the machines and pipes on each side); power (each of our poles in the way: its network and the wires that go; whether the poles it joined stay joined; a group cut off: its poles, the machines in their supply areas and whether a generator, solar panel or accumulator is among them); unpowered_after (machines no pole\'s supply area covers once they are gone); supplied_by (an electric entity: the pole whose supply area covers it then); line'},
       ports={name='entity (or the item that places it), e.g. electromagnetic-plant',position='{x,y} where it would stand (snapped like a build)',direction='north|east|south|west (default north)',recipe='optional recipe: which ports open and the fluid each carries',mirror='optional boolean: the H/V flip of fluid machines',platform='optional platform name (platform coordinates)',returns='ports [{at (the entity tile with the connection), joins (the tile outside it where a pipe joins), direction, flow input|output, fluid, box, there (what stands on joins now)}], closed (ports this recipe closes); a read, nothing is built; inspect of a ghost with a recipe shows the same in fluid_connections (fluid_connections_closed)'},
       dry_run={action='place_ghosts|paste|blueprint_place|build',args='that call\'s arguments (details=true: every entry with its footprint); the same as the call with dry_run=true'},
@@ -8776,6 +8776,16 @@ M.CARGO_INVENTORY={['rocket-silo']='rocket_silo_rocket',['cargo-landing-pad']='c
   ['cargo-wagon']='cargo_wagon',car='car_trunk',['spider-vehicle']='spider_trunk'}
 handlers.cargo=function(p,a)
   local list,from,silo={},nil,nil
+  -- incoming (Sonnet): our platforms headed for your planet, with their ETA through the schedule and their hub's cargo.
+  if a.incoming~=nil then
+    assert(a.incoming==true and a.items==nil and a.position==nil,'incoming is true, without items or position')
+    local planet=a.planet or (pcall(function() return p.surface.planet.name end) and p.surface.planet and p.surface.planet.name)
+    assert(type(planet)=='string' and prototypes.space_location[planet],'planet: a planet name (default the one you are on)')
+    local rows=M.freight.headed(p.force,planet,integer(a.limit,8,1,32,'limit'))
+    local lines={}
+    for i,r in ipairs(rows) do lines[i]=r.line end
+    return {planet=planet,platforms=rows,lines=lines,note=#rows==0 and 'no platform of ours flies to '..planet..' or has it in its schedule (away from it now)' or nil}
+  end
   assert((a.items==nil)~=(a.position==nil),'cargo takes items ({name: count} or [{name, count, quality}]) or a position, one of them')
   if a.items~=nil then
     assert(type(a.items)=='table' and next(a.items)~=nil,'items is {name: count} or [{name, count, quality}]')
@@ -8814,6 +8824,68 @@ handlers.cargo=function(p,a)
   end
   local out=M.cargo.weigh(list,lift,slots)
   out.from=from
+  if a.silo~=nil then out.dependency=M.cargo_eta(p,a,out.rockets or out.fewest or 1) end
+  return out
+end
+-- When a list can go up (Astra: a cargo dependency ETA recomputed 10+ times a shift): the rockets it takes and the
+-- launches queued ahead of it at that silo, the parts those rockets still need at the silo's full speed (and the
+-- surface's measured rocket-part rate), and the platform's arrival through its schedule. Facts and the sums of them.
+function M.cargo_eta(p,a,rockets)
+  local silo=remote_entity(p,{position=position(a.silo)})
+  assert(silo.type=='rocket-silo',silo.name..' is not a rocket silo')
+  local required=silo.prototype.rocket_parts_required or 50
+  local rk=M.silo.rocket(silo)
+  local ready=(rk.rocket_ready or rk.built_parts) and 1 or 0
+  local progress=silo.rocket_parts or 0
+  -- the agent's own queued launches at this silo, ahead of this list
+  local ahead=0
+  local q=state().queues and state().queues[p.index]
+  local steps={}
+  if q and q.current then steps[1]=q.current end
+  for _,step in ipairs(q and q.pending or {}) do steps[#steps+1]=step end
+  for _,step in ipairs(steps) do
+    local sa=step and step.args
+    if type(sa)=='table' and (step.action=='launch' or (step.action=='load_silo' and sa.launch)) and type(sa.position)=='table'
+      and distance(position(sa.position),silo.position)<6 then ahead=ahead+1 end
+  end
+  local total=rockets+ahead
+  local need=math.max(0,(total-ready)*required-progress)
+  local okr,rate=pcall(M.craftrate.machine,silo)
+  local per_min=okr and rate and rate.products and rate.products[1] and rate.products[1].per_min or (okr and rate and rate.crafts_per_min) or nil
+  local measured
+  pcall(function()
+    measured=silo.force.get_item_production_statistics(silo.surface).get_flow_count{name='rocket-part',category='input',
+      precision_index=defines.flow_precision_index.ten_minutes,count=true}/10
+  end)
+  local parts_s=per_min and per_min>0 and math.ceil(need/per_min*60) or nil
+  local out={rockets=rockets,queued_ahead=ahead,rocket_ready=ready==1 or nil,parts_now=progress,parts_per_rocket=required,parts_needed=need,
+    parts_per_min_full_speed=per_min and math.floor(per_min*10+0.5)/10 or nil,rocket_parts_made_per_min=measured and math.floor(measured*10+0.5)/10 or nil,
+    parts_ready_in_s=parts_s}
+  local words={string.format('%d rocket%s for the list%s',rockets,rockets==1 and '' or 's',ahead>0 and string.format(', %d queued launch%s of yours ahead of it at this silo',ahead,ahead==1 and '' or 'es') or '')}
+  words[#words+1]=string.format('%s; %d parts to make (%d a rocket)',rk.rocket_now,need,required)
+  if parts_s then words[#words+1]=string.format('at the silo\'s full speed (%.1f parts/min) in %ds',per_min,parts_s)
+  elseif need>0 then words[#words+1]='the silo makes no parts now (no recipe rate)' end
+  if measured then words[#words+1]=string.format('rocket parts made on %s in the last 10 min: %.1f/min',silo.surface.name,measured) end
+  local arrive
+  if a.to_platform~=nil then
+    local pl=space.platform(p,a.to_platform)
+    local planet=silo.surface.planet and silo.surface.planet.name
+    local w=M.freight.where(pl)
+    if w.at==planet then arrive=0; words[#words+1]=pl.name..' is at '..planet..' now'
+    else
+      local est,why=M.freight.before_departure(pl,planet)
+      arrive=est and est.eta_s
+      words[#words+1]=pl.name..': '..(est and est.line or ('no arrival estimate: '..tostring(why)))
+    end
+    out.platform=pl.name; out.platform_eta_s=arrive
+  end
+  local ready_s=need==0 and 0 or parts_s
+  if ready_s and (a.to_platform==nil or arrive) then
+    out.earliest_s=math.max(ready_s,arrive or 0)
+    words[#words+1]=string.format('the last rocket for it built in %ds%s: the list can go up from %ds (each launch also takes the rocket\'s rise and flight)',
+      ready_s,arrive and string.format(' and the platform there in %ds',arrive) or '',out.earliest_s)
+  end
+  out.line=table.concat(words,'; ')
   return out
 end
 -- A rocket silo at a glance (silo.lua, Gemini's request): parts, crafting and
@@ -11897,7 +11969,8 @@ M.freight=require('freight'){state=state,spoil=M.spoil,pods=M.pods}
 -- platform_endurance: a route's legs at the platform's speed and what its ammunition, repair packs, thruster fluids,
 -- power and hub space come to over it at today's rates (endurance.lua; Astra, d15: Wayfarer lost at Aquilo).
 M.endurance=require('endurance'){platform=function(p,name) return space.platform(p,name) end,
-  leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,ammo_counts=function(pl) return M.freight.ammo_counts(pl) end}
+  leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,ammo_counts=function(pl) return M.freight.ammo_counts(pl) end,
+  path=function(a,b) return M.freight.path(a,b) end}
 function handlers.platform_endurance(p,a) return M.endurance.read(p,a) end
 -- Each platform's flight over the last 60 and 180 s: speed, thruster fluids, tanks, pumps (engine.lua; Astra, 21:20).
 M.engine=require('engine'){state=state}
