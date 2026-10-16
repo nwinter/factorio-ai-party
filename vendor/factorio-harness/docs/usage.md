@@ -4793,3 +4793,29 @@ fh watch    # deploy on every change
     ingredients aboard (sulfuric-acid 80)`). A fluid ingredient is counted in the storage tanks and in the makers'
     fluid boxes (`ingredient_limited.fluid`, `ingredient_limited.below`).
   - `tools/read_cost.py` has `platform_endurance` (`--platform NAME`, default Aegis) and `artillery`.
+
+## d15 batch4 (operator 21:25; shifts 19-20)
+
+- `trace {position, upstream: true}` (Sol, Luna, Astra, Grok: Starling drifted backwards ~8 min while an arm at
+  (9.5,2.5) sent all its ore onto a furnace belt; Swift's ammo starved behind a jammed mixed return; Grok walked a coal
+  tour while coal sat on the copper ore lane): from the target back along what feeds it. Per ingredient it lacks
+  (`all: true`: every one; `item`: that one), `ingredients[] {item, has, needs, line, feeders, lanes, makers}`:
+  - a feeder whose filter does not let it through, or that is off by its circuit condition (the condition and the
+    signal on its wires, as thrust reads it);
+  - each lane a feeder picks, walked back tile by tile through undergrounds, splitters and side-loads
+    (`lanes[] {from, at_feeder, jammed, path_back, line}`). The line says, in the order items move: an inserter
+    taking it elsewhere first (onto another belt, into a chest, into a machine with another recipe; its status,
+    filter and what it holds; inserters feeding machines like the target are counted), the first tile back where it
+    is on the lane, where it comes onto the lane (an inserter and what it reads, a drill, a side-loading belt), the
+    first tile where another item joins and from what (`which it burns as fuel` when the target does), a splitter
+    filter sending it to the other output, and where the walk ended (the lane's start, out of sight, the cap);
+  - `jammed`: the lane at the feeder full with none of it (`the left lane at transport-belt (15.5,2.5) is full and
+    holds no iron-ore (left lane 4 coal, right lane empty), front item coal`);
+  - a chest a feeder reads with none: what fills it; a machine making it that is not working: traced the same way one
+    level down (`makers`).
+  - A thruster: each fluid by pipe and pump (thrust.lua's walk) to the machines making it, each traced as above, so
+    oxidizer goes back through its iron ore belt to the crushers and their chunk belt to the collectors. A machine's
+    fluid ingredient it lacks goes the same way (water to the ice melting plant).
+  - A hub, chest or belt tile with no `item`: every lane feeding it, with the items coming onto it, first first.
+  - Bounds: 3000 belt tiles, 600 a lane, 16 lane walks, two machine levels. `cost` says what it walked.
+

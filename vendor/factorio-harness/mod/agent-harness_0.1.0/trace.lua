@@ -1005,7 +1005,25 @@ return function(api)
     return out
   end
 
+  -- The helpers upstream.lua walks with (trace {position, upstream}).
+  M.h = {try=try, at=at, place=place, side=side, status=status, BELT=BELT, CRAFTER=CRAFTER, CONTAINER=CONTAINER, target=target,
+    index=index, cells=cells, sight=sight, packs=packs, wants=wants, filters_of=filters_of, filter_text=filter_text, allows=allows,
+    hand=hand, picks_lane=picks_lane, lanes_of=lanes_of, lane_text=lane_text, items_on=items_on, upstream_items=upstream_items,
+    lane_near=lane_near, drop_lane=drop_lane, lane_full=lane_full, front_item=front_item, accepts=accepts, splitter_filter=splitter_filter,
+    splitter_side=splitter_side, radius_of=radius_of, recipe_of=recipe_of, output_of=output_of, input_of=input_of, main=main,
+    inventory=inventory, count=count}
+  local upstream
   function M.trace(p, a)
+    if a.upstream ~= nil then
+      assert(type(a.upstream) == 'boolean', 'upstream must be true or false')
+      assert(a.forward == nil, 'upstream and forward go one way each: give one')
+      assert(a.near == nil and a.radius == nil, 'near and radius go with item alone')
+    end
+    if a.upstream then
+      assert(a.position ~= nil, 'upstream takes position (a machine, lab, thruster, hub, chest or belt tile); item= picks one ingredient')
+      upstream = upstream or require('upstream')(api, M.h)
+      return upstream.trace(p, a)
+    end
     if a.item ~= nil then
       assert(a.position == nil and a.forward == nil and a.all == nil, 'item traces the item\'s routes: give item, or position (with forward or all)')
       return M.items(p, a)
@@ -1030,7 +1048,8 @@ return function(api)
   M.schema = {trace = {memory='without coverage: recorded trace with observation tick and age, or remembered belt layout (up to 512 tiles; stops at unknown routing); current state unknown; a visible trace stops at fog and attaches recorded layout',position='{x,y} of a machine or lab in sight (platform= for one on a platform); with forward also a belt tile',
     all='boolean: every ingredient, not only those it lacks for its next craft',
     forward='boolean: follow its output instead: the inserters taking from it and the belts they load, lane by lane, to where they end; on a belt tile, that belt\'s lanes from there (those carrying something now, else both); every walk names where other items join its lanes (merges)',
-    item='an item instead of position: the routes from every machine making it (and every mining drill on a resource that gives it, from where it drops) to the labs, machines and chests taking it',
+    upstream='boolean, with position: from the target back along what feeds it to the first place each ingredient it lacks (all: every one; item: that one) stops or goes elsewhere: a feeder whose filter does not let it through or that is off by its circuit condition (the condition, the signal on its wires), each lane a feeder picks walked back through undergrounds, splitters and side-loads (the lane at the feeder: full, front item, a jammed mixed lane; the first tile back holding it; inserters taking it elsewhere on the way, with status, filter and what each holds; a splitter filter sending it to the other output; where it comes onto the lane; the first tile where another item joins), a chest it reads and what fills it, and a machine making it that is not working, traced the same way one level down. A thruster: each fluid by pipe to the machines making it, each traced so (back through crushers to the collectors). A hub, chest or belt tile: every lane feeding it',
+    item='with upstream: the one ingredient or item to follow. Alone: an item instead of position: the routes from every machine making it (and every mining drill on a resource that gives it, from where it drops) to the labs, machines and chests taking it',
     surface='optional surface name for position or item (default yours); exclusive with platform',
     near='with item: optional {x,y}: makers and labs in this area only (cheaper than the whole surface)', radius='with near: 1..512 tiles (default 64)',
     platform='optional platform name: trace on that platform (platform coordinates, hub at 0,0)',
