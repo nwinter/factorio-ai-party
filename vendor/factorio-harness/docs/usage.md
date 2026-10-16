@@ -5272,3 +5272,9 @@ fh watch    # deploy on every change
   1.1 MW (laser-turret); assembling-machine 631 kW (assembling-machine-2, foundry, chemical-plant); ...` and
   `draw_by_kind` [{kind, kw, names}], from the game's 5 s statistics (by prototype, under its entity type). No harness
   switch turns a consumer off; power switches and circuit-enabled machines are the game's own.
+- `move_to` past 512 tiles with no `via` (Haiku, every ~20 minutes: refused with no route summary): via points about
+  500 tiles apart are added on the straight line, each moved to the nearest spot a character fits, and the walk (or
+  its dry run) goes through them: `via_added: 771 tiles away, past the 512 a leg takes: walked through via points
+  (313.1,20.6) (on the straight line, each moved to the nearest free spot)`. A point that lands in a chunk the map has
+  not charted is refused, naming it; so is a walk needing more than 16. On the copy of world n a 771-tile dry run took
+  65 ms in the container (about 13 ms on n).
