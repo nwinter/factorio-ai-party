@@ -5327,3 +5327,9 @@ fh watch    # deploy on every change
   (default 200), and the offshore-pump spots there as `placements` gives them: `nearest water (water) at
   (-344.5,-368.5), 135.1 tiles from (-281,-250); offshore-pump spots: (-346.5,-369.5) east, ...`. On the copy of world
   n warm reads took 4-22 ms in the container (about 1-4 ms on n); a cold first call is slower.
+- The build and place_ghosts dry runs add `poles_preview`, a row a pole of the plan (Luna 01:50: a pole already stood
+  on the agreed tile, and the dry run gave blockers only): whether the spot is free, taken (what takes it) or already
+  built; the networks of the built poles it wires to (within the shorter wire reach); and the machines in its supply
+  area that no network powers now (they gain coverage) against those already powered: `small-electric-pole
+  (24.5,30.5): the spot is free; joins #613 (6 poles); in its supply area 0 machines no network powers now, 0 already
+  powered`. Checked on Gleba on the copy.
