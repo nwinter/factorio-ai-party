@@ -144,7 +144,7 @@ return function(api)
   end
   -- orders: true lists the standing orders' entries too (every entry, as before plans); else the plan's own entries,
   -- the orders' counted.
-  local function snapshot(q,recent,orders)
+  local function snapshot(q,recent,orders,with_args)
     local list,from_orders=q.history,0
     if not orders then
       list={}
@@ -158,6 +158,21 @@ return function(api)
     if recent and #history>recent then
       history={}
       for i=#list-recent+1,#list do history[#history+1]=list[i] end
+    end
+    local trimmed=history~=q.history
+    -- Each entry's arguments only when asked (queue_status {args: true}): replies stay as small as before.
+    if not with_args then
+      local copies={}
+      for i,e in ipairs(history) do
+        if e.args~=nil then local c={}; for k,v in pairs(e) do if k~='args' then c[k]=v end end; copies[i]=c else copies[i]=e end
+      end
+      history=copies
+    end
+    local loop_done=q.loop_done
+    if loop_done and loop_done.steps and not with_args then
+      loop_done={}
+      for k,v in pairs(q.loop_done) do if k~='steps' then loop_done[k]=v end end
+      loop_done.steps_count=#q.loop_done.steps
     end
     local plan
     if q.plan then
@@ -181,12 +196,12 @@ return function(api)
     return {revision=q.revision,paused=q.paused,pending=q.pending,active=current or false,history=history,plan=plan,
       order=q.order and {name=q.order.name,reason=q.order.reason,steps=q.order.total} or nil,
       orders_history=from_orders>0 and string.format('%d entries from standing orders left out (queue_status {"orders": true} lists them)',from_orders) or nil,
-      history_total=history~=q.history and #q.history or nil,
+      history_total=trimmed and #q.history or nil,
       waiting=waiting,
       guards=q.guards and #q.guards>0 and q.guards or nil,last_failure=failure,after_direct=q.after_direct,
       repeating=q.loop~=nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.loop and (q.orders or 'triggers') or nil,
       times=q.loop and q.times or nil,rounds_left=q.loop and q.times and math.max(0,q.times-(q.cycle or 1)) or nil,
-      stops_tick=q.loop and q.stop_tick or nil,loop_done=q.loop_done,repeat_name=q.loop and q.name or nil,condition=q.loop and q.condition or nil,condition_error=q.condition_error,submission=q.submission,
+      stops_tick=q.loop and q.stop_tick or nil,loop_done=loop_done,repeat_name=q.loop and q.name or nil,condition=q.loop and q.condition or nil,condition_error=q.condition_error,submission=q.submission,
       limits={pending=MAX_PENDING,history=MAX_HISTORY,instant_per_tick=MAX_INSTANT,argument_bytes=MAX_BYTES}}
   end
   -- A repeating plan's round tallies its steps that ran short (Opus, after short steps were skipped): action, item and
@@ -277,6 +292,10 @@ return function(api)
   end
   local function end_loop(q,why)
     q.loop_done={name=q.name,rounds=q.cycle or 1,reason=why,tick=game.tick}
+    -- The loop's steps, as queue_repeat took them (Muse, Luna, shift19): with queue_status {args: true}.
+    local steps={}
+    for i,st in ipairs(q.loop or {}) do steps[i]={action=st.action,args=st.args,label=st.label,wait=st.wait,on_fail=st.on_fail,on_short=st.on_short,min_moved=st.min_moved} end
+    q.loop_done.steps=#steps>0 and steps or nil
     q.history[#q.history+1]={action='loop_done',ok=true,result={rounds=q.cycle or 1,reason=why,name=q.name},finished_tick=game.tick,plan=q.plan_seq}
     if #q.history>MAX_HISTORY then table.remove(q.history,1) end
     q.round_news=q.round_news or {}
@@ -296,8 +315,9 @@ return function(api)
   local function record(q,step,ok,result)
     if step.action=='wait_until' and api.wait_info then api.wait_info(result,step) end
     tally(q,step,result)
+    -- with its arguments (Muse, Luna, shift19: a finished 40-round loop could not be rebuilt from its history)
     q.history[#q.history+1]={id=step.id,action=step.action,label=step.label,ok=ok,result=result,started_tick=step.started_tick,finished_tick=game.tick,order=step.order,
-      plan=not step.order and (step.plan or q.plan_seq) or nil}
+      plan=not step.order and (step.plan or q.plan_seq) or nil,args=step.args}
     if #q.history>MAX_HISTORY then table.remove(q.history,1) end
     q.revision=q.revision+1
   end
@@ -512,8 +532,9 @@ return function(api)
     a=a or {}
     local q=queue(p.index)
     assert(a.orders==nil or type(a.orders)=='boolean','orders must be true or false')
+    assert(a.args==nil or type(a.args)=='boolean','args must be true or false')
     -- The plan's entries: up to 16 by default (its steps and outcomes); with orders, the newest 3 of all as before.
-    local s=snapshot(q,count_arg(a.history,a.orders and RECENT or PLAN_RECENT,MAX_HISTORY,'history'),a.orders==true)
+    local s=snapshot(q,count_arg(a.history,a.orders and RECENT or PLAN_RECENT,MAX_HISTORY,'history'),a.orders==true,a.args==true)
     local np=count_arg(a.pending,1,MAX_PENDING,'pending')
     if #q.pending>np then
       local some={}
@@ -844,7 +865,7 @@ return function(api)
   -- A direct wait while the queue runs would pause it (runtime.lua dispatch_request refuses it).
   local PAUSE_QUEUE='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'
   M.schema={
-    queue_status={history='optional count 0..64 or "all": newest history entries of the plan (default 16; with orders, of all entries, default 3)',pending='optional count 0..128 or "all": next pending steps (default 1)',
+    queue_status={args='optional true: each history entry with the arguments its step ran with, and loop_done with the finished loop\'s steps (as queue_repeat took them), so a finished plan or loop can be submitted again',history='optional count 0..64 or "all": newest history entries of the plan (default 16; with orders, of all entries, default 3)',pending='optional count 0..128 or "all": next pending steps (default 1)',
       orders='true: the standing orders\' history entries too, every entry in order as it ran (default: the plan last submitted only, the orders\' entries counted in orders_history)',
       returns='active (the running step in full, running_s: how long it has run), pending (the next step), plan {id, kind submit|repeat, name, submitted_s_ago, steps, done, ok, failed, pending, running}: the plan last submitted (queue_submit or queue_repeat), history (its entries, the newest 16), orders_history (how many entries standing orders left, not listed), pending_count, history_total, last_failure (the plan\'s), waiting, guards, repeating, cycle; a loop with an end: times, rounds_left (after this round), stops_tick; loop_done {name, rounds, reason, tick} once one ended'},
     queue_repeat={steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional',

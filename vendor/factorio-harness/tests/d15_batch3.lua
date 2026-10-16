@@ -224,3 +224,33 @@ do
   eq(out.taken_by_inserters,tk.line); eq(out.follow_chests,'follow: true takes from steel-chest (6.5,-3.5) instead')
 end
 print('d15_batch3 5 collect output takers: ok')
+
+-- 7 (Muse, Luna): history keeps each step's arguments; a finished loop keeps its steps (queue_status {args: true}). -
+do
+  game={tick=0}
+  local state,active={},{}
+  local players={[1]={index=1}}
+  local s=require('scheduler'){
+    state=function() return state end,player=function(i) return players[i] end,
+    handlers={craft=function() return {started=1} end},
+    busy=function() return false end,stop=function() end,stop_index=function() end,
+    outcome=function() return nil end,completion=function() return nil end,
+    condition=function() return false end,validate_condition=function() end,
+  }
+  local h,p=s.handlers,players[1]
+  local function tick() game.tick=game.tick+1; s.tick() end
+  h.queue_submit(p,{steps={{action='craft',args={recipe='iron-gear-wheel',count=5}}}})
+  tick()
+  local q=h.queue_status(p)
+  eq(q.history[#q.history].action,'craft'); eq(q.history[#q.history].args,nil,'no arguments unless asked')
+  q=h.queue_status(p,{args=true})
+  eq(q.history[#q.history].args.recipe,'iron-gear-wheel'); eq(q.history[#q.history].args.count,5)
+  -- a loop of 2 rounds keeps its steps for queue_status {args: true}
+  h.queue_repeat(p,{steps={{action='craft',args={recipe='pipe',count=2}}},times=2,interval_ticks=60})
+  for _=1,200 do tick() end
+  q=h.queue_status(p)
+  eq(q.loop_done.rounds,2); eq(q.loop_done.steps,nil); eq(q.loop_done.steps_count,1)
+  q=h.queue_status(p,{args=true})
+  eq(q.loop_done.steps[1].action,'craft'); eq(q.loop_done.steps[1].args.recipe,'pipe')
+end
+print('d15_batch3 7 history args: ok')
