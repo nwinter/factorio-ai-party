@@ -7,10 +7,10 @@
 -- so is the network beyond the radius, when a wire leaves it (an outpost read with a radius around it counts its
 -- link to the base as power). A pole whose removal leaves a group of poles with no source (a cut vertex of the graph,
 -- with no source on that side) is fragile: the machines only that group and the pole itself cover are cut off.
--- Bounded: 3000 poles, 600 supply-area searches; cost says what it read.
+-- Bounded: the 1000 poles nearest (wires to the rest count as power); machines counted for the 16 cuts with most poles, 200 supply-area searches; cost says what it read.
 return function(api)
   local M = {}
-  local MAX_POLES, MAX_FINDS, MAX_ROWS, CELL = 3000, 600, 8, 16
+  local MAX_POLES, MAX_FINDS, MAX_ROWS, MAX_COUNTED, CELL = 1000, 200, 8, 16, 16
   local GENERATORS = {'generator', 'solar-panel', 'burner-generator', 'fusion-generator', 'electric-energy-interface'}
   local NOT_MACHINE = {generator=true, ['solar-panel']=true, accumulator=true, ['burner-generator']=true, ['electric-energy-interface']=true,
     ['fusion-generator']=true, ['lightning-attractor']=true, ['electric-pole']=true, ['power-switch']=true}
@@ -46,12 +46,15 @@ return function(api)
     assert(first, 'no electric pole of ours within 12 tiles of ' .. at(pos))
     local id = first.electric_network_id
     local area = {{pos.x - radius, pos.y - radius}, {pos.x + radius, pos.y + radius}}
-    local poles, index = {}, {}
+    -- The MAX_POLES nearest (on a copy of world n, 1149 poles cost 80 ms in the container, about 16 ms on n): the rest
+    -- count as the network beyond, as past the radius.
+    local poles, index, found = {}, {}, {}
     for _, e in ipairs(surface.find_entities_filtered{type='electric-pole', force=p.force, area=area}) do
-      if #poles >= MAX_POLES then break end
-      if e.valid and e.electric_network_id == id then poles[#poles+1] = e; index[e.unit_number] = #poles end
+      if e.valid and e.electric_network_id == id then found[#found+1] = {e=e, d=(e.position.x - pos.x) ^ 2 + (e.position.y - pos.y) ^ 2} end
     end
-    local capped = #poles >= MAX_POLES
+    local capped = #found > MAX_POLES and #found
+    if capped then table.sort(found, function(x, y) return x.d < y.d end) end
+    for k = 1, math.min(MAX_POLES, #found) do local e = found[k].e; poles[k] = e; index[e.unit_number] = k end
     -- The graph: copper wires between the poles read; a wire to a pole of the network outside them goes to OUT.
     local n = #poles
     local OUT = n + 1
@@ -104,7 +107,7 @@ return function(api)
     for i = 1, OUT do if gen[i] then root = i; break end end
     local out = {network=id, pole=first.name .. ' ' .. at(first.position), area=string.format('%s radius %d', at(pos), radius),
       poles=n, generators=n_gen, wires_out=exits > 0 and exits or nil}
-    if capped then out.capped = string.format('the first %d poles of the network in the area were read', MAX_POLES) end
+    if capped then out.capped = string.format('%d poles of the network in the area: the %d nearest read; wires to the rest count as power, as past the radius', capped, MAX_POLES) end
     if not root then
       out.line = string.format('network %d: no generator in %d poles\' areas and no wire leaving the area: none of it has power from here', id, n)
       return out
@@ -160,12 +163,20 @@ return function(api)
       covers[i] = list
       return list
     end
+    -- Each cut's poles (cheap); machines are counted for the MAX_COUNTED cutting most poles (searches are the cost: on a
+    -- copy of world n, 1319 poles with a search per pole cost 314 ms in the container).
     local rows = {}
     for v, kids in pairs(cuts) do
       local set, members = {[v]=true}, {v}
       for _, c in ipairs(kids) do
         for k = disc[c], disc[c] + size[c] - 1 do local m = order[k]; if m ~= OUT and not set[m] then set[m] = true; members[#members+1] = m end end
       end
+      rows[#rows+1] = {v=v, set=set, members=members, poles=#members - 1}
+    end
+    table.sort(rows, function(x, y) if x.poles ~= y.poles then return x.poles > y.poles end return x.v < y.v end)
+    for k = 1, math.min(MAX_COUNTED, #rows) do
+      local r = rows[k]
+      local set, members = r.set, r.members
       local cut, names, partial = {}, {}, false
       local x1, y1, x2, y2
       for _, m in ipairs(members) do
@@ -189,12 +200,14 @@ return function(api)
       end
       local count = 0
       for _ in pairs(cut) do count = count + 1 end
-      rows[#rows+1] = {v=v, poles=#members - 1, machines=count, names=names, box=x1 and {x1, y1, x2, y2}, partial=partial}
+      r.machines, r.names, r.box, r.partial = count, names, x1 and {x1, y1, x2, y2}, partial
     end
-    table.sort(rows, function(x, y) if x.machines ~= y.machines then return x.machines > y.machines end return x.poles > y.poles end)
+    local counted = {}
+    for k = 1, math.min(MAX_COUNTED, #rows) do counted[k] = rows[k] end
+    table.sort(counted, function(x, y) if x.machines ~= y.machines then return x.machines > y.machines end return x.poles > y.poles end)
     local list = {}
-    for k = 1, math.min(MAX_ROWS, #rows) do
-      local r = rows[k]
+    for k = 1, math.min(MAX_ROWS, #counted) do
+      local r = counted[k]
       local e = poles[r.v]
       local kinds = {}
       for name, c in pairs(r.names) do kinds[#kinds+1] = {name=name, c=c} end
@@ -214,7 +227,7 @@ return function(api)
     out.line = string.format('network %d, %d poles in the area, %d generators%s: %s%s', id, n, n_gen,
       exits > 0 and string.format(', %d wire%s leaving the area (counted as power)', exits, exits == 1 and '' or 's') or '',
       #rows == 0 and 'no single pole whose loss cuts machines off from all generation' or string.format('%d pole%s whose loss alone cuts machines off from all generation%s', #rows, #rows == 1 and '' or 's',
-        #rows > MAX_ROWS and string.format(' (the %d cutting most listed)', MAX_ROWS) or ''),
+        #rows > MAX_ROWS and string.format(' (of the %d cutting most poles, the %d cutting most machines listed)', math.min(MAX_COUNTED, #rows), MAX_ROWS) or ''),
       unreached > 0 and string.format('; %d poles of it in the area have no wire path to a generator or the edge', unreached) or '')
     out.cost = string.format('%d poles, %d supply-area searches', n, finds)
     return out

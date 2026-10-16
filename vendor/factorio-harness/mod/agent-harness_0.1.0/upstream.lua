@@ -15,12 +15,14 @@
 --   stops, traced the same way.
 -- A thruster: each fluid input through pipes and pumps (thrust.lua) to the machines making it, each traced as above
 -- (thruster fuel and oxidizer back through crushers to the collectors). A hub, chest or belt tile: what is put into it
--- (item: that item), each source traced the same way. Bounded: 3000 belt tiles, 16 lane walks, depth 2.
+-- (item: that item), each source traced the same way. Bounded: 800 belt tiles (500 a lane), 16 lane walks, depth 2.
 return function(api, H)
   local M = {}
   local try, at, place, side, status = H.try, H.at, H.place, H.side, H.status
   local BELT, CRAFTER, CONTAINER = H.BELT, H.CRAFTER, H.CONTAINER
-  local MAX_TILES, MAX_WALKS, MAX_DEPTH, MAX_LIST, MAX_LANE = 3000, 16, 2, 4, 600
+  -- On a copy of world n a walk cost about 0.08 ms a belt tile in the container (about 0.02 ms on n): 800 tiles stay
+  -- under the 20 ms rule.
+  local MAX_TILES, MAX_WALKS, MAX_DEPTH, MAX_LIST, MAX_LANE = 800, 16, 2, 4, 500
 
   -- An item or filter name, userdata-safe (2.0 gives prototypes for some filters and qualities).
   local function name_of(v)
@@ -48,6 +50,7 @@ return function(api, H)
   local function output_inv(e)
     if CRAFTER[e.type] then return H.output_of(e) end
     if e.type == 'asteroid-collector' then return H.inventory(e, 'asteroid_collector_output') end
+    if e.type == 'space-platform-hub' then return try(function() return e.get_inventory(defines.inventory.hub_main) end) end
     if e.type == 'lab' then return nil end
     return H.main(e)
   end
@@ -111,11 +114,11 @@ return function(api, H)
 
   -- The lanes feeding lane k of belt e, upstream: the same internal line on an input belt (or the input underground
   -- of an output one), else the lines that feed it here (a splitter's inputs, a belt that ends onto it).
-  local function prev_lanes(e, k)
+  local function prev_lanes(e, k, bn)
     local line = try(function() return e.get_transport_line(k) end)
     if not line then return {} end
     local cands = {}
-    local bn = try(function() return e.belt_neighbours end)
+    bn = bn or try(function() return e.belt_neighbours end)
     for _, n in ipairs(bn and bn.inputs or {}) do cands[#cands+1] = n end
     if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'output' then
       local nb = try(function() return e.neighbours end)
@@ -142,11 +145,11 @@ return function(api, H)
   end
   -- Belts side-loading onto lane k of e (perpendicular inputs on a straight belt or an underground, onto the lane
   -- nearest them).
-  local function side_loaders(e, k)
+  local function side_loaders(e, k, bn)
     local out = {}
+    if not (bn and bn.inputs and #bn.inputs > 1 or e.type == 'underground-belt' and bn and bn.inputs and #bn.inputs > 0) then return out end
     if not (e.type == 'underground-belt' or (e.type == 'transport-belt' and try(function() return e.belt_shape end) == 'straight')) then return out end
-    local bn = try(function() return e.belt_neighbours end)
-    for _, b in ipairs(bn and bn.inputs or {}) do
+    for _, b in ipairs(bn.inputs) do
       if b.valid and b.direction ~= e.direction and H.lane_near(e, b.position) == k then out[#out+1] = b end
     end
     return out
@@ -253,15 +256,15 @@ return function(api, H)
               if like and #w.share_names < 2 then w.share_names[#w.share_names+1] = place(t) end
             elseif #w.takers < 8 then
               local name = H.hand(i)
-              w.takers[#w.takers+1] = {tile=w.tiles, holding=item and name == item, text=inserter_text(i) .. ' takes it ' .. into_text(t)
+              w.takers[#w.takers+1] = {tile=w.tiles, holding=item and name == item, off=status(i) == 'disabled_by_control_behavior', text=inserter_text(i) .. ' takes it ' .. into_text(t)
                 .. string.format(' (%d tiles back)', w.tiles - 1)}
             end
           end
         end
       end
       -- What comes onto the lane here: inserters and drills dropping onto it, belts side-loading onto it.
-      local function arrive(m, where, what, src)
-        if item and gives(src, item, m) then
+      local function arrive(m, where, what, src, named)
+        if item and (named or gives(src, item, m)) then
           w.sources[#w.sources+1] = {tile=w.tiles, text=what, src=src}
           local rest = {}
           for n, c in pairs(m) do if n ~= item then rest[n] = c end end
@@ -276,20 +279,25 @@ return function(api, H)
           if name then m[name] = n end
           if src and src.valid and not BELT[src.type] then for nm, c in pairs(contents(output_inv(src))) do m[nm] = (m[nm] or 0) + c end
           elseif src and src.valid then for nm, c in pairs(H.items_on(src)) do m[nm] = (m[nm] or 0) + c end end
-          arrive(m, e, inserter_text(i) .. (src and src.valid and ' from ' .. place(src) or ''), src)
+          -- Only what its filter lets through (an inserter from the hub filtered to iron-ore puts nothing else here).
+          local fl = H.filters_of(i)
+          if fl then for nm in pairs(m) do if not H.allows(fl, nm) then m[nm] = nil end end end
+          arrive(m, e, inserter_text(i) .. (src and src.valid and ' from ' .. place(src) or ''), src,
+            item and fl and fl.mode ~= 'blacklist' and H.allows(fl, item))
         end
       end
       for _, d in ipairs(ctx.drills_at(e)) do
         if d.valid and H.drop_lane(e, d) == k then arrive(drill_items(d), e, string.format('%s %s %s', d.name, at(d.position), machine_state(d)), d) end
       end
-      for _, b in ipairs(side_loaders(e, k)) do
+      local bn = try(function() return e.belt_neighbours end)
+      for _, b in ipairs(side_loaders(e, k, bn)) do
         local m = H.upstream_items(b)
         arrive(m, e, string.format('%s side-loading (carrying %s)', place(b), list_text(m)), nil)
         if item and m[item] and #ctx.queue < MAX_WALKS then
           for j = 1, 2 do ctx.queue[#ctx.queue+1] = {e=b, k=j, from=place(b) .. ' ' .. side(j) .. ' lane, side-loading onto ' .. place(e)} end
         end
       end
-      local prev = prev_lanes(e, k)
+      local prev = prev_lanes(e, k, bn)
       if #prev == 0 then
         close(e.position)
         w.stop = string.format('the lane starts at %s (%s lane %s)', place(e), side(k), list_text(here))
@@ -316,13 +324,25 @@ return function(api, H)
     local reach = 0
     for _, s in ipairs(w.sources) do reach = math.max(reach, s.tile) end
     if w.first_at then reach = math.max(reach, w.first_at.tile) end
-    local takers = {}
-    for _, t in ipairs(w.takers) do if not item or reach == 0 or t.tile <= reach then takers[#takers+1] = t end end
+    local takers, off = {}, {}
+    for _, t in ipairs(w.takers) do
+      if not item or reach == 0 or t.tile <= reach then
+        if t.off then off[#off+1] = t else takers[#takers+1] = t end
+      end
+    end
     table.sort(takers, function(x, y) return x.tile > y.tile end)
-    if w.blocked then parts[#parts+1] = 'stops at ' .. w.blocked.text end
+    table.sort(off, function(x, y) return x.tile > y.tile end)
+    local head
+    if w.blocked then parts[#parts+1] = 'stops at ' .. w.blocked.text; head = parts[#parts] end
     if item then
-      if #takers > 0 then
+      if #takers > 0 and reach > 0 then
         parts[#parts+1] = 'goes elsewhere first at ' .. takers[1].text .. (#takers > 1 and string.format(' (+%d more taking it off this lane)', #takers - 1) or '')
+        head = head or parts[#parts]
+      elseif #takers > 0 then
+        parts[#parts+1] = string.format('%d inserter%s on the way would take it elsewhere, the first %s', #takers, #takers == 1 and '' or 's', takers[1].text)
+      end
+      if #off > 0 then
+        parts[#parts+1] = string.format('%d inserter%s that would take it elsewhere %s off by its condition now: %s', #off, #off == 1 and '' or 's', #off == 1 and 'is' or 'are', off[1].text)
       end
       if w.first_at and w.first_at.tile == 1 then
         parts[#parts+1] = string.format('%s is on this lane at %s', item, place(w.first_at.e))
@@ -331,10 +351,15 @@ return function(api, H)
       elseif not w.blocked then
         parts[#parts+1] = string.format('no %s on this lane for %d tiles back', item, w.tiles)
       end
+      local none = not w.first_at and not w.blocked and parts[#parts]
       if #w.sources > 0 then
         table.sort(w.sources, function(x, y) return x.tile > y.tile end)
         parts[#parts+1] = 'comes onto it from ' .. w.sources[1].text .. string.format(' (%d tiles back)', w.sources[1].tile - 1)
-      elseif not w.blocked then parts[#parts+1] = 'nothing found putting ' .. item .. ' onto it' end
+        if none then head = head or none .. '; ' .. parts[#parts] end
+      elseif not w.blocked then
+        parts[#parts+1] = 'nothing found putting ' .. item .. ' onto it'
+        if none then head = head or none .. ', and nothing found putting it onto it (' .. tostring(w.stop) .. ')' end
+      end
     end
     if #w.joins > 0 then
       table.sort(w.joins, function(x, y) return x.tile > y.tile end)
@@ -348,7 +373,7 @@ return function(api, H)
     if w.shares > 0 then parts[#parts+1] = string.format('%d inserter%s on the way feed%s machines like this one%s', w.shares, w.shares == 1 and '' or 's',
       w.shares == 1 and 's' or '', #w.share_names > 0 and ' (' .. table.concat(w.share_names, ', ') .. ')' or '') end
     if not w.blocked and w.stop then parts[#parts+1] = w.stop end
-    return start_text .. ': ' .. table.concat(parts, '; ')
+    return start_text .. ': ' .. table.concat(parts, '; '), head and start_text .. ': ' .. head
   end
 
   -- The fluid box index of fluid in machine e (its contents, else an input box filtered to it).
@@ -372,7 +397,9 @@ return function(api, H)
     end
     local w = walk_lane(ctx, b, k, nil)
     lane.path_back = table.concat(w.path, ' <- ')
-    lane.line = (lane.jammed and lane.jammed .. '; ' or '') .. lane_line(ctx, w, from_text)
+    local line, head = lane_line(ctx, w, from_text)
+    lane.line = (lane.jammed and lane.jammed .. '; ' or '') .. line
+    lane.head = lane.jammed or head
     out.lanes[#out.lanes+1] = lane
     -- A machine at the source that is not working: one level down.
     for _, s in ipairs(w.sources) do
@@ -381,7 +408,7 @@ return function(api, H)
         ctx.explained[m.unit_number] = true
         local st = status(m)
         if st ~= 'working' and CRAFTER[m.type] then
-          local sub = trace_target(ctx.p, m, nil, depth + 1, ctx)
+          local sub = trace_target(ctx.p, m, {all=ctx.all}, depth + 1, ctx)
           if sub then out.makers[#out.makers+1] = sub end
         elseif st ~= 'working' then out.makers[#out.makers+1] = {entity=m.name, position=m.position, line=place(m) .. ' ' .. machine_state(m)} end
       end
@@ -408,7 +435,7 @@ return function(api, H)
     if #feeders == 0 then lines[#lines+1] = 'no inserter feeds it'
     elseif #let == 0 then lines[#lines+1] = 'no inserter feeding it lets ' .. item .. ' through its filter' end
     local sub = {p=ctx.p, target=tgt.target, item=item, uses=tgt.uses, idx_of=ctx.idx_of, drills_at=ctx.drills_at, seen=ctx.seen, budget=ctx.budget,
-      mine=tgt.mine, counted={}, walked=ctx.walked, queue={}, pk=ctx.pk, explained=ctx.explained}
+      mine=tgt.mine, counted={}, walked={}, queue={}, pk=ctx.pk, explained=ctx.explained, all=ctx.all}
     for _, f in ipairs(let) do
       local src = f.pick
       if not (src and src.valid) then
@@ -428,11 +455,23 @@ return function(api, H)
             text = text .. ' (' .. machine_state(src) .. ')'
             if CRAFTER[src.type] and depth < MAX_DEPTH and not ctx.explained[src.unit_number] then
               ctx.explained[src.unit_number] = true
-              local m = trace_target(ctx.p, src, nil, depth + 1, ctx)
+              local m = trace_target(ctx.p, src, {all=ctx.all}, depth + 1, ctx)
               if m then row.makers[#row.makers+1] = m end
             end
           else
-            -- A chest: what fills it.
+            -- A chest: what fills it (a requester or buffer chest: its request, which robots fill).
+            local mode = src.type == 'logistic-container' and try(function() return src.prototype.logistic_mode end)
+            if mode == 'requester' or mode == 'buffer' then
+              local want = 0
+              local secs = try(function() return src.get_logistic_sections() end)
+              for k = 1, secs and secs.sections_count or 0 do
+                local sec = try(function() return secs.get_section(k) end)
+                for _, f in ipairs(sec and sec.active ~= false and try(function() return sec.filters end) or {}) do
+                  if name_of(f.value) == item then want = want + (f.min or 0) end
+                end
+              end
+              text = text .. (want > 0 and string.format('; a %s chest requesting %d (robots fill it)', mode, want) or string.format('; a %s chest with no request for it', mode))
+            end
             local fill = {}
             for _, r in ipairs(ctx.idx_of(src).by_drop[src.unit_number] or {}) do
               if #fill < MAX_LIST then fill[#fill+1] = inserter_text(r.e) .. (r.pick and r.pick.valid and ' from ' .. place(r.pick) or '') end
@@ -449,7 +488,13 @@ return function(api, H)
       ctx.budget.walks = ctx.budget.walks + 1
       trace_lane(sub, q.e, q.k, q.from, depth, row)
     end
-    for _, l in ipairs(row.lanes) do lines[#lines+1] = l.line end
+    -- The summary: the feeders' and chests' lines, each lane's first problem (lanes has every lane in full), the makers.
+    local fine = 0
+    for _, l in ipairs(row.lanes) do
+      if l.head then lines[#lines+1] = l.head else fine = fine + 1 end
+      l.head = nil
+    end
+    if fine > 0 then lines[#lines+1] = string.format('%d lane%s with no stop found (lanes)', fine, fine == 1 and '' or 's') end
     for _, m in ipairs(row.makers) do lines[#lines+1] = 'its maker ' .. (m.line or place(m)) end
     row.line = string.format('%s%s: ', item or 'what it takes', item and string.format(' (has %s of %s)', tostring(w.has), tostring(w.amount)) or '') .. table.concat(lines, '; ')
     if #row.feeders == 0 then row.feeders = nil end
@@ -469,6 +514,7 @@ return function(api, H)
       ctx = {p=p, idx_of=H.cells(e.surface, e.force), drills_at=drills_of(e.surface, e.force), seen=H.sight(p, e.surface),
         budget={tiles=0, walks=0}, walked={}, explained={[e.unit_number or 0]=true}, pk=H.packs(p)}
     end
+    ctx.all = a.all
     local out = {entity=e.name, position=e.position, status=machine_state(e)}
     budget_of[out] = ctx.budget
     local list, what = H.wants(e, p)
@@ -486,7 +532,7 @@ return function(api, H)
         for _, m in ipairs(up.makers) do
           if depth < MAX_DEPTH + 1 and not ctx.explained[m.entity.unit_number] then
             ctx.explained[m.entity.unit_number] = true
-            local sub = trace_target(p, m.entity, nil, depth + 1, ctx)
+            local sub = trace_target(p, m.entity, {all=ctx.all}, depth + 1, ctx)
             row.makers[#row.makers+1] = sub
             bits[#bits+1] = 'made by ' .. sub.line
           end
@@ -547,7 +593,7 @@ return function(api, H)
         for _, m in ipairs(up.makers) do
           if depth < MAX_DEPTH and not ctx.explained[m.entity.unit_number] then
             ctx.explained[m.entity.unit_number] = true
-            local sub = trace_target(p, m.entity, nil, depth + 1, ctx)
+            local sub = trace_target(p, m.entity, {all=ctx.all}, depth + 1, ctx)
             row.makers[#row.makers+1] = sub
             bits[#bits+1] = 'made by ' .. sub.line
           elseif #bits < 6 then bits[#bits+1] = 'made by ' .. place(m.entity) .. ' ' .. machine_state(m.entity) end

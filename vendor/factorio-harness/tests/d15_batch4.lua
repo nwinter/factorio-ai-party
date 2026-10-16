@@ -180,7 +180,33 @@ do
   -- On the belt tile itself: both lanes walked with no one item; joins listed first first.
   r=trace.trace(p,{position={x=15.5,y=2.5},upstream=true})
   has(r.lanes[1].line,'items come onto it (first first): iron-ore joins the left lane at transport-belt (2.5,2.5) from inserter (2.5,3.5)')
-  _=arm
+  -- The summary line: each lane's first problem.
+  world[#world].filter_slot_count=0; world[#world].use_filters=false
+  for x=12,15 do belts[x].lines[1].items={'coal'} end
+  r=trace.trace(p,{position={x=15.5,y=5.5},upstream=true})
+  has(r.ingredients[1].line,'iron-ore (has 0 of 2): inserter (15.5,3.5) picks transport-belt (15.5,2.5) left lane: goes elsewhere first at inserter (9.5,3.5)')
+  has(r.ingredients[1].line,'right lane: no iron-ore on this lane for 15 tiles back, and nothing found putting it onto it (the lane starts at transport-belt (1.5,2.5) (right lane nothing))')
+  -- The arm off by its circuit condition: named as off, not as taking it.
+  arm.status='disabled_by_control_behavior'
+  r=trace.trace(p,{position={x=15.5,y=5.5},upstream=true})
+  has(r.ingredients[1].lanes[1].line,'1 inserter that would take it elsewhere is off by its condition now: inserter (9.5,3.5) disabled_by_control_behavior')
+  assert(not r.ingredients[1].lanes[1].line:find('goes elsewhere first',1,true))
+  arm.status='working'
+  -- A feeder reading a requester chest with none: its request.
+  local req=ent{name='requester-chest',type='logistic-container',position={x=20.5,y=5.5},prototype={logistic_mode='requester'}}
+  local rinv=inv({}); req.get_inventory=function() return rinv end
+  req.get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,filters={{value={name='iron-ore'},min=40}}} end} end
+  local T2=crafter(22.5,5.5,'chemical-plant',oxidizer,{},{},'item_ingredient_shortage')
+  inserter(21.5,5.5,req,T2)
+  r=trace.trace(p,{position={x=22.5,y=5.5},upstream=true})
+  has(r.ingredients[1].line,'reads requester-chest (20.5,5.5), holding 0 iron-ore; a requester chest requesting 40 (robots fill it); no inserter fills it')
+  -- An inserter filtered to iron-ore from the hub puts only iron-ore onto the lane (not the hub's other items).
+  local hub=ent{name='space-platform-hub',type='space-platform-hub',position={x=0.5,y=0.5}}
+  local hinv=inv({['iron-plate']=100}); hub.get_inventory=function() return hinv end
+  inserter(3.5,1.5,hub,belts[3],{drop={x=3.5,y=2.25},filters={'iron-ore'}})
+  r=trace.trace(p,{position={x=15.5,y=5.5},upstream=true})
+  has(r.ingredients[1].lanes[1].line,'comes onto it from inserter (2.5,3.5)')
+  assert(not r.ingredients[1].lanes[1].line:find('iron-plate joins',1,true),r.ingredients[1].lanes[1].line)
 end
 print('d15_batch4 2 upstream: ok')
 

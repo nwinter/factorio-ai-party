@@ -4817,7 +4817,13 @@ fh watch    # deploy on every change
     oxidizer goes back through its iron ore belt to the crushers and their chunk belt to the collectors. A machine's
     fluid ingredient it lacks goes the same way (water to the ice melting plant).
   - A hub, chest or belt tile with no `item`: every lane feeding it, with the items coming onto it, first first.
-  - Bounds: 3000 belt tiles, 600 a lane, 16 lane walks, two machine levels. `cost` says what it walked.
+  - Bounds: 800 belt tiles, 500 a lane, 16 lane walks, two machine levels. `cost` says what it walked. Measured on a
+    copy of world n in a private 2.0.77 container: 184 tiles back along the south copper line 21 ms there (about 4 ms
+    on n), Swift's oxidizer plant with every ingredient (6 lanes, the ice melter one level down) 18 ms.
+  - `line` gives each ingredient's first problem per lane (a jam, a taker elsewhere, a splitter filter, no source
+    found); `lanes[].line` has every finding.
+  - A requester or buffer chest a feeder reads names its request (`a requester chest requesting 40 (robots fill
+    it)`). An inserter that would take it elsewhere but is off by its circuit condition is named as off.
 - `power {position, fragile: true, radius?}` (Opus: one small pole at (-72.5,-114.5) cut 142 poles of oil and drills;
   NW oil lost its one link pole twice): the network of the pole nearest `position` (within 12 tiles), its poles within
   `radius` (8..512, default 96) and their copper wires.
@@ -4829,6 +4835,8 @@ fh watch    # deploy on every change
     machines (2 electric-mining-drill, 1 pumpjack) around (30.5,6.5), from (20,1) to (41,12), off from all
     generation`. The one pole covering the only generator is listed too.
   - A pole whose loss cuts only machines in its own supply area is not a cut of the network and is not listed.
-  - `unreached`: poles of it in the area with no wire path to a source now. Bounded: 3000 poles, 600 supply-area
-    searches (`cost`).
+  - `unreached`: poles of it in the area with no wire path to a source now. Bounded: 200 supply-area
+    searches (`cost`). Machines are counted for the 16 cuts with the most poles; the 1000 poles nearest are read and
+    wires to the rest count as power (`capped`). Measured on the copy of world n in the container: 297 poles 20-27 ms
+    there (about 5 ms on n), 1000 poles (radius 512 round Opus's oil pole) 78-82 ms (about 16 ms on n).
 
