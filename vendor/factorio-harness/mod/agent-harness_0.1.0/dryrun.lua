@@ -1485,6 +1485,56 @@ return function(api)
       if global_net and out.power then pw.global_network = out.power.global_network end
       if next(pw) then out.power = pw end
     end
+    -- Each pole of the plan (Luna 01:50: a pole already stood on the agreed tile; the dry run gave blockers only): the
+    -- tile (taken or free), the networks of the built poles it wires to (within the shorter wire reach), and the
+    -- machines in its supply area that no network powers now (they gain coverage) against those already powered.
+    do
+      local function reach_of(proto, quality)
+        return try(function() return proto.get_max_wire_distance(quality or 'normal') end) or try(function() return proto.max_wire_distance end) or 0
+      end
+      local function supply_of(proto, quality)
+        return try(function() return proto.get_supply_area_distance(quality or 'normal') end) or try(function() return proto.supply_area_distance end) or 0
+      end
+      local rows = {}
+      for _, r in ipairs(recs) do
+        if #rows >= 16 then break end
+        if r.proto and r.proto.type == 'electric-pole' then
+          local reach, sup = reach_of(r.proto, r.quality), supply_of(r.proto, r.quality)
+          local nets = {}
+          for _, e in ipairs(try(function() return s.find_entities_filtered{type='electric-pole', force=force, position=r.pos, radius=reach + 0.01} end) or {}) do
+            local their = reach_of(e.prototype, try(function() return e.quality.name end))
+            local here = math.abs(e.position.x - r.pos.x) < 0.01 and math.abs(e.position.y - r.pos.y) < 0.01
+            if not here and dist(e.position, r.pos) <= math.min(reach, their) + 1e-6 then
+              local id = try(function() return e.electric_network_id end)
+              if id then nets[id] = (nets[id] or 0) + 1 end
+            end
+          end
+          local ids = {}
+          for id, c in pairs(nets) do ids[#ids+1] = string.format('#%d (%d pole%s)', id, c, c == 1 and '' or 's') end
+          table.sort(ids)
+          local gain, covered, names = 0, 0, {}
+          local area = {left_top={x=r.pos.x - sup, y=r.pos.y - sup}, right_bottom={x=r.pos.x + sup, y=r.pos.y + sup}}
+          for _, e in ipairs(try(function() return s.find_entities_filtered{area=area, force=force, limit=256} end) or {}) do
+            local src = try(function() return e.prototype.electric_energy_source_prototype end)
+            if src and e.type ~= 'electric-pole' then
+              if try(function() return e.electric_network_id end) then covered = covered + 1
+              else gain = gain + 1; names[e.name] = (names[e.name] or 0) + 1 end
+            end
+          end
+          local nl = {}
+          for n, c in pairs(names) do nl[#nl+1] = c .. ' ' .. n end
+          table.sort(nl)
+          local tile = r.status == 'blocked' and ('the spot is taken: ' .. tostring(r.why or r.note or 'blocked'))
+            or r.status == 'exists' and tostring(r.note or 'already built there') or 'the spot is free'
+          rows[#rows+1] = {index=r.copy and (r.copy .. '.' .. r.index) or r.index, name=r.name, position=r.pos, spot=tile,
+            joins=#ids > 0 and table.concat(ids, ', ') or nil, gains=gain, already_powered=covered,
+            line=string.format('%s %s: %s; joins %s; in its supply area %d machine%s no network powers now%s, %d already powered',
+              r.name, at(r.pos), tile, #ids > 0 and table.concat(ids, ', ') or 'no built pole in wire reach', gain, gain == 1 and '' or 's',
+              #nl > 0 and ' (' .. table.concat(nl, ', ') .. ')' or '', covered)}
+        end
+      end
+      if #rows > 0 then out.poles_preview = rows end
+    end
 
     -- Reach: from where the character stands, then spots that reach the rest.
     local reach = not on_platform and character and try(function() return p.build_distance end)

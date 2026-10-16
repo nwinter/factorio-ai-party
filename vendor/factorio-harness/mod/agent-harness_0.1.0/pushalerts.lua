@@ -39,6 +39,8 @@ return function(api)
     collector_path_blocked='asteroid collector path blocked', pipeline_overextended='pipeline overextended (flow stops)',
     no_platform_storage='platform hub storage full', platform_tile_building_blocked='platform tile building blocked',
     input_spoilage='short of ingredients with spoilage in their input (their recipes do not take it)',
+    output_chest_full='stopped: the chest their output goes into has no free slot',
+    catalyst_gone='short of an ingredient their own recipe makes (none left in the input to start the next craft)',
     requester_full='requester chests with every slot taken while a request is short',
     heat_no_fuel='heating towers out of fuel and under 500 C (heat exchangers take 500 C and more)',
     outpost_ammo_low='turrets no construction robots reach, under 20% of their ammo slots',
@@ -257,6 +259,69 @@ return function(api)
     local v = defines.entity_status and defines.entity_status[k]
     if v then STARVED[v] = true end
   end
+  -- A full_output maker whose output goes by inserter into a chest with no free slot (Grok, twice: the yumako mash and the
+  -- nutrient and bioplastic chests full of spoilage): the chest, its slots and what fills them; and a starved machine
+  -- whose recipe makes an ingredient it takes, with none of it in its input (Grok: the egg breeder's output inserter took
+  -- its only pentapod egg): that item, what its output holds, and the hand size of the inserters taking from it.
+  local FULL = {}
+  for _, k in ipairs({'full_output'}) do local v = defines.entity_status and defines.entity_status[k]; if v then FULL[v] = true end end
+  local function takers(e)
+    local b = e.bounding_box
+    local out = {}
+    for _, i in ipairs(try(function() return e.surface.find_entities_filtered{type='inserter', area={left_top={x=b.left_top.x - 3, y=b.left_top.y - 3},
+        right_bottom={x=b.right_bottom.x + 3, y=b.right_bottom.y + 3}}, force=e.force} end) or {}) do
+      if try(function() return i.pickup_target end) == e then out[#out+1] = i end
+    end
+    return out
+  end
+  local function hand(i)
+    local o = try(function() return i.inserter_stack_size_override end) or 0
+    if o > 0 then return o end
+    local bulk = try(function() return i.prototype.bulk end)
+    local f = i.force
+    return 1 + ((bulk and try(function() return f.bulk_inserter_capacity_bonus end) or try(function() return f.inserter_stack_size_bonus end)) or 0)
+  end
+  local function chest_full(e)
+    for _, i in ipairs(takers(e)) do
+      local d = try(function() return i.drop_target end)
+      local inv = d and d.valid and (d.type == 'container' or d.type == 'logistic-container') and try(function() return d.get_inventory(defines.inventory.chest) end)
+      if inv and try(function() return inv.count_empty_stacks() end) == 0 then
+        local list = try(function() return inv.get_contents() end) or {}
+        table.sort(list, function(a, b) return a.count > b.count end)
+        local parts = {}
+        for k2, st in ipairs(list) do if k2 > 3 then break end; parts[#parts+1] = st.name .. ' ' .. st.count end
+        return string.format('%s %s full_output: %s %s puts its output into %s %s, all %d slots taken (%s)', e.name, at_text(e.position), i.name, at_text(i.position),
+          d.name, at_text(d.position), #inv, table.concat(parts, ', '))
+      end
+    end
+  end
+  -- Recipes that take an item they also make, read once a recipe (most take none: the scan then stops here).
+  local CATALYST = {}
+  local function catalyst_gone(e)
+    local r = try(function() return e.get_recipe() end)
+    if not r then return nil end
+    local c = CATALYST[r.name]
+    if c == nil then
+      c = false
+      local makes = {}
+      for _, pr in ipairs(r.products or {}) do if pr.type == 'item' then makes[pr.name] = true end end
+      for _, ing in ipairs(r.ingredients or {}) do if ing.type == 'item' and makes[ing.name] then c = true end end
+      CATALYST[r.name] = c
+    end
+    if not c then return nil end
+    local made = {}
+    for _, pr in ipairs(r.products or {}) do if pr.type == 'item' then made[pr.name] = true end end
+    local input = try(function() return e.get_inventory(defines.inventory.crafter_input or defines.inventory.assembling_machine_input) end)
+    local output = try(function() return e.get_output_inventory() end)
+    for _, ing in ipairs(r.ingredients or {}) do
+      if ing.type == 'item' and made[ing.name] and input and (try(function() return input.get_item_count(ing.name) end) or 0) == 0 then
+        local hands = {}
+        for _, i in ipairs(takers(e)) do hands[#hands+1] = string.format('%s %s hand %d', i.name, at_text(i.position), hand(i)) end
+        return string.format('%s %s %s: its recipe takes %d %s and makes it, and none is in its input (its output holds %d); taken out by %s', e.name, at_text(e.position), r.name,
+          ing.amount or 1, ing.name, output and (try(function() return output.get_item_count(ing.name) end) or 0) or 0, #hands > 0 and table.concat(hands, ', ') or 'no inserter')
+      end
+    end
+  end
   local function read_list(groups, s, list, from, to, mem, tmem, mining, dmem)
     local st = statuses()
     for i = from or 1, to or #list do
@@ -312,7 +377,14 @@ return function(api)
         elseif not kind and (e.type == 'assembling-machine' or e.type == 'furnace') and STARVED[e.status] then
           -- Spoilage its recipe does not take, in the input of a machine short of ingredients (Sol, 22:08; Gleba).
           local sp = try(function() return slots.input_spoilage(e) end)
-          if sp then kind, detail = 'input_spoilage', string.format('%s %s: %s', e.name, at_text(e.position), sp.text) end
+          if sp then kind, detail = 'input_spoilage', string.format('%s %s: %s', e.name, at_text(e.position), sp.text)
+          else
+            local cg = try(function() return api.timed and api.timed('pushalerts.catalyst_gone', catalyst_gone, e) or catalyst_gone(e) end)
+            if cg then kind, detail = 'catalyst_gone', cg end
+          end
+        elseif not kind and (e.type == 'assembling-machine' or e.type == 'furnace') and FULL[e.status] then
+          local cf = try(function() return api.timed and api.timed('pushalerts.output_chest_full', chest_full, e) or chest_full(e) end)
+          if cf then kind, detail = 'output_chest_full', cf end
         end
         if kind then add(groups, kind, s.name, e, e.position, e.name, builder(e), detail) end
       end
@@ -1021,7 +1093,7 @@ return function(api)
       note=#rows == 0 and 'no alerts or warnings' or nil}
   end
   M.schema = {
-    game_alerts = {freshness='power/fuel entity groups recheck up to 128 recorded entities; hidden/capped observations are dated; belt_cut names missing formerly carrying tiles, cleared by observed replacements; out_of_ore includes drill_site, one representative drill placement cached 60 s and computed in background',surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel (its line adds the spoiling fuel of burners of those names around it: how many burn it, how many within 60 s, the first to spoil and when), burnt_full (burners stopped by a full burnt-result slot whatever their status reads, a biochamber whose spoiled nutrients fill it: each with what fills that slot and its fuel slot), no_ammo, flamer_dry; out_of_ore (mining drills whose patch under them is used up, by ore: out_of_ore.iron-ore, ...; each with ore, still_mining (our drills still mining that ore in the area) and untapped (the nearest patch of it no drill of ours is on, from the ores read\'s last survey: x, y, d tiles, amount));rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: no_power.network (machines reporting no_power, grouped by electric network including small isolated networks, with its latest 5 s supply sample); power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), feed_chest_low (a boiler\'s feed chest under 20 of its fuel with nothing put into it for 5 min: boiler, chest, count, feeder); robots_busy (no idle logistic robot for 10 min); accumulators_draining (a network\'s accumulators empty within 10 min at their net flow of the last 30 s, again under 5 and 2 min; kept 10 min after, so a Fulgora storm between lulls is not news; on Fulgora with the time to the next storm or to dawn); construction_wait (ghosts in a network\'s construction area waiting 5+ min since first seen while their items are in the network, with the construction robots and whether busy); deliveries_wait (requests unfilled 5+ min while providers or storage hold the item free, with what the logistic robots are doing); requester_full (requester chests with every slot taken while a request has been short 60+ s: per network, each chest, the item it asks and what fills its slots, spoilage counted); input_spoilage (assemblers and furnaces short of ingredients with spoilage their recipe does not take in their input: each machine, how much in how many slots);science_idle (a pack the research needs whose makers on the science surface all stood still at two science-line builds 5+ min apart, with their states and the chain\'s first short step); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
+    game_alerts = {freshness='power/fuel entity groups recheck up to 128 recorded entities; hidden/capped observations are dated; belt_cut names missing formerly carrying tiles, cleared by observed replacements; out_of_ore includes drill_site, one representative drill placement cached 60 s and computed in background',surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel (its line adds the spoiling fuel of burners of those names around it: how many burn it, how many within 60 s, the first to spoil and when), burnt_full (burners stopped by a full burnt-result slot whatever their status reads, a biochamber whose spoiled nutrients fill it: each with what fills that slot and its fuel slot), no_ammo, flamer_dry; out_of_ore (mining drills whose patch under them is used up, by ore: out_of_ore.iron-ore, ...; each with ore, still_mining (our drills still mining that ore in the area) and untapped (the nearest patch of it no drill of ours is on, from the ores read\'s last survey: x, y, d tiles, amount));rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: no_power.network (machines reporting no_power, grouped by electric network including small isolated networks, with its latest 5 s supply sample); power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), feed_chest_low (a boiler\'s feed chest under 20 of its fuel with nothing put into it for 5 min: boiler, chest, count, feeder); robots_busy (no idle logistic robot for 10 min); accumulators_draining (a network\'s accumulators empty within 10 min at their net flow of the last 30 s, again under 5 and 2 min; kept 10 min after, so a Fulgora storm between lulls is not news; on Fulgora with the time to the next storm or to dawn); construction_wait (ghosts in a network\'s construction area waiting 5+ min since first seen while their items are in the network, with the construction robots and whether busy); deliveries_wait (requests unfilled 5+ min while providers or storage hold the item free, with what the logistic robots are doing); requester_full (requester chests with every slot taken while a request has been short 60+ s: per network, each chest, the item it asks and what fills its slots, spoilage counted); input_spoilage (assemblers and furnaces short of ingredients with spoilage their recipe does not take in their input: each machine, how much in how many slots); output_chest_full (a full_output maker whose output inserter puts into a chest with no free slot: the maker, the inserter, the chest and what fills its slots); catalyst_gone (a starved machine whose recipe takes an item it also makes, with none of it in its input: the item, what its output holds, and each inserter taking from it with its hand size);science_idle (a pack the research needs whose makers on the science surface all stood still at two science-line builds 5+ min apart, with their states and the chain\'s first short step); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
       returns='groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest)}; scanned (the scan is at most 30 s old). What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
   }
   return M

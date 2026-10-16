@@ -40,6 +40,7 @@
   stands in); `"separate":true` lists spots that do not overlap each other, `"powered":true` only spots in one of our
   poles' supply areas; without them `overlapping` and `no_supply` count such spots, and count 0 names what is in the way
   (`in_the_way`). `build_path` mines the trees and rocks in its way by hand as it goes (`last.cleared`, `cleared_names`).
+- `nearest_water {position?, radius?}`: the nearest pumpable tile in charted ground (up to 256 tiles) with offshore-pump spots there.
 - Placement: a refused build of an offshore pump, or of anything onto water, lists the nearest valid placements;
   placements {name, near, radius, limit} lists where it fits now, nearest first, without building.
 - `build` errors name the blocker (tree, rock, the character, water). Trees and rocks: `place_ghosts` + `construct`

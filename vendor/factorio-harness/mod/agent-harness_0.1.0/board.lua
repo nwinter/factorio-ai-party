@@ -26,7 +26,7 @@ return function(api)
   -- project has no owner or its owner has made no request for 30 min, and
   -- may then take it. Open projects are never pruned.
   local PROJECT_QUIET, MAX_PROJECTS, MAX_STEPS, STEP, MAX_AREAS, MAX_PROJECT_NOTES, MAX_PROJECT_LINES = 30 * 3600, 30, 40, 160, 8, 20, 8
-  local PROJECT_ARGS = {'step', 'done', 'undone', 'remove_step', 'goal', 'handoff', 'areas', 'take_step', 'release_step', 'open_steps'}
+  local PROJECT_ARGS = {'step', 'done', 'undone', 'remove_step', 'goal', 'handoff', 'areas', 'take_step', 'release_step', 'open_steps', 'edit_step'}
   -- Links between items (Foobator, d15 06:38 and 08:17; joonazan 08:20): blocked_by (items this one waits for) and
   -- parent (the project this one serves), on tasks, requests and projects; fields agents may use, not required.
   local LINK_KINDS, MAX_LINKS, COMPACT_OVER = {task=true, request=true, project=true}, 8, 1200
@@ -45,6 +45,7 @@ return function(api)
     return s.team_hints[index]
   end
   -- One line of text, cut to `max` bytes on a UTF-8 boundary; never fails.
+  local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function clip(text, max)
     text = tostring(text):gsub('[%c]+', ' ')
     if #text <= max then return text end
@@ -356,6 +357,18 @@ return function(api)
     end
     return added
   end
+  -- supersedes (Astra 03:45, d15 batch5 H): the items this one replaces (numbers; [] clears); each gets superseded_by.
+  local function supersedes_arg(v, self)
+    if type(v) == 'number' then v = {v} end
+    assert(type(v) == 'table' and #v <= MAX_LINKS, 'supersedes takes item numbers: a number or an array of up to ' .. MAX_LINKS .. ' ([] clears)')
+    local out = {}
+    for _, id in ipairs(v) do
+      assert(type(id) == 'number' and store().items[id], 'supersedes: no board item #' .. tostring(id))
+      assert(id ~= self, 'supersedes: an item does not replace itself')
+      out[#out+1] = id
+    end
+    return out
+  end
   local function links_arg(v, self)
     if v == false or v == '' then return {} end
     if type(v) == 'number' then v = {v} end
@@ -431,7 +444,7 @@ return function(api)
       areas=#i.areas > 0 and i.areas or nil,
       handoff=cut(i.handoff), handoff_edited=i.handoff and edited(i.handoff_by, i.handoff_tick) or nil,
       needs=i.needs, tags=i.tags, notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil,
-      blocked_by=i.blocked_by, parent=i.parent, open_steps=i.open_steps,
+      blocked_by=i.blocked_by, parent=i.parent, open_steps=i.open_steps, supersedes=i.supersedes, superseded_by=i.superseded_by,
       history=full and history(i) or nil, created_tick=i.created_tick, updated_tick=i.updated_tick}
   end
   -- What blocks an item: each blocked_by link with its title and state, and what blocks that in turn (2 deep), as
@@ -571,7 +584,7 @@ return function(api)
       owner_active=claim and ago(game.tick - api.claims.activity(i)) .. ' ago' or nil, stale=claim and api.claims.stale(i) or nil,
       allow=i.kind == 'claim' and i.allow or nil,
       requested_by=i.requested_by, status=i.status, area=i.area, surface=i.kind == 'claim' and api.claims.surface_of(i) or nil,
-      needs=i.needs, tags=i.tags, problem=i.problem, proposal=i.proposal, blocked_by=i.blocked_by, parent=i.parent,
+      needs=i.needs, tags=i.tags, problem=i.problem, proposal=i.proposal, blocked_by=i.blocked_by, parent=i.parent, supersedes=i.supersedes, superseded_by=i.superseded_by,
       notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil,
       history=full and history(i) or nil, created_tick=i.created_tick, updated_tick=i.updated_tick}
   end
@@ -624,6 +637,7 @@ return function(api)
     end
     if a.blocked_by ~= nil then local l = links_arg(a.blocked_by); item.blocked_by = #l > 0 and l or nil end
     if a.parent ~= nil then item.parent = parent_arg(a.parent) or nil end
+    local sup_post = a.supersedes ~= nil and supersedes_arg(a.supersedes) or nil
     -- A first note (shake4: agents carried update's note over to posts).
     if a.note ~= nil then item.notes[1] = {tick=game.tick, by=by, text=required_text(a.note, 'note', NOTE)} end
     local warnings, over = {}, nil
@@ -655,6 +669,10 @@ return function(api)
     local b = store()
     item.id = b.next_id; b.next_id = b.next_id + 1
     b.items[item.id] = item; b.count = b.count + 1
+    if sup_post and #sup_post > 0 then
+      item.supersedes = sup_post
+      for _, id in ipairs(sup_post) do b.items[id].superseded_by = item.id end
+    end
     -- The first note rides on the event, so an assigned owner reads it.
     event(by, item, 'posted', item.notes[1] and item.notes[1].text, over and {overlaps=over})
     prune()
@@ -667,9 +685,10 @@ return function(api)
     assert(item, 'no board item #' .. tostring(a.id) .. ' (pruned or never posted)')
     local project = item.kind == 'project'
     local given = a.status ~= nil or a.owner ~= nil or a.note ~= nil or a.allow ~= nil or a.title ~= nil or a.needs ~= nil or a.surface ~= nil
-      or a.blocked_by ~= nil or a.parent ~= nil
-    assert((a.blocked_by == nil and a.parent == nil) or LINK_KINDS[item.kind], 'blocked_by and parent are for a task, request or project')
+      or a.blocked_by ~= nil or a.parent ~= nil or a.supersedes ~= nil
+    assert((a.blocked_by == nil and a.parent == nil and a.supersedes == nil) or LINK_KINDS[item.kind], 'blocked_by, parent and supersedes are for a task, request or project')
     local links = a.blocked_by ~= nil and links_arg(a.blocked_by, item.id) or nil
+    local sup = a.supersedes ~= nil and supersedes_arg(a.supersedes, item.id) or nil
     local parent = a.parent ~= nil and parent_arg(a.parent, item.id) or nil
     for _, k in ipairs(PROJECT_ARGS) do
       assert(project or a[k] == nil, k .. ' is for a project (#' .. item.id .. ' is a ' .. item.kind .. ')'
@@ -766,6 +785,17 @@ return function(api)
       end
       if a.handoff ~= nil then pj.handoff = optional_text(a.handoff, 'handoff', LONG) end
       if a.areas ~= nil then pj.areas = areas_arg(a.areas) end
+      -- edit_step {n, text} (Astra 03:45): a step's text changed in place, its earlier text kept in its history; by the
+      -- step's adder, its owner, or a lead.
+      if a.edit_step ~= nil then
+        local es = a.edit_step
+        assert(type(es) == 'table' and type(es.n) == 'number', 'edit_step is {n, text}: the step number and its new text')
+        local st
+        for _, s in ipairs(item.steps) do if s.n == es.n then st = s end end
+        assert(st, string.format('#%d has no step %s', item.id, tostring(es.n)))
+        if not (st.by == by or st.owner == by) then owner_only(string.format('step %d of #%d was added by %s: only %s, its owner or a lead edits it', st.n, item.id, tostring(st.by), tostring(st.by))) end
+        pj.edit = {step=st, text=required_text(es.text, 'edit_step text', STEP)}
+      end
     end
     if a.owner ~= nil then
       assert(item.kind ~= 'claim' and item.kind ~= 'note' and item.kind ~= 'harness', 'a ' .. item.kind .. ' stays with its poster'
@@ -847,6 +877,22 @@ return function(api)
       item.handoff = pj.handoff:find('%S') and pj.handoff or nil
       item.handoff_by, item.handoff_tick = item.handoff and by, item.handoff and game.tick
       changed('handoff', item.handoff or 'handoff cleared')
+    end
+    if pj.edit and pj.edit.text ~= pj.edit.step.text then
+      local st = pj.edit.step
+      st.history = st.history or {}
+      st.history[#st.history+1] = {text=st.text, by=by, tick=game.tick}
+      while #st.history > 8 do table.remove(st.history, 1) end
+      changed('step_edited', string.format('step %d: %s (was: %s)', st.n, pj.edit.text, st.text))
+      st.text = pj.edit.text
+    end
+    if sup then
+      local b = store()
+      for _, id in ipairs(item.supersedes or {}) do if b.items[id] and b.items[id].superseded_by == item.id then b.items[id].superseded_by = nil end end
+      item.supersedes = #sup > 0 and sup or nil
+      local ids = {}
+      for _, id in ipairs(sup) do b.items[id].superseded_by = item.id; ids[#ids+1] = '#' .. id end
+      changed('supersedes', #ids > 0 and 'supersedes ' .. table.concat(ids, ', ') or 'supersedes cleared')
     end
     if pj.take then
       local names = {}
@@ -1219,6 +1265,7 @@ return function(api)
       allow='claim only: agents its labels name as allowed, whose stock sweeps include its chests while it is fresh (array or "luna,sol"), or "everyone"; the harness enforces nothing else',
       goal='project only: what it is for, 1..600 characters', steps='project only: its checklist, an array of texts (1..160 characters each, at most 40), or of {text, owner? (that step\'s own owner), parallel? (true: no order between it and the parallel steps next to it)}',
       blocked_by='task, request or project: item numbers it waits for (1..8); the compact project line shows them and what blocks those', parent='task, request or project: the project it serves (a long-term goal such as "Aquilo landing")',
+      supersedes='task, request or project: item numbers this one replaces (each gets superseded_by)',
       open_steps='project only: true lets anyone take an unowned step (board_update take_step)',
       areas='project only: up to 8 areas {left_top, right_bottom} (area takes one)', handoff='project only: where it stands for whoever goes on with it, 1..1000 characters',
       returns='the item; warnings for overlapping claims (with where the owner is when not with you: claim #128 by sol (on Vulcanus), its age, owner activity and state, stale) or an unowned request'},
@@ -1234,9 +1281,14 @@ return function(api)
       take_step='project: take steps by number for yourself (you lead it, added the step, or it has open_steps)', release_step='project: give up a step\'s owner (that owner or a lead)',
       open_steps='project owner: true lets anyone take an unowned step, false stops it',
       blocked_by='task, request or project: replace the items it waits for (numbers; [] clears)', parent='task, request or project: the project it serves (false clears)',
+      supersedes='task, request or project: the items this one replaces (numbers; [] clears); each shows superseded_by, and board_review flags one still active',
+      edit_step='project: {n, text}: change step n\'s text in place (its adder, its owner or a lead); the earlier text is kept in the step\'s history (last 8)',
       title='replace the title, 1..120 characters (its poster, owner or the operator; anyone once the owner, or the poster of an unowned item, has made no request for 20 min, 30 on a project; a project with no owner: anyone)',
       needs='replace what it asks for: text, an array of item names or {name,count}, or {item: count} ("" or [] clears it); who may: as title',
       returns='the item in full and changed; on a project the goal, handoff and areas are its owner\'s to edit, and anyone\'s when it has no owner or its owner has made no request for 30 min (who may then also take it with owner); a title or needs change is kept in the item\'s history ("title changed by astra: \'old\' -> \'new\'", last 10) and told to its owner and poster'},
+    board_review = {id='optional: one item (a project) and the items under it; default every active item',
+      returns='flags [{id, kind, line}]: gone_platform (a title or open step naming a platform of ours no longer there), stale_handoff (a handoff unchanged for 2 h while its owner was active in the last 30 min), superseded (another item supersedes it and it is still active), needs_differ (the same item needed in different counts by items of one project); reviewed, lines, gone_platforms. Read only'},
+    board_retire = {ids='1..32 board item numbers', reason='1..200 characters: the note each gets', returns='retired (dropped, the reason as a note), failed [{id, why}] (board_update\'s rules: its owner or poster, or anyone once they have been quiet), line'},
     board_events = {since_seq='return events after this sequence number (default 0)', limit='1..200 (default 100), oldest first',
       returns='events {seq,tick,by,id,change,title,kind,owner,requested_by,status,text; a project\'s also progress, steps_done, steps_total} and cursor (pass it back as since_seq)'},
     harness_request = {title='1..120 characters', problem='what you tried and what went wrong (1..1000)', proposal='optional: the tool or change you want',
@@ -1257,6 +1309,100 @@ return function(api)
   end
   M.handlers.board_post = function(p, a) return post(who(p), a, p) end
   M.handlers.board_update = function(p, a) return update(who(p), a) end
+  -- board_review {id?} (Astra 03:45, after a viewer asked for planning help): facts on active items (or one project and
+  -- the items under it) a planner reads by hand now: steps and titles naming a platform of ours no longer there, a
+  -- handoff left unchanged for 2 h while its owner was active in the last 30 min, the same item needed in different
+  -- counts by items of one project, and items another one supersedes that are still active. Nothing changes.
+  local REVIEW_STALE, REVIEW_ACTIVE = 2 * 216000, 30 * 3600
+  M.handlers.board_review = function(p, a)
+    local b = store()
+    local live, seen = {}, {}
+    for _, pl in pairs(try(function() return p.force.platforms end) or {}) do if pl.valid then live[pl.name:lower()] = true end end
+    for _, r in pairs(try(function() return api.state().platform_alerts.by end) or {}) do if r.name then seen[r.name] = true end end
+    for _, r in pairs(try(function() return api.state().freight end) or {}) do if type(r) == 'table' and r.name then seen[r.name] = true end end
+    local gone = {}
+    for name in pairs(seen) do if not live[name:lower()] then gone[#gone+1] = name end end
+    table.sort(gone)
+    local function names_gone(text)
+      local out = {}
+      for _, g in ipairs(gone) do
+        local s, e = text:lower():find(g:lower(), 1, true)
+        if s and not text:sub(s - 1, s - 1):match('[%w]') and not text:sub(e + 1, e + 1):match('[%w]') then out[#out+1] = g end
+      end
+      return out
+    end
+    local scope = {}
+    if a.id ~= nil then
+      local root = b.items[a.id]
+      assert(root, 'no board item #' .. tostring(a.id))
+      scope[#scope+1] = root
+      for _, i in pairs(b.items) do if i.parent == root.id then scope[#scope+1] = i end end
+    else
+      for _, i in pairs(b.items) do if ACTIVE[i.status] and i.kind ~= 'plan' and i.kind ~= 'harness' then scope[#scope+1] = i end end
+    end
+    table.sort(scope, function(x, y) return x.id < y.id end)
+    local flags = {}
+    local function flag(i, kind, text) flags[#flags+1] = {id=i.id, kind=kind, line=string.format('#%d %s: %s', i.id, clip(i.title or '', 60), text)} end
+    local needs_by = {}
+    for _, i in ipairs(scope) do
+      local g = names_gone(i.title or '')
+      if #g > 0 then flag(i, 'gone_platform', 'its title names ' .. table.concat(g, ', ') .. ', no platform of ours now') end
+      for _, s in ipairs(i.steps or {}) do
+        if not s.done_by then
+          local gs = names_gone(s.text or '')
+          if #gs > 0 then flag(i, 'gone_platform', string.format('open step %d (%s) names %s, no platform of ours now', s.n, clip(s.text, 60), table.concat(gs, ', '))) end
+        end
+      end
+      if i.handoff and i.owner and i.handoff_tick and game.tick - i.handoff_tick > REVIEW_STALE and not quiet(i.owner, REVIEW_ACTIVE) then
+        flag(i, 'stale_handoff', string.format('handoff unchanged for %s while %s was active in the last 30 min (%s)', ago(game.tick - i.handoff_tick), i.owner, M.owner_state(i.owner) or ''))
+      end
+      if i.superseded_by and ACTIVE[i.status] then
+        local by = b.items[i.superseded_by]
+        flag(i, 'superseded', string.format('#%d supersedes it (%s, %s) and it is still %s', i.superseded_by, by and clip(by.title or '', 40) or 'gone', by and by.status or '?', i.status))
+      end
+      if type(i.needs) == 'table' then
+        for _, n in ipairs(i.needs) do
+          local name = type(n) == 'table' and n.name or n
+          local count = type(n) == 'table' and n.count or nil
+          if name and count and (i.parent or i.kind == 'project') then
+            local key = tostring(i.parent or i.id) .. '|' .. name
+            needs_by[key] = needs_by[key] or {}
+            table.insert(needs_by[key], {i=i, count=count})
+          end
+        end
+      end
+    end
+    for key, list in pairs(needs_by) do
+      local counts, parts = {}, {}
+      for _, x in ipairs(list) do counts[x.count] = true; parts[#parts+1] = string.format('#%d asks %d', x.i.id, x.count) end
+      local n = 0
+      for _ in pairs(counts) do n = n + 1 end
+      if n > 1 then
+        local parent, item = key:match('^(.-)|(.*)$')
+        flag(list[1].i, 'needs_differ', string.format('%s needed in different counts under #%s: %s', item, parent, table.concat(parts, ', ')))
+      end
+    end
+    table.sort(flags, function(x, y) if x.id ~= y.id then return x.id < y.id end return x.kind < y.kind end)
+    local lines = {}
+    for k, f in ipairs(flags) do if k <= 40 then lines[#lines+1] = f.line end end
+    return {reviewed=#scope, flags=flags, lines=lines, gone_platforms=#gone > 0 and gone or nil,
+      note=#flags == 0 and string.format('%d items read: nothing flagged', #scope) or 'facts only; board_retire {ids, reason} drops several at once, board_update changes one'}
+  end
+  -- board_retire {ids, reason} (Astra 03:45: bulk review and retire; nothing closes on its own): each item dropped with
+  -- the reason as its note, under board_update's rules (its owner or poster, or anyone once they have been quiet);
+  -- one that may not be is listed with why, and the rest go on.
+  M.handlers.board_retire = function(p, a)
+    assert(type(a.ids) == 'table' and #a.ids >= 1 and #a.ids <= 32, 'ids: 1..32 board item numbers')
+    local reason = required_text(a.reason, 'reason', NOTE)
+    local by = who(p)
+    local done, failed = {}, {}
+    for _, id in ipairs(a.ids) do
+      local ok, err = pcall(update, by, {id=id, status='dropped', note=reason})
+      if ok then done[#done+1] = id else failed[#failed+1] = {id=id, why=tostring(err):gsub('^[^:]*:%d+: ', '')} end
+    end
+    return {retired=done, failed=#failed > 0 and failed or nil,
+      line=string.format('%d of %d dropped (%s)%s', #done, #a.ids, reason, #failed > 0 and string.format('; %d not: %s', #failed, failed[1].why) or '')}
+  end
   M.handlers.board_events = function(_, a) return events(a) end
   M.handlers.harness_request = function(p, a) return harness_request(who(p), a) end
   M.handlers.board_plan = function(p, a) return plan_edit(who(p), a) end

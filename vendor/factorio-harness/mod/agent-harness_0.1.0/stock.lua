@@ -382,6 +382,31 @@ return function(api)
         if out.inventory_full then return 'inventory_full' end
       else action.take_error=tostring(out) end
     end
+    -- The other machines (collect positions with wait_ticks): each reached from here, taken from the same way.
+    for _,x in ipairs(action.also or {}) do
+      if action.got>=action.want then break end
+      if x.valid and p.can_reach_entity(x) then
+        local xi=output_of(x)
+        local n=xi and (action.item and xi.get_item_count{name=action.item,quality=action.quality or 'normal'} or (not xi.is_empty() and 1 or 0)) or 0
+        if n>0 then
+          action.trash_tally=action.trash_tally or {}
+          local ok,out=pcall(api.take,p,x,action.item,action.quality,math.min(10000,action.want-action.got),OUTPUT[x.type],action.trash_tally)
+          if ok then
+            action.got=action.got+out.transferred
+            local k=string.format('%s (%g,%g)',x.name,x.position.x,x.position.y)
+            action.also_took=action.also_took or {}
+            action.also_took[k]=(action.also_took[k] or 0)+out.transferred
+            for _,st in ipairs(out.items or {{name=action.item,count=out.transferred}}) do
+              if st.name and st.count and st.count>0 then action.items[st.name]=(action.items[st.name] or 0)+st.count end
+            end
+            if out.inventory_full then return 'inventory_full' end
+          end
+        end
+      elseif x.valid then
+        action.also_unreached=action.also_unreached or {}
+        action.also_unreached[string.format('%s (%g,%g)',x.name,x.position.x,x.position.y)]=true
+      end
+    end
     if action.got>=action.want then return 'collected' end
     if game.tick>=action.wait_end then return action.got>0 and 'collected' or 'nothing_collected' end
   end
@@ -408,6 +433,15 @@ return function(api)
       return #parts>0 and table.concat(parts,' ') or 'none'
     end
     local out={took=line(action.items),waited_s=math.floor((game.tick-w.since)/6+0.5)/10}
+    if action.also then
+      local parts={}
+      for k,n in pairs(action.also_took or {}) do parts[#parts+1]=k..' '..n end
+      table.sort(parts)
+      local far={}
+      for k in pairs(action.also_unreached or {}) do if not (action.also_took or {})[k] then far[#far+1]=k end end
+      table.sort(far)
+      out.also=(#parts>0 and 'from the others: '..table.concat(parts,', ') or 'from the others: none')..(#far>0 and '; out of reach from where it stood: '..table.concat(far,', ') or '')
+    end
     local now=e and e.valid and finished(e)
     local crafts=now and w.finished and now-w.finished or nil
     out.crafts=crafts

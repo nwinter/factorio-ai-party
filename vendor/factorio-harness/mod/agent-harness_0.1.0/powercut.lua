@@ -268,6 +268,7 @@ return function(api)
   end
   -- 'power cut #3: small-electric-pole (78.5,-182.5) destroyed by big-biter 6s ago split electric network #57 in 2:
   -- #212 has no power (31 poles, (60,-260)-(95,-185)): 20 electric-mining-drill, 6 inserter; #57 has power (5.2 MW)'.
+  function M.fixed(c) return joined(c) end
   function M.line(c, reader)
     local first = c.poles[1]
     local head = string.format('power cut #%d%s: %s %s destroyed%s %s ago', c.id, c.surface ~= (reader or 'nauvis') and ' on ' .. c.surface or '',

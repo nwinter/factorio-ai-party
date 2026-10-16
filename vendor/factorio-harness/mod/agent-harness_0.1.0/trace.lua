@@ -799,7 +799,10 @@ return function(api)
         starts[#starts+1] = {e=t, k=k, from=string.format('%s %s onto %s', i.name, at(i.position), place(t)), hops=0}
       else
         local full = CONTAINER[t.type] and container_full(t, name)
-        text = text .. ' -> ' .. place(t) .. (full and ' (full)' or '')
+        -- (Luna 00:20: the jelly maker's output: which inserter, the exact chest and its free slots)
+        local inv = CONTAINER[t.type] and try(function() return t.get_inventory(defines.inventory.chest) end)
+        local free = inv and try(function() return inv.count_empty_stacks() end)
+        text = text .. ' -> ' .. place(t) .. (full and ' (full)' or '') .. (free and string.format(' (%d of %d slots free)', free, #inv) or '')
         ends[#ends+1] = place(t)
       end
       if FULL[st] and name then text = text .. ' (holding what it cannot drop)' end
@@ -1042,6 +1045,16 @@ return function(api)
       out.note = (out.note and out.note .. '; ' or '') .. string.format('%s has no recipe to trace back: traced forward (its output)', e.name)
       return out
     end
+    -- A maker stopped by its full output (Luna 00:20: trace upstream showed only the input side): where its output goes.
+    if FULL[status(e)] and a.all == nil then
+      local out = M.back(p, a)
+      local ok, f = pcall(M.forward, p, a)
+      if ok and f then
+        out.downstream = f.takers or {f.note or 'nothing takes its output'}
+        out.downstream_note = string.format('%s stopped with its output full (%s): what takes from it and where that goes (trace forward=true for the belt routes)', e.name, f.output or '?')
+      end
+      return out
+    end
     return M.back(p, a)
   end
 
@@ -1053,7 +1066,7 @@ return function(api)
     surface='optional surface name for position or item (default yours); exclusive with platform',
     near='with item: optional {x,y}: makers and labs in this area only (cheaper than the whole surface)', radius='with near: 1..512 tiles (default 64)',
     platform='optional platform name: trace on that platform (platform coordinates, hub at 0,0)',
-    returns='position: per ingredient it lacks (has/needs) each feeding inserter (status, filter, held), its pickup target (a chest, a machine\'s output, a belt tile with each lane) and what that holds, and the nearest container within 10 tiles holding it that no inserter reads; feeders; throughput (a crafting machine whose inserters in or out carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, and how many like its fastest it takes). forward: takers (a belt tile: belt, lanes); merges (every route\'s, once); routes [{from, path (belt runs, undergrounds, splitters with filters, as flown), carries, merges (where other items join the lane: the belt it joins carrying them, a belt side-loading them onto it, a splitter\'s other input, an inserter putting them onto it; each with what the lane carried up to there), takers (status, filter, held, into), stop (belt end with each lane and full, the front item, joins another route, the cap), nobody_takes}]. item: makers, routes, direct, reaches, labs_short and labs (each short lab: the route reaching it, else its own inserters and what they read, and the nearest route tile). cost'},
+    returns='position: a maker stopped by its full output adds downstream (the inserters taking from it, each with its destination; a chest with its free slots) and downstream_note; per ingredient it lacks (has/needs) each feeding inserter (status, filter, held), its pickup target (a chest, a machine\'s output, a belt tile with each lane) and what that holds, and the nearest container within 10 tiles holding it that no inserter reads; feeders; throughput (a crafting machine whose inserters in or out carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, and how many like its fastest it takes). forward: takers (a belt tile: belt, lanes); merges (every route\'s, once); routes [{from, path (belt runs, undergrounds, splitters with filters, as flown), carries, merges (where other items join the lane: the belt it joins carrying them, a belt side-loading them onto it, a splitter\'s other input, an inserter putting them onto it; each with what the lane carried up to there), takers (status, filter, held, into), stop (belt end with each lane and full, the front item, joins another route, the cap), nobody_takes}]. item: makers, routes, direct, reaches, labs_short and labs (each short lab: the route reaching it, else its own inserters and what they read, and the nearest route tile). cost'},
   }
   return M
 end

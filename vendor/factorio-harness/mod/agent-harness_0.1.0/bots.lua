@@ -218,9 +218,10 @@ return function(api)
   -- with surface=nauvis, and its dry run, were refused as no-body while a player aboard places ghosts on a planet by
   -- remote view); the refusal lists them from here.
   -- blueprint_save and blueprint_capture (Astra, d15 18:35: cloning platform Starling into a new platform Swift).
-  M.PLATFORM_ACTIONS = {'place_ghosts', 'deconstruct', 'cancel_deconstruction', 'paste', 'blueprint_place', 'blueprint_save', 'blueprint_capture', 'grid', 'scan', 'inspect',
+  -- rotate (Astra, Sol, d15 batch5 D4): ghosts and built belts and inserters by remote view.
+  M.PLATFORM_ACTIONS = {'rotate', 'place_ghosts', 'deconstruct', 'cancel_deconstruction', 'paste', 'blueprint_place', 'blueprint_save', 'blueprint_capture', 'grid', 'scan', 'inspect',
     'configure', 'flush', 'circuit_set', 'circuit', 'wire', 'ports', 'cargo', 'trace', 'power', 'conflicts', 'placements'}
-  M.SURFACE_ACTIONS = {'inspect', 'circuit_set', 'circuit', 'wire', 'ores', 'launch', 'configure', 'silo', 'preflight', 'requests',
+  M.SURFACE_ACTIONS = {'rates', 'rotate', 'inspect', 'circuit_set', 'circuit', 'wire', 'ores', 'launch', 'configure', 'silo', 'preflight', 'requests',
     'place_ghosts', 'scan', 'conflicts', 'deconstruct', 'cancel_deconstruction', 'trace'}
   M.ABOARD_NOTE = 'every read (status, scan, inspect, science, supply, networks, platforms, map, ...: of the platform, or of a planet with surface=) but inventory and craftable; '
     .. 'tell, chat, say, operator, board and votes; research; platform_schedule, platform_create, requests (platform= or position=), drop (hub items down to the planet) and land; '
@@ -402,7 +403,7 @@ return function(api)
   -- the refusal said grid/scan work. The team's calls work aboard, as every read does (the runtime's read-only list,
   -- api.read_only) but the two about the character's own inventory; so do waits on conditions that need no body.
   local TEAM = {tell=true, tells=true, operator=true, board=true, board_post=true, board_update=true, board_plan=true, board_events=true,
-    vote=true, votes=true, lookahead=true, reminders=true, reminder_add=true, reminder_edit=true, reminder_remove=true, reminder_ack=true, reminder_snooze=true}
+    vote=true, votes=true, lookahead=true, board_review=true, board_retire=true, platform_supply=true, platform_plan=true, reminders=true, reminder_add=true, reminder_edit=true, reminder_remove=true, reminder_ack=true, reminder_snooze=true}
   local BODY_READS = {inventory=true, craftable=true}
   local BODYLESS_WAITS = {platform_arrived=true, platform_left=true, researched=true, rocket_ready=true, rocket_parts=true, produced=true, platform_built=true}
   function M.check_action(index, action, args)

@@ -231,6 +231,8 @@ return function(api)
     return row
   end
 
+  -- One planet's row (stock {item, surface}; Gemini 02:36).
+  function M.planet_row(force, surface, item) return planet(force, surface, item, needed_by_research(force, item)) end
   function M.fresh(force, item)
     local research = needed_by_research(force, item)
     local planets, platforms, total = {}, {}, 0

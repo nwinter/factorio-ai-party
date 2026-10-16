@@ -193,3 +193,153 @@ do
   has(rows[1].line,'Tern (flying fulgora->gleba 67%): ETA '); has(rows[1].line,'hub: calcite*900 tungsten-plate*400')
 end
 print('d15_batch5 C4 arrival through the schedule: ok')
+
+-- D4 (Astra, Sol): rotate takes platform= and surface= (remote view). ----------------------------------------------------
+do
+  local bots=dofile('mod/agent-harness_0.1.0/bots.lua')
+  local list=type(bots)=='function' and bots{} or bots
+  local on_platform,on_surface=false,false
+  for _,n in ipairs(list.PLATFORM_ACTIONS) do if n=='rotate' then on_platform=true end end
+  for _,n in ipairs(list.SURFACE_ACTIONS) do if n=='rotate' then on_surface=true end end
+  assert(on_platform and on_surface,'rotate with platform= and surface=')
+end
+print('d15_batch5 D4 rotate by remote view: ok')
+
+-- D2 (Sol, Astra): an empty platform turret that takes ammo the hub holds: where it is and what feeds it. -------------
+do
+  prototypes={item={rocket={type='ammo',ammo_category={name='rocket'}},['firearm-magazine']={type='ammo',ammo_category={name='bullet'}}}}
+  local surface={}
+  local force={name='player'}
+  local turret={valid=true,name='rocket-turret',position={x=-14.5,y=-16.5},surface=surface,force=force,prototype={attack_parameters={ammo_categories={'rocket'}}}}
+  local asm={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=-14.5,y=-20.5},
+    get_output_inventory=function() return {get_contents=function() return {} end} end}
+  local chest={valid=true,name='iron-chest',position={x=-11.5,y=-20.5}}
+  local arm={valid=true,name='long-handed-inserter',position={x=-14.5,y=-18.5},drop_target=turret,pickup_target=asm}
+  local rival={valid=true,name='fast-inserter',position={x=-12.5,y=-20.5},drop_target=chest,pickup_target=asm}
+  surface.find_entities_filtered=function(f) if f.type=='inserter' then return {arm,rival} end return {} end
+  local P=dofile('mod/agent-harness_0.1.0/platalerts.lua'){state=function() return {} end}
+  local rows=P.empty_turrets({},{empty_list={turret},hub_ammo={rocket=250,['firearm-magazine']=900}})
+  eq(#rows,1)
+  eq(rows[1],'rocket-turret (-14.5,-16.5) is empty while the hub holds rocket*250 it takes: fed by long-handed-inserter (-14.5,-18.5) from assembling-machine-2 (-14.5,-20.5) holding 0 of its ammo; taking from it too: fast-inserter (-12.5,-20.5) into iron-chest (-11.5,-20.5)')
+  eq(#P.empty_turrets({},{empty_list={turret},hub_ammo={['firearm-magazine']=900}}),0,'the hub holds none it takes')
+  arm.drop_target=nil
+  has(P.empty_turrets({},{empty_list={turret},hub_ammo={rocket=5}})[1],'no inserter drops into it')
+end
+print('d15_batch5 D2 empty platform turrets: ok')
+
+-- D3 (Sol): platform_plan: foundation islands, belt loops, head-on belts, side-loads (built and ghosts). ----------------
+do
+  local tiles={}
+  for x=-2,1 do for y=-2,1 do tiles[#tiles+1]={position={x=x,y=y}} end end
+  local ghost_tiles={}
+  for x=10,12 do ghost_tiles[#ghost_tiles+1]={position={x=x+0.5,y=0.5},ghost_name='space-platform-foundation'} end
+  local belts={}
+  local function belt(x,y,dir,ghost) local e={position={x=x+0.5,y=y+0.5},direction=dir}
+    if ghost then e.type='entity-ghost'; e.ghost_type='transport-belt'; e.ghost_name='transport-belt' else e.type='transport-belt'; e.name='transport-belt' end
+    belts[#belts+1]=e end
+  -- a closed 2x2 loop: (0,0) east, (1,0) south, (1,1) west, (0,1) north
+  belt(0,0,4); belt(1,0,8); belt(1,1,12,true); belt(0,1,0)
+  -- head on: (5,0) east into (6,0) west
+  belt(5,0,4); belt(6,0,12)
+  -- a side-load: (8,0)->(8,1) south... a line (8,2) east fed from behind by (7,2) east, and from the side by (8,1) south
+  belt(7,2,4); belt(8,2,4); belt(8,1,8)
+  -- a curve: (3,5) south into (3,6) east with nothing behind (3,6): no side-load
+  belt(3,5,8); belt(3,6,4)
+  local s={find_tiles_filtered=function() return tiles end,
+    find_entities_filtered=function(f)
+      if f.type=='tile-ghost' then return ghost_tiles end
+      if f.type=='entity-ghost' then local o={} for _,b in ipairs(belts) do if b.type=='entity-ghost' then o[#o+1]=b end end return o end
+      local o={} for _,b in ipairs(belts) do if b.type~='entity-ghost' then o[#o+1]=b end end return o
+    end,count_entities_filtered=function() return 0 end}
+  local pl={name='Petrel',surface=s,hub={valid=true,position={x=0,y=0}},force='player'}
+  local P=dofile('mod/agent-harness_0.1.0/platplan.lua'){platform=function() return pl end}
+  local r=P.read({},{platform='Petrel'})
+  eq(r.foundation_tiles,19); eq(r.hub_group,16); eq(#r.islands,1); eq(r.islands[1].size,3); eq(r.islands[1].ghost_tiles,3)
+  eq(#r.loops,1); eq(r.loops[1].belts,4); eq(r.loops[1].ghosts,1); eq(r.loops[1].exits,0)
+  eq(#r.head_on,1); has(r.head_on[1],'run head on into each other')
+  eq(#r.side_loads,1); eq(r.side_loads[1],'transport-belt (8.5,1.5) feeds the side of transport-belt (8.5,2.5)')
+end
+print('d15_batch5 D3 platform_plan: ok')
+
+-- D1 (Sol, Astra): platform_supply: the chain in order, the first stop named. -------------------------------------------
+do
+  defines={entity_status={working=1,item_ingredient_shortage=2,full_output=3},inventory={asteroid_collector_output=1,crafter_input=2,crafter_output=3,turret_ammo=4,hub_main=5}}
+  prototypes={item={rocket={type='ammo'}},tile={}}
+  local empty={get_contents=function() return {} end,get_item_count=function() return 0 end}
+  local s={}
+  local col={valid=true,name='asteroid-collector',position={x=-0.5,y=-40.5},status=1,filter_slot_count=1,get_filter=function() return 'metallic-asteroid-chunk' end,
+    bounding_box={left_top={x=-2,y=-42},right_bottom={x=1,y=-39}},get_inventory=function() return empty end}
+  local crusher={valid=true,name='crusher',position={x=-6,y=-2.5},status=2,get_recipe=function() return {name='metallic-asteroid-crushing'} end,
+    prototype={crafting_categories={crushing=true}},get_inventory=function() return empty end}
+  local arm={valid=true,name='fast-inserter',position={x=-0.5,y=-38.5},pickup_target=col,drop_target={valid=true,name='transport-belt',position={x=-0.5,y=-37.5}}}
+  s.find_entities_filtered=function(f)
+    if f.type=='asteroid-collector' then return {col} elseif f.type=='assembling-machine' then return {crusher}
+    elseif f.type=='inserter' then return {arm} end
+    return {}
+  end
+  local pl={name='Petrel',surface=s,force='player',hub={valid=true,get_inventory=function() return {get_contents=function() return {{name='rocket',count=250}} end} end}}
+  local P=dofile('mod/agent-harness_0.1.0/platsupply.lua'){platform=function() return pl end}
+  local r=P.read({},{platform='Petrel'})
+  eq(r.first_stop,'crusher (-6,-2.5) metallic-asteroid-crushing: item_ingredient_shortage; in empty, out empty')
+  eq(r.lines[1],'first stop: '..r.first_stop)
+  has(r.lines[3],'collector (-0.5,-40.5): working; holds empty; filters metallic-asteroid-chunk; taken by fast-inserter (-0.5,-38.5) into transport-belt (-0.5,-37.5)')
+  has(table.concat(r.lines,'|'),'0 guns, 0 empty; the hub holds rocket*250')
+end
+print('d15_batch5 D1 platform_supply: ok')
+
+-- E1 (Opus 00:21): a pole loss that leaves machines with no power wakes agents on that surface (urgent). ----------------
+do
+  game={tick=5000}
+  local st={powercut={cuts={{id=104,tick=4700,checked=5000,surface='nauvis',net=2,poles={{name='small-electric-pole',position={x=-104.5,y=-160.5},by='medium-spitter'}},
+    parts={{id=2,cut=false,kw=900},{id=928,cut=true,total=9}}}}}}
+  local U=dofile('mod/agent-harness_0.1.0/urgent.lua'){state=function() return st end,who=function(p) return p.name end,
+    cut_line=function(c) return 'power cut #'..c.id..': small-electric-pole (-104.5,-160.5) destroyed by medium-spitter; #928 had no power: 9 machines' end,
+    cut_fixed=function() return false end}
+  local opus={index=4,name='opus',surface={name='nauvis'},character={valid=true,position={x=0,y=0}}}
+  local line=U.check(opus,{tick=4000})
+  eq(line,'power cut #104: small-electric-pole (-104.5,-160.5) destroyed by medium-spitter; #928 had no power: 9 machines')
+  eq(U.check(opus,{tick=4000}),nil,'told once')
+  local far={index=5,name='sol',surface={name='aquilo'},character={valid=true,position={x=0,y=0}}}
+  eq(U.check(far,{tick=4000}),nil,'another surface')
+  local near={index=6,name='luna',surface={name='nauvis'},character={valid=true,position={x=0,y=0}}}
+  eq(U.check(near,{tick=4000,radius=40}),nil,'outside a wait\'s radius')
+  st.powercut.cuts[1].parts[2].total=2
+  local grok={index=7,name='grok',surface={name='nauvis'},character={valid=true,position={x=0,y=0}}}
+  eq(U.check(grok,{tick=4000}),nil,'under 3 machines')
+end
+print('d15_batch5 E1 power cut wakes: ok')
+
+-- E3 (Opus, twice): the boilers' fuel drills on the power those boilers make, short of it. -----------------------------
+do
+  defines={entity_status={working=1,low_power=2,no_power=3}}
+  local function drill(x,status,net,ore) return {valid=true,position={x=x,y=0},status=status,electric_network_id=net,mining_target={name=ore}} end
+  local list={drill(1,2,7,'coal'),drill(2,2,7,'coal'),drill(3,1,7,'coal'),drill(4,2,9,'coal'),drill(5,2,7,'iron-ore')}
+  local surface={find_entities_filtered=function() return list end}
+  local N=dofile('mod/agent-harness_0.1.0/networks.lua'){state=function() return {} end}
+  eq(N.spiral(surface,'player',{x=0,y=0},7,{'coal'}),'3 electric drills mining coal within 160 tiles run on this network: 2 on low power, 0 on no power, 1 other; the fuel these boilers burn comes from machines their power runs')
+  list[1].status=1; list[2].status=1
+  eq(N.spiral(surface,'player',{x=0,y=0},7,{'coal'}),nil,'none short of power')
+end
+print('d15_batch5 E3 boiler fuel spiral: ok')
+
+-- F1 (Opus, twice): enemy groups seen now are hazards a walk plans round, where they are and ahead of them. ------------
+do
+  game={tick=100}
+  local visible=true
+  game.forces={player={name='player',players={{}},is_chunk_visible=function() return visible end},enemy={name='enemy',players={}}}
+  local grp={valid=true,position={x=100,y=0},members={1,2,3,4,5,6}}
+  local st={live_groups={{id=7,group=grp,surface='nauvis',target={x=100,y=200}}}}
+  local A=dofile('mod/agent-harness_0.1.0/avoid.lua'){state=function() return st end,charted=function() return true end}
+  local surface={name='nauvis',index=1}
+  local discs=A.attack_discs(surface,{attacks=true,pad=4})
+  eq(#discs,2); eq(discs[1].group,true); eq(discs[1].name,'enemy group of 6 heading for (100,200)')
+  eq(discs[2].y,48,'a disc 48 tiles ahead toward its target'); has(discs[2].name,'(ahead of it)')
+  local id=discs[1].id
+  grp.position={x=100,y=40}
+  eq(A.attack_discs(surface,{attacks=true,pad=4})[1].id~=id,true,'a new name once it moved a chunk on: planned again')
+  visible=false
+  eq(#A.attack_discs(surface,{attacks=true,pad=4}),0,'a group no player force sees now is no hazard')
+  visible=true; grp.valid=false
+  eq(#A.attack_discs(surface,{attacks=true,pad=4}),0,'a group gone')
+end
+print('d15_batch5 F1 enemy groups on the way: ok')

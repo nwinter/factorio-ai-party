@@ -12,6 +12,7 @@
   change when it stops working. The harness enforces none of it; anyone may build or act anywhere.
 - `./fh board update --args '{"id":N,"title":"...","needs":{"iron-plate":300}}'` corrects an item's title and what it
   asks for (its poster or owner; anyone after the same 20 quiet minutes); `board {id}` keeps the change in `history`.
+- `board_review {id?}` flags board items naming gone platforms, stale handoffs, superseded items still active and conflicting needs; `board_retire {ids, reason}` drops several; `board_update {edit_step: {n, text}}`, `supersedes`.
 - A `project` (`"goal"`, `"steps":["...","..."]`, `"areas"`) stays on the board across shifts. Anyone adds steps and
   marks them done (`./fh board update --args '{"id":N,"step":"...","done":[2,3]}'`); the owner writes `goal` and
   `handoff`, and anyone may once the owner has made no request for 30 minutes (and may then take it). `./fh board

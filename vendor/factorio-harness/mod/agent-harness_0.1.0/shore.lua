@@ -334,6 +334,14 @@ return function(api)
       return {}, 0, info
     end
     local G = grid(p, proto, gx, gy, gw, pump)
+    -- Tile ghosts in the search area, for an entity with tile rules (an asteroid collector): what they become.
+    local tile_ghosts
+    if #(try(function() return proto.tile_buildability_rules end) or {}) > 0 then
+      for _, g in pairs(try(function() return surface.find_entities_filtered{area={left_top={x=gx, y=gy}, right_bottom={x=gx + gw, y=gy + gw}}, type='tile-ghost', limit=4096} end) or {}) do
+        local tp = g.valid and prototypes.tile[g.ghost_name]
+        if tp then tile_ghosts = tile_ghosts or {}; tile_ghosts[math.floor(g.position.x) .. ',' .. math.floor(g.position.y)] = {name=g.ghost_name, prototype=tp} end
+      end
+    end
     info.ghost_list = G.ghost_names
     local in_way, wet, flag, water = G.in_way, G.wet, G.flag, G.water
     -- Tiles of the grid by number ((tx - gx) * gw + ty - gy): any marked in x1..x2, y1..y2; mark them all.
@@ -490,8 +498,17 @@ return function(api)
             if fits then
               checks = checks + 1
               local position = {x=x, y=y}
-              if surface.can_place_entity{name=proto.name, position=position, direction=dir, force=p.force,
-                  build_check_type=defines.build_check_type.manual} then
+              local ok_place = surface.can_place_entity{name=proto.name, position=position, direction=dir, force=p.force,
+                  build_check_type=defines.build_check_type.manual}
+              -- Tile ghosts count as the tiles they become (Sol 03:21: a collector's placement read valid with
+              -- foundation ghosts in the open space it needs, and the build was refused): its tile rules judge them so.
+              if ok_place and tile_ghosts and api.placewhy then
+                local broken = api.placewhy.tile_rules(surface, proto, position, dir, function(tx, ty)
+                  return tile_ghosts[tx .. ',' .. ty] or surface.get_tile(tx, ty)
+                end)
+                if broken then ok_place = false; info.tile_ghosts = (info.tile_ghosts or 0) + 1; info.tile_ghost_why = info.tile_ghost_why or broken end
+              end
+              if ok_place then
                 done[at] = true
                 out[#out+1] = {position=position, direction=NAMES[dir], over_ghost=ghost and ghost or nil}
                 if ghost then info.ghosts = info.ghosts + 1 end
@@ -623,6 +640,7 @@ return function(api)
     local out = {name=proto.name, near=pos, radius=radius, placements=found, count=#found, checked=checked, by=by,
       blocked=info.blocked > 0 and info.blocked or nil, unseen=info.unseen > 0 and info.unseen or nil, more=info.more or nil,
       over_ghosts=info.ghosts > 0 and string.format('%d of these placements lie over a ghost (over_ghost names it): a build there replaces the ghost', info.ghosts) or nil,
+      tile_ghosts=info.tile_ghosts and string.format('%d spot%s the game takes now left out: tile ghosts there break its tile rules once built (%s)', info.tile_ghosts, info.tile_ghosts == 1 and '' or 's', info.tile_ghost_why) or nil,
       separate=a.separate or nil, overlap=a.separate and info.overlap or nil,
       powered=a.powered or nil, unpowered=a.powered and info.unpowered or nil, poles=a.powered and info.poles or nil,
       note=#notes > 0 and table.concat(notes, '; ') or nil}

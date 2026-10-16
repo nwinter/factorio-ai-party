@@ -9,6 +9,7 @@
   conditions with time left and items to go where it waits. A platform flying under 5 km/s is an alert naming the
   thruster input it lacks and the pumps, plants, crushers and chunks behind it (`platforms {platform}`:
   `thrust_inputs`).
+- `rotate {platform: NAME, position, direction?}` (or `surface: NAME`) turns a ghost or built belt or inserter there by remote view.
 - `queue_submit {lane:"remote",steps:[...]}` runs platform waits, drops, schedules, platform configuration, platform `place_ghosts`/`deconstruct` (wait `{until:"platform_built",platform}` for the foundation) and body-independent reads alongside body work; queue controls accept the same lane, and status shows both.
 - `./fh view platform=Sunward --out sunward.png` shows platform foundation and structure footprints; `agriculture {surface:"gleba"}` lists towers, ghosts and recorded tower-loss positions.
 - `./fh call requests --args '{"platform":"NAME"}'` shows each hub section; `off: true` means it requests nothing
@@ -27,6 +28,8 @@
   thrusters' tanks at start and end, the pumps' share of time working). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when
   `from` is not given.
 - `./fh call platform_endurance --args '{"platform":"Wayfarer"}'` (optional `"route":["fulgora","aquilo"]`, default its schedule): each leg's km and minutes at its speed, and each ammunition, repair pack and thruster fluid aboard with its stock, made and used per minute, and the leg it runs out on; hub slots free, power, solar power at the stops. Stopped, the rates come from the last leg (or read `flight use unknown`); on a leg under 10 minutes old, from a window inside the leg; an item made aboard is capped by the ingredients aboard, two levels down and fluids included (`ingredient-limited`).
+- `platform_supply {platform}`: the supply chain from collectors to guns, with the first stop named.
+- `platform_plan {platform}`: foundation islands, belt loops, head-on belts and side-loads across built entities and ghosts.
 - `./fh call networks --args '{"platform":"Starling"}'` gives a platform's electric network line (capacity, draw, solar
   power where it is and its panels' output, accumulators, machines on low power); accumulators are read at the call
   (`acc_mj`, `acc_pct`, `acc_series` every 15 s over 3 min) and `"fresh":true` adds `draw_now_kw`; `power` takes `platform` too, and

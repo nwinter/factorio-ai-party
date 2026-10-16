@@ -5211,3 +5211,146 @@ fh watch    # deploy on every change
     the later of the two. `9 rockets for the list; building the rocket: parts 17/50; 433 parts to make (50 a
     rocket); at the silo's full speed (48.0 parts/min) in 542s; rocket parts made on vulcanus in the last 10 min:
     8.5/min; ...`.
+- `rotate {platform: NAME, position, direction?}` and `rotate {surface: NAME, ...}` turn a ghost or a built belt,
+  inserter and the like by remote view, as remote view's R does (Astra, Sol: Petrel's corners were deconstructed and
+  ghosted again by hand about 6 times). The reply says `by: remote view`. Checked on the copy of world n: a belt on
+  Tern turned east to south and back.
+- An empty platform turret that takes ammo the hub holds (Sol, Astra 00:21-00:23: Starling's rear rocket turret
+  starved while the ammo assembler's other output arm won). The platform alert's turret line now ends with each such
+  turret (up to 4): `rocket-turret (-14.5,-16.5) is empty while the hub holds rocket*250 it takes: fed by fast-inserter
+  (-16.5,-16.5) from transport-belt (-17.5,-16.5) carrying 0 of its ammo`, and `; taking from it too: fast-inserter
+  (-12.5,-20.5) into iron-chest (-11.5,-20.5)` when other inserters take from the same source, or `no inserter drops
+  into it`. `preflight {platform}` adds the same rows (`empty_turrets`) to the platform's row, whatever the hub holds.
+  Checked on the copy of world n: Petrel's two empty rocket turrets, with 250 rockets in the hub.
+- Platform construction (Sol, 00:21-03:21).
+  - The hub's `construction_blocked` (inspect a hub, the platforms row) names each defense ghost (gun, rocket, laser,
+    flamethrower, artillery turret) with empty space under it: `defense ghosts wait on foundation: gun-turret ghost
+    (0,-40) on 4 empty tiles (-1,-41)* (-1,-40)* (0,-41)* (0,-40)*; their footprints take 4 foundation tiles (* marks
+    the 4 with a foundation ghost planned), the hub holds 49 space-platform-foundation: the least to bring no more
+    foundation, 1 gun-turret (hub has 0)`. Checked on the copy of world n with a gun-turret ghost off Tern's edge.
+  - `placements {platform, name: "asteroid-collector"}` counts tile ghosts as the tiles they become. A spot the game
+    takes now, with a foundation ghost in the open space a collector needs, is left out and said: `tile_ghosts: 1 spot
+    the game takes now left out: tile ghosts there break its tile rules once built (... space-platform-foundation at
+    (8,-17))`. Checked on Swift. (The place_ghosts and build dry runs already counted them.)
+  - `platform_plan {platform}` reads a platform as planned, built and ghosts together:
+    - foundation tiles in 4-joined groups, with each island no foundation joins with the hub (its size, a tile, its
+      ghost tiles);
+    - belts (transport belts, undergrounds, splitters) as a graph: closed loops (with how many ways out), belts that
+      run head on into each other, and side-loads (a belt fed from a side while a belt behind it, or the other side,
+      feeds it too; one belt from a side alone is a curve).
+    On the copy: Petrel 2345 tiles, no island, 538 belts, 2 head-on pairs and 10 side-loads, 24 ms in the container
+    (about 5 ms on n).
+- `platform_supply {platform}`: a platform's supply chain in one read (Sol, Astra 03:21-03:23: Petrel's first flight
+  starved of fuel; about 20 reads by hand), in the chain's order:
+  - collectors: status, chunks held, filters, the inserters taking from them and where they put the chunks, and
+    foundation ghosts in their open space;
+  - crushers: recipe, status, input and output;
+  - thruster-fuel and thruster-oxidizer makers: status, what they hold, their fluids;
+  - thrusters: tanks under half (thrust.lua's lines);
+  - guns: each empty one with what feeds it, and the hub's ammo;
+  - ghosts by name, apart.
+  The first line is `first stop: ...`, the first of these not working: a collector not working, with no inserter
+  taking from it, or with foundation ghosts in front; a crusher or maker not working; a thruster under half; an empty
+  gun. On the copy: Petrel `first stop: collector (-0.5,-40.5): full_output; holds metallic-asteroid-chunk*32 ...`, 15
+  ms in the container (about 3 ms on n). An empty turret's feed now counts only the ammo that turret takes (`holding 0
+  of its ammo`).
+- A pole loss that cuts machines off all power is urgent (Opus 00:21: `power cut #104: small-electric-pole
+  (-104.5,-160.5) destroyed by medium-spitter ... #928 had no power` was in the alerts and woke nobody; the part cut
+  off had a new network id, which the collapse rule had never seen with power). A cut on your surface that left 3 or
+  more machines in a part with no power, or with no pole at all, ends every sleep and direct wait as an urgent alert,
+  once per agent, with the power cut's line (the pole, what destroyed it, each part and its machines). A cut joined
+  again does not wake. With `wake_on_urgent: {radius}` only a pole within the radius counts.
+- Two more pushed alert kinds (team alerts and `game_alerts {kind}`), from the status scan every 30 s (Grok, twice):
+  - `output_chest_full`: a maker stopped at full_output whose output inserter puts into a chest with no free slot:
+    `biochamber (15.5,26.5) full_output: bulk-inserter (16.5,24.5) puts its output into passive-provider-chest
+    (16.5,23.5), all 48 slots taken (spoilage 1981, yumako-seed 323)`. Seen on the copy of world n: 6 on Gleba.
+  - `catalyst_gone`: a machine short of ingredients whose recipe takes an item it also makes (the pentapod egg
+    breeder), with none of it in its input: the item, what its output holds, and each inserter taking from it with its
+    hand size (`bulk-inserter (5.5,15.5) hand 12`). Not seen on the copy (its breeders were switched off by circuit).
+- The boiler fuel alert (`boiler_fuel`) adds the fuel's own drills on the boilers' power (Opus, twice: coal drills
+  short of power fed the boilers that powered them): `3 electric drills mining coal within 160 tiles run on this
+  network: 2 on low power, 0 on no power, 1 other; the fuel these boilers burn comes from machines their power runs`.
+  Said only when one of them is on low or no power.
+- The status fuel line names each burner burning its last fuel (Luna 04:51: two low-fuel biochambers, one named):
+  `burner-mining-drill 0/1 no_fuel, 1 burning their last fuel ((-35,-50) 559s left)`, up to 8 a name, the time at
+  its full draw. Seen on the copy of world n.
+- The `power` read ranks each network's draw by kind (Opus 04:11: after a blackout, roboports recharging drew 11-16 MW
+  and starved the boilers' feeders): `draw_line: electric #2 draws 4.5 MW: roboport 2.2 MW (roboport); electric-turret
+  1.1 MW (laser-turret); assembling-machine 631 kW (assembling-machine-2, foundry, chemical-plant); ...` and
+  `draw_by_kind` [{kind, kw, names}], from the game's 5 s statistics (by prototype, under its entity type). No harness
+  switch turns a consumer off; power switches and circuit-enabled machines are the game's own.
+- `move_to` past 512 tiles with no `via` (Haiku, every ~20 minutes: refused with no route summary): via points about
+  500 tiles apart are added on the straight line, each moved to the nearest spot a character fits, and the walk (or
+  its dry run) goes through them: `via_added: 771 tiles away, past the 512 a leg takes: walked through via points
+  (313.1,20.6) (on the straight line, each moved to the nearest free spot)`. A point that lands in a chunk the map has
+  not charted is refused, naming it; so is a walk needing more than 16. On the copy of world n a 771-tile dry run took
+  65 ms in the container (about 13 ms on n).
+- Enemy groups on the move are hazards for a walk (Opus, twice: died on corridors walked safely minutes before, each
+  time into an attack group crossing the route). Each enemy group in a chunk a player force sees now (radar or a
+  character) counts as an area under attack does: a disc where it is and one up to 48 tiles ahead of it toward its
+  target. A live `move_to` plans again round one that comes near the way on (`last.replanned`), and again as it moves
+  on (each chunk it moves into is news); a goal or via point inside one is refused unless `unsafe_goal`. The dry run's
+  `enemies` lists them: `enemy group of 6 heading for (100,200) at (100,0), seen now (24 tiles): closest pass ...`. A
+  group in a chunk no one sees now is not read.
+- The `labs` read adds `lacking`, one row a lab lacking a pack the research needs (up to 8; Luna 03:20: 4 of 43 labs
+  had no military science while 8,754 packs sat in storage): `lab (27.5,44.5) lacks military-science-pack: fed by
+  long-handed-inserter (30.5,44.5) from lab (32.5,44.5) holding 0; no logistic network there`. A requester source says
+  what it asks of the pack (`asking 0` / `no request for it`); with a logistic network there, what it holds and the
+  chest its robots would take the pack from (the network's own pickup point). On the copy of world n, 13-24 ms in the
+  container for Nauvis's 43 labs (about 3-5 ms on n).
+- `status` (brief and full) adds `logistics_here` (Haiku): `logistic network #96 where you stand: 834 logistic robots
+  (710 idle), 11 construction robots (11 idle), 15 roboports; 5 personal requests unfilled (long-handed-inserter,
+  ...)`, or `no logistic network where you stand (x,y)`. `requests` gives each unfilled request's reason.
+- `transfer {from: "nearest", item}` with a spoilable item takes the freshest stock first (Luna 00:20: 75%-spoiled
+  mash came from a requester while fresher stock sat at a provider): the chests holding it are ordered by their
+  stock's count-weighted spoiled share, in steps of 10%, then by distance; `fresh: false` keeps the nearest first. The
+  reply's `source_freshness` names each: `freshest first: requester-chest (57.5,58.5) 56% spoiled, requester-chest
+  (36.5,65.5) 59% spoiled, ...`. Checked on the copy (nutrients on Gleba).
+- `trace {position}` of a maker stopped by its full output adds `downstream` (Luna 00:20: trace showed only the
+  input side): each inserter taking from it and where it puts, a chest with its free slots: `inserter (-6.5,47.5)
+  waiting_for_space_in_destination filter copper-plate -> passive-provider-chest (-6.5,48.5) (full) (0 of 48 slots
+  free)`. `trace {forward: true}` names every chest destination's free slots too. Checked on Gleba on the copy.
+- Stock and rates by surface or network (Gemini 02:36).
+  - `stock {network: 96, item?, limit?}`: what that logistic network holds, largest first (`surface=` for another
+    surface), with its robots.
+  - `stock {item, surface: "aquilo"}` with no position: that planet's whole stock of the item, as freight_audit
+    counts a planet (networks, pads in no network, plain chests and landed pods, silos' rockets, labs, made and used a
+    minute). `supply {item, surface}` still gives the belts, machines and inserters.
+  - `rates {recipe}` or `rates {item}` with no area or positions: every crafter on your surface (`surface=` another)
+    set to that recipe, or to one making the item, at most 512, as the rates read computes them (`scope` says how
+    many). With `item`, only its rows, and `statistics`: the game's made and used a minute over 10 min. On the copy:
+    Nauvis's gear makers, 19-62 ms in the container (about 4-12 ms on n).
+- A refuel over an area with more than 1024 entities of the kinds it reads (Opus 01:51: a base-sized boiler area) now
+  says what the area holds by type and the filter that narrows it: `the area holds more than 1024 entities this refuel
+  reads (900 boiler, 300 furnace, ...); types: ["boiler"] (or entity names ...) reads only those`. `types` (refuel and
+  feed) already took entity types and names.
+- `collect {positions: [...], item?, wait_ticks}` waits at several machines (Sonnet, ~6 a shift: scarce output such as
+  low-density structures): it walks to the first, stands there, and takes from each of the others it reaches from
+  there too, the tick their products appear (1..16 positions). The reply's `also` names them; `last.also` says what
+  each gave and which were never in reach from there. Checked on the copy: two copper-cable assemblers 8 tiles apart,
+  38 taken, 16 of them from the second.
+- `nearest_water {position?, radius?}` (Opus 04:11: placements stops at 24 tiles): the nearest tile an offshore pump
+  takes (a tile with a fluid: water, lava, an oil ocean, ammonia) in chunks the map has charted, within 1..256 tiles
+  (default 200), and the offshore-pump spots there as `placements` gives them: `nearest water (water) at
+  (-344.5,-368.5), 135.1 tiles from (-281,-250); offshore-pump spots: (-346.5,-369.5) east, ...`. On the copy of world
+  n warm reads took 4-22 ms in the container (about 1-4 ms on n); a cold first call is slower.
+- The build and place_ghosts dry runs add `poles_preview`, a row a pole of the plan (Luna 01:50: a pole already stood
+  on the agreed tile, and the dry run gave blockers only): whether the spot is free, taken (what takes it) or already
+  built; the networks of the built poles it wires to (within the shorter wire reach); and the machines in its supply
+  area that no network powers now (they gain coverage) against those already powered: `small-electric-pole
+  (24.5,30.5): the spot is free; joins #613 (6 poles); in its supply area 0 machines no network powers now, 0 already
+  powered`. Checked on Gleba on the copy.
+- Board planning (Astra 03:45, after a viewer asked the team for planning help; facts and tools, the team decides).
+  - `supersedes` on a task, request or project (`board_post` and `board_update`): the items this one replaces; each
+    shows `superseded_by`.
+  - `board_update {id, edit_step: {n, text}}` changes a project step's text in place (its adder, its owner or a lead);
+    the earlier text stays in the step's history (last 8), and the change is an event (`step_edited`).
+  - `board_review {id?}` (a project and the items under it; default every active item) flags, facts only:
+    - `gone_platform`: a title or open step naming a platform of ours no longer there;
+    - `stale_handoff`: a handoff unchanged for 2 h while its owner was active in the last 30 min;
+    - `superseded`: an item another one supersedes, still active;
+    - `needs_differ`: the same item needed in different counts by items of one project.
+    On the copy of world n: 142 items read in 9-11 ms in the container (about 2 ms on n); it named the items still
+    naming Sunward, Kestrel and Wayfarer.
+  - `board_retire {ids, reason}` drops up to 32 items at once with the reason as their note, under board_update's
+    rules; one that may not be dropped is listed with why. Nothing closes on its own.

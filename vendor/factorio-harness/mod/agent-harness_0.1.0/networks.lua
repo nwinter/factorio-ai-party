@@ -1877,7 +1877,28 @@ return function(api)
     if least then
       g.line=g.line..string.format('; least-stocked feed chest %s %s: %s (%d fuel items)',least.e.name,at(least.e.position.x,least.e.position.y),least.held or 'no fuel',least.count)
     end
+    -- The fuel's own drills on the power these boilers make (Opus, twice: coal drills short of power fed the boilers that
+    -- powered them): electric drills within SPIRAL_RADIUS on this network mining a fuel the boilers burn, by status.
+    local spiral = surface and f and try(function() return timed('networks.spiral', M.spiral, surface, f, g.center, r.id, names) end)
+    if spiral then g.line = g.line .. '; ' .. spiral; g.spiral = true end
     return g
+  end
+  local SPIRAL_RADIUS = 160
+  function M.spiral(surface, f, center, id, names)
+    local fuel = {}
+    for _, n in ipairs(names) do fuel[n] = true end
+    local st = defines.entity_status or {}
+    local low, none, ok, total, mined = 0, 0, 0, 0, nil
+    for _, d in ipairs(try(function() return surface.find_entities_filtered{type='mining-drill', force=f, position=center, radius=SPIRAL_RADIUS, limit=512} end) or {}) do
+      local target = d.valid and try(function() return d.mining_target and d.mining_target.name end)
+      if target and fuel[target] and try(function() return d.electric_network_id end) == id then
+        total = total + 1; mined = target
+        if d.status == st.low_power then low = low + 1 elseif d.status == st.no_power then none = none + 1 else ok = ok + 1 end
+      end
+    end
+    if total == 0 or low + none == 0 then return nil end
+    return string.format('%d electric drill%s mining %s within %d tiles run on this network: %d on low power, %d on no power, %d other; the fuel these boilers burn comes from machines their power runs',
+      total, total == 1 and '' or 's', mined, SPIRAL_RADIUS, low, none, ok)
   end
   -- Push alert groups (pushalerts.lua scan): plain data, worst first there.
   -- Fulgora's sky for an accumulator line (lightning.lua M.sky, round1220a): the next storm in daylight, else dawn.

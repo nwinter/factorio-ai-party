@@ -585,6 +585,51 @@ return function(api)
   local tiles=require('tilecheck')()
   -- On world n 327 ghosts on Aegis took 1.3 ms to count (about 4 us each): 4000 stay under 20 ms.
   M.GHOST_CAP={['entity-ghost']=1000,['tile-ghost']=3000}
+  local DEFENSE={['ammo-turret']=true,['electric-turret']=true,['fluid-turret']=true,['artillery-turret']=true}
+  function M.defense_waits(pl,ghosts,tile_ghosts,inv)
+    local s=pl.surface
+    local planned={}
+    for _,g in ipairs(tile_ghosts) do
+      local pos=g.position
+      if try(function() return g.ghost_name end)=='space-platform-foundation' then planned[math.floor(pos.x)..','..math.floor(pos.y)]=true end
+    end
+    local rows,empty,planned_n,seen={},{},0,{}
+    local turrets_need={}
+    for _,g in ipairs(ghosts) do
+      local gtype=try(function() return g.ghost_type end)
+      if DEFENSE[gtype] then
+        local b=g.bounding_box
+        local holes={}
+        for x=math.floor(b.left_top.x+0.01),math.ceil(b.right_bottom.x-0.01)-1 do
+          for y=math.floor(b.left_top.y+0.01),math.ceil(b.right_bottom.y-0.01)-1 do
+            local tile=try(function() return s.get_tile(x,y).name end)
+            if tile=='empty-space' then
+              local k=x..','..y
+              holes[#holes+1]=string.format('(%d,%d)%s',x,y,planned[k] and '*' or '')
+              if not seen[k] then seen[k]=true; empty[#empty+1]=k; if planned[k] then planned_n=planned_n+1 end end
+            end
+          end
+        end
+        if #holes>0 then
+          local gname=try(function() return g.ghost_name end) or '?'
+          turrets_need[gname]=(turrets_need[gname] or 0)+1
+          if #rows<8 then rows[#rows+1]=string.format('%s ghost (%g,%g) on %d empty tile%s %s',gname,g.position.x,g.position.y,#holes,#holes==1 and '' or 's',table.concat(holes,' ',1,math.min(6,#holes))) end
+        end
+      end
+    end
+    if #empty==0 then return nil end
+    local held=inv and (try(function() return inv.get_item_count('space-platform-foundation') end) or 0) or 0
+    local short=math.max(0,#empty-held)
+    local items={}
+    for gname,n in pairs(turrets_need) do
+      local it=try(function() return prototypes.entity[gname].items_to_place_this[1].name end) or gname
+      local have=inv and (try(function() return inv.get_item_count(it) end) or 0) or 0
+      if have<n then items[#items+1]=string.format('%d %s (hub has %d)',n-have,it,have) end
+    end
+    table.sort(items)
+    return string.format('defense ghosts wait on foundation: %s; their footprints take %d foundation tiles (* marks the %d with a foundation ghost planned), the hub holds %d space-platform-foundation: the least to bring %s%s',
+      table.concat(rows,'; '),#empty,planned_n,held,short>0 and short..' space-platform-foundation' or 'no more foundation',#items>0 and ', '..table.concat(items,', ') or '')
+  end
   function M.blockers(pl)
     local hub=pl.hub
     if not (hub and hub.valid) then return nil end
@@ -616,9 +661,11 @@ return function(api)
     -- count. The item a ghost takes is read once per ghost name.
     local need,order={},{}
     local items_of,short={},{}
+    local lists={}
     for _,kind in ipairs({'entity-ghost','tile-ghost'}) do
       local cap=M.GHOST_CAP[kind]
       local list=try(function() return s.find_entities_filtered{type=kind,limit=cap} end) or {}
+      lists[kind]=list
       if #list>=cap then
         local total=try(function() return s.count_entities_filtered{type=kind} end) or #list
         if total>#list then short[#short+1]=string.format('the first %d of %d %ss counted',#list,total,kind) end
@@ -653,8 +700,13 @@ return function(api)
     if #missing>0 then out[#out+1]='ghosts wait for items the hub lacks: '..table.concat(missing,', ')..(#short>0 and ' ('..table.concat(short,'; ')..')' or '') end
     -- Past a cap the hub may hold enough for the ghosts counted and not for the rest: what the counted ones need.
     if #short>0 then out[#out+1]='ghost count capped ('..table.concat(short,'; ')..'): the counted ghosts need '..(#counted>0 and table.concat(counted,', ') or 'nothing') end
+    -- Defense ghosts waiting on foundation (Sol 00:21: 173 foundation missing; a spare rocket turret in the hub could not
+    -- build): each turret ghost with tiles of empty space under it, those tiles, whether foundation ghosts are planned
+    -- there, and the least foundation the hub needs for all of them.
+    local line=try(function() return M.defense_waits(pl,lists['entity-ghost'] or {},lists['tile-ghost'] or {},inv) end)
+    if line then out[#out+1]=line end
     -- Tile ghosts the foundation rules hold back.
-    for _,line in ipairs(try(function() return tiles.stalled(pl) end) or {}) do out[#out+1]=line end
+    for _,line2 in ipairs(try(function() return tiles.stalled(pl) end) or {}) do out[#out+1]=line2 end
     return #out>0 and out or nil
   end
   -- Marked foundation tiles: which the hub removes, in turn, and which wait, and why (tilecheck.lua, platformtiles2).

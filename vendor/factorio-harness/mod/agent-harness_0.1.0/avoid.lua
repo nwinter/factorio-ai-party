@@ -95,8 +95,7 @@ return function(api)
   function M.attack_discs(surface, mode, box)
     local out = {}
     if not (mode and mode.attacks) then return out end
-    local areas = api.state().damage
-    if not areas then return out end
+    local areas = api.state().damage or {}
     local name = surface.name
     for _, a in pairs(areas) do
       if a.id and a.at and a.last and game.tick - a.last <= M.ATTACK_ACTIVE and (a.surface == nil or a.surface == name) then
@@ -108,7 +107,44 @@ return function(api)
         end
       end
     end
+    -- Enemy groups on the move that our force sees now (Opus, twice: died on corridors walked safely minutes before,
+    -- each time into an attack group crossing the route): each group in a chunk a player force sees now, as a disc
+    -- where it is and one ahead of it toward its target (GROUP_AHEAD tiles at most); named by where it is, so a walk
+    -- plans again as it moves on.
+    for _, g in ipairs(api.state().live_groups or {}) do
+      local grp = g.group
+      local pos = grp and try(function() return grp.valid and grp.position end)
+      if pos and (g.surface == nil or g.surface == name) and M.seen_now(surface, pos) then
+        local n = try(function() return #grp.members end) or 0
+        if n > 0 then
+          local r = M.ATTACK_R + mode.pad
+          local label = string.format('enemy group of %d%s', n, g.target and string.format(' heading for (%d,%d)', g.target.x, g.target.y) or '')
+          local key = 'g' .. g.id .. '@' .. math.floor(pos.x / 32) .. ',' .. math.floor(pos.y / 32)
+          local spots = {{x=pos.x, y=pos.y}}
+          if g.target then
+            local dx, dy = g.target.x - pos.x, g.target.y - pos.y
+            local len = math.sqrt(dx * dx + dy * dy)
+            if len > 1 then local s = math.min(len, M.GROUP_AHEAD) / len; spots[2] = {x=pos.x + dx * s, y=pos.y + dy * s} end
+          end
+          for k, q in ipairs(spots) do
+            if not box or (q.x + r >= box[1] and q.x - r <= box[3] and q.y + r >= box[2] and q.y - r <= box[4]) then
+              out[#out+1] = {x=q.x, y=q.y, r=r, range=M.ATTACK_R, name=label .. (k == 2 and ' (ahead of it)' or ''), attack=true, group=true,
+                id=key .. '#' .. k, ago=0, size=n}
+            end
+          end
+        end
+      end
+    end
     return out
+  end
+  M.GROUP_AHEAD = 48
+  -- A chunk a player force sees now (radar or a character).
+  function M.seen_now(surface, pos)
+    for _, force in pairs(game.forces) do
+      if force.name ~= 'enemy' and force.name ~= 'neutral' and #force.players > 0
+        and try(function() return force.is_chunk_visible(surface, {x=math.floor(pos.x / 32), y=math.floor(pos.y / 32)}) end) then return true end
+    end
+    return false
   end
 
   -- Hostile forces: neither ours, neutral, friends nor at cease-fire.
@@ -838,7 +874,9 @@ return function(api)
   -- 'goal (-10,350) is inside big-worm-turret (-21,343) range 38 (13.0 tiles from it)'.
   function M.goal_text(label, goal, c)
     local m = c.m
-    if m.attack then
+    if m.group then
+      return string.format('%s %s is within %g tiles of an %s at %s, seen now (%.1f tiles from it)', label, at(goal), m.range, m.name, at(m), c.d)
+    elseif m.attack then
       return string.format('%s %s is within %g tiles of %s at %s, an area under attack now (last hit %ds ago%s) (%.1f tiles from it)', label, at(goal),
         m.range, m.name, at(m), m.ago or 0, m.size and m.size > 0 and string.format(', %d attackers seen', m.size) or '', c.d)
     elseif m.spawner then
