@@ -134,6 +134,7 @@ already targets your character.
 - `collect {position, item, count, wait_ticks}` says which inserters take the machine's output and the chest they fill (`taken_by_inserters`); `follow: true` takes from that chest instead of waiting.
 - Build and place_ghosts dry runs name the tiles an entry needs (shallow oil, water) together with the entities in its way; a platform ghost refused over empty space says when foundation tile ghosts under it are not built yet.
 - `queue_status {args: true}`: history with each step's arguments (and a finished loop's steps); status `active.progress` gives a tour's or courier's leg, distance left and moved so far; an interrupted queued transfer tour resumes from the stops left.
+- `./fh call stop` ends your running body action (a walk, tour, `load_silo` or gather) and starts nothing; `queue_cancel` (with `lane: "remote"` for the remote lane) cancels a queue.
 - `deconstruct {area, cancel: true}` unmarks; pump dry runs show each port's tile and what is there; supply rows show stock robots have reserved.
 - `artillery` rows add `units_near`: enemy units within 64 tiles of each piece, their range, and how many of our turrets reach them.
 `./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
