@@ -5370,3 +5370,7 @@ fh watch    # deploy on every change
 - `platform_endurance`'s ingredient cap (Astra 07:51: the cap counted the ore on hand while the collectors and crushers
   kept making more) grows at the rate each ingredient is made aboard now (`more_per_min`), an ingredient with makers
   aboard by what they can make by then; a line gives the asteroid chunks collected a minute (`chunks_collected`).
+- Area inspect of belts (Astra 09:37: it said `holds empty` for loaded belts; a belt's items are on its transport
+  lines, not in an inventory): with `types` naming belt types, each belt's `holds` (and its compact line) is its lanes,
+  `right lane: rocket*4`, an underground's buried part as `left lane underground: ...`, or `empty`. Checked on the copy
+  of world n on Tern.

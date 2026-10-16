@@ -5202,8 +5202,29 @@ do
     {'rocket_silo_rocket','cargo'},{'turret_ammo','ammo'},{'artillery_turret_ammo','ammo'},{'fuel','fuel'},{'burnt_result','burnt'},
     {'roboport_robot','robots'},{'roboport_material','repair packs'}}
   local CHESTS={container=true,['logistic-container']=true,['linked-container']=true}
+  -- A belt's items are on its transport lines, not in an inventory (Astra 09:37: area inspect said "holds empty" for
+  -- loaded belts): each lane as the game holds it; an underground's buried part (lines 3 and 4) said apart.
+  local BELT_ROW={['transport-belt']=true,['underground-belt']=true,splitter=true,loader=true,['loader-1x1']=true,['linked-belt']=true}
+  local LANE={'left lane','right lane','left lane underground','right lane underground'}
+  local function lanes(e)
+    local parts={}
+    for i=1,e.get_max_transport_line_index() do
+      local items={}
+      for _,st in ipairs(e.get_transport_line(i).get_contents()) do
+        local q=type(st.quality)=='table' and st.quality.name or st.quality
+        items[#items+1]=st.name..(q and q~='normal' and '@'..q or '')..'*'..st.count
+      end
+      if #items>0 then parts[#parts+1]=(e.type=='splitter' and 'lane '..i or LANE[i] or 'lane '..i)..': '..table.concat(items,' ') end
+    end
+    return #parts>0 and table.concat(parts,'; ') or 'empty'
+  end
   local function row(e)
     local r={name=e.name,position=e.position}
+    if BELT_ROW[e.type] then
+      local ok,h=pcall(lanes,e)
+      r.holds=ok and h or nil
+      return r
+    end
     -- A chest, wagon, trunk, landing pad or hub: holds as inspect writes it (details.lua), and a requester's asks.
     local held={inventories={}}
     for _,name in ipairs(STORES) do
@@ -5254,6 +5275,8 @@ do
       parts[#parts+1]=okhs and hs and hs.valid_for_read and string.format('hand: %s*%d',hs.name,hs.count) or 'hand empty'
       local blocked=M.details.held_blocked(e)
       if blocked then parts[#parts+1]=blocked end
+    elseif BELT_ROW[e.type] and r.holds then
+      parts[#parts+1]=r.holds=='empty' and 'lanes empty' or r.holds
     elseif r.holds and not (r.holds=='empty' and not has_inventory(e)) then
       local h=r.holds
       if h=='empty' then h='holds nothing' elseif CHESTS[e.type] and not h:find('^empty') then h='holds '..h end
