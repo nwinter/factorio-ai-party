@@ -168,6 +168,13 @@ return function(api)
     local p0 = turret.position
     local box = {left_top={x=p0.x-5, y=p0.y-5}, right_bottom={x=p0.x+5, y=p0.y+5}}
     local parts = {}
+    local cats = {}
+    for _, c in ipairs(try(function() return turret.prototype.attack_parameters.ammo_categories end) or {}) do cats[c] = true end
+    local function its_ammo(name)
+      if try(function() return prototypes.item[name].type end) ~= 'ammo' then return false end
+      local cat = try(function() local c = prototypes.item[name].ammo_category; return type(c) == 'string' and c or c.name end)
+      return next(cats) == nil or (cat and cats[cat]) or false
+    end
     for _, i in ipairs(try(function() return s.find_entities_filtered{type='inserter', area=box, force=turret.force} end) or {}) do
       if try(function() return i.drop_target end) == turret then
         local src = try(function() return i.pickup_target end)
@@ -179,13 +186,13 @@ return function(api)
           else lists[1] = src.get_output_inventory().get_contents() end
           for _, list in ipairs(lists) do
             for _, st in ipairs(list) do
-              if try(function() return prototypes.item[st.name].type end) == 'ammo' then n = n + st.count end
+              if its_ammo(st.name) then n = n + st.count end
             end
           end
           return n
         end) or 0) or 0
         local text = string.format('%s %s from %s', i.name, at(i.position), src and src.valid and (src.name .. ' ' .. at(src.position) ..
-          string.format(belt and ' carrying %d ammo' or ' holding %d ammo', held)) or 'nothing (no pickup target)')
+          string.format(belt and ' carrying %d of its ammo' or ' holding %d of its ammo', held)) or 'nothing (no pickup target)')
         if src and src.valid then
           local sp = src.position
           local others = {}

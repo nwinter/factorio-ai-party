@@ -220,7 +220,7 @@ do
   local P=dofile('mod/agent-harness_0.1.0/platalerts.lua'){state=function() return {} end}
   local rows=P.empty_turrets({},{empty_list={turret},hub_ammo={rocket=250,['firearm-magazine']=900}})
   eq(#rows,1)
-  eq(rows[1],'rocket-turret (-14.5,-16.5) is empty while the hub holds rocket*250 it takes: fed by long-handed-inserter (-14.5,-18.5) from assembling-machine-2 (-14.5,-20.5) holding 0 ammo; taking from it too: fast-inserter (-12.5,-20.5) into iron-chest (-11.5,-20.5)')
+  eq(rows[1],'rocket-turret (-14.5,-16.5) is empty while the hub holds rocket*250 it takes: fed by long-handed-inserter (-14.5,-18.5) from assembling-machine-2 (-14.5,-20.5) holding 0 of its ammo; taking from it too: fast-inserter (-12.5,-20.5) into iron-chest (-11.5,-20.5)')
   eq(#P.empty_turrets({},{empty_list={turret},hub_ammo={['firearm-magazine']=900}}),0,'the hub holds none it takes')
   arm.drop_target=nil
   has(P.empty_turrets({},{empty_list={turret},hub_ammo={rocket=5}})[1],'no inserter drops into it')
@@ -260,3 +260,29 @@ do
   eq(#r.side_loads,1); eq(r.side_loads[1],'transport-belt (8.5,1.5) feeds the side of transport-belt (8.5,2.5)')
 end
 print('d15_batch5 D3 platform_plan: ok')
+
+-- D1 (Sol, Astra): platform_supply: the chain in order, the first stop named. -------------------------------------------
+do
+  defines={entity_status={working=1,item_ingredient_shortage=2,full_output=3},inventory={asteroid_collector_output=1,crafter_input=2,crafter_output=3,turret_ammo=4,hub_main=5}}
+  prototypes={item={rocket={type='ammo'}},tile={}}
+  local empty={get_contents=function() return {} end,get_item_count=function() return 0 end}
+  local s={}
+  local col={valid=true,name='asteroid-collector',position={x=-0.5,y=-40.5},status=1,filter_slot_count=1,get_filter=function() return 'metallic-asteroid-chunk' end,
+    bounding_box={left_top={x=-2,y=-42},right_bottom={x=1,y=-39}},get_inventory=function() return empty end}
+  local crusher={valid=true,name='crusher',position={x=-6,y=-2.5},status=2,get_recipe=function() return {name='metallic-asteroid-crushing'} end,
+    prototype={crafting_categories={crushing=true}},get_inventory=function() return empty end}
+  local arm={valid=true,name='fast-inserter',position={x=-0.5,y=-38.5},pickup_target=col,drop_target={valid=true,name='transport-belt',position={x=-0.5,y=-37.5}}}
+  s.find_entities_filtered=function(f)
+    if f.type=='asteroid-collector' then return {col} elseif f.type=='assembling-machine' then return {crusher}
+    elseif f.type=='inserter' then return {arm} end
+    return {}
+  end
+  local pl={name='Petrel',surface=s,force='player',hub={valid=true,get_inventory=function() return {get_contents=function() return {{name='rocket',count=250}} end} end}}
+  local P=dofile('mod/agent-harness_0.1.0/platsupply.lua'){platform=function() return pl end}
+  local r=P.read({},{platform='Petrel'})
+  eq(r.first_stop,'crusher (-6,-2.5) metallic-asteroid-crushing: item_ingredient_shortage; in empty, out empty')
+  eq(r.lines[1],'first stop: '..r.first_stop)
+  has(r.lines[3],'collector (-0.5,-40.5): working; holds empty; filters metallic-asteroid-chunk; taken by fast-inserter (-0.5,-38.5) into transport-belt (-0.5,-37.5)')
+  has(table.concat(r.lines,'|'),'0 guns, 0 empty; the hub holds rocket*250')
+end
+print('d15_batch5 D1 platform_supply: ok')

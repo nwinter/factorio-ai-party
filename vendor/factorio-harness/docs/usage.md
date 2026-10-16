@@ -5211,7 +5211,7 @@ fh watch    # deploy on every change
 - An empty platform turret that takes ammo the hub holds (Sol, Astra 00:21-00:23: Starling's rear rocket turret
   starved while the ammo assembler's other output arm won). The platform alert's turret line now ends with each such
   turret (up to 4): `rocket-turret (-14.5,-16.5) is empty while the hub holds rocket*250 it takes: fed by fast-inserter
-  (-16.5,-16.5) from transport-belt (-17.5,-16.5) carrying 0 ammo`, and `; taking from it too: fast-inserter
+  (-16.5,-16.5) from transport-belt (-17.5,-16.5) carrying 0 of its ammo`, and `; taking from it too: fast-inserter
   (-12.5,-20.5) into iron-chest (-11.5,-20.5)` when other inserters take from the same source, or `no inserter drops
   into it`. `preflight {platform}` adds the same rows (`empty_turrets`) to the platform's row, whatever the hub holds.
   Checked on the copy of world n: Petrel's two empty rocket turrets, with 250 rockets in the hub.
@@ -5233,3 +5233,17 @@ fh watch    # deploy on every change
       feeds it too; one belt from a side alone is a curve).
     On the copy: Petrel 2345 tiles, no island, 538 belts, 2 head-on pairs and 10 side-loads, 24 ms in the container
     (about 5 ms on n).
+- `platform_supply {platform}`: a platform's supply chain in one read (Sol, Astra 03:21-03:23: Petrel's first flight
+  starved of fuel; about 20 reads by hand), in the chain's order:
+  - collectors: status, chunks held, filters, the inserters taking from them and where they put the chunks, and
+    foundation ghosts in their open space;
+  - crushers: recipe, status, input and output;
+  - thruster-fuel and thruster-oxidizer makers: status, what they hold, their fluids;
+  - thrusters: tanks under half (thrust.lua's lines);
+  - guns: each empty one with what feeds it, and the hub's ammo;
+  - ghosts by name, apart.
+  The first line is `first stop: ...`, the first of these not working: a collector not working, with no inserter
+  taking from it, or with foundation ghosts in front; a crusher or maker not working; a thruster under half; an empty
+  gun. On the copy: Petrel `first stop: collector (-0.5,-40.5): full_output; holds metallic-asteroid-chunk*32 ...`, 15
+  ms in the container (about 3 ms on n). An empty turret's feed now counts only the ammo that turret takes (`holding 0
+  of its ammo`).
