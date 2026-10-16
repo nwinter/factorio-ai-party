@@ -933,6 +933,17 @@ end)()
   eq(c[3].heat[1], 'heat south at (128.5,41.5): planned #2 heat-pipe')
   eq(c[4].fluid[1], 'input steam north at (128.5,33.5): nothing there'); eq(c[4].fluid[2], 'input steam south at (128.5,39.5): planned #3 heat-exchanger')
   eq(c[2], nil, 'a heat pipe joining only the plan: no row'); eq(c[5], nil, 'a pipe joining only the plan: no row')
+  -- A pump's ports in every dry run row, blocked or not (Grok, shift19: one placed backwards, one with its output past
+  -- an underground pipe's mouth): each tile it joins, one past its body, and what stands there.
+  prototypes.entity.pump = {name='pump', type='pump', tile_width=1, tile_height=2, collision_box={left_top={x=-0.3, y=-0.8}, right_bottom={x=0.3, y=0.8}},
+    collision_mask=BLD, fluidbox_prototypes={{production_type='input-output', pipe_connections={conn(0, -0.5, 0, 'output'), conn(0, 0.5, 8, 'input')}}},
+    items_to_place_this={{name='pump', count=1}}}
+  local pr = dr.check(cp, {kind='build', entities={{index=1, name='pump', position={x=130.5, y=42}, direction=0, item='pump'}}})
+  eq(pr.entities[1].ports, 'output north at (130.5,40.5), one tile past the body: pipe (130.5,40.5) (connects back); input south at (130.5,43.5), one tile past the body: nothing')
+  -- turned round: the output faces away from the pipe
+  pr = dr.check(cp, {kind='build', entities={{index=1, name='pump', position={x=130.5, y=42}, direction=8, item='pump'}}})
+  assert(pr.entities[1].ports:find('output south at (130.5,43.5), one tile past the body: nothing', 1, true), pr.entities[1].ports)
+  assert(pr.entities[1].ports:find('input north at (130.5,40.5), one tile past the body: pipe (130.5,40.5) (connects back)', 1, true), pr.entities[1].ports)
   eq(out.connections_open, 4)   -- the tower's east, south and west, the turbine's north
   -- A pipe-to-ground's underground side faces the turbine: no join.
   c = rows(dr.check(cp, {kind='build', entities={

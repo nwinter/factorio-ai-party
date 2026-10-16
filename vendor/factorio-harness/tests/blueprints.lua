@@ -178,6 +178,11 @@ local parea={left_top={x=-3,y=-3},right_bottom={x=3,y=3}}
 -- Without tiles, entity deconstruction is unchanged and no tile is touched.
 local plain=H.deconstruct(pp,{area=parea})
 eq(plain.changed,1,'the chest is marked'); eq(chest_marks,1); eq(plain.tiles,false); eq(tile_queries,0,'no tile query without tiles')
+-- Marked already (Grok, shift19): said, and cancel: true unmarks it as cancel_deconstruction does.
+local twice=H.deconstruct(pp,{area=parea})
+eq(twice.changed,0); assert(twice.already_marked and twice.already_marked:find('1 already marked',1,true),tostring(twice.already_marked))
+local undo=H.deconstruct(pp,{area=parea,cancel=true})
+eq(undo.cancelled,1); eq(chest.marked,false); eq(undo.mode,'cancel')
 chest.marked=false; chest_marks=0
 
 -- tiles=true marks every minable tile in the area; empty space is never selected.

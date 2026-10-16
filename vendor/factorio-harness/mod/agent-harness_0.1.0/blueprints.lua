@@ -875,7 +875,7 @@ return function(api)
     local list=candidates(p,box)
     local changed,by=0,{}
     -- Heat-network parts it marks (Sol, shift19): what their removal does to heat (heating.lua loss).
-    local heat_parts={}
+    local heat_parts,already={},0
     local HEAT_PART={['heat-pipe']=true,reactor=true,boiler=true,['heat-interface']=true}
     for _, e in ipairs(list) do
       if e.valid and (e.force==p.force or e.force.name=='neutral') and e.type~='character' and e.minable
@@ -886,10 +886,12 @@ return function(api)
         elseif dry then
           -- (a dry run: what is not marked yet; ghosts would be removed, as a planner removes them)
           if not e.to_be_deconstructed(p.force) then changed=changed+1; by[e.name]=(by[e.name] or 0)+1; if HEAT_PART[e.type] then heat_parts[#heat_parts+1]=e end end
+        elseif e.to_be_deconstructed(p.force) then already=already+1
         elseif e.order_deconstruction(p.force,real(p)) then changed=changed+1; if HEAT_PART[e.type] then heat_parts[#heat_parts+1]=e end end
       end
     end
     out.changed=changed
+    if already>0 then out.already_marked=already..' already marked for deconstruction (deconstruct {area, cancel: true} or cancel_deconstruction unmarks them)' end
     if dry then
       out.changed=nil; out.would_mark=changed
       local names={}
@@ -905,7 +907,22 @@ return function(api)
     if out.tiles then deconstruct_tiles(p,a,box,cancel,out,dry) end
     return out
   end
-  function H.deconstruct(p,a) return deconstruct(p,a,false) end
+  -- cancel: true (Grok, shift19: an underground on a 311-tile crude line, already marked, was mined and rebuilt by hand
+  -- to undo the mark): the marks in the area are cancelled, as cancel_deconstruction does.
+  function H.deconstruct(p,a)
+    if a.cancel~=nil then
+      assert(type(a.cancel)=='boolean','cancel must be true or false')
+      if a.cancel then
+        local rest={}
+        for k,v in pairs(a) do if k~='cancel' then rest[k]=v end end
+        assert(not rest.dry_run,'cancel and dry_run: one or the other')
+        local out=deconstruct(p,rest,true)
+        out.cancelled=out.changed
+        return out
+      end
+    end
+    return deconstruct(p,a,false)
+  end
   function H.cancel_deconstruction(p,a) return deconstruct(p,a,true) end
 
   -- The library's actions: blueprint_save captures, blueprint_list reads, blueprint_place (and paste, dry_run,

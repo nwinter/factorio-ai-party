@@ -757,6 +757,7 @@ return function(api)
     end
     local recs, nproblems = {}, 0
     local occupied = {} -- tile key -> planned recs whose footprint covers it
+    local pumps_read = 0
     local needed, need_list = {}, {} -- tile key -> {x, y, item, why}
     local counts = {ok=0, after_tiles=0, after_rails=0, needs_tiles=0, blocked=0, exists=0}
     -- Cliffs under placeable entries (Sol 12:20: a belt_route dry run said 55 placeable, 6 of them over cliffs, with
@@ -1074,6 +1075,34 @@ return function(api)
         end
       end
       rec.why = #reasons > 0 and table.concat(reasons, '; ') or nil
+      -- A pump's ports, blocked or not (Grok, shift19: one placed backwards, one with its output past an underground
+      -- pipe's mouth): each tile it joins, one past its body, and what stands there now or is planned.
+      if rec.proto and rec.proto.type == 'pump' and rec.pos and api.fluid_rows and pumps_read < 16 then
+        pumps_read = pumps_read + 1
+        local rows = try(function() return api.fluid_rows({prototype=rec.proto, position=rec.pos, direction=rec.dir}) end) or {}
+        local parts = {}
+        for _, c in ipairs(rows) do
+          local tx, ty = math.floor(c.joins.x), math.floor(c.joins.y)
+          local bx, by = math.floor(c.at.x), math.floor(c.at.y)
+          local there = {}
+          for _, o in pairs(try(function() return s.find_entities_filtered{area={{tx+0.1, ty+0.1}, {tx+0.9, ty+0.9}}, force=force} end) or {}) do
+            if o.valid and o.type ~= 'character' then
+              local back = false
+              for _, oc in ipairs(api.fluid_connections and try(function() return api.fluid_connections(o) end) or {}) do
+                if oc.x == tx and oc.y == ty and oc.tx == bx and oc.ty == by then back = true end
+              end
+              there[#there+1] = string.format('%s %s (%s)', o.type == 'entity-ghost' and o.ghost_name..' ghost' or o.name, at(o.position),
+                back and 'connects back' or 'no connection back')
+            end
+          end
+          for _, q in ipairs(occupied[key(tx, ty)] or {}) do
+            if q ~= rec then there[#there+1] = 'planned #'..tostring(q.copy and (q.copy..'.'..q.index) or q.index)..' '..q.name end
+          end
+          parts[#parts+1] = string.format('%s %s at %s, one tile past the body: %s', c.flow or 'fluid', c.direction or '?', tile_text(tx, ty),
+            #there > 0 and table.concat(there, ', ') or 'nothing')
+        end
+        rec.ports = #parts > 0 and table.concat(parts, '; ') or nil
+      end
       counts[rec.status] = (counts[rec.status] or 0) + 1
       -- What the game refuses at this moment (a normal paste is all or nothing).
       if rec.status == 'blocked' or (rec.status == 'needs_tiles' and rec.engine == false) then counts.refused_now = (counts.refused_now or 0) + 1 end
@@ -1748,9 +1777,9 @@ return function(api)
       local problem = r.status == 'blocked' or r.status == 'needs_tiles' or r.reach ~= nil or r.collisions ~= nil
         or ((r.status == 'exists' or r.status == 'after_tiles') and kind ~= 'paste')
       if problem then nproblems = nproblems + 1 end
-      if (problem or plan.details) and #rows < (plan.details and 256 or MAX_ROWS) then
+      if (problem or plan.details or r.ports) and #rows < (plan.details and 256 or MAX_ROWS) then
         local row = {index=r.copy and (r.copy..'.'..r.index) or r.index, name=r.name, position=r.pos or nil,
-          direction=r.dir ~= 0 and NAMES[r.dir] or nil, status=r.status, why=r.why or r.note, reach=r.reach, collisions=r.collisions}
+          direction=r.dir ~= 0 and NAMES[r.dir] or nil, status=r.status, why=r.why or r.note, reach=r.reach, collisions=r.collisions, ports=r.ports}
         if r.why and r.note then row.note = r.note end
         if plan.details and r.box then
           local x0, y0, x1, y1 = span(r.box)
