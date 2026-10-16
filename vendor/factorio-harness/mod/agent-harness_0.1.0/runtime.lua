@@ -7437,8 +7437,13 @@ end
 M.NEAREST_TYPES={'container','logistic-container','linked-container'}
 -- What a chest feeds: a requester or buffer chest's own name for it, or what an inserter that takes from it drops
 -- into (a machine's input chest, a turret's feeder); nil for a chest nothing takes from.
-function M.feeds(p,e,mode)
-  if mode=='requester' or mode=='buffer' then return 'a '..mode..' chest' end
+function M.feeds(p,e,mode,item)
+  -- A requester or buffer chest: its request for the item (Luna, d15: from nearest kept picking a requester).
+  if mode=='requester' or mode=='buffer' then
+    local okp,pt=pcall(function() return e.get_logistic_point(defines.logistic_member_index.logistic_container) end)
+    local min=item and okp and pt and M.reqchest and M.reqchest.request(pt,item) or 0
+    return 'a '..mode..' chest'..(item and (min>0 and string.format(' requesting %d %s: robots bring it there for that request',min,item) or ' with no request for '..item) or '')
+  end
   local b=e.bounding_box
   local ok,list=pcall(function() return p.surface.find_entities_filtered{area={{b.left_top.x-3,b.left_top.y-3},{b.right_bottom.x+3,b.right_bottom.y+3}},type='inserter',force=p.force} end)
   for _,i in ipairs(ok and list or {}) do
@@ -7509,7 +7514,7 @@ function M.holding(p,item,quality,radius,exclude)
       if n>0 then
         local okm,mode=pcall(function() return e.type=='logistic-container' and e.prototype.logistic_mode or nil end)
         mode=okm and mode or nil
-        local feeds=M.feeds(p,e,mode)
+        local feeds=M.feeds(p,e,mode,item)
         -- what robots have reserved there (Grok, 15:20: three walks to a copper-cable provider robots emptied)
         local okr,r=pcall(M.supply.reserved,e,item)
         r=okr and r or 0
@@ -9802,6 +9807,42 @@ local function on_platform(p,name)
     __index=function(_,k) if k=='surface' then return pl.surface elseif k=='position' then return hub end return p[k] end,
     __newindex=function(_,k,v) p[k]=v end})
 end
+-- Whether entity e takes item as a hand move would put it (Luna, d15: timed walks to a machine that did not use the item):
+-- the inventory infer_inventory picks (or the one named), the recipe, the slots and filters, read now.
+function M.accepts_text(e,a)
+  local where=string.format('%s (%g,%g)',e.name,e.position.x,e.position.y)
+  local args={direction='to_entity',item=a.item,inventory=a.inventory,quality=a.quality}
+  local okn,name,inv=pcall(infer_inventory,e,args)
+  if not okn then return 'no: '..where..': '..tostring(name):gsub('^[^:]*:%d+: ','') end
+  if not inv then return 'no: '..where..' has no inventory that takes '..a.item end
+  -- An assembler takes only its recipe's ingredients; a furnace takes any smeltable while its source is empty (the
+  -- game picks the recipe), so its slots decide.
+  local recipe=name=='assembling_machine_input' and select(2,pcall(function() return e.get_recipe() end)) or nil
+  if (name=='assembling_machine_input') and not recipe then return string.format('no: %s has no recipe set (its input takes nothing)',where) end
+  if recipe then
+    local takes,list=false,{}
+    for _,ing in ipairs(recipe.ingredients or {}) do if ing.type~='fluid' then list[#list+1]=ing.name; if ing.name==a.item then takes=true end end end
+    if not takes then return string.format('no: %s recipe %s takes %s, not %s',where,recipe.name,#list>0 and table.concat(list,', ') or 'no items',a.item) end
+  end
+  local okc,can=pcall(function() return inv.can_insert({name=a.item,count=1,quality=a.quality or 'normal'}) end)
+  if okc and can==false then
+    local okf,full=pcall(M.slots.full,inv,a.item)
+    if okf and full then return string.format('no: %s %s is full: %s',where,name,full.text) end
+    -- A furnace: whether any recipe of its crafting categories takes the item at all.
+    if name=='furnace_source' then
+      local okc2,cats=pcall(function() return e.prototype.crafting_categories end)
+      local okr,list=pcall(function() return prototypes.get_recipe_filtered{{filter='has-ingredient-item',elem_filters={{filter='name',name=a.item}}}} end)
+      local smelts=false
+      for _,r in pairs(okr and list or {}) do if okc2 and cats and cats[r.category] then smelts=true end end
+      if okr and not smelts then return string.format('no: %s makes nothing from %s (no recipe of its crafting categories takes it)',where,a.item) end
+    end
+    local fr=name=='furnace_source' and select(2,pcall(function() return e.get_recipe() or e.previous_recipe end)) or nil
+    local frn=fr and (type(fr.name)=='string' and fr.name or fr.name and fr.name.name)
+    if frn then return string.format('no: %s %s refuses %s now (its recipe %s; a furnace switches recipe only once its source is empty)',where,name,a.item,frn) end
+    return string.format('no: %s %s refuses %s (a slot filter, or the item does not go in that inventory)',where,name,a.item)
+  end
+  return string.format('yes: %s takes %s into %s',where,a.item,name)
+end
 -- Walking tours with dry_run (d15 batch3 item 4; Haiku, Luna): the route through the stops read now (routecheck.lua),
 -- nothing walked or moved. The stops are the positions given, nearest first from you; a radius or area tour chooses its
 -- stops when it runs.
@@ -9836,6 +9877,18 @@ for _,name in ipairs({'feed','collect','transfer','rearm','refuel'}) do
       end
       out.outputs_taken=#lines>0 and lines or nil
       if a.wait_ticks~=nil or a.keep_taking~=nil then out.note=out.note..'; a wait takes each product the tick it is in the output' end
+    end
+    -- feed, and transfer to an entity: whether each stop takes the item (M.accepts_text).
+    if (name=='feed' or (name=='transfer' and a.direction~='to_player')) and type(a.item)=='string' and prototypes.item[a.item] then
+      local lines={}
+      for i,q in ipairs(list) do
+        if i>16 then lines[#lines+1]=string.format('+%d more stops not read',#list-16); break end
+        local pos=position(type(q)=='table' and (q.position or q) or q)
+        local ok,e=pcall(entity,p,{position=pos,name=a.name},'walk')
+        if not ok then ok,e=pcall(remote_entity,p,{position=pos}) end
+        lines[#lines+1]=ok and e and M.accepts_text(e,a) or string.format('unknown: no entity of ours in sight at (%g,%g)',pos.x,pos.y)
+      end
+      out.accepts=lines
     end
     out.order=#points<=17 and (function() local t={}; for i=2,#points do t[#t+1]=string.format('(%g,%g)',points[i].x,points[i].y) end; return table.concat(t,' ') end)() or nil
     out.avoid_enemies=mode and M.avoid.describe(mode) or 'false: no check'

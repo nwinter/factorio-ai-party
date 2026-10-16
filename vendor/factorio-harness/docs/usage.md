@@ -4916,4 +4916,17 @@ fh watch    # deploy on every change
   surface, by name: position, the rail beside it, limit, `trains_count`, and the trains heading there or stopped at it
   (`train 13 at it (front (-43,96))`). It gives at most 200, and reads `game.train_manager.get_train_stops` and
   `get_trains` once each.
+- Transfer and feed dry runs (Luna: timed walks to a machine that did not take the item). `transfer {positions,
+  direction: "to_entity", item, dry_run: true}` and `feed {..., dry_run: true}` add `accepts`, one line per stop (at
+  most 16). It is read now, with the inventory a hand move would pick:
+  - `yes: stone-furnace (-26,-45) takes coal into fuel`;
+  - `no: assembling-machine-2 (x,y) recipe iron-gear-wheel takes iron-plate, not copper-plate`;
+  - `no: stone-furnace (-26,-45) makes nothing from iron-gear-wheel (no recipe of its crafting categories takes it)`;
+  - `no: electric-furnace (-52.5,-73.5) furnace_source is full: all 1 slots taken (iron-ore 3 in 1 slot)`;
+  - a furnace holding another ore: `refuses ... now (its recipe copper-plate; a furnace switches recipe only once its
+    source is empty)`;
+  - a filter or an inventory that does not take it, and an assembler with no recipe.
+- `from: "nearest"` names a requester or buffer chest with its request for the item (`a requester chest requesting 200
+  nutrients: robots bring it there for that request`). Such chests stay left out unless `feeding: true`, and come
+  after the others then. supply's chest rows already give a requester's request and a provider's robot reservations.
 
