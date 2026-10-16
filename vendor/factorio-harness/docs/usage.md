@@ -5145,8 +5145,8 @@ fh watch    # deploy on every change
     12 a teammate and 48 in all.
   - When it is due, each recipient gets one private line in their next reply, as a tell from `reminder #N`: `reminder
     #1: ship review (sol, every 15m00s, board #575): Petrel ammo, fuel and hub room; reminder_ack {id: 1, result}
-    records the result`. It wakes a sleep as a tell does (`woke: told`), and a sleep with `wake_on_messages: false`
-    as a tell does too (only `wake: true` ends that). It is not in the game chat.
+    records the result`. It wakes a sleep as a tell does (`woke: told`); a sleep with `wake_on_messages: false` keeps
+    it for the next reply, as it keeps tells. It is not in the game chat.
   - While a recipient has not acknowledged a run, later runs fold into it (`missed`): no second line, and no backlog
     after a pause. A cadence's next run is always the next point on it after the tick now.
   - `reminder_ack {id, result?}` records the result (job `last_result`, `result_by`, `result_tick`) and clears your
