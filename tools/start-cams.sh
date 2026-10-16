@@ -30,6 +30,9 @@ joined() {  # NAME: the player is connected to the server now
   out=$("${rcon[@]}" "/silent-command local p=game.get_player('$1') rcon.print(p and p.connected and 'joined' or 'not yet')" 2>/dev/null)
   grep -q joined <<<"$out"
 }
+running() {  # CAM: its client process is up on the box
+  "${winps[@]}" tools/win/client-running.ps1 -Slot "-$1" 2>/dev/null | tr -d '\r' | grep -q '^running'
+}
 start() {  # CAM
   local sound=(); [ "$1" = cam1 ] && sound=(-Sound)  # stream audio: only the main director is audible
   "${winps[@]}" tools/win/start-client.ps1 -Name "$world" -GamePort "$game" -PlayerName "pog-$1" -Slot "-$1" \
@@ -46,7 +49,13 @@ wait_join() {  # CAM -> 0 once joined, 1 after wait_s
 
 bad=0
 for cam in ${POG_CAMS:-cam1 cam2 cam3}; do  # POG_CAMS: a subset when the box is short of memory (2026-10-14 19:30)
-  if joined "pog-$cam"; then say "$cam: already in the game"; continue; fi
+  if joined "pog-$cam"; then
+    if running "$cam"; then say "$cam: already in the game"; continue; fi
+    # 12:00 2026-10-16: right after stop-client the server still lists the player for a few seconds, so this skipped
+    # three stopped cameras. A listed player whose client is not running is waited out (up to 60 s), then started.
+    say "$cam: listed as joined but its client is not running: waiting for the server to drop it"
+    t0=$(date +%s); while joined "pog-$cam" && [ $(( $(date +%s) - t0 )) -lt 60 ]; do sleep 3; done
+  fi
   say "$cam: starting"
   start "$cam"
   wait_join "$cam" && continue
