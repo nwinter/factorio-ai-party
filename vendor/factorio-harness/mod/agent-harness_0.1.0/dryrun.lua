@@ -1538,6 +1538,15 @@ return function(api)
 
     -- Reach: from where the character stands, then spots that reach the rest.
     local reach = not on_platform and character and try(function() return p.build_distance end)
+    -- A plan on another surface by remote view (Sol 15:21: the Nauvis dry run from Aquilo measured reach from the
+    -- character's Aquilo position): no hand reach applies there; that planet's construction robots build the ghosts.
+    local remote = type(p) == 'table' and rawget(p, '__remote')
+    if remote and reach then
+      local real = rawget(p, '__player')
+      local from = real and try(function() return real.surface.name end)
+      out.standing = {remote=string.format('you are on %s: the ghosts on %s are built by its construction robots (no hand reach there)', from or 'another surface', s.name)}
+      reach = nil
+    end
     if reach and (manual or plan.standing) then
       local targets = {}
       for _, r in ipairs(recs) do

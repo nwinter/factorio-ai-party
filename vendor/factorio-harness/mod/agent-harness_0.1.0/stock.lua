@@ -4,13 +4,15 @@
 -- radius walks the stock back.
 return function(api)
   local M={}
-  local TYPES={'assembling-machine','furnace','agricultural-tower','container','logistic-container','cargo-landing-pad'}
+  -- temporary-container: a cargo pod landed with no pad (a player opens it; freight_audit counted 45 solar panels in one
+  -- that stock left out, Sol 15:22).
+  local TYPES={'assembling-machine','furnace','agricultural-tower','container','logistic-container','cargo-landing-pad','temporary-container'}
   -- Gathering leaves plain chests alone unless asked: they are usually feed
   -- chests the player stocked for machines, not stock to collect.
   local NO_CHESTS={'assembling-machine','furnace','agricultural-tower','cargo-landing-pad'}
   -- An agricultural tower's harvest is its output, as an assembler's product is (Gleba).
   local CRAFTER={['assembling-machine']=true,furnace=true,['agricultural-tower']=true}
-  local CHEST={container=true,['logistic-container']=true}
+  local CHEST={container=true,['logistic-container']=true,['temporary-container']=true}
   local MAX_PLACES=32
   local function output_of(e)
     if CRAFTER[e.type] then
@@ -28,13 +30,17 @@ return function(api)
   end
   -- Every own entity within radius of centre holding the item, nearest first,
   -- plus the crafters set to make it (whether or not they hold any now).
+  -- opts.surface: another surface than the character's (stock {surface, position}; Sonnet 12:20: the surface was
+  -- ignored); opts.whole: every place on it (a platform's), no radius.
   function M.scan(p,item,opts)
     opts=opts or {}
     local centre=opts.position or p.position
     local quality=opts.quality or 'normal'
     local places,total,groups,makers={},0,{},{}
     local spoils=api.spoil and api.spoil.spoils(item)
-    for _,e in pairs(p.surface.find_entities_filtered{position=centre,radius=opts.radius or 128,force=p.force,type=opts.types or TYPES}) do
+    local f={force=p.force,type=opts.types or TYPES}
+    if not opts.whole then f.position=centre; f.radius=opts.radius or 128 end
+    for _,e in pairs((opts.surface or p.surface).find_entities_filtered(f)) do
       if e.valid then
         if makes(e,item) then makers[e.name]=(makers[e.name] or 0)+1 end
         local inv=output_of(e)
@@ -83,11 +89,12 @@ return function(api)
   end
   -- Without an item: what our machines and chests hold, per item, largest
   -- first (shake2: agents asked `scope=stock` bare and got an error).
-  function M.summary(p,a,radius,limit)
+  function M.summary(p,a,radius,limit,surface)
     local centre=a.position and api.position(a.position) or p.position
+    surface=surface or p.surface
     local totals,order={},{}
     local spoil,read={},{}
-    for _,e in pairs(p.surface.find_entities_filtered{position=centre,radius=radius,force=p.force,type=TYPES}) do
+    for _,e in pairs(surface.find_entities_filtered{position=centre,radius=radius,force=p.force,type=TYPES}) do
       local inv=e.valid and output_of(e)
       for _,s in ipairs(inv and inv.get_contents() or {}) do
         local key=s.quality and s.quality~='normal' and s.name..'@'..s.quality or s.name
@@ -110,6 +117,8 @@ return function(api)
         r and string.format('; the first %s in %s (%d%% spoiled)',h and 'hatches into '..h.entity or 'spoils',api.spoil.secs(r.tick-game.tick),math.floor(r.percent*100+0.5)) or '')
     end
     return {radius=radius,items=items,more=#order>limit and #order-limit or nil,
+      covered=string.format('our machine outputs and chests within %d tiles of (%g,%g) on %s',radius,math.floor(centre.x),math.floor(centre.y),surface.name),
+      as_of=string.format('live (tick %d)',game.tick),
       note=#order>0 and 'machine outputs and chests within radius; scope=stock item=NAME lists the places and a collect line' or 'no machine output or chest within radius holds anything'}
   end
   -- What kind of holder a place is (Muse 09:24: 3-4 stock calls to find a provider robots had not committed): provider
@@ -126,13 +135,16 @@ return function(api)
     if e.type=='car' or e.type=='spider-vehicle' then return 'vehicle' end
     return e.type
   end
-  function M.view(p,a)
+  -- opts: surface (the one named), whole (a platform: every place aboard).
+  function M.view(p,a,opts)
     local radius=api.integer(a.radius,128,1,1024,'radius')
-    if a.item==nil then return M.summary(p,a,radius,api.integer(a.limit,16,1,64,'limit')) end
+    if a.item==nil then return M.summary(p,a,radius,api.integer(a.limit,16,1,64,'limit'),opts and opts.surface) end
     assert(type(a.item)=='string' and prototypes.item[a.item],'item must be a known item name')
     local limit=api.integer(a.limit,8,1,MAX_PLACES,'limit')
     local centre=a.position and api.position(a.position) or p.position
-    local s=M.scan(p,a.item,{position=centre,radius=radius,quality=a.quality})
+    local surface=opts and opts.surface or p.surface
+    local whole=opts and opts.whole
+    local s=M.scan(p,a.item,{position=centre,radius=radius,quality=a.quality,surface=surface,whole=whole})
     -- holders: only those kinds of place (the total and groups stay the whole stock).
     local want
     if a.holders~=nil then
@@ -155,6 +167,9 @@ return function(api)
     end
     local h=api.spoil and api.spoil.hatch(a.item)
     return {item=a.item,total=s.total,by_entity=s.groups,places=places,more=#s.places>limit and #s.places-limit or nil,
+      covered=whole and string.format('every machine output and chest of ours on %s',surface.name)
+        or string.format('our machine outputs and chests within %d tiles of (%g,%g) on %s',radius,math.floor(centre.x),math.floor(centre.y),surface.name),
+      as_of=string.format('live (tick %d)',game.tick),
       made_by=s.makers,held=p.get_main_inventory().get_item_count{name=a.item,quality=a.quality or 'normal'},summary=M.line(s,centre),
       hatches_into=h and string.format('%s (an enemy, %s) when it spoils: first_spoils_in is when the first hatches',h.entity,api.spoil.per_text(h)) or nil}
   end
@@ -211,7 +226,7 @@ return function(api)
     end
     local skipped
     places,skipped=unclaimed(p,places,'items')
-    local action={kind='gather',all=true,want=want,got=0,visited=0,items={},targets=route(p.position,places),index=1,until_tick=game.tick+ticks}
+    local action={kind='gather',all=true,want=want,got=0,visited=0,items={},targets=route(p.position,places),index=1,until_tick=game.tick+ticks,min_fresh=a.min_fresh}
     local out={items='all',want=want<1000000 and want or nil,stock=total,places=#action.targets,skipped_claims=skipped}
     if total==0 then out.note='no assembler or furnace output in radius holds anything' end
     return action,out
@@ -226,7 +241,7 @@ return function(api)
     -- Another agent's claimed stock stays put; the result says whose it is.
     local skipped
     s.places,skipped=unclaimed(p,s.places,a.item)
-    local action={kind='gather',item=a.item,quality=a.quality,outputs_only=a.outputs_only,want=want,got=0,visited=0,
+    local action={kind='gather',item=a.item,quality=a.quality,outputs_only=a.outputs_only,want=want,got=0,visited=0,min_fresh=a.min_fresh,
       targets=route(p.position,s.places),index=1,until_tick=game.tick+ticks,avoid_enemies=a.avoid_enemies,unsafe_goal=a.unsafe_goal}
     M.guard(action)
     local left=M.screen_action(p,action,'every place holding '..a.item..' there')
@@ -252,7 +267,7 @@ return function(api)
     if a.item~=nil then assert(type(a.item)=='string' and prototypes.item[a.item],'item must be a known item') end
     local want=a.count and api.integer(a.count,nil,1,100000,'count') or 1000000
     local walk=api.integer(a.ticks,3600,1,36000,'ticks')
-    local action={kind='gather',wait=wait,item=a.item,quality=a.quality,all=a.item==nil or nil,want=want,got=0,visited=0,items={},
+    local action={kind='gather',wait=wait,item=a.item,quality=a.quality,all=a.item==nil or nil,want=want,got=0,visited=0,items={},min_fresh=a.min_fresh,
       targets={{entity=e,position=e.position}},index=1,until_tick=game.tick+walk+wait}
     local recipe=pcall(e.get_recipe) and e.get_recipe()
     local okt,tk=pcall(M.output_takers,e,a.item); tk=okt and tk or nil

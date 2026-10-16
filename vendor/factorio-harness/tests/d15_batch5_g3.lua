@@ -168,7 +168,10 @@ do
   local r=astra('stock',{item='copper-cable',surface='nauvis'})
   eq(r.total,840); eq(r.surface,'nauvis'); eq(r.line,'copper-cable on nauvis: 840'); assert(r.note:find('supply {item, surface}',1,true))
   fails(function() astra('stock',{surface='nauvis'}) end,'stock {surface} takes item')
-  fails(function() astra('stock',{item='copper-cable',surface='platform-3'}) end,'surface must be a planet name')
+  -- A platform's surface is read whole (d16 batch7 A1).
+  platform.find_entities_filtered=function(f) assert(f.position==nil and f.radius==nil,'a platform is read whole'); return {} end
+  r=astra('stock',{item='copper-cable',surface='platform-3'})
+  eq(r.total,0); eq(r.covered,'every machine output and chest of ours on platform-3')
   runtime.packaudit.planet_row,game.get_surface=kept,kg
 end
 print('d15_batch5_g3 stock on a surface: ok')

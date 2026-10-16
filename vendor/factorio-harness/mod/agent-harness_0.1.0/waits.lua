@@ -317,6 +317,25 @@ return function(api)
       end
     end
   end
+  -- A collect waiting at its machine (stock.lua start_wait): whether the machine works now (crafting, its products
+  -- accumulating) and one line on it; nil for any other action.
+  function M.collect_waiting(index)
+    local act = (api.state().active or {})[index]
+    if not (act and act.kind == 'gather' and act.wait) then return nil end
+    local t = act.targets and act.targets[1]
+    local e = t and t.entity
+    if not (e and e.valid) then return nil end
+    local crafting = pcall(function() return e.is_crafting() end) and e.is_crafting()
+    local progress = (pcall(function() return e.crafting_progress end) and e.crafting_progress) or 0
+    local st = defines and defines.entity_status
+    local status = pcall(function() return e.status end) and e.status
+    local name
+    for k, v in pairs(st or {}) do if v == status then name = k end end
+    local working = crafting or (st and status == st.working) or false
+    return {working=working, line=string.format('collect waits at %s (%g,%g) for %s: the machine %s (status %s, craft %d%%), got %d so far',
+      e.name, e.position.x, e.position.y, act.item or 'its products', working and 'works: the products come as it crafts' or 'is not crafting',
+      name or tostring(status), math.floor(progress * 100 + 0.5), act.got or 0)}
+  end
   local function queue_why(p, record, out, remote)
     local q = queue_of(p.index,remote)
     if not q or q.paused then
@@ -328,10 +347,14 @@ return function(api)
     local step = q.current
     if step and MOVING[step.action] and c and c.valid then
       local pos, still = c.position, record.still
+      -- A collect standing at its machine on purpose while the machine works (Sol 13:50: a long coolant collect woke
+      -- the sleep every 30 s as queue_stalled) is no stall; a machine that stopped is one, and says so.
+      local waiting = M.collect_waiting(p.index)
+      if waiting and waiting.working then record.still = nil; return nil end
       if not still or still.step ~= step.id or math.abs(pos.x - still.x) + math.abs(pos.y - still.y) > 0.5 then
         record.still = {x=pos.x, y=pos.y, tick=game.tick, step=step.id}
       elseif game.tick - still.tick >= STILL_TICKS then
-        out.queue = string.format('%s has not moved your character for %d s (at %.1f,%.1f)', step.action, math.floor((game.tick - still.tick) / 60), pos.x, pos.y)
+        out.queue = waiting and waiting.line or string.format('%s has not moved your character for %d s (at %.1f,%.1f)', step.action, math.floor((game.tick - still.tick) / 60), pos.x, pos.y)
         return 'queue_stalled'
       end
     end

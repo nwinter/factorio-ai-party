@@ -72,6 +72,9 @@
   direction: "to_player", item: "logistic-robot", count}` takes robots out of it, as its GUI does. `stock {item,
   surface}` gives a planet's whole stock of an item. `stock {item, holders: ["provider", "storage"], limit: 32}` lists only those kinds of place;
   each place says its `kind` and what robots have `reserved` there.
+- `stock {item}` with no radius totals the whole surface (named or yours; a platform is read whole) and lists the places
+  within 128 tiles; `covered` says what was read, `as_of` whether a total is live or reused (and its age; `supply` too).
+- `belt_gaps` follows a leg that is not straight round the remembered belt's corners (`followed`); `surface` is read.
 - `reservations {network, item?}` (read only): what robots have reserved to pick up at each provider and storage
   chest, each requester short or with deliveries on the way (its request, what it holds, what is coming, no room when
   every slot is taken), the robots' orders by item and target, and `flags` (reservations while robots are idle, orders

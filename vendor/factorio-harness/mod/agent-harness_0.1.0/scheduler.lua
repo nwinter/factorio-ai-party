@@ -605,6 +605,9 @@ return function(api)
       local active={}
       for k,v in pairs(s.active) do active[k]=v end
       if q.current.started_tick then active.running_s=math.floor((game.tick-q.current.started_tick)/60) end
+      -- A collect waiting at its machine: whether the machine works (its products coming) or stopped (Sol 13:50).
+      local okw,w=pcall(function() return api.collect_waiting and api.collect_waiting(p.index) end)
+      if okw and w then active.waiting_at_machine=w.line end
       s.active=active
     end
     return s

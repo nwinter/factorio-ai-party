@@ -252,9 +252,10 @@ setTimeout(() => {
     assert len(o["sent"]) == 1 and o["sent"][0]["name"] == "LimeLight" and o["sent"][0]["title"] == "Aethera", o
     assert o["sent"][0]["string"] == "0eNqabcdef" and len(o["sent"][0]["cid"]) == 24, o
     assert o["note"].startswith("Shared as #7: a book of 2 blueprints, 4 entities") and o["left"] == "", o
-    # the page has the box
+    # the page leaves the box out (shelved d16 17:00: Nick does not want outside designs brought to the agents);
+    # live.js does nothing without it
     html = Path(SITE, "build.py").read_text()
-    assert 'id="bp-form"' in html and 'name="string"' in html
+    assert 'id="bp-form"' not in html
 
 
 if __name__ == "__main__":
