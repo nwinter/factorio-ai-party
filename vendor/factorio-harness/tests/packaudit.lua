@@ -69,7 +69,9 @@ eq(r.planets[1].unmet,40); eq(r.planets[1].labs_without,1); eq(r.platforms[1].sp
 local CP='cryogenic-science-pack'
 prototypes.item[CP]={weight=1000}
 force.current_research=nil
-local aqpad={valid=true,type='cargo-landing-pad',position={x=4.5,y=-3.5},logistic_network={}}
+local aqpad={valid=true,type='cargo-landing-pad',position={x=4.5,y=-3.5},
+  get_logistic_point=function() return {{mode=3,logistic_network={valid=false}},{mode=4,logistic_network={valid=true}}} end}
+defines.logistic_mode={requester=3}
 local aqpadinv=inv({{CP,763}}); aqpad.get_inventory=function() return aqpadinv end
 local aqsilo={valid=true,type='rocket-silo',position={x=30.5,y=0.5}}
 local aqcargo=inv({{CP,1000}}); aqsilo.get_inventory=function() return aqcargo end

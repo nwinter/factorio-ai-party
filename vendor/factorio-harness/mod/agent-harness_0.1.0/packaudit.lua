@@ -55,6 +55,19 @@ return function(api)
     return false
   end
 
+  -- A pad's stock is in a logistic network when one of its provider points is (a pad has several points, so its
+  -- logistic_network reads nil: checked on 2.0.77, Aquilo's pad in network 126).
+  local function in_network(pad)
+    local pts = try(function() return pad.get_logistic_point() end)
+    if type(pts) ~= 'table' then return false end
+    if pts.mode ~= nil then pts = {pts} end
+    local requester = try(function() return defines.logistic_mode.requester end)
+    for _, pt in pairs(pts) do
+      local net = try(function() return pt.logistic_network end)
+      if net and try(function() return net.valid end) and (requester == nil or pt.mode ~= requester) then return true end
+    end
+    return false
+  end
   local function planet(force, surface, item, research)
     local row = {surface=surface.name, made_per_min=per_min(force, surface, item, 'input'), used_per_min=per_min(force, surface, item, 'output'),
       networks=0, unmet=0, requesters_short=0, pads=0, labs=0, silos=0}
@@ -103,7 +116,7 @@ return function(api)
       local inv = try(function() return pad.get_inventory(defines.inventory.cargo_landing_pad_main) end)
       local n = count_in(inv, item)
       row.pads = row.pads + n
-      if n > 0 and try(function() return pad.logistic_network end) then row.pads_in_networks = row.pads_in_networks + n end
+      if n > 0 and in_network(pad) then row.pads_in_networks = row.pads_in_networks + n end
       first = spoil_into(first, inv, item, 'cargo-landing-pad ' .. at(pad.position))
     end
     -- Plain chests (machine output chests and the like) and landed cargo pods: in no logistic network.
