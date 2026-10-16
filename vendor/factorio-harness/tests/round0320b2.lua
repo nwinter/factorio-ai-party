@@ -115,5 +115,11 @@ do
   eq(#action.targets,1); eq(action.targets[1].entity,fc)
   for _=1,10 do if step() then break end end
   eq(fc.n,10); eq(boiler.n,0)
+  -- Over 1024 entities (Opus 01:51: a base-sized boiler area): refused with the counts by type and the types filter.
+  targets={}
+  for i=1,900 do targets[#targets+1]=entity(i,0,'boiler') end
+  for i=1,300 do targets[#targets+1]=entity(i,1,'furnace') end
+  fails(function() F.start(p,{radius=64,from='nearest'},'coal',10) end,
+    'the area holds more than 1024 entities this refuel reads (900 boiler, 300 furnace); types: ["boiler"] (or entity names')
 end
 print('round0320b2: ok')

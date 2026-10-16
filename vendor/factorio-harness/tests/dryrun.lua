@@ -214,6 +214,24 @@ has(out.power.connected[1], 'planned pole #2 reaches the built network of small-
 has(out.power.islands[1], 'planned pole #4 at (30.5,0.5): no wire path to a built pole; nearest built pole small-electric-pole at (-4.5,0.5) is 35.0 tiles')
 eq(#out.power.unpowered, 1); eq(out.power.unpowered[1].index, 10)
 has(out.power.unpowered[1].why, "no pole's supply area reaches it; nearest pole small-electric-pole (planned) at (2.5,0.5)")
+-- poles_preview (Luna 01:50): each planned pole's spot, the networks it wires to, the machines it would power.
+eq(#out.poles_preview, 2)
+eq(out.poles_preview[1].index, 2); eq(out.poles_preview[1].spot, 'the spot is free'); eq(out.poles_preview[1].joins, '#7 (1 pole)')
+eq(out.poles_preview[1].line, 'small-electric-pole (2.5,0.5): the spot is free; joins #7 (1 pole); in its supply area 0 machines no network powers now, 0 already powered')
+eq(out.poles_preview[2].joins, nil); has(out.poles_preview[2].line, 'joins no built pole in wire reach')
+do
+  local unpowered = {name='assembling-machine-1', type='assembling-machine', position={x=2.5, y=3.5}}
+  local powered = {name='assembling-machine-2', type='assembling-machine', position={x=2.5, y=-2.5}, electric_network_id=7}
+  local taken = {name='stone-wall', type='wall', position={x=9.5, y=0.5}}
+  local ws = world(planet, {{name='small-electric-pole', type='electric-pole', position={x=-4.5, y=0.5}, electric_network_id=7}, unpowered, powered, taken, me})
+  local wp = {surface=ws, force=force, position={x=0, y=0}, build_distance=10, character=me,
+    get_main_inventory=function() return {get_item_count=function() return 2 end} end}
+  local pv = dryrun.check(wp, {kind='build', entities={{index=1, name='small-electric-pole', position={x=2.5, y=0.5}, item='small-electric-pole'},
+    {index=2, name='small-electric-pole', position={x=9.5, y=0.5}, item='small-electric-pole'}}}).poles_preview
+  eq(pv[1].gains, 1); eq(pv[1].already_powered, 1)
+  has(pv[1].line, 'in its supply area 1 machine no network powers now (1 assembling-machine-1), 1 already powered')
+  has(pv[2].spot, 'the spot is taken')
+end
 -- Reach: #4 and the pond furnace are out of reach; a spot reaches them.
 eq(out.standing.reach, 10); has(out.standing.from_here, 'of 5 in reach from (0,0)')
 assert(out.standing.spots and #out.standing.spots >= 1)
