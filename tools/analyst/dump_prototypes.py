@@ -2,6 +2,10 @@
 """Dump Factorio prototypes over RCON into the analyst's knowledge base (read-only Lua, nothing in the game changes).
 Space Age: asteroids.json lists each route's and each orbit's asteroid_spawn_definitions as the game gives them
 (asteroid, type, quality, probability, speed, spawn_points) and the asteroid entities (max_health, resistances).
+Fluid energy (Sol, d15 19:05): fluid-burning and fluid-making entities (fusion reactor and generator, generators such as
+steam engines and turbines, boilers and heat exchangers, reactors) get a "fluid" object in entities.json: fluid usage a
+second, fluid boxes (production type, filter, temperatures, volume, connections), neighbour bonus, effectivity,
+maximum and target temperature (`--only fluid_energy` merges it into an existing entities.json).
 
   python3 tools/analyst/dump_prototypes.py                      # world live -> tools/analyst/kb/base-2.0.77/
   python3 tools/analyst/dump_prototypes.py --world sa --port 27031 --out tools/analyst/kb/space-age-2.0.77
@@ -281,10 +285,51 @@ rcon.print(helpers.table_to_json({items={{
   autoplace=g(function() return game.surfaces.nauvis.map_gen_settings.autoplace_controls end),
   starting_area=g(function() return game.surfaces.nauvis.map_gen_settings.starting_area end)}}, total=1}))
 """,
+    # Fluid rates of fluid-burning and fluid-making entities (Sol, d15 19:05: fusion planning read 10 MW and 50 MW and
+    # no fluid rate): each one's fluid usage a second, its fluid boxes (production type, filter, temperatures, volume),
+    # the reactor's neighbour bonus, the generator's effectivity and maximum temperature, a fluid energy source (2.0.77:
+    # the fusion pair's rate is LuaEntityPrototype.get_fluid_usage_per_tick(), 4/s and 2/s; max_fluid_usage is not read). Merged
+    # into entities.json by name (the entities page is near MAX_COMMAND); fields the game lacks are left out.
+    "fluid_energy": r"""
+local want = {["fusion-reactor"]=true, ["fusion-generator"]=true, generator=true, boiler=true, reactor=true, ["burner-generator"]=true}
+local all, list = prototypes.entity, {}
+for name, e in pairs(all) do if want[e.type] or g(function() return e.fluid_energy_source_prototype ~= nil end) then list[#list+1] = name end end
+table.sort(list)
+local out = {}
+for i = START, math.min(#list, START + COUNT - 1) do
+  local e = all[list[i]]
+  local r = {name=e.name, type=e.type}
+  r.max_fluid_usage_per_s = g(function() return e.get_fluid_usage_per_tick() * 60 end) or g(function() return e.fluid_usage_per_tick * 60 end)
+  r.two_direction_only = g(function() return e.two_direction_only end)
+  r.effectivity = g(function() return e.effectivity end)
+  r.neighbour_bonus = g(function() return e.neighbour_bonus end)
+  r.maximum_temperature = g(function() return e.maximum_temperature end)
+  r.target_temperature = g(function() return e.target_temperature end)
+  r.burns_fluid = g(function() return e.burns_fluid end)
+  r.scale_fluid_usage = g(function() return e.scale_fluid_usage end)
+  r.perceived_performance = g(function() return e.perceived_performance end)
+  r.max_power_output_kw = g(function() return e.max_power_output * 60 / 1000 end)
+  r.fluid_energy_source = g(function()
+    local f = e.fluid_energy_source_prototype
+    if not f then return nil end
+    return {effectivity=g(function() return f.effectivity end), burns_fluid=g(function() return f.burns_fluid end),
+      scale_fluid_usage=g(function() return f.scale_fluid_usage end), fluid_usage_per_s=g(function() return f.fluid_usage_per_tick * 60 end),
+      maximum_temperature=g(function() return f.maximum_temperature end)} end)
+  local boxes = {}
+  for _, b in ipairs(g(function() return e.fluidbox_prototypes end) or {}) do
+    boxes[#boxes+1] = {production_type=g(function() return b.production_type end), filter=g(function() return b.filter.name end),
+      minimum_temperature=g(function() return b.minimum_temperature end), maximum_temperature=g(function() return b.maximum_temperature end),
+      volume=g(function() return b.volume end), connections=g(function() return #b.pipe_connections end)}
+  end
+  if #boxes > 0 then r.fluid_boxes = boxes end
+  out[#out+1] = r
+end
+rcon.print(helpers.table_to_json({total=#list, items=out}))
+""",
 }
 
 PAGE = {"recipes": 60, "technologies": 40, "items": 80, "fluids": 80, "entities": 40, "locations": 1, "settings": 1,
-        "asteroids": 3}
+        "asteroids": 3, "fluid_energy": 10}
 SINGLE = ("settings", "locations")
 # The longest command that ran live (the entities page, 2026-10-13): nothing longer is sent.
 MAX_COMMAND = 6800
@@ -315,6 +360,36 @@ def dump(rc, cat):
     return out
 
 
+def merge_fluid_energy(out_dir, rows):
+    """fluid_energy rows go into entities.json by name, as each entity's "fluid" object (the entities page is near
+    MAX_COMMAND, so they are read apart). Returns the line printed."""
+    path = os.path.join(out_dir, "entities.json")
+    with open(path) as f:
+        entities = json.load(f)
+    def tidy(v):
+        # (2.0.77 gives the fusion rates as 3.9999997 and 1.999998 a second: 4 decimals)
+        if isinstance(v, float) and abs(v) < 1e12:
+            return round(v, 4)
+        if isinstance(v, dict):
+            return {k: tidy(x) for k, x in v.items()}
+        if isinstance(v, list):
+            return [tidy(x) for x in v]
+        return v
+    by = {r["name"]: {k: tidy(v) for k, v in r.items() if k not in ("name", "type") and v not in (None, False, [], {})} for r in rows}
+    merged = 0
+    for e in entities:
+        fluid = by.get(e["name"])
+        if fluid:
+            e["fluid"] = fluid
+            merged += 1
+        else:
+            e.pop("fluid", None)
+    with open(path, "w") as f:
+        json.dump(entities, f, indent=0, sort_keys=True, ensure_ascii=False)
+        f.write("\n")
+    return f"fluid_energy: {len(rows)} read, {merged} merged into {os.path.relpath(path)}"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--world", default="live")
@@ -328,6 +403,9 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     for cat in (a.only.split(",") if a.only else LUA):
         rows = dump(rc, cat)
+        if cat == "fluid_energy":
+            print(merge_fluid_energy(a.out, rows))
+            continue
         if cat in SINGLE:
             rows = rows[0]
         path = os.path.join(a.out, f"{cat}.json")

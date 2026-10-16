@@ -584,6 +584,23 @@
 "emissions_per_minute": {
 "pollution": 30.000000000000007
 },
+"fluid": {
+"fluid_boxes": [
+{
+"connections": 2,
+"filter": "water",
+"production_type": "input",
+"volume": 200
+},
+{
+"connections": 1,
+"filter": "steam",
+"production_type": "output",
+"volume": 200
+}
+],
+"target_temperature": 165
+},
 "inventory_size": 1,
 "max_energy_usage_kw": 1800,
 "max_health": 200,
@@ -644,6 +661,9 @@
 "electric": true,
 "emissions_per_minute": {
 "pollution": 10
+},
+"fluid": {
+"max_power_output_kw": 1000.0
 },
 "hidden": true,
 "max_energy_production_kw": 1000.0000000000001,
@@ -1624,6 +1644,24 @@
 },
 {
 "electric": true,
+"fluid": {
+"effectivity": 1,
+"fluid_boxes": [
+{
+"connections": 7,
+"filter": "fusion-plasma",
+"production_type": "input",
+"volume": 10
+},
+{
+"connections": 2,
+"filter": "fluoroketone-hot",
+"production_type": "output",
+"volume": 100
+}
+],
+"max_fluid_usage_per_s": 2.0
+},
 "max_energy_production_kw": 50000,
 "max_health": 1000,
 "name": "fusion-generator",
@@ -1637,6 +1675,30 @@
 "effectivity": 1
 },
 "electric": true,
+"fluid": {
+"fluid_boxes": [
+{
+"connections": 4,
+"filter": "fluoroketone-cold",
+"production_type": "input",
+"volume": 1000
+},
+{
+"connections": 4,
+"filter": "fusion-plasma",
+"production_type": "output",
+"volume": 10
+}
+],
+"max_fluid_usage_per_s": 4.0,
+"neighbour_bonus": 1,
+"perceived_performance": {
+"maximum": 1.7976931348623155e+308,
+"minimum": 0.25,
+"performance_to_activity_rate": 2
+},
+"two_direction_only": true
+},
 "max_energy_usage_kw": 10000,
 "max_health": 1000,
 "name": "fusion-reactor",
@@ -1898,6 +1960,23 @@
 "type": "tree"
 },
 {
+"fluid": {
+"fluid_boxes": [
+{
+"connections": 2,
+"filter": "water",
+"production_type": "input",
+"volume": 200
+},
+{
+"connections": 1,
+"filter": "steam",
+"production_type": "output",
+"volume": 200
+}
+],
+"target_temperature": 500
+},
 "max_energy_usage_kw": 10000,
 "max_health": 200,
 "name": "heat-exchanger",
@@ -2350,6 +2429,9 @@
 "nuclear": true
 },
 "effectivity": 1
+},
+"fluid": {
+"neighbour_bonus": 1
 },
 "inventory_size": 1,
 "max_energy_usage_kw": 40000,
@@ -2916,6 +2998,21 @@
 },
 {
 "electric": true,
+"fluid": {
+"effectivity": 1,
+"fluid_boxes": [
+{
+"connections": 2,
+"filter": "steam",
+"minimum_temperature": 100,
+"production_type": "input",
+"volume": 200
+}
+],
+"max_fluid_usage_per_s": 30,
+"max_power_output_kw": 900,
+"maximum_temperature": 165
+},
 "max_energy_production_kw": 900,
 "max_fluid_usage": 30,
 "max_health": 400,
@@ -2924,6 +3021,21 @@
 },
 {
 "electric": true,
+"fluid": {
+"effectivity": 1,
+"fluid_boxes": [
+{
+"connections": 2,
+"filter": "steam",
+"minimum_temperature": 100,
+"production_type": "input",
+"volume": 200
+}
+],
+"max_fluid_usage_per_s": 60,
+"max_power_output_kw": 5820,
+"maximum_temperature": 500
+},
 "max_energy_production_kw": 5820,
 "max_fluid_usage": 60,
 "max_health": 300,
