@@ -5672,9 +5672,11 @@ local function infer_inventory(e,a)
   end
   local item=a.item and prototypes.item[a.item]
   local fuel=item and (item.fuel_value or 0)>0
-  -- A module can be a recipe ingredient (production science, higher modules).
-  -- Recipe input wins even when full; overflow must not install a module instead.
-  if a.direction=='to_entity' and item and item.type=='module' and e.get_recipe then
+  -- An item the machine's recipe takes goes to its recipe input (Grok, d15: nutrients into a biochamber making
+  -- pentapod eggs went to its fuel slot, and the recipe stayed short; a module can be an ingredient too). Recipe input
+  -- wins even when full: overflow must not go to the fuel slot or install a module instead. inventory: "fuel" puts it
+  -- in the fuel slot.
+  if a.direction=='to_entity' and item and e.get_recipe and e.type~='lab' then
     local ok,recipe=pcall(e.get_recipe)
     for _,ing in ipairs(ok and recipe and recipe.ingredients or {}) do
       if ing.type~='fluid' and ing.name==a.item then
@@ -5988,6 +5990,11 @@ local function transfer_one(p,a,pos,e)
   end
   local out={transferred=moved,items=not a.item and stacks or nil,inventory=inferred or (named~=a.inventory and named or nil),none_held=short and a.item or nil,target_has=short and count(target) or nil,
     at_up_to=a.item and a.up_to~=nil and a.direction=='to_entity' and count(target)>=a.up_to or nil}
+  -- A fuel item into a recipe input (Grok, d15: nutrients for pentapod eggs): which slot, and how to reach the other.
+  if inferred and (inferred=='assembling_machine_input' or inferred=='furnace_source') and a.item and (prototypes.item[a.item].fuel_value or 0)>0
+    and pcall(function() return e.get_fuel_inventory() end) and e.get_fuel_inventory() then
+    out.inventory_note=string.format('into the recipe input: its recipe takes %s; inventory: "fuel" puts it in the fuel slot',a.item)
+  end
   if moved>0 and a.direction=='to_entity' and e.type=='logistic-container' then
     local okn,note=pcall(M.delivery_note,p,e,a.item)
     if okn then out.delivery_note=note end
@@ -9893,7 +9900,9 @@ end
 function M.accepts_text(e,a)
   local where=string.format('%s (%g,%g)',e.name,e.position.x,e.position.y)
   local args={direction='to_entity',item=a.item,inventory=a.inventory,quality=a.quality}
-  local okn,name,inv=pcall(infer_inventory,e,args)
+  local okn,name,inv
+  if a.inventory~=nil then okn,inv=pcall(inventory,e,a.inventory); name=okn and M.inventory_name(e,a.inventory) or inv; if not okn then name=inv end
+  else okn,name,inv=pcall(infer_inventory,e,args) end
   if not okn then return 'no: '..where..': '..tostring(name):gsub('^[^:]*:%d+: ','') end
   if not inv then return 'no: '..where..' has no inventory that takes '..a.item end
   -- An assembler takes only its recipe's ingredients; a furnace takes any smeltable while its source is empty (the

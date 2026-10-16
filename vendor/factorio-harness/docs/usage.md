@@ -4990,4 +4990,14 @@ fh watch    # deploy on every change
   - our structures within 24 tiles of its target took damage since.
   The line then ends with why: `...; again: it is larger: 21 (the largest told was 8)`. A gathering is kept 30 minutes
   after it was last seen. `wait --until alert` still names every new group.
+- An item the machine's recipe takes goes to its recipe input (Grok, every breeder feed: nutrients into a biochamber
+  making pentapod eggs went to its fuel slot, and the recipe stayed short). Before, this held only for modules. A
+  transfer or feed into a crafting machine now sends any item its recipe lists to the recipe input, even a fuel.
+  `inventory: "fuel"` puts it in the fuel slot, and a fuel the recipe does not list goes there as before. The reply's
+  `inventory` names where it went. A fuel item put into a recipe input adds `inventory_note`: `into the recipe input:
+  its recipe takes nutrients; inventory: "fuel" puts it in the fuel slot`. The transfer dry run's `accepts` reads a
+  named `inventory` too.
+- The exit 3 stderr line also says which next calls stop a running action: one that drives the character (move_to,
+  transfer, collect, feed, build, mine, rearm, refuel ...). Reads, say, tell, chat, craft, planners (place_ghosts,
+  deconstruct, requests) and calls by remote view or on another surface leave it running.
 

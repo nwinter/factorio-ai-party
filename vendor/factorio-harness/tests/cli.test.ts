@@ -250,6 +250,7 @@ test('fh wait exits nonzero when the action ended badly or is still running at t
       assert.equal(reply.error.code,'wait_timeout'); assert.equal(reply.result.still_running.kind,'mine'); assert.match(reply.error.message,/up to 1 s more/);
       // Exit 3 says on stderr that the action goes on (Grok, d15).
       assert.match(error.stderr,/still running \(exit 3\): mine goes on after this wait ended \(a walk keeps walking\); fh wait resumes waiting for it/);
+      assert.match(error.stderr,/A call that drives your character \(move_to, transfer, collect.*stops it; reads .* leave it running/);
       return true;
     });
   });
