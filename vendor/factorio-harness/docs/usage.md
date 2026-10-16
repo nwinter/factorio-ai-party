@@ -5113,3 +5113,8 @@ fh watch    # deploy on every change
   quality-module-1 said 80%; the GUI gives 8%). The engine stores the quality effect as 0.1 per 1% (`effects.quality`
   0.8 there, checked on a copy of world n), and the read multiplied it by 100. It now says `8%` (`1.6%` for one rare
   module). No other read prints a quality effect; module and configure replies name modules, not their effects.
+- `fh call craft ... --wait` waits until the hand-craft queue is done (Grok: it returned when crafting started, and the
+  silo transfer after it moved nothing). It sleeps on `crafting_done` (about the queue's time 1.25 + 5 s, at most 900
+  s; it wakes as a sleep does) and the reply adds `crafted: the hand-craft queue is done: the items are in your
+  inventory`, or `not done: the wait ended (told) with crafts still queued` and `still_running: hand crafting` (exit
+  3). Host only.
