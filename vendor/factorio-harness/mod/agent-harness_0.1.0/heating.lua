@@ -111,7 +111,8 @@ return function(api)
   -- temperature and heat capacity (its heat buffer's specific heat), the mean weighted by capacity, the lowest and
   -- highest, the heat stored above 30 C (what keeps neighbours from freezing); with add_pipes N, the mean once N new
   -- heat pipes, each starting at its buffer's default temperature, share that heat (no heat made or used meanwhile).
-  local MAX_PARTS=5000
+  -- (about the belt walk's cost per element on a copy of world n: 1000 parts stay under the 20 ms rule)
+  local MAX_PARTS=1000
   function M.budget(p,e,add)
     assert(add==nil or (type(add)=='number' and add>=0 and add<=5000 and add==math.floor(add)),'add_pipes is 0..5000 heat pipes')
     assert(try(function() return e.temperature end),e.name..' has no heat buffer (a heat pipe, reactor, heating tower or heat exchanger has)')
@@ -138,7 +139,7 @@ return function(api)
     for n,c in pairs(kinds) do parts[#parts+1]=c..' '..n end
     table.sort(parts)
     local function at(x) return string.format('%s (%g,%g)',x.name,x.position.x,x.position.y) end
-    local out={parts=#queue,capped=#queue>MAX_PARTS or nil,mean_c=math.floor(mean*10+0.5)/10,
+    local out={parts=#queue,capped=#queue>MAX_PARTS and string.format('more than %d parts: the first %d read',MAX_PARTS,MAX_PARTS) or nil,mean_c=math.floor(mean*10+0.5)/10,
       lowest=lo and string.format('%.1f C at %s',lo.t,at(lo.e)),highest=hi and string.format('%.1f C at %s',hi.t,at(hi.e)),
       capacity_mj_per_c=math.floor(cap/1e5+0.5)/10,stored_above_30_mj=math.floor(above/1e5+0.5)/10}
     out.line=string.format('heat network of %d parts (%s): mean %.1f C, lowest %s, highest %s; heat capacity %.1f MJ per C; %.1f MJ stored above 30 C',

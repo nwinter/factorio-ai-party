@@ -5051,7 +5051,7 @@ fh watch    # deploy on every change
   robots (pending until one arrives)`. The carrier note ends with `network 44 has no construction robots: nothing is
   brought until it has some` when that is so.
 - `heat_budget {position, add_pipes?}` (Sol: 21 new heat pipes caused a 10-minute brownout on Aquilo): the heat
-  network of a heat pipe, reactor, heating tower or heat exchanger, walked by its heat connections (up to 5000 parts).
+  network of a heat pipe, reactor, heating tower or heat exchanger, walked by its heat connections (up to 1000 parts; `capped` says when there are more).
   - It gives the mean temperature weighted by heat capacity, the lowest and highest with where, the heat capacity in
     MJ per C, and the heat stored above 30 C.
   - With `add_pipes: N`, it gives the mean once N new heat pipes (each at its prototype's starting temperature and
