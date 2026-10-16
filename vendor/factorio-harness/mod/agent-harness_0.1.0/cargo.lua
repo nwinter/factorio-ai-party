@@ -99,6 +99,39 @@ return function(api)
     end
     return out
   end
+  -- One rocket from a mix (Sol, d15: 375 explosives and 50 low-density-structure make 1000 kg, hard to find from
+  -- separate reads): the list's items in the order given, each as many as still fit by weight and slots; top_up (an
+  -- item name) then fills the room left with as many of it as fit. {items, kg, slots, room_kg, room_slots, left_over,
+  -- line}.
+  function M.one_rocket(list, lift, slots, top_up)
+    local kinds = kinds_of(list)
+    if top_up then
+      local proto = prototypes.item[top_up]
+      assert(proto, 'unknown item '..tostring(top_up))
+      local w = try(function() return proto.weight end) or 0
+      local extra = kinds_of({{name=top_up, count=w > 0 and math.ceil(lift/w) + 1 or slots*(proto.stack_size or 1)}})[1]
+      extra.top = true
+      kinds[#kinds+1] = extra
+    end
+    local r = split(kinds, lift, slots)[1] or {weight=0, slots=0, count={}, kinds={}}
+    local items, parts, left = {}, {}, {}
+    for _, kind in ipairs(kinds) do
+      local n = r.count[kind] or 0
+      if n > 0 then
+        items[#items+1] = {name=kind.name, quality=kind.quality, count=n, kg=kg(kind.each*n), top_up=kind.top or nil}
+        parts[#parts+1] = string.format('%s %d (%g kg)', label(kind), n, kg(kind.each*n))
+      end
+      if not kind.top and n < kind.count then left[#left+1] = {name=kind.name, quality=kind.quality, count=kind.count-n} end
+    end
+    local room_kg, room_slots = kg(lift-r.weight), slots-r.slots
+    local lefts = {}
+    for i, l in ipairs(left) do lefts[i] = l.name..(l.quality and '@'..l.quality or '')..' '..l.count end
+    local line = string.format('one rocket: %s = %g of %g kg, %d of %d slots%s%s', #parts > 0 and table.concat(parts, ' + ') or 'nothing', kg(r.weight), kg(lift), r.slots, slots,
+      (room_kg > 0 or room_slots > 0) and string.format('; room left %g kg, %d slots', room_kg, room_slots) or '; full by weight and slots',
+      #lefts > 0 and '; left over: '..table.concat(lefts, ', ') or '; nothing left over')
+    if room_kg <= 0 and room_slots > 0 then line = line:gsub('; room left 0 kg, %d+ slots', '; full by weight') end
+    return {items=items, kg=kg(r.weight), slots=r.slots, room_kg=room_kg, room_slots=room_slots, left_over=#left > 0 and left or nil, line=line}
+  end
   -- list: {{name, count, quality?}}. Returns the reply fields.
   function M.weigh(list, lift, slots)
     local kinds = kinds_of(list)

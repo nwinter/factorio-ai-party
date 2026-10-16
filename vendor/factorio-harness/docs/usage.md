@@ -4937,4 +4937,41 @@ fh watch    # deploy on every change
     (avoid_enemies 3); the 3 legs left in the via chain ...`, with `legs`.
   - With `avoid_enemies {distance: N}` it tries smaller distances down to 4 (`largest_verified_distance`; before, it
     verified nothing for a distance).
+- Repeating loops walk into reach (Muse, twice: a hand haul left the character elsewhere and the loop's collect failed
+  out of reach, past the 32 tiles a call walks by default). In a `queue_repeat` loop, a transfer, collect, feed, rearm
+  or refuel step that names `position` or `positions` and gives no `walk` runs with `walk: true`, as a transfer with
+  `walk: true` does. `walk: false` on the step keeps it from walking. `from: "nearest"` steps and `queue_submit` plans
+  are unchanged.
+- A remote recipe change on a platform machine holding items (Astra, twice: a deconstruct and rebuild instead, and
+  during the gap an unfiltered feeder grabbed magazines and stayed jammed). `configure {platform, position, recipe}`
+  now moves its input and output stacks, then what the recipe change returns (the ingredients of a craft under way),
+  into the platform hub, and reports them as `to_hub`.
+  - On a copy of world n, a crusher on Swift changed from metallic to oxide crushing: `to_hub {iron-ore: 48,
+    metallic-asteroid-chunk: 2}`.
+  - The hub must have an empty slot for each stack (and one per ingredient of a craft under way). Otherwise the
+    refusal names the hub's empty slots, and nothing changes.
+  - Fluids still need `force: true`, as before.
+- `cargo {items: [...], one_rocket: true}` (Sol: 375 explosives and 50 low-density-structure make 1000 kg, hard to find
+  from separate reads) loads one rocket from the list in its order: each item as many as still fit by weight and
+  slots. It returns `items` with kg, `kg`, `slots`, `room_kg`, `room_slots`, `left_over` and a line: `one rocket:
+  explosives 375 (750 kg) + low-density-structure 50 (250 kg) = 1000 of 1000 kg, 9 of 20 slots; full by weight;
+  nothing left over`.
+  - `top_up: "low-density-structure"` then fills the room left with as many of that item as fit.
+  - Without these, `cargo` weighs a list and splits it into rockets, as before.
+- Remote outposts (Opus, 15:20: the south copper outpost 550 tiles out was cut by biters 5+ times a shift).
+  - game_alerts and team.alerts have two new kinds, for turrets no construction robot reaches (no logistic network's
+    construction area covers them): `outpost_ammo_low`, ammo turrets under 20% of their ammo slots (`gun-turret
+    (408,-248): 1 of 100 piercing-rounds-magazine (1%)`, seen on a copy of world n); and `outpost_turret_lost`, such
+    turrets destroyed in the last 10 minutes.
+  - `outpost {area | position, radius?, ammo?, below?, dry_run?}` reads the area and submits one plan to your queue,
+    each step skipped if it fails:
+    - `construct {area}`: its ghosts;
+    - `rearm {area, ammo, below}`: ammo turrets under `below` rounds (default 20; the ammo the turrets there hold
+      most of, else firearm-magazine);
+    - `wire` (copper): each network there with no power, joined to the nearest pole of a powered network that a
+      copper wire reaches.
+    - `plan` says each step, what you hold of the ghosts' items and of the ammo (`short of gun-turret 5 (you hold
+      0)`), and `not_reached` names cut-off networks no wire reaches. `dry_run: true` queues nothing.
+    - On the copy: `construct: 13 ghosts (...); rearm: 1 of 23 ammo turrets under 20 rounds, with
+      piercing-rounds-magazine`, 31 ms in the container for the read (about 6 ms on n).
 

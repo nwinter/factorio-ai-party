@@ -1453,7 +1453,7 @@ function handlers.describe()
         dry_run='plan only, place nothing',details='list every entity',
         returns='route (runs like E12 N3, uE10 = pipe-to-ground pair east spanning 10), tiles, items, missing (vs inventory), joins {from,to: name, ghost?, position, fluid} for ends joined to an entity (a pipe ghost there is joined as part of its line: name is what it builds, ghost=true), placed/failed/bounds (construct defaults to them), segment_extent (tiles, with joined pipes; a joined ghost line counts as built) and, past the limit, extent_warning + pumps [{position,direction}]',
         note='plain pipe connects on every side, so it never goes where another pipe, machine connection or ghost would connect to it (only at a joined end); pipe-to-ground pairs pass beside or under those, belts and obstacles, never along another underground pipe axis or beneath lava/space; free ends stay plain pipe; refuses an end two entities connect to, a machine with several connections (give the tile), and joining two different known fluids; searches charted ground within 16 tiles around from and to'},
-      cargo={items='{name: count} or [{name, count, quality}]: a rocket cargo list (items, not fluids)',position='or a chest, rocket silo (its loaded cargo), landing pad, platform hub, wagon or vehicle in sight: what it holds',platform='optional platform name (a hub or chest there)',returns='lift (kg and cargo slots a rocket), items [{name, quality, count, each_kg, kg, stacks, per_rocket (alone in one rocket: by weight and by slots), share (of a rocket\'s lift)}] heaviest first, total_kg, stacks, fewest (rockets by total weight and stacks), rockets and split [{rocket, kg, slots, items}] (one split: heaviest first, each into the first rocket with room), too_heavy; a read, nothing moves'},
+      cargo={one_rocket='optional true, with items as a list: one rocket loaded in the list\'s order, each item as many as still fit by weight and slots: items with kg, kg, slots, room_kg, room_slots, left_over (what of the list does not fit), line',top_up='optional item name: after the list, fill the room left with as many of it as fit (implies one_rocket)',items='{name: count} or [{name, count, quality}]: a rocket cargo list (items, not fluids)',position='or a chest, rocket silo (its loaded cargo), landing pad, platform hub, wagon or vehicle in sight: what it holds',platform='optional platform name (a hub or chest there)',returns='lift (kg and cargo slots a rocket), items [{name, quality, count, each_kg, kg, stacks, per_rocket (alone in one rocket: by weight and by slots), share (of a rocket\'s lift)}] heaviest first, total_kg, stacks, fewest (rockets by total weight and stacks), rockets and split [{rocket, kg, slots, items}] (one split: heaviest first, each into the first rocket with room), too_heavy; a read, nothing moves'},
       conflicts={name='the entity to build (or the item that places it), e.g. pumpjack',position='{x,y} where it would stand (snapped like a build), e.g. a well\'s position',direction='optional compass name or 0..15 (default north)',surface='optional planet name (remote view there)',platform='optional platform name (platform coordinates)',returns='a read, nothing changes: name, position (snapped), footprint; remove [{name, position, kind (ours, ghost, tree or rock, cliff, force NAME), note}]: every entity whose collision meets it there, ours first; resource (under it: a drill\'s mining area, a pumpjack\'s centre tile; yield for wells); fluid (each fluid segment our fluid entities in the way are in: its fluid, what joins them, and whether taking them away splits it: the machines and pipes on each side); power (each of our poles in the way: its network and the wires that go; whether the poles it joined stay joined; a group cut off: its poles, the machines in their supply areas and whether a generator, solar panel or accumulator is among them); unpowered_after (machines no pole\'s supply area covers once they are gone); supplied_by (an electric entity: the pole whose supply area covers it then); line'},
       ports={name='entity (or the item that places it), e.g. electromagnetic-plant',position='{x,y} where it would stand (snapped like a build)',direction='north|east|south|west (default north)',recipe='optional recipe: which ports open and the fluid each carries',mirror='optional boolean: the H/V flip of fluid machines',platform='optional platform name (platform coordinates)',returns='ports [{at (the entity tile with the connection), joins (the tile outside it where a pipe joins), direction, flow input|output, fluid, box, there (what stands on joins now)}], closed (ports this recipe closes); a read, nothing is built; inspect of a ghost with a recipe shows the same in fluid_connections (fluid_connections_closed)'},
       dry_run={action='place_ghosts|paste|blueprint_place|build',args='that call\'s arguments (details=true: every entry with its footprint); the same as the call with dry_run=true'},
@@ -1555,6 +1555,7 @@ function handlers.describe()
   for name,schema in pairs(M.flush and M.flush.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circuits and M.circuits.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.trains and M.trains.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.outpost and M.outpost.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.rails and M.rails.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.vehicles and M.vehicles.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.shore and M.shore.schema or {}) do description.actions[name]=schema end
@@ -5269,8 +5270,13 @@ local function configure_check(p,a,e,near)
     for i=1,#e.fluidbox do assert(not e.fluidbox[i],'machine holds fluid that a recipe change destroys; pass force=true') end
   end
   -- Out of reach, it needs the character there: the refusal's text, for the caller to walk (M.configure_walk) or raise.
+  -- On a platform the old ingredients and products go to the hub instead (Astra, d15 twice: a deconstruct and rebuild
+  -- to change a recipe left a gap in which an unfiltered feeder grabbed magazines), when it has room for them all.
   local held=not near and holds_items(e)
+  if held and M.recipe_to_hub(e) then held=nil end
   if held then
+    local why=M.recipe_hub_why(e)
+    if why then held=held..'; '..why end
     return string.format('remote recipe change refused: %s at (%g,%g) on %s: %s; a recipe change can return these items and requires a character in reach on that surface',
       e.name,e.position.x,e.position.y,e.surface.name,held)
   end
@@ -5285,6 +5291,32 @@ local function configure_check(p,a,e,near)
     return string.format('remote recipe change refused: %s at (%g,%g) on %s: %s; they would come out, which takes a character in reach on that surface; modules the recipe allows stay and need nothing: empty those slots first (configure modules {%s}), or change the recipe in reach',
       e.name,e.position.x,e.position.y,e.surface.name,table.concat(parts,', '),table.concat(keys,','))
   end
+end
+-- A platform machine's stacks (input and output) and the hub that takes them on a remote recipe change: the hub when
+-- its empty slots hold every stack, else nil.
+function M.recipe_to_hub(e)
+  local pl=e.surface and e.surface.platform
+  local hub=pl and pl.hub
+  if not (hub and hub.valid) then return nil end
+  local okh,inv=pcall(function() return hub.get_inventory(defines.inventory.hub_main) end)
+  if not (okh and inv) then return nil end
+  local stacks=0
+  for _,name in ipairs({'assembling_machine_input','assembling_machine_output'}) do
+    local ok,mi=pcall(inventory,e,name)
+    for i=1,ok and #mi or 0 do if mi[i].valid_for_read then stacks=stacks+1 end end
+  end
+  -- What is mid-craft comes back too: one more stack per ingredient.
+  local okr,r=pcall(function() return e.get_recipe() end)
+  if okr and r and (e.crafting_progress or 0)>0 then for _,ing in ipairs(r.ingredients or {}) do if ing.type~='fluid' then stacks=stacks+1 end end end
+  if inv.count_empty_stacks()<stacks then return nil end
+  return inv,stacks
+end
+function M.recipe_hub_why(e)
+  local pl=e.surface and e.surface.platform
+  local hub=pl and pl.hub
+  if not (hub and hub.valid) then return nil end
+  local okh,inv=pcall(function() return hub.get_inventory(defines.inventory.hub_main) end)
+  return okh and inv and string.format('the hub has %d empty slots, too few for the machine\'s stacks',inv.count_empty_stacks()) or nil
 end
 -- The modules a recipe change takes out, as the game does (checked on a private 2.0.77 server, d15: a crusher's two
 -- efficiency modules stay through metallic -> oxide crushing; productivity modules come out for wooden-chest, which
@@ -5564,6 +5596,36 @@ function handlers.configure(p,a)
   local same_quality=(a.quality or 'normal')==((current_quality and current_quality.name) or 'normal')
   local ghost=e.type=='entity-ghost' and e.ghost_name or nil
   if current and current.name==recipe.name and same_quality then return {recipe=recipe.name,quality=a.quality,unchanged=true,ghost=ghost,remote=not near or nil} end
+  -- A platform machine by remote view: its stacks to the hub first, then what the change returns (M.recipe_to_hub).
+  local hub_inv=not ghost and not near and holds_items(e) and M.recipe_to_hub(e)
+  if hub_inv then
+    local moved={}
+    local function put(name,count,quality)
+      local key=name..(quality and quality~='normal' and '@'..quality or '')
+      moved[key]=(moved[key] or 0)+count
+    end
+    for _,name in ipairs({'assembling_machine_input','assembling_machine_output'}) do
+      local ok,mi=pcall(inventory,e,name)
+      for i=1,ok and #mi or 0 do
+        local st=mi[i]
+        if st.valid_for_read then
+          local q=st.quality; if type(q)~='string' then q=q and q.name or 'normal' end
+          local n,c=st.name,st.count
+          local okt=pcall(function() return hub_inv.insert(st) end)
+          if okt then put(n,c,q); st.clear() end
+        end
+      end
+    end
+    for _,item in ipairs(e.set_recipe(recipe.name,a.quality) or {}) do
+      local q=item.quality; if type(q)~='string' then q=q and q.name or 'normal' end
+      local n=hub_inv.insert({name=item.name,count=item.count,quality=q})
+      if n>0 then put(item.name,n,q) end
+    end
+    current=e.get_recipe()
+    assert(current and current.name==recipe.name,'recipe incompatible with machine')
+    return {recipe=current.name,quality=a.quality,remote=true,to_hub=next(moved) and moved or nil,
+      note='the machine\'s items went to the platform hub'}
+  end
   if ghost or not near then
     e.set_recipe(recipe.name,a.quality)
     current=e.get_recipe()
@@ -8644,6 +8706,15 @@ handlers.cargo=function(p,a)
     assert(#list>0,string.format('%s at (%g,%g) holds nothing in %s',e.name,e.position.x,e.position.y,name))
   end
   local lift,slots=M.cargo.limits(silo)
+  -- one_rocket (Sol, d15): the first rocket of the mix in the order given; top_up fills its room with one item.
+  assert(a.one_rocket==nil or type(a.one_rocket)=='boolean','one_rocket must be true or false')
+  assert(a.top_up==nil or (type(a.top_up)=='string' and prototypes.item[a.top_up]),'top_up is an item name: the room left is filled with it')
+  if a.one_rocket or a.top_up~=nil then
+    if a.items~=nil and #a.items==0 then error('one_rocket takes items as a list [{name, count}] (the order loads first first)',0) end
+    local one=M.cargo.one_rocket(list,lift,slots,a.top_up)
+    one.from=from
+    return one
+  end
   local out=M.cargo.weigh(list,lift,slots)
   out.from=from
   return out
@@ -11545,6 +11616,9 @@ M.supply.feed=function(e,into,from) return M.craftrate.feed(e,into,from) end
 M.fragile=require('fragile'){position=position,integer=integer}
 M.personal=require('personal'){}
 M.reqchest=require('reqchest'){}
+-- outpost {area | position}: one queued tour that rebuilds ghosts, rearms turrets and wires cut-off poles (outpost.lua).
+M.outpost=require('outpost'){position=position,integer=integer,submit=function(p,a) return handlers.queue_submit(p,a) end}
+function handlers.outpost(p,a) return M.outpost.read(p,a) end
 M.trace=require('trace'){state_text=function(e) return M.thrust.state_text(e) end,fluid_upstream=function(box,i) return M.thrust.upstream(box,i) end,held_blocked=M.details.held_blocked,observe=function(e,p) return M.readmemory.observe(e,p) end,memory_trace=function(p,a) return M.beltgaps.trace(p,a) end,end_seen=M.factory_digest.end_seen,supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
 -- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
