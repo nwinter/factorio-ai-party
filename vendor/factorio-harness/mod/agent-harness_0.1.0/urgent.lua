@@ -8,7 +8,8 @@
 --   losses: our buildings destroyed by enemies in one of your fresh claims, or within NEAR tiles of you;
 --   platform: a platform you hear about (as its alerts route them) losing a building, or its hub taking damage;
 --   death: a teammate's character died on your surface;
---   power: an electric network on your surface with MIN_MACHINES+ machines, half of them on low or no power.
+--   power: an electric network on your surface with MIN_MACHINES+ machines, half of them on low or no power;
+--   power cut: a pole loss on your surface that left CUT_MACHINES+ machines with no power (powercut.lua).
 -- Each one wakes an agent once (an attack, group, loss incident, death), and again only after REPEAT if it grew. All
 -- of it is read from what the harness already keeps (threat.lua's attacked areas and groups, the loss incidents, the
 -- platform hit counts, the chronicle's deaths, the networks' cached view): no scan, a few small tables a check.
@@ -24,6 +25,7 @@ return function(api)
   -- NEW_COLLAPSE ticks (d15 trajectory analysis: far-east networks the team keeps dark woke Haiku and Sonnet for hours,
   -- and they turned urgent wakes off). One never seen with power since this runtime started does not wake.
   M.NEW_COLLAPSE = 10 * 3600
+  M.CUT_MACHINES = 3
   local KEEP = 30 * 3600
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function round(v) return math.floor(v + 0.5) end
@@ -299,6 +301,25 @@ return function(api)
           local at = e.position and string.format(' at (%d,%d)', e.position.x, e.position.y) or ''
           local d = pos and e.position and string.format(', %d tiles from you', round(dist(e.position, pos))) or ''
           return string.format('%s died%s%s%s', tostring(e.agent), at, e.by and ', killed by ' .. e.by or '', d)
+        end
+      end
+    end
+    -- A pole loss on this surface that left machines with no power (powercut.lua; Opus 00:21: power cut #104 raised an
+    -- alert and woke nobody, since the part cut off had a new network id the collapse rule had never seen with power):
+    -- CUT_MACHINES or more machines in the parts cut off or left with no pole, the cut not joined again.
+    local pc = s.powercut
+    for k = #(pc and pc.cuts or {}), 1, -1 do
+      local c = pc.cuts[k]
+      if (c.checked or c.tick or 0) < since then break end
+      if c.surface == surface then
+        local lost = c.orphan_total or 0
+        for _, part in ipairs(c.parts or {}) do if part.cut then lost = lost + (part.total or 0) end end
+        local first = c.poles and c.poles[1]
+        local close = not base.radius or (pos and first and first.position and dist(first.position, pos) <= base.radius)
+        local key = 'cut|' .. tostring(c.id)
+        if lost >= M.CUT_MACHINES and close and not (api.cut_fixed and api.cut_fixed(c)) and news(told, key, lost) then
+          tell(told, key, lost)
+          return api.cut_line and api.cut_line(c, surface) or string.format('power cut #%s: %d machines left with no power', tostring(c.id), lost)
         end
       end
     end

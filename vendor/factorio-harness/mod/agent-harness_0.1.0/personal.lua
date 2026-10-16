@@ -81,6 +81,20 @@ return function(api)
     return rows
   end
 
+  -- status's logistics_here (Haiku: a request unfilled in a network with 0 logistic robots; the robot count in status):
+  -- the logistic network where the character stands, its robots, and how many personal requests are unfilled.
+  function M.here(p)
+    local c = p.character
+    if not (c and c.valid) then return nil end
+    local ln = try(function() return c.surface.find_logistic_network_by_position(c.position, c.force) end)
+    local rows = try(function() return M.unfilled(p) end) or {}
+    local req = #rows > 0 and string.format('; %d personal request%s unfilled (%s)', #rows, #rows == 1 and '' or 's', rows[1].item .. (#rows > 1 and ', ...' or '')) or ''
+    if not ln then return 'no logistic network where you stand ' .. at(c.position) .. req end
+    local function n(f) return try(f) or 0 end
+    return string.format('logistic network #%s where you stand: %d logistic robots (%d idle), %d construction robots (%d idle), %d roboports%s',
+      tostring(try(function() return ln.network_id end) or '?'), n(function() return ln.all_logistic_robots end), n(function() return ln.available_logistic_robots end),
+      n(function() return ln.all_construction_robots end), n(function() return ln.available_construction_robots end), n(function() return #ln.cells end), req)
+  end
   -- team.alerts: a request unfilled WAIT ticks or more in a network with 0 logistic robots (checked every EVERY ticks).
   function M.lines(p, h)
     if h.personal_at and game.tick - h.personal_at < EVERY then return nil end

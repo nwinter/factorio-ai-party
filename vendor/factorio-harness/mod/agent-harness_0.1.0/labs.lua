@@ -7,7 +7,7 @@ return function(api)
   local MAX_LABS, MAX_GROUPS, NEAR = 256, 8, 5.5
   M.schema = {labs = {surface='optional surface name: visible labs there, up to 256; position limits the read to an area',
     position='optional charted centre (default character without surface; with surface, all visible labs there)', radius='1..256 (default 96); on another surface requires position',
-    returns='research line (name, progress, eta at the working labs) and per lab group: labs working, packs missing (labs lacking each), feeders idle/starved and why, what their belts/chests hold'}}
+    returns='research line (name, progress, eta at the working labs) and per lab group: labs working, packs missing (labs lacking each), feeders idle/starved and why, what their belts/chests hold; lacking (up to 8 labs, one row each): the pack, each inserter dropping into the lab and its source (a chest: what it holds and asks of it; a lab: what it holds; a belt: what it carries), the logistic network there and what it holds of it, and the chest its robots would take it from'}}
   local function short(name) return (name:gsub('%-science%-pack$', '')) end
   local function fmt(s)
     if s >= 3600 then return string.format('%dh%02dm', math.floor(s / 3600), math.floor(s / 60) % 60) end
@@ -30,6 +30,49 @@ return function(api)
     return out
   end
   local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
+  local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- Why one lab lacks a pack (Luna 03:20: 4 of 43 labs had no military science while 8,754 packs sat in storage): each
+  -- inserter dropping into it and its source (a chest: what it holds and asks of the pack; a lab: what that lab holds;
+  -- a belt: what it carries), the logistic network there and what it holds of the pack, and the chest its robots would
+  -- take it from (the network's pickup point for it).
+  local function lab_why(lab, name, surface, force, seen)
+    local b = lab.bounding_box
+    local feeds = {}
+    for _, ins in pairs(try(function() return surface.find_entities_filtered{area={left_top={x=b.left_top.x-3, y=b.left_top.y-3}, right_bottom={x=b.right_bottom.x+3, y=b.right_bottom.y+3}}, type='inserter', force=force, limit=32} end) or {}) do
+      if try(function() return ins.drop_target end) == lab then
+        local src = try(function() return ins.pickup_target end)
+        local text
+        if not src then text = 'nothing to pick up from'
+        elseif not seen(src) then text = src.name .. ' outside visible chunks'
+        else
+          local n = holds(src)[name] or 0
+          text = string.format('%s %s holding %d', src.name, at(src.position), n)
+          if src.type == 'logistic-container' then
+            local asked
+            for _, sec in pairs(try(function() return src.get_logistic_sections().sections end) or {}) do
+              for _, f in pairs(try(function() return sec.filters end) or {}) do
+                local v = f.value
+                if v and (v.name == name) then asked = (asked or 0) + (f.min or 0) end
+              end
+            end
+            local mode = try(function() return src.prototype.logistic_mode end)
+            if mode == 'requester' or mode == 'buffer' then text = text .. (asked and string.format(', asking %d', asked) or ', no request for it') end
+          end
+        end
+        feeds[#feeds+1] = ins.name .. ' ' .. at(ins.position) .. ' from ' .. text
+      end
+    end
+    local ln = try(function() return surface.find_logistic_network_by_position(lab.position, force) end)
+    local net = ''
+    if ln then
+      local n = try(function() return ln.get_item_count(name) end) or 0
+      local pick = n > 0 and try(function() return ln.select_pickup_point{name=name, position=lab.position} end)
+      local owner = pick and try(function() return pick.owner end)
+      net = string.format('; logistic network #%s there holds %d%s', tostring(try(function() return ln.network_id end) or '?'), n,
+        owner and string.format(', robots would take it from %s %s', owner.name, at(owner.position)) or '')
+    else net = '; no logistic network there' end
+    return string.format('lab %s lacks %s: %s%s', at(lab.position), name, #feeds > 0 and 'fed by ' .. table.concat(feeds, ' | ') or 'no inserter drops into it', net)
+  end
   function M.view(p, a)
     local force, surface = p.force, p.surface
     if a.surface~=nil then
@@ -86,6 +129,7 @@ return function(api)
     end
     table.sort(groups, function(x, y) return #x > #y end)
     local working, lines = 0, {}
+    local why_rows = {}
     for gi, g in ipairs(groups) do
       local box = {left_top={x=math.huge, y=math.huge}, right_bottom={x=-math.huge, y=-math.huge}}
       local statuses, lacking, member = {}, {}, {}
@@ -95,7 +139,12 @@ return function(api)
         statuses[status] = (statuses[status] or 0) + 1
         if status == 'working' then working = working + 1 end
         local inv = e.get_inventory(defines.inventory.lab_input)
-        for _, name in ipairs(packs) do if inv and inv.get_item_count(name) == 0 then lacking[name] = (lacking[name] or 0) + 1 end end
+        for _, name in ipairs(packs) do
+          if inv and inv.get_item_count(name) == 0 then
+            lacking[name] = (lacking[name] or 0) + 1
+            if #why_rows < 8 then why_rows[#why_rows+1] = {lab=e, name=name} end
+          end
+        end
         box.left_top.x = math.min(box.left_top.x, e.position.x - 3); box.left_top.y = math.min(box.left_top.y, e.position.y - 3)
         box.right_bottom.x = math.max(box.right_bottom.x, e.position.x + 3); box.right_bottom.y = math.max(box.right_bottom.y, e.position.y + 3)
       end
@@ -155,7 +204,9 @@ return function(api)
         research = research .. string.format(', eta %s at %d working labs', fmt(math.ceil(left)), working)
       else research = research .. ', stalled: no lab is working' end
     end
-    return {surface=surface.name,position=centre,radius=centre and radius or nil,research=research,
+    local why = {}
+    for _, r in ipairs(why_rows) do why[#why+1] = try(function() return lab_why(r.lab, r.name, surface, force, seen) end) end
+    return {surface=surface.name,position=centre,radius=centre and radius or nil,research=research,lacking=#why > 0 and why or nil,
       labs=#labs .. ' in ' .. #groups .. ' groups' .. (#groups > MAX_GROUPS and ' (largest ' .. MAX_GROUPS .. ' shown)' or ''), groups=lines,
       limited=#found>=MAX_LABS and 'lab search reached 256 entities; counts cover the visible labs among those found' or nil}
   end

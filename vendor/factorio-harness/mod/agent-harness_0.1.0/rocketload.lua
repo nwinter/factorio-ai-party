@@ -848,10 +848,14 @@ return function(api)
         end
         extra.ammo_rates = api.ammo and try(function() return api.ammo(pl) end) or nil
         extra.hub_chunks = api.hub_chunks and try(function() return api.hub_chunks(pl) end) or nil
+        -- Each empty turret taking ammo the hub holds, and what feeds it (platalerts.lua; Sol, Astra 00:21).
+        local empty = api.empty_turrets and try(function() return api.empty_turrets(pl) end)
+        extra.empty_turrets = empty and #empty > 0 and empty or nil
         extra_cache[id] = extra
       end
       for k, v in pairs(extra) do plat[k] = v end
       if plat.incoming_cargo then plat.line = one_line(plat.line .. '; ' .. plat.incoming_cargo) end
+      if plat.empty_turrets then plat.line = one_line(plat.line .. '; ' .. table.concat(plat.empty_turrets, '; ')) end
       return {plat}
     end
     local out = {}
