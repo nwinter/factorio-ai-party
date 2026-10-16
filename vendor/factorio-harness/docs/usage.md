@@ -5303,3 +5303,47 @@ fh watch    # deploy on every change
   input side): each inserter taking from it and where it puts, a chest with its free slots: `inserter (-6.5,47.5)
   waiting_for_space_in_destination filter copper-plate -> passive-provider-chest (-6.5,48.5) (full) (0 of 48 slots
   free)`. `trace {forward: true}` names every chest destination's free slots too. Checked on Gleba on the copy.
+- Stock and rates by surface or network (Gemini 02:36).
+  - `stock {network: 96, item?, limit?}`: what that logistic network holds, largest first (`surface=` for another
+    surface), with its robots.
+  - `stock {item, surface: "aquilo"}` with no position: that planet's whole stock of the item, as freight_audit
+    counts a planet (networks, pads in no network, plain chests and landed pods, silos' rockets, labs, made and used a
+    minute). `supply {item, surface}` still gives the belts, machines and inserters.
+  - `rates {recipe}` or `rates {item}` with no area or positions: every crafter on your surface (`surface=` another)
+    set to that recipe, or to one making the item, at most 512, as the rates read computes them (`scope` says how
+    many). With `item`, only its rows, and `statistics`: the game's made and used a minute over 10 min. On the copy:
+    Nauvis's gear makers, 19-62 ms in the container (about 4-12 ms on n).
+- A refuel over an area with more than 1024 entities of the kinds it reads (Opus 01:51: a base-sized boiler area) now
+  says what the area holds by type and the filter that narrows it: `the area holds more than 1024 entities this refuel
+  reads (900 boiler, 300 furnace, ...); types: ["boiler"] (or entity names ...) reads only those`. `types` (refuel and
+  feed) already took entity types and names.
+- `collect {positions: [...], item?, wait_ticks}` waits at several machines (Sonnet, ~6 a shift: scarce output such as
+  low-density structures): it walks to the first, stands there, and takes from each of the others it reaches from
+  there too, the tick their products appear (1..16 positions). The reply's `also` names them; `last.also` says what
+  each gave and which were never in reach from there. Checked on the copy: two copper-cable assemblers 8 tiles apart,
+  38 taken, 16 of them from the second.
+- `nearest_water {position?, radius?}` (Opus 04:11: placements stops at 24 tiles): the nearest tile an offshore pump
+  takes (a tile with a fluid: water, lava, an oil ocean, ammonia) in chunks the map has charted, within 1..256 tiles
+  (default 200), and the offshore-pump spots there as `placements` gives them: `nearest water (water) at
+  (-344.5,-368.5), 135.1 tiles from (-281,-250); offshore-pump spots: (-346.5,-369.5) east, ...`. On the copy of world
+  n warm reads took 4-22 ms in the container (about 1-4 ms on n); a cold first call is slower.
+- The build and place_ghosts dry runs add `poles_preview`, a row a pole of the plan (Luna 01:50: a pole already stood
+  on the agreed tile, and the dry run gave blockers only): whether the spot is free, taken (what takes it) or already
+  built; the networks of the built poles it wires to (within the shorter wire reach); and the machines in its supply
+  area that no network powers now (they gain coverage) against those already powered: `small-electric-pole
+  (24.5,30.5): the spot is free; joins #613 (6 poles); in its supply area 0 machines no network powers now, 0 already
+  powered`. Checked on Gleba on the copy.
+- Board planning (Astra 03:45, after a viewer asked the team for planning help; facts and tools, the team decides).
+  - `supersedes` on a task, request or project (`board_post` and `board_update`): the items this one replaces; each
+    shows `superseded_by`.
+  - `board_update {id, edit_step: {n, text}}` changes a project step's text in place (its adder, its owner or a lead);
+    the earlier text stays in the step's history (last 8), and the change is an event (`step_edited`).
+  - `board_review {id?}` (a project and the items under it; default every active item) flags, facts only:
+    - `gone_platform`: a title or open step naming a platform of ours no longer there;
+    - `stale_handoff`: a handoff unchanged for 2 h while its owner was active in the last 30 min;
+    - `superseded`: an item another one supersedes, still active;
+    - `needs_differ`: the same item needed in different counts by items of one project.
+    On the copy of world n: 142 items read in 9-11 ms in the container (about 2 ms on n); it named the items still
+    naming Sunward, Kestrel and Wayfarer.
+  - `board_retire {ids, reason}` drops up to 32 items at once with the reason as their note, under board_update's
+    rules; one that may not be dropped is listed with why. Nothing closes on its own.

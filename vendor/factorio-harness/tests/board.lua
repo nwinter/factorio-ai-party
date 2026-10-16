@@ -943,4 +943,29 @@ do
   surface.count_entities_filtered,gleba.count_entities_filtered,game.surfaces=nil,nil,nil
   soc.surface=surface
 end
+-- d15 batch5 H (Astra 03:45): supersedes, edit_step with history, board_review, board_retire.
+do
+  storage.agent_harness.platform_alerts={by={[9]={name='Kestrel'}}}
+  for _,i in pairs(storage.agent_harness.board.items) do if i.kind=='project' then i.status='done' end end
+  local fleet=astra('board_post',{kind='project',title='fleet plan',owner='astra',steps={'Kestrel takes the Aquilo run','build Tern'},handoff='Kestrel at Fulgora'}).item
+  local old=sol('board_post',{kind='task',title='old ammo run',parent=fleet.id,needs={['firearm-magazine']=500}}).item
+  local new=sol('board_post',{kind='task',title='ammo run v2',parent=fleet.id,needs={['firearm-magazine']=200},supersedes=old.id}).item
+  eq(new.supersedes[1],old.id); eq(sol('board',{id=old.id}).item.superseded_by,new.id)
+  local e=astra('board_update',{id=fleet.id,edit_step={n=2,text='build Tern from the proven blueprint'}})
+  eq(e.item.steps[2]:find('build Tern from the proven blueprint',1,true)~=nil,true)
+  fails(function() sol('board_update',{id=fleet.id,edit_step={n=9,text='x'}}) end,'has no step 9')
+  local st=storage.agent_harness.board.items[fleet.id].steps[2]
+  eq(st.history[1].text,'build Tern'); eq(st.history[1].by,'astra')
+  -- the handoff two hours old while astra is active
+  storage.agent_harness.board.items[fleet.id].handoff_tick=game.tick-3*216000
+  astra('status',{brief=true})
+  local rv=astra('board_review',{id=fleet.id})
+  local kinds={}
+  for _,f in ipairs(rv.flags) do kinds[f.kind]=(kinds[f.kind] or 0)+1 end
+  eq(kinds.gone_platform,1,'step 1 names Kestrel, gone'); eq(kinds.superseded,1); eq(kinds.needs_differ,1); eq(kinds.stale_handoff,1)
+  local rt=sol('board_retire',{ids={old.id,99999},reason='superseded by the v2 run'})
+  eq(rt.retired[1],old.id); eq(rt.failed[1].id,99999)
+  eq(sol('board',{id=old.id}).item.status,'dropped')
+  storage.agent_harness.platform_alerts=nil
+end
 print('board: ok')

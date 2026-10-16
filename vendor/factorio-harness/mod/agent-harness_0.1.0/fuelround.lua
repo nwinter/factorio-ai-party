@@ -32,7 +32,16 @@ return function(api)
       base.area={lt,rb}
     else base.position=a.position and api.position(a.position) or p.position;base.radius=api.integer(a.radius,32,1,256,'radius') end
     local found,note=api.find_kinds(p,base,a.types)
-    assert(#found<=1024,'refuel area read exceeds the 1024-entity limit')
+    -- (Opus 01:51: a base-sized area of boilers hit the limit) what the area holds by type, and the filter that narrows it.
+    if #found>1024 then
+      local by,order={},{}
+      for _,e in ipairs(found) do local t=e.valid and e.type or '?'; if not by[t] then by[t]=0; order[#order+1]=t end; by[t]=by[t]+1 end
+      table.sort(order,function(x,y) return by[x]>by[y] end)
+      local parts={}
+      for i,t in ipairs(order) do if i>4 then break end; parts[#parts+1]=by[t]..' '..t end
+      error(string.format('the area holds more than 1024 entities this refuel reads (%s%s); types: ["boiler"] (or entity names, e.g. ["boiler","burner-mining-drill"]) reads only those',
+        table.concat(parts,', '),#order>4 and ', ...' or ''),0)
+    end
     local targets,hidden={},0
     -- feed_chests (Haiku, d15 06:20: "a one-call fill of every boiler feed chest from the nearest coal source"): the
     -- chests that inserters take from to feed those burners, each topped up to count, instead of the burners.

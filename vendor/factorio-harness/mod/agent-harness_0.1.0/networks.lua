@@ -1879,7 +1879,7 @@ return function(api)
     end
     -- The fuel's own drills on the power these boilers make (Opus, twice: coal drills short of power fed the boilers that
     -- powered them): electric drills within SPIRAL_RADIUS on this network mining a fuel the boilers burn, by status.
-    local spiral = surface and f and try(function() return M.spiral(surface, f, g.center, r.id, names) end)
+    local spiral = surface and f and try(function() return timed('networks.spiral', M.spiral, surface, f, g.center, r.id, names) end)
     if spiral then g.line = g.line .. '; ' .. spiral; g.spiral = true end
     return g
   end

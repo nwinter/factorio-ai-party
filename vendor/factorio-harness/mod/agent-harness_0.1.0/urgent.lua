@@ -178,6 +178,25 @@ return function(api)
     return left
   end
   -- The urgent line that wakes p now, or nil; once returned, that event is told to p.
+  -- A pole loss on this surface that left machines with no power (the urgent check's power-cut part).
+  function M.cut_check(s, surface, pos, base, told, since)
+    local pc = s.powercut
+    for k = #(pc and pc.cuts or {}), 1, -1 do
+      local c = pc.cuts[k]
+      if (c.checked or c.tick or 0) < since then break end
+      if c.surface == surface then
+        local lost = c.orphan_total or 0
+        for _, part in ipairs(c.parts or {}) do if part.cut then lost = lost + (part.total or 0) end end
+        local first = c.poles and c.poles[1]
+        local close = not base.radius or (pos and first and first.position and dist(first.position, pos) <= base.radius)
+        local key = 'cut|' .. tostring(c.id)
+        if lost >= M.CUT_MACHINES and close and not (api.cut_fixed and api.cut_fixed(c)) and news(told, key, lost) then
+          tell(told, key, lost)
+          return api.cut_line and api.cut_line(c, surface) or string.format('power cut #%s: %d machines left with no power', tostring(c.id), lost)
+        end
+      end
+    end
+  end
   function M.check(p, base)
     local s = api.state()
     local surface, pos = where(p)
@@ -307,22 +326,8 @@ return function(api)
     -- A pole loss on this surface that left machines with no power (powercut.lua; Opus 00:21: power cut #104 raised an
     -- alert and woke nobody, since the part cut off had a new network id the collapse rule had never seen with power):
     -- CUT_MACHINES or more machines in the parts cut off or left with no pole, the cut not joined again.
-    local pc = s.powercut
-    for k = #(pc and pc.cuts or {}), 1, -1 do
-      local c = pc.cuts[k]
-      if (c.checked or c.tick or 0) < since then break end
-      if c.surface == surface then
-        local lost = c.orphan_total or 0
-        for _, part in ipairs(c.parts or {}) do if part.cut then lost = lost + (part.total or 0) end end
-        local first = c.poles and c.poles[1]
-        local close = not base.radius or (pos and first and first.position and dist(first.position, pos) <= base.radius)
-        local key = 'cut|' .. tostring(c.id)
-        if lost >= M.CUT_MACHINES and close and not (api.cut_fixed and api.cut_fixed(c)) and news(told, key, lost) then
-          tell(told, key, lost)
-          return api.cut_line and api.cut_line(c, surface) or string.format('power cut #%s: %d machines left with no power', tostring(c.id), lost)
-        end
-      end
-    end
+    local cut = api.timed and api.timed('urgent.power_cut', M.cut_check, s, surface, pos, base, told, since) or M.cut_check(s, surface, pos, base, told, since)
+    if cut then return cut end
     -- Power collapse on this surface.
     for _, x in ipairs(collapsed(p)) do
       if x.surface == surface and news(told, x.key, x.level) then
