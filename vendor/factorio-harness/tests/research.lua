@@ -152,7 +152,7 @@ eq(astra('research').entries[2].done_in,'10m40s')
 -- An entry that needs a pack the current research does not use, and that nobody made in 10 minutes, stops the clock.
 force.research_queue[#force.research_queue+1]=techs['sulfur-processing']
 q=astra('research')
-eq(q.entries[4].waits_for,'chemical-science-pack (none made in 10 min, none in our labs or logistic networks: the labs cannot run it)'); eq(q.entries[4].done_in,nil)
+eq(q.entries[4].waits_for,'chemical-science-pack (none made in 10 min, none in the labs or logistic networks where the labs are: the labs cannot run it; chemical-science-pack: no labs of ours)'); eq(q.entries[4].done_in,nil)
 eq(q.clock_stops_at,'sulfur-processing'); eq(q.entries[4].not_made_recently,nil)
 -- None made, but some in stock (Grok, shift17 20:40: 5571 in chests while the labs used them): not a stop; the stock named.
 local lab_inv={get_item_count=function(n) return n=='chemical-science-pack' and 120 or 0 end}
@@ -162,7 +162,17 @@ force.logistic_networks={nauvis={{get_item_count=function(n) return n=='chemical
 used['chemical-science-pack']=340
 q=astra('research')
 eq(q.entries[4].waits_for,nil); eq(q.clock_stops_at,nil); assert(q.entries[4].done_in)
-eq(q.entries[4].not_made_recently,'chemical-science-pack: none made in 10 min; 5571 in stock (labs 120, logistic networks 5451); labs used 340 in 10 min')
+eq(q.entries[4].not_made_recently,'chemical-science-pack: none made in 10 min; 5571 where the labs are (nauvis: labs 120, logistic networks 5451); labs used 340 in 10 min')
+-- d15 batch5 A7 (Sol 05:19): stock on a surface with no labs is not the labs' stock. Nauvis's labs hold none, Aquilo's
+-- network 2288: the labs cannot run it, and the Aquilo stock is named apart.
+lab_inv={get_item_count=function() return 0 end}
+local aquilo={name='aquilo',index=2,find_entities_filtered=function() return {} end}
+game.surfaces.aquilo=aquilo
+force.logistic_networks={aquilo={{get_item_count=function(n) return n=='chemical-science-pack' and 2288 or 0 end}}}
+q=astra('research')
+eq(q.entries[4].not_made_recently,nil); eq(q.clock_stops_at,'sulfur-processing')
+eq(q.entries[4].waits_for,'chemical-science-pack (none made in 10 min, none in the labs or logistic networks where the labs are: the labs cannot run it; chemical-science-pack: 0 where the labs are (nauvis: labs 0, logistic networks 0); 2288 elsewhere, no labs there (aquilo: logistic networks 2288))')
+game.surfaces.aquilo=nil
 surface.find_entities_filtered=real_find; force.logistic_networks=nil; used['chemical-science-pack']=nil
 made['chemical-science-pack']=40
 q=astra('research'); eq(q.entries[4].waits_for,nil); eq(q.clock_stops_at,nil); assert(q.entries[4].done_in)
