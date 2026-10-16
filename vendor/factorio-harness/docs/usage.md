@@ -378,6 +378,10 @@ fh call status
     fast-inserter (-65.5,95.5): its circuit condition ... is ignored: no red or green wire connects it, and the game
     counts a circuit condition only with a circuit connection`.
 - `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests" switch.
+- `requests` checks every argument before it changes anything (Sol, d15 04:16: `max: "inf"` on Starling's magazines
+  set the slot, then failed with `attempt to compare string with number`): the switches, `section`, every `clear` name
+  and every `set` entry (item, quality, min, max, from, a personal max under what is held). One bad argument refuses the
+  call and nothing is set. `max` is a whole number at least `min`, or `"inf"` (also `"infinity"`, `"none"`) for none.
 - Personal requests (Opus, d15 09:20: max 0 to clear a request sent 6 pumpjacks and 30 steel to the trash, and robots
   carried them off): a `set` whose `max` is under what the character holds of the item is refused (`pumpjack max 0: you
   hold 6; the game moves what you hold over a personal max to your trash, and robots take it to storage. clear (or
