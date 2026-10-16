@@ -8,7 +8,9 @@ param(
   [string]$Slot = '',          # several clients in one world: '-astra', '-opus' (own dir, task and exe name)
   [switch]$Sound,              # unmute (stream: only the main director, -Slot -cam1). Music stays off either way:
                                # the soundtrack may draw copyright claims; the stream has its own music slot.
-  [switch]$Human               # a person plays this client: sound and music on, normal graphics (not captured by OBS)
+  [switch]$Human,              # a person plays this client: sound and music on, normal graphics (not captured by OBS)
+  [switch]$NoAudio             # --disable-audio on a camera without -Sound: no sound loaded (OBS takes game audio from
+                               # factorio-cam1.exe only, 2026-10-16); try it with memtest-client.ps1 first
 )
 $ErrorActionPreference = 'Stop'
 $srv = "D:\pog\inst\$Name"
@@ -68,7 +70,8 @@ if ($Human) {
   Start-Process -FilePath $exe -ArgumentList "--config `"$dir\config\config.ini`" --mp-connect 127.0.0.1:$GamePort"
   return
 }
-$action = New-ScheduledTaskAction -Execute $exe -Argument "--config `"$dir\config\config.ini`" --mp-connect 127.0.0.1:$GamePort"
+$quiet = if ($NoAudio -and -not $Sound -and -not $Human) { ' --disable-audio' } else { '' }
+$action = New-ScheduledTaskAction -Execute $exe -Argument "--config `"$dir\config\config.ini`" --mp-connect 127.0.0.1:$GamePort$quiet"
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
 Register-ScheduledTask -TaskName $task -Action $action -Principal $principal -Settings $settings -Force | Out-Null
