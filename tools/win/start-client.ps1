@@ -18,6 +18,8 @@ $fwd = $dir -replace '\\','/'
 $data = ($Factorio -replace '\\','/') + '/data'
 $muted = if ($Sound -or $Human) { 'false' } else { 'true' }
 $music = if ($Human) { '0.5' } else { '0' }
+# Viewer Foobator 13:40 2026-10-16: the game's alert sounds (losses, low ammo) played on the stream through cam1.
+$alerts = if ($Human) { 'false' } else { 'true' }
 # Factorio 2.0's graphics-quality takes only high or medium (sprite resolution); the old 'low'/'normal' were not valid,
 # so every client fell back to high ("[Graphics quality: high]" in shake5's cam3 log). Directors get medium-resolution
 # sprites (a quarter of the pixels) to cut the ~5.2 GB each Space Age client committed; see docs/STREAM-NOTES.md.
@@ -39,6 +41,7 @@ show-tips-and-tricks=false
 [sound]
 master-muted=$muted
 music-volume=$music
+alerts-muted=$alerts
 [graphics]
 full-screen=false
 graphics-quality=$quality
