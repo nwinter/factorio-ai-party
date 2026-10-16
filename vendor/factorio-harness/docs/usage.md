@@ -5464,3 +5464,8 @@ fh watch    # deploy on every change
   rocks, plants and cliffs the ghosts mark (`2 trees, 1 rocks: tree-03 (-113.75,517.438), ...`), dry runs too.
   Checked on the copy at Haiku's cliffs: default `S4 W1 S6 uS5 S5 E1 S2` (under the cliff), `cliffs: true` `S4 W1 S17
   E1 S2` (over it, one cliff marked).
+- `move_to {mine_out: true}` (Haiku 06:20: closed in among machines, `last.mine_to_get_out` named the way and the agent
+  mined it by hand): a walk that ends closed in, or with no way that mining would open (`mine_for_a_way`), marks the
+  fewest blockers it names for deconstruction, mines them by hand as a timed construct over them (their contents go to
+  the inventory), and walks again once; a queue step waits through it. Checked on the copy: Astra walled in on
+  Fulgora, the pipe and provider chest it named mined by hand, then the walk left the ring.

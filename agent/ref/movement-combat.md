@@ -36,6 +36,8 @@
   condition counts only with a red or green wire on the entity: without one the game ignores it, and the line says
   `condition ignored`);
   `requests` `set` takes a map `{item: min}` too; an entry without `max` keeps the slot's max (`"max": "inf"` sets none).
+  `move_to {mine_out: true}`: closed in (or with no way that mining would open), it marks the blockers it names,
+  mines them by hand (a timed construct; contents to your inventory) and walks again once (`last.mining_out`).
 - A walk stops short of rails that a moving train will cross within 6 s and goes on once it has passed (status
   `train_wait`, then `last.train_waits`).
 - `"retreat":{"to":{"x":260,"y":-60},"health_below":0.5,"shield_below":0.2}` on `move_to`, `shoot`, `kite` or `vehicle {drive}`:
