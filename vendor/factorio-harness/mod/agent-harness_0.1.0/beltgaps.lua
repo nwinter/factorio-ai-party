@@ -114,27 +114,94 @@ return function(api)
     if f and s then refresh(c,f,s) else c.pending=nil end
     if not c.pending then m.next=m.next+1 end
   end
-  local function line(a)
+  local DIRS={[0]={0,-1},[4]={1,0},[8]={0,1},[12]={-1,0}}
+  -- A leg that is not straight (Haiku: belt_gaps refused a route with corners) follows the belt as remembered from its
+  -- start: each belt's direction, an underground entrance to its exit; across a gap (no belt remembered there) it goes
+  -- on the way the belt went while that nears the end, else turns toward it. A belt that runs the other way is
+  -- followed from the leg's end. Returns the tiles and the underground tiles passed, or nil.
+  local function follow(f,s,from,to)
+    local m=store()
+    local function row(x,y)
+      local c=m.chunks[id(f,s,math.floor(x/32),math.floor(y/32))]
+      return c and c.tiles and c.tiles[key(x,y)]
+    end
+    local x,y=math.floor(from.x),math.floor(from.y)
+    local tx,ty=math.floor(to.x),math.floor(to.y)
+    -- No belt remembered where it starts: nothing to follow.
+    if not row(x,y) then return nil end
+    local tiles,under,seen,d,gap={},{},{},nil,0
+    for _=1,512 do
+      local k=key(x,y)
+      if seen[k] then return nil end
+      seen[k]=true; tiles[#tiles+1]={x=x,y=y}
+      if x==tx and y==ty then return tiles,under end
+      local r=row(x,y)
+      if r and r.type=='underground-belt' and r.belt_to_ground_type=='input' and r.paired_with then
+        local px,py=math.floor(r.paired_with.x),math.floor(r.paired_with.y)
+        local dx,dy=px>x and 1 or px<x and -1 or 0,py>y and 1 or py<y and -1 or 0
+        while x~=px or y~=py do x=x+dx; y=y+dy; if x~=px or y~=py then under[key(x,y)]=true end end
+        d=DIRS[r.direction]
+      else
+        if r and DIRS[r.direction] then d=DIRS[r.direction]; gap=0
+        else
+          -- more than 32 tiles with no belt remembered: not this belt any more
+          gap=gap+1
+          if gap>32 then return nil end
+          -- a gap: on the way the belt went while that nears the end, else toward it
+          local gx,gy=tx>x and 1 or tx<x and -1 or 0,ty>y and 1 or ty<y and -1 or 0
+          if not (d and ((d[1]~=0 and d[1]==gx) or (d[2]~=0 and d[2]==gy))) then
+            d=gx~=0 and (gy==0 or math.abs(tx-x)>=math.abs(ty-y)) and {gx,0} or {0,gy}
+          end
+        end
+        x=x+d[1]; y=y+d[2]
+      end
+    end
+    return nil
+  end
+  local function line(a,f,s,prepare)
     local points={api.position(a.from)}
     if a.via then assert(type(a.via)=='table' and #a.via<=16,'via takes at most 16 positions');for _,p in ipairs(a.via) do points[#points+1]=api.position(p) end end
     points[#points+1]=api.position(a.to)
-    local tiles,seen={},{}
+    local tiles,seen,under,followed={},{},{},nil
+    local function add(t) local k=key(t.x,t.y); if not seen[k] then tiles[#tiles+1]=t;seen[k]=true;assert(#tiles<=512,'belt line exceeds 512 tiles') end end
     for i=2,#points do
       local x,y=math.floor(points[i-1].x),math.floor(points[i-1].y)
       local tx,ty=math.floor(points[i].x),math.floor(points[i].y)
-      assert(x==tx or y==ty,'each belt line leg must be horizontal or vertical; via supplies corner positions')
-      local dx,dy=tx>x and 1 or tx<x and -1 or 0,ty>y and 1 or ty<y and -1 or 0
-      while true do
-        local k=key(x,y)
-        if not seen[k] then tiles[#tiles+1]={x=x,y=y};seen[k]=true;assert(#tiles<=512,'belt line exceeds 512 tiles') end
-        if x==tx and y==ty then break end;x=x+dx;y=y+dy
+      if x==tx or y==ty then
+        local dx,dy=tx>x and 1 or tx<x and -1 or 0,ty>y and 1 or ty<y and -1 or 0
+        while true do
+          add({x=x,y=y})
+          if x==tx and y==ty then break end;x=x+dx;y=y+dy
+        end
+      else
+        if prepare then prepare(points[i-1],points[i]) end
+        local list,u=follow(f,s,points[i-1],points[i])
+        if not list then
+          local back,ub=follow(f,s,points[i],points[i-1])
+          if back then list,u={},ub; for j=#back,1,-1 do list[#list+1]=back[j] end end
+        end
+        assert(list,string.format('the leg (%g,%g) to (%g,%g) is not horizontal or vertical, and no belt remembered at either end leads to the other within 512 tiles (gaps up to 32 tiles crossed); via supplies corner positions',
+          points[i-1].x,points[i-1].y,points[i].x,points[i].y))
+        for _,t in ipairs(list) do add(t) end
+        for k in pairs(u) do under[k]=true end
+        followed=(followed or 0)+1
       end
     end
-    return tiles
+    return tiles,under,followed
   end
   function M.read(p,a)
-    local wanted=line(a)
     local f,s=p.force,p.surface
+    -- Before following a leg round corners, the chunks round it are read as for a straight one (at most 4 refreshed).
+    local prepared=0
+    local function prepare(from,to)
+      for cx=math.floor(math.min(from.x,to.x)/32),math.floor(math.max(from.x,to.x)/32) do
+        for cy=math.floor(math.min(from.y,to.y)/32),math.floor(math.max(from.y,to.y)/32) do
+          local c=register(f,s,cx,cy)
+          if prepared<4 and visible(c,f,s,p) and not c.tick then prepared=prepared+1; refresh(c,f,s,p,128) end
+        end
+      end
+    end
+    local wanted,under_followed,followed=line(a,f,s,prepare)
     local chunks,refreshed,budget={},0,128
     for _,t in ipairs(wanted) do
       local x,y=math.floor(t.x/32),math.floor(t.y/32);local k=key(x,y)
@@ -164,6 +231,7 @@ return function(api)
       end
     end
     local out={surface=s.name,tiles=#wanted,missing={},ghosts={},unknown={},belts=0,underground=0,observations={},checked_tick=game.tick,
+      followed=followed and string.format('%d leg%s not straight: followed the remembered belt round its corners (gaps crossed toward the end)',followed,followed==1 and '' or 's') or nil,
       memory='last completed layout only; pending refreshes are disclosed; fogged tiles are not queried; unrecorded tiles are unknown, not missing'}
     for _,c in pairs(chunks) do out.observations[#out.observations+1]={chunk={x=c.x,y=c.y},tick=c.tick,current=c.tick==game.tick,capped=c.capped,pending=c.pending and {read=c.pending.next-1,total=#c.pending.list} or nil} end
     table.sort(out.observations,function(a,b) return a.chunk.y<b.chunk.y or a.chunk.y==b.chunk.y and a.chunk.x<b.chunk.x end)
@@ -172,7 +240,7 @@ return function(api)
       local row={position={x=t.x+0.5,y=t.y+0.5},observed_tick=c.tick,current=c.tick==game.tick}
       if r then
         if r.ghost then row.name=r.name;row.direction=r.direction;out.ghosts[#out.ghosts+1]=row else out.belts=out.belts+1 end
-      elseif covered[key(t.x,t.y)] then out.underground=out.underground+1
+      elseif covered[key(t.x,t.y)] or under_followed[key(t.x,t.y)] then out.underground=out.underground+1
       elseif not c.tick then out.unknown[#out.unknown+1]=row
       else out.missing[#out.missing+1]=row end
     end

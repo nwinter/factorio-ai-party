@@ -70,14 +70,23 @@ return function(api)
   end
   local function planet(force, surface, item, research)
     local row = {surface=surface.name, made_per_min=per_min(force, surface, item, 'input'), used_per_min=per_min(force, surface, item, 'output'),
-      networks=0, unmet=0, requesters_short=0, pads=0, labs=0, silos=0}
+      networks=0, unmet=0, requesters_short=0, pads=0, labs=0, silos=0, requesters=0}
     local first
-    -- Logistic networks: their count, their requesters' shortfall, and their chests' stacks for spoil.
+    -- Logistic networks: their count, their requesters' shortfall, and their chests' stacks for spoil. What requester
+    -- chests hold is no part of a network's count (d16 batch7, checked on the copy of world n: Nauvis's networks counted
+    -- 8 iron plates while 2,100 sat in 35 requesters; Sonnet 12:20: 2,500 packs in a requester read as none): counted
+    -- apart, each chest once.
     local chests = 0
+    local req_seen = {}
     for _, ln in ipairs(try(function() return force.logistic_networks[surface.name] end) or {}) do
       row.networks = row.networks + math.max(0, try(function() return ln.get_item_count(item) end) or 0)
       for _, pt in ipairs(try(function() return ln.requester_points end) or {}) do
         local owner = try(function() return pt.owner end)
+        if owner and owner.valid and owner.type == 'logistic-container' and not req_seen[owner.unit_number or owner]
+          and try(function() return owner.prototype.logistic_mode end) == 'requester' then
+          req_seen[owner.unit_number or owner] = true
+          row.requesters = row.requesters + (try(function() return owner.get_item_count(item) end) or 0)
+        end
         local coming = 0
         for _, c in pairs(try(function() return pt.targeted_items_deliver end) or {}) do
           if type(c) == 'table' and (c.name == item or (type(c.name) == 'table' and c.name.name == item)) then coming = coming + (c.count or 0) end
@@ -161,10 +170,11 @@ return function(api)
     row.labs_without = research and labs > 0 and without or nil
     row.lab_count = labs > 0 and labs or nil
     row.spoil = spoil_text(first)
-    row.total = row.networks + row.pads - row.pads_in_networks + row.chests + row.silos + row.labs
+    row.total = row.networks + row.requesters + row.pads - row.pads_in_networks + row.chests + row.silos + row.labs
     if row.pads_in_networks == 0 then row.pads_in_networks = nil end
     local parts = {string.format('%s: made %d/min, used %d/min', surface.name, row.made_per_min, row.used_per_min)}
     parts[#parts+1] = string.format('logistic networks %d', row.networks)
+    if row.requesters > 0 then parts[#parts+1] = string.format('requester chests %d', row.requesters) end
     if row.unmet > 0 then parts[#parts+1] = string.format('their requesters lack %d (%d requester%s)', row.unmet, row.requesters_short, row.requesters_short == 1 and '' or 's') end
     if row.pads > 0 then
       parts[#parts+1] = string.format('landing pads %d', row.pads) .. (row.pads_in_networks and
@@ -257,7 +267,7 @@ return function(api)
     for _, r in ipairs(planets) do lines[#lines+1] = r.line end
     for _, r in ipairs(platforms) do lines[#lines+1] = r.line end
     return {item=item, total=total, research_needs_it=research or nil, lines=lines, planets=planets, platforms=platforms,
-      note='counted once each: logistic networks (the game\'s count, landing pads in a network among them), landing pads in no network, plain chests and landed cargo pods (machine output chests: up to '..PLAIN..' a planet), silos\' rocket cargo, labs and platform hubs; not counted: belts, inserter hands, machines\' inputs and outputs, vehicles and wagons (supply {item, surface} reads those on one planet)'}
+      note='counted once each: logistic networks (the game\'s count, landing pads in a network among them), what requester chests hold (not in a network\'s count), landing pads in no network, plain chests and landed cargo pods (machine output chests: up to '..PLAIN..' a planet), silos\' rocket cargo, labs and platform hubs; not counted: belts, inserter hands, machines\' inputs and outputs, vehicles and wagons (supply {item, surface} reads those on one planet)'}
   end
   function M.read(p, a)
     local item = a.item

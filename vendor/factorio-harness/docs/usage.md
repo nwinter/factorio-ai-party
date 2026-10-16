@@ -5480,3 +5480,51 @@ fh watch    # deploy on every change
   a superseded one is retired, kept with its link; at most 150 active; the board's plain listing leaves lessons out
   (`board {kind: "lesson"}` lists them). Checked on the copy: a lesson on a requester at (48.5,190.5) rode on an
   inspect there and not elsewhere; an inspect with the check took about 1 ms in the container.
+
+## d16 batch7 (operator 15:15; agents' requests 12:20-14:49)
+- `stock {item}` (Sonnet 12:20: 0 packs within 128 tiles while 2,500 sat in a requester; Muse 14:08: told a teammate 0
+  foundation while 209 sat elsewhere, twice): with no `radius`, `total` is the whole surface's, counted as
+  `freight_audit` counts a planet (logistic networks, what requester chests hold, landing pads, plain chests and landed
+  cargo pods, silos' rockets, labs; machine outputs not counted), and `within_radius` gives the 128-tile total of the places listed. `surface` is
+  used throughout (with `position` it read the caller's surface before); a platform is read whole. `covered` says what
+  was read; `as_of` says `live (tick N)` or, for a total reused within 10 s, `Ns ago` (Haiku: a total read as current
+  when it was not). `supply` and `science` (compact too) carry `as_of` the same way. Landed cargo pods
+  (`temporary-container`) are among stock's places. `freight_audit` and `stock {item, surface}` add what requester chests
+  hold (`requesters`): a network's own count leaves them out (on the copy of world n, Nauvis's networks counted 8 iron
+  plates while 2,100 sat in 35 requesters).
+- A transfer or a `pick` from a belt (Grok 12:21: the egg belt at (7.5,17.5) "held none" three times while inspect showed
+  eggs) is refused, naming what its lanes carry and the `pickup {belt: true, position, radius: 1, items}` call that takes
+  them off, as the pickup key does.
+- `belt_gaps` (Haiku): a leg that is not straight follows the remembered belt from its start (each belt's direction, an
+  underground entrance to its exit; across a gap of up to 32 tiles on the way the belt went while that nears the end,
+  else toward it), or from the leg's end when the belt runs the other way; `followed` says so. Refused when no belt
+  remembered at either end leads to the other. `surface` is now read (it was ignored).
+- `load_silo {walk: true}` without `from` (Grok 13:51: a rescue rocket refused with the collectors in hand): a walk to
+  the silo that loads what you hold of the list; holding none, refused.
+- A call that ends a running action (Haiku 13:50: a walk and transfer cut off read moved 0; Muse, three times after
+  `fh --wait` exited 3) says in `replaced` which action it ended and what it had done: moved, places reached, where its
+  walk stopped and how far from the next place (a walk: the goal and how far short).
+- `transfer {from: "nearest", to}` (Opus 12:20: refuelling a boiler left out the requester chest its own inserter fills it
+  from): a chest an inserter takes from into the `to` target is taken from as any chest (`from_nearest` says `it feeds X,
+  the target`); chests feeding other machines stay left out without `feeding: true`.
+- `collect {min_fresh: 0..100}` (Grok 12:21: nutrients about 40% spoiled from a biochamber with no choice): only stacks
+  at least that fresh are taken (a stack's spoiled percent at most 100 - min_fresh); `left_less_fresh` says how many
+  stayed and the most spoiled. Every collect form (in reach, walk, radius, wait_ticks) takes it.
+- A collect standing at its machine (Sol 13:50: a coolant collect woke a sleep every 30 s as `queue_stalled`) is no stall
+  while the machine crafts; a machine that stopped wakes it with `collect waits at X: the machine is not crafting
+  (status ...)`. `queue_status` gives the active step's `waiting_at_machine` line.
+- `load_silo` waiting for its rocket (Sonnet 15:20: four waits timed out with an ingredient missing): `waiting.parts_short`
+  and, when the wait runs out, `last.why` name each rocket-part ingredient the silo lacks, short of the next part and of
+  the parts left, with what its input holds. `wait_min: 1..60` keeps the wait going that many minutes with no new part.
+- `place_ghosts {surface, dry_run}` from another planet (Sol 15:21): the dry run's `standing` measured hand reach from the
+  character's position on its own planet; it now says the ghosts are built by that planet's robots. The power preview
+  read the requested surface already: on the copy of world n the pole Sol's Nauvis dry run joined, medium-electric-pole
+  (115.5,51.5) on network #2, stands on Nauvis (none there on Aquilo).
+- `train {stops: true, surface}` from a helper call (Sol 15:22) was refused for the `helper` field: accepted now.
+  `train {position, surface}` reads (and sets) the train or stop on that surface by remote view.
+- `load_silo` fresh first (Grok 15:25: 87%-spoiled packs went up): a walking load took the chest's stacks in slot order;
+  it now takes the least spoiled first at each chest (as the load in reach did), and `last.freshness` gives the loaded
+  batch's spoilage. The reply's `switches` states the silo's automatic requests and send to orbit automatically;
+  load_silo never sets either (the journals show the Gleba silo's switches set by `configure` and `launch` calls).
+  Checked on the copy of world n: with send to orbit automatically on, a ready rocket holding 1000 agricultural science
+  packs (its full lift) stayed in the silo for 30 s.

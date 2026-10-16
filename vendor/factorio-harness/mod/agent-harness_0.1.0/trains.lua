@@ -11,7 +11,7 @@ return function(api)
   local TRAIN_NAMES
   M.schema = {
     train = {stops='true: every train stop of ours on the surface (Gemini, d15 21:40: no call listed them), by name: position, rail beside it, limit, trains_count and the trains heading there or stopped at it (their front carriage and state); at most 200; surface= for another one',
-      surface='with stops: a surface name (default yours)',
+      surface='a surface name (default yours): with stops, its stops; with position, the train or stop there, by remote view (ours, in a chunk our force sees now)',
       position='{x,y} of a train stop, or of a locomotive or wagon of the train (in sight, or by remote view in a visible chunk)',
       station='train stop: its station name (what schedules name)', limit='train stop: train limit 0..1000, or false to clear it',
       schedule='train: array of 0..32 {station, wait=[{type=time|inactivity|full|empty|item_count|fluid_count|circuit|passenger_present|..., ticks? (time, inactivity), compare? and|or, condition? {signal, comparator, value}}]}; [] clears',
@@ -192,7 +192,8 @@ return function(api)
   local MAX_STOPS = 200
   function M.stops(p, a)
     assert(a.stops == true, 'stops must be true')
-    for k in pairs(a) do assert(k == 'stops' or k == 'surface', 'stops takes surface only (not ' .. tostring(k) .. ')') end
+    -- helper and peek ride on any request (a subagent's call, an overlay's read; Sol 15:22: a helper's call was refused).
+    for k in pairs(a) do assert(k == 'stops' or k == 'surface' or k == 'helper' or k == 'peek', 'stops takes surface only (not ' .. tostring(k) .. ')') end
     local surface = p.surface
     if a.surface ~= nil then
       assert(type(a.surface) == 'string', 'surface must be a surface name')
@@ -233,6 +234,9 @@ return function(api)
   end
   function M.handlers.train(p, a)
     if a.stops ~= nil then return M.stops(p, a) end
+    -- surface with position (Sol 15:22: from Aquilo a train at (120,-131) was looked for on Aquilo): that surface's
+    -- train or stop by remote view.
+    if a.surface ~= nil and api.on_surface then p = api.on_surface(p, a.surface) end
     -- The target by position only: entity() reads `name` as an entity-name
     -- filter, which is why a stop's name is `station` (live check: name
     -- "LC-East" failed as "Unknown entity name"). In sight, else by remote

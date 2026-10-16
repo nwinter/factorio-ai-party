@@ -33,6 +33,8 @@
   the action ending still end them.
 - A sleep ends when the plan you submitted to your queue finishes or stalls (`queue_done`, `queue_stalled`); a
   standing order's rounds do not end it (`--wake-on-orders` makes them).
+- A collect standing at a machine that crafts is no stall (queue_status `waiting_at_machine` says which); a call that
+  ends a running action says in `replaced` what that action had done and where its walk stopped.
 - Urgent wakes: `--urgent-radius N` (1..200) counts attacks, groups, losses and deaths only within N tiles of you. `--until "alert near=X,Y radius=R min_size=N"` (or `area=X1,Y1,X2,Y2`)
   wakes only on an attack, group or nest there and that big; `woke: alert` names the alert.
 - Conditional `sleep`, `wait_until`, and queue waits report `wait_estimates` (ETA and rate basis, or no estimate) and

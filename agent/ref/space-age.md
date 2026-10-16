@@ -67,6 +67,10 @@
   a part increase, capped at `gives_up_tick`); `silo_wait` reports the observed parts/minute and idle window.
   A spoiling item goes in fresh first (the least
   spoiled stacks of you and the chests; `"fresh_first": false` for the old order).
+- `load_silo {walk: true}` without `from` walks to the silo with what you hold; a walking load takes the freshest
+  stacks first (`last.freshness`). `wait_min: 15` keeps a load waiting through 15 minutes with no new part;
+  `parts_short` (and `last.why`) names each rocket-part ingredient the silo lacks. The reply's `switches` gives the
+  silo's automatic requests and send to orbit automatically; load_silo never sets them.
 - `preflight {position,items,from}` reads source chest stock and shorts; `manifest` checks combined kg/slots including existing cargo. `from` is one chest position or up to 16; nothing moves.
 - `launch {position, wait_ready: true}` waits for the rocket and launches when it is ready (a queue step too); a tell does not end that wait (one with `wake: true` or an urgent alert does), and a wait that ends before the rocket is ready ends `not_launched` with `launch_error`; a queued `load_silo` your own build or transfer interrupts is requeued and goes on.
 - A drop's landing line gives the container's exact position and the other cargo pod containers within 8 tiles with

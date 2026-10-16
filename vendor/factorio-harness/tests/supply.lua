@@ -309,11 +309,11 @@ local n=finds
 game.tick=game.tick+300
 local again=supply_once(p,{item=AC})
 eq(finds,n,'no scan for the same read'); eq(again.as_of,'5s ago (the same read within 10 s is reused)')
-eq(first.as_of,nil); eq(again.where,first.where); eq(again.makers,first.makers); eq(again.counted,first.counted)
+eq(first.as_of,'live (tick '..(game.tick-300)..')'); eq(again.where,first.where); eq(again.makers,first.makers); eq(again.counted,first.counted)
 again.team={'x'}; eq(supply_once(p,{item=AC}).team,nil,'a reply added to does not change the kept one')
 supply_once(p,{item=AC,near={x=22,y=0},radius=12}); assert(finds>n,'another area reads anew')
 n=finds; game.tick=game.tick+300
-eq(supply_once(p,{item=AC}).as_of,nil,'10 s later: read anew'); assert(finds>n)
+eq(supply_once(p,{item=AC}).as_of,'live (tick '..game.tick..')','10 s later: read anew'); assert(finds>n)
 surface.find_entities_filtered=find
 -- Space Age crafters are makers and users by their type (Astra, 06:19: "makers omit electromagnetic plants"):
 -- electromagnetic plants, foundries, cryogenic plants, biochambers and crushers are assembling machines, recyclers

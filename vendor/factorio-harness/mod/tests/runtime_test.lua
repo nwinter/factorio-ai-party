@@ -4821,7 +4821,11 @@ end)()
   far={[chest]=true}
   fails(function() call('load_silo',{position=silo.position,items={['agricultural-science-pack']=10},from={x=40.5,y=5.5},walk=true}) end,
     'nothing walked: the rocket still needs agricultural-science-pack 10 (you hold 0) and the chests in from hold none of it (iron-chest (40.5,5.5) holds 0 agricultural-science-pack)')
-  fails(function() call('load_silo',{position=silo.position,items={['agricultural-science-pack']=10},walk=true}) end,'walk goes with from')
+  -- walk without from (Grok 13:51): a walk to the silo that loads what you hold; holding none, refused
+  far={[silo]=true}
+  fails(function() call('load_silo',{position=silo.position,items={['agricultural-science-pack']=10},walk=true}) end,
+    'nothing walked: the rocket still needs agricultural-science-pack 10 (you hold 0) and you hold none of it (from names chests to take it from on the way)')
+  far={[chest]=true}
   -- fresh_first (Luna, shift14 22:50): for an item that spoils, the least spoiled stacks of you and the chests first,
   -- each moved whole; fresh_first=false: you first, then the chests.
   do
@@ -4842,6 +4846,37 @@ end)()
     r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=60},from={x=40.5,y=5.5},fresh_first=false})
     eq(r.loaded[1].order,nil); eq(r.loaded[1].from,'you 50, iron-chest (40.5,5.5) 10'); eq(main[1].count,0)
     eq(r.loaded[1].freshness:match('^[^;]*'),'agricultural-science-pack*60: spoiled 30-60%, 55% by count')
+    -- d16 batch7 A12 (Grok 15:25: a walking load took the chest's stacks in slot order, 87% spoiled): at the chest the
+    -- least spoiled stacks first; the loaded batch's spoilage in last.freshness.
+    for i=1,3 do cargo[i]=stack(nil,0) end
+    main[1]=stack(nil,0); main[2]=stack(nil,0)
+    held_inv[1]=aged(50,0.87); held_inv[2]=aged(50,0.2)
+    far={[chest]=true,[silo]=true}
+    r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=50},from={x=40.5,y=5.5},walk=true})
+    eq(r.op,'load_silo')
+    far={}; advance(3)
+    local st=call('status',{})
+    eq(st.last.outcome,'loaded'); eq(held_inv[2].count,0,'the 20% stack taken'); eq(held_inv[1].count,50,'the 87% one stays')
+    eq(st.last.freshness[1]:match('^[^;]*'),'agricultural-science-pack*50: spoiled 20%, 20% by count')
+    -- d16 batch7 A4 (Grok 13:51): walk without from, holding the packs: a walk to the silo that loads them.
+    for i=1,3 do cargo[i]=stack(nil,0) end
+    held_inv[1]=stack(nil,0); held_inv[2]=stack(nil,0)
+    main[1]=aged(10,0.1)
+    far={[silo]=true}
+    r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=10},walk=true})
+    eq(r.trip,'to the silo with what you hold (no from)'); eq(r.chests,nil)
+    far={}; advance(3)
+    st=call('status',{})
+    eq(st.last.outcome,'loaded'); eq(st.last.loaded,10); eq(main[1].count,0)
+    -- d16 batch7 A7 (Grok 12:21: nutrients 40% spoiled from a biochamber with no choice): collect min_fresh leaves
+    -- stacks less fresh than that where they are and says how many.
+    main[1]=stack(nil,0); main[2]=stack(nil,0)
+    held_inv[1]=aged(30,0.4); held_inv[2]=aged(20,0.1)
+    far={}
+    r=call('collect',{position={x=40.5,y=5.5},item='agricultural-science-pack',min_fresh=70})
+    eq(r.transferred,20); eq(held_inv[2].count,0); eq(held_inv[1].count,30)
+    eq(r.left_less_fresh,'(40.5,5.5): 30 left where they were: less than 70% fresh (the most spoiled 40%)')
+    held_inv[1]=stack(nil,0); held_inv[2]=stack(nil,0); main[1]=stack(nil,0)
     ag.get_spoil_ticks=kept_spoil
     held_inv[1]=stack(nil,0); held_inv[2]=stack(nil,0)
   end

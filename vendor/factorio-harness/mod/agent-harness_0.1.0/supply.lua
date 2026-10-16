@@ -175,6 +175,8 @@ return function(api)
       return out
     end
     local out = fn()
+    -- A fresh read says so (Sol 15:22: a reused total read as current); a reused one says its age.
+    if type(out) == 'table' and out.as_of == nil then out.as_of = string.format('live (tick %d)', game.tick) end
     replies[key] = {tick=game.tick, out=out}
     return out
   end

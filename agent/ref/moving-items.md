@@ -67,6 +67,8 @@
 - `feed {clear_spoilage:true}` clears spoiled recipe waste and burnt results before top-ups, also walking; `entities.cleared` reports taken/left. `collect {outputs_only:true}` reads/takes machine outputs only, never fuel.
 - `refuel {area|radius,from:"nearest"|chest_position,fuel,count}` collects fuel from observed chests/belts and tops up burners in one enemy-checked tour; `--wait` waits through it, `last.sources`/`fuel_taken` report takes.
 - `feed` takes `position` with `radius` (its centre); `feed {area}` over 64 machines walks one tour; `refuel {from: "nearest", from_radius: 128}` looks farther for fuel. `refuel {radius, from: "nearest", feed_chests: true}` fills the chests that inserters feed boilers from.
+- `collect {min_fresh: 70}` takes only stacks at least 70% fresh; `left_less_fresh` says what stayed. A transfer from
+  a belt is refused naming `pickup {belt: true}`. `transfer {from: "nearest", to}` takes from a chest feeding `to` itself.
 - What you take over a personal request's max goes to your trash slots: `transfer`, `collect` and `pickup` say how much
   (`trash`); `"up_to": true` stops at the max, `"keep_max": true` refuses the take. A paste leaves the requests of a hub
   or requester chest it lands on (`requests_kept`), a hub's construction requests too.

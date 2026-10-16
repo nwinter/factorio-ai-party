@@ -246,8 +246,9 @@ return function(api)
     for _, k in ipairs({'to_total', 'launch', 'chests', 'walk', 'fresh_first', 'up_to'}) do
       assert(a[k] == nil or type(a[k]) == 'boolean', k .. ' must be true or false')
     end
+    -- walk without from (Grok 13:51: a rescue rocket refused with the collectors in hand): the walk to the silo loads
+    -- what you hold.
     if a.walk == true then
-      assert(a.from ~= nil, 'walk goes with from: the chests to take from ({x,y} or a list), on this surface, in sight or on the map')
       assert(a.chests == nil, 'walk takes from the chests in from (chests does not go with it)')
     end
     for _, k in ipairs({'avoid_enemies', 'unsafe_goal'}) do assert(a[k] == nil or a.walk == true, k .. ' goes with walk=true') end
@@ -273,6 +274,17 @@ return function(api)
       .. 'its rocket holds ' .. (#held > 0 and table.concat(held, ' ') or 'nothing') .. (kg and (' (' .. kg .. ')') or '')
       .. '; launch {position, platform} launches the rocket with what is aboard now, and automatic requests stay on; '
       .. 'launch {position, auto_requests=false} turns them off to load by hand'
+  end
+  -- The silo's two GUI switches as they stand (Grok 15:25: a partial rocket left before the kit was complete). load_silo
+  -- never sets either; configure {auto_requests} and {send_to_orbit_automatically} (alias auto_launch) do.
+  function M.switches_text(silo)
+    local auto = try(function() return silo.use_transitional_requests end) and true or false
+    local send = try(function() return silo.send_to_orbit_automatically end) and true or false
+    -- Checked on 2.0.77: with send to orbit automatically on, a ready rocket holding 1000 agricultural science packs (its
+    -- full lift) stayed in the silo 30 s; with automatic requests on, the game fills and sends rockets for platforms'
+    -- requests.
+    return string.format('automatic requests %s, send to orbit automatically %s%s', auto and 'on' or 'off', send and 'on' or 'off',
+      auto and ': the game fills and launches this silo\'s rockets for platforms\' requests' or '')
   end
   -- Returns the reply, or {wait=...} when the rocket is not there (or not ready for a launch) yet.
   function M.load(p, a)
@@ -363,7 +375,8 @@ return function(api)
     if #moved_all > 0 and api.moved then pcall(api.moved, p, silo, moved_all) end
     local out = {silo=string.format('%s at %s', silo.name, at(silo.position)), loaded=rows,
       cargo=list_text(contents(inv)), rocket_weight=api.rocket_weight(silo), slots=used_slots(inv) .. '/' .. #inv,
-      chests=#chests > 0 and #chests or nil, complete=#short == 0, short=#short > 0 and short or nil}
+      chests=#chests > 0 and #chests or nil, complete=#short == 0, short=#short > 0 and short or nil,
+      switches=M.switches_text(silo)}
     -- up_to (Sonnet 07:50: a launch stayed unlaunched when weight ran short, about 5 retries a shift): what fits and
     -- what you and the chests hold is loaded; a short row does not stop the launch, which goes with what is aboard of
     -- the list (none of it aboard: refused). min_cargo still guards it.
@@ -401,8 +414,35 @@ return function(api)
     local built = M.rocket_inventory(silo) and 1 or 0
     return built * 1000000 + st * 1000 + parts
   end
+  -- What the silo lacks to make the rocket's parts (Sonnet 15:20: four load_silo waits ended timed_out this shift with
+  -- an ingredient missing): each rocket-part ingredient short of the next part and of the parts left, as the silo's
+  -- GUI shows its input and part count. nil when nothing is short.
+  function M.parts_short(silo)
+    local recipe = try(function() return silo.get_recipe() end)
+    local input = try(function() return silo.get_inventory(defines.inventory.assembling_machine_input) end)
+    if not (recipe and input) then return nil end
+    local parts = try(function() return silo.rocket_parts end) or 0
+    local required = try(function() return silo.prototype.rocket_parts_required end) or 0
+    if M.rocket_inventory(silo) then return nil end
+    local left = math.max(1, required - parts)
+    local rows, parts_txt = {}, {}
+    for _, ing in ipairs(recipe.ingredients or {}) do
+      if ing.type ~= 'fluid' then
+        local held = try(function() return input.get_item_count(ing.name) end) or 0
+        local next_part = math.max(0, ing.amount - held)
+        local all = math.max(0, ing.amount * left - held)
+        if next_part > 0 then
+          rows[#rows+1] = {item=ing.name, held=held, next_part=next_part, rocket=all}
+          parts_txt[#parts_txt+1] = string.format('%s: %d short of the next part, %d of the %d parts left (its input holds %d)', ing.name, next_part, all, left, held)
+        end
+      end
+    end
+    if #rows == 0 then return nil end
+    return {rows=rows, parts=parts, required=required,
+      line=string.format('the silo at %s makes no part: %s', at(silo.position), table.concat(parts_txt, '; '))}
+  end
   function M.wait_fields(silo, ticks)
-    return {stall=ticks, idle_ticks=ticks, give_up=game.tick + math.max(ticks, M.MAX_WAIT), mark=progress_mark(silo),
+    return {stall=ticks, idle_ticks=ticks, give_up=game.tick + math.max(ticks, M.MAX_WAIT), mark=progress_mark(silo), silo=silo,
       parts=try(function() return silo.rocket_parts end) or 0, part_tick=game.tick, parts_added=0, observed_ticks=0}
   end
   -- The measured cadence belongs to this wait and this silo.
@@ -418,7 +458,8 @@ return function(api)
       parts_per_min=elapsed>0 and (w.parts_added or 0)*3600/elapsed or nil,
       rate_basis=elapsed>0 and 'part-count increases observed during this wait' or 'no part-count increase observed during this wait',
       last_part_ago_s=(w.parts_added or 0)>0 and w.part_tick and (game.tick-w.part_tick)/60 or nil,
-      idle_window_s=(w.idle_ticks or w.stall or 3600)/60, gives_up_tick=w.give_up}
+      idle_window_s=(w.idle_ticks or w.stall or 3600)/60, gives_up_tick=w.give_up,
+      parts_short=w.silo and w.silo.valid and (function() local r = M.parts_short(w.silo); return r and r.line end)() or nil}
   end
   function M.ready(p, action)
     local w = action.await_silo
@@ -533,7 +574,7 @@ return function(api)
       error(M.auto_text(silo), 0)
     end
     local chests, far = {}, try(function() return p.can_reach_entity(silo) end) ~= true
-    for _, pos in ipairs(from_list(a.from)) do
+    for _, pos in ipairs(a.from ~= nil and from_list(a.from) or {}) do
       local c = api.sight_entity(p, pos)
       assert(c.force == p.force, 'from: ' .. c.name .. ' at ' .. at(c.position) .. ' is not ours')
       assert(chest_inventory(c), 'from: ' .. c.name .. ' at ' .. at(c.position) .. ' has no chest inventory')
@@ -572,6 +613,9 @@ return function(api)
         a.to_total and '' or ' (items adds to what is aboard; to_total=true counts what is aboard)', M.as_is(silo, a)), 0)
     end
     if taking and not todo and not held_any then
+      if #chests == 0 then
+        error(string.format('nothing walked: the rocket still needs %s and you hold none of it (from names chests to take it from on the way)', need_text(rows)), 0)
+      end
       error(string.format('nothing walked: the rocket still needs %s and the chests in from hold none of it (%s)', need_text(rows), chests_text(action, rows)), 0)
     end
     local entities = {}
@@ -581,7 +625,8 @@ return function(api)
       avoid_enemies=a.avoid_enemies, unsafe_goal=a.unsafe_goal, started_tick=game.tick}
     local rk = api.rocket and try(function() return api.rocket(silo) end)
     local reply = {op='load_silo', walk=true, silo=string.format('%s at %s', silo.name, at(silo.position)), needs=need_text(rows),
-      chests=chests_text(action, rows), trip=#first .. ' chest' .. (#first == 1 and '' or 's') .. ', then the silo', rocket=rk and rk.rocket or nil,
+      chests=#chests > 0 and chests_text(action, rows) or nil,
+      trip=#chests == 0 and 'to the silo with what you hold (no from)' or #first .. ' chest' .. (#first == 1 and '' or 's') .. ', then the silo', rocket=rk and rk.rocket or nil,
       note=a.launch and 'launch: at the silo the tour waits for the rocket to be ready before it loads, then loads and launches in that tick' or nil}
     return {entities=entities, fields=fields, reply=reply}
   end
@@ -607,8 +652,10 @@ return function(api)
       local n, full, notes = 0, false, {}
       for _, r in ipairs(rows) do
         if r.take > 0 then
-          local out = api.take(p, e, r.goal.name, r.goal.quality, r.take)
+          local out = api.take(p, e, r.goal.name, r.goal.quality, r.take, action.load.fresh_first ~= false and spoils(r.goal.name))
           n = n + (out.transferred or 0)
+          -- the taken batch's spoilage (last.freshness when the silo stop reads none)
+          if out.fresh and api.merge_fresh then action.fresh = api.merge_fresh(action.fresh or {}, out.fresh) end
           if out.transferred and out.transferred > 0 then
             local k = label(r.goal)
             action.items[k] = (action.items[k] or 0) + out.transferred
@@ -676,15 +723,18 @@ return function(api)
     end
     local n, full_rocket = 0, nil
     if #list > 0 then
-      local out = M.load(p, {position=e.position, items=list, chests=false})
+      local out = M.load(p, {position=e.position, items=list, chests=false, fresh_first=action.load.fresh_first})
       for _, row in ipairs(out.loaded or {}) do
         n = n + (row.loaded or 0)
+        -- The loaded batch's spoilage (Grok 15:25: seen only after the launch).
+        if row.freshness then action.freshness = action.freshness or {}; action.freshness[#action.freshness+1] = row.freshness end
         if row.why and (row.why:find('^weight') or row.why:find('cargo slots are full', 1, true)) then full_rocket = row.why end
       end
       action.cargo = out.cargo; action.rocket_weight = out.rocket_weight
     end
     action.loaded = action.loaded + n
-    action.rows[#action.rows+1] = {position=e.position, name=e.name, trip=action.trips, loaded=n, cargo=action.cargo}
+    action.rows[#action.rows+1] = {position=e.position, name=e.name, trip=action.trips, loaded=n, cargo=action.cargo,
+      freshness=action.freshness and action.freshness[#action.freshness] or nil}
     rows = needs(p, action)
     if #rows == 0 then
       if not action.load.launch then action.final = 'loaded'; return {transferred=n, stop='loaded'} end
@@ -742,6 +792,7 @@ return function(api)
     last.trips = action.trips; last.taken = action.taken; last.loaded = action.loaded; last.stops = action.rows
     last.cargo = action.cargo; last.rocket_weight = action.rocket_weight; last.launch = action.launch
     last.taken_items = next(action.items) and action.items or nil
+    last.freshness = action.freshness or last.freshness
     last.why = last.why or action.why
     last.silo_wait = action.silo_hold and M.wait_report({await_silo=action.silo_hold}) or nil
   end
@@ -1202,13 +1253,14 @@ return function(api)
       from='optional chest {x,y} or 1..16 of them, within reach: take from these (after your inventory); default: your inventory, then our chests within reach, nearest first (at most 16): every chest kind (chests, logistic chests, linked and infinity chests) and a cargo landing pad. With walk: anywhere on the silo\'s surface, in sight or on the map',
       chests='false: your inventory only',
       fresh_first='default true for an item that spoils (agricultural science, bioflux, ...): the stacks of you and the chests read, least spoiled first, each moved whole (its spoilage goes with it; the row says order: fresh first); false: you first, then the chests in order, slot by slot',
-      walk='true, with from: one timed call that walks between the chests in from and the silo, as many trips as it takes (at most 20): at each chest it takes what the rocket still needs less what you hold (up to your request max), at the silo it loads what you hold of the list; another trip while the rocket still needs some, a chest in from holds it and the trip loaded any. No rocket at the silo yet, or with launch a rocket not ready: the tour waits at the silo and loads nothing until it is (as without walk: the wait goes on while the silo makes parts; status and last silo_wait), then loads and launches in that tick. The silo and every chest in reach: the load at once, as without walk. Nothing in the chests and nothing held of what the rocket needs: refused, nothing walked. Outcomes loaded | launched | short (last.why: weight, slots, the chests empty, a trip that loaded none) | unreached | timed_out (also while waiting at the silo: last.why says for what; what you took stays with you); last: trips, taken, taken_items, loaded, stops [{position, name, trip, taken | loaded, full, note}], cargo, rocket_weight, launch',
+      walk='true, with from or alone (alone: a walk to the silo that loads what you hold of the list; refused when you hold none of it): one timed call that walks between the chests in from and the silo, as many trips as it takes (at most 20): at each chest it takes what the rocket still needs less what you hold (up to your request max), at the silo it loads what you hold of the list; another trip while the rocket still needs some, a chest in from holds it and the trip loaded any. No rocket at the silo yet, or with launch a rocket not ready: the tour waits at the silo and loads nothing until it is (as without walk: the wait goes on while the silo makes parts; status and last silo_wait), then loads and launches in that tick. The silo and every chest in reach: the load at once, as without walk. Nothing in the chests and nothing held of what the rocket needs: refused, nothing walked. Outcomes loaded | launched | short (last.why: weight, slots, the chests empty, a trip that loaded none) | unreached | timed_out (also while waiting at the silo: last.why says for what; what you took stays with you); last: trips, taken, taken_items, loaded, stops [{position, name, trip, taken | loaded, full, note}], cargo, rocket_weight, launch',
       avoid_enemies='with walk: as move_to\'s; each leg goes round the worms, spawners and attacks the map shows, and a stop inside one is left out',
       unsafe_goal='with walk: true walks to such a stop anyway',
       up_to='true: load what fits (weight, slots) and what you and the chests hold; a short row is listed in up_to_short and does not fail the call or stop a launch, which goes with what is aboard (none of the list aboard: refused); with walk the tour ends loaded (or launched) instead of short',
       launch='true: launch once the rocket is ready, in the tick the cargo is loaded; needs platform (or orbit=true); refused (not launched, an error) when any count fell short (up_to aside); min_cargo and arrived are checked as launch checks them',
       platform='with launch: the platform in orbit to send it to', orbit='with launch: true for no platform',
       min_cargo='with launch: as launch min_cargo', arrived='with launch: as launch arrived',
+      wait_min='optional 1..60: the wait for the rocket goes on this many minutes with no new part (a queue step waiting for an ingredient on its way); waiting.parts_short and, when it runs out, last.why name each rocket-part ingredient the silo lacks: short of the next part and of the parts left, and what its input holds',
       ticks='1..36000 (default 3600): how long to wait for the rocket (no rocket yet, or not ready for a launch) with no new rocket part: the idle window grows to at least 3 times the longest observed interval to a part increase; the wait goes on while the silo makes parts (or the rocket moves on to ready), 1 game hour at most in all (gives_up_tick); with walk, the whole tour (default 18000)',
       returns='silo, loaded [{item, asked, aboard_before, loaded, aboard, from (you N, iron-chest (x,y) N), freshness (a spoilable item: the loaded batch\'s spread and, for a pack the running research takes, how many a unit the running research takes and its units left), short, why (weight, slots, or what you and the chests held)}], cargo, rocket_weight, slots (used/total), chests (how many were read), complete, short; launch (the launch reply) with launch=true. No rocket yet, or launch=true before the rocket is ready: a timed action (until_tick, waiting {why, rocket}; outcome fed | failed | timed_out; last.result holds the reply). Into the rocket only what fits under its 1000 kg lift and in its cargo slots; a silo with automatic requests on is refused'},
     preflight = {from='with items: one chest position or 1..16, readable in sight or remote view; per-chest stock, order.from_held, from_short (less what is aboard), short (also less you_hold); repeated chests counted once; nothing moved',position='optional rocket silo {x,y} (any tile of it), in a visible chunk (remote view); omitted: all visible silos in the background census index, nearest your coordinates first',
