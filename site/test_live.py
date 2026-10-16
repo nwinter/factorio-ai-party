@@ -383,6 +383,8 @@ def map_tests():
         assert '<h4>Projects</h4><ul class="board-projects">' in bd and "<b>Nuclear power plant</b>" in bd, bd
         assert 'aria-valuenow="50"' in bd and "3 of 6 steps" in bd and "no owner" in bd and "--fx-value:25%" in bd, bd
         assert "finished a step of</span> Nuclear power plant" in bd and "3. Reactor and heat exchangers" in bd, bd
+        # a step's own owner and the parallel steps (d15 batch5 J2, viewer Foobator)
+        assert 'class="step step-next step-parallel"' in bd and "· Luna</span>" in bd and ">parallel</span>" in bd, bd
         # the team's reminder jobs (d15 batch5 group I): owner, message, next due, the last result with its age, states
         assert '<h4>Reminders</h4><ul class="board-claims board-reminders">' in bd and "ship review: Petrel ammo, fuel and hub room" in bd, bd
         assert "every 15m00s, next in 7 min" in bd and "last result 8 min ago:</span> Petrel 900 magazines" in bd, bd

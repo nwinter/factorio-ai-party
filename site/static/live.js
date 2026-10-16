@@ -593,8 +593,11 @@
   function stepsHtml(p) {
     var steps = (p.steps || []).map(function (st) {
       var mark = st.done ? '✓' : st.next ? '→' : '○', cls = st.done ? 'done' : st.next ? 'next' : 'todo';
-      return '<li class="step step-' + cls + '"><span class="step-mark" aria-hidden="true">' + mark + '</span> ' +
+      // a step's own owner, and parallel steps (no order between them and their parallel neighbours; d15 batch5 J2)
+      return '<li class="step step-' + cls + (st.parallel ? ' step-parallel' : '') + '"><span class="step-mark" aria-hidden="true">' + mark + '</span> ' +
         (st.n != null ? '<span class="fx-muted">' + esc(st.n) + '.</span> ' : '') + esc(st.text) +
+        (st.owner ? ' <span class="fx-muted small step-owner">· ' + esc((team[st.owner] || {}).display_name || st.owner) + '</span>' : '') +
+        (st.parallel ? ' <span class="fx-chip fx-chip--grey step-tag" title="No order between this step and the parallel steps next to it">parallel</span>' : '') +
         (st.done && st.by ? ' <span class="fx-muted small">done by ' + esc((team[st.by] || {}).display_name || st.by) + (st.ago ? ', ' + esc(st.ago) + ' ago' : '') + '</span>' : '') +
         (st.next ? ' <span class="fx-chip fx-chip--orange step-tag">next</span>' : '') + '</li>';
     }).join('');

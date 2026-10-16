@@ -5159,3 +5159,11 @@ fh watch    # deploy on every change
     tick is set again from it.
   - The site's Board card has a Reminders panel: owner, message, cadence and next due, the last result and its age,
     and each recipient's state. tools/stream/live.py reads `reminders {all: true}` with the board, every board read.
+- The site (viewer Foobator, asked twice).
+  - `/blueprints/`: the team's blueprint library from the newest shift's copy (tools/bplibrary.py writes
+    runs/RUN/blueprints/index.json and NAME.txt each shift): per entry its name, author, footprint, entity counts,
+    description, uses and last use, the surface it was saved on and when (game time), and the blueprint string in a
+    read-only box with a copy button, to import into your own game. Linked from the nav when a copy exists.
+  - Project steps show each step's own owner (`· Luna`) and a `parallel` marker. A board step line keeps its owner and
+    `(parallel)` once done too: `[x] 1. Lay foundation (sol) (parallel) (done by sol, 2m00s ago)`. The parallel steps
+    right after the next one are marked next as well.

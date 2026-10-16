@@ -474,7 +474,10 @@
   ],
   "claims_total": 2,
   "projects": [
-   {"id": 4, "title": "Nuclear power plant", "owner": "opus", "agent": "opus", "status": "claimed", "progress": "3 of 6 steps", "done": 3, "total": 6, "next": "Reactor and heat exchangers", "goal": "40 MW of nuclear power for blue science"},
+   {"id": 4, "title": "Nuclear power plant", "owner": "opus", "agent": "opus", "status": "claimed", "progress": "3 of 6 steps", "done": 3, "total": 6, "next": "Reactor and heat exchangers", "goal": "40 MW of nuclear power for blue science",
+    "steps": [{"n": 3, "text": "Offshore pumps", "done": true, "by": "opus", "ago": "4m"},
+              {"n": 4, "text": "Reactor and heat exchangers", "done": false, "owner": "luna", "parallel": true, "next": true},
+              {"n": 5, "text": "Steam turbines", "done": false, "owner": "opus", "parallel": true, "next": true}]},
    {"id": 15, "title": "Rail line to the north iron field", "owner": null, "agent": null, "status": "open", "progress": "1 of 4 steps", "done": 1, "total": 4, "next": "Rails from (120,-300) to the iron field", "goal": null}
   ],
   "projects_total": 2,

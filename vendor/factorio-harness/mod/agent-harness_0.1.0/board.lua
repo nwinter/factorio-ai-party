@@ -165,7 +165,7 @@ return function(api)
   local function step_text(s)
     local tail = (s.owner and ' (' .. s.owner .. ')' or '') .. (s.parallel and ' (parallel)' or '')
     if not s.done_by then return string.format('[ ] %d. %s%s', s.n, s.text, tail) end
-    return string.format('[x] %d. %s (done by %s, %s ago)', s.n, s.text, s.done_by, ago(game.tick - s.done_tick))
+    return string.format('[x] %d. %s%s (done by %s, %s ago)', s.n, s.text, tail, s.done_by, ago(game.tick - s.done_tick))
   end
   -- extra: prev_owner (an owner who lost the item in this change) and
   -- overlaps (owner -> their claim id, for a claim posted over theirs). A
