@@ -328,3 +328,71 @@ do
   has(plan.error,'your inventory has no room for'); has(plan.error,'5 iron-plate')
 end
 print('d15_batch3 8 fast replace hand: ok')
+
+-- 9 (Grok): enemy units near an artillery piece: distance, their range, whether our turrets reach them. -----------
+do
+  prototypes={entity={['big-spitter']={attack_parameters={range=13}},['medium-biter']={attack_parameters={range=1}}}}
+  defines={inventory={artillery_turret_ammo=1}}
+  local force={name='player',is_chunk_visible=function() return true end,is_chunk_charted=function() return true end,artillery_range_modifier=0}
+  local units={{valid=true,name='big-spitter',position={x=20,y=0}},{valid=true,name='medium-biter',position={x=3,y=4}},{valid=true,name='big-spitter',position={x=0,y=40}}}
+  local gun={valid=true,name='gun-turret',type='ammo-turret',position={x=25,y=0},prototype={attack_parameters={range=18}}}
+  local surface={find_entities_filtered=function(f)
+    if f.type=='unit' then return units end
+    if type(f.type)=='table' and f.type[1]=='ammo-turret' then return {gun} end
+    return {}
+  end}
+  local piece={valid=true,name='artillery-turret',type='artillery-turret',position={x=0,y=0},surface=surface,force=force,
+    prototype={guns={{attack_parameters={range=224,min_range=32}}}},get_inventory=function() return {get_contents=function() return {} end} end}
+  local AR=require('artillery'){position=function(v) return v end}
+  local u=AR.units_near(piece)
+  eq(u.count,3); eq(u.by_name,'1 medium-biter, 2 big-spitter')
+  eq(u.rows[1],'medium-biter (3,4) 5 tiles away, its range 1 (4 outside it); no turret of ours reaches it')
+  eq(u.rows[2],'big-spitter (20,0) 20 tiles away, its range 13 (7 outside it); 1 turret of ours reaches it')
+  has(AR.row(piece).line,'3 enemy units within 64 tiles (1 medium-biter, 2 big-spitter): medium-biter (3,4)')
+end
+print('d15_batch3 9 artillery units: ok')
+
+-- 10: platform_endurance on a young leg (the window inside the leg) and its ingredient cap two levels down with fluids.
+do
+  defines={flow_precision_index={ten_minutes=2,one_minute=1,five_seconds=0},inventory={hub_main=1,turret_ammo=1,assembling_machine_input=2}}
+  prototypes={item={rocket={type='ammo'},explosives={type='item'},coal={type='item'}},fluid={['thruster-fuel']={},['thruster-oxidizer']={},['sulfuric-acid']={}},
+    space_location={nauvis={solar_power_in_space=100},fulgora={solar_power_in_space=120}},
+    space_connection={a={from={name='nauvis'},to={name='fulgora'},length=15000}}}
+  game={tick=10*3600}
+  -- the statistics: per minute over the last minute and over the last 10 (the 10 hold the stop: fuel used 0 there)
+  local per={one={['thruster-fuel']={0,600},rocket={0,12}},ten={['thruster-fuel']={0,180},rocket={0,2}}}
+  local function stats(kind) return {get_flow_count=function(a) local t=a.precision_index==1 and per.one or per.ten; local r=t[a.name]; local m=a.precision_index==1 and 1 or 10
+    return r and (a.category=='input' and r[1] or r[2])*m or 0 end} end
+  local hub=setmetatable({get_contents=function() return {{name='rocket',count=100},{name='explosives',count=10},{name='coal',count=20}} end,count_empty_stacks=function() return 5 end},{__len=function() return 10 end})
+  local tank={fluidbox={{name='sulfuric-acid',amount=50},{name='thruster-fuel',amount=6000}}}
+  local function asm(recipe,fluid) return {get_recipe=function() return recipe end,get_inventory=function() return {get_contents=function() return {} end} end,fluidbox=fluid or {}} end
+  local A=asm({products={{name='rocket',amount=1}},ingredients={{type='item',name='explosives',amount=1}}})
+  local B=asm({products={{name='explosives',amount=1}},ingredients={{type='item',name='coal',amount=2},{type='fluid',name='sulfuric-acid',amount=10}}},{{name='sulfuric-acid',amount=30}})
+  local surface={find_entities_filtered=function(f)
+    if f.type=='assembling-machine' then return {A,B} elseif type(f.type)=='table' then return {tank} end
+    return {} end}
+  local force={get_item_production_statistics=function() return stats() end,get_fluid_production_statistics=function() return stats() end}
+  local pl={name='Swift',surface=surface,force=force,hub={get_inventory=function() return hub end},speed=25/60,space_connection={},
+    schedule={current=2,records={{station='nauvis'},{station='fulgora'}}}}
+  local leg={from='nauvis',to='fulgora',left_km=6000}
+  -- the leg it flies began 3 minutes ago; rockets 0 used then, 36 now (12/min)
+  local segs={{kind='stop',at='nauvis',start=0,['end']=7*3600},{kind='leg',from='nauvis',to='fulgora',start=7*3600,ammo0={rocket={made=0,used=0}}}}
+  made_now=0
+  local E=require('endurance'){platform=function() return pl end,leg=function() return leg end,segments=function() return segs end,
+    ammo_counts=function() return {rocket={made=made_now,used=36}} end}
+  local r=E.read({},{platform='Swift'})
+  local by={}; for _,x in ipairs(r.resources) do by[x.name]=x end
+  eq(by.rocket.used_per_min,12); eq(by.rocket.rate_from,'this leg so far, 3m00s')
+  eq(by['thruster-fuel'].used_per_min,600); eq(by['thruster-fuel'].rate_from,'last 1 min, within this leg (3m00s so far)')
+  eq(by['thruster-fuel'].lasts_min,10,'6000 at 600/min, not 180/min from a window that held the stop')
+  -- two levels down: rockets from explosives (10 aboard) and explosives from coal (20, 2 a craft) and acid (50 in a tank and
+  -- 30 in the maker, 10 a craft): 8 more explosives, so at most 18 more rockets
+  made_now=15
+  r=E.read({},{platform='Swift'})
+  by={}; for _,x in ipairs(r.resources) do by[x.name]=x end
+  local cap=by.rocket.ingredient_limited
+  eq(cap.more,18); eq(cap.item,'explosives'); eq(cap.below.more,8); eq(cap.below.item,'sulfuric-acid')
+  has(by.rocket.line,'at most 18 more (explosives 10 aboard and at most 8 more from its own ingredients aboard (sulfuric-acid 80), 1 a craft)')
+  prototypes,defines=nil,nil
+end
+print('d15_batch3 10 endurance: ok')

@@ -4775,3 +4775,17 @@ fh watch    # deploy on every change
   - supply's `chests` rows add what robots have reserved for pickup in each provider, storage or plain chest. When
     all of it is reserved, `surplus_chest` names the largest such chest as `all reserved for robot pickups` instead
     of leaving it out (Haiku).
+- Artillery (Grok lost a turret to biters that came after the artillery woke a nest): each row of `artillery` adds
+  `units_near`. These are the enemy units within 64 tiles of the piece that our force sees now: the count by name,
+  and for the 5 nearest the distance, its attack range and how far outside it the piece stands, and how many of our
+  turrets reach it (`big-spitter (20,0) 20 tiles away, its range 13 (7 outside it); 1 turret of ours reaches it`).
+  The row's line says the same.
+- platform_endurance (leftovers from d15 blockers):
+  - Flying on a leg under 10 minutes old, the rates come from the largest window that fits inside the leg (5 or 1
+    minute, `rate_from: last 1 min, within this leg (3m00s so far)`), so the stop it left no longer dilutes them.
+    Ammunition comes from the leg's own counts (`this leg so far, 3m00s`).
+  - The ingredient cap goes two levels down: an ingredient the machines aboard make is counted with what they can
+    still make of it from their own ingredients aboard (`explosives 10 aboard and at most 8 more from its own
+    ingredients aboard (sulfuric-acid 80)`). A fluid ingredient is counted in the storage tanks and in the makers'
+    fluid boxes (`ingredient_limited.fluid`, `ingredient_limited.below`).
+  - `tools/read_cost.py` has `platform_endurance` (`--platform NAME`, default Aegis) and `artillery`.

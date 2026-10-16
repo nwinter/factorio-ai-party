@@ -44,6 +44,62 @@ return function(api)
     for i = 1, math.min(SHOW, #list) do rows[i] = list[i] end
     return rows, #list
   end
+  -- Enemy units near a piece (Grok, shift19 15:34: a turret lost to biters that came after the artillery woke a nest):
+  -- the units within NEAR tiles that our force sees now, each with its distance, its attack range, how far outside
+  -- that range the piece stands, and how many of our turrets reach it. At most UNITS units read and SHOW_UNITS
+  -- shown, nearest first.
+  local NEAR, UNITS, SHOW_UNITS, TURRETS = 64, 200, 5, 200
+  local TURRET_TYPES = {'ammo-turret', 'electric-turret', 'fluid-turret'}
+  local unit_range = {}
+  local function attack_range(name)
+    if unit_range[name] == nil then
+      unit_range[name] = try(function() return prototypes.entity[name].attack_parameters.range end) or false
+    end
+    return unit_range[name] or nil
+  end
+  local turret_range = {}
+  local function reach_of(t)
+    local name = t.name
+    if turret_range[name] == nil then
+      turret_range[name] = try(function() return t.prototype.attack_parameters.range end) or try(function() return t.prototype.turret_range end) or false
+    end
+    return turret_range[name] or nil
+  end
+  function M.units_near(e)
+    local surface, force = e.surface, e.force
+    local found = try(function() return surface.find_entities_filtered{position=e.position, radius=NEAR, type='unit', force='enemy', limit=UNITS} end) or {}
+    local list = {}
+    for _, u in ipairs(found) do
+      if u.valid and try(function() return force.is_chunk_visible(surface, chunk(u.position)) end) ~= false then
+        list[#list+1] = {u=u, d=dist(u.position, e.position)}
+      end
+    end
+    if #list == 0 then return nil end
+    table.sort(list, function(a, b) return a.d < b.d end)
+    local turrets = try(function() return surface.find_entities_filtered{position=e.position, radius=NEAR + 40, type=TURRET_TYPES, force=force, limit=TURRETS} end) or {}
+    local by, order = {}, {}
+    for _, x in ipairs(list) do
+      if not by[x.u.name] then by[x.u.name] = 0; order[#order+1] = x.u.name end
+      by[x.u.name] = by[x.u.name] + 1
+    end
+    local counts = {}
+    for _, n in ipairs(order) do counts[#counts+1] = by[n] .. ' ' .. n end
+    local rows = {}
+    for i = 1, math.min(SHOW_UNITS, #list) do
+      local u, d = list[i].u, list[i].d
+      local range = attack_range(u.name)
+      local cover = 0
+      for _, t in ipairs(turrets) do
+        local r = t.valid and reach_of(t)
+        if r and dist(t.position, u.position) <= r then cover = cover + 1 end
+      end
+      rows[i] = string.format('%s (%g,%g) %g tiles away%s; %s', u.name, r1(u.position.x), r1(u.position.y), r1(d),
+        range and (d <= range and string.format(', its range %g reaches the piece', range) or string.format(', its range %g (%g outside it)', range, r1(d - range))) or '',
+        cover > 0 and string.format('%d turret%s of ours reach%s it', cover, cover == 1 and '' or 's', cover == 1 and 'es' or '') or 'no turret of ours reaches it')
+    end
+    return {count=#list, by_name=table.concat(counts, ', '), rows=rows, capped=#found >= UNITS or nil,
+      line=string.format('%d enemy unit%s within %d tiles (%s)%s', #list, #list == 1 and '' or 's', NEAR, table.concat(counts, ', '), #found >= UNITS and ', the first ' .. UNITS .. ' read' or '')}
+  end
   function M.row(e)
     local range, min_range = M.range(e)
     local n, held = shells(e)
@@ -53,8 +109,10 @@ return function(api)
     local line = string.format('%s (%g,%g): %s; automatic targeting %s; range %g (minimum %g); %d enemy spawners and worms in range%s',
       e.name, e.position.x, e.position.y, n > 0 and (n .. ' shells') or 'no shells', auto == nil and 'unknown' or (auto and 'on' or 'off'),
       r1(range), min_range, count, first and string.format(', the nearest %s (%g,%g) %g tiles away', first.name, first.position.x, first.position.y, first.distance) or '')
+    local units = try(function() return M.units_near(e) end)
+    if units then line = line .. '; ' .. units.line .. ': ' .. table.concat(units.rows, '; ') end
     return {name=e.name, position={x=e.position.x, y=e.position.y}, shells=n, held=held ~= '' and held or nil, auto_targeting=auto,
-      range=r1(range), min_range=min_range, in_range=count, nearest=near, line=line}
+      range=r1(range), min_range=min_range, in_range=count, nearest=near, units_near=units, line=line}
   end
   -- artillery {position?, radius?, surface?}: our artillery pieces, nearest the centre first, at most MAX.
   function M.read(p, a)
@@ -132,6 +190,6 @@ return function(api)
   end
   M.schema = {artillery = {position='optional {x,y}: the centre (default you)', radius='optional 1..4096 tiles round the centre (default the whole surface)',
     surface='optional planet name (default yours)',
-    returns='artillery [{name, position, shells, held, auto_targeting, range, min_range (the cannon\'s, with the force\'s range bonus), in_range (enemy spawners and worms in its range on charted chunks), nearest (the 3 nearest: name, position, distance), line}], nearest the centre first, at most 8 (more: how many past them); count; lines; read only. Switch automatic targeting with configure {position, auto_targeting: false}; fire at one spot with use_item {item: "artillery-targeting-remote", position}'}}
+    returns='artillery [{name, position, shells, held, auto_targeting, range, min_range (the cannon\'s, with the force\'s range bonus), in_range (enemy spawners and worms in its range on charted chunks), nearest (the 3 nearest: name, position, distance), units_near (enemy units within 64 tiles our force sees now: count, by_name, rows for the 5 nearest: distance, its attack range and how far outside it the piece stands, how many of our turrets reach it), line}], nearest the centre first, at most 8 (more: how many past them); count; lines; read only. Switch automatic targeting with configure {position, auto_targeting: false}; fire at one spot with use_item {item: "artillery-targeting-remote", position}'}}
   return M
 end

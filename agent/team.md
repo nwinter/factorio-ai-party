@@ -113,7 +113,7 @@ already targets your character.
   (working, output full, no resource left) and what they put into.
 - `power` (observe scope) gives per network `supply_line`: generators' nameplate, what the working ones can give, the stopped ones by status (dry steam engines), and `boilers` by state.
 - `./fh call fuel_budget` (optional `"surface"`): each fuel made and used per minute, and each group of fuel users (boilers, furnaces, burner drills, heating towers, `recipe plastic-bar`, ...) with what it burns per minute and the minutes its own fuel lasts, fewest first.
-- `./fh call platform_endurance --args '{"platform":"Wayfarer"}'` (optional `"route":["fulgora","aquilo"]`, default its schedule): each leg's km and minutes at its speed, and each ammunition, repair pack and thruster fluid aboard with its stock, made and used per minute, and the leg it runs out on; hub slots free, power, solar power at the stops. Stopped, the rates come from the last leg (or read `flight use unknown`); an item made aboard is capped by the ingredients aboard (`ingredient-limited`).
+- `./fh call platform_endurance --args '{"platform":"Wayfarer"}'` (optional `"route":["fulgora","aquilo"]`, default its schedule): each leg's km and minutes at its speed, and each ammunition, repair pack and thruster fluid aboard with its stock, made and used per minute, and the leg it runs out on; hub slots free, power, solar power at the stops. Stopped, the rates come from the last leg (or read `flight use unknown`); on a leg under 10 minutes old, from a window inside the leg; an item made aboard is capped by the ingredients aboard, two levels down and fluids included (`ingredient-limited`).
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
   `"surface"`) reads one item: where it sits (chests by kind, belts (`belt_lines`: the 5 belt lines holding the most, with their ends and the tile with the most), machine outputs, inserter hands, robots,
   characters), each logistic network's stock of it (free and reserved, and which requesters the reserved stock is for),
@@ -133,6 +133,7 @@ already targets your character.
 - Build and place_ghosts dry runs name the tiles an entry needs (shallow oil, water) together with the entities in its way; a platform ghost refused over empty space says when foundation tile ghosts under it are not built yet.
 - `queue_status {args: true}`: history with each step's arguments (and a finished loop's steps); status `active.progress` gives a tour's or courier's leg, distance left and moved so far; an interrupted queued transfer tour resumes from the stops left.
 - `deconstruct {area, cancel: true}` unmarks; pump dry runs show each port's tile and what is there; supply rows show stock robots have reserved.
+- `artillery` rows add `units_near`: enemy units within 64 tiles of each piece, their range, and how many of our turrets reach them.
 `./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
   starts, naming each step's makers, their states and what they lack; `fixes` gives, for a starved maker, the nearest
   chest within 64 tiles holding what it lacks and one `transfer` call that carries it there; with `"per_min":30` each step's rate for that
