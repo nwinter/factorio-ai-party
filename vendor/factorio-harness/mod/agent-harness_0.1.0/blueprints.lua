@@ -884,9 +884,11 @@ return function(api)
     for _, e in ipairs(list) do
       local ok,t,n,mine=pcall(function() return e.valid and e.type,e.valid and e.name,e.valid and (e.force==p.force or e.force.name=='neutral') and e.type~='character' and e.minable end)
       if not (ok and t) then gone=gone+1
-      elseif mine and (not filters.entity_types or filters.entity_types[t]) and (not filters.entity_names or filters.entity_names[n]) then
+      -- Items on the ground go with items_on_ground only (Sol, d15: a cancel on Starling said 146 while 12 entities had
+      -- been marked; the rest were most likely items on the ground the platform had marked for pickup).
+      elseif mine and t~='item-entity' and (not filters.entity_types or filters.entity_types[t]) and (not filters.entity_names or filters.entity_names[n]) then
         if cancel then
-          if e.to_be_deconstructed(p.force) then e.cancel_deconstruction(p.force,real(p)); changed=changed+1 end
+          if e.to_be_deconstructed(p.force) then e.cancel_deconstruction(p.force,real(p)); changed=changed+1; by[n]=(by[n] or 0)+1 end
         elseif dry then
           -- (a dry run: what is not marked yet; ghosts would be removed, as a planner removes them)
           if not e.to_be_deconstructed(p.force) then changed=changed+1; by[n]=(by[n] or 0)+1; if HEAT_PART[t] then heat_parts[#heat_parts+1]=e end end
@@ -895,7 +897,7 @@ return function(api)
           local ghost_name=(t=='entity-ghost' or t=='tile-ghost') and (select(2,pcall(function() return e.ghost_name end)) or n) or nil
           local okd,done=pcall(e.order_deconstruction,p.force,real(p))
           if okd and done then
-            changed=changed+1
+            changed=changed+1; by[ghost_name and ('ghost of '..ghost_name) or n]=(by[ghost_name and ('ghost of '..ghost_name) or n] or 0)+1
             if ghost_name then removed=removed+1; ghost_names[ghost_name]=(ghost_names[ghost_name] or 0)+1
             elseif HEAT_PART[t] and e.valid then heat_parts[#heat_parts+1]=e end
           elseif not e.valid then gone=gone+1 end
@@ -903,6 +905,13 @@ return function(api)
       end
     end
     out.changed=changed
+    if not dry and changed>0 then
+      local names={}
+      for nm,c in pairs(by) do names[#names+1]={nm,c} end
+      table.sort(names,function(x,y) return x[2]>y[2] or x[2]==y[2] and x[1]<y[1] end)
+      for i,v in ipairs(names) do names[i]=v[2]..' '..v[1] end
+      out[cancel and 'cancelled_by_name' or 'marked_by_name']=table.concat(names,', ',1,math.min(12,#names))..(#names>12 and ', ...' or '')
+    end
     if removed>0 then
       local parts={}
       for gn,c in pairs(ghost_names) do parts[#parts+1]=c..' '..gn end

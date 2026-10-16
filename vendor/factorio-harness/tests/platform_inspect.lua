@@ -125,7 +125,7 @@ eq(#r.filters,0); eq(r.use_filters,false); eq(r.filter_mode,'whitelist'); eq(r.h
 eq(r.pickup_target,'asteroid-collector (-2.5,-6.5)'); eq(r.drop_target,'space-platform-hub (0,0)')
 eq(r.marked_for_deconstruction,true); eq(r.marked_for_upgrade,nil)
 eq(#r.ghosts_here,1); eq(r.ghosts_here[1].name,'inserter'); eq(r.ghosts_here[1].filters[1],'oxide-asteroid-chunk'); eq(r.ghosts_here[1].filter_mode,'whitelist')
-eq(r.construction_blocked[1],'hub full: 0 of 2 slots free; 1 marked for deconstruction wait for room (removed entities and their contents go to the hub)')
+eq(r.construction_blocked[1],'hub full: 0 of 2 slots free; 1 of our entities marked for deconstruction wait for room (1 inserter; removed entities and their contents go to the hub)')
 eq(r.construction_blocked[2],'ghosts wait for items the hub lacks: inserter (ghosts need 1, hub has 0)')
 -- Off the platform the same position is on Nauvis: nothing there.
 fails(function() bot('inspect',{position={x=-2.5,y=-4.5}}) end,'entity not found at (-2.5,-4.5): nothing within 3 tiles')
@@ -189,7 +189,7 @@ on_platform={hub,collector,ins,ghost,tile_ghost(-8,8),tile_ghost(20,20),tile_gho
 hub_inv[2]=stack('space-platform-foundation',9)
 local blocked=bot('platforms',{platform='Starling'}).platforms[1].construction_blocked
 eq(#blocked,3,'hub full and two tile ghosts')
-eq(blocked[1],'hub full: 0 of 2 slots free; 1 marked for deconstruction wait for room (removed entities and their contents go to the hub)')
+eq(blocked[1],'hub full: 0 of 2 slots free; 1 of our entities marked for deconstruction wait for room (1 inserter; removed entities and their contents go to the hub)')
 eq(blocked[2],'tile ghost (-7.5,8.5) space-platform-foundation: building it would split the empty space beside it: (-6.5,8.5) and (-8.5,8.5) meet only through it (the hub builds no foundation that splits empty space, even when each side stays open); on one side a hole of 6 empty tiles with no ghost: (-6.5,8.5), (-5.5,8.5), (-4.5,8.5), (-3.5,8.5), ...')
 eq(blocked[3],'tile ghost (20.5,20.5) space-platform-foundation: no foundation among the 8 tiles round it')
 assert(gets<4000,gets)

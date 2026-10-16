@@ -5017,4 +5017,12 @@ fh watch    # deploy on every change
   underground; past it is not this line`, another line feeding it or taking from it, the belt's start or end), what
   it holds, and, when wired, what the wires read where that differs. This is read now; I did not check on a 2.0.77
   engine which tiles the game's entire-belt read covers.
+- Deconstruction counts (Sol: Starling's hub said 198 marked and a cancel said 146 cancelled, while 12 entities had
+  been marked; Sol cancelled everything, thinking the ship was being taken apart). Both counts took in items on the
+  ground the platform had marked for pickup: on world n afterwards Starling held exactly 146 items on the ground, none
+  marked.
+  - `deconstruct` and its `cancel` now leave items on the ground to `items_on_ground` (as a planner's item filter
+    does), and add `marked_by_name` or `cancelled_by_name`.
+  - The hub's `construction_blocked` line counts our entities marked, by name (`1 of our entities marked for
+    deconstruction wait for room (1 inserter; ...)`), and items on the ground marked for pickup apart.
 

@@ -692,3 +692,26 @@ do
   has(C.belt_segment(b2),'(the wires read: iron-ore 15 on the wires, which includes anything else on those networks)')
 end
 print('d15_batch4 F4 belt segment: ok')
+
+-- F9 (Sol): deconstruct and cancel count only our entities' marks, by name; items on the ground are left to
+-- items_on_ground. ----------------------------------------------------------------------------------------------------
+do
+  defines={input_action={}}
+  local force={name='player',is_chunk_charted=function() return true end}
+  local neutral={name='neutral'}
+  local function ent(t,n,f,marked)
+    local e={valid=true,type=t,name=n,force=f,minable=true,marked=marked}
+    e.to_be_deconstructed=function() return e.marked end
+    e.cancel_deconstruction=function() e.marked=false end
+    e.order_deconstruction=function() e.marked=true; return true end
+    return e
+  end
+  local list={ent('assembling-machine','chemical-plant',force,true),ent('inserter','fast-inserter',force,true)}
+  for _=1,3 do list[#list+1]=ent('item-entity','item-on-ground',neutral,true) end
+  local p={index=1,position={x=0,y=0},force=force,surface={find_entities_filtered=function() return list end}}
+  local B=dofile('mod/agent-harness_0.1.0/blueprints.lua'){position=function(v) return v end,real=function(q) return q end}
+  local out=B.deconstruct(p,{area={left_top={x=-32,y=-32},right_bottom={x=32,y=32}},cancel=true})
+  eq(out.cancelled,2); eq(out.cancelled_by_name,'1 chemical-plant, 1 fast-inserter')
+  eq(list[3].marked,true,'items on the ground keep their marks')
+end
+print('d15_batch4 F9 deconstruction counts: ok')
