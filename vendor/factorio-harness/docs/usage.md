@@ -5059,3 +5059,34 @@ fh watch    # deploy on every change
     starting at 15 C, take the mean to 64.6 C (83.4 C lower) ...`.
   - It is a read: the running action and queue go on.
 
+
+## d15 batch5 (operator 05:20; shifts 20-22)
+
+- A platform's machines need no pole: a space platform has one electric network for everything on it (Sol 01:52:
+  `check_inserters` refused every platform inserter as unpowered). The dry run's `power` on such a surface says
+  `global_network: every machine on this surface is on its one electric network (no poles needed): N planned machines
+  covered` and lists no machine as unpowered, so `check_inserters` checks only pickup, drop and filters there.
+- `freight_audit` counts each item once (Sol 01:59: cryogenic packs on Aquilo 763 + 763 + 1000). A landing pad in a
+  logistic network is in that network's count already: its row says `landing pads 763 (in a logistic network: counted
+  there)` and `pads_in_networks`, and it is not added to the total again. Plain chests (machine output chests) and
+  landed cargo pods in no network are read too: `other chests 77 (1 chest)`, `chests`, `chests_holding`. Past 4000
+  plain chests a planet, `chests_unread` says the total is partial. Pads, silos, labs and chests come from one find a
+  planet.
+- A queue step written flat (`{action: "transfer", position: ..., item: ...}`) is refused on submit (`queue_submit`,
+  `queue_repeat`, its dry run, saved plans and standing orders), naming the step and the shape it needs (Muse, twice,
+  each a loop rebuild after "pos nil"): `steps[2] (transfer, label "drop"): item, position are arguments of transfer
+  written beside action; a step is {action: "transfer", args: {item: ..., position: ...}} (wait, label, on_fail,
+  on_short, min_moved beside args)`.
+- `feed {recipe: "rocket-part"}` fills a rocket silo's ingredients, as a machine's (Muse, twice: "no recipe set"). A
+  feed into a silo that moves nothing says `the rocket silo's rocket-part recipe takes none of what was named; feed
+  fills a rocket silo's rocket-part ingredients; its rocket cargo: load_silo, or transfer {inventory:
+  "rocket_silo_rocket"}`.
+- One cargo landing pad per planet (Astra 02:03: a second pad on Fulgora refused with no blocker named). A refused
+  build, the build and place_ghosts dry runs, and `placements` (`one_per_planet`, and `in_the_way` when nothing fits)
+  say `one cargo landing pad per planet (the game's rule): one, ours stands at (-20,30) on fulgora` (or `a ghost of
+  one`).
+- `research`'s per-pack stock is by surface (Sol 05:19: from Aquilo, cryogenic packs "2288 in stock" while the Nauvis
+  labs had none). Labs use what is on their own surface. `not_made_recently` needs stock where the labs are, and
+  says `N where the labs are (nauvis: labs 120, logistic networks 5451)`; stock on surfaces with no labs follows as
+  `2288 elsewhere, no labs there (aquilo: logistic networks 2288)`. With none where the labs are, the entry
+  `waits_for` the pack (the clock stops there) and names what is elsewhere.
