@@ -24,7 +24,7 @@ Each topic, when to read it, and the commands it documents:
   `wait_ticks`, `sleep_check`, `queue_submit` (modes), `queue_status`, `queue_edit`, `queue_cancel`, `queue_repeat`, `plan save`, `plan run`,
   `plan list`, `stop`, `order_set`, `orders`, `order_remove`, `orders_pause`, `orders_resume` (standing orders),
   `reminder_add`, `reminder_ack`, `reminders`; urgent wakes, slow game, harness updates.
-- `team`, when you edit board items or read a `team:` or `team: shift` block or an `OPERATOR:` line: claims, `board projects`, `board_review`, `board_retire`, `review`,
+- `team`, when you edit board items or read a `team:` or `team: shift` block or an `OPERATOR:` line: claims, `board projects`, `board_review`, `board_retire`, `lessons`, `lesson_add`, `lesson_edit`, `lesson_verify`, `review`,
   `lookahead`, `networks`, `boilers`, `tells`.
 - `stream-people`, in your first minute (your stream profile) and when you talk to viewers or a human player joins:
   `profile`, `profiles`, `confess`, `chronicle`, `operator`, `players`, `vote`, `votes`, `restore`.

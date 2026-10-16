@@ -968,4 +968,49 @@ do
   eq(sol('board',{id=old.id}).item.status,'dropped')
   storage.agent_harness.platform_alerts=nil
 end
+-- d16 batch6 G (lessons; Sol and Astra 10:51): a board item kind lesson with evidence and last_verified, edits keep
+-- history, supersedes retires, lessons {...} reads them, and a call matching a lesson's keys carries its line.
+do
+  prototypes=prototypes or {}
+  prototypes.item=prototypes.item or {}; prototypes.recipe=prototypes.recipe or {}; prototypes.entity=prototypes.entity or {}
+  prototypes.item['rocket']={name='rocket'}; prototypes.item['copper-cable']={name='copper-cable'}; prototypes.recipe['rocket']={name='rocket'}; prototypes.entity['rocket-silo']={name='rocket-silo'}
+  local l=sol('lesson_add',{rule='launch wait_ready: check the silo after --wait',cause='a tell ended the wait',fix='verify launched',
+    action='launch',evidence_tick=game.tick,invalidated_when='after the d16 fix'}).lesson
+  eq(l.rule,'launch wait_ready: check the silo after --wait'); eq(l.keys.action,'launch'); eq(l.owner,'sol')
+  fails(function() sol('lesson_add',{rule='no key'}) end,'a lesson needs a key')
+  fails(function() sol('lesson_add',{rule=' ',item='rocket'}) end,'rule is required')
+  -- edit keeps history; any teammate edits
+  local e=astra('lesson_edit',{id=l.id,fix='read silo after the wait'})
+  eq(e.lesson.fix,'read silo after the wait'); eq(e.history[1].fix,'verify launched'); eq(e.history[1].by,'astra')
+  -- verify
+  game.tick=game.tick+60
+  eq(grok('lesson_verify',{id=l.id}).lesson.verified_by,'grok')
+  -- reads
+  eq(sol('lessons',{action='launch'}).count,1)
+  eq(sol('lessons',{item='rocket'}).count,0)
+  local hit=sol('lessons',{}).lines[1]
+  assert(hit:find('lesson #'..l.id..' (sol; evidence tick',1,true),hit)
+  -- the board's plain listing leaves lessons out; kind lesson lists them
+  for _,row in ipairs(sol('board',{}).items or {}) do assert(row.kind~='lesson','no lesson in the plain listing') end
+  eq(sol('board',{kind='lesson'}).items[1].id,l.id)
+  -- a call naming the action carries the line (here a failing launch: the lesson rides on what a matching call returns)
+  local key=astra('lesson_add',{rule='the north requester overflows past 200 copper cable',item='copper-cable',position={x=10,y=10},surface='nauvis'}).lesson
+  local out=astra('lessons',{near={x=12,y=11}})
+  eq(out.count,1); eq(out.lessons[1].id,key.id)
+  local me=runtime.lookup(runtime.bots.index_of('astra'))
+  local m=runtime.board.lessons_for(me,'transfer',{item='copper-cable',position={x=11,y=9}})
+  assert(m and m[1]:find('north requester overflows',1,true),'a transfer of its item at its place')
+  eq(runtime.board.lessons_for(me,'transfer',{item='copper-cable',position={x=40,y=40}}),nil,'its item elsewhere: the place narrows it')
+  eq(runtime.board.lessons_for(me,'transfer',{item='iron-plate',position={x=11,y=9}}),nil,'another item there')
+  -- supersedes retires the old lesson
+  local v2=sol('lesson_add',{rule='launch wait_ready is fixed; --wait fails when not launched',action='launch',supersedes=l.id}).lesson
+  eq(sol('lessons',{action='launch'}).count,1); eq(sol('lessons',{action='launch',all=true}).count,2)
+  eq(sol('board',{id=l.id}).item.status,'dropped')
+  -- stale after 12 game hours unverified
+  game.tick=game.tick+12*216000+1
+  local st=sol('lessons',{action='launch'}).lessons[1]
+  eq(st.id,v2.id); eq(st.stale,true)
+  -- board_post kind lesson goes the same way
+  fails(function() sol('board_post',{kind='lesson',title='posted as a board item'}) end,'a lesson goes with lesson_add')
+end
 print('board: ok')

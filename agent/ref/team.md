@@ -83,3 +83,11 @@
 - `OPERATOR:` lines: fh prints each message once;
   later replies that still carry it leave it out (`--operator-repeat` prints it on every reply). With `--format json`
   stdout is one JSON document and the message is only in the reply's `result.operator`.
+- Lessons: short rules a teammate tested, board items of kind `lesson`. `lesson_add {rule, cause?, fix?, evidence_tick?,
+  invalidated_when?, item | recipe | entity | action, surface?, position | area?, supersedes?}` (a lesson it supersedes
+  is retired); `lesson_edit {id, ...}` (any teammate; the earlier versions kept, last 8); `lesson_verify {id}` (last
+  verified now); `lessons {item | recipe | entity | action | near | surface}` reads them. A call on a lesson's item,
+  recipe, entity or action (at its place and on its surface when it names them: inspect, trace, build, place_ghosts,
+  transfer, feed, collect, configure, load_silo, launch, craft, mine, rearm, refuel) carries up to 2 lines in
+  `lessons`, each with who recorded it, its evidence tick and when it was last verified; one not verified for 12 game
+  hours reads `stale`. At most 150 active.
