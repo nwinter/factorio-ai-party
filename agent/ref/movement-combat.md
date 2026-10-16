@@ -28,7 +28,8 @@
   walks in). Squeezed in, the walk gets out along the gaps first (`last.escaped`); closed in, `last.mine_to_get_out`
   names everything to mine to open ground (chests, accumulators, walls, trees and rocks before poles and machines); not
   closed in but with no way to the target, `last.mine_for_a_way` names the fewest to mine for one (never a rocket
-  silo, landing pad or platform hub; for a goal inside a building, the way to its edge). `move_to` walks over
+  silo, landing pad or platform hub; for a goal inside a building, the way to its edge). `move_to {mine_out: true}` then marks those blockers, mines them by hand (a timed construct;
+  contents to your inventory) and walks again once (`last.mining_out`). `move_to` walks over
   shallow water, wetland and Fulgora's oil ocean, deep too. A
   `build` batch that fails part way, and a real `place_ghosts`, say on the `warning:` line when what they place closes
   you in. A `build` batch with `"all": true` builds every entry it can and lists the rest in `failed` with why.
@@ -36,8 +37,6 @@
   condition counts only with a red or green wire on the entity: without one the game ignores it, and the line says
   `condition ignored`);
   `requests` `set` takes a map `{item: min}` too; an entry without `max` keeps the slot's max (`"max": "inf"` sets none).
-  `move_to {mine_out: true}`: closed in (or with no way that mining would open), it marks the blockers it names,
-  mines them by hand (a timed construct; contents to your inventory) and walks again once (`last.mining_out`).
 - A walk stops short of rails that a moving train will cross within 6 s and goes on once it has passed (status
   `train_wait`, then `last.train_waits`).
 - `"retreat":{"to":{"x":260,"y":-60},"health_below":0.5,"shield_below":0.2}` on `move_to`, `shoot`, `kite` or `vehicle {drive}`:
