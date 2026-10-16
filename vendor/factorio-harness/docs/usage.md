@@ -5317,3 +5317,8 @@ fh watch    # deploy on every change
   says what the area holds by type and the filter that narrows it: `the area holds more than 1024 entities this refuel
   reads (900 boiler, 300 furnace, ...); types: ["boiler"] (or entity names ...) reads only those`. `types` (refuel and
   feed) already took entity types and names.
+- `collect {positions: [...], item?, wait_ticks}` waits at several machines (Sonnet, ~6 a shift: scarce output such as
+  low-density structures): it walks to the first, stands there, and takes from each of the others it reaches from
+  there too, the tick their products appear (1..16 positions). The reply's `also` names them; `last.also` says what
+  each gave and which were never in reach from there. Checked on the copy: two copper-cable assemblers 8 tiles apart,
+  38 taken, 16 of them from the second.

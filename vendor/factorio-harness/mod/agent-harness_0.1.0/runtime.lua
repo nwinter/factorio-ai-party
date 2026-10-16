@@ -7010,9 +7010,22 @@ function handlers.collect(p,a)
   if a.wait_ticks~=nil or a.keep_taking~=nil then
     -- One machine: position (the alias layer hands a single position over as positions).
     local at=a.position
-    if at==nil and type(a.positions)=='table' and #a.positions==1 then at=a.positions[1] end
-    if a.radius~=nil or a.area~=nil or at==nil or (a.positions~=nil and #a.positions~=1) then
-      error('wait_ticks waits at one machine: give its position (an assembler or furnace)',0)
+    -- Several machines (Sonnet, ~6 a shift: waiting on scarce output such as low-density structures): it stands at the
+    -- first and takes from each of the others too that it reaches from there (also).
+    local also
+    if at==nil and type(a.positions)=='table' and #a.positions>=1 then
+      at=a.positions[1]
+      if #a.positions>1 then
+        assert(#a.positions<=16,'wait_ticks waits at 1..16 machines (positions)')
+        also={}
+        for i=2,#a.positions do
+          local q=a.positions[i]
+          also[#also+1]=entity(p,{position=q.position or q,name=q.name,unit_number=q.unit_number},true)
+        end
+      end
+    end
+    if a.radius~=nil or a.area~=nil or at==nil then
+      error('wait_ticks waits at a machine: give its position (an assembler or furnace), or positions (1..16; it stands at the first)',0)
     end
     if not (a.keep_taking==nil or a.keep_taking==true or type(a.keep_taking)=='number') then error('keep_taking is true (3600 ticks) or ticks',0) end
     local wait=a.wait_ticks~=nil and integer(a.wait_ticks,nil,1,36000,'wait_ticks')
@@ -7035,6 +7048,12 @@ function handlers.collect(p,a)
       end
     end
     local action,out=stock.start_wait(p,a,e,wait)
+    if also then
+      action.also=also
+      local names={}
+      for _,x in ipairs(also) do names[#names+1]=string.format('%s (%g,%g)',x.name,x.position.x,x.position.y) end
+      out.also=string.format('also takes from %d more machine%s it reaches from where it stands at the first: %s (one out of reach from there waits: last.also says)',#also,#also==1 and '' or 's',table.concat(names,', '))
+    end
     if a.follow then out.followed='no chest its output inserters fill holds '..(a.item or 'its products')..': waiting at the machine' end
     if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
     state().active[p.index]=action
