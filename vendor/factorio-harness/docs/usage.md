@@ -5215,3 +5215,21 @@ fh watch    # deploy on every change
   (-12.5,-20.5) into iron-chest (-11.5,-20.5)` when other inserters take from the same source, or `no inserter drops
   into it`. `preflight {platform}` adds the same rows (`empty_turrets`) to the platform's row, whatever the hub holds.
   Checked on the copy of world n: Petrel's two empty rocket turrets, with 250 rockets in the hub.
+- Platform construction (Sol, 00:21-03:21).
+  - The hub's `construction_blocked` (inspect a hub, the platforms row) names each defense ghost (gun, rocket, laser,
+    flamethrower, artillery turret) with empty space under it: `defense ghosts wait on foundation: gun-turret ghost
+    (0,-40) on 4 empty tiles (-1,-41)* (-1,-40)* (0,-41)* (0,-40)*; their footprints take 4 foundation tiles (* marks
+    the 4 with a foundation ghost planned), the hub holds 49 space-platform-foundation: the least to bring no more
+    foundation, 1 gun-turret (hub has 0)`. Checked on the copy of world n with a gun-turret ghost off Tern's edge.
+  - `placements {platform, name: "asteroid-collector"}` counts tile ghosts as the tiles they become. A spot the game
+    takes now, with a foundation ghost in the open space a collector needs, is left out and said: `tile_ghosts: 1 spot
+    the game takes now left out: tile ghosts there break its tile rules once built (... space-platform-foundation at
+    (8,-17))`. Checked on Swift. (The place_ghosts and build dry runs already counted them.)
+  - `platform_plan {platform}` reads a platform as planned, built and ghosts together:
+    - foundation tiles in 4-joined groups, with each island no foundation joins with the hub (its size, a tile, its
+      ghost tiles);
+    - belts (transport belts, undergrounds, splitters) as a graph: closed loops (with how many ways out), belts that
+      run head on into each other, and side-loads (a belt fed from a side while a belt behind it, or the other side,
+      feeds it too; one belt from a side alone is a curve).
+    On the copy: Petrel 2345 tiles, no island, 538 belts, 2 head-on pairs and 10 side-loads, 24 ms in the container
+    (about 5 ms on n).

@@ -226,3 +226,37 @@ do
   has(P.empty_turrets({},{empty_list={turret},hub_ammo={rocket=5}})[1],'no inserter drops into it')
 end
 print('d15_batch5 D2 empty platform turrets: ok')
+
+-- D3 (Sol): platform_plan: foundation islands, belt loops, head-on belts, side-loads (built and ghosts). ----------------
+do
+  local tiles={}
+  for x=-2,1 do for y=-2,1 do tiles[#tiles+1]={position={x=x,y=y}} end end
+  local ghost_tiles={}
+  for x=10,12 do ghost_tiles[#ghost_tiles+1]={position={x=x+0.5,y=0.5},ghost_name='space-platform-foundation'} end
+  local belts={}
+  local function belt(x,y,dir,ghost) local e={position={x=x+0.5,y=y+0.5},direction=dir}
+    if ghost then e.type='entity-ghost'; e.ghost_type='transport-belt'; e.ghost_name='transport-belt' else e.type='transport-belt'; e.name='transport-belt' end
+    belts[#belts+1]=e end
+  -- a closed 2x2 loop: (0,0) east, (1,0) south, (1,1) west, (0,1) north
+  belt(0,0,4); belt(1,0,8); belt(1,1,12,true); belt(0,1,0)
+  -- head on: (5,0) east into (6,0) west
+  belt(5,0,4); belt(6,0,12)
+  -- a side-load: (8,0)->(8,1) south... a line (8,2) east fed from behind by (7,2) east, and from the side by (8,1) south
+  belt(7,2,4); belt(8,2,4); belt(8,1,8)
+  -- a curve: (3,5) south into (3,6) east with nothing behind (3,6): no side-load
+  belt(3,5,8); belt(3,6,4)
+  local s={find_tiles_filtered=function() return tiles end,
+    find_entities_filtered=function(f)
+      if f.type=='tile-ghost' then return ghost_tiles end
+      if f.type=='entity-ghost' then local o={} for _,b in ipairs(belts) do if b.type=='entity-ghost' then o[#o+1]=b end end return o end
+      local o={} for _,b in ipairs(belts) do if b.type~='entity-ghost' then o[#o+1]=b end end return o
+    end,count_entities_filtered=function() return 0 end}
+  local pl={name='Petrel',surface=s,hub={valid=true,position={x=0,y=0}},force='player'}
+  local P=dofile('mod/agent-harness_0.1.0/platplan.lua'){platform=function() return pl end}
+  local r=P.read({},{platform='Petrel'})
+  eq(r.foundation_tiles,19); eq(r.hub_group,16); eq(#r.islands,1); eq(r.islands[1].size,3); eq(r.islands[1].ghost_tiles,3)
+  eq(#r.loops,1); eq(r.loops[1].belts,4); eq(r.loops[1].ghosts,1); eq(r.loops[1].exits,0)
+  eq(#r.head_on,1); has(r.head_on[1],'run head on into each other')
+  eq(#r.side_loads,1); eq(r.side_loads[1],'transport-belt (8.5,1.5) feeds the side of transport-belt (8.5,2.5)')
+end
+print('d15_batch5 D3 platform_plan: ok')
