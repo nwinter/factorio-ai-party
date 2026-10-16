@@ -299,6 +299,14 @@ if [ "${POG_PUSH_LIVE:-1}" != 0 ] && { [ -f site/worker/.secrets.json ] || [ -n 
   echo $! >> "$rundir/stream-service.pid"
   helpers+=("push-live:$!:$rundir/push-live.log")
 fi
+# Viewers' blueprints shared on the site (site/viewer_blueprints.py): pulled into team-tools/viewer-blueprints/, one
+# fact line each in game chat while the viewer relay is on. POG_VIEWER_BLUEPRINTS=0: off.
+if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_VIEWER_BLUEPRINTS:-1}" != 0 ] && \
+   { [ -f site/worker/.secrets.json ] || [ -n "${POG_LIVE_TOKEN:-}" ]; }; then
+  nohup python3 -u site/viewer_blueprints.py "$rundir" --world "$world" >"$rundir/viewer-blueprints.log" 2>&1 &
+  echo $! >> "$rundir/stream-service.pid"
+  helpers+=("viewer-blueprints:$!:$rundir/viewer-blueprints.log")
+fi
 # Terrain for the site's maps (tools/stream/mapframes.py): a georeferenced frame of each base-map shot, from its OBS
 # source, kept per area in runs/RUN/mapframes/ (site/terrain.py publishes them). Needs OBS and system python3's numpy
 # and Pillow; POG_MAPFRAMES=0 turns it off. (Shift07 had none: it was never started.)

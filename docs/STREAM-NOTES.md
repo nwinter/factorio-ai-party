@@ -1108,6 +1108,85 @@ with the director service moving cam3 is the fair one. If the saving holds, rest
 config.ini on every start, so nothing on the box needs editing by hand. To go back: `git revert` the
 start-client.ps1 commit and restart the client.
 
+## Camera client memory, d16 (eng/d16-stream7)
+
+The box (pogwin, 32 GB) at 15:06 on 2026-10-16: 0.4 GB free; nonpaged pool 3.1 GB; about 13 GB held by no process;
+up since Oct 14 19:30. Each camera client starts at about 3.1 GB private and grows about 350 MB an hour; cam2 and
+cam3 died at 14:59 with no Windows error (their logs just stop). Already set: medium sprites,
+`video-memory-usage=low`, texture streaming (start-client.ps1, "Director client memory" above).
+
+**Not measured yet.** This session could not reach the box: its sandbox blocks ssh and scp to pogwin, and the
+operator's go-ahead to bypass it was refused by the guardrail hook. The Mac has no Factorio client (only the
+Steam 2.0.72 user data, which cannot load a 2.0.77 save anyway). So there are no before/after numbers or screenshot
+pair here yet. The scripts below get them; each one is read-only on the live server, OBS and cameras.
+
+What a camera never needs:
+
+- Sound on cam2 and cam3. OBS's "stream game audio" captures `factorio-cam1.exe` only, and every capture has
+  `capture_audio` off (read from the box's OBS, 2026-10-16). `start-client.ps1 -NoAudio` adds `--disable-audio`, so
+  the game loads no sound at all, for a camera started without `-Sound`. Picture: unchanged. Memory: not measured.
+  It is opt-in until a test client has started with it, because an unknown flag would stop a camera from starting.
+- Music: already 0. Chat on screen: already 1 tick.
+
+The other `[graphics]` keys in a 2.0 config.ini (commented defaults), for a camera:
+
+| Key | Default | For a camera |
+|---|---|---|
+| `streamed-atlas-physical-vram-size` | 0 (32 MB at medium) | The streamed atlas's size in video memory. Smaller means more re-streaming; system RAM effect unknown. |
+| `max-texture-size` | 0 (auto) | Caps atlas page size: smaller pages, more of them. Effect on private bytes unknown. |
+| `texture-compression-level` | high-quality | `low-quality` compresses sprites harder, with visible artefacts on stream. Last resort. |
+| `optimize-for-low-vram` | false | Not documented. Try on a test client only. |
+| `cache-sprite-atlas` | false | A disk cache of the atlas for faster loads. No steady-state saving expected. |
+| `show-decoratives` | true | Grass, rocks and debris: part of the picture. Off only if a test shows a large saving. |
+| `show-smoke`, `-particles`, `-clouds`, `-fog`, `-space-dust` | true | Small effects; little memory expected. Clouds and fog are part of the look. |
+| `high-quality-animations`, `-shadows`, `-terrain` | true | Mostly GPU time. |
+
+What grows each hour. There are three candidates, and `mem-sample.ps1` tells them apart:
+
+1. Game state. The map, pollution, and the mods' Lua storage (journals, chronicle, tells). Every client holds the
+   same game state as the server, so the world's server process would grow at the same rate as the cams.
+2. Drawing. Sprites streamed in as the camera visits new places, and the chart textures behind the base-map
+   shots. Only the clients would grow, the cam that travels most the fastest, and it would level off once the
+   streamed atlas is full.
+3. A driver. Neither the clients nor the server would grow, but `mem-audit.ps1`'s "no owner" figure or the GPU's
+   shared usage would. 13 GB over about 44 hours is about 300 MB an hour, so this is worth checking first. Game
+   capture of three windows and the encoder both live in the GPU driver.
+
+What a reboot would recover, from the 15:06 counters:
+
+- The nonpaged pool, 3.1 GB. A few hundred MB is usual; pool memory is freed only by its owner or by a reboot.
+- The roughly 13 GB that no process holds: driver-locked memory or GPU memory shared with the system.
+- Each running client's growth since it started.
+- Roughly 15 to 16 GB in total, more if the cams have run long.
+
+`mem-audit.ps1` shows these figures now, and running it again after a reboot confirms them. If poolmon or RAMMap is on
+the box, it reports where they are, and poolmon's top tags name the driver behind the nonpaged pool.
+
+Scripts (tools/win, run with `tools/winps.sh` from the Mac). They are written but not run: there is no PowerShell
+here and no path to the box.
+
+```sh
+tools/winps.sh tools/win/mem-audit.ps1        # read-only: pools, "no owner", GPU memory, top processes, RAMMap/poolmon
+tools/winps.sh tools/win/mem-sample.ps1       # read-only: one row per factorio*/obs64 process, appended to
+                                              # D:\pog\memtest\samples.csv; run it every 15 min for an hour
+tools/winps.sh tools/win/memtest-client.ps1 -Variant base             # isolated test client (below)
+tools/winps.sh tools/win/mem-sample.ps1                                # after 3 and 15 min: factorio-memtest rows
+tools/winps.sh tools/win/memtest-client.ps1 -Stop
+tools/winps.sh tools/win/memtest-client.ps1 -Variant noaudio -NoAudio  # then the same samples
+```
+
+`memtest-client.ps1` sets up its own client:
+
+- write dir D:\pog\memtest\VARIANT, exe `factorio-memtest.exe` (OBS does not capture it), task
+  `pog-memtest-client`;
+- a camera's `[graphics]` plus the variant's keys (`-Graphics 'key=value,...'`, `-NoAudio`);
+- a copy of world n's newest save, loaded as a local game, so it never joins a server.
+
+It refuses to start below 8 GB of commit headroom: as of 15:06, run it after a reboot or between shifts, not
+now. It also runs one more copy of the simulation, so check the box's CPU first. Compare the variants at the same
+age, after loading. A variant that changes the picture (decoratives, compression) needs a screenshot pair:
+`tools/win/desktop-shot.ps1` while it runs.
+
 ## Machines at work (2026-10-14, eng/efficiency)
 
 Nick (15:50): production credited fairly to the agents who build machines; viewers Enginerd and Foobator asked for
