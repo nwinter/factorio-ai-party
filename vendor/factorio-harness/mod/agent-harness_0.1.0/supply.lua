@@ -829,6 +829,10 @@ return function(api)
         local note = not row and request_note(c.e, t.item)
         text = text .. (row and (' (requests ' .. row.want .. ')') or ' (no request for it' .. (note and ': ' .. note or '') .. ')')
       else
+        -- What robots have reserved there for pickup (Haiku, shift19: a passive provider's copper all reserved, read as
+        -- no stock; she walked 500 tiles to mine some).
+        local reserved = M.reserved(c.e, t.item)
+        if reserved > 0 then text = text .. string.format(' (%d of it reserved for robots to take)', math.min(reserved, c.n)) end
         -- Its free slots (Astra, Luna, shift19: providers 48/48 slots used while supply read only their stock).
         text = text .. fullchest.free_note(c.e)
       end
@@ -857,6 +861,19 @@ return function(api)
     end
     if best then best.line=string.format('%s %s: %d held, %d reserved for robot pickups, %d unreserved; %s',
       best.name,at(best.position),best.held,best.reserved,best.free,best.kind) end
+    -- None unreserved: the largest held that robots have reserved, said as reserved (Haiku, shift19).
+    if not best then
+      local top
+      for _, c in ipairs(t.chests) do
+        if (c.kind=='chest' or c.kind=='storage' or c.kind=='passive-provider' or c.kind=='active-provider') and (not top or c.n>top.n) then top=c end
+      end
+      if top then
+        local reserved=M.reserved(top.e,t.item)
+        return {name=top.e.name,position={x=top.e.position.x,y=top.e.position.y},kind=top.kind,held=top.n,reserved=reserved,free=0,
+          line=string.format('%s %s: %d held, all reserved for robot pickups (%d); %s; no provider, storage or plain chest holds it unreserved',
+            top.e.name,at(top.e.position),top.n,reserved,top.kind)}
+      end
+    end
     return best
   end
   -- The nearest place holding the item to a position, other than the entity itself.

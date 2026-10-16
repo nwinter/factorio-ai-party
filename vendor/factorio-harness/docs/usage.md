@@ -4762,3 +4762,16 @@ fh watch    # deploy on every change
   - A queued transfer or feed tour interrupted by a direct action is requeued with the stops it had not finished.
     A courier whose take is done is requeued as the give at its destination with what it still carries. The history
     entry says `resumed_from`. Before, such a step failed whole.
+- Small ones (item 8):
+  - `deconstruct {area, cancel: true}` cancels the deconstruction marks there, as `cancel_deconstruction` does
+    (`cancelled`). A plain deconstruct says `already_marked` when some were marked before (Grok).
+  - A build or place_ghosts dry run gives each pump's `ports`, blocked or not: each tile it joins, one past its body,
+    and what stands there, with whether it connects back (`output north at (130.5,40.5), one tile past the body: pipe
+    (130.5,40.5) (connects back); input south at (130.5,43.5), one tile past the body: nothing`) (Grok).
+  - A build on lava says the tile first: `lava-hot (unbuildable: lava; only foundation laid on it makes it buildable,
+    and that is not researched)` (Sonnet).
+  - A fast replace of an inserter keeps the stack its hand holds in the new inserter's hand. A hand stack that would
+    need inventory room is named in the refusal with the rest that does not fit (Sonnet).
+  - supply's `chests` rows add what robots have reserved for pickup in each provider, storage or plain chest. When
+    all of it is reserved, `surplus_chest` names the largest such chest as `all reserved for robot pickups` instead
+    of leaving it out (Haiku).
