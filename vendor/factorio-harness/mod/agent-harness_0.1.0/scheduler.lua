@@ -639,7 +639,7 @@ return function(api)
     local q=queue(p.index); revision(q,a)
     local items,corrected=steps(a,p)
     local new_guards=guards(a,p)
-    assert(a.mode==nil or a.mode=='append' or a.mode=='replace' or a.mode=='ahead' or a.mode=='pending','mode must be append, replace, ahead or pending')
+    assert(a.mode==nil or a.mode=='append' or a.mode=='replace' or a.mode=='ahead' or a.mode=='pending' or a.mode=='next','mode must be append, replace, ahead, next or pending')
     -- pending (Astra, d15 09:20: change what comes next while a load_silo runs): the pending steps are replaced, the
     -- active step and the guards stay; into a repeating plan it refuses (replace or ahead say what happens to the loop).
     if a.mode=='pending' then
@@ -684,8 +684,10 @@ return function(api)
     assign(q,items)
     if #items>0 then new_plan(q,items,'submit') end
     if replacing then q.pending={}; q.loop=nil; q.next_cycle_tick=nil; q.guards={}; q.times=nil; q.stop_tick=nil; q.orders=nil; q.condition=nil; q.condition_error=nil end
-    q.submission=loop and ('repeating job "'..loop..'": '..(a.mode=='replace' and 'stopped and replaced' or a.mode=='ahead' and 'new steps run first; interrupted absolute-goal step restarts afterward' or 'new steps wait behind the current round ('..active..')')) or nil
-    if a.mode=='ahead' then
+    q.submission=loop and ('repeating job "'..loop..'": '..(a.mode=='replace' and 'stopped and replaced' or a.mode=='ahead' and 'new steps run first; interrupted absolute-goal step restarts afterward'
+      or a.mode=='next' and 'new steps run once right after the active step ('..active..'), then the round goes on' or 'new steps wait behind the current round ('..active..')')) or nil
+    -- next (Opus 06:33: a handoff waited a 6-minute round): right after the active step, which goes on; run once.
+    if a.mode=='ahead' or a.mode=='next' then
       for i=#items,1,-1 do table.insert(q.pending,1,items[i]) end
     else
       for _,step in ipairs(items) do q.pending[#q.pending+1]=step end
@@ -947,7 +949,7 @@ return function(api)
       times='optional 1..10000: the number of rounds; after the last one the loop ends',
       for_ticks='optional 60..432000: from this call, no round starts at or after that many ticks (a round under way finishes); with times, whichever comes first ends the loop',
       note='a loop that ends (times, for_ticks) leaves the queue empty: history entry loop_done {rounds, reason}, queue_status loop_done, and one team block line under queue ("queue NAME done after N rounds: ...");a round whose steps ran short (out_of_items, nothing_collected, inventory_full, none held, or a short reply) puts one line in the team block (queue: "queue NAME round N: K of M steps short: transfer iron-plate inventory_full x2, ..."), only when it differs from the last round\'s; a step with up_to=true or on_short=skip is left out of it (its history entry says short=true)'},
-    queue_submit={steps='array of {action,args,wait?,label?,on_fail?,min_moved?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace|ahead|pending: pending replaces the pending steps and keeps the active step and guards (ordinary plans; a repeating plan refuses); omitted refuses nonempty submits into a repeating plan, naming it; replace stops the active step (its history entry: stopped by queue_submit mode=replace; not run again), drops pending steps and guards, and removes a loop; ahead interrupts and restarts an absolute-goal step after the new steps, preserving the loop (other active steps refuse); append explicitly waits behind the current round',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
+    queue_submit={steps='array of {action,args,wait?,label?,on_fail?,min_moved?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace|ahead|next|pending: next runs the new steps once right after the active step (which goes on), before the rest of the round or plan (a repeating plan keeps its loop; Opus 06:33); pending replaces the pending steps and keeps the active step and guards (ordinary plans; a repeating plan refuses); omitted refuses nonempty submits into a repeating plan, naming it; replace stops the active step (its history entry: stopped by queue_submit mode=replace; not run again), drops pending steps and guards, and removes a loop; ahead interrupts and restarts an absolute-goal step after the new steps, preserving the loop (other active steps refuse); append explicitly waits behind the current round',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
       dry_run='true: check the plan as a submit does and queue nothing (the queue is left as it is); returns steps, corrected, and the silo cargo the steps would leave: launches [{step, label, silo, cargo (before that launch), kg, min_cargo (lines), platform_now, would_refuse}], silos_after, notes (steps whose item moves are not counted); counted from what you, the chests and the silos hold now through transfer, load_silo and launch steps'},
     queue_edit={expected_revision='required from queue_status (not with id)',index='1-based pending index',remove='count to remove (with id: default 1, the step itself)',steps='replacement steps (with id: in its place; none: the step is deleted)',
       id='a pending step\'s job id (queue_status pending, "job-12"): edit, delete or move that step; the active step is never touched',to='with id: move that step to this pending place (1-based)'},

@@ -5408,3 +5408,6 @@ fh watch    # deploy on every change
   operator tells and reminder jobs wait for the next reply) on `sleep`, `wait_ticks` and `wait_until`, and on the host
   for `--wait` and `fh wait` on an action. Urgent alerts and the action ending still end them. Checked on the copy:
   Luna's sleep with `wake_from: ["astra"]` went on through Sol's tell and ended on Astra's.
+- `queue_submit {mode: "next"}` (Opus 06:33: a handoff transfer waited a 6-minute round of a repeating plan): the new
+  steps run once right after the active step, which goes on, and before the rest of the round or plan; a repeating
+  plan keeps its loop and does not repeat them.

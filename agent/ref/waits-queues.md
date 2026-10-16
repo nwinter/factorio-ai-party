@@ -51,7 +51,7 @@
   `./fh queue status` shows the active step (`running_s`), the next one, and the plan you last submitted (`plan`: steps
   done, ok, failed; `history`: its own results); `./fh queue status orders` lists the standing orders' steps too;
   `--args '{"history":"all","pending":10}'` shows more.
-  `queue_submit` into a repeat requires explicit `mode`: `replace` stops it, `ahead` interrupts/restarts an absolute-goal step, `append` waits behind this round; refusal names the job.
+  `queue_submit` into a repeat requires explicit `mode`: `replace` stops it, `ahead` interrupts/restarts an absolute-goal step, `append` waits behind this round, `next` runs the new steps once right after the active step (which goes on) and keeps the loop; refusal names the job.
   `mode: "replace"` stops the active step of any plan (a running `load_silo` too). `mode: "pending"` replaces only the pending steps; `queue_edit {id: "job-12"}` deletes a pending step (`steps`: replace it, `to: N`: move it), the active step untouched. A `place_ghosts` or `build` step with failed entries fails (`reason: place_ghosts: 3 entries failed (37 placed); first: ...`) and its `on_fail` applies.
   `queue_repeat {condition: {until: ...}}` ends at a round boundary when met (before round one too); `feed up_to:true` ending `out_of_items` exits 0 from `--wait`/`fh wait`, with moved and stops left.
 - `queue_status {args: true}`: history with each step's arguments (and a finished loop's steps); status `active.progress` gives a tour's or courier's leg, distance left and moved so far; an interrupted queued transfer tour resumes from the stops left.
