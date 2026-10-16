@@ -457,6 +457,9 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .vchat-filter { display: flex; align-items: center; gap: 6px; padding: 2px 8px; }
 .vchat-form { display: grid; grid-template-columns: 6.5em 1fr auto; gap: 6px; margin-top: 8px; }
 .vchat-form[hidden] { display: none; }
+.vchat-form .vchat-viewers { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; }
+.vchat .c-src-viewers { background: #5b8fb9; color: #111; }
+.vchat .c-viewers .c-text { opacity: 0.85; }
 .chat-panel .small { margin: 6px 0 0; }
 .vchat-tips { display: grid; grid-template-columns: auto 1fr; gap: 1px 8px; line-height: 1.35; }
 .vchat-tips > div { display: contents; }

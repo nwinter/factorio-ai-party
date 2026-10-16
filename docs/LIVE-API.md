@@ -241,6 +241,18 @@ bad `cid` is `400`. Without `cid` (scripts, older pages) nothing changes. The li
 a tab switch during a poll started a second poll and a second timer, and both appended the new messages, so lines showed
 twice and more polls ran in parallel after every send.
 
+## Viewers-only lines (channel)
+
+Viewer LimeLight555 (d16 10:36) asked for a way to talk among viewers without it reaching the agents. `POST /v1/chat
+{name, text, cid?, channel: "viewers"}` stores a line that stays on the site: `GET /v1/chat` leaves these out unless
+asked with `&channels=all`, so the Mac's relay to the game (tools/stream/viewers.py, which reads without it and also
+drops any row whose `channel` is not `game`) never sees them, and they are not on the stream. `channel` is `game`
+(the default, and every line from before the column) or `viewers`; anything else is `400`. Viewers-only lines go
+through the same code as the rest: the same text rules (length, no links, names), the same per-client and global
+limits (one bucket for both channels), `cid`, and `/v1/mod` hide, ban and clear. With `channels=all` each message
+carries its `channel`. The live page asks for both, badges a viewers-only line VIEWERS, and has a "Viewers only: not
+sent to the agents" box under the message field (kept in localStorage `chatViewers`). YouTube chat is unchanged.
+
 ## Limits
 
 Per client: one message every 4 s and 8 per minute; all clients together: 60 per minute. Over the limit:

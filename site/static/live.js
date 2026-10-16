@@ -117,7 +117,7 @@
     return -1;
   }
   function joinedChat() {
-    var all = chatMsgs.map(function (m) { return { src: 'site', name: m.name, text: m.text, t: m.t, k: 's' + m.seq }; })
+    var all = chatMsgs.map(function (m) { return { src: m.channel === 'viewers' ? 'viewers' : 'site', name: m.name, text: m.text, t: m.t, k: 's' + m.seq }; })
       .concat(ytLines.map(function (m) { return { src: 'yt', name: m.name, text: m.text, t: m.t, k: 'y' + m.id }; }));
     all.sort(function (a, b) { return (a.t || 0) - (b.t || 0) || (a.k < b.k ? -1 : 1); });
     all = all.slice(-150);
@@ -161,7 +161,7 @@
       var t = new Date(m.t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       if (m.src === 'agent') return replyHtml(m, t);
       return '<li class="c-' + m.src + '"><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-' + m.src + '">' +
-        (m.src === 'yt' ? 'YT' : 'SITE') + '</span> <b>' + esc(m.name) + '</b> <span class="c-text">' + esc(m.text) + '</span></li>';
+        (m.src === 'yt' ? 'YT' : m.src === 'viewers' ? 'VIEWERS' : 'SITE') + '</span> <b>' + esc(m.name) + '</b> <span class="c-text">' + esc(m.text) + '</span></li>';
     }).join('') : '<li class="fx-muted">No messages yet. Say hello.</li>';
     if (atEnd || !chatList.dataset.seen) chatList.scrollTop = chatList.scrollHeight;
     chatList.dataset.seen = '1';
@@ -184,7 +184,8 @@
     if (polling) { pollAgain = true; return; }
     polling = true; pollAgain = false;
     var visible = !app.querySelector('[data-pane="site"]').hidden;
-    getJSON(API + '/v1/chat' + (lastSeq != null ? '?after=' + lastSeq : '?limit=60')).then(function (d) {
+    // channels=all: the viewers-only lines too (the Worker leaves them out for the relay to the game)
+    getJSON(API + '/v1/chat' + (lastSeq != null ? '?after=' + lastSeq : '?limit=60') + '&channels=all').then(function (d) {
       var hidden = {}; (d.hidden || []).forEach(function (s) { hidden[s] = 1; });
       chatMsgs = mergeChat(chatMsgs.filter(function (m) { return !hidden[m.seq]; }), d.messages);
       if (d.messages && d.messages.length) lastSeq = Math.max(lastSeq || 0, d.messages[d.messages.length - 1].seq);
@@ -212,6 +213,13 @@
   }
   if (chatForm) {
     var nameIn = chatForm.querySelector('[name=name]'), textIn = chatForm.querySelector('[name=text]');
+    // Viewers only (viewer LimeLight555, d16 10:36): the line stays on this site, never sent to the agents or the
+    // stream; remembered per browser
+    var viewersBox = chatForm.querySelector('[name=viewers]');
+    if (viewersBox) {
+      viewersBox.checked = store('chatViewers') === '1';
+      viewersBox.addEventListener('change', function () { store('chatViewers', viewersBox.checked ? '1' : '0'); });
+    }
     var sendBtn = chatForm.querySelector('[type=submit]');
     nameIn.value = store('chatName') || '';
     // A message id made once per message and sent again on a retry: the worker stores a message once per id, so a
@@ -226,8 +234,9 @@
       ev.preventDefault();
       if (!API || demo || sending) return;
       var body = { name: nameIn.value.trim(), text: textIn.value.trim() };
+      if (viewersBox && viewersBox.checked) body.channel = 'viewers';
       if (!body.text) return;
-      if (!pending || pending.text !== body.text) pending = { text: body.text, cid: newCid() };
+      if (!pending || pending.text !== body.text || pending.channel !== body.channel) pending = { text: body.text, channel: body.channel, cid: newCid() };
       body.cid = pending.cid;
       store('chatName', body.name);
       sending = true; if (sendBtn) sendBtn.disabled = true;

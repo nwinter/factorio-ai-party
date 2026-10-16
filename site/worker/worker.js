@@ -2,9 +2,11 @@
 //
 //   GET  /v1/state            latest stream state pushed from the Mac (public)
 //   POST /v1/state            replace it (Authorization: Bearer PUBLISH_TOKEN)
-//   GET  /v1/chat?after=SEQ   viewer chat messages after SEQ (public)
-//   POST /v1/chat             post a message {name, text, cid?} (no accounts; rate limited per client; the same cid
-//                             from the same client is stored once: a repeat returns the first message)
+//   GET  /v1/chat?after=SEQ   viewer chat messages after SEQ (public); the ones that go to the game only, unless
+//                             &channels=all (the live page): then the viewers-only ones too, each with its channel
+//   POST /v1/chat             post a message {name, text, cid?, channel?} (no accounts; rate limited per client; the
+//                             same cid from the same client is stored once: a repeat returns the first message);
+//                             channel "viewers": on the site only, never relayed to the agents (default "game")
 //   POST /v1/mod              hide/unhide/ban/unban/open/close (Authorization: Bearer PUBLISH_TOKEN)
 //   POST /v1/here             {id}: an open live page, once a minute; GET /v1/state counts them as site_watching
 //
@@ -155,6 +157,9 @@ export class Live {
       // cid: the page's id for one message (joonazan, d15 08:05: messages sent twice); a table from before it gains it
       try { this.sql.exec(`ALTER TABLE chat ADD COLUMN cid TEXT`); } catch (e) { /* already there */ }
       this.sql.exec(`CREATE INDEX IF NOT EXISTS chat_cid ON chat (cid)`);
+      // channel (viewer LimeLight555, d16 10:36): "viewers" lines stay on the site; GET /v1/chat leaves them out unless
+      // asked (channels=all), so the Mac's relay to the game never reads them
+      try { this.sql.exec(`ALTER TABLE chat ADD COLUMN channel TEXT NOT NULL DEFAULT 'game'`); } catch (e) { /* already there */ }
       this.sql.exec(`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS bans (who TEXT PRIMARY KEY, t REAL NOT NULL)`);
       this.state = this.get("state");
@@ -248,12 +253,15 @@ export class Live {
   getChat(url) {
     const limit = Math.max(1, Math.min(CHAT.pageMax, parseInt(url.searchParams.get("limit") || "50", 10) || 50));
     const after = parseInt(url.searchParams.get("after") || "", 10);
+    const all = url.searchParams.get("channels") === "all";
+    const cols = all ? "seq, t, name, text, channel" : "seq, t, name, text";
+    const only = all ? "" : " AND channel = 'game'";
     let rows;
     if (Number.isFinite(after)) {
-      rows = this.sql.exec("SELECT seq, t, name, text FROM chat WHERE seq > ? AND hidden = 0 ORDER BY seq LIMIT ?",
+      rows = this.sql.exec(`SELECT ${cols} FROM chat WHERE seq > ? AND hidden = 0${only} ORDER BY seq LIMIT ?`,
         after, limit).toArray();
     } else {
-      rows = this.sql.exec("SELECT seq, t, name, text FROM chat WHERE hidden = 0 ORDER BY seq DESC LIMIT ?", limit)
+      rows = this.sql.exec(`SELECT ${cols} FROM chat WHERE hidden = 0${only} ORDER BY seq DESC LIMIT ?`, limit)
         .toArray().reverse();
     }
     const maxRow = this.sql.exec("SELECT COALESCE(MAX(seq), 0) AS m FROM chat").toArray()[0];
@@ -279,8 +287,10 @@ export class Live {
     // The same message again (a second press, a retry after a slow reply): the first one, before any limit.
     const cid = body.cid == null ? null : String(body.cid);
     if (cid !== null && !/^[0-9a-f]{16,32}$/.test(cid)) return json({ error: "cid must be 16-32 hex digits" }, 400);
+    const channel = body.channel == null ? "game" : String(body.channel);
+    if (channel !== "game" && channel !== "viewers") return json({ error: "channel must be game or viewers" }, 400);
     if (cid) {
-      const had = this.sql.exec("SELECT seq, t, name, text FROM chat WHERE cid = ? AND who = ?", cid, who).toArray();
+      const had = this.sql.exec("SELECT seq, t, name, text, channel FROM chat WHERE cid = ? AND who = ?", cid, who).toArray();
       if (had.length) return json({ ok: true, repeat: true, message: had[0] });
     }
     const msg = tidy(body.text);
@@ -311,10 +321,10 @@ export class Live {
     if (this.lastText.size > 5000) this.lastText.clear();
 
     const t = now / 1000;
-    const row = this.sql.exec("INSERT INTO chat (t, name, text, who, cid) VALUES (?, ?, ?, ?, ?) RETURNING seq", t, name, msg, who, cid)
-      .toArray()[0];
+    const row = this.sql.exec("INSERT INTO chat (t, name, text, who, cid, channel) VALUES (?, ?, ?, ?, ?, ?) RETURNING seq",
+      t, name, msg, who, cid, channel).toArray()[0];
     this.sql.exec("DELETE FROM chat WHERE seq <= ?", row.seq - CHAT.keep);
-    return json({ ok: true, message: { seq: row.seq, t, name, text: msg } });
+    return json({ ok: true, message: { seq: row.seq, t, name, text: msg, channel } });
   }
 
   mod(req, text) {

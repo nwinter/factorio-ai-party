@@ -72,6 +72,7 @@ global.PogMap = { create: () => ({ set: () => {} }) };
 // The worker: messages by seq; a GET answers after 40 ms, so a send lands while a poll is in flight.
 const server = [{ seq: 1, t: state.now - 120, name: 'Foobator', text: 'hello from the site' }];
 let inflight = 0, maxInflight = 0, gets = 0;
+const urls = [];
 const posts = [];
 let failNext = false;
 const reply = (body, ok = true) => Promise.resolve({ ok, json: () => Promise.resolve(body) });
@@ -81,13 +82,13 @@ global.fetch = (url, opts) => {
     const body = JSON.parse(opts.body);
     posts.push(body);
     if (failNext) { failNext = false; return later(5, () => ({ ok: false, json: () => Promise.resolve({ error: 'slow_down', retry_after_s: 3 }) })); }
-    const msg = { seq: server.length + 1, t: state.now, name: body.name || 'viewer', text: body.text };
+    const msg = { seq: server.length + 1, t: state.now, name: body.name || 'viewer', text: body.text, channel: body.channel || 'game' };
     server.push(msg);
     return later(5, () => ({ ok: true, json: () => Promise.resolve({ ok: true, message: msg }) }));
   }
   if (opts && opts.method === 'POST') return reply({ ok: true });
   if (url.indexOf('/v1/chat') >= 0) {
-    gets++; inflight++; maxInflight = Math.max(maxInflight, inflight);
+    gets++; inflight++; maxInflight = Math.max(maxInflight, inflight); urls.push(url);
     const m = /after=(\d+)/.exec(url), after = m ? Number(m[1]) : null;
     return later(40, () => { inflight--; const rows = server.filter((r) => after == null || r.seq > after);
       return { ok: true, json: () => Promise.resolve({ schema: 1, open: true, messages: rows, last_seq: server.length, hidden: [] }) }; });
@@ -112,12 +113,18 @@ setTimeout(() => {
 setTimeout(() => { text.value = 'retry me'; submit(); }, 340);
 setTimeout(() => { text.value = 'something else'; submit(); }, 380);
 setTimeout(() => {
+  // Viewers only (LimeLight555, d16 10:36): ticked, kept, sent with channel "viewers", badged VIEWERS
+  const vb = kids['[name=viewers]'];
+  vb.checked = true; (vb.on.change || []).forEach((f) => f({}));
+  text.value = 'just between us'; submit();
+}, 430);
+setTimeout(() => {
   out.html = kids['#vchat'].innerHTML;
   const box = kids['#vchat-replies'];
   box.checked = false; (box.on.change || []).forEach((f) => f({}));
   out.hidden_html = kids['#vchat'].innerHTML;
   out.stored = stored;
-  out.posts = posts; out.maxInflight = maxInflight; out.gets = gets;
+  out.posts = posts; out.maxInflight = maxInflight; out.gets = gets; out.urls = urls;
   out.board = (kids['#cb-board'] || {}).innerHTML;
   process.stdout.write(JSON.stringify(out), () => process.exit(0));
 }, 600);
@@ -159,9 +166,15 @@ def live_tests():
     assert o["html"].count("something else") == 1, o["html"]
     # one send per press while one is in flight; a message id, reused by the retry of the same text
     posts = o["posts"]
-    assert [p["text"] for p in posts] == ["first message", "retry me", "retry me", "something else"], posts
+    assert [p["text"] for p in posts] == ["first message", "retry me", "retry me", "something else", "just between us"], posts
+    assert [p.get("channel") for p in posts] == [None, None, None, None, "viewers"], posts
+    assert o["urls"] and all("channels=all" in u for u in o["urls"]), o["urls"]  # the page asks for both channels
+    i_vo = next(i for i, (_, t) in enumerate(re.findall(r"<li class=\"([^\"]+)\"[^>]*>(.*?)</li>", o["hidden_html"]))
+                if "just between us" in t)
+    assert re.findall(r"<li class=\"([^\"]+)\"[^>]*>(.*?)</li>", o["hidden_html"])[i_vo][0] == "c-viewers"
+    assert ">VIEWERS<" in o["hidden_html"] and o["stored"].get("chatViewers") == "1", o["stored"]
     assert all(re.fullmatch(r"[0-9a-f]{24}", p["cid"]) for p in posts), posts
-    assert posts[1]["cid"] == posts[2]["cid"] and posts[0]["cid"] != posts[1]["cid"] != posts[3]["cid"], posts
+    assert posts[1]["cid"] == posts[2]["cid"] and posts[0]["cid"] != posts[1]["cid"] != posts[3]["cid"] != posts[4]["cid"], posts
     assert o["disabled_while_sending"] is True
     # replies: under the line they answer, in the agent's colour, tagged; a viewer-addressed line in time order
     html = o["html"]
@@ -214,6 +227,22 @@ const sql = { exec(q, ...params) {
   out.rows = db.prepare('SELECT seq, text, cid FROM chat ORDER BY seq').all();
   const g = await live.fetch(new Request('https://api.test/v1/chat?limit=10'));
   out.get = await g.json();
+  // the viewers-only channel (LimeLight555, d16 10:36): the same limits, moderation, and the relay's read leaves it out
+  out.v_gap = await post({ name: 'fan', text: 'only for viewers', channel: 'viewers' }, '5.6.7.8');  // 4 s gap: shared
+  out.v_bad = await post({ name: 'fan', text: 'x', channel: 'agents' }, '9.9.9.9');
+  out.v_link = await post({ name: 'fan', text: 'see www.example.com', channel: 'viewers' }, '9.9.9.8');
+  out.v = await post({ name: 'fan', text: 'only for viewers', channel: 'viewers', cid: 'b'.repeat(24) }, '9.9.9.7');
+  out.v_again = await post({ name: 'fan', text: 'only for viewers', channel: 'viewers', cid: 'b'.repeat(24) }, '9.9.9.7');
+  const relay = await live.fetch(new Request('https://api.test/v1/chat?after=0&limit=100'));
+  out.relay = await relay.json();
+  const page = await live.fetch(new Request('https://api.test/v1/chat?after=0&limit=100&channels=all'));
+  out.page = await page.json();
+  const vseq = out.v.body.message.seq;
+  const ban = await live.fetch(new Request('https://api.test/v1/mod', { method: 'POST', body: JSON.stringify({ action: 'ban', seq: vseq }),
+    headers: { Authorization: 'Bearer ' + 'x'.repeat(20) } }));
+  out.ban = ban.status;
+  out.after_ban = await (await live.fetch(new Request('https://api.test/v1/chat?after=0&limit=100&channels=all'))).json();
+  out.banned_post = await post({ name: 'fan', text: 'again', channel: 'viewers' }, '9.9.9.7');
   process.stdout.write(JSON.stringify(out));
 })().catch((e) => { console.error(e); process.exit(1); });
 """
@@ -242,14 +271,44 @@ def worker_tests():
     assert o["bad"]["status"] == 400 and "cid" in o["bad"]["body"]["error"], o["bad"]
     assert [(x["text"], x["cid"]) for x in o["rows"]] == [("from before", None), ("hello", "a" * 24), ("hi there", "a" * 24)], o["rows"]
     assert [m["text"] for m in o["get"]["messages"]] == ["from before", "hello", "hi there"] and "cid" not in o["get"]["messages"][1]
+    # viewers-only: shared rate limit, checked channel, the same text rules, stored once per cid
+    assert o["v_gap"]["status"] == 429, o["v_gap"]
+    assert o["v_bad"]["status"] == 400 and "channel" in o["v_bad"]["body"]["error"], o["v_bad"]
+    assert o["v_link"]["status"] == 400 and "links" in o["v_link"]["body"]["error"], o["v_link"]
+    assert o["v"]["status"] == 200 and o["v"]["body"]["message"]["channel"] == "viewers", o["v"]
+    assert o["v_again"]["body"].get("repeat") is True and o["v_again"]["body"]["message"]["channel"] == "viewers"
+    # the relay's read (no channels): game lines only, no channel field, as before; the page's read: both, with channel
+    assert [m["text"] for m in o["relay"]["messages"]] == ["from before", "hello", "hi there"], o["relay"]
+    assert all("channel" not in m for m in o["relay"]["messages"]) and o["relay"]["last_seq"] == o["v"]["body"]["message"]["seq"]
+    assert [(m["text"], m["channel"]) for m in o["page"]["messages"]][-1] == ("only for viewers", "viewers"), o["page"]
+    assert o["page"]["messages"][0]["channel"] == "game"  # a line from before the column: the game channel
+    # moderation: a ban hides the viewers-only lines too and blocks the client
+    assert o["ban"] == 200 and "only for viewers" not in [m["text"] for m in o["after_ban"]["messages"]]
+    assert o["banned_post"]["status"] == 403, o["banned_post"]
+
+
+def relay_tests():
+    """The Mac's relay (tools/stream/viewers.py SiteChat) never passes a viewers-only line on, even if one is read."""
+    sys.path.insert(0, os.path.join(os.path.dirname(SITE), "tools", "stream"))
+    import viewers
+    page = {"schema": 1, "open": True, "last_seq": 3, "hidden": [], "messages": [
+        {"seq": 2, "t": 1.0, "name": "fan", "text": "to the agents"},
+        {"seq": 3, "t": 2.0, "name": "fan", "text": "just viewers", "channel": "viewers"}]}
+    urls = []
+    sc = viewers.SiteChat("https://api.test", fetch=lambda u: urls.append(u) or json.dumps(page))
+    sc.after = 1
+    msgs, _, _ = sc.poll()
+    assert [m["text"] for m in msgs] == ["to the agents"] and sc.after == 3, (msgs, sc.after)
+    assert "channels" not in urls[0], urls  # the relay's read is the game channel only
 
 
 def main():
+    relay_tests()
     payload_tests()
     live_tests()
     worker_tests()
     print("site chat: ok (replies in the state, under the line they answer, hide box kept; one poll at a time, each message"
-          " once; one send at a time with a message id; the worker stores a cid once)")
+          " once; one send at a time with a message id; the worker stores a cid once; viewers-only lines stay on the site)")
 
 
 if __name__ == "__main__":

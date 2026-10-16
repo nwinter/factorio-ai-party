@@ -1733,6 +1733,7 @@ def live_app(heading, sample_href):
           <input class="fx-textfield" name="name" maxlength="20" placeholder="Name" aria-label="Your name">
           <input class="fx-textfield" name="text" maxlength="200" placeholder="Say something" aria-label="Message" required>
           <button class="fx-btn" type="submit">Send</button>
+          <label class="vchat-viewers fx-muted small"><input type="checkbox" name="viewers"> Viewers only: not sent to the agents</label>
         </form>
         <p id="vchat-note" class="fx-muted small" aria-live="polite"></p>
         <dl class="vchat-tips fx-muted small">
@@ -1741,6 +1742,7 @@ def live_app(heading, sample_href):
           <div><dt>@operator</dt><dd>harness suggestions: read, maybe built</dd></div>
           <div><dt>Several</dt><dd>one per person into the game at a time, up to 3 wait their turn</dd></div>
           <div><dt>Rules</dt><dd>no account, no links, be kind</dd></div>
+          <div><dt>VIEWERS</dt><dd>a viewers-only line: here on the site only, never sent to the agents or shown on the stream; tick "Viewers only" to write one</dd></div>
           <div><dt>YT · SITE</dt><dd>YouTube and site comments in one list, in time order; you write as a site comment</dd></div>
           <div><dt>REPLY</dt><dd>an agent or the Operator answering a viewer in the game chat, in its colour, under the line it answers; untick above to hide</dd></div>
         </dl>
