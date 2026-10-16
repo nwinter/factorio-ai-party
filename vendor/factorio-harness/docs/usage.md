@@ -4951,4 +4951,11 @@ fh watch    # deploy on every change
   - The hub must have an empty slot for each stack (and one per ingredient of a craft under way). Otherwise the
     refusal names the hub's empty slots, and nothing changes.
   - Fluids still need `force: true`, as before.
+- `cargo {items: [...], one_rocket: true}` (Sol: 375 explosives and 50 low-density-structure make 1000 kg, hard to find
+  from separate reads) loads one rocket from the list in its order: each item as many as still fit by weight and
+  slots. It returns `items` with kg, `kg`, `slots`, `room_kg`, `room_slots`, `left_over` and a line: `one rocket:
+  explosives 375 (750 kg) + low-density-structure 50 (250 kg) = 1000 of 1000 kg, 9 of 20 slots; full by weight;
+  nothing left over`.
+  - `top_up: "low-density-structure"` then fills the room left with as many of that item as fit.
+  - Without these, `cargo` weighs a list and splits it into rockets, as before.
 

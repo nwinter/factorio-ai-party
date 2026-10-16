@@ -511,3 +511,19 @@ do
   eq(seen[1].walk,nil,'a submitted plan keeps its args')
 end
 print('d15_batch4 12 loop walk: ok')
+
+-- 14 (Sol): cargo fills one rocket from a mix and says what is left over. --------------------------------------------
+do
+  prototypes={item={explosives={weight=2000,stack_size=50},['low-density-structure']={weight=5000,stack_size=50},['iron-plate']={weight=1000,stack_size=100}},
+    utility_constants={rocket_lift_weight=1000000}}
+  local C=dofile('mod/agent-harness_0.1.0/cargo.lua'){}
+  local r=C.one_rocket({{name='explosives',count=375},{name='low-density-structure',count=50}},1000000,20)
+  eq(r.line,'one rocket: explosives 375 (750 kg) + low-density-structure 50 (250 kg) = 1000 of 1000 kg, 9 of 20 slots; full by weight; nothing left over')
+  r=C.one_rocket({{name='explosives',count=400},{name='low-density-structure',count=50}},1000000,20)
+  eq(r.line,'one rocket: explosives 400 (800 kg) + low-density-structure 40 (200 kg) = 1000 of 1000 kg, 9 of 20 slots; full by weight; left over: low-density-structure 10')
+  r=C.one_rocket({{name='explosives',count=375}},1000000,20,'low-density-structure')
+  eq(r.items[2].count,50); eq(r.items[2].top_up,true); eq(r.left_over,nil)
+  r=C.one_rocket({{name='iron-plate',count=200}},1000000,20)
+  eq(r.line,'one rocket: iron-plate 200 (200 kg) = 200 of 1000 kg, 2 of 20 slots; room left 800 kg, 18 slots; nothing left over')
+end
+print('d15_batch4 14 cargo: ok')
