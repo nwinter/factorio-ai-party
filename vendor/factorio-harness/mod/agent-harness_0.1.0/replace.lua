@@ -118,6 +118,13 @@ return function(api)
       add(plan.item, k, pr.count)
       need[#need+1] = {k=k, name=pr.name, quality=pr.quality, count=pr.count}
     end
+    -- An inserter's hand (Sonnet, shift19: an inserter -> fast inserter replace with a full inventory, twice): kept in
+    -- the new inserter's hand when the new one is an inserter, else it needs room like the rest.
+    local okh, hand = pcall(function() local h = o.held_stack; return h and h.valid_for_read and {name=h.name, quality=qname(h), count=h.count} end)
+    if okh and hand then
+      if o.type == 'inserter' and proto.type == 'inserter' then plan.hand = hand
+      else list[#list+1] = hand end
+    end
     for _, s in ipairs(list) do
       local k = key(s.name, s.quality)
       local n = keep and fit(box, s.name, s.quality, s.count) or 0
@@ -212,6 +219,18 @@ return function(api)
       return done
     end
     for k, n in pairs(plan.item) do to_you(k, n) end
+    -- The old inserter's hand into the new one's.
+    if plan.hand and e and e.valid then
+      local hk = key(plan.hand.name, plan.hand.quality)
+      for i = 1, #hold do
+        local s = hold[i]
+        if s.valid_for_read and key(s.name, qname(s)) == hk then
+          local ok = pcall(function() local h = e.held_stack; if not h.valid_for_read then h.transfer_stack(s) end end)
+          if ok and not s.valid_for_read then add(kept, hk, plan.hand.count) end
+          break
+        end
+      end
+    end
     if inv then
       for k, n in pairs(plan.kept) do add(kept, k, move(hold, inv, k, n)) end
     end
@@ -229,7 +248,7 @@ return function(api)
     end
     hold.destroy()
     local parts = {}
-    if next(kept) then parts[#parts+1] = 'kept ' .. list_text(kept) .. ' in the new ' .. e.name end
+    if next(kept) then parts[#parts+1] = 'kept ' .. list_text(kept) .. (plan.hand and not inv and ' in the new ' .. e.name .. '\'s hand' or ' in the new ' .. e.name) end
     if next(moved) then parts[#parts+1] = list_text(moved) .. ' moved to you' end
     if next(spilled) then parts[#parts+1] = list_text(spilled) .. ' spilled at your feet (no room left)' end
     local line = #parts > 0 and table.concat(parts, '; ') or (plan.any and 'none' or 'it was empty')

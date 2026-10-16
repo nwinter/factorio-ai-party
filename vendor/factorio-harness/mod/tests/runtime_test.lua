@@ -449,6 +449,13 @@ do
   local ok,err=pcall(call,'build',{item='wooden-chest',position={x=2,y=0}})
   assert(not ok and tostring(err):find('placement blocked by tiles: wetland-blue-slime (needs landfill',1,true) and not tostring(err):find('ghost',1,true),tostring(err))
 end
+-- Lava (Sonnet, shift19): the tile first, not the research.
+;(function()
+  footprint={}
+  tiles={{name='lava-hot',prototype={collision_mask={layers={lava_tile=true}}}}}
+  local ok,err=pcall(call,'build',{item='wooden-chest',position={x=2,y=0}})
+  assert(not ok and tostring(err):find('placement blocked by tiles: lava-hot (unbuildable: lava',1,true) and not tostring(err):find('shore',1,true),tostring(err))
+end)()
 -- On a platform (Astra, shift19): empty space under it holding foundation tile ghosts not built yet is said so.
 ;(function()
   p.surface.platform={name='Starling'}
@@ -5141,5 +5148,16 @@ end)()
   w=runtime.attach_why(fake,bay,{x=6.5,y=0},0)
   assert(w:find('off the tile grid: a 4x4 cargo-bay centres on tile edges (x 6 or 7, y 0)',1,true),w)
   eq(runtime.attach_why(fake,{name='chest',type='container',tile_width=1,tile_height=1},{x=1.5,y=1.5},0),nil)
+end)()
+-- A walking tour's progress in status active (d15 batch3 item 7; Muse, Luna).
+;(function()
+  local keep=runtime.lookup
+  runtime.lookup=function() return {character={valid=true,position={x=0,y=0}}} end
+  local tgt={{position={x=3,y=4},name='a'},{position={x=6,y=8},entity={valid=true,name='steel-chest'}},{position={x=6,y=20}}}
+  eq(runtime.tour_progress(1,{kind='gather',targets=tgt,index=2,got=40,item='iron-plate'}),
+    'stop 2 of 3 (steel-chest (6,8)), 10 tiles to it, 22 tiles left in all; moved 40 iron-plate so far')
+  eq(runtime.tour_progress(1,{kind='gather',targets=tgt,index=1,got=50,taken=50,legs={{},{}}}),
+    'leg 1 of 3 (a (3,4)), 5 tiles to it, 22 tiles left in all; took 50, delivered 0')
+  runtime.lookup=keep
 end)()
 print('runtime: '..assertions..' assertions passed')

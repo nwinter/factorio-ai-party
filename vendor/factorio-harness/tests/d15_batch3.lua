@@ -224,3 +224,107 @@ do
   eq(out.taken_by_inserters,tk.line); eq(out.follow_chests,'follow: true takes from steel-chest (6.5,-3.5) instead')
 end
 print('d15_batch3 5 collect output takers: ok')
+
+-- 7 (Muse, Luna): history keeps each step's arguments; a finished loop keeps its steps (queue_status {args: true}). -
+do
+  game={tick=0}
+  local state,active={},{}
+  local players={[1]={index=1}}
+  local s=require('scheduler'){
+    state=function() return state end,player=function(i) return players[i] end,
+    handlers={craft=function() return {started=1} end},
+    busy=function() return false end,stop=function() end,stop_index=function() end,
+    outcome=function() return nil end,completion=function() return nil end,
+    condition=function() return false end,validate_condition=function() end,
+  }
+  local h,p=s.handlers,players[1]
+  local function tick() game.tick=game.tick+1; s.tick() end
+  h.queue_submit(p,{steps={{action='craft',args={recipe='iron-gear-wheel',count=5}}}})
+  tick()
+  local q=h.queue_status(p)
+  eq(q.history[#q.history].action,'craft'); eq(q.history[#q.history].args,nil,'no arguments unless asked')
+  q=h.queue_status(p,{args=true})
+  eq(q.history[#q.history].args.recipe,'iron-gear-wheel'); eq(q.history[#q.history].args.count,5)
+  -- a loop of 2 rounds keeps its steps for queue_status {args: true}
+  h.queue_repeat(p,{steps={{action='craft',args={recipe='pipe',count=2}}},times=2,interval_ticks=60})
+  for _=1,200 do tick() end
+  q=h.queue_status(p)
+  eq(q.loop_done.rounds,2); eq(q.loop_done.steps,nil); eq(q.loop_done.steps_count,1)
+  q=h.queue_status(p,{args=true})
+  eq(q.loop_done.steps[1].action,'craft'); eq(q.loop_done.steps[1].args.recipe,'pipe')
+end
+print('d15_batch3 7 history args: ok')
+
+-- 7 (Luna): a queued timed transfer interrupted by a direct action goes on from the stops left. -------------------
+do
+  game={tick=0}
+  local state,active={},{}
+  local players={[1]={index=1}}
+  local s=require('scheduler'){
+    state=function() return state end,player=function(i) return players[i] end,
+    handlers={transfer=function(p,a) active[p.index]=game.tick+1000; return {walking=true} end,craft=function() return {started=1} end},
+    busy=function(p) return active[p.index]~=nil end,stop=function(p) active[p.index]=nil end,stop_index=function(i) active[i]=nil end,
+    outcome=function() return nil end,completion=function() return nil end,
+    condition=function() return false end,validate_condition=function() end,
+  }
+  local h,p=s.handlers,players[1]
+  local function tick() game.tick=game.tick+1; s.tick() end
+  local stops={{x=1.5,y=1.5},{x=10.5,y=1.5},{x=20.5,y=1.5}}
+  h.queue_submit(p,{steps={{action='transfer',args={positions=stops,item='coal',count=20,direction='to_entity',walk=true}},{action='craft'}}})
+  tick()
+  local cur=state.queues and state.queues[1] and state.queues[1].current
+  assert(cur and cur.action=='transfer','the transfer runs')
+  -- the runtime notes the part done (M.tour_mark): one stop done, two left
+  cur.tour_left={positions={{x=10.5,y=1.5},{x=20.5,y=1.5}},done=1,total=3,got=20,item='coal'}
+  s.pause(1)
+  local q=h.queue_status(p)
+  eq(q.pending[1].action,'transfer'); eq(#q.pending[1].args.positions,2); eq(q.pending[1].args.positions[1].x,10.5); eq(q.pending[1].args.count,20)
+  has(q.history[#q.history].result.resumed_from,'1 of 3 stops done (moved 20); requeued with the 2 left')
+  eq(q.history[#q.history].result.requeued,true)
+  -- a courier past its take: requeued as the give at the destination
+  h.queue_cancel(p,{})
+  h.queue_submit(p,{steps={{action='transfer',args={pick='first_with_stock',positions={{x=1.5,y=1.5}},item='iron-plate',to={x=30.5,y=4.5},count=50}}}})
+  h.queue_resume(p,{}); tick()
+  cur=state.queues[1].current
+  cur.tour_left={positions={{x=30.5,y=4.5}},done=1,total=2,got=50,item='iron-plate',courier=true,taken=50}
+  s.pause(1)
+  q=h.queue_status(p)
+  eq(q.pending[1].args.position.x,30.5); eq(q.pending[1].args.count,50); eq(q.pending[1].args.direction,'to_entity'); eq(q.pending[1].args.pick,nil)
+  has(q.history[#q.history].result.resumed_from,'the take is done (50 iron-plate); requeued as the give at (30.5,4.5)')
+end
+print('d15_batch3 7 resume: ok')
+
+-- 8 (Sonnet): a fast replace of an inserter keeps what its hand holds in the new inserter's hand. ----------------
+do
+  prototypes={item={['iron-plate']={stack_size=100},inserter={stack_size=50},['fast-inserter']={stack_size=50}}}
+  defines={inventory={chest=1}}
+  local function stack(name,count)
+    local s={name=name,count=count,valid_for_read=name~=nil,quality='normal'}
+    s.clear=function() s.name=nil; s.count=0; s.valid_for_read=false end
+    s.transfer_stack=function(o) s.name,s.count,s.valid_for_read=o.name,o.count,true; o.clear(); return true end
+    return s
+  end
+  -- the character's inventory: its one slot full of iron plates; the build uses its last fast inserter
+  local main={stack('iron-plate',100)}
+  main.supports_filters=function() return false end
+  local p={get_main_inventory=function() return main end,insert=function() return 0 end,surface={spill_item_stack=function() error('nothing spills') end},position={x=0,y=0}}
+  local old={valid=true,name='inserter',type='inserter',position={x=3.5,y=4.5},held_stack=stack('iron-plate',5),get_max_inventory_index=function() return 0 end,
+    prototype={mineable_properties={products={{type='item',name='inserter',amount=1}}}},quality='normal'}
+  local RP=require('replace'){}
+  local plan=RP.plan(p,old,{type='inserter',name='fast-inserter'},'normal',1)
+  eq(plan.error,nil); eq(plan.hand.name,'iron-plate'); eq(plan.hand.count,5)
+  -- after the build: the hold has the old inserter and its hand; the new one's hand takes the plates
+  local hold={stack('inserter',1),stack('iron-plate',5)}
+  hold.destroy=function() end
+  local got={}
+  p.insert=function(s) got[#got+1]=s.name; return s.count end
+  local new={valid=true,name='fast-inserter',held_stack=stack()}
+  local line=RP.give(p,new,hold,plan)
+  eq(new.held_stack.name,'iron-plate'); eq(new.held_stack.count,5)
+  has(line,"kept 5 iron-plate in the new fast-inserter's hand")
+  -- an inserter hand that would need room it does not have is named in the refusal
+  main[1]=stack('copper-plate',100)
+  plan=RP.plan(p,old,{type='container',name='wooden-chest'},'normal',0)
+  has(plan.error,'your inventory has no room for'); has(plan.error,'5 iron-plate')
+end
+print('d15_batch3 8 fast replace hand: ok')

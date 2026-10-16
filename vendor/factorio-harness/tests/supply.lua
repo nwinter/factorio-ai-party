@@ -467,5 +467,11 @@ do
   local t={item=AC,chests={{e=c5,kind='requester',n=900},{e=c8,kind='buffer',n=800},{e=c1,kind='passive-provider',n=3},{e=c,kind='chest',n=6}}}
   local r=S.surplus_chest(t)
   eq(r.name,'steel-chest');eq(r.free,6);eq(r.reserved,0)
-  t.chests[4]=nil;eq(S.surplus_chest(t),nil,'provider is fully reserved')
+  -- fully reserved (Haiku, shift19): said as reserved, not left out
+  t.chests[4]=nil
+  local rr=S.surplus_chest(t)
+  eq(rr.free,0); assert(rr.line:find('3 held, all reserved for robot pickups',1,true),rr.line)
+  -- and the chests row says how much of it robots have reserved
+  local rows=S.top_chests({item=AC,chests={{e=c1,kind='passive-provider',n=3}},request_of={}})
+  assert(rows[1]:find('reserved for robots to take',1,true),rows[1])
 end
