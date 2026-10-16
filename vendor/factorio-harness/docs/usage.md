@@ -4722,3 +4722,14 @@ fh watch    # deploy on every change
 - `blueprint_save` and `blueprint_capture` take `platform=NAME` (Astra, cloning platform Starling into a new platform
   Swift): they capture on that space platform by remote view, in platform coordinates (hub at 0,0), as `paste` and
   `blueprint_place` already place there. Aboard a platform they act on it as before.
+- Route preview (Haiku died on a 500-tile move_to with `avoid_enemies {distance: 12}` past big worms of range 38;
+  Luna walked into an enclosed core twice): `move_to {..., dry_run: true}` walks nothing (a read). It reads the
+  route now, without the engine's pathfinder: `route` and `length` (straight lines through the via points, round the
+  worms and spawners the map shows as a walk plans its legs), `enemies` (each worm, spawner and area under attack
+  within reach: `big-worm-turret (250,0) range 38: closest pass 14 tiles at (251,14) (24 inside it)`, nearest its
+  range first, up to 8), `reachable`, `closed_in_start` / `closed_in_goal` (no way out within 24 tiles) with
+  `mine_for_a_way_in` (the fewest of our entities, trees or rocks to mine, the first met first), and `unsafe_goal`
+  (said instead of refused). `feed`, `collect`, `transfer`, `rearm` and `refuel` take `dry_run: true` with positions:
+  the same read through the stops, nearest first from you (radius and area tours choose their stops when they run).
+  With `avoid_enemies {distance: N}`, `under_range` names the worms on the route whose range is more than N, on the
+  dry run and on a live move_to's reply.

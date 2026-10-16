@@ -151,3 +151,38 @@ do
   eq(A.idle_ammo(A.read(p)),nil)
 end
 print('d15_batch3 3 ammo slots: ok')
+
+-- 4 (Haiku, Luna): the route read before walking: worms on the way with their range, closed-in goals. ------------
+do
+  game={tick=100,forces={player={name='player'},enemy={name='enemy'}}}
+  prototypes={entity={['big-worm-turret']={attack_parameters={range=38}},['biter-spawner']={result_units={}}}}
+  local force=game.forces.player
+  force.get_friend=function() return false end; force.get_cease_fire=function() return false end
+  local worm={valid=true,name='big-worm-turret',type='turret',position={x=250,y=0},force=game.forces.enemy}
+  local surface={name='nauvis',index=1,find_entities_filtered=function() return {worm} end}
+  local st={}
+  local A=require('avoid'){state=function() return st end,charted=function() return true end,leg=function() return false end}
+  local closed_goal=false
+  local P={half=function() return 0.2 end,area_text=function() return 'the area (10,10)-(20,20) has no gap' end,
+    region=function(_,q) return {closed=closed_goal and q.x==500} end,
+    dig=function() return {mine={{name='stone-wall',position={x=21.5,y=15.5}},{name='steel-chest',position={x=22.5,y=15.5}}}} end}
+  local RC=require('routecheck'){avoid=A,pathing=P}
+  local p={index=1,position={x=0,y=0},surface=surface,force=force,character={}}
+  local out=RC.check(p,{{x=0,y=0},{x=500,y=0}},A.mode({distance=12}))
+  has(out.enemies[1],'big-worm-turret (250,0) range 38: closest pass ')
+  has(out.enemies[1],'inside it)')
+  has(out.under_range[1],'big-worm-turret (250,0) range 38 is more than distance 12; the route passes ')
+  has(out.route,'round worms and spawners')
+  has(out.reachable,'not closed in at either end')
+  -- the default margins keep the route out of its range
+  out=RC.check(p,{{x=0,y=0},{x=500,y=0}},A.mode(nil))
+  assert(not out.enemies[1]:find('inside it',1,true),out.enemies[1]); eq(out.under_range,nil)
+  -- a live move_to with distance 12 names the worm too (on the straight line)
+  has(RC.under_live(p,{{x=0,y=0},{x=500,y=0}},A.mode({distance=12}))[1],'passes 0 tiles from it')
+  -- a closed goal: the entities to mine for a way in, the first met first
+  closed_goal=true
+  out=RC.check(p,{{x=0,y=0},{x=500,y=0}},A.mode(nil))
+  eq(out.reachable,'no: closed in at the goal'); eq(out.mine_for_a_way_in[1],'steel-chest (23,16)')
+  has(out.closed_in_goal,'the goal: the area')
+end
+print('d15_batch3 4 route check: ok')
