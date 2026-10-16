@@ -5167,3 +5167,11 @@ fh watch    # deploy on every change
   - Project steps show each step's own owner (`· Luna`) and a `parallel` marker. A board step line keeps its owner and
     `(parallel)` once done too: `[x] 1. Lay foundation (sol) (parallel) (done by sol, 2m00s ago)`. The parallel steps
     right after the next one are marked next as well.
+- `requests {platform, set: [{item, min, from, min_payload}]}`: the GUI's custom minimum payload per request on a
+  platform hub (LogisticFilter `minimum_delivery_count`; Astra 03:59, Sonnet). An edit that does not name it keeps
+  the slot's (`min payload kept: not named in this edit`); `false` (or 0) clears it. Request lines read `stone
+  50..inf from fulgora min payload 10`. What it does, seen on 2.0.77 on the copy of world n, Swift above Fulgora with
+  the silos' automatic requests on:
+  - `stone min 50, min_payload 10`: the silos sent three rockets, of 28, 10 and 12 stone, 50 in all.
+  - `concrete min 50`, no minimum payload: one full rocket, 100 concrete.
+  - So `min` is how much the hub asks for; `min_payload` is how little one rocket may carry for it.

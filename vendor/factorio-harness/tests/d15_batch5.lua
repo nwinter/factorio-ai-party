@@ -119,3 +119,34 @@ do
   eq(once.added,2)
 end
 print('d15_batch5 I reminders: ok')
+
+-- C1 (Astra, Sonnet): a platform request's minimum payload (the GUI's custom minimum payload, minimum_delivery_count). -
+do
+  defines={space_platform_state={paused=7},rocket_silo_status={},inventory={hub_main=1,hub_trash=2},cargo_destination={}}
+  prototypes={item={stone={},coal={}},space_location={nauvis={},fulgora={}},quality={normal={}}}
+  local slots={}
+  local sec={index=1,is_manual=true,group='',active=true,filters_count=0}
+  local function recount() local n=0; for i in pairs(slots) do n=math.max(n,i) end; sec.filters_count=n end
+  sec.get_slot=function(i) return slots[i] or {} end
+  sec.set_slot=function(i,f) slots[i]=f; recount() end
+  sec.clear_slot=function(i) slots[i]=nil; recount() end
+  setmetatable(sec,{__index=function(_,k) if k=='filters' then local out={}; for i=1,sec.filters_count do out[i]=slots[i] or {} end; return out end end})
+  local secs=setmetatable({get_section=function(i) return i==1 and sec or nil end,add_section=function() return sec end},{__index=function(_,k) if k=='sections_count' then return 1 end end})
+  local main={get_item_count=function() return 0 end,get_contents=function() return {} end}
+  local platform={valid=true,name='Swift',index=1,space_connection={},
+    hub={valid=true,type='space-platform-hub',position={x=0,y=0},get_logistic_sections=function() return secs end,get_inventory=function() return main end}}
+  local p={index=1,force={platforms={platform}}}
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return {} end,
+    integer=function(v,d,lo,hi,name) v=v==nil and d or v; assert(type(v)=='number' and v>=lo and v<=hi,name..' out of range'); return v end,
+    keep=function() return {set_construction=function(_,on) return on end,construction=function() return nil end} end,freight={where=function() return {} end}}
+  local r=space.requests(p,{platform='Swift',set={{item='stone',min=50,from='fulgora',min_payload=10}}})
+  eq(slots[1].minimum_delivery_count,10); eq(r.stored[1],'stone 50..inf from fulgora min payload 10')
+  -- an edit that does not name it keeps it; false clears it
+  r=space.requests(p,{platform='Swift',set={{item='stone',min=80}}})
+  eq(slots[1].minimum_delivery_count,10); has(r.stored[1],'stone 80..inf from fulgora min payload 10 (import planet kept: not named in this edit) (min payload kept: not named in this edit)')
+  r=space.requests(p,{platform='Swift',set={{item='stone',min=80,min_payload=false}}})
+  eq(slots[1].minimum_delivery_count,nil); eq(r.stored[1],'stone 80..inf from fulgora (import planet kept: not named in this edit) (was stone 80..inf from fulgora min payload 10)')
+  fails(function() space.requests(p,{platform='Swift',set={{item='coal',min=5,min_payload=2.5}}}) end,'min_payload must be 1..1000000')
+  fails(function() space.requests({index=2,force={platforms={}},get_main_inventory=function() return main end,get_requester_point=function() return nil end},{set={{item='coal',min=5,min_payload=3}}}) end,'')
+end
+print('d15_batch5 C1 min payload: ok')

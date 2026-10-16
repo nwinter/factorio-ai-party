@@ -88,7 +88,10 @@ return function(api)
     if f.max and f.max==f.min then text=text..'='..f.min
     else text=text..' '..(f.min or 0)..'..'..(f.max and tostring(f.max) or 'inf') end
     local from=hub and f.import_from and (type(f.import_from)=='string' and f.import_from or f.import_from.name)
-    return from and text..' from '..from or text
+    text=from and text..' from '..from or text
+    -- The GUI's custom minimum payload per request (LogisticFilter minimum_delivery_count; Astra 03:59).
+    if hub and f.minimum_delivery_count then text=text..' min payload '..f.minimum_delivery_count end
+    return text
   end
   local function list_sections(secs,hub)
     local out={}
@@ -182,7 +185,17 @@ return function(api)
         assert(type(from)=='string' and prototypes.space_location[from],
           'from is the planet a platform hub imports the item from, a space location ('..table.concat(names,', ')..'): '..tostring(from)..' is not one')
       end
-      entries[k]={name=name,quality=quality,min=min,max=max,inf=inf,from=from}
+      -- min_payload (Astra 03:59, Sonnet): the GUI's custom minimum payload for this request on a platform hub
+      -- (minimum_delivery_count): automatic silos send a rocket for it once that much of it is ready; false or 0 clears it.
+      local mp=r.min_payload
+      if mp==nil then mp=r.minimum_delivery_count end
+      if mp~=nil then
+        local is_hub=a.platform~=nil or (chest and chest.type=='space-platform-hub')
+        assert(is_hub,'min_payload is a platform hub request setting (the GUI\'s custom minimum payload)')
+        assert(mp==false or (type(mp)=='number' and mp==math.floor(mp) and mp>=0 and mp<=1000000),'min_payload must be 1..1000000 items, or false (or 0) to clear it')
+        if mp==0 then mp=false end
+      end
+      entries[k]={name=name,quality=quality,min=min,max=max,inf=inf,from=from,min_payload=mp}
     end
     return entries
   end
@@ -305,10 +318,14 @@ return function(api)
           from=type(old.import_from)=='string' and old.import_from or try(function() return old.import_from.name end)
           kept=from~=nil
         end
+        -- The minimum payload: the one named (false clears it), else the slot's, as for the import planet.
+        local mp,mp_kept=e.min_payload,false
+        if mp==nil and old and old.minimum_delivery_count then mp=old.minimum_delivery_count; mp_kept=true end
         local was=old and filter_text(old,is_hub)
-        ssec.set_slot(i,{value={type='item',name=name,quality=quality,comparator='='},min=min,max=max,import_from=from}); changed=true
+        ssec.set_slot(i,{value={type='item',name=name,quality=quality,comparator='='},min=min,max=max,import_from=from,minimum_delivery_count=mp or nil}); changed=true
         local now=filter_text(ssec.get_slot(i),is_hub) or name
-        stored[#stored+1]=now..max_note..(kept and is_hub and ' (import planet kept: not named in this edit)' or '')..(was and was~=now and ' (was '..was..')' or '')
+        stored[#stored+1]=now..max_note..(kept and is_hub and ' (import planet kept: not named in this edit)' or '')
+          ..(mp_kept and ' (min payload kept: not named in this edit)' or '')..(was and was~=now and ' (was '..was..')' or '')
       end
       if not touched then touch(default_section()) end
       if #sections_touched>1 then table.sort(sections_touched); others[#others+1]='sections changed: '..table.concat(sections_touched,', ') end
@@ -1405,7 +1422,7 @@ return function(api)
   end
   M.schema={
     requests={surface='optional planet name, with position: a requester or buffer chest or landing pad there by remote view, where our force sees the chunk (the reply\'s target says on which surface)',target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
-      set='array of {item,min,max? (omitted: the slot\'s max is kept while at least min; "inf": none),quality?,from? (planet to import from, platform hubs; omitted: the planet the slot already has is kept)} (a map {item: min} runs as that list); replaces that item\'s slot',clear='array of item names whose request slot is deleted (what is held stays)',remove='the same as clear',force='true: set a personal max under what you hold (the game moves the rest to your trash); without it such a set is refused',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
+      set='array of {item,min,max? (omitted: the slot\'s max is kept while at least min; "inf": none),quality?,from? (planet to import from, platform hubs; omitted: the planet the slot already has is kept),min_payload? (platform hubs: the GUI\'s custom minimum payload for the request, minimum_delivery_count; omitted: the slot\'s is kept; false clears it). Seen on 2.0.77 above Fulgora: with min_payload 10 and min 50, automatic silos sent rockets of 28, 10 and 12 stone, 50 in all; with none, one full rocket (100 concrete for a min of 50). min is how much the hub asks for; min_payload how little a rocket may carry for it} (a map {item: min} runs as that list); replaces that item\'s slot',clear='array of item names whose request slot is deleted (what is held stays)',remove='the same as clear',force='true: set a personal max under what you hold (the game moves the rest to your trash); without it such a set is refused',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       active='boolean: switch the section on or off (the GUI\'s checkbox; a section that is off requests nothing)',
       construction_requests='platform hub: boolean, the hub\'s Request missing construction materials (on: the game keeps a section requesting what the platform\'s ghosts need; a paste of a hub blueprint that has it off switches it off, and paste switches it back on)',
       returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"]}], changed_section (only when a slot was set or cleared or the section switched; else unchanged), stored (each item this call set or cleared, as read back from its slot: "processing-unit 0..400 from vulcanus (import planet kept: not named in this edit) (was 0..200 from vulcanus)", "coal: cleared (was coal=500 from vulcanus)"), note (sections that are off but hold requests); on a platform hub: construction_requests (on: its controlled section lists what the ghosts need), construction_overlap (items a manual section requests too: the hub requests the sum), over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); call with no set/clear/active to just read'},
