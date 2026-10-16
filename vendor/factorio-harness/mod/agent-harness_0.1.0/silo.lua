@@ -319,6 +319,10 @@ return function(api)
     if row.trash then words[#words+1] = 'trash slots: ' .. row.trash end
     row.auto_requests = try(function() return e.use_transitional_requests end) and true or false
     words[#words+1] = 'automatic requests ' .. (row.auto_requests and 'on (the silo launches for platforms\' requests itself)' or 'off')
+    if row.auto_requests then
+      local ok, w = pcall(M.auto_wait, e, force, loaded)
+      if ok and w then row.auto_waits = w; words[#words+1] = 'automatic launch: ' .. w end
+    end
     row.send_to_orbit_automatically = try(function() return e.send_to_orbit_automatically end) and true or false
     if row.send_to_orbit_automatically then words[#words+1] = 'send to orbit automatically on' end
     row.platforms_above = platforms_above(force, try(function() return e.surface.planet and e.surface.planet.name end))
@@ -333,6 +337,67 @@ return function(api)
     end
     row.line = table.concat(words, '; ')
     return row
+  end
+  -- What automatic launch waits for (Muse, d15 shifts 19-20, twice: Starling asked 50 low-density-structure and no
+  -- rocket went up). Seen on a 2.0.77 copy of world n: with automatic requests on, the silo's own logistic request
+  -- (its rocket_silo_requester point) asked its network for 200 low-density-structure, a full rocket by weight at 5 kg
+  -- each, both for a platform asking 50 with no max and for one asking 400..400 holding 350, and the rocket went up once
+  -- it held about 200. So the line gives the platform it fills a rocket for, the silo's request against what the rocket
+  -- holds and what its network holds; with no platform taken up, the platforms stopped above that ask this planet for
+  -- items they lack, with what the network holds of each and a full rocket of it (on the copy: with 16-30
+  -- low-density-structure in its network the silo took up no platform asking for it; with 320 it filled 200 and launched).
+  -- The harness does not change the rule.
+  function M.auto_wait(e, force, loaded)
+    local target = try(function() local t = e.transitional_request_target; return t and t.valid and t.name or nil end)
+    local pt = defines.logistic_member_index.rocket_silo_requester and try(function() return e.get_logistic_point(defines.logistic_member_index.rocket_silo_requester) end)
+    local ln = try(function() return e.surface.find_logistic_network_by_position(e.position, force) end)
+    local have = {}
+    for _, s in ipairs(loaded or {}) do have[s.name] = (have[s.name] or 0) + s.count end
+    local parts = {}
+    for _, f in ipairs(pt and try(function() return pt.filters end) or {}) do
+      local name = type(f.name) == 'string' and f.name or try(function() return f.name.name end)
+      if name and (f.count or 0) > 0 then
+        local free = ln and (try(function() return ln.get_item_count(name) end) or 0) or 0
+        local w = try(function() return prototypes.item[name].weight end)
+        local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end)
+        local full = w and lift and w > 0 and math.floor(lift / w) or nil
+        local short = f.count - (have[name] or 0)
+        parts[#parts+1] = string.format('%s %d of %d aboard%s; its network holds %d more%s', name, have[name] or 0, f.count,
+          full and f.count == full and string.format(' (a full rocket by weight, %g kg each)', w / 1000) or '', math.max(0, free),
+          short > 0 and free < short and string.format(', under the %d it still waits for', short) or '')
+      end
+    end
+    if target then
+      return string.format('filling a rocket for %s: %s; it goes up once the rocket holds what the silo requests (on 2.0.77 a full rocket of the item, whatever the platform lacks)',
+        target, #parts > 0 and table.concat(parts, '; ') or 'the silo requests nothing from its network now')
+    end
+    -- No platform taken up: the platforms above asking this planet for items they lack.
+    local planet = try(function() return e.surface.planet.name end)
+    local asks = {}
+    for _, pl in pairs(try(function() return force.platforms end) or {}) do
+      local loc = pl.valid and try(function() return pl.space_location.name end)
+      if loc == planet and pl.hub and pl.hub.valid then
+        local secs = try(function() return pl.hub.get_logistic_sections() end)
+        for i = 1, secs and secs.sections_count or 0 do
+          local sec = try(function() return secs.get_section(i) end)
+          for _, f in ipairs(sec and sec.active ~= false and try(function() return sec.filters end) or {}) do
+            local v = f.value
+            local name = v and (type(v.name) == 'string' and v.name or try(function() return v.name.name end))
+            local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
+            local held = name and (try(function() return pl.hub.get_item_count(name) end) or 0) or 0
+            if name and from == planet and (f.min or 0) > held and #asks < 6 then
+              local w = try(function() return prototypes.item[name].weight end)
+              local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end)
+              local free = ln and (try(function() return ln.get_item_count(name) end) or 0) or 0
+              asks[#asks+1] = string.format('%s asks %s %d (holds %d); the silo\'s network holds %d%s', pl.name, name, f.min, held, math.max(0, free),
+                w and lift and w > 0 and string.format(', a full rocket of it is %d by weight', math.floor(lift / w)) or '')
+            end
+          end
+        end
+      end
+    end
+    if #asks > 0 then return 'no platform taken up now; above ' .. planet .. ': ' .. table.concat(asks, '; ') end
+    return 'no platform stopped above ' .. tostring(planet) .. ' asks it for items it lacks'
   end
   -- The silo GUI's switches as they stand, with where the silo is (configure and launch read them back after a change).
   function M.settings(e)

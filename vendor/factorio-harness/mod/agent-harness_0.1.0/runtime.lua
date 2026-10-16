@@ -10248,7 +10248,7 @@ end
 local conditions=conditions_module{known=known,position=position,passing=function(e) return M.passing(e) end,
   -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
   platform_where=function(pl) return M.freight and M.freight.where(pl) end}
-M.waiteta=require('waiteta'){state=state,check=function(p,c,record) return conditions.check(p,c,true,record) end,
+M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.before_departure(pl,loc) end,state=state,check=function(p,c,record) return conditions.check(p,c,true,record) end,
   research_rate=function(name) return M.research.rate(name) end,crafting_left=crafting_left,
   busy=function(s,index) return M.idle.busy(s,index) end,
   has_body=function(index) local p=M.lookup(index); return p and p.valid and p.character and p.character.valid end}

@@ -382,3 +382,48 @@ do
   eq(R.one_item(e),nil,'two items')
 end
 print('d15_batch4 6 requester chests: ok')
+
+-- 7 (Sonnet): a platform's arrival estimated before it leaves its stop. -------------------------------------------
+do
+  defines={space_platform_state={on_the_path=9},inventory={hub_main=1,hub_trash=2}}
+  prototypes={space_connection={['gleba-nauvis']={from={name='nauvis'},to={name='gleba'},length=15000}}}
+  game={tick=10000}
+  local st={}
+  local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return st end}
+  local pl={valid=true,index=3,name='Starling',state=1,paused=false,space_location={name='gleba'},
+    schedule={current=1,records={{station='gleba',wait_conditions={{type='time',ticks=3600},{type='all_requests_satisfied'}}},{station='nauvis',wait_conditions={{type='time',ticks=1800}}}}}}
+  st.freight={[3]={segs={{kind='stop',at='gleba',start=9400}},speed=2}}  -- 2 km a tick: 120 km/s
+  local r=F.before_departure(pl,'nauvis')
+  eq(r.after_s,175); eq(r.eta_s,nil)
+  eq(r.line,'ETA 175s after gleba: all_requests_satisfied: leaves gleba when time 60s and all_requests_satisfied; gleba->nauvis 15000 km at 120 km/s (its last speed): 125s')
+  pl.schedule.records[1].wait_conditions={{type='time',ticks=3600}}
+  r=F.before_departure(pl,'nauvis')
+  eq(r.eta_s,175); has(r.line,'ETA 175s before departure: leaves gleba when time 60s')
+  eq(select(2,F.before_departure(pl,'vulcanus')),'its schedule does not go to vulcanus')
+  st.freight[3].speed=nil
+  eq(select(2,F.before_departure(pl,'nauvis')),'no flying speed seen yet for Starling')
+  -- waiteta uses it while no leg is flown.
+  st.freight[3].speed=2
+  local W=dofile('mod/agent-harness_0.1.0/waiteta.lua'){before_departure=function(a,b) return F.before_departure(a,b) end}
+  local row=W.estimate({},{['until']='platform_arrived',platform='Starling',location='nauvis'},false,{platform=pl},{})
+  eq(row.eta_s,175); has(row.line,'platform_arrived Starling: ETA 175s (before departure: leaves gleba when time 60s')
+end
+print('d15_batch4 7 platform arrival: ok')
+
+-- 8 (Muse): what automatic launch waits for. -------------------------------------------------------------------------
+do
+  defines={logistic_member_index={rocket_silo_requester=4}}
+  prototypes={item={['low-density-structure']={weight=5000}},utility_constants={rocket_lift_weight=1000000}}
+  local net={get_item_count=function() return 30 end}
+  local pt={filters={{name='low-density-structure',count=200}}}
+  local silo={position={x=15.5,y=59.5},surface={planet={name='nauvis'},find_logistic_network_by_position=function() return net end},
+    transitional_request_target={valid=true,name='Starling'},get_logistic_point=function() return pt end}
+  local hub={valid=true,get_item_count=function() return 0 end,get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,
+    filters={{value={name='low-density-structure'},min=50,import_from={name='nauvis'}}}} end} end}
+  local force={platforms={{valid=true,name='Starling',space_location={name='nauvis'},hub=hub}}}
+  local S=dofile('mod/agent-harness_0.1.0/silo.lua'){}
+  eq(S.auto_wait(silo,force,{{name='low-density-structure',count=14}}),'filling a rocket for Starling: low-density-structure 14 of 200 aboard (a full rocket by weight, 5 kg each); its network holds 30 more, under the 186 it still waits for; it goes up once the rocket holds what the silo requests (on 2.0.77 a full rocket of the item, whatever the platform lacks)')
+  silo.transitional_request_target=nil
+  eq(S.auto_wait(silo,force,{}),'no platform taken up now; above nauvis: Starling asks low-density-structure 50 (holds 0); the silo\'s network holds 30, a full rocket of it is 200 by weight')
+end
+print('d15_batch4 8 silo: ok')
