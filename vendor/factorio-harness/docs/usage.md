@@ -5426,3 +5426,34 @@ fh watch    # deploy on every change
   `direction: to_player`, `to_inventory` with `to_entity`. Checked on the copy: 5 copper cable from an assembler's
   input into a requester chest. A courier whose take place is never reached now ends `unreached` with nothing given
   (on the copy it had given one from the character's inventory).
+- Robots per roboport (Haiku 07:50: needed 20 robots and fell back to inserter feeds): `stock {network}` adds
+  `roboports`, the robots each roboport of the network holds, most first (`roboport (64,209): logistic-robot 131,
+  construction-robot 6`; on the copy Fulgora's #96, 17 roboports, 1.3 ms in the container). Taking robots out of a
+  roboport with `transfer {direction: to_player, item: logistic-robot}` already worked (inventory `roboport_robot`);
+  area `inspect` with `types: ["roboport"]` lists each one's robots too. Both are now in the brief.
+- `stock {item, holders}` (Muse 09:24: 3-4 calls to find a provider robots had not committed; places stop at 8 by
+  default, 32 with `limit`): `holders` keeps only those kinds of place (provider, storage, requester, buffer, chest,
+  machine, wagon, pad, vehicle); each place now says its `kind` and `reserved` (robots' pickup reservations there). On
+  the copy: copper cable, providers and storage, 4 places in 3 ms in the container.
+- `reservations {network, item?, surface?}` (Luna 06:20: on Gleba 23 nutrients were all reserved across 14
+  requesters, 245 short, while 44 robots sat idle; the cause was chests full of seeds and spoilage), read only: pickup
+  reservations at each provider and storage chest; each requester or buffer short or with deliveries on the way (per
+  item its request, what it holds, what is on the way, `no room for it` when every slot is taken; free slots); the
+  logistic robots' orders grouped by item and target (`35 robots with 91 iron-gear-wheel for requester-chest
+  (29.5,202.5)`); flags: reservations while robots are idle, orders to a chest with no room, requesters with deliveries
+  on the way and no room. Releasing a reservation is no player action: nothing changes. On the copy: Fulgora's #96, 832
+  robots, 532 orders, 17 ms in the container (about 3.5 ms on n); the robots read stop at 1024.
+- `supply {item, compact: true}` and `science {compact: true}` (Muse 06:21: the replies run to thousands of tokens, a
+  dozen reads a shift): lines only. supply: flow, where, makers, the three stopped makers and users by position, the
+  chests holding most, the surplus chest; science: the research and one line a pack (made and used in 10 min, makers
+  and their states, labs lacking), no holders or reach. On the copy: supply iron-gear-wheel 10.3k characters to 2.1k;
+  science 38.5k to 1.7k.
+- A hand-built inserter (Muse 07:51: three backwards inserters, about 30 minutes) says what its pickup and drop sides
+  touch in the build reply, as check_inserters reads them: `pickup: requester-chest (44.5,190.5)`, `drop: none: the
+  ground at (42.5,190.5)`, beside `inserter` (the direction in words) and `io_warning`. Checked on the copy.
+- `placements` with nothing fitting (Astra 06:22, 4 times on Fulgora: a roboport in a dense accumulator field) adds
+  `fewest_to_clear`: up to 3 spots within 12 tiles of the centre whose blockers are all ours and minable (or trees and
+  rocks), on tiles the entity stands on, fewest removals first: `(47,187): mine 2 first (accumulator 2): accumulator
+  (48,186), accumulator (48,188)`. One read of the area's entities and tiles, the spots tried in Lua. On the copy: a
+  roboport at radius 1 in Fulgora's accumulators 1.5 ms in the container; the worst case seen, a rocket silo at radius
+  24 in the base, 30 ms in the container (about 6 ms on n; 93 ms before the 12-tile cap).

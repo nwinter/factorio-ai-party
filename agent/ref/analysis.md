@@ -67,3 +67,14 @@
   in the air with its charge, cargo, orders and what holds it up (no storage for what it holds, target out of the
   area, waiting to charge).
 - The operator factory digest arrives by `tell` at deadline minus 2 hours, or on operator request: cached planetary machine/fuel counts and sampled belt ends, with observation ages; missing data is unknown.
+- `stock {network: 96}` (the number `networks` and an `inspect` of a roboport give): what a logistic network holds,
+  its robots, and `roboports`: the robots each roboport holds, most first. `transfer {position: a roboport,
+  direction: "to_player", item: "logistic-robot", count}` takes robots out of it, as its GUI does. `stock {item,
+  surface}` gives a planet's whole stock of an item. `stock {item, holders: ["provider", "storage"], limit: 32}` lists only those kinds of place;
+  each place says its `kind` and what robots have `reserved` there.
+- `reservations {network, item?}` (read only): what robots have reserved to pick up at each provider and storage
+  chest, each requester short or with deliveries on the way (its request, what it holds, what is coming, no room when
+  every slot is taken), the robots' orders by item and target, and `flags` (reservations while robots are idle, orders
+  to a chest with no room for the item).
+- `supply {item, compact: true}` and `science {compact: true}`: lines only (supply: flow, where, makers, the stopped
+  makers and users by position, the chests holding most; science: one line a pack), about a fifth of the full reply.

@@ -649,6 +649,12 @@ return function(api)
     local pad = api.one_pad and try(function() return api.one_pad(p.surface, p.force, proto) end)
     if pad then out.one_per_planet = pad end
     if #found == 0 then out.in_the_way = pad or M.in_the_way(p, proto, pos, radius) end
+    -- None fits: the spots that need the fewest of our entities (or trees and rocks) mined first (Astra 06:22, 4 times on
+    -- Fulgora: a roboport in a full accumulator field), as a player would clear a site.
+    if #found == 0 and not pad then
+      local ok, sites = pcall(M.fewest_to_clear, p, proto, pos, radius, seen)
+      if ok and sites and #sites > 0 then out.fewest_to_clear = sites end
+    end
     if #found > 1 and not a.separate then
       local pairs_n = 0
       for i = 1, #found do
@@ -699,6 +705,97 @@ return function(api)
   end
   -- When nothing fits: what stands in the search square, by name with the nearest one, cliffs among them, and the
   -- tiles it cannot stand on, by name (one entity and one tile read; at most 4000 each).
+  -- Spots for proto (its north footprint, on the tile grid) within radius of pos whose blockers are all ours and
+  -- minable, or trees and rocks, with no tile it cannot stand on: the 3 needing the fewest removed, nearest first among
+  -- equals. One read of the area's entities and tiles; the spots are tried in Lua.
+  M.CLEAR_RADIUS = 12
+  function M.fewest_to_clear(p, proto, pos, radius, seen)
+    local s = p.surface
+    local mask = try(function() return proto.collision_mask end)
+    local layers = {}
+    for layer in pairs(mask and mask.layers or {}) do layers[#layers+1] = layer end
+    if #layers == 0 then return nil end
+    local bx = box_of(proto, 0)
+    -- (at most 12 tiles from pos: 625 spots; radius 24 with a 9x9 footprint read 93 ms in a 2.0.77 container)
+    radius = math.min(radius, M.CLEAR_RADIUS)
+    local reach = radius + 4
+    local area = {left_top={x=pos.x - reach, y=pos.y - reach}, right_bottom={x=pos.x + reach, y=pos.y + reach}}
+    local blockers = {}
+    for _, e in pairs(try(function() return s.find_entities_filtered{area=area, collision_mask=layers, limit=4000} end) or {}) do
+      if e.valid and not PASSABLE[e.type] then
+        local bb = try(function() return e.bounding_box end)
+        if bb then
+          local ours = e.force == p.force and try(function() return e.minable end)
+          local natural = e.type == 'tree' or (e.type == 'simple-entity' and try(function() return e.minable end))
+          blockers[#blockers+1] = {e=e, l=bb.left_top.x, t=bb.left_top.y, r=bb.right_bottom.x, b=bb.right_bottom.y, ok=(ours or natural) and true or false}
+        end
+      end
+    end
+    -- Each blocker under every tile its box touches (a spot reads its own tiles only).
+    local cell = {}
+    for i, x in ipairs(blockers) do
+      for tx = math.floor(x.l), math.ceil(x.r) - 1 do
+        for ty = math.floor(x.t), math.ceil(x.b) - 1 do
+          local k = tx * 65536 + ty
+          local c = cell[k]
+          if not c then c = {}; cell[k] = c end
+          c[#c+1] = i
+        end
+      end
+    end
+    local bad_tiles = {}
+    for _, tl in pairs(try(function() return s.find_tiles_filtered{area=area, collision_mask=layers, limit=8000} end) or {}) do
+      bad_tiles[math.floor(tl.position.x) * 65536 + math.floor(tl.position.y)] = true
+    end
+    local w = try(function() return proto.tile_width end) or math.ceil(bx[3] - bx[1])
+    local h = try(function() return proto.tile_height end) or math.ceil(bx[4] - bx[2])
+    local ox, oy = (w % 2 == 1) and 0.5 or 0, (h % 2 == 1) and 0.5 or 0
+    local sites = {}
+    for dx = -radius, radius do
+      for dy = -radius, radius do
+        local cx, cy = math.floor(pos.x) + dx + ox, math.floor(pos.y) + dy + oy
+        if (dx * dx + dy * dy) <= radius * radius and (not seen or seen(cx, cy)) then
+          local l, t, r, b = cx + bx[1], cy + bx[2], cx + bx[3], cy + bx[4]
+          local okt = true
+          for tx = math.floor(l), math.ceil(r) - 1 do
+            for ty = math.floor(t), math.ceil(b) - 1 do if bad_tiles[tx * 65536 + ty] then okt = false end end
+          end
+          if okt then
+            local hit, fine, done = {}, true, {}
+            for tx = math.floor(l), math.ceil(r) - 1 do
+              for ty = math.floor(t), math.ceil(b) - 1 do
+                for _, i in ipairs(cell[tx * 65536 + ty] or {}) do
+                  local x = blockers[i]
+                  if not done[i] and x.l < r - EPS and l < x.r - EPS and x.t < b - EPS and t < x.b - EPS then
+                    done[i] = true
+                    if not x.ok then fine = false end
+                    hit[#hit+1] = x.e
+                  end
+                end
+              end
+            end
+            if fine and #hit > 0 then sites[#sites+1] = {x=cx, y=cy, hit=hit, d=dx * dx + dy * dy} end
+          end
+        end
+      end
+    end
+    table.sort(sites, function(x, y) if #x.hit ~= #y.hit then return #x.hit < #y.hit end return x.d < y.d end)
+    local out = {}
+    for i = 1, math.min(3, #sites) do
+      local st = sites[i]
+      local by, order, at = {}, {}, {}
+      for _, e in ipairs(st.hit) do
+        if not by[e.name] then by[e.name] = 0; order[#order+1] = e.name end
+        by[e.name] = by[e.name] + 1
+        if #at < 6 then at[#at+1] = string.format('%s (%g,%g)', e.name, e.position.x, e.position.y) end
+      end
+      local parts = {}
+      for _, n in ipairs(order) do parts[#parts+1] = n .. ' ' .. by[n] end
+      out[i] = {position={x=st.x, y=st.y}, remove=#st.hit, line=string.format('(%g,%g): mine %d first (%s): %s%s', st.x, st.y, #st.hit,
+        table.concat(parts, ', '), table.concat(at, ', '), #st.hit > #at and ', ...' or '')}
+    end
+    return out
+  end
   function M.in_the_way(p, proto, pos, radius)
     local s = p.surface
     local area = {left_top={x=pos.x - radius, y=pos.y - radius}, right_bottom={x=pos.x + radius, y=pos.y + radius}}

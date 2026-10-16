@@ -112,6 +112,20 @@ return function(api)
     return {radius=radius,items=items,more=#order>limit and #order-limit or nil,
       note=#order>0 and 'machine outputs and chests within radius; scope=stock item=NAME lists the places and a collect line' or 'no machine output or chest within radius holds anything'}
   end
+  -- What kind of holder a place is (Muse 09:24: 3-4 stock calls to find a provider robots had not committed): provider
+  -- (active or passive), storage, requester, buffer, chest (no logistics), machine, or the entity type.
+  local KINDS={provider=true,storage=true,requester=true,buffer=true,chest=true,machine=true,wagon=true,pad=true,vehicle=true}
+  function M.holder_kind(e)
+    local mode=e.type=='logistic-container' and (pcall(function() return e.prototype.logistic_mode end) and e.prototype.logistic_mode)
+    if mode=='active-provider' or mode=='passive-provider' then return 'provider' end
+    if mode then return mode end
+    if CHEST[e.type] then return 'chest' end
+    if e.type=='assembling-machine' or e.type=='furnace' or e.type=='lab' or e.type=='mining-drill' or e.type=='agricultural-tower' then return 'machine' end
+    if e.type=='cargo-wagon' then return 'wagon' end
+    if e.type=='cargo-landing-pad' then return 'pad' end
+    if e.type=='car' or e.type=='spider-vehicle' then return 'vehicle' end
+    return e.type
+  end
   function M.view(p,a)
     local radius=api.integer(a.radius,128,1,1024,'radius')
     if a.item==nil then return M.summary(p,a,radius,api.integer(a.limit,16,1,64,'limit')) end
@@ -119,10 +133,23 @@ return function(api)
     local limit=api.integer(a.limit,8,1,MAX_PLACES,'limit')
     local centre=a.position and api.position(a.position) or p.position
     local s=M.scan(p,a.item,{position=centre,radius=radius,quality=a.quality})
+    -- holders: only those kinds of place (the total and groups stay the whole stock).
+    local want
+    if a.holders~=nil then
+      local list=type(a.holders)=='string' and {a.holders} or a.holders
+      assert(type(list)=='table' and #list>=1,'holders is a list of kinds: provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle')
+      want={}
+      for _,k in ipairs(list) do assert(KINDS[k],'holders: unknown kind '..tostring(k)..' (provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle)'); want[k]=true end
+      local kept={}
+      for _,x in ipairs(s.places) do if want[M.holder_kind(x.entity)] then kept[#kept+1]=x end end
+      s={item=s.item,total=s.total,groups=s.groups,places=kept,makers=s.makers}
+    end
     local places={}
     for i=1,math.min(limit,#s.places) do
       local x=s.places[i]
-      places[i]={name=x.name,position=x.position,count=x.count,distance=math.floor(x.distance+0.5),
+      local reserved=api.reserved and api.reserved(x.entity,a.item) or 0
+      places[i]={name=x.name,position=x.position,count=x.count,distance=math.floor(x.distance+0.5),kind=M.holder_kind(x.entity),
+        reserved=reserved>0 and reserved or nil,
         first_spoils_in=x.spoil_tick and api.spoil.secs(x.spoil_tick-game.tick) or nil,spoiled_percent=x.spoil_tick and math.floor(x.spoil_percent*100+0.5) or nil,
         within_5_min=x.soon and x.soon>0 and x.soon or nil}
     end

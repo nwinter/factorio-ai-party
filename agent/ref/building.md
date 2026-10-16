@@ -92,3 +92,7 @@
   that serves trains heading one way; `train {position}` reads a train's state and why it waits.
 - `build {item: "rail-ramp", position, direction}` and `construct` on a ramp ghost build it by hand from one held ramp;
   the centre snaps to the ramp grid, with the same collision and reach checks.
+- A `build` of an inserter says what its sides touch: `pickup` and `drop` (`requester-chest (44.5,190.5)`, `none: the
+  ground at (42.5,190.5)`), with `inserter` (its direction in words) and `io_warning`.
+- `placements` that finds no spot adds `fewest_to_clear`: up to 3 spots (within 12 tiles) whose blockers are all ours
+  and minable, or trees and rocks, with how many to mine first and which (`(47,187): mine 2 first (accumulator 2): ...`).

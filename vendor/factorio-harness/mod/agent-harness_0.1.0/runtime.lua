@@ -1500,7 +1500,7 @@ function handlers.describe()
         dry_run='an entity: mine nothing; name, position, in_reach and heat_loss (removing a heat pipe, reactor, heating tower or heat exchanger: cut_off, the heat-network parts left with no nuclear reactor or heating tower in their part of the network, which keep their heat and cool; on a surface whose entities need heating, freeze: freezable entities beside it (pipes, undergrounds, machines) that lose their last heater at 30 C or more, or keep only cut-off ones; none when neither); the live reply carries heat_loss too when it is not none. With tiles: mine nothing; each tile: tile, restores, seconds, in_reach, distance; items, seconds, skipped (why), natural (natural tiles in the area)',
         radius='1..32 (default 8): a resource tile at position that is mined out (the resource named, or the one an earlier mine at that position took): the tile of the same resource within radius of it, one in reach first, is mined instead; the reply\'s instead (and last.instead) names it', outcomes='moved 0 and timed now; last.moved (how many more of its products you hold) and last.inv when it ends; target_mined | duration_elapsed (ore: last reports mined) | inventory_full (blocked_item) | not_minable (a stump, remnant or corpse; last.error) | target_lost | out_of_reach'},
       nearest_water={position='optional centre (default you)',radius='1..256 tiles (default 200)',returns='the nearest tile an offshore pump takes (a tile with a fluid: water, lava, an oil ocean, ammonia) in chunks the map has charted: tile, fluid, position, distance; pump_spots (offshore-pump placements within 12 tiles of it, as placements gives them); checked_chunks, uncharted_chunks; line. Read only'},
-      stock={network='optional logistic network number (the networks read numbers them; surface= another): what it holds, largest first, item= one, limit 1..64',surface='optional planet name, with item and no position: that planet\'s whole stock of it as freight_audit counts it (networks, pads, plain chests, silos, labs)',item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',quality='default normal',
+      stock={network='optional logistic network number (the networks read numbers them; surface= another): what it holds, largest first, item= one, limit 1..64',surface='optional planet name, with item and no position: that planet\'s whole stock of it as freight_audit counts it (networks, pads, plain chests, silos, labs)',item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',holders='with item: only places of these kinds (provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle; each place says its kind and what robots have reserved there)',quality='default normal',
         returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance; a spoilable item: first_spoils_in (its first stack there), spoiled_percent, within_5_min}; made_by (crafters set to a recipe making it); held (your inventory); summary line (with the first to spoil, or for pentapod-egg and other items that hatch into enemies the first to hatch); hatches_into. Without item each line adds the first to spoil or hatch'},
       craft={force='boolean: hand-craft even when nearby stock covers it',short='when fewer started than asked: the raw ingredients missing for the rest (e.g. "wood short 18 (held 2)"), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item; a craft of >=3 s of hand time that stock covers is refused (errors) unless force=true',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
       rates={recipe='or, with no area or positions: every crafter on your surface (surface= another) set to this recipe, at most 512 (scope says how many)',item='or, with no area or positions: every crafter there set to a recipe making it, with statistics (made and used a minute over 10 min, the game\'s) and only its rows (rows_other counts the rest)',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',
@@ -1596,6 +1596,7 @@ function handlers.describe()
   for name,schema in pairs(M.reminders and M.reminders.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platplan and M.platplan.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platsupply and M.platsupply.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.reservations and M.reservations.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.research and M.research.schema or {}) do description.actions[name]=schema end
@@ -2938,7 +2939,22 @@ function handlers.stock(p,a)
     local limit=integer(a.limit,16,1,64,'limit')
     local parts={}
     for i,s in ipairs(items) do if i>limit then break end; parts[#parts+1]=s.name..(s.quality and '@'..s.quality or '')..' '..s.count end
+    -- The robots each roboport holds (Haiku 07:50: which roboport to take robots from, as its GUI shows): most first.
+    local ports={}
+    for _,cell in ipairs(ln.cells or {}) do
+      local e=cell.owner
+      local inv=e and e.valid and e.type=='roboport' and e.get_inventory(defines.inventory.roboport_robot)
+      if inv then
+        local parts,n={},0
+        for _,s in ipairs(inv.get_contents()) do parts[#parts+1]=s.name..' '..s.count; n=n+s.count end
+        if n>0 then ports[#ports+1]={n=n,line=string.format('roboport (%g,%g): %s',e.position.x,e.position.y,table.concat(parts,', '))} end
+      end
+    end
+    table.sort(ports,function(x,y) return x.n>y.n end)
+    local port_lines={}
+    for i,r in ipairs(ports) do if i<=16 then port_lines[i]=r.line end end
     return {network=a.network,surface=surface.name,items=items[limit+1] and {table.unpack(items,1,limit)} or items,more=#items>limit and #items-limit or nil,
+      roboports=#port_lines>0 and port_lines or nil,roboports_more=#ports>16 and #ports-16 or nil,
       robots=string.format('%d logistic robots (%d idle), %d construction robots',ln.all_logistic_robots,ln.available_logistic_robots,ln.all_construction_robots),
       line=string.format('logistic network #%d on %s holds %s%s',a.network,surface.name,#parts>0 and table.concat(parts,', ') or (a.item and 'no '..a.item or 'nothing'),
         #items>limit and string.format(' (+%d more items)',#items-limit) or '')}
@@ -4474,6 +4490,8 @@ local function built_summary(e)
   if e.type=='inserter' and M.targets then
     local ok,t=pcall(M.targets.plan,e.surface,e.prototype,e.position,e.direction)
     out.io_warning=ok and t and t.missing or nil
+    -- What its pickup and drop sides touch (Muse 07:51: three backwards inserters, about 30 min), as check_inserters reads them.
+    if ok and t then out.pickup=t.pickup; out.drop=t.drop end
   end
   if e.type=='inserter' then
     local ok,line=pcall(M.inserter_sides,e)
@@ -11409,7 +11427,7 @@ passive.circuit_set=true; passive.wire=true
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
 for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route','rail_route','train_stop','blueprint_save','blueprint_rename'}) do passive[name]=true end
-local reads={nearest_water=true,platform_supply=true,platform_plan=true,reminders=true,fuel_budget=true,artillery=true,platform_endurance=true,belt_gaps=true,pipe_gaps=true,danger=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
+local reads={reservations=true,nearest_water=true,platform_supply=true,platform_plan=true,reminders=true,fuel_budget=true,artillery=true,platform_endurance=true,belt_gaps=true,pipe_gaps=true,danger=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
 M.reads=reads
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
 reads.heat_budget=true
@@ -12214,13 +12232,43 @@ survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
 M.supply=require('supply'){timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
-function handlers.supply(p,a) return M.supply.supply(p,a) end
+-- compact (Muse 06:21: supply and science run to thousands of tokens, a dozen times a shift): lines with the places and
+-- the minutes only.
+function M.compact_supply(out)
+  if type(out)~='table' then return out end
+  local lines={out.flow,out.where and ('where: '..out.where) or nil,out.makers}
+  local function first(list,n,cut)
+    local parts={}
+    for i,l in ipairs(list or {}) do if i<=n then parts[#parts+1]=cut and (tostring(l):gsub(';.*$','')) or tostring(l) end end
+    return #parts>0 and table.concat(parts,' | ') or nil
+  end
+  local mk=first(out.makers_worst,3); if mk then lines[#lines+1]='makers stopped: '..mk end
+  local us=first(out.users_worst,3,true); if us then lines[#lines+1]='users stopped: '..us end
+  local ch=first(out.chests,3); if ch then lines[#lines+1]='chests: '..ch end
+  if out.surplus_chest and out.surplus_chest.line then lines[#lines+1]='surplus: '..(tostring(out.surplus_chest.line):gsub(';.*$','')) end
+  local kept={}
+  for _,l in ipairs(lines) do if l then kept[#kept+1]=l end end
+  return {item=out.item,surface=out.surface,compact=true,lines=kept,clock=out.clock,team=out.team,chat=out.chat}
+end
+function handlers.supply(p,a)
+  if a.compact~=nil then
+    assert(type(a.compact)=='boolean','compact must be true or false')
+    local args={}
+    for k,v in pairs(a) do if k~='compact' then args[k]=v end end
+    local out=M.supply.supply(p,args)
+    return a.compact and M.compact_supply(out) or out
+  end
+  return M.supply.supply(p,a)
+end
 -- throughput's inserters against recipes (craftrate.feed; Sol, 19:50)
 M.supply.feed=function(e,into,from) return M.craftrate.feed(e,into,from) end
 -- trace: a machine's feeders and their sources, its output followed to where it ends, an item's routes (trace.lua).
 M.fragile=require('fragile'){position=position,integer=integer}
 M.personal=require('personal'){}
 M.reqchest=require('reqchest'){}
+-- A logistic network's reservations, read only (reservations.lua; Luna 06:20).
+M.reservations=require('reservations'){}
+function handlers.reservations(p,a) return M.reservations.read(p,a) end
 -- outpost {area | position}: one queued tour that rebuilds ghosts, rearms turrets and wires cut-off poles (outpost.lua).
 M.outpost=require('outpost'){position=position,integer=integer,submit=function(p,a) return handlers.queue_submit(p,a) end}
 function handlers.outpost(p,a) return M.outpost.read(p,a) end
@@ -12229,7 +12277,21 @@ M.trace=require('trace'){state_text=function(e) return M.thrust.state_text(e) en
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,supply=M.supply,spoil=M.spoil}
 function handlers.labs(p,a) return M.labs.view(p,a) end
-function handlers.science(p,a) return M.labs.science(p,a) end
+function handlers.science(p,a)
+  if a.compact~=nil then
+    assert(type(a.compact)=='boolean','compact must be true or false')
+    local args={}
+    for k,v in pairs(a) do if k~='compact' then args[k]=v end end
+    local out=M.labs.science(p,args)
+    if not a.compact or type(out)~='table' then return out end
+    -- compact: one line a pack (made and used in 10 min, makers and their states, labs lacking), largest holders left out.
+    local lines={}
+    if out.research then lines[1]='research: '..tostring(out.research) end
+    for _,pk in ipairs(out.packs or {}) do lines[#lines+1]=(tostring(pk.line or pk.pack):gsub('; largest holders:.*$','')) end
+    return {surface=out.surface,compact=true,lines=lines,clock=out.clock,team=out.team}
+  end
+  return M.labs.science(p,a)
+end
 rates=rates_module{position=position,status_name=function(e) return M.machine_status(e) end}
 -- Electric and logistic networks and turrets, one line each (networks.lua):
 -- the shift block, the networks read, and the network push alerts.
@@ -12419,6 +12481,7 @@ function M.last_drop(index)
   return last and game.tick-last.tick<=3600 and last or nil
 end
 stock=stock_module{distance=distance,integer=integer,position=position,claims=M.claims,spoil=M.spoil,
+  reserved=function(e,item) local ok,r=pcall(M.supply.reserved,e,item); return ok and r or 0 end,
   -- One stop of a rearm/refuel tour: top the entity up; stop when none is left.
   visit=function(p,action,e)
     if action.op=='refuel_source' then return M.fuelround.source_visit(p,action,e) end
