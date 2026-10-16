@@ -5046,4 +5046,16 @@ fh watch    # deploy on every change
     (-297,-314) is 0/min now, was about 402/min (22 drills destroyed by 7 big-biter; loss incident #77); no drill of
     ours mining coal works within 32 tiles there`.
   - The rate is the drills' rate at full speed, not a measured flow. The check is one search a minute per incident.
+- `configure {modules}` out of reach makes an item request for robots (Sol took three such requests for installed
+  modules). The reply now adds `pending`: `nothing installed or removed yet: 3 efficiency-module is a request for
+  robots (pending until one arrives)`. The carrier note ends with `network 44 has no construction robots: nothing is
+  brought until it has some` when that is so.
+- `heat_budget {position, add_pipes?}` (Sol: 21 new heat pipes caused a 10-minute brownout on Aquilo): the heat
+  network of a heat pipe, reactor, heating tower or heat exchanger, walked by its heat connections (up to 5000 parts).
+  - It gives the mean temperature weighted by heat capacity, the lowest and highest with where, the heat capacity in
+    MJ per C, and the heat stored above 30 C.
+  - With `add_pipes: N`, it gives the mean once N new heat pipes (each at its prototype's starting temperature and
+    specific heat) share that heat, with no heat made or used meanwhile: `21 new heat pipes, each 1.0 MJ per C
+    starting at 15 C, take the mean to 64.6 C (83.4 C lower) ...`.
+  - It is a read: the running action and queue go on.
 

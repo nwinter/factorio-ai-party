@@ -757,3 +757,31 @@ do
   eq(U.check(agent('opus'),base),nil,'coal still mined there')
 end
 print('d15_batch4 F6 outpost output: ok')
+
+-- F7 (Sol): remote module requests say plainly nothing is installed; a heat budget for a heat network. --------------
+do
+  prototypes={entity={['heat-pipe']={heat_buffer_prototype={specific_heat=1000000,default_temperature=15}}}}
+  local function part(name,x,t,c) return {valid=true,name=name,unit_number=x+100,position={x=x,y=0},temperature=t,prototype={heat_buffer_prototype={specific_heat=c}},heat_neighbours={}} end
+  local tower=part('heating-tower',0,500,2500000)
+  local pipes={}
+  for i=1,10 do pipes[i]=part('heat-pipe',i,60,1000000) end
+  tower.heat_neighbours={pipes[1]}
+  for i=1,10 do pipes[i].heat_neighbours={pipes[i-1] or tower,pipes[i+1]} end
+  local H=dofile('mod/agent-harness_0.1.0/heating.lua'){footprint=function() end}
+  local r=H.budget({},pipes[5],21)
+  eq(r.parts,11); eq(r.capacity_mj_per_c,12.5)
+  -- mean (2.5*500+10*60)/12.5 = 148; with 21 pipes at 15: (1850+315)/33.5 = 64.6
+  eq(r.mean_c,148); eq(r.after_c,64.6)
+  has(r.line,'21 new heat pipes, each 1.0 MJ per C starting at 15 C, take the mean to 64.6 C (83.4 C lower)')
+  has(r.line,'heat network of 11 parts (1 heating-tower, 10 heat-pipe): mean 148.0 C, lowest 60.0 C at heat-pipe (5,0), highest 500.0 C at heating-tower (0,0)')
+end
+print('d15_batch4 F7 heat budget: ok')
+do
+  prototypes={item={['efficiency-module']={}},quality={normal={}}}
+  local net={network_id=44,all_construction_robots=0,available_construction_robots=0,get_item_count=function() return 6 end}
+  local port={position={x=0,y=0},logistic_cell={construction_radius=55,logistic_network=net}}
+  local e={surface={find_entities_filtered=function() return {port} end},force='player',position={x=10,y=10}}
+  local Mo=dofile('mod/agent-harness_0.1.0/modules.lua'){}
+  has(Mo.carrier(e,{{name='efficiency-module',quality='normal',count=3}},nil),'; network 44 has no construction robots: nothing is brought until it has some')
+end
+print('d15_batch4 F7 module requests: ok')

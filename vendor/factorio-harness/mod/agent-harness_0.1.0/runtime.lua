@@ -1556,6 +1556,9 @@ function handlers.describe()
   for name,schema in pairs(M.circuits and M.circuits.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.trains and M.trains.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.outpost and M.outpost.schema or {}) do description.actions[name]=schema end
+  description.actions.heat_budget={position='{x,y} of a heat pipe, reactor, heating tower or heat exchanger (in sight or by remote view)',
+    add_pipes='optional 0..5000: new heat pipes at their starting temperature joining the network',
+    returns='parts, mean_c (weighted by heat capacity), lowest, highest, capacity_mj_per_c, stored_above_30_mj, after_c (with add_pipes: the mean once the new pipes share the heat, none made or used meanwhile), line'}
   for name,schema in pairs(M.rails and M.rails.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.vehicles and M.vehicles.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.shore and M.shore.schema or {}) do description.actions[name]=schema end
@@ -8665,6 +8668,14 @@ M.paste_plan=blueprint_handlers.plan
 -- entity not built yet, by recipe (ports.lua).
 M.ammoslots=require('ammoslots')()
 M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end}
+-- heat_budget {position, add_pipes?} (Sol, d15: 21 new heat pipes, a 10-minute Aquilo brownout): heating.lua M.budget.
+function handlers.heat_budget(p,a)
+  assert(a.position~=nil,'heat_budget takes position: a heat pipe, reactor, heating tower or heat exchanger')
+  local ok,e=pcall(entity,p,a,true)
+  if not ok then e=remote_entity(p,a) end
+  friendly(p,e)
+  return M.heating.budget(p,e,a.add_pipes)
+end
 M.dryrun=require('dryrun'){heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
   sidefeed=M.sidefeed,coverage=function(s,force,pos,planned) return M.networks.coverage(s,force,pos,planned) end,
   placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
@@ -10839,6 +10850,7 @@ for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut'
 local reads={fuel_budget=true,artillery=true,platform_endurance=true,belt_gaps=true,pipe_gaps=true,danger=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
 M.reads=reads
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
+reads.heat_budget=true
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys

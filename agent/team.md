@@ -160,6 +160,7 @@ already targets your character.
   1000 tiles, over trees and wild plants it marks, water only with `"landfill":true`; `return` adds the line back beside it,
   crossing under it where its side is blocked). Belts, undergrounds and splitters say where items go in `belt` (inspect,
   observe rows, build replies; `last_belt` for a batch): `moves items south to (-22.5,-28.5); fed from (-22.5,-30.5)`.
+- `heat_budget {position, add_pipes?}` reads a heat network's mean temperature, heat capacity and heat above 30 C, and with add_pipes the mean after that many new cold heat pipes join.
 - `outpost {position, radius}` (or `area`) queues one tour for an outpost: construct its ghosts, rearm its turrets, wire its poles cut off from power; `dry_run: true` shows the plan and what you lack.
 - `train {stops: true, surface?}` lists every train stop of ours on a surface: name, position, rail, limit and the trains heading there.
 - `./fh call rail_route --args '{"from":{"x":0,"y":0},"to":{"x":0,"y":-200}}'` lays 2.0 rails (16 headings; straight,
