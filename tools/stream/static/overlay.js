@@ -909,6 +909,32 @@
         label.classList.add("on");
         continue;
       }
+      if (slot === "main" && s.show) { // an image over the main camera (show.py): "🖼️ Aethera design (Sol, for LimeLight)"
+        const ssig = "show|" + s.show.label;
+        if (label.dataset.sig !== ssig) {
+          label.dataset.sig = ssig;
+          label.textContent = "";
+          label.append(el("span", "ico", "🖼️"), el("span", "", s.show.label));
+        }
+        label.classList.remove("attack", "death");
+        frame.style.borderColor = "";
+        frame.style.removeProperty("--bracket");
+        label.classList.add("on");
+        continue;
+      }
+      if (cam && cam.look) { // the operator's position shot (lookcam.py): "📍 The western wall"
+        const lsig = "look|" + cam.look.label;
+        if (label.dataset.sig !== lsig) {
+          label.dataset.sig = lsig;
+          label.textContent = "";
+          label.append(el("span", "ico", "📍"), el("span", "", cam.look.label));
+        }
+        label.classList.remove("attack", "death");
+        frame.style.borderColor = "";
+        frame.style.removeProperty("--bracket");
+        label.classList.add("on");
+        continue;
+      }
       if (cam && cam.platform && (!agents.length || cam.platform.why === "follow")) { // whole ship, including an agent aboard
         const psig = "plat|" + cam.platform.label;
         if (label.dataset.sig !== psig) {

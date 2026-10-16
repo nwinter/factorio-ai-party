@@ -1041,6 +1041,17 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
                                           "and how it is coming along")}
         if plat.get("why") == "operator" and s.get("platform_hold"):
             f["on_screen_platform"]["hold"] = s["platform_hold"]
+    img = s.get("show")  # show.py: an image over the main camera
+    if img and img.get("state") == "on":
+        f["on_screen_image"] = {"shown_as": img.get("label"), "remaining_s": img.get("remaining_s"),
+                                "note": "viewers see this still image over the main camera for a short while (the "
+                                        "camera is behind it); shown_as is its caption"}
+    look = (s.get("onair") or {}).get("look")  # lookcam.py: the operator pointed the camera at a spot
+    if look:
+        f["on_screen_look"] = {"shown_as": look.get("label"), "surface": look.get("surface"),
+                               "position": look.get("position"), "remaining_s": (s.get("look") or {}).get("remaining_s"),
+                               "note": "the operator has pointed the camera at this spot for viewers for a short while; "
+                                       "shown_as is the caption on screen"}
     onair = (s.get("onair") or {}).get("agent")
     if onair and e["kind"] in ("lull", "camera", "chat", "board", "plan", "research_start"):
         # one camera on air (onecam.py): the regular beats lean on the agent viewers are watching

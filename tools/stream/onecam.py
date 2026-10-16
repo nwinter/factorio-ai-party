@@ -336,6 +336,7 @@ def onair_info(snap, cams):
     return {"agent": name, "display_name": a.get("display_name") or name, "doing": doing, "platform": plat,
             "since": main.get("since"), "client": main.get("client"), "attack": main.get("attack"),
             "follow": main.get("follow"),  # an operator follow's label on air ("Sol vs the Demolisher"), for the hosts
+            "look": main.get("look"),  # an operator position shot on air: {label, by, surface, position} (lookcam.py)
             "battle": main.get("battle"),  # a key battle on air (onecam watch_battle)
             "incoming": main.get("incoming"),  # an enemy group followed on its way (onecam watch_incoming)
             "inset": ((cams or {}).get("inset") or {}).get("attack"),
@@ -406,6 +407,8 @@ class OneCam(Director):
         self.fol = None        # the agent it pins on air at this step, or None
         self.platform_follow = None  # POST /platform: {name, until, label, by}; kept by PlatformControl
         self.plat = None       # the operator's platform available to pin this step (takes priority over fol)
+        self.look_hold = None  # POST /look: {surface, position, zoom, until, label, by}; kept by LookControl (lookcam.py)
+        self.look = None       # that look while it lasts (takes priority over plat and fol)
         self.battle = None     # a key battle held on air (watch_battle): {key, why, label, position, surface, ...}
         self.battles = []      # (t, key, why, label): key battles seen
         self.last_battle_end = -1e9
@@ -553,7 +556,7 @@ class OneCam(Director):
                 target.update(zoom=self.fight_zoom(position.get("extent")), exact_zoom=True)
         target.update(label=al["text"], kind=al["kind"], attack_t=now, fight=al.get("key"))
         big = al["kind"] == "death" or (al["kind"] == "loss" and not minor_loss(al["text"]))
-        if self.plat or (self.fol and subject != self.fol):
+        if self.look or self.plat or (self.fol and subject != self.fol):
             big = False  # an operator follow: other agents' urgent events are insets or toasts, never cuts
         elif self.battle and not self.fol and not (subject and subject == self.battle.get("agent")) and \
                 not self.in_battle(position):
@@ -877,13 +880,17 @@ class OneCam(Director):
         if not self.slots:
             return {}
         self.watch_platforms(snapshot, now)
+        self.look = self.looking(now)
         self.plat = self.platform_following(now)
         self.fol = self.following(by_name, now)
         held = self.operator_platform_target(by_name, now)
+        look = self.look_target(now)
         for t in self.state.values():
             if t and (t.get("platform") or {}).get("why") in ("operator", "follow"):
                 t["until"] = held["until"] if self.same_platform(t, held) else 0
-        if self.pending and (self.plat or (self.fol and
+            if t and t.get("subject") == "@look":
+                t["until"] = look["until"] if self.same_look(t, look) else 0
+        if self.pending and (self.look or self.plat or (self.fol and
                 (self.state.get(self.pending["slot"]) or {}).get("subject") != self.fol)):
             self.pending = None
         if self.pending and self.ready(self.pending["slot"], now):
@@ -897,8 +904,9 @@ class OneCam(Director):
         self.follow_battle(by_name, now)  # a follow until its battle: ends follow_after_battle after the battle
         fol = self.fol = self.following(by_name, now)
         self.watch_incoming(snapshot, by_name, scores, now, segment)
-        # an operator follow, a key battle, or a group followed on its way: nothing else takes the camera
-        pinned = self.plat or fol or self.battle or self.incoming
+        # an operator look, platform hold or follow, a key battle, or a group followed on its way: nothing else
+        # takes the camera
+        pinned = self.look or self.plat or fol or self.battle or self.incoming
         attack = self.attack_target(snapshot, by_name, scores, now)
         if attack:
             self.on_alert(attack, by_name, scores, now)
@@ -924,10 +932,12 @@ class OneCam(Director):
         if not pinned:
             self.cloud_operator(scores, now, segment)
         if pinned:  # an operator follow, or a key battle: on air, nothing else takes the camera
-            self.leave_trio(f"platform {self.plat}" if self.plat else f"follow {fol}" if fol else f"battle: {self.battle['label']}" if self.battle
+            self.leave_trio("look" if self.look else f"platform {self.plat}" if self.plat else f"follow {fol}" if fol else f"battle: {self.battle['label']}" if self.battle
                             else f"incoming: {self.incoming['label']}", now)
             self.trio_pending = None
-            if self.plat:
+            if self.look:
+                self.look_direct(look, scores, now)
+            elif self.plat:
                 self.platform_direct(self.operator_platform_target(by_name, now), scores, now)
             elif fol:
                 self.follow_direct(fol, by_name, scores, now)
@@ -1035,6 +1045,67 @@ class OneCam(Director):
         elif self.ready(nxt["slot"], now):
             self.cut(nxt["slot"], f"follow: {label}", now)
             self.resume = None
+
+    # -- operator look (lookcam.py) -------------------------------------------------------------------------
+    def set_look(self, look, now=None):
+        """The operator points the camera on air at a charted spot until look["until"] (serve.py POST /look, or
+        runs/RUN/director-look.json); None ends it. It takes the camera from a platform hold and a follow, which
+        resume after it if their time is not up."""
+        self.look_hold = dict(look, since=now or time.time()) if look else None
+
+    def looking(self, now):
+        lk = self.look_hold
+        return lk if lk and now < lk["until"] else None
+
+    def look_info(self, now):
+        """snapshot["look"]: {surface, position, zoom, until, remaining_s, label, by}, or None."""
+        lk = self.looking(now)
+        return {k: lk[k] for k in ("surface", "position", "zoom", "until", "label", "by")} | \
+            {"remaining_s": int(lk["until"] - now)} if lk else None
+
+    def look_label(self, lk):
+        """The on-air card: the operator's label, else the spot ("Vulcanus · (120, -40)")."""
+        where = f"({round(lk['position']['x'])}, {round(lk['position']['y'])})"
+        surf = lk["surface"]
+        if surf != "nauvis":
+            where = f"{surf[:1].upper() + surf[1:] if not surf.startswith('platform-') else surf} · {where}"
+        return lk.get("label") or where
+
+    def look_target(self, now):
+        lk = self.looking(now)
+        if not lk:
+            return None
+        return {"agents": [], "subject": "@look", "position": dict(lk["position"]), "surface": lk["surface"],
+                "zoom": lk["zoom"], "exact_zoom": True, "until": lk["until"],
+                "look": {"label": self.look_label(lk), "by": lk["by"], "surface": lk["surface"],
+                         "position": dict(lk["position"])}}
+
+    @staticmethod
+    def same_look(a, b):
+        return bool(a and b) and all(a.get(k) == b.get(k) for k in ("position", "surface", "zoom"))
+
+    def look_direct(self, shot, scores, now):
+        """Hold the spot on air: frame it on a standby and cut once it is there (one client: retarget it on air).
+        The story on air is remembered and taken up again after (direct: resume)."""
+        if not shot:
+            return
+        self.pending = None
+        cur = self.state.get(self.onair)
+        if self.same_look(cur, shot):
+            cur.update(look=shot["look"], until=shot["until"])  # a new label or time for the same spot
+            return
+        if cur and cur.get("subject") in scores:
+            self.resume = {"subject": cur["subject"], "since": self.onair_since}
+        slot = self.next_slot() or self.slot(self.onair)
+        t = self.state.get(slot["slot"])
+        if not self.same_look(t, shot):
+            self.frame_on(slot, shot, f"standby: look {shot['look']['label']}", scores, now)
+            if slot["slot"] == self.onair:
+                self.onair_since = now
+            return
+        t.update(look=shot["look"], until=shot["until"])
+        if slot["slot"] != self.onair and self.ready(slot["slot"], now):
+            self.cut(slot["slot"], f"look: {shot['look']['label']}", now)
 
     # -- key battles -------------------------------------------------------------------------------------------
     def fight_spot(self, f, by_name):
@@ -1233,7 +1304,7 @@ class OneCam(Director):
             blocked = None
             if not cfg["incoming"]:
                 blocked = "incoming follow off"
-            elif self.plat or self.fol or self.battle or self.incoming:
+            elif self.look or self.plat or self.fol or self.battle or self.incoming:
                 blocked = "the camera is held (a follow, a battle or another group)"
             elif self.hold_layout or self.pending or segment or \
                     (cur.get("subject") in HOLDS and now < cur.get("until", 0)):
@@ -1475,7 +1546,7 @@ class OneCam(Director):
             return "drop", f"spacing: the last cue {int(now - self.last_cue)} s ago"
         if self.hold_layout or self.mode == "trio":
             return "drop", "a replay or a trio is on air"
-        busy = ("an operator platform hold" if self.plat else "an operator follow" if self.fol else "a battle" if self.battle else "an incoming group" if self.incoming
+        busy = ("an operator look" if self.look else "an operator platform hold" if self.plat else "an operator follow" if self.fol else "a battle" if self.battle else "an incoming group" if self.incoming
                 else "a segment" if segment else "an urgent shot" if self.pending or
                 (cur.get("subject") in HOLDS and now < cur.get("until", 0)) else None)
         subj = cur.get("subject")
@@ -1685,6 +1756,8 @@ class OneCam(Director):
         """The operator's cloud shot (serve.py POST /cloud) -> (http code, reply). It goes on air at the next step
         with nothing pinned on air (a segment, a key battle or a followed group: it waits, up to cloud_late)."""
         now = now or time.time()
+        if self.looking(now):
+            return 409, {"error": "an operator look is on air (DELETE /look first)"}
         p = self.platform_info(now)
         if p:
             return 409, {"error": f"an operator platform hold of {p['name']} is active (DELETE /platform first)"}
@@ -2190,7 +2263,7 @@ class OneCam(Director):
         if need:
             r, self.resume = self.resume, None
             if r and r["subject"] in scores and r["subject"] not in inset_agents and \
-                    subj in (None, "@attack", "@segment", "@map", "@platform", "@battle", "@incoming", "@work") and \
+                    subj in (None, "@attack", "@segment", "@map", "@platform", "@battle", "@incoming", "@work", "@look") and \
                     not (floor_reason and r["subject"] not in others):
                 want, resumed = r["subject"], r  # back to the story the urgent shot interrupted
                 self.resume = r  # kept until the cut back happens
@@ -2338,6 +2411,8 @@ class OneCam(Director):
                 row["incoming"] = t["incoming"]  # "Incoming · 38 biters and spitters heading for the oil field"
             if key == "main" and self.battle and t.get("battle") == self.battle["key"]:
                 row["battle"] = self.battle["label"]  # "Sol in battle · 44 lost near (-237, 64): 40 gun turret ..."
+            if key == "main" and t.get("subject") == "@look" and t.get("look"):
+                row["look"] = t["look"]  # the on-air card: "📍 The western wall" (lookcam.py)
             f = self.follow
             if key == "main" and f and f["label"] and now < f["until"] and f["agent"] in (t.get("agents") or []):
                 row["follow"] = f["label"]  # the on-air card: "Following Sol · Sol vs the Demolisher"
