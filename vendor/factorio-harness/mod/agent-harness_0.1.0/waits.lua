@@ -156,7 +156,7 @@ return function(api)
   -- A sleep no message ends (wake_on_messages: false), for tells.lua: {kind, until_tick}, and its wake by a tell.
   function M.deaf(index)
     local r = sleeps()[index]
-    if r and not r.woke and r.wake_messages == false and game.tick < (r.until_tick or 0) then return {kind='sleep', until_tick=r.until_tick} end
+    if r and not r.woke and r.wake_messages == false and game.tick < (r.until_tick or 0) then return {until_tick=r.until_tick, kind='sleep'} end
   end
   function M.wake_deaf(index, from)
     if not M.deaf(index) then return false end
