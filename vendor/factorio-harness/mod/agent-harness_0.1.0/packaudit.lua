@@ -8,11 +8,12 @@
 -- - per platform: where it is (the platforms row's rule), what its hub holds (main and trash), its first stack to
 --   spoil and, flying, how many spoil before the arrival, and what its hub requests of it with the import planet and
 --   how much is short.
--- A finished read is kept 10 s (supply.lua reuse). Chests outside every logistic network are not read: supply
--- {item, surface} reads one planet whole.
+-- A finished read is kept 10 s (supply.lua reuse). A landing pad in a logistic network is in the network's count and
+-- is not added again; plain chests (machine output chests) and landed pods are read (Sol 01:59: Aquilo's cryogenic
+-- packs 763 + 763 + 1000, the pad twice and the output chests left out).
 return function(api)
   local M = {}
-  local CHESTS, LABS, SILOS, PADS = 400, 1024, 16, 16
+  local CHESTS, LABS, SILOS, PADS, PLAIN = 400, 1024, 16, 16, 4000
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function at(pos) return string.format('(%g,%g)', math.floor(pos.x * 10 + 0.5) / 10, math.floor(pos.y * 10 + 0.5) / 10) end
   local function secs(ticks)
@@ -89,15 +90,43 @@ return function(api)
       end
     end
     row.chests_read = chests > 0 and chests or nil
-    -- Landing pads.
-    for _, pad in ipairs(try(function() return surface.find_entities_filtered{type='cargo-landing-pad', force=force, limit=PADS} end) or {}) do
+    -- One find for the pads, silos, labs and plain chests (each whole-surface find sweeps every chunk).
+    local found = try(function()
+      return surface.find_entities_filtered{type={'cargo-landing-pad', 'rocket-silo', 'lab', 'container', 'temporary-container'}, force=force}
+    end) or {}
+    local by = {['cargo-landing-pad']={}, ['rocket-silo']={}, lab={}, container={}, ['temporary-container']={}}
+    for _, e in ipairs(found) do local l = by[e.type]; if l then l[#l+1] = e end end
+    -- Landing pads. A pad in a logistic network is in that network's count already: it is shown, not added again.
+    row.pads_in_networks = 0
+    for i, pad in ipairs(by['cargo-landing-pad']) do
+      if i > PADS then break end
       local inv = try(function() return pad.get_inventory(defines.inventory.cargo_landing_pad_main) end)
-      row.pads = row.pads + count_in(inv, item)
+      local n = count_in(inv, item)
+      row.pads = row.pads + n
+      if n > 0 and try(function() return pad.logistic_network end) then row.pads_in_networks = row.pads_in_networks + n end
       first = spoil_into(first, inv, item, 'cargo-landing-pad ' .. at(pad.position))
     end
+    -- Plain chests (machine output chests and the like) and landed cargo pods: in no logistic network.
+    row.chests, row.chests_holding = 0, 0
+    local plain = 0
+    for _, kind in ipairs({'container', 'temporary-container'}) do
+      for _, c in ipairs(by[kind]) do
+        if plain >= PLAIN then break end
+        plain = plain + 1
+        local inv = try(function() return c.get_inventory(defines.inventory.chest) end)
+        local n = count_in(inv, item)
+        if n > 0 then
+          row.chests = row.chests + n; row.chests_holding = row.chests_holding + 1
+          first = spoil_into(first, inv, item, c.name .. ' ' .. at(c.position))
+        end
+      end
+    end
+    local plain_total = #by.container + #by['temporary-container']
+    row.chests_unread = plain_total > plain and plain_total - plain or nil
     -- Rocket silos: their cargo of it and room for more.
     local silos = {}
-    for _, silo in ipairs(try(function() return surface.find_entities_filtered{type='rocket-silo', force=force, limit=SILOS} end) or {}) do
+    for i, silo in ipairs(by['rocket-silo']) do
+      if i > SILOS then break end
       local inv = try(function() return silo.get_inventory(defines.inventory.rocket_silo_rocket) end)
       local n = count_in(inv, item)
       row.silos = row.silos + n
@@ -109,7 +138,8 @@ return function(api)
     row.silo_rows = #silos > 0 and silos or nil
     -- Labs: what they hold, and those with none while the research needs it.
     local labs, without = 0, 0
-    for _, lab in ipairs(try(function() return surface.find_entities_filtered{type='lab', force=force, limit=LABS} end) or {}) do
+    for i, lab in ipairs(by.lab) do
+      if i > LABS then break end
       labs = labs + 1
       local n = count_in(try(function() return lab.get_inventory(defines.inventory.lab_input) end), item)
       row.labs = row.labs + n
@@ -118,11 +148,17 @@ return function(api)
     row.labs_without = research and labs > 0 and without or nil
     row.lab_count = labs > 0 and labs or nil
     row.spoil = spoil_text(first)
-    row.total = row.networks + row.pads + row.silos + row.labs
+    row.total = row.networks + row.pads - row.pads_in_networks + row.chests + row.silos + row.labs
+    if row.pads_in_networks == 0 then row.pads_in_networks = nil end
     local parts = {string.format('%s: made %d/min, used %d/min', surface.name, row.made_per_min, row.used_per_min)}
     parts[#parts+1] = string.format('logistic networks %d', row.networks)
     if row.unmet > 0 then parts[#parts+1] = string.format('their requesters lack %d (%d requester%s)', row.unmet, row.requesters_short, row.requesters_short == 1 and '' or 's') end
-    if row.pads > 0 then parts[#parts+1] = string.format('landing pads %d', row.pads) end
+    if row.pads > 0 then
+      parts[#parts+1] = string.format('landing pads %d', row.pads) .. (row.pads_in_networks and
+        (row.pads_in_networks == row.pads and ' (in a logistic network: counted there)' or string.format(' (%d of them in a logistic network: counted there)', row.pads_in_networks)) or '')
+    end
+    if row.chests > 0 then parts[#parts+1] = string.format('other chests %d (%d chest%s)', row.chests, row.chests_holding, row.chests_holding == 1 and '' or 's') end
+    if row.chests_unread then parts[#parts+1] = string.format('%d plain chests not read (the first %d were): the total is partial', row.chests_unread, PLAIN) end
     if #silos > 0 then parts[#parts+1] = table.concat(silos, '; ') end
     if labs > 0 then
       parts[#parts+1] = string.format('labs %d hold %d', labs, row.labs) .. (research and string.format(', %d of them none (the research needs it)', without) or '')
@@ -206,7 +242,7 @@ return function(api)
     for _, r in ipairs(planets) do lines[#lines+1] = r.line end
     for _, r in ipairs(platforms) do lines[#lines+1] = r.line end
     return {item=item, total=total, research_needs_it=research or nil, lines=lines, planets=planets, platforms=platforms,
-      note='counted: logistic networks (the game\'s count), landing pads, silos\' rocket cargo, labs and platform hubs; chests outside every logistic network are not read (supply {item, surface} reads one planet whole)'}
+      note='counted once each: logistic networks (the game\'s count, landing pads in a network among them), landing pads in no network, plain chests and landed cargo pods (machine output chests: up to '..PLAIN..' a planet), silos\' rocket cargo, labs and platform hubs; not counted: belts, inserter hands, machines\' inputs and outputs, vehicles and wagons (supply {item, surface} reads those on one planet)'}
   end
   function M.read(p, a)
     local item = a.item
@@ -215,6 +251,6 @@ return function(api)
     return api.reuse('freight_audit|' .. force.name .. '|' .. item, function() return M.fresh(force, item) end)
   end
   M.schema = {freight_audit = {item='an item name (a science pack, ...)',
-    returns='one item across every planet and platform (Luna, 16:50): lines (one per planet, then one per platform), planets [{surface, made_per_min, used_per_min (10 min), networks (what its logistic networks hold), unmet and requesters_short (what their requesters lack: asked less held and on the way), pads (landing pads), silos and silo_rows (each silo: its rocket cargo of it, room for more by weight), labs (held), labs_without (labs holding none while the research needs it), spoil (the first stack to spoil: when, how spoiled, where), total, line}], platforms [{platform, where, hub (main and trash), spoil, arrival (flying: how many spoil before it), requests (import planet, short), line}], total, research_needs_it, note; kept 10 s. Read only'}}
+    returns='one item across every planet and platform (Luna, 16:50): lines (one per planet, then one per platform), planets [{surface, made_per_min, used_per_min (10 min), networks (what its logistic networks hold), unmet and requesters_short (what their requesters lack: asked less held and on the way), pads (landing pads), pads_in_networks (of those, in a logistic network: in networks already, not added to total), chests and chests_holding (plain chests and landed cargo pods in no network), chests_unread (past the cap: the total is partial), silos and silo_rows (each silo: its rocket cargo of it, room for more by weight), labs (held), labs_without (labs holding none while the research needs it), spoil (the first stack to spoil: when, how spoiled, where), total, line}], platforms [{platform, where, hub (main and trash), spoil, arrival (flying: how many spoil before it), requests (import planet, short), line}], total, research_needs_it, note; kept 10 s. Read only'}}
   return M
 end
