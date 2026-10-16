@@ -5322,3 +5322,8 @@ fh watch    # deploy on every change
   there too, the tick their products appear (1..16 positions). The reply's `also` names them; `last.also` says what
   each gave and which were never in reach from there. Checked on the copy: two copper-cable assemblers 8 tiles apart,
   38 taken, 16 of them from the second.
+- `nearest_water {position?, radius?}` (Opus 04:11: placements stops at 24 tiles): the nearest tile an offshore pump
+  takes (a tile with a fluid: water, lava, an oil ocean, ammonia) in chunks the map has charted, within 1..256 tiles
+  (default 200), and the offshore-pump spots there as `placements` gives them: `nearest water (water) at
+  (-344.5,-368.5), 135.1 tiles from (-281,-250); offshore-pump spots: (-346.5,-369.5) east, ...`. On the copy of world
+  n warm reads took 4-22 ms in the container (about 1-4 ms on n); a cold first call is slower.
