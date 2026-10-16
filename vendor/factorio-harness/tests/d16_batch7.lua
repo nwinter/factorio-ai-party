@@ -93,3 +93,111 @@ do
   fails(function() T.stops({surface={name='aquilo'},force={}},{stops=true,limit=3}) end,'stops takes surface only (not limit)')
 end
 print('d16_batch7 A11 a helper call reads train stops: ok')
+
+-- B3 (Astra on Wren 4+ times): each chunk type from its collectors through inserters and belts to the crushers whose
+-- recipe takes it and the hub; a static filter that keeps a collected type from its crusher; a crusher stopped full
+-- while its output goes to a full hub.
+do
+  game={tick=0}
+  defines={inventory={hub_main=1},entity_status={working=1,full_output=2}}
+  prototypes={item={['metallic-asteroid-chunk']={},['oxide-asteroid-chunk']={},['iron-ore']={}}}
+  local n=0
+  local function ent(t) n=n+1; t.valid=true; t.unit_number=n; t.position=t.position or {x=n,y=0}; return t end
+  local hub=ent{name='space-platform-hub',type='space-platform-hub',get_inventory=function() return {count_empty_stacks=function() return 0 end} end}
+  local function crusher(recipe,ing,st) return ent{name='crusher',type='assembling-machine',status=st or 1,prototype={crafting_categories={crushing=true}},
+    get_recipe=function() return {name=recipe,ingredients={{name=ing,amount=1}}} end} end
+  local cm=crusher('metallic-asteroid-crushing','metallic-asteroid-chunk',2)
+  local co=crusher('oxide-asteroid-crushing','oxide-asteroid-chunk')
+  local b2=ent{name='transport-belt',type='transport-belt',belt_neighbours={outputs={}}}
+  local b1=ent{name='transport-belt',type='transport-belt',belt_neighbours={outputs={b2}}}
+  local col=ent{name='asteroid-collector',type='asteroid-collector',filter_slot_count=0}
+  local function ins(from,to,filters,mode)
+    return ent{name='inserter',type='inserter',pickup_target=from,drop_target=to,use_filters=filters~=nil,inserter_filter_mode=mode or 'whitelist',
+      filter_slot_count=filters and #filters or 0,get_filter=function(k) return filters and filters[k] end,get_control_behavior=function() return nil end}
+  end
+  local list={ins(col,b1),ins(b1,cm),ins(b2,co,{'iron-ore'}),ins(b2,hub,nil),ins(cm,hub)}
+  local s={find_entities_filtered=function(f)
+    if f.type=='inserter' then return list elseif f.type=='asteroid-collector' then return {col} elseif f.type=='assembling-machine' then return {cm,co} end
+    return {} end}
+  local P=dofile('mod/agent-harness_0.1.0/platsupply.lua'){}
+  local rows,flags=P.trace(s,{},hub)
+  eq(rows[1],'metallic-asteroid-chunk: 1 collector; goes to crusher (2,0) metallic-asteroid-crushing, the hub (over 2 belt tiles)')
+  eq(rows[2],'oxide-asteroid-chunk: 1 collector; goes to the hub (over 2 belt tiles)')
+  has(flags[1],'inserter (9,0) (whitelist: iron-ore) takes from the belt (4,0) into crusher (3,0), whose recipe oxide-asteroid-crushing takes oxide-asteroid-chunk, and keeps it out')
+  has(flags[#flags],'crusher (2,0) metallic-asteroid-crushing stopped with its output full; its output inserters drop into the hub, which has no free slot')
+  defines,prototypes=nil,nil
+end
+print('d16_batch7 B3 platform_supply chunk trace: ok')
+
+-- B5 (Sonnet, every shift): a shared fluid's users by recipe, their full-speed take and share.
+do
+  game={tick=0}
+  defines={flow_precision_index={ten_minutes=2}}
+  prototypes={item={},fluid={lubricant={}}}
+  local function m(recipe,ings,prods,speed,working)
+    return {valid=true,crafting_speed=speed,working=working,get_recipe=function() return {name=recipe,energy=10,ingredients=ings,products=prods} end}
+  end
+  local list={m('electric-engine-unit',{{type='fluid',name='lubricant',amount=15}},{},1,true),m('electric-engine-unit',{{type='fluid',name='lubricant',amount=15}},{},1,false),
+    m('express-transport-belt',{{type='fluid',name='lubricant',amount=20}},{},2,true),m('lubricant',{},{{type='fluid',name='lubricant',amount=10}},1,true)}
+  local surface={name='nauvis',find_entities_filtered=function() return list end}
+  local force={get_fluid_production_statistics=function() return {get_flow_count=function(f) return f.category=='output' and 2100 or 1500 end} end}
+  local S=dofile('mod/agent-harness_0.1.0/supply.lua'){status_name=function(e) return e.working and 'working' or 'fluid_ingredient_shortage' end}
+  local lines=S.fluid_shares(surface,force,'lubricant')
+  eq(lines[1],'lubricant on nauvis: used 210/min, made 150/min (last 10 min); 1 maker at full speed 60/min; its users at full speed 420/min:')
+  eq(lines[2],'express-transport-belt: 1 machine (1 working) take 240/min at full speed, 57% of the users\' take')
+  eq(lines[3],'electric-engine-unit: 2 machines (1 working) take 180/min at full speed, 43% of the users\' take')
+  defines,prototypes=nil,nil
+end
+print('d16_batch7 B5 bottleneck fluid shares: ok')
+
+-- B6 (Opus 13:51): the factory's shortages in one read.
+do
+  game={tick=0}
+  defines={inventory={assembling_machine_input=2,furnace_source=2}}
+  local function crafter(recipe,ing,st,held)
+    return {valid=true,type='assembling-machine',name='assembling-machine-2',st=st,fluidbox={},
+      get_recipe=function() return {name=recipe,ingredients={{type='item',name=ing,amount=2}}} end,
+      get_inventory=function() return {get_item_count=function() return held or 0 end} end}
+  end
+  local list={crafter('copper-cable','copper-plate','item_ingredient_shortage'),crafter('copper-cable','copper-plate','item_ingredient_shortage'),
+    crafter('engine-unit','steel-plate','item_ingredient_shortage',1),{valid=true,type='boiler',name='boiler',st='no_fuel'},
+    {valid=true,type='lab',name='lab',st='missing_science_packs'},{valid=true,type='lab',name='lab',st='working'},
+    {valid=true,type='mining-drill',name='electric-mining-drill',st='low_power'}}
+  local owner={valid=true,type='logistic-container',get_item_count=function() return 10 end}
+  local pt={owner=owner,targeted_items_deliver={{name='iron-plate',count=40}},filters={{name='iron-plate',count=100},{name='coal',count=5}}}
+  local surface={name='nauvis',find_entities_filtered=function() return list end}
+  local force={name='player',current_research={name='automation-2'},logistic_networks={nauvis={{requester_points={pt}}}}}
+  local SH=dofile('mod/agent-harness_0.1.0/shortages.lua'){reuse=function(_,fn) return fn() end,status_name=function(e) return e.st end}
+  local r=SH.read({surface=surface,force=force},{})
+  eq(r.lines[1],'stopped short of an ingredient: copper-cable short of copper-plate (2 machines); engine-unit short of steel-plate (1 machine)')
+  eq(r.lines[2],'no fuel: 1 boiler')
+  eq(r.lines[3],'power: 1 machines on low power (1 electric-mining-drill), 0 on no power')
+  eq(r.lines[4],'labs: 1 of 2 wait for science packs (research automation-2)')
+  eq(r.lines[5],'requester chests lack (asked, less held and on the way): iron-plate 50')
+  defines=nil
+end
+print('d16_batch7 B6 shortages: ok')
+
+-- B8 (Sol, board #695): hits on our entities where our force sees, with the source, its position and facing.
+do
+  game={tick=600}
+  local st={}
+  local D=dofile('mod/agent-harness_0.1.0/damagelog.lua'){state=function() return st end,position=function(p) return p end,integer=function(v,d) return v or d end}
+  local visible=true
+  local force={name='player',is_chunk_visible=function() return visible end}
+  local wall={valid=true,unit_number=7,name='stone-wall',force=force,surface={name='nauvis'},position={x=10.5,y=4.5}}
+  local flamer={valid=true,name='flamethrower-turret',force={name='player'},position={x=14,y=4},direction=4}
+  D.on_damaged{entity=wall,cause=flamer,damage_type={name='fire'},final_damage_amount=12,tick=600}
+  D.on_damaged{entity=wall,cause=flamer,damage_type={name='fire'},final_damage_amount=12,tick=620}
+  D.on_damaged{entity=wall,damage_type={name='acid'},final_damage_amount=5,tick=630}
+  visible=false
+  D.on_damaged{entity=wall,damage_type={name='acid'},final_damage_amount=5,tick=640}
+  game.tick=900
+  local h=D.of(wall)
+  eq(#h,2)
+  eq(h[1],'4s ago: 1 acid hit, 5 damage, from no source the game names (a fire or projectile that outlived it)')
+  eq(h[2],'4s ago: 2 fire hits, 24 damage, from flamethrower-turret at (14,4) facing east')
+  local r=D.read({surface={name='nauvis',find_entities_filtered=function() return {} end},position={x=10,y=4}},{radius=4})
+  eq(#r.entities,1); eq(r.entities[1].alive,false); eq(#r.entities[1].hits,2)
+end
+print('d16_batch7 B8 damage log: ok')

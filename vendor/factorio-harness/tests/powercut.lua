@@ -80,7 +80,7 @@ run(329); eq(#S.powercut.cuts,0,'not before 5.5 s')
 run(10)
 eq(#S.powercut.jobs,0); eq(#S.powercut.cuts,1)
 local cut=S.powercut.cuts[1]
-eq(pc.line(cut,'nauvis'),'power cut #1: small-electric-pole (14,0) destroyed by big-biter 5s ago: split electric network #57 in 2: #57 had power at tick 1332 (60 kW); #212 had no power at tick 1332 (2 poles, (21,0)-(28,0)): 3 electric-mining-drill, 1 inserter; no ghost of the pole there')
+eq(pc.line(cut,'nauvis'),'power cut #1: small-electric-pole (14,0) destroyed by big-biter 5s ago: split electric network #57 in 2: #57 had power at tick 1332 (60 kW); #212 had no power at tick 1332 (2 poles, (21,0)-(28,0)): 3 electric-mining-drill, 1 inserter; no ghost of the pole there; the missing link: small-electric-pole (14,0) (nothing there), between small-electric-pole (7,0) on #57 now and small-electric-pole (21,0) on #212 now')
 -- Told once to each agent, in team.alerts; status alerts has it too.
 local h={}
 eq(pc.lines({surface=surface},h)[1],pc.line(cut,'nauvis')); eq(pc.lines({surface=surface},h),nil)
@@ -102,7 +102,7 @@ e1.electric_network_id=nil; e2.electric_network_id=nil
 entity({name='entity-ghost',type='entity-ghost',ghost_name='small-electric-pole',position={x=107,y=0}})
 run(400)
 eq(#S.powercut.cuts,2)
-eq(pc.line(S.powercut.cuts[2],'nauvis'),'power cut #2: small-electric-pole (107,0) destroyed by small-spitter 6s ago: 2 machines no other pole reached had no power at tick '..S.powercut.cuts[2].checked..' (106,-2)-(108,1): 2 electric-mining-drill; a ghost of the pole stands there')
+eq(pc.line(S.powercut.cuts[2],'nauvis'),'power cut #2: small-electric-pole (107,0) destroyed by small-spitter 6s ago: 2 machines no other pole reached had no power at tick '..S.powercut.cuts[2].checked..' (106,-2)-(108,1): 2 electric-mining-drill; a ghost of the pole stands there; the missing link: small-electric-pole (107,0) (a ghost of small-electric-pole there)')
 -- An agent told before hears only the new one.
 eq(#pc.lines({surface=surface},h),1)
 -- Wired again: joined.

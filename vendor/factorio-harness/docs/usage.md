@@ -5528,3 +5528,47 @@ fh watch    # deploy on every change
   load_silo never sets either (the journals show the Gleba silo's switches set by `configure` and `launch` calls).
   Checked on the copy of world n: with send to orbit automatically on, a ready rocket holding 1000 agricultural science
   packs (its full lift) stayed in the silo for 30 s.
+- Empty ground (B1, Muse 12:20): an inspect that finds nothing, a refused one out of sight and an empty `scan` (`ground`)
+  say what the map says of the chunk: `chunk (x,y) is in sight now (tick T)`, `is charted and not in sight now; our
+  reads last saw it at tick T (Ns ago)` (every read that finds a chunk in sight records it, 4096 chunks kept), or `was
+  never charted`. `inspect {position, radius: 1..64}` (Gemini 14:49) reads the square round it as `area` does (`square`).
+  Checked on the copy: a fogged chunk at (-731,-827) and an uncharted one at (6500,6500).
+- Power cut alerts (B2, Opus 12:20: the NW coal cut; Haiku: networks renumber on a split) end with `the missing link`:
+  each lost pole read now (built there again, a ghost there, or nothing) and the live poles at the gap's ends with the
+  network each is on now: `small-electric-pole (14,0) (nothing there), between small-electric-pole (7,0) on #57 now and
+  small-electric-pole (21,0) on #212 now`.
+- `platform_supply` (B3, Astra, on Wren 4+ times) adds `chunks`: each chunk type its collectors take, followed through the
+  inserters (their filters) and belts (undergrounds and splitters too, up to 512 tiles) to the machines whose recipe takes
+  it, chests and the hub; and `chunk_flags`: an inserter whose GUI filter (not one the circuit network sets) keeps a
+  chunk from the hub or from a machine whose recipe takes it, and a crusher stopped with its output full while its output
+  inserters drop into a hub with no free slot. On the copy: Wren's two crushers were stopped so (the hub 0 of 99 free);
+  Von Braun's carbonic and oxide chunks reach their four crushers each over 227 belt tiles. About 7-13 ms in the
+  container a platform.
+- `platform_endurance` (B3, Astra 12:20; Sol 13:50: Swift left short of ammunition repeatedly): flying, each resource
+  line adds the last 60 s (`last_minute`) apart from the window's average, which holds the leg's stalls; `solar` gives the
+  solar panels' peak, at a stop at its solar power in space, and the machines on low and no power now (`low_power`,
+  `no_power`); `departure` gives each ammunition used on the route: what it uses at the rates read, what is aboard and
+  made on the way, short or to spare, and how many a rocket lifts (`firearm-magazine over the route (9m30s): uses about
+  594 at 62.5/min; 3319 aboard and about 624 made on the way: 3349 to spare; a rocket lifts 100 of it` on the copy).
+- `platforms {compact: true}` (B4, Astra 13:50): a line a platform: where, ammunition aboard (hub and turrets), thruster
+  fuel and its net trend over 10 min, how many items its ghosts lack in all, and only the blockers this agent was not
+  shown in its last compact read (the rest counted).
+- `bottleneck {item}` for a fluid (B5, Sonnet, every shift) adds `shares`: the fluid's users by recipe on the surface,
+  machines and how many work, what they take at full speed and their share of all users' take, against what the
+  surface used and made in 10 minutes and its makers at full speed. On the copy: heavy oil 1288/min used of its users'
+  2475/min at full speed: cracking 65%, lubricant 24%, coal liquefaction 10%. (Fluid segments are not split out:
+  `get_fluid_segment_id` returned nil on 2.0.77.)
+- `shortages {surface?}` (B6, Opus 13:51, every hour): one read of machines stopped short of an ingredient (by recipe and
+  the ingredient each lacks for one craft), machines with no fuel, on low or no power, labs waiting for packs (with the
+  research), and what requester chests lack (asked, less held and on the way), by item; kept 10 s. About 18 ms live in
+  the container on Nauvis (about 4 ms on n).
+- Platform loss alerts (B7, Luna 13:52: Swift lost 28 structures in a minute) list each lost entity (up to 48 an
+  incident), read when told: `N rebuilt already`, `a ghost stands at N (the hub rebuilds them with the items): ...` and
+  `no ghost at N (a new placement each): ...`. Checked on the copy: of two belts and a solar panel killed on Swift, the
+  hub had rebuilt both belts and a ghost stood for the panel.
+- `damage_log {position, radius?, surface?}` (B8, Sol, board #695: incident 973 blamed a flamethrower that faced away):
+  hits on our entities, alive or destroyed since, only where our force saw at the time (a chunk in radar coverage or a
+  character's sight): each row's age, count, damage type and amount, and its source, its position and facing (or no
+  source the game names: a fire or projectile that outlived it). Hits from one source within a second are one row; the
+  last 8 rows an entity, 512 entities. `inspect` adds `damage_history`. On the copy the log adds about 6-12 ms per 1000
+  hits in the container (about 0.002 ms a hit on n).

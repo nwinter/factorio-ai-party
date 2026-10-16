@@ -19,7 +19,8 @@ Each topic, when to read it, and the commands it documents:
 - `analysis`, when something is starved or slow or you need numbers to plan: `progress` (the run by shift), `research`
   and `research done`, `science` (packs), `supply` (one item), `bottleneck`, `trace`, `labs`, `inspect` (areas,
   remote view), `ports`, `power` (networks, fragile poles), `fuel_budget`, `game_alerts`, `belt_gaps`, `pipe_gaps`,
-  `danger`, `drill_sites`, `ores`, `stock` (where an item is), `reservations` (a network's robot reservations), `construction_robots`; the factory digest.
+  `danger`, `drill_sites`, `ores`, `stock` (where an item is), `reservations` (a network's robot reservations), `construction_robots`, `shortages` (the factory's
+  shortages in one read), `damage_log` (what hit our entities); the factory digest.
 - `waits-queues`, for waits past the sleep and wait basics, or work that repeats: `wait_until` and `sleep --until` conditions,
   `wait_ticks`, `sleep_check`, `queue_submit` (modes), `queue_status`, `queue_edit`, `queue_cancel`, `queue_repeat`, `plan save`, `plan run`,
   `plan list`, `stop`, `order_set`, `orders`, `order_remove`, `orders_pause`, `orders_resume` (standing orders),
