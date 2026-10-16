@@ -375,7 +375,7 @@ do
     surface={find_entities_filtered=function() return {ins} end}}
   ins.drop_target=e
   local R=dofile('mod/agent-harness_0.1.0/reqchest.lua'){}
-  eq(R.over(e,'iron-plate'),'iron-plate: the chest holds 100, over its request max 20: the game moves the 80 over it to the chest\'s trash slots, and robots carry them to storage')
+  eq(R.over(e,'iron-plate'),'iron-plate: the chest holds 100, over its request max 20: the game moves the 80 over it to the chest\'s trash slots, and logistic robots take them out of the chest')
   items['copper-plate']=100
   eq(R.over(e,'copper-plate'),nil,'no max, trash unrequested off: it stays')
   pt.trash_not_requested=true

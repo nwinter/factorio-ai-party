@@ -668,6 +668,7 @@ return function(api)
           if #action.dangers<8 then action.dangers[#action.dangers+1]=why end
           action.first_unreached=action.first_unreached or string.format('(%g,%g): %s (unsafe_goal: true walks there)',t.position.x,t.position.y,why)
           action.index=action.index+1; action.unreached=(action.unreached or 0)+1
+          if action.legs and action.index==2 then return 'unreached' end
           return nil
         end
       end
@@ -695,6 +696,8 @@ return function(api)
       action.first_unreached=action.first_unreached or string.format('(%g,%g): %s%s',t.position.x,t.position.y,outcome,
         action.nav.why and ': '..action.nav.why or '')
       action.index=action.index+1; action.nav=nil; action.unreached=(action.unreached or 0)+1; api.stop_walking(p)
+      -- A courier's take not reached: nothing taken, so no give either (it gave from the inventory before).
+      if action.legs and action.index==2 then return 'unreached' end
     end
   end
   return M

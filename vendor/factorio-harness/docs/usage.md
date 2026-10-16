@@ -5411,3 +5411,18 @@ fh watch    # deploy on every change
 - `queue_submit {mode: "next"}` (Opus 06:33: a handoff transfer waited a 6-minute round of a repeating plan): the new
   steps run once right after the active step, which goes on, and before the rest of the round or plan; a repeating
   plan keeps its loop and does not repeat them.
+- Automatic requests (Sonnet, 3 times: an automatic rocket stalled 4+ minutes short of 1000 kg; load_silo and launch
+  "refuse while auto_requests is on"): `launch {position, platform}` launches with automatic requests on, with what the
+  game loaded so far, and leaves them on (checked on the copy: a launch with `auto_requests: true`); only `load_silo`
+  refuses, and its refusal now says what is aboard (`its rocket holds nothing (0 of 1000 kg)`) and that launch sends it.
+  No load_mixed: launch covers it.
+- A requester's over-max note (Grok 07:51): queued and courier transfers into a requester carry the same
+  `delivery_note` as a direct one (checked on the copy for a queued step); the over-max line names the request max and
+  now says the robots take the excess out of the chest (it said "to storage"; Grok saw trashed spoilage fill passive
+  providers).
+- `transfer {position, to, item, from_inventory, to_inventory}` (Grok 06:30: `inventory` applied to both ends, so a
+  machine's output could not go straight into another's input): take at position from `from_inventory`, give at `to`
+  into `to_inventory` (a courier, as pick with that one place). Alone, `from_inventory` is `inventory` with
+  `direction: to_player`, `to_inventory` with `to_entity`. Checked on the copy: 5 copper cable from an assembler's
+  input into a requester chest. A courier whose take place is never reached now ends `unreached` with nothing given
+  (on the copy it had given one from the character's inventory).

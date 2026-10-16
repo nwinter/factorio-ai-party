@@ -45,6 +45,8 @@
   parts X/50, what it lacks for the parts left (in the silo and at its feeders), the cargo's kg and slots, and the
   last launch. `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically`
   on a silo) take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
+  With automatic requests on, `launch {position, platform}` launches the rocket with what the game loaded so far (they
+  stay on); `load_silo` refuses, saying what is aboard.
   `launch` refuses a rocket with no cargo (a launch spends its parts) unless `allow_empty: true`, naming science in
   chests near the silo. A silo's transfer inventories: `assembling_machine_input` (alias `parts`, the rocket-part
   ingredients) and `rocket_silo_rocket` (alias `cargo`, what goes up with the rocket); `inspect` lists them with a call each.
