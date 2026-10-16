@@ -5025,4 +5025,15 @@ fh watch    # deploy on every change
     does), and add `marked_by_name` or `cancelled_by_name`.
   - The hub's `construction_blocked` line counts our entities marked, by name (`1 of our entities marked for
     deconstruction wait for room (1 inserter; ...)`), and items on the ground marked for pickup apart.
+- `inspect` of an inserter adds `inserter_line` (Luna: arms misrouting items), one line with:
+  - its circuit condition and each of its signals' values on its wires now, and whether the condition holds (or is
+    ignored with no wire);
+  - its logistic condition;
+  - whether it is off by its condition;
+  - each red or green wire's far ends and what that network carries now;
+  - its filter, what it holds, where it picks from, and where it drops (into an entity, or onto the ground at a
+    position).
+  Example: `fast-inserter (9.5,2.5): enabled when iron-ore > 0 (on its wires: iron-ore 0): false now; it is off by
+  its condition; red wire to decider-combinator (12.5,2) output; network 31 carries calcite 40; filter iron-ore; picks
+  from transport-belt (8.5,1.5), drops into transport-belt (10.5,2.5)`.
 

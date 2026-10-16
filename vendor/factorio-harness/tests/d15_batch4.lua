@@ -715,3 +715,22 @@ do
   eq(list[3].marked,true,'items on the ground keep their marks')
 end
 print('d15_batch4 F9 deconstruction counts: ok')
+
+-- F5 (Luna): an inserter in one line: its condition and the signals on its wires now, wires, filter, pickup and drop. -
+do
+  defines={wire_connector_id={circuit_red=1,circuit_green=2,pole_copper=5},entity_status={disabled_by_control_behavior=9}}
+  prototypes={item={['iron-ore']={}},fluid={},virtual_signal={},entity={},recipe={},space_location={},quality={}}
+  local C=dofile('mod/agent-harness_0.1.0/circuits.lua'){}
+  local belt={valid=true,name='transport-belt',position={x=8.5,y=1.5}}
+  local furnace_belt={valid=true,name='transport-belt',position={x=10.5,y=2.5}}
+  local cond={first_signal={name='iron-ore'},comparator='>',constant=0}
+  local e={valid=true,type='inserter',name='fast-inserter',position={x=9.5,y=2.5},status=9,pickup_target=belt,drop_target=furnace_belt,
+    filter_slot_count=5,use_filters=true,inserter_filter_mode='whitelist',held_stack={valid_for_read=false},
+    get_filter=function(k) return k==1 and {name='iron-ore'} or nil end,
+    get_control_behavior=function() return {circuit_condition=cond} end,
+    get_circuit_network=function(w) return w==1 and {get_signal=function(s) return s.name=='iron-ore' and 0 or 0 end} or nil end}
+  local c={enable='iron-ore > 0',enable_met=false,
+    wires={red={{entity='decider-combinator',position={x=12.5,y=2},side='output'}}},networks={red={id=31,signals={{name='calcite',count=40}}}}}
+  eq(C.inserter_line(e,c),'fast-inserter (9.5,2.5): enabled when iron-ore > 0 (on its wires: iron-ore 0): false now; it is off by its condition; red wire to decider-combinator (12.5,2) output; network 31 carries calcite 40; filter iron-ore; picks from transport-belt (8.5,1.5), drops into transport-belt (10.5,2.5)')
+end
+print('d15_batch4 F5 inserter line: ok')

@@ -4802,6 +4802,8 @@ function handlers.inspect(p,a)
   end
   -- Circuit network: settings, each wire's far end, the signals now (circuits.lua).
   if M.circuits then local okc,c=pcall(M.timed,'inspect.circuits',M.circuits.read,e); if okc and c then out.circuit=c end end
+  -- An inserter in one line (Luna, d15: misrouting arms): condition and its signals now, wires, filters, pickup and drop.
+  if M.circuits and e.type=='inserter' then local okl,l=pcall(M.circuits.inserter_line,e,out.circuit); if okl then out.inserter_line=l end end
   -- A roboport or logistic chest: its logistic network's id, areas and robots, or that it has none; a roboport's own cell (networks.lua).
   if M.networks and (e.type=='roboport' or e.type=='logistic-container') then
     local okn,ln=pcall(M.timed,'inspect.logistic',M.networks.of_entity,e); if okn and ln then out.logistic_network=ln end

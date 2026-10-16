@@ -375,6 +375,70 @@ return function(api)
   end
   -- What the entity's circuit GUI shows now; nil without a control behavior
   -- (cb nil: the entity's own, never created by a read) or a wire.
+  -- An inserter in one line (Luna, d15: arms misrouting items): its circuit condition with each signal's value on its
+  -- wires now and whether it holds, whether the inserter is off by it, where its wires go and what their networks carry,
+  -- its filters and hand, and where it picks up and drops. c: M.read(e) (read here when nil).
+  function M.inserter_line(e, c)
+    c = c or M.read(e) or {}
+    local cb = try(function() return e.get_control_behavior() end)
+    local parts = {}
+    local function value(sig)
+      if not (type(sig) == 'table' and sig.name) then return nil end
+      local n, wired = 0, false
+      for _, w in ipairs({defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green}) do
+        local net = try(function() return e.get_circuit_network(w) end)
+        if net then wired = true; n = n + (try(function() return net.get_signal(sig) end) or 0) end
+      end
+      return wired and n or nil
+    end
+    if type(c.enable) == 'string' then
+      local cond = cb and try(function() return cb.circuit_condition end)
+      local vals = {}
+      for _, k in ipairs({'first_signal', 'second_signal'}) do
+        local sig = cond and cond[k]
+        local v = value(sig)
+        if v then vals[#vals+1] = string.format('%s %d', signal_text(sig), v) end
+      end
+      parts[#parts+1] = string.format('enabled when %s%s: %s now', c.enable, #vals > 0 and ' (on its wires: ' .. table.concat(vals, ', ') .. ')' or '',
+        c.enable_ignored and 'ignored (no red or green wire)' or c.enable_met == true and 'true' or c.enable_met == false and 'false' or 'unknown')
+    elseif c.enable == false then parts[#parts+1] = 'no circuit condition' end
+    if type(c.logistic) == 'string' then
+      parts[#parts+1] = string.format('logistic condition %s: %s now', c.logistic, c.logistic_met == true and 'true' or c.logistic_met == false and 'false' or 'unknown')
+    end
+    local st = try(function() return e.status end)
+    if st and st == defines.entity_status.disabled_by_control_behavior then parts[#parts+1] = 'it is off by its condition'
+    elseif type(c.enable) == 'string' or type(c.logistic) == 'string' then parts[#parts+1] = 'it is on' end
+    -- Its wires and what each network carries now.
+    for key, rows in pairs(c.wires or {}) do
+      if key:sub(1, 6) ~= 'copper' then
+        local ends = {}
+        for i = 1, math.min(3, #rows) do local r = rows[i]; ends[i] = string.format('%s%s (%g,%g)%s', r.ghost and 'ghost of ' or '', r.entity, r.position.x, r.position.y, r.side and ' ' .. r.side or '') end
+        local net = c.networks and c.networks[key]
+        local sigs = {}
+        for i, sg in ipairs(net and net.signals or {}) do if i <= 4 then sigs[i] = sg.name .. ' ' .. sg.count end end
+        parts[#parts+1] = string.format('%s wire to %s%s%s', key, table.concat(ends, ', '), #rows > 3 and ', ...' or '',
+          net and string.format('; network %s carries %s', tostring(net.id), #sigs > 0 and table.concat(sigs, ', ') .. (net.more and ', ...' or '') or 'nothing') or '')
+      end
+    end
+    -- Filters, hand, pickup and drop.
+    local fl = {}
+    for k = 1, try(function() return e.filter_slot_count end) or 0 do
+      local f = try(function() return e.get_filter(k) end)
+      local n = type(f) == 'string' and f or type(f) == 'table' and (type(f.name) == 'string' and f.name or try(function() return f.name.name end)) or nil
+      if n then fl[#fl+1] = n end
+    end
+    if #fl > 0 and try(function() return e.use_filters end) ~= false then
+      parts[#parts+1] = (try(function() return e.inserter_filter_mode end) == 'blacklist' and 'filter not ' or 'filter ') .. table.concat(fl, ', ')
+    end
+    local h = try(function() return e.held_stack end)
+    if h and h.valid_for_read then parts[#parts+1] = string.format('holding %d %s', h.count, h.name) end
+    local function at_(x) return x and x.valid and string.format('%s (%g,%g)', x.name, x.position.x, x.position.y) end
+    local pick, drop = try(function() return e.pickup_target end), try(function() return e.drop_target end)
+    local dp = try(function() return e.drop_position end)
+    parts[#parts+1] = string.format('picks from %s, drops %s', at_(pick) or 'nothing (the ground)',
+      at_(drop) and 'into ' .. at_(drop) or (dp and string.format('onto the ground at (%g,%g)', dp.x, dp.y) or 'nowhere'))
+    return string.format('%s (%g,%g): %s', e.name, e.position.x, e.position.y, table.concat(parts, '; '))
+  end
   local SEG = 400
   function M.belt_segment(e)
     local lines = {}
