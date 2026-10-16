@@ -328,3 +328,26 @@ do
   has(plan.error,'your inventory has no room for'); has(plan.error,'5 iron-plate')
 end
 print('d15_batch3 8 fast replace hand: ok')
+
+-- 9 (Grok): enemy units near an artillery piece: distance, their range, whether our turrets reach them. -----------
+do
+  prototypes={entity={['big-spitter']={attack_parameters={range=13}},['medium-biter']={attack_parameters={range=1}}}}
+  defines={inventory={artillery_turret_ammo=1}}
+  local force={name='player',is_chunk_visible=function() return true end,is_chunk_charted=function() return true end,artillery_range_modifier=0}
+  local units={{valid=true,name='big-spitter',position={x=20,y=0}},{valid=true,name='medium-biter',position={x=3,y=4}},{valid=true,name='big-spitter',position={x=0,y=40}}}
+  local gun={valid=true,name='gun-turret',type='ammo-turret',position={x=25,y=0},prototype={attack_parameters={range=18}}}
+  local surface={find_entities_filtered=function(f)
+    if f.type=='unit' then return units end
+    if type(f.type)=='table' and f.type[1]=='ammo-turret' then return {gun} end
+    return {}
+  end}
+  local piece={valid=true,name='artillery-turret',type='artillery-turret',position={x=0,y=0},surface=surface,force=force,
+    prototype={guns={{attack_parameters={range=224,min_range=32}}}},get_inventory=function() return {get_contents=function() return {} end} end}
+  local AR=require('artillery'){position=function(v) return v end}
+  local u=AR.units_near(piece)
+  eq(u.count,3); eq(u.by_name,'1 medium-biter, 2 big-spitter')
+  eq(u.rows[1],'medium-biter (3,4) 5 tiles away, its range 1 (4 outside it); no turret of ours reaches it')
+  eq(u.rows[2],'big-spitter (20,0) 20 tiles away, its range 13 (7 outside it); 1 turret of ours reaches it')
+  has(AR.row(piece).line,'3 enemy units within 64 tiles (1 medium-biter, 2 big-spitter): medium-biter (3,4)')
+end
+print('d15_batch3 9 artillery units: ok')

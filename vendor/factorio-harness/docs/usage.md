@@ -4775,3 +4775,8 @@ fh watch    # deploy on every change
   - supply's `chests` rows add what robots have reserved for pickup in each provider, storage or plain chest. When
     all of it is reserved, `surplus_chest` names the largest such chest as `all reserved for robot pickups` instead
     of leaving it out (Haiku).
+- Artillery (Grok lost a turret to biters that came after the artillery woke a nest): each row of `artillery` adds
+  `units_near`. These are the enemy units within 64 tiles of the piece that our force sees now: the count by name,
+  and for the 5 nearest the distance, its attack range and how far outside it the piece stands, and how many of our
+  turrets reach it (`big-spitter (20,0) 20 tiles away, its range 13 (7 outside it); 1 turret of ours reaches it`).
+  The row's line says the same.

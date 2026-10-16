@@ -133,6 +133,7 @@ already targets your character.
 - Build and place_ghosts dry runs name the tiles an entry needs (shallow oil, water) together with the entities in its way; a platform ghost refused over empty space says when foundation tile ghosts under it are not built yet.
 - `queue_status {args: true}`: history with each step's arguments (and a finished loop's steps); status `active.progress` gives a tour's or courier's leg, distance left and moved so far; an interrupted queued transfer tour resumes from the stops left.
 - `deconstruct {area, cancel: true}` unmarks; pump dry runs show each port's tile and what is there; supply rows show stock robots have reserved.
+- `artillery` rows add `units_near`: enemy units within 64 tiles of each piece, their range, and how many of our turrets reach them.
 `./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
   starts, naming each step's makers, their states and what they lack; `fixes` gives, for a starved maker, the nearest
   chest within 64 tiles holding what it lacks and one `transfer` call that carries it there; with `"per_min":30` each step's rate for that
