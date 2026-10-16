@@ -4689,3 +4689,36 @@ fh watch    # deploy on every change
   disconnect declarations do not count as new circuit connections. This reads at most 64 planned pump
   positions (further pumps counted as unchecked), not a full-platform circuit audit or a proof that a declared wire will connect. Existing `circuit`
   and `circuit_set` reads already report `enable_ignored` for an enabled condition without a circuit connection.
+
+## d15 batch3 (operator 18:30, shifts 18-19)
+
+- Full chests (Astra, Luna: Gleba's nutrient, yumako and bioflux providers had 48/48 slots used, mostly spoilage,
+  and the machines feeding them stopped): `supply {item}` adds `full_chests`, the chests with every slot used that
+  the item's makers' output inserters wait on or that hold the item: `passive-provider-chest (10.5,4.5): 48/48 slots
+  used (spoilage 4000 in 40 slots, nutrients 240 in 8 slots); output waits on it: biochamber (7.5,4.5) full_output
+  (1 inserter waiting)`. Its `chests` rows add each non-requester chest's free slots (`, 0/48 slots free`).
+  `bottleneck {item}` adds the chest to a not-working maker stopped by its output (`; output into ... 48/48 slots
+  used (...)`) and lists those chests in `full_chests`. `open for you` counts full chests in your fresh claims that
+  a full_output machine's output waits on. `inspect` of such a chest adds `slots_used`, `output_waits` and
+  `free_chests_near` (the nearest 3 chests of ours within 32 tiles with a free slot).
+- Heat (Sol: reclaiming "spare" heat pipes twice froze an ammonia underground pipe and the only steam turbine on
+  Aquilo): `mine {position, dry_run: true}` on an entity mines nothing and reads `heat_loss`; `deconstruct` (dry run
+  and live) reads it for the heat-network parts it marks; a live `mine` of a heat part carries it when it is not
+  `none`. `heat_loss.cut_off`: the heat-network parts (by the engine's heat links) whose part of the network keeps no
+  nuclear reactor or heating tower without the removed ones (`1 heat-network part cut off from every nuclear reactor
+  and heating tower (1 heat-pipe; first at (5.5,1.5)); they keep their heat and cool`). `heat_loss.freeze` (a surface
+  whose entities need heating): freezable entities beside a removed heater, or beside a cut-off one, that keep no
+  heater at 30 C or more (`pipe-to-ground (4.5,2.5): loses its last heater at 30 C or more (heat-pipe (4.5,1.5) 270
+  C)`, or `keeps only heaters cut off from every reactor and heating tower, which cool`). Up to 64 freezable
+  entities are read; a heat network is followed up to 2000 parts.
+- Gun and ammo slots (Grok: a pistol in gun slot 1 and 75 piercing rounds in ammo slot 2; gun slot N fires only from
+  ammo slot N): `inventory` (and `status {inventory: true}`) gives `guns` and `ammo` per slot (`1 pistol, 2 empty, 3
+  empty (selected: 1)`, `1 empty, 2 piercing-rounds-magazine*75, 3 empty`) and `ammo_idle` for ammo whose gun slot
+  does not fire it (`ammo slot 2 piercing-rounds-magazine*75: gun slot 2 is empty; it fits gun slot 1 pistol, which
+  fires only from its own ammo slot`). `shoot`'s `no_compatible_ammo` names compatible ammo in other ammo slots and
+  the gun slot beside each. `equip {slot: ammo, item}` moves ammo held only in the ammo slots: to `index`, or beside
+  the selected gun when it fits it, else beside the first gun it fits (`moved_from`, `swapped`, `fired_by`). `equip`
+  without `slot` takes it from the item's kind.
+- `blueprint_save` and `blueprint_capture` take `platform=NAME` (Astra, cloning platform Starling into a new platform
+  Swift): they capture on that space platform by remote view, in platform coordinates (hub at 0,0), as `paste` and
+  `blueprint_place` already place there. Aboard a platform they act on it as before.

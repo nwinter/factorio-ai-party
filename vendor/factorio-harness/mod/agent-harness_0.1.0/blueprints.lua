@@ -874,6 +874,9 @@ return function(api)
     end
     local list=candidates(p,box)
     local changed,by=0,{}
+    -- Heat-network parts it marks (Sol, shift19): what their removal does to heat (heating.lua loss).
+    local heat_parts={}
+    local HEAT_PART={['heat-pipe']=true,reactor=true,boiler=true,['heat-interface']=true}
     for _, e in ipairs(list) do
       if e.valid and (e.force==p.force or e.force.name=='neutral') and e.type~='character' and e.minable
         and (not filters.entity_types or filters.entity_types[e.type])
@@ -882,8 +885,8 @@ return function(api)
           if e.to_be_deconstructed(p.force) then e.cancel_deconstruction(p.force,real(p)); changed=changed+1 end
         elseif dry then
           -- (a dry run: what is not marked yet; ghosts would be removed, as a planner removes them)
-          if not e.to_be_deconstructed(p.force) then changed=changed+1; by[e.name]=(by[e.name] or 0)+1 end
-        elseif e.order_deconstruction(p.force,real(p)) then changed=changed+1 end
+          if not e.to_be_deconstructed(p.force) then changed=changed+1; by[e.name]=(by[e.name] or 0)+1; if HEAT_PART[e.type] then heat_parts[#heat_parts+1]=e end end
+        elseif e.order_deconstruction(p.force,real(p)) then changed=changed+1; if HEAT_PART[e.type] then heat_parts[#heat_parts+1]=e end end
       end
     end
     out.changed=changed
@@ -894,6 +897,10 @@ return function(api)
       table.sort(names,function(x,y) return x[2]>y[2] or x[2]==y[2] and x[1]<y[1] end)
       for i,v in ipairs(names) do names[i]=v[2]..' '..v[1] end
       out.would_mark_by_name=#names>0 and table.concat(names,', ') or nil
+    end
+    if #heat_parts>0 and api.heat_loss then
+      local ok,loss=pcall(api.heat_loss,p.surface,p.force,heat_parts)
+      if ok and loss and not (loss.none and not dry) then out.heat_loss=loss end
     end
     if out.tiles then deconstruct_tiles(p,a,box,cancel,out,dry) end
     return out

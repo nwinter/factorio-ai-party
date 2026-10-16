@@ -98,5 +98,129 @@ return function(api)
     end
     return #rows>0 and rows or nil,more>0 and more or nil
   end
+  -- What removing entities does to heat (Sol, shift19: twice reclaiming "spare" heat pipes froze an ammonia
+  -- underground pipe and the only steam turbine, and all Aquilo power collapsed). Read from the built entities now:
+  --   cut_off: heat-network parts (engine heat_neighbours links) whose part of the network keeps no nuclear reactor or
+  --     heating tower once the removed ones are gone, where it held one before; they keep their heat and cool;
+  --   freeze (a surface whose entities need heating): freezable entities touching a removed heater (heat pipe,
+  --     reactor, heating tower) that had a heater at 30 C or more touching them, and keep none (lost), or keep only
+  --     cut-off ones (cools).
+  local NODES,CANDIDATES,SHOW=2000,64,8
+  function M.loss(surface,force,removed)
+    local gone,parts={},{}
+    for _,e in ipairs(removed or {}) do
+      if e.valid and e.unit_number then
+        gone[e.unit_number]=true
+        if buffer(e.prototype) then parts[#parts+1]=e end
+      end
+    end
+    if #parts==0 then return nil end
+    local function source(e) return e.type=='reactor' end
+    local function links(e) return try(function() return e.heat_neighbours end) or {} end
+    -- The network of e, with or without the removed parts: {list, source}; capped at NODES.
+    local function walk(start,skip,seen)
+      local list,has,queue,k={},false,{start},1
+      seen[start.unit_number]=true
+      while queue[k] and #list<NODES do
+        local e=queue[k];k=k+1
+        list[#list+1]=e
+        if source(e) and not (skip and gone[e.unit_number]) then has=true end
+        for _,n in ipairs(links(e)) do
+          if n.valid and n.unit_number and not seen[n.unit_number] and not (skip and gone[n.unit_number]) then seen[n.unit_number]=true;queue[#queue+1]=n end
+        end
+      end
+      return {list=list,source=has,capped=queue[k]~=nil or nil}
+    end
+    local before,cut,capped={},{},nil
+    local seen_before={}
+    for _,e in ipairs(parts) do
+      if not seen_before[e.unit_number] then
+        local w=walk(e,false,seen_before)
+        for _,x in ipairs(w.list) do before[x.unit_number]=w.source end
+        capped=capped or w.capped
+      end
+    end
+    local seen_after,cut_by={},{}
+    for _,e in ipairs(parts) do
+      if before[e.unit_number] then
+        for _,n in ipairs(links(e)) do
+          if n.valid and n.unit_number and not gone[n.unit_number] and not seen_after[n.unit_number] then
+            local w=walk(n,true,seen_after)
+            capped=capped or w.capped
+            if not w.source then for _,x in ipairs(w.list) do cut[x.unit_number]=x;cut_by[x.name]=(cut_by[x.name] or 0)+1 end end
+          end
+        end
+      end
+    end
+    local out={}
+    local ncut=0
+    for _ in pairs(cut) do ncut=ncut+1 end
+    if ncut>0 then
+      local names={}
+      for n,c in pairs(cut_by) do names[#names+1]={n,c} end
+      table.sort(names,function(x,y) return x[2]>y[2] or x[2]==y[2] and x[1]<y[1] end)
+      for i,v in ipairs(names) do names[i]=v[2]..' '..v[1] end
+      local first
+      for _,x in pairs(cut) do if not first or x.position.y<first.position.y or x.position.y==first.position.y and x.position.x<first.position.x then first=x end end
+      out.cut_off=string.format('%d heat-network part%s cut off from every nuclear reactor and heating tower (%s; first at (%g,%g)); they keep their heat and cool',
+        ncut,ncut==1 and '' or 's',table.concat(names,', '),first.position.x,first.position.y)
+      out.cut_off_count=ncut
+    end
+    -- Freezing: only where entities need heating.
+    local required=try(function() return surface.planet.prototype.entities_require_heating end)
+    if required then
+      local cands,seen={},{}
+      local more=0
+      -- beside the removed heaters, and beside the cut-off ones (they cool)
+      local beside={}
+      for _,h in ipairs(parts) do beside[#beside+1]=h end
+      for _,h in pairs(cut) do if #beside<NODES then beside[#beside+1]=h end end
+      for _,h in ipairs(beside) do
+        if HEATERS[h.type] and #cands<CANDIDATES then
+          local b=box(h.prototype,h.position,h.direction)
+          for _,c in ipairs(surface.find_entities_filtered{area={{b.l-1,b.t-1},{b.r+2,b.b+2}},force=force} or {}) do
+            if c.valid and c.unit_number and not gone[c.unit_number] and not seen[c.unit_number] and c.type~='entity-ghost'
+              and (try(function() return c.prototype.heating_energy end) or 0)>0 then
+              seen[c.unit_number]=true
+              if #cands<CANDIDATES then cands[#cands+1]=c else more=more+1 end
+            end
+          end
+        end
+      end
+      local rows={}
+      for _,c in ipairs(cands) do
+        local b=box(c.prototype,c.position,c.direction)
+        local warm_gone,warm_kept,warm_cut,warm_cut_first={},0,0,nil
+        for _,h in ipairs(surface.find_entities_filtered{area={{b.l-1,b.t-1},{b.r+2,b.b+2}},force=force,type={'heat-pipe','reactor'}} or {}) do
+          if h.valid and touches(b,box(h.prototype,h.position,h.direction)) then
+            local t=try(function() return h.temperature end) or 0
+            if t>=30 then
+              if gone[h.unit_number] then warm_gone[#warm_gone+1]=h
+              elseif cut[h.unit_number] then warm_cut=warm_cut+1;warm_cut_first=warm_cut_first or h
+              else warm_kept=warm_kept+1 end
+            end
+          end
+        end
+        if #warm_gone+warm_cut>0 and warm_kept==0 then
+          local h=warm_cut_first or warm_gone[1]
+          local frozen=try(function() return c.frozen end)
+          rows[#rows+1]=string.format('%s (%g,%g)%s: %s (%s (%g,%g) %d C)',c.name,c.position.x,c.position.y,frozen and ' (frozen now)' or '',
+            warm_cut>0 and 'keeps only heaters cut off from every reactor and heating tower, which cool' or 'loses its last heater at 30 C or more',
+            h.name,h.position.x,h.position.y,math.floor((try(function() return h.temperature end) or 0)+0.5))
+        end
+      end
+      if #rows>0 then
+        out.freeze_count=#rows
+        out.freeze={}
+        for i=1,math.min(SHOW,#rows) do out.freeze[i]=rows[i] end
+        if #rows>SHOW then out.freeze[#out.freeze+1]=string.format('%d more',#rows-SHOW) end
+      end
+      if more>0 then out.freeze_unread=more..' more freezable entities beside the removed heaters not read' end
+    end
+    if capped then out.network_capped='a heat network read stopped at '..NODES..' parts' end
+    if not next(out) then return {none='no entity loses its last heater at 30 C or more and no heat-network part is cut off'} end
+    out.rule=required and out.freeze and M.RULE or nil
+    return out
+  end
   return M
 end

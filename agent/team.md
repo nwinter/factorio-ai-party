@@ -123,7 +123,12 @@ already targets your character.
   machines that make and use it by status (the worst 3 with positions), and the inserters feeding them; `throughput` names a machine whose inserters carry less than its
   recipe at full speed, each inserter's rate a minute, and how many inserters like its fastest it takes (`trace
   {position}` on a machine gives the same).
-- `./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
+  `full_chests` names chests with every slot used that the makers' output waits on (slots used/total, what fills them,
+  the machines waiting); `chests` rows give free slots; `inspect` of a full chest names the nearest chests with free slots.
+- - `mine {position, dry_run: true}` and `deconstruct` (dry run and live) read `heat_loss`: heat-network parts cut off from every reactor and heating tower, and on Aquilo freezable pipes and machines that lose their last heater at 30 C or more.
+- Gun slot N fires only from ammo slot N: `inventory` shows guns and ammo per slot; `equip {slot: "ammo", item, index}` moves ammo between ammo slots.
+- `blueprint_save {name, area, platform: "Starling"}` and `blueprint_capture` take `platform=NAME` like `paste` and `blueprint_place`: save a platform's layout from anywhere, then `blueprint_place {name, platform: "Swift"}`.
+`./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
   starts, naming each step's makers, their states and what they lack; `fixes` gives, for a starved maker, the nearest
   chest within 64 tiles holding what it lacks and one `transfer` call that carries it there; with `"per_min":30` each step's rate for that
   target, what it makes now, its makers' rate each and the machines the target takes.

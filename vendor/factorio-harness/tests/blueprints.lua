@@ -636,4 +636,19 @@ do
   fails(function() L.blueprint_save(p,{name='e63',area=area}) end,'holds 64 entries')
   _G.capture_world=nil; p.name=nil
 end
+-- blueprint_save and blueprint_capture with platform=NAME (Astra, d15 18:35): the platform handler's view of the
+-- player (surface: the platform's) needs no charted chunk; bots.lua lets them run with platform=.
+do
+  local bots=dofile('mod/agent-harness_0.1.0/bots.lua')
+  local list=type(bots)=='function' and bots{} or bots
+  local found={}
+  for _,n in ipairs(list.PLATFORM_ACTIONS) do found[n]=true end
+  assert(found.blueprint_save and found.blueprint_capture,'blueprint_save and blueprint_capture take platform=')
+  local plat={force=p.force}
+  local view=setmetatable({__platform='Starling',__player=p},{__index=function(_,k) if k=='surface' then return {platform=plat,find_entities_filtered=function() return {} end} end return p[k] end})
+  local far={left_top={x=40,y=40},right_bottom={x=42,y=42}}
+  local ok,err=pcall(H.blueprint_capture,view,{area=far})
+  assert(ok,tostring(err))
+  fails(function() H.blueprint_capture(p,{area=far}) end,'uncharted')
+end
 print('blueprint policy tests passed')

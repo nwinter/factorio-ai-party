@@ -44,6 +44,8 @@ return function(api)
   local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
   local function try(fn, ...) local ok, v = pcall(fn, ...); if ok then return v end end
   local slots = require('slots')()
+  local fullchest = require('fullchest'){slots=slots, status_name=function(e) return api.status_name and api.status_name(e) end}
+  M.fullchest = fullchest
   -- No closure per call: these run for every belt, chest and inserter.
   local function inventory(e, name)
     local id = defines.inventory[name]
@@ -566,7 +568,14 @@ return function(api)
           status = status or api.status_name(e) or 'unknown'
           local k = t.takers
           k.n = k.n + 1; bump(k.states, status)
-          if FULL[status] then bump(k.into, drop and drop.name or 'ground') end
+          if FULL[status] then
+            bump(k.into, drop and drop.name or 'ground')
+            -- The chest it waits on (Astra, Luna, shift19): read for full_chests.
+            if drop and drop.unit_number and (drop.type == 'container' or drop.type == 'logistic-container') then
+              k.chests = k.chests or {}
+              k.chests[drop.unit_number] = drop
+            end
+          end
         end
       end
     end
@@ -819,6 +828,9 @@ return function(api)
         local row = c.e.unit_number and t.request_of[c.e.unit_number]
         local note = not row and request_note(c.e, t.item)
         text = text .. (row and (' (requests ' .. row.want .. ')') or ' (no request for it' .. (note and ': ' .. note or '') .. ')')
+      else
+        -- Its free slots (Astra, Luna, shift19: providers 48/48 slots used while supply read only their stock).
+        text = text .. fullchest.free_note(c.e)
       end
       -- Its spread (Sol, 22:25): least and most spoiled stack, count-weighted.
       local s = c.e.unit_number and t.spread_of and t.spread_of[c.e.unit_number]
@@ -1009,6 +1021,32 @@ return function(api)
     local line = string.format('%d inserters take from the makers: %s', k.n, table.concat(parts, ', '))
     if next(k.into) then line = line .. ' (output side full: into ' .. short_list(k.into, 4) .. ')' end
     return line
+  end
+  -- Chests with every slot used that the item's makers' output waits on, or that hold the item (Astra, Luna, shift19):
+  -- slots used/total, what fills them, the machines whose output waits on it. Up to FULL_SHOW of FULL_LOOK read.
+  local FULL_SHOW, FULL_LOOK = 5, 32
+  function M.full_chests(t)
+    local seen, list, looked = {}, {}, 0
+    local function look(e)
+      if looked >= FULL_LOOK or not e or not e.valid or not e.unit_number or seen[e.unit_number] then return end
+      seen[e.unit_number] = true
+      looked = looked + 1
+      local r = try(fullchest.read, e)
+      if r then list[#list+1] = r end
+    end
+    local units = {}
+    for unit in pairs(t.takers.chests or {}) do units[#units+1] = unit end
+    table.sort(units)
+    for _, unit in ipairs(units) do look(t.takers.chests[unit]) end
+    for _, c in ipairs(t.chests) do
+      if c.kind ~= 'requester' and c.kind ~= 'buffer' and (c.e.type == 'container' or c.e.type == 'logistic-container') then look(c.e) end
+    end
+    if #list == 0 then return nil end
+    table.sort(list, function(a, b) if #a.waiting.machines ~= #b.waiting.machines then return #a.waiting.machines > #b.waiting.machines end return a.line < b.line end)
+    local out = {}
+    for i = 1, math.min(FULL_SHOW, #list) do out[i] = list[i].line end
+    if #list > FULL_SHOW then out[#out+1] = string.format('%d more full chests', #list - FULL_SHOW) end
+    return out
   end
   function M.counted(scan)
     local c = scan.counted
@@ -1296,7 +1334,7 @@ return function(api)
       local names = prototypes.item[item] and {[item]=true} or {}
       local scan = M.scan(surface, force, names, {packs=M.packs_of(force), miners=true})
       local chain = M.chain(scan, force, surface, item)
-      local where, fixes = {}, {}
+      local where, fixes, full_chests = {}, {}, {}
       for _, name in ipairs(chain.path or {}) do
         local rows = {}
         for _, m in ipairs(scan.by_product and scan.by_product[name] or {}) do
@@ -1307,8 +1345,12 @@ return function(api)
             local burnt = state == 'burnt_result_full' and api.burnt_line and try(api.burnt_line, m.e)
             -- Its input holding spoilage its recipe does not take (Sol, 22:08).
             local sp = (not m.miner) and slots.input_spoilage(m.e)
-            rows[#rows+1] = string.format('%s %s %s%s%s%s', m.e.name, at(m.e.position), state, #lack > 0 and ' (lacks ' .. table.concat(lack, ', ') .. ')' or '',
-              burnt and ' (' .. burnt .. ')' or '', sp and '; ' .. sp.text or '')
+            -- Its output waiting on a chest with every slot used (Astra, Luna, shift19).
+            local fc = FULL[state] and try(fullchest.of_machine, m.e)
+            if fc then full_chests[#full_chests+1] = fc.line end
+            rows[#rows+1] = string.format('%s %s %s%s%s%s%s', m.e.name, at(m.e.position), state, #lack > 0 and ' (lacks ' .. table.concat(lack, ', ') .. ')' or '',
+              burnt and ' (' .. burnt .. ')' or '', sp and '; ' .. sp.text or '',
+              fc and string.format('; output into %s %s: %d/%d slots used (%s)', fc.name, at(fc.position), fc.used, fc.total, fc.fills) or '')
             for _, ing in ipairs(SHORT[state] and lack or {}) do
               if #fixes < FIX_MAX then fixes[#fixes+1] = fix_line(surface, force, m, ing) end
             end
@@ -1324,7 +1366,7 @@ return function(api)
         target = ratechain.plan(scan.by_product or {}, item, a.per_min, force, function(name) return made[name] end)
       end
       return {item=item, surface=surface.name, line=chain.line, path=chain.path, root=chain.last, not_working=#where > 0 and where or nil,
-        fixes=#fixes > 0 and fixes or nil, steps=chain.tree, cut=chain.cut, target=target}
+        fixes=#fixes > 0 and fixes or nil, full_chests=#full_chests > 0 and full_chests or nil, steps=chain.tree, cut=chain.cut, target=target}
     end)
   end
   local function packs_of(force)
@@ -1366,7 +1408,7 @@ return function(api)
 
   M.schema = {supply = {item='item or fluid name; fluids return 10-minute flow, connected segment stock/capacity, makers and users by status', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole; fluid segments touching it include their whole connected stock',
     radius='with near: 1..512 tiles (default 64); alone: that far around you, on your surface',
-    returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); surplus_chest (the largest unreserved stock outside requester/buffer chests, with held and robot-pickup reservations); belt_lines (where it sits on belts: the belt tiles holding it joined into lines (side by side; an empty tile or an underground splits one), the 5 holding the most: "N on K belt tiles (x1,y1)-(x2,y2); most M at (x,y); out end (x,y) n, in end (x,y) n" (out: its items move on to no belt of the line; in: nothing of the line feeds it), then how many more lines hold how many); chests (largest 5; what a requester or buffer chest asks for); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); freshness (its spread over every place read: count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; chests adds each one\'s least and most spoiled and count-weighted %); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
+    returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); surplus_chest (the largest unreserved stock outside requester/buffer chests, with held and robot-pickup reservations); belt_lines (where it sits on belts: the belt tiles holding it joined into lines (side by side; an empty tile or an underground splits one), the 5 holding the most: "N on K belt tiles (x1,y1)-(x2,y2); most M at (x,y); out end (x,y) n, in end (x,y) n" (out: its items move on to no belt of the line; in: nothing of the line feeds it), then how many more lines hold how many); chests (largest 5; what a requester or buffer chest asks for; any other chest its free slots, e.g. 0/48 slots free); full_chests (chests with every slot used that the makers\' output inserters wait on or that hold the item: slots used/total, what fills them (item and count, the most slots first), the machines whose output waits on it); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); freshness (its spread over every place read: count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; chests adds each one\'s least and most spoiled and count-weighted %); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
 
   function M.supply(p, a)
     local item = a.item
@@ -1418,6 +1460,7 @@ return function(api)
     if out.users_worst and #out.users_worst == 0 then out.users_worst = nil end
     out.feeders = M.feeders(t)
     out.takers = M.takers(t)
+    out.full_chests = M.full_chests(t)
     out.throughput = M.throughput(t)
     out.counted = M.counted(scan)
     -- Spoilage: the first to spoil, or for an item that hatches into enemies (pentapod-egg) the first to hatch.
