@@ -326,3 +326,42 @@ do
   api.navigate,api.avoid_start,api.avoid_report,api.leg_done,api.avoid_mode=oldnav,oldavoid,oldreport,oldleg,oldmode
   reachable=saved_reachable
 end
+
+-- collect wait_ticks at several machines (Sonnet 00:20): it stands at the first and takes from the others it reaches
+-- from there too (action.also); one out of reach is named in the report, not walked to.
+do
+  prototypes.item['copper-cable']={}
+  local function machine(x,n)
+    local o={n=n}
+    o.get_item_count=function(f) return f.name=='copper-cable' and o.n or 0 end
+    o.get_contents=function() return o.n>0 and {{name='copper-cable',quality='normal',count=o.n}} or {} end
+    o.is_empty=function() return o.n==0 end
+    local m={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=x,y=0},force=p.force,products_finished=0,out=o,
+      bounding_box={left_top={x=x-1.5,y=-1.5},right_bottom={x=x+1.5,y=1.5}},surface={find_entities_filtered=function() return {} end}}
+    m.get_output_inventory=function() return o end
+    m.get_recipe=function() return {name='copper-cable',products={{type='item',name='copper-cable',amount=2}}} end
+    return m
+  end
+  local first,second,far=machine(2,4),machine(8,6),machine(40,9)
+  local api3={}
+  for k,v in pairs(api) do api3[k]=v end
+  api3.take=function(_,e,item,_,count)
+    local n=math.min(e.out.n,count); e.out.n=e.out.n-n
+    return {transferred=n,items={{name='copper-cable',count=n}}}
+  end
+  local W=dofile('mod/agent-harness_0.1.0/stock.lua')(api3)
+  local fp={position={x=0,y=0},force=p.force,reach_distance=10,can_reach_entity=function(e) return e~=far end}
+  game.tick=2000
+  local action=W.start_wait(fp,{item='copper-cable'},first,60)
+  action.also={second,far}
+  eq(W.tick(fp,action),nil); eq(action.got,10,'4 from the first, 6 from the second')
+  second.out.n=2; second.products_finished=1
+  game.tick=2001; eq(W.tick(fp,action),nil); eq(action.got,12)
+  eq(far.out.n,9,'the far one is not taken from')
+  game.tick=2000+61
+  eq(W.tick(fp,action),'collected')
+  local r=W.wait_report(action)
+  eq(r.also,'from the others: assembling-machine-2 (8,0) 8; out of reach from where it stood: assembling-machine-2 (40,0)')
+  eq(r.took,'copper-cable*12')
+end
+print('stock collect at several machines: ok')
