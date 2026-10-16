@@ -5451,3 +5451,9 @@ fh watch    # deploy on every change
 - A hand-built inserter (Muse 07:51: three backwards inserters, about 30 minutes) says what its pickup and drop sides
   touch in the build reply, as check_inserters reads them: `pickup: requester-chest (44.5,190.5)`, `drop: none: the
   ground at (42.5,190.5)`, beside `inserter` (the direction in words) and `io_warning`. Checked on the copy.
+- `placements` with nothing fitting (Astra 06:22, 4 times on Fulgora: a roboport in a dense accumulator field) adds
+  `fewest_to_clear`: up to 3 spots within 12 tiles of the centre whose blockers are all ours and minable (or trees and
+  rocks), on tiles the entity stands on, fewest removals first: `(47,187): mine 2 first (accumulator 2): accumulator
+  (48,186), accumulator (48,188)`. One read of the area's entities and tiles, the spots tried in Lua. On the copy: a
+  roboport at radius 1 in Fulgora's accumulators 1.5 ms in the container; the worst case seen, a rocket silo at radius
+  24 in the base, 30 ms in the container (about 6 ms on n; 93 ms before the 12-tile cap).
