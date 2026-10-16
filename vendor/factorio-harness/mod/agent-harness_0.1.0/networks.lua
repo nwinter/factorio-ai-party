@@ -779,7 +779,7 @@ return function(api)
         v.roboports = v.roboports + 1
         v.center = v.center or {x=o.position.x, y=o.position.y}
         -- Repair packs in its material slot (Haiku, d15: a remote agent could not see them run out).
-        local mat = defines.inventory.roboport_material and try(function() return o.get_inventory(defines.inventory.roboport_material) end)
+        local mat = defines.inventory and defines.inventory.roboport_material and try(function() return o.get_inventory(defines.inventory.roboport_material) end)
         local packs = 0
         for _, it in ipairs(mat and try(function() return mat.get_contents() end) or {}) do
           local n = type(it.name) == 'string' and it.name or try(function() return it.name.name end)
