@@ -122,3 +122,32 @@ do
   eq(H.loss(surface,{name='player'},{ug}),nil,'no heat part removed')
 end
 print('d15_batch3 2 heat: ok')
+
+-- 3 (Grok): guns and ammo per slot; compatible ammo in another slot; moving ammo between ammo slots. ---------------
+do
+  defines={inventory={character_guns=1,character_ammo=2}}
+  prototypes={item={pistol={type='gun',attack_parameters={ammo_categories={'bullet'}}},
+    ['piercing-rounds-magazine']={type='ammo',ammo_category={name='bullet'}},rocket={type='ammo',ammo_category={name='rocket'}}}}
+  local function slot(name,count)
+    local s={}
+    local function set(n,c) s.name,s.count,s.valid_for_read=n,c,n~=nil end
+    set(name,count)
+    s.swap_stack=function(o) local n,c=s.name,s.count; set(o.name,o.count); o._set(n,c); return true end
+    s._set=set
+    return s
+  end
+  local guns={slot('pistol',1),slot(),slot()}
+  local ammo={slot(),slot('piercing-rounds-magazine',75),slot()}
+  local p={get_inventory=function(i) return i==1 and guns or ammo end}
+  local A=require('ammoslots')()
+  local r=A.read(p)
+  local g,am=A.lines(r)
+  eq(g,'1 pistol, 2 empty, 3 empty'); eq(am,'1 empty, 2 piercing-rounds-magazine*75, 3 empty')
+  eq(A.elsewhere(r,1),'piercing-rounds-magazine*75 in ammo slot 2 fits pistol (gun slot 1 fires only from ammo slot 1; ammo slot 2 is fired by gun slot 2: empty)')
+  eq(A.idle_ammo(r)[1],'ammo slot 2 piercing-rounds-magazine*75: gun slot 2 is empty; it fits gun slot 1 pistol, which fires only from its own ammo slot')
+  eq(A.fits('pistol','rocket'),false)
+  local m=A.move(p,'piercing-rounds-magazine',1)
+  eq(m.from,2); eq(m.to,1); eq(ammo[1].name,'piercing-rounds-magazine'); eq(ammo[1].count,75); eq(ammo[2].valid_for_read,false)
+  eq(A.idle_ammo(A.read(p)),nil)
+end
+print('d15_batch3 3 ammo slots: ok')

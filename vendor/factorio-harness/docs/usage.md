@@ -4711,3 +4711,11 @@ fh watch    # deploy on every change
   heater at 30 C or more (`pipe-to-ground (4.5,2.5): loses its last heater at 30 C or more (heat-pipe (4.5,1.5) 270
   C)`, or `keeps only heaters cut off from every reactor and heating tower, which cool`). Up to 64 freezable
   entities are read; a heat network is followed up to 2000 parts.
+- Gun and ammo slots (Grok: a pistol in gun slot 1 and 75 piercing rounds in ammo slot 2; gun slot N fires only from
+  ammo slot N): `inventory` (and `status {inventory: true}`) gives `guns` and `ammo` per slot (`1 pistol, 2 empty, 3
+  empty (selected: 1)`, `1 empty, 2 piercing-rounds-magazine*75, 3 empty`) and `ammo_idle` for ammo whose gun slot
+  does not fire it (`ammo slot 2 piercing-rounds-magazine*75: gun slot 2 is empty; it fits gun slot 1 pistol, which
+  fires only from its own ammo slot`). `shoot`'s `no_compatible_ammo` names compatible ammo in other ammo slots and
+  the gun slot beside each. `equip {slot: ammo, item}` moves ammo held only in the ammo slots: to `index`, or beside
+  the selected gun when it fits it, else beside the first gun it fits (`moved_from`, `swapped`, `fired_by`). `equip`
+  without `slot` takes it from the item's kind.

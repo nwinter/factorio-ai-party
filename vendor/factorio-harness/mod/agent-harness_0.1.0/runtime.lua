@@ -1376,13 +1376,13 @@ function handlers.describe()
         gun='in a vehicle: a gun name (tank-cannon, tank-machine-gun, tank-flamethrower, vehicle-machine-gun, spidertron-rocket-launcher-1..4)',
         ammo='in a vehicle: an ammo name (cannon-shell, explosive-cannon-shell, firearm-magazine, flamethrower-ammo, rocket, ...): the gun that takes it, its slot loaded from your inventory when empty or holding another kind',
         note='seated in a car, tank or spidertron as its gunner (the driver, unless driver_is_gunner is off and a passenger sits in) it fires the vehicle\'s selected gun from the vehicle\'s ammo slots; the turret turns toward the target as a player\'s cursor turns it; position= aims at the entity there (not our own), auto=true at the nearest enemy in radius; vehicle {drive} goes on while it fires; reply: vehicle, seat, gun, gun_slot, range, guns (each slot with its ammo), target, out_of_range',
-        outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={slot='gun|ammo|armor',item='owned item name',index='optional exact slot; without it gun/ammo tries compatible empty slots in order, then slot 1; armor defaults to 1'},
+        outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={slot='gun|ammo|armor (default: the item\'s kind)',item='owned item name',index='optional exact slot; without it gun/ammo tries compatible empty slots in order, then slot 1; armor defaults to 1. Ammo held only in the ammo slots moves between them (gun slot N fires only from ammo slot N): to index, or beside the selected gun when it fits, else beside the first gun it fits; returns moved_from, swapped, fired_by'},
       danger={position='{x,y}: the destination',radius='8..128 tiles (default 64)',surface='optional surface name (default yours)',returns='line and lines (facts, no verdict): the destination and its distance from you; worms and spawners on charted chunks within radius by name, each kind\'s reach (a worm\'s range, a spawner\'s units\' sight) and the nearest; enemy units seen now within radius (chunks our force sees now) by name and the nearest; attacks on our structures, buildings lost and enemy groups heading there in the last 10 min; deaths of ours within radius; the worms and spawners whose reach the straight line from you passes (not the walk\'s path); you: health, armor, shield. Also spawners, worms, units {name=count}, distance, you {health, max_health, armor, shield, max_shield}'},
       pipe_gaps={from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; axis-aligned legs, at most 512 tiles',returns='line (one line), segments [{from, to, tiles, first, last, segment_id, fluid, amount, extent, underground}] (runs of tiles whose fluid entities join, with the engine\'s fluid segment there), cuts [{between, line}] (two neighbouring entities that do not join, or where the line stops at a tile with nothing), empty [{from, to, tiles}] (no fluid entity of ours and no pipe-to-ground pair over it), ghosts [{position, name}], unknown [{from, to, tiles}] (chunks our force does not see now: not read); in sight or by remote view on your surface'},
       belt_gaps={from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; axis-aligned legs, at most 512 tiles',surface='optional surface name (default yours)',returns='missing and ghosts with observed_tick; unknown means no recorded observation, never a missing belt; observations lists each chunk and age/current flag; visible chunks refreshed (at most 4); otherwise the remembered layout, including observed underground spans; no live entity reads in fog. Memory starts when installed, up to 256 chunks, discovered by the census or this call, one visible chunk refreshed per second'},
       drill_sites=M.drill_sites.schema,
       agriculture={surface='optional surface name (default yours)',returns='towers [{name, position, state (built, ghost, destroyed), status, seeds, lost_tick, cause, line}], as_of (census discovery tick), pending, history; current visible towers and ghosts, plus up to 256 recorded tower deaths since this history was installed; rebuilt positions show the current tower'},
-      describe={}, inventory={full='true: the stacks as lists {name, quality, count}, as observe player has them',returns='the character\'s inventories as short lines (name*count, name@quality*count, or empty): inventory (main), free (slots), guns, ammo, armor, equipment (in the armor\'s grid), trash (trash slots, when any), cursor (the stack or ghost in hand, when any), crafting (hand queue), warnings (nearly full, hoarding); status {inventory=true} gives it in one line'},
+      describe={}, inventory={full='true: the stacks as lists {name, quality, count}, as observe player has them',returns='the character\'s inventories as short lines (name*count, name@quality*count, or empty): inventory (main), free (slots), guns and ammo per slot (1 pistol, 2 empty, 3 empty (selected: 1); 1 empty, 2 piercing-rounds-magazine*75, 3 empty: gun slot N fires only from ammo slot N), ammo_idle (ammo in a slot whose gun slot does not fire it, and the guns it fits), armor, equipment (in the armor\'s grid), trash (trash slots, when any), cursor (the stack or ghost in hand, when any), crafting (hand queue), warnings (nearly full, hoarding); status {inventory=true} gives it in one line'},
       map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true: regions of water (a character cannot cross it), walkable water (shallow water, wetland, oil ocean: a character walks through) and lava',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={platform='optional owned platform: bounded schematic tile_runs [{x,y,count,name}], tile_count, entities with footprints and directions, centred on its hub or position; works aboard',position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)',returns='player, entities, resource_patches, ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the radius by item (rows for them only with entity_types/entity_names)'},
       status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
         reports='combat (while a shoot runs: the shoot\'s own record plus target {name, position, distance}: the enemy it aims at now, or a shoot at a position\'s spot; none with nothing in range; fired_tick: the last tick it fired at something; kills_10s: kills by the character or its vehicle in the last 10 s; hurt); hurt (also in brief: the last hit by another force on the character or the vehicle it rides in the last 5 minutes: tick, ago_s, by (the attacker, else the damage type), at, damage (hits under 10 s apart add up), what (the vehicle hit)); teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); storm (on Fulgora: the sky now, as networks has it, with bolts_near: lightning within 64 tiles of you); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name; power_cuts: one line per pole death that split its electric network or left machines with no pole, as team.alerts tells it (powercut.lua); latest: one line per loss incident (a raid: losses within 32 tiles on one surface) with causes; incidents: the same as rows {id, surface, platform, box {x0,y0,x1,y1}, total, names, by, first_tick, last_tick, line}; attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
@@ -2180,6 +2180,15 @@ function M.character_inventory(p,full)
   end
   out.inventory=stacks_text(contents(p.get_main_inventory())); out.guns=text(inv(defines.inventory.character_guns))
   out.ammo=text(inv(defines.inventory.character_ammo)); out.armor=text(armor)
+  -- Per slot (Grok, shift19 00:36: a pistol in gun slot 1, its ammo in ammo slot 2): gun slot N fires from ammo slot N.
+  local okr,r=pcall(M.ammoslots.read,p)
+  if okr and r.n>0 and (out.guns~='empty' or out.ammo~='empty') then
+    local g,am=M.ammoslots.lines(r)
+    local sel=p.character and p.character.valid and p.character.selected_gun_index
+    out.guns=sel and (g..' (selected: '..sel..')') or g
+    out.ammo=am
+    out.ammo_idle=M.ammoslots.idle_ammo(r)
+  end
   out.equipment=grid and #grid>0 and stacks_text(grid) or nil
   local t=trash and list(trash)
   out.trash=t and #t>0 and stacks_text(t) or nil
@@ -2195,6 +2204,7 @@ function M.inventory_line(p)
   local parts={'main '..v.inventory..' ('..tostring(v.free)..')'}
   if v.ammo~='empty' then parts[#parts+1]='ammo '..v.ammo end
   if v.guns~='empty' then parts[#parts+1]='guns '..v.guns end
+  if v.ammo_idle then parts[#parts+1]=table.concat(v.ammo_idle,'; ') end
   if v.armor~='empty' then parts[#parts+1]='armor '..v.armor..(v.equipment and ' with '..v.equipment or '') end
   if v.trash then parts[#parts+1]='trash '..v.trash end
   if v.cursor then parts[#parts+1]='cursor '..v.cursor end
@@ -8259,8 +8269,12 @@ function handlers.shoot(p,a)
     if gun_row.count==0 then
       local others={}
       for _,g in ipairs(guns) do if g.count>0 then others[#others+1]=string.format('slot %d %s has %s*%d',g.index,g.gun,g.ammo,g.count) end end
-      why={no_compatible_ammo=string.format('gun slot %d (%s) has nothing in ammo slot %d%s',gun_row.index,gun_row.gun,gun_row.index,
-        #others>0 and '; '..table.concat(others,', ')..' (gun_slot picks it)' or '')}
+      -- Ammo that fits it in another ammo slot (Grok, shift19 00:36), and that slot's gun slot.
+      local okr,r=pcall(M.ammoslots.read,p)
+      local there=okr and M.ammoslots.elsewhere(r,gun_row.index)
+      why={no_compatible_ammo=string.format('gun slot %d (%s) has nothing in ammo slot %d%s%s',gun_row.index,gun_row.gun,gun_row.index,
+        #others>0 and '; '..table.concat(others,', ')..' (gun_slot picks it)' or '',
+        there and '; '..there..'; equip {slot: ammo, item, index: '..gun_row.index..'} moves it between ammo slots' or '')}
     elseif pos and gun_row.range and distance(p.position,pos)>gun_row.range then
       why={out_of_range=string.format('%s reaches %g tiles; the target is %.1f away',gun_row.gun,gun_row.range,distance(p.position,pos))}
     end
@@ -8279,11 +8293,41 @@ function handlers.shoot(p,a)
 end
 function handlers.equip(p,a)
   local names={gun='character_guns',ammo='character_ammo',armor='character_armor'}
+  -- The slot from the item's kind when not given (Grok, shift19 00:36: equip {item: piercing-rounds-magazine}).
+  if a.slot==nil and type(a.item)=='string' then
+    local t=prototypes.item[a.item] and prototypes.item[a.item].type
+    a.slot=t=='gun' and 'gun' or t=='ammo' and 'ammo' or t=='armor' and 'armor' or nil
+  end
   assert(names[a.slot],'slot must be gun, ammo, or armor')
   local inv=p.get_inventory(defines.inventory[names[a.slot]])
   local index=a.index~=nil and integer(a.index,nil,1,#inv,'index') or nil
   assert(type(a.item)=='string','item required')
   local source=p.get_main_inventory().find_item_stack(a.item)
+  -- Ammo only in the ammo slots (Grok, shift19 00:36): moved between them. Without index it goes beside the selected
+  -- gun when it fits that gun, else beside the first gun it fits.
+  if not source and a.slot=='ammo' then
+    local r=M.ammoslots.read(p)
+    local held_at
+    for j=1,r.n do if r.ammo[j] and r.ammo[j].name==a.item then held_at=held_at or j end end
+    if held_at then
+      local to=index
+      if not to then
+        local sel=p.character and p.character.selected_gun_index
+        if sel and r.guns[sel] and M.ammoslots.fits(r.guns[sel].name,a.item) then to=sel
+        else for i=1,r.n do if not to and r.guns[i] and M.ammoslots.fits(r.guns[i].name,a.item) then to=i end end end
+      end
+      if not to then error(string.format('%s is in ammo slot %d and no gun in your gun slots fires it; index picks the ammo slot',a.item,held_at),0) end
+      if r.ammo[to] and r.ammo[to].name==a.item then
+        return {equipped=a.item,slot='ammo',index=to,note=string.format('already in ammo slot %d (gun slot %d: %s)',to,to,r.guns[to] and r.guns[to].name or 'empty')}
+      end
+      local moved,why=M.ammoslots.move(p,a.item,to)
+      if not moved then error(string.format('%s in ammo slot %d not moved to ammo slot %d: %s',a.item,held_at,to,why),0) end
+      return {equipped=a.item,slot='ammo',index=to,moved_from=string.format('ammo slot %d',moved.from),
+        swapped=moved.swapped and moved.swapped..' to ammo slot '..moved.from or nil,
+        fired_by=string.format('gun slot %d: %s',to,r.guns[to] and r.guns[to].name or 'empty')}
+    end
+    error(a.item..' is not in your main inventory or ammo slots',0)
+  end
   -- A gun already in a gun slot (Sol, d15 07:50): equip selects it.
   if not source and a.slot=='gun' then
     for i=1,#inv do
@@ -8361,6 +8405,7 @@ M.bplibrary_operator=blueprint_handlers.operator
 M.paste_plan=blueprint_handlers.plan
 -- Dry runs of place_ghosts, paste and build (dryrun.lua); fluid ports of an
 -- entity not built yet, by recipe (ports.lua).
+M.ammoslots=require('ammoslots')()
 M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end}
 M.dryrun=require('dryrun'){heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
   sidefeed=M.sidefeed,coverage=function(s,force,pos,planned) return M.networks.coverage(s,force,pos,planned) end,
