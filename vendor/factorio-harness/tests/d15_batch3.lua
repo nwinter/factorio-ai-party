@@ -149,5 +149,71 @@ do
   local m=A.move(p,'piercing-rounds-magazine',1)
   eq(m.from,2); eq(m.to,1); eq(ammo[1].name,'piercing-rounds-magazine'); eq(ammo[1].count,75); eq(ammo[2].valid_for_read,false)
   eq(A.idle_ammo(A.read(p)),nil)
+  -- Regression (hotfix 000fb4ac, Sol 18:54): in 2.0 a stack's quality is a LuaQualityPrototype, userdata, not a table.
+  local function quality(name) local u=io.tmpfile(); debug.setmetatable(u,{__index={name=name}}); return u end
+  ammo[2]=slot('piercing-rounds-magazine',10); ammo[2].quality=quality('uncommon'); ammo[1].quality=quality('normal')
+  g,am=A.lines(A.read(p))
+  eq(am,'1 piercing-rounds-magazine*75, 2 piercing-rounds-magazine@uncommon*10, 3 empty')
 end
 print('d15_batch3 3 ammo slots: ok')
+
+-- 4 (Haiku, Luna): the route read before walking: worms on the way with their range, closed-in goals. ------------
+do
+  game={tick=100,forces={player={name='player'},enemy={name='enemy'}}}
+  prototypes={entity={['big-worm-turret']={attack_parameters={range=38}},['biter-spawner']={result_units={}}}}
+  local force=game.forces.player
+  force.get_friend=function() return false end; force.get_cease_fire=function() return false end
+  local worm={valid=true,name='big-worm-turret',type='turret',position={x=250,y=0},force=game.forces.enemy}
+  local surface={name='nauvis',index=1,find_entities_filtered=function() return {worm} end}
+  local st={}
+  local A=require('avoid'){state=function() return st end,charted=function() return true end,leg=function() return false end}
+  local closed_goal=false
+  local P={half=function() return 0.2 end,area_text=function() return 'the area (10,10)-(20,20) has no gap' end,
+    region=function(_,q) return {closed=closed_goal and q.x==500} end,
+    dig=function() return {mine={{name='stone-wall',position={x=21.5,y=15.5}},{name='steel-chest',position={x=22.5,y=15.5}}}} end}
+  local RC=require('routecheck'){avoid=A,pathing=P}
+  local p={index=1,position={x=0,y=0},surface=surface,force=force,character={}}
+  local out=RC.check(p,{{x=0,y=0},{x=500,y=0}},A.mode({distance=12}))
+  has(out.enemies[1],'big-worm-turret (250,0) range 38: closest pass ')
+  has(out.enemies[1],'inside it)')
+  has(out.under_range[1],'big-worm-turret (250,0) range 38 is more than distance 12; the route passes ')
+  has(out.route,'round worms and spawners')
+  has(out.reachable,'not closed in at either end')
+  -- the default margins keep the route out of its range
+  out=RC.check(p,{{x=0,y=0},{x=500,y=0}},A.mode(nil))
+  assert(not out.enemies[1]:find('inside it',1,true),out.enemies[1]); eq(out.under_range,nil)
+  -- a live move_to with distance 12 names the worm too (on the straight line)
+  has(RC.under_live(p,{{x=0,y=0},{x=500,y=0}},A.mode({distance=12}))[1],'passes 0 tiles from it')
+  -- a closed goal: the entities to mine for a way in, the first met first
+  closed_goal=true
+  out=RC.check(p,{{x=0,y=0},{x=500,y=0}},A.mode(nil))
+  eq(out.reachable,'no: closed in at the goal'); eq(out.mine_for_a_way_in[1],'steel-chest (23,16)')
+  has(out.closed_in_goal,'the goal: the area')
+end
+print('d15_batch3 4 route check: ok')
+
+-- 5 (Sol): the inserters that take a machine's output and the chest they fill; the wait's reply says so. ---------
+do
+  prototypes={item={['lithium-plate']={}}}
+  local force={name='player'}
+  local chest={valid=true,unit_number=7,type='container',name='steel-chest',position={x=6.5,y=-3.5},get_item_count=function(n) return n=='lithium-plate' and 340 or 0 end}
+  local plant
+  local ins={valid=true,unit_number=8,name='fast-inserter',position={x=5.5,y=-3.5},drop_target=chest,use_filters=false}
+  -- (a filter's name as a prototype, userdata in 2.0)
+  local proto=io.tmpfile(); debug.setmetatable(proto,{__index={name='iron-plate'}})
+  local blocked={valid=true,unit_number=9,name='inserter',position={x=3.5,y=-1.5},drop_target=chest,use_filters=true,inserter_filter_mode='whitelist',
+    get_filter=function(i) return i==1 and {name=proto} or nil end}
+  local surface={find_entities_filtered=function() return {ins,blocked} end}
+  plant={valid=true,name='foundry',type='assembling-machine',position={x=3.5,y=-3.5},force=force,surface=surface,
+    bounding_box={left_top={x=2,y=-5},right_bottom={x=5,y=-2}},get_recipe=function() return {name='molten-lithium'} end}
+  ins.pickup_target=plant; blocked.pickup_target=plant
+  local ST=require('stock'){integer=function(v,d) return v or d end}
+  local tk=ST.output_takers(plant,'lithium-plate')
+  eq(tk.line,'1 inserter takes lithium-plate from its output as it is made: fast-inserter (5.5,-3.5) into steel-chest (6.5,-3.5) (holds 340 lithium-plate)')
+  eq(tk.chests[1].holds,340)
+  -- the whitelist naming iron-plate by a userdata prototype lets iron-plate through
+  has(ST.output_takers(plant,'iron-plate').line,'2 inserters take iron-plate')
+  local _,out=ST.start_wait({position={x=0,y=0},force=force,can_reach_entity=function() return true end},{item='lithium-plate',count=100},plant,600)
+  eq(out.taken_by_inserters,tk.line); eq(out.follow_chests,'follow: true takes from steel-chest (6.5,-3.5) instead')
+end
+print('d15_batch3 5 collect output takers: ok')

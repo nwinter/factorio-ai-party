@@ -4722,3 +4722,28 @@ fh watch    # deploy on every change
 - `blueprint_save` and `blueprint_capture` take `platform=NAME` (Astra, cloning platform Starling into a new platform
   Swift): they capture on that space platform by remote view, in platform coordinates (hub at 0,0), as `paste` and
   `blueprint_place` already place there. Aboard a platform they act on it as before.
+- Route preview (Haiku died on a 500-tile move_to with `avoid_enemies {distance: 12}` past big worms of range 38;
+  Luna walked into an enclosed core twice): `move_to {..., dry_run: true}` walks nothing (a read). It reads the
+  route now, without the engine's pathfinder: `route` and `length` (straight lines through the via points, round the
+  worms and spawners the map shows as a walk plans its legs), `enemies` (each worm, spawner and area under attack
+  within reach: `big-worm-turret (250,0) range 38: closest pass 14 tiles at (251,14) (24 inside it)`, nearest its
+  range first, up to 8), `reachable`, `closed_in_start` / `closed_in_goal` (no way out within 24 tiles) with
+  `mine_for_a_way_in` (the fewest of our entities, trees or rocks to mine, the first met first), and `unsafe_goal`
+  (said instead of refused). `feed`, `collect`, `transfer`, `rearm` and `refuel` take `dry_run: true` with positions:
+  the same read through the stops, nearest first from you (radius and area tours choose their stops when they run).
+  With `avoid_enemies {distance: N}`, `under_range` names the worms on the route whose range is more than N, on the
+  dry run and on a live move_to's reply.
+- Collect and output inserters (Sol: twice `collect {positions, item, count, wait_ticks}` waited while inserters moved
+  every lithium plate into an output chest): a wait at a machine says `taken_by_inserters` (`1 inserter takes
+  lithium-plate from its output as it is made: fast-inserter (5.5,-3.5) into steel-chest (6.5,-3.5) (holds 340
+  lithium-plate)`; an inserter whose filter keeps the item out is left out) and `follow_chests`. `follow: true` with
+  `wait_ticks` or `keep_taking` takes from the chests those inserters fill when they hold the item, instead of
+  waiting (`followed` says so; none holding it: the wait at the machine). `collect {positions, dry_run: true}` adds
+  `outputs_taken` for each machine among the positions.
+- Build dry runs (Astra: a Fulgora roboport's dry run named the accumulators and a pole in its way; after mining them
+  the build met shallow oil): an entry blocked by entities also says the tiles it needs (`tiles: stands on 4
+  oil-ocean-shallow tiles: needs 4 foundation first`). On a platform, a ghost or build refused over empty space says
+  whether foundation tile ghosts stand under it not built yet (`placement blocked by tiles: empty-space under it, with
+  tile ghosts of space-platform-foundation at (15,-2) not built yet: the game's ghost check refuses this entity's
+  ghost while they are ghosts, and takes it once the foundation under it is built ...`) or that no foundation or
+  foundation ghost is there. The shore hint is only given for water tiles.

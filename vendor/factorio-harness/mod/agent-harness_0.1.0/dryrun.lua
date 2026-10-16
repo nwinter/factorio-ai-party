@@ -1003,7 +1003,18 @@ return function(api)
             rec.status = 'exists'
             rec.note = (same.type == 'entity-ghost' and 'a ghost of it is already there' or 'already built there')
               ..(kind == 'paste' and ' (the paste skips it)' or '')
-          elseif #reasons > 0 then rec.status = 'blocked'
+          elseif #reasons > 0 then
+            rec.status = 'blocked'
+            -- The tiles it needs too (Astra, shift19: a Fulgora roboport's dry run named the accumulators and a pole;
+            -- the build after mining them met shallow oil): said with the entities in the way.
+            if #tile_need > 0 then
+              local by = {}
+              for _, n in ipairs(tile_need) do by[n.item] = (by[n.item] or 0) + 1 end
+              local parts = {}
+              for item, n in pairs(by) do parts[#parts+1] = n..' '..item end
+              table.sort(parts)
+              reasons[#reasons+1] = string.format('tiles: stands on %d %s tile%s: needs %s first', #tile_need, tile_need[1].tile, #tile_need == 1 and '' or 's', table.concat(parts, ', '))
+            end
           elseif #tile_need > 0 then
             local by = {}
             for _, n in ipairs(tile_need) do

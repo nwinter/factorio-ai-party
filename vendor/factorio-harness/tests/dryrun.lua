@@ -192,6 +192,16 @@ eq(rows[4].status, 'ok'); has(rows[4].reach, '30.5 tiles from you, reach 10')
 eq(rows[5].status, 'needs_tiles'); has(rows[5].why, 'stands on 4 water tiles: needs 4 landfill first')
 eq(rows[6].status, 'blocked'); has(rows[6].why, 'blocked by tree-01 (-8,6)')
 eq(rows[7].status, 'blocked'); has(rows[7].why, '(60.5,-0.5) is outside the map')
+-- Blocked by an entity and needing tiles too (Astra, shift19: a Fulgora roboport's dry run named the accumulators only;
+-- the build after mining them met shallow oil): both are said.
+do
+  local two = dryrun.check(p, {kind='build', entities={
+    {index=1, name='stone-furnace', position={x=20, y=10}, item='stone-furnace'},
+    {index=2, name='stone-furnace', position={x=21, y=10}, item='stone-furnace'}}})
+  local r2
+  for _, r in ipairs(two.entities) do if r.index == 2 then r2 = r end end
+  eq(r2.status, 'blocked'); has(r2.why, 'collides with planned #1 stone-furnace'); has(r2.why, 'tiles: stands on'); has(r2.why, 'water tile')
+end
 eq(rows[8].status, 'exists'); has(rows[8].why, 'already built there')
 eq(rows[9].status, 'blocked'); has(rows[9].why, "sol's character at (0.5,-8.5)")
 eq(rows[11].status, 'blocked'); has(rows[11].why, 'outside the charted area (chunk 6,0)')
