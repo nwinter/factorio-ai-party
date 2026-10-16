@@ -5260,3 +5260,7 @@ fh watch    # deploy on every change
   - `catalyst_gone`: a machine short of ingredients whose recipe takes an item it also makes (the pentapod egg
     breeder), with none of it in its input: the item, what its output holds, and each inserter taking from it with its
     hand size (`bulk-inserter (5.5,15.5) hand 12`). Not seen on the copy (its breeders were switched off by circuit).
+- The boiler fuel alert (`boiler_fuel`) adds the fuel's own drills on the boilers' power (Opus, twice: coal drills
+  short of power fed the boilers that powered them): `3 electric drills mining coal within 160 tiles run on this
+  network: 2 on low power, 0 on no power, 1 other; the fuel these boilers burn comes from machines their power runs`.
+  Said only when one of them is on low or no power.

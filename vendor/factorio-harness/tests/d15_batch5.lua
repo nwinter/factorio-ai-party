@@ -308,3 +308,16 @@ do
   eq(U.check(grok,{tick=4000}),nil,'under 3 machines')
 end
 print('d15_batch5 E1 power cut wakes: ok')
+
+-- E3 (Opus, twice): the boilers' fuel drills on the power those boilers make, short of it. -----------------------------
+do
+  defines={entity_status={working=1,low_power=2,no_power=3}}
+  local function drill(x,status,net,ore) return {valid=true,position={x=x,y=0},status=status,electric_network_id=net,mining_target={name=ore}} end
+  local list={drill(1,2,7,'coal'),drill(2,2,7,'coal'),drill(3,1,7,'coal'),drill(4,2,9,'coal'),drill(5,2,7,'iron-ore')}
+  local surface={find_entities_filtered=function() return list end}
+  local N=dofile('mod/agent-harness_0.1.0/networks.lua'){state=function() return {} end}
+  eq(N.spiral(surface,'player',{x=0,y=0},7,{'coal'}),'3 electric drills mining coal within 160 tiles run on this network: 2 on low power, 0 on no power, 1 other; the fuel these boilers burn comes from machines their power runs')
+  list[1].status=1; list[2].status=1
+  eq(N.spiral(surface,'player',{x=0,y=0},7,{'coal'}),nil,'none short of power')
+end
+print('d15_batch5 E3 boiler fuel spiral: ok')
