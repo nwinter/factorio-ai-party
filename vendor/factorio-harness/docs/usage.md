@@ -5347,3 +5347,7 @@ fh watch    # deploy on every change
     naming Sunward, Kestrel and Wayfarer.
   - `board_retire {ids, reason}` drops up to 32 items at once with the reason as their note, under board_update's
     rules; one that may not be dropped is listed with why. Nothing closes on its own.
+- `game_alerts {}` failed `attempt to index field 'center' (a nil value)` (Muse, shift23 16:20) while an
+  `outpost_turret_lost` group was live (a turret no construction robot reached, destroyed in the last 10 min): that
+  group had no centre. Every group now gets one (the mean of its positions, else its first; with none, its line says
+  `no position recorded`), and a group that fails to read is listed with why while the rest of the read goes on.

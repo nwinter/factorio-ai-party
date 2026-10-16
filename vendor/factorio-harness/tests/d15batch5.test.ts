@@ -9,3 +9,7 @@ test('Lua contract: tests/d15_batch5.lua', () => {
 test('Lua contract: tests/d15_batch5_g3.lua', () => {
   execFileSync(process.env.LUA_BIN ?? 'lua',['tests/d15_batch5_g3.lua'],{stdio:'pipe'});
 });
+
+test('Lua contract: tests/game_alerts_groups.lua', () => {
+  execFileSync(process.env.LUA_BIN ?? 'lua',['tests/game_alerts_groups.lua'],{stdio:'pipe'});
+});
