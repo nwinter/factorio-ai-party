@@ -4937,4 +4937,9 @@ fh watch    # deploy on every change
     (avoid_enemies 3); the 3 legs left in the via chain ...`, with `legs`.
   - With `avoid_enemies {distance: N}` it tries smaller distances down to 4 (`largest_verified_distance`; before, it
     verified nothing for a distance).
+- Repeating loops walk into reach (Muse, twice: a hand haul left the character elsewhere and the loop's collect failed
+  out of reach, past the 32 tiles a call walks by default). In a `queue_repeat` loop, a transfer, collect, feed, rearm
+  or refuel step that names `position` or `positions` and gives no `walk` runs with `walk: true`, as a transfer with
+  `walk: true` does. `walk: false` on the step keeps it from walking. `from: "nearest"` steps and `queue_submit` plans
+  are unchanged.
 

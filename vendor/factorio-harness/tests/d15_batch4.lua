@@ -487,3 +487,27 @@ do
   has(r.line,'(avoid_enemies {distance: ')
 end
 print('d15_batch4 11 via margins: ok')
+
+-- 12 (Muse): a repeating loop's hand steps walk into reach (walk: true unless the step says walk). ------------------
+do
+  game={tick=0}
+  local st,seen={},{}
+  local players={[1]={index=1}}
+  local handlers={
+    collect=function(_,a) seen[#seen+1]={action='collect',walk=a.walk}; return {} end,
+    transfer=function(_,a) seen[#seen+1]={action='transfer',walk=a.walk}; return {} end,
+    craft=function(_,a) seen[#seen+1]={action='craft',walk=a.walk}; return {} end}
+  local S=dofile('mod/agent-harness_0.1.0/scheduler.lua'){state=function() return st end,player=function(i) return players[i] end,handlers=handlers,
+    busy=function() return false end,stop=function() end,stop_index=function() end,condition=function() return false end,validate_condition=function() end}
+  S.handlers.queue_repeat(players[1],{steps={{action='collect',args={position={x=10,y=0},item='yumako'}},
+    {action='transfer',args={position={x=50,y=0},direction='to_entity',item='yumako',walk=false}},
+    {action='transfer',args={from='nearest',item='coal'}},{action='craft',args={recipe='x'}}},interval_ticks=60})
+  for _=1,5 do game.tick=game.tick+1; S.tick() end
+  eq(seen[1].walk,true,'collect walks'); eq(seen[2].walk,false,'walk: false kept'); eq(seen[3].walk,nil,'from nearest untouched'); eq(seen[4].walk,nil,'craft untouched')
+  -- A plain submitted plan is not a loop: unchanged.
+  seen={}
+  S.handlers.queue_submit(players[1],{mode='replace',steps={{action='collect',args={position={x=10,y=0},item='yumako'}}}})
+  for _=1,3 do game.tick=game.tick+1; S.tick() end
+  eq(seen[1].walk,nil,'a submitted plan keeps its args')
+end
+print('d15_batch4 12 loop walk: ok')

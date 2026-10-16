@@ -1,5 +1,6 @@
 -- Short-horizon plans execute at simulation speed. No coroutines or host clock.
 return function(api)
+  local LOOP_WALK
   local M = {handlers={}}
   local QUEUES=api.queue_key or 'queues'
   local MAX_PENDING, MAX_HISTORY, MAX_INSTANT, MAX_BYTES, MAX_GUARDS, CHECK_TICKS = 128, 64, 4, 1048576, 8, 10
@@ -661,6 +662,7 @@ return function(api)
     q.revision=q.revision+1
     return with(snapshot(q,RECENT),corrected)
   end
+  LOOP_WALK={transfer=true,collect=true,feed=true,rearm=true,refuel=true}
   function M.handlers.queue_repeat(p,a)
     local q=queue(p.index); revision(q,a)
     local items,corrected=steps(a,p)
@@ -862,7 +864,17 @@ return function(api)
             else
               -- What the step moves by hand is the queue's or its standing order's (hauling.lua).
               if api.step_begin then pcall(api.step_begin,index,step) end
-              local ok,result=pcall(timed,'scheduler.step '..tostring(step.action),api.handlers[step.action],p,step.args)
+              -- A repeating loop's hand steps walk into reach (Muse, d15 twice: a hand haul ended elsewhere and the loop's
+              -- collect failed out of reach, past the 32 tiles a call walks by default): a transfer, collect, feed, rearm
+              -- or refuel step with a position and no walk runs with walk: true; walk: false keeps it from walking.
+              local args=step.args
+              if q.loop and not step.order and LOOP_WALK[step.action] and type(args)=='table' and args.walk==nil and args.from==nil
+                and (args.position~=nil or args.positions~=nil) then
+                local c={}
+                for k,v in pairs(args) do c[k]=v end
+                c.walk=true; args=c
+              end
+              local ok,result=pcall(timed,'scheduler.step '..tostring(step.action),api.handlers[step.action],p,args)
               if ok and api.claim then api.claim(p) end
               if api.step_done then pcall(api.step_done,index) end
               if not ok then
