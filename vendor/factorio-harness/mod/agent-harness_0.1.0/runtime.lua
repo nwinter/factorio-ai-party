@@ -10673,8 +10673,12 @@ end
 M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,
   where_from=function(me) return M.where.from(me) end,
   -- A direct wait that no tell ends (wake_on_messages: false), and ending one for tell {wake: true} (Astra, d15 14:48).
-  deaf=function(index) local a=state().active[index]; if M.deaf_wait(a) then return {kind=a.kind,until_tick=a.until_tick} end end,
-  wake=function(index,from) local a=state().active[index]; if not M.deaf_wait(a) then return false end; a.told='told by '..from..' (wake: true)'; finish(index,'told'); return true end}
+  deaf=function(index) local a=state().active[index]; if M.deaf_wait(a) then return {kind=a.kind,until_tick=a.until_tick} end; return M.waits.deaf(index) end,
+  wake=function(index,from)
+    local a=state().active[index]
+    if not M.deaf_wait(a) then return M.waits.wake_deaf(index,from) end
+    a.told='told by '..from..' (wake: true)'; finish(index,'told'); return true
+  end}
 function M.deaf_wait(a) return a~=nil and (a.kind=='wait_ticks' or a.kind=='wait_until') and not a.queued and a.wake_messages==false end
 for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
 M.factory_digest=require('factory_digest'){state=state,use_lines=function(force) return M.research_use.lines(force) end}
@@ -10834,6 +10838,26 @@ M.votes=require('votes'){state=state,notice=function(from,text) return M.chat.no
 for name,handler in pairs(M.votes.handlers) do handlers[name]=handler end
 for name,handler in pairs(M.players.handlers) do handlers[name]=handler end
 function handlers.cameras() return M.cameras.list() end
+-- A direct wait_ticks or wait_until as a sleep's request (the queue runs on; dispatch): ticks or timeout as seconds
+-- (rounded up), the rest of wait_until's arguments as the condition, and the wake options.
+function M.wait_as_sleep(request)
+  local a=request.args
+  local args={wake_on_messages=a.wake_on_messages,wake_on_viewers=a.wake_on_viewers,wake_on_urgent=a.wake_on_urgent}
+  if request.action=='wait_ticks' then
+    args.seconds=math.max(1,math.min(900,math.ceil((tonumber(a.ticks) or 60)/60)))
+  else
+    args.seconds=math.max(1,math.min(900,math.ceil((tonumber(a.timeout) or 3600)/60)))
+    local c={}
+    for k,v in pairs(a) do
+      if k~='timeout' and k~='pause_queue' and k~='wake_on_messages' and k~='wake_on_viewers' and k~='wake_on_urgent' then c[k]=v end
+    end
+    args.condition=c
+  end
+  local out={}
+  for k,v in pairs(request) do out[k]=v end
+  out.action='sleep'; out.args=args
+  return out
+end
 -- wait_until as a direct call: a timed action that holds the character idle
 -- until the condition is met (outcome met) or the timeout passes (timed_out),
 -- so `fh call wait_until --wait` works outside a queue (in turn mode the
@@ -11595,6 +11619,19 @@ dispatch_request=function(request)
     if M.bots.is_index(request.player) then M.bots.check_action(request.player,request.action,request.args) end
     p=player(request.player)
   end
+  -- A direct wait while the agent's own queue runs (Grok, Sonnet x3: refused unless pause_queue, which stops the
+  -- queue's work) runs as a sleep: the queue keeps going, and the sleep takes the wait's condition, timeout and wake
+  -- options (wake_on_messages: false among them).
+  if (request.action=='wait_ticks' or request.action=='wait_until') and type(request.args)=='table' and request.args.pause_queue~=true then
+    local q=state().queues and state().queues[p.index]
+    if q and not q.paused and not q.order and (q.current or #q.pending>0 or q.loop) then
+      local n=#q.pending+(q.current and 1 or 0)
+      local as=string.format('%s ran as a sleep: your queue runs (%d step%s%s) and keeps running; it ends as a sleep does (fh sleep; sleep_check reads it), on your queue finishing or stalling too; pause_queue: true pauses the queue for a direct wait instead',
+        request.action,n,n==1 and '' or 's',q.loop and ', repeating' or '')
+      request=M.wait_as_sleep(request)
+      handler=function(pp,aa) local out=handlers.sleep(pp,aa); if type(out)=='table' then out.as_sleep=as end; return out end
+    end
+  end
   -- Passive, or acting on another surface or by remote view (M.remote): the action and queue go on.
   local quiet=passive[request.action] or M.read_call(request.action,request.args) or M.remote(p,request.action,request.args)
     or (request.action:match('^queue_') and (request.args or {}).lane=='remote')
@@ -11605,19 +11642,8 @@ dispatch_request=function(request)
   end
   if not reads[request.action] and not quiet and not request.action:match('^queue_') then
     local q=state().queues and state().queues[p.index]
-    -- A direct wait would pause a running queue (agent-minds study, fix 7:
-    -- Sonnet's "queue resume, wait_ticks 20000" interrupted 22 queued walks,
-    -- 0 jobs done in 105 minutes); it refuses unless asked to pause it. A
-    -- standing order is not the agent's own queue: the wait preempts it and
-    -- it resumes after (orders.lua).
-    if (request.action=='wait_ticks' or request.action=='wait_until') and q and not q.paused and not q.order
-      and (q.current or #q.pending>0 or q.loop) and (request.args or {}).pause_queue~=true then
-      local n=#q.pending+(q.current and 1 or 0)
-      passive_failed=game.tick  -- the refusal stops nothing (the bootstrap's failure cleanup)
-      error(string.format('%s would pause your queue (%d step%s%s): a direct wait stops the character, and its queue with it. '..
-        'Use fh sleep SECONDS [--until COND] or fh wait --until COND --max SECONDS: your queue keeps running and the wait ends when it finishes or stalls. '..
-        'To pause the queue for this wait, pass pause_queue=true',request.action,n,n==1 and '' or 's',q.loop and ', repeating' or ''),0)
-    end
+    -- A direct wait would pause a running queue (agent-minds study, fix 7: Sonnet's "queue resume, wait_ticks 20000"
+    -- interrupted 22 queued walks): it runs as a sleep instead unless pause_queue (above, M.wait_as_sleep).
     if q and not q.paused then M.stop_player(p.index) end
   end
   -- The agent's own character work and queue calls: standing orders wait a while after it (orders.lua hold).

@@ -5097,3 +5097,15 @@ fh watch    # deploy on every change
   rebased on the hub. Checked on a copy of world n: Tern saved with y -35..40, then pasted as a dry run on Tern: 214 of
   214 entities and 732 tiles already there. An entry saved with a hub before this deploy is off by its area's shift
   (`astra.tern-inner-freighter.v1`: 2 in Y); saving it again fixes it.
+- Waits that ignore messages while the queue runs (Grok, Sonnet x3: woken 6-15 times an hour waiting for a ship).
+  - `sleep` (`fh sleep`, `fh wait --until`) takes `wake_on_messages: false`; on the CLI `--wait-through-tells` sends
+    it. No tell or mention ends it then; they wait for the next reply. A tell sent with `wake: true` (`fh tell
+    --wake`) still ends it, once per 10 minutes per teammate, as for a direct wait. Urgent alerts, damage, the queue
+    finishing or stalling and the condition still end it. `wakes_on` says `no message (tells and mentions wait for your
+    next reply)` and `a tell sent with wake: true`; a teller's reply says `ignoring: NAME is in a sleep that ignores
+    messages until tick T`.
+  - A direct `wait_ticks` or `wait_until` while your own queue runs no longer refuses. It runs as a sleep: the queue
+    keeps working, the wait's condition, timeout and wake options carry over, and the reply says `as_sleep: wait_until
+    ran as a sleep: your queue runs (2 steps) and keeps running; ...`. `fh call wait_until --wait` follows it to its
+    wake as `fh sleep` does. `pause_queue: true` still pauses the queue for a direct wait. A standing order is still
+    preempted by a direct wait.

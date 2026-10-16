@@ -538,6 +538,7 @@ already targets your character.
   thrusters' tanks at start and end, the pumps' share of time working). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when
   `from` is not given.
 - Direct `wait_until` and `wait_ticks` accept `wake_on_messages:false`: tells and mentions remain for the next reply while the wait continues; default true wakes on messages.
+  `fh sleep` and `fh wait --until` take it too (`--wait-through-tells`); while your queue runs, a direct wait runs as such a sleep (`as_sleep`) and the queue keeps going. A tell with `--wake` still ends it.
 - `./fh sleep 600 --until "rocket_ready 65.5,14.5"` (or `wait_until {"until":"rocket_ready","position":...}`) waits for
   that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
   `--until "rocket_parts>=40 at 65.5,14.5"` (or `{"until":"rocket_parts","at_least":40,"position":...}`, also a queue

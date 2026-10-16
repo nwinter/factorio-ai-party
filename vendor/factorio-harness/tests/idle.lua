@@ -166,13 +166,25 @@ local ib=sol('status',{peek=true}).inbox; eq(ib.tick,tick); eq(ib.woke,'told'); 
 table.insert(S.mentions[si].list,{tell=999,tick=tick+1,from='grok',text='fyi',how='tell',fyi=true}); advance(1)
 eq(sol('status',{peek=true}).inbox.tick,tick-1,'the fyi tell is skipped')
 sol('status')
--- Fix 7: a direct wait refuses while the queue runs (Sonnet's "queue resume, wait_ticks 20000": 22 queued walks
--- interrupted, 0 jobs done); pause_queue=true pauses it as before; a paused queue is no reason to refuse.
+-- Fix 7: a direct wait does not stop a running queue (Sonnet's "queue resume, wait_ticks 20000": 22 queued walks
+-- interrupted, 0 jobs done); since d15 batch5 B1 (Grok, Sonnet x3) it runs as a sleep, wake_on_messages taken;
+-- pause_queue=true pauses it as before; a paused queue is no reason for a sleep.
 local sq={pending={{action='move_to',args={position={x=9,y=9}}}},history={},revision=1,paused=false}
 S.queues[si]=sq
-fails(function() sol('wait_ticks',{ticks=600}) end,'wait_ticks would pause your queue (1 step): a direct wait stops the character')
-fails(function() sol('wait_until',{['until']='crafting_done'}) end,'Use fh sleep SECONDS')
-eq(sq.paused,false,'the refused wait left the queue running')
+local slept=sol('wait_ticks',{ticks=600,wake_on_messages=false})
+sq.pending={{action='wait_ticks',args={ticks=6000}}}  -- a step the scheduler runs here without stalling
+assert(tostring(slept.as_sleep):find('wait_ticks ran as a sleep: your queue runs (1 step) and keeps running',1,true),tostring(slept.as_sleep))
+eq(slept.sleeping_s,10); eq(S.sleeps[si].wake_messages,false); eq(S.active[si],nil,'no direct wait')
+assert(tostring(slept.wakes_on):find('a tell sent with wake: true',1,true),slept.wakes_on)
+-- a tell does not end it; one with wake: true does
+astra('tell',{to='sol',text='coal is in'}); advance(1)
+eq(sol('sleep_check',{peek=true}).woke,nil,'a tell waits for the next reply')
+local w=astra('tell',{to='sol',text='ship is here',wake=true}); eq(w.woken[1],'sol'); advance(1)
+local ck=sol('sleep_check',{}); eq(ck.woke,'told'); assert(tostring(ck.tell):find('astra',1,true),tostring(ck.tell))
+runtime.lookup(si).crafting_queue_size=1
+local until_sleep=sol('wait_until',{['until']='crafting_done',timeout=600})
+assert(until_sleep.as_sleep,'wait_until too'); eq(S.sleeps[si].conditions[1]['until'],'crafting_done')
+eq(sq.paused,false,'the wait left the queue running')
 sq.order={name='refuel'}; sol('wait_ticks',{ticks=60}); eq(sq.paused,true,'a standing order is preempted, as by any own request')
 sol('stop'); sq.order=nil; sq.paused=false
 sol('wait_ticks',{ticks=60,pause_queue=true}); eq(sq.paused,true); eq(S.active[si].kind,'wait_ticks')

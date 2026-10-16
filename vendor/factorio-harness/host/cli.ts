@@ -92,7 +92,8 @@ Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT),
          --session NAME (default: auto-use default session), --bridge-socket PATH (bridge without a session),
          --socket PATH (an RCON broker's socket instead of RCON: harness requests only, no password; FH_SOCKET),
          --wait, --wait-timeout MS (default: until the action's own end tick, at least 30000), --journal PATH, --args-file PATH
-         --wait-through-tells (a tell or mention does not end the wait; told_during_wait lists them at the end)
+         --wait-through-tells (a tell or mention does not end the wait; told_during_wait lists them at the end; fh sleep, fh wait --until
+                               and direct waits: wake_on_messages false, so only a tell sent with --wake ends them)
          --wake-on-viewers (fh sleep, fh wait, --wait: a viewer's @mention ends it too; by default it waits for your next reply)
          --no-urgent (fh sleep, fh wait --until, direct wait_ticks/wait_until: an urgent alert does not end it; by default it does)
          --urgent-radius N (the same waits: attacks, enemy groups, losses and teammates' deaths wake it only within N tiles of you, 1..200; default 40)
@@ -1292,7 +1293,7 @@ async function main() {
     if (!Number.isFinite(n) || n < 1 || n > 200) throw new Error(`--urgent-radius takes 1..200 tiles, not ${String(raw)}`);
     return n;
   }
-  async function sleep(seconds: number, condition?: Record<string,unknown>, quiet = false): Promise<Reply> {
+  async function sleep(seconds: number, condition?: Record<string,unknown>, quiet = false, begunReply?: Reply): Promise<Reply> {
     const left = deadline === undefined ? undefined : deadline-Date.now();
     if (left !== undefined && left <= 1000) {
       return {ok:true, result:{woke:'deadline', slept_s:0, note:`no sleep: ${deadlineText(deadline!)}`}};
@@ -1307,9 +1308,18 @@ async function main() {
     // --urgent-radius N (Grok, d15 14:07): urgent wakes only within N tiles of you; a runtime from before it says
     // wake_on_urgent must be true or false, and the sleep runs with the default 40 (said on stderr).
     let radius = noUrgent ? undefined : urgentRadius();
+    // --wait-through-tells: no tell or mention ends the sleep (wake_on_messages: false; a tell with --wake still does).
+    let deaf = values['wait-through-tells'] === true;
     const sleepArgs = (peek: boolean) => ({seconds, ...(condition ? {condition} : {}), ...(peek ? {peek:true} : {}), ...(viewers ? {wake_on_viewers:true} : {}),
-      ...(noUrgent ? {wake_on_urgent:false} : radius !== undefined ? {wake_on_urgent:{radius}} : {}), ...(values['wake-on-orders'] === true ? {wake_on_orders:true} : {})});
-    let started = await harness.request('sleep',sleepArgs(quiet));
+      ...(noUrgent ? {wake_on_urgent:false} : radius !== undefined ? {wake_on_urgent:{radius}} : {}), ...(values['wake-on-orders'] === true ? {wake_on_orders:true} : {}),
+      ...(deaf ? {wake_on_messages:false} : {})});
+    // A direct wait the runtime ran as a sleep (your queue runs: as_sleep) is followed from its reply.
+    let started = begunReply ?? await harness.request('sleep',sleepArgs(quiet));
+    if (!started.ok && deaf && /unknown argument wake_on_messages/.test(String(started.error?.message ?? ''))) {
+      deaf = false;
+      process.stderr.write('--wait-through-tells: this runtime\'s sleep takes no wake_on_messages yet (it comes with the next harness deploy); a tell ends this sleep\n');
+      started = await harness.request('sleep',sleepArgs(quiet));
+    }
     if (!started.ok && radius !== undefined && /wake_on_urgent must be true or false/.test(String(started.error?.message ?? ''))) {
       radius = undefined;
       process.stderr.write('--urgent-radius: this runtime has no urgent radius yet (it comes with the next harness deploy); urgent wakes use 40 tiles\n');
@@ -1495,6 +1505,8 @@ async function main() {
     // --wake-on-viewers: a direct wait ends on a viewer's @mention too (the runtime ends it told|mentioned).
     const viewersArg = wakeViewers && (action === 'wait_ticks' || action === 'wait_until') && args.wake_on_viewers === undefined;
     if (viewersArg) args = {...args, wake_on_viewers:true};
+    // --wait-through-tells: a direct wait no tell ends (wake_on_messages: false), also when it runs as a sleep.
+    if (throughTells && (action === 'wait_ticks' || action === 'wait_until') && args.wake_on_messages === undefined) args = {...args, wake_on_messages:false};
     // --no-urgent: an urgent alert does not end a direct wait (by default it ends it, outcome urgent, last.why naming it).
     if (values['no-urgent'] === true && (action === 'wait_ticks' || action === 'wait_until') && args.wake_on_urgent === undefined) args = {...args, wake_on_urgent:false};
     // --urgent-radius N: urgent wakes only within N tiles of you.
@@ -1520,6 +1532,12 @@ async function main() {
       const failed = transportError(error);
       if (failed) return {id:requestId, ok:false, error:failed};
       throw error;
+    }
+    // A direct wait while your queue runs ran as a sleep (as_sleep): --wait follows it as fh sleep does.
+    if (wait && reply.ok && typeof reply.result?.as_sleep === 'string' && (action === 'wait_ticks' || action === 'wait_until')) {
+      const seconds = typeof reply.result?.sleeping_s === 'number' ? reply.result.sleeping_s : 60;
+      const slept = await sleep(seconds, undefined, false, reply);
+      return slept.ok && slept.result ? {...slept, result:{...slept.result, as_sleep:reply.result.as_sleep}} : slept;
     }
     // kite runs until no enemy is left in its radius, its health or ammo floor, or its ticks (Sol, shift09: kite --wait
     // returned at once while the fight went on).

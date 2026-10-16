@@ -367,3 +367,23 @@ test('a sleep never runs past the deadline: cut to the time left, or none after 
   const seconds=seen[0].args.seconds;
   assert.ok(seconds>=55 && seconds<=65,String(seconds));
 });
+// d15 batch5 B1 (Grok, Sonnet x3): a direct wait while the queue runs ran as a sleep (as_sleep); --wait follows it to
+// its wake, and --wait-through-tells sends wake_on_messages false to sleeps and direct waits.
+test('a direct wait that ran as a sleep is followed to its wake; --wait-through-tells asks for no message wakes',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{
+    seen.push(request);
+    if (request.action==='wait_until') return {ok:true,result:{as_sleep:'wait_until ran as a sleep: your queue runs (2 steps) and keeps running',sleeping_s:30,until_tick:1801}};
+    if (request.action==='sleep') return {ok:true,result:{sleeping_s:30,until_tick:1801,while_asleep:'your queue runs'}};
+    if (request.action==='sleep_check' || request.args?.scope==='sleep_check') return {ok:true,result:{woke:'condition',slept_s:12,until_tick:1801,saw:'coal 40'}};
+    return {ok:true,result:{}};
+  },async port=>{
+    const out=JSON.parse((await cli(port,['call','wait_until','--args','{"until":"item_count","item":"coal","at_least":40}','--wait','--wait-through-tells'])).stdout);
+    assert.equal(out.result.woke,'condition'); assert.ok(String(out.result.as_sleep).includes('ran as a sleep'));
+    assert.equal(seen[0].args.wake_on_messages,false);
+    assert.ok(seen.some(r=>r.action==='sleep_check' || r.args?.scope==='sleep_check'),'followed as a sleep');
+    seen.length=0;
+    await cli(port,['sleep','30','--wait-through-tells']);
+    assert.equal(seen.find(r=>r.action==='sleep').args.wake_on_messages,false);
+  });
+});
