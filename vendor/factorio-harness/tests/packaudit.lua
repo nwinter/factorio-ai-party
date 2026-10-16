@@ -16,7 +16,9 @@ local function inv(stacks)
   return setmetatable(t,{__len=function() return #stacks end})
 end
 local force={name='player',current_research={research_unit_ingredients={{name=AG,amount=1}}}}
-local function find(list) return function(f) local out={} for _,e in ipairs(list) do if e.type==f.type then out[#out+1]=e end end return out end end
+local function find(list) return function(f)
+  local types=type(f.type)=='table' and f.type or {f.type}
+  local out={} for _,e in ipairs(list) do for _,t in ipairs(types) do if e.type==t then out[#out+1]=e end end end return out end end
 -- Gleba: a network holding 300 (one provider chest, 200 of it spoiling in 2 min), a requester short 40, 2 labs (one
 -- empty), a silo with 50 in its rocket.
 local provider={valid=true,type='logistic-container',name='passive-provider-chest',position={x=10,y=10}}
@@ -62,5 +64,26 @@ eq(r.lines[2],'nauvis: made 0/min, used 90/min; logistic networks 0; landing pad
 eq(r.lines[3],'platform Sunward (flying gleba->nauvis 50%): hub 400; the first spoils in 10s (95% spoiled) at its hub; arrives at nauvis in 50s: 200 spoil before it; requests 500..2000 from gleba, 100 short')
 eq(#r.platforms,1,'a platform with none and no request is left out')
 eq(r.planets[1].unmet,40); eq(r.planets[1].labs_without,1); eq(r.platforms[1].spoil_before_arrival,200)
+-- Aquilo (Sol 01:59, d15 batch5 A2): the pad is in the logistic network (763 counted there), a silo holds 1000, an
+-- output chest 77: 1840, the pad once.
+local CP='cryogenic-science-pack'
+prototypes.item[CP]={weight=1000}
+force.current_research=nil
+local aqpad={valid=true,type='cargo-landing-pad',position={x=4.5,y=-3.5},
+  get_logistic_point=function() return {{mode=3,logistic_network={valid=false}},{mode=4,logistic_network={valid=true}}} end}
+defines.logistic_mode={requester=3}
+local aqpadinv=inv({{CP,763}}); aqpad.get_inventory=function() return aqpadinv end
+local aqsilo={valid=true,type='rocket-silo',position={x=30.5,y=0.5}}
+local aqcargo=inv({{CP,1000}}); aqsilo.get_inventory=function() return aqcargo end
+local out={valid=true,type='container',name='steel-chest',position={x=12.5,y=8.5}}
+local outinv=inv({{CP,77}}); out.get_inventory=function() return outinv end
+local empty={valid=true,type='container',name='wooden-chest',position={x=1.5,y=1.5},get_inventory=function() return inv({}) end}
+local aquilo={name='aquilo',find_entities_filtered=find({aqpad,aqsilo,out,empty})}
+force.logistic_networks.aquilo={{get_item_count=function(n) return n==CP and 763 or 0 end,provider_points={},storage_points={},requester_points={}}}
+game.surfaces={aquilo}; force.platforms={}
+local q=A.read({force=force},{item=CP})
+eq(q.total,763+1000+77,'the pad counted once, the output chest counted')
+eq(q.planets[1].pads_in_networks,763); eq(q.planets[1].chests,77); eq(q.planets[1].chests_holding,1)
+assert(q.lines[1]:find('landing pads 763 (in a logistic network: counted there); other chests 77 (1 chest)',1,true),q.lines[1])
 fails(function() A.read({force=force},{item='nope'}) end,'item must be an item name')
 print('packaudit: ok')

@@ -999,6 +999,10 @@ return function(api)
             if #blockers > 0 then rec.note = 'replaces '..table.concat(blockers, ', ', 1, math.min(4, #blockers)) end
           elseif #blockers > 0 then reasons[#reasons+1] = 'blocked by '..table.concat(blockers, ', ', 1, math.min(4, #blockers)) end
           if broken then reasons[#reasons+1] = broken end
+          if engine ~= true and api.one_pad then
+            local pad = try(function() return api.one_pad(s, force, proto, rec.pos) end)
+            if pad then reasons[#reasons+1] = pad end
+          end
           if #tile_bad > 0 then reasons[#reasons+1] = 'tiles: '..table.concat(tile_bad, ', ', 1, math.min(4, #tile_bad)) end
           if same and #reasons == 0 then
             rec.status = 'exists'
@@ -1250,6 +1254,13 @@ return function(api)
         elseif try(function() return r.proto.electric_energy_source_prototype end) then consumers[#consumers+1] = r end
       end
     end
+    -- A surface with one electric network for everything (a space platform)
+    -- powers every machine with no pole: no consumer is unpowered there.
+    local global_net = try(function() return s.has_global_electric_network end)
+    if global_net and #consumers > 0 then
+      out.power = {global_network = 'every machine on this surface is on its one electric network (no poles needed): '..#consumers..' planned machines covered'}
+      consumers = {}
+    end
     if (#planned_poles > 0 or #consumers > 0) and lo then
       local function reach_of(proto, quality)
         return try(function() return proto.get_max_wire_distance(quality or 'normal') end) or try(function() return proto.max_wire_distance end) or 0
@@ -1471,6 +1482,7 @@ return function(api)
       pw.more_islands = more_islands > 0 and more_islands or nil
       pw.unpowered = #unpowered > 0 and unpowered or nil
       pw.unpowered_count = unpowered_count > #unpowered and unpowered_count or nil
+      if global_net and out.power then pw.global_network = out.power.global_network end
       if next(pw) then out.power = pw end
     end
 

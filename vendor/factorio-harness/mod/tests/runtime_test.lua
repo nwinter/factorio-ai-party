@@ -992,11 +992,32 @@ do
   r=call('feed',{recipe='logistic-science-pack',crafts=10,positions={{x=1,y=5},{x=2,y=5}}})
   eq(r.entities[1].loaded,nil); eq(r.entities[1].short,nil)
   eq(r.entities[2].loaded.inserter,2); eq(r.entities[2].short.inserter,3)
+  -- A rocket silo's fixed rocket-part recipe (d15 batch5 A4, Muse twice: "no recipe set").
+  prototypes.recipe['rocket-part']={name='rocket-part',ingredients={{type='item',name='inserter',amount=1},{type='item',name='transport-belt',amount=1}}}
+  local silo=assembler(4,'rocket-part'); silo.name='rocket-silo'; silo.type='rocket-silo'
+  machines[4]=silo
+  main=inv(stack('inserter',20),stack('transport-belt',20))
+  r=call('feed',{recipe='rocket-part',crafts=5,positions={{x=4,y=5}}})
+  eq(r.entities[1].loaded.inserter,5); eq(r.entities[1].loaded['transport-belt'],5)
+  prototypes.item['iron-plate']={}
+  main=inv(stack('iron-plate',20),stack(nil,0))
+  r=call('feed',{item='iron-plate',positions={{x=4,y=5}}})
+  eq(r.nothing_moved,'nothing given: the rocket silo\'s rocket-part recipe takes none of what was named; feed fills a rocket silo\'s rocket-part ingredients; its rocket cargo: load_silo, or transfer {inventory: "rocket_silo_rocket"}')
   fails(function() call('feed',{recipe='nope',positions={{x=1,y=5}}}) end,'unknown recipe nope')
   fails(function() call('feed',{crafts=2,positions={{x=1,y=5}}}) end,'crafts goes with recipe')
   fails(function() call('feed',{recipe='logistic-science-pack',items={'inserter'},positions={{x=1,y=5}}}) end,'recipe or items')
   fails(function() call('feed',{recipe='logistic-science-pack',item='inserter',positions={{x=1,y=5}}}) end,'recipe or items (or item)')
 
+  -- One cargo landing pad per planet (d15 batch5 A5, Astra 02:03): the refusal names the pad there.
+  do
+    local padproto={type='cargo-landing-pad',name='cargo-landing-pad'}
+    local fulgora={name='fulgora',find_entities_filtered=function(f) if f.type=='cargo-landing-pad' then return {{position={x=-20,y=30},force=p.force}} end return {} end}
+    eq(runtime.one_pad(fulgora,p.force,padproto,{x=69,y=189}),'one cargo landing pad per planet (the game\'s rule): one, ours stands at (-20,30) on fulgora')
+    eq(runtime.one_pad(fulgora,p.force,padproto,{x=-20,y=30}),nil,'the pad itself')
+    eq(runtime.one_pad(fulgora,p.force,{type='container'}),nil,'other entities')
+    local empty={name='vulcanus',find_entities_filtered=function(f) if f.ghost_type then return {{position={x=1,y=2},force=p.force}} end return {} end}
+    eq(runtime.one_pad(empty,p.force,padproto,{x=9,y=9}),'one cargo landing pad per planet (the game\'s rule): a ghost of one, ours stands at (1,2) on vulcanus')
+  end
   -- inspect over positions: one call, results in order; a miss is its position and error.
   a1.get_fluid_contents=function() return {} end; a2.get_fluid_contents=a1.get_fluid_contents
   for _,m in ipairs({a1,a2}) do m.slots.get_contents=function() return {} end end

@@ -83,7 +83,9 @@ return function(api)
     out.recipe = recipe.name
     out.line = out.line .. ' (at full speed all the time; status, input and output decide what it makes)'
     local q = try(function() return e.effects.quality end)
-    if q and q > 0 then out.quality_chance = string.format('%d%%', math.floor(q * 100 + 0.5)) end
+    -- The quality effect is stored as 0.1 per 1% the GUI shows (2.0.77: five rare quality-module-1 read 0.8, the GUI 8%;
+    -- Astra 05:43 saw "80%").
+    if q and q > 0 then out.quality_chance = string.format('%g%%', math.floor(q * 100 + 0.5) / 10) end
     return out
   end
   -- A recipe read's row: at crafting speed 1, or at a machine prototype's speed (its quality normal) and base effect.

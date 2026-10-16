@@ -26,6 +26,13 @@ e.productivity_bonus=0.8
 r=R.machine(e)
 eq(r.productivity,0.8); eq(r.products[1].per_craft,8.2)
 assert(r.line:find('productivity +80% (the machine\'s own +50%, research +10%, modules and beacons +20%)',1,true),r.line)
+-- The quality chance as the GUI shows it (d15 batch5 A8, Astra 05:43: five rare quality-module-1 read 0.8 from the
+-- engine, 8% in the GUI; it printed 80%).
+e.effects={quality=0.80000001192092896}
+eq(R.machine(e).quality_chance,'8%')
+e.effects={quality=0.16}
+eq(R.machine(e).quality_chance,'1.6%')
+e.effects=nil
 -- Capped at the recipe's maximum.
 e.productivity_bonus=5
 eq(R.machine(e).productivity,3)

@@ -155,6 +155,16 @@ return function(api)
     return {slot=name,kind='blueprint',entities=#entities,tiles=#tiles,label=stack.label or '',
       snap_to_grid=stack.blueprint_snap_to_grid or false}
   end
+  -- The shift that rebases captured world coordinates: an even one about the area's centre (it keeps the rail grid),
+  -- or a space-platform-hub's own position. The engine keeps a blueprint's hub at 0,0 whatever set_blueprint_entities
+  -- is given (checked on 2.0.77), so any other shift moved every entity but the hub (Astra 05:15: Tern saved with the
+  -- collector at (-0.5,-15.5) for (-0.5,-13.5), a y -35..40 area's shift of 2).
+  local function rebase_origin(box,entities)
+    for _,e in ipairs(entities) do
+      if e.name=='space-platform-hub' then return {x=e.position.x,y=e.position.y} end
+    end
+    return {x=math.floor((box.left_top.x+box.right_bottom.x)/4)*2,y=math.floor((box.left_top.y+box.right_bottom.y)/4)*2}
+  end
   local function capture(p,a,cut)
     permission(p,cut and 'deconstruct' or 'copy')
     permission(p,'select_blueprint_entities')
@@ -169,9 +179,8 @@ return function(api)
       -- create_blueprint retains world coordinates. Rebase copied content so
       -- placement bounds and exported blueprints are independent of map origin.
       -- An even translation preserves the rail grid.
-      local origin={x=math.floor((box.left_top.x+box.right_bottom.x)/4)*2,
-        y=math.floor((box.left_top.y+box.right_bottom.y)/4)*2}
       local entities=stack.get_blueprint_entities() or {}
+      local origin=rebase_origin(box,entities)
       for _,e in ipairs(entities) do e.position={x=e.position.x-origin.x,y=e.position.y-origin.y} end
       stack.set_blueprint_entities(entities)
       local tiles=stack.get_blueprint_tiles() or {}
@@ -1042,7 +1051,7 @@ return function(api)
       end
       assert(#entities>0,'nothing to save: no entity of ours '..(keep and 'at those positions' or 'in the area'))
       -- Rebased as blueprint_capture does (an even shift keeps the rail grid).
-      local origin={x=math.floor((box.left_top.x+box.right_bottom.x)/4)*2,y=math.floor((box.left_top.y+box.right_bottom.y)/4)*2}
+      local origin=rebase_origin(box,entities)
       for _,e in ipairs(entities) do e.position={x=e.position.x-origin.x,y=e.position.y-origin.y} end
       stack.set_blueprint_entities(entities)
       local tiles=stack.get_blueprint_tiles() or {}

@@ -656,4 +656,22 @@ do
   assert(ok,tostring(err))
   fails(function() H.blueprint_capture(p,{area=far}) end,'uncharted')
 end
+-- A capture holding a space-platform-hub is rebased on the hub (d15 batch5 A6, Astra 05:15): the engine keeps a
+-- blueprint's hub at 0,0 (seen on 2.0.77), so the area's even shift (2 in y for y -35..40) moved everything else.
+do
+  local plat={force=p.force}
+  local view=setmetatable({__platform='Tern',__player=p},{__index=function(_,k) if k=='surface' then return {platform=plat,find_entities_filtered=function() return {} end} end return p[k] end})
+  _G.capture_world=function() return {{entity_number=1,name='space-platform-hub',position={x=0,y=0}},{entity_number=2,name='asteroid-collector',position={x=-0.5,y=-13.5}}},{} end
+  H.blueprint_capture(view,{area={left_top={x=-30,y=-35},right_bottom={x=30,y=40}}})
+  local data=exports[#exports]
+  local at={}
+  for _,e in ipairs(data.entities) do at[e.name]=e.position end
+  assert(at['space-platform-hub'].x==0 and at['space-platform-hub'].y==0,'hub at 0,0')
+  assert(at['asteroid-collector'].x==-0.5 and at['asteroid-collector'].y==-13.5,'collector where it stands: '..at['asteroid-collector'].y)
+  -- No hub: the even shift about the area's centre, as before.
+  _G.capture_world=function() return {{entity_number=1,name='chest',position={x=0.5,y=-13.5}}},{} end
+  H.blueprint_capture(view,{area={left_top={x=-30,y=-35},right_bottom={x=30,y=40}}})
+  eq(exports[#exports].entities[1].position.y,-15.5)
+  _G.capture_world=nil
+end
 print('blueprint policy tests passed')

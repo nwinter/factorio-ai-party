@@ -409,10 +409,15 @@ return function(api)
   -- and labs consuming them): used in the last 10 minutes on any surface, held in our labs, and in our logistic
   -- networks (their providers, storage and buffers), as the game counts them.
   local function packs_stock(force, names)
+    -- Per surface too (Sol 05:19: from Aquilo, cryogenic packs 2288 "in stock" counted Aquilo's networks while the labs
+    -- on Nauvis held none): labs use what is on their own surface; the rest is elsewhere.
     local out = {}
-    for _, name in ipairs(names) do out[name] = {used=0, labs=0, networks=0} end
+    for _, name in ipairs(names) do out[name] = {used=0, labs=0, networks=0, here=0, elsewhere=0, lab_surfaces={}, by_surface={}} end
     if #names == 0 then return out end
-    for _, surface in pairs(game.surfaces or {}) do
+    local surfaces = {}
+    for _, surface in pairs(game.surfaces or {}) do surfaces[#surfaces+1] = surface end
+    table.sort(surfaces, function(x, y) return tostring(x.name) < tostring(y.name) end)
+    for _, surface in ipairs(surfaces) do
       local okp, stats = pcall(function() return force.get_item_production_statistics(surface) end)
       if not okp then stats = nil end
       local okl, labs = pcall(function() return surface.find_entities_filtered{type='lab', force=force} end)
@@ -426,17 +431,41 @@ return function(api)
             precision_index=defines.flow_precision_index.ten_minutes, count=true} end)
           if ok and type(n) == 'number' then s.used = s.used + n end
         end
+        local in_labs, in_nets = 0, 0
         for _, lab in ipairs(labs) do
           local ok, n = pcall(function() return lab.get_inventory(defines.inventory.lab_input).get_item_count(name) end)
-          if ok and type(n) == 'number' then s.labs = s.labs + n end
+          if ok and type(n) == 'number' then in_labs = in_labs + n end
         end
         for _, net in ipairs(nets) do
           local ok, n = pcall(function() return net.get_item_count(name) end)
-          if ok and type(n) == 'number' then s.networks = s.networks + n end
+          if ok and type(n) == 'number' then in_nets = in_nets + n end
+        end
+        s.labs = s.labs + in_labs; s.networks = s.networks + in_nets
+        local row = {surface=surface.name, labs=in_labs, networks=in_nets, lab_count=#labs}
+        if #labs > 0 then
+          s.here = s.here + in_labs + in_nets
+          s.lab_surfaces[#s.lab_surfaces+1] = row
+        elseif in_nets > 0 then
+          s.elsewhere = s.elsewhere + in_nets
+          s.by_surface[#s.by_surface+1] = row
         end
       end
     end
     return out
+  end
+  -- "0 where the labs are (nauvis: labs 0, logistic networks 0); 2288 elsewhere (aquilo: logistic networks 2288)".
+  local function stock_text(s)
+    local here = {}
+    for _, r in ipairs(s.lab_surfaces) do
+      here[#here+1] = string.format('%s: labs %d, logistic networks %d', r.surface, r.labs, r.networks)
+    end
+    local text = #here > 0 and string.format('%d where the labs are (%s)', s.here, table.concat(here, '; ')) or 'no labs of ours'
+    if s.elsewhere > 0 then
+      local far = {}
+      for _, r in ipairs(s.by_surface) do far[#far+1] = string.format('%s: logistic networks %d', r.surface, r.networks) end
+      text = text .. string.format('; %d elsewhere, no labs there (%s)', s.elsewhere, table.concat(far, '; '))
+    end
+    return text
   end
   -- The research queue in full: each entry's progress, who queued it, the
   -- packs it needs, and when it should finish at the measured throughput.
@@ -467,25 +496,27 @@ return function(api)
         local ok, saved = pcall(function() return t.saved_progress end)
         if ok and type(saved) == 'number' then progress = saved end
       end
-      local packs, missing, stocked = {}, {}, {}
+      local packs, missing, stocked, missing_text = {}, {}, {}, {}
       for _, ing in ipairs(t.research_unit_ingredients or {}) do
         packs[#packs+1] = ing.name
         if not in_use[ing.name] and (made[ing.name] or 0) <= 0 then
-          local s = stock[ing.name] or {used=0, labs=0, networks=0}
-          if s.labs + s.networks > 0 then
-            stocked[#stocked+1] = string.format('%s: none made in 10 min; %d in stock (labs %d, logistic networks %d); labs used %d in 10 min',
-              ing.name, s.labs + s.networks, s.labs, s.networks, math.floor(s.used + 0.5))
-          else missing[#missing+1] = ing.name end
+          local s = stock[ing.name] or {used=0, labs=0, networks=0, here=0, elsewhere=0, lab_surfaces={}, by_surface={}}
+          if s.here > 0 then
+            stocked[#stocked+1] = string.format('%s: none made in 10 min; %s; labs used %d in 10 min',
+              ing.name, stock_text(s), math.floor(s.used + 0.5))
+          else missing[#missing+1] = ing.name; missing_text[#missing_text+1] = ing.name .. ': ' .. stock_text(s) end
         end
       end
       local by = M.queued_by(force.name, t.name)
       local entry = {name=t.name, progress=math.floor(progress * 1000 + 0.5) / 10, queued_by=by and by.by,
         packs=table.concat(packs, '+')}
-      -- Not made lately with some in stock: the labs can run on it (not_made_recently); none made and none in our labs
-      -- or logistic networks: they cannot (waits_for; the clock stops there).
+      -- Not made lately with some in stock where the labs are: the labs can run on it (not_made_recently); none made
+      -- and none in the labs or logistic networks of the labs' surfaces: they cannot (waits_for; the clock stops
+      -- there), whatever other surfaces hold (named, with no labs there).
       if #stocked > 0 then entry.not_made_recently = table.concat(stocked, '; ') end
       if #missing > 0 then
-        entry.waits_for = table.concat(missing, '+') .. ' (none made in 10 min, none in our labs or logistic networks: the labs cannot run it)'
+        entry.waits_for = table.concat(missing, '+') .. ' (none made in 10 min, none in the labs or logistic networks where the labs are: the labs cannot run it; '
+          .. table.concat(missing_text, '; ') .. ')'
         stalled = stalled or t.name
       end
       if rate and rate > 0 and not stalled then

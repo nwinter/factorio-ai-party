@@ -274,6 +274,12 @@ has(pl.tiles.not_connected, '1 new foundation tile touches no existing foundatio
 has(pl.tiles.not_connected, '(20.5,20.5)')
 eq(pl.standing, nil, 'the platform builds from its hub: no reach')
 eq(pl.items['space-platform-foundation'], 28); eq(pl.missing['space-platform-foundation'], 18); eq(pl.missing_from, 'the hub')
+-- A platform powers every machine with no pole (d15 batch5 A1, Sol: check_inserters refused every platform inserter).
+ps.has_global_electric_network = true
+local pw = dryrun.check(pp, {kind='ghosts', entities={{index=1, name='assembling-machine-1', position={x=-2.5, y=-2.5}}}})
+eq(pw.power.unpowered, nil, 'a platform machine is not unpowered')
+has(pw.power.global_network, '1 planned machines covered')
+ps.has_global_electric_network = nil
 -- A ring wider than the hole limit counts as open space, not a hole.
 local wide = {}
 for x = 6, 70 do wide[#wide+1] = {name='space-platform-foundation', position={x=x+0.5, y=-1.5}}; wide[#wide+1] = {name='space-platform-foundation', position={x=x+0.5, y=40.5}} end

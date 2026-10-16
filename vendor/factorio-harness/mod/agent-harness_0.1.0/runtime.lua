@@ -3947,8 +3947,28 @@ function M.attach_why(p,proto,pos,direction)
   return string.format(': a cargo bay joins the platform hub or another cargo bay edge to edge; its box (%g,%g)-(%g,%g) touches none%s',l,t,r,bt,
     best and string.format('; the nearest: %s, %d tiles from its edge',best,bd) or '; no hub or cargo bay within 12 tiles')
 end
+-- One cargo landing pad per planet (the game's rule; Astra 02:03: a second pad on Fulgora refused with no blocker
+-- named): the pad already there (built or a ghost), or nil.
+function M.one_pad(surface,force,proto,pos)
+  if not (proto and proto.type=='cargo-landing-pad') then return nil end
+  if (pcall(function() return surface.platform end)) and surface.platform then return nil end
+  local found=surface.find_entities_filtered{type='cargo-landing-pad',limit=1}
+  local e=found[1]
+  local ghost=false
+  if not e then
+    e=surface.find_entities_filtered{ghost_type='cargo-landing-pad',limit=1}[1]
+    ghost=e~=nil
+  end
+  if not e then return nil end
+  if pos and math.abs(e.position.x-pos.x)<0.01 and math.abs(e.position.y-pos.y)<0.01 then return nil end
+  local whose=e.force==force and 'ours' or ('of force '..tostring(e.force and e.force.name))
+  return string.format('one cargo landing pad per planet (the game\'s rule): %s%s stands at (%g,%g) on %s',
+    ghost and 'a ghost of one, ' or 'one, ',whose,e.position.x,e.position.y,surface.name)
+end
 local function placement_error(p,proto,pos,direction,near)
  local function blockers()
+  local pad=M.one_pad(p.surface,p.force,proto,pos)
+  if pad then return ': '..pad end
   if proto.type=='rail-ramp' then
     local _,_,text=M.placewhy.ramp_collisions(p.surface,p.force,proto,pos,direction)
     if text~='' then return '; ramp footprint contains '..text end
@@ -6943,7 +6963,7 @@ end
 local feeding={TYPES={'assembling-machine','furnace','lab','boiler','burner-generator','mining-drill','inserter','agricultural-tower'}}
 -- The recipe an assembler or furnace is set to (a furnace's last one when idle), by name, or nil.
 function feeding.recipe_of(e)
-  if e.type~='assembling-machine' and e.type~='furnace' then return nil end
+  if e.type~='assembling-machine' and e.type~='furnace' and e.type~='rocket-silo' then return nil end
   local ok,r=pcall(e.get_recipe)
   if ok and r then return r.name end
   if e.type=='furnace' then
@@ -7049,7 +7069,7 @@ function feeding.wants(p,e,a)
   local fuel=feeding.fuel_want(p,e,a)
   if fuel then out[#out+1]=fuel end
   local recipe
-  if e.type=='assembling-machine' or e.type=='furnace' then
+  if e.type=='assembling-machine' or e.type=='furnace' or e.type=='rocket-silo' then
     local ok,r=pcall(e.get_recipe); recipe=ok and r or nil
     if not recipe and e.type=='furnace' then
       local okp,prev=pcall(function() return e.previous_recipe end)
@@ -7206,8 +7226,13 @@ function feeding.why(p,es,a)
   end
   if blocked.n>0 then notes[#notes+1]=M.other_fuel_line(blocked.n,blocked.holds,blocked.item) end
   if #order==0 and blocked.n>0 then return table.concat(notes,'; ') end
+  -- A silo's rocket cargo is not a recipe input: the calls that fill it.
+  local silos=0
+  for _,e in ipairs(es) do if e.type=='rocket-silo' then silos=silos+1 end end
+  if silos>0 then notes[#notes+1]='feed fills a rocket silo\'s rocket-part ingredients; its rocket cargo: load_silo, or transfer {inventory: "rocket_silo_rocket"}' end
   if #order==0 then
-    local base=string.format('none of the %d machines wants an item (no recipe set, or not a machine feed fills)',#es)
+    local base=silos==#es and string.format('the rocket silo%s rocket-part recipe takes none of what was named',silos==1 and '\'s' or 's\'')
+      or string.format('none of the %d machines wants an item (no recipe set, or not a machine feed fills)',#es)
     return #notes>0 and base..'; '..table.concat(notes,'; ') or base
   end
   local parts={}
@@ -7249,7 +7274,8 @@ function handlers.feed(p,a)
     assert(a.items==nil,'give recipe or items (or item), not both')
     a.crafts=integer(a.crafts,1,1,1000,'crafts')
   end
-  local types=a.types or (a.recipe and {'assembling-machine','furnace'}) or feeding.TYPES
+  -- A rocket silo's fixed rocket-part recipe is fed as a machine's (Muse, twice: feed {recipe} refused it as "no recipe set").
+  local types=a.types or (a.recipe and {'assembling-machine','furnace','rocket-silo'}) or feeding.TYPES
   if a.position~=nil then
     assert(a.positions==nil,'give position or positions, not both')
     if a.radius==nil then
@@ -8676,7 +8702,7 @@ function handlers.heat_budget(p,a)
   friendly(p,e)
   return M.heating.budget(p,e,a.add_pipes)
 end
-M.dryrun=require('dryrun'){heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
+M.dryrun=require('dryrun'){one_pad=function(...) return M.one_pad(...) end,heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
   sidefeed=M.sidefeed,coverage=function(s,force,pos,planned) return M.networks.coverage(s,force,pos,planned) end,
   placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
   ghost_placeable=function(p,proto,pos,direction) return construction.ghost_placeable(p.surface,p.force,proto,pos,direction) end,
@@ -9082,7 +9108,7 @@ function M.retreat_go(r)
     if last and last.retreated then last.retreated.going=info.going; last.why=info.why..'; '..info.going end
   end
 end
-M.shore=require('shore'){position=position,integer=integer,assert_visible=assert_visible,directions=directions,direction_of=M.direction_of,read_sight=M.read_sight,
+M.shore=require('shore'){one_pad=function(...) return M.one_pad(...) end,position=position,integer=integer,assert_visible=assert_visible,directions=directions,direction_of=M.direction_of,read_sight=M.read_sight,
   chunk_seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) end}
 handlers.placements=M.shore.handlers.placements
 -- The defense read (defense.lua): built-up areas, turret cover and ammo, nests near them.
@@ -10454,6 +10480,7 @@ M.scheduler_api={
   wait_check=function(p,c,record) return M.waiteta.check(p,c,record) end,
   wait_info=function(out,record) return M.waiteta.info(out,record) end,
   fix_args=function(action,args) return M.aliases.fix(action,args,M.takes) end,
+  takes=function(action,key) return M.takes(action,key) end,
   simulate=function(p,items) return M.rocketload.simulate(p,items) end,
   busy=function(p,action)
     if action=='shoot' then return state().combat and state().combat[p.index]~=nil end
@@ -10646,8 +10673,12 @@ end
 M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,
   where_from=function(me) return M.where.from(me) end,
   -- A direct wait that no tell ends (wake_on_messages: false), and ending one for tell {wake: true} (Astra, d15 14:48).
-  deaf=function(index) local a=state().active[index]; if M.deaf_wait(a) then return {kind=a.kind,until_tick=a.until_tick} end end,
-  wake=function(index,from) local a=state().active[index]; if not M.deaf_wait(a) then return false end; a.told='told by '..from..' (wake: true)'; finish(index,'told'); return true end}
+  deaf=function(index) local a=state().active[index]; if M.deaf_wait(a) then return {kind=a.kind,until_tick=a.until_tick} end; return M.waits.deaf(index) end,
+  wake=function(index,from)
+    local a=state().active[index]
+    if not M.deaf_wait(a) then return M.waits.wake_deaf(index,from) end
+    a.told='told by '..from..' (wake: true)'; finish(index,'told'); return true
+  end}
 function M.deaf_wait(a) return a~=nil and (a.kind=='wait_ticks' or a.kind=='wait_until') and not a.queued and a.wake_messages==false end
 for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
 M.factory_digest=require('factory_digest'){state=state,use_lines=function(force) return M.research_use.lines(force) end}
@@ -10807,6 +10838,26 @@ M.votes=require('votes'){state=state,notice=function(from,text) return M.chat.no
 for name,handler in pairs(M.votes.handlers) do handlers[name]=handler end
 for name,handler in pairs(M.players.handlers) do handlers[name]=handler end
 function handlers.cameras() return M.cameras.list() end
+-- A direct wait_ticks or wait_until as a sleep's request (the queue runs on; dispatch): ticks or timeout as seconds
+-- (rounded up), the rest of wait_until's arguments as the condition, and the wake options.
+function M.wait_as_sleep(request)
+  local a=request.args
+  local args={wake_on_messages=a.wake_on_messages,wake_on_viewers=a.wake_on_viewers,wake_on_urgent=a.wake_on_urgent}
+  if request.action=='wait_ticks' then
+    args.seconds=math.max(1,math.min(900,math.ceil((tonumber(a.ticks) or 60)/60)))
+  else
+    args.seconds=math.max(1,math.min(900,math.ceil((tonumber(a.timeout) or 3600)/60)))
+    local c={}
+    for k,v in pairs(a) do
+      if k~='timeout' and k~='pause_queue' and k~='wake_on_messages' and k~='wake_on_viewers' and k~='wake_on_urgent' then c[k]=v end
+    end
+    args.condition=c
+  end
+  local out={}
+  for k,v in pairs(request) do out[k]=v end
+  out.action='sleep'; out.args=args
+  return out
+end
 -- wait_until as a direct call: a timed action that holds the character idle
 -- until the condition is met (outcome met) or the timeout passes (timed_out),
 -- so `fh call wait_until --wait` works outside a queue (in turn mode the
@@ -11568,6 +11619,19 @@ dispatch_request=function(request)
     if M.bots.is_index(request.player) then M.bots.check_action(request.player,request.action,request.args) end
     p=player(request.player)
   end
+  -- A direct wait while the agent's own queue runs (Grok, Sonnet x3: refused unless pause_queue, which stops the
+  -- queue's work) runs as a sleep: the queue keeps going, and the sleep takes the wait's condition, timeout and wake
+  -- options (wake_on_messages: false among them).
+  if (request.action=='wait_ticks' or request.action=='wait_until') and type(request.args)=='table' and request.args.pause_queue~=true then
+    local q=state().queues and state().queues[p.index]
+    if q and not q.paused and not q.order and (q.current or #q.pending>0 or q.loop) then
+      local n=#q.pending+(q.current and 1 or 0)
+      local as=string.format('%s ran as a sleep: your queue runs (%d step%s%s) and keeps running; it ends as a sleep does (fh sleep; sleep_check reads it), on your queue finishing or stalling too; pause_queue: true pauses the queue for a direct wait instead',
+        request.action,n,n==1 and '' or 's',q.loop and ', repeating' or '')
+      request=M.wait_as_sleep(request)
+      handler=function(pp,aa) local out=handlers.sleep(pp,aa); if type(out)=='table' then out.as_sleep=as end; return out end
+    end
+  end
   -- Passive, or acting on another surface or by remote view (M.remote): the action and queue go on.
   local quiet=passive[request.action] or M.read_call(request.action,request.args) or M.remote(p,request.action,request.args)
     or (request.action:match('^queue_') and (request.args or {}).lane=='remote')
@@ -11578,19 +11642,8 @@ dispatch_request=function(request)
   end
   if not reads[request.action] and not quiet and not request.action:match('^queue_') then
     local q=state().queues and state().queues[p.index]
-    -- A direct wait would pause a running queue (agent-minds study, fix 7:
-    -- Sonnet's "queue resume, wait_ticks 20000" interrupted 22 queued walks,
-    -- 0 jobs done in 105 minutes); it refuses unless asked to pause it. A
-    -- standing order is not the agent's own queue: the wait preempts it and
-    -- it resumes after (orders.lua).
-    if (request.action=='wait_ticks' or request.action=='wait_until') and q and not q.paused and not q.order
-      and (q.current or #q.pending>0 or q.loop) and (request.args or {}).pause_queue~=true then
-      local n=#q.pending+(q.current and 1 or 0)
-      passive_failed=game.tick  -- the refusal stops nothing (the bootstrap's failure cleanup)
-      error(string.format('%s would pause your queue (%d step%s%s): a direct wait stops the character, and its queue with it. '..
-        'Use fh sleep SECONDS [--until COND] or fh wait --until COND --max SECONDS: your queue keeps running and the wait ends when it finishes or stalls. '..
-        'To pause the queue for this wait, pass pause_queue=true',request.action,n,n==1 and '' or 's',q.loop and ', repeating' or ''),0)
-    end
+    -- A direct wait would pause a running queue (agent-minds study, fix 7: Sonnet's "queue resume, wait_ticks 20000"
+    -- interrupted 22 queued walks): it runs as a sleep instead unless pause_queue (above, M.wait_as_sleep).
     if q and not q.paused then M.stop_player(p.index) end
   end
   -- The agent's own character work and queue calls: standing orders wait a while after it (orders.lua hold).
