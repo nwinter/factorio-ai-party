@@ -136,4 +136,44 @@ if LUA_BIN:
     check(ast["max_health"] == 400 and {r["type"] for r in ast["resistances"]} == {"physical", "explosion"}, ast)
 else:
     print("lua not found: the compile and run checks were skipped")
+
+# 5: the fluid_energy page (Sol, d15 19:05), run against fake prototypes, and its merge into entities.json by name
+FLUID_PROTOS = r"""
+local function box(t) return obj{production_type = t.p, filter = t.f and obj{name = t.f} or nil, minimum_temperature = t.min,
+  maximum_temperature = t.max, volume = t.v, pipe_connections = t.c} end
+prototypes = {entity = {
+  ['fusion-reactor'] = obj{name = 'fusion-reactor', type = 'fusion-reactor', get_fluid_usage_per_tick = function() return 4 / 60 end, neighbour_bonus = 1, two_direction_only = true,
+    fluidbox_prototypes = {box{p = 'input', f = 'fluoroketone-cold', v = 1000, c = {1, 2}}, box{p = 'output', f = 'fusion-plasma', v = 1000, c = {1, 2, 3}}}},
+  ['fusion-generator'] = obj{name = 'fusion-generator', type = 'fusion-generator', get_fluid_usage_per_tick = function() return 2 / 60 end, effectivity = 1,
+    fluidbox_prototypes = {box{p = 'input', f = 'fusion-plasma', min = 1000000, v = 100, c = {1}}}},
+  ['steam-turbine'] = obj{name = 'steam-turbine', type = 'generator', fluid_usage_per_tick = 1, effectivity = 1, maximum_temperature = 500,
+    fluidbox_prototypes = {box{p = 'input-output', f = 'steam', min = 15, v = 200, c = {1, 2}}}},
+  ['iron-chest'] = obj{name = 'iron-chest', type = 'container'}}}
+"""
+if LUA_BIN:
+    prelude = PRELUDE[:PRELUDE.index("local metallic")] + FLUID_PROTOS + PRELUDE[PRELUDE.index("local code = CODE"):]
+    code = dp.command("fluid_energy", 1)[len("/silent-command "):]
+    rc, out, err = run_lua(prelude.replace("CODE", lua_string(code)))
+    check(rc == 0, f"fluid_energy: {err}")
+    data = json.loads(out)
+    check(data["total"] == 3, data)
+    by = {r["name"]: r for r in data["items"]}
+    fr = by["fusion-reactor"]
+    check(abs(fr["max_fluid_usage_per_s"] - 4) < 1e-9 and fr["neighbour_bonus"] == 1 and fr["two_direction_only"] is True, fr)
+    check(fr["fluid_boxes"][0] == {"production_type": "input", "filter": "fluoroketone-cold", "volume": 1000, "connections": 2}, fr)
+    check(fr["fluid_boxes"][1]["filter"] == "fusion-plasma", fr)
+    fg = by["fusion-generator"]
+    check(abs(fg["max_fluid_usage_per_s"] - 2) < 1e-9 and fg["effectivity"] == 1 and fg["fluid_boxes"][0]["minimum_temperature"] == 1000000, fg)
+    st = by["steam-turbine"]
+    check(st["max_fluid_usage_per_s"] == 60 and st["maximum_temperature"] == 500 and st["fluid_boxes"][0]["production_type"] == "input-output", st)
+    # the merge: each entity's "fluid", by name; an entity the page did not read has none
+    with tempfile.TemporaryDirectory() as d:
+        with open(os.path.join(d, "entities.json"), "w") as f:
+            json.dump([{"name": "fusion-reactor", "type": "fusion-reactor", "max_energy_usage_kw": 10000},
+                       {"name": "iron-chest", "type": "container", "fluid": {"stale": 1}}], f)
+        line = dp.merge_fluid_energy(d, data["items"])
+        check("3 read, 1 merged" in line, line)
+        ents = {e["name"]: e for e in json.load(open(os.path.join(d, "entities.json")))}
+        check(ents["fusion-reactor"]["fluid"]["neighbour_bonus"] == 1 and ents["fusion-reactor"]["max_energy_usage_kw"] == 10000, ents)
+        check("fluid" not in ents["iron-chest"], ents)
 print("test_dump_prototypes: ok")
