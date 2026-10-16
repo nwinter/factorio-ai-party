@@ -11058,7 +11058,7 @@ for name,handler in pairs(clock.handlers) do handlers[name]=handler end
 -- Direct wait_ticks and sleep/sleep_check (waits.lua).
 -- Wakes a loop of sleeps throws away, shown again later (missed.lua; Opus, shift12 12:26).
 M.missed=require('missed'){state=state,clock_mode=function() return clock and clock.report().mode end}
-M.waits=require('waits'){state=state,integer=integer,
+M.waits=require('waits'){state=state,integer=integer,wake_filter=function(a) return M.board.wake_filter(a) end,wakes=function(m,f) return M.board.wakes(m,f) end,
   replace=function(p) if state().active[p.index] then finish(p.index,'replaced') else stop(p) end end,
   advance=function(p,ticks) return clock.handlers.advance(p,{ticks=ticks}) end,clock_mode=function() return clock.report().mode end,
   traveling=function(index) local b=M.bots.record(index); return b~=nil and b.travel~=nil end,
@@ -11324,14 +11324,14 @@ end
 -- (rounded up), the rest of wait_until's arguments as the condition, and the wake options.
 function M.wait_as_sleep(request)
   local a=request.args
-  local args={wake_on_messages=a.wake_on_messages,wake_on_viewers=a.wake_on_viewers,wake_on_urgent=a.wake_on_urgent}
+  local args={wake_on_messages=a.wake_on_messages,wake_on_viewers=a.wake_on_viewers,wake_on_urgent=a.wake_on_urgent,wake_from=a.wake_from,wake_on_operator=a.wake_on_operator}
   if request.action=='wait_ticks' then
     args.seconds=math.max(1,math.min(900,math.ceil((tonumber(a.ticks) or 60)/60)))
   else
     args.seconds=math.max(1,math.min(900,math.ceil((tonumber(a.timeout) or 3600)/60)))
     local c={}
     for k,v in pairs(a) do
-      if k~='timeout' and k~='pause_queue' and k~='wake_on_messages' and k~='wake_on_viewers' and k~='wake_on_urgent' then c[k]=v end
+      if k~='timeout' and k~='pause_queue' and k~='wake_on_messages' and k~='wake_on_viewers' and k~='wake_on_urgent' and k~='wake_from' and k~='wake_on_operator' then c[k]=v end
     end
     args.condition=c
   end
@@ -11351,9 +11351,10 @@ function handlers.wait_until(p,a)
   local viewers=a.wake_on_viewers==true or nil
   local messages=a.wake_on_messages
   local urgent=urgent_on and M.urgent.base(p,urgent_radius) or nil
-  if a.pause_queue~=nil or a.wake_on_viewers~=nil or messages~=nil or a.wake_on_urgent~=nil then
+  local wake_filter=M.board.wake_filter(a)
+  if a.pause_queue~=nil or a.wake_on_viewers~=nil or messages~=nil or a.wake_on_urgent~=nil or a.wake_from~=nil or a.wake_on_operator~=nil then
     local copy={}
-    for k,v in pairs(a) do if k~='pause_queue' and k~='wake_on_viewers' and k~='wake_on_messages' and k~='wake_on_urgent' then copy[k]=v end end
+    for k,v in pairs(a) do if k~='pause_queue' and k~='wake_on_viewers' and k~='wake_on_messages' and k~='wake_on_urgent' and k~='wake_from' and k~='wake_on_operator' then copy[k]=v end end
     a=copy
   end
   conditions.validate(a)
@@ -11362,7 +11363,7 @@ function handlers.wait_until(p,a)
   for k,v in pairs(a) do if k~='timeout' and k~='pause_queue' then condition[k]=v end end
   -- Met already: done at once, like construct with nothing to do.
   local record={kind='wait_until',condition=condition,until_tick=game.tick+timeout,next_check=game.tick+FEED_CHECK,start_tick=game.tick,
-    wake_viewers=viewers,wake_messages=messages,urgent=urgent,default_timeout=a.timeout==nil or nil}
+    wake_viewers=viewers,wake_messages=messages,urgent=urgent,default_timeout=a.timeout==nil or nil,wake_filter=wake_filter}
   local ok,met,saw=pcall(M.waiteta.check,p,condition,record)
   -- error, not assert: Factorio's Lua 5.2 assert puts the source line in front of the reason.
   if not ok then error(met,0) end
@@ -12902,11 +12903,11 @@ function M.tick_action(index,action,event)
   elseif action.retreat and event.tick%5==0 and M.retreat_due(index,p,action) then
     -- Hurt below its retreat (retreat.lua): it goes back after this loop.
   elseif (action.kind=='wait_ticks' or action.kind=='wait_until') and not action.queued and action.start_tick and action.wake_messages~=false
-    and event.tick%30==0 and (M.board.inbox_tick(index,action.wake_viewers) or -1)>=action.start_tick then
+    and event.tick%30==0 and (M.board.inbox_tick(index,action.wake_viewers,action.wake_filter) or -1)>=action.start_tick then
     -- A tell or mention ends a direct wait (agent-minds study, fix 5: agents
     -- moved to waits nobody could interrupt; Grok chose wait_until for that);
     -- a viewer's @mention only one started with wake_on_viewers (board.lua).
-    local _,kind,from=M.board.inbox_tick(index,action.wake_viewers)
+    local _,kind,from=M.board.inbox_tick(index,action.wake_viewers,action.wake_filter)
     action.told=from and kind..' by '..from or kind
     finish(index,kind)
   elseif (action.kind=='wait_ticks' or action.kind=='wait_until') and not action.queued and action.urgent and event.tick%60==0

@@ -1517,11 +1517,34 @@ return function(api)
   -- A viewer's @mention (on_viewer) waits for the next reply too and wakes nobody unless asked (viewers: the call's
   -- wake_on_viewers, fh --wake-on-viewers; Sonnet and Opus, shift12 13:50: viewers' @mentions ended a sleep, a wait
   -- and a move_to --wait every minute or so).
-  function M.inbox_tick(index, viewers)
+  -- Who wakes a wait (Opus 06:33: only named teammates; Sonnet: not the operator's or automatic tells): wake_from, 1..16
+  -- names (a teammate, or operator), and wake_on_operator false (operator tells and reminder jobs wait for the next
+  -- reply); nil when neither is given.
+  function M.wake_filter(a)
+    if a.wake_from == nil and a.wake_on_operator == nil then return nil end
+    assert(a.wake_on_operator == nil or type(a.wake_on_operator) == 'boolean', 'wake_on_operator must be true or false')
+    local f = {operator=a.wake_on_operator}
+    if a.wake_from ~= nil then
+      local list = type(a.wake_from) == 'string' and {a.wake_from} or a.wake_from
+      assert(type(list) == 'table' and #list >= 1 and #list <= 16, 'wake_from is 1..16 names (teammates, or operator)')
+      f.from = {}
+      for _, n in ipairs(list) do assert(type(n) == 'string' and n ~= '', 'wake_from names are strings'); f.from[n:lower()] = true end
+    end
+    return f
+  end
+  function M.wakes(m, f)
+    if not f then return true end
+    local from = tostring(m.from or ''):lower()
+    local auto = from == 'operator' or from:find('^reminder') ~= nil
+    if f.operator == false and auto then return false end
+    if f.from and not f.from[from] then return false end
+    return true
+  end
+  function M.inbox_tick(index, viewers, filter)
     local box = api.state().mentions and api.state().mentions[index]
     for i = #(box and box.list or {}), 1, -1 do
       local m = box.list[i]
-      if not m.fyi and (viewers or not m.viewer) then return m.tick, m.tell and 'told' or 'mentioned', m.from end
+      if not m.fyi and (viewers or not m.viewer) and M.wakes(m, filter) then return m.tick, m.tell and 'told' or 'mentioned', m.from end
     end
     return nil
   end

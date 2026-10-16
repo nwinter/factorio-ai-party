@@ -109,3 +109,53 @@ do
   eq(W.extend({wait_estimates={{eta_s=10}}},{['until']='item_count'},0),nil)
 end
 print('d16_batch6 A6 platform waits past the default timeout: ok')
+
+-- B1 (Opus 06:33: wake only on named teammates; Sonnet 06:20: not on operator and automatic tells): wake_from and
+-- wake_on_operator choose which tells and mentions end a sleep or a direct wait.
+do
+  game={tick=100}
+  local st={mentions={[1]={list={},dropped=0}}}
+  local B=dofile('mod/agent-harness_0.1.0/board.lua'){state=function() return st end}
+  local box=st.mentions[1].list
+  box[1]={tell=1,tick=10,from='sol',text='a'}
+  box[2]={tell=2,tick=20,from='operator',text='live now'}
+  box[3]={tell='reminder',tick=30,from='reminder #4',text='review'}
+  eq(B.inbox_tick(1),30,'any tell ends a wait by default')
+  local f=B.wake_filter({wake_on_operator=false})
+  eq(B.inbox_tick(1,nil,f),10,'operator and reminder tells skipped')
+  f=B.wake_filter({wake_from={'Astra','sol'}})
+  eq(B.inbox_tick(1,nil,f),10)
+  f=B.wake_filter({wake_from={'astra'}})
+  eq(B.inbox_tick(1,nil,f),nil,'none from astra')
+  f=B.wake_filter({wake_from='operator'})
+  eq(B.inbox_tick(1,nil,f),20)
+  eq(B.wake_filter({}),nil)
+  assert(not pcall(B.wake_filter,{wake_from={}}),'1..16 names')
+  assert(not pcall(B.wake_filter,{wake_on_operator='no'}))
+end
+print('d16_batch6 B1 who wakes a wait: ok')
+
+-- B2 (Opus 06:33: a handoff waited a 6-minute round): queue_submit mode next runs a one-off step right after the active
+-- step of a repeating plan, which goes on; the loop is kept and the step is not repeated.
+do
+  game={tick=0}
+  local st={}
+  local players={[1]={index=1}}
+  local calls,active={},{}
+  local handlers={walk=function(p,a) active[p.index]=game.tick+(a.ticks or 3); calls[#calls+1]='walk'; return {} end,
+    craft=function() calls[#calls+1]='craft'; return {} end,give=function() calls[#calls+1]='give'; return {} end}
+  local S=dofile('mod/agent-harness_0.1.0/scheduler.lua'){state=function() return st end,player=function(i) return players[i] end,handlers=handlers,
+    busy=function(p,action) return action=='walk' and active[p.index]~=nil end,stop=function(p) active[p.index]=nil end,stop_index=function(i) active[i]=nil end,
+    condition=function() return false end,validate_condition=function() end}
+  local function run(n) for _=1,n do game.tick=game.tick+1; for i,e in pairs(active) do if game.tick>=e then active[i]=nil end end; S.tick() end end
+  S.handlers.queue_repeat(players[1],{name='round',interval_ticks=600,steps={{action='walk',args={ticks=10}},{action='craft'}}})
+  run(2); eq(calls[1],'walk')
+  local out=S.handlers.queue_submit(players[1],{mode='next',steps={{action='give'}}})
+  has(st.queues[1].submission,'new steps run once right after the active step')
+  run(12)
+  eq(table.concat(calls,','),'walk,give,craft','the walk goes on, then the one-off step, then the round')
+  eq(st.queues[1].loop~=nil,true,'the loop is kept')
+  run(700)
+  eq(table.concat(calls,','),'walk,give,craft,walk,craft','the next round has no give')
+end
+print('d16_batch6 B2 queue_submit mode next: ok')

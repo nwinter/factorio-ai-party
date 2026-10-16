@@ -97,6 +97,8 @@ Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT),
          --wait-through-tells (a tell or mention does not end the wait; told_during_wait lists them at the end; fh sleep, fh wait --until
                                and direct waits: wake_on_messages false, so only a tell sent with --wake ends them)
          --wake-on-viewers (fh sleep, fh wait, --wait: a viewer's @mention ends it too; by default it waits for your next reply)
+         --wake-from NAMES (fh sleep, fh wait, --wait: only a tell or mention from these comma-separated teammates, or operator, ends it)
+         --no-operator-wake (the same waits: operator tells and reminder jobs do not end it; teammates' tells do)
          --no-urgent (fh sleep, fh wait --until, direct wait_ticks/wait_until: an urgent alert does not end it; by default it does)
          --urgent-radius N (the same waits: attacks, enemy groups, losses and teammates' deaths wake it only within N tiles of you, 1..200; default 40)
          --wake-on-orders (fh sleep, fh wait --until: a standing order's round finishing or stalling ends it; by default only your own plan's does)
@@ -585,7 +587,7 @@ async function main() {
     format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
     host:{type:'string'}, port:{type:'string'}, timeout:{type:'string'}, id:{type:'string'},
     file:{type:'string'}, out:{type:'string'}, mods:{type:'string'}, journal:{type:'string'},
-    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'urgent-radius':{type:'string'}, 'wake-on-orders':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
+    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-from':{type:'string'}, 'no-operator-wake':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'urgent-radius':{type:'string'}, 'wake-on-orders':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
@@ -1240,10 +1242,22 @@ async function main() {
   // inbox is the newest tell or teammate's mention, inbox_viewer the newest viewer's @mention (a runtime from before
   // that puts viewers' mentions in inbox too).
   const wakeViewers = values['wake-on-viewers'] === true;
+  // --wake-from NAMES and --no-operator-wake (Opus 06:33: only named teammates; Sonnet 06:20: not the operator's or
+  // automatic tells): a tell from anyone else does not end the wait.
+  const wakeFrom = typeof values['wake-from'] === 'string' ? values['wake-from'].split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : undefined;
+  const noOperatorWake = values['no-operator-wake'] === true;
+  function wakesFrom(from?: string): boolean {
+    const who = String(from ?? '').toLowerCase();
+    const auto = who === 'operator' || who.startsWith('reminder');
+    if (noOperatorWake && auto) return false;
+    if (wakeFrom && !wakeFrom.includes(who)) return false;
+    return true;
+  }
+  const wakeArgs = (): Record<string, unknown> => ({...(wakeFrom ? {wake_from:wakeFrom} : {}), ...(noOperatorWake ? {wake_on_operator:false} : {})});
   function wakeInbox(status: Reply, since?: number): {tick:number, woke?:string, from?:string} | undefined {
     if (since === undefined) return undefined;
     for (const inbox of [status.result?.inbox, wakeViewers ? status.result?.inbox_viewer : undefined]) {
-      if (typeof inbox?.tick === 'number' && inbox.tick >= since) return inbox;
+      if (typeof inbox?.tick === 'number' && inbox.tick >= since && wakesFrom(inbox.from)) return inbox;
     }
     return undefined;
   }
@@ -1327,7 +1341,7 @@ async function main() {
     let deaf = values['wait-through-tells'] === true;
     const sleepArgs = (peek: boolean) => ({seconds, ...(condition ? {condition} : {}), ...(peek ? {peek:true} : {}), ...(viewers ? {wake_on_viewers:true} : {}),
       ...(noUrgent ? {wake_on_urgent:false} : radius !== undefined ? {wake_on_urgent:{radius}} : {}), ...(values['wake-on-orders'] === true ? {wake_on_orders:true} : {}),
-      ...(deaf ? {wake_on_messages:false} : {})});
+      ...(deaf ? {wake_on_messages:false} : {}), ...wakeArgs()});
     // A direct wait the runtime ran as a sleep (your queue runs: as_sleep) is followed from its reply.
     let started = begunReply ?? await harness.request('sleep',sleepArgs(quiet));
     if (!started.ok && deaf && /unknown argument wake_on_messages/.test(String(started.error?.message ?? ''))) {
@@ -1522,6 +1536,8 @@ async function main() {
     if (viewersArg) args = {...args, wake_on_viewers:true};
     // --wait-through-tells: a direct wait no tell ends (wake_on_messages: false), also when it runs as a sleep.
     if (throughTells && (action === 'wait_ticks' || action === 'wait_until') && args.wake_on_messages === undefined) args = {...args, wake_on_messages:false};
+    // --wake-from, --no-operator-wake: who may end a direct wait.
+    if ((action === 'wait_ticks' || action === 'wait_until') && args.wake_from === undefined && args.wake_on_operator === undefined) args = {...args, ...wakeArgs()};
     // --no-urgent: an urgent alert does not end a direct wait (by default it ends it, outcome urgent, last.why naming it).
     if (values['no-urgent'] === true && (action === 'wait_ticks' || action === 'wait_until') && args.wake_on_urgent === undefined) args = {...args, wake_on_urgent:false};
     // --urgent-radius N: urgent wakes only within N tiles of you.

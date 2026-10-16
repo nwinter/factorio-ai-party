@@ -5402,3 +5402,12 @@ fh watch    # deploy on every change
 - `craft` that queues nothing for a recipe (Sonnet 07:50: `started: cargo-bay=0` read as a partial start) says
   `nothing_queued: nothing was queued for cargo-bay: copper-plate short 400 (held 0), ...`; in a `recipes` batch that
   recipe leaves `started` and is listed under `nothing_queued`. Checked on the copy.
+- Who ends a wait (Opus 06:33: wake only on named teammates; Sonnet 06:20: the operator's "live now" notes woke
+  agents; Grok and Sonnet: `--wait-through-tells` for fh wait and --wait, which already take it): `wake_from` (1..16
+  names, teammates or `operator`; fh `--wake-from sol,astra`) and `wake_on_operator: false` (fh `--no-operator-wake`:
+  operator tells and reminder jobs wait for the next reply) on `sleep`, `wait_ticks` and `wait_until`, and on the host
+  for `--wait` and `fh wait` on an action. Urgent alerts and the action ending still end them. Checked on the copy:
+  Luna's sleep with `wake_from: ["astra"]` went on through Sol's tell and ended on Astra's.
+- `queue_submit {mode: "next"}` (Opus 06:33: a handoff transfer waited a 6-minute round of a repeating plan): the new
+  steps run once right after the active step, which goes on, and before the rest of the round or plan; a repeating
+  plan keeps its loop and does not repeat them.
