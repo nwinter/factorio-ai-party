@@ -149,6 +149,11 @@ do
   local m=A.move(p,'piercing-rounds-magazine',1)
   eq(m.from,2); eq(m.to,1); eq(ammo[1].name,'piercing-rounds-magazine'); eq(ammo[1].count,75); eq(ammo[2].valid_for_read,false)
   eq(A.idle_ammo(A.read(p)),nil)
+  -- Regression (hotfix 000fb4ac, Sol 18:54): in 2.0 a stack's quality is a LuaQualityPrototype, userdata, not a table.
+  local function quality(name) local u=io.tmpfile(); debug.setmetatable(u,{__index={name=name}}); return u end
+  ammo[2]=slot('piercing-rounds-magazine',10); ammo[2].quality=quality('uncommon'); ammo[1].quality=quality('normal')
+  g,am=A.lines(A.read(p))
+  eq(am,'1 piercing-rounds-magazine*75, 2 piercing-rounds-magazine@uncommon*10, 3 empty')
 end
 print('d15_batch3 3 ammo slots: ok')
 
@@ -194,8 +199,10 @@ do
   local chest={valid=true,unit_number=7,type='container',name='steel-chest',position={x=6.5,y=-3.5},get_item_count=function(n) return n=='lithium-plate' and 340 or 0 end}
   local plant
   local ins={valid=true,unit_number=8,name='fast-inserter',position={x=5.5,y=-3.5},drop_target=chest,use_filters=false}
+  -- (a filter's name as a prototype, userdata in 2.0)
+  local proto=io.tmpfile(); debug.setmetatable(proto,{__index={name='iron-plate'}})
   local blocked={valid=true,unit_number=9,name='inserter',position={x=3.5,y=-1.5},drop_target=chest,use_filters=true,inserter_filter_mode='whitelist',
-    get_filter=function(i) return i==1 and {name='iron-plate'} or nil end}
+    get_filter=function(i) return i==1 and {name=proto} or nil end}
   local surface={find_entities_filtered=function() return {ins,blocked} end}
   plant={valid=true,name='foundry',type='assembling-machine',position={x=3.5,y=-3.5},force=force,surface=surface,
     bounding_box={left_top={x=2,y=-5},right_bottom={x=5,y=-2}},get_recipe=function() return {name='molten-lithium'} end}
@@ -204,6 +211,8 @@ do
   local tk=ST.output_takers(plant,'lithium-plate')
   eq(tk.line,'1 inserter takes lithium-plate from its output as it is made: fast-inserter (5.5,-3.5) into steel-chest (6.5,-3.5) (holds 340 lithium-plate)')
   eq(tk.chests[1].holds,340)
+  -- the whitelist naming iron-plate by a userdata prototype lets iron-plate through
+  has(ST.output_takers(plant,'iron-plate').line,'2 inserters take iron-plate')
   local _,out=ST.start_wait({position={x=0,y=0},force=force,can_reach_entity=function() return true end},{item='lithium-plate',count=100},plant,600)
   eq(out.taken_by_inserters,tk.line); eq(out.follow_chests,'follow: true takes from steel-chest (6.5,-3.5) instead')
 end

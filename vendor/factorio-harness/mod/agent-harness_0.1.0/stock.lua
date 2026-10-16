@@ -288,7 +288,9 @@ return function(api)
     local named=false
     for i=1,5 do
       local okf,f=pcall(function() return ins.get_filter(i) end)
-      local n=okf and f and (type(f)=='table' and (type(f.name)=='table' and f.name.name or f.name) or f)
+      -- (a filter's name, or the filter itself, may be a prototype: a table in tests, userdata in 2.0)
+      local n=okf and f and (type(f)=='string' and f or (pcall(function() return f.name end)) and f.name)
+      if n and type(n)~='string' then local okn,nm=pcall(function() return n.name end); n=okn and nm or nil end
       if n==item then named=true end
     end
     if okm and mode=='blacklist' then return not named end

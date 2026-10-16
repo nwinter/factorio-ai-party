@@ -11195,9 +11195,9 @@ function M.is_read(action) return reads[action]==true end
 -- A read by its arguments (round2120a): recover dry_run walks nowhere, so the running action, the queue and the
 -- standing orders go on as for a read action.
 -- move_to, mine and the walking tours too (d15 batch3: a route or heat read before acting).
-local DRY_READS={recover=true,construct=true,move_to=true,mine=true,feed=true,collect=true,transfer=true,rearm=true,refuel=true}
+M.DRY_READS={recover=true,construct=true,move_to=true,mine=true,feed=true,collect=true,transfer=true,rearm=true,refuel=true}
 function M.read_call(action,args)
-  return reads[action]==true or (DRY_READS[action] and type(args)=='table' and args.dry_run==true) or false
+  return reads[action]==true or (M.DRY_READS[action] and type(args)=='table' and args.dry_run==true) or false
 end
 function M.keeps(action,args)
   return type(action)~='string' or not handlers[action] or M.read_call(action,args) or passive[action] or action:match('^queue_')~=nil

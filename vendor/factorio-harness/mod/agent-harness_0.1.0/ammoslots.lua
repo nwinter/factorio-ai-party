@@ -5,7 +5,8 @@
 return function()
   local M = {}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
-  local function quality(s) local q = try(function() return s.quality end); if type(q) == 'table' or type(q) == 'userdata' then q = q.name end; return q ~= 'normal' and q or nil end
+  -- (2.0: a stack's quality is a LuaQualityPrototype, userdata; hotfix 000fb4ac, Sol 18:54)
+  local function quality(s) local q = try(function() return s.quality end); if type(q) ~= 'string' and q ~= nil then q = try(function() return q.name end) end; return type(q) == 'string' and q ~= 'normal' and q or nil end
   local function stack(s)
     if not (s and try(function() return s.valid_for_read end)) then return false end
     return {name=s.name, count=s.count, quality=quality(s)}
