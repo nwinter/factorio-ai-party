@@ -4880,4 +4880,61 @@ fh watch    # deploy on every change
   - One item in every slot while the chest requests others it lacks: `one item fills every slot: stone 2400 in all 48
     slots (it does not request it), so iron-plate, copper-plate cannot come in; put in by ...`. This appears in that
     delivery note, in `inspect` (`one_item`), and in the `requester_full` alert line in place of the slot list.
+- Platform arrival before departure (Sonnet, every shift: "no estimate" until the ship left). A `wait_until
+  {until: platform_arrived, platform, location}` estimate for a platform stopped at a location now reads its
+  schedule:
+  - the current stop's wait conditions, with the seconds left on a time condition (counted from when the stop began);
+  - each leg to `location` at the platform's last flying speed (freight.lua keeps it once a second while it flies);
+  - the time conditions of the stops between.
+  - Example: `ETA 175s before departure: leaves gleba when time 60s; gleba->nauvis 15000 km at 120 km/s (its last
+    speed): 125s`.
+  - A wait that is not a time condition (all requests satisfied, a circuit condition, ...) is named, not timed: `ETA
+    175s after gleba: all_requests_satisfied: ...`, with no `eta_s`. Conditions joined by `or` give `at most` the
+    shortest time condition.
+  - Without `location`: the next stop.
+  - No estimate: a paused platform, a schedule that does not go there, or no flying speed seen yet.
+- Silo automatic launch (Muse, twice: Starling asked 50 low-density-structure and no rocket went up). With automatic
+  requests on, the silo read adds `auto_waits`; the harness does not change the rule.
+  - What was seen on a 2.0.77 copy of world n: the silo's own logistic request asked its network for a full rocket by
+    weight (200 low-density-structure at 5 kg each). It did so both for a platform asking 50 with no max and for one
+    asking 400..400 holding 350, and the rocket went up once it held about 200. With 16-30 low-density-structure in
+    its network the silo took up no platform; with 320 it filled a rocket and launched.
+  - Filling: `filling a rocket for Starling: low-density-structure 14 of 200 aboard (a full rocket by weight, 5 kg
+    each); its network holds 30 more, under the 186 it still waits for; ...`.
+  - No platform taken up: `no platform taken up now; above nauvis: Starling asks low-density-structure 50 (holds 0);
+    the silo's network holds 30, a full rocket of it is 200 by weight`.
+- `equip {slot: "ammo", unequip: true, index?, item?}` (Grok: a rocket ride refused ammo in the ammo slots, and equip
+  could only put ammo in) moves that slot's stacks back to the main inventory (`unequipped`). What does not fit stays
+  and is named in `left`. `slot: "gun"` does the same for guns.
+- A ride refused for items it carries names them and, for the ammo slots, how to clear them: `only armor and guns
+  travel with the rider: character_ammo holds firearm-magazine*10; equip {slot: "ammo", unequip: true} moves them to
+  your main inventory; a transfer {position, direction: "to_entity", item} into a chest takes from the ammo slots too`.
+- `fh ... --wait` that ends with exit 3 (a tell, a mention or the wait timeout while the action still runs) also writes
+  to stderr: `still running (exit 3): transfer goes on after this wait ended (a walk keeps walking); fh wait resumes
+  waiting for it`.
+- `train {stops: true, surface?}` (Gemini, 21:40: no call listed the train stops) lists every train stop of ours on the
+  surface, by name: position, the rail beside it, limit, `trains_count`, and the trains heading there or stopped at it
+  (`train 13 at it (front (-43,96))`). It gives at most 200, and reads `game.train_manager.get_train_stops` and
+  `get_trains` once each.
+- Transfer and feed dry runs (Luna: timed walks to a machine that did not take the item). `transfer {positions,
+  direction: "to_entity", item, dry_run: true}` and `feed {..., dry_run: true}` add `accepts`, one line per stop (at
+  most 16). It is read now, with the inventory a hand move would pick:
+  - `yes: stone-furnace (-26,-45) takes coal into fuel`;
+  - `no: assembling-machine-2 (x,y) recipe iron-gear-wheel takes iron-plate, not copper-plate`;
+  - `no: stone-furnace (-26,-45) makes nothing from iron-gear-wheel (no recipe of its crafting categories takes it)`;
+  - `no: electric-furnace (-52.5,-73.5) furnace_source is full: all 1 slots taken (iron-ore 3 in 1 slot)`;
+  - a furnace holding another ore: `refuses ... now (its recipe copper-plate; a furnace switches recipe only once its
+    source is empty)`;
+  - a filter or an inventory that does not take it, and an assembler with no recipe.
+- `from: "nearest"` names a requester or buffer chest with its request for the item (`a requester chest requesting 200
+  nutrients: robots bring it there for that request`). Such chests stay left out unless `feeding: true`, and come
+  after the others then. supply's chest rows already give a requester's request and a provider's robot reservations.
+- `move_to` through `via` points that ends short (Opus: the NE uranium route, 4 times) names the leg: `failed_leg`
+  `leg 4 of 6 (to (20,150))`. The why line, which the error line shows, starts with it and ends with the smaller-margin
+  result.
+  - `smaller_margins` on a via chain verifies every leg left (the failed leg's goal, the via points after it and the
+    final position) at each smaller margin. The line gives `largest smaller integer margin with a verified route: 3
+    (avoid_enemies 3); the 3 legs left in the via chain ...`, with `legs`.
+  - With `avoid_enemies {distance: N}` it tries smaller distances down to 4 (`largest_verified_distance`; before, it
+    verified nothing for a distance).
 

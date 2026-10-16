@@ -160,6 +160,7 @@ already targets your character.
   1000 tiles, over trees and wild plants it marks, water only with `"landfill":true`; `return` adds the line back beside it,
   crossing under it where its side is blocked). Belts, undergrounds and splitters say where items go in `belt` (inspect,
   observe rows, build replies; `last_belt` for a batch): `moves items south to (-22.5,-28.5); fed from (-22.5,-30.5)`.
+- `train {stops: true, surface?}` lists every train stop of ours on a surface: name, position, rail, limit and the trains heading there.
 - `./fh call rail_route --args '{"from":{"x":0,"y":0},"to":{"x":0,"y":-200}}'` lays 2.0 rails (16 headings; straight,
   half-diagonal and two curve pieces, a curve 3 rails) around water, cliffs and buildings as ghosts and builds those in
   reach (`"signals":30` adds one-way signals); `train_stop {position, name}` puts a stop on the side of a straight rail

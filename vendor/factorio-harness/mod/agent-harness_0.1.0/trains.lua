@@ -10,7 +10,9 @@ return function(api)
   local ROLLING = {locomotive=true, ['cargo-wagon']=true, ['fluid-wagon']=true, ['artillery-wagon']=true}
   local TRAIN_NAMES
   M.schema = {
-    train = {position='{x,y} of a train stop, or of a locomotive or wagon of the train (in sight, or by remote view in a visible chunk)',
+    train = {stops='true: every train stop of ours on the surface (Gemini, d15 21:40: no call listed them), by name: position, rail beside it, limit, trains_count and the trains heading there or stopped at it (their front carriage and state); at most 200; surface= for another one',
+      surface='with stops: a surface name (default yours)',
+      position='{x,y} of a train stop, or of a locomotive or wagon of the train (in sight, or by remote view in a visible chunk)',
       station='train stop: its station name (what schedules name)', limit='train stop: train limit 0..1000, or false to clear it',
       schedule='train: array of 0..32 {station, wait=[{type=time|inactivity|full|empty|item_count|fluid_count|circuit|passenger_present|..., ticks? (time, inactivity), compare? and|or, condition? {signal, comparator, value}}]}; [] clears',
       current='train: 1-based schedule entry to head for (default 1)',
@@ -186,7 +188,51 @@ return function(api)
     local kind = prototypes.item[c.signal] and 'item' or (prototypes.fluid and prototypes.fluid[c.signal] and 'fluid') or 'virtual'
     return {first_signal={type=kind, name=c.signal}, comparator=c.comparator or '<', constant=math.floor(c.value or 0)}
   end
+  -- train {stops: true}: every stop of ours on a surface, as the train stop list and map show them.
+  local MAX_STOPS = 200
+  function M.stops(p, a)
+    assert(a.stops == true, 'stops must be true')
+    for k in pairs(a) do assert(k == 'stops' or k == 'surface', 'stops takes surface only (not ' .. tostring(k) .. ')') end
+    local surface = p.surface
+    if a.surface ~= nil then
+      assert(type(a.surface) == 'string', 'surface must be a surface name')
+      surface = game.get_surface(a.surface)
+      assert(surface, 'no surface ' .. a.surface)
+    end
+    local tm = game.train_manager
+    local list = tm.get_train_stops{force=p.force, surface=surface}
+    -- The trains heading to or stopped at each stop.
+    local by = {}
+    for _, t in ipairs(tm.get_trains{force=p.force, surface=surface}) do
+      local stop = t.station
+      local heading = false
+      if not (stop and stop.valid) then stop = t.path_end_stop; heading = true end
+      local u = stop and stop.valid and stop.unit_number
+      if u then
+        by[u] = by[u] or {}
+        local front = t.front_stock
+        local row = string.format('train %d %s%s', t.id, heading and 'heading there' or 'at it', front and front.valid and ' (front ' .. at(front.position) .. ')' or '')
+        if #by[u] < 4 then by[u][#by[u]+1] = row end
+      end
+    end
+    local rows = {}
+    for _, e in ipairs(list) do
+      if e.valid then rows[#rows+1] = e end
+    end
+    table.sort(rows, function(x, y) if x.backer_name ~= y.backer_name then return x.backer_name < y.backer_name end return x.unit_number < y.unit_number end)
+    local out = {}
+    for i = 1, math.min(MAX_STOPS, #rows) do
+      local e = rows[i]
+      local v = stop_view(e)
+      v.trains = by[e.unit_number]
+      v.line = string.format('%s %s: limit %s, %d train%s on the way or there%s; rail %s', v.stop, at(e.position), v.limit and v.limit < 4294967295 and tostring(v.limit) or 'none',
+        v.trains_count or 0, (v.trains_count or 0) == 1 and '' or 's', v.trains and ' (' .. table.concat(v.trains, '; ') .. ')' or '', v.rail or '?')
+      out[i] = v
+    end
+    return {surface=surface.name, count=#rows, stops=out, note=#rows > MAX_STOPS and string.format('the first %d by name', MAX_STOPS) or nil}
+  end
   function M.handlers.train(p, a)
+    if a.stops ~= nil then return M.stops(p, a) end
     -- The target by position only: entity() reads `name` as an entity-name
     -- filter, which is why a stop's name is `station` (live check: name
     -- "LC-East" failed as "Unknown entity name"). In sight, else by remote

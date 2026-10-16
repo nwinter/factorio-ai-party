@@ -975,7 +975,14 @@ return function(api)
       assert(cargo==nil,'a rider is the only payload: unload the rocket cargo first (holds '..tostring(cargo)..')')
       for _,inv in ipairs({'character_main','character_ammo','character_trash'}) do
         local items=defines.inventory[inv] and rider.get_inventory(defines.inventory[inv])
-        assert(not items or items.is_empty(),'only armor and guns travel with the rider: put down everything in '..inv..' first (ship it as rocket cargo)')
+        if items and not items.is_empty() then
+          local held={}
+          for _,c in ipairs(try(function() return items.get_contents() end) or {}) do if #held<6 then held[#held+1]=tostring(c.name)..'*'..tostring(c.count) end end
+          -- Ammo in the ammo slots (Grok, d15: a ride refused, and nothing said how to clear them).
+          local how=inv=='character_ammo' and 'equip {slot: "ammo", unequip: true} moves them to your main inventory; a transfer {position, direction: "to_entity", item} into a chest takes from the ammo slots too'
+            or 'ship it as rocket cargo, or put it in a chest'
+          error(string.format('only armor and guns travel with the rider: %s holds %s; %s',inv,table.concat(held,' '),how),0)
+        end
       end
     end
     local destination,to,pl

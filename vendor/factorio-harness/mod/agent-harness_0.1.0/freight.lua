@@ -255,6 +255,105 @@ return function(api)
       spoil_step(seg, rec.prev, counts)
     end
     rec.prev, rec.tick = counts, tick
+    -- The last flying speed (the arrival estimate before a departure reads it).
+    local v = w.leg and try(function() return pl.speed end)
+    if type(v) == 'number' and v > 0 then rec.speed, rec.speed_tick = v, tick end
+  end
+  -- The arrival at `location` estimated before the platform leaves its stop (Sonnet, every shift: a wait for the
+  -- platform at her planet said "no estimate" until it departed): the schedule from the current stop, its wait
+  -- conditions (a time condition's seconds left from when the stop began; other conditions named, not timed), each
+  -- leg's length at the platform's last flying speed, and the waits of stops between. {eta_s (nil when a wait is not
+  -- timed), after_waits (the untimed waits), line} or nil, why.
+  local CONN
+  local function connection(a, b)
+    if not CONN then
+      CONN = {}
+      for _, c in pairs(try(function() return prototypes.space_connection end) or {}) do
+        local f, t = try(function() return c.from.name end), try(function() return c.to.name end)
+        local len = try(function() return c.length end)
+        if f and t and len then CONN[f .. '>' .. t] = len; CONN[t .. '>' .. f] = len end
+      end
+    end
+    return CONN[a .. '>' .. b]
+  end
+  local function wait_text(w)
+    local t = w.type or '?'
+    if w.ticks then t = t .. ' ' .. math.floor(w.ticks / 60) .. 's' end
+    local cond = w.condition
+    if type(cond) == 'table' and cond.first_signal then
+      t = t .. ' ' .. tostring(cond.first_signal.name) .. ' ' .. tostring(cond.comparator or '<') .. ' ' .. tostring(cond.constant or (cond.second_signal and cond.second_signal.name) or 0)
+    end
+    return t
+  end
+  function M.before_departure(pl, location)
+    local w = M.where(pl)
+    if not w.at then return nil, 'not at a stop' end
+    local sch = try(function() return pl.schedule end)
+    local records = sch and sch.records or {}
+    if #records == 0 then return nil, 'it has no schedule' end
+    if try(function() return pl.paused end) then return nil, 'platform is paused' end
+    local cur = sch.current or 1
+    local rec = store()[pl.index]
+    local speed = rec and rec.speed
+    local seg = rec and rec.segs and rec.segs[#rec.segs]
+    local started = seg and not seg['end'] and seg.kind == 'stop' and seg.start or nil
+    local secs, untimed, parts = 0, {}, {}
+    -- The current stop's waits: the platform leaves when they are met (an and of conditions: the longest time).
+    -- A stop's waits: joined by and, the platform leaves after the longest time condition and when the others are met
+    -- (named, not timed); with an or among them, at most the shortest time condition (the others may end it sooner).
+    local upper = false
+    local function waits(r, here_now)
+      local list, longest, shortest, other, any_or = {}, 0, nil, {}, false
+      for k, c in ipairs(r.wait_conditions or {}) do
+        if k > 1 and c.compare_type == 'or' then any_or = true end
+        list[#list+1] = (k > 1 and (c.compare_type == 'or' and 'or ' or 'and ') or '') .. wait_text(c)
+        if c.type == 'time' and c.ticks then
+          local left = math.max(0, c.ticks - (here_now and started and (game.tick - started) or 0)) / 60
+          longest = math.max(longest, left)
+          shortest = math.min(shortest or left, left)
+        else other[#other+1] = wait_text(c) end
+      end
+      if any_or and shortest then upper = true; return shortest, {}, list end
+      return longest, other, list
+    end
+    local at, i, n = w.at, cur, 0
+    if records[cur] and records[cur].station ~= w.at then
+      -- Stopped somewhere off the schedule's current record: it heads for that record next.
+      i = cur - 1
+    else
+      local t, other, list = waits(records[cur], true)
+      secs = secs + t
+      for _, o in ipairs(other) do untimed[#untimed+1] = w.at .. ': ' .. o end
+      parts[#parts+1] = string.format('leaves %s when %s', w.at, #list > 0 and table.concat(list, ' ') or 'its schedule says (no wait conditions)')
+    end
+    while n < #records do
+      n = n + 1
+      i = i % #records + 1
+      local r = records[i]
+      local to = r.station
+      if not to then return nil, 'schedule record ' .. i .. ' has no station' end
+      if to ~= at then
+        local len = connection(at, to)
+        if not len then return nil, 'no space connection ' .. at .. '->' .. to end
+        if not speed then return nil, 'no flying speed seen yet for ' .. pl.name end
+        local s = len / speed / 60
+        secs = secs + s
+        parts[#parts+1] = string.format('%s->%s %d km at %.0f km/s (its last speed): %ds', at, to, math.floor(len + 0.5), speed * 60, math.floor(s + 0.5))
+        at = to
+      end
+      if to == location or (location == nil and to ~= w.at) then
+        local eta = #untimed == 0 and math.ceil(secs) or nil
+        local line = table.concat(parts, '; ')
+        if eta then line = string.format('ETA %s%ds before departure: %s', upper and 'at most ' or '', eta, line)
+        else line = string.format('ETA %ds after %s: %s', math.ceil(secs), table.concat(untimed, ' and '), line) end
+        return {eta_s=eta, after_s=math.ceil(secs), after_waits=#untimed > 0 and untimed or nil, line=line}
+      end
+      local t, other, list = waits(r, false)
+      secs = secs + t
+      for _, o in ipairs(other) do untimed[#untimed+1] = to .. ': ' .. o end
+      parts[#parts+1] = string.format('stops at %s (%s)', to, #list > 0 and table.concat(list, ' ') or 'no wait conditions')
+    end
+    return nil, 'its schedule does not go to ' .. tostring(location)
   end
   -- A platform's arrivals at and departures from space locations (Gemini, 16:50: a team alert when one arrives at or
   -- leaves the agent's planet), the last EVENTS: {seq, platform, force, kind arrived|left, at, to, tick}.

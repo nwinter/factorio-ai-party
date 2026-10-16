@@ -273,7 +273,7 @@ return function(api)
       -- in flight): stopped at a location and not on its path; a leg in the way it is flown.
       local w=api.platform_where and api.platform_where(pl)
       if w then return w.stopped==true and (c.location==nil or w.at==c.location),c.platform..' '..w.text,
-        estimate and {leg=w.leg,paused=pl.paused} or nil end
+        estimate and {leg=w.leg,paused=pl.paused,platform=pl} or nil end
       local loc=pl.space_location and pl.space_location.name
       local conn=pl.space_connection
       local where=loc and ('at '..loc) or conn and string.format('flying %s->%s %d%%',conn.from.name,conn.to.name,math.floor((pl.distance or 0)*100+0.5)) or 'nowhere'

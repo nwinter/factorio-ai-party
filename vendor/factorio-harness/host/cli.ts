@@ -508,6 +508,20 @@ function exitCode(reply: Reply): number {
   if (ends.some(r => r && typeof r === 'object' && r.still_running !== undefined && r.still_running !== false)) return STILL_RUNNING_EXIT;
   return reply.ok ? 0 : 1;
 }
+/** Sets the exit status; exit 3 also says on stderr that the action goes on (Grok, d15: a tell ended --wait on a
+ * walking transfer, and the next command was another move). */
+export function stillRunningLine(reply: Reply): string | undefined {
+  if (exitCode(reply) !== STILL_RUNNING_EXIT) return undefined;
+  const ends = [reply.result, reply.result?.completion];
+  const what = ends.map(r => r && typeof r === 'object' ? r.still_running : undefined).find(v => v !== undefined && v !== false);
+  const label = typeof what === 'string' ? what : typeof what === 'object' && what && typeof (what as any).kind === 'string' ? (what as any).kind : 'the action';
+  return `still running (exit 3): ${label} goes on after this wait ended (a walk keeps walking); fh wait resumes waiting for it`;
+}
+function setExit(reply: Reply) {
+  process.exitCode = exitCode(reply);
+  const line = stillRunningLine(reply);
+  if (line) process.stderr.write(line + '\n');
+}
 // fh ACTION run as fh call ACTION (round1650d: Haiku's fh transfer, Luna's fh move_to): said once, in corrected (or on
 // the error).
 let cliCorrected: string | undefined;
@@ -1603,7 +1617,7 @@ async function main() {
         if (stopping) break;
         const reply = await execute(step.action,step.args,step.id,true);
         output({step:index,...reply});
-        if (exitCode(reply)) {process.exitCode=exitCode(reply); break;}
+        if (exitCode(reply)) {setExit(reply); break;}
       }
     } else if (command === 'view') {
       if (!values.out) throw new Error('view requires --out path.png');
@@ -1633,12 +1647,12 @@ async function main() {
       if (max > 900) throw new Error('wait --max takes 1..900 seconds');
       const reply = await waitForIdle(max*1000);
       output(reply);
-      process.exitCode=exitCode(reply);
+      setExit(reply);
     } else if (command === 'wait' && values.until !== undefined && /^\s*idle\s*$/.test(values.until)) {
       if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
       const reply = await waitForIdle();
       output(reply);
-      process.exitCode=exitCode(reply);
+      setExit(reply);
     } else if (command === 'wait' && (values.until !== undefined || values.max !== undefined)) {
       if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
       const max = integer(values.max, 600);
@@ -1652,7 +1666,7 @@ async function main() {
       if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
       const reply = await waitForIdle();
       output(reply);
-      process.exitCode=exitCode(reply);
+      setExit(reply);
     } else if (command === 'doctor' && bridged) {
       const bridge = await execute('bridge_status',{});
       const player = bridge.ok && bridge.result?.in_game ? await execute('observe',{}) : undefined;
@@ -1689,7 +1703,7 @@ async function main() {
         await writeFile(values.out,reply.result.blueprint+'\n');
         output({...reply,result:{...reply.result,blueprint:undefined,path:resolve(values.out)}});
       } else output(reply);
-      process.exitCode=exitCode(reply);
+      setExit(reply);
     }
   } finally {
     client.close();

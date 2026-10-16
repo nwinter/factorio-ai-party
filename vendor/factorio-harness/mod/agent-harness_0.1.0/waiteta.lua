@@ -90,7 +90,13 @@ return function(api)
       end
     elseif c['until']=='platform_arrived' and o then
       local leg=o.leg
-      if not leg then unknown='platform has not departed; departure time and flight speed are unknown'
+      if not leg then
+        -- Before it leaves (Sonnet, every shift): its schedule, the stop's waits, the legs at its last speed.
+        local est,why
+        if api.before_departure and o.platform then est,why=api.before_departure(o.platform,c.location) end
+        if est and est.eta_s then seconds=est.eta_s; basis='before departure: '..est.line:gsub('^ETA [%a ]-%d+s before departure: ','')
+        elseif est then unknown=est.line
+        else unknown='platform has not departed'..(why and '; '..why or '') end
       elseif c.location and leg.to~=c.location then unknown='current flight leg ends at '..leg.to..', not '..c.location
       elseif o.paused then unknown='platform is paused; arrival rate is unavailable'
       elseif not leg.eta_ticks or leg.eta_ticks<=0 then unknown='current platform speed is zero or unavailable'

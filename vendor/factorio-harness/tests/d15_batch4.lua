@@ -382,3 +382,108 @@ do
   eq(R.one_item(e),nil,'two items')
 end
 print('d15_batch4 6 requester chests: ok')
+
+-- 7 (Sonnet): a platform's arrival estimated before it leaves its stop. -------------------------------------------
+do
+  defines={space_platform_state={on_the_path=9},inventory={hub_main=1,hub_trash=2}}
+  prototypes={space_connection={['gleba-nauvis']={from={name='nauvis'},to={name='gleba'},length=15000}}}
+  game={tick=10000}
+  local st={}
+  local F=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return st end}
+  local pl={valid=true,index=3,name='Starling',state=1,paused=false,space_location={name='gleba'},
+    schedule={current=1,records={{station='gleba',wait_conditions={{type='time',ticks=3600},{type='all_requests_satisfied'}}},{station='nauvis',wait_conditions={{type='time',ticks=1800}}}}}}
+  st.freight={[3]={segs={{kind='stop',at='gleba',start=9400}},speed=2}}  -- 2 km a tick: 120 km/s
+  local r=F.before_departure(pl,'nauvis')
+  eq(r.after_s,175); eq(r.eta_s,nil)
+  eq(r.line,'ETA 175s after gleba: all_requests_satisfied: leaves gleba when time 60s and all_requests_satisfied; gleba->nauvis 15000 km at 120 km/s (its last speed): 125s')
+  pl.schedule.records[1].wait_conditions={{type='time',ticks=3600}}
+  r=F.before_departure(pl,'nauvis')
+  eq(r.eta_s,175); has(r.line,'ETA 175s before departure: leaves gleba when time 60s')
+  eq(select(2,F.before_departure(pl,'vulcanus')),'its schedule does not go to vulcanus')
+  st.freight[3].speed=nil
+  eq(select(2,F.before_departure(pl,'nauvis')),'no flying speed seen yet for Starling')
+  -- waiteta uses it while no leg is flown.
+  st.freight[3].speed=2
+  local W=dofile('mod/agent-harness_0.1.0/waiteta.lua'){before_departure=function(a,b) return F.before_departure(a,b) end}
+  local row=W.estimate({},{['until']='platform_arrived',platform='Starling',location='nauvis'},false,{platform=pl},{})
+  eq(row.eta_s,175); has(row.line,'platform_arrived Starling: ETA 175s (before departure: leaves gleba when time 60s')
+end
+print('d15_batch4 7 platform arrival: ok')
+
+-- 8 (Muse): what automatic launch waits for. -------------------------------------------------------------------------
+do
+  defines={logistic_member_index={rocket_silo_requester=4}}
+  prototypes={item={['low-density-structure']={weight=5000}},utility_constants={rocket_lift_weight=1000000}}
+  local net={get_item_count=function() return 30 end}
+  local pt={filters={{name='low-density-structure',count=200}}}
+  local silo={position={x=15.5,y=59.5},surface={planet={name='nauvis'},find_logistic_network_by_position=function() return net end},
+    transitional_request_target={valid=true,name='Starling'},get_logistic_point=function() return pt end}
+  local hub={valid=true,get_item_count=function() return 0 end,get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,
+    filters={{value={name='low-density-structure'},min=50,import_from={name='nauvis'}}}} end} end}
+  local force={platforms={{valid=true,name='Starling',space_location={name='nauvis'},hub=hub}}}
+  local S=dofile('mod/agent-harness_0.1.0/silo.lua'){}
+  eq(S.auto_wait(silo,force,{{name='low-density-structure',count=14}}),'filling a rocket for Starling: low-density-structure 14 of 200 aboard (a full rocket by weight, 5 kg each); its network holds 30 more, under the 186 it still waits for; it goes up once the rocket holds what the silo requests (on 2.0.77 a full rocket of the item, whatever the platform lacks)')
+  silo.transitional_request_target=nil
+  eq(S.auto_wait(silo,force,{}),'no platform taken up now; above nauvis: Starling asks low-density-structure 50 (holds 0); the silo\'s network holds 30, a full rocket of it is 200 by weight')
+end
+print('d15_batch4 8 silo: ok')
+
+-- 9 (Gemini, 21:40): train {stops: true}: every stop of ours on a surface. ------------------------------------------
+do
+  defines={train_state={},signal_state={}}
+  prototypes={entity={}}
+  local s1={valid=true,unit_number=1,backer_name='Scrap North',position={x=-41,y=93},trains_limit=2,trains_count=1,connected_rail={name='straight-rail',position={x=-43,y=93}}}
+  local s2={valid=true,unit_number=2,backer_name='Iron Drop',position={x=1,y=193},trains_count=0,connected_rail=nil}
+  local surface={name='fulgora'}
+  game={get_surface=function(n) return n=='fulgora' and surface or nil end,train_manager={
+    get_train_stops=function(f) assert(f.surface==surface) return {s1,s2} end,
+    get_trains=function() return {{id=13,station=nil,path_end_stop=s1,front_stock={valid=true,position={x=-43,y=110}}}} end}}
+  local T=dofile('mod/agent-harness_0.1.0/trains.lua'){}
+  local r=T.handlers.train({surface={name='nauvis'},force='player'},{stops=true,surface='fulgora'})
+  eq(r.count,2)
+  eq(r.stops[1].line,'Iron Drop (1,193): limit none, 0 trains on the way or there; rail none: no straight rail beside it on the side that serves its direction')
+  eq(r.stops[2].line,'Scrap North (-41,93): limit 2, 1 train on the way or there (train 13 heading there (front (-43,110))); rail straight-rail (-43,93)')
+  fails(function() T.handlers.train({surface=surface,force='player'},{stops=true,position={x=0,y=0}}) end,'stops takes surface only')
+end
+print('d15_batch4 9 train stops: ok')
+
+-- 11 (Opus): smaller margins verified over every leg left in a via chain, and for {distance: N}. ----------------------
+do
+  game={tick=0,forces={player={name='player'},enemy={name='enemy'}}}
+  prototypes={entity={['biter-spawner']={result_units={}}}}
+  defines=defines or {}
+  local force=game.forces.player
+  force.get_friend=function() return false end
+  force.get_cease_fire=function() return false end
+  local state,paths,asked={},{},{}
+  local surface={name='nauvis',index=1}
+  local hazard={valid=true,name='biter-spawner',type='unit-spawner',position={x=50,y=42.5},force=game.forces.enemy}
+  surface.find_entities_filtered=function() return {hazard} end
+  surface.request_path=function(a) asked[#asked+1]=a; return #asked end
+  local p={index=1,position={x=0,y=0},surface=surface,force=force,walking_state={walking=false},
+    character={prototype={collision_box={left_top={x=-0.2,y=-0.2},right_bottom={x=0.2,y=0.2}},collision_mask={layers={player=true}}}}}
+  package.loaded.avoid=nil; package.loaded.margin_probe=nil
+  local A=require('avoid'){state=function() return state end,charted=function() return true end,leg=function() return false end}
+  local P=require('margin_probe'){avoid=A,paths=function() return paths end}
+  local function run(n)
+    local count=0
+    while P.tick(p,n) do
+      game.tick=game.tick+1; count=count+1; assert(count<2000)
+      local q=n.margin_probe
+      if q.id then local r=asked[q.id]; P.on_path(n,{id=q.id,path={{position=r.start},{position={x=(r.start.x+r.goal.x)/2,y=(r.start.y+r.goal.y)/2}},{position=r.goal}}}) end
+    end
+    return n.margin_probe.result
+  end
+  -- A via chain: the leg to (100,0) failed; the rest of the chain goes on to (100,100) then (0,100).
+  local n={position={x=100,y=0},path_state='unsafe',foes={mode=A.mode(4),goal={x=100,y=0}},via={index=1,points={{x=100,y=0},{x=100,y=100}},final={x=0,y=100}}}
+  local r=run(n)
+  eq(r.legs,3); eq(r.to.x,0); eq(r.to.y,100)
+  has(r.line,'the 3 legs left in the via chain (0,0) to (0,100)')
+  has(r.method,'every leg left in the chain')
+  -- {distance: N}: smaller distances are tried (before, the check started below 0 and verified nothing).
+  n={position={x=100,y=0},path_state='unsafe',foes={mode=A.mode({distance=12}),goal={x=100,y=0}}}
+  r=run(n)
+  eq(r.requested_distance,12); assert(r.largest_verified_distance and r.largest_verified_distance<12,tostring(r.largest_verified_distance))
+  has(r.line,'(avoid_enemies {distance: ')
+end
+print('d15_batch4 11 via margins: ok')
