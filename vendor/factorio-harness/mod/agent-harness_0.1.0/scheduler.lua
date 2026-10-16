@@ -473,6 +473,24 @@ return function(api)
           resumed=string.format('%d of %d stops done (moved %d); requeued with the %d left',tl.done,tl.total,tl.got or 0,#tl.positions)
         end
       end
+      -- load_silo (Sonnet, Astra: a running or queued load_silo was failed by the agent's own build or transfer, and
+      -- resume skipped it): requeued; a walking load's goals are the rocket's totals, so it goes on from what is aboard.
+      if not again and step.action=='load_silo' and type(args)=='table' then
+        local act=(api.state().active or {})[index]
+        local goals=act and act.queued and act.op=='load_silo' and act.goals
+        if type(goals)=='table' and #goals>0 then
+          local rest,items={},{}
+          for k,v in pairs(args) do rest[k]=v end
+          for _,g in ipairs(goals) do items[#items+1]={item=g.name,quality=g.quality,count=g.target} end
+          rest.items=items; rest.to_total=true
+          args=rest
+          resumed='requeued with the rocket\'s totals (to_total): it goes on from what is aboard'
+        else
+          resumed='requeued as it was'
+        end
+        again=true
+        q.requeued_load={id=step.id,tick=game.tick}
+      end
       record(q,step,false,{reason='interrupted',requeued=again or nil,resumed_from=resumed}); q.current=nil
       -- A walk through via points goes on from the first one it had not reached (runtime: via_done).
       if again and step.via_done and type(args)=='table' and type(args.via)=='table' then

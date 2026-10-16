@@ -1539,6 +1539,21 @@ async function main() {
       const slept = await sleep(seconds, undefined, false, reply);
       return slept.ok && slept.result ? {...slept, result:{...slept.result, as_sleep:reply.result.as_sleep}} : slept;
     }
+    // craft --wait (Grok: it returned when hand crafting started, and the silo transfer after it moved nothing): waits
+    // until the hand-craft queue is done (crafting_done), as a sleep on that condition.
+    if (wait && reply.ok && action === 'craft' && !bridged) {
+      const started = reply.result?.started;
+      const n = typeof started === 'number' ? started : Object.values((started ?? {}) as Record<string,unknown>).reduce((s: number, v) => s + (typeof v === 'number' ? v : 0), 0);
+      if (n > 0) {
+        const queued = typeof reply.result?.queue_s === 'number' ? reply.result.queue_s : 30;
+        const seconds = Math.min(900, Math.max(5, Math.ceil(queued*1.25) + 5));
+        const slept = await sleep(seconds, {until:'crafting_done'}, true);
+        const done = slept.ok && slept.result?.woke === 'condition';
+        return {...slept, ok:slept.ok, result:{...reply.result, crafted:done ? 'the hand-craft queue is done: the items are in your inventory'
+          : `not done: the wait ended (${String(slept.result?.woke ?? slept.error?.code ?? 'ended')}) with crafts still queued`,
+          ...(done || !slept.ok ? {} : {still_running:'hand crafting'}), wait:slept.result}};
+      }
+    }
     // kite runs until no enemy is left in its radius, its health or ammo floor, or its ticks (Sol, shift09: kite --wait
     // returned at once while the fight went on).
     const waits = bridged ? ['walk','mine','build'].includes(action)
@@ -1553,6 +1568,8 @@ async function main() {
         // load_silo waiting for its rocket (no rocket yet, or launch=true before it is ready), then loading (shift12 15:20);
         // a walking load (op load_silo, until_tick) is a tour (Sol 07:50: --wait returned the acceptance)
         || (action === 'load_silo' && (reply.result?.waiting !== undefined || reply.result?.until_tick !== undefined))
+        // launch {wait_ready}: the wait for the rocket, then the launch (last.launch)
+        || (action === 'launch' && reply.result?.waiting_to_launch !== undefined)
         // A transfer or collect that walks (walk, pick, pick with to) runs as a timed tour.
         || (['transfer','collect'].includes(action) && reply.result?.op === 'transfer' && reply.result?.until_tick !== undefined)
         // feed over positions with walk: a tour when any was out of reach (Opus 10:50).

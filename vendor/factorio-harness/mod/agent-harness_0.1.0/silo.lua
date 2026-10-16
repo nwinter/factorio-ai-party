@@ -74,6 +74,11 @@ return function(api)
     for u, x in pairs(list) do n = n + 1; if x.tick < at_tick then oldest, at_tick = u, x.tick end end
     if n > MAX_RECORDS and oldest then list[oldest] = nil end
   end
+  -- The silo's last launch as recorded ({tick, cargo, to, by}), or nil.
+  function M.last_launch(silo)
+    local unit = try(function() return silo.unit_number end)
+    return unit and records()[unit] or nil
+  end
   local destinations
   local function destination_text(d)
     if not d then return nil end

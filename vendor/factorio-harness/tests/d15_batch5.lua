@@ -24,3 +24,98 @@ do
   assert(ok,'the nested shape passes')
 end
 print('d15_batch5 A3 flat steps: ok')
+
+-- B3 (Sonnet, Astra): a load_silo step paused by the agent's own call is requeued; a walking load with the rocket's
+-- totals (to_total), so it goes on from what is aboard. ---------------------------------------------------------------
+do
+  game={tick=100}
+  local st={active={}}
+  local players={[1]={index=1}}
+  local S=dofile('mod/agent-harness_0.1.0/scheduler.lua'){state=function() return st end,player=function(i) return players[i] end,handlers={load_silo=function() return {} end},
+    busy=function() return false end,stop=function() end,stop_index=function() end,condition=function() return false end,validate_condition=function() end}
+  st.queues={[1]={pending={},history={},revision=1,sequence=1,paused=false,
+    current={id='job-7',action='load_silo',args={position={x=15.5,y=59.5},items={['agricultural-science-pack']=300},walk=true,from={{x=1,y=2}}},wait=true}}}
+  st.active[1]={queued=true,op='load_silo',goals={{name='agricultural-science-pack',quality='normal',target=885}}}
+  S.pause(1)
+  local q=st.queues[1]
+  eq(q.paused,true); eq(q.pending[1].id,'job-7'); eq(q.pending[1].action,'load_silo')
+  eq(q.pending[1].args.to_total,true); eq(q.pending[1].args.items[1].count,885); eq(q.pending[1].args.walk,true)
+  eq(q.requeued_load.id,'job-7')
+  has(q.history[#q.history].result.resumed_from,'to_total')
+  -- A load waiting for its rocket (no goals yet): requeued as it was.
+  st.active[1]={queued=true,kind='feed'}
+  q.paused=false; q.current=table.remove(q.pending,1); q.current.args={position={x=15.5,y=59.5},items={coal=5}}
+  S.pause(1)
+  eq(q.pending[1].args.items.coal,5); eq(q.pending[1].args.to_total,nil)
+end
+print('d15_batch5 B3 load_silo requeue: ok')
+
+-- B3 (Grok): a walking load ends when the rocket it fills launches by another hand. -------------------------------------
+do
+  game={tick=1000}
+  prototypes={item={['agricultural-science-pack']={weight=1000}}}
+  defines={inventory={rocket_silo_rocket=1},rocket_silo_status={rocket_ready=13}}
+  local silo={valid=true,name='rocket-silo',type='rocket-silo',position={x=15.5,y=59.5},unit_number=9}
+  local launched
+  local R=dofile('mod/agent-harness_0.1.0/rocketload.lua'){last_launch=function(s) return launched end}
+  local action={silo=silo,started_tick=500,goals={{name='agricultural-science-pack',quality='normal',target=885}},rows={},trips=1,items={},load={}}
+  launched={tick=900,by='astra',cargo='agricultural-science-pack 885'}
+  local out=R.walk_visit({},action,{position={x=3,y=4},name='steel-chest'})
+  eq(out.stop,'rocket_launched'); eq(action.final,'rocket_launched')
+  has(action.why,'launched 1 s ago by astra (cargo: agricultural-science-pack 885)')
+end
+print('d15_batch5 B3 gather stops at launch: ok')
+
+-- I (viewer Foobator; design Astra and Sol 05:16): reminder jobs: a line to each recipient when due, missed runs folded
+-- into the pending one, ack keeps the cadence, snooze moves the next run, a rollback sets due ticks from the tick. ---------
+do
+  game={tick=960}
+  local st={}
+  local boxes={}
+  local agents={{name='sol',index=2},{name='astra',index=1},{name='luna',index=3}}
+  local R=dofile('mod/agent-harness_0.1.0/reminders.lua'){state=function() return st end,
+    resolve=function(w) for _,a in ipairs(agents) do if a.name==w then return w end end error('no teammate '..w,0) end,
+    agents=function() return agents end,who=function(p) return p.name end,
+    deliver=function(index,t) boxes[index]=boxes[index] or {}; table.insert(boxes[index],t) end}
+  local sol,astra,luna={name='sol',index=2},{name='astra',index=1},{name='luna',index=3}
+  local function run(ticks) for _=1,ticks do game.tick=game.tick+1; R.tick() end end
+  local r=R.handlers.reminder_add(sol,{name='ship review',message='Petrel ammo, fuel and hub room',every_ticks=54000,recipients='sol,astra',board_item=575})
+  eq(r.added,1); eq(r.reminder.recipients,'astra, sol'); eq(r.reminder.next_due_tick,54960)
+  fails(function() R.handlers.reminder_add(sol,{message='x',every_ticks=60}) end,'every_ticks must be 3600..')
+  fails(function() R.handlers.reminder_add(sol,{message='x'}) end,'every_ticks (a cadence')
+  fails(function() R.handlers.reminder_edit(astra,{id=1,message='mine now'}) end,'is sol\'s: its owner edits')
+  run(54000)
+  eq(#boxes[2],1); eq(#boxes[1],1); eq(boxes[3],nil,'luna is no recipient')
+  has(boxes[1][1].text,'ship review (sol, every 15m00s, board #575): Petrel ammo, fuel and hub room; reminder_ack {id: 1, result}')
+  eq(boxes[1][1].from,'reminder #1')
+  local l=R.handlers.reminders(astra,{}).reminders[1]
+  eq(l.yours,'pending'); eq(l.next_due_tick,108960)
+  -- Not acknowledged: the next run folds into the pending line (no second line), and it reads overdue.
+  run(54000)
+  eq(#boxes[1],1,'no backlog'); has(R.handlers.reminders(astra,{}).reminders[1].states,'astra pending (1 run missed)')
+  -- sol acknowledges: the result is kept, the cadence stays anchored.
+  local ack=R.handlers.reminder_ack(sol,{id=1,result='Petrel 900 magazines, 4 free slots'})
+  eq(ack.missed,1); eq(R.handlers.reminders(sol,{}).reminders[1].next_due_tick,162960)
+  run(54000)
+  eq(#boxes[2],2,'sol gets the next run'); eq(#boxes[1],1,'astra still pending: folded')
+  -- A server paused for hours: one run, not one per missed interval.
+  game.tick=game.tick+54000*5-1; run(1)
+  eq(#boxes[2],2,'still pending for sol: folded'); eq(R.handlers.reminders(sol,{}).reminders[1].next_due_tick,162960+54000*6)
+  -- snooze: the next run only.
+  local sn=R.handlers.reminder_snooze(astra,{id=1,ticks=600}); eq(sn.next_due_tick,game.tick+600)
+  run(600); eq(#boxes[1],2,'astra\'s snoozed run came')
+  -- A rollback: a next run more than one interval ahead is set from the restored tick.
+  local job=st.reminders.jobs[1]
+  game.tick=game.tick-200000; R.tick()
+  for _=1,59 do game.tick=game.tick+1; R.tick() end
+  assert(job.next_due>game.tick and job.next_due<=game.tick+54000,'next run within one interval of the restored tick: '..job.next_due..' at '..game.tick)
+  -- Once, to the team: fires once and is done.
+  local once=R.handlers.reminder_add(luna,{message='Aquilo heater check',due_in_ticks=120,recipients='team'})
+  run(180)
+  eq(#boxes[3],1); eq(R.handlers.reminders(luna,{}).reminders[1].done,true)
+  eq(#R.handlers.reminders(luna,{}).reminders,1,'luna: hers and those to her, not #1')
+  eq(R.handlers.reminders(luna,{all=true}).count,2)
+  R.handlers.reminder_remove(sol,{id=1}); eq(R.handlers.reminders(sol,{all=true}).count,1)
+  eq(once.added,2)
+end
+print('d15_batch5 I reminders: ok')

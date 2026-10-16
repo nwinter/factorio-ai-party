@@ -134,22 +134,52 @@ STEP_RE = re.compile(r"^\[(x| )\]\s*(?:(\d+)\.\s*)?(.*?)(?:\s+\(done by ([^,()]+
 STEPS_MAX, STEP_TEXT = 30, 200
 
 
-def parse_steps(steps):
-    """A project's steps as the board shows them ("[x] 3. Lay the belt (done by sol, 5m00s ago)", "[ ] 4. Feed coal") ->
-    [{n, text, done, by, ago}], at most STEPS_MAX, each text cut to STEP_TEXT; the first not done is next."""
+STEP_TAIL_RE = re.compile(r"\s+\(([A-Za-z][\w.-]*)\)$")
+
+
+def parse_steps(steps, known=None):
+    """A project's steps as the board shows them ("[x] 3. Lay the belt (sol) (done by sol, 5m00s ago)", "[ ] 4. Feed
+    coal (luna) (parallel)") -> [{n, text, done, by, ago, owner, parallel}], at most STEPS_MAX, each text cut to
+    STEP_TEXT. A step's own owner is a trailing "(name)" that known(name) accepts (the team's names), and "(parallel)"
+    marks a step with no order between it and its parallel neighbours (d15 batch5 J2, viewer Foobator). The first step
+    not done is next, and so are the parallel steps right after it when it is parallel itself."""
     out = []
     for s in (steps if isinstance(steps, list) else [])[:STEPS_MAX]:
         m = STEP_RE.match(str(s))
         if not m:
             continue
         text = clean_text(m.group(3)).strip()  # (after the match: clean_text takes "[x]" for a rich-text tag)
+        owner, parallel = None, False
+        for _ in range(2):
+            t = STEP_TAIL_RE.search(text)
+            if not t:
+                break
+            word = t.group(1)
+            if word == "parallel" and not parallel:
+                parallel = True
+            elif owner is None and known is not None and known(word):
+                owner = word
+            else:
+                break
+            text = text[:t.start()].rstrip()
         row = {"n": int(m.group(2)) if m.group(2) else None, "text": text[:STEP_TEXT], "done": m.group(1) == "x"}
+        if owner:
+            row["owner"] = owner
+        if parallel:
+            row["parallel"] = True
         if m.group(4):
             row["by"], row["ago"] = m.group(4).strip(), m.group(5).strip()
         out.append(row)
-    nxt = next((r for r in out if not r["done"]), None)
-    if nxt:
-        nxt["next"] = True
+    for i, r in enumerate(out):
+        if not r["done"]:
+            r["next"] = True
+            for r2 in out[i + 1:] if r.get("parallel") else []:
+                if r2["done"]:
+                    continue
+                if not r2.get("parallel"):
+                    break
+                r2["next"] = True
+            break
     return out
 
 
@@ -612,6 +642,7 @@ class Model:
         self.incoming = {}  # id -> an enemy group on its way (attack_groups_live), as last read
         self.big = {}  # id -> a demolisher near our buildings (big_enemies_live), as last read
         self.hauling = None  # hand hauling this shift (live.py observe_hauling): {rows, since, t}
+        self.reminders = None  # the team's reminder jobs (reminders.lua via live.py): {jobs, tick}
         # production credited to who built the machine (live.py observe_efficiency): the last read, and the reads of the
         # last hour for a notable change (efficiency.notable)
         self.efficiency = None
@@ -713,6 +744,8 @@ class Model:
             self._ingest_groups(obs["attack_groups"], now)
         if obs.get("big_enemies") is not None:
             self._ingest_big(obs["big_enemies"], now)
+        if obs.get("reminders") is not None:  # the team's reminder jobs, for the site's panel
+            self.reminders = obs["reminders"]
         if obs.get("hauling") is not None:  # hand hauling this shift (live.py observe_hauling), for the segment card
             self.hauling = obs["hauling"]
         if obs.get("efficiency") is not None:  # machines' output by builder (live.py observe_efficiency)
@@ -1240,6 +1273,26 @@ class Model:
             return
         cl.append({"text": text, "version": version, "request": None if version else text, "tick": tick, "t": t})
 
+    REMINDERS_MAX = 12
+
+    def reminders_snapshot(self):
+        """The team's reminder jobs for the site's panel (d15 batch5 group I): owner, message, next due, the last result
+        and its age, and each recipient's state (pending, acknowledged, overdue); None before the first read."""
+        r = self.reminders
+        if not isinstance(r, dict):
+            return None
+        rows = []
+        for j in (r.get("jobs") or [])[:self.REMINDERS_MAX]:
+            if not isinstance(j, dict):
+                continue
+            rows.append({"id": j.get("id"), "name": clean_text(j.get("name") or ""), "owner": j.get("owner"),
+                         "agent": self._who(j.get("owner")), "recipients": j.get("recipients"),
+                         "message": clean_text(j.get("message") or ""), "cadence": j.get("cadence"),
+                         "enabled": bool(j.get("enabled")), "done": bool(j.get("done")),
+                         "next_due_in_s": j.get("next_due_in_s"), "last_result": clean_text(j.get("last_result") or "") or None,
+                         "result_age_s": j.get("result_age_s"), "result_by": j.get("result_by"), "states": j.get("states")})
+        return {"jobs": rows, "total": len(r.get("jobs") or [])}
+
     def board_snapshot(self):
         b = self.board
         items = list(b["items"].values())
@@ -1314,7 +1367,7 @@ class Model:
         "we cant see the individual steps")."""
         done, total = project_steps(it.get("progress"))
         full = isinstance(it.get("steps"), list)
-        steps = parse_steps(it.get("steps") if full else it.get("next_steps"))
+        steps = parse_steps(it.get("steps") if full else it.get("next_steps"), known=lambda n: self._who(n) is not None)
         nxt = [f"[ ] {s['text']}" for s in steps if s.get("next")]
         row = {"id": it.get("id"), "title": clean_text(it.get("title") or ""), "owner": it.get("owner"),
                "agent": self._who(it.get("owner")), "status": it.get("status"),
@@ -1991,6 +2044,7 @@ class Model:
             "tokens": self.tokens,
             "alerts": [a for a in self.alerts if a["until"] > now][-3:],
             "board": self.board_snapshot(),
+            "reminders": self.reminders_snapshot(),
             "cameras": cameras or {},
             "errors": self.errors,
         }

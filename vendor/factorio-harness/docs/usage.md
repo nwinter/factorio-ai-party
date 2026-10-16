@@ -5113,3 +5113,57 @@ fh watch    # deploy on every change
   quality-module-1 said 80%; the GUI gives 8%). The engine stores the quality effect as 0.1 per 1% (`effects.quality`
   0.8 there, checked on a copy of world n), and the read multiplied it by 100. It now says `8%` (`1.6%` for one rare
   module). No other read prints a quality effect; module and configure replies name modules, not their effects.
+- `fh call craft ... --wait` waits until the hand-craft queue is done (Grok: it returned when crafting started, and the
+  silo transfer after it moved nothing). It sleeps on `crafting_done` (about the queue's time 1.25 + 5 s, at most 900
+  s; it wakes as a sleep does) and the reply adds `crafted: the hand-craft queue is done: the items are in your
+  inventory`, or `not done: the wait ended (told) with crafts still queued` and `still_running: hand crafting` (exit
+  3). Host only.
+- `load_silo` and the agent's own calls (Sonnet, Astra, Grok, Muse).
+  - A running or queued `load_silo` step survives your own build, transfer, collect, feed, rearm, refuel, configure,
+    rotate, pickup, mine or craft. Before, it failed as interrupted and `queue resume` skipped it. Now it is requeued
+    at the head of the queue: a walking load with the rocket's totals (`to_total`), so it goes on from what is aboard;
+    a load waiting for its rocket as it was. The queue goes on by itself when your call ran at once, or when the timed
+    action it started ends. That call's reply says `queue_resumed: your queue's load_silo step (job-7) was requeued
+    and the queue goes on` (or `... the queue goes on when this gather ends`). Other calls (a walk, `stop`) leave the
+    queue paused with the step requeued, and `queue resume` runs it.
+  - A walking `load_silo` (a gather) ends when the rocket it fills launches by another hand, instead of filling the
+    next one (Grok: the gather went on after Astra launched the 885-pack rocket). The outcome is `rocket_launched`,
+    and `last.why` says `the rocket this load was filling launched 12 s ago by astra (cargo: ...); the load ends: what
+    you carry stays with you`.
+  - `launch {position, wait_ready: true, timeout?}` waits for a rocket that is not ready yet, then launches it in the
+    tick it is ready (Muse: queued launches failed at 45/50 parts, twice). The wait is a `wait_until` on
+    `rocket_ready` at the silo (default 36000 ticks), so a queue step holds there. `last.launch` holds the launch
+    reply; a launch then refused ends `launch_failed` with `last.launch_error`. With the rocket ready it launches at
+    once. As a direct call it refuses while an action runs. `fh call launch ... --wait` waits for it. A launch refused
+    as not ready now names `wait_ready` and the `wait_until {until: "rocket_ready", position}` step.
+- Reminder and review jobs (viewer Foobator's idea; the design from Astra and Sol, 05:16). A job only sends lines: it
+  never drives a character, interrupts an action, combat or queue, changes a machine, runs Lua or retries anything.
+  Standing orders and `queue_repeat` stay the tools for actions, and alerts stay apart.
+  - `reminder_add {message, every_ticks | due_tick | due_in_ticks, recipients?, name?, board_item?, surface?,
+    expires_tick? | for_ticks?, enabled?}`. `every_ticks` (3600 and up; 54000 is 15 min) is a cadence anchored at
+    the call. `due_tick` or `due_in_ticks` runs it once. `recipients` are names or `team`; the default is you. At most
+    12 a teammate and 48 in all.
+  - When it is due, each recipient gets one private line in their next reply, as a tell from `reminder #N`: `reminder
+    #1: ship review (sol, every 15m00s, board #575): Petrel ammo, fuel and hub room; reminder_ack {id: 1, result}
+    records the result`. It wakes a sleep as a tell does (`woke: told`); a sleep with `wake_on_messages: false` keeps
+    it for the next reply, as it keeps tells. It is not in the game chat.
+  - While a recipient has not acknowledged a run, later runs fold into it (`missed`): no second line, and no backlog
+    after a pause. A cadence's next run is always the next point on it after the tick now.
+  - `reminder_ack {id, result?}` records the result (job `last_result`, `result_by`, `result_tick`) and clears your
+    pending run; the cadence stays as it is. `reminder_snooze {id, ticks}` moves the next run only (its owner or a
+    recipient). `reminder_edit {id, ...}` and `reminder_remove {id}`: the owner only.
+  - `reminders {all?}` lists yours and those addressed to you (`all: true`: the team's): owner, recipients, message,
+    cadence, next due, the last result and its age, and per recipient `scheduled`, `pending`, `overdue` (pending for
+    more than an interval), `acknowledged`, with runs missed.
+  - The jobs live in the save, so a rollback restores them with the tick; a next run more than one interval past the
+    tick is set again from it.
+  - The site's Board card has a Reminders panel: owner, message, cadence and next due, the last result and its age,
+    and each recipient's state. tools/stream/live.py reads `reminders {all: true}` with the board, every board read.
+- The site (viewer Foobator, asked twice).
+  - `/blueprints/`: the team's blueprint library from the newest shift's copy (tools/bplibrary.py writes
+    runs/RUN/blueprints/index.json and NAME.txt each shift): per entry its name, author, footprint, entity counts,
+    description, uses and last use, the surface it was saved on and when (game time), and the blueprint string in a
+    read-only box with a copy button, to import into your own game. Linked from the nav when a copy exists.
+  - Project steps show each step's own owner (`· Luna`) and a `parallel` marker. A board step line keeps its owner and
+    `(parallel)` once done too: `[x] 1. Lay foundation (sol) (parallel) (done by sol, 2m00s ago)`. The parallel steps
+    right after the next one are marked next as well.

@@ -27,6 +27,17 @@ def parse_tests():
     rows = model.parse_steps(["[ ] build 8 furnaces", "[ ] " + "x" * 400])
     assert rows[0] == {"n": None, "text": "build 8 furnaces", "done": False, "next": True} and len(rows[1]["text"]) == model.STEP_TEXT
     assert model.parse_steps(None) == [] and len(model.parse_steps(["[ ] s"] * 50)) == model.STEPS_MAX
+    # d15 batch5 J2 (viewer Foobator): a step's own owner and the parallel mark; the parallel steps after the next one
+    # are next too; a "(name)" that is no teammate stays in the text
+    known = {"sol", "luna", "opus"}.__contains__
+    rows = model.parse_steps(["[x] 1. Lay foundation (sol) (parallel) (done by sol, 2m00s ago)", "[ ] 2. Guns on the rear (luna) (parallel)",
+                              "[ ] 3. Fuel makers (parallel)", "[ ] 4. Test flight (Fulgora)", "[ ] 5. Name it (opus)"], known)
+    assert rows[0] == {"n": 1, "text": "Lay foundation", "done": True, "owner": "sol", "parallel": True, "by": "sol", "ago": "2m00s"}, rows[0]
+    assert rows[1] == {"n": 2, "text": "Guns on the rear", "done": False, "owner": "luna", "parallel": True, "next": True}, rows[1]
+    assert rows[2] == {"n": 3, "text": "Fuel makers", "done": False, "parallel": True, "next": True}, rows[2]
+    assert rows[3] == {"n": 4, "text": "Test flight (Fulgora)", "done": False}, rows[3]
+    assert rows[4] == {"n": 5, "text": "Name it", "done": False, "owner": "opus"}, rows[4]
+    assert model.parse_steps(["[ ] 1. Ask (sol)"])[0]["text"] == "Ask (sol)", "no known names: the text as it is"
 
 
 def snapshot_tests():

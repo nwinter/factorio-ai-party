@@ -225,6 +225,7 @@ local function finish(index, outcome)
   local s=state()
   s.last=s.last or {}
   local action=s.active[index]
+  if action and action.resume_queue and not action.finishing then M.resume_after(index,action.resume_queue) end
   -- One carried over a harness update ends guarded (carry.lua): a shape this runtime does not expect still ends it.
   if action and action.carried and not action.finishing then
     action.finishing=true
@@ -691,6 +692,11 @@ local function finish(index, outcome)
   -- A walk that ends on a belt: the game carries the character on (shift03).
   if action and action.kind~='drive' then s.last[index].on_belt=M.belt.note(body(M.lookup(index))) end
   stop(body(M.lookup(index)))
+  -- launch {wait_ready}: the wait met, the launch now (last.launch; launch_failed when it is refused).
+  if action and action.then_launch and outcome=='met' and s.last[index] then
+    local ok,r=pcall(M.launch_now,M.lookup(index),action.then_launch)
+    if ok then s.last[index].launch=r else s.last[index].outcome='launch_failed'; s.last[index].launch_error=(tostring(r):gsub('^[^:]*:%d+: ','')) end
+  end
   if action and action.borrowed_cursor then
     local p=M.lookup(index)
     if M.bots.is(p) and p.valid and p.character then M.bots.clear_cursor(p)
@@ -1566,6 +1572,7 @@ function handlers.describe()
   for name,schema in pairs(M.defense and M.defense.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ores and M.ores.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.tells and M.tells.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.reminders and M.reminders.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.research and M.research.schema or {}) do description.actions[name]=schema end
@@ -2767,8 +2774,35 @@ for _,name in ipairs({'requests','platform_create','platform_schedule','launch',
   handlers[name]=function(p,a) return space[name](p,a) end
 end
 -- A launch an agent ordered is the silo read's last launch (silo.lua), with who ordered it.
+function M.launch_now(p,a) return handlers.launch(p,a) end
 handlers.launch=function(p,a)
   if a.position==nil and a.unit_number==nil then error(M.launch_needs_silo(p,a),0) end
+  -- wait_ready (Muse, twice: a queued launch failed at 45/50 parts): a rocket not ready yet is waited for as a wait_until
+  -- rocket_ready at the silo; finish launches it in the tick the wait is met (then_launch).
+  if a.wait_ready~=nil or a.timeout~=nil then
+    assert(a.wait_ready==nil or type(a.wait_ready)=='boolean','wait_ready must be true or false')
+    assert(a.timeout==nil or a.wait_ready==true,'timeout goes with wait_ready')
+    local rest={}
+    for k,v in pairs(a) do if k~='wait_ready' and k~='timeout' then rest[k]=v end end
+    if a.wait_ready then
+      local silo=remote_entity(p,{position=a.position,name=a.name,unit_number=a.unit_number})
+      assert(silo.type=='rocket-silo',silo.name..' is not a rocket silo')
+      if silo.rocket_silo_status~=defines.rocket_silo_status.rocket_ready then
+        -- What the launch itself would refuse for its arguments, said now rather than after the wait.
+        if rest.platform==nil and rest.orbit~=true then error('give platform=<name>, or orbit=true to launch into orbit with no platform (cargo is lost unless it has launch products); nothing waited',0) end
+        local running=state().active[p.index]
+        if running then error('launch {wait_ready} waits as a timed action, and an action runs now ('..tostring(running.kind)..'): a queue step launch {wait_ready: true} waits in the queue',0) end
+        local timeout=integer(a.timeout,36000,1,54000,'timeout (1..54000 ticks)')
+        local out=handlers.wait_until(p,{['until']='rocket_ready',position=silo.position,timeout=timeout})
+        local now=state().active[p.index]
+        if not now then return handlers.launch(p,rest) end
+        now.then_launch=rest
+        out.waiting_to_launch=string.format('the rocket at (%g,%g) is not ready: it launches when it is (within %d s)',silo.position.x,silo.position.y,math.floor(timeout/60))
+        return out
+      end
+    end
+    a=rest
+  end
   -- min_cargo and arrived (Luna 15:20): read in this tick, the one the rocket goes in (rocketload.lua M.guard); a rocket
   -- not ready yet is refused by space.launch first.
   local checked
@@ -8788,7 +8822,7 @@ M.silo=require('silo'){state=state,cargo=M.cargo,position=position,status_name=f
 function handlers.silo(p,a) return M.silo.read(p,a) end
 -- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),
 -- launch's min_cargo and arrived guard and a queue dry run's cargo (Luna).
-M.rocketload=require('rocketload'){cargo=M.cargo,remote_entity=remote_entity,reason=reason,
+M.rocketload=require('rocketload'){last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,
   where=function(pl) return M.freight.where(pl) end,silos=function(p) return M.census.silos(p) end,
   ammo=function(pl) return M.freight.ammo(pl) end,incoming=function(pl) return M.freight.incoming(pl) end,
@@ -10456,11 +10490,13 @@ end
 local timed={recover=true,walk=true,move_to=true,build_path=true,construct=true,kite=true,mine=true,pickup=true,repair=true,rearm=true,refuel=true,transfer=true,collect=true,feed=true,wait_until=true,wait_ticks=true,build=true,load_silo=true,
   clear_cliffs=true,use_item=true,vehicle=true,
   -- configure and rotate: a walk into reach that the call makes first (autowalk.lua)
-  configure=true,rotate=true}
+  configure=true,rotate=true,
+  -- launch {wait_ready}: a wait for the rocket, then the launch
+  launch=true}
 -- The active action kind a step's handler starts, where it differs from its name (use_item: cliff explosives only;
 -- vehicle: a drive, or a drive's dry run).
 local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true,gather=true},build={feed=true},collect={gather=true},feed={gather=true},load_silo={feed=true,gather=true},
-  recover={gather=true},use_item={clear_cliffs=true},vehicle={drive=true}}
+  recover={gather=true},use_item={clear_cliffs=true},vehicle={drive=true},launch={wait_until=true}}
 -- Whether a queue step of `action` waits while an active action of `kind` runs (shoot and drop are read apart: the
 -- combat channel and drop jobs).
 function M.queue_waits(action,kind)
@@ -10681,6 +10717,9 @@ M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agen
   end}
 function M.deaf_wait(a) return a~=nil and (a.kind=='wait_ticks' or a.kind=='wait_until') and not a.queued and a.wake_messages==false end
 for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
+-- Reminder and review jobs (reminders.lua; viewer Foobator, design from Astra and Sol 05:16): lines only, never game acts.
+M.reminders=require('reminders'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver}
+for name,handler in pairs(M.reminders.handlers) do handlers[name]=handler end
 M.factory_digest=require('factory_digest'){state=state,use_lines=function(force) return M.research_use.lines(force) end}
 -- Idle characters for the operator's nudge (idle.lua): idle_report, and the
 -- standing clock idle_tick keeps.
@@ -10838,6 +10877,28 @@ M.votes=require('votes'){state=state,notice=function(from,text) return M.chat.no
 for name,handler in pairs(M.votes.handlers) do handlers[name]=handler end
 for name,handler in pairs(M.players.handlers) do handlers[name]=handler end
 function handlers.cameras() return M.cameras.list() end
+-- A load_silo queue step paused by the agent's own build, transfer and the like (Sonnet, Astra) was requeued
+-- (scheduler.lua): the queue goes on at once when the call ran at once, or when the timed action it started ends.
+M.RESUME_AFTER={build=true,transfer=true,collect=true,feed=true,rearm=true,refuel=true,configure=true,rotate=true,pickup=true,mine=true,craft=true,load_silo=false}
+function M.resume_after(index,id)
+  local q=(state().queues or {})[index]
+  if q and q.paused and q.pending[1] and q.pending[1].id==id then q.paused=false; q.revision=q.revision+1; q.requeued_load=nil; return true end
+end
+function M.resume_requeued_load(p,action,result)
+  local q=(state().queues or {})[p.index]
+  local r=q and q.requeued_load
+  if not (r and r.tick==game.tick and q.paused) then return end
+  if not M.RESUME_AFTER[action] then q.requeued_load=nil; return end
+  local now=state().active[p.index]
+  local text
+  if now and now.until_tick then
+    now.resume_queue=r.id
+    text=string.format('your queue\'s load_silo step (%s) was requeued: the queue goes on when this %s ends',r.id,tostring(now.kind))
+  elseif M.resume_after(p.index,r.id) then
+    text=string.format('your queue\'s load_silo step (%s) was requeued and the queue goes on',r.id)
+  end
+  if text and type(result)=='table' then result.queue_resumed=text end
+end
 -- A direct wait_ticks or wait_until as a sleep's request (the queue runs on; dispatch): ticks or timeout as seconds
 -- (rounded up), the rest of wait_until's arguments as the condition, and the wake options.
 function M.wait_as_sleep(request)
@@ -10891,14 +10952,14 @@ function handlers.wait_until(p,a)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
-local passive={retreat_guard=true,order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,chronicle=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
+local passive={reminder_add=true,reminder_edit=true,reminder_remove=true,reminder_ack=true,reminder_snooze=true,reminders=true,retreat_guard=true,order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,chronicle=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
 -- circuit_set and wire (circuits.lua) leave the character and its queue alone, as circuit did.
 passive.circuit_set=true; passive.wire=true
 -- Planners and blueprint tools never drive the character, near or by remote
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
 for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route','rail_route','train_stop','blueprint_save','blueprint_rename'}) do passive[name]=true end
-local reads={fuel_budget=true,artillery=true,platform_endurance=true,belt_gaps=true,pipe_gaps=true,danger=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
+local reads={reminders=true,fuel_budget=true,artillery=true,platform_endurance=true,belt_gaps=true,pipe_gaps=true,danger=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
 M.reads=reads
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
 reads.heat_budget=true
@@ -11655,6 +11716,7 @@ dispatch_request=function(request)
   end
   local before=state().active[p.index]
   local result=handler(p,request.args or {})
+  M.resume_requeued_load(p,request.action,result)
   if request.action:match('^queue_') and not M.queue_dry_run(request) then M.orders.on_drive(p.index) end
   -- The call that started a direct action, so a harness update can start it again (carry.lua: a move_to or drive; an
   -- older runtime installed over this one, which carries fewer kinds, every other).
@@ -12708,6 +12770,8 @@ function M.tick_body(event)
     if not okb then local s=state();s.belt_memory_error={tick=event.tick,error=tostring(errb)} end
   end
   M.orders.tick()
+  local okr,errr=pcall(M.reminders.tick)
+  if not okr then local s=state(); s.reminder_error={tick=event.tick,error=tostring(errr)} end
   clock.tick()
   M.cameras.tick()
   -- Production credit (efficiency.lua): a block every other tick; like the camera drawing, its faults are counted.

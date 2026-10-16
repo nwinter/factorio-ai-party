@@ -387,3 +387,18 @@ test('a direct wait that ran as a sleep is followed to its wake; --wait-through-
     assert.equal(seen.find(r=>r.action==='sleep').args.wake_on_messages,false);
   });
 });
+// d15 batch5 B2 (Grok): craft --wait waits until the hand-craft queue is done (crafting_done), not until it starts.
+test('craft --wait sleeps until crafting_done',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{
+    seen.push(request);
+    if (request.action==='craft') return {ok:true,result:{started:10,queue_s:8,hand_s:8}};
+    if (request.action==='sleep') return {ok:true,result:{sleeping_s:15,until_tick:901}};
+    if (request.action==='sleep_check' || request.args?.scope==='sleep_check') return {ok:true,result:{woke:'condition',slept_s:8,until_tick:901,saw:'0 crafts queued'}};
+    return {ok:true,result:{}};
+  },async port=>{
+    const out=JSON.parse((await cli(port,['call','craft','--args','{"recipe":"low-density-structure","count":10}','--wait'])).stdout);
+    assert.ok(String(out.result.crafted).includes('the hand-craft queue is done'),JSON.stringify(out.result));
+    const sl=seen.find(r=>r.action==='sleep'); assert.equal(sl.args.condition.until,'crafting_done'); assert.equal(sl.args.seconds,15);
+  });
+});

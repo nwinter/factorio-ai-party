@@ -563,7 +563,7 @@ return function(api)
     for i, c in ipairs(first) do entities[i] = c end
     entities[#entities+1] = silo
     local fields = {ordered=true, load=load, silo=silo, chests=chests, goals=goals, trips=1, taken=0, loaded=0, rows={}, items={},
-      avoid_enemies=a.avoid_enemies, unsafe_goal=a.unsafe_goal}
+      avoid_enemies=a.avoid_enemies, unsafe_goal=a.unsafe_goal, started_tick=game.tick}
     local rk = api.rocket and try(function() return api.rocket(silo) end)
     local reply = {op='load_silo', walk=true, silo=string.format('%s at %s', silo.name, at(silo.position)), needs=need_text(rows),
       chests=chests_text(action, rows), trip=#first .. ' chest' .. (#first == 1 and '' or 's') .. ', then the silo', rocket=rk and rk.rocket or nil,
@@ -572,7 +572,21 @@ return function(api)
   end
   -- One stop of the tour: a chest (take) or the silo (load, then another trip, the end, or the launch).
   -- Returns {transferred, stop} as the tour's visits do.
+  -- The rocket this tour loads launched by another hand (Grok: a gather went on into the next rocket after Astra
+  -- launched the 885-pack one): the tour ends there, rocket_launched, naming the launch.
+  local function launched_since(action)
+    local r = api.last_launch and action.started_tick and try(function() return api.last_launch(action.silo) end)
+    if r and r.tick and r.tick >= action.started_tick and not action.launch then return r end
+  end
   function M.walk_visit(p, action, e)
+    local gone = launched_since(action)
+    if gone then
+      action.final = 'rocket_launched'
+      action.why = string.format('the rocket this load was filling launched %d s ago%s (cargo: %s); the load ends: what you carry stays with you',
+        math.floor((game.tick - gone.tick) / 60), gone.by and ' by ' .. gone.by or '', tostring(gone.cargo or 'empty'))
+      action.rows[#action.rows+1] = {position=e.position, name=e.name, trip=action.trips, why=action.why}
+      return {transferred=0, stop='rocket_launched'}
+    end
     local rows = needs(p, action)
     if e ~= action.silo then
       local n, full, notes = 0, false, {}

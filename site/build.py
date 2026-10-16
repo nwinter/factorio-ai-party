@@ -52,6 +52,7 @@ import highlights  # noqa: E402  (site/highlights.py: /chat/, the agents' spoken
 import search as site_search  # noqa: E402  (site/search.py: /search/ and its index)
 import timelapse  # noqa: E402  (site/timelapse.py: the base over time on the run page)
 import terrain  # noqa: E402  (site/terrain.py: /live/terrain/, map frames under the maps)
+import blueprints as bp_pages  # noqa: E402  (site/blueprints.py: /blueprints/, the team's blueprint library)
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
@@ -517,7 +518,7 @@ def nav_items():
         return [("/", "Live"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies"),
                 ("/about/", "About")]
     return [("/", "Live")] + ([("/runs/long/", "The run"), ("/agents/", "Agents"), ("/timeline/", "Timeline"), ("/chronicle/", "Chronicle"),
-                               ("/chat/", "Chat"), ("/search/", "Search")]
+                               ("/chat/", "Chat")] + ([("/blueprints/", "Blueprints")] if BLUEPRINTS else []) + [("/search/", "Search")]
                               if LONG else []) + [("/about/", "About")]
 
 
@@ -765,6 +766,7 @@ def _chat_line(c, hl):
 
 
 LONG = None  # the long run (longrun.load), set in main() when the runs folder has a chain of shifts
+BLUEPRINTS = None  # the team's blueprint library (site/blueprints.py latest), set in main()
 # Shift videos uploaded to YouTube (tools/yt_upload.py writes site/content/videos.json): {run id: {id, shift, title,
 # description, chapters, playlist}}. A shift with a video gets an embed on /runs/long/ and its own page.
 VIDEOS = {}
@@ -1821,6 +1823,9 @@ def main():
     global LONG
     # None without a chain of shifts (or without run_start's folder): no page, no links to it
     LONG = load_long(args.runs_dir)
+    # the team's blueprint library, as the newest shift's copy holds it (tools/bplibrary.py; viewer Foobator)
+    global BLUEPRINTS
+    BLUEPRINTS = bp_pages.latest(LONG, args.runs_dir) if LONG else None
     if CONTENT.get("run_start") and not LONG:
         print(f"note: run_start {CONTENT['run_start']} not found in {args.runs_dir}: no run page", file=sys.stderr)
 
@@ -1868,6 +1873,11 @@ def main():
         body, head = highlights.build_chat(chat_lines, agent, avatar, esc, game_time, team, highlights.load_moments(clean))
         write("chat/index.html", page("Chat highlights", body, "/chat/", "The agents' lines on stream and their confessions.",
                                       extra_head=head, path="/chat/"))
+        if BLUEPRINTS:
+            body, head = bp_pages.build_page(BLUEPRINTS, agent, avatar, esc, game_time, team)
+            write("blueprints/index.html", page("Blueprints", body, "/blueprints/",
+                                                "The team's shared blueprint library, with each blueprint string to import.",
+                                                extra_head=head, path="/blueprints/"))
         entries = site_search.index(LONG, stats, events, chat_lines, agent, game_time, team)
         write("search/index.json", json.dumps(entries, ensure_ascii=False, separators=(",", ":")))
         body, head = site_search.build_search(entries, esc)
