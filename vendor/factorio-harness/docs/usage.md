@@ -5253,3 +5253,10 @@ fh watch    # deploy on every change
   more machines in a part with no power, or with no pole at all, ends every sleep and direct wait as an urgent alert,
   once per agent, with the power cut's line (the pole, what destroyed it, each part and its machines). A cut joined
   again does not wake. With `wake_on_urgent: {radius}` only a pole within the radius counts.
+- Two more pushed alert kinds (team alerts and `game_alerts {kind}`), from the status scan every 30 s (Grok, twice):
+  - `output_chest_full`: a maker stopped at full_output whose output inserter puts into a chest with no free slot:
+    `biochamber (15.5,26.5) full_output: bulk-inserter (16.5,24.5) puts its output into passive-provider-chest
+    (16.5,23.5), all 48 slots taken (spoilage 1981, yumako-seed 323)`. Seen on the copy of world n: 6 on Gleba.
+  - `catalyst_gone`: a machine short of ingredients whose recipe takes an item it also makes (the pentapod egg
+    breeder), with none of it in its input: the item, what its output holds, and each inserter taking from it with its
+    hand size (`bulk-inserter (5.5,15.5) hand 12`). Not seen on the copy (its breeders were switched off by circuit).
