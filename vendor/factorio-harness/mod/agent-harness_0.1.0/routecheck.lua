@@ -10,7 +10,12 @@
 return function(api)
   local M = {}
   local A, P = api.avoid, api.pathing
-  local MAX_CHUNKS, SHOW, LIVE_CHUNKS = 400, 8, 64
+  -- Cost caps, measured on a copy of world n (d15 batch3; private 2.0.77 server, x86 emulated, where a brief status
+  -- costs 13-19 ms): a cold chunk read is about 0.06 ms; avoid.lua's detour grows with the discs it is given (a
+  -- 12-stop tour planned against every disc on its 2,600 tiles took 1.4 s). So: CHUNKS chunks read a call (the rest
+  -- named, read by the next call: they are kept a minute), each leg planned against the nests near it only, and a leg
+  -- with more than LEG_DISCS discs near it, or past PLANNED_LEGS legs, read as a straight line (named).
+  local MAX_CHUNKS, SHOW, LIVE_CHUNKS, LEG_DISCS, PLANNED_LEGS, NEAR_LEG, ALL_DISCS = 128, 8, 64, 72, 16, 48, 72
   local function dist(a, b) return ((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) ^ 0.5 end
   local function at(q) return string.format('(%g,%g)', math.floor(q.x + 0.5), math.floor(q.y + 0.5)) end
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -85,18 +90,27 @@ return function(api)
   -- The route as a walk plans it: straight lines through the points, round the discs (avoid.lua detour); a disc that
   -- holds a leg's start or end is not gone round (a walk goes there).
   local function plan(points, blobs, mode)
-    local route, corners, no_way = {points[1]}, 0, nil
+    local route, corners, no_way, straight, used = {points[1]}, 0, nil, {}, 0
     for i = 2, #points do
       local a, b = route[#route], points[i]
       local vias = {}
       if mode then
-        local mblobs = blobs
-        local skip = {}
-        for bi, bl in ipairs(mblobs) do
-          for _, m in ipairs(bl.members) do if dist(m, a) < m.r or dist(m, b) < m.r then skip[bi] = true end end
+        -- the nests near this leg only
+        local mblobs, discs = {}, 0
+        for _, bl in ipairs(blobs) do
+          if dist(nearest_on(a, b, bl), bl) <= bl.r + NEAR_LEG then mblobs[#mblobs+1] = bl; discs = discs + #bl.members end
         end
-        vias = A.detour(a, b, mblobs, skip)
-        if vias == nil then no_way = no_way or i - 1; vias = {} end
+        if discs > LEG_DISCS or (i - 1 > PLANNED_LEGS and discs > 0) or (discs > 0 and used + discs > ALL_DISCS) then
+          straight[#straight+1] = string.format('leg %d (%d discs near it)', i - 1, discs)
+        elseif discs > 0 then
+          used = used + discs
+          local skip = {}
+          for bi, bl in ipairs(mblobs) do
+            for _, m in ipairs(bl.members) do if dist(m, a) < m.r or dist(m, b) < m.r then skip[bi] = true end end
+          end
+          vias = A.detour(a, b, mblobs, skip)
+          if vias == nil then no_way = no_way or i - 1; vias = {} end
+        end
       end
       for _, v in ipairs(vias) do
         if dist(v, b) > 0.01 then corners = corners + 1 end
@@ -104,7 +118,7 @@ return function(api)
       end
       if #vias == 0 or dist(route[#route], b) > 0.01 then route[#route+1] = {x=b.x, y=b.y} end
     end
-    return route, corners, no_way
+    return route, corners, no_way, straight
   end
   local function length(route)
     local n = 0
@@ -118,6 +132,11 @@ return function(api)
     local half = P.half(c)
     local r = try(function() return P.region(p.surface, q, half, {ignore=c, force=p.force, search=4}) end)
     if not (r and r.closed) then return nil end
+    -- No spot the character's box fits within a tile of it (deep water, a building): no flood, no dig.
+    if r.stuck then
+      local tile = try(function() return p.surface.get_tile(math.floor(q.x), math.floor(q.y)).name end)
+      return {stuck=true, text=string.format('no spot the character stands on within a tile of %s (the tile there: %s)', at(q), tile or 'unknown')}
+    end
     local out = {text=P.area_text and P.area_text(r, half) or 'closed in'}
     if goal and P.dig then
       local d = try(function() return P.dig(p.surface, q, half, {ignore=c, force=p.force}) end)
@@ -139,14 +158,18 @@ return function(api)
     local blobs, unread = hazards(p, points, MAX_CHUNKS)
     local mblobs = blobs
     if mode then mblobs = A.blobs(p.surface, A.chunks_near(points, 48), mode) end
-    local route, corners, no_way = plan(points, mblobs, mode)
+    local route, corners, no_way, straight = plan(points, mblobs, mode)
     local rows = enemies(route, blobs)
     local out = {dry_run=true}
-    local len, straight = length(route), length(points)
+    local len, straight_len = length(route), length(points)
     out.route = string.format('%.0f tiles in straight lines%s%s (the engine\'s path bends round buildings, water and cliffs: longer)',
       len, #points > 2 and string.format(' through %d stops or via points', #points - 2) or '',
-      corners > 0 and string.format(', %d corner%s round worms and spawners (%.0f tiles straight)', corners, corners == 1 and '' or 's', straight) or '')
+      corners > 0 and string.format(', %d corner%s round worms and spawners (%.0f tiles straight)', corners, corners == 1 and '' or 's', straight_len) or '')
     out.length = math.floor(len + 0.5)
+    if #straight > 0 then
+      out.not_planned_round = string.format('read as straight lines, not planned round the nests (over %d discs near a leg, %d in all, or past leg %d): %s',
+        LEG_DISCS, ALL_DISCS, PLANNED_LEGS, table.concat(straight, ', ', 1, math.min(6, #straight)) .. (#straight > 6 and string.format(' +%d more', #straight - 6) or ''))
+    end
     if no_way then out.no_way_round = string.format('leg %d: no way round the worms and spawners at these margins', no_way) end
     local list = {}
     for i = 1, math.min(SHOW, #rows) do list[i] = rows[i].text end
@@ -154,7 +177,9 @@ return function(api)
     out.enemies = #list > 0 and list or nil
     out.enemies_none = #rows == 0 and 'no worm, spawner or area under attack the map shows within reach of the route' or nil
     out.under_range = under(rows, mode)
-    if unread > 0 then out.unread_chunks = unread .. ' chunks along the route not read (over ' .. MAX_CHUNKS .. ')' end
+    if unread > 0 then
+      out.unread_chunks = string.format('%d chunks along the route not read (%d a call; the farthest from you): their worms and spawners are not listed; the chunks read are kept a minute, so the same dry run again reads the next ones', unread, MAX_CHUNKS)
+    end
     local start = closed_at(p, points[1], false)
     local goal = closed_at(p, points[#points], true)
     if start then out.closed_in_start = 'where you stand: ' .. start.text end
@@ -162,7 +187,8 @@ return function(api)
       out.closed_in_goal = 'the goal: ' .. goal.text
       out.mine_for_a_way_in = goal.mine
     end
-    out.reachable = (start or goal) and 'no: closed in' .. (start and ' where you stand' or '') .. (start and goal and ' and' or '') .. (goal and ' at the goal' or '')
+    out.reachable = goal and goal.stuck and 'no: no spot to stand at the goal'
+      or (start or goal) and 'no: closed in' .. (start and ' where you stand' or '') .. (start and goal and ' and' or '') .. (goal and ' at the goal' or '')
       or no_way and 'no way round the worms and spawners at these margins'
       or 'not closed in at either end within 24 tiles (the engine\'s path is not asked for: water or cliffs can still keep it out)'
     return out

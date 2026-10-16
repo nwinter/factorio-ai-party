@@ -4747,3 +4747,8 @@ fh watch    # deploy on every change
   tile ghosts of space-platform-foundation at (15,-2) not built yet: the game's ghost check refuses this entity's
   ghost while they are ghosts, and takes it once the foundation under it is built ...`) or that no foundation or
   foundation ghost is there. The shore hint is only given for water tiles.
+- Route preview limits (measured on a copy of world n): a dry run reads at most 128 map chunks for worms and
+  spawners a call (`unread_chunks` names the rest, the farthest; the chunks read are kept a minute, so the same dry
+  run again reads the next ones), plans each leg round the nests near it only, and plans at most 72 discs a leg and a
+  call (`not_planned_round` names the legs read as straight lines). A goal with no spot to stand within a tile (deep
+  water, a building) reads `reachable: no: no spot to stand at the goal`.
