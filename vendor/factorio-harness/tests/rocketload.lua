@@ -587,7 +587,8 @@ provinv.counts={}; provinv.order={}
 -- All in reach: nil (the load as without walk). The arguments.
 p.can_reach_entity=kept_can
 eq(R.walk_start(p,{position=S,items={['agricultural-science-pack']=1},from={x=129.5,y=14.5},walk=true}),nil)
-fails(function() R.walk_start(p,{position=S,items={['agricultural-science-pack']=1},walk=true}) end,'walk goes with from')
+-- walk without from (d16 batch7 A4): all in reach, the load as without walk
+eq(R.walk_start(p,{position=S,items={['agricultural-science-pack']=1},walk=true}),nil)
 fails(function() R.walk_start(p,{position=S,items={['agricultural-science-pack']=1},from={x=129.5,y=14.5},walk=true,chests=false}) end,'chests does not go with it')
 fails(function() R.load(p,{position=S,items={['agricultural-science-pack']=1},avoid_enemies=false}) end,'avoid_enemies goes with walk=true')
 print('rocketload ok')
