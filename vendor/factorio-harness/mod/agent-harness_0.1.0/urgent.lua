@@ -154,6 +154,27 @@ return function(api)
     m.d, m.size, m.tick = math.min(m.d, d), math.max(m.size, size), game.tick
     return true, table.concat(why, '; ')
   end
+  -- Drills of ours still working, by the item they mine, in and within OUT_MARGIN tiles of a loss incident's box: one
+  -- search, kept on the incident OUT_KEEP ticks.
+  M.OUT_MARGIN, M.OUT_KEEP = 32, 3600
+  function M.output_left(p, i)
+    local c = i.out_check
+    if c and game.tick - c.tick < M.OUT_KEEP then return c.left end
+    local left = {}
+    local surface = try(function() return game.get_surface(i.surface) end)
+    local b = i.box
+    local working = defines.entity_status and defines.entity_status.working
+    for _, d in ipairs(surface and try(function() return surface.find_entities_filtered{type='mining-drill', force=p.force,
+      area={{b[1] - M.OUT_MARGIN, b[2] - M.OUT_MARGIN}, {b[3] + M.OUT_MARGIN, b[4] + M.OUT_MARGIN}}, limit=500} end) or {}) do
+      if d.valid and try(function() return d.status end) == working then
+        local mp = try(function() return d.mining_target.prototype.mineable_properties end)
+        local prod = mp and mp.products and mp.products[1]
+        if prod and prod.name then left[prod.name] = (left[prod.name] or 0) + 1 end
+      end
+    end
+    i.out_check = {tick=game.tick, left=left}
+    return left
+  end
   -- The urgent line that wakes p now, or nil; once returned, that event is told to p.
   function M.check(p, base)
     local s = api.state()
@@ -190,6 +211,31 @@ return function(api)
               return string.format('enemy group of %d%s gathered at (%d,%d), %d tiles from you, heading for (%d,%d), %d tiles from you%s',
                 g.size or 0, g.kinds and ' (' .. g.kinds .. ')' or '', g.position.x, g.position.y, round(dist(g.position, pos)),
                 g.target.x, g.target.y, round(d), why and '; again: ' .. why or '')
+            end
+          end
+        end
+      end
+    end
+    -- An outpost's output gone (Opus, d15 22:51: the NW coal mine was wiped and noticed 15 minutes later via cold
+    -- furnaces): a loss incident that destroyed drills, where no drill of ours mining that item still works in or
+    -- within OUT_MARGIN tiles of its box, wakes the agents who built those drills and those whose claim covers it.
+    for _, i in ipairs(s.losses or {}) do
+      local last = i.last or i.first or 0
+      if last >= since and i.mined and i.box and not i.platform then
+        local mine = i.builders and i.builders[me] or (i.surface and my_claim(p, i.surface, i.box))
+        if mine then
+          local left = M.output_left(p, i)
+          for item, m in pairs(i.mined) do
+            local key = 'output|' .. tostring(i.id) .. '|' .. item
+            if (left[item] or 0) == 0 and news(told, key, m.drills) then
+              tell(told, key, m.drills)
+              local b = i.box
+              local causes = {}
+              for name, n in pairs(i.causes or {}) do causes[#causes+1] = n .. ' ' .. name end
+              table.sort(causes)
+              return string.format('outpost output: %s from drills at (%d,%d) is 0/min now, was about %d/min (%d drill%s destroyed%s; loss incident #%s); no drill of ours mining %s works within %d tiles there',
+                item, round((b[1] + b[3]) / 2), round((b[2] + b[4]) / 2), round(m.per_min), m.drills, m.drills == 1 and '' or 's',
+                #causes > 0 and ' by ' .. table.concat(causes, ', ', 1, math.min(3, #causes)) or '', tostring(i.id), item, M.OUT_MARGIN)
             end
           end
         end

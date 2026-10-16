@@ -1665,6 +1665,23 @@ local function record_loss(tick,e,cause,friendly,cause_at)
   b[1],b[2],b[3],b[4]=math.min(b[1],e.position.x),math.min(b[2],e.position.y),math.max(b[3],e.position.x),math.max(b[4],e.position.y)
   incident.last=tick; incident.seq=s.loss_seq; incident.total=incident.total+1
   incident.names[e.name]=(incident.names[e.name] or 0)+1
+  -- A drill: what it mined and at what rate, and who built it (Opus, d15 22:51: the NW coal mine was wiped and noticed
+  -- 15 min later; urgent.lua tells its builders when the output there is gone).
+  if e.type=='mining-drill' then pcall(function()
+    local res=e.mining_target
+    local mp=res and res.valid and res.prototype.mineable_properties
+    local prod=mp and mp.products and mp.products[1]
+    if prod and prod.name then
+      local speed=(e.prototype.mining_speed or 0)*(1+(e.force.mining_drill_productivity_bonus or 0))
+      local per_min=(mp.mining_time or 1)>0 and speed/(mp.mining_time or 1)*60*(prod.amount or 1) or 0
+      incident.mined=incident.mined or {}
+      local m=incident.mined[prod.name] or {drills=0,per_min=0}
+      m.drills=m.drills+1; m.per_min=m.per_min+per_min
+      incident.mined[prod.name]=m
+      local who=e.last_user and e.last_user.name
+      if who then incident.builders=incident.builders or {}; incident.builders[who]=true end
+    end
+  end) end
   if cause and friendly then
     incident.friendly=incident.friendly or {}; incident.friendly[cause]=(incident.friendly[cause] or 0)+1
     -- Where the burning turret stands (up to 2 per name), so the reader can find it.

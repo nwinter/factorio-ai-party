@@ -734,3 +734,26 @@ do
   eq(C.inserter_line(e,c),'fast-inserter (9.5,2.5): enabled when iron-ore > 0 (on its wires: iron-ore 0): false now; it is off by its condition; red wire to decider-combinator (12.5,2) output; network 31 carries calcite 40; filter iron-ore; picks from transport-belt (8.5,1.5), drops into transport-belt (10.5,2.5)')
 end
 print('d15_batch4 F5 inserter line: ok')
+
+-- F6 (Opus): an outpost's output gone to 0: wakes the drills' builders with the item, the rate it had and the cause. -
+do
+  game={tick=5000}
+  defines={entity_status={working=1}}
+  local drills={}
+  local surface={find_entities_filtered=function() return drills end}
+  game.get_surface=function() return surface end
+  local s={losses={{id=77,surface='nauvis',box={-305,-320,-290,-308},first=4900,last=4990,total=30,names={['electric-mining-drill']=22},
+    causes={['big-biter']=7},mined={coal={drills=22,per_min=402}},builders={opus=true}}}}
+  local U=dofile('mod/agent-harness_0.1.0/urgent.lua'){state=function() return s end,who=function(p) return p.name end,
+    attack_line=function() return 'attack' end,claim_surface=function() return 'nauvis' end,claim_stale=function() return false end,
+    platform_hears=function() return false end,power_view=function() return nil end}
+  local function agent(name) return {index=name=='opus' and 1 or 2,name=name,surface={name='nauvis'},character={valid=true,position={x=0,y=0},health=250},force={platforms={}}} end
+  local base={tick=4800,hub={}}
+  eq(U.check(agent('opus'),base),'outpost output: coal from drills at (-297,-314) is 0/min now, was about 402/min (22 drills destroyed by 7 big-biter; loss incident #77); no drill of ours mining coal works within 32 tiles there')
+  eq(U.check(agent('sol'),base),nil,'not its builder, no claim there')
+  -- A drill still mining coal there: no wake.
+  s.losses[1].id=78; s.losses[1].out_check=nil
+  drills={{valid=true,status=1,mining_target={prototype={mineable_properties={products={{name='coal'}}}}}}}
+  eq(U.check(agent('opus'),base),nil,'coal still mined there')
+end
+print('d15_batch4 F6 outpost output: ok')

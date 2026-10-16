@@ -5036,4 +5036,14 @@ fh watch    # deploy on every change
   Example: `fast-inserter (9.5,2.5): enabled when iron-ore > 0 (on its wires: iron-ore 0): false now; it is off by
   its condition; red wire to decider-combinator (12.5,2) output; network 31 carries calcite 40; filter iron-ore; picks
   from transport-belt (8.5,1.5), drops into transport-belt (10.5,2.5)`.
+- Outpost output gone (Opus: the NW coal mine was wiped, noticed 15 minutes later through cold furnaces).
+  - The existing loss incidents name what was destroyed and by what. They wake an agent only for its own claim or for
+    losses within 40 tiles, and say nothing about output.
+  - A loss incident now records, per destroyed drill, the item it mined, its rate at full speed (mining speed with
+    the force's productivity bonus, over the resource's mining time) and who built it.
+  - An urgent wake goes to the drills' builders and to agents whose claim covers the incident, once per incident and
+    item, when no drill of ours mining that item works within 32 tiles of it: `outpost output: coal from drills at
+    (-297,-314) is 0/min now, was about 402/min (22 drills destroyed by 7 big-biter; loss incident #77); no drill of
+    ours mining coal works within 32 tiles there`.
+  - The rate is the drills' rate at full speed, not a measured flow. The check is one search a minute per incident.
 
