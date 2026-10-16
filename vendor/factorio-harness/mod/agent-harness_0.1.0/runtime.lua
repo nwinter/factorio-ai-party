@@ -12000,7 +12000,8 @@ for name,handler in pairs(M.chronicle.handlers) do handlers[name]=handler end
 M.urgent=require('urgent'){state=state,who=function(p) return M.board.who(p) end,
   attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,
   claim_surface=function(i) return M.claims.surface_of(i) end,claim_stale=function(i) return M.claims.stale(i) end,
-  platform_hears=function(p,name) return M.platalerts.hears(p,name) end,power_view=function(f) return M.networks.cached_view(f) end}
+  platform_hears=function(p,name) return M.platalerts.hears(p,name) end,power_view=function(f) return M.networks.cached_view(f) end,
+  cut_line=function(c,reader) return M.powercut.line(c,reader) end,cut_fixed=function(c) return M.powercut.fixed(c) end}
 -- What is open for an agent (open.lua; d15 H3): its board items, alert groups and idle machines in its fresh claims,
 -- requests and tells it has not answered; on a sleep's replies and in the idle report (the idle nudge).
 M.open=require('open'){state=state,fullchest=M.supply.fullchest,claim_surface=function(i) return M.claims.surface_of(i) end,claim_stale=function(i) return M.claims.stale(i) end,

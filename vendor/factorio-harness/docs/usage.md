@@ -5247,3 +5247,9 @@ fh watch    # deploy on every change
   gun. On the copy: Petrel `first stop: collector (-0.5,-40.5): full_output; holds metallic-asteroid-chunk*32 ...`, 15
   ms in the container (about 3 ms on n). An empty turret's feed now counts only the ammo that turret takes (`holding 0
   of its ammo`).
+- A pole loss that cuts machines off all power is urgent (Opus 00:21: `power cut #104: small-electric-pole
+  (-104.5,-160.5) destroyed by medium-spitter ... #928 had no power` was in the alerts and woke nobody; the part cut
+  off had a new network id, which the collapse rule had never seen with power). A cut on your surface that left 3 or
+  more machines in a part with no power, or with no pole at all, ends every sleep and direct wait as an urgent alert,
+  once per agent, with the power cut's line (the pole, what destroyed it, each part and its machines). A cut joined
+  again does not wake. With `wake_on_urgent: {radius}` only a pole within the radius counts.

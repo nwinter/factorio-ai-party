@@ -286,3 +286,25 @@ do
   has(table.concat(r.lines,'|'),'0 guns, 0 empty; the hub holds rocket*250')
 end
 print('d15_batch5 D1 platform_supply: ok')
+
+-- E1 (Opus 00:21): a pole loss that leaves machines with no power wakes agents on that surface (urgent). ----------------
+do
+  game={tick=5000}
+  local st={powercut={cuts={{id=104,tick=4700,checked=5000,surface='nauvis',net=2,poles={{name='small-electric-pole',position={x=-104.5,y=-160.5},by='medium-spitter'}},
+    parts={{id=2,cut=false,kw=900},{id=928,cut=true,total=9}}}}}}
+  local U=dofile('mod/agent-harness_0.1.0/urgent.lua'){state=function() return st end,who=function(p) return p.name end,
+    cut_line=function(c) return 'power cut #'..c.id..': small-electric-pole (-104.5,-160.5) destroyed by medium-spitter; #928 had no power: 9 machines' end,
+    cut_fixed=function() return false end}
+  local opus={index=4,name='opus',surface={name='nauvis'},character={valid=true,position={x=0,y=0}}}
+  local line=U.check(opus,{tick=4000})
+  eq(line,'power cut #104: small-electric-pole (-104.5,-160.5) destroyed by medium-spitter; #928 had no power: 9 machines')
+  eq(U.check(opus,{tick=4000}),nil,'told once')
+  local far={index=5,name='sol',surface={name='aquilo'},character={valid=true,position={x=0,y=0}}}
+  eq(U.check(far,{tick=4000}),nil,'another surface')
+  local near={index=6,name='luna',surface={name='nauvis'},character={valid=true,position={x=0,y=0}}}
+  eq(U.check(near,{tick=4000,radius=40}),nil,'outside a wait\'s radius')
+  st.powercut.cuts[1].parts[2].total=2
+  local grok={index=7,name='grok',surface={name='nauvis'},character={valid=true,position={x=0,y=0}}}
+  eq(U.check(grok,{tick=4000}),nil,'under 3 machines')
+end
+print('d15_batch5 E1 power cut wakes: ok')
