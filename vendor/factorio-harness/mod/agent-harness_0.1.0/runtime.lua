@@ -11562,7 +11562,7 @@ M.freight=require('freight'){state=state,spoil=M.spoil,pods=M.pods}
 -- platform_endurance: a route's legs at the platform's speed and what its ammunition, repair packs, thruster fluids,
 -- power and hub space come to over it at today's rates (endurance.lua; Astra, d15: Wayfarer lost at Aquilo).
 M.endurance=require('endurance'){platform=function(p,name) return space.platform(p,name) end,
-  leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end}
+  leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,ammo_counts=function(pl) return M.freight.ammo_counts(pl) end}
 function handlers.platform_endurance(p,a) return M.endurance.read(p,a) end
 -- Each platform's flight over the last 60 and 180 s: speed, thruster fluids, tanks, pumps (engine.lua; Astra, 21:20).
 M.engine=require('engine'){state=state}

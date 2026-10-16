@@ -97,7 +97,32 @@ return function(api)
     local items_stats = try(function() return pl.force.get_item_production_statistics(pl.surface) end)
     local fluid_stats = try(function() return pl.force.get_fluid_production_statistics(pl.surface) end)
     local P = defines.flow_precision_index or {}
-    local function rate(stats, name, cat) return stats and P.ten_minutes and (try(function() return stats.get_flow_count{name=name, category=cat, precision_index=P.ten_minutes, count=true} end) or 0) / 10 or 0 end
+    -- Flying, the window fits inside the leg it flies (d15 blockers, seen but not fixed: soon after departure the 10
+    -- minutes held the stop it left): the largest of 10, 5 and 1 minutes no longer than the leg so far; ammunition
+    -- from the leg's own counts (freight.lua). A leg first seen under way counts from when it was first seen.
+    local win_min, win_p, win_text = 10, P.ten_minutes, nil
+    local open_leg
+    if leg_now then
+      local segs = api.segments and api.segments(pl) or {}
+      local sg = segs[#segs]
+      if sg and sg.kind == 'leg' and not sg['end'] and sg.start then open_leg = sg end
+      local leg_min = open_leg and (game.tick - open_leg.start) / 3600
+      if leg_min and leg_min < 10 then
+        if leg_min >= 5 and P.five_minutes then win_min, win_p = 5, P.five_minutes
+        elseif P.one_minute then win_min, win_p = 1, P.one_minute end
+        win_text = leg_min >= 1 and string.format('last %d min, within this leg (%s so far)', win_min, mins(leg_min))
+          or string.format('last 1 min, flying %s: the window holds the stop it left too', mins(leg_min))
+      end
+    end
+    local function rate(stats, name, cat) return stats and win_p and (try(function() return stats.get_flow_count{name=name, category=cat, precision_index=win_p, count=true} end) or 0) / win_min or 0 end
+    local function leg_now_rate(name)
+      if not (open_leg and open_leg.ammo0 and api.ammo_counts) then return nil end
+      local m = (game.tick - open_leg.start) / 3600
+      if m <= 0 then return nil end
+      local now = try(function() return api.ammo_counts(pl) end) or {}
+      local a, b = open_leg.ammo0[name] or {made=0, used=0}, now[name] or {made=0, used=0}
+      return math.max(0, b.made - a.made) / m, math.max(0, b.used - a.used) / m, string.format('this leg so far, %s', mins(m))
+    end
     local hub = try(function() return pl.hub.get_inventory(defines.inventory.hub_main) end)
     local held = {}
     for _, r in ipairs(hub and try(function() return hub.get_contents() end) or {}) do held[r.name] = (held[r.name] or 0) + r.count end
@@ -111,9 +136,13 @@ return function(api)
     -- assemblers whose recipe makes it, their recipe's item ingredients in the hub and in those machines' inputs, one
     -- level down (an ingredient made aboard too is named with its rate, not counted ahead).
     local makers
-    local function ceiling(name)
+    -- Two levels down, fluids too (d15 blockers, seen but not fixed): an item ingredient the machines aboard make is
+    -- counted with what they can still make of it from their own ingredients aboard; a fluid ingredient is counted in
+    -- the storage tanks and in those machines' fluid boxes.
+    local function ceiling(name, depth)
+      depth = depth or 1
       makers = makers or try(function() return pl.surface.find_entities_filtered{type='assembling-machine', force=pl.force} end) or {}
-      local rec, per, inputs = nil, 0, {}
+      local rec, per, inputs, fluids_in = nil, 0, {}, {}
       for _, m in ipairs(makers) do
         local r = try(function() return m.get_recipe() end)
         local made_here = 0
@@ -124,18 +153,29 @@ return function(api)
           rec, per = r, made_here
           local inv = try(function() return m.get_inventory(defines.inventory.assembling_machine_input) end)
           for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do inputs[c.name] = (inputs[c.name] or 0) + c.count end
+          for i = 1, try(function() return #m.fluidbox end) or 0 do
+            local f = try(function() return m.fluidbox[i] end)
+            if f and f.name then fluids_in[f.name] = (fluids_in[f.name] or 0) + (f.amount or 0) end
+          end
         end
       end
       if not rec then return nil end
       local best
       for _, ing in ipairs(try(function() return rec.ingredients end) or {}) do
-        if ing.type ~= 'fluid' and (ing.amount or 0) > 0 then
-          local have = (held[ing.name] or 0) + (inputs[ing.name] or 0)
-          local more = math.floor(have / ing.amount) * per
-          if not best or more < best.more then best = {more=math.floor(more), item=ing.name, have=have, per_craft=ing.amount} end
+        if (ing.amount or 0) > 0 then
+          local fluid = ing.type == 'fluid'
+          local have
+          if fluid then have = (fluid_stock(pl, {[ing.name]=true})[ing.name] or 0) + (fluids_in[ing.name] or 0)
+          else have = (held[ing.name] or 0) + (inputs[ing.name] or 0) end
+          local below = not fluid and depth < 2 and ceiling(ing.name, depth + 1) or nil
+          local more = math.floor((have + (below and below.more or 0)) / ing.amount) * per
+          if not best or more < best.more then
+            best = {more=math.floor(more), item=ing.name, have=round(have, 0), per_craft=ing.amount, fluid=fluid or nil,
+              below=below and {more=below.more, item=below.item, have=below.have} or nil}
+          end
         end
       end
-      if best then best.ingredient_made_per_min = round(rate(items_stats, best.item, 'input'), 1) end
+      if best then best.ingredient_made_per_min = round(rate(best.fluid and fluid_stats or items_stats, best.item, 'input'), 1) end
       return best
     end
     -- A rate measured where it is now: flying, the last 10 minutes; stopped, the last finished leg's (ammunition, from
@@ -187,8 +227,10 @@ return function(api)
         end
       end
       row.line = string.format('%s: %s%s now, made %g/min, used %g/min (%s)%s%s%s', name, row.stock, unit, row.made_per_min, row.used_per_min, from,
-        cap and string.format('; ingredient-limited: the ingredients aboard make at most %d more (%s %d aboard, %g a craft%s)', cap.more, cap.item, cap.have, cap.per_craft,
-          cap.ingredient_made_per_min > 0 and string.format('; %s made %g/min aboard', cap.item, cap.ingredient_made_per_min) or '') or '',
+        cap and string.format('; ingredient-limited: the ingredients aboard make at most %d more (%s %d%s aboard%s, %g a craft%s)', cap.more, cap.item, cap.have,
+          cap.fluid and ' units' or '',
+          cap.below and string.format(' and at most %d more from its own ingredients aboard (%s %d)', cap.below.more, cap.below.item, cap.below.have) or '',
+          cap.per_craft, cap.ingredient_made_per_min > 0 and string.format('; %s made %g/min aboard', cap.item, cap.ingredient_made_per_min) or '') or '',
         row.lasts_min and string.format('; lasts %s at that rate%s', mins(row.lasts_min), row.runs_out_on and ' (runs out on ' .. row.runs_out_on .. ')'
           or (total_min and row.lasts_min >= total_min and ' (past the route\'s end)' or '')) or '',
         row.at_end and string.format('; at the route\'s end about %d%s', math.max(0, row.at_end), unit) or '')
@@ -200,7 +242,10 @@ return function(api)
     for _, name in ipairs(ammo) do
       local made, used = rate(items_stats, name, 'input'), rate(items_stats, name, 'output')
       if (held[name] or 0) > 0 or made > 0 or used > 0 then
-        if flying then project(name, held[name] or 0, made, used, nil, 'last 10 min, flying')
+        local lm2, lu2, from2
+        if flying and win_text and prototypes.item[name].type == 'ammo' then lm2, lu2, from2 = leg_now_rate(name) end
+        if lm2 then project(name, held[name] or 0, lm2, lu2, nil, from2)
+        elseif flying then project(name, held[name] or 0, made, used, nil, win_text or 'last 10 min, flying')
         else
           local lm, lu, from = nil, nil, nil
           if prototypes.item[name].type == 'ammo' then lm, lu, from = leg_rate(name) end
@@ -215,7 +260,7 @@ return function(api)
       if try(function() return prototypes.fluid[name] end) then
         local made, used = rate(fluid_stats, name, 'input'), rate(fluid_stats, name, 'output')
         if (fstock[name] or 0) > 0 or made > 0 or used > 0 then
-          if flying then project(name, fstock[name] or 0, made, used, ' units', 'last 10 min, flying')
+          if flying then project(name, fstock[name] or 0, made, used, ' units', win_text or 'last 10 min, flying')
           else project(name, fstock[name] or 0, made, used, ' units', 'stopped; the thrusters burn only in flight', true) end
         end
       end
@@ -256,9 +301,9 @@ return function(api)
       resources=rows, hub_slots=string.format('%d of %d free', free, slots), power=power, solar_power=#solar > 0 and table.concat(solar, ', ') or nil,
       lines={'route: ' .. (#legs_text > 0 and table.concat(legs_text, '; ') or 'no legs') .. (total_min and '; in all ' .. mins(total_min) or ''),
         'hub: ' .. string.format('%d of %d slots free', free, slots) .. (power and '; power ' .. power or '') .. (#solar > 0 and '; solar power ' .. table.concat(solar, ', ') or '')},
-      note='rates: flying, the platform\'s production statistics over the last 10 minutes; stopped, the last finished leg\'s for ammunition (rate_from), else the flight rate is unknown and nothing is projected; a rate that changes on the way (fights near a planet, thrust) changes the projection'}
+      note='rates: flying, the platform\'s production statistics over the last 10 minutes (on a leg younger than that, the last 5 or 1 minute within the leg, and ammunition from the leg\'s own counts); stopped, the last finished leg\'s for ammunition (rate_from), else the flight rate is unknown and nothing is projected; a rate that changes on the way (fights near a planet, thrust) changes the projection'}
   end
   M.schema = {platform_endurance = {platform='platform name', route='optional list of space locations to fly through in order (default: its schedule from the current stop round to it again)',
-    returns='legs [{from, to, km, minutes}], total_km, total_minutes, speed_km_per_min and speed_from (now while flying, else the last finished leg\'s average), resources [{name, stock, made_per_min, used_per_min, rate_from, flight_rate (unknown: stopped with no flight rate on record; nothing projected), ingredient_limited {more, item, have, per_craft, ingredient_made_per_min} (made from ingredients aboard: at most more), lasts_min, runs_out_on, at_end, line}] for each ammunition and repair pack aboard or used, thruster-fuel and thruster-oxidizer, hub_slots, power, solar_power at the stops, lines; read only'}}
+    returns='legs [{from, to, km, minutes}], total_km, total_minutes, speed_km_per_min and speed_from (now while flying, else the last finished leg\'s average), resources [{name, stock, made_per_min, used_per_min, rate_from, flight_rate (unknown: stopped with no flight rate on record; nothing projected), ingredient_limited {more, item, have, per_craft, fluid, below {more, item, have}, ingredient_made_per_min} (made from ingredients aboard, two levels down, fluids in tanks and the makers counted: at most more), lasts_min, runs_out_on, at_end, line}] for each ammunition and repair pack aboard or used, thruster-fuel and thruster-oxidizer, hub_slots, power, solar_power at the stops, lines; read only'}}
   return M
 end

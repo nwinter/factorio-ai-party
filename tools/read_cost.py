@@ -45,7 +45,7 @@ def parse(out):
     return ms, int(size), status
 
 
-def reads(bot="sol"):
+def reads(bot="sol", platform="Aegis"):
     """name -> (who and how often, the timed command). The periods are the services' own (see the report). Agent
     reads go as `bot` with peek (no cursor moves); board_events is left out (the stream reads it without peek)."""
     import importlib.util
@@ -108,6 +108,10 @@ def reads(bot="sol"):
         "census_basemap": ("inside basemap: operator read census", op("census", {"part": "basemap"})),
         "census_snapshot": ("inside snapshot: operator read census", op("census", {"part": "snapshot"})),
         "census_machines": ("inside machines: operator read census", op("census", {"part": "machines"})),
+        # Agent reads on request, not on a period (d15 blockers, seen but not fixed): one platform's endurance (its
+        # route, rates, ingredient caps) and every artillery piece with its targets and the enemy units near it.
+        "platform_endurance": ("agents on request: platform_endurance (--platform)", agent("platform_endurance", {"platform": platform})),
+        "artillery": ("agents on request: artillery (up to 8 pieces)", agent("artillery")),
     }
 
 
@@ -118,9 +122,10 @@ def main(argv=None):
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--json", action="store_true", help="one JSON row per read")
     ap.add_argument("--bot", default="sol", help="the bot the agent reads go as (peek; default sol)")
+    ap.add_argument("--platform", default="Aegis", help="the platform platform_endurance reads (default Aegis)")
     ap.add_argument("names", nargs="*")
     a = ap.parse_args(argv)
-    table = reads(a.bot)
+    table = reads(a.bot, a.platform)
     if a.list:
         for name, (who, _) in table.items():
             print(f"{name:20} {who}")
