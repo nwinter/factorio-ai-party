@@ -1633,6 +1633,11 @@ return function(api)
       local ok, list = pcall(api.power_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
+    -- A personal request unfilled in a network with no logistic robots (personal.lua).
+    if api.personal_lines then
+      local ok, list = pcall(api.personal_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     -- Our platforms (platalerts.lua), with their own cap of 6 lines.
     if api.platform_lines then
       local ok, list = pcall(api.platform_lines, p, h)

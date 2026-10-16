@@ -272,3 +272,41 @@ do
   eq(r.fragile_total,2); has(r.fragile[2].line,'small-electric-pole (30,0)')
 end
 print('d15_batch4 3 fragile: ok')
+
+-- 4 (Haiku, Muse): personal requests not filled, and why; the alert for a network with no logistic robots. ---------
+do
+  defines={logistic_member_index={character_requester=1}}
+  game={tick=100}
+  local inv={get_item_count=function(q) return ({['repair-pack']=2,['iron-plate']=500})[q.name] or 0 end}
+  local net={network_id=12,all_logistic_robots=0,available_logistic_robots=0,get_item_count=function(q) return ({['repair-pack']=40})[q.name] or 0 end}
+  local pt={enabled=true,logistic_network=net,filters={{name='repair-pack',quality='normal',count=10},{name='iron-plate',quality='normal',count=100},{name='coal',quality='normal',count=50}},
+    targeted_items_deliver={}}
+  local c={valid=true,position={x=-10,y=562},get_logistic_point=function() return pt end,get_main_inventory=function() return inv end}
+  local p={character=c}
+  local P=dofile('mod/agent-harness_0.1.0/personal.lua'){}
+  local rows=P.unfilled(p)
+  eq(#rows,2)
+  eq(rows[1].line,'repair-pack: hold 2 of 10; logistic network 12 where you stand has no logistic robots (its roboports hold none)')
+  net.all_logistic_robots=5
+  rows=P.unfilled(p)
+  eq(rows[1].line,'repair-pack: hold 2 of 10; all 5 logistic robots of network 12 are busy now; it holds 40 repair-pack')
+  eq(rows[2].line,'coal: hold 0 of 50; logistic network 12 holds no coal robots can take (its provider, storage and buffer chests: none, or all reserved)')
+  net.available_logistic_robots=3; pt.targeted_items_deliver={{name='repair-pack',quality='normal',count=4}}
+  eq(P.unfilled(p)[1].line,'repair-pack: hold 2 of 10 (4 on the way); robots are bringing 4; network 12 holds 40 more')
+  pt.logistic_network=nil; c.surface={find_logistic_network_by_position=function() return nil end}
+  eq(P.unfilled(p)[1].why,'no logistic network where you stand (-10,562) (no roboport\'s logistic area covers it)')
+  pt.enabled=false
+  has(P.unfilled(p)[1].why,'your personal logistics are switched off')
+  -- The alert: unfilled 60 s or more in a network with 0 logistic robots, once, again after 10 minutes.
+  pt.enabled=true; pt.logistic_network=net; net.all_logistic_robots=0; pt.targeted_items_deliver={}
+  local h={}
+  eq(P.lines(p,h),nil,'first seen now')
+  game.tick=100+3600
+  local l=P.lines(p,h)
+  eq(l[1],'your personal requests repair-pack 2 of 10, coal 0 of 50 sit unfilled: logistic network 12 where you stand (-10,562) has no logistic robots (a network\'s logistic robots are those in its roboports\' robot slots and in the air)')
+  game.tick=game.tick+600
+  eq(P.lines(p,h),nil,'told once')
+  game.tick=game.tick+36000
+  has(P.lines(p,h)[1],'repair-pack 2 of 10')
+end
+print('d15_batch4 4 personal: ok')

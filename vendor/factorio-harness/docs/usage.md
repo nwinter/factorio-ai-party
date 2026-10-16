@@ -4839,4 +4839,18 @@ fh watch    # deploy on every change
     searches (`cost`). Machines are counted for the 16 cuts with the most poles; the 1000 poles nearest are read and
     wires to the rest count as power (`capped`). Measured on the copy of world n in the container: 297 poles 20-27 ms
     there (about 5 ms on n), 1000 poles (radius 512 round Opus's oil pole) 78-82 ms (about 16 ms on n).
+- Personal requests (Haiku: 10 repair packs at south copper (-10,562) never came; Muse): `requests` for the character
+  adds `unfilled`, one line per request whose held plus on-the-way count is under its min, with the first reason
+  that holds:
+  - personal logistics switched off;
+  - no logistic network where the character stands;
+  - the network has no logistic robots;
+  - the network holds none of the item robots can take;
+  - all its logistic robots are busy;
+  - robots are bringing some;
+  - the network holds it and has free robots, and none has taken it yet.
+  - Example: `repair-pack: hold 0 of 10; logistic network 120 where you stand has no logistic robots (its roboports
+    hold none)`, read on a copy of world n as Haiku.
+  - Alert (team.alerts): a personal request unfilled for 60 s or more in a network with 0 logistic robots. Checked
+    every 5 s an agent replies; told once per network and item, and again after 10 minutes.
 
