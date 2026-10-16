@@ -245,7 +245,19 @@ return function(api)
           if not f then f={type=e.type,total=0,empty=0,low=0}; fuel[e.name]=f; fuel_order[#fuel_order+1]=e.name end
           f.total=f.total+1
           if e.status==status_ids.no_fuel then f.empty=f.empty+1
-          elseif burner.inventory.is_empty() and (burner.remaining_burning_fuel or 0)>0 then f.low=f.low+1 end
+          elseif burner.inventory.is_empty() and (burner.remaining_burning_fuel or 0)>0 then
+            f.low=f.low+1
+            -- Each burner on its last fuel, where and about how long it burns on (Luna 04:51: two biochambers low, one
+            -- named): at its full draw, the time the fuel left in it lasts.
+            f.last=f.last or {}
+            if #f.last<8 then
+              local usage=0
+              pcall(function() usage=e.prototype.get_max_energy_usage(e.quality) end)
+              if usage<=0 then pcall(function() usage=e.prototype.energy_usage or 0 end) end
+              local s=usage>0 and burner.remaining_burning_fuel/usage/60 or nil
+              f.last[#f.last+1]=string.format('(%g,%g)%s',e.position.x,e.position.y,s and string.format(' %ds left',math.floor(s+0.5)) or '')
+            end
+          end
           -- Stopped by a full burnt-result slot (burnt.lua), whatever the status reads.
           local stuck=api.burnt_stuck and api.burnt_stuck(e)
           if stuck then
@@ -325,7 +337,8 @@ return function(api)
     for _,name in ipairs(fuel_order) do
       local f=fuel[name]
       if f.empty>0 or f.low>0 or (f.rot or 0)>0 or (f.stuck or 0)>0 then
-        fuel_parts[#fuel_parts+1]=string.format('%s %d/%d no_fuel',name,f.empty,f.total)..(f.low>0 and ', '..f.low..' burning their last fuel' or '')
+        fuel_parts[#fuel_parts+1]=string.format('%s %d/%d no_fuel',name,f.empty,f.total)..(f.low>0 and ', '..f.low..' burning their last fuel'
+          ..(f.last and ' ('..table.concat(f.last,', ')..(f.low>#f.last and ', ...' or '')..')' or '') or '')
           ..((f.stuck or 0)>0 and string.format(', %d stopped by a full burnt-result slot (the first at %s: %s)',f.stuck,f.stuck_at.at,f.stuck_at.burnt) or '')
           ..(f.first and (f.rot or 0)>0 and string.format(', fuel spoils within %ds in %d (the first: %s in %s at %s)',ROT_SOON/60,f.rot,f.first.item,
             duration(math.max(0,f.first.tick-game.tick)),f.first.at) or '')

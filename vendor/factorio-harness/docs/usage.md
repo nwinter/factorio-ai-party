@@ -5264,3 +5264,6 @@ fh watch    # deploy on every change
   short of power fed the boilers that powered them): `3 electric drills mining coal within 160 tiles run on this
   network: 2 on low power, 0 on no power, 1 other; the fuel these boilers burn comes from machines their power runs`.
   Said only when one of them is on low or no power.
+- The status fuel line names each burner burning its last fuel (Luna 04:51: two low-fuel biochambers, one named):
+  `burner-mining-drill 0/1 no_fuel, 1 burning their last fuel ((-35,-50) 559s left)`, up to 8 a name, the time at
+  its full draw. Seen on the copy of world n.
