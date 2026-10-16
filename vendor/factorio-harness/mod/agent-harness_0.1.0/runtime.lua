@@ -868,10 +868,50 @@ local function active(index)
     -- A walk into reach for a call (autowalk.lua): the call made on arrival.
     walking_for=action.then_call and action.then_call.action or nil,
     leg=action.kind=='move_to' and action.via and string.format('%d of %d',action.via.index,#action.via.points+1) or nil,
+    -- A walking tour's or a courier's progress (Muse, Luna, shift19): leg N of M, the walk left, moved so far.
+    progress=action.kind=='gather' and not action.wait and M.tour_progress(index,action) or nil,
     remote=action.kind=='drive' and action.remote and action.vehicle and action.vehicle.valid and
       string.format('%s at (%.1f,%.1f) by remote view',action.vehicle.name,action.vehicle.position.x,action.vehicle.position.y) or nil}
 end
 M.active=active
+-- A queued tour's finished part, kept on its queue step (Luna, shift19: queued timed transfers interrupted by a direct
+-- action failed whole while harvesting yumako): the stops left, what it moved, and a courier's leg; scheduler.lua
+-- requeues the step from there when it is interrupted.
+function M.tour_mark(index,action)
+  action.marked_index=action.index
+  local q=(state().queues or {})[index]
+  local cur=q and q.current
+  if not cur or type(action.targets)~='table' then return end
+  local left={}
+  for k=action.index or 1,#action.targets do
+    local t=action.targets[k]
+    if t and t.position then left[#left+1]={x=t.position.x,y=t.position.y} end
+  end
+  local give=action.legs and action.legs[2]
+  cur.tour_left={positions=left,done=(action.index or 1)-1,total=#action.targets,got=action.got or 0,item=action.item,quality=action.quality,
+    fill=action.fill,courier=action.legs and true or nil,taken=action.taken,give_inventory=give and give.inventory or nil}
+end
+-- "leg 2 of 3 (to steel-chest (12.5,4.5)), 37 tiles to it, 85 tiles left in all; moved 40 iron-plate so far": a timed
+-- transfer, collect, feed, rearm or refuel tour, or a courier (take, then give), read from the action as it runs.
+function M.tour_progress(index,action)
+  local targets=action.targets
+  if type(targets)~='table' or #targets==0 then return nil end
+  local i=math.min(action.index or 1,#targets)
+  local t=targets[i]
+  local p=M.lookup and M.lookup(index)
+  local c=p and (p.character or p)
+  local here=c and c.valid~=false and c.position
+  if not (t and t.position and here) then return nil end
+  local to=distance(here,t.position)
+  local all,prev=to,t.position
+  for k=i+1,#targets do local q=targets[k].position; if q then all=all+distance(prev,q); prev=q end end
+  local name=t.entity and t.entity.valid and t.entity.name or t.name or 'place'
+  local moved
+  if action.legs then moved=string.format('took %d, delivered %d',action.taken or 0,math.max(0,(action.got or 0)-(action.taken or 0)))
+  else moved=string.format('moved %d%s so far',action.got or 0,action.item and ' '..action.item or '') end
+  return string.format('%s %d of %d (%s (%g,%g)), %.0f tiles to it, %.0f tiles left in all; %s',action.legs and 'leg' or 'stop',i,#targets,
+    name,t.position.x,t.position.y,to,all,moved)
+end
 -- {left,top,right,bottom} around a list of cells or ghosts, once when an action is planned (at most 512 cells).
 -- A field of M, not a top-level local (tests/locals.lua: runtime.lua keeps 3 of Lua's 200 free).
 function M.cell_bounds(list,pos)
@@ -1539,7 +1579,7 @@ function handlers.describe()
       b.wires='a single build: [{to {x,y}, color red|green, from_side?, to_side?}] from it'
     end
   end
-  description.actions.status.brief='boolean: only active, last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older)'
+  description.actions.status.brief='boolean: only active (a walking tour or courier adds progress: stop or leg N of M, the place, tiles to it and left in all, moved so far), last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older)'
   description.actions.status.alerts='boolean, with brief: add the alerts block (losses, attacked areas, groups, enemy news; read from what the game reported, no scan)'
   description.actions.status.inventory='boolean: add inventory, one line: main (name*count, free slots), ammo, guns, armor with its equipment, trash slots, cursor (the inventory read in one line)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
@@ -12139,6 +12179,7 @@ function M.tick_action(index,action,event)
   elseif action.kind=='gather' then
     local outcome
     if action.fuel_round then outcome=M.fuelround.tick(p,action) else outcome=stock.tick(p,action) end
+    if action.queued and action.marked_index~=action.index then pcall(M.tour_mark,index,action) end
     if outcome then finish(index,outcome) end
   elseif action.kind=='feed' then
     -- A build stepping aside walks until the character is off the footprint.

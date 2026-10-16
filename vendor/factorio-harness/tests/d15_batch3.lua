@@ -254,3 +254,42 @@ do
   eq(q.loop_done.steps[1].action,'craft'); eq(q.loop_done.steps[1].args.recipe,'pipe')
 end
 print('d15_batch3 7 history args: ok')
+
+-- 7 (Luna): a queued timed transfer interrupted by a direct action goes on from the stops left. -------------------
+do
+  game={tick=0}
+  local state,active={},{}
+  local players={[1]={index=1}}
+  local s=require('scheduler'){
+    state=function() return state end,player=function(i) return players[i] end,
+    handlers={transfer=function(p,a) active[p.index]=game.tick+1000; return {walking=true} end,craft=function() return {started=1} end},
+    busy=function(p) return active[p.index]~=nil end,stop=function(p) active[p.index]=nil end,stop_index=function(i) active[i]=nil end,
+    outcome=function() return nil end,completion=function() return nil end,
+    condition=function() return false end,validate_condition=function() end,
+  }
+  local h,p=s.handlers,players[1]
+  local function tick() game.tick=game.tick+1; s.tick() end
+  local stops={{x=1.5,y=1.5},{x=10.5,y=1.5},{x=20.5,y=1.5}}
+  h.queue_submit(p,{steps={{action='transfer',args={positions=stops,item='coal',count=20,direction='to_entity',walk=true}},{action='craft'}}})
+  tick()
+  local cur=state.queues and state.queues[1] and state.queues[1].current
+  assert(cur and cur.action=='transfer','the transfer runs')
+  -- the runtime notes the part done (M.tour_mark): one stop done, two left
+  cur.tour_left={positions={{x=10.5,y=1.5},{x=20.5,y=1.5}},done=1,total=3,got=20,item='coal'}
+  s.pause(1)
+  local q=h.queue_status(p)
+  eq(q.pending[1].action,'transfer'); eq(#q.pending[1].args.positions,2); eq(q.pending[1].args.positions[1].x,10.5); eq(q.pending[1].args.count,20)
+  has(q.history[#q.history].result.resumed_from,'1 of 3 stops done (moved 20); requeued with the 2 left')
+  eq(q.history[#q.history].result.requeued,true)
+  -- a courier past its take: requeued as the give at the destination
+  h.queue_cancel(p,{})
+  h.queue_submit(p,{steps={{action='transfer',args={pick='first_with_stock',positions={{x=1.5,y=1.5}},item='iron-plate',to={x=30.5,y=4.5},count=50}}}})
+  h.queue_resume(p,{}); tick()
+  cur=state.queues[1].current
+  cur.tour_left={positions={{x=30.5,y=4.5}},done=1,total=2,got=50,item='iron-plate',courier=true,taken=50}
+  s.pause(1)
+  q=h.queue_status(p)
+  eq(q.pending[1].args.position.x,30.5); eq(q.pending[1].args.count,50); eq(q.pending[1].args.direction,'to_entity'); eq(q.pending[1].args.pick,nil)
+  has(q.history[#q.history].result.resumed_from,'the take is done (50 iron-plate); requeued as the give at (30.5,4.5)')
+end
+print('d15_batch3 7 resume: ok')

@@ -432,8 +432,30 @@ return function(api)
     if q.current then
       local step=q.current
       local again=RESTARTABLE[step.action]==true
-      record(q,step,false,{reason='interrupted',requeued=again or nil}); q.current=nil
+      -- A transfer or feed tour (or a courier) with a part done goes on from the stops left (runtime: tour_left).
       local args=step.args
+      local resumed
+      local tl=step.tour_left
+      if not again and tl and tl.done>0 and type(args)=='table' and (step.action=='transfer' or step.action=='feed' or step.action=='collect') then
+        if tl.courier then
+          -- taken at the picked place: what is left is the give at the destination
+          local undelivered=math.max(0,(tl.taken or 0)-math.max(0,(tl.got or 0)-(tl.taken or 0)))
+          local to=tl.positions[#tl.positions]
+          if to and undelivered>0 and tl.item then
+            args={position=to,direction='to_entity',item=tl.item,quality=tl.quality,count=undelivered,walk=true,inventory=tl.give_inventory,
+              avoid_enemies=args.avoid_enemies,unsafe_goal=args.unsafe_goal}
+            again=true; resumed=string.format('the take is done (%d %s); requeued as the give at (%g,%g)',tl.taken or 0,tl.item,to.x,to.y)
+          end
+        elseif #tl.positions>0 and (args.positions~=nil or args.position~=nil) then
+          local rest={}
+          for k,v in pairs(args) do rest[k]=v end
+          rest.position=nil; rest.positions=tl.positions
+          if tl.fill and type(args.count)=='number' then rest.count=math.max(1,args.count-(tl.got or 0)) end
+          args=rest; again=true
+          resumed=string.format('%d of %d stops done (moved %d); requeued with the %d left',tl.done,tl.total,tl.got or 0,#tl.positions)
+        end
+      end
+      record(q,step,false,{reason='interrupted',requeued=again or nil,resumed_from=resumed}); q.current=nil
       -- A walk through via points goes on from the first one it had not reached (runtime: via_done).
       if again and step.via_done and type(args)=='table' and type(args.via)=='table' then
         local rest,left={},{}

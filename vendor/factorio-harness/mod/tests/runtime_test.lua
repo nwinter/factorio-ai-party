@@ -5142,4 +5142,15 @@ end)()
   assert(w:find('off the tile grid: a 4x4 cargo-bay centres on tile edges (x 6 or 7, y 0)',1,true),w)
   eq(runtime.attach_why(fake,{name='chest',type='container',tile_width=1,tile_height=1},{x=1.5,y=1.5},0),nil)
 end)()
+-- A walking tour's progress in status active (d15 batch3 item 7; Muse, Luna).
+;(function()
+  local keep=runtime.lookup
+  runtime.lookup=function() return {character={valid=true,position={x=0,y=0}}} end
+  local tgt={{position={x=3,y=4},name='a'},{position={x=6,y=8},entity={valid=true,name='steel-chest'}},{position={x=6,y=20}}}
+  eq(runtime.tour_progress(1,{kind='gather',targets=tgt,index=2,got=40,item='iron-plate'}),
+    'stop 2 of 3 (steel-chest (6,8)), 10 tiles to it, 22 tiles left in all; moved 40 iron-plate so far')
+  eq(runtime.tour_progress(1,{kind='gather',targets=tgt,index=1,got=50,taken=50,legs={{},{}}}),
+    'leg 1 of 3 (a (3,4)), 5 tiles to it, 22 tiles left in all; took 50, delivered 0')
+  runtime.lookup=keep
+end)()
 print('runtime: '..assertions..' assertions passed')

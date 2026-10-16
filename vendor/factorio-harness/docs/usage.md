@@ -4752,3 +4752,13 @@ fh watch    # deploy on every change
   run again reads the next ones), plans each leg round the nests near it only, and plans at most 72 discs a leg and a
   call (`not_planned_round` names the legs read as straight lines). A goal with no spot to stand within a tile (deep
   water, a building) reads `reachable: no: no spot to stand at the goal`.
+- Queues (Muse, Luna):
+  - Each history entry keeps the arguments its step ran with, and a finished loop keeps its steps.
+    `queue_status {args: true}` shows them, so a finished plan or a 40-round loop can be submitted again. Without
+    `args` the replies are as small as before.
+  - While a timed transfer, collect, feed, rearm or refuel tour, or a courier (`pick` with `to`), walks, status
+    `active.progress` reads `stop 2 of 3 (steel-chest (6,8)), 10 tiles to it, 22 tiles left in all; moved 40
+    iron-plate so far` (a courier: `leg N of M ...; took 50, delivered 0`).
+  - A queued transfer or feed tour interrupted by a direct action is requeued with the stops it had not finished.
+    A courier whose take is done is requeued as the give at its destination with what it still carries. The history
+    entry says `resumed_from`. Before, such a step failed whole.
