@@ -132,7 +132,8 @@ return function(api)
     local function occupant(c)
       local x,y=c.position.x,c.position.y
       for _,o in ipairs(surface.find_entities_filtered{area={{x-w/2+0.05,y-h/2+0.05},{x+w/2-0.05,y+h/2-0.05}},type={'mining-drill','entity-ghost'},limit=8}) do
-        if o.valid and o~=e and (o.type=='mining-drill' or o.ghost_type=='mining-drill') then return o end
+        -- Any ghost there takes the spot too (Astra, d15: sites suggested over belt and pole ghosts); named as a ghost.
+        if o.valid and o~=e and (o.type=='mining-drill' or o.type=='entity-ghost') then return o end
       end
     end
     local box=e.bounding_box

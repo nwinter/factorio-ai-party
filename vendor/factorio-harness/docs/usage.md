@@ -5004,4 +5004,17 @@ fh watch    # deploy on every change
   logistic network's line, in the networks read and the status brief's network lines, adds `repair packs: 10 in
   roboport material slots (1 of 2 roboports hold none), 0 in its chests`, next to its robot counts. Rows give
   `repair_packs`, `ports_without_packs` and `repair_packs_stored`. The view is rebuilt every 60 s, as before.
+- Ghosts in placement suggestions (Astra).
+  - `drill_sites` counts any ghost in a drill's footprint as taken (before, only drill ghosts), named `ghost of
+    <name>` in `occupied_by`.
+  - `placements` (on planets and with `platform`) keeps a spot over a ghost but names it: `over_ghost: <ghost
+    name>`, with `over_ghosts` counting them (a build there replaces the ghost).
+- trace upstream, a jammed lane: `jammed` adds who takes the front item on that lane, at the feeder's tile and up to
+  16 tiles on, and where they put it with that machine's state. When that machine's output is full it starts with
+  `deadlock:` (Astra: ore stood behind ice the ice plant, its water full, no longer took).
+- A belt reading its entire belt (`read_contents_mode: entire_belt_hold`): inspect's circuit read adds
+  `belt_segment`: the run of belts the engine joins into this tile's line, how many tiles, what ends it each way (`an
+  underground; past it is not this line`, another line feeding it or taking from it, the belt's start or end), what
+  it holds, and, when wired, what the wires read where that differs. This is read now; I did not check on a 2.0.77
+  engine which tiles the game's entire-belt read covers.
 

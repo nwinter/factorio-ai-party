@@ -171,6 +171,12 @@ do
   for x=12,15 do belts[x].lines[1].items={'coal','coal','coal','coal'} end
   r=trace.trace(p,{position={x=15.5,y=5.5},upstream=true})
   has(r.ingredients[1].lanes[1].line,'the left lane at transport-belt (15.5,2.5) is full and holds no iron-ore (left lane 4 coal, right lane empty), front item coal')
+  -- F4 (Astra): the front item's only taker on the lane puts it into a machine with full output: a deadlock.
+  local boiler=crafter(17.5,3.5,'boiler-room',{name='burn-coal',ingredients={{type='item',name='coal',amount=1}},products={{name='steam'}}},{},{},'full_output')
+  local coal_arm=inserter(16.5,2.5,belts[15],boiler,{pickup={x=15.5,y=2.25}})
+  r=trace.trace(p,{position={x=15.5,y=5.5},upstream=true})
+  has(r.ingredients[1].lanes[1].jammed,'; deadlock: inserter (16.5,2.5) working takes coal into boiler-room (17.5,3.5) (recipe burn-coal) (full_output)')
+  table.remove(world); table.remove(world)  -- the arm and its machine out again: the feeder is world[#world] below
   -- The feeder filtered to coal: stops there.
   world[#world].filter_slot_count=5; world[#world].use_filters=true; world[#world].get_filter=function(k) return k==1 and {name='coal'} or nil end
   r=trace.trace(p,{position={x=15.5,y=5.5},upstream=true})
@@ -662,3 +668,27 @@ do
   has(v.text,'; repair packs: 10 in roboport material slots (1 of 2 roboports hold none), 0 in its chests')
 end
 print('d15_batch4 F3 repair packs: ok')
+
+-- F4 (Astra): a belt reading its entire belt: the line's extent, what ends it, its contents against the wires. ----
+do
+  defines={wire_connector_id={circuit_red=1,circuit_green=2}}
+  local function belt(x,typ,line,items)
+    local b={valid=true,name=typ=='underground-belt' and 'underground-belt' or 'transport-belt',type=typ or 'transport-belt',position={x=x,y=0}}
+    local l={id=line,get_contents=function() return items end}
+    l.line_equals=function(o) return o.id==l.id end
+    local empty={id=line,get_contents=function() return {} end,line_equals=l.line_equals}
+    b.get_transport_line=function(k) return k==1 and l or empty end
+    b.belt_neighbours={inputs={},outputs={}}
+    return b
+  end
+  local b1,b2,u=belt(0.5,nil,'A',{{name='iron-ore',count=4}}),belt(1.5,nil,'A',{{name='iron-ore',count=3}}),belt(2.5,'underground-belt','A',{})
+  local u2=belt(6.5,'underground-belt','B',{{name='iron-ore',count=8}})
+  u.neighbours=u2
+  b1.belt_neighbours.outputs={b2}; b2.belt_neighbours.inputs={b1}; b2.belt_neighbours.outputs={u}; u.belt_neighbours.inputs={b2}
+  b2.get_circuit_network=function(w) return w==1 and {signals={{signal={name='iron-ore'},count=7}}} or nil end
+  local C=dofile('mod/agent-harness_0.1.0/circuits.lua'){}
+  eq(C.belt_segment(b2),'this tile\'s line runs 3 tiles: back at transport-belt (0.5,0) (the belt starts there), on at underground-belt (2.5,0) (an underground; past it is not this line); it holds 7 iron-ore')
+  b2.get_circuit_network=function(w) return w==1 and {signals={{signal={name='iron-ore'},count=15}}} or nil end
+  has(C.belt_segment(b2),'(the wires read: iron-ore 15 on the wires, which includes anything else on those networks)')
+end
+print('d15_batch4 F4 belt segment: ok')

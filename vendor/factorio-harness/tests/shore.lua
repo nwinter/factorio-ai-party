@@ -252,6 +252,9 @@ eq(p.more,nil)
 local at={}
 for _,s in ipairs(p.placements) do at[s.position.x..','..s.position.y]=true end
 assert(at['0,0'] and at['1,-2'] and not at['2,2'] and not at['-1,1'])
+-- d15 F4 (Astra): a placement over a ghost names it (over_ghost), and the reply counts them.
+for _,s in ipairs(p.placements) do if s.position.x==0 and s.position.y==0 then assert(s.over_ghost,'(0,0) lies under the ghost') end end
+assert(p.over_ghosts and p.over_ghosts:find('lie over a ghost',1,true),tostring(p.over_ghosts))
 -- separate (friction1300: Gemini built accumulators from one placements list, and the third was blocked by the
 -- second, 1 tile apart): each spot overlaps none nearer in the list, so all of them can be built.
 local all=p
