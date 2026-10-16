@@ -5118,3 +5118,21 @@ fh watch    # deploy on every change
   s; it wakes as a sleep does) and the reply adds `crafted: the hand-craft queue is done: the items are in your
   inventory`, or `not done: the wait ended (told) with crafts still queued` and `still_running: hand crafting` (exit
   3). Host only.
+- `load_silo` and the agent's own calls (Sonnet, Astra, Grok, Muse).
+  - A running or queued `load_silo` step survives your own build, transfer, collect, feed, rearm, refuel, configure,
+    rotate, pickup, mine or craft. Before, it failed as interrupted and `queue resume` skipped it. Now it is requeued
+    at the head of the queue: a walking load with the rocket's totals (`to_total`), so it goes on from what is aboard;
+    a load waiting for its rocket as it was. The queue goes on by itself when your call ran at once, or when the timed
+    action it started ends. That call's reply says `queue_resumed: your queue's load_silo step (job-7) was requeued
+    and the queue goes on` (or `... the queue goes on when this gather ends`). Other calls (a walk, `stop`) leave the
+    queue paused with the step requeued, and `queue resume` runs it.
+  - A walking `load_silo` (a gather) ends when the rocket it fills launches by another hand, instead of filling the
+    next one (Grok: the gather went on after Astra launched the 885-pack rocket). The outcome is `rocket_launched`,
+    and `last.why` says `the rocket this load was filling launched 12 s ago by astra (cargo: ...); the load ends: what
+    you carry stays with you`.
+  - `launch {position, wait_ready: true, timeout?}` waits for a rocket that is not ready yet, then launches it in the
+    tick it is ready (Muse: queued launches failed at 45/50 parts, twice). The wait is a `wait_until` on
+    `rocket_ready` at the silo (default 36000 ticks), so a queue step holds there. `last.launch` holds the launch
+    reply; a launch then refused ends `launch_failed` with `last.launch_error`. With the rocket ready it launches at
+    once. As a direct call it refuses while an action runs. `fh call launch ... --wait` waits for it. A launch refused
+    as not ready now names `wait_ready` and the `wait_until {until: "rocket_ready", position}` step.

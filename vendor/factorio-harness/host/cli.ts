@@ -1568,6 +1568,8 @@ async function main() {
         // load_silo waiting for its rocket (no rocket yet, or launch=true before it is ready), then loading (shift12 15:20);
         // a walking load (op load_silo, until_tick) is a tour (Sol 07:50: --wait returned the acceptance)
         || (action === 'load_silo' && (reply.result?.waiting !== undefined || reply.result?.until_tick !== undefined))
+        // launch {wait_ready}: the wait for the rocket, then the launch (last.launch)
+        || (action === 'launch' && reply.result?.waiting_to_launch !== undefined)
         // A transfer or collect that walks (walk, pick, pick with to) runs as a timed tour.
         || (['transfer','collect'].includes(action) && reply.result?.op === 'transfer' && reply.result?.until_tick !== undefined)
         // feed over positions with walk: a tour when any was out of reach (Opus 10:50).
