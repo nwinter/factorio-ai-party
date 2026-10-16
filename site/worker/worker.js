@@ -9,6 +9,9 @@
 //                             channel "viewers": on the site only, never relayed to the agents (default "game")
 //   POST /v1/mod              hide/unhide/ban/unban/open/close (Authorization: Bearer PUBLISH_TOKEN)
 //   POST /v1/here             {id}: an open live page, once a minute; GET /v1/state counts them as site_watching
+//   POST /v1/blueprints       a viewer shares a blueprint {name, title, string, cid?}: checked to decode to a blueprint
+//                             or book, under chat's rules and limits (viewer LimeLight, d16 16:17)
+//   GET  /v1/blueprints?after=ID, GET /v1/blueprints/ID   the shared ones, for the Mac (Authorization: PUBLISH_TOKEN)
 //
 // Everything is unlisted: every response carries X-Robots-Tag noindex and /robots.txt disallows all.
 // Client addresses are never stored: rate limits and bans key on a salted hash.
@@ -27,6 +30,18 @@ const CHAT = {
 // the last `windowS` counts; at most `perClient` pages per client address, so one script can't inflate it. Kept in
 // memory only: a restart of the object starts the count again within a minute.
 const HERE = { windowS: 150, perClient: 4, maxIds: 20000 };
+// Viewers' blueprint strings (LimeLight's are 2-200 KB). The Mac pulls them into the shift's team-tools; nothing goes
+// into the game by itself. Each post counts against chat's limits too; these caps keep the storage small.
+const BP = {
+  maxString: 1024 * 1024,       // characters of the blueprint string
+  maxJson: 16 * 1024 * 1024,    // bytes once inflated (a small string can inflate a lot)
+  maxTitle: 80,
+  perClientHour: 6,
+  globalHour: 40,
+  keep: 300,                    // blueprints kept
+  keepBytes: 64 * 1024 * 1024,  // and at most this many string bytes
+  pageMax: 20,
+};
 const RESERVED = ["astra", "sol", "luna", "opus", "sonnet", "haiku", "grok", "gemini", "muse", "fable", "operator",
   "mod", "moderator", "admin", "caster", "system", "server", "player of games", "pog"];
 
@@ -96,7 +111,8 @@ export default {
 
     // Browsers may only post chat from the site's own origins; scripts (no Origin header) are rate limited the same.
     const origin = req.headers.get("Origin");
-    if (req.method === "POST" && (path === "/v1/chat" || path === "/v1/here") && origin && !originAllowed(origin, env)) {
+    if (req.method === "POST" && (path === "/v1/chat" || path === "/v1/here" || path === "/v1/blueprints") && origin &&
+        !originAllowed(origin, env)) {
       await req.arrayBuffer();
       return json({ error: "origin not allowed" }, 403);
     }
@@ -140,6 +156,62 @@ function tidy(s) {
     .replace(/\s+/g, " ")
     .trim();
 }
+// A blueprint string: "0" (the version byte) + base64 of zlib-deflated JSON. -> {ok, kind, label, blueprints,
+// entities, version} or {error}. Inflates through a stream and stops past BP.maxJson.
+async function decodeBlueprint(str) {
+  const s = String(str || "").trim();
+  if (!s) return { error: "blueprint string missing" };
+  if (s.length > BP.maxString) return { error: `blueprint strings are at most ${BP.maxString} characters` };
+  if (s[0] !== "0") return { error: "not a blueprint string (it starts with the version 0)" };
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(s.slice(1)) || (s.length - 1) % 4 !== 0) return { error: "not a blueprint string (bad base64)" };
+  let bytes;
+  try {
+    const bin = atob(s.slice(1));
+    bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  } catch (e) { return { error: "not a blueprint string (bad base64)" }; }
+  let text;
+  try {
+    const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate")).getReader();
+    const parts = [];
+    let n = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      n += value.length;
+      if (n > BP.maxJson) { await reader.cancel(); return { error: "blueprint too large once decoded" }; }
+      parts.push(value);
+    }
+    const all = new Uint8Array(n);
+    let o = 0;
+    for (const p of parts) { all.set(p, o); o += p.length; }
+    text = new TextDecoder("utf-8", { fatal: true }).decode(all);
+  } catch (e) { return { error: "not a blueprint string (it does not inflate)" }; }
+  let j;
+  try { j = JSON.parse(text); } catch (e) { return { error: "not a blueprint string (no JSON inside)" }; }
+  if (!j || typeof j !== "object" || Array.isArray(j)) return { error: "not a blueprint string (no JSON object inside)" };
+  const count = (bp) => (bp && Array.isArray(bp.entities) ? bp.entities.length : 0);
+  if (j.blueprint && typeof j.blueprint === "object") {
+    return { ok: true, kind: "blueprint", label: tidy(j.blueprint.label).slice(0, 80), blueprints: 1, entities: count(j.blueprint),
+      version: j.blueprint.version ?? null };
+  }
+  if (j.blueprint_book && typeof j.blueprint_book === "object") {
+    let blueprints = 0, entities = 0, depth = 0;
+    const walk = (book) => {
+      if (++depth > 8) return;
+      for (const e of Array.isArray(book.blueprints) ? book.blueprints : []) {
+        if (e && e.blueprint) { blueprints++; entities += count(e.blueprint); }
+        else if (e && e.blueprint_book) walk(e.blueprint_book);
+      }
+      depth--;
+    };
+    walk(j.blueprint_book);
+    return { ok: true, kind: "blueprint_book", label: tidy(j.blueprint_book.label).slice(0, 80), blueprints, entities,
+      version: j.blueprint_book.version ?? null };
+  }
+  return { error: "not a blueprint or blueprint book (an upgrade or deconstruction planner, or something else)" };
+}
+
 const LINK = /(https?:\/\/|www\.|\b[a-z0-9-]{2,}\.(com|net|org|io|gg|ly|xyz|ru|tv|me|co|app|dev|link|site)\b)/i;
 
 export class Live {
@@ -162,6 +234,11 @@ export class Live {
       try { this.sql.exec(`ALTER TABLE chat ADD COLUMN channel TEXT NOT NULL DEFAULT 'game'`); } catch (e) { /* already there */ }
       this.sql.exec(`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS bans (who TEXT PRIMARY KEY, t REAL NOT NULL)`);
+      this.sql.exec(`CREATE TABLE IF NOT EXISTS blueprints (id INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
+        name TEXT NOT NULL, title TEXT NOT NULL, kind TEXT NOT NULL, label TEXT NOT NULL, blueprints INTEGER NOT NULL,
+        entities INTEGER NOT NULL, bytes INTEGER NOT NULL, string TEXT NOT NULL, who TEXT NOT NULL, cid TEXT,
+        hidden INTEGER NOT NULL DEFAULT 0)`);
+      this.bpTimes = new Map(); // who -> [ms] blueprint posts in the last hour
       this.state = this.get("state");
       this.received = Number(this.get("received") || 0);
       this.salt = this.get("salt");
@@ -198,7 +275,11 @@ export class Live {
         case "POST /v1/chat": return await this.postChat(req, text);
         case "POST /v1/mod": return this.mod(req, text);
         case "POST /v1/here": return await this.postHere(req, text);
-        default: return json({ error: "not found" }, 404);
+        case "POST /v1/blueprints": return await this.postBlueprint(req, text);
+        case "GET /v1/blueprints": return this.listBlueprints(req, url);
+        default:
+          if (req.method === "GET" && /^\/v1\/blueprints\/\d+$/.test(url.pathname)) return this.getBlueprint(req, url);
+          return json({ error: "not found" }, 404);
       }
     } catch (e) {
       return json({ error: "bad request" }, 400);
@@ -294,16 +375,39 @@ export class Live {
       if (had.length) return json({ ok: true, repeat: true, message: had[0] });
     }
     const msg = tidy(body.text);
-    let name = tidy(body.name).slice(0, 20);
     if (!msg) return json({ error: "empty message" }, 400);
     if ([...msg].length > CHAT.maxLen) return json({ error: `messages are at most ${CHAT.maxLen} characters` }, 400);
     if (LINK.test(msg)) return json({ error: "links are not allowed" }, 400);
-    if (!name) name = "viewer";
-    if (!/^[\p{L}\p{N} _.'-]{2,20}$/u.test(name)) return json({ error: "names are 2-20 letters, digits, spaces or _ . ' -" }, 400);
-    if (RESERVED.includes(name.toLowerCase())) return json({ error: "that name is reserved" }, 400);
-
+    const name = this.viewerName(body.name);
+    if (name.error) return json(name, 400);
     const now = Date.now();
+    const limited = this.limit(who, now);
+    if (limited) return limited;
+    const last = this.lastText.get(who);
+    if (last && last.text === msg.toLowerCase() && now - last.at < 120000) return json({ error: "duplicate message" }, 400);
+    this.count(who, now);
+    this.lastText.set(who, { text: msg.toLowerCase(), at: now });
+    if (this.lastText.size > 5000) this.lastText.clear();
+
+    const t = now / 1000;
+    const row = this.sql.exec("INSERT INTO chat (t, name, text, who, cid, channel) VALUES (?, ?, ?, ?, ?, ?) RETURNING seq",
+      t, name.name, msg, who, cid, channel).toArray()[0];
+    this.sql.exec("DELETE FROM chat WHERE seq <= ?", row.seq - CHAT.keep);
+    return json({ ok: true, message: { seq: row.seq, t, name: name.name, text: msg, channel } });
+  }
+
+  // A viewer's name, as chat takes it: {name} or {error}.
+  viewerName(raw) {
+    const name = tidy(raw).slice(0, 20) || "viewer";
+    if (!/^[\p{L}\p{N} _.'-]{2,20}$/u.test(name)) return { error: "names are 2-20 letters, digits, spaces or _ . ' -" };
+    if (RESERVED.includes(name.toLowerCase())) return { error: "that name is reserved" };
+    return { name };
+  }
+
+  // Chat's per-client and global limits (a blueprint post counts as a message): a 429 response, or null.
+  limit(who, now) {
     const mine = (this.recent.get(who) || []).filter((t) => now - t < 60000);
+    this.recent.set(who, mine);
     this.global = this.global.filter((t) => now - t < 60000);
     if (mine.length && now - mine[mine.length - 1] < CHAT.minGapS * 1000) {
       return json({ error: "slow down", retry_after_s: Math.ceil((CHAT.minGapS * 1000 - (now - mine[mine.length - 1])) / 1000) }, 429);
@@ -311,20 +415,83 @@ export class Live {
     if (mine.length >= CHAT.perMinute || this.global.length >= CHAT.globalPerMinute) {
       return json({ error: "slow down", retry_after_s: 20 }, 429);
     }
-    const last = this.lastText.get(who);
-    if (last && last.text === msg.toLowerCase() && now - last.at < 120000) return json({ error: "duplicate message" }, 400);
-    mine.push(now);
-    this.recent.set(who, mine);
-    this.global.push(now);
-    this.lastText.set(who, { text: msg.toLowerCase(), at: now });
-    if (this.recent.size > 5000) this.recent.clear();
-    if (this.lastText.size > 5000) this.lastText.clear();
+    return null;
+  }
 
+  count(who, now) {
+    this.recent.get(who).push(now);
+    this.global.push(now);
+    if (this.recent.size > 5000) this.recent.clear();
+  }
+
+  async postBlueprint(req, text) {
+    if (this.get("chat_open") === "0") return json({ error: "chat is closed" }, 403);
+    if (text.length > BP.maxString + 4096) return json({ error: `blueprint strings are at most ${BP.maxString} characters` }, 413);
+    const body = JSON.parse(text || "{}");
+    const who = await this.who(req);
+    if (this.sql.exec("SELECT 1 FROM bans WHERE who = ?", who).toArray().length) {
+      return json({ error: "you can't post right now" }, 403);
+    }
+    const cid = body.cid == null ? null : String(body.cid);
+    if (cid !== null && !/^[0-9a-f]{16,32}$/.test(cid)) return json({ error: "cid must be 16-32 hex digits" }, 400);
+    const cols = "id, t, name, title, kind, label, blueprints, entities, bytes";
+    if (cid) {
+      const had = this.sql.exec(`SELECT ${cols} FROM blueprints WHERE cid = ? AND who = ?`, cid, who).toArray();
+      if (had.length) return json({ ok: true, repeat: true, blueprint: had[0] });
+    }
+    const name = this.viewerName(body.name);
+    if (name.error) return json(name, 400);
+    const title = tidy(body.title);
+    if (!title) return json({ error: "a title, please" }, 400);
+    if ([...title].length > BP.maxTitle) return json({ error: `titles are at most ${BP.maxTitle} characters` }, 400);
+    if (LINK.test(title)) return json({ error: "links are not allowed" }, 400);
+    const str = String(body.string || "").replace(/\s+/g, "");
+    const now = Date.now();
+    const limited = this.limit(who, now);
+    if (limited) return limited;
+    const hour = (this.bpTimes.get(who) || []).filter((t) => now - t < 3600000);
+    const all = [...this.bpTimes.values()].reduce((n, l) => n + l.filter((t) => now - t < 3600000).length, 0);
+    if (hour.length >= BP.perClientHour || all >= BP.globalHour) return json({ error: "slow down", retry_after_s: 600 }, 429);
+    const d = await decodeBlueprint(str);
+    if (d.error) return json({ error: d.error }, 400);
+    if (this.sql.exec("SELECT 1 FROM blueprints WHERE string = ? AND hidden = 0", str).toArray().length) {
+      return json({ error: "that blueprint was shared already" }, 400);
+    }
+    this.count(who, now);
+    hour.push(now);
+    this.bpTimes.set(who, hour);
+    if (this.bpTimes.size > 5000) this.bpTimes.clear();
     const t = now / 1000;
-    const row = this.sql.exec("INSERT INTO chat (t, name, text, who, cid, channel) VALUES (?, ?, ?, ?, ?, ?) RETURNING seq",
-      t, name, msg, who, cid, channel).toArray()[0];
-    this.sql.exec("DELETE FROM chat WHERE seq <= ?", row.seq - CHAT.keep);
-    return json({ ok: true, message: { seq: row.seq, t, name, text: msg, channel } });
+    const row = this.sql.exec(`INSERT INTO blueprints (t, name, title, kind, label, blueprints, entities, bytes, string, who, cid)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, t, name.name, title, d.kind, d.label, d.blueprints, d.entities,
+      str.length, str, who, cid).toArray()[0];
+    // the oldest go past BP.keep or BP.keepBytes
+    this.sql.exec("DELETE FROM blueprints WHERE id <= ?", row.id - BP.keep);
+    const sizes = this.sql.exec("SELECT id, bytes FROM blueprints ORDER BY id DESC").toArray();
+    let total = 0;
+    for (const r of sizes) {
+      total += r.bytes;
+      if (total > BP.keepBytes) { this.sql.exec("DELETE FROM blueprints WHERE id <= ?", r.id); break; }
+    }
+    return json({ ok: true, blueprint: { id: row.id, t, name: name.name, title, kind: d.kind, label: d.label,
+      blueprints: d.blueprints, entities: d.entities, bytes: str.length } });
+  }
+
+  listBlueprints(req, url) {
+    if (!tokenOk(req, this.env)) return json({ error: "unauthorized" }, 401);
+    const after = parseInt(url.searchParams.get("after") || "0", 10) || 0;
+    const rows = this.sql.exec(`SELECT id, t, name, title, kind, label, blueprints, entities, bytes FROM blueprints
+      WHERE id > ? AND hidden = 0 ORDER BY id LIMIT ?`, after, BP.pageMax).toArray();
+    const maxRow = this.sql.exec("SELECT COALESCE(MAX(id), 0) AS m FROM blueprints").toArray()[0];
+    return json({ schema: SCHEMA, blueprints: rows, last_id: maxRow.m });
+  }
+
+  getBlueprint(req, url) {
+    if (!tokenOk(req, this.env)) return json({ error: "unauthorized" }, 401);
+    const id = parseInt(url.pathname.split("/").pop(), 10);
+    const r = this.sql.exec(`SELECT id, t, name, title, kind, label, blueprints, entities, bytes, string FROM blueprints
+      WHERE id = ? AND hidden = 0`, id).toArray();
+    return r.length ? json({ schema: SCHEMA, blueprint: r[0] }) : json({ error: "no such blueprint" }, 404);
   }
 
   mod(req, text) {
@@ -343,6 +510,7 @@ export class Live {
         if (!w) return json({ error: "no such message" }, 404);
         this.sql.exec("INSERT OR REPLACE INTO bans (who, t) VALUES (?, ?)", w, Date.now() / 1000);
         this.sql.exec("UPDATE chat SET hidden = 1 WHERE who = ?", w);
+        this.sql.exec("UPDATE blueprints SET hidden = 1 WHERE who = ?", w);
         break;
       }
       case "unban": {
@@ -350,11 +518,23 @@ export class Live {
         if (w) this.sql.exec("DELETE FROM bans WHERE who = ?", w);
         break;
       }
+      // a shared blueprint: hide it (the Mac does not pull it), or ban whoever shared it (and hide all they posted)
+      case "hide_blueprint": this.sql.exec("UPDATE blueprints SET hidden = 1 WHERE id = ?", parseInt(body.id, 10)); break;
+      case "unhide_blueprint": this.sql.exec("UPDATE blueprints SET hidden = 0 WHERE id = ?", parseInt(body.id, 10)); break;
+      case "ban_blueprint": {
+        const r = this.sql.exec("SELECT who FROM blueprints WHERE id = ?", parseInt(body.id, 10)).toArray();
+        if (!r.length) return json({ error: "no such blueprint" }, 404);
+        this.sql.exec("INSERT OR REPLACE INTO bans (who, t) VALUES (?, ?)", r[0].who, Date.now() / 1000);
+        this.sql.exec("UPDATE chat SET hidden = 1 WHERE who = ?", r[0].who);
+        this.sql.exec("UPDATE blueprints SET hidden = 1 WHERE who = ?", r[0].who);
+        break;
+      }
       case "close": this.put("chat_open", "0"); break;
       case "open": this.put("chat_open", "1"); break;
       // a fresh start (the public run): hide every message so far; seq keeps counting, so pollers lose nothing new
       case "clear": this.sql.exec("UPDATE chat SET hidden = 1"); break;
-      default: return json({ error: "action must be hide, unhide, ban, unban, open, close or clear" }, 400);
+      default: return json({ error: "action must be hide, unhide, ban, unban, open, close, clear, hide_blueprint, " +
+        "unhide_blueprint or ban_blueprint" }, 400);
     }
     return json({ ok: true });
   }

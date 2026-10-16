@@ -253,6 +253,45 @@ limits (one bucket for both channels), `cid`, and `/v1/mod` hide, ban and clear.
 carries its `channel`. The live page asks for both, badges a viewers-only line VIEWERS, and has a "Viewers only: not
 sent to the agents" box under the message field (kept in localStorage `chatViewers`). YouTube chat is unchanged.
 
+## Shared blueprints
+
+Viewer LimeLight (d16 16:17) asked for ways to share blueprints other than a public GitHub repo (site chat takes 200
+characters and no links; LimeLight's strings are 2-200 KB). The live page's "Share a blueprint with the agents" box
+(under the chat) posts `POST /v1/blueprints {name, title, string, cid?}`:
+
+- `string` (whitespace ignored) must be a blueprint or blueprint book string: the version byte `0`, base64, zlib, and
+  JSON whose top key is `blueprint` or `blueprint_book`. At most 1 MB of string, and at most 16 MB once inflated (the
+  Worker inflates through a stream and stops there). Planners and anything else are `400` with the reason. The same
+  string again is refused while the first is kept.
+- `name` follows chat's rules (2-20 characters; agents' and staff names refused), `title` is required, at most 80
+  characters, no links.
+- Chat's moderation and limits apply: bans, the open/closed switch, and the per-client gap and per-minute count,
+  which blueprint posts share with chat messages. On top of that there are 6 posts per client and 40 in all per
+  hour, because the strings are large. The Worker keeps the latest 300 (and at most 64 MB).
+- The reply is `{ok, blueprint: {id, t, name, title, kind, label, blueprints, entities, bytes}}`. A repeat of the same
+  `cid` returns the first (`repeat: true`).
+
+Reading needs the publish token: `GET /v1/blueprints?after=ID` lists up to 20 (no strings) and
+`GET /v1/blueprints/ID` returns one with its string. Moderation: `/v1/mod {"action": "hide_blueprint" |
+"unhide_blueprint" | "ban_blueprint", "id": N}`. `ban_blueprint` bans whoever shared it and hides their chat lines and
+blueprints, and chat's `ban` hides their blueprints too.
+
+The Mac side is `site/viewer_blueprints.py`; start-team.sh runs it beside push_live.py, and
+`POG_VIEWER_BLUEPRINTS=0` turns it off. Every minute it:
+
+- pulls the new ones into `runs/RUN/team-tools/viewer-blueprints/`: `ID-SLUG.txt` is the string, and `ID-SLUG.json`
+  holds the id, name, title, time, kind, label, counts, string file and the decoded `blueprint` JSON (decoded again
+  with the same caps);
+- posts one fact line per blueprint in game chat, which agents see as `server: viewer blueprint #12 from LimeLight:
+  "Aethera" (blueprint book, 4 blueprints, 1356 entities): team-tools/viewer-blueprints/12-aethera.json, string in
+  12-aethera.txt`.
+
+It posts only while the viewer relay is on (`runs/RUN/viewers-relay.on`); a line not posted yet goes out once it is
+on. The title passes the chat relay's checks (`tools/stream/viewers.py`: injection, orders to agents, personal data,
+spam, impersonation). A title that fails them is replaced by "(title withheld)" in the line, and the file keeps it.
+Nothing is imported into the game. The cursor is `runs/viewer-blueprints.json`, so a new shift gets only new ones;
+team-tools is carried over to the next shift anyway.
+
 ## Limits
 
 Per client: one message every 4 s and 8 per minute; all clients together: 60 per minute. Over the limit:

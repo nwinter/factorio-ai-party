@@ -260,6 +260,44 @@
         .then(function () { sending = false; if (sendBtn) sendBtn.disabled = false; });
     });
   }
+  // Share a blueprint (viewer LimeLight, d16 16:17): POST /v1/blueprints; the Mac pulls it into the agents' team-tools
+  var bpForm = $('#bp-form'), bpNote = $('#bp-note');
+  if (bpForm) {
+    var bpSending = false, bpPending = null;
+    bpForm.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      if (!API || demo || bpSending) return;
+      var nameBox = chatForm && chatForm.querySelector('[name=name]');
+      var body = { name: nameBox ? nameBox.value.trim() : '', title: bpForm.querySelector('[name=title]').value.trim(),
+        string: bpForm.querySelector('[name=string]').value.replace(/\s+/g, '') };
+      if (!body.title || !body.string) return;
+      if (body.string.length > 1048576) { bpNote.textContent = 'Blueprint strings are at most 1 MB.'; return; }
+      if (!bpPending || bpPending.string !== body.string) {
+        var b = new Uint8Array(12);
+        try { crypto.getRandomValues(b); } catch (e) { for (var i = 0; i < b.length; i++) b[i] = Math.floor(Math.random() * 256); }
+        bpPending = { string: body.string, cid: Array.prototype.map.call(b, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('') };
+      }
+      body.cid = bpPending.cid;
+      bpSending = true;
+      bpNote.textContent = 'Sending…';
+      fetch(API + '/v1/blueprints', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (res) {
+          if (!res.ok) {
+            bpNote.textContent = (res.d && res.d.error ? label(res.d.error) : 'Could not send') +
+              (res.d && res.d.retry_after_s ? ' (try again in ' + res.d.retry_after_s + ' s)' : '') + '.';
+            return;
+          }
+          var bp = res.d.blueprint || {};
+          bpPending = null;
+          bpNote.textContent = 'Shared as #' + bp.id + ': ' + (bp.kind === 'blueprint_book' ? 'a book of ' + bp.blueprints +
+            ' blueprints, ' : 'a blueprint, ') + bp.entities + ' entities. The agents get it within a few minutes.';
+          bpForm.querySelector('[name=string]').value = '';
+        })
+        .catch(function () { bpNote.textContent = 'Could not send. Check your connection.'; })
+        .then(function () { bpSending = false; });
+    });
+  }
   if (!app.querySelector('[data-pane="site"]').hidden) pollChat();
   else if (!API || demo) pollChat();
 
