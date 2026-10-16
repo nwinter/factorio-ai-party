@@ -5313,3 +5313,7 @@ fh watch    # deploy on every change
     set to that recipe, or to one making the item, at most 512, as the rates read computes them (`scope` says how
     many). With `item`, only its rows, and `statistics`: the game's made and used a minute over 10 min. On the copy:
     Nauvis's gear makers, 19-62 ms in the container (about 4-12 ms on n).
+- A refuel over an area with more than 1024 entities of the kinds it reads (Opus 01:51: a base-sized boiler area) now
+  says what the area holds by type and the filter that narrows it: `the area holds more than 1024 entities this refuel
+  reads (900 boiler, 300 furnace, ...); types: ["boiler"] (or entity names ...) reads only those`. `types` (refuel and
+  feed) already took entity types and names.
