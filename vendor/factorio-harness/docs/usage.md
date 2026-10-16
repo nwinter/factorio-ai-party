@@ -5388,3 +5388,6 @@ fh watch    # deploy on every change
   tile mined its own assembler at (62.5,9.5)) is refused unless the entity is named: `(63.5,9.5) is a tile of
   assembling-machine-2's footprint, its centre at (62.5,9.5): nothing mined; ...`. `mine {dry_run: true}` names the
   pick as `off_centre`. Resources, trees, rocks and items on the ground pick as before. Checked on the copy.
+- A `wait_until` on `platform_arrived` or `platform_left` with no `timeout` (Luna 07:50: a queued one timed out at the
+  default 60 s with the ETA at 77 s), queued or direct, goes on at its default end while its ETA is known: to the ETA
+  plus a quarter and 10 s, at most 54000 ticks from its start (`extended` says so). A timeout given is kept.

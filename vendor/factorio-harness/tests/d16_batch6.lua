@@ -74,3 +74,38 @@ do
   prototypes,defines=nil,nil
 end
 print('d16_batch6 A1 endurance stock by place: ok')
+
+-- A6 (Luna 07:50: a queued wait_until platform_arrived with no timeout timed out at 60 s with the ETA at 77 s): with no
+-- timeout a platform wait goes on while its ETA is known, to the ETA plus a quarter and 10 s, at most 54000 ticks.
+do
+  game={tick=0}
+  local W=dofile('mod/agent-harness_0.1.0/waiteta.lua'){state=function() return {} end,check=function() return false,'x' end}
+  local st={}
+  local players={[1]={index=1}}
+  local arrived=false
+  local factory=dofile('mod/agent-harness_0.1.0/scheduler.lua')
+  local S=factory{state=function() return st end,player=function(i) return players[i] end,handlers={craft=function() return {} end},
+    busy=function() return false end,stop=function() end,stop_index=function() end,validate_condition=function() end,
+    wait_check=function(_,c,record)
+      record.wait_estimates={{condition=c['until'],eta_s=77,line='ETA 77s'}}
+      return arrived,arrived and 'Swift at nauvis' or 'Swift flying'
+    end,
+    extend_wait=function(step,c,started) return W.extend(step,c,started) end}
+  local function run(n) for _=1,n do game.tick=game.tick+1; S.tick() end end
+  S.handlers.queue_submit(players[1],{steps={{action='wait_until',args={['until']='platform_arrived',platform='Swift'}},{action='craft'}}})
+  run(3700)
+  local q=st.queues[1]
+  assert(q.current and q.current.action=='wait_until','still waiting past the default 3600 ticks')
+  has(q.current.extended,'no timeout given: extended to the ETA 77s')
+  eq(q.current.until_tick>=3600+77*60,true)
+  arrived=true; run(40)
+  eq(q.current,nil); eq(q.history[1].result.outcome,'met')
+  -- A timeout given is kept.
+  arrived=false
+  S.handlers.queue_submit(players[1],{steps={{action='wait_until',args={['until']='platform_arrived',platform='Swift',timeout=600}}}})
+  run(700)
+  eq(q.current,nil); eq(q.history[#q.history].result.outcome,'timed_out')
+  -- Other conditions keep the default.
+  eq(W.extend({wait_estimates={{eta_s=10}}},{['until']='item_count'},0),nil)
+end
+print('d16_batch6 A6 platform waits past the default timeout: ok')

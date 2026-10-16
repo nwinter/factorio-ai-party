@@ -10881,6 +10881,7 @@ M.scheduler_api={
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
   condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end end,validate_condition=function(c) return conditions.validate(c) end,
   wait_check=function(p,c,record) return M.waiteta.check(p,c,record) end,
+  extend_wait=function(step,c,started) return M.waiteta.extend(step,c,started) end,
   wait_info=function(out,record) return M.waiteta.info(out,record) end,
   fix_args=function(action,args) return M.aliases.fix(action,args,M.takes) end,
   takes=function(action,key) return M.takes(action,key) end,
@@ -11308,7 +11309,7 @@ function handlers.wait_until(p,a)
   for k,v in pairs(a) do if k~='timeout' and k~='pause_queue' then condition[k]=v end end
   -- Met already: done at once, like construct with nothing to do.
   local record={kind='wait_until',condition=condition,until_tick=game.tick+timeout,next_check=game.tick+FEED_CHECK,start_tick=game.tick,
-    wake_viewers=viewers,wake_messages=messages,urgent=urgent}
+    wake_viewers=viewers,wake_messages=messages,urgent=urgent,default_timeout=a.timeout==nil or nil}
   local ok,met,saw=pcall(M.waiteta.check,p,condition,record)
   -- error, not assert: Factorio's Lua 5.2 assert puts the source line in front of the reason.
   if not ok then error(met,0) end
@@ -12859,6 +12860,8 @@ function M.tick_action(index,action,event)
     and M.urgent.waking(p,action) then
     -- An urgent alert ends a direct wait as it ends a sleep (urgent.lua; last.why names it).
     finish(index,'urgent')
+  elseif event.tick>action.until_tick and action.kind=='wait_until' and action.default_timeout and M.waiteta.extend(action,action.condition,action.start_tick) then
+    action.until_tick=M.waiteta.extend(action,action.condition,action.start_tick)
   elseif event.tick>action.until_tick then
     finish(index,(action.kind=='move_to' or action.kind=='build_path' or action.kind=='construct' or (action.kind=='mine' and action.tiles) or action.kind=='kite' or action.kind=='feed' or action.kind=='gather' or action.kind=='wait_until' or action.kind=='drive' or action.area~=nil or (action.kind=='repair' and action.targets~=nil)) and 'timed_out' or 'duration_elapsed')
   elseif action.kind=='wait_until' then
