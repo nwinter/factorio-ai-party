@@ -5374,3 +5374,17 @@ fh watch    # deploy on every change
   lines, not in an inventory): with `types` naming belt types, each belt's `holds` (and its compact line) is its lanes,
   `right lane: rocket*4`, an underground's buried part as `left lane underground: ...`, or `empty`. Checked on the copy
   of world n on Tern.
+- `launch {wait_ready: true}` (Astra, board #635, twice: with --wait it returned success while the rocket was still
+  building): a tell ended the wait, so nothing launched and the wait read as done. A tell no longer ends that wait (a
+  tell with `wake: true` and an urgent alert still do), and a wait that ends before the rocket is ready ends with outcome
+  `not_launched` and `launch_error` (`the wait for the rocket ended timed_out before it was ready: nothing launched`),
+  which `--wait` reports as a failure. Checked on the copy of world n: a tell during the rise left the wait running and
+  the rocket launched when ready; a 2 s timeout at 25/50 parts ended `not_launched`.
+- `wait_until platform_left {platform, location?}` (Grok 07:51: in flight it was met at once, an earlier departure
+  counting and the location ignored) waits for the next departure: met once the platform, seen stopped at `location`
+  (any stop without one) during the wait, is not stopped there; a wait begun in flight waits for the next stop and
+  departure.
+- `mine` at a tile of a building's footprint away from its centre (Muse 07:51: a mine on what Muse took for an empty
+  tile mined its own assembler at (62.5,9.5)) is refused unless the entity is named: `(63.5,9.5) is a tile of
+  assembling-machine-2's footprint, its centre at (62.5,9.5): nothing mined; ...`. `mine {dry_run: true}` names the
+  pick as `off_centre`. Resources, trees, rocks and items on the ground pick as before. Checked on the copy.

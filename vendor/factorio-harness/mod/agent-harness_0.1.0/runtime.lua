@@ -696,6 +696,11 @@ local function finish(index, outcome)
   if action and action.then_launch and outcome=='met' and s.last[index] then
     local ok,r=pcall(M.launch_now,M.lookup(index),action.then_launch)
     if ok then s.last[index].launch=r else s.last[index].outcome='launch_failed'; s.last[index].launch_error=(tostring(r):gsub('^[^:]*:%d+: ','')) end
+  elseif action and action.then_launch and s.last[index] then
+    -- Ended before the rocket was ready (Astra, board #635, twice: a tell ended the wait and --wait read it as done):
+    -- nothing launched, said as the outcome.
+    s.last[index].outcome='not_launched'
+    s.last[index].launch_error=string.format('the wait for the rocket ended %s%s before it was ready: nothing launched',outcome,action.told and ' ('..action.told..')' or '')
   end
   if action and action.borrowed_cursor then
     local p=M.lookup(index)
@@ -2962,7 +2967,9 @@ handlers.launch=function(p,a)
         local now=state().active[p.index]
         if not now then return handlers.launch(p,rest) end
         now.then_launch=rest
-        out.waiting_to_launch=string.format('the rocket at (%g,%g) is not ready: it launches when it is (within %d s)',silo.position.x,silo.position.y,math.floor(timeout/60))
+        -- No tell ends it (a tell with wake: true and an urgent alert do; then nothing launches: outcome not_launched).
+        now.wake_messages=false
+        out.waiting_to_launch=string.format('the rocket at (%g,%g) is not ready: it launches when it is (within %d s); a tell does not end this wait (one with wake: true does, and an urgent alert: then nothing launches, outcome not_launched)',silo.position.x,silo.position.y,math.floor(timeout/60))
         return out
       end
     end
@@ -3515,6 +3522,18 @@ local function next_tile(p,a,pos)
   end
   return best,name,radius
 end
+-- A position that is a tile of a building's footprint away from its centre (Muse 07:51: mine on what it took for an
+-- empty tile mined its own assembler there): said, and mine refuses it unless the entity is named.
+function M.mine_snap(a,e)
+  local pos=position(a.position)
+  if a.name or a.unit_number or e.type=='resource' or e.type=='item-entity' or e.type=='tree' or e.type=='simple-entity' then return nil end
+  if math.abs(e.position.x-pos.x)<=0.5 and math.abs(e.position.y-pos.y)<=0.5 then return nil end
+  return string.format('(%g,%g) is a tile of %s\'s footprint, its centre at (%g,%g)',pos.x,pos.y,e.name,e.position.x,e.position.y)
+end
+function M.mine_refuse_snap(a,e)
+  local snap=M.mine_snap(a,e)
+  if snap then error(snap..': nothing mined; to mine it give name="'..e.name..'" (or its centre as the position); mine {dry_run: true} says what a position picks',0) end
+end
 function handlers.mine(p,a)
   -- Tiles laid by a player, by hand (tilemine.lua).
   if a.tiles~=nil then
@@ -3534,11 +3553,11 @@ function handlers.mine(p,a)
     assert(e.minable,'entity is not mineable')
     local ok,loss=pcall(M.heating.loss,p.surface,p.force,{e})
     return {dry_run=true,name=e.name,position={x=e.position.x,y=e.position.y},in_reach=p.can_reach_entity(e),
-      heat_loss=ok and loss or nil,heat_error=not ok and tostring(loss) or nil,note='mined nothing'}
+      heat_loss=ok and loss or nil,heat_error=not ok and tostring(loss) or nil,off_centre=M.mine_snap(a,e),note='mined nothing'}
   end
   -- Seen out of reach (autowalk.lua; Astra, shift12: a tree 5.4 tiles off refused, and as a queue step it paused the
   -- plan): within 32 tiles the character walks into reach first, then mines it.
-  local walking=M.walk_first(p,'mine',a,nil,function(e) assert(e.minable,'entity is not mineable'); hand_minable(p,e) end)
+  local walking=M.walk_first(p,'mine',a,nil,function(e) assert(e.minable,'entity is not mineable'); M.mine_refuse_snap(a,e); hand_minable(p,e) end)
   if walking then return walking end
   local found,e=pcall(entity,p,a)
   local instead
@@ -3567,6 +3586,7 @@ function handlers.mine(p,a)
   end
   friendly(p,e)
   assert(e.minable,'entity is not mineable')
+  if not instead then M.mine_refuse_snap(a,e) end
   -- Where it mines: inside a worm's range, within 40 tiles of a spawner or in an area under attack now is refused unless
   -- unsafe_goal (round1950a item 1, Haiku 45h57m: a dry tree 38 tiles from a nest; big spitters killed it within 5 s).
   if not a.unsafe_goal then

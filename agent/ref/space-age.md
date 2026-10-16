@@ -18,7 +18,8 @@
   Personal requests: `clear` (or `remove`): `["pumpjack"]` deletes the request and keeps what you hold; a `max` under what you hold is refused without `force: true` (the game trashes the rest).
 - `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without
   a planet); it is also a `wait_until` condition, a queue guard and an order's `when`.
-  `platform_left Sunward [nauvis]` waits for its departure; the team alerts say when a platform stops at or leaves
+  `platform_left Sunward [nauvis]` waits for its next departure (from nauvis, or from any stop): seen stopped there
+  during the wait, then gone; one begun in flight waits for the next stop and departure; the team alerts say when a platform stops at or leaves
   your planet. `./fh call freight_audit --args '{"item":"agricultural-science-pack"}'` shows one item across every
   planet and platform: stock, spoil times, silo room, unmet lab and requester demand.
 - `./fh platform NAME` also shows `freight` (per stop what was expected down and up, what left the hub, came aboard
@@ -65,7 +66,7 @@
   A spoiling item goes in fresh first (the least
   spoiled stacks of you and the chests; `"fresh_first": false` for the old order).
 - `preflight {position,items,from}` reads source chest stock and shorts; `manifest` checks combined kg/slots including existing cargo. `from` is one chest position or up to 16; nothing moves.
-- `launch {position, wait_ready: true}` waits for the rocket and launches when it is ready (a queue step too); a queued `load_silo` your own build or transfer interrupts is requeued and goes on.
+- `launch {position, wait_ready: true}` waits for the rocket and launches when it is ready (a queue step too); a tell does not end that wait (one with `wake: true` or an urgent alert does), and a wait that ends before the rocket is ready ends `not_launched` with `launch_error`; a queued `load_silo` your own build or transfer interrupts is requeued and goes on.
 - A drop's landing line gives the container's exact position and the other cargo pod containers within 8 tiles with
   what each holds; `scan` lists a cargo pod container with `holds`.
 - `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list

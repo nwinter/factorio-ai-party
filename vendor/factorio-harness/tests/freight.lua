@@ -120,18 +120,26 @@ eq(met,false); eq(saw,'Sunward at gleba, on its path (not stopped)')
 sunward.state=6
 met,saw=C.check(p,{['until']='platform_arrived',platform='Sunward',location='gleba'})
 eq(met,true); eq(saw,'Sunward at gleba')
--- Departure (Gemini, 16:50): met while it is not stopped there (or at no stop).
-eq(C.check(p,{['until']='platform_left',platform='Sunward',location='gleba'}),false)
-eq(C.check(p,{['until']='platform_left',platform='Sunward',location='nauvis'}),true)
-eq(C.check(p,{['until']='platform_left',platform='Sunward'}),false)
+-- Departure (Gemini, 16:50; Grok 07:51: in flight it was met at once, an earlier departure counting and the location
+-- left out): the next departure, met once it was seen stopped there (at any stop without a location) during the wait.
+local rec_gleba,rec_nauvis,rec_any={},{},{}
+met,saw=C.check(p,{['until']='platform_left',platform='Sunward',location='gleba'},nil,rec_gleba)
+eq(met,false); eq(saw,'Sunward at gleba (met when it leaves)')
+met,saw=C.check(p,{['until']='platform_left',platform='Sunward',location='nauvis'},nil,rec_nauvis)
+eq(met,false); eq(saw,'Sunward at gleba; met when it stops at nauvis and leaves again (a departure before this wait does not count)')
+eq(C.check(p,{['until']='platform_left',platform='Sunward'},nil,rec_any),false)
 C.validate({['until']='platform_left',platform='Sunward',location='nauvis'})
 assert(not pcall(C.validate,{['until']='platform_left'}),'needs platform')
 sunward.space_location=nil; sunward.state=3; sunward.space_connection={from={name='nauvis'},to={name='gleba'},length=15000}; sunward.distance=0.25
 sunward.schedule={records={{station='nauvis'}},current=1}
 met,saw=C.check(p,{['until']='platform_arrived',platform='Sunward',location='nauvis'})
 eq(met,false); eq(saw,'Sunward flying gleba->nauvis 75%')
-met,saw=C.check(p,{['until']='platform_left',platform='Sunward'})
-eq(met,true); eq(saw,'Sunward flying gleba->nauvis 75%')
+met,saw=C.check(p,{['until']='platform_left',platform='Sunward',location='gleba'},nil,rec_gleba)
+eq(met,true); eq(saw,'Sunward left gleba; now flying gleba->nauvis 75%')
+eq(C.check(p,{['until']='platform_left',platform='Sunward'},nil,rec_any),true)
+eq(C.check(p,{['until']='platform_left',platform='Sunward',location='nauvis'},nil,rec_nauvis),false,'it never stopped at nauvis in this wait')
+met,saw=C.check(p,{['until']='platform_left',platform='Sunward'},nil,{})
+eq(met,false,'a wait begun in flight waits for the next stop and departure')
 -- 7. Cargo pods (Astra, 21:20: left the hub is not delivered): at a stop the pods leaving the hub are followed down;
 -- a stop says what went down, what each landing pad received, and the pods still in flight. (Found by a look of its
 -- own here; in the runtime they come from pods.lua, below.)

@@ -43,7 +43,8 @@
 - Reach is measured to an entity's edge. `rotate` is one
   90-degree turn clockwise (`reverse` counter-clockwise, `direction` a facing to turn to) and replies `before`/`after`.
   `mine` at a mined-out resource tile mines the nearest tile of the same resource within `radius` (default 8), one in
-  reach first, and names it in `instead`. `fh research` times (`done_in`) use the last minute's lab throughput.
+  reach first, and names it in `instead`. `mine` at a tile of a building's footprint away from its centre is refused,
+  naming the building and its centre (give `name` to mine it); `mine {dry_run: true}` says what a position picks (`off_centre`). `fh research` times (`done_in`) use the last minute's lab throughput.
   `repair` on an undamaged entity is ok with `unchanged: "not damaged"`; `repair` takes `positions` or `area` and
   reports `repaired` and `already_full`.
 - Items on the ground: scan and observe sum them up by item (ground_items); status alerts.ground_items names full
