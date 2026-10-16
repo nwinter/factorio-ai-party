@@ -106,6 +106,56 @@ return function(api)
   --     reactor, heating tower) that had a heater at 30 C or more touching them, and keep none (lost), or keep only
   --     cut-off ones (cools).
   local NODES,CANDIDATES,SHOW=2000,64,8
+  -- heat_budget {position, add_pipes?} (Sol, d15 22:55: 21 new heat pipes caused a 10-minute brownout on Aquilo): the
+  -- heat network of the entity at position, walked by its heat connections (at most MAX_PARTS): each part's
+  -- temperature and heat capacity (its heat buffer's specific heat), the mean weighted by capacity, the lowest and
+  -- highest, the heat stored above 30 C (what keeps neighbours from freezing); with add_pipes N, the mean once N new
+  -- heat pipes, each starting at its buffer's default temperature, share that heat (no heat made or used meanwhile).
+  -- (about the belt walk's cost per element on a copy of world n: 1000 parts stay under the 20 ms rule)
+  local MAX_PARTS=1000
+  function M.budget(p,e,add)
+    assert(add==nil or (type(add)=='number' and add>=0 and add<=5000 and add==math.floor(add)),'add_pipes is 0..5000 heat pipes')
+    assert(try(function() return e.temperature end),e.name..' has no heat buffer (a heat pipe, reactor, heating tower or heat exchanger has)')
+    local seen,queue,head={[e.unit_number or 0]=true},{e},1
+    local cap,sum,above,lo,hi,kinds=0,0,0,nil,nil,{}
+    while head<=#queue and #queue<=MAX_PARTS do
+      local x=queue[head]; head=head+1
+      local t=try(function() return x.temperature end)
+      local c=try(function() return x.prototype.heat_buffer_prototype.specific_heat end)
+        or try(function() return x.prototype.heat_energy_source_prototype.specific_heat end) or 0
+      if t then
+        cap=cap+c; sum=sum+c*t; above=above+c*math.max(0,t-30)
+        if not lo or t<lo.t then lo={t=t,e=x} end
+        if not hi or t>hi.t then hi={t=t,e=x} end
+        kinds[x.name]=(kinds[x.name] or 0)+1
+      end
+      for _,n in ipairs(try(function() return x.heat_neighbours end) or {}) do
+        local u=n.unit_number or 0
+        if n.valid and not seen[u] then seen[u]=true; queue[#queue+1]=n end
+      end
+    end
+    local mean=cap>0 and sum/cap or 0
+    local parts={}
+    for n,c in pairs(kinds) do parts[#parts+1]=c..' '..n end
+    table.sort(parts)
+    local function at(x) return string.format('%s (%g,%g)',x.name,x.position.x,x.position.y) end
+    local out={parts=#queue,capped=#queue>MAX_PARTS and string.format('more than %d parts: the first %d read',MAX_PARTS,MAX_PARTS) or nil,mean_c=math.floor(mean*10+0.5)/10,
+      lowest=lo and string.format('%.1f C at %s',lo.t,at(lo.e)),highest=hi and string.format('%.1f C at %s',hi.t,at(hi.e)),
+      capacity_mj_per_c=math.floor(cap/1e5+0.5)/10,stored_above_30_mj=math.floor(above/1e5+0.5)/10}
+    out.line=string.format('heat network of %d parts (%s): mean %.1f C, lowest %s, highest %s; heat capacity %.1f MJ per C; %.1f MJ stored above 30 C',
+      #queue,table.concat(parts,', '),mean,out.lowest or '?',out.highest or '?',cap/1e6,above/1e6)
+    if add and add>0 then
+      local pipe=prototypes.entity['heat-pipe']
+      local hb=pipe and try(function() return pipe.heat_buffer_prototype end)
+      local c=hb and hb.specific_heat or 1000000
+      local t0=hb and try(function() return hb.default_temperature end) or 15
+      local after=(sum+add*c*t0)/(cap+add*c)
+      out.after_c=math.floor(after*10+0.5)/10
+      out.line=out.line..string.format('; %d new heat pipes, each %.1f MJ per C starting at %g C, take the mean to %.1f C (%.1f C lower) when they share this heat, with no heat made or used meanwhile',
+        add,c/1e6,t0,after,mean-after)
+    end
+    return out
+  end
   function M.loss(surface,force,removed)
     local gone,parts={},{}
     for _,e in ipairs(removed or {}) do

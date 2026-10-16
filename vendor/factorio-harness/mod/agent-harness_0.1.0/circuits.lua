@@ -375,6 +375,129 @@ return function(api)
   end
   -- What the entity's circuit GUI shows now; nil without a control behavior
   -- (cb nil: the entity's own, never created by a read) or a wire.
+  -- An inserter in one line (Luna, d15: arms misrouting items): its circuit condition with each signal's value on its
+  -- wires now and whether it holds, whether the inserter is off by it, where its wires go and what their networks carry,
+  -- its filters and hand, and where it picks up and drops. c: M.read(e) (read here when nil).
+  function M.inserter_line(e, c)
+    c = c or M.read(e) or {}
+    local cb = try(function() return e.get_control_behavior() end)
+    local parts = {}
+    local function value(sig)
+      if not (type(sig) == 'table' and sig.name) then return nil end
+      local n, wired = 0, false
+      for _, w in ipairs({defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green}) do
+        local net = try(function() return e.get_circuit_network(w) end)
+        if net then wired = true; n = n + (try(function() return net.get_signal(sig) end) or 0) end
+      end
+      return wired and n or nil
+    end
+    if type(c.enable) == 'string' then
+      local cond = cb and try(function() return cb.circuit_condition end)
+      local vals = {}
+      for _, k in ipairs({'first_signal', 'second_signal'}) do
+        local sig = cond and cond[k]
+        local v = value(sig)
+        if v then vals[#vals+1] = string.format('%s %d', signal_text(sig), v) end
+      end
+      parts[#parts+1] = string.format('enabled when %s%s: %s now', c.enable, #vals > 0 and ' (on its wires: ' .. table.concat(vals, ', ') .. ')' or '',
+        c.enable_ignored and 'ignored (no red or green wire)' or c.enable_met == true and 'true' or c.enable_met == false and 'false' or 'unknown')
+    elseif c.enable == false then parts[#parts+1] = 'no circuit condition' end
+    if type(c.logistic) == 'string' then
+      parts[#parts+1] = string.format('logistic condition %s: %s now', c.logistic, c.logistic_met == true and 'true' or c.logistic_met == false and 'false' or 'unknown')
+    end
+    local st = try(function() return e.status end)
+    if st and st == defines.entity_status.disabled_by_control_behavior then parts[#parts+1] = 'it is off by its condition'
+    elseif type(c.enable) == 'string' or type(c.logistic) == 'string' then parts[#parts+1] = 'it is on' end
+    -- Its wires and what each network carries now.
+    for key, rows in pairs(c.wires or {}) do
+      if key:sub(1, 6) ~= 'copper' then
+        local ends = {}
+        for i = 1, math.min(3, #rows) do local r = rows[i]; ends[i] = string.format('%s%s (%g,%g)%s', r.ghost and 'ghost of ' or '', r.entity, r.position.x, r.position.y, r.side and ' ' .. r.side or '') end
+        local net = c.networks and c.networks[key]
+        local sigs = {}
+        for i, sg in ipairs(net and net.signals or {}) do if i <= 4 then sigs[i] = sg.name .. ' ' .. sg.count end end
+        parts[#parts+1] = string.format('%s wire to %s%s%s', key, table.concat(ends, ', '), #rows > 3 and ', ...' or '',
+          net and string.format('; network %s carries %s', tostring(net.id), #sigs > 0 and table.concat(sigs, ', ') .. (net.more and ', ...' or '') or 'nothing') or '')
+      end
+    end
+    -- Filters, hand, pickup and drop.
+    local fl = {}
+    for k = 1, try(function() return e.filter_slot_count end) or 0 do
+      local f = try(function() return e.get_filter(k) end)
+      local n = type(f) == 'string' and f or type(f) == 'table' and (type(f.name) == 'string' and f.name or try(function() return f.name.name end)) or nil
+      if n then fl[#fl+1] = n end
+    end
+    if #fl > 0 and try(function() return e.use_filters end) ~= false then
+      parts[#parts+1] = (try(function() return e.inserter_filter_mode end) == 'blacklist' and 'filter not ' or 'filter ') .. table.concat(fl, ', ')
+    end
+    local h = try(function() return e.held_stack end)
+    if h and h.valid_for_read then parts[#parts+1] = string.format('holding %d %s', h.count, h.name) end
+    local function at_(x) return x and x.valid and string.format('%s (%g,%g)', x.name, x.position.x, x.position.y) end
+    local pick, drop = try(function() return e.pickup_target end), try(function() return e.drop_target end)
+    local dp = try(function() return e.drop_position end)
+    parts[#parts+1] = string.format('picks from %s, drops %s', at_(pick) or 'nothing (the ground)',
+      at_(drop) and 'into ' .. at_(drop) or (dp and string.format('onto the ground at (%g,%g)', dp.x, dp.y) or 'nowhere'))
+    return string.format('%s (%g,%g): %s', e.name, e.position.x, e.position.y, table.concat(parts, '; '))
+  end
+  local SEG = 400
+  function M.belt_segment(e)
+    local lines = {}
+    for k = 1, 2 do lines[k] = try(function() return e.get_transport_line(k) end) end
+    local held, tiles = {}, 0
+    local function count(b)
+      for k = 1, 2 do
+        for _, c in ipairs(try(function() return b.get_transport_line(k).get_contents() end) or {}) do
+          local n = type(c.name) == 'string' and c.name or try(function() return c.name.name end)
+          if n then held[n] = (held[n] or 0) + c.count end
+        end
+      end
+    end
+    local function same(b)
+      local l = lines[1] and try(function() return b.get_transport_line(1) end)
+      return l and try(function() return l.line_equals(lines[1]) end) == true
+    end
+    local function where(b) return string.format('%s (%g,%g)', b.name, b.position.x, b.position.y) end
+    local ends = {}
+    count(e); tiles = 1
+    for _, way in ipairs({'inputs', 'outputs'}) do
+      local cur, steps, stop = e, 0, nil
+      while steps < SEG do
+        local bn = try(function() return cur.belt_neighbours end)
+        local nxt
+        for _, o in ipairs(bn and bn[way] or {}) do if same(o) then nxt = o end end
+        if not nxt and cur.type == 'underground-belt' then
+          local pair = try(function() return cur.neighbours end)
+          if pair and pair.valid and same(pair) then nxt = pair end
+        end
+        if not nxt then
+          local others = bn and bn[way] or {}
+          if #others > 0 then stop = string.format('at %s, where %s %s on another line', where(cur), where(others[1]), way == 'inputs' and 'feeds it' or 'takes from it')
+          elseif cur.type == 'underground-belt' then stop = string.format('at %s (an underground; past it is not this line)', where(cur))
+          else stop = string.format('at %s (the belt %s there)', where(cur), way == 'inputs' and 'starts' or 'ends') end
+          break
+        end
+        cur = nxt; steps = steps + 1; tiles = tiles + 1; count(cur)
+      end
+      ends[#ends+1] = (way == 'inputs' and 'back ' or 'on ') .. (stop or string.format('past %d tiles (not read further)', SEG))
+    end
+    -- What the wires read now.
+    local wired = {}
+    for _, w in ipairs({defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green}) do
+      local net = try(function() return e.get_circuit_network(w) end)
+      for _, sg in ipairs(net and try(function() return net.signals end) or {}) do
+        local n = sg.signal and sg.signal.name
+        if n then wired[n] = (wired[n] or 0) + (sg.count or 0) end
+      end
+    end
+    local parts, diff = {}, {}
+    for n, c in pairs(held) do
+      parts[#parts+1] = c .. ' ' .. n
+      if next(wired) and (wired[n] or 0) ~= c then diff[#diff+1] = string.format('%s %d on the wires', n, wired[n] or 0) end
+    end
+    table.sort(parts)
+    return string.format('this tile\'s line runs %d tiles: %s; it holds %s%s', tiles, table.concat(ends, ', '),
+      #parts > 0 and table.concat(parts, ', ') or 'nothing', #diff > 0 and ' (the wires read: ' .. table.concat(diff, ', ') .. ', which includes anything else on those networks)' or '')
+  end
   function M.read(e, cb)
     if cb == nil then cb = try(function() return e.get_control_behavior() end) end
     local wires, nets = wires_of(e)
@@ -414,6 +537,12 @@ return function(api)
     end
     out.settings = next(settings) and settings or nil
     out.off = #off > 0 and off or nil
+    -- A belt reading its entire belt (Astra, d15: the read missed a segment past an underground): the run of belts the
+    -- engine joins into this tile's lines (each way, up to SEG tiles), what ends it each way, and what that run holds
+    -- against what the wires read now.
+    if kind == 'transport_belt' and settings.read_contents and settings.read_contents_mode == 'entire_belt_hold' then
+      out.belt_segment = M.belt_segment(e)
+    end
     if kind == 'constant_combinator' then
       out.on = try(function() return cb.enabled end)
       local list, groups, inactive = {}, {}, 0

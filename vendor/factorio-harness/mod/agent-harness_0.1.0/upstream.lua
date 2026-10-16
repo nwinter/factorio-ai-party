@@ -384,6 +384,39 @@ return function(api, H)
       if (f and f.name == fluid) or name_of(try(function() return fb.get_filter(i) end)) == fluid then return i end
     end
   end
+  -- A jammed lane's cause downstream (Astra, d15: a thruster fuel path whose ore stood behind ice the ice plant, full of
+  -- water, no longer took): the inserters on this lane, at the feeder's tile and up to DOWN tiles on, that take the front
+  -- item, and where they put it; one into a machine with full output is the deadlock.
+  local DOWN = 16
+  local function front_takers(ctx, b, k, front)
+    local line = try(function() return b.get_transport_line(k) end)
+    local tiles, e = {b}, b
+    for _ = 1, DOWN do
+      local bn = try(function() return e.belt_neighbours end)
+      local nxt
+      for _, o in ipairs(bn and bn.outputs or {}) do
+        for j = 1, try(function() return o.get_max_transport_line_index() end) or 0 do
+          if line and try(function() return o.get_transport_line(j).line_equals(line) end) then nxt = o end
+        end
+      end
+      if not nxt then break end
+      tiles[#tiles+1] = nxt; e = nxt
+    end
+    local out, stuck = {}, false
+    for _, t in ipairs(tiles) do
+      for _, row in ipairs(ctx.idx_of(t).by_pick[t.unit_number] or {}) do
+        local i, d = row.e, row.drop
+        if i.valid and H.picks_lane(i, k) and H.allows(H.filters_of(i), front) and H.accepts(d, front, ctx.pk) and #out < 3 then
+          local st = d and d.valid and status(d)
+          local full = st == 'full_output' or st == 'waiting_for_space_in_destination'
+          if full then stuck = true end
+          out[#out+1] = string.format('%s %s %s takes %s %s%s', i.name, at(i.position), status(i), front, into_text(d), st and ' (' .. st .. ')' or '')
+        end
+      end
+    end
+    if #out == 0 then return string.format('no inserter on this lane within %d tiles takes %s', DOWN, front) end
+    return (stuck and 'deadlock: ' or '') .. table.concat(out, '; ')
+  end
   local trace_target
   -- A belt lane walk from a feeder, with its own findings: the lane at the feeder, then the walk.
   local function trace_lane(ctx, b, k, from_text, depth, out)
@@ -392,8 +425,10 @@ return function(api, H)
     local here = l[side(k)]
     local lane = {from=from_text, at_feeder=string.format('%s lane %s%s', side(k), H.lane_text(here), full and ' (full)' or '')}
     if full and ctx.item and not here[ctx.item] then
+      local front = H.front_item(b, k)
       lane.jammed = string.format('the %s lane at %s is full and holds no %s (left lane %s, right lane %s)%s', side(k), place(b), ctx.item,
-        H.lane_text(l.left), H.lane_text(l.right), H.front_item(b, k) and ', front item ' .. H.front_item(b, k) or '')
+        H.lane_text(l.left), H.lane_text(l.right), front and ', front item ' .. front or '')
+      if front then lane.jammed = lane.jammed .. '; ' .. front_takers(ctx, b, k, front) end
     end
     local w = walk_lane(ctx, b, k, nil)
     lane.path_back = table.concat(w.path, ' <- ')

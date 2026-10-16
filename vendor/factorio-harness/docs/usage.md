@@ -5000,4 +5000,62 @@ fh watch    # deploy on every change
 - The exit 3 stderr line also says which next calls stop a running action: one that drives the character (move_to,
   transfer, collect, feed, build, mine, rearm, refuel ...). Reads, say, tell, chat, craft, planners (place_ghosts,
   deconstruct, requests) and calls by remote view or on another surface leave it running.
+- Repair packs in a remote network (Haiku: a remote agent could not see the repair packs at south copper run out). A
+  logistic network's line, in the networks read and the status brief's network lines, adds `repair packs: 10 in
+  roboport material slots (1 of 2 roboports hold none), 0 in its chests`, next to its robot counts. Rows give
+  `repair_packs`, `ports_without_packs` and `repair_packs_stored`. The view is rebuilt every 60 s, as before.
+- Ghosts in placement suggestions (Astra).
+  - `drill_sites` counts any ghost in a drill's footprint as taken (before, only drill ghosts), named `ghost of
+    <name>` in `occupied_by`.
+  - `placements` (on planets and with `platform`) keeps a spot over a ghost but names it: `over_ghost: <ghost
+    name>`, with `over_ghosts` counting them (a build there replaces the ghost).
+- trace upstream, a jammed lane: `jammed` adds who takes the front item on that lane, at the feeder's tile and up to
+  16 tiles on, and where they put it with that machine's state. When that machine's output is full it starts with
+  `deadlock:` (Astra: ore stood behind ice the ice plant, its water full, no longer took).
+- A belt reading its entire belt (`read_contents_mode: entire_belt_hold`): inspect's circuit read adds
+  `belt_segment`: the run of belts the engine joins into this tile's line, how many tiles, what ends it each way (`an
+  underground; past it is not this line`, another line feeding it or taking from it, the belt's start or end), what
+  it holds, and, when wired, what the wires read where that differs. This is read now; I did not check on a 2.0.77
+  engine which tiles the game's entire-belt read covers.
+- Deconstruction counts (Sol: Starling's hub said 198 marked and a cancel said 146 cancelled, while 12 entities had
+  been marked; Sol cancelled everything, thinking the ship was being taken apart). Both counts took in items on the
+  ground the platform had marked for pickup: on world n afterwards Starling held exactly 146 items on the ground, none
+  marked.
+  - `deconstruct` and its `cancel` now leave items on the ground to `items_on_ground` (as a planner's item filter
+    does), and add `marked_by_name` or `cancelled_by_name`.
+  - The hub's `construction_blocked` line counts our entities marked, by name (`1 of our entities marked for
+    deconstruction wait for room (1 inserter; ...)`), and items on the ground marked for pickup apart.
+- `inspect` of an inserter adds `inserter_line` (Luna: arms misrouting items), one line with:
+  - its circuit condition and each of its signals' values on its wires now, and whether the condition holds (or is
+    ignored with no wire);
+  - its logistic condition;
+  - whether it is off by its condition;
+  - each red or green wire's far ends and what that network carries now;
+  - its filter, what it holds, where it picks from, and where it drops (into an entity, or onto the ground at a
+    position).
+  Example: `fast-inserter (9.5,2.5): enabled when iron-ore > 0 (on its wires: iron-ore 0): false now; it is off by
+  its condition; red wire to decider-combinator (12.5,2) output; network 31 carries calcite 40; filter iron-ore; picks
+  from transport-belt (8.5,1.5), drops into transport-belt (10.5,2.5)`.
+- Outpost output gone (Opus: the NW coal mine was wiped, noticed 15 minutes later through cold furnaces).
+  - The existing loss incidents name what was destroyed and by what. They wake an agent only for its own claim or for
+    losses within 40 tiles, and say nothing about output.
+  - A loss incident now records, per destroyed drill, the item it mined, its rate at full speed (mining speed with
+    the force's productivity bonus, over the resource's mining time) and who built it.
+  - An urgent wake goes to the drills' builders and to agents whose claim covers the incident, once per incident and
+    item, when no drill of ours mining that item works within 32 tiles of it: `outpost output: coal from drills at
+    (-297,-314) is 0/min now, was about 402/min (22 drills destroyed by 7 big-biter; loss incident #77); no drill of
+    ours mining coal works within 32 tiles there`.
+  - The rate is the drills' rate at full speed, not a measured flow. The check is one search a minute per incident.
+- `configure {modules}` out of reach makes an item request for robots (Sol took three such requests for installed
+  modules). The reply now adds `pending`: `nothing installed or removed yet: 3 efficiency-module is a request for
+  robots (pending until one arrives)`. The carrier note ends with `network 44 has no construction robots: nothing is
+  brought until it has some` when that is so.
+- `heat_budget {position, add_pipes?}` (Sol: 21 new heat pipes caused a 10-minute brownout on Aquilo): the heat
+  network of a heat pipe, reactor, heating tower or heat exchanger, walked by its heat connections (up to 1000 parts; `capped` says when there are more).
+  - It gives the mean temperature weighted by heat capacity, the lowest and highest with where, the heat capacity in
+    MJ per C, and the heat stored above 30 C.
+  - With `add_pipes: N`, it gives the mean once N new heat pipes (each at its prototype's starting temperature and
+    specific heat) share that heat, with no heat made or used meanwhile: `21 new heat pipes, each 1.0 MJ per C
+    starting at 15 C, take the mean to 64.6 C (83.4 C lower) ...`.
+  - It is a read: the running action and queue go on.
 

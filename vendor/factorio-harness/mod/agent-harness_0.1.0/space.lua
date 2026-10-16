@@ -576,8 +576,21 @@ return function(api)
     local out={}
     local free=try(function() return inv.count_empty_stacks() end)
     if free==0 then
-      local marked=try(function() return s.count_entities_filtered{to_be_deconstructed=true} end) or 0
-      out[#out+1]=string.format('hub full: 0 of %d slots free',#inv)..(marked>0 and string.format('; %d marked for deconstruction wait for room (removed entities and their contents go to the hub)',marked) or '')
+      -- Ours only, by name; items on the ground marked for pickup apart (Sol, d15: "198 marked" read as the ship being
+      -- taken apart, while 12 entities had been marked; the count was every marked entity of every force).
+      local by,marked={},0
+      for _,e in ipairs(try(function() return s.find_entities_filtered{to_be_deconstructed=true,force=pl.force,limit=2000} end) or {}) do
+        if e.valid and e.type~='item-entity' then marked=marked+1; by[e.name]=(by[e.name] or 0)+1 end
+      end
+      local ground=try(function() return s.count_entities_filtered{to_be_deconstructed=true,type='item-entity'} end) or 0
+      local names={}
+      for n,c in pairs(by) do names[#names+1]={n,c} end
+      table.sort(names,function(x,y) return x[2]>y[2] or x[2]==y[2] and x[1]<y[1] end)
+      for i,v in ipairs(names) do names[i]=v[2]..' '..v[1] end
+      out[#out+1]=string.format('hub full: 0 of %d slots free',#inv)
+        ..(marked>0 and string.format('; %d of our entities marked for deconstruction wait for room (%s; removed entities and their contents go to the hub)',marked,
+          table.concat(names,', ',1,math.min(6,#names))..(#names>6 and ', ...' or '')) or '')
+        ..(ground>0 and string.format('; %d items on the ground marked for pickup wait for room too',ground) or '')
     end
     -- Items by name and the ghost's quality: the hub builds a ghost only from
     -- items of that quality.

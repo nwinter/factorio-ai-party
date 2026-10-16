@@ -171,6 +171,12 @@ do
   for x=12,15 do belts[x].lines[1].items={'coal','coal','coal','coal'} end
   r=trace.trace(p,{position={x=15.5,y=5.5},upstream=true})
   has(r.ingredients[1].lanes[1].line,'the left lane at transport-belt (15.5,2.5) is full and holds no iron-ore (left lane 4 coal, right lane empty), front item coal')
+  -- F4 (Astra): the front item's only taker on the lane puts it into a machine with full output: a deadlock.
+  local boiler=crafter(17.5,3.5,'boiler-room',{name='burn-coal',ingredients={{type='item',name='coal',amount=1}},products={{name='steam'}}},{},{},'full_output')
+  local coal_arm=inserter(16.5,2.5,belts[15],boiler,{pickup={x=15.5,y=2.25}})
+  r=trace.trace(p,{position={x=15.5,y=5.5},upstream=true})
+  has(r.ingredients[1].lanes[1].jammed,'; deadlock: inserter (16.5,2.5) working takes coal into boiler-room (17.5,3.5) (recipe burn-coal) (full_output)')
+  table.remove(world); table.remove(world)  -- the arm and its machine out again: the feeder is world[#world] below
   -- The feeder filtered to coal: stops there.
   world[#world].filter_slot_count=5; world[#world].use_filters=true; world[#world].get_filter=function(k) return k==1 and {name='coal'} or nil end
   r=trace.trace(p,{position={x=15.5,y=5.5},upstream=true})
@@ -644,3 +650,138 @@ do
   has(gather(5,{x=100,y=60},{x=90,y=10}),'enemy group of 5')
 end
 print('d15_batch4 F2 gatherings: ok')
+
+-- F3 (Haiku): a network's repair packs in its roboports' material slots and its chests, on its line. -----------------
+do
+  defines={inventory={roboport_material=7}}
+  prototypes={item={['repair-pack']={type='repair-tool'}}}
+  local function port(x,packs)
+    local mat={get_contents=function() return packs>0 and {{name='repair-pack',count=packs}} or {} end}
+    return {valid=true,position={x=x,y=0},get_inventory=function(i) assert(i==7); return mat end}
+  end
+  local cells={{owner=port(0,10),logistic_radius=25,construction_radius=55},{owner=port(50,0),logistic_radius=25,construction_radius=55}}
+  local ln={network_id=120,all_logistic_robots=0,available_logistic_robots=0,all_construction_robots=20,available_construction_robots=20,cells=cells,
+    get_item_count=function(n) return n=='repair-pack' and 0 or 0 end}
+  local N=dofile('mod/agent-harness_0.1.0/networks.lua'){state=function() return {} end}
+  local v=N.logistic_view(ln)
+  eq(v.repair_packs,10); eq(v.ports_without_packs,1)
+  has(v.text,'; repair packs: 10 in roboport material slots (1 of 2 roboports hold none), 0 in its chests')
+end
+print('d15_batch4 F3 repair packs: ok')
+
+-- F4 (Astra): a belt reading its entire belt: the line's extent, what ends it, its contents against the wires. ----
+do
+  defines={wire_connector_id={circuit_red=1,circuit_green=2}}
+  local function belt(x,typ,line,items)
+    local b={valid=true,name=typ=='underground-belt' and 'underground-belt' or 'transport-belt',type=typ or 'transport-belt',position={x=x,y=0}}
+    local l={id=line,get_contents=function() return items end}
+    l.line_equals=function(o) return o.id==l.id end
+    local empty={id=line,get_contents=function() return {} end,line_equals=l.line_equals}
+    b.get_transport_line=function(k) return k==1 and l or empty end
+    b.belt_neighbours={inputs={},outputs={}}
+    return b
+  end
+  local b1,b2,u=belt(0.5,nil,'A',{{name='iron-ore',count=4}}),belt(1.5,nil,'A',{{name='iron-ore',count=3}}),belt(2.5,'underground-belt','A',{})
+  local u2=belt(6.5,'underground-belt','B',{{name='iron-ore',count=8}})
+  u.neighbours=u2
+  b1.belt_neighbours.outputs={b2}; b2.belt_neighbours.inputs={b1}; b2.belt_neighbours.outputs={u}; u.belt_neighbours.inputs={b2}
+  b2.get_circuit_network=function(w) return w==1 and {signals={{signal={name='iron-ore'},count=7}}} or nil end
+  local C=dofile('mod/agent-harness_0.1.0/circuits.lua'){}
+  eq(C.belt_segment(b2),'this tile\'s line runs 3 tiles: back at transport-belt (0.5,0) (the belt starts there), on at underground-belt (2.5,0) (an underground; past it is not this line); it holds 7 iron-ore')
+  b2.get_circuit_network=function(w) return w==1 and {signals={{signal={name='iron-ore'},count=15}}} or nil end
+  has(C.belt_segment(b2),'(the wires read: iron-ore 15 on the wires, which includes anything else on those networks)')
+end
+print('d15_batch4 F4 belt segment: ok')
+
+-- F9 (Sol): deconstruct and cancel count only our entities' marks, by name; items on the ground are left to
+-- items_on_ground. ----------------------------------------------------------------------------------------------------
+do
+  defines={input_action={}}
+  local force={name='player',is_chunk_charted=function() return true end}
+  local neutral={name='neutral'}
+  local function ent(t,n,f,marked)
+    local e={valid=true,type=t,name=n,force=f,minable=true,marked=marked}
+    e.to_be_deconstructed=function() return e.marked end
+    e.cancel_deconstruction=function() e.marked=false end
+    e.order_deconstruction=function() e.marked=true; return true end
+    return e
+  end
+  local list={ent('assembling-machine','chemical-plant',force,true),ent('inserter','fast-inserter',force,true)}
+  for _=1,3 do list[#list+1]=ent('item-entity','item-on-ground',neutral,true) end
+  local p={index=1,position={x=0,y=0},force=force,surface={find_entities_filtered=function() return list end}}
+  local B=dofile('mod/agent-harness_0.1.0/blueprints.lua'){position=function(v) return v end,real=function(q) return q end}
+  local out=B.deconstruct(p,{area={left_top={x=-32,y=-32},right_bottom={x=32,y=32}},cancel=true})
+  eq(out.cancelled,2); eq(out.cancelled_by_name,'1 chemical-plant, 1 fast-inserter')
+  eq(list[3].marked,true,'items on the ground keep their marks')
+end
+print('d15_batch4 F9 deconstruction counts: ok')
+
+-- F5 (Luna): an inserter in one line: its condition and the signals on its wires now, wires, filter, pickup and drop. -
+do
+  defines={wire_connector_id={circuit_red=1,circuit_green=2,pole_copper=5},entity_status={disabled_by_control_behavior=9}}
+  prototypes={item={['iron-ore']={}},fluid={},virtual_signal={},entity={},recipe={},space_location={},quality={}}
+  local C=dofile('mod/agent-harness_0.1.0/circuits.lua'){}
+  local belt={valid=true,name='transport-belt',position={x=8.5,y=1.5}}
+  local furnace_belt={valid=true,name='transport-belt',position={x=10.5,y=2.5}}
+  local cond={first_signal={name='iron-ore'},comparator='>',constant=0}
+  local e={valid=true,type='inserter',name='fast-inserter',position={x=9.5,y=2.5},status=9,pickup_target=belt,drop_target=furnace_belt,
+    filter_slot_count=5,use_filters=true,inserter_filter_mode='whitelist',held_stack={valid_for_read=false},
+    get_filter=function(k) return k==1 and {name='iron-ore'} or nil end,
+    get_control_behavior=function() return {circuit_condition=cond} end,
+    get_circuit_network=function(w) return w==1 and {get_signal=function(s) return s.name=='iron-ore' and 0 or 0 end} or nil end}
+  local c={enable='iron-ore > 0',enable_met=false,
+    wires={red={{entity='decider-combinator',position={x=12.5,y=2},side='output'}}},networks={red={id=31,signals={{name='calcite',count=40}}}}}
+  eq(C.inserter_line(e,c),'fast-inserter (9.5,2.5): enabled when iron-ore > 0 (on its wires: iron-ore 0): false now; it is off by its condition; red wire to decider-combinator (12.5,2) output; network 31 carries calcite 40; filter iron-ore; picks from transport-belt (8.5,1.5), drops into transport-belt (10.5,2.5)')
+end
+print('d15_batch4 F5 inserter line: ok')
+
+-- F6 (Opus): an outpost's output gone to 0: wakes the drills' builders with the item, the rate it had and the cause. -
+do
+  game={tick=5000}
+  defines={entity_status={working=1}}
+  local drills={}
+  local surface={find_entities_filtered=function() return drills end}
+  game.get_surface=function() return surface end
+  local s={losses={{id=77,surface='nauvis',box={-305,-320,-290,-308},first=4900,last=4990,total=30,names={['electric-mining-drill']=22},
+    causes={['big-biter']=7},mined={coal={drills=22,per_min=402}},builders={opus=true}}}}
+  local U=dofile('mod/agent-harness_0.1.0/urgent.lua'){state=function() return s end,who=function(p) return p.name end,
+    attack_line=function() return 'attack' end,claim_surface=function() return 'nauvis' end,claim_stale=function() return false end,
+    platform_hears=function() return false end,power_view=function() return nil end}
+  local function agent(name) return {index=name=='opus' and 1 or 2,name=name,surface={name='nauvis'},character={valid=true,position={x=0,y=0},health=250},force={platforms={}}} end
+  local base={tick=4800,hub={}}
+  eq(U.check(agent('opus'),base),'outpost output: coal from drills at (-297,-314) is 0/min now, was about 402/min (22 drills destroyed by 7 big-biter; loss incident #77); no drill of ours mining coal works within 32 tiles there')
+  eq(U.check(agent('sol'),base),nil,'not its builder, no claim there')
+  -- A drill still mining coal there: no wake.
+  s.losses[1].id=78; s.losses[1].out_check=nil
+  drills={{valid=true,status=1,mining_target={prototype={mineable_properties={products={{name='coal'}}}}}}}
+  eq(U.check(agent('opus'),base),nil,'coal still mined there')
+end
+print('d15_batch4 F6 outpost output: ok')
+
+-- F7 (Sol): remote module requests say plainly nothing is installed; a heat budget for a heat network. --------------
+do
+  prototypes={entity={['heat-pipe']={heat_buffer_prototype={specific_heat=1000000,default_temperature=15}}}}
+  local function part(name,x,t,c) return {valid=true,name=name,unit_number=x+100,position={x=x,y=0},temperature=t,prototype={heat_buffer_prototype={specific_heat=c}},heat_neighbours={}} end
+  local tower=part('heating-tower',0,500,2500000)
+  local pipes={}
+  for i=1,10 do pipes[i]=part('heat-pipe',i,60,1000000) end
+  tower.heat_neighbours={pipes[1]}
+  for i=1,10 do pipes[i].heat_neighbours={pipes[i-1] or tower,pipes[i+1]} end
+  local H=dofile('mod/agent-harness_0.1.0/heating.lua'){footprint=function() end}
+  local r=H.budget({},pipes[5],21)
+  eq(r.parts,11); eq(r.capacity_mj_per_c,12.5)
+  -- mean (2.5*500+10*60)/12.5 = 148; with 21 pipes at 15: (1850+315)/33.5 = 64.6
+  eq(r.mean_c,148); eq(r.after_c,64.6)
+  has(r.line,'21 new heat pipes, each 1.0 MJ per C starting at 15 C, take the mean to 64.6 C (83.4 C lower)')
+  has(r.line,'heat network of 11 parts (1 heating-tower, 10 heat-pipe): mean 148.0 C, lowest 60.0 C at heat-pipe (5,0), highest 500.0 C at heating-tower (0,0)')
+end
+print('d15_batch4 F7 heat budget: ok')
+do
+  prototypes={item={['efficiency-module']={}},quality={normal={}}}
+  local net={network_id=44,all_construction_robots=0,available_construction_robots=0,get_item_count=function() return 6 end}
+  local port={position={x=0,y=0},logistic_cell={construction_radius=55,logistic_network=net}}
+  local e={surface={find_entities_filtered=function() return {port} end},force='player',position={x=10,y=10}}
+  local Mo=dofile('mod/agent-harness_0.1.0/modules.lua'){}
+  has(Mo.carrier(e,{{name='efficiency-module',quality='normal',count=3}},nil),'; network 44 has no construction robots: nothing is brought until it has some')
+end
+print('d15_batch4 F7 module requests: ok')

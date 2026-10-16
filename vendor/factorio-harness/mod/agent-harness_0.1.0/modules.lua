@@ -273,6 +273,9 @@ return function(api)
       tostring(try(function() return net.network_id end)), verb,
       holdings(function(w) return try(function() return net.get_item_count{name=w.name, quality=w.quality} end) end),
       try(function() return net.available_construction_robots end) or 0, try(function() return net.all_construction_robots end) or 0)
+    if (try(function() return net.all_construction_robots end) or 0) == 0 then
+      text = text .. string.format('; network %s has no construction robots: nothing is brought until it has some', tostring(try(function() return net.network_id end)))
+    end
     if removing then
       local stores = try(function() return net.storages end) or {}
       local no_room = {}
@@ -516,6 +519,11 @@ return function(api)
     row.removing = next(rem) and M.text(list_of(rem)) or nil
     row.by_slot = M.by_slot(e)
     row.note = M.carrier(e, list_of(ins), next(rem) and list_of(rem) or nil)
+    -- Plainly (Sol, d15: three such requests read as installed modules): nothing is in the slots yet.
+    if row.requested or row.removing then
+      row.pending = string.format('nothing installed or removed yet: %s%s%s is a request for robots (pending until one arrives)',
+        row.requested and row.requested or '', row.requested and row.removing and '; ' or '', row.removing and 'taking out ' .. row.removing or '')
+    end
     return row
   end
 

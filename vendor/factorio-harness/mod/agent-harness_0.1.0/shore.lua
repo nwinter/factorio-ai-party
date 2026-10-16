@@ -123,11 +123,13 @@ return function(api)
       for layer in pairs(m.layers) do if layers[layer] then return true end end
       return false
     end
-    local function mark(t, tx, ty)
+    local function mark(t, tx, ty, v)
       local i, j = tx - gx, ty - gy
-      if i >= 0 and i < gw and j >= 0 and j < gw then t[i * gw + j] = true end
+      if i >= 0 and i < gw and j >= 0 and j < gw then t[i * gw + j] = v or true end
     end
-    local function mark_box(bb)
+    local ghosted, ghost_names = {}, {}
+    local function mark_box(bb, into, val)
+      local blocked = into or blocked
       if not (bb and bb.left_top and bb.right_bottom) then return end
       local l, t, r, b = bb.left_top.x, bb.left_top.y, bb.right_bottom.x, bb.right_bottom.y
       local o = (bb.orientation or 0) % 0.5
@@ -143,14 +145,14 @@ return function(api)
         local y1, y2 = span(cy - rad, cy + rad)
         for tx = x1, x2 do
           for ty = y1, y2 do
-            if (tx + 0.5 - cx) ^ 2 + (ty + 0.5 - cy) ^ 2 < rad * rad then mark(blocked, tx, ty) end
+            if (tx + 0.5 - cx) ^ 2 + (ty + 0.5 - cy) ^ 2 < rad * rad then mark(blocked, tx, ty, val) end
           end
         end
         return
       end
       local x1, x2 = span(l, r)
       local y1, y2 = span(t, b)
-      for tx = x1, x2 do for ty = y1, y2 do mark(blocked, tx, ty) end end
+      for tx = x1, x2 do for ty = y1, y2 do mark(blocked, tx, ty, val) end end
     end
     local function block_area(bi, bj)
       local x1, y1 = gx + bi * B, gy + bj * B
@@ -196,6 +198,14 @@ return function(api)
       tblock(bi, bj)
       if not scan then return end
       local _, _, _, _, area = block_area(bi, bj)
+      -- Ghosts (Astra, d15: placements suggested over ghosts): marked apart, as taken.
+      for _, g in pairs(surface.find_entities_filtered{area=area, type='entity-ghost'}) do
+        if g.valid then
+          mark_box(g.bounding_box, ghosted, g.ghost_name or 'a ghost')
+          local n = g.ghost_name
+          if n and not ghost_names[n] then ghost_names[n] = true; ghost_names[#ghost_names+1] = n end
+        end
+      end
       for _, e in pairs(surface.find_entities_filtered{area=area, collision_mask=list}) do
         local t = e.valid and e.type
         if t and not PASSABLE[t] then
@@ -215,6 +225,20 @@ return function(api)
     function G.all_water()
       for bi = 0, nb - 1 do for bj = 0, nb - 1 do wblock(bi, bj) end end
     end
+    -- Whether a ghost stands on any of the tiles (in_way loads the blocks first).
+    function G.ghost_in_way(x1, y1, x2, y2)
+      for tx = x1, x2 do
+        local i = tx - gx
+        if i >= 0 and i < gw then
+          for ty = y1, y2 do
+            local j = ty - gy
+            if j >= 0 and j < gw and ghosted[i * gw + j] then return ghosted[i * gw + j] end
+          end
+        end
+      end
+      return false
+    end
+    G.ghost_names = ghost_names
     function G.in_way(x1, y1, x2, y2)
       for tx = x1, x2 do
         local i = tx - gx
@@ -288,7 +312,7 @@ return function(api)
     local ref = opts.ref or pos
     local surface = p.surface
     local pump = proto.type == 'offshore-pump'
-    local info = {blocked=0, unseen=0, overlap=0, unpowered=0}
+    local info = {blocked=0, unseen=0, overlap=0, unpowered=0, ghosts=0}
     local boxes, rules, extent = {}, {}, 1
     for rank, dir in ipairs(dirs) do
       local b = box_of(proto, dir)
@@ -310,6 +334,7 @@ return function(api)
       return {}, 0, info
     end
     local G = grid(p, proto, gx, gy, gw, pump)
+    info.ghost_list = G.ghost_names
     local in_way, wet, flag, water = G.in_way, G.wet, G.flag, G.water
     -- Tiles of the grid by number ((tx - gx) * gw + ty - gy): any marked in x1..x2, y1..y2; mark them all.
     local function any(t, x1, y1, x2, y2)
@@ -460,6 +485,7 @@ return function(api)
             if fits and in_way(x1, y1, x2, y2) then
               fits = false; info.blocked = info.blocked + 1
             end
+            local ghost = fits and G.ghost_in_way and G.ghost_in_way(x1, y1, x2, y2)
             if fits and seen and not seen(x, y) then fits = false; info.unseen = info.unseen + 1 end
             if fits then
               checks = checks + 1
@@ -467,7 +493,8 @@ return function(api)
               if surface.can_place_entity{name=proto.name, position=position, direction=dir, force=p.force,
                   build_check_type=defines.build_check_type.manual} then
                 done[at] = true
-                out[#out+1] = {position=position, direction=NAMES[dir]}
+                out[#out+1] = {position=position, direction=NAMES[dir], over_ghost=ghost and ghost or nil}
+                if ghost then info.ghosts = info.ghosts + 1 end
                 if taken then mark(taken, x1, y1, x2, y2) end
               end
             end
@@ -595,6 +622,7 @@ return function(api)
     local found, checked, info = M.find(p, proto, pos, radius, dirs, {limit=limit, seen=seen, separate=a.separate, powered=a.powered})
     local out = {name=proto.name, near=pos, radius=radius, placements=found, count=#found, checked=checked, by=by,
       blocked=info.blocked > 0 and info.blocked or nil, unseen=info.unseen > 0 and info.unseen or nil, more=info.more or nil,
+      over_ghosts=info.ghosts > 0 and string.format('%d of these placements lie over a ghost (over_ghost names it): a build there replaces the ghost', info.ghosts) or nil,
       separate=a.separate or nil, overlap=a.separate and info.overlap or nil,
       powered=a.powered or nil, unpowered=a.powered and info.unpowered or nil, poles=a.powered and info.poles or nil,
       note=#notes > 0 and table.concat(notes, '; ') or nil}

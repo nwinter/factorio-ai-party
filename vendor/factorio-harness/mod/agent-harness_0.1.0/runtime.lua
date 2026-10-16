@@ -1556,6 +1556,9 @@ function handlers.describe()
   for name,schema in pairs(M.circuits and M.circuits.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.trains and M.trains.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.outpost and M.outpost.schema or {}) do description.actions[name]=schema end
+  description.actions.heat_budget={position='{x,y} of a heat pipe, reactor, heating tower or heat exchanger (in sight or by remote view)',
+    add_pipes='optional 0..5000: new heat pipes at their starting temperature joining the network',
+    returns='parts, mean_c (weighted by heat capacity), lowest, highest, capacity_mj_per_c, stored_above_30_mj, after_c (with add_pipes: the mean once the new pipes share the heat, none made or used meanwhile), line'}
   for name,schema in pairs(M.rails and M.rails.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.vehicles and M.vehicles.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.shore and M.shore.schema or {}) do description.actions[name]=schema end
@@ -1665,6 +1668,23 @@ local function record_loss(tick,e,cause,friendly,cause_at)
   b[1],b[2],b[3],b[4]=math.min(b[1],e.position.x),math.min(b[2],e.position.y),math.max(b[3],e.position.x),math.max(b[4],e.position.y)
   incident.last=tick; incident.seq=s.loss_seq; incident.total=incident.total+1
   incident.names[e.name]=(incident.names[e.name] or 0)+1
+  -- A drill: what it mined and at what rate, and who built it (Opus, d15 22:51: the NW coal mine was wiped and noticed
+  -- 15 min later; urgent.lua tells its builders when the output there is gone).
+  if e.type=='mining-drill' then pcall(function()
+    local res=e.mining_target
+    local mp=res and res.valid and res.prototype.mineable_properties
+    local prod=mp and mp.products and mp.products[1]
+    if prod and prod.name then
+      local speed=(e.prototype.mining_speed or 0)*(1+(e.force.mining_drill_productivity_bonus or 0))
+      local per_min=(mp.mining_time or 1)>0 and speed/(mp.mining_time or 1)*60*(prod.amount or 1) or 0
+      incident.mined=incident.mined or {}
+      local m=incident.mined[prod.name] or {drills=0,per_min=0}
+      m.drills=m.drills+1; m.per_min=m.per_min+per_min
+      incident.mined[prod.name]=m
+      local who=e.last_user and e.last_user.name
+      if who then incident.builders=incident.builders or {}; incident.builders[who]=true end
+    end
+  end) end
   if cause and friendly then
     incident.friendly=incident.friendly or {}; incident.friendly[cause]=(incident.friendly[cause] or 0)+1
     -- Where the burning turret stands (up to 2 per name), so the reader can find it.
@@ -4802,6 +4822,8 @@ function handlers.inspect(p,a)
   end
   -- Circuit network: settings, each wire's far end, the signals now (circuits.lua).
   if M.circuits then local okc,c=pcall(M.timed,'inspect.circuits',M.circuits.read,e); if okc and c then out.circuit=c end end
+  -- An inserter in one line (Luna, d15: misrouting arms): condition and its signals now, wires, filters, pickup and drop.
+  if M.circuits and e.type=='inserter' then local okl,l=pcall(M.circuits.inserter_line,e,out.circuit); if okl then out.inserter_line=l end end
   -- A roboport or logistic chest: its logistic network's id, areas and robots, or that it has none; a roboport's own cell (networks.lua).
   if M.networks and (e.type=='roboport' or e.type=='logistic-container') then
     local okn,ln=pcall(M.timed,'inspect.logistic',M.networks.of_entity,e); if okn and ln then out.logistic_network=ln end
@@ -8646,6 +8668,14 @@ M.paste_plan=blueprint_handlers.plan
 -- entity not built yet, by recipe (ports.lua).
 M.ammoslots=require('ammoslots')()
 M.heating=require('heating'){footprint=function(...) return M.dryrun.footprint(...) end}
+-- heat_budget {position, add_pipes?} (Sol, d15: 21 new heat pipes, a 10-minute Aquilo brownout): heating.lua M.budget.
+function handlers.heat_budget(p,a)
+  assert(a.position~=nil,'heat_budget takes position: a heat pipe, reactor, heating tower or heat exchanger')
+  local ok,e=pcall(entity,p,a,true)
+  if not ok then e=remote_entity(p,a) end
+  friendly(p,e)
+  return M.heating.budget(p,e,a.add_pipes)
+end
 M.dryrun=require('dryrun'){heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
   sidefeed=M.sidefeed,coverage=function(s,force,pos,planned) return M.networks.coverage(s,force,pos,planned) end,
   placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
@@ -10820,6 +10850,7 @@ for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut'
 local reads={fuel_budget=true,artillery=true,platform_endurance=true,belt_gaps=true,pipe_gaps=true,danger=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
 M.reads=reads
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
+reads.heat_budget=true
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
