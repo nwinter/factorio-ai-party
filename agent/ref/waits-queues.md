@@ -27,6 +27,10 @@
   `fh sleep` and `fh wait --until` take it too (`--wait-through-tells`); while your queue runs, a direct wait runs as such a sleep (`as_sleep`) and the queue keeps going. A tell with `--wake` still ends it.
 - A tell or mention ends any wait early: a direct `wait_ticks`/`wait_until` (outcome `told` or `mentioned`), and
   `--wait` or `./fh wait` on an action (outcome `told`, `still_running`: the action keeps going).
+  `--wait-through-tells` keeps `--wait` and `./fh wait` on an action waiting too (`told_during_wait` lists them).
+  `--wake-from sol,astra` (`wake_from`): only a tell or mention from those (or `operator`) ends a sleep or wait;
+  `--no-operator-wake` (`wake_on_operator: false`): operator tells and reminder jobs do not end it. Urgent alerts and
+  the action ending still end them.
 - A sleep ends when the plan you submitted to your queue finishes or stalls (`queue_done`, `queue_stalled`); a
   standing order's rounds do not end it (`--wake-on-orders` makes them).
 - Urgent wakes: `--urgent-radius N` (1..200) counts attacks, groups, losses and deaths only within N tiles of you. `--until "alert near=X,Y radius=R min_size=N"` (or `area=X1,Y1,X2,Y2`)

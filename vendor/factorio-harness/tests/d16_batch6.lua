@@ -109,3 +109,28 @@ do
   eq(W.extend({wait_estimates={{eta_s=10}}},{['until']='item_count'},0),nil)
 end
 print('d16_batch6 A6 platform waits past the default timeout: ok')
+
+-- B1 (Opus 06:33: wake only on named teammates; Sonnet 06:20: not on operator and automatic tells): wake_from and
+-- wake_on_operator choose which tells and mentions end a sleep or a direct wait.
+do
+  game={tick=100}
+  local st={mentions={[1]={list={},dropped=0}}}
+  local B=dofile('mod/agent-harness_0.1.0/board.lua'){state=function() return st end}
+  local box=st.mentions[1].list
+  box[1]={tell=1,tick=10,from='sol',text='a'}
+  box[2]={tell=2,tick=20,from='operator',text='live now'}
+  box[3]={tell='reminder',tick=30,from='reminder #4',text='review'}
+  eq(B.inbox_tick(1),30,'any tell ends a wait by default')
+  local f=B.wake_filter({wake_on_operator=false})
+  eq(B.inbox_tick(1,nil,f),10,'operator and reminder tells skipped')
+  f=B.wake_filter({wake_from={'Astra','sol'}})
+  eq(B.inbox_tick(1,nil,f),10)
+  f=B.wake_filter({wake_from={'astra'}})
+  eq(B.inbox_tick(1,nil,f),nil,'none from astra')
+  f=B.wake_filter({wake_from='operator'})
+  eq(B.inbox_tick(1,nil,f),20)
+  eq(B.wake_filter({}),nil)
+  assert(not pcall(B.wake_filter,{wake_from={}}),'1..16 names')
+  assert(not pcall(B.wake_filter,{wake_on_operator='no'}))
+end
+print('d16_batch6 B1 who wakes a wait: ok')
