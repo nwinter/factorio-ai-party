@@ -314,6 +314,15 @@ return function(api)
       if #sections_touched>1 then table.sort(sections_touched); others[#others+1]='sections changed: '..table.concat(sections_touched,', ') end
     end
     local out={target=label,sections=list_sections(secs,a.platform~=nil or (chest and chest.type=='space-platform-hub')),from_buffers=buffers}
+    -- The character's requests not filled, each with why (personal.lua; Haiku, d15: 10 repair packs never came).
+    if label=='character' and api.personal then
+      local rows=try(function() return api.personal().unfilled(p) end)
+      if rows and #rows>0 then
+        local lines={}
+        for i,r in ipairs(rows) do if i<=12 then lines[i]=r.line end end
+        out.unfilled=lines
+      end
+    end
     -- Requests set into a section that is off are not made: say so.
     local off={}
     for _,row in ipairs(out.sections) do if row.off and #row.requests>0 then off[#off+1]=row.index end end

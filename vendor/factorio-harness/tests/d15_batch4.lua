@@ -272,3 +272,113 @@ do
   eq(r.fragile_total,2); has(r.fragile[2].line,'small-electric-pole (30,0)')
 end
 print('d15_batch4 3 fragile: ok')
+
+-- 4 (Haiku, Muse): personal requests not filled, and why; the alert for a network with no logistic robots. ---------
+do
+  defines={logistic_member_index={character_requester=1}}
+  game={tick=100}
+  local inv={get_item_count=function(q) return ({['repair-pack']=2,['iron-plate']=500})[q.name] or 0 end}
+  local net={network_id=12,all_logistic_robots=0,available_logistic_robots=0,get_item_count=function(q) return ({['repair-pack']=40})[q.name] or 0 end}
+  local pt={enabled=true,logistic_network=net,filters={{name='repair-pack',quality='normal',count=10},{name='iron-plate',quality='normal',count=100},{name='coal',quality='normal',count=50}},
+    targeted_items_deliver={}}
+  local c={valid=true,position={x=-10,y=562},get_logistic_point=function() return pt end,get_main_inventory=function() return inv end}
+  local p={character=c}
+  local P=dofile('mod/agent-harness_0.1.0/personal.lua'){}
+  local rows=P.unfilled(p)
+  eq(#rows,2)
+  eq(rows[1].line,'repair-pack: hold 2 of 10; logistic network 12 where you stand has no logistic robots (its roboports hold none)')
+  net.all_logistic_robots=5
+  rows=P.unfilled(p)
+  eq(rows[1].line,'repair-pack: hold 2 of 10; all 5 logistic robots of network 12 are busy now; it holds 40 repair-pack')
+  eq(rows[2].line,'coal: hold 0 of 50; logistic network 12 holds no coal robots can take (its provider, storage and buffer chests: none, or all reserved)')
+  net.available_logistic_robots=3; pt.targeted_items_deliver={{name='repair-pack',quality='normal',count=4}}
+  eq(P.unfilled(p)[1].line,'repair-pack: hold 2 of 10 (4 on the way); robots are bringing 4; network 12 holds 40 more')
+  pt.logistic_network=nil; c.surface={find_logistic_network_by_position=function() return nil end}
+  eq(P.unfilled(p)[1].why,'no logistic network where you stand (-10,562) (no roboport\'s logistic area covers it)')
+  pt.enabled=false
+  has(P.unfilled(p)[1].why,'your personal logistics are switched off')
+  -- The alert: unfilled 60 s or more in a network with 0 logistic robots, once, again after 10 minutes.
+  pt.enabled=true; pt.logistic_network=net; net.all_logistic_robots=0; pt.targeted_items_deliver={}
+  local h={}
+  eq(P.lines(p,h),nil,'first seen now')
+  game.tick=100+3600
+  local l=P.lines(p,h)
+  eq(l[1],'your personal requests repair-pack 2 of 10, coal 0 of 50 sit unfilled: logistic network 12 where you stand (-10,562) has no logistic robots (a network\'s logistic robots are those in its roboports\' robot slots and in the air)')
+  game.tick=game.tick+600
+  eq(P.lines(p,h),nil,'told once')
+  game.tick=game.tick+36000
+  has(P.lines(p,h)[1],'repair-pack 2 of 10')
+end
+print('d15_batch4 4 personal: ok')
+
+-- 5 (Opus): burner machines no inserter feeds, running dry within 10 minutes. ----------------------------------------
+do
+  defines={entity_status={working=1,low_power=2,no_fuel=3},inventory={chest=1}}
+  prototypes={item={coal={fuel_value=4e6},['copper-ore']={fuel_value=0}}}
+  game={tick=0,surfaces={}}
+  local st={}
+  local surface={index=1,name='nauvis'}
+  local list={}
+  local all_inserters={}
+  surface.find_entities_filtered=function(f) local out={} for _,i in ipairs(all_inserters) do if (i.position.x-f.position.x)^2+(i.position.y-f.position.y)^2<=f.radius^2 then out[#out+1]=i end end return out end
+  game.surfaces={nauvis=surface}
+  local force={name='player'}
+  local function furnace(x,y,coal,status)
+    local e={valid=true,type='furnace',name='stone-furnace',unit_number=#list+1,position={x=x,y=y},surface=surface,force=force,status=1,coal=30,
+      burner={remaining_burning_fuel=0},prototype={get_max_energy_usage=function() return 90000/60 end,burner_prototype={effectivity=1}},
+      bounding_box={left_top={x=x-1,y=y-1},right_bottom={x=x+1,y=y+1}}}
+    e.later={coal,status or 1}
+    e.get_fuel_inventory=function() return {get_contents=function() return e.coal>0 and {{name='coal',count=e.coal}} or {} end} end
+    list[#list+1]=e; return e
+  end
+  -- 90 kW on coal (4 MJ): 1.35 coal a minute. 5 coal: about 3.7 min; 20 coal: about 14.8 min.
+  for k=1,4 do furnace(k*2,0,5) end
+  furnace(10,0,20)
+  furnace(12,0,0,3)
+  furnace(16,0,0,3).status=3  -- never seen working with fuel: an abandoned one is not counted
+  list[#list].coal=0
+  local fed=furnace(14,0,5)
+  all_inserters[1]={position={x=14,y=-1.5},drop_target=fed,held_stack={valid_for_read=true,name='coal',count=1},filter_slot_count=0}
+  local B=dofile('mod/agent-harness_0.1.0/burnerfuel.lua'){state=function() return st end,fuel_users=function() return list end}
+  game.tick=60; B.tick(60)
+  eq(#st.burnerfuel.alerts,0,'30 coal each: over 10 minutes')
+  for _,e in ipairs(list) do if e.unit_number~=7 then e.coal,e.status=e.later[1],e.later[2] end end
+  local m=B.minutes(list[1]); assert(m>3.6 and m<3.8,m)
+  for t=120,600,60 do game.tick=t; B.tick(t) end
+  local h={}
+  local l=B.lines({force=force},h)
+  eq(l[1],'stone-furnace near (6,0), fed by hand or by order (no inserter brings them fuel): 4 run dry within 10 min at full use (coal; the first in about 3 min); 1 is out of fuel now')
+  eq(#l,1)
+  for t=660,6000,60 do game.tick=t; B.tick(t) end
+  eq(B.lines({force=force},h),nil,'told once')
+end
+print('d15_batch4 5 burner fuel: ok')
+
+-- 6 (Sonnet): requester chests: what is over the request leaves; one item in every slot. ----------------------------
+do
+  defines={logistic_member_index={logistic_container=1},inventory={chest=1}}
+  local items={['iron-plate']=100}
+  local slots=48
+  local inv={get_item_count=function(n) return items[n] or 0 end,count_empty_stacks=function() return 0 end,
+    get_contents=function() local out={} for n,c in pairs(items) do out[#out+1]={name=n,count=c} end table.sort(out,function(a,b) return a.name<b.name end) return out end}
+  setmetatable(inv,{__len=function() return slots end})
+  local pt={trash_not_requested=false,filters={{name='iron-plate',count=10,max_count=20},{name='copper-plate',count=10}}}
+  local ins={drop_target=nil,name='fast-inserter',position={x=1.5,y=0.5},pickup_target={valid=true,name='transport-belt',position={x=2.5,y=0.5}}}
+  local e={valid=true,prototype={logistic_mode='requester'},position={x=0.5,y=0.5},force='player',
+    get_inventory=function() return inv end,get_logistic_point=function() return pt end,
+    surface={find_entities_filtered=function() return {ins} end}}
+  ins.drop_target=e
+  local R=dofile('mod/agent-harness_0.1.0/reqchest.lua'){}
+  eq(R.over(e,'iron-plate'),'iron-plate: the chest holds 100, over its request max 20: the game moves the 80 over it to the chest\'s trash slots, and robots carry them to storage')
+  items['copper-plate']=100
+  eq(R.over(e,'copper-plate'),nil,'no max, trash unrequested off: it stays')
+  pt.trash_not_requested=true
+  has(R.over(e,'copper-plate'),'over its request 10 with trash unrequested on: the game moves the 90 over it')
+  items.coal=5
+  has(R.over(e,'coal'),'coal is not requested here and trash unrequested is on: the game moves all 5')
+  items={['iron-plate']=4800}
+  eq(R.one_item(e).line,'one item fills every slot: iron-plate 4800 in all 48 slots (it requests 10..20), so copper-plate cannot come in; put in by fast-inserter (1.5,0.5) from transport-belt (2.5,0.5)')
+  items={['iron-plate']=4000,['copper-plate']=5}
+  eq(R.one_item(e),nil,'two items')
+end
+print('d15_batch4 6 requester chests: ok')

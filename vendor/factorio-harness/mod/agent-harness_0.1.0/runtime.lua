@@ -4838,6 +4838,8 @@ function handlers.inspect(p,a)
         if name and (f.count or 0)>0 and e.get_item_count(name)<f.count and M.slots.full_of(e,name) then blocked[#blocked+1]=name end
       end
       if #blocked>0 then out.requests_blocked=table.concat(blocked,', ')..': requested, and no slot takes them' end
+      local oki,one=pcall(M.reqchest.one_item,e)
+      if oki and one then out.one_item=one.line end
       -- A full chest (Astra, Luna, shift19): the machines whose output waits on it, and the nearest chests with a free slot.
       if e.type=='container' or e.type=='logistic-container' then
         local fc=M.supply.fullchest
@@ -7487,6 +7489,12 @@ function M.delivery_note(p,e,item)
   end
   if count>4 then parts[#parts+1]=string.format('+%d local inserters',count-4) end
   if #list==32 then parts[#parts+1]='local inserter read capped at 32' end
+  -- What the game does with what is over the request (Sonnet, d15: robots took a hand-fed item back), and one item in
+  -- every slot while others are requested (reqchest.lua).
+  local oko,over=pcall(M.reqchest.over,e,item)
+  if oko and over then parts[#parts+1]=over end
+  local oki,one=pcall(M.reqchest.one_item,e)
+  if oki and one then parts[#parts+1]=one.line end
   return table.concat(parts,'; ')
 end
 -- friction2 and friction3: the chests holding it, nearest first; each says what it feeds (M.feeds), and those come
@@ -10415,7 +10423,7 @@ M.board=require('board'){state=state,claims=M.claims,director=function(index) re
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
   platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,
   hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,
-  power_lines=function(p,h) return M.powercut.lines(p,h) end,
+  power_lines=function(p,h) return M.powercut.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
   science_line=function(p,h) return M.scienceline.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
@@ -11450,6 +11458,8 @@ function handlers.supply(p,a) return M.supply.supply(p,a) end
 M.supply.feed=function(e,into,from) return M.craftrate.feed(e,into,from) end
 -- trace: a machine's feeders and their sources, its output followed to where it ends, an item's routes (trace.lua).
 M.fragile=require('fragile'){position=position,integer=integer}
+M.personal=require('personal'){}
+M.reqchest=require('reqchest'){}
 M.trace=require('trace'){state_text=function(e) return M.thrust.state_text(e) end,fluid_upstream=function(box,i) return M.thrust.upstream(box,i) end,held_blocked=M.details.held_blocked,observe=function(e,p) return M.readmemory.observe(e,p) end,memory_trace=function(p,a) return M.beltgaps.trace(p,a) end,end_seen=M.factory_digest.end_seen,supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
 -- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
@@ -11500,9 +11510,10 @@ M.readmemory=require('readmemory'){state=state,position=position,visible=M.memor
 M.census=require('census'){state=state,timed=M.timed,observe_entity=function(e) return M.readmemory.observe(e) end}
 -- fuel_budget: fuel made and used per minute, and each group of fuel users with its burn and minutes left (fuelbudget.lua;
 -- Opus, d15 06:20 and 07:50).
+M.burnerfuel=require('burnerfuel'){state=state,fuel_users=function(s) return M.census.fuel_users(s) end}
 M.fuelbudget=require('fuelbudget'){fuel_users=function(s) return M.census.fuel_users(s) end,status_name=function(e) return M.machine_status(e) end}
 function handlers.fuel_budget(p,a) return M.fuelbudget.read(p,a) end
-M.networks=require('networks'){state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
+M.networks=require('networks'){reqchest=function() return M.reqchest end,state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
   sky=function(surface) return M.lightning and M.lightning.sky(surface) end}
 -- One item across every planet and platform (packaudit.lua; Luna, 16:50).
 M.packaudit=require('packaudit'){reuse=function(key,fn) return M.supply.reuse(key,fn) end,spoil=M.spoil,
@@ -11590,7 +11601,7 @@ M.urgent=require('urgent'){state=state,who=function(p) return M.board.who(p) end
 M.open=require('open'){state=state,fullchest=M.supply.fullchest,claim_surface=function(i) return M.claims.surface_of(i) end,claim_stale=function(i) return M.claims.stale(i) end,
   alert_groups=function(f) return M.pushalerts.cached_groups(f) end,alert_text=function(g) return M.pushalerts.text(g,g.surface,nil,true) end,
   open_steps=function(me,max,pos) return M.board.open_steps(me,max,pos) end}
-space=space_module{chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+space=space_module{personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,
   engine=function(pl) return M.engine.read(pl) end,
@@ -12366,6 +12377,7 @@ function M.tick_body(event)
   pcall(M.ground.watch_tick,event.tick)  -- items on the ground for status alerts and reply hints, a band or a pile a step
   pcall(M.scienceline.tick,event.tick)
   M.powercut.tick(event.tick)  -- a pole death's check and trace, a stage a tick (never raises)
+  if M.burnerfuel then M.burnerfuel.tick(event.tick) end  -- hand-fed burners running dry (never raises)
   if state().turret_deaths then pcall(M.turretammo.tick,event.tick) end  -- ammo requests on the ghosts of turrets that died
   M.ores.tick()  -- queued chunks of an ore survey, a few a tick (never raises)
   if event.tick%600==0 then pcall(M.avoid.prune) end  -- enemy chunk records older than a minute (avoid.lua)
@@ -12612,7 +12624,7 @@ M.profile=require('profile')()
   for _,part in ipairs{{M.pushalerts,'claim_lines','pushalerts.claim_lines'},{M.networks,'alert_groups','networks.alert_groups'},{M.networks,'lines','networks.lines'},{M.platalerts,'lines','platalerts.lines'},{M.drops,'lines','drops.lines'},{M.research,'lines','research.lines'},{threat,'watch','threat.watch'},{M.selfview,'review_due','selfview.review_due'},{M.selfview,'retro','selfview.retro'},{M.selfview,'request','selfview.request'}} do parts[#parts+1]=part end
   for _,part in ipairs{{M.idle,'request','idle.request'},{M.tells,'operator_lines','tells.operator_lines'},{M.orders,'line','orders.line'},{M.platalerts,'note','platalerts.note'},{M.visuals,'worked','visuals.worked'},{M.claims,'worked','claims.worked'},{M.carry,'carry','carry.carry'},{M.supply,'scan','supply.scan'},{M.supply,'chain','supply.chain'},{M.networks,'read','networks.read'}} do parts[#parts+1]=part end
   for _,part in ipairs{{M.beltgaps,'read','beltgaps.read'},{M.beltgaps,'tick','beltgaps.tick'},{M.drill_sites,'read','drill_sites.read'},{M.readmemory,'read','readmemory.read'},{M.pushalerts,'tick','pushalerts.tick'},{survey,'tick','survey.tick'},{threat,'tick','threat.tick'}} do parts[#parts+1]=part end
-  for _,part in ipairs{{M.scienceline,'tick','scienceline.tick'},{M.scienceline,'lines','scienceline.lines'},{M.networks,'view_tick','networks.view_tick'},{M.powercut,'tick','powercut.tick'}} do parts[#parts+1]=part end
+  for _,part in ipairs{{M.scienceline,'tick','scienceline.tick'},{M.scienceline,'lines','scienceline.lines'},{M.networks,'view_tick','networks.view_tick'},{M.powercut,'tick','powercut.tick'},{M.burnerfuel,'tick','burnerfuel.tick'}} do parts[#parts+1]=part end
   -- Inside the tick, so its unprofiled share has names (operator 18:12: tick totals 300 ms over their parts at 17:53);
   -- the background jobs' steps are parts by kind through M.timed.
   for _,part in ipairs{{M.networks,'alert_step','networks.alert_step'},{M.bots,'travel_tick','bots.travel_tick'},{M.drops,'tick','drops.tick'},{M,'drop_jobs_tick','drop_jobs_tick'},{M.ores,'tick','ores.tick'},{M.spoil,'tick','spoil.tick'},{M,'tick_action','tick_action'}} do parts[#parts+1]=part end

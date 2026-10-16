@@ -4839,4 +4839,45 @@ fh watch    # deploy on every change
     searches (`cost`). Machines are counted for the 16 cuts with the most poles; the 1000 poles nearest are read and
     wires to the rest count as power (`capped`). Measured on the copy of world n in the container: 297 poles 20-27 ms
     there (about 5 ms on n), 1000 poles (radius 512 round Opus's oil pole) 78-82 ms (about 16 ms on n).
+- Personal requests (Haiku: 10 repair packs at south copper (-10,562) never came; Muse): `requests` for the character
+  adds `unfilled`, one line per request whose held plus on-the-way count is under its min, with the first reason
+  that holds:
+  - personal logistics switched off;
+  - no logistic network where the character stands;
+  - the network has no logistic robots;
+  - the network holds none of the item robots can take;
+  - all its logistic robots are busy;
+  - robots are bringing some;
+  - the network holds it and has free robots, and none has taken it yet.
+  - Example: `repair-pack: hold 0 of 10; logistic network 120 where you stand has no logistic robots (its roboports
+    hold none)`, read on a copy of world n as Haiku.
+  - Alert (team.alerts): a personal request unfilled for 60 s or more in a network with 0 logistic robots. Checked
+    every 5 s an agent replies; told once per network and item, and again after 10 minutes.
+- Burner fuel alert (Opus: 30 stone furnaces ran out of coal and copper fell from 1000 to 560 a minute). team.alerts
+  names a group of burner machines that no inserter brings fuel to (fed by hand or by order) when they will run dry
+  within 10 minutes: `stone-furnace near (108,-168), fed by hand or by order (no inserter brings them fuel): 21 run dry
+  within 10 min at full use (coal; the first in about 3 min)` (on a copy of world n).
+  - A background pass goes over the census's fuel users: furnaces, burner drills, burner assemblers, heating towers and
+    burner generators. Boilers have their own alert in the networks view, and burner inserters are left out. It reads
+    24 machines a second.
+  - Minutes left: the fuel slots' fuel value plus the rest of the item burning, over the burn at full use (energy use
+    with the consumption bonus, over the burner's effectivity).
+  - Fed by an inserter: one dropping into it holds a fuel item, reads a belt, chest or output holding one, or is
+    filtered to one. This is read again every 5 minutes.
+  - Groups are by name and 64-tile cell. A group is told once, and again after 10 minutes if still so. `out of fuel
+    now` counts only machines the pass saw working with fuel before.
+  - Cost on the copy: 49 ms in 60 s in the container, at most 1.8 ms a step (about 0.4 ms on n).
+- Requester and buffer chests (Sonnet: hours of starvation twice).
+  - A hand `transfer` or `feed` into one adds to `delivery_note` what the game does with that item now.
+  - Over the request's max: `iron-plate: the chest holds 100, over its request max 20: the game moves the 80 over it to
+    the chest's trash slots, and robots carry them to storage`.
+  - With trash unrequested on: an item with no max, over its min, goes the same way, and so does an item the chest
+    does not request at all.
+  - An item it does not request, with trash unrequested off, stays in its slots.
+  - Seen on a 2.0.77 copy of world n: a chest asking 10..20 iron plate given 100 kept 20 and moved 80 to its trash, and
+    robots took 78 within seconds. With trash unrequested on, copper plate with no max fell to its min of 10, and the
+    coal went to the trash.
+  - One item in every slot while the chest requests others it lacks: `one item fills every slot: stone 2400 in all 48
+    slots (it does not request it), so iron-plate, copper-plate cannot come in; put in by ...`. This appears in that
+    delivery note, in `inspect` (`one_item`), and in the `requester_full` alert line in place of the slot list.
 
