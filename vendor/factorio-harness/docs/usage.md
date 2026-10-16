@@ -5278,3 +5278,10 @@ fh watch    # deploy on every change
   (313.1,20.6) (on the straight line, each moved to the nearest free spot)`. A point that lands in a chunk the map has
   not charted is refused, naming it; so is a walk needing more than 16. On the copy of world n a 771-tile dry run took
   65 ms in the container (about 13 ms on n).
+- Enemy groups on the move are hazards for a walk (Opus, twice: died on corridors walked safely minutes before, each
+  time into an attack group crossing the route). Each enemy group in a chunk a player force sees now (radar or a
+  character) counts as an area under attack does: a disc where it is and one up to 48 tiles ahead of it toward its
+  target. A live `move_to` plans again round one that comes near the way on (`last.replanned`), and again as it moves
+  on (each chunk it moves into is news); a goal or via point inside one is refused unless `unsafe_goal`. The dry run's
+  `enemies` lists them: `enemy group of 6 heading for (100,200) at (100,0), seen now (24 tiles): closest pass ...`. A
+  group in a chunk no one sees now is not read.

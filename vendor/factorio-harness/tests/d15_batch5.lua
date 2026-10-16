@@ -321,3 +321,25 @@ do
   eq(N.spiral(surface,'player',{x=0,y=0},7,{'coal'}),nil,'none short of power')
 end
 print('d15_batch5 E3 boiler fuel spiral: ok')
+
+-- F1 (Opus, twice): enemy groups seen now are hazards a walk plans round, where they are and ahead of them. ------------
+do
+  game={tick=100}
+  local visible=true
+  game.forces={player={name='player',players={{}},is_chunk_visible=function() return visible end},enemy={name='enemy',players={}}}
+  local grp={valid=true,position={x=100,y=0},members={1,2,3,4,5,6}}
+  local st={live_groups={{id=7,group=grp,surface='nauvis',target={x=100,y=200}}}}
+  local A=dofile('mod/agent-harness_0.1.0/avoid.lua'){state=function() return st end,charted=function() return true end}
+  local surface={name='nauvis',index=1}
+  local discs=A.attack_discs(surface,{attacks=true,pad=4})
+  eq(#discs,2); eq(discs[1].group,true); eq(discs[1].name,'enemy group of 6 heading for (100,200)')
+  eq(discs[2].y,48,'a disc 48 tiles ahead toward its target'); has(discs[2].name,'(ahead of it)')
+  local id=discs[1].id
+  grp.position={x=100,y=40}
+  eq(A.attack_discs(surface,{attacks=true,pad=4})[1].id~=id,true,'a new name once it moved a chunk on: planned again')
+  visible=false
+  eq(#A.attack_discs(surface,{attacks=true,pad=4}),0,'a group no player force sees now is no hazard')
+  visible=true; grp.valid=false
+  eq(#A.attack_discs(surface,{attacks=true,pad=4}),0,'a group gone')
+end
+print('d15_batch5 F1 enemy groups on the way: ok')
