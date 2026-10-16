@@ -5303,3 +5303,13 @@ fh watch    # deploy on every change
   input side): each inserter taking from it and where it puts, a chest with its free slots: `inserter (-6.5,47.5)
   waiting_for_space_in_destination filter copper-plate -> passive-provider-chest (-6.5,48.5) (full) (0 of 48 slots
   free)`. `trace {forward: true}` names every chest destination's free slots too. Checked on Gleba on the copy.
+- Stock and rates by surface or network (Gemini 02:36).
+  - `stock {network: 96, item?, limit?}`: what that logistic network holds, largest first (`surface=` for another
+    surface), with its robots.
+  - `stock {item, surface: "aquilo"}` with no position: that planet's whole stock of the item, as freight_audit
+    counts a planet (networks, pads in no network, plain chests and landed pods, silos' rockets, labs, made and used a
+    minute). `supply {item, surface}` still gives the belts, machines and inserters.
+  - `rates {recipe}` or `rates {item}` with no area or positions: every crafter on your surface (`surface=` another)
+    set to that recipe, or to one making the item, at most 512, as the rates read computes them (`scope` says how
+    many). With `item`, only its rows, and `statistics`: the game's made and used a minute over 10 min. On the copy:
+    Nauvis's gear makers, 19-62 ms in the container (about 4-12 ms on n).

@@ -1479,10 +1479,10 @@ function handlers.describe()
         positions='only with tiles: true: 1..64 laid tiles; entities take one position per call or queue step',area='only with tiles: true: {left_top, right_bottom} up to 32x32 laid tiles; no entity area mining',walk=WALK..'; mine walks as move_to {target, reach} does, then mines on arrival (last.walked); with tiles: each tile out of reach walked to in turn, tiles inside a weapon\'s reach left out (skipped)',
         dry_run='an entity: mine nothing; name, position, in_reach and heat_loss (removing a heat pipe, reactor, heating tower or heat exchanger: cut_off, the heat-network parts left with no nuclear reactor or heating tower in their part of the network, which keep their heat and cool; on a surface whose entities need heating, freeze: freezable entities beside it (pipes, undergrounds, machines) that lose their last heater at 30 C or more, or keep only cut-off ones; none when neither); the live reply carries heat_loss too when it is not none. With tiles: mine nothing; each tile: tile, restores, seconds, in_reach, distance; items, seconds, skipped (why), natural (natural tiles in the area)',
         radius='1..32 (default 8): a resource tile at position that is mined out (the resource named, or the one an earlier mine at that position took): the tile of the same resource within radius of it, one in reach first, is mined instead; the reply\'s instead (and last.instead) names it', outcomes='moved 0 and timed now; last.moved (how many more of its products you hold) and last.inv when it ends; target_mined | duration_elapsed (ore: last reports mined) | inventory_full (blocked_item) | not_minable (a stump, remnant or corpse; last.error) | target_lost | out_of_reach'},
-      stock={item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',quality='default normal',
+      stock={network='optional logistic network number (the networks read numbers them; surface= another): what it holds, largest first, item= one, limit 1..64',surface='optional planet name, with item and no position: that planet\'s whole stock of it as freight_audit counts it (networks, pads, plain chests, silos, labs)',item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',quality='default normal',
         returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance; a spoilable item: first_spoils_in (its first stack there), spoiled_percent, within_5_min}; made_by (crafters set to a recipe making it); held (your inventory); summary line (with the first to spoil, or for pentapod-egg and other items that hatch into enemies the first to hatch); hatches_into. Without item each line adds the first to spoil or hatch'},
       craft={force='boolean: hand-craft even when nearby stock covers it',short='when fewer started than asked: the raw ingredients missing for the rest (e.g. "wood short 18 (held 2)"), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item; a craft of >=3 s of hand time that stock covers is refused (errors) unless force=true',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
-      rates={area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',
+      rates={recipe='or, with no area or positions: every crafter on your surface (surface= another) set to this recipe, at most 512 (scope says how many)',item='or, with no area or positions: every crafter there set to a recipe making it, with statistics (made and used a minute over 10 min, the game\'s) and only its rows (rows_other counts the rest)',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',
         returns='rows per item: produced, consumed, net at full speed, by/into machines x count; power produced/consumed; errors (no_recipe, no_fuel, no_power, no_resources, ...)',
         note='Rate Calculator formulas: recipe, crafting speed, modules, beacons, productivity, quality, fuel, drill resources; our machines only'},
       bottleneck={item='or an item or fluid name: its recipe chain on the surface followed down to where the shortage starts (Sonnet, 15:20): line (each step: its makers by state and what most of them lack, made and used per minute), path, root (the last step), not_working (per step of the path up to 3 makers not working: position, state, what they lack, spoilage its recipe does not take in its input; a maker stopped by its output: the chest its output waits on when every slot of it is used, slots used/total and what fills them), full_chests (those chests, with the machines whose output waits on each), fixes (a starved one\'s nearest chest within 64 tiles holding what it lacks, and one transfer call carrying it there), steps (every step of the tree); kept 10 s',surface='with item: a surface name (default yours)',
@@ -2779,7 +2779,41 @@ function handlers.grid(p,a)
   if out_legend[','] then out_legend[',']='water a character walks through: '..out_legend[','] end
   return {origin={x=x0,y=y0},ruler=table.concat(ruler),ruler_note="'|' marks x%10==0",rows=rows,legend=out_legend}
 end
-function handlers.rates(p,a) return rates.rates(p,a) end
+-- rates {recipe | item} with no area or positions (Gemini 02:36: rates filtered by recipe or item across a surface):
+-- every crafter of ours on the surface set to that recipe (or to one making the item), at most 512, as the rates read
+-- computes them, with the surface's statistics for the item beside it (made and used a minute over 10 min).
+M.RATES_SURFACE=512
+function handlers.rates(p,a)
+  if (a.recipe~=nil or a.item~=nil) and a.area==nil and a.positions==nil then
+    assert(a.recipe==nil or (type(a.recipe)=='string' and prototypes.recipe[a.recipe]),'recipe must be a recipe name')
+    assert(a.item==nil or (type(a.item)=='string' and prototypes.item[a.item]),'item must be an item name')
+    local list,found={},0
+    for _,e in ipairs(p.surface.find_entities_filtered{type={'assembling-machine','furnace','rocket-silo'},force=p.force}) do
+      local ok,r=pcall(function() return e.get_recipe() or (e.type=='furnace' and e.previous_recipe and prototypes.recipe[type(e.previous_recipe.name)=='string' and e.previous_recipe.name or e.previous_recipe.name.name]) end)
+      local name=ok and r and r.name
+      local hit=name and (name==a.recipe)
+      if name and a.item and not a.recipe then
+        for _,pr in ipairs(prototypes.recipe[name].products or {}) do if pr.name==a.item then hit=true end end
+      end
+      if hit then found=found+1; if #list<M.RATES_SURFACE then list[#list+1]=e end end
+    end
+    local out=rates.compute(p,list,a.per)
+    for _,row in ipairs(out.rows or {}) do row.raw_net=nil end
+    if a.item then
+      local keep={}
+      for _,row in ipairs(out.rows or {}) do if row.name==a.item or row.item==a.item then keep[#keep+1]=row end end
+      out.rows_other=#(out.rows or {})-#keep; out.rows=keep
+      local stats=p.force.get_item_production_statistics(p.surface)
+      local function per(c) return math.floor(stats.get_flow_count{name=a.item,category=c,precision_index=defines.flow_precision_index.ten_minutes,count=true}/10*10+0.5)/10 end
+      out.statistics=string.format('%s on %s, the game\'s statistics over 10 min: made %g/min, used %g/min',a.item,p.surface.name,per('input'),per('output'))
+    end
+    out.machines=found; out.machines_read=#list<found and #list or nil; out.surface=p.surface.name; out.per=a.per or 'minute'
+    out.scope=string.format('%d crafter%s on %s set to %s%s',found,found==1 and '' or 's',p.surface.name,a.recipe or ('a recipe making '..a.item),
+      #list<found and string.format(' (the first %d read)',#list) or '')
+    return out
+  end
+  return rates.rates(p,a)
+end
 -- bottleneck {item}: the item's chain to its root (supply.lua; Sonnet, 15:20); else the area read (rates.lua).
 function handlers.bottleneck(p,a)
   if a.item~=nil then return M.supply.bottleneck_item(p,a) end
@@ -2787,7 +2821,41 @@ function handlers.bottleneck(p,a)
   assert(a.per_min==nil,'per_min goes with item: bottleneck {item, per_min}')
   return rates.bottleneck(p,a)
 end
-function handlers.stock(p,a) return stock.view(p,a) end
+-- stock {network} and stock {item, surface} (Gemini 02:36: stock with a surface or network filter): a logistic
+-- network's holdings by its number (the networks read numbers them), and one planet's whole stock of an item as
+-- freight_audit counts it (networks, pads in no network, plain chests and landed pods, silos' rockets, labs).
+function handlers.stock(p,a)
+  if a.network~=nil then
+    assert(type(a.network)=='number','network is a logistic network number (the networks read lists them)')
+    local surface=p.surface
+    if a.surface~=nil then surface=game.get_surface(a.surface); assert(surface,'no surface '..tostring(a.surface)) end
+    local ln
+    for _,n in ipairs(p.force.logistic_networks[surface.name] or {}) do if n.network_id==a.network then ln=n end end
+    assert(ln,string.format('no logistic network #%d of ours on %s',a.network,surface.name))
+    local items={}
+    for _,s in ipairs(ln.get_contents() or {}) do
+      if a.item==nil or s.name==a.item then items[#items+1]={name=s.name,quality=s.quality~='normal' and s.quality or nil,count=s.count} end
+    end
+    table.sort(items,function(x,y) return x.count>y.count end)
+    local limit=integer(a.limit,16,1,64,'limit')
+    local parts={}
+    for i,s in ipairs(items) do if i>limit then break end; parts[#parts+1]=s.name..(s.quality and '@'..s.quality or '')..' '..s.count end
+    return {network=a.network,surface=surface.name,items=items[limit+1] and {table.unpack(items,1,limit)} or items,more=#items>limit and #items-limit or nil,
+      robots=string.format('%d logistic robots (%d idle), %d construction robots',ln.all_logistic_robots,ln.available_logistic_robots,ln.all_construction_robots),
+      line=string.format('logistic network #%d on %s holds %s%s',a.network,surface.name,#parts>0 and table.concat(parts,', ') or (a.item and 'no '..a.item or 'nothing'),
+        #items>limit and string.format(' (+%d more items)',#items-limit) or '')}
+  end
+  if a.surface~=nil and a.position==nil then
+    assert(type(a.item)=='string' and prototypes.item[a.item],'stock {surface} takes item (an item name); with position it reads around a place there')
+    local surface=game.get_surface(a.surface)
+    assert(surface and not surface.platform,'surface must be a planet name')
+    local row=M.packaudit.planet_row(p.force,surface,a.item)
+    return {item=a.item,surface=surface.name,total=row.total,networks=row.networks,pads=row.pads,pads_in_networks=row.pads_in_networks,chests=row.chests,
+      silos=row.silos,labs=row.labs,made_per_min=row.made_per_min,used_per_min=row.used_per_min,line=row.line,
+      note='counted as freight_audit counts a planet; supply {item, surface} gives the belts, machines and inserters too'}
+  end
+  return stock.view(p,a)
+end
 function handlers.platforms(p,a) return space.platforms(p,a) end
 for _,name in ipairs({'requests','platform_create','platform_schedule','launch','land','drop'}) do
   handlers[name]=function(p,a) return space[name](p,a) end
