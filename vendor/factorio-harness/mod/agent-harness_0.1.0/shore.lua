@@ -628,7 +628,9 @@ return function(api)
       note=#notes > 0 and table.concat(notes, '; ') or nil}
     -- friction3 (Gemini: 17 placements calls, 12 of them count 0, its accumulators built from overlapping spots): what is
     -- in the way when nothing fits; spots of the list that overlap each other, and those no pole supplies.
-    if #found == 0 then out.in_the_way = M.in_the_way(p, proto, pos, radius) end
+    local pad = api.one_pad and try(function() return api.one_pad(p.surface, p.force, proto) end)
+    if pad then out.one_per_planet = pad end
+    if #found == 0 then out.in_the_way = pad or M.in_the_way(p, proto, pos, radius) end
     if #found > 1 and not a.separate then
       local pairs_n = 0
       for i = 1, #found do

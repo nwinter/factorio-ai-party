@@ -999,6 +999,10 @@ return function(api)
             if #blockers > 0 then rec.note = 'replaces '..table.concat(blockers, ', ', 1, math.min(4, #blockers)) end
           elseif #blockers > 0 then reasons[#reasons+1] = 'blocked by '..table.concat(blockers, ', ', 1, math.min(4, #blockers)) end
           if broken then reasons[#reasons+1] = broken end
+          if engine ~= true and api.one_pad then
+            local pad = try(function() return api.one_pad(s, force, proto, rec.pos) end)
+            if pad then reasons[#reasons+1] = pad end
+          end
           if #tile_bad > 0 then reasons[#reasons+1] = 'tiles: '..table.concat(tile_bad, ', ', 1, math.min(4, #tile_bad)) end
           if same and #reasons == 0 then
             rec.status = 'exists'

@@ -1008,6 +1008,16 @@ do
   fails(function() call('feed',{recipe='logistic-science-pack',items={'inserter'},positions={{x=1,y=5}}}) end,'recipe or items')
   fails(function() call('feed',{recipe='logistic-science-pack',item='inserter',positions={{x=1,y=5}}}) end,'recipe or items (or item)')
 
+  -- One cargo landing pad per planet (d15 batch5 A5, Astra 02:03): the refusal names the pad there.
+  do
+    local padproto={type='cargo-landing-pad',name='cargo-landing-pad'}
+    local fulgora={name='fulgora',find_entities_filtered=function(f) if f.type=='cargo-landing-pad' then return {{position={x=-20,y=30},force=p.force}} end return {} end}
+    eq(runtime.one_pad(fulgora,p.force,padproto,{x=69,y=189}),'one cargo landing pad per planet (the game\'s rule): one, ours stands at (-20,30) on fulgora')
+    eq(runtime.one_pad(fulgora,p.force,padproto,{x=-20,y=30}),nil,'the pad itself')
+    eq(runtime.one_pad(fulgora,p.force,{type='container'}),nil,'other entities')
+    local empty={name='vulcanus',find_entities_filtered=function(f) if f.ghost_type then return {{position={x=1,y=2},force=p.force}} end return {} end}
+    eq(runtime.one_pad(empty,p.force,padproto,{x=9,y=9}),'one cargo landing pad per planet (the game\'s rule): a ghost of one, ours stands at (1,2) on vulcanus')
+  end
   -- inspect over positions: one call, results in order; a miss is its position and error.
   a1.get_fluid_contents=function() return {} end; a2.get_fluid_contents=a1.get_fluid_contents
   for _,m in ipairs({a1,a2}) do m.slots.get_contents=function() return {} end end

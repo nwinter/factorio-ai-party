@@ -3947,8 +3947,28 @@ function M.attach_why(p,proto,pos,direction)
   return string.format(': a cargo bay joins the platform hub or another cargo bay edge to edge; its box (%g,%g)-(%g,%g) touches none%s',l,t,r,bt,
     best and string.format('; the nearest: %s, %d tiles from its edge',best,bd) or '; no hub or cargo bay within 12 tiles')
 end
+-- One cargo landing pad per planet (the game's rule; Astra 02:03: a second pad on Fulgora refused with no blocker
+-- named): the pad already there (built or a ghost), or nil.
+function M.one_pad(surface,force,proto,pos)
+  if not (proto and proto.type=='cargo-landing-pad') then return nil end
+  if (pcall(function() return surface.platform end)) and surface.platform then return nil end
+  local found=surface.find_entities_filtered{type='cargo-landing-pad',limit=1}
+  local e=found[1]
+  local ghost=false
+  if not e then
+    e=surface.find_entities_filtered{ghost_type='cargo-landing-pad',limit=1}[1]
+    ghost=e~=nil
+  end
+  if not e then return nil end
+  if pos and math.abs(e.position.x-pos.x)<0.01 and math.abs(e.position.y-pos.y)<0.01 then return nil end
+  local whose=e.force==force and 'ours' or ('of force '..tostring(e.force and e.force.name))
+  return string.format('one cargo landing pad per planet (the game\'s rule): %s%s stands at (%g,%g) on %s',
+    ghost and 'a ghost of one, ' or 'one, ',whose,e.position.x,e.position.y,surface.name)
+end
 local function placement_error(p,proto,pos,direction,near)
  local function blockers()
+  local pad=M.one_pad(p.surface,p.force,proto,pos)
+  if pad then return ': '..pad end
   if proto.type=='rail-ramp' then
     local _,_,text=M.placewhy.ramp_collisions(p.surface,p.force,proto,pos,direction)
     if text~='' then return '; ramp footprint contains '..text end
@@ -8682,7 +8702,7 @@ function handlers.heat_budget(p,a)
   friendly(p,e)
   return M.heating.budget(p,e,a.add_pipes)
 end
-M.dryrun=require('dryrun'){heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
+M.dryrun=require('dryrun'){one_pad=function(...) return M.one_pad(...) end,heating=function(...) return M.heating.plan(...) end,placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
   sidefeed=M.sidefeed,coverage=function(s,force,pos,planned) return M.networks.coverage(s,force,pos,planned) end,
   placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
   ghost_placeable=function(p,proto,pos,direction) return construction.ghost_placeable(p.surface,p.force,proto,pos,direction) end,
@@ -9088,7 +9108,7 @@ function M.retreat_go(r)
     if last and last.retreated then last.retreated.going=info.going; last.why=info.why..'; '..info.going end
   end
 end
-M.shore=require('shore'){position=position,integer=integer,assert_visible=assert_visible,directions=directions,direction_of=M.direction_of,read_sight=M.read_sight,
+M.shore=require('shore'){one_pad=function(...) return M.one_pad(...) end,position=position,integer=integer,assert_visible=assert_visible,directions=directions,direction_of=M.direction_of,read_sight=M.read_sight,
   chunk_seen=function(p,pos) return own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) end}
 handlers.placements=M.shore.handlers.placements
 -- The defense read (defense.lua): built-up areas, turret cover and ammo, nests near them.
