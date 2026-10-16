@@ -644,3 +644,21 @@ do
   has(gather(5,{x=100,y=60},{x=90,y=10}),'enemy group of 5')
 end
 print('d15_batch4 F2 gatherings: ok')
+
+-- F3 (Haiku): a network's repair packs in its roboports' material slots and its chests, on its line. -----------------
+do
+  defines={inventory={roboport_material=7}}
+  prototypes={item={['repair-pack']={type='repair-tool'}}}
+  local function port(x,packs)
+    local mat={get_contents=function() return packs>0 and {{name='repair-pack',count=packs}} or {} end}
+    return {valid=true,position={x=x,y=0},get_inventory=function(i) assert(i==7); return mat end}
+  end
+  local cells={{owner=port(0,10),logistic_radius=25,construction_radius=55},{owner=port(50,0),logistic_radius=25,construction_radius=55}}
+  local ln={network_id=120,all_logistic_robots=0,available_logistic_robots=0,all_construction_robots=20,available_construction_robots=20,cells=cells,
+    get_item_count=function(n) return n=='repair-pack' and 0 or 0 end}
+  local N=dofile('mod/agent-harness_0.1.0/networks.lua'){state=function() return {} end}
+  local v=N.logistic_view(ln)
+  eq(v.repair_packs,10); eq(v.ports_without_packs,1)
+  has(v.text,'; repair packs: 10 in roboport material slots (1 of 2 roboports hold none), 0 in its chests')
+end
+print('d15_batch4 F3 repair packs: ok')

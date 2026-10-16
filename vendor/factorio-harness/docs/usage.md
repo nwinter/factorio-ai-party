@@ -5000,4 +5000,8 @@ fh watch    # deploy on every change
 - The exit 3 stderr line also says which next calls stop a running action: one that drives the character (move_to,
   transfer, collect, feed, build, mine, rearm, refuel ...). Reads, say, tell, chat, craft, planners (place_ghosts,
   deconstruct, requests) and calls by remote view or on another surface leave it running.
+- Repair packs in a remote network (Haiku: a remote agent could not see the repair packs at south copper run out). A
+  logistic network's line, in the networks read and the status brief's network lines, adds `repair packs: 10 in
+  roboport material slots (1 of 2 roboports hold none), 0 in its chests`, next to its robot counts. Rows give
+  `repair_packs`, `ports_without_packs` and `repair_packs_stored`. The view is rebuilt every 60 s, as before.
 

@@ -778,6 +778,18 @@ return function(api)
       elseif o and o.valid then
         v.roboports = v.roboports + 1
         v.center = v.center or {x=o.position.x, y=o.position.y}
+        -- Repair packs in its material slot (Haiku, d15: a remote agent could not see them run out).
+        local mat = defines.inventory.roboport_material and try(function() return o.get_inventory(defines.inventory.roboport_material) end)
+        local packs = 0
+        for _, it in ipairs(mat and try(function() return mat.get_contents() end) or {}) do
+          local n = type(it.name) == 'string' and it.name or try(function() return it.name.name end)
+          if n and try(function() return prototypes.item[n].type end) == 'repair-tool' then packs = packs + (it.count or 0) end
+        end
+        if mat then
+          v.ports_read = (v.ports_read or 0) + 1
+          v.repair_packs = (v.repair_packs or 0) + packs
+          if packs == 0 then v.ports_without_packs = (v.ports_without_packs or 0) + 1 end
+        end
         v.logistic_area = box_add(v.logistic_area, o.position.x, o.position.y, try(function() return c.logistic_radius end) or 0)
         v.construction_area = box_add(v.construction_area, o.position.x, o.position.y, try(function() return c.construction_radius end) or 0)
       end
@@ -788,10 +800,16 @@ return function(api)
       r.working = math.max(0, r.total - r.idle - (r.charging or 0) - (r.waiting or 0))
     end
     if not typed then v.charging, v.waiting = any_charging, any_waiting end
-    v.text = string.format('%d roboport%s%s, logistic area %s, construction area %s; %s; %s%s', v.roboports, v.roboports == 1 and '' or 's',
+    -- The network's repair packs in its chests too (robots take them from storage as from roboports).
+    local stored = 0
+    for _, name in ipairs({'repair-pack'}) do stored = stored + (try(function() return ln.get_item_count(name) end) or 0) end
+    v.repair_packs_stored = stored
+    local packs_text = (v.ports_read or 0) > 0 and string.format('; repair packs: %d in roboport material slots%s, %d in its chests', v.repair_packs or 0,
+      (v.ports_without_packs or 0) > 0 and string.format(' (%d of %d roboports hold none)', v.ports_without_packs, v.ports_read) or '', math.max(0, stored)) or ''
+    v.text = string.format('%d roboport%s%s, logistic area %s, construction area %s; %s; %s%s%s', v.roboports, v.roboports == 1 and '' or 's',
       v.personal > 0 and string.format(' (+%d personal)', v.personal) or '', box_text(v.logistic_area), box_text(v.construction_area),
       robots_text('logistic', v.logistic), robots_text('construction', v.construction),
-      not typed and string.format('; %d robots charging, %d waiting to charge', any_charging, any_waiting) or '')
+      not typed and string.format('; %d robots charging, %d waiting to charge', any_charging, any_waiting) or '', packs_text)
     return v
   end
   -- A logistic chest is in a logistic network only inside a roboport's
