@@ -186,3 +186,25 @@ do
   has(out.closed_in_goal,'the goal: the area')
 end
 print('d15_batch3 4 route check: ok')
+
+-- 5 (Sol): the inserters that take a machine's output and the chest they fill; the wait's reply says so. ---------
+do
+  prototypes={item={['lithium-plate']={}}}
+  local force={name='player'}
+  local chest={valid=true,unit_number=7,type='container',name='steel-chest',position={x=6.5,y=-3.5},get_item_count=function(n) return n=='lithium-plate' and 340 or 0 end}
+  local plant
+  local ins={valid=true,unit_number=8,name='fast-inserter',position={x=5.5,y=-3.5},drop_target=chest,use_filters=false}
+  local blocked={valid=true,unit_number=9,name='inserter',position={x=3.5,y=-1.5},drop_target=chest,use_filters=true,inserter_filter_mode='whitelist',
+    get_filter=function(i) return i==1 and {name='iron-plate'} or nil end}
+  local surface={find_entities_filtered=function() return {ins,blocked} end}
+  plant={valid=true,name='foundry',type='assembling-machine',position={x=3.5,y=-3.5},force=force,surface=surface,
+    bounding_box={left_top={x=2,y=-5},right_bottom={x=5,y=-2}},get_recipe=function() return {name='molten-lithium'} end}
+  ins.pickup_target=plant; blocked.pickup_target=plant
+  local ST=require('stock'){integer=function(v,d) return v or d end}
+  local tk=ST.output_takers(plant,'lithium-plate')
+  eq(tk.line,'1 inserter takes lithium-plate from its output as it is made: fast-inserter (5.5,-3.5) into steel-chest (6.5,-3.5) (holds 340 lithium-plate)')
+  eq(tk.chests[1].holds,340)
+  local _,out=ST.start_wait({position={x=0,y=0},force=force,can_reach_entity=function() return true end},{item='lithium-plate',count=100},plant,600)
+  eq(out.taken_by_inserters,tk.line); eq(out.follow_chests,'follow: true takes from steel-chest (6.5,-3.5) instead')
+end
+print('d15_batch3 5 collect output takers: ok')

@@ -129,6 +129,7 @@ already targets your character.
 - Gun slot N fires only from ammo slot N: `inventory` shows guns and ammo per slot; `equip {slot: "ammo", item, index}` moves ammo between ammo slots.
 - `blueprint_save {name, area, platform: "Starling"}` and `blueprint_capture` take `platform=NAME` like `paste` and `blueprint_place`: save a platform's layout from anywhere, then `blueprint_place {name, platform: "Swift"}`.
 - `move_to {position, dry_run: true}` (and feed/collect/transfer/rearm/refuel with positions) reads the route without walking: length, each worm and spawner's range and closest pass, closed-in goals with what to mine; `under_range` names worms whose range is over `avoid_enemies {distance: N}`.
+- `collect {position, item, count, wait_ticks}` says which inserters take the machine's output and the chest they fill (`taken_by_inserters`); `follow: true` takes from that chest instead of waiting.
 `./fh call bottleneck --args '{"item":"processing-unit"}'` follows a shortage down its ingredient chain to where it
   starts, naming each step's makers, their states and what they lack; `fixes` gives, for a starved maker, the nearest
   chest within 64 tiles holding what it lacks and one `transfer` call that carries it there; with `"per_min":30` each step's rate for that

@@ -228,8 +228,10 @@ return function(api)
     local action={kind='gather',wait=wait,item=a.item,quality=a.quality,all=a.item==nil or nil,want=want,got=0,visited=0,items={},
       targets={{entity=e,position=e.position}},index=1,until_tick=game.tick+walk+wait}
     local recipe=pcall(e.get_recipe) and e.get_recipe()
+    local okt,tk=pcall(M.output_takers,e,a.item); tk=okt and tk or nil
     return action,{machine=string.format('%s (%g,%g)',e.name,e.position.x,e.position.y),recipe=recipe and recipe.name or nil,wait_ticks=wait,
-      count=a.count and want or nil,item=a.item,in_reach=p.can_reach_entity(e)}
+      count=a.count and want or nil,item=a.item,in_reach=p.can_reach_entity(e),
+      taken_by_inserters=tk and tk.line or nil,follow_chests=tk and #tk.chests>0 and 'follow: true takes from '..tk.chests[1].name..string.format(' (%g,%g)',tk.chests[1].position.x,tk.chests[1].position.y)..' instead' or nil}
   end
   local function counts(inv)
     local out={}
@@ -274,6 +276,47 @@ return function(api)
       if st and st.valid_for_read then return st.name,st.count end
     end)
     if ok then return name,count end
+  end
+  -- The inserters that take a machine's output and where they put it (Sol, shift18: twice collect wait_ticks waited
+  -- while inserters moved every lithium plate into an output chest): {rows, chests, line}. item: only inserters
+  -- whose filter lets it through (a whitelist naming it, a blacklist not naming it, or no filter in use).
+  local function passes(ins,item)
+    if not item then return true end
+    local ok,use=pcall(function() return ins.use_filters end)
+    if not (ok and use) then return true end
+    local okm,mode=pcall(function() return ins.inserter_filter_mode end)
+    local named=false
+    for i=1,5 do
+      local okf,f=pcall(function() return ins.get_filter(i) end)
+      local n=okf and f and (type(f)=='table' and (type(f.name)=='table' and f.name.name or f.name) or f)
+      if n==item then named=true end
+    end
+    if okm and mode=='blacklist' then return not named end
+    return named
+  end
+  function M.output_takers(e,item)
+    local rows,chests,seen={},{},{}
+    for _,ins in ipairs(takers(e)) do
+      if passes(ins,item) then
+        local okd,drop=pcall(function() return ins.drop_target end)
+        local held=0
+        local into='the ground'
+        if okd and drop then
+          into=string.format('%s (%g,%g)',drop.name,drop.position.x,drop.position.y)
+          if item then held=(pcall(function() return drop.get_item_count(item) end)) and drop.get_item_count(item) or 0 end
+          if (drop.type=='container' or drop.type=='logistic-container') and not seen[drop.unit_number] then
+            seen[drop.unit_number]=true
+            chests[#chests+1]={entity=drop,position={x=drop.position.x,y=drop.position.y},name=drop.name,holds=held}
+          end
+        end
+        rows[#rows+1]=string.format('%s (%g,%g) into %s%s',ins.name,ins.position.x,ins.position.y,into,
+          okd and drop and item and string.format(' (holds %d %s)',held,item) or '')
+      end
+    end
+    if #rows==0 then return nil end
+    return {rows=rows,chests=chests,
+      line=string.format('%d inserter%s take%s %s from its output as it is made: %s',#rows,#rows==1 and '' or 's',#rows==1 and 's' or '',
+        item or 'its products',table.concat(rows,'; '))}
   end
   local function watch(w,e)
     if not w.takers or game.tick>=w.takers_tick then w.takers=takers(e); w.takers_tick=game.tick+300 end

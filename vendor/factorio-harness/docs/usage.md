@@ -4733,3 +4733,10 @@ fh watch    # deploy on every change
   the same read through the stops, nearest first from you (radius and area tours choose their stops when they run).
   With `avoid_enemies {distance: N}`, `under_range` names the worms on the route whose range is more than N, on the
   dry run and on a live move_to's reply.
+- Collect and output inserters (Sol: twice `collect {positions, item, count, wait_ticks}` waited while inserters moved
+  every lithium plate into an output chest): a wait at a machine says `taken_by_inserters` (`1 inserter takes
+  lithium-plate from its output as it is made: fast-inserter (5.5,-3.5) into steel-chest (6.5,-3.5) (holds 340
+  lithium-plate)`; an inserter whose filter keeps the item out is left out) and `follow_chests`. `follow: true` with
+  `wait_ticks` or `keep_taking` takes from the chests those inserters fill when they hold the item, instead of
+  waiting (`followed` says so; none holding it: the wait at the machine). `collect {positions, dry_run: true}` adds
+  `outputs_taken` for each machine among the positions.
