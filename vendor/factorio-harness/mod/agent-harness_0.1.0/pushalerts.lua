@@ -140,6 +140,16 @@ return function(api)
   -- stays there, with what it read and fed then, until it has a target again or is gone.
   local FED = {boiler='boiler', furnace='furnace', lab='lab', ['assembling-machine']='assembler'}
   local function at_text(pos) return string.format('(%g,%g)', math.floor(pos.x * 10 + 0.5) / 10, math.floor(pos.y * 10 + 0.5) / 10) end
+  -- A group's centre where its maker set none (shift23 16:20, Muse: game_alerts failed "attempt to index field 'center'"
+  -- on an outpost_turret_lost group, a cell add() made that no merge had centred): the mean of its positions, else its
+  -- first position.
+  local function centred(g)
+    if g.center then return g end
+    if g.sx and g.sy and (g.n or 0) > 0 then g.center = {x=math.floor(g.sx / g.n + 0.5), y=math.floor(g.sy / g.n + 0.5)}
+    elseif g.at and g.at[1] then g.center = {x=math.floor(g.at[1].x + 0.5), y=math.floor(g.at[1].y + 0.5)} end
+    return g
+  end
+  M.centred = centred
   local function inserter_memory(force)
     local s = api.state()
     s.push_inserters = s.push_inserters or {}
@@ -564,7 +574,7 @@ return function(api)
     end
     -- Network groups (networks.lua): power_high, boiler_fuel, robots_busy,
     -- one per network, with their own line and level (n).
-    for _, g in ipairs(extra or {}) do out[#out+1] = g end
+    for _, g in ipairs(extra or {}) do out[#out+1] = centred(g) end
     table.sort(out, function(a, b) return a.n > b.n or (a.n == b.n and a.key < b.key) end)
     return out
   end
@@ -734,8 +744,9 @@ return function(api)
     if not api.belt_groups and not next(lost) then return c end
     local out={tick=c.tick,groups={}}
     for _,g in ipairs(c.groups) do out.groups[#out.groups+1]=g end
-    for _,g in ipairs(api.belt_groups and api.belt_groups(force) or {}) do out.groups[#out.groups+1]=g end
-    for _,g in pairs(lost) do g.observed_tick=game.tick; out.groups[#out.groups+1]=g end
+    for _,g in ipairs(api.belt_groups and api.belt_groups(force) or {}) do out.groups[#out.groups+1]=centred(g) end
+    -- (cells as add() makes them: centred here, as merge centres the scan's)
+    for _,g in pairs(lost) do g.observed_tick=game.tick; out.groups[#out.groups+1]=centred(g) end
     return out
   end
   local function current(force)
@@ -781,7 +792,7 @@ return function(api)
     local best, d2 = nil, math.huge
     for name, a in pairs(roster) do
       local pl = a.place
-      if pl and pl.key == g.surface and pl.position and not pl.dead then
+      if pl and pl.key == g.surface and pl.position and not pl.dead and g.center then
         local d = (pl.position.x - g.center.x) ^ 2 + (pl.position.y - g.center.y) ^ 2
         if d < d2 then best, d2 = name, d end
       end
@@ -882,6 +893,10 @@ return function(api)
   -- plain: without the hint (the review block, selfview.lua).
   -- was: the count told before, or (a group with now_text) what its now_text said then.
   function M.text(g, here, was, plain)
+    centred(g)
+    if not g.line and not g.center then
+      return string.format('%d %s on %s (no position recorded)', g.n or 0, LABEL[g.kind] or tostring(g.kind):gsub('_', ' '), tostring(g.surface))
+    end
     if g.line then
       local before = type(was) == 'string' and ' (was ' .. was .. ')' or was and string.format(' (was %d%s)', was, g.unit or '') or ''
       -- whose claim the boiler's feed chest is in (Haiku, shift17 10:50)
@@ -1082,11 +1097,15 @@ return function(api)
       local g = (a.surface == nil or g0.surface == a.surface) and (a.kind == nil or g0.kind == a.kind or g0.kind:sub(1, #a.kind + 1) == a.kind .. '.')
         and M.recheck(g0, p.force)
       if g then
-        local to = {}
-        for name, why in pairs(owners(g, who)) do to[#to+1] = name .. ' (' .. why .. ')' end
-        table.sort(to)
-        rows[#rows+1] = {kind=g.kind, surface=g.surface, count=g.n, center=g.center, names=g.names, at=g.at, lost=g.lost,
-          ore=g.ore, still_mining=g.still, untapped=g.untapped, drill_site=g.drill_site, observed_tick=g.observed_tick, checked_tick=g.checked_tick, stale=g.stale, line=M.text(g, here), to=#to > 0 and to or nil}
+        -- One group that fails to read is listed with why; the others still are.
+        local ok, row = pcall(function()
+          local to = {}
+          for name, why in pairs(owners(g, who)) do to[#to+1] = name .. ' (' .. why .. ')' end
+          table.sort(to)
+          return {kind=g.kind, surface=g.surface, count=g.n, center=g.center, names=g.names, at=g.at, lost=g.lost,
+            ore=g.ore, still_mining=g.still, untapped=g.untapped, drill_site=g.drill_site, observed_tick=g.observed_tick, checked_tick=g.checked_tick, stale=g.stale, line=M.text(g, here), to=#to > 0 and to or nil}
+        end)
+        rows[#rows+1] = ok and row or {kind=g.kind, surface=g.surface, count=g.n, line=string.format('%s on %s: this group could not be read (%s)', tostring(g.kind), tostring(g.surface), tostring(row))}
       end
     end
     return {groups=rows, scanned=string.format('%ds ago', math.floor((game.tick - c.tick) / 60)),
