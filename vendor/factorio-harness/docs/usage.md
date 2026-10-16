@@ -5136,3 +5136,26 @@ fh watch    # deploy on every change
     reply; a launch then refused ends `launch_failed` with `last.launch_error`. With the rocket ready it launches at
     once. As a direct call it refuses while an action runs. `fh call launch ... --wait` waits for it. A launch refused
     as not ready now names `wait_ready` and the `wait_until {until: "rocket_ready", position}` step.
+- Reminder and review jobs (viewer Foobator's idea; the design from Astra and Sol, 05:16). A job only sends lines: it
+  never drives a character, interrupts an action, combat or queue, changes a machine, runs Lua or retries anything.
+  Standing orders and `queue_repeat` stay the tools for actions, and alerts stay apart.
+  - `reminder_add {message, every_ticks | due_tick | due_in_ticks, recipients?, name?, board_item?, surface?,
+    expires_tick? | for_ticks?, enabled?}`. `every_ticks` (3600 and up; 54000 is 15 min) is a cadence anchored at
+    the call. `due_tick` or `due_in_ticks` runs it once. `recipients` are names or `team`; the default is you. At most
+    12 a teammate and 48 in all.
+  - When it is due, each recipient gets one private line in their next reply, as a tell from `reminder #N`: `reminder
+    #1: ship review (sol, every 15m00s, board #575): Petrel ammo, fuel and hub room; reminder_ack {id: 1, result}
+    records the result`. It wakes a sleep as a tell does (`woke: told`), and a sleep with `wake_on_messages: false`
+    as a tell does too (only `wake: true` ends that). It is not in the game chat.
+  - While a recipient has not acknowledged a run, later runs fold into it (`missed`): no second line, and no backlog
+    after a pause. A cadence's next run is always the next point on it after the tick now.
+  - `reminder_ack {id, result?}` records the result (job `last_result`, `result_by`, `result_tick`) and clears your
+    pending run; the cadence stays as it is. `reminder_snooze {id, ticks}` moves the next run only (its owner or a
+    recipient). `reminder_edit {id, ...}` and `reminder_remove {id}`: the owner only.
+  - `reminders {all?}` lists yours and those addressed to you (`all: true`: the team's): owner, recipients, message,
+    cadence, next due, the last result and its age, and per recipient `scheduled`, `pending`, `overdue` (pending for
+    more than an interval), `acknowledged`, with runs missed.
+  - The jobs live in the save, so a rollback restores them with the tick; a next run more than one interval past the
+    tick is set again from it.
+  - The site's Board card has a Reminders panel: owner, message, cadence and next due, the last result and its age,
+    and each recipient's state. tools/stream/live.py reads `reminders {all: true}` with the board, every board read.

@@ -1572,6 +1572,7 @@ function handlers.describe()
   for name,schema in pairs(M.defense and M.defense.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ores and M.ores.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.tells and M.tells.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.reminders and M.reminders.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.research and M.research.schema or {}) do description.actions[name]=schema end
@@ -10716,6 +10717,9 @@ M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agen
   end}
 function M.deaf_wait(a) return a~=nil and (a.kind=='wait_ticks' or a.kind=='wait_until') and not a.queued and a.wake_messages==false end
 for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
+-- Reminder and review jobs (reminders.lua; viewer Foobator, design from Astra and Sol 05:16): lines only, never game acts.
+M.reminders=require('reminders'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver}
+for name,handler in pairs(M.reminders.handlers) do handlers[name]=handler end
 M.factory_digest=require('factory_digest'){state=state,use_lines=function(force) return M.research_use.lines(force) end}
 -- Idle characters for the operator's nudge (idle.lua): idle_report, and the
 -- standing clock idle_tick keeps.
@@ -10948,14 +10952,14 @@ function handlers.wait_until(p,a)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
-local passive={retreat_guard=true,order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,chronicle=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
+local passive={reminder_add=true,reminder_edit=true,reminder_remove=true,reminder_ack=true,reminder_snooze=true,reminders=true,retreat_guard=true,order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,chronicle=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
 -- circuit_set and wire (circuits.lua) leave the character and its queue alone, as circuit did.
 passive.circuit_set=true; passive.wire=true
 -- Planners and blueprint tools never drive the character, near or by remote
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
 for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route','rail_route','train_stop','blueprint_save','blueprint_rename'}) do passive[name]=true end
-local reads={fuel_budget=true,artillery=true,platform_endurance=true,belt_gaps=true,pipe_gaps=true,danger=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
+local reads={reminders=true,fuel_budget=true,artillery=true,platform_endurance=true,belt_gaps=true,pipe_gaps=true,danger=true,drill_sites=true,agriculture=true,conflicts=true,construction_robots=true,freight_audit=true,ores=true,cargo=true,silo=true,preflight=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,turrets=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,lookahead=true,networks=true,boilers=true}
 M.reads=reads
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
 reads.heat_budget=true
@@ -12766,6 +12770,8 @@ function M.tick_body(event)
     if not okb then local s=state();s.belt_memory_error={tick=event.tick,error=tostring(errb)} end
   end
   M.orders.tick()
+  local okr,errr=pcall(M.reminders.tick)
+  if not okr then local s=state(); s.reminder_error={tick=event.tick,error=tostring(errr)} end
   clock.tick()
   M.cameras.tick()
   -- Production credit (efficiency.lua): a block every other tick; like the camera drawing, its faults are counted.

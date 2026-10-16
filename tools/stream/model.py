@@ -612,6 +612,7 @@ class Model:
         self.incoming = {}  # id -> an enemy group on its way (attack_groups_live), as last read
         self.big = {}  # id -> a demolisher near our buildings (big_enemies_live), as last read
         self.hauling = None  # hand hauling this shift (live.py observe_hauling): {rows, since, t}
+        self.reminders = None  # the team's reminder jobs (reminders.lua via live.py): {jobs, tick}
         # production credited to who built the machine (live.py observe_efficiency): the last read, and the reads of the
         # last hour for a notable change (efficiency.notable)
         self.efficiency = None
@@ -713,6 +714,8 @@ class Model:
             self._ingest_groups(obs["attack_groups"], now)
         if obs.get("big_enemies") is not None:
             self._ingest_big(obs["big_enemies"], now)
+        if obs.get("reminders") is not None:  # the team's reminder jobs, for the site's panel
+            self.reminders = obs["reminders"]
         if obs.get("hauling") is not None:  # hand hauling this shift (live.py observe_hauling), for the segment card
             self.hauling = obs["hauling"]
         if obs.get("efficiency") is not None:  # machines' output by builder (live.py observe_efficiency)
@@ -1239,6 +1242,26 @@ class Model:
                 last["request"] = text
             return
         cl.append({"text": text, "version": version, "request": None if version else text, "tick": tick, "t": t})
+
+    REMINDERS_MAX = 12
+
+    def reminders_snapshot(self):
+        """The team's reminder jobs for the site's panel (d15 batch5 group I): owner, message, next due, the last result
+        and its age, and each recipient's state (pending, acknowledged, overdue); None before the first read."""
+        r = self.reminders
+        if not isinstance(r, dict):
+            return None
+        rows = []
+        for j in (r.get("jobs") or [])[:self.REMINDERS_MAX]:
+            if not isinstance(j, dict):
+                continue
+            rows.append({"id": j.get("id"), "name": clean_text(j.get("name") or ""), "owner": j.get("owner"),
+                         "agent": self._who(j.get("owner")), "recipients": j.get("recipients"),
+                         "message": clean_text(j.get("message") or ""), "cadence": j.get("cadence"),
+                         "enabled": bool(j.get("enabled")), "done": bool(j.get("done")),
+                         "next_due_in_s": j.get("next_due_in_s"), "last_result": clean_text(j.get("last_result") or "") or None,
+                         "result_age_s": j.get("result_age_s"), "result_by": j.get("result_by"), "states": j.get("states")})
+        return {"jobs": rows, "total": len(r.get("jobs") or [])}
 
     def board_snapshot(self):
         b = self.board
@@ -1991,6 +2014,7 @@ class Model:
             "tokens": self.tokens,
             "alerts": [a for a in self.alerts if a["until"] > now][-3:],
             "board": self.board_snapshot(),
+            "reminders": self.reminders_snapshot(),
             "cameras": cameras or {},
             "errors": self.errors,
         }

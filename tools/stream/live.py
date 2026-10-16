@@ -668,6 +668,18 @@ class LiveSource:
             errors["board_events"] = str(e)
         if time.time() >= self.next_board:
             self.next_board = time.time() + self.board_every
+            # the team's reminder jobs (reminders.lua, d15 batch5 group I) for the site's panel; a runtime without them
+            # refuses the action, and it is not asked again
+            if getattr(self, "reminders_ok", None) is not False:
+                try:
+                    rem, _ = self.read("reminders", {"all": True}, **self.reader())
+                    obs["reminders"] = {"jobs": rem.get("reminders") or [], "tick": rem.get("tick")}
+                    self.reminders_ok = True
+                except Exception as e:
+                    if "unsupported action" in str(e) or "unknown action" in str(e):
+                        self.reminders_ok = False
+                    else:
+                        errors["reminders"] = str(e)
             try:
                 # with each plan line's tick (board plan_ticks: the site's Team plan says when each line changed);
                 # an older runtime refuses the argument, and is asked without it from then on

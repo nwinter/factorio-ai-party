@@ -501,7 +501,7 @@
       '<span class="fx-chip fx-chip--grey">' + esc(board.open_unowned || 0) + ' open</span></p>' + jobsHtml +
       (projects ? '<h4>Projects</h4>' + projects : '') +
       (claims ? '<h4>Who owns what</h4><ul class="board-claims">' + claims + '</ul>' : '') +
-      (events ? '<h4>Recent</h4><ul class="board-events">' + events + '</ul>' : '');
+      (events ? '<h4>Recent</h4><ul class="board-events">' + events + '</ul>' : '') + remindersHtml(s.reminders, byName);
 
     // research
     var recent = (r.recent || []).map(function (t) { return '<li>' + esc(t.label || label(t.name)) + '</li>'; }).join('');
@@ -621,6 +621,28 @@
       (withNext && p.next && p.status !== 'done' ? '<span class="small plan-next"><span class="fx-muted">Next:</span> ' + esc(p.next) + '</span>' : '') + '</span>';
     return '<li><details class="project" data-project="' + esc(key) + '"' + (openProjects[key] ? ' open' : '') + '><summary>' + head +
       '</summary><div class="project-body">' + stepsHtml(p) + '</div></details></li>';
+  }
+  // The team's reminder jobs (d15 batch5 group I; viewer Foobator's idea, Astra and Sol's design): who set each, its
+  // message, when it is next due, the last result and its age, and each recipient's state (pending, acknowledged,
+  // overdue). Reminders only send the agents a line; they never act in the game.
+  function remindersHtml(rem, byName) {
+    if (!rem || !(rem.jobs || []).length) return '';
+    var STATE = { pending: 'fx-chip--orange', overdue: 'fx-chip--red', acknowledged: 'fx-chip--green' };
+    var rows = rem.jobs.map(function (j) {
+      var o = byName[j.agent] || {};
+      var due = j.done ? 'done' : !j.enabled ? 'off' : j.next_due_in_s != null ? 'next in ' + ago(j.next_due_in_s).replace(/ ago$/, '') : '';
+      var states = String(j.states || '').split('; ').filter(Boolean).map(function (st) {
+        var m = /^(\S+) (\S+)(.*)$/.exec(st) || [];
+        var who = byName[m[1]] || {};
+        return '<span class="fx-chip ' + (STATE[m[2]] || 'fx-chip--grey') + '">' + esc((who.display_name || m[1] || '') + ' ' + (m[2] || '') + (m[3] || '')) + '</span>';
+      }).join(' ');
+      return '<li>' + avatar(o.name ? o : { name: j.agent || j.owner || '?' }, 24) + '<span><b>' + esc(o.display_name || j.owner || '?') + '</b> ' +
+        esc(j.name ? j.name + ': ' : '') + esc(j.message) + ' <span class="fx-muted">' + esc([j.cadence, due].filter(Boolean).join(', ')) + '</span>' +
+        (j.last_result ? '<br><span class="fx-muted">last result' + (j.result_age_s != null ? ' ' + esc(ago(j.result_age_s)) : '') + ':</span> ' + esc(j.last_result) : '') +
+        (states ? '<br>' + states : '') + '</span></li>';
+    }).join('');
+    return '<h4>Reminders</h4><ul class="board-claims board-reminders">' + rows + '</ul>' +
+      (rem.total > rem.jobs.length ? '<p class="fx-muted small">+' + esc(rem.total - rem.jobs.length) + ' more</p>' : '');
   }
   function projectsHtml(board, byName, card, withNext) {
     var shown = (board.projects || []).map(function (p) { return projectItem(p, byName, card, withNext); }).join('');

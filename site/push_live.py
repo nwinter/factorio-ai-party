@@ -25,6 +25,7 @@ AGENT_KEYS = ("name", "kind", "display_name", "color", "glyph", "motto", "profil
               "surface", "where", "on_platform", "travel")  # where the body is: the map lists agents off Nauvis at its edge
 TOP_KEYS = ("now", "tick", "paused", "game_time", "title", "subtitle", "research", "production", "science", "alerts",
             "board", "basemap", "shift",
+            "reminders",  # the team's reminder jobs (d15 batch5 group I): owner, message, next due, last result, states
             "chronicle")  # the agents' newest chronicle entries and the harness's events (fh chronicle; viewer Alex 22:24)
 ATTENTION_KEYS = ("kind", "text", "surface", "platform", "age_s", "dist", "far")
 # What each agent carries, wears and builds (the harness's loadout read via serve.py; the agents page shows it)
