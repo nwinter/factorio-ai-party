@@ -5204,3 +5204,7 @@ fh watch    # deploy on every change
     the later of the two. `9 rockets for the list; building the rocket: parts 17/50; 433 parts to make (50 a
     rocket); at the silo's full speed (48.0 parts/min) in 542s; rocket parts made on vulcanus in the last 10 min:
     8.5/min; ...`.
+- `rotate {platform: NAME, position, direction?}` and `rotate {surface: NAME, ...}` turn a ghost or a built belt,
+  inserter and the like by remote view, as remote view's R does (Astra, Sol: Petrel's corners were deconstructed and
+  ghosted again by hand about 6 times). The reply says `by: remote view`. Checked on the copy of world n: a belt on
+  Tern turned east to south and back.

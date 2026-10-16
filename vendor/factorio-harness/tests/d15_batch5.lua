@@ -193,3 +193,14 @@ do
   has(rows[1].line,'Tern (flying fulgora->gleba 67%): ETA '); has(rows[1].line,'hub: calcite*900 tungsten-plate*400')
 end
 print('d15_batch5 C4 arrival through the schedule: ok')
+
+-- D4 (Astra, Sol): rotate takes platform= and surface= (remote view). ----------------------------------------------------
+do
+  local bots=dofile('mod/agent-harness_0.1.0/bots.lua')
+  local list=type(bots)=='function' and bots{} or bots
+  local on_platform,on_surface=false,false
+  for _,n in ipairs(list.PLATFORM_ACTIONS) do if n=='rotate' then on_platform=true end end
+  for _,n in ipairs(list.SURFACE_ACTIONS) do if n=='rotate' then on_surface=true end end
+  assert(on_platform and on_surface,'rotate with platform= and surface=')
+end
+print('d15_batch5 D4 rotate by remote view: ok')
