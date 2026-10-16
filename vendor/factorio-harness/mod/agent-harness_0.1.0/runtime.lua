@@ -1897,6 +1897,7 @@ function handlers.status(p,a)
       drop_pending=M.drop_pending(p.index),last_drop=M.last_drop(p.index),
       surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,
       alerts=a.alerts==true and recent_alerts(a,p) or nil,order=M.orders.brief(p.index),
+      logistics_here=alive and (function() local ok,l=pcall(M.personal.here,p); return ok and l or nil end)() or nil,
       supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,tick=game.tick,position=p.position}
   end
   assert(a.alerts==nil,'alerts is an option of brief (a full status always has them)')
@@ -1961,7 +1962,7 @@ function handlers.status(p,a)
   local oks,sky=false,nil
   if alive then oks,sky=pcall(M.lightning.sky,p.surface,p.position) end
   local okb,boiler_line=pcall(M.networks.boiler_line,p.force,p.surface.name)
-  return {boilers=okb and boiler_line or nil,queues=scheduler.lanes(p.index),storm=oks and sky or nil,crafting=alive and crafting_line(p) or nil,retreat_guard=M.retreat_guard_line(p.index),inv=factory.inv,inventory=inv_line,factory=factory.factory,machines=factory.machines,machine_positions=factory.machine_positions,warnings=factory.warnings,factory_as_of=factory.as_of,survey_error=factory.error,
+  return {logistics_here=alive and (function() local ok,l=pcall(M.personal.here,p); return ok and l or nil end)() or nil,boilers=okb and boiler_line or nil,queues=scheduler.lanes(p.index),storm=oks and sky or nil,crafting=alive and crafting_line(p) or nil,retreat_guard=M.retreat_guard_line(p.index),inv=factory.inv,inventory=inv_line,factory=factory.factory,machines=factory.machines,machine_positions=factory.machine_positions,warnings=factory.warnings,factory_as_of=factory.as_of,survey_error=factory.error,
     evolution=threats.evolution,pollution=threats.pollution,enemies=threats.enemies,chart=threats.chart,threats_as_of=threats.as_of,
     alerts=alerts,runtime_fault=state().runtime_fault or false,connected=p.connected,alive=p.character and p.character.valid or false,cheat_mode=p.cheat_mode,
     supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,active=now,order=M.orders.brief(p.index),

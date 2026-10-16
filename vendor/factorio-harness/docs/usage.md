@@ -5291,3 +5291,6 @@ fh watch    # deploy on every change
   what it asks of the pack (`asking 0` / `no request for it`); with a logistic network there, what it holds and the
   chest its robots would take the pack from (the network's own pickup point). On the copy of world n, 13-24 ms in the
   container for Nauvis's 43 labs (about 3-5 ms on n).
+- `status` (brief and full) adds `logistics_here` (Haiku): `logistic network #96 where you stand: 834 logistic robots
+  (710 idle), 11 construction robots (11 idle), 15 roboports; 5 personal requests unfilled (long-handed-inserter,
+  ...)`, or `no logistic network where you stand (x,y)`. `requests` gives each unfilled request's reason.
