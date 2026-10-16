@@ -449,6 +449,13 @@ do
   local ok,err=pcall(call,'build',{item='wooden-chest',position={x=2,y=0}})
   assert(not ok and tostring(err):find('placement blocked by tiles: wetland-blue-slime (needs landfill',1,true) and not tostring(err):find('ghost',1,true),tostring(err))
 end
+-- Lava (Sonnet, shift19): the tile first, not the research.
+;(function()
+  footprint={}
+  tiles={{name='lava-hot',prototype={collision_mask={layers={lava_tile=true}}}}}
+  local ok,err=pcall(call,'build',{item='wooden-chest',position={x=2,y=0}})
+  assert(not ok and tostring(err):find('placement blocked by tiles: lava-hot (unbuildable: lava',1,true) and not tostring(err):find('shore',1,true),tostring(err))
+end)()
 -- On a platform (Astra, shift19): empty space under it holding foundation tile ghosts not built yet is said so.
 ;(function()
   p.surface.platform={name='Starling'}

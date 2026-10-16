@@ -3985,8 +3985,18 @@ local function placement_error(p,proto,pos,direction,near)
       end
       return ' by tiles: '..table.concat(tiles,', ')..' under it, with no foundation or foundation tile ghost there (needs '..(#items>0 and table.concat(items,' or ') or 'space-platform-foundation')..')'
     end
-    local wet=false
-    for _,t in ipairs(tiles) do if t:find('water',1,true) or t:find('wetland',1,true) or t:find('ocean',1,true) then wet=true end end
+    local wet,lava=false,false
+    for _,t in ipairs(tiles) do
+      if t:find('water',1,true) or t:find('wetland',1,true) or t:find('ocean',1,true) then wet=true end
+      if t:find('lava',1,true) then lava=true end
+    end
+    -- Lava (Sonnet, shift19: "needs foundation (not researched)" read as a research problem): the tile first.
+    if lava and not wet then
+      local fix=items[1]
+      return ' by tiles: '..table.concat(tiles,', ')..' (unbuildable: lava'
+        ..(fix and (fix:find(' (not researched)',1,true) and '; only '..fix:gsub(' %(not researched%)','')..' laid on it makes it buildable, and that is not researched'
+          or '; '..fix..' laid on it makes it buildable') or '; no tile item makes it buildable')..')'
+    end
     return ' by tiles: '..table.concat(tiles,', ')..' (needs '..(#items>0 and table.concat(items,' or ') or 'landfill')
       ..(wet and ', or a shore position: scan fields=fluids / grid ~ marks water)' or ')')
   end

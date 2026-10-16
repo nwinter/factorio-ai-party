@@ -886,7 +886,7 @@ return function(api)
         elseif dry then
           -- (a dry run: what is not marked yet; ghosts would be removed, as a planner removes them)
           if not e.to_be_deconstructed(p.force) then changed=changed+1; by[e.name]=(by[e.name] or 0)+1; if HEAT_PART[e.type] then heat_parts[#heat_parts+1]=e end end
-        elseif e.to_be_deconstructed(p.force) then already=already+1
+        elseif (pcall(e.to_be_deconstructed,p.force)) and e.to_be_deconstructed(p.force) then already=already+1
         elseif e.order_deconstruction(p.force,real(p)) then changed=changed+1; if HEAT_PART[e.type] then heat_parts[#heat_parts+1]=e end end
       end
     end
