@@ -5109,3 +5109,7 @@ fh watch    # deploy on every change
     ran as a sleep: your queue runs (2 steps) and keeps running; ...`. `fh call wait_until --wait` follows it to its
     wake as `fh sleep` does. `pause_queue: true` still pauses the queue for a direct wait. A standing order is still
     preempted by a direct wait.
+- `inspect`'s `rate.quality_chance` is the GUI's figure (Astra 05:43: an electromagnetic plant on Fulgora with five rare
+  quality-module-1 said 80%; the GUI gives 8%). The engine stores the quality effect as 0.1 per 1% (`effects.quality`
+  0.8 there, checked on a copy of world n), and the read multiplied it by 100. It now says `8%` (`1.6%` for one rare
+  module). No other read prints a quality effect; module and configure replies name modules, not their effects.
