@@ -4942,4 +4942,13 @@ fh watch    # deploy on every change
   or refuel step that names `position` or `positions` and gives no `walk` runs with `walk: true`, as a transfer with
   `walk: true` does. `walk: false` on the step keeps it from walking. `from: "nearest"` steps and `queue_submit` plans
   are unchanged.
+- A remote recipe change on a platform machine holding items (Astra, twice: a deconstruct and rebuild instead, and
+  during the gap an unfiltered feeder grabbed magazines and stayed jammed). `configure {platform, position, recipe}`
+  now moves its input and output stacks, then what the recipe change returns (the ingredients of a craft under way),
+  into the platform hub, and reports them as `to_hub`.
+  - On a copy of world n, a crusher on Swift changed from metallic to oxide crushing: `to_hub {iron-ore: 48,
+    metallic-asteroid-chunk: 2}`.
+  - The hub must have an empty slot for each stack (and one per ingredient of a craft under way). Otherwise the
+    refusal names the hub's empty slots, and nothing changes.
+  - Fluids still need `force: true`, as before.
 

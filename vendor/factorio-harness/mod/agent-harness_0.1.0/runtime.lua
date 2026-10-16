@@ -5269,8 +5269,13 @@ local function configure_check(p,a,e,near)
     for i=1,#e.fluidbox do assert(not e.fluidbox[i],'machine holds fluid that a recipe change destroys; pass force=true') end
   end
   -- Out of reach, it needs the character there: the refusal's text, for the caller to walk (M.configure_walk) or raise.
+  -- On a platform the old ingredients and products go to the hub instead (Astra, d15 twice: a deconstruct and rebuild
+  -- to change a recipe left a gap in which an unfiltered feeder grabbed magazines), when it has room for them all.
   local held=not near and holds_items(e)
+  if held and M.recipe_to_hub(e) then held=nil end
   if held then
+    local why=M.recipe_hub_why(e)
+    if why then held=held..'; '..why end
     return string.format('remote recipe change refused: %s at (%g,%g) on %s: %s; a recipe change can return these items and requires a character in reach on that surface',
       e.name,e.position.x,e.position.y,e.surface.name,held)
   end
@@ -5285,6 +5290,32 @@ local function configure_check(p,a,e,near)
     return string.format('remote recipe change refused: %s at (%g,%g) on %s: %s; they would come out, which takes a character in reach on that surface; modules the recipe allows stay and need nothing: empty those slots first (configure modules {%s}), or change the recipe in reach',
       e.name,e.position.x,e.position.y,e.surface.name,table.concat(parts,', '),table.concat(keys,','))
   end
+end
+-- A platform machine's stacks (input and output) and the hub that takes them on a remote recipe change: the hub when
+-- its empty slots hold every stack, else nil.
+function M.recipe_to_hub(e)
+  local pl=e.surface and e.surface.platform
+  local hub=pl and pl.hub
+  if not (hub and hub.valid) then return nil end
+  local okh,inv=pcall(function() return hub.get_inventory(defines.inventory.hub_main) end)
+  if not (okh and inv) then return nil end
+  local stacks=0
+  for _,name in ipairs({'assembling_machine_input','assembling_machine_output'}) do
+    local ok,mi=pcall(inventory,e,name)
+    for i=1,ok and #mi or 0 do if mi[i].valid_for_read then stacks=stacks+1 end end
+  end
+  -- What is mid-craft comes back too: one more stack per ingredient.
+  local okr,r=pcall(function() return e.get_recipe() end)
+  if okr and r and (e.crafting_progress or 0)>0 then for _,ing in ipairs(r.ingredients or {}) do if ing.type~='fluid' then stacks=stacks+1 end end end
+  if inv.count_empty_stacks()<stacks then return nil end
+  return inv,stacks
+end
+function M.recipe_hub_why(e)
+  local pl=e.surface and e.surface.platform
+  local hub=pl and pl.hub
+  if not (hub and hub.valid) then return nil end
+  local okh,inv=pcall(function() return hub.get_inventory(defines.inventory.hub_main) end)
+  return okh and inv and string.format('the hub has %d empty slots, too few for the machine\'s stacks',inv.count_empty_stacks()) or nil
 end
 -- The modules a recipe change takes out, as the game does (checked on a private 2.0.77 server, d15: a crusher's two
 -- efficiency modules stay through metallic -> oxide crushing; productivity modules come out for wooden-chest, which
@@ -5564,6 +5595,36 @@ function handlers.configure(p,a)
   local same_quality=(a.quality or 'normal')==((current_quality and current_quality.name) or 'normal')
   local ghost=e.type=='entity-ghost' and e.ghost_name or nil
   if current and current.name==recipe.name and same_quality then return {recipe=recipe.name,quality=a.quality,unchanged=true,ghost=ghost,remote=not near or nil} end
+  -- A platform machine by remote view: its stacks to the hub first, then what the change returns (M.recipe_to_hub).
+  local hub_inv=not ghost and not near and holds_items(e) and M.recipe_to_hub(e)
+  if hub_inv then
+    local moved={}
+    local function put(name,count,quality)
+      local key=name..(quality and quality~='normal' and '@'..quality or '')
+      moved[key]=(moved[key] or 0)+count
+    end
+    for _,name in ipairs({'assembling_machine_input','assembling_machine_output'}) do
+      local ok,mi=pcall(inventory,e,name)
+      for i=1,ok and #mi or 0 do
+        local st=mi[i]
+        if st.valid_for_read then
+          local q=st.quality; if type(q)~='string' then q=q and q.name or 'normal' end
+          local n,c=st.name,st.count
+          local okt=pcall(function() return hub_inv.insert(st) end)
+          if okt then put(n,c,q); st.clear() end
+        end
+      end
+    end
+    for _,item in ipairs(e.set_recipe(recipe.name,a.quality) or {}) do
+      local q=item.quality; if type(q)~='string' then q=q and q.name or 'normal' end
+      local n=hub_inv.insert({name=item.name,count=item.count,quality=q})
+      if n>0 then put(item.name,n,q) end
+    end
+    current=e.get_recipe()
+    assert(current and current.name==recipe.name,'recipe incompatible with machine')
+    return {recipe=current.name,quality=a.quality,remote=true,to_hub=next(moved) and moved or nil,
+      note='the machine\'s items went to the platform hub'}
+  end
   if ghost or not near then
     e.set_recipe(recipe.name,a.quality)
     current=e.get_recipe()
