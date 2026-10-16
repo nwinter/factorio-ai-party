@@ -5333,3 +5333,17 @@ fh watch    # deploy on every change
   area that no network powers now (they gain coverage) against those already powered: `small-electric-pole
   (24.5,30.5): the spot is free; joins #613 (6 poles); in its supply area 0 machines no network powers now, 0 already
   powered`. Checked on Gleba on the copy.
+- Board planning (Astra 03:45, after a viewer asked the team for planning help; facts and tools, the team decides).
+  - `supersedes` on a task, request or project (`board_post` and `board_update`): the items this one replaces; each
+    shows `superseded_by`.
+  - `board_update {id, edit_step: {n, text}}` changes a project step's text in place (its adder, its owner or a lead);
+    the earlier text stays in the step's history (last 8), and the change is an event (`step_edited`).
+  - `board_review {id?}` (a project and the items under it; default every active item) flags, facts only:
+    - `gone_platform`: a title or open step naming a platform of ours no longer there;
+    - `stale_handoff`: a handoff unchanged for 2 h while its owner was active in the last 30 min;
+    - `superseded`: an item another one supersedes, still active;
+    - `needs_differ`: the same item needed in different counts by items of one project.
+    On the copy of world n: 142 items read in 9-11 ms in the container (about 2 ms on n); it named the items still
+    naming Sunward, Kestrel and Wayfarer.
+  - `board_retire {ids, reason}` drops up to 32 items at once with the reason as their note, under board_update's
+    rules; one that may not be dropped is listed with why. Nothing closes on its own.

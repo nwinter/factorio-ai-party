@@ -295,9 +295,20 @@ return function(api)
       end
     end
   end
+  -- Recipes that take an item they also make, read once a recipe (most take none: the scan then stops here).
+  local CATALYST = {}
   local function catalyst_gone(e)
     local r = try(function() return e.get_recipe() end)
     if not r then return nil end
+    local c = CATALYST[r.name]
+    if c == nil then
+      c = false
+      local makes = {}
+      for _, pr in ipairs(r.products or {}) do if pr.type == 'item' then makes[pr.name] = true end end
+      for _, ing in ipairs(r.ingredients or {}) do if ing.type == 'item' and makes[ing.name] then c = true end end
+      CATALYST[r.name] = c
+    end
+    if not c then return nil end
     local made = {}
     for _, pr in ipairs(r.products or {}) do if pr.type == 'item' then made[pr.name] = true end end
     local input = try(function() return e.get_inventory(defines.inventory.crafter_input or defines.inventory.assembling_machine_input) end)
@@ -368,11 +379,11 @@ return function(api)
           local sp = try(function() return slots.input_spoilage(e) end)
           if sp then kind, detail = 'input_spoilage', string.format('%s %s: %s', e.name, at_text(e.position), sp.text)
           else
-            local cg = try(function() return catalyst_gone(e) end)
+            local cg = try(function() return api.timed and api.timed('pushalerts.catalyst_gone', catalyst_gone, e) or catalyst_gone(e) end)
             if cg then kind, detail = 'catalyst_gone', cg end
           end
         elseif not kind and (e.type == 'assembling-machine' or e.type == 'furnace') and FULL[e.status] then
-          local cf = try(function() return chest_full(e) end)
+          local cf = try(function() return api.timed and api.timed('pushalerts.output_chest_full', chest_full, e) or chest_full(e) end)
           if cf then kind, detail = 'output_chest_full', cf end
         end
         if kind then add(groups, kind, s.name, e, e.position, e.name, builder(e), detail) end

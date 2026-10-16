@@ -136,6 +136,7 @@ already targets your character.
 - `queue_status {args: true}`: history with each step's arguments (and a finished loop's steps); status `active.progress` gives a tour's or courier's leg, distance left and moved so far; an interrupted queued transfer tour resumes from the stops left.
 - `./fh call stop` ends your running body action (a walk, tour, `load_silo` or gather) and starts nothing; `queue_cancel` (with `lane: "remote"` for the remote lane) cancels a queue.
 - `nearest_water {position?, radius?}`: the nearest pumpable tile in charted ground (up to 256 tiles) with offshore-pump spots there.
+- `board_review {id?}` flags board items naming gone platforms, stale handoffs, superseded items still active and conflicting needs; `board_retire {ids, reason}` drops several; `board_update {edit_step: {n, text}}`, `supersedes`.
 - `platform_supply {platform}`: the supply chain from collectors to guns, with the first stop named.
 - `platform_plan {platform}`: foundation islands, belt loops, head-on belts and side-loads across built entities and ghosts.
 - `rotate {platform: NAME, position, direction?}` (or `surface: NAME`) turns a ghost or built belt or inserter there by remote view.

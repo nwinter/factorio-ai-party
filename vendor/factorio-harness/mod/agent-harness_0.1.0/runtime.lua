@@ -12238,7 +12238,7 @@ M.chronicle=require('chronicle'){state=state,where=function(pl) return M.freight
   owner=function(c) return M.character_owner(c) end}
 for name,handler in pairs(M.chronicle.handlers) do handlers[name]=handler end
 -- Urgent alerts that end every sleep and direct wait (Nick, d15 06:17; urgent.lua), and until=alert's filter.
-M.urgent=require('urgent'){state=state,who=function(p) return M.board.who(p) end,
+M.urgent=require('urgent'){timed=M.timed,state=state,who=function(p) return M.board.who(p) end,
   attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,
   claim_surface=function(i) return M.claims.surface_of(i) end,claim_stale=function(i) return M.claims.stale(i) end,
   platform_hears=function(p,name) return M.platalerts.hears(p,name) end,power_view=function(f) return M.networks.cached_view(f) end,
@@ -13103,7 +13103,7 @@ function M.tick_body(event)
     if not okb then local s=state();s.belt_memory_error={tick=event.tick,error=tostring(errb)} end
   end
   M.orders.tick()
-  local okr,errr=pcall(M.reminders.tick)
+  local okr,errr=pcall(M.timed,'reminders.tick',M.reminders.tick)
   if not okr then local s=state(); s.reminder_error={tick=event.tick,error=tostring(errr)} end
   clock.tick()
   M.cameras.tick()
