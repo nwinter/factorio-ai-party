@@ -276,6 +276,36 @@ return function(api)
     end
     return CONN[a .. '>' .. b]
   end
+  -- The shortest way between two space locations through the connections (Sonnet, Astra: Fulgora->Vulcanus has no
+  -- connection of its own and the platform flies through Nauvis or Gleba): {km, via (the locations between), hops
+  -- [{from, to, km}], also (another way as short)}, or nil.
+  function M.path(a, b)
+    if a == b then return {km=0, via={}, hops={}} end
+    connection(a, a)
+    local adj = {}
+    for k, len in pairs(CONN) do
+      local f, t2 = k:match('^(.-)>(.*)$')
+      adj[f] = adj[f] or {}; adj[f][#adj[f]+1] = {to=t2, km=len}
+    end
+    local dist, prev, done, ties = {[a]=0}, {}, {}, {}
+    while true do
+      local u, best
+      for n, d in pairs(dist) do if not done[n] and (not best or d < best or (d == best and n < u)) then u, best = n, d end end
+      if not u or u == b then break end
+      done[u] = true
+      for _, e in ipairs(adj[u] or {}) do
+        local nd = best + e.km
+        if not dist[e.to] or nd < dist[e.to] - 1e-6 then dist[e.to] = nd; prev[e.to] = u; ties[e.to] = nil
+        elseif math.abs(nd - dist[e.to]) <= 1e-6 and prev[e.to] ~= u then ties[e.to] = u end
+      end
+    end
+    if not dist[b] then return nil end
+    local hops, n = {}, b
+    while prev[n] do table.insert(hops, 1, {from=prev[n], to=n, km=CONN[prev[n] .. '>' .. n]}); n = prev[n] end
+    local via = {}
+    for i = 1, #hops - 1 do via[#via+1] = hops[i].to end
+    return {km=dist[b], via=via, hops=hops, also=ties[b] and ties[b] ~= hops[#hops].from and ties[b] or nil}
+  end
   local function wait_text(w)
     local t = w.type or '?'
     if w.ticks then t = t .. ' ' .. math.floor(w.ticks / 60) .. 's' end
@@ -285,9 +315,12 @@ return function(api)
     end
     return t
   end
+  -- A platform's ETA at a location through its schedule (Sonnet, every shift; Astra): at a stop, from that stop's
+  -- waits; in flight (d15 batch5 C4), from the leg it flies (the distance left at its speed now) and then the stops
+  -- after it, each stop's waits, and each stop to stop by the shortest way through the connections at its last speed.
   function M.before_departure(pl, location)
     local w = M.where(pl)
-    if not w.at then return nil, 'not at a stop' end
+    if not w.at and not w.leg then return nil, 'not at a stop' end
     local sch = try(function() return pl.schedule end)
     local records = sch and sch.records or {}
     if #records == 0 then return nil, 'it has no schedule' end
@@ -317,7 +350,45 @@ return function(api)
       return longest, other, list
     end
     local at, i, n = w.at, cur, 0
-    if records[cur] and records[cur].station ~= w.at then
+    local function fly(from, to)
+      local route = M.path(from, to)
+      if not route then return nil, 'no space connection or way through them ' .. from .. '->' .. to end
+      if not speed then return nil, 'no flying speed seen yet for ' .. pl.name end
+      local s = route.km / speed / 60
+      secs = secs + s
+      parts[#parts+1] = string.format('%s->%s %d km%s at %.0f km/s (its last speed): %ds', from, to, math.floor(route.km + 0.5),
+        #route.via > 0 and ' via ' .. table.concat(route.via, ', ') .. (route.also and ' (as short through ' .. route.also .. ')' or '') or '',
+        speed * 60, math.floor(s + 0.5))
+      return true
+    end
+    if w.leg then
+      -- In flight: the rest of this leg at its speed now, then on from its end.
+      local leg = w.leg
+      if not leg.eta_ticks then return nil, 'its speed is zero or unread now' end
+      secs = leg.eta_ticks / 60
+      speed = speed or (leg.left_km > 0 and leg.left_km / leg.eta_ticks) or nil
+      parts[#parts+1] = string.format('flying %s->%s: %d km left at its speed now: %ds', leg.from, leg.to, math.floor(leg.left_km + 0.5), math.floor(secs + 0.5))
+      at = leg.to
+      if leg.to == location then
+        return {eta_s=math.ceil(secs), after_s=math.ceil(secs), line=string.format('ETA %ds: %s', math.ceil(secs), table.concat(parts, '; '))}
+      end
+      local stop = records[cur] and records[cur].station
+      if stop and stop ~= at then
+        local ok, why = fly(at, stop)
+        if not ok then return nil, why end
+        at = stop
+      end
+      if stop == location then
+        local eta = math.ceil(secs)
+        return {eta_s=eta, after_s=eta, line=string.format('ETA %ds: %s', eta, table.concat(parts, '; '))}
+      end
+      if stop then
+        local t2, other, list = waits(records[cur], false)
+        secs = secs + t2
+        for _, o in ipairs(other) do untimed[#untimed+1] = stop .. ': ' .. o end
+        parts[#parts+1] = string.format('stops at %s (%s)', stop, #list > 0 and table.concat(list, ' ') or 'no wait conditions')
+      end
+    elseif records[cur] and records[cur].station ~= w.at then
       -- Stopped somewhere off the schedule's current record: it heads for that record next.
       i = cur - 1
     else
@@ -333,18 +404,15 @@ return function(api)
       local to = r.station
       if not to then return nil, 'schedule record ' .. i .. ' has no station' end
       if to ~= at then
-        local len = connection(at, to)
-        if not len then return nil, 'no space connection ' .. at .. '->' .. to end
-        if not speed then return nil, 'no flying speed seen yet for ' .. pl.name end
-        local s = len / speed / 60
-        secs = secs + s
-        parts[#parts+1] = string.format('%s->%s %d km at %.0f km/s (its last speed): %ds', at, to, math.floor(len + 0.5), speed * 60, math.floor(s + 0.5))
+        local ok, why = fly(at, to)
+        if not ok then return nil, why end
         at = to
       end
       if to == location or (location == nil and to ~= w.at) then
         local eta = #untimed == 0 and math.ceil(secs) or nil
         local line = table.concat(parts, '; ')
-        if eta then line = string.format('ETA %s%ds before departure: %s', upper and 'at most ' or '', eta, line)
+        local how = w.leg and '' or ' before departure'
+        if eta then line = string.format('ETA %s%ds%s: %s', upper and 'at most ' or '', eta, how, line)
         else line = string.format('ETA %ds after %s: %s', math.ceil(secs), table.concat(untimed, ' and '), line) end
         return {eta_s=eta, after_s=math.ceil(secs), after_waits=#untimed > 0 and untimed or nil, line=line}
       end
@@ -644,6 +712,36 @@ return function(api)
     local text = string.format('leg %s->%s (%s)', seg.from, seg.to, when(seg, game.tick))
       .. (#parts > 0 and ': ' .. table.concat(parts, '; ') or ': no spoilable item aboard')
     return {line=text, kind='leg', from=seg.from, to=seg.to, start=seg.start, ['end']=seg['end'], items=rows}
+  end
+  -- Our platforms headed for a planet (Sonnet: stage freight for a platform flying toward the agent): flying to it, or
+  -- with it in their schedule, each with where it is, its ETA through the schedule (before_departure) and what its hub
+  -- holds (main inventory, the largest stacks first).
+  function M.headed(force, planet, limit)
+    local rows = {}
+    for _, pl in pairs(try(function() return force.platforms end) or {}) do
+      if pl.valid and pl.hub and pl.hub.valid then
+        local w = M.where(pl)
+        local goes = w.leg and w.leg.to == planet
+        if not goes and w.at ~= planet then
+          for _, r in ipairs(try(function() return pl.schedule.records end) or {}) do if r.station == planet then goes = true end end
+        end
+        if goes and w.at ~= planet then
+          local est, why = M.before_departure(pl, planet)
+          local inv = try(function() return pl.hub.get_inventory(defines.inventory.hub_main) end)
+          local items = {}
+          for _, s in ipairs(inv and try(function() return inv.get_contents() end) or {}) do items[#items+1] = {name=s.name, count=s.count, quality=s.quality} end
+          table.sort(items, function(x, y) if x.count ~= y.count then return x.count > y.count end return x.name < y.name end)
+          local text = {}
+          for i, s in ipairs(items) do if i > 10 then text[#text+1] = '+' .. (#items - 10) .. ' more'; break end; text[#text+1] = s.name .. '*' .. s.count end
+          local eta = est and est.eta_s
+          rows[#rows+1] = {platform=pl.name, where=w.text, eta_s=eta, eta=est and est.line or why, hub=#text > 0 and table.concat(text, ' ') or 'empty',
+            line=string.format('%s (%s): %s; hub: %s', pl.name, w.text, est and est.line or ('no estimate: ' .. tostring(why)), #text > 0 and table.concat(text, ' ') or 'empty')}
+        end
+      end
+    end
+    table.sort(rows, function(x, y) return (x.eta_s or math.huge) < (y.eta_s or math.huge) end)
+    while limit and #rows > limit do table.remove(rows) end
+    return rows
   end
   -- Rockets on their way to a platform's hub (Astra, 22:50: cargo still incoming, reconciled by hand): each launch to it
   -- keeps its cargo pod until the pod is gone. 2.0.77 on a copy of world n: a pod rose over the planet about 25 s, came

@@ -44,6 +44,7 @@
   `launch` refuses a rocket with no cargo (a launch spends its parts) unless `allow_empty: true`, naming science in
   chests near the silo. A silo's transfer inventories: `assembling_machine_input` (alias `parts`, the rocket-part
   ingredients) and `rocket_silo_rocket` (alias `cargo`, what goes up with the rocket); `inspect` lists them with a call each.
+- `cargo {incoming: true}` lists our platforms headed for your planet with their ETA and hub cargo; `cargo {items, silo, to_platform?}` adds when that list can go up (rockets, parts, the platform's arrival).
 - `./fh call load_silo --args '{"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","position":{"x":65.5,"y":14.5},"to_total":true}' --wait`
   loads the list into the rocket from your inventory and our chests in reach (any chest kind, logistic chests and a
   landing pad too, nearest first; `from` for given chests) and launches

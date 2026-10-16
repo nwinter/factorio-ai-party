@@ -993,6 +993,11 @@ return function(api)
       words[#words+1] = #lacking > 0 and 'the list lacks ' .. table.concat(lacking, ', ') or 'the list is aboard'
     end
     add_platforms(out, words, p, a, here, inv, held, extra_cache)
+    -- Automatic requests on (Sol 04:50): what automatic loading waits for, per request of the platforms above (silo.lua).
+    if out.auto_requests and api.auto_wait then
+      local okw, w = pcall(api.auto_wait, silo, p.force, held)
+      if okw and w then out.auto_waits = w; words[#words+1] = 'automatic loading: ' .. w end
+    end
     -- What launch would refuse now.
     local refuse = {}
     if not out.rocket_ready then refuse[#refuse+1] = rk and rk.rocket_now or 'the rocket is not ready' end

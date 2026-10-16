@@ -461,6 +461,16 @@ eq(drop_pod.cargo_pod_destination.surface,vulcanus_surface); eq(drop_pod.cargo_p
 -- The drop is followed until it lands (drops.lua): its number, the pod, who is told.
 eq(d.drop,7); eq(drop_record.pod,drop_pod); eq(drop_record.platform,'alpha'); eq(drop_record.surface,'vulcanus')
 eq(drop_record.sent[1],'iron-plate*5'); eq(drop_record.near.x,0); assert(d.note:find('team block says where',1,true),d.note)
+-- up_to (d15 batch5 C3, Astra twice: the hub's pad requests took the items first and the queued drop failed): what the
+-- hub holds now, up to the count; holding none, done with nothing sent.
+local held_now=hub_inv.get_item_count{name='iron-plate'}
+d=space.drop(p,{platform='alpha',items={{item='iron-plate',count=885}},up_to=true})
+eq(d.dropped[1],'iron-plate*'..held_now); eq(d.up_to,'up_to: the hub held iron-plate '..held_now..' of 885')
+eq(hub_inv.get_item_count{name='iron-plate'},0)
+d=space.drop(p,{platform='alpha',items={{item='iron-plate',count=885}},up_to=true})
+eq(d.nothing_to_drop,true); eq(#d.dropped,0); assert(d.note:find('nothing sent; the drop is done',1,true),d.note)
+fails(function() space.drop(p,{platform='alpha',items={{item='iron-plate',count=1}}}) end,'holds 0 iron-plate, not 1')
+hub_inv.insert(stack('iron-plate',2))
 fails(function() space.drop(p,{platform='alpha',items={{item='iron-plate',count=1}},to='nobody'}) end,'unknown agent nobody')
 eq(hub_inv.get_item_count{name='iron-plate'},2,'an unknown teammate fails before anything leaves the hub')
 -- Two items in one drop, each from its own hub stack.

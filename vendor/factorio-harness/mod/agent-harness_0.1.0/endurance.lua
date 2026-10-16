@@ -86,8 +86,19 @@ return function(api)
     for _, to in ipairs(stops) do
       if from and to ~= from then
         local len = connection(from, to)
-        legs[#legs+1] = {from=from, to=to, km=len and round(len, 0) or nil, none=len == nil or nil}
-        total_km = total_km + (len or 0)
+        -- No connection of its own (Astra: Fulgora->Vulcanus said "no connection" though the platform flies via Nauvis):
+        -- the shortest way through the connections, a leg each hop.
+        local route = not len and api.path and api.path(from, to)
+        if route then
+          for _, h in ipairs(route.hops) do
+            legs[#legs+1] = {from=h.from, to=h.to, km=round(h.km, 0), via_for=from .. '->' .. to,
+              also=route.also and ('as short through ' .. route.also) or nil}
+            total_km = total_km + h.km
+          end
+        else
+          legs[#legs+1] = {from=from, to=to, km=len and round(len, 0) or nil, none=len == nil or nil}
+          total_km = total_km + (len or 0)
+        end
       end
       from = to
     end
@@ -294,7 +305,8 @@ return function(api)
     local legs_text = {}
     for _, l in ipairs(legs) do
       legs_text[#legs_text+1] = string.format('%s->%s %s km, %s%s', l.from, l.to, l.km and tostring(l.km) or '?', l.minutes and mins(l.minutes) or 'time unknown',
-        l.now and ' (the rest of the leg it flies)' or l.none and ' (no space connection between them)' or '')
+        l.now and ' (the rest of the leg it flies)' or l.none and ' (no space connection between them)'
+          or l.via_for and ' (on the way ' .. l.via_for .. (l.also and ', ' .. l.also or '') .. ')' or '')
     end
     return {platform=pl.name, route=route_by, legs=legs, total_km=round(total_km, 0), total_minutes=total_min and round(total_min, 1) or nil,
       speed_km_per_min=v and round(v, 1) or nil, speed_from=v_by or 'unknown: stopped, and no finished leg on record (times unknown)',
