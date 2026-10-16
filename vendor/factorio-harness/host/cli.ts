@@ -515,7 +515,7 @@ export function stillRunningLine(reply: Reply): string | undefined {
   const ends = [reply.result, reply.result?.completion];
   const what = ends.map(r => r && typeof r === 'object' ? r.still_running : undefined).find(v => v !== undefined && v !== false);
   const label = typeof what === 'string' ? what : typeof what === 'object' && what && typeof (what as any).kind === 'string' ? (what as any).kind : 'the action';
-  return `still running (exit 3): ${label} goes on after this wait ended (a walk keeps walking); fh wait resumes waiting for it`;
+  return `still running (exit 3): ${label} goes on after this wait ended (a walk keeps walking); fh wait resumes waiting for it. A call that drives your character (move_to, transfer, collect, feed, build, mine, rearm, refuel ...) stops it; reads (observe, inspect, status, trace, supply ...), say, tell, chat, craft, planners (place_ghosts, deconstruct, requests) and calls by remote view or on another surface leave it running`;
 }
 function setExit(reply: Reply) {
   process.exitCode = exitCode(reply);

@@ -572,3 +572,75 @@ do
   eq(PA.outpost_low(t,inv),nil,'robots reach it')
 end
 print('d15_batch4 15 outpost: ok')
+
+-- F1 (Astra, 3 times): deconstruct of ghosts: a removed ghost is invalid at once; never fail for an entity gone. -----
+do
+  defines={input_action={}}
+  game={create_inventory=function() return {[1]={},destroy=function() end} end}
+  prototypes={entity={}}
+  local force={name='player',is_chunk_charted=function() return true end}
+  local list={}
+  local function ghost(name,also)
+    local g={valid=true,type='entity-ghost',name='entity-ghost',ghost_name=name,force=force,minable=true}
+    setmetatable(g,{__index=function(t,k) if not rawget(t,'alive') then error('LuaEntity API call when LuaEntity was invalid.') end end})
+    g.alive=true
+    local real={}
+    for k,v in pairs(g) do real[k]=v end
+    -- Every field read errors once it is gone, as the engine's do.
+    local e=setmetatable({},{__index=function(_,k)
+      if k=='valid' then return real.alive end
+      if not real.alive then error('LuaEntity API call when LuaEntity was invalid.') end
+      if k=='to_be_deconstructed' then return function() return false end end
+      if k=='order_deconstruction' then return function() real.alive=false; if also then also() end; return true end end
+      return real[k]
+    end})
+    return e,real
+  end
+  local g1,r1=ghost('transport-belt')
+  local g2,r2=ghost('inserter')
+  local g3,r3=ghost('inserter')
+  -- Removing g2 takes g3 with it (a ghost under another).
+  getmetatable(g2).__index=(function(old) return function(t,k)
+    if k=='order_deconstruction' and r2.alive then return function() r2.alive=false; r3.alive=false; return true end end
+    return old(t,k) end end)(getmetatable(g2).__index)
+  list={g1,g2,g3}
+  local p={index=1,position={x=0,y=0},force=force,surface={find_entities_filtered=function() return list end}}
+  local B=dofile('mod/agent-harness_0.1.0/blueprints.lua'){position=function(v) return v end,real=function(q) return q end}
+  local r=B.handlers and B.handlers.deconstruct or B.deconstruct
+  local out=r(p,{area={left_top={x=48,y=217},right_bottom={x=49,y=218}},entity_types={'entity-ghost'}})
+  eq(out.changed,2); eq(out.ghosts_removed,2); eq(out.ghosts_removed_by_name,'1 inserter, 1 transport-belt')
+  has(out.gone,'1 found in the area were gone by the time they were reached')
+end
+print('d15_batch4 F1 deconstruct ghosts: ok')
+
+-- F2 (Muse): a gathering already told wakes again only when it changes. ----------------------------------------------
+do
+  game={tick=1000}
+  local s={active={}}
+  local U=dofile('mod/agent-harness_0.1.0/urgent.lua'){state=function() return s end,who=function(p) return p.name end,
+    attack_line=function(v) return 'attack' end,claim_surface=function() return 'nauvis' end,claim_stale=function() return false end,
+    platform_hears=function() return false end,power_view=function() return nil end}
+  local p={index=1,name='muse',surface={name='nauvis'},character={valid=true,position={x=82,y=-4},health=250},force={platforms={}}}
+  s.attack_groups={}
+  local seq=0
+  local function gather(size,at,target)
+    game.tick=game.tick+600; seq=seq+1
+    s.attack_groups[#s.attack_groups+1]={seq=seq,tick=game.tick,size=size,position=at,target=target,surface='nauvis'}
+    return U.check(p,U.base(p,40) and {tick=game.tick-1,hub={},radius=40})
+  end
+  has(gather(8,{x=187,y=-14},{x=96,y=-30}),'enemy group of 8')
+  eq(gather(12,{x=187,y=-14},{x=96,y=-30}),nil,'same spot, not much larger')
+  eq(gather(4,{x=191,y=1},{x=96,y=-30}),nil,'within 24 tiles of the spot')
+  has(gather(21,{x=187,y=-14},{x=96,y=-30}),'again: it is larger: 21 (the largest told was 8)')
+  eq(gather(19,{x=187,y=-14},{x=96,y=-38}),nil)
+  -- Its target 15+ tiles nearer.
+  has(gather(19,{x=187,y=-14},{x=90,y=-8}),'again: it heads 21 tiles nearer you than before (9, was 30)')
+  -- Our structures near its target hit since (49 tiles from the character: no attack wake of its own).
+  s.damage={a={id=5,at={x=130,y=-20},damage=40,hits=2,last=game.tick+300,surface='nauvis'}}
+  game.tick=game.tick+300
+  has(gather(19,{x=187,y=-14},{x=110,y=-20}),'again: our structures near its target took damage since at (130,-20)')
+  -- Another spot is a new gathering.
+  s.damage=nil
+  has(gather(5,{x=100,y=60},{x=90,y=10}),'enemy group of 5')
+end
+print('d15_batch4 F2 gatherings: ok')

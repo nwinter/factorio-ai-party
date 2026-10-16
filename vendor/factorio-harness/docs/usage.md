@@ -4975,3 +4975,29 @@ fh watch    # deploy on every change
     - On the copy: `construct: 13 ghosts (...); rearm: 1 of 23 ammo turrets under 20 rounds, with
       piercing-rounds-magazine`, 31 ms in the container for the read (about 6 ms on n).
 
+## d15 batch4 follow-ups (operator 22:55)
+
+- `deconstruct {area, entity_types: ["entity-ghost"]}` (Astra, 3 times: one ghost removed, then `LuaEntity API call
+  when LuaEntity was invalid.`). A ghost given a deconstruction order is removed at once; the call read it after that.
+  Now everything read of an entity is read before the order, and an entity gone by the time it is reached is skipped
+  and counted (`gone`). The reply adds `ghosts_removed` and `ghosts_removed_by_name`. The call no longer fails for an
+  entity that went away.
+- Repeated urgent wakes (Muse, a dozen this shift: groups re-gathering at (187,-14) for (96,-30) while 31 turrets held
+  with no damage). An urgent group wake is now kept per gathering: enemy groups staging within 24 tiles of a spot this
+  agent was already told of. Such a gathering wakes again only when:
+  - its target is 15+ tiles nearer the agent;
+  - it is at least 1.5 times and 5 more than the largest told;
+  - our structures within 24 tiles of its target took damage since.
+  The line then ends with why: `...; again: it is larger: 21 (the largest told was 8)`. A gathering is kept 30 minutes
+  after it was last seen. `wait --until alert` still names every new group.
+- An item the machine's recipe takes goes to its recipe input (Grok, every breeder feed: nutrients into a biochamber
+  making pentapod eggs went to its fuel slot, and the recipe stayed short). Before, this held only for modules. A
+  transfer or feed into a crafting machine now sends any item its recipe lists to the recipe input, even a fuel.
+  `inventory: "fuel"` puts it in the fuel slot, and a fuel the recipe does not list goes there as before. The reply's
+  `inventory` names where it went. A fuel item put into a recipe input adds `inventory_note`: `into the recipe input:
+  its recipe takes nutrients; inventory: "fuel" puts it in the fuel slot`. The transfer dry run's `accepts` reads a
+  named `inventory` too.
+- The exit 3 stderr line also says which next calls stop a running action: one that drives the character (move_to,
+  transfer, collect, feed, build, mine, rearm, refuel ...). Reads, say, tell, chat, craft, planners (place_ghosts,
+  deconstruct, requests) and calls by remote view or on another surface leave it running.
+

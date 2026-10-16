@@ -877,20 +877,39 @@ return function(api)
     -- Heat-network parts it marks (Sol, shift19): what their removal does to heat (heating.lua loss).
     local heat_parts,already={},0
     local HEAT_PART={['heat-pipe']=true,reactor=true,boiler=true,['heat-interface']=true}
+    -- A ghost given a deconstruction order is removed at once, as a planner removes it (Astra, shift20, 3 times: the next
+    -- read of it failed "LuaEntity API call when LuaEntity was invalid"): what is read of an entity is read before the
+    -- order, an entity gone by the time it is reached is skipped, and removed ghosts are counted apart.
+    local removed,ghost_names,gone=0,{},0
     for _, e in ipairs(list) do
-      if e.valid and (e.force==p.force or e.force.name=='neutral') and e.type~='character' and e.minable
-        and (not filters.entity_types or filters.entity_types[e.type])
-        and (not filters.entity_names or filters.entity_names[e.name]) then
+      local ok,t,n,mine=pcall(function() return e.valid and e.type,e.valid and e.name,e.valid and (e.force==p.force or e.force.name=='neutral') and e.type~='character' and e.minable end)
+      if not (ok and t) then gone=gone+1
+      elseif mine and (not filters.entity_types or filters.entity_types[t]) and (not filters.entity_names or filters.entity_names[n]) then
         if cancel then
           if e.to_be_deconstructed(p.force) then e.cancel_deconstruction(p.force,real(p)); changed=changed+1 end
         elseif dry then
           -- (a dry run: what is not marked yet; ghosts would be removed, as a planner removes them)
-          if not e.to_be_deconstructed(p.force) then changed=changed+1; by[e.name]=(by[e.name] or 0)+1; if HEAT_PART[e.type] then heat_parts[#heat_parts+1]=e end end
-        elseif (pcall(e.to_be_deconstructed,p.force)) and e.to_be_deconstructed(p.force) then already=already+1
-        elseif e.order_deconstruction(p.force,real(p)) then changed=changed+1; if HEAT_PART[e.type] then heat_parts[#heat_parts+1]=e end end
+          if not e.to_be_deconstructed(p.force) then changed=changed+1; by[n]=(by[n] or 0)+1; if HEAT_PART[t] then heat_parts[#heat_parts+1]=e end end
+        elseif t~='entity-ghost' and t~='tile-ghost' and (pcall(e.to_be_deconstructed,p.force)) and e.to_be_deconstructed(p.force) then already=already+1
+        else
+          local ghost_name=(t=='entity-ghost' or t=='tile-ghost') and (select(2,pcall(function() return e.ghost_name end)) or n) or nil
+          local okd,done=pcall(e.order_deconstruction,p.force,real(p))
+          if okd and done then
+            changed=changed+1
+            if ghost_name then removed=removed+1; ghost_names[ghost_name]=(ghost_names[ghost_name] or 0)+1
+            elseif HEAT_PART[t] and e.valid then heat_parts[#heat_parts+1]=e end
+          elseif not e.valid then gone=gone+1 end
+        end
       end
     end
     out.changed=changed
+    if removed>0 then
+      local parts={}
+      for gn,c in pairs(ghost_names) do parts[#parts+1]=c..' '..gn end
+      table.sort(parts)
+      out.ghosts_removed=removed; out.ghosts_removed_by_name=table.concat(parts,', ')
+    end
+    if gone>0 then out.gone=gone..' found in the area were gone by the time they were reached (removed with a ghost before them)' end
     if already>0 then out.already_marked=already..' already marked for deconstruction (deconstruct {area, cancel: true} or cancel_deconstruction unmarks them)' end
     if dry then
       out.changed=nil; out.would_mark=changed

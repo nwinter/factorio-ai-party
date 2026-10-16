@@ -5160,4 +5160,19 @@ end)()
     'leg 1 of 3 (a (3,4)), 5 tiles to it, 22 tiles left in all; took 50, delivered 0')
   runtime.lookup=keep
 end)()
+-- d15 F8 (Grok): an item the machine's recipe takes goes to its recipe input, not its fuel slot (nutrients into a
+-- biochamber making pentapod eggs).
+;(function()
+  defines.inventory.fuel=defines.inventory.fuel or 41; defines.inventory.assembling_machine_input=defines.inventory.assembling_machine_input or 42
+  prototypes.item.nutrients={fuel_value=2000000,type='item'}; prototypes.item['bioflux']={fuel_value=6000000,type='item'}
+  local function inv() return {valid=true,can_insert=function() return true end} end
+  local fuel,input=inv(),inv()
+  local bio={name='biochamber',type='assembling-machine',position={x=5.5,y=5.5},
+    get_recipe=function() return {name='pentapod-egg',ingredients={{type='item',name='nutrients',amount=30},{type='item',name='pentapod-egg',amount=1}}} end,
+    get_fuel_inventory=function() return fuel end,
+    get_inventory=function(id) if id==defines.inventory.fuel then return fuel elseif id==defines.inventory.assembling_machine_input then return input end end}
+  eq(runtime.accepts_text(bio,{item='nutrients'}),'yes: biochamber (5.5,5.5) takes nutrients into assembling_machine_input','recipe ingredient to the input')
+  eq(runtime.accepts_text(bio,{item='bioflux'}),'yes: biochamber (5.5,5.5) takes bioflux into fuel','a fuel the recipe does not take')
+  eq(runtime.accepts_text(bio,{item='nutrients',inventory='fuel'}),'yes: biochamber (5.5,5.5) takes nutrients into fuel','inventory fuel named')
+end)()
 print('runtime: '..assertions..' assertions passed')
