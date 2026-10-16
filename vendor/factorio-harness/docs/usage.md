@@ -5183,3 +5183,8 @@ fh watch    # deploy on every change
   for, that payload takes 1 hub slot, the hub has 45 free`. The payload a rocket waits for is the request's min
   payload, else a full rocket by weight (both seen on 2.0.77). While the silo fills a rocket for one platform, the
   others' requests follow as `waiting meanwhile: ...`. The game's choice among several eligible requests is not read.
+- `drop {platform, items, up_to: true}` (Astra, twice: automatic pad requests emptied Tern's hub just before a queued
+  drop, which failed and paused the route; 885 agricultural packs at Nauvis): drops what the hub holds now of each
+  item, up to its count, and says `up_to: the hub held agricultural-science-pack 120 of 885`. Holding none of any, it
+  is done with nothing sent (`nothing_to_drop: true`), so a queue step goes on. Without `up_to` a short hub still
+  refuses, as before.
