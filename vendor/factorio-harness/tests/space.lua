@@ -345,9 +345,10 @@ fails(function() space.launch(p,{position={x=20.5,y=20.5},ride=true}) end,'ride 
 -- Riding as the silo GUI allows: no other payload, nothing carried but armor and guns.
 defines.inventory.character_main=10; defines.inventory.character_ammo=11
 local carried={[10]=false,[11]=false}
-p.character.get_inventory=function(i) return {is_empty=function() return not carried[i] end} end
+p.character.get_inventory=function(i) return {is_empty=function() return not carried[i] end,get_contents=function() return carried[i] and {{name='firearm-magazine',count=10}} or {} end} end
 carried[11]=true
-fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha',ride=true}) end,'put down everything in character_ammo')
+-- The refusal names what is in the slots and how to clear them (Grok, d15).
+fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha',ride=true}) end,'character_ammo holds firearm-magazine*10; equip {slot: "ammo", unequip: true} moves them to your main inventory')
 carried[11]=false
 local saved_cargo=silo_cargo
 silo_cargo={get_contents=function() return {{name='coal',count=5}} end}
@@ -368,7 +369,7 @@ local bot_space=dofile('mod/agent-harness_0.1.0/space.lua'){position=function(v)
     land=function(b) landed=b; return {landing='nauvis',at={x=1,y=2}} end}}
 silo.rocket={valid=true,attached_cargo_pod={valid=true,name='cargo-pod'}}
 carried[10]=true
-fails(function() bot_space.launch(bot,{position={x=20.5,y=20.5},platform='alpha',ride=true}) end,'put down everything in character_main')
+fails(function() bot_space.launch(bot,{position={x=20.5,y=20.5},platform='alpha',ride=true}) end,'character_main holds firearm-magazine*10; ship it as rocket cargo, or put it in a chest')
 eq(boarded,nil,'nothing moves when the rule fails')
 carried[10]=false
 launched=nil

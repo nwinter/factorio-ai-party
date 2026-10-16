@@ -1416,7 +1416,7 @@ function handlers.describe()
         gun='in a vehicle: a gun name (tank-cannon, tank-machine-gun, tank-flamethrower, vehicle-machine-gun, spidertron-rocket-launcher-1..4)',
         ammo='in a vehicle: an ammo name (cannon-shell, explosive-cannon-shell, firearm-magazine, flamethrower-ammo, rocket, ...): the gun that takes it, its slot loaded from your inventory when empty or holding another kind',
         note='seated in a car, tank or spidertron as its gunner (the driver, unless driver_is_gunner is off and a passenger sits in) it fires the vehicle\'s selected gun from the vehicle\'s ammo slots; the turret turns toward the target as a player\'s cursor turns it; position= aims at the entity there (not our own), auto=true at the nearest enemy in radius; vehicle {drive} goes on while it fires; reply: vehicle, seat, gun, gun_slot, range, guns (each slot with its ammo), target, out_of_range',
-        outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={slot='gun|ammo|armor (default: the item\'s kind)',item='owned item name',index='optional exact slot; without it gun/ammo tries compatible empty slots in order, then slot 1; armor defaults to 1. Ammo held only in the ammo slots moves between them (gun slot N fires only from ammo slot N): to index, or beside the selected gun when it fits, else beside the first gun it fits; returns moved_from, swapped, fired_by'},
+        outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={unequip='true, with slot ammo or gun (index? item?): that slot\'s stacks back to your main inventory (what does not fit stays, in left); returns unequipped, left',slot='gun|ammo|armor (default: the item\'s kind)',item='owned item name',index='optional exact slot; without it gun/ammo tries compatible empty slots in order, then slot 1; armor defaults to 1. Ammo held only in the ammo slots moves between them (gun slot N fires only from ammo slot N): to index, or beside the selected gun when it fits, else beside the first gun it fits; returns moved_from, swapped, fired_by'},
       danger={position='{x,y}: the destination',radius='8..128 tiles (default 64)',surface='optional surface name (default yours)',returns='line and lines (facts, no verdict): the destination and its distance from you; worms and spawners on charted chunks within radius by name, each kind\'s reach (a worm\'s range, a spawner\'s units\' sight) and the nearest; enemy units seen now within radius (chunks our force sees now) by name and the nearest; attacks on our structures, buildings lost and enemy groups heading there in the last 10 min; deaths of ours within radius; the worms and spawners whose reach the straight line from you passes (not the walk\'s path); you: health, armor, shield. Also spawners, worms, units {name=count}, distance, you {health, max_health, armor, shield, max_shield}'},
       pipe_gaps={from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; axis-aligned legs, at most 512 tiles',returns='line (one line), segments [{from, to, tiles, first, last, segment_id, fluid, amount, extent, underground}] (runs of tiles whose fluid entities join, with the engine\'s fluid segment there), cuts [{between, line}] (two neighbouring entities that do not join, or where the line stops at a tile with nothing), empty [{from, to, tiles}] (no fluid entity of ours and no pipe-to-ground pair over it), ghosts [{position, name}], unknown [{from, to, tiles}] (chunks our force does not see now: not read); in sight or by remote view on your surface'},
       belt_gaps={from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; axis-aligned legs, at most 512 tiles',surface='optional surface name (default yours)',returns='missing and ghosts with observed_tick; unknown means no recorded observation, never a missing belt; observations lists each chunk and age/current flag; visible chunks refreshed (at most 4); otherwise the remembered layout, including observed underground spans; no live entity reads in fog. Memory starts when installed, up to 256 chunks, discovered by the census or this call, one visible chunk refreshed per second'},
@@ -8426,6 +8426,28 @@ function handlers.shoot(p,a)
 end
 function handlers.equip(p,a)
   local names={gun='character_guns',ammo='character_ammo',armor='character_armor'}
+  -- unequip (Grok, d15: a rocket ride refused ammo in the ammo slots, and equip could only put ammo in): the slot's
+  -- stacks (index: one slot; item: that item) back to the main inventory, as the GUI's click on a slot does.
+  if a.unequip~=nil then
+    assert(a.unequip==true,'unequip must be true')
+    assert(a.slot=='ammo' or a.slot=='gun','unequip takes slot "ammo" or "gun" (index? item?)')
+    local inv=p.get_inventory(defines.inventory[names[a.slot]])
+    local index=a.index~=nil and integer(a.index,nil,1,#inv,'index') or nil
+    assert(a.item==nil or (type(a.item)=='string' and prototypes.item[a.item]),'item must be an item name')
+    local main=p.get_main_inventory()
+    local moved,left={},{}
+    for i=1,#inv do
+      local s=inv[i]
+      if (index==nil or index==i) and s.valid_for_read and (a.item==nil or s.name==a.item) then
+        local stack={name=s.name,count=s.count,quality=s.quality}
+        local n=main.insert(stack)
+        if n>0 then if n>=s.count then s.clear() else s.count=s.count-n end; moved[#moved+1]=string.format('%s*%d from %s slot %d',stack.name,n,a.slot,i) end
+        if n<stack.count then left[#left+1]=string.format('%s*%d in %s slot %d (no room in your main inventory)',stack.name,stack.count-n,a.slot,i) end
+      end
+    end
+    assert(#moved>0 or #left>0,'nothing in your '..a.slot..' slots'..(index and ' at index '..index or '')..(a.item and ' of '..a.item or '')..' to unequip')
+    return {unequipped=#moved>0 and moved or nil,left=#left>0 and left or nil}
+  end
   -- The slot from the item's kind when not given (Grok, shift19 00:36: equip {item: piercing-rounds-magazine}).
   if a.slot==nil and type(a.item)=='string' then
     local t=prototypes.item[a.item] and prototypes.item[a.item].type

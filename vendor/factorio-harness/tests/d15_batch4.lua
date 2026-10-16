@@ -427,3 +427,22 @@ do
   eq(S.auto_wait(silo,force,{}),'no platform taken up now; above nauvis: Starling asks low-density-structure 50 (holds 0); the silo\'s network holds 30, a full rocket of it is 200 by weight')
 end
 print('d15_batch4 8 silo: ok')
+
+-- 9 (Gemini, 21:40): train {stops: true}: every stop of ours on a surface. ------------------------------------------
+do
+  defines={train_state={},signal_state={}}
+  prototypes={entity={}}
+  local s1={valid=true,unit_number=1,backer_name='Scrap North',position={x=-41,y=93},trains_limit=2,trains_count=1,connected_rail={name='straight-rail',position={x=-43,y=93}}}
+  local s2={valid=true,unit_number=2,backer_name='Iron Drop',position={x=1,y=193},trains_count=0,connected_rail=nil}
+  local surface={name='fulgora'}
+  game={get_surface=function(n) return n=='fulgora' and surface or nil end,train_manager={
+    get_train_stops=function(f) assert(f.surface==surface) return {s1,s2} end,
+    get_trains=function() return {{id=13,station=nil,path_end_stop=s1,front_stock={valid=true,position={x=-43,y=110}}}} end}}
+  local T=dofile('mod/agent-harness_0.1.0/trains.lua'){}
+  local r=T.handlers.train({surface={name='nauvis'},force='player'},{stops=true,surface='fulgora'})
+  eq(r.count,2)
+  eq(r.stops[1].line,'Iron Drop (1,193): limit none, 0 trains on the way or there; rail none: no straight rail beside it on the side that serves its direction')
+  eq(r.stops[2].line,'Scrap North (-41,93): limit 2, 1 train on the way or there (train 13 heading there (front (-43,110))); rail straight-rail (-43,93)')
+  fails(function() T.handlers.train({surface=surface,force='player'},{stops=true,position={x=0,y=0}}) end,'stops takes surface only')
+end
+print('d15_batch4 9 train stops: ok')

@@ -4903,4 +4903,17 @@ fh watch    # deploy on every change
     each); its network holds 30 more, under the 186 it still waits for; ...`.
   - No platform taken up: `no platform taken up now; above nauvis: Starling asks low-density-structure 50 (holds 0);
     the silo's network holds 30, a full rocket of it is 200 by weight`.
+- `equip {slot: "ammo", unequip: true, index?, item?}` (Grok: a rocket ride refused ammo in the ammo slots, and equip
+  could only put ammo in) moves that slot's stacks back to the main inventory (`unequipped`). What does not fit stays
+  and is named in `left`. `slot: "gun"` does the same for guns.
+- A ride refused for items it carries names them and, for the ammo slots, how to clear them: `only armor and guns
+  travel with the rider: character_ammo holds firearm-magazine*10; equip {slot: "ammo", unequip: true} moves them to
+  your main inventory; a transfer {position, direction: "to_entity", item} into a chest takes from the ammo slots too`.
+- `fh ... --wait` that ends with exit 3 (a tell, a mention or the wait timeout while the action still runs) also writes
+  to stderr: `still running (exit 3): transfer goes on after this wait ended (a walk keeps walking); fh wait resumes
+  waiting for it`.
+- `train {stops: true, surface?}` (Gemini, 21:40: no call listed the train stops) lists every train stop of ours on the
+  surface, by name: position, the rail beside it, limit, `trains_count`, and the trains heading there or stopped at it
+  (`train 13 at it (front (-43,96))`). It gives at most 200, and reads `game.train_manager.get_train_stops` and
+  `get_trains` once each.
 
