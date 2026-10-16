@@ -435,6 +435,15 @@ local function finish(index, outcome)
       end
     end
     M.avoid.report(last,action)
+    -- A walk through via points that ended short (Opus, d15: the NE uranium route): which leg, on the why line too.
+    if action.via and outcome~=nil and outcome~='arrived' and outcome~='arrived_near' then
+      local v=action.via
+      local goal=v.index>#v.points and v.final or v.points[v.index]
+      last.failed_leg=string.format('leg %d of %d (to %s)',v.index,#v.points+1,goal and at(goal) or '?')
+      last.why=last.failed_leg..': '..(last.why or outcome)
+      local sm=last.smaller_margins
+      if sm and sm.line then last.why=last.why..'; '..sm.line end
+    end
     local ob=action.off_belt
     if ob then
       local where=ob.reach and 'within reach of the target' or 'within the arrival radius'

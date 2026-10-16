@@ -446,3 +446,44 @@ do
   fails(function() T.handlers.train({surface=surface,force='player'},{stops=true,position={x=0,y=0}}) end,'stops takes surface only')
 end
 print('d15_batch4 9 train stops: ok')
+
+-- 11 (Opus): smaller margins verified over every leg left in a via chain, and for {distance: N}. ----------------------
+do
+  game={tick=0,forces={player={name='player'},enemy={name='enemy'}}}
+  prototypes={entity={['biter-spawner']={result_units={}}}}
+  defines=defines or {}
+  local force=game.forces.player
+  force.get_friend=function() return false end
+  force.get_cease_fire=function() return false end
+  local state,paths,asked={},{},{}
+  local surface={name='nauvis',index=1}
+  local hazard={valid=true,name='biter-spawner',type='unit-spawner',position={x=50,y=42.5},force=game.forces.enemy}
+  surface.find_entities_filtered=function() return {hazard} end
+  surface.request_path=function(a) asked[#asked+1]=a; return #asked end
+  local p={index=1,position={x=0,y=0},surface=surface,force=force,walking_state={walking=false},
+    character={prototype={collision_box={left_top={x=-0.2,y=-0.2},right_bottom={x=0.2,y=0.2}},collision_mask={layers={player=true}}}}}
+  package.loaded.avoid=nil; package.loaded.margin_probe=nil
+  local A=require('avoid'){state=function() return state end,charted=function() return true end,leg=function() return false end}
+  local P=require('margin_probe'){avoid=A,paths=function() return paths end}
+  local function run(n)
+    local count=0
+    while P.tick(p,n) do
+      game.tick=game.tick+1; count=count+1; assert(count<2000)
+      local q=n.margin_probe
+      if q.id then local r=asked[q.id]; P.on_path(n,{id=q.id,path={{position=r.start},{position={x=(r.start.x+r.goal.x)/2,y=(r.start.y+r.goal.y)/2}},{position=r.goal}}}) end
+    end
+    return n.margin_probe.result
+  end
+  -- A via chain: the leg to (100,0) failed; the rest of the chain goes on to (100,100) then (0,100).
+  local n={position={x=100,y=0},path_state='unsafe',foes={mode=A.mode(4),goal={x=100,y=0}},via={index=1,points={{x=100,y=0},{x=100,y=100}},final={x=0,y=100}}}
+  local r=run(n)
+  eq(r.legs,3); eq(r.to.x,0); eq(r.to.y,100)
+  has(r.line,'the 3 legs left in the via chain (0,0) to (0,100)')
+  has(r.method,'every leg left in the chain')
+  -- {distance: N}: smaller distances are tried (before, the check started below 0 and verified nothing).
+  n={position={x=100,y=0},path_state='unsafe',foes={mode=A.mode({distance=12}),goal={x=100,y=0}}}
+  r=run(n)
+  eq(r.requested_distance,12); assert(r.largest_verified_distance and r.largest_verified_distance<12,tostring(r.largest_verified_distance))
+  has(r.line,'(avoid_enemies {distance: ')
+end
+print('d15_batch4 11 via margins: ok')

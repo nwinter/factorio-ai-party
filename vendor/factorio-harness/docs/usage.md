@@ -4929,4 +4929,12 @@ fh watch    # deploy on every change
 - `from: "nearest"` names a requester or buffer chest with its request for the item (`a requester chest requesting 200
   nutrients: robots bring it there for that request`). Such chests stay left out unless `feeding: true`, and come
   after the others then. supply's chest rows already give a requester's request and a provider's robot reservations.
+- `move_to` through `via` points that ends short (Opus: the NE uranium route, 4 times) names the leg: `failed_leg`
+  `leg 4 of 6 (to (20,150))`. The why line, which the error line shows, starts with it and ends with the smaller-margin
+  result.
+  - `smaller_margins` on a via chain verifies every leg left (the failed leg's goal, the via points after it and the
+    final position) at each smaller margin. The line gives `largest smaller integer margin with a verified route: 3
+    (avoid_enemies 3); the 3 legs left in the via chain ...`, with `legs`.
+  - With `avoid_enemies {distance: N}` it tries smaller distances down to 4 (`largest_verified_distance`; before, it
+    verified nothing for a distance).
 
