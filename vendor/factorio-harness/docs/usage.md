@@ -5294,3 +5294,8 @@ fh watch    # deploy on every change
 - `status` (brief and full) adds `logistics_here` (Haiku): `logistic network #96 where you stand: 834 logistic robots
   (710 idle), 11 construction robots (11 idle), 15 roboports; 5 personal requests unfilled (long-handed-inserter,
   ...)`, or `no logistic network where you stand (x,y)`. `requests` gives each unfilled request's reason.
+- `transfer {from: "nearest", item}` with a spoilable item takes the freshest stock first (Luna 00:20: 75%-spoiled
+  mash came from a requester while fresher stock sat at a provider): the chests holding it are ordered by their
+  stock's count-weighted spoiled share, in steps of 10%, then by distance; `fresh: false` keeps the nearest first. The
+  reply's `source_freshness` names each: `freshest first: requester-chest (57.5,58.5) 56% spoiled, requester-chest
+  (36.5,65.5) 59% spoiled, ...`. Checked on the copy (nutrients on Gleba).
