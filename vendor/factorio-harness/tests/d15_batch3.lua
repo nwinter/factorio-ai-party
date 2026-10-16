@@ -392,7 +392,7 @@ do
   by={}; for _,x in ipairs(r.resources) do by[x.name]=x end
   local cap=by.rocket.ingredient_limited
   eq(cap.more,18); eq(cap.item,'explosives'); eq(cap.below.more,8); eq(cap.below.item,'sulfuric-acid')
-  has(by.rocket.line,'at most 18 more (explosives 10 aboard and at most 8 more from its own ingredients aboard (sulfuric-acid 80), 1 a craft)')
+  has(by.rocket.line,'at most 18 more now (explosives 10 aboard and at most 8 more from its own ingredients aboard (sulfuric-acid 80), 1 a craft)')
   prototypes,defines=nil,nil
 end
 print('d15_batch3 10 endurance: ok')

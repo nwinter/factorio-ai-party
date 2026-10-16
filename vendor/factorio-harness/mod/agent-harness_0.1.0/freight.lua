@@ -103,6 +103,90 @@ return function(api)
     end
     return out
   end
+  -- Ammunition and repair packs aboard by place (Sol, Astra 06:21-09:37: Tern's endurance read 42 rockets in the hub
+  -- and turrets while 344 more sat on about 310 belt tiles): the hub's main inventory, the turrets' ammo slots, belts
+  -- (each transport line; an underground's buried part is on the input's lines 3 and 4, and an output's line equal to
+  -- its input's is counted once), inserter hands, and the machines' outputs. want: item name -> true (default every
+  -- ammo and repair-tool item). Belts past MAX_BELTS are left out and said (capped).
+  M.MAX_BELTS = 8000
+  local WANT
+  local function want_default()
+    if not WANT then
+      WANT = {}
+      for name, item in pairs(prototypes.item) do if item.type == 'ammo' or item.type == 'repair-tool' then WANT[name] = true end end
+    end
+    return WANT
+  end
+  local BELTS = {'transport-belt', 'underground-belt', 'splitter', 'loader', 'loader-1x1', 'linked-belt'}
+  function M.stock_places(pl, want)
+    want = want or want_default()
+    local s, f = pl.surface, pl.force
+    local out = {hub={}, turrets={}, belts={}, hands={}, machines={}, belt_entities=0}
+    local function put(place, name, n)
+      if want[name] and n and n > 0 then out[place][name] = (out[place][name] or 0) + n end
+    end
+    local function contents(place, inv)
+      for _, r in ipairs(inv and try(function() return inv.get_contents() end) or {}) do put(place, r.name, r.count) end
+    end
+    local hub = try(function() return pl.hub end)
+    if hub and hub.valid and defines.inventory.hub_main then contents('hub', try(function() return hub.get_inventory(defines.inventory.hub_main) end)) end
+    for _, e in ipairs(try(function() return s.find_entities_filtered{type='ammo-turret', force=f} end) or {}) do
+      contents('turrets', try(function() return e.get_inventory(defines.inventory.turret_ammo) end))
+    end
+    local list = try(function() return s.find_entities_filtered{type=BELTS, force=f, limit=M.MAX_BELTS + 1} end) or {}
+    if #list > M.MAX_BELTS then out.capped = M.MAX_BELTS; list[#list] = nil end
+    out.belt_entities = #list
+    for _, e in ipairs(list) do
+      local lines = try(function() return e.get_max_transport_line_index() end) or 0
+      local partner = e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'output'
+        and try(function() local n = e.neighbours; return n and n.valid and n or nil end)
+      for i = 1, lines do
+        local line = try(function() return e.get_transport_line(i) end)
+        local same = partner and i > 2 and try(function() return line.line_equals(partner.get_transport_line(i)) end)
+        if line and not same then
+          for _, r in ipairs(try(function() return line.get_contents() end) or {}) do put('belts', r.name, r.count) end
+        end
+      end
+    end
+    for _, e in ipairs(try(function() return s.find_entities_filtered{type='inserter', force=f} end) or {}) do
+      local h = try(function() return e.held_stack end)
+      if h and try(function() return h.valid_for_read end) then put('hands', h.name, h.count) end
+    end
+    for _, e in ipairs(try(function() return s.find_entities_filtered{type={'assembling-machine', 'furnace'}, force=f} end) or {}) do
+      contents('machines', try(function() return e.get_output_inventory() end))
+    end
+    out.total = {}
+    for _, place in ipairs({'hub', 'turrets', 'belts', 'hands', 'machines'}) do
+      for name, n in pairs(out[place]) do out.total[name] = (out.total[name] or 0) + n end
+    end
+    return out
+  end
+  -- The places without totals, kept on a segment at its ends (the loading and the firing told apart).
+  function M.places_snapshot(pl)
+    local sp = try(function() return M.stock_places(pl) end)
+    if not sp then return nil end
+    return {hub=sp.hub, turrets=sp.turrets, belts=sp.belts, hands=sp.hands, machines=sp.machines, capped=sp.capped}
+  end
+  -- How one item's count changed by place between two snapshots: 'hub -300, belts +280, turrets +12' (unchanged
+  -- places left out), or nil with no change or no second snapshot.
+  function M.moved_text(a, b, name)
+    if not (a and b) then return nil end
+    local parts = {}
+    for _, place in ipairs({'hub', 'turrets', 'belts', 'hands', 'machines'}) do
+      local d = ((b[place] or {})[name] or 0) - ((a[place] or {})[name] or 0)
+      if d ~= 0 then parts[#parts+1] = string.format('%s %+d', place, d) end
+    end
+    return #parts > 0 and table.concat(parts, ', ') or 'no change by place'
+  end
+  -- One item's places as text: 'hub 42, turrets 16, belts 344, hands 2' (places holding none left out).
+  function M.places_text(sp, name)
+    local parts = {}
+    for _, place in ipairs({'hub', 'turrets', 'belts', 'hands', 'machines'}) do
+      local n = sp[place][name] or 0
+      if n > 0 then parts[#parts+1] = place .. ' ' .. n end
+    end
+    return #parts > 0 and table.concat(parts, ', ') or 'none aboard'
+  end
   local results = {}
   function M.spoils(name) return (try(function() return prototypes.item[name].get_spoil_ticks() end) or 0) > 0 end
   -- What an item spoils into, or false (it does not spoil, or spoils into no item).
@@ -190,7 +274,7 @@ return function(api)
   end
   M.ammo_counts = ammo_counts
   local function open(rec, pl, w, counts, tick, first)
-    local seg = {start=tick, first=copy(counts), spoiled={}, partial=first or nil, ammo0=ammo_counts(pl)}
+    local seg = {start=tick, first=copy(counts), spoiled={}, partial=first or nil, ammo0=ammo_counts(pl), places0=M.places_snapshot(pl)}
     if w.stopped then
       seg.kind, seg.at = 'stop', w.at
       local ask, hold = pads(w.at, pl.force)
@@ -245,7 +329,7 @@ return function(api)
     local seg = rec.segs[#rec.segs]
     if key and key ~= rec.key then
       local was = seg and not seg['end'] and seg or nil
-      if was then was['end'], was.last, was.ammo1 = tick, copy(rec.prev or counts), ammo_counts(pl) end
+      if was then was['end'], was.last, was.ammo1, was.places1 = tick, copy(rec.prev or counts), ammo_counts(pl), M.places_snapshot(pl) end
       -- Arrivals and departures for the team alert (Gemini, 16:50); not the first look's stop.
       if was and was.kind == 'stop' then M.event(pl, 'left', was.at, tick, w.leg and w.leg.to) end
       seg = open(rec, pl, w, counts, tick, rec.key == nil)
@@ -783,19 +867,12 @@ return function(api)
       if rec.segs[i].kind == 'leg' then seg = rec.segs[i]; break end
     end
     local now = ammo_counts(pl) or {}
-    local turrets = {}
-    for _, t in ipairs(try(function() return pl.surface.find_entities_filtered{type='ammo-turret', force=pl.force} end) or {}) do
-      local inv = defines.inventory.turret_ammo and try(function() return t.get_inventory(defines.inventory.turret_ammo) end)
-      add_contents(turrets, inv and try(function() return inv.get_contents() end))
-    end
-    -- (the hub's main inventory: its trash goes down at the next stop)
-    local hub = {}
-    local hinv = defines.inventory.hub_main and try(function() return pl.hub.get_inventory(defines.inventory.hub_main) end)
-    add_contents(hub, hinv and try(function() return hinv.get_contents() end))
+    -- Every place aboard (the hub's main inventory: its trash goes down at the next stop): hub, turrets, belts, inserter
+    -- hands, machines' outputs (M.stock_places).
+    local sp = M.stock_places(pl)
     local names, seen = {}, {}
     local function want(name) if not seen[name] then seen[name] = true; names[#names+1] = name end end
-    for name in pairs(turrets) do want(name) end
-    for _, name in ipairs(ammo_names()) do if (hub[name] or 0) > 0 then want(name) end end
+    for _, name in ipairs(ammo_names()) do if (sp.total[name] or 0) > 0 then want(name) end end
     -- The window: the leg's own counts, else the game's last 10 minutes.
     local c0, c1, minutes, window
     local flying = seg and not seg['end']
@@ -829,9 +906,12 @@ return function(api)
       else
         made, used = flow(name, 'input', P.ten_minutes), flow(name, 'output', P.ten_minutes)
       end
-      local stock = (hub[name] or 0) + (turrets[name] or 0)
-      local text = string.format('%s: made %s/min, used %s/min over %s; hub %d, turrets %d', name, per_min(made, minutes), per_min(used, minutes), window,
-        hub[name] or 0, turrets[name] or 0)
+      local stock = sp.total[name] or 0
+      local text = string.format('%s: made %s/min, used %s/min (fired or crafted into another item; moves between places are not use) over %s; %d aboard: %s', name, per_min(made, minutes),
+        per_min(used, minutes), window, stock, M.places_text(sp, name))
+      -- Since the leg began, by place: what was loaded from the hub onto belts and into turrets is told from the firing.
+      local moved = c0 and seg.places0 and M.moved_text(seg.places0, flying and sp or seg.places1, name)
+      if moved then text = text .. '; since ' .. (flying and 'this leg began' or 'the last leg began') .. ': ' .. moved end
       local m1, u1 = flow(name, 'input', P.one_minute), flow(name, 'output', P.one_minute)
       local m5, u5 = flow(name, 'input', P.five_minutes), flow(name, 'output', P.five_minutes)
       if stats and P.one_minute and P.five_minutes then
@@ -839,7 +919,7 @@ return function(api)
           per_min(m5, 5), per_min(u5, 5))
         -- Stopped (no arrival to count to): how long the stock lasts at the last 5 minutes' rate when it falls.
         if not flying and u5 > m5 then
-          text = text .. string.format('; at the last 5 min rate the %d in the hub and turrets last %s', stock, secs((stock / ((u5 - m5) / 5)) * 3600))
+          text = text .. string.format('; at the last 5 min rate the %d aboard last %s', stock, secs((stock / ((u5 - m5) / 5)) * 3600))
         end
       end
       if l and l.eta_ticks and minutes > 0 then

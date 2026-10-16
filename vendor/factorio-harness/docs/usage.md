@@ -5358,3 +5358,15 @@ fh watch    # deploy on every change
   `outpost_turret_lost` group was live (a turret no construction robot reached, destroyed in the last 10 min): that
   group had no centre. Every group now gets one (the mean of its positions, else its first; with none, its line says
   `no position recorded`), and a group that fails to read is listed with why while the rest of the read goes on.
+
+## d16 batch6 (operator 09:45; agents' requests 06:20-09:37)
+- Ammunition aboard a platform by place (Sol and Astra 06:21-09:37: Tern's endurance read 42 rockets while 344 more sat
+  on about 310 belt tiles, and 15 minutes went into a needless rescue design). `platform_endurance` and `ammo_rates`
+  (preflight, `fh platform`, the platforms row) count the hub, the turrets, belts (each transport line; an
+  underground's buried part once), inserter hands and machines' outputs: `rocket: 389 now (hub 30, turrets 12, belts
+  344, hands 2, machines 1)`. Each platform's stock by place is kept when a stop or leg opens and closes, so the reads
+  say what moved between places since the leg began (`since this leg began: hub -340, belts +340`) apart from what was
+  used (the game's consumption count: fired, or crafted into another item; moves are not in it).
+- `platform_endurance`'s ingredient cap (Astra 07:51: the cap counted the ore on hand while the collectors and crushers
+  kept making more) grows at the rate each ingredient is made aboard now (`more_per_min`), an ingredient with makers
+  aboard by what they can make by then; a line gives the asteroid chunks collected a minute (`chunks_collected`).

@@ -12222,7 +12222,8 @@ M.freight=require('freight'){state=state,spoil=M.spoil,pods=M.pods}
 -- power and hub space come to over it at today's rates (endurance.lua; Astra, d15: Wayfarer lost at Aquilo).
 M.endurance=require('endurance'){platform=function(p,name) return space.platform(p,name) end,
   leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,ammo_counts=function(pl) return M.freight.ammo_counts(pl) end,
-  path=function(a,b) return M.freight.path(a,b) end}
+  path=function(a,b) return M.freight.path(a,b) end,stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,
+  places_text=function(sp,name) return M.freight.places_text(sp,name) end,moved_text=function(a,b,name) return M.freight.moved_text(a,b,name) end}
 function handlers.platform_endurance(p,a) return M.endurance.read(p,a) end
 -- A platform as planned, built and ghosts together: foundation islands, belt loops, head-on belts, side-loads (platplan.lua).
 M.platplan=require('platplan'){platform=function(p,name) return space.platform(p,name) end}

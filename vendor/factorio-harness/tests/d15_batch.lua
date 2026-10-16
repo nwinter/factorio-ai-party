@@ -304,7 +304,7 @@ do
   -- made 20/min from 9 iron plates at 4 a craft: 2 more, then 5/min used alone (Astra, d15 15:39)
   local fm=by['firearm-magazine']
   eq(fm.ingredient_limited.more,2); eq(fm.ingredient_limited.item,'iron-plate'); eq(fm.at_end,-98); eq(fm.lasts_min,10.4); eq(fm.runs_out_on,'fulgora->aquilo')
-  has(fm.line,'ingredient-limited: the ingredients aboard make at most 2 more (iron-plate 9 aboard, 4 a craft)')
+  has(fm.line,'ingredient-limited: the ingredients aboard make at most 2 more now (iron-plate 9 aboard, 4 a craft)')
   -- stopped: no flight rate for repair packs (not in the leg counts) or the thruster fluids, and nothing projected
   eq(by['repair-pack'].flight_rate,'unknown'); eq(by['repair-pack'].lasts_min,nil); eq(by['repair-pack'].at_end,nil)
   has(by['repair-pack'].line,'repair-pack: 40 now; flight use unknown: stopped, and no finished leg on record for it (at the stop, last 10 min: made 0/min, used 1/min)')
