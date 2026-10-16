@@ -29,6 +29,7 @@ return function(api)
     if not ok then error(path..': '..tostring(result):gsub('^[^:]*:%d+: ', ''), 0) end
     return result
   end
+  local STEP_KEYS={action=true,args=true,wait=true,label=true,on_fail=true,on_short=true,min_moved=true,plan=true,id=true}
   local function steps(a,p,path)
     path=path or 'steps'
     assert(type(a.steps)=='table' and #a.steps<=MAX_PENDING,'steps must be an array of at most 128 entries')
@@ -41,6 +42,22 @@ return function(api)
       end
       checked(where,function()
         assert(type(step)=='table' and type(step.action)=='string','each step needs an action')
+        -- A step written flat ({action, position, ...}) ran with no arguments and failed later ("pos nil"; Muse, twice,
+        -- each a loop rebuild): an argument of the action beside action is refused here, naming the shape.
+        if api.takes then
+          local flat={}
+          for k in pairs(step) do
+            if type(k)=='string' and not STEP_KEYS[k] and api.takes(step.action,k) then flat[#flat+1]=k end
+          end
+          if #flat>0 then
+            table.sort(flat)
+            local inner={}
+            for _,k in ipairs(flat) do inner[#inner+1]=k..': ...' end
+            error(string.format('%s %s of %s written beside action; a step is {action: "%s", args: {%s}} (wait, label, on_fail, on_short, min_moved beside args)%s',
+              table.concat(flat,', '),#flat==1 and 'is an argument' or 'are arguments',step.action,step.action,table.concat(inner,', '),
+              step.args~=nil and '; this step also has args: put every argument of the action in it' or ''),0)
+          end
+        end
         -- Wrong argument names and position/positions mix-ups run as a direct call would (aliases.lua).
         local action,args=step.action,step.args
         if api.fix_args and type(args)=='table' then

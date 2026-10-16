@@ -10454,6 +10454,7 @@ M.scheduler_api={
   wait_check=function(p,c,record) return M.waiteta.check(p,c,record) end,
   wait_info=function(out,record) return M.waiteta.info(out,record) end,
   fix_args=function(action,args) return M.aliases.fix(action,args,M.takes) end,
+  takes=function(action,key) return M.takes(action,key) end,
   simulate=function(p,items) return M.rocketload.simulate(p,items) end,
   busy=function(p,action)
     if action=='shoot' then return state().combat and state().combat[p.index]~=nil end
