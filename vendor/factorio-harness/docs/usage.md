@@ -5175,3 +5175,11 @@ fh watch    # deploy on every change
   - `stone min 50, min_payload 10`: the silos sent three rockets, of 28, 10 and 12 stone, 50 in all.
   - `concrete min 50`, no minimum payload: one full rocket, 100 concrete.
   - So `min` is how much the hub asks for; `min_payload` is how little one rocket may carry for it.
+- Why automatic loading has not sent an item (Sol 04:50: Petrel stalled ~15 min with a ready silo, 9 free hub slots and
+  4,500 foundation in providers). The `silo` read's `auto_waits` and `preflight {position}` (`auto_waits`, and the
+  line's `automatic loading: ...`) give, for a silo with automatic requests on, each request of the platforms stopped
+  above that asks this planet for something they lack: `Swift asks space-platform-foundation 50 (holds 0, lacks 50),
+  no min payload: a rocket waits for a full one, 50 by weight, the silo's network holds 0, under the 50 a rocket waits
+  for, that payload takes 1 hub slot, the hub has 45 free`. The payload a rocket waits for is the request's min
+  payload, else a full rocket by weight (both seen on 2.0.77). While the silo fills a rocket for one platform, the
+  others' requests follow as `waiting meanwhile: ...`. The game's choice among several eligible requests is not read.

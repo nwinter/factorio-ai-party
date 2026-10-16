@@ -373,15 +373,38 @@ return function(api)
       end
     end
     if target then
-      return string.format('filling a rocket for %s: %s; it goes up once the rocket holds what the silo requests (on 2.0.77 a full rocket of the item, whatever the platform lacks)',
-        target, #parts > 0 and table.concat(parts, '; ') or 'the silo requests nothing from its network now')
+      local others = {}
+      for _, r in ipairs(M.request_rows(e, force, ln)) do if r.platform ~= target and #others < 4 then others[#others+1] = r.line end end
+      return string.format('filling a rocket for %s: %s; it goes up once the rocket holds what the silo requests (on 2.0.77 a full rocket of the item, or the request\'s min payload)%s',
+        target, #parts > 0 and table.concat(parts, '; ') or 'the silo requests nothing from its network now',
+        #others > 0 and '; waiting meanwhile: ' .. table.concat(others, '; ') or '')
     end
-    -- No platform taken up: the platforms above asking this planet for items they lack.
+    -- No platform taken up: the platforms above asking this planet for items they lack, each with why no rocket goes.
+    local rows = M.request_rows(e, force, ln)
     local planet = try(function() return e.surface.planet.name end)
-    local asks = {}
+    if #rows > 0 then
+      local lines = {}
+      for i, r in ipairs(rows) do if i <= 6 then lines[#lines+1] = r.line end end
+      return 'no platform taken up now; above ' .. tostring(planet) .. ': ' .. table.concat(lines, '; ')
+    end
+    return 'no platform stopped above ' .. tostring(planet) .. ' asks it for items it lacks'
+  end
+  -- Per request a platform stopped above makes of this planet (Sol 04:50: Petrel stalled ~15 min with a ready silo, 9
+  -- free hub slots and 4,500 foundation in providers): how much it asks and holds, the payload a rocket waits for (the
+  -- request's min payload, else a full rocket by weight, as seen on 2.0.77), what the silo's network holds of it, the hub
+  -- slots that payload takes and the hub's free slots, and whether the silo is filling a rocket for it or another
+  -- platform now. Facts only; the game's choice among eligible requests is not read.
+  function M.request_rows(e, force, ln)
+    ln = ln or try(function() return e.surface.find_logistic_network_by_position(e.position, force) end)
+    local planet = try(function() return e.surface.planet.name end)
+    local target = try(function() local t = e.transitional_request_target; return t and t.valid and t.name or nil end)
+    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end)
+    local rows = {}
     for _, pl in pairs(try(function() return force.platforms end) or {}) do
       local loc = pl.valid and try(function() return pl.space_location.name end)
       if loc == planet and pl.hub and pl.hub.valid then
+        local main = try(function() return pl.hub.get_inventory(defines.inventory.hub_main) end)
+        local free_slots = main and try(function() return main.count_empty_stacks() end)
         local secs = try(function() return pl.hub.get_logistic_sections() end)
         for i = 1, secs and secs.sections_count or 0 do
           local sec = try(function() return secs.get_section(i) end)
@@ -390,19 +413,37 @@ return function(api)
             local name = v and (type(v.name) == 'string' and v.name or try(function() return v.name.name end))
             local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
             local held = name and (try(function() return pl.hub.get_item_count(name) end) or 0) or 0
-            if name and from == planet and (f.min or 0) > held and #asks < 6 then
+            if name and from == planet and (f.min or 0) > held and #rows < 16 then
               local w = try(function() return prototypes.item[name].weight end)
-              local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end)
-              local free = ln and (try(function() return ln.get_item_count(name) end) or 0) or 0
-              asks[#asks+1] = string.format('%s asks %s %d (holds %d); the silo\'s network holds %d%s', pl.name, name, f.min, held, math.max(0, free),
-                w and lift and w > 0 and string.format(', a full rocket of it is %d by weight', math.floor(lift / w)) or '')
+              local full = w and lift and w > 0 and math.floor(lift / w) or nil
+              local lacks = f.min - held
+              local mp = f.minimum_delivery_count
+              local payload = mp or full
+              local stack = try(function() return prototypes.item[name].stack_size end) or 1
+              local net = ln and math.max(0, try(function() return ln.get_item_count(name) end) or 0) or 0
+              local need_slots = payload and math.ceil(math.min(payload, full or payload) / stack) or nil
+              local r = {platform=pl.name, item=name, asks=f.min, holds=held, lacks=lacks, min_payload=mp, full_rocket=full,
+                payload=payload, network_holds=net, slots_for_payload=need_slots, hub_free_slots=free_slots,
+                filling=target == pl.name or nil, other_filling=target and target ~= pl.name and target or nil}
+              local words = {string.format('%s asks %s %d (holds %d, lacks %d)', pl.name, name, f.min, held, lacks)}
+              words[#words+1] = mp and string.format('min payload %d', mp)
+                or (full and string.format('no min payload: a rocket waits for a full one, %d by weight', full) or 'no min payload')
+              words[#words+1] = string.format('the silo\'s network holds %d%s', net,
+                payload and net < payload and string.format(', under the %d a rocket waits for', payload) or '')
+              if need_slots and free_slots then
+                words[#words+1] = string.format('that payload takes %d hub slot%s, the hub has %d free%s', need_slots, need_slots == 1 and '' or 's', free_slots,
+                  free_slots < need_slots and ' (fewer)' or '')
+              end
+              if r.filling then words[#words+1] = 'the silo fills a rocket for ' .. pl.name .. ' now'
+              elseif r.other_filling then words[#words+1] = 'the silo fills a rocket for ' .. target .. ' now' end
+              r.line = table.concat(words, ', ')
+              rows[#rows+1] = r
             end
           end
         end
       end
     end
-    if #asks > 0 then return 'no platform taken up now; above ' .. planet .. ': ' .. table.concat(asks, '; ') end
-    return 'no platform stopped above ' .. tostring(planet) .. ' asks it for items it lacks'
+    return rows
   end
   -- The silo GUI's switches as they stand, with where the silo is (configure and launch read them back after a change).
   function M.settings(e)
