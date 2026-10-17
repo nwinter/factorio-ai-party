@@ -38,10 +38,10 @@ def stats(rows, minutes):
                 kind = r["reason"].rsplit("(", 1)[-1].rstrip(")")
                 zoom_by[kind] = zoom_by.get(kind, 0) + 1
         dwell = [b - a for a, b in zip(times, times[1:])]
-        pairs = [r for r in rows if r["slot"] == slot and r["target"] and len(r["target"]["agents"]) > 1]
+        pairs = [r for r in rows if r["slot"] == slot and r.get("target") and len(r["target"]["agents"]) > 1]
         subjects = {}
         for r in cuts:
-            if r["slot"] == slot and r["target"]:
+            if r["slot"] == slot and r.get("target"):
                 who = (r["target"]["agents"] or ["@base attack"])[0]
                 subjects[who] = subjects.get(who, 0) + 1
         out[slot] = {
