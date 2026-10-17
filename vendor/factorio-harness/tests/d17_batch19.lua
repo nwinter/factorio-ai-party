@@ -119,3 +119,98 @@ do
   defines=nil
 end
 print('d17_batch19 B2 a whole-belt read shorter than its belt names what it leaves out: ok')
+
+-- C1 (Haiku 5-8 times per 30 min on Swiftlet's mixed loads): silo_stage plans the takes at several chests, the hand
+-- crafts of what is short (ingredients from the chests too), and the load, as one queue plan.
+STAGE_FIXTURE=function()
+  defines={inventory={chest=1,rocket_silo_rocket=2}}
+  prototypes={item={}}
+  for _,n in ipairs({'arithmetic-combinator','electronic-circuit','copper-cable','iron-plate','copper-plate','pipe','processing-unit','low-density-structure'}) do prototypes.item[n]={name=n} end
+  local function chest(x,y,items)
+    local inv={get_item_count=function(n) return items[n] or 0 end}
+    return {valid=true,name='iron-chest',type='container',position={x=x,y=y},get_inventory=function() return inv end}
+  end
+  local silo={valid=true,name='rocket-silo',type='rocket-silo',position={x=65.5,y=14.5},get_inventory=function() return {get_item_count=function() return 0 end} end}
+  local a=chest(10.5,10.5,{pipe=30,['iron-plate']=6})
+  local b=chest(12.5,10.5,{['electronic-circuit']=8,['copper-cable']=50,['processing-unit']=10})
+  local at={['65.5,14.5']=silo,['10.5,10.5']=a,['12.5,10.5']=b}
+  local recipes={
+    ['arithmetic-combinator']={name='arithmetic-combinator',ingredients={{type='item',name='copper-cable',amount=5},{type='item',name='electronic-circuit',amount=5}},products={{name='arithmetic-combinator',amount=1}}},
+    ['electronic-circuit']={name='electronic-circuit',ingredients={{type='item',name='iron-plate',amount=1},{type='item',name='copper-cable',amount=3}},products={{name='electronic-circuit',amount=1}}},
+    ['copper-cable']={name='copper-cable',ingredients={{type='item',name='copper-plate',amount=1}},products={{name='copper-cable',amount=2}}},
+    pipe={name='pipe',ingredients={{type='item',name='iron-plate',amount=1}},products={{name='pipe',amount=1}}}}
+  local held={pipe=5}
+  local p={get_main_inventory=function() return {get_item_count=function(n) return held[n] or 0 end} end}
+  local submitted
+  local S=dofile('mod/agent-harness_0.1.0/stage.lua'){position=function(q) return {x=q.x or q[1],y=q.y or q[2]} end,
+    entity=function(_,q) return at[q.x..','..q.y] end,hand_recipe=function(_,item) return recipes[item] end,
+    submit=function(_,x) submitted=x; return {pending=#x.steps} end}
+  return S,p,function() return submitted end
+end
+do
+  local S,p,sub=STAGE_FIXTURE()
+  local args={position={x=65.5,y=14.5},items={pipe=40,['arithmetic-combinator']=2,['processing-unit']=10,['low-density-structure']=5},
+    from={{x=10.5,y=10.5},{x=12.5,y=10.5}},launch=true,platform='Swiftlet'}
+  local r=S.run(p,{position=args.position,items=args.items,from=args.from,launch=true,platform='Swiftlet',dry_run=true})
+  -- pipe: 5 carried, 30 from the first chest, 5 crafted from its plates; combinators: 2 crafted from 10 circuits (8 in
+  -- the second chest, 2 crafted along from a plate and 3 cables each) and 10 cables; processing units: 10 from the
+  -- second chest; low density structures: none anywhere. Plates: 7 needed, the first chest holds 6.
+  eq(r.plan[1],'take iron-plate 6, pipe 30 from iron-chest (10.5,10.5)')
+  eq(r.plan[2],'take copper-cable 16, electronic-circuit 8, processing-unit 10 from iron-chest (12.5,10.5)')
+  has(r.plan[3],'craft by hand arithmetic-combinator x2, pipe x5, then wait until the hand queue is done')
+  eq(r.plan[4],'load_silo at (65.5,14.5): arithmetic-combinator 2, low-density-structure 5, pipe 40, processing-unit 10, then launch')
+  eq(r.missing['low-density-structure'],5); eq(r.raw_short['iron-plate'],1,'7 plates needed, 6 in the chest')
+  has(r.short,'not in those chests, not hand-craftable: low-density-structure 5')
+  eq(#r.steps,5); eq(r.steps[1].on_short,'skip'); eq(r.steps[5].action,'load_silo'); eq(r.steps[5].args.walk,true); eq(r.steps[5].args.launch,true)
+  eq(sub(),nil,'dry run: nothing queued')
+  r=S.run(p,{position=args.position,items=args.items,from=args.from,launch=true,platform='Swiftlet'})
+  eq(r.queued,5); eq(#sub().steps,5)
+  has(r.line,'queued 5 steps: take iron-plate 6, pipe 30 from iron-chest (10.5,10.5);')
+end
+print('d17_batch19 C1 silo_stage plans takes, crafts and the load: ok')
+
+-- C2 (Sol: three silos and eight cargo bays by hand-written 14-step plans, two batches overshot): assembler_batch plans
+-- a finite batch: output and input held, the requester cleared and asked for exactly what is to come, input on, wait for
+-- the products, input off, output released. Sol's 8 cargo bays at (107.5,-94.5).
+BATCH_FIXTURE=function(req_held,in_held)
+  defines={inventory={assembling_machine_input=2,assembling_machine_output=3}}
+  local function inv(t) return {get_item_count=function(n) return t[n] or 0 end} end
+  local recipe={name='cargo-bay',products={{type='item',name='cargo-bay',amount=1}},
+    ingredients={{type='item',name='steel-plate',amount=20},{type='item',name='low-density-structure',amount=20},{type='item',name='processing-unit',amount=5}}}
+  local m={valid=true,unit_number=1,name='assembling-machine-2',type='assembling-machine',position={x=107.5,y=-94.5},force='player',
+    bounding_box={left_top={x=106,y=-96},right_bottom={x=109,y=-93}},get_recipe=function() return recipe end}
+  local req={valid=true,unit_number=2,name='requester-chest',position={x=107.5,y=-97.5},prototype={logistic_mode='requester'},
+    get_item_count=function(n) return (req_held or {})[n] or 0 end}
+  local input={valid=true,unit_number=3,type='inserter',position={x=107.5,y=-96.5},pickup_target=req,drop_target=m}
+  local output={valid=true,unit_number=4,type='inserter',position={x=109.5,y=-94.5},pickup_target=m,drop_target=nil}
+  local mi,mo=inv(in_held or {}),inv({['cargo-bay']=0})
+  m.get_inventory=function(i) return i==2 and mi or i==3 and mo or nil end
+  m.surface={find_entities_filtered=function() return {input,output} end}
+  local submitted
+  local B=dofile('mod/agent-harness_0.1.0/batch.lua'){position=function(q) return q end,
+    integer=function(v,d,lo,hi,name) assert(type(v)=='number' and v>=lo and v<=hi,name) return v end,
+    entity=function(_,q) if q.x==107.5 and q.y==-94.5 then return m end end,submit=function(_,x) submitted=x; return {pending=#x.steps} end}
+  return B,function() return submitted end
+end
+do
+  local B,sub=BATCH_FIXTURE({['steel-plate']=40},{['processing-unit']=10})
+  local r=B.run({},{position={x=107.5,y=-94.5},count=8,dry_run=true})
+  eq(r.crafts,8); eq(r.requester,'(107.5,-97.5)'); eq(r.input,'(107.5,-96.5)'); eq(r.output,'(109.5,-94.5)')
+  has(r.plan[1],'8 cargo-bay: 8 crafts of cargo-bay in assembling-machine-2 (107.5,-94.5) (it holds 0 of it now)')
+  has(r.plan[4],'steel-plate: 160 for 8 crafts, the machine holds 0, the requester 40: 120 to come')
+  has(r.plan[6],'processing-unit: 40 for 8 crafts, the machine holds 10, the requester 0: 30 to come')
+  local labels={}
+  for i,st in ipairs(r.steps) do labels[i]=st.label end
+  eq(table.concat(labels,' / '),'hold output / input held / clear requester / stage / staged steel-plate / staged low-density-structure / staged processing-unit / staged / input on / made / input off / release output')
+  local stage=r.steps[4].args.set
+  eq(stage[1].item,'steel-plate'); eq(stage[1].min,160); eq(stage[1].max,160,'what it holds plus what is to come')
+  eq(r.steps[1].args.logistic,'cargo-bay < 0'); eq(r.steps[12].args.logistic,false)
+  eq(r.steps[10].args.at_least,8)
+  eq(sub(),nil)
+  -- more than the batch needs already there: said
+  B=BATCH_FIXTURE({['steel-plate']=200})
+  r=B.run({},{position={x=107.5,y=-94.5},count=8,dry_run=true})
+  has(r.surplus_line,'already hold more than the batch needs: steel-plate 40; the machine makes more with it')
+  defines=nil
+end
+print('d17_batch19 C2 assembler_batch plans a finite batch: ok')

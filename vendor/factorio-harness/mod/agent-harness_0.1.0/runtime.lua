@@ -1921,6 +1921,8 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.platdefense and M.platdefense.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circaudit and M.circaudit.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.logaudit and M.logaudit.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.stage and M.stage.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.batch and M.batch.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.owed and M.owed.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.shipment and M.shipment.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
@@ -14531,6 +14533,21 @@ M.reservations=require('reservations'){}
 function handlers.reservations(p,a) return M.reservations.read(p,a) end
 -- outpost {area | position}: one queued tour that rebuilds ghosts, rearms turrets and wires cut-off poles (outpost.lua).
 M.outpost=require('outpost'){position=position,integer=integer,submit=function(p,a) return handlers.queue_submit(p,a) end}
+-- A silo load staged in one plan: takes from several chests, hand crafts of what is short, the load (stage.lua; d17
+-- batch19 C1, Haiku).
+-- (an entity of ours at pos, in sight or on the map, for a plan's read)
+function M.stage_entity(p,pos)
+  local ok,e=pcall(entity,p,{position=pos},'walk')
+  if not (ok and e) then ok,e=pcall(remote_entity,p,{position=pos}) end
+  return ok and e or nil
+end
+M.stage=require('stage'){position=position,hand_recipe=function(p,item) return hand_recipe(p,item) end,
+  entity=function(p,pos) return M.stage_entity(p,pos) end,submit=function(p,a) return handlers.queue_submit(p,a) end}
+function handlers.silo_stage(p,a) return M.stage.run(p,a) end
+-- A finite batch of an assembler's recipe as one plan (batch.lua; d17 batch19 C2, Sol).
+M.batch=require('batch'){position=position,integer=integer,entity=function(p,pos) return M.stage_entity(p,pos) end,
+  submit=function(p,a) return handlers.queue_submit(p,a) end}
+function handlers.assembler_batch(p,a) return M.batch.run(p,a) end
 function handlers.outpost(p,a) return M.outpost.read(p,a) end
 M.trace=require('trace'){circuits=function() return M.circuits end,state_text=function(e) return M.thrust.state_text(e) end,fluid_upstream=function(box,i) return M.thrust.upstream(box,i) end,held_blocked=M.details.held_blocked,observe=function(e,p) return M.readmemory.observe(e,p) end,memory_trace=function(p,a) return M.beltgaps.trace(p,a) end,end_seen=M.factory_digest.end_seen,supply=M.supply,feed=function(e,into,from) return M.craftrate.feed(e,into,from) end,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return M.machine_status(e) end}
 -- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
