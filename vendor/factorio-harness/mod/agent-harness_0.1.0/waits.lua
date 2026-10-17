@@ -85,6 +85,10 @@ return function(api)
     elseif active then
       return string.format('your %s keeps going, then your character stands idle%s', active.kind or 'action', held)
     end
+    local armed = api.armed and api.armed(p.index)
+    if armed then
+      return string.format('no queue and no action: your character waits on your armed standing orders (%s) for up to %d s; they run when a trigger holds (not counted as idle)%s', armed, seconds, held)
+    end
     return string.format('no queue and no action: your character stands idle for up to %d s%s', seconds, held)
   end
   local function asleep_line(p,record,seconds)

@@ -64,6 +64,8 @@
   `./fh plan run` to repeat it); `wait_until` for one condition, with a timeout of a few minutes; `./fh sleep` or
   `./fh wait --until` for a wait that leaves the queue running.
 - The clock line counts a wait or sleep as idle: `character idle 5m00s of it (100%, 4m30s of that in wait_ticks)`.
+  With a standing order on (not paused, none running) that time is `waiting on your armed standing orders (NAMES)`
+  instead, and the sleep line says the character waits on them.
   The operator's idle nudge uses the same count.
 - Raw `fh call wait_until` accepts word-form `until` and `ticks`/`timeout_ticks` aliases; queue errors name the step path. Aboard, queues accept allowed remote steps, `configure {platform}` works, and `observe` reports surroundings with `player.body:"none"`.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
@@ -75,6 +77,10 @@
   `queue_repeat {condition: {until: ...}}` ends at a round boundary when met (before round one too); `feed up_to:true` ending `out_of_items` exits 0 from `--wait`/`fh wait`, with moved and stops left.
 - `queue_status {args: true}`: history with each step's arguments (and a finished loop's steps); status `active.progress` gives a tour's or courier's leg, distance left and moved so far; an interrupted queued transfer tour resumes from the stops left.
 - `./fh call stop` ends your running body action (a walk, tour, `load_silo` or gather) and starts nothing; `queue_cancel` (with `lane: "remote"` for the remote lane) cancels a queue.
+- `./fh queue pause` (`queue_pause`, `lane` too) pauses a queue and holds it: the running step goes back to the head
+  of pending, and nothing resumes it until `./fh queue resume` (or a submit or repeat that starts it). Without it, a
+  direct call that interrupts a queued `load_silo` lets the queue go on when that call ends. Replies with a paused queue
+  say what paused it (`paused_by`; `queue_held` on a direct call while you hold it).
 - A `craft` stock refusal names stocking chests and queue-step `on_fail`: `abort` pauses, `skip` continues,
   `goto:<label>` jumps to that pending label. Skipping acquires nothing; `transfer`/`collect` take stock explicitly.
 - Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, repairs,

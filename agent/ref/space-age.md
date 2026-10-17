@@ -24,7 +24,8 @@
   planet and platform: stock, spoil times, silo room, unmet lab and requester demand.
 - `./fh call platform --args '{"name":"Kestrel"}'` is the same read as `./fh platform Kestrel` (platforms of that one).
 - `./fh platform NAME` also shows `freight` (per stop what was expected down and up, what left the hub, came aboard
-  and spoiled, the rockets sent to it, the cargo pods sent down with what each landing pad received and the pods still
+  (with what construction robots placed from a rocket's cargo at once: "built at once N", the platform's count before
+  and after) and spoiled, the rockets sent to it, the cargo pods sent down with what each landing pad received and the pods still
   in flight; per leg what spoiled on the way), `spoiling` (when its spoilable items spoil, against the arrival) and
   `engine` (the last 60 and 180 s: mean, lowest and highest speed, thruster fuel and oxidizer used and made, the
   thrusters' tanks at start and end, the pumps' share of time working). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when
@@ -78,7 +79,8 @@
   `departure`: agents' queue steps and orders that send a platform on beside its schedule. `platform_endurance` lines
   add `phases` (moving, still in space, stopped) and `flight` (the route and its last leg at the moving rate).
   `platform_plan {platform, floor: true}` lists the foundation ghosts need (footprints, tunnels, holes, links) with
-  `place_ghosts_entries`; `paste {preserve_existing_settings_and_wires: true}` adds only what is missing.
+  `place_ghosts_entries`; a tunnel runs to the next underground of its name facing the same way (one crossing it is
+  passed over), and `tile_ghosts_held` names tile ghosts counted as floor that the hub's foundation rules never build; `paste {preserve_existing_settings_and_wires: true}` adds only what is missing.
 - `platform_rename {platform, name}` renames one, listing queues, orders, plans and board items still naming the old
   name. `platform_plan {platform, salvage: 60}` lists foundation tiles to take up from the edge in, as deconstruct areas.
   `load_silo {rockets: 3, launch: true, ...}` queues the load for 3 rockets. With automatic requests on, load_silo and
@@ -156,8 +158,9 @@
   call that recovers it (a belt pickup aboard, else `deconstruct` of those belts into the hub).
 - `circuit_audit {platform}`: whole-belt readers (`entire_belt_hold`) on one network whose belts overlap (counted
   twice), and each asteroid collector whose filter the circuit sets: the filter it holds and the chunk signals there.
-- `load_silo {from: [..], walk: true}` takes from the sources in order (chests, a landing pad, anywhere on the surface)
-  and skips a trip's other sources once you hold what the rocket needs.
+- `load_silo {position, from: [..], walk: true}` takes from the sources in order (chests, a landing pad, anywhere on
+  the surface) and skips a trip's other sources once you hold what the rocket needs. `position` is the silo's (always
+  needed; without it the reply lists the silos here); `from` is one chest `{x,y}` or a list of them.
 - `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure
   conditions with what the hub holds against each.
 - `silo` gives `robots_bringing` (what logistic robots carry or have reserved toward it) and `requesting_for`.

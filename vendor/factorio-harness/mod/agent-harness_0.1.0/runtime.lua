@@ -10758,6 +10758,9 @@ function M.silo_pause(p,a,rockets)
     silo.name,silo.position.x,silo.position.y,rockets or 1,(rockets or 1)==1 and '' or 's',#aboard>0 and '; the rocket already held '..table.concat(aboard,' ')..', which stays aboard' or '')
 end
 function handlers.load_silo(p,a)
+  -- the silo (Grok d17 16:16: walk with from [chest] and no position failed "position requires x and y" and read as
+  -- the from list being wrong): without position, the silos here and the call that works.
+  if a.position==nil then error(M.launch_needs_silo(p,a,'load_silo'),0) end
   -- wait_platform (d17 batch13 A4, Gemini: load_silo with arrived failed while the platform was still on its way):
   -- the cargo goes into the ready rocket now, recorded for the platform, and launch {wait_platform} launches it when
   -- the platform is stopped in orbit here. A rocket not ready yet: the load waits for the rocket and the platform as
@@ -12873,9 +12876,9 @@ function M.queue_brief(q)
     last_failure=f and (step(f)..(type(f.result)=='table' and f.result.reason and ': '..tostring(f.result.reason) or '')) or nil,
     repeating=q.repeating or nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.orders_between_rounds,guards=q.guards and #q.guards or nil,
     times=q.times,rounds_left=q.rounds_left,stops_tick=q.stops_tick,loop_done=q.loop_done,repeat_name=q.repeat_name,condition=q.condition,condition_error=q.condition_error,submission=q.submission,
-    waiting=q.waiting,after_direct=q.after_direct,corrected=q.corrected,note='queue_status: the active step, the next one and the last 3 in full (history, pending: a count or "all")'}
+    waiting=q.waiting,after_direct=q.after_direct,corrected=q.corrected,held=type(q.held)=='string' and q.held or nil,paused_why=q.paused_why,note='queue_status: the active step, the next one and the last 3 in full (history, pending: a count or "all")'}
 end
-for _,name in ipairs{'queue_submit','queue_repeat','queue_edit','queue_cancel','queue_resume'} do
+for _,name in ipairs{'queue_submit','queue_repeat','queue_edit','queue_cancel','queue_resume','queue_pause'} do
   local handler=handlers[name]
   if handler then handlers[name]=function(p,a)
     local key=a and a.lane=='remote' and 'remote_queues' or 'queues'
@@ -12895,7 +12898,7 @@ for name,handler in pairs(clock.handlers) do handlers[name]=handler end
 -- Direct wait_ticks and sleep/sleep_check (waits.lua).
 -- Wakes a loop of sleeps throws away, shown again later (missed.lua; Opus, shift12 12:26).
 M.missed=require('missed'){state=state,clock_mode=function() return clock and clock.report().mode end}
-M.waits=require('waits'){state=state,integer=integer,wake_filter=function(a) return M.board.wake_filter(a) end,wakes=function(m,f) return M.board.wakes(m,f) end,
+M.waits=require('waits'){state=state,integer=integer,armed=function(index) return M.orders.armed(index) end,wake_filter=function(a) return M.board.wake_filter(a) end,wakes=function(m,f) return M.board.wakes(m,f) end,
   replace=function(p) if state().active[p.index] then finish(p.index,'replaced') else stop(p) end end,
   advance=function(p,ticks) return clock.handlers.advance(p,{ticks=ticks}) end,clock_mode=function() return clock.report().mode end,
   traveling=function(index) local b=M.bots.record(index); return b~=nil and b.travel~=nil end,
@@ -13002,6 +13005,7 @@ M.idle=require('idle'){state=state,agents=function() return M.board.agents() end
   mention_counts=function() return M.board.operator('mention_counts',{}) end,
   unread=function(index) return M.chat.unread(index,'peek') end,
   orders=function(index) return M.orders.report(index) end,
+  armed=function(index) return M.orders.armed(index) end,
   has_body=function(index)
     local ok,p=pcall(M.lookup,index)
     return ok and p~=nil and p.valid and p.character~=nil and p.character.valid or false
@@ -13156,18 +13160,25 @@ function handlers.cameras() return M.cameras.list() end
 M.RESUME_AFTER={build=true,transfer=true,collect=true,feed=true,rearm=true,refuel=true,configure=true,rotate=true,pickup=true,mine=true,craft=true,load_silo=false}
 function M.resume_after(index,id)
   local q=(state().queues or {})[index]
+  if q and q.held then return false end  -- the agent's own pause (queue_pause) holds
   if q and q.paused and q.pending[1] and q.pending[1].id==id then q.paused=false; q.revision=q.revision+1; q.requeued_load=nil; return true end
 end
 function M.resume_requeued_load(p,action,result)
   local q=(state().queues or {})[p.index]
   local r=q and q.requeued_load
+  if q and q.held and q.paused and type(result)=='table' and M.RESUME_AFTER[action] then
+    result.queue_held=string.format('your queue is paused by you (queue_pause, %ds ago) with %d pending: it holds until queue_resume; this call did not resume it',
+      math.floor((game.tick-q.held.tick)/60),#q.pending)
+    q.requeued_load=nil
+    return
+  end
   if not (r and r.tick==game.tick and q.paused) then return end
   if not M.RESUME_AFTER[action] then q.requeued_load=nil; return end
   local now=state().active[p.index]
   local text
   if now and now.until_tick then
     now.resume_queue=r.id
-    text=string.format('your queue\'s load_silo step (%s) was requeued: the queue goes on when this %s ends',r.id,tostring(now.kind))
+    text=string.format('your queue\'s load_silo step (%s) was requeued: the queue goes on when this %s ends (queue_pause first holds it until queue_resume)',r.id,tostring(now.kind))
   elseif M.resume_after(p.index,r.id) then
     text=string.format('your queue\'s load_silo step (%s) was requeued and the queue goes on',r.id)
   end
@@ -13402,7 +13413,7 @@ function M.with_example(action,args,msg)
 end
 -- launch without its silo (Luna, shift11 17:43: launch {platform:"Sunward"} failed as "position requires x and y",
 -- twice): the silos on the surface, a ready rocket first, and the call that works.
-function M.launch_needs_silo(p,a)
+function M.launch_needs_silo(p,a,action)
   local list={}
   local ok,silos=pcall(function() return p.surface.find_entities_filtered{type='rocket-silo',force=p.force} end)
   for _,s in ipairs(ok and silos or {}) do
@@ -13423,7 +13434,12 @@ function M.launch_needs_silo(p,a)
       list[i].ready and 'rocket ready' or tostring(states[s.rocket_silo_status] or s.rocket_silo_status),list[i].ready and '' or parts_text)
   end
   local ex={position=list[1] and {x=list[1].s.position.x,y=list[1].s.position.y} or {x=0,y=0},platform=a.platform,orbit=a.platform==nil and a.orbit or nil}
-  return string.format("launch takes the silo: position (or unit_number); e.g. fh call launch --args '%s'; silos on %s: %s",
+  local takes='launch takes the silo: position (or unit_number)'
+  if action=='load_silo' then
+    ex.launch=a.launch; ex.walk=a.walk; ex.from=a.from; ex.items=a.items
+    takes='load_silo takes the silo: position (the silo; from is the chests: one {x,y} or a list of them)'
+  end
+  return string.format("%s; e.g. fh call %s --args '%s'; silos on %s: %s",takes,action or 'launch',
     M.aliases.encode(ex),p.surface.name,#parts>0 and table.concat(parts,'; ')..(#list>4 and string.format(' (%d in all)',#list) or '') or 'none')
 end
 -- An unknown argument of configure or circuit_set also names what the entity at the position takes (Luna 06:20:
@@ -13643,6 +13659,7 @@ local function clock_line(p,peek)
   local idle=c and c.idle or 0
   local waited=c and c.craft_wait or 0
   local in_waits=c and c.in_waits or 0
+  local watch,watch_names=c and c.watch or 0,c and c.watch_names
   local kinds={}
   for kind in pairs(c and c.wait_kinds or {}) do kinds[#kinds+1]=kind end
   table.sort(kinds)
@@ -13658,17 +13675,23 @@ local function clock_line(p,peek)
   local function share(n) return since>0 and math.floor(100*n/since+0.5) or 0 end
   local waiting=waited>0 and string.format(', waiting on hand crafting %s of it (%d%%)',t(waited),share(waited)) or ''
   local slept=in_waits>0 and string.format(', %s of that in %s',t(in_waits),table.concat(kinds,'/')) or ''
-  return string.format('game %s; +%s since your last request, character idle %s of it (%d%%%s)%s; hand crafting %s queued',
-    t(game.tick),t(since),t(idle),share(idle),slept,waiting,t(craft*60))
+  local watched=watch>0 and string.format(', waiting on your armed standing orders (%s) %s of it (%d%%)',tostring(watch_names),t(watch),share(watch)) or ''
+  return string.format('game %s; +%s since your last request, character idle %s of it (%d%%%s)%s%s; hand crafting %s queued',
+    t(game.tick),t(since),t(idle),share(idle),slept,watched,waiting,t(craft*60))
 end
 local function idle_tick()
   local s=state()
   for index,c in pairs(s.clocks or {}) do
     M.waiteta.idle_tick(index)
     if not M.idle.busy(s,index) then
-      c.idle=c.idle+1
-      local kind=M.idle.waiting(s,index)
-      if kind then c.in_waits=(c.in_waits or 0)+1; c.wait_kinds=c.wait_kinds or {}; c.wait_kinds[kind]=true end
+      -- armed standing orders keep watch (orders.lua armed; d17 batch16 A5): waiting on them, not idle
+      local watch=M.orders.armed(index)
+      if watch then c.watch=(c.watch or 0)+1; c.watch_names=watch
+      else
+        c.idle=c.idle+1
+        local kind=M.idle.waiting(s,index)
+        if kind then c.in_waits=(c.in_waits or 0)+1; c.wait_kinds=c.wait_kinds or {}; c.wait_kinds[kind]=true end
+      end
     elseif s.active[index] and s.active[index].awaiting_craft then c.craft_wait=(c.craft_wait or 0)+1 end
   end
   -- When each character started standing (no action, no running queue, a body

@@ -751,7 +751,7 @@ async function main() {
   }
   if (command === 'queue') {
     const operation = positionals[1] ?? 'status';
-    if (!['submit','repeat','status','edit','cancel','resume'].includes(operation)) throw new Error('queue expects submit, repeat, status, edit, cancel, or resume');
+    if (!['submit','repeat','status','edit','cancel','resume','pause'].includes(operation)) throw new Error('queue expects submit, repeat, status, edit, cancel, resume, or pause');
     let args = object(JSON.parse(values.args ?? '{}'),'args');
     // fh queue status orders: the standing orders' history entries too (round2250a, Grok: by default the plan last
     // submitted only).
