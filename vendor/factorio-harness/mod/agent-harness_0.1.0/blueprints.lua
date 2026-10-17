@@ -1104,7 +1104,12 @@ return function(api)
         end
         entities=kept
       end
-      assert(#entities>0,'nothing to save: no entity of ours '..(keep and 'at those positions' or 'in the area'))
+      -- (B4, Sol 22:50: standing on Aquilo, an area on Vulcanus read as empty: the surface is named)
+      assert(#entities>0,string.format('nothing to save: no entity or ghost of ours %s on %s%s',keep and 'at those positions' or 'in the area',p.surface.name,
+        (type(p)=='table' and rawget(p,'__remote')) and '' or ' (your surface; surface=NAME saves an area on another planet by remote view, platform=NAME on a platform)'))
+      -- Ghosts go in at their positions as entities of the blueprint, tile ghosts as its tiles (tiles: true).
+      local ghosts=0
+      for _,e in ipairs(entities) do local w=mapping[e.entity_number]; if w and w.valid and w.type=='entity-ghost' then ghosts=ghosts+1 end end
       -- Rebased as blueprint_capture does (an even shift keeps the rail grid).
       local origin=rebase_origin(box,entities)
       for _,e in ipairs(entities) do e.position={x=e.position.x-origin.x,y=e.position.y-origin.y} end
@@ -1127,6 +1132,14 @@ return function(api)
       lib.entries[name]=entry
       local out=row(entry)
       out.replaced=old and old.author or nil
+      out.ghosts=ghosts>0 and ghosts or nil
+      if a.tiles==true then
+        local tg=p.surface.count_entities_filtered{area=box,type='tile-ghost',force=p.force}
+        out.tile_ghosts=tg>0 and tg or nil
+      end
+      if ghosts>0 or out.tile_ghosts then
+        out.note=string.format('%d of the %d entities are ghosts%s, saved at their positions as the rest',ghosts,#ents,out.tile_ghosts and string.format(' and %d tiles tile ghosts',out.tile_ghosts) or '')
+      end
       return out
     end)
   end

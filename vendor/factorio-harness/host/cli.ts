@@ -327,7 +327,7 @@ const TELL_WORDS = new Set(['tell','tells','mention','told']);
 const THEN_READS = new Set(['agriculture','artillery','belt_gaps','blueprint_list','boilers','bottleneck','cameras','cargo','conflicts',
   'construction_robots','craftable','damage_log','danger','defense','drill_sites','drops','dry_run','flamers','freight_audit','fuel_budget',
   'game_alerts','grid','heat_budget','inspect','inventory','labs','lookahead','map','nearest','nearest_water','networks','observe','ores',
-  'pipe_gaps','placements','platform','platform_endurance','platform_plan','platform_supply','platforms','ports','power','preflight',
+  'pipe_gaps','placements','platform','platform_bom','platform_endurance','platform_plan','platform_supply','platforms','ports','power','preflight',
   'profiles','rates','recipes','reminders','research_options','reservations','review','scan','science','shortages','silo','status','stock',
   'supply','technologies','trace','turrets','where_is']);
 /** --then's action and arguments: "ACTION", "ACTION {json}", with the JSON as the next positional or --args. */

@@ -82,3 +82,46 @@ do
   defines=nil
 end
 print('d16_batch10 A2 silo why: ok')
+
+-- B1 (Grok 22:50, twice: from nearest with fresh could not deliver to a machine): from "nearest" with to stays a
+-- courier from the nearest chest (it was rewritten to a give at to and refused).
+do
+  local A=dofile('mod/agent-harness_0.1.0/aliases.lua')({})
+  local takes=function(_,k) return ({from=true,to=true,item=true,count=true,fresh=true,to_inventory=true,position=true,direction=true})[k]==true end
+  local _,f=A.fix('transfer',{from='nearest',item='nutrients',count=40,fresh=true,to={x=7.5,y=20.5},to_inventory='assembling_machine_input'},takes)
+  eq(f.from,'nearest'); eq(f.to.x,7.5); eq(f.position,nil); eq(f.direction,nil)
+  -- to alone is still the give's target
+  _,f=A.fix('transfer',{item='coal',count=5,to={x=1,y=2}},takes)
+  eq(f.position.x,1); eq(f.direction,'to_entity')
+end
+print('d16_batch10 B1 from nearest with to: ok')
+
+-- B3 (Sol 22:50: the remaining bill of materials reconciled by hand every five minutes): ghosts' need less hub and
+-- in-flight cargo, packed into rockets.
+do
+  game={tick=0}
+  defines={cargo_destination={station=1,space_platform=2},inventory={hub_main=1,cargo_unit=2}}
+  prototypes={item={['space-platform-foundation']={weight=20000,stack_size=50},pipe={weight=5000,stack_size=100}}}
+  local hub={valid=true,get_inventory=function() return {get_item_count=function(n) return n=='pipe' and 100 or 0 end} end,
+    get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,filters={{value={name='space-platform-foundation'},min=2826}}} end} end}
+  local floor={name='space-platform-foundation',items_to_place_this={{name='space-platform-foundation',count=1}}}
+  local pipe={name='pipe',items_to_place_this={{name='pipe',count=1}}}
+  local ghosts={}
+  for i=1,120 do ghosts[#ghosts+1]={type='tile-ghost',ghost_name='space-platform-foundation',ghost_prototype=floor} end
+  for i=1,165 do ghosts[#ghosts+1]={type='entity-ghost',ghost_name='pipe',ghost_prototype=pipe} end
+  local pl
+  local surface={find_entities_filtered=function() return ghosts end,count_entities_filtered=function() return 0 end,count_tiles_filtered=function() return 639 end}
+  pl={name='Meridian',surface=surface,hub=hub}
+  local pod={valid=true,cargo_pod_destination={type=2,space_platform=pl},get_inventory=function() return {get_contents=function() return {{name='pipe',count=50}} end} end}
+  game.surfaces={fulgora={find_entities_filtered=function() return {pod} end}}
+  local cargo=dofile('mod/agent-harness_0.1.0/cargo.lua'){}
+  local B=dofile('mod/agent-harness_0.1.0/platbom.lua'){platform=function() return pl end,cargo=cargo}
+  local r=B.read({force='player'},{platform='Meridian',pack=true})
+  eq(r.pods_in_flight,1); eq(r.tile_ghosts,120); eq(r.entity_ghosts,165)
+  eq(r.lines[1],'space-platform-foundation: ghosts need 120 (639 built); hub holds 0; 120 to send (the hub asks 2826)')
+  eq(r.lines[2],'pipe: ghosts need 165 (0 built); hub holds 100, 50 in flight; 15 to send (the hub asks none)')
+  has(r.lines[3],'to send: 2475 kg, at least 3 rockets by weight and slots; pack: 3 rockets')
+  eq(r.pack.split[1].items,'space-platform-foundation*50')
+  defines,prototypes=nil,nil; game={tick=0}
+end
+print('d16_batch10 B3 platform bill of materials: ok')

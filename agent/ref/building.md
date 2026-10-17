@@ -107,3 +107,5 @@
 - `build` where you stand on the footprint steps aside first: the reply gives `not_yet`, `still_to_build` and
   `built_so_far` (nothing of that entry is built yet); `--wait` or status `last.built` counts it. A retry with the item
   gone names the entity already standing there.
+- `blueprint_save` and `blueprint_capture` take `surface` (a planet) to capture an area there from anywhere; entity
+  ghosts are saved at their positions (and tile ghosts with `tiles: true`), counted in `ghosts`.

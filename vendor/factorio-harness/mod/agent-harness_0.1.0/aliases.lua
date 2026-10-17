@@ -147,7 +147,8 @@ return function(api)
       -- from there; to as the one target, without pick (pick takes to: where what it took is given), the position and
       -- a give. A from and a to: the take is at from, and to the refusal's pick form gives at (the handler shows it).
       if out.pick == nil and out.position == nil and out.positions == nil then
-        if is_pos(out.to) and not (is_pos(out.from) or is_list(out.from)) and (out.direction == nil or out.direction == 'to_entity') then
+        -- (from: "nearest" with to is a courier from the nearest chest holding it: B1, Grok 22:50)
+        if is_pos(out.to) and not (is_pos(out.from) or is_list(out.from)) and out.from ~= 'nearest' and (out.direction == nil or out.direction == 'to_entity') then
           out.position, out.to, out.direction = xy(out.to), nil, 'to_entity'
           notes[#notes+1] = 'to={x,y} without pick is position=... direction="to_entity"'
         elseif is_pos(out.from) or is_list(out.from) then

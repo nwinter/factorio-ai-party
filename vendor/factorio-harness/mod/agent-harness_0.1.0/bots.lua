@@ -221,7 +221,7 @@ return function(api)
   -- rotate (Astra, Sol, d15 batch5 D4): ghosts and built belts and inserters by remote view.
   M.PLATFORM_ACTIONS = {'rotate', 'upgrade', 'place_ghosts', 'deconstruct', 'cancel_deconstruction', 'paste', 'blueprint_place', 'blueprint_save', 'blueprint_capture', 'grid', 'scan', 'inspect',
     'configure', 'flush', 'circuit_set', 'circuit', 'wire', 'ports', 'cargo', 'trace', 'power', 'conflicts', 'placements'}
-  M.SURFACE_ACTIONS = {'rates', 'rotate', 'upgrade', 'placements', 'inspect', 'circuit_set', 'circuit', 'wire', 'ores', 'launch', 'configure', 'silo', 'preflight', 'requests',
+  M.SURFACE_ACTIONS = {'blueprint_save', 'blueprint_capture', 'rates', 'rotate', 'upgrade', 'placements', 'inspect', 'circuit_set', 'circuit', 'wire', 'ores', 'launch', 'configure', 'silo', 'preflight', 'requests',
     'place_ghosts', 'scan', 'conflicts', 'deconstruct', 'cancel_deconstruction', 'trace'}
   M.ABOARD_NOTE = 'every read (status, scan, inspect, science, supply, networks, platforms, map, ...: of the platform, or of a planet with surface=) but inventory and craftable; '
     .. 'tell, chat, say, operator, board and votes; research; platform_schedule, platform_create, requests (platform= or position=), drop (hub items down to the planet) and land; '

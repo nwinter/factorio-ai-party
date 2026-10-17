@@ -117,3 +117,9 @@
   and left at each arrival.
 - `load_silo` with a walk gives `loaded_items` (what you put in), `aboard_before` and `kept` (taken, not loaded, still
   with you: a teammate's load met the count); `cargo` is everything in the rocket.
+- `launch {position, platform, wait_platform: true}` waits until the platform is in orbit of the silo's planet (and,
+  with `wait_ready`, the rocket is ready), then launches; a plain tell does not end it.
+- `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`: per item, what the ghosts still need less hub
+  stock and cargo in flight, what is built and what the hub asks; `pack` splits the rest into rockets for `load_silo`.
+- `load_silo {..., launch: true, auto_requests: "pause"}` loads a silo whose automatic requests are on. They go off for
+  this manifest and come back on after its last launch, or when the load ends without one.
