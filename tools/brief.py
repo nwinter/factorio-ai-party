@@ -12,10 +12,10 @@ The core is agent/PLAYBOOK.md, the team section (agent/team.md) or co-op (agent/
 commands (agent/ref/index.md) and the compaction instructions (agent/compact.md); tools/launch-agent.sh adds
 agent/harness-KIND.md and tools/full_tools.py the "Your tools" paragraph before the compaction instructions. Every agent
 reads the core at the start of every context window, so it stays under 20 KB (tools/test_brief.py); a command's
-details go in its topic file, with one index entry in agent/ref/index.md (the topic's scope in a few words and
-the command names; when to read each topic, the third line of its file, is in agent/topics.tsv). The topic files are agent/ref/*.md (Space
-Age worlds add agent/spaceage.md at the head of space-age); `./fh help TOPIC` prints one, and fh names the topic of
-the call in an argument refusal (ref/commands.tsv, written here from the index).
+details go in its topic file, with one index entry in agent/ref/index.md (the topic's scope in a few words and the
+command names; when to read each topic, the third line of its file, is in agent/ref/topics.tsv). The topic files are
+agent/ref/*.md (Space Age worlds add agent/spaceage.md at the head of space-age); `./fh help TOPIC` prints one, and fh
+names the topic of the call in an argument refusal (ref/commands.tsv, written here from the index).
 """
 import os, re, sys, tempfile
 
@@ -105,9 +105,9 @@ def core(player, time_text, coop, mate="", mate_notes="", role=""):
 
 
 def whens():
-    """{topic: when to read it} from agent/topics.tsv (the index itself names each topic's scope in a few words)."""
+    """{topic: when to read it} from agent/ref/topics.tsv (the index itself names each topic's scope in a few words)."""
     out = {}
-    for line in open(os.path.join(AGENT, "topics.tsv")):
+    for line in open(os.path.join(REF, "topics.tsv")):
         if line.strip() and not line.startswith("#"):
             topic, when = line.rstrip("\n").split("\t", 1)
             out[topic] = when
@@ -115,7 +115,7 @@ def whens():
 
 
 def topic_files(player):
-    """{topic: text} for ref/: each topic's file with a heading, when to read it (agent/topics.tsv), and its facts."""
+    """{topic: text} for ref/: each topic's file with a heading, when to read it (agent/ref/topics.tsv), and its facts."""
     out = {}
     when_of = whens()
     for topic, _, _ in index():
