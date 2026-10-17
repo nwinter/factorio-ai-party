@@ -6644,6 +6644,15 @@ fh watch    # deploy on every change
   build them (no hand reach there)`. Copy, Astra on nauvis: belt_route on vulcanus placed 29 ghosts (27 belts, 2
   undergrounds), pole_route 6 medium pole ghosts; the dry run's standing says `you are on another surface: the ghosts
   on vulcanus are built by its construction robots`. tests/d17_batch18.lua.
+- C2 (Opus): a whole circuit block was built unpowered outside the robot network. build (one entry or a batch) and
+  place_ghosts (and the routes and pastes that place through it) add `no_power_coverage`: electric entities (not
+  poles, generators, solar, accumulators) no pole's supply area covers. A built one has no electric network
+  (M.unpowered: the nearest pole within 64 tiles); a ghost has no pole or pole ghost within 12 tiles whose supply area
+  (get_supply_area_distance) meets its collision box. `outside_construction_area`: what no roboport's construction
+  area covers (find_logistic_networks_by_construction_area). Each: how many, the first 8. Read for up to 256 entities
+  a call; not on a platform. Copy: ghosts at (260.5,0.5) and (264.5,0.5) named both (the chest has no power source);
+  a lamp ghost by a pole in the base and a lamp and chest built there say neither. 64 lamp ghosts placed in 21-23 ms
+  on the copy with and without the notes. tests/d17_batch18_rt.lua.
 
 ## d17 batch20 (operator 15:25: the agents' 15:20 poll)
 - A1 (Haiku): `craft` refused 20 firearm-magazine over 650 in four requester chests (150 within 25 tiles), and a gun

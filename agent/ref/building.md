@@ -161,7 +161,9 @@
   area and planned boundary tiles (a bounded 24-32-tile window); `pockets_checked` says when a larger plan was not
   checked. Dry runs and build replies name logistic chests no roboport covers (`outside_logistic_coverage`) and
   inserters or belts feeding an underground entrance from the side, with the lane that gets nothing
-  (`underground_side_feed`). Each cliff the placement marks is listed (`cliffs_under`). A place_ghosts dry run over
+  (`underground_side_feed`). build and place_ghosts replies also name what they put down that no pole's supply area
+  covers (`no_power_coverage`; built: the nearest pole) and what lies outside every roboport's construction area
+  (`outside_construction_area`). Each cliff the placement marks is listed (`cliffs_under`). A place_ghosts dry run over
   another ghost says blocked, as the call does. On a platform a planned pump's enable condition with no circuit wire is
   named (`pump_circuits`), and a ghost refused over empty space says when foundation tile ghosts under it are not
   built yet.

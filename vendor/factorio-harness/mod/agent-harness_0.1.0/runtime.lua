@@ -5579,6 +5579,63 @@ function M.build_notes(p,ents)
   end
   return #cover>0 and cover or nil,#side>0 and side or nil
 end
+-- Power and robot coverage of what a build or place_ghosts call put down (d17 batch18 C2, Opus: a whole circuit block
+-- built unpowered outside the robot network): electric entities no pole's supply area covers (built: no electric
+-- network, with the nearest pole; a ghost: no pole or pole ghost's supply area reaches its box), and entities no
+-- roboport's construction area covers (robots neither build those ghosts nor repair or rebuild those entities). Each
+-- a line: how many, the first 8 by name and position. Not on a platform (the hub builds there).
+do
+  local OWN={['electric-pole']=true,['solar-panel']=true,accumulator=true,generator=true,['burner-generator']=true,
+    ['electric-energy-interface']=true,['power-switch']=true,['fusion-generator']=true,['lightning-attractor']=true}
+  local MAX_READ,REACH=256,12
+  local function supply(proto)
+    local ok,d=pcall(function() return proto.get_supply_area_distance() end)
+    if ok and d then return d end
+    ok,d=pcall(function() return proto.supply_area_distance end)
+    return ok and d or 0
+  end
+  local function ghost_covered(e,proto)
+    local box=proto.collision_box or {left_top={x=0,y=0},right_bottom={x=0,y=0}}
+    local x0,y0,x1,y1=e.position.x+box.left_top.x,e.position.y+box.left_top.y,e.position.x+box.right_bottom.x,e.position.y+box.right_bottom.y
+    for _,f in ipairs({{type='electric-pole'},{type='entity-ghost',ghost_type='electric-pole'}}) do
+      for _,pole in ipairs(e.surface.find_entities_filtered{position=e.position,radius=REACH,type=f.type,ghost_type=f.ghost_type,force=e.force,limit=64}) do
+        local d=supply(pole.type=='entity-ghost' and pole.ghost_prototype or pole.prototype)
+        local q=pole.position
+        if x1>q.x-d and x0<q.x+d and y1>q.y-d and y0<q.y+d then return true end
+      end
+    end
+    return false
+  end
+  function M.coverage_notes(p,ents)
+    if own_platform(p) then return nil,nil end
+    local off,offn,out,outn,read={},0,{},0,0
+    for _,e in ipairs(ents or {}) do
+      if read>=MAX_READ then break end
+      if e.valid and e.type~='tile-ghost' then
+        read=read+1
+        local ghost=e.type=='entity-ghost'
+        local proto=ghost and e.ghost_prototype or e.prototype
+        local name=ghost and e.ghost_name or e.name
+        local at=string.format('%s%s (%g,%g)',ghost and 'ghost of ' or '',name,e.position.x,e.position.y)
+        local okp,src=pcall(function() return proto.electric_energy_source_prototype end)
+        if okp and src and not OWN[proto.type] then
+          if ghost then
+            local okc,covered=pcall(ghost_covered,e,proto)
+            if okc and not covered then offn=offn+1; if #off<8 then off[#off+1]=at end end
+          else
+            local okw,why=pcall(M.unpowered,e)
+            if okw and why then offn=offn+1; if #off<8 then off[#off+1]=at..': '..why:gsub('^unpowered: ','') end end
+          end
+        end
+        local okn,nets=pcall(function() return e.surface.find_logistic_networks_by_construction_area(e.position,e.force) end)
+        if okn and nets and #nets==0 then outn=outn+1; if #out<8 then out[#out+1]=at end end
+      end
+    end
+    local power=offn>0 and string.format('%d not covered by any pole\'s supply area: %s%s',offn,table.concat(off,'; '),offn>#off and string.format('; +%d more',offn-#off) or '') or nil
+    local robots=outn>0 and string.format('%d outside every roboport\'s construction area (robots do not build, repair or rebuild them there): %s%s',outn,table.concat(out,', '),outn>#out and string.format(', +%d more',outn-#out) or '') or nil
+    return power,robots
+  end
+end
 -- A batch entry blocked by an entity this batch placed says which entry placed it (Muse, shift13: a pole at
 -- (20.5,64.5) inside the assembler's footprint stopped the batch at entry 2). own: {name, position, index}.
 function M.own_blockers(why,own)
@@ -5646,6 +5703,7 @@ function handlers.build(p,a)
       M.entryset.built(p,a,1,settings)
       r.closed_in=M.closed_in_note(p,ents or {})
       r.outside_logistic_coverage,r.underground_side_feed=M.build_notes(p,ents)
+      r.no_power_coverage,r.outside_construction_area=M.coverage_notes(p,ents)
       return result(r,true)
     end
     local rest={}
@@ -5757,6 +5815,7 @@ function handlers.build(p,a)
     end
   end
   local cover,side=M.build_notes(p,built)
+  local no_power,outside=M.coverage_notes(p,built)
   local okb,last_belt=pcall(M.beltflow.last,built)
   -- Two or more belts: each one's line, the tile its items move to (last_belt stays the last one's).
   local okl,belt_lines,belts_more=pcall(M.beltflow.lines,built)
@@ -5768,7 +5827,7 @@ function handlers.build(p,a)
   return result({built=#placed,placed=placed,built_before=a.built_before,failed=#failed>0 and failed or nil,summary=summary,inserters_without_target=loose,
     batches=entries>64 and string.format('%d entries in %d batches of up to 64, one reply',entries,math.ceil(entries/64)) or nil,
     inserters_without_target_count=nloose and nloose>#loose and nloose or nil,
-    closed_in=M.closed_in_note(p,built),outside_logistic_coverage=cover,underground_side_feed=side,last_belt=okb and last_belt or nil,
+    closed_in=M.closed_in_note(p,built),outside_logistic_coverage=cover,no_power_coverage=no_power,outside_construction_area=outside,underground_side_feed=side,last_belt=okb and last_belt or nil,
     belts=belt_lines,belts_more=belts_more and belts_more>0 and belts_more or nil,
     tiles_removed=#tiles_removed>0 and tiles_removed or nil,removed_note=#tiles_removed>0 and M.bots.REMOVED_NOTE or nil,
     tiles_not_placed=#tiles_not_placed>0 and tiles_not_placed or nil},true)
@@ -11827,6 +11886,7 @@ local function place_ghost_list(p,list,ammo)
   end
   -- Logistic chest ghosts no roboport's logistic area covers (a roboport placed in this call counts: it is a ghost now).
   local cover=M.build_notes(p,chests)
+  local no_power,outside=M.coverage_notes(p,ghosts)
   -- The last belt ghost: where it moves items, read once all of this call's ghosts stand (beltflow.lua).
   local okb,last_belt=pcall(M.beltflow.last,belts)
   local okl,belt_lines,belts_more=pcall(M.beltflow.lines,belts)
@@ -11851,6 +11911,7 @@ local function place_ghost_list(p,list,ammo)
     cliffs_marked=ncliffs>0 and ncliffs or nil,cliffs_note=cliffs_note,
     underground_warnings=#warnings>0 and warnings or nil,inserters_without_target=loose,inserters_without_target_count=nloose,
     tiles_laid=tiles_laid,tiles_note=tile_note,outside_logistic_coverage=cover,tile_obstacles_marked=M.tile_marks_line(tile_marked),
+    no_power_coverage=no_power,outside_construction_area=outside,
     ammo_requests=#ammo_rows>0 and ammo_rows or nil,recipes=next(recipes) and recipes or nil,closes_in=M.ghosts_close_in(p,ghosts)}
 end
 -- Ghosts that, once built, close the character in where it stands, as the dry run's closes_in reads the plan
