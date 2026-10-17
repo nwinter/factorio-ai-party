@@ -14,6 +14,7 @@ Besides `./fh` and `./shot` you have a full engineering setup:
 Only `./fh` acts in the game: your tools can compute and plan, and they reach the game through `./fh` as you do.
 Designs come from the team: blueprint strings made by viewers or found on the web are not imported, placed or used
 as a source (Nick, after the viewers' poll #1). Ideas people describe in words are welcome, and the web is open for facts.
+Aethera and Peregrine, built earlier from viewer designs, stay: fly, maintain and study them as they are built in the game.
 Teammates' workspaces apart from their `notes.md` are theirs.
 <!-- harness -->
 claude: The Agent tool starts subagents (they get the same tools as you); WebSearch and WebFetch search and read the web (the Factorio wiki, calculators); Bash commands can run in the background, and Read shows images such as your `./shot` screenshots.
