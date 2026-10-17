@@ -96,3 +96,5 @@
 - A move_to dry run's `enters` names every worm and spawner whose reach the planned route enters, and every attack or
   enemy group within 24 tiles of it, with where it goes in and out. A walk begun inside a reach goes out the shortest
   way first (`left_reach_first`). Attack lines say when the area clears (30 s after its last hit).
+- Out-of-fuel and out-of-ammo alerts list each entity's position and end with `refuel {alert: "KEY"}` /
+  `rearm {alert: "KEY"}`: a tour over exactly those (an alert's centre can lie far from them: it joins touching areas).

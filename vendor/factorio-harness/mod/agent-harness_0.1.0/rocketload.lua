@@ -699,7 +699,9 @@ return function(api)
     for i, c in ipairs(first) do entities[i] = c end
     entities[#entities+1] = silo
     local fields = {ordered=true, load=load, silo=silo, chests=chests, goals=goals, trips=1, taken=0, loaded=0, rows={}, items={},
-      avoid_enemies=a.avoid_enemies, unsafe_goal=a.unsafe_goal, started_tick=game.tick}
+      avoid_enemies=a.avoid_enemies, unsafe_goal=a.unsafe_goal, started_tick=game.tick,
+      -- the silo's last launch when the tour began, and whether a rocket was leaving then (C6: not a launch under it)
+      launch_before=try(function() return api.last_launch(silo).tick end), leaving=M.leaving(silo)}
     local rk = api.rocket and try(function() return api.rocket(silo) end)
     local reply = {op='load_silo', walk=true, silo=string.format('%s at %s', silo.name, at(silo.position)), needs=need_text(rows),
       chests=#chests > 0 and chests_text(action, rows) or nil,
@@ -711,9 +713,26 @@ return function(api)
   -- Returns {transferred, stop} as the tour's visits do.
   -- The rocket this tour loads launched by another hand (Grok: a gather went on into the next rocket after Astra
   -- launched the 885-pack one): the tour ends there, rocket_launched, naming the launch.
+  -- (C6, Sol: a second load_silo launch step began while the first one's rocket was leaving and read that launch as
+  -- made under it: the launch known when it began, and one within SAME_LAUNCH ticks of a start with a rocket leaving,
+  -- are not.)
+  local LEAVING = {}
+  function M.leaving(silo)
+    if not next(LEAVING) then
+      for _, k in ipairs({'launch_starting', 'launch_started', 'engine_starting', 'arms_retract', 'rocket_flying', 'lights_blinking_close', 'doors_closing'}) do
+        local v = defines.rocket_silo_status and defines.rocket_silo_status[k]
+        if v then LEAVING[v] = true end
+      end
+    end
+    local st = try(function() return silo.rocket_silo_status end)
+    return st ~= nil and LEAVING[st] == true or nil
+  end
   local function launched_since(action)
     local r = api.last_launch and action.started_tick and try(function() return api.last_launch(action.silo) end)
-    if r and r.tick and r.tick >= action.started_tick and not action.launch then return r end
+    if not (r and r.tick and r.tick >= action.started_tick and not action.launch) then return nil end
+    if action.launch_before and r.tick == action.launch_before then return nil end
+    if action.leaving and r.tick <= action.started_tick + 600 then return nil end
+    return r
   end
   function M.walk_visit(p, action, e)
     local gone = launched_since(action)

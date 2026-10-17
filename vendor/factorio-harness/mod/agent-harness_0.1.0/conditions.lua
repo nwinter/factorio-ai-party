@@ -84,6 +84,21 @@ return function(api)
   -- table lives.
   local seen=setmetatable({},{__mode='k'})
   local function seen_by(c) seen[c]=seen[c] or {}; return seen[c] end
+  -- An area or a list of them ({left_top, right_bottom} or [[x,y],[x,y]]), as {{x0,y0},{x1,y1}} boxes; {} for nil.
+  function M.areas_of(v)
+    if v==nil then return {} end
+    assert(type(v)=='table','area/tiles is {left_top, right_bottom} or a list of them')
+    local list=(v.left_top or (type(v[1])=='table' and type(v[1][1])=='number')) and {v} or v
+    assert(#list>=1 and #list<=64,'area/tiles: 1..64 areas')
+    local out={}
+    for _,ar in ipairs(list) do
+      local lt,rb=ar.left_top or ar[1],ar.right_bottom or ar[2]
+      lt,rb=api.position(lt),api.position(rb)
+      assert(lt.x<rb.x and lt.y<rb.y,'an area has left_top above and left of right_bottom')
+      out[#out+1]={{lt.x,lt.y},{rb.x,rb.y}}
+    end
+    return out
+  end
   local checks={
     no_enemy_structures=function(p,c)
       local n=enemies(p,c,ENEMY_STRUCTURES); return n==0,n..' enemy structures'
@@ -273,6 +288,18 @@ return function(api)
       assert(pl,'no platform of ours named '..tostring(c.platform))
       local surface=pl.surface
       assert(surface,'platform '..c.platform..' has no surface yet')
+      -- A subset (d17 batch12 C5, Sol: one finished module gating its commissioning among hundreds of other ghosts):
+      -- the entity ghosts at positions and in area, the tile ghosts in tiles, as platform_plan ready reads them.
+      if c.positions or c.area or c.tiles then
+        local ents,tiles=0,0
+        for _,q in ipairs(c.positions or {}) do
+          local pos=api.position(q)
+          ents=ents+surface.count_entities_filtered{position=pos,radius=0.5,type='entity-ghost',force=p.force}
+        end
+        for _,ar in ipairs(M.areas_of(c.area)) do ents=ents+surface.count_entities_filtered{area=ar,type='entity-ghost',force=p.force} end
+        for _,ar in ipairs(M.areas_of(c.tiles)) do tiles=tiles+surface.count_entities_filtered{area=ar,type='tile-ghost',force=p.force} end
+        return ents==0 and tiles==0,string.format('platform %s, the part asked: %d entity ghost%s, %d tile ghost%s left',c.platform,ents,ents==1 and '' or 's',tiles,tiles==1 and '' or 's')
+      end
       local tiles=surface.count_entities_filtered{type='tile-ghost',force=p.force}
       local ents=c.entities and surface.count_entities_filtered{type='entity-ghost',force=p.force} or nil
       local met=tiles==0 and (ents==nil or ents==0)
@@ -348,11 +375,12 @@ return function(api)
       return n>0,n..' burners below '..c.count..' fuel'..(near and string.format(' (nearest %s at %d,%d)',near.name,math.floor(near.position.x),math.floor(near.position.y)) or '')
     end,
   }
-  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced|platform_built|all'
+  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced|platform_built|platform_ready|all'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
   -- conditions=[...]} met when each is; saw joins theirs. Members are plain conditions.
+  checks.platform_ready=checks.platform_built
   checks['all']=function(p,c,estimate,record)
     local all,saws=true,{}
     for i,m in ipairs(c.conditions) do
@@ -381,8 +409,10 @@ return function(api)
     if c.position~=nil then api.position(c.position) end
     if c.radius~=nil then number(c.radius,1,256,'radius') end
     local kind=c['until']
-    if c.area~=nil then
-      assert(kind=='ammo_below' or kind=='fuel_below','area applies to ammo_below or fuel_below')
+    if c.area~=nil and (kind=='platform_built' or kind=='platform_ready') then
+      -- (C5: an area or a list of them on the platform, checked below)
+    elseif c.area~=nil then
+      assert(kind=='ammo_below' or kind=='fuel_below','area applies to ammo_below or fuel_below (and platform_built, platform_ready)')
       assert(c.radius==nil and c.position==nil,'area excludes position and radius')
       local l,r=api.position(c.area.left_top or c.area[1]),api.position(c.area.right_bottom or c.area[2])
       assert(r.x>l.x and r.y>l.y and r.x-l.x<=256 and r.y-l.y<=256,'area must be nonempty and at most 256x256')
@@ -422,9 +452,14 @@ return function(api)
       assert(c.at_least~=nil,'produced requires at_least (items made since the wait began; crafts without item)')
       number(c.at_least,1,1e9,'at_least')
     end
-    if kind=='platform_built' then
-      assert(type(c.platform)=='string' and #c.platform>0,'platform_built requires platform (a platform name)')
-      assert(c.entities==nil or type(c.entities)=='boolean','platform_built entities must be true or false')
+    if kind=='platform_built' or kind=='platform_ready' then
+      assert(type(c.platform)=='string' and #c.platform>0,kind..' requires platform (a platform name)')
+      assert(c.entities==nil or type(c.entities)=='boolean',kind..' entities must be true or false')
+      if c.positions~=nil then
+        assert(type(c.positions)=='table' and #c.positions>=1 and #c.positions<=512,kind..' positions takes 1..512 {x,y} (entity ghosts)')
+        for _,pos in ipairs(c.positions) do api.position(pos) end
+      end
+      M.areas_of(c.area); M.areas_of(c.tiles)
     end
     if kind=='researched' then assert(type(c.technology)=='string','researched requires technology') end
     if kind=='rocket_ready' then assert(c.position~=nil,'rocket_ready requires position (a rocket silo\'s, any tile of it)') end

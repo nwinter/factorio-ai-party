@@ -20,6 +20,26 @@ return function(api)
     local ok, n = pcall(function() return e.get_item_count(item) end)
     return ok and type(n) == 'number' and n or 0
   end
+  -- How many of a spoilable item in an entity's inventories spoil within `ticks` (d17 batch12 C7, Grok: yumako mash read
+  -- 559, then 167 minutes later; a total read as a reserve): each stack's own spoil tick.
+  M.SOON_TICKS, M.SOON_PLACES = 7200, 400
+  function M.spoils_soon(e, item, ticks)
+    local n = 0
+    local max = (pcall(function() return e.get_max_inventory_index() end)) and e.get_max_inventory_index() or 0
+    for i = 1, max do
+      local inv = (pcall(function() return e.get_inventory(i) end)) and e.get_inventory(i) or nil
+      if inv then
+        for k = 1, #inv do
+          local st = inv[k]
+          if st.valid_for_read and st.name == item then
+            local ok, t = pcall(function() return st.spoil_tick end)
+            if ok and type(t) == 'number' and t > 0 and t - game.tick <= ticks then n = n + st.count end
+          end
+        end
+      end
+    end
+    return n
+  end
   function M.where_is(p, a)
     local item = a.item
     assert(type(item) == 'string' and item ~= '', 'item is required (an item name, e.g. automation-science-pack)')
@@ -101,7 +121,24 @@ return function(api)
     end
     local total = 0
     for _, n in pairs(totals) do total = total + n end
-    local out = {item=item, surface=surface.name, total=total, by_kind=totals, places={}, more=0, in_flight=#flying > 0 and flying or nil}
+    -- A spoilable item: what of it spoils within 2 minutes in the places read (the first SOON_PLACES, the most held first).
+    local soon
+    local spoils = pcall(function() return prototypes.item[item].get_spoil_ticks() end) and prototypes.item[item].get_spoil_ticks() > 0
+    if spoils then
+      local order = {}
+      for _, e in ipairs(places) do order[#order+1] = e end
+      table.sort(order, function(x, y) return x.count > y.count end)
+      soon = 0
+      local ents = {}
+      for _, e in ipairs(surface.find_entities_filtered{force=p.force, type=TYPES}) do ents[e.position.x .. ',' .. e.position.y .. e.name] = e end
+      for i, pl in ipairs(order) do
+        if i > M.SOON_PLACES then break end
+        local e = pl.entity and ents[pl.position.x .. ',' .. pl.position.y .. pl.entity]
+        if e then local n = M.spoils_soon(e, item, M.SOON_TICKS); soon = soon + n; if n > 0 then pl.spoils_within_2_min = n end end
+      end
+    end
+    local out = {item=item, surface=surface.name, total=total, by_kind=totals, places={}, more=0, in_flight=#flying > 0 and flying or nil,
+      spoils_within_2_min=soon, spoil_note=soon and string.format('%d of the %d spoil within 2 minutes (chests, machines and the like; belts and hands not read)', soon, total) or nil}
     for i, e in ipairs(places) do
       if i <= limit then out.places[i] = e else out.more = out.more + 1 end
     end
@@ -111,7 +148,7 @@ return function(api)
   end
   M.schema = {
     where_is = {item='item name', limit='1..50 places (default 15)', surface='optional surface name (default yours)',
-      returns='total and by_kind (chest, lab, machine, vehicle, pad, hub, roboport, belts, inserter_hands, characters, in_flight); places: each chest, lab, machine, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, distance}, nearest first (belts and inserter hands as totals only); more: places past the limit; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
+      returns='total and by_kind (a spoilable item: spoils_within_2_min and spoil_note, each place its own spoils_within_2_min; chest, lab, machine, vehicle, pad, hub, roboport, belts, inserter_hands, characters, in_flight); places: each chest, lab, machine, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, distance}, nearest first (belts and inserter hands as totals only); more: places past the limit; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
   }
   return M
 end

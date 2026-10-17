@@ -84,7 +84,7 @@ local function has(lines,text) for _,l in ipairs(lines) do if l:find(text,1,true
 
 -- 1. Each group goes to whoever it concerns: a claim, the builder, else the nearest agent there.
 local l=A.lines(sol,hs)
-eq(#l,1); eq(l[1],'12 gun-turret out of ammo near (67,-170); rearm')
+eq(#l,1); eq(l[1],'12 gun-turret out of ammo near (67,-170): (61,-170), (62,-170), (63,-170), (64,-170), (65,-170), (66,-170), (67,-170), (68,-170), +4 more; rearm {alert: "no_ammo|nauvis|0,-3"}')
 l=A.lines(luna,hl)
 eq(#l,3,table.concat(l,' | '))
 assert(has(l,'8 assembling-machine-2 no power near (125,40) on nauvis; fh call power'),table.concat(l,' | '))
@@ -92,7 +92,8 @@ assert(has(l,'2 assembling-machine-2 not connected to power (no pole reaches the
 assert(has(l,'1 flamethrower-turret out of flamer oil near (10,10); fh call flamers'),'the nearest on Vulcanus')
 l=A.lines(astra,ha)
 eq(#l,2,table.concat(l,' | '))
-assert(has(l,'5 stone-furnace out of fuel near (6,2); refuel'))
+-- (d17 batch12 C1: the exact positions and the alert's key for refuel)
+assert(has(l,'5 stone-furnace out of fuel near (6,2): stone-furnace ') and has(l,'; refuel {alert: "no_fuel|nauvis|'),table.concat(l,' | '))
 assert(has(l,'2 (1 entity-ghost, 1 transport-belt) ghosts waiting for materials (no robot can bring them) near (-41,11)'),table.concat(l,' | '))
 assert(not has(l,'Sunward') and not has(l,'entity_destroyed'))
 
@@ -101,7 +102,7 @@ for i=13,16 do turrets[i]=ent('nauvis','gun-turret','ammo-turret',60+i,-170) end
 game.tick=game.tick+60*60
 eq(#A.lines(sol,hs),0,'within 150 s')
 game.tick=game.tick+91*60
-l=A.lines(sol,hs); eq(#l,1); eq(l[1],'16 gun-turret out of ammo near (69,-170) (was 12); rearm')
+l=A.lines(sol,hs); eq(#l,1); eq(l[1],'16 gun-turret out of ammo near (69,-170) (was 12): (61,-170), (62,-170), (63,-170), (64,-170), (65,-170), (66,-170), (67,-170), (68,-170), +8 more; rearm {alert: "no_ammo|nauvis|0,-3"}')
 game.tick=game.tick+151*60
 eq(#A.lines(sol,hs),0,'unchanged: not told again')
 eq(#A.lines(luna,hl),0); eq(#A.lines(astra,ha),0)
@@ -111,7 +112,7 @@ game.tick=game.tick+151*60
 eq(#A.lines(sol,hs),0); eq(next(hs.push.told),nil,'gone: forgotten')
 for i=1,4 do turrets[i].rounds=0 end
 game.tick=game.tick+151*60
-l=A.lines(sol,hs); eq(l[1],'4 gun-turret out of ammo near (63,-170); rearm')
+l=A.lines(sol,hs); eq(l[1],'4 gun-turret out of ammo near (63,-170): (61,-170), (62,-170), (63,-170), (64,-170); rearm {alert: "no_ammo|nauvis|0,-3"}')
 
 -- 3. The game_alerts read: every group, worst first, with who it goes to.
 local r=A.read(astra,{})
@@ -346,7 +347,7 @@ do
   g=read(); eq(g.no_ammo.count,3,'30 s on: still out of ammo')
   g=read()
   eq(g.no_ammo.count,1,'60 s on: the old one only'); eq(g.rebuilt_empty.count,2)
-  eq(g.rebuilt_empty.line,'2 gun-turret rebuilt empty near (212,10): no ammo since built, 60+ s: gun-turret (210,10) requests 10 firearm-magazine; gun-turret (214,10) no ammo request; rearm')
+  eq(g.rebuilt_empty.line,'2 gun-turret rebuilt empty near (212,10): no ammo since built, 60+ s: gun-turret (210,10) requests 10 firearm-magazine; gun-turret (214,10) no ammo request; rearm {alert: "rebuilt_empty|nauvis|3,0"}')
   eq(#R.read(astra,{kind='rebuilt_empty'}).groups,1)
   local told=R.lines(astra,{})
   assert(has(told,'2 gun-turret rebuilt empty near (212,10)'),table.concat(told,' | '))
@@ -474,7 +475,7 @@ do
   for i=1,3 do guns[i]=ent('nauvis','gun-turret','ammo-turret',300+i*2,300,{unit_number=700+i}) end
   local h={}
   game.tick=game.tick+1800
-  local l=R.lines(sol,h); eq(#l,1); eq(l[1],'3 gun-turret out of ammo near (304,300); rearm')
+  local l=R.lines(sol,h); eq(#l,1); eq(l[1],'3 gun-turret out of ammo near (304,300): (302,300), (304,300), (306,300); rearm {alert: "no_ammo|nauvis|4,4"}')
   st11.push_bg=true   -- that read stays the current one
   -- Two refilled since the read: the read counts the one left; one built since is not in this read.
   ent('nauvis','gun-turret','ammo-turret',320,300,{unit_number=799})
@@ -513,7 +514,7 @@ do
   ent('nauvis','heating-tower','reactor',46.5,48.5,{status=3,burner={inventory={}}})
   local r=R.read(sol,{kind='no_fuel'}).groups
   eq(#r,1)
-  eq(r[1].line,'2 (1 biochamber, 1 heating-tower) out of fuel near (48,47); refuel; 3 biochamber around it burn spoiling fuel, 2 of them within 60s; '
+  eq(r[1].line,'2 (1 biochamber, 1 heating-tower) out of fuel near (48,47): biochamber (49.5,44.5), heating-tower (46.5,48.5); refuel {alert: "no_fuel|nauvis|0,0"}; 3 biochamber around it burn spoiling fuel, 2 of them within 60s; '
     ..'the first: nutrients spoils in 4s at (43.5,34.5)')
   -- Heating towers (Gemini, d15 07:54): empty and under 500 C, their own group with the temperature; hotter, not said.
   ent('nauvis','heating-tower','reactor',146.5,48.5,{status=3,temperature=320,burner={inventory={is_empty=function() return true end},remaining_burning_fuel=0}})
@@ -523,7 +524,7 @@ do
   game.tick=game.tick+1801
   local h=R.read(sol,{kind='heat_no_fuel'}).groups
   eq(#h,1)
-  eq(h[1].line,'1 heating-tower out of fuel and under 500 C near (146.5,48.5): heating-tower (146.5,48.5): 320 C, fuel slot empty; refuel')
+  eq(h[1].line,'1 heating-tower out of fuel and under 500 C near (146.5,48.5): heating-tower (146.5,48.5): 320 C, fuel slot empty; refuel {alert: "heat_no_fuel|nauvis|2,0"}')
   ents.nauvis={}
 end
 -- A burner its full burnt-result slot stopped (Sol, shift14 03:54: two agricultural science biochambers read working and

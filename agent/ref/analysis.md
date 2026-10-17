@@ -120,3 +120,4 @@
 - `trace {position, circuit: true}`: a machine's inserters with their conditions, and the circuit networks on their
   wires followed back through combinators. `fuel_budget {boilers: true}`: each boiler group's burn against the fuel in
   reach and the drills supplying it, with the hours left.
+- `where_is` and `stock` for a spoilable item give `spoils_within_2_min` beside the total (and per place).

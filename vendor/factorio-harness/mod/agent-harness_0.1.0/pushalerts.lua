@@ -117,7 +117,7 @@ return function(api)
     g.sx, g.sy = g.sx + pos.x, g.sy + pos.y
     if name then g.names[name] = (g.names[name] or 0) + 1 end
     if by then g.by[by] = (g.by[by] or 0) + 1 end
-    if #g.at < 4 then g.at[#g.at+1] = {x=math.floor(pos.x * 10 + 0.5) / 10, y=math.floor(pos.y * 10 + 0.5) / 10} end
+    if #g.at < 8 then g.at[#g.at+1] = {x=math.floor(pos.x * 10 + 0.5) / 10, y=math.floor(pos.y * 10 + 0.5) / 10} end
     if detail then g.lost = g.lost or {}; if #g.lost < MAX_DETAIL then g.lost[#g.lost+1] = detail end end
     -- A turret group is read again before it is shown (M.recheck): its turrets by unit number, in its cells.
     if RECHECK[kind] and e then
@@ -514,7 +514,7 @@ return function(api)
         h.n, h.sx, h.sy = h.n + g.n, h.sx + g.sx, h.sy + g.sy
         for n, v in pairs(g.names) do h.names[n] = (h.names[n] or 0) + v end
         for n, v in pairs(g.by) do h.by[n] = (h.by[n] or 0) + v end
-        for _, pos in ipairs(g.at) do if #h.at < 4 then h.at[#h.at+1] = pos end end
+        for _, pos in ipairs(g.at) do if #h.at < 8 then h.at[#h.at+1] = pos end end
       end
     end
   end
@@ -582,7 +582,7 @@ return function(api)
           end
           for n, v in pairs(part.names) do area.names[n] = (area.names[n] or 0) + v end
           for n, v in pairs(part.by) do area.by[n] = (area.by[n] or 0) + v end
-          for _, pos in ipairs(part.at) do if #area.at < 4 then area.at[#area.at+1] = pos end end
+          for _, pos in ipairs(part.at) do if #area.at < 8 then area.at[#area.at+1] = pos end end
           for _, d in ipairs(part.lost or {}) do area.lost = area.lost or {}; if #area.lost < MAX_DETAIL then area.lost[#area.lost+1] = d end end
           for dx = -1, 1 do for dy = -1, 1 do
             local nk = kind .. '|' .. surface .. '|' .. (c[1] + dx) .. ',' .. (c[2] + dy)
@@ -887,7 +887,7 @@ return function(api)
         else unknown=true end
         if active then
           keep[#keep+1]=r;names[r.name]=(names[r.name] or 0)+1
-          if #at<4 then at[#at+1]=r.position end
+          if #at<8 then at[#at+1]=r.position end
         end
       end
       if #keep==0 and not g.status_capped then return nil end
@@ -912,7 +912,7 @@ return function(api)
           if still_empty(e, g.kind) then
             n = n + 1
             names[e.name] = (names[e.name] or 0) + 1
-            if #at < 4 then at[#at+1] = {x=math.floor(e.position.x * 10 + 0.5) / 10, y=math.floor(e.position.y * 10 + 0.5) / 10} end
+            if #at < 8 then at[#at+1] = {x=math.floor(e.position.x * 10 + 0.5) / 10, y=math.floor(e.position.y * 10 + 0.5) / 10} end
             keep[at_text(e.position)] = true
           end
         end
@@ -933,6 +933,49 @@ return function(api)
       end
     end
     return c
+  end
+  -- An alert's entities now, by its key (d17 batch12 C1, Haiku ~6 times: a refuel round an alert's centre found none of
+  -- the 15 furnaces it named: a group is every touching 32-tile cell, and its centre the average): the burners or
+  -- turrets still in that state (status groups: as recorded, still valid; turret groups: still empty). nil when no
+  -- alert of ours has that key now.
+  function M.alert_entities(force, key)
+    local g
+    for _, x in ipairs(current(force).groups or {}) do if x.key == key then g = x end end
+    if not g then return nil end
+    local list = {}
+    if g.status_entities then
+      for _, r in ipairs(g.status_entities) do
+        local e = r.entity
+        if e and e.valid and (g.kind == 'unconnected' or statuses()[e.status] == g.kind or g.kind == 'heat_no_fuel') then list[#list+1] = e end
+      end
+    elseif TURRET_TYPE[g.kind] and g.units and g.cells then
+      local surface
+      for _, x in pairs(game.surfaces) do if x.name == g.surface then surface = x end end
+      local seen = {}
+      for _, c in ipairs(surface and g.cells or {}) do
+        local box = {{c[1] * CELL, c[2] * CELL}, {(c[1] + 1) * CELL, (c[2] + 1) * CELL}}
+        for _, e in ipairs(surface.find_entities_filtered{area=box, type=TURRET_TYPE[g.kind], force=force, limit=4096}) do
+          local unit = e.valid and try(function() return e.unit_number end)
+          if unit and g.units[unit] and not seen[unit] and still_empty(e, g.kind) then seen[unit] = true; list[#list+1] = e end
+        end
+      end
+    end
+    return list, g
+  end
+  -- The exact positions of a group's entities (C1): 'stone-furnace (24.5,-60.5), ...' (at most 8), and its key.
+  local ALERT_TAKES = {no_fuel='refuel', heat_no_fuel='refuel', no_ammo='rearm', rebuilt_empty='rearm'}
+  local function where_text(g)
+    local parts = {}
+    if g.status_entities then
+      for _, r in ipairs(g.status_entities) do
+        if #parts >= 8 then break end
+        if r.entity and try(function() return r.entity.valid end) then parts[#parts+1] = r.name .. ' ' .. at_text(r.position) end
+      end
+    else
+      for _, q in ipairs(g.at or {}) do parts[#parts+1] = at_text(q) end
+    end
+    if #parts == 0 then return '' end
+    return ': ' .. table.concat(parts, ', ') .. (g.n > #parts and string.format(', +%d more', g.n - #parts) or '')
   end
   -- plain: without the hint (the review block, selfview.lua).
   -- was: the count told before, or (a group with now_text) what its now_text said then.
@@ -997,7 +1040,7 @@ return function(api)
       return string.format('%s out of fuel and under 500 C near %s%s%s: %s%s%s', what(g), near_text(g),
         g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '',
-        not plain and '; refuel' or '')
+        not plain and (g.key and string.format('; refuel {alert: "%s"}', g.key) or '; refuel') or '')
     end
     if g.kind == 'burnt_full' then
       -- '2 biochamber stopped by a full burnt-result slot near (57,61): biochamber (45.5,72.5): burnt-result slot spoilage*200; fuel slot spoilage*3 (not a fuel it burns: it burns nutrients); ...'
@@ -1010,9 +1053,11 @@ return function(api)
       return string.format('%s rebuilt empty near %s%s%s: no ammo since built, 60+ s: %s%s%s', what(g), near_text(g),
         g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '',
-        not plain and '; rearm' or '')
+        not plain and (g.key and string.format('; rearm {alert: "%s"}', g.key) or '; rearm') or '')
     end
     local hint = not plain and HINT[g.kind]
+    -- (C1) a refuel or rearm takes this alert by its key
+    if hint and ALERT_TAKES[g.kind] and g.key and g.n > 1 then hint = string.format('%s {alert: "%s"}', ALERT_TAKES[g.kind], g.key) end
     -- Spoiling fuel of those burners around it (merge): how many still burn it, how many spoil within ROT_SOON, the first.
     local rot = {}
     local names = {}
@@ -1024,8 +1069,9 @@ return function(api)
       rot[#rot+1] = string.format('%d %s around it burn spoiling fuel, %d of them within %ds; the first: %s %s at (%g,%g)', r.n, name, r.soon,
         ROT_SOON / 60, r.item, left > 0 and string.format('spoils in %ds', math.floor(left / 60 + 0.5)) or 'spoiled', r.at.x, r.at.y)
     end
-    return string.format('%s %s near %s%s%s%s%s', what(g), LABEL[g.kind] or g.kind:gsub('_', ' '), near_text(g),
-      g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '', hint and '; ' .. hint or '',
+    return string.format('%s %s near %s%s%s%s%s%s', what(g), LABEL[g.kind] or g.kind:gsub('_', ' '), near_text(g),
+      g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
+      ALERT_TAKES[g.kind] and g.n > 1 and where_text(g) or '', hint and '; ' .. hint or '',
       (#rot > 0 and '; ' .. table.concat(rot, '; ') or '')..(g.stale and '; last observed tick '..(g.observed_tick or 0)..'; current state partly unknown' or ''))
   end
 

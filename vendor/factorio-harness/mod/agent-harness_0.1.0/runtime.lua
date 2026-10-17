@@ -1697,8 +1697,8 @@ function handlers.describe()
         recipe='optional recipe name: every machine set to it (positions, in reach, or radius) gets each item ingredient for crafts crafts (topped up to ingredient amount x crafts); machines set to another recipe are listed apart',crafts='with recipe: 1..1000 (default 1)',
         up_to='true: a short or empty inventory never fails the call or, as a queue step, pauses the plan (a tour\'s out_of_items counts as done, including CLI --wait and fh wait; last.short_allowed=true keeps outcome, moved and left visible)',
         returns='moved (alias transferred), inv (the inventory line after), items {name=count}, entities (position, name, gave; with recipe: loaded, short {item=missing}), unchanged, held (what is left of each item given)'},
-      rearm={dry_run='true with positions: walk and move nothing (a read); the route through the stops, nearest first from you, read as move_to dry_run reads it (stops, order, route, length, enemies, under_range, reachable, closed_in_goal for the last stop); radius and area tours choose their stops when they run',walk=WALK..'; with positions (or position alone): the turrets out of reach are walked to as radius walks its tour (below leaves those holding enough), timed: outcomes as radius',avoid_enemies='walking: as move_to\'s (default: worms, range + 4; spawners, 40 tiles + 4; the areas under attack now, 24 tiles + 4; true: + 8; false: no check): each leg goes round them, and a place inside one is left out: at the call (left_out names the first 8, left_out_more counts the rest, also in last.left_out; every place inside one: refused, naming them), and on the way (last.danger counts them, last.dangers names the first 8, last.first_unreached the first)',unsafe_goal='optional true: walk to such a place anyway',radius='1..256: a walking tour (timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left) through every turret in radius (round you, or round position) that takes the ammo and holds under below rounds (any ammo, counted in items), topping each up to count; turrets within 24 tiles of each other are one cluster (as the turrets read groups fronts), the nearest cluster first from where you stand, then from where the last one ends, nearest first inside one (clusters: one line each); up to 128 turrets a call (skipped: the rest)',area='or {left_top, right_bottom}: the same tour over every such turret in it, any size',surface='or true (or your surface\'s name): the same over your whole surface',below='optional 1..1000 rounds, on every form: only turrets holding fewer (any ammo, counted in items) get topped up to count (at least below); with radius, area or surface default count; in reach or at positions, the ones holding below or more are left as they are (held_enough names them)',position='optional {x,y}: with radius, the centre of the radius (default you); alone, the turret there (as positions with one entry)',ticks='with radius, area or surface: 1..36000 (default: by the tour\'s length: the walk from you through every turret in order at your running speed, half again for turns, 1 s a turret and 10 s; at least 3600, at most 36000; ticks_note says how it came out)',ammo='ammo item; omitted on a radius, area or surface tour (A3): each turret gets the ammo it holds, an empty one the ammo it takes that you carry most of; turrets whose ammo you carry none of are left out (none_held), ammo_each says the split; on positions too (each turret its own); a turret whose slots hold other ammo with no room is left out and named (other_ammo)',count='1..1000 target per turret (default 10)',positions='optional 1..64 positions instead of every turret in reach',types='default {ammo-turret}; artillery-turret allowed; an entity name is taken as a name (types_note)',returns='with radius, area or surface: places, clusters (one line each, nearest first: turrets, around (x,y), tiles from you or from the cluster before, rounds they hold), below, count, ticks and ticks_note (when defaulted), other_ammo (turrets there that take other ammo), no_room (turrets under below whose ammo slots hold other ammo with no room for this one: left out of the walk, each with what it holds); when no turret needs it: nothing, nearest_outside (the nearest such turret outside radius or area, within 512 tiles), also in last.why',note='gives from the main inventory, then the gun ammo slots (crafted ammo lands there); fails when none is held and turrets want more; waits for ammo in the hand-craft queue (awaiting_craft; outcome fed | failed | timed_out)'},
-      refuel={dry_run='true with positions: walk and move nothing (a read); the route through the stops, nearest first from you, read as move_to dry_run reads it (stops, order, route, length, enemies, under_range, reachable, closed_in_goal for the last stop); radius and area tours choose their stops when they run',feed_chests='with area/radius (and from): true tops up the chests inserters take from to feed those burners (boiler feed chests), each to count, instead of the burners themselves; feed_chests in the reply says how many',from_radius='with from: nearest, 1..128 (default 64): how far round each refill stop the nearest chest or belt holding the fuel is looked for',from='with area/radius or positions (the burners by position, 1..128: a standing order\'s step for named burner drills, e.g. order_set {name, interval_ticks, steps: [{action: refuel, args: {positions, from: nearest, fuel: coal, count: 10}}]}; it walks with move_to\'s enemy checks): nearest (observed chests/belts within from_radius tiles of each refill stop, default 64; at most 256 read), or one chest position; use carried fuel, walk for more, then continue topping up burners; last.fuel_taken and sources report collections; up to 64 refill attempts',area='optional {left_top,right_bottom} up to 256x256 instead of radius; at most 128 burners needing fuel; unseen burners excluded and counted',position='optional radius centre (default character)',walk=WALK..'; with positions: the burners out of reach are walked to as radius walks its tour, timed: outcomes as radius',avoid_enemies='walking: as move_to\'s (default: worms, range + 4; spawners, 40 tiles + 4; the areas under attack now, 24 tiles + 4; true: + 8; false: no check): each leg goes round them, and a place inside one is left out: at the call (left_out names the first 8, left_out_more counts the rest, also in last.left_out; every place inside one: refused, naming them), and on the way (last.danger counts them, last.dangers names the first 8, last.first_unreached the first)',unsafe_goal='optional true: walk to such a place anyway',radius='1..256: walk a nearest-first route through every burner in radius below count and top it up (a timed action; outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left); none below count in it: nothing (how many there hold enough) and nearest_outside (the nearest burner below count outside the radius, within 512 tiles), also in last.why',ticks='with radius: 1..36000 (default 3600)',fuel='fuel item (default coal)',count='1..1000 target per entity (default 10)',positions='optional 1..64 positions instead of every burner in reach',types='optional entity types (furnace, boiler, mining-drill, ...); an entity name is taken as a name (types_note)',note='fails when no fuel is held and burners want more; waits for fuel in the hand-craft queue (awaiting_craft)'},
+      rearm={alert='optional: an out-of-ammo alert\'s key (its line gives it: rearm {alert: "no_ammo|nauvis|0,-1"}): a walking tour over the box round the turrets it names (those in it with no rounds); refused when the alert is gone',dry_run='true with positions: walk and move nothing (a read); the route through the stops, nearest first from you, read as move_to dry_run reads it (stops, order, route, length, enemies, under_range, reachable, closed_in_goal for the last stop); radius and area tours choose their stops when they run',walk=WALK..'; with positions (or position alone): the turrets out of reach are walked to as radius walks its tour (below leaves those holding enough), timed: outcomes as radius',avoid_enemies='walking: as move_to\'s (default: worms, range + 4; spawners, 40 tiles + 4; the areas under attack now, 24 tiles + 4; true: + 8; false: no check): each leg goes round them, and a place inside one is left out: at the call (left_out names the first 8, left_out_more counts the rest, also in last.left_out; every place inside one: refused, naming them), and on the way (last.danger counts them, last.dangers names the first 8, last.first_unreached the first)',unsafe_goal='optional true: walk to such a place anyway',radius='1..256: a walking tour (timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left) through every turret in radius (round you, or round position) that takes the ammo and holds under below rounds (any ammo, counted in items), topping each up to count; turrets within 24 tiles of each other are one cluster (as the turrets read groups fronts), the nearest cluster first from where you stand, then from where the last one ends, nearest first inside one (clusters: one line each); up to 128 turrets a call (skipped: the rest)',area='or {left_top, right_bottom}: the same tour over every such turret in it, any size',surface='or true (or your surface\'s name): the same over your whole surface',below='optional 1..1000 rounds, on every form: only turrets holding fewer (any ammo, counted in items) get topped up to count (at least below); with radius, area or surface default count; in reach or at positions, the ones holding below or more are left as they are (held_enough names them)',position='optional {x,y}: with radius, the centre of the radius (default you); alone, the turret there (as positions with one entry)',ticks='with radius, area or surface: 1..36000 (default: by the tour\'s length: the walk from you through every turret in order at your running speed, half again for turns, 1 s a turret and 10 s; at least 3600, at most 36000; ticks_note says how it came out)',ammo='ammo item; omitted on a radius, area or surface tour (A3): each turret gets the ammo it holds, an empty one the ammo it takes that you carry most of; turrets whose ammo you carry none of are left out (none_held), ammo_each says the split; on positions too (each turret its own); a turret whose slots hold other ammo with no room is left out and named (other_ammo)',count='1..1000 target per turret (default 10)',positions='optional 1..64 positions instead of every turret in reach',types='default {ammo-turret}; artillery-turret allowed; an entity name is taken as a name (types_note)',returns='with radius, area or surface: places, clusters (one line each, nearest first: turrets, around (x,y), tiles from you or from the cluster before, rounds they hold), below, count, ticks and ticks_note (when defaulted), other_ammo (turrets there that take other ammo), no_room (turrets under below whose ammo slots hold other ammo with no room for this one: left out of the walk, each with what it holds); when no turret needs it: nothing, nearest_outside (the nearest such turret outside radius or area, within 512 tiles), also in last.why',note='gives from the main inventory, then the gun ammo slots (crafted ammo lands there); fails when none is held and turrets want more; waits for ammo in the hand-craft queue (awaiting_craft; outcome fed | failed | timed_out)'},
+      refuel={alert='optional: an out-of-fuel alert\'s key (its line gives it: refuel {alert: "no_fuel|nauvis|0,-1"}): a walking tour over the burners it names that are still out of fuel, nearest first (alert: how many; those burning another fuel named); refused when the alert is gone',dry_run='true with positions: walk and move nothing (a read); the route through the stops, nearest first from you, read as move_to dry_run reads it (stops, order, route, length, enemies, under_range, reachable, closed_in_goal for the last stop); radius and area tours choose their stops when they run',feed_chests='with area/radius (and from): true tops up the chests inserters take from to feed those burners (boiler feed chests), each to count, instead of the burners themselves; feed_chests in the reply says how many',from_radius='with from: nearest, 1..128 (default 64): how far round each refill stop the nearest chest or belt holding the fuel is looked for',from='with area/radius or positions (the burners by position, 1..128: a standing order\'s step for named burner drills, e.g. order_set {name, interval_ticks, steps: [{action: refuel, args: {positions, from: nearest, fuel: coal, count: 10}}]}; it walks with move_to\'s enemy checks): nearest (observed chests/belts within from_radius tiles of each refill stop, default 64; at most 256 read), or one chest position; use carried fuel, walk for more, then continue topping up burners; last.fuel_taken and sources report collections; up to 64 refill attempts',area='optional {left_top,right_bottom} up to 256x256 instead of radius; at most 128 burners needing fuel; unseen burners excluded and counted',position='optional radius centre (default character)',walk=WALK..'; with positions: the burners out of reach are walked to as radius walks its tour, timed: outcomes as radius',avoid_enemies='walking: as move_to\'s (default: worms, range + 4; spawners, 40 tiles + 4; the areas under attack now, 24 tiles + 4; true: + 8; false: no check): each leg goes round them, and a place inside one is left out: at the call (left_out names the first 8, left_out_more counts the rest, also in last.left_out; every place inside one: refused, naming them), and on the way (last.danger counts them, last.dangers names the first 8, last.first_unreached the first)',unsafe_goal='optional true: walk to such a place anyway',radius='1..256: walk a nearest-first route through every burner in radius below count and top it up (a timed action; outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left); none below count in it: nothing (how many there hold enough) and nearest_outside (the nearest burner below count outside the radius, within 512 tiles), also in last.why',ticks='with radius: 1..36000 (default 3600)',fuel='fuel item (default coal)',count='1..1000 target per entity (default 10)',positions='optional 1..64 positions instead of every burner in reach',types='optional entity types (furnace, boiler, mining-drill, ...); an entity name is taken as a name (types_note)',note='fails when no fuel is held and burners want more; waits for fuel in the hand-craft queue (awaiting_craft)'},
       recover={stop_after='optional 1..5: the nearest that many corpses only (from where you stand); not_walked names the rest',corpse='optional {x,y} (within 2 tiles) or a unit_number: that corpse only',dry_run='true: walk nowhere (a read: the running action and queue go on): each corpse of yours, its distance, died, items and holds, walk (whether recover walks to it, or leaves it out naming the weapon and the nearest safe spot), danger (the worms whose range comes within 16 tiles of it, the spawners whose units\' reach does, each with its distance and whether the corpse lies inside; the attacks on our entities within 48 tiles of it in the last 10 minutes, with attackers seen and the last hit), nests (the nests those belong to); elsewhere (corpses on other surfaces)',ticks='1..36000 (default 3600)',avoid_enemies='as move_to\'s: default worms the map shows (range + 4), spawners (40 tiles + 4) and the areas under attack now (24 tiles + 4); true: the same + 8; a number 0..32: that margin; false: no check. The walk goes around them as move_to\'s does, and a corpse inside a weapon\'s reach is left out (left_out: the weapon and the nearest safe spot toward it)',unsafe_goal='optional true: walk to such a corpse anyway (unsafe_goal names the weapon)',note='walks to your own character corpses on this surface, nearest first, and takes everything from each (a corpse goes once empty), as collect walk=true takes from a chest: one timed call (--wait waits; outcomes collected | nothing_collected | inventory_full | unreached (last.first_unreached: where and why) | timed_out). A bot\'s corpses are the ones its deaths left (found where it died, by the tick it died; up to 5 kept, newest first); a character corpse does not expire',returns='corpses (each: where, how long ago it died, how many items it holds), left_out, unsafe_goal, avoid_enemies, elsewhere (yours on other surfaces, not walked to), places, legs, until_tick; last: transferred, items, entities (removed: the corpse went), train_waits; no corpse to walk to: refused, naming those left out or elsewhere'},
       collect={fresh_first='optional true: a spoilable item\'s least spoiled stacks first (each stack whole), at each place and on a courier (pick with to); default slot order',min_fresh='optional 0..100: take only stacks at least this fresh (100 = unspoiled; a stack\'s spoiled percent at most 100 - min_fresh); the rest stay where they are and left_less_fresh says how many and the most spoiled; the moved batch\'s freshness is in freshness (a timed collect: last.freshness)',follow='true with wait_ticks or keep_taking: when the machine\'s output inserters put the item into chests that hold it, take from those chests instead of waiting (the reply\'s followed says so); none holding it: the wait at the machine, looking again every half second: a chest in reach is taken from (last.followed_took), one out of reach is walked to and the wait goes on there (last.followed_to; a walk that fails ends unreached, why saying where the items are)',dry_run='true with positions (collect: also outputs_taken, the inserters that take each machine\'s output as it is made and the chest each puts it in, with how much of the item it holds; a wait\'s reply gives taken_by_inserters too): walk and move nothing (a read); the route through the stops, nearest first from you, read as move_to dry_run reads it (stops, order, route, length, enemies, under_range, reachable, closed_in_goal for the last stop); radius and area tours choose their stops when they run',outputs_only='true: take only machine output slots, including when empty; never fuel, inputs or burnt-result slots; works with positions, radius, wait_ticks and pick',avoid_enemies='walking: as move_to\'s (default: worms, range + 4; spawners, 40 tiles + 4; the areas under attack now, 24 tiles + 4; true: + 8; false: no check): each leg goes round them, and a place inside one is left out: at the call (left_out names the first 8, left_out_more counts the rest, also in last.left_out; every place inside one: refused, naming them), and on the way (last.danger counts them, last.dangers names the first 8, last.first_unreached the first)',unsafe_goal='optional true: walk to such a place anyway',wait_ticks='1..36000 with position: stand at that assembler or furnace (walking into reach first) and take each product from its output the tick it is there, as a player standing there does, until the ticks run out or count is taken (item: only that one); a timed action: outcomes collected | nothing_collected | inventory_full | unreached; last.took, last.made (counted in its output each tick: what arrived), last.inserters_took (what inserters picking from it took into their hands), last.left_otherwise (spoiled, or another player took it), last.crafts, last.chance (products a craft makes only by chance), last.why (when it took none: none made, with the chance; inserters took them; left otherwise; out of reach), last.waited_s; reach is the engine\'s, as transfer\'s (to its edge)',
         keep_taking='true (3600 ticks) or ticks: the same as wait_ticks',
@@ -3211,6 +3211,8 @@ function handlers.stock(p,a)
   out.surface_line=row.line
   out.covered=string.format('total: the whole of %s (logistic networks, requester chests, landing pads, plain chests and landed pods, silos\' rockets, labs; machine outputs not counted); places: %s (%d there)',
     surface.name,out.covered,out.within_radius.total)
+  -- (C7) a spoilable item: what spoils within 2 minutes, of the places read
+  if out.spoils_within_2_min then out.spoil_note=string.format('%d of the %d within 128 tiles spoil within 2 minutes',out.spoils_within_2_min,out.within_radius.total) end
   out.summary=string.format('%d %s on %s as a whole (%s); within 128 tiles: %s',row.total,a.item,surface.name,
     tostring(row.as_of):match('^live') and 'live' or (tostring(row.as_of):match('^%d+s ago') or tostring(row.as_of)),
     out.summary or string.format('none in our machine outputs and chests'))
@@ -3352,7 +3354,7 @@ handlers.launch=function(p,a)
   if out.launched then pcall(function() M.silo_loads()[remote_entity(p,{position=a.position,name=a.name,unit_number=a.unit_number}).unit_number]=nil end) end
   pcall(function()
     local silo=remote_entity(p,{position=a.position,name=a.name,unit_number=a.unit_number})
-    if out.launched then M.silo.record(silo,{by=M.board.who(p),to=out.to,cargo=type(out.cargo)=='string' and out.cargo or nil}) end
+    if out.launched then M.silo.record(silo,{by=M.board.who(p),to=out.to,cargo=type(out.cargo)=='string' and out.cargo or nil,called=true}) end
     -- a load_silo auto_requests pause (B5): this rocket counted, the requests back on after the last
     if out.launched then out.auto_requests_back=M.silo_launched(p,silo) end
     -- The silo's switches as they stand after the call (auto_requests set, or a launch).
@@ -7498,11 +7500,35 @@ function M.tour_wants(e,action)
   local n=action.op=='refuel' and inv.get_item_count{name=action.item,quality=action.quality or 'normal'} or inv.get_item_count()
   return n<(action.count or 1)
 end
+-- An alert's entities by its key (C1; pushalerts.lua alert_entities), for refuel and rearm {alert}: refused when no
+-- alert of ours has that key now, or none of its entities is still in that state.
+function M.alert_targets(p,a,what)
+  assert(type(a.alert)=='string','alert is the key an alert line gives (e.g. "no_fuel|nauvis|0,-1")')
+  assert(a.position==nil and a.positions==nil and a.radius==nil and a.area==nil and a.surface==nil,'alert names the '..what..' itself: no position, positions, radius, area or surface')
+  local list,g=M.pushalerts.alert_entities(p.force,a.alert)
+  if not list then error('no alert of ours has the key '..a.alert..' now (it cleared, or the alerts were read again: the newest line gives its key)',0) end
+  if #list==0 then error('alert '..a.alert..': none of its '..what..' is still in that state',0) end
+  assert(g.surface==p.surface.name,'alert '..a.alert..' is on '..tostring(g.surface)..'; you are on '..p.surface.name)
+  return list,g
+end
 -- Tops every burner in reach up to `count` of one fuel item.
 function handlers.refuel(p,a)
   local fuel=a.fuel or 'coal'
   assert(type(fuel)=='string' and prototypes.item[fuel] and (prototypes.item[fuel].fuel_value or 0)>0,'fuel must be a fuel item')
   local count=integer(a.count,10,1,1000,'count')
+  -- alert (C1, Haiku): the burners an out-of-fuel alert names, as one walking tour, nearest first
+  if a.alert~=nil then
+    local list,g=M.alert_targets(p,a,'burners')
+    local targets,other={},{}
+    for _,e in ipairs(list) do
+      if fuel_inventory(e) and M.farm.accepts_fuel(e,fuel) then targets[#targets+1]=e else other[#other+1]=string.format('%s (%g,%g)',e.name,e.position.x,e.position.y) end
+    end
+    table.sort(targets,function(x,y) return distance(p.position,x.position)<distance(p.position,y.position) end)
+    local out=start_tour(p,a,'refuel',fuel,count,targets)
+    out.alert=string.format('%d burner%s of alert %s%s%s',#targets,#targets==1 and '' or 's',a.alert,
+      (g.n or 0)>#list and string.format(' (the alert counts %d; it keeps the first 128 found: refuel by it again for the rest)',g.n) or '',#other>0 and string.format('; %d burn another fuel than %s: %s',#other,fuel,table.concat(other,', ',1,math.min(4,#other))) or '')
+    return out
+  end
   if a.from~=nil or a.area~=nil or a.feed_chests~=nil then return M.fuelround.start(p,a,fuel,count) end
   if a.radius~=nil then
     assert(a.positions==nil,'give radius or positions, not both')
@@ -7568,6 +7594,20 @@ function handlers.rearm(p,a)
   local ammo=a.ammo or 'firearm-magazine'
   assert(type(ammo)=='string' and prototypes.item[ammo] and prototypes.item[ammo].type=='ammo','ammo must be an ammo item')
   local count=integer(a.count,10,1,1000,'count')
+  -- alert (C1, Haiku): the turrets an out-of-ammo alert names, as an area tour over the box round them (the turrets in
+  -- it under below get their ammo)
+  if a.alert~=nil then
+    local list=M.alert_targets(p,a,'turrets')
+    local x0,y0,x1,y1=math.huge,math.huge,-math.huge,-math.huge
+    for _,e in ipairs(list) do local q=e.position; x0,y0,x1,y1=math.min(x0,q.x),math.min(y0,q.y),math.max(x1,q.x),math.max(y1,q.y) end
+    local b={}
+    for k,v in pairs(a) do if k~='alert' then b[k]=v end end
+    b.area={left_top={x=math.floor(x0)-2,y=math.floor(y0)-2},right_bottom={x=math.ceil(x1)+2,y=math.ceil(y1)+2}}
+    b.below=b.below or 1
+    local out=handlers.rearm(p,b)
+    if type(out)=='table' then out.alert=string.format('%d turret%s of alert %s, in the area (%d,%d)-(%d,%d)',#list,#list==1 and '' or 's',a.alert,b.area.left_top.x,b.area.left_top.y,b.area.right_bottom.x,b.area.right_bottom.y) end
+    return out
+  end
   -- below on every form (Haiku, shift13): turrets holding fewer rounds than this (any ammo, in items) get topped up to
   -- count (at least below); the tours default it to count.
   local below=a.below~=nil and integer(a.below,nil,1,1000,'below') or nil
@@ -10946,8 +10986,35 @@ local function place_ghost(p,spec)
   pcall(M.efficiency.built,M.board.who(p),ghost)
   return ghost,marked,fixes and laid or nil,fixes and fixes[1].tile or nil,tile_marked,cliffs
 end
+-- What already stands where a place_ghosts entry goes, the same as the entry (d17 batch12 C4, Astra: staged plans
+-- re-run many times read every standing ghost as a failure): 'ghost' (a ghost of it), 'built' (the entity itself), or
+-- nil. The same: name, position (the same tile: within 0.71), direction (north when the entry gives none), an underground's
+-- type and a machine's recipe when the entry names them.
+function M.same_standing(p,spec)
+  if type(spec)~='table' or type(spec.name)~='string' or not prototypes.entity[spec.name] then return nil end
+  local okp,pos=pcall(position,spec.position)
+  if not okp then return nil end
+  local dir=spec.direction and M.direction_of(spec.direction) or 0
+  for _,e in ipairs(p.surface.find_entities_filtered{position=pos,radius=0.75,force=p.force,limit=8}) do
+    local ghost=e.type=='entity-ghost'
+    local name=ghost and e.ghost_name or e.name
+    if name==spec.name and distance(e.position,pos)<=0.71 and (e.direction or 0)==dir then
+      local same=true
+      if spec.type then
+        local okt,t=pcall(function() return e.belt_to_ground_type end)
+        same=okt and t==spec.type
+      end
+      if same and spec.recipe then
+        local okr,r=pcall(function() return e.get_recipe() end)
+        same=okr and r and (r.name or r)==spec.recipe
+      end
+      if same then return ghost and 'ghost' or 'built' end
+    end
+  end
+end
 local function place_ghost_list(p,list,ammo)
   local placed,failed,bounds,marked=0,{},nil,0
+  local already={}
   local unders,inserters,chests,belts,ghosts={},{},{},{},{}
   local tiles_laid,laid_under,laid_on=nil,0,nil
   local tile_marked={}
@@ -10955,6 +11022,9 @@ local function place_ghost_list(p,list,ammo)
   local cliffs,ncliffs={},0
   local recipes={}
   for i,spec in ipairs(list) do
+    local oks,same=pcall(M.same_standing,p,spec)
+    if oks and same then already[#already+1]={index=i,name=spec.name,position=spec.position,already=same}
+    else
     local ok,err=pcall(function()
       if type(spec)=='table' then M.turretammo.check(spec.ammo) end
       -- recipe: checked before the ghost is placed, set on it after (a ghost takes one as its machine would).
@@ -10997,6 +11067,14 @@ local function place_ghost_list(p,list,ammo)
       bounds.right=math.max(bounds.right,g.x); bounds.bottom=math.max(bounds.bottom,g.y)
     end)
     if ok then placed=placed+1 else failed[#failed+1]={index=i,name=type(spec)=='table' and spec.name or nil,position=type(spec)=='table' and spec.position or nil,error=reason(err)} end
+    end
+  end
+  -- (C4) the entries already standing: counted apart from failures
+  local already_line
+  if #already>0 then
+    local g,b=0,0
+    for _,r in ipairs(already) do if r.already=='ghost' then g=g+1 else b=b+1 end end
+    already_line=string.format('%d entr%s already standing as asked (%d as ghosts, %d built): not placed again, not failures',#already,#already==1 and 'y' or 'ies',g,b)
   end
   -- Underground spans over tiles they cannot pass under (lava, space): once
   -- per span, from a belt entrance or either pipe end (underpass.lua).
@@ -11053,6 +11131,7 @@ local function place_ghost_list(p,list,ammo)
       ncliffs,ncliffs==1 and '' or 's',ncliffs==1 and 'is' or 'are',table.concat(parts,'; '))
   end
   return {last_belt=okb and last_belt or nil,belts=belt_lines,belts_more=belts_more and belts_more>0 and belts_more or nil,placed=placed,failed=#failed>0 and failed or nil,bounds=bounds,obstacles_marked=marked>0 and marked or nil,
+    already_placed=#already>0 and #already or nil,already=already_line,already_list=#already>0 and {table.unpack(already,1,math.min(16,#already))} or nil,
     cliffs_marked=ncliffs>0 and ncliffs or nil,cliffs_note=cliffs_note,
     underground_warnings=#warnings>0 and warnings or nil,inserters_without_target=loose,inserters_without_target_count=nloose,
     tiles_laid=tiles_laid,tiles_note=tile_note,outside_logistic_coverage=cover,tile_obstacles_marked=M.tile_marks_line(tile_marked),
@@ -12276,6 +12355,16 @@ end
 -- Standing orders (orders.lua): the agent's routines, run in its own queue
 -- while its character is free.
 M.orders=require('orders'){state=state,player=player,scheduler=scheduler,agents=function() return M.board.agents() end,
+  -- (C2) what enemies our force sees now hold the place (an area under attack, units or a group, as move_to counts
+  -- them), nil when clear; no place: round the character
+  enemies_near=function(index,at)
+    local p=M.lookup(index)
+    if not (p and p.character and p.character.valid) then return nil end
+    local q=at or p.position
+    for _,d in ipairs(M.avoid.attack_discs(p.surface,M.avoid.mode(nil),{q.x-40,q.y-40,q.x+40,q.y+40})) do
+      if distance(d,q)<d.r then return string.format('%s at (%d,%d)',d.name,math.floor(d.x+0.5),math.floor(d.y+0.5)) end
+    end
+  end,
   condition=function(p,c) return conditions.check(p,c) end,validate_condition=function(c) return conditions.validate(c) end,
   busy=function(index)
     local action=state().active[index]

@@ -59,12 +59,19 @@ return function(api)
     s.silo_launches = s.silo_launches or {}
     return s.silo_launches
   end
+  M.SAME_LAUNCH = 600
   -- One record per silo (the latest), at most MAX_RECORDS silos kept.
   function M.record(silo, fields)
     local unit = try(function() return silo.unit_number end)
     if not unit then return end
     local list = records()
     local r = list[unit]
+    -- The game's launch-ordered event a few ticks after our launch call is the same launch, not another (d17 batch12
+    -- C6, Sol: a second load_silo step read it as a launch made under it and ended rocket_launched with 0 loaded).
+    if fields.ordered and r and r.called and not r.ordered and game.tick - r.tick <= M.SAME_LAUNCH then
+      for k, v in pairs(fields) do if v ~= nil and k ~= 'by' then r[k] = v end end
+      return
+    end
     if not (r and r.tick == game.tick) then
       r = {tick=game.tick, surface=try(function() return silo.surface.name end), position=try(function() return silo.position end)}
       list[unit] = r
@@ -99,7 +106,7 @@ return function(api)
     local inv = pod and defines.inventory.cargo_unit and try(function() return pod.get_inventory(defines.inventory.cargo_unit) end)
     local cargo = items_text(contents(inv), 8)
     local by = event.player_index and try(function() return game.get_player(event.player_index).name end)
-    M.record(silo, {cargo=cargo or 'empty', to=destination_text(pod and try(function() return pod.cargo_pod_destination end)), by=by})
+    M.record(silo, {cargo=cargo or 'empty', to=destination_text(pod and try(function() return pod.cargo_pod_destination end)), by=by, ordered=true})
   end
 
   -- The rocket in words (Astra 10:50: teammates read a ready rocket's 0/50 parts, and a rising one, as launched or as

@@ -52,6 +52,14 @@ return function(api)
           local place={entity=e,name=e.name,position=e.position,count=n,distance=api.distance(centre,e.position)}
           -- A spoilable item: this place's first stack to spoil (spoil.lua).
           if spoils then
+            -- (C7) what of it spoils within 2 minutes here
+            for k=1,#inv do
+              local st=inv[k]
+              if st.valid_for_read and st.name==item then
+                local okt,t=pcall(function() return st.spoil_tick end)
+                if okt and type(t)=='number' and t>0 and t-game.tick<=7200 then place.soon2=(place.soon2 or 0)+st.count end
+              end
+            end
             for _,r in ipairs(api.spoil.inventory(inv,{})) do
               if r.name==item and (not place.spoil_tick or r.tick<place.spoil_tick) then place.spoil_tick,place.spoil_percent,place.soon=r.tick,r.percent,r.soon end
             end
@@ -167,10 +175,17 @@ return function(api)
       places[i]={name=x.name,position=x.position,count=x.count,distance=math.floor(x.distance+0.5),kind=M.holder_kind(x.entity),
         reserved=reserved>0 and reserved or nil,
         first_spoils_in=x.spoil_tick and api.spoil.secs(x.spoil_tick-game.tick) or nil,spoiled_percent=x.spoil_tick and math.floor(x.spoil_percent*100+0.5) or nil,
-        within_5_min=x.soon and x.soon>0 and x.soon or nil}
+        within_5_min=x.soon and x.soon>0 and x.soon or nil,within_2_min=x.soon2}
+    end
+    -- (C7) the places read: how much spoils within 2 minutes
+    local soon2
+    if api.spoil and api.spoil.spoils(a.item) then
+      soon2=0
+      for _,x in ipairs(s.places) do soon2=soon2+(x.soon2 or 0) end
     end
     local h=api.spoil and api.spoil.hatch(a.item)
     return {item=a.item,total=s.total,by_entity=s.groups,places=places,more=#s.places>skip+limit and #s.places-skip-limit or nil,
+      spoils_within_2_min=soon2,
       page=pages>1 and page or nil,pages=pages>1 and pages or nil,
       covered=whole and string.format('every machine output and chest of ours on %s',surface.name)
         or string.format('our machine outputs and chests within %d tiles of (%g,%g) on %s',radius,math.floor(centre.x),math.floor(centre.y),surface.name),

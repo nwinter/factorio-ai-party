@@ -82,7 +82,22 @@ return function(api)
     local leg_now = api.leg and api.leg(pl)
     local here = try(function() return pl.space_location.name end)
     local start = here
+    local route_note
     if leg_now then
+      -- A given route read from the leg it flies (d17 batch12 C3, Astra 2x: route [aquilo, fulgora] on the way from
+      -- Aquilo to Fulgora projected another round trip): the route's from->to that is this leg starts it there; a route
+      -- whose first stop is the one the ship left, going elsewhere, is refused.
+      if route_by == 'given' and stops[1] ~= leg_now.to then
+        local cut
+        for i = 1, #stops - 1 do if stops[i] == leg_now.from and stops[i + 1] == leg_now.to then cut = i; break end end
+        if cut then
+          for _ = 1, cut do table.remove(stops, 1) end
+          route_note = string.format('the route read from the leg it flies now (%s->%s): its stops before %s are behind the ship', leg_now.from, leg_now.to, leg_now.to)
+        else
+          assert(stops[1] ~= leg_now.from, string.format('route starts at %s, behind the ship: it flies %s->%s now (%d km left); give the route from %s on',
+            stops[1], leg_now.from, leg_now.to, math.floor(leg_now.left_km + 0.5), leg_now.to))
+        end
+      end
       legs[#legs+1] = {from=leg_now.from, to=leg_now.to, km=round(leg_now.left_km, 0), now=true}
       total_km = total_km + leg_now.left_km
       start = leg_now.to
@@ -460,7 +475,7 @@ return function(api)
         l.now and ' (the rest of the leg it flies)' or l.none and ' (no space connection between them)'
           or l.via_for and ' (on the way ' .. l.via_for .. (l.also and ', ' .. l.also or '') .. ')' or '')
     end
-    return {platform=pl.name, route=route_by, legs=legs, total_km=round(total_km, 0), total_minutes=total_min and round(total_min, 1) or nil,
+    return {platform=pl.name, route=route_by, route_note=route_note, legs=legs, total_km=round(total_km, 0), total_minutes=total_min and round(total_min, 1) or nil,
       speed_km_per_min=v and round(v, 1) or nil, speed_from=v_by or 'unknown: stopped, and no finished leg on record (times unknown)',
       resources=rows, hub_slots=string.format('%d of %d free', free, slots), power=power, solar_power=#solar > 0 and table.concat(solar, ', ') or nil,
       lines={'route: ' .. (#legs_text > 0 and table.concat(legs_text, '; ') or 'no legs') .. (total_min and '; in all ' .. mins(total_min) or ''),

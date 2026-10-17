@@ -96,3 +96,7 @@
   restart from a save, one reply says `rolled_back` and lists in `redo` what you changed since, which is gone.
 - `fh wait` over a walking or loading tour goes on through plain tells (an urgent alert or a `--wake` tell ends it).
   The default routine's `interval_ticks` runs up to 216000 (an hour).
+- A standing order refused for enemies that come and go (an area under attack, units or a group seen now) waits for
+  the place to clear and runs again; it is not a failure (orders line: `waits for enemies near (x,y) to clear`).
+- `wait_until {until: "platform_ready", platform, positions?, area?, tiles?}` waits for that part's ghosts only
+  (`platform_built` takes the same subset).

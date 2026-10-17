@@ -6144,3 +6144,32 @@ fh watch    # deploy on every change
   changes, and `platform_bom {request: true, min_payload: {item: N}}` sets those items' minimum payload (kept for later
   rewrites; 0 or false clears). On the copy: min_payload {assembling-machine-3: 2} on Meridian's section read 2 after
   1437 ticks (two rewrites).
+- C1 (Haiku): an out-of-fuel or out-of-ammo alert (2 or more) lists each entity's position (8, then +N more) and ends
+  with `refuel {alert: "no_fuel|nauvis|-1,-1"}` / `rearm {alert: "..."}`. A group is every touching 64-tile cell of
+  that kind, and its centre is their average, so a radius round it can miss them: Haiku's refuel radius 25 round
+  (25,-43) read "the 9 burners in radius 25 hold 5 coal or more" while the alert named 15 elsewhere in it. refuel
+  {alert} tours the burners it names still out of fuel (the first 128 recorded, nearest first; those burning another
+  fuel named); rearm {alert} tours the box round its turrets still empty. On the copy: `128 burners of alert
+  no_fuel|nauvis|-1,-1 (the alert counts 198 ...)` and `10 turrets of alert no_ammo|nauvis|0,-3`.
+- C2 (Luna): a standing order's run refused for enemies that come and go (an area under attack now, units or a group
+  seen now; a worm or spawner still counts) is no failure: the order waits until the place (the refusal's position)
+  is clear of the enemies our force sees there, looking every 10 s, then runs; after 30 min it counts as a failure.
+- C3 (Astra): `platform_endurance {route}` while flying: a route holding the leg it flies (aquilo, fulgora on the way
+  from Aquilo to Fulgora) is read from that leg (`route_note`); a route starting at the stop it left, going elsewhere,
+  is refused. On the copy, Wren flying nauvis->vulcanus: [nauvis, vulcanus] 4m32s; [nauvis, fulgora] refused.
+- C4 (Astra): place_ghosts counts an entry with the same ghost or the built entity already there (name, tile,
+  direction, underground type and recipe when given) as `already_placed` (with `already` and `already_list`), not
+  placed again and not a failure. On the copy a second identical call: placed 0, already 3.
+- C5 (Sol): `wait_until {until: "platform_ready" (or platform_built), platform, positions, area, tiles}`: met when the
+  entity ghosts at the positions and in the area and the tile ghosts in tiles are gone, as platform_plan ready reads
+  that subset. On the copy, Meridian: `the part asked: 2 entity ghosts, 0 tile ghosts left`.
+- C6 (Sol, bug): our launch records the launch in the tick it is called and the game's launch-ordered event can come a
+  few ticks later; that made a second record, which a load_silo step started in between read as a launch made under
+  it (rocket_launched, 0 loaded). The event now updates the launch's own record, and a walking load_silo started
+  while a rocket is leaving ignores that launch. On the copy, two queued load_silo launch steps at Fulgora's silo:
+  the second waited for the next rocket and launched it with 5 loaded; one record for each launch.
+- C7 (Grok): `where_is` and `stock` for a spoilable item give `spoils_within_2_min` (each stack's own spoil tick) and a
+  note beside the total, and per place. On the copy (Gleba): nutrients `788 of the 865 spoil within 2 minutes`.
+- C8 (Grok): the departure lines (what sends a platform on) read the remote queue lane too, where platform steps run;
+  the stop a platform waits at says `or sooner, when ... runs`. On the copy Swift's stop named Sol's remote-lane
+  platform_schedule steps, missed before.
