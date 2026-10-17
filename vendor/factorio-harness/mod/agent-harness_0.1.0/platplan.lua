@@ -296,7 +296,9 @@ return function(api)
   -- underground pipe spans; it kept belt spans only, from the built pair). ghosts: the surface's entity ghosts.
   function M.tunnels(s, force, ghosts, on)
     local unders = {}
-    for _, e in ipairs(try(function() return s.find_entities_filtered{type={'underground-belt', 'pipe-to-ground'}, force=force} end) or {}) do unders[#unders+1] = e end
+    for _, e in ipairs(try(function() return s.find_entities_filtered{type={'underground-belt', 'pipe-to-ground'}, force=force} end) or {}) do
+      if e.valid and e.position and (e.type == 'underground-belt' or e.type == 'pipe-to-ground') then unders[#unders+1] = e end
+    end
     for _, g in ipairs(ghosts) do
       local t = try(function() return g.ghost_type end)
       if t == 'underground-belt' or t == 'pipe-to-ground' then unders[#unders+1] = g end
