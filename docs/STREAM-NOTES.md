@@ -296,8 +296,9 @@ is not a replay carries `site: "factorio.nickwinter.net"` (segments.py `SITE`; `
 `segments`, 0 turns it off). The card shows one line, "More on the run: factorio.nickwinter.net", at its foot above
 the time bar (15 px on a lower card, 20 px on a full panel, muted), on both the landscape and the vertical page. It
 stays inside the card, which already rises above the voice captions and never covers the agents' chat or bubbles. It
-is outside `facts`, so the casters neither see nor say it. Shift 28 had 13 non-replay segments in about 3 hours (ids
-up to seg-18, 5 of them replays), so this is about two lines an hour, each up for the card's 10-45 s. Checked in a
+is outside `facts`, so the casters neither see nor say it. Shift 28 accepted at least 18 segments in its first 3
+hours (the replay log's last id is seg-18; 5 were replays), so about 13 cards and 6-7 site lines in 3 hours: two an
+hour, each up for the card's 10-45 s. Checked in a
 stub DOM (tools/stream/test_sitecard.py), not yet seen in OBS.
 
 ## Space Age
