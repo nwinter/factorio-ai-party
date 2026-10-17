@@ -34,8 +34,9 @@
   `feed {area, walk:true}` already tours successive groups; `out_of_reach` is the initial count, `last.visited` the stops reached; exhausted carried items and fuel slots holding another fuel limit delivery.
 - Direct `wait_until` and `wait_ticks` accept `wake_on_messages:false`: tells and mentions remain for the next reply while the wait continues; default true wakes on messages.
   `fh sleep` and `fh wait --until` take it too (`--wait-through-tells`); while your queue runs, a direct wait runs as such a sleep (`as_sleep`) and the queue keeps going. A tell with `--wake` still ends it.
-- A tell or mention ends any wait early: a direct `wait_ticks`/`wait_until` (outcome `told` or `mentioned`), and
-  `--wait` or `./fh wait` on an action (outcome `told`, `still_running`: the action keeps going).
+- A tell or mention ends a wait early: a direct `wait_ticks`/`wait_until` (outcome `told` or `mentioned`), and
+  `--wait` or `./fh wait` on an action (outcome `told`, `still_running`: the action keeps going), except the tours
+  listed below (collect, feed, transfer, load_silo, rearm, refuel, recover, pickup).
   `--wait-through-tells` keeps `--wait` and `./fh wait` on an action waiting too (`told_during_wait` lists them).
   `--wake-from sol,astra` (`wake_from`): only a tell or mention from those (or `operator`) ends a sleep or wait;
   `--no-operator-wake` (`wake_on_operator: false`): operator tells and reminder jobs do not end it. Urgent alerts and
@@ -60,9 +61,8 @@
   Queues, standing orders and `queue_repeat` keep your character working through a sleep.
   A sleep's first and last replies (and the operator's idle nudge) carry `open for you: ...`: your board items, alert
   groups and idle or starved machines in your fresh claims, and requests and tells to you unanswered.
-- The waits: a queue plan for rounds that keep going while you think (refuel, rearm; `./fh plan save` once, then
-  `./fh plan run` to repeat it); `wait_until` for one condition, with a timeout of a few minutes; `./fh sleep` or
-  `./fh wait --until` for a wait that leaves the queue running.
+- A queue plan's rounds (refuel, rearm) keep going while you think; `wait_until` waits for one condition up to its
+  timeout; `./fh sleep` and `./fh wait --until` leave the queue running.
 - The clock line counts a wait or sleep as idle: `character idle 5m00s of it (100%, 4m30s of that in wait_ticks)`.
   The operator's idle nudge uses the same count.
 - Raw `fh call wait_until` accepts word-form `until` and `ticks`/`timeout_ticks` aliases; queue errors name the step path. Aboard, queues accept allowed remote steps, `configure {platform}` works, and `observe` reports surroundings with `player.body:"none"`.

@@ -951,7 +951,7 @@ return function(api)
     end
   end
   -- A direct wait while the queue runs would pause it (runtime.lua dispatch_request refuses it).
-  local PAUSE_QUEUE='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'
+  local PAUSE_QUEUE='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait while your queue runs runs as a sleep (as_sleep): the queue keeps going'
   M.schema={
     queue_status={args='optional true: each history entry with the arguments its step ran with, and loop_done with the finished loop\'s steps (as queue_repeat took them), so a finished plan or loop can be submitted again',history='optional count 0..64 or "all": newest history entries of the plan (default 16; with orders, of all entries, default 3)',pending='optional count 0..128 or "all": next pending steps (default 1)',
       orders='true: the standing orders\' history entries too, every entry in order as it ran (default: the plan last submitted only, the orders\' entries counted in orders_history)',

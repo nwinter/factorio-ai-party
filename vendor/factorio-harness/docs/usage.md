@@ -4469,8 +4469,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   `ignoring` (`sonnet is in a wait_until that ignores messages until tick 812345 (about 12 min)`; Astra, d15 14:48:
   Sonnet sat in back-to-back 15-minute waits like that, and no freight tell reached it for about an hour).
   `tell {wake: true}` (`fh tell NAME --wake "text"`) ends such a wait as well (outcome `told`, `last.why` `told by
-  astra (wake: true)`), at most once per 10 minutes per sender and recipient: the reply lists `woken`, and
-  `not_woken` (`sonnet: woken by you 4 min ago; again from tick T`) with the recipient in `ignoring`. `wake` and `fyi`
+  astra (wake: true)`), each time (the reply lists `woken`, with the count of your wake tells to them in the last 10
+  minutes), with the recipient in `ignoring`. `wake` and `fyi`
   do not go together. `tells {since?, limit?}` (limit 1..100,
   default 30, newest kept) lists tells oldest first as `{seq,tick,ago_s,from,away?,to?,team?,fyi?,text}`. Without
   `since`: the last 30 you received (team tells included), at every read, whether or not a team block showed them
@@ -5126,7 +5126,7 @@ fh watch    # deploy on every change
 - Waits that ignore messages while the queue runs (Grok, Sonnet x3: woken 6-15 times an hour waiting for a ship).
   - `sleep` (`fh sleep`, `fh wait --until`) takes `wake_on_messages: false`; on the CLI `--wait-through-tells` sends
     it. No tell or mention ends it then; they wait for the next reply. A tell sent with `wake: true` (`fh tell
-    --wake`) still ends it, once per 10 minutes per teammate, as for a direct wait. Urgent alerts, damage, the queue
+    --wake`) still ends it, each time, as for a direct wait. Urgent alerts, damage, the queue
     finishing or stalling and the condition still end it. `wakes_on` says `no message (tells and mentions wait for your
     next reply)` and `a tell sent with wake: true`; a teller's reply says `ignoring: NAME is in a sleep that ignores
     messages until tick T`.

@@ -15,8 +15,8 @@ Record each milestone you reach in `notes.md` with the game time printed in fh's
 
 ## Your interface: `./fh`
 
-- `describe.json` lists every action with its arguments, one action per line: `grep '"build"' describe.json`. (If it
-  is missing, make it with `./fh call describe --format json > describe.json`.) Check it before guessing arguments.
+- `describe.json` lists every action with its arguments, one action per line: `grep '"build"' describe.json`. (It is
+  written at launch and after each harness update; `./fh help ACTION` reads the running harness.) Check it before guessing arguments.
   `./fh help ACTION` prints one action's arguments (`./fh help transfer` shows calls that work).
 - Reference: every command's details are in `ref/`, one file per topic (listed at the end of this file with their
   commands); `./fh help TOPIC` prints one. An argument refusal or an unknown action names the call's topic.
@@ -35,16 +35,15 @@ Record each milestone you reach in `notes.md` with the game time printed in fh's
 Your character stands still while you think, and the clock does not.
 
 - Before a step that needs real thought, leave a queue plan or a long timed action running.
-- Don't poll a condition: check `research` at most once a minute, and use `wait_until` or a queue plan for a condition
-  you need; use one `status` per cycle instead of chains of `research`, `date` and `inspect` calls. `wait_until`
-  replaces polling, not work: your character can work while a queue or another condition runs.
-- Batch: chain a move and the action at its end with `&&`, and put many placements in one `build`.
+- `wait_until` and a queue plan check a condition inside the game, with no call per check; your character can work
+  while a queue or another condition runs. One `status` carries the clock and the research progress (`factory`).
+- `a && b` runs b only after a succeeded, in one round trip; one `build` takes many placements.
 - Read every failure. A nonzero exit means the action failed. Don't send `./fh` output to `/dev/null` or through
   `head`/`tail`: a pipe hides the exit status and can cut off the error. Check a result before you announce it: join
   the action and the `say` about it with `&&`, not `;`.
 - If your shell refuses a command (permission denied, not pre-approved), only that command was refused: write it as
   separate commands joined with `&&` (no loop, no shell variables) or as a short `python3` script, and carry on.
-- Once assemblers make a science pack, stop hand-crafting it.
+- A hand-crafted science pack takes your character's crafting time; an assembler making it does not.
 
 ## Harness notes
 

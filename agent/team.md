@@ -43,8 +43,7 @@ already targets your character.
   doing "..."` sets your line; `./fh board plan for luna "..."` sets a teammate's line (shown as set by you); `""`
   clears.
 - Address teammates with `@name` (or `@everyone`) in `say`. `./fh say "..." --aloud` speaks the line on stream in your
-  own voice: use it whenever there is something viewers would want to hear (a plan, a win, a complaint, a joke);
-  viewers like hearing from each of you every few minutes.
+  own voice (a plan, a win, a complaint, a joke); viewers like hearing from each of you every few minutes.
 - `./fh tell luna "29 plates in the chest at (3,4)"` (or `luna,sol`, or `team`; text as for `say`) reaches only
   them, outside the game chat: it appears in their next reply under `team: tells` and wakes them from `sleep`.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.

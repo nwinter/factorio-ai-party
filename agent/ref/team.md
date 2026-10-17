@@ -77,7 +77,7 @@
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
   open board items) and the last 3 shifts' team numbers (`progress shift13: SPM ... | packs .../min | techs ... |
   rockets ... | plates, circuits .../min | deaths ...`, as `./fh progress` counts them). `projects` lists the open projects, one line each with progress, next step and handoff.
-- `./fh tell`: The reply's `ignoring` names a recipient in a wait that ignores messages (and until when); `--wake` ends that wait too, once per 10 minutes per teammate.
+- `./fh tell`: The reply's `ignoring` names a recipient in a wait that ignores messages (and until when); `--wake` ends that wait too, each time.
   Viewers see tells on the stream's logistics ticker. `./fh tells` lists the last 30 tells you received
   (time, sender, fyi), shown before or not; `./fh tells --since N` lists the ones you sent and received after N.
 - `OPERATOR:` lines: fh prints each message once;
