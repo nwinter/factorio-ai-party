@@ -111,3 +111,4 @@
 - A walk that falls back to a spot within its target's reach (recover, transfer, feed tours) keeps the enemy margin;
   `construct` stands no nearer a worm or spawner than its reach + the margin (refused ghosts name it).
 - A squeeze walk that ends short of its gap trail says where it ended (`squeezed`).
+- `recover {corpse, dry_run: true}` reads that corpse only.
