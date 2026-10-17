@@ -886,13 +886,27 @@ return function(api)
   -- platforms {compact: true} (Astra 13:50: the full read is long): a line a platform: where, ammunition aboard (hub
   -- and turrets), thruster fuel and its 10-minute trend, the ghosts' missing items in all, and only the blockers this
   -- agent was not shown in its last compact read.
+  -- 'thruster fuel 1200 units (+3/min over 10 min)': in its thrusters and tanks, and the platform's net over 10 minutes.
+  function M.fuel_text(pl)
+    local P=defines.flow_precision_index or {}
+    local fuel=0
+    for _,e in ipairs(try(function() return pl.surface.find_entities_filtered{type={'thruster','storage-tank'},force=pl.force} end) or {}) do
+      for i=1,try(function() return #e.fluidbox end) or 0 do
+        local f=try(function() return e.fluidbox[i] end)
+        if f and f.name=='thruster-fuel' then fuel=fuel+f.amount end
+      end
+    end
+    local fs=try(function() return pl.force.get_fluid_production_statistics(pl.surface) end)
+    local function per(cat) return fs and P.ten_minutes and (try(function() return fs.get_flow_count{name='thruster-fuel',category=cat,precision_index=P.ten_minutes,count=true} end) or 0)/10 or 0 end
+    local net=per('input')-per('output')
+    return string.format('thruster fuel %d units (%s%d/min over 10 min)',math.floor(fuel+0.5),net>=0 and '+' or '',math.floor(net+0.5))
+  end
   function M.platforms_compact(p,a)
     local st=api.state and api.state()
     local seen_all=st and st.platforms_compact_seen or {}
     if st then st.platforms_compact_seen=seen_all end
     local mine=seen_all[p.index] or {}
     seen_all[p.index]=mine
-    local P=defines.flow_precision_index or {}
     local lines={}
     for _,pl in pairs(p.force.platforms) do
       if pl.valid and (a.platform==nil or pl.name==a.platform) and pl.surface then
@@ -911,17 +925,7 @@ return function(api)
         for n,c in pairs(ammo) do al[#al+1]=n..' '..c end
         table.sort(al)
         parts[#parts+1]='ammo '..(#al>0 and table.concat(al,', ') or 'none')
-        local fuel=0
-        for _,e in ipairs(try(function() return pl.surface.find_entities_filtered{type={'thruster','storage-tank'},force=pl.force} end) or {}) do
-          for i=1,try(function() return #e.fluidbox end) or 0 do
-            local f=try(function() return e.fluidbox[i] end)
-            if f and f.name=='thruster-fuel' then fuel=fuel+f.amount end
-          end
-        end
-        local fs=try(function() return pl.force.get_fluid_production_statistics(pl.surface) end)
-        local function per(cat) return fs and P.ten_minutes and (try(function() return fs.get_flow_count{name='thruster-fuel',category=cat,precision_index=P.ten_minutes,count=true} end) or 0)/10 or 0 end
-        local net=per('input')-per('output')
-        parts[#parts+1]=string.format('thruster fuel %d units (%s%d/min over 10 min)',math.floor(fuel+0.5),net>=0 and '+' or '',math.floor(net+0.5))
+        parts[#parts+1]=M.fuel_text(pl)
         local blk=try(function() return M.blockers(pl) end) or {}
         local missing=0
         for _,b in ipairs(blk) do

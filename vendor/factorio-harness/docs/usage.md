@@ -6656,3 +6656,15 @@ fh watch    # deploy on every change
   say where and why (nothing within 16 tiles, what stands on the next tile, a chunk not seen now, a loop). `line`:
   `the line through (30.5,0.5): 38 belt tiles from (0.5,0.5) to (40.5,0.5); 2 gaps: ...`. A gap that turns a corner
   is not bridged (the probe is straight on). tests/d17_batch20.lua.
+- B4 (Sol): every port visit took silo, platform and queue reads, and a queue step done was once read as cargo aboard.
+  `fleet {platform?}` (fleet.lua; a read, also in the remote lane and `--then`) gives one line a platform from the
+  reads that exist, nothing new scanned:
+  - where it is and the current stop with each departure condition against what the hub holds (platform_gate);
+  - `hub holds`: the hub's 6 largest stacks now (what is aboard, read from the hub);
+  - `requests:` shipment.lua's rows by state (delivered, in flight, launched, loading, waiting), the ones on their way
+    named; `aboard for PLANET's pads`: what that stop's landing pads ask of the hub now;
+  - the rockets on the way to it now and their cargo (freight.incoming), thruster fuel and its 10-minute trend
+    (space.fuel_text, split out of platforms compact);
+  - `waits on`: the first waiting request at the stop it is at (else the first), with the gate holding it.
+  Its cost is shipment's for the same platforms plus the gate line (shipment measured 61-77 ms for all platforms on
+  the copy of world n). tests/d17_batch20.lua.

@@ -1927,6 +1927,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.batch and M.batch.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.owed and M.owed.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.shipment and M.shipment.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.fleet and M.fleet.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.demolishers and M.demolishers.schema or {}) do description.actions[name]=schema end
@@ -13781,6 +13782,7 @@ reads.platform_defense=true
 reads.circuit_audit=true
 reads.logistics_audit=true
 reads.platform_gate=true
+reads.fleet=true
 reads.demolishers=true
 reads.dependency=true
 reads.shipment=true
@@ -15002,6 +15004,11 @@ M.shipment=require('shipment'){state=state,stops=function(pl) return space.stops
   pads=function(planet,force) return M.freight.pads(planet,force) end,request_rows=function(e,force) return M.silo.request_rows(e,force) end,
   last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end}
 function handlers.shipment(p,a) return M.shipment.read(p,a) end
+-- fleet: one line a platform from the gate, the hub, shipment's rows, rockets on the way and fuel (d17 batch20 B4, Sol).
+M.fleet=require('fleet'){gate=function(p,a) return space.gate(p,a) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
+  shipment_platform=function(pl,cache) return M.shipment.platform(pl,cache) end,incoming=function(pl) return M.freight.incoming(pl) end,
+  where=function(pl) return M.freight.where(pl) end,fuel_text=function(pl) return space.fuel_text(pl) end}
+function handlers.fleet(p,a) return M.fleet.read(p,a) end
 -- Progress on owned board items from the game, stalls, blocked items ranked (progress.lua; d17 batch15 Group C).
 M.progress=require('progress'){state=state,items=function() return M.board.items() end,agents=function() return M.board.agents() end,
   who=function(p) return M.board.who(p) end,since_request=function(name) return M.board.since_request(name) end,
