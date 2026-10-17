@@ -150,3 +150,48 @@ do
   eq(table.concat(missing,', '),'','fields conditions.lua reads that wait_until refuses')
 end
 print('d17_batch19_rt A1 every condition field is a wait_until argument: ok')
+
+-- B1 (Muse: inspect area listed the chests and machines and only counted belts and inserters in an also line; finding a
+-- missing feeder took 20 minutes of walking): every entity of ours there is listed with its position; robots flying
+-- through are counted, not listed.
+do
+  local function ent(name,t,x,y,extra)
+    local e={valid=true,name=name,type=t,force=force,surface=surface,position={x=x,y=y},direction=0,unit_number=9000+math.floor(x*10+y),
+      bounding_box={left_top={x=x-0.4,y=y-0.4},right_bottom={x=x+0.4,y=y+0.4}},prototype={name=name,type=t},
+      get_inventory=function() return nil end,get_output_inventory=function() return nil end,get_max_inventory_index=function() return 0 end,
+      get_item_count=function() return 0 end,status=nil}
+    for k,v in pairs(extra or {}) do e[k]=v end
+    return e
+  end
+  local list={ent('transport-belt','transport-belt',6.5,5.5,{get_max_transport_line_index=function() return 2 end,
+      get_transport_line=function() return {get_contents=function() return {} end} end}),
+    ent('inserter','inserter',7.5,5.5,{pickup_position={x=6.5,y=5.5},drop_position={x=8.5,y=5.5}}),
+    ent('small-electric-pole','electric-pole',7.5,6.5),
+    ent('logistic-robot','logistic-robot',8,6)}
+  local find=surface.find_entities_filtered
+  surface.find_entities_filtered=function(f)
+    if f.area and f.force then
+      local out={}
+      for _,e in ipairs(list) do
+        local ok=true
+        if f.type then ok=false; for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do if t==e.type then ok=true end end end
+        if f.name then ok=false; for _,n in ipairs(type(f.name)=='table' and f.name or {f.name}) do if n==e.name then ok=true end end end
+        if ok then out[#out+1]=e end
+      end
+      return out
+    end
+    return find(f)
+  end
+  local r=astra('inspect',{area={left_top={x=4,y=4},right_bottom={x=10,y=8}},compact=true})
+  eq(r.count,3)
+  local names={}
+  for _,l in ipairs(r.lines) do names[#names+1]=l:match('^([%w%-]+) %(') end
+  table.sort(names)
+  eq(table.concat(names,' '),'inserter small-electric-pole transport-belt')
+  eq(r.also,'also passing through, not listed: 1 logistic-robot')
+  -- types still narrows it
+  r=astra('inspect',{area={left_top={x=4,y=4},right_bottom={x=10,y=8}},types={'inserter'},compact=true})
+  eq(r.count,1)
+  surface.find_entities_filtered=find
+end
+print('d17_batch19_rt B1 inspect area lists every entity: ok')
