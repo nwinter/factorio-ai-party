@@ -163,4 +163,15 @@ do
   eq(out.places[1].reserved,6)
   eq(out.places[1].reserved_for,'5 to requester-chest (97.5,41.5), 1 to the character of haiku (5,5)')
 end
+-- C1 (Astra, #862): belt_route and pole_route take surface= (remote ghost planning), as place_ghosts does; a belt_route
+-- dry run with surface= is checked there too.
+do
+  local B=dofile('mod/agent-harness_0.1.0/bots.lua')
+  local list=type(B)=='function' and B{} or B
+  local on={}
+  for _,n in ipairs(list.SURFACE_ACTIONS) do on[n]=true end
+  assert(on.belt_route and on.pole_route,'belt_route and pole_route with surface=')
+  local src=io.open('mod/agent-harness_0.1.0/runtime.lua'):read('a')
+  has(src,"assert(action=='place_ghosts' or action=='belt_route','dry_run with surface checks place_ghosts or belt_route")
+end
 print('d17 batch18 ok')

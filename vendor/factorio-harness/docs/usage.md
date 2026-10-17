@@ -6637,3 +6637,10 @@ fh watch    # deploy on every change
   storage]}`: each passive provider's 3 reserved plates name their requester (`3 to requester-chest (97.5,41.5)`).
   Reading 1133 robots' queues took 2-3 ms on the copy; the stock read 21-25 ms against 20 ms for the same places with
   nothing reserved. tests/d17_batch18.lua.
+- C1 (Astra, #862): belt_route and pole_route take `surface` (bots.lua SURFACE_ACTIONS: the remote-view proxy that
+  place_ghosts surface= uses; both only lay ghosts). A belt_route dry run with surface is planned there too (the
+  dry_run action took surface for place_ghosts only). route.lua plans in charted chunks; place_ghosts refuses
+  uncharted ones. pole_route's note by remote view: `ghosts placed on vulcanus by remote view; its construction robots
+  build them (no hand reach there)`. Copy, Astra on nauvis: belt_route on vulcanus placed 29 ghosts (27 belts, 2
+  undergrounds), pole_route 6 medium pole ghosts; the dry run's standing says `you are on another surface: the ghosts
+  on vulcanus are built by its construction robots`. tests/d17_batch18.lua.

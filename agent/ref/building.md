@@ -84,11 +84,12 @@
   Example: `./fh call build_path --args '{"points":[{"x":0.5,"y":0.5},{"x":20.5,"y":0.5}]}' --wait`
 - `grid {position?, radius?}`: one character per tile; `,` is `walkable water` (shallow water, wetland, Fulgora's oil
   ocean, deep too), `~` water a character cannot cross; `map` tells them apart the same way.
-- `pole_route {from, to}`: from a powered pole, lays pole ghosts along a line and reports how many poles you are
-  `short`. On water and Gleba wetland it shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost
+- `pole_route {from, to, surface?}`: from a powered pole, lays pole ghosts along a line and reports how many poles you are
+  `short`. `surface` (pole_route and belt_route, dry runs too): on another planet by remote view, in charted chunks;
+  that planet's construction robots build them. On water and Gleba wetland it shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost
   under it (`tiles_under`, `tiles_note`).
   Example: `./fh call pole_route --args '{"from":{"x":10.5,"y":10.5},"to":{"x":80.5,"y":10.5}}'`
-- `belt_route {from, to, via?, return?, landfill?, cliffs?, avoid_nests?, avoid_enemies?}`: lays a belt line as ghosts
+- `belt_route {from, to, via?, return?, landfill?, cliffs?, avoid_nests?, avoid_enemies?, surface?}`: lays a belt line as ghosts
   (legs up to 1000 tiles), over trees and wild plants it marks, water only with `"landfill": true`; `return` adds the
   line back beside it, crossing under it where its side is blocked. It goes round cliffs (an underground passes under
   one; `cliffs: true` passes over and marks them) and names what its ghosts mark for mining (`to_mine`: trees, rocks,
