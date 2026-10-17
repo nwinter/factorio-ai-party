@@ -478,19 +478,49 @@ return function(api)
       if mark > (before and before.mark or 0) then w.seq = (w.seq or 0) + 1; before = {mark=mark, seq=w.seq, tick=f.tick} end
       if before then told[f.key] = before; f.news = before.seq end
     end
-    -- Keep old timer sites for ten minutes after their predicted expiry. They
-    -- remain history even if the eggs were carried away or used before then.
-    local recent,seen={},{}
+    -- Keep old timer sites for ten minutes after their predicted expiry, as
+    -- history: the eggs may have hatched there. A site whose eggs this sweep did
+    -- not find again before its time (moved or used, A2) or that a check found
+    -- empty before then (gone) is dropped.
+    local recent,seen,again={},{},{}
+    for _,f in ipairs(job.found) do again[f.surface..'|'..at(f.position)..'|'..f.item]=true end
     for _,list in ipairs({w.places or {},w.recent or {}}) do
       for _,old in ipairs(list) do
         local key=old.surface..'|'..at(old.position)
-        if old.tick>=game.tick-36000 and old.tick<=game.tick+M.WARN_TICKS and not seen[key] and #recent<64 then
+        local left=not old.gone and (old.tick<=game.tick or again[key..'|'..old.item])
+        if left and old.tick>=game.tick-36000 and old.tick<=game.tick+M.WARN_TICKS and not seen[key] and #recent<64 then
           recent[#recent+1]=old;seen[key]=true
         end
       end
     end
     w.recent=recent
     w.places, w.told, w.tick, w.job = places, told, job.start, nil
+  end
+  -- Whether a place's holder still holds its eggs now (d17 batch18 A2, Luna: a timer stayed on a provider after Grok
+  -- moved its eggs into a breeder): the entity of that name at that position (a character: the one of that name),
+  -- read as the sweep reads it. A place found empty before its first stack's time is marked gone (the eggs were moved
+  -- or used) and is told no more, nor kept as a site; one empty after it may have hatched, and stays as history.
+  function M.still_held(place)
+    local item = place.item:match('^[^@]+')
+    local holder
+    if place.entity == 'character' then
+      for _, ch in ipairs(api.characters and api.characters() or {}) do
+        if ch.valid and api.character_name and api.character_name(ch) == place.by then holder = ch end
+      end
+    else
+      local s = game.surfaces[place.surface]
+      local x, y = place.position.x, place.position.y
+      for _, e in ipairs(s and try(function() return s.find_entities_filtered{area={{x - 0.05, y - 0.05}, {x + 0.05, y + 0.05}}, name=place.entity, limit=4} end) or {}) do
+        if e.valid and e.name == place.entity and math.abs(e.position.x - x) < 0.01 and math.abs(e.position.y - y) < 0.01 then holder = e end
+      end
+    end
+    local n = 0
+    if holder then for _, r in ipairs(M.hatching_in(holder, {item}) or {}) do if r.name == item then n = n + r.count end end end
+    if n == 0 and place.tick > game.tick then place.gone = game.tick end
+    return n > 0
+  end
+  local function live(place)
+    return not place.gone and (place.tick <= game.tick or M.still_held(place))
   end
   -- The places hatching soon an agent hears of: on its surface, or built by it.
   local function mine(p, name, place)
@@ -514,7 +544,7 @@ return function(api)
     local here = try(function() return p.surface.name end)
     local out = {}
     for _, place in ipairs(w.places or {}) do
-      if place.news and place.news > (h.eggs_seq or 0) and place.tick > game.tick and mine(p, name, place) and #out < 3 then
+      if place.news and place.news > (h.eggs_seq or 0) and place.tick > game.tick and mine(p, name, place) and #out < 3 and live(place) then
         out[#out+1] = 'eggs hatching: ' .. M.place_text(place, here)
       end
     end
@@ -529,13 +559,14 @@ return function(api)
     local here = try(function() return p.surface.name end)
     for _, place in ipairs(w.places or {}) do
       if place.news and place.news > seq and place.tick > game.tick and mine(p, name, place)
-        and (not carried_only or place.entity == 'character' and place.by == name) then return 'eggs hatching: ' .. M.place_text(place, here) end
+        and (not carried_only or place.entity == 'character' and place.by == name) and live(place) then return 'eggs hatching: ' .. M.place_text(place, here) end
     end
   end
   local nearby=require('eggnear'){}
   function M.nearby(p)
     local w,sites=watch(),{}
-    for _,list in ipairs({w.places or {},w.recent or {}}) do for _,s in ipairs(list) do sites[#sites+1]=s end end
+    for _,list in ipairs({w.places or {},w.recent or {}}) do for _,s in ipairs(list) do if not s.gone then sites[#sites+1]=s end end end
+    sites.check=live
     return nearby.read(p,sites)
   end
   function M.seq() return watch().seq or 0 end
@@ -545,7 +576,7 @@ return function(api)
     local out = {}
     for i, place in ipairs(w.places or {}) do
       if i > (limit or 16) then break end
-      if place.tick > game.tick then out[#out+1] = M.place_text(place) end
+      if place.tick > game.tick and live(place) then out[#out+1] = M.place_text(place) end
     end
     return out, w.tick
   end

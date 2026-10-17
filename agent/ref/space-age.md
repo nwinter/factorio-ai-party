@@ -109,7 +109,7 @@
   `launch` for the rocket's cargo), and the moved batch's in `transfer`, `collect` and `load_silo` (a
   science pack: how many a unit the running research takes, and its units left). Eggs of ours
   hatching within 5 minutes on your surface top `team.alerts` (`eggs hatching: ...`) and wake `fh sleep` (`woke: eggs`).
-- Full `status` rechecks nearby recorded egg sites: enemies visible now, future/elapsed timer, and gun range coverage with ammo. An old timer alone is not a live hatch.
+- Full `status` rechecks nearby recorded egg sites: enemies visible now, future/elapsed timer, and gun range coverage with ammo. An old timer alone is not a live hatch. A site whose holder no longer holds the eggs before their time (moved or used) is neither told nor listed.
 - `./fh call min_payload` reads every hub request that imports from a planet: platform, item, asks, holds, the custom
   minimum payload and a full rocket of it by weight; `{"platforms":"all","set":{"low-density-structure":50}}` sets that
   number for those items on those platforms (0 or false clears it), nothing else changed.

@@ -165,4 +165,29 @@ bio.get_inventory=function() return inv{} end
 game.tick=game.tick+1800
 run(12)
 eq(#st.eggs.places,0); eq(#S.alert_lines(sol,{},'sol'),0)
+-- d17 batch18 A2 (Luna): eggs moved out of a holder before their time are not told, and their timer is not kept as a
+-- site; eggs whose time came stay as history (they may have hatched).
+egg_chest_inv[1]=stack('pentapod-egg',6,4*3600,0.7)
+game.tick=game.tick+1800
+run(12)
+place=st.eggs.places[1]
+eq(place.entity,'wooden-chest'); eq(place.count,6)
+egg_chest_inv[1]={valid_for_read=false} -- Grok carries them to a breeder
+local hm={}
+eq(#S.alert_lines(sol,hm,'sol'),0); eq(place.gone~=nil,true); eq(S.news(sol,0,'sol'),nil)
+eq(#S.places(),0)
+game.tick=game.tick+1800
+run(12)
+for _,r in ipairs(st.eggs.recent or {}) do assert(not (r.position.x==46.5 and r.position.y==48.5),'a moved timer kept as a site') end
+-- not seen moved before its time: kept 10 min after it as history
+egg_chest_inv[1]=stack('pentapod-egg',2,2*3600,0.9)
+game.tick=game.tick+1800
+run(12)
+eq(st.eggs.places[1].count,2)
+game.tick=game.tick+2*3600+60
+egg_chest_inv[1]={valid_for_read=false}
+run(12)
+local kept=false
+for _,r in ipairs(st.eggs.recent or {}) do if r.position.x==46.5 then kept=true end end
+eq(kept,true)
 print('spoil: ok')

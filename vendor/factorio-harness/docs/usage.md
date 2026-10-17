@@ -6546,3 +6546,12 @@ fh watch    # deploy on every change
   - per item (2 at most), whether the drop target takes one now. Fuel: what its fuel slots hold, and how fast it burns
     the item at full power. Else what it holds of it, or its recipe when it takes none.
   2 ms for the whole inspect call on the copy (about 0.5 ms on n). tests/d17_batch18.lua.
+- A2 (Luna): the egg watch (spoil.lua) reads holders every 30 s sweep. Between sweeps its places stood, and `recent`
+  kept every old timer 10 minutes past its time, so status listed elapsed timers at a provider whose eggs Grok had
+  moved into a breeder. Now, before each egg alert (team block, sleep wake, the places read) and each status egg
+  site, the holder is read again: the entity of that name at that position (a character by its name).
+  - One that holds none of the eggs before their first stack's time is marked gone: not told, not listed.
+  - The next sweep keeps an old timer only when it found the eggs again, or the time came (they may have hatched;
+    history, as before).
+  - Copy: an egg on a Gleba belt was told and listed; with it taken off the belt, status had neither (6 ms for status).
+  tests/spoil.lua.

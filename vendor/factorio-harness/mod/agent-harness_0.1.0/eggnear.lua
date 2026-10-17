@@ -17,6 +17,12 @@ return function(api)
       end
     end
     table.sort(near,function(a,b) return d(p.position,a.position)<d(p.position,b.position) end)
+    -- sites.check (spoil.lua): a timer not yet run out whose holder holds none of its eggs now is dropped (A2)
+    if sites.check then
+      local kept={}
+      for _,s in ipairs(near) do if #kept<3 and sites.check(s) then kept[#kept+1]=s end end
+      near=kept
+    end
     local out={}
     for i=1,math.min(3,#near) do
       local s=near[i]
