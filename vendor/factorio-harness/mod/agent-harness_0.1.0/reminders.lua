@@ -82,7 +82,7 @@ return function(api)
   end
   local function row(job, me)
     local r = {id=job.id, name=job.name, owner=job.owner, recipients=table.concat(job.recipients, ', '), message=job.message,
-      cadence=cadence(job), every_ticks=job.every, due_tick=not job.every and job.due or nil, enabled=job.enabled,
+      cadence=cadence(job), every_ticks=job.every, due_tick=not job.every and job.due or nil, enabled=job.enabled, wake=job.quiet and 'false: delivered with the next reply, wakes no wait' or nil,
       next_due_tick=job.enabled and job.next_due or nil, next_due_in_s=job.enabled and math.max(0, math.floor((job.next_due - game.tick) / 60)) or nil,
       last_fired_tick=job.last_fired, last_result=job.last_result, result_by=job.result_by, result_tick=job.result_tick,
       result_age_s=job.result_tick and math.floor((game.tick - job.result_tick) / 60) or nil,
@@ -137,6 +137,12 @@ return function(api)
       local e = a.expires_tick or (a.for_ticks and game.tick + ticks_arg(a.for_ticks, 60, 30 * 216000, 'for_ticks'))
       assert(e == false or (type(e) == 'number' and e > game.tick), 'expires_tick must lie after the tick now, or false for none')
       job.expires = e or nil
+    end
+    -- wake (d17 batch13 A1, Luna: a routine check woke long waits with no change): false delivers the line with the
+    -- recipient's next reply and wakes no sleep or wait; urgent alerts are apart and unchanged.
+    if a.wake ~= nil then
+      assert(type(a.wake) == 'boolean', 'wake must be true or false')
+      job.quiet = a.wake == false or nil
     end
     if a.enabled ~= nil then
       assert(type(a.enabled) == 'boolean', 'enabled must be true or false')
@@ -194,8 +200,21 @@ return function(api)
     local was = job.pending[me]
     job.pending[me] = nil; job.acked[me] = game.tick
     if result then job.last_result = result; job.result_by = me; job.result_tick = game.tick end
+    -- (A1) with the ack: the next run later (next_in_ticks: the next run only), or a slower cadence (every_ticks, its
+    -- owner, anchored now)
+    local note = 'the cadence stays as it is'
+    if a.every_ticks ~= nil then
+      owner_only(p, job)
+      job.every = ticks_arg(a.every_ticks, MIN_EVERY, MAX_EVERY, 'every_ticks'); job.due = nil
+      job.anchor = game.tick; job.next_due = game.tick + job.every
+      note = 'the cadence is now ' .. cadence(job) .. ', from now'
+    end
+    if a.next_in_ticks ~= nil then
+      job.next_due = game.tick + ticks_arg(a.next_in_ticks, 60, MAX_EVERY, 'next_in_ticks'); job.enabled = true; job.done = nil
+      note = string.format('the next run in %s (that run only; the cadence goes on from its anchor after it)', ago(job.next_due - game.tick))
+    end
     return {acknowledged=job.id, was_pending=was and true or false, missed=was and was.missed > 0 and was.missed or nil,
-      note='the cadence stays as it is', reminder=row(job, me)}
+      note=note, reminder=row(job, me)}
   end
   function M.handlers.reminders(p, a)
     local me = api.who(p)
@@ -220,7 +239,7 @@ return function(api)
   local function deliver(job, name, index, missed)
     local text = string.format('%s (%s, %s%s): %s; reminder_ack {id: %d, result} records the result',
       job.name or 'review', job.owner, cadence(job), job.board_item and ', board #' .. job.board_item or '', job.message, job.id)
-    api.deliver(index, {seq='reminder', tick=game.tick, from='reminder #' .. job.id, text=text})
+    api.deliver(index, {seq='reminder', tick=game.tick, from='reminder #' .. job.id, text=text, fyi=job.quiet or nil})
   end
   local function fire(job)
     local index = {}
@@ -256,11 +275,14 @@ return function(api)
     reminder_add = {message='1..300 characters: what to review (the line recipients get)', every_ticks=WHEN, due_tick='a game tick (once)', due_in_ticks='ticks from now (once)',
       recipients='optional: names (sol, luna) or "team"; default yourself', name='optional 1..40 characters', board_item='optional board item number',
       surface='optional surface name', expires_tick='optional tick it switches off', for_ticks='optional: switches off that many ticks from now', enabled='optional boolean (default true)',
+      wake='optional false: its line waits for the recipient\'s next reply and wakes no sleep or wait (a routine check; urgent alerts are apart and still wake)',
       returns='added (its id), reminder {id, owner, recipients, message, cadence, next_due_tick, next_due_in_s, states, line}. A reminder only sends lines: when due, each recipient gets one private line in their next reply (a tell from "reminder #N", waking a sleep as a tell does); while one has not acknowledged it, later runs fold into it (missed). It never acts in the game; at most 12 a teammate, 48 in all'},
     reminder_edit = {id='reminder number', message='as reminder_add', every_ticks='as reminder_add (sets the anchor now)', due_tick='as reminder_add', due_in_ticks='as reminder_add', recipients='as reminder_add', name='as reminder_add; false clears it',
-      board_item='as reminder_add; false clears it', surface='as reminder_add; false clears it', expires_tick='as reminder_add; false clears it', for_ticks='as reminder_add', enabled='boolean', returns='edited, reminder; its owner only'},
+      board_item='as reminder_add; false clears it', surface='as reminder_add; false clears it', expires_tick='as reminder_add; false clears it', for_ticks='as reminder_add', enabled='boolean', wake='as reminder_add', returns='edited, reminder; its owner only'},
     reminder_remove = {id='reminder number', returns='removed, was; its owner only'},
-    reminder_ack = {id='reminder number', result='optional 1..200 characters: what the review found (shown with the job and on the site)', returns='acknowledged, was_pending, missed (runs folded into the line), reminder; the cadence stays as it is'},
+    reminder_ack = {id='reminder number', result='optional 1..200 characters: what the review found (shown with the job and on the site)',
+      next_in_ticks='optional 60..: the next run that many ticks from now (that run only), with the ack', every_ticks='optional, its owner: a new cadence from now (e.g. 18000, 5 min), with the ack',
+      returns='acknowledged, was_pending, missed (runs folded into the line), note, reminder; without next_in_ticks or every_ticks the cadence stays as it is'},
     reminder_snooze = {id='reminder number', ticks='60..: the next run that many ticks from now (the next run only)', returns='snoozed, next_due_tick, reminder; its owner or a recipient'},
     reminders = {all='optional true: the whole team\'s; default yours and those addressed to you', returns='reminders [{id, name, owner, recipients, message, cadence, every_ticks, due_tick, enabled, next_due_tick, next_due_in_s, last_fired_tick, last_result, result_by, result_tick, result_age_s, board_item, surface, expires_tick, states (each recipient: scheduled, pending, overdue, acknowledged; runs missed), yours, line}], lines, count. Read only'},
   }

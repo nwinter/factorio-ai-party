@@ -6196,3 +6196,64 @@ fh watch    # deploy on every change
 - B3 (Sol): platform_plan floor and ready use each ghost's tiles less those a tile rule of its prototype keeps empty
   (an asteroid collector's collection area, turned with it): rear support only. On the copy Meridian's west collector
   ghost at (-24.5,-14.5) reads on foundation (its two rear columns are floor; the front column is empty space).
+- A1 (Luna): reminders already reach only their recipients; in the logs Sol's waits were woken by his own reminders
+  (#41, #43) and by Luna's tells to him (16 times), not by her reminder #6. `reminder_add {wake: false}` (and edit)
+  delivers the line with the next reply as an fyi tell, waking no sleep or wait; urgent alerts are apart. `reminder_ack
+  {id, result, next_in_ticks}` puts the next run off with the ack; `every_ticks` there (its owner) sets a new cadence
+  from now. Lua test.
+- A2 (Haiku): a refusal for enemy reach (rearm's three forms, every walking tour) ends with what holds the places:
+  `[N held by a worm or spawner (it stays: unsafe_goal: true goes anyway); M by passing enemies, an attack or units
+  seen now (retry_when_clear: true waits ...)]`. `rearm {..., retry_when_clear: true, retry_ticks}`: refused for
+  passing enemies only, it waits (wait_until `units_clear`, new: enemy units only within the radius) for no enemy
+  unit within 48 tiles of the first place held, then rearms again (then_call; at most 6 tries; last.then_result, and
+  the tour's last.started_by). Own-ammo rearm (batch11 A3) covers Haiku's no_room case: with ammo left out, a turret
+  holding piercing rounds gets piercing rounds, and with none carried it is named (none_held); a mixed carry loads each
+  turret its own. In own mode the refusal says "of the ammo each holds". On the copy: inert biters by Haiku's turrets
+  refused with the passing count; with retry_when_clear the rearm ran once they were gone.
+- A3 (Muse): inspect {area} has one shape at any size: entities (a page of 64 in reading order; page, pages, next past
+  one page) and by_name (every name: count, states, where), with by_name_lines; batch10 C3's summary-only reply is gone.
+- A4 (Gemini): `load_silo {launch: true, platform, wait_platform: true}` with a ready rocket: loads now (recorded for
+  the platform), then launch {wait_platform} launches when the platform is stopped in orbit (`staged`); no rocket
+  ready: the load waits for both and loads and launches together. On the copy: 10 iron plates staged in Gleba's rocket
+  while Wren flew nauvis->gleba; launched to Wren on its arrival.
+- A5 (Sol 05:28, bug): a refused cargo bay said "no hub or cargo bay within 12 tiles" beside the hub: the search took
+  hubs, bays and every ghost together, 32 at most, and Meridian's other ghosts filled it first. Hubs and bays are found
+  apart from the bays' ghosts now. The dry run's ghost check is the game's forced one, which can take a cargo bay the
+  placement refuses; for a cargo bay with no tiles to lay and nothing in the way, the plain ghost check now decides,
+  and a refusal says why. On the copy the dry run and the placement agreed at every spot tried round Meridian's hub
+  (Sol's case was not reproduced there).
+- C1 (Opus): a belt of ours (belt, underground, splitter) destroyed with items on it is recorded as it dies; every 2 s
+  the owner of the claim it lies in (else the agent who placed it, else the nearest agent on that surface) gets one
+  waking tell: how many belts, what destroyed them, each one's position and the way it faced, and what they carried.
+  inspect lists a ghost by its entity name with `ghost: true` and its direction (it read only "entity-ghost"). On the
+  copy: a loaded belt destroyed in Luna's Gleba claim #525 told her "1 belt carrying items destroyed in your claim
+  #525: transport-belt (15.5,15.5) facing south (they carried 4 yumako) ..."; inspect showed its ghost facing south.
+- C2 (Opus): after batch12 went live (03:41) Opus died once, at 04:31 (-287,-268): he worked the NW coal field
+  (construct, repair, rearm and refuel round (-300,-310)) in a sleep with wake_on_urgent false; a move_to there 2 s
+  before was refused for "an enemy group of 20 heading for (-305,-307)"; the group hit him standing, and the walk away
+  was outrun (it says: a big-spitter 9.0 tiles/s, you 2.4). His three stay_in_turret_coverage calls were refused for
+  a start or goal 6 to 32 tiles outside coverage. Now: a start or goal outside coverage is walked to or from the
+  nearest covered spot, up to `max_uncovered` tiles (default 48) at each end, said in turret_coverage ("the last 4
+  tiles, from (44,42), are outside it"); the box grows to 160 tiles round the way when nothing joins inside 48; no
+  covered way: "coverage is missing between (42,188) and (46,132), 56 tiles apart" (the nearest points of the two
+  covered areas). On the copy: from the main base, covered routes to (40,40) and (118,52); the south outpost and the
+  NW coal field read with their gaps (56 and 198 tiles).
+- D1 (Grok): `load_silo {walk: true, ..., up_to_stock_at_start: true}`: each item's target is at most what was aboard,
+  what you held and what the chests in from held when the tour began (`stock_at_start` names any cut); that loaded,
+  the tour ends (launching with launch) instead of touring on while a machine trickles more in. In reach it acts as
+  up_to. On the copy: 50 iron plates asked with 7 on hand: "iron-plate: 7 of the 50 asked", the tour ended loaded 7.
+- D2 (Grok): `pickup {belt: true, ..., spoiled_first: true}` takes the most spoiled stacks first (each stack itself,
+  cleared from the belt as taken, with its spoilage), walking to the belt holding the most spoiled one;
+  `min_spoiled: N` takes only stacks at least N% spoiled and leaves fresh ones; `last.picked_spoil` lists each stack
+  taken with its spoilage (default pickups too). On the copy: yumako taken with picked_spoil "yumako*1 at 11% spoiled";
+  min_spoiled 95 took nothing (none that spoiled).
+- B1 fix (Astra, Sol; live since 05:53): the trace stopped at an inserter moving items from one belt onto another (a
+  relay), so fed turrets read STOPPED (Wren's bow guns; Meridian's west turret fed from the hub's rocket spine). It now
+  goes on through such inserters (and chains of them) to the belt each takes from, that belt's upstream and its
+  loaders; the way says `through fast-inserter (x,y) from transport-belt (x,y)`. A relay switched off by its circuit or
+  filtering the ammo out does not count. Lua test with both layouts; on the copy Wren's bow guns no longer read
+  STOPPED.
+- Test gate: in a fresh checkout `vendor/factorio-harness/.cache` does not exist, and four CLI tests (bridge journal,
+  board and plan commands, say, the deadline clock line) write there; run in parallel, 0 to 4 of them failed depending
+  on which test made it first (the merge gate saw 1). `npm test` creates `.cache` before the tests now; a fresh
+  worktree of cp2 then passed 322/322 (it failed 4 before).

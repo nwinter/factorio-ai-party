@@ -974,6 +974,16 @@ return function(api)
             if kind == 'ghosts' and api.ghost_placeable then return api.ghost_placeable(p, proto, rec.pos, rec.dir) end
             return s.can_place_entity{name=e.name, position=rec.pos, direction=rec.dir, force=force, build_check_type=check_type, forced=forced}
           end)
+          -- A cargo bay (A5, Sol): the forced ghost check can take one that the placement then refuses (it joins the hub
+          -- or a bay only where their connection points line up); without tiles to lay, the plain check decides.
+          if engine == true and kind == 'ghosts' and proto.type == 'cargo-bay' then
+            local plain = try(function() return s.can_place_entity{name=e.name, position=rec.pos, direction=rec.dir, force=force, build_check_type=defines.build_check_type.manual_ghost} end)
+            if plain == false and #tile_need == 0 and #blockers == 0 then
+              engine = false
+              local text = api.placement_error and try(function() return api.placement_error(p, proto, rec.pos, rec.dir) end)
+              reasons[#reasons+1] = text and (text:gsub('^placement blocked', 'the game refuses it here')) or 'the game refuses a cargo bay here (it joins the hub or a bay where their connection points line up)'
+            end
+          end
           rec.engine = engine
           -- Tiles laid by the plan or already ordered under it, and (a build
           -- batch) the last entry laying one.

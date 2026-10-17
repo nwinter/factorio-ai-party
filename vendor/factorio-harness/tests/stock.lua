@@ -170,7 +170,7 @@ do
   tour,out=stock.start_tour(p,'rearm',{a1,a2,a3},600,{item='firearm-magazine',unsafe_goal=true}); eq(out.places,3); eq(out.left_out,nil)
   tour,out=stock.start_tour(p,'rearm',{a1,a2,a3},600,{item='firearm-magazine',avoid_enemies=false}); eq(out.places,3)
   local ok,err=pcall(stock.start_tour,p,'rearm',{a2},600,{item='firearm-magazine'})
-  assert(not ok and tostring(err):find('every place of this tour lies in enemy reach the map shows: gun-turret (30,0) is inside big-worm-turret (40,0) range 38 (10.0 tiles from it): unsafe_goal: true to go anyway',1,true),tostring(err))
+  assert(not ok and tostring(err):find('every place of this tour lies in enemy reach the map shows: gun-turret (30,0) is inside big-worm-turret (40,0) range 38 (10.0 tiles from it) [1 held by a worm or spawner (it stays: unsafe_goal: true goes anyway)]: unsafe_goal: true to go anyway',1,true),tostring(err))
   -- Nine left out: the first 8 named, the rest counted.
   local many={}
   for i=1,9 do many[i]={valid=true,name='gun-turret',position={x=30,y=i}} end

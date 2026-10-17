@@ -670,9 +670,32 @@ return function(api)
       local before = aboard(inv, r)
       goals[#goals+1] = {name=r.name, quality=r.quality, count=r.count, before=before, target=a.to_total and r.count or before + r.count}
     end
+    -- up_to_stock_at_start (d17 batch13 D1, Grok ~4 times: a count above the chests' stock toured on to the tick limit
+    -- while a machine trickled more in, the rocket loaded and not launched): each item's target is at most what was
+    -- aboard, what you held and what the chests in from held when the tour began; that loaded, the tour ends (and
+    -- launches with launch).
+    local stock_note
+    if a.up_to_stock_at_start ~= nil then
+      assert(type(a.up_to_stock_at_start) == 'boolean', 'up_to_stock_at_start must be true or false')
+    end
+    if a.up_to_stock_at_start then
+      local parts, any = {}, false
+      for _, g in ipairs(goals) do
+        local have = held_of(p, g)
+        for _, c in ipairs(chests) do have = have + (try(function() return chest_inventory(c).get_item_count{name=g.name, quality=g.quality} end) or 0) end
+        local cap = g.before + have
+        if cap < g.target then
+          parts[#parts+1] = string.format('%s: %d of the %d asked (you and the chests held %d)', label(g), cap - g.before, g.target - g.before, have)
+          g.target = cap; g.capped = true
+        end
+        if g.target > g.before then any = true end
+      end
+      if not any then error('nothing to load: you and the chests in from hold none of the list now (up_to_stock_at_start); nothing walked', 0) end
+      stock_note = #parts > 0 and 'loads what there was when the tour began (up_to_stock_at_start): ' .. table.concat(parts, '; ') or 'the stock at the start covers the list'
+    end
     local load = {}
     for k, v in pairs(a) do load[k] = v end
-    load.walk = nil; load.ticks = nil; load.from = nil; load.avoid_enemies = nil; load.unsafe_goal = nil
+    load.walk = nil; load.ticks = nil; load.from = nil; load.avoid_enemies = nil; load.unsafe_goal = nil; load.up_to_stock_at_start = nil
     local action = {silo=silo, chests=chests, goals=goals}
     local rows = needs(p, action)
     if #rows == 0 then
@@ -703,7 +726,7 @@ return function(api)
       -- the silo's last launch when the tour began, and whether a rocket was leaving then (C6: not a launch under it)
       launch_before=try(function() return api.last_launch(silo).tick end), leaving=M.leaving(silo)}
     local rk = api.rocket and try(function() return api.rocket(silo) end)
-    local reply = {op='load_silo', walk=true, silo=string.format('%s at %s', silo.name, at(silo.position)), needs=need_text(rows),
+    local reply = {op='load_silo', walk=true, silo=string.format('%s at %s', silo.name, at(silo.position)), needs=need_text(rows), stock_at_start=stock_note,
       chests=#chests > 0 and chests_text(action, rows) or nil,
       trip=#chests == 0 and 'to the silo with what you hold (no from)' or #first .. ' chest' .. (#first == 1 and '' or 's') .. ', then the silo', rocket=rk and rk.rocket or nil,
       note=a.launch and 'launch: at the silo the tour waits for the rocket to be ready before it loads, then loads and launches in that tick' or nil}
@@ -1379,7 +1402,7 @@ return function(api)
   end
 
   M.schema = {
-    load_silo = {position='the rocket silo {x,y} (any tile of it), within reach',
+    load_silo = {position='the rocket silo {x,y} (any tile of it), within reach', up_to_stock_at_start='optional true: load at most what you and the chests in from hold when it begins (a walking tour does not tour on for items trickling in), then launch with launch; without walking, as up_to', wait_platform='optional true, with launch and platform: a ready rocket gets the cargo now (recorded for the platform) and launches when the platform is stopped in orbit here (launch {wait_platform}: a timed wait; staged says which); no rocket ready: the load waits for both and loads and launches in that tick',
       items='the cargo to load: {"item-name": count} or [{"item", "count", "quality"}], 1..20 items',
       to_total='true: each count is what the rocket should hold in all (only the rest is loaded); default: each count is loaded on top of what it holds',
       from='optional chest {x,y} or 1..16 of them, within reach: take from these (after your inventory); default: your inventory, then our chests within reach, nearest first (at most 16): every chest kind (chests, logistic chests, linked and infinity chests) and a cargo landing pad. With walk: anywhere on the silo\'s surface, in sight or on the map',

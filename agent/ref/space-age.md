@@ -146,3 +146,7 @@
   `feed: true` lists every turret. platform_endurance and preflight count only ammunition that can reach a turret.
   A team alert names turrets whose feeds ran dry while ammunition aboard is stranded.
 - platform_plan's floor and ready leave out the tiles a collector's rule keeps empty (its front): rear support only.
+- `load_silo {launch: true, platform, wait_platform: true}` loads a ready rocket now and launches when the platform
+  is stopped in orbit here (`staged` says so).
+- `load_silo {walk: true, from, up_to_stock_at_start: true}` loads at most what you and the chests held when it began
+  (`stock_at_start` says what), then ends (launches with launch) instead of touring on for a trickle.

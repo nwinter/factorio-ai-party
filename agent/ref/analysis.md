@@ -121,3 +121,4 @@
   wires followed back through combinators. `fuel_budget {boilers: true}`: each boiler group's burn against the fuel in
   reach and the drills supplying it, with the hours left.
 - `where_is` and `stock` for a spoilable item give `spoils_within_2_min` beside the total (and per place).
+- `inspect {area}` always returns `entities` (64 a page: `page`, `pages`, `next`) and `by_name` beside them.

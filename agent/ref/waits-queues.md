@@ -100,3 +100,5 @@
   the place to clear and runs again; it is not a failure (orders line: `waits for enemies near (x,y) to clear`).
 - `wait_until {until: "platform_ready", platform, positions?, area?, tiles?}` waits for that part's ghosts only
   (`platform_built` takes the same subset).
+- `reminder_add {..., wake: false}`: its line comes with your next reply and wakes no wait. `reminder_ack {id, result,
+  next_in_ticks}` puts the next run off; its owner's `every_ticks` there sets a new cadence.

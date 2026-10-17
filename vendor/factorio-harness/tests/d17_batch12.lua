@@ -23,14 +23,17 @@ do
     assert(inside,'via point outside coverage '..q.x..','..q.y)
   end
   assert(line:find('via',1,true),line)
-  -- a goal outside every reach: (50,-60) is over 40 tiles from every turret
-  local ok,err=pcall(T.route,p,{x=0,y=0},{x=50,y=-60})
-  assert(not ok and tostring(err):find('is not inside our turrets',1,true),tostring(err))
-  -- two covered areas apart: refused with where the coverage ends
+  -- a goal far outside every reach: refused (d17 batch13 C2: up to max_uncovered tiles at each end are walked)
+  local ok,err=pcall(T.route,p,{x=0,y=0},{x=-60,y=-60})
+  assert(not ok and tostring(err):find('outside our turrets\' reach',1,true),tostring(err))
+  -- a goal a few tiles out (the base's middle): walked from the nearest covered cell, said
+  local v2,l2=T.route(p,{x=0,y=0},{x=50,y=-30})
+  assert(l2:find('the last',1,true) and l2:find('are outside it',1,true),l2)
+  -- two covered areas apart: refused with where coverage is missing
   turrets={}
   turret(0,0); turret(100,0)
   ok,err=pcall(T.route,p,{x=0,y=0},{x=100,y=0})
-  assert(not ok and tostring(err):find('the coverage you are in ends nearest the goal at',1,true),tostring(err))
+  assert(not ok and tostring(err):find('coverage is missing between',1,true),tostring(err))
   -- an empty turret does not count
   turrets={}
   turret(0,0)

@@ -124,7 +124,29 @@ return function(api)
         if blocked then row.stops[#row.stops+1] = way .. ': ' .. blocked
         elseif not src then row.stops[#row.stops+1] = way .. ': takes from nothing'
         elseif BELT[src.type] then
-          local list, set, capped = upstream(src)
+          -- the belts upstream, and on through the inserters that move items onto them from another belt (relays,
+          -- chains of them: d17 batch13, Astra and Sol: Wren's bow and Meridian's west turret read STOPPED while a
+          -- relay fed them), each such belt's own upstream too
+          local list, capped, seen_b, relays, pending = {}, false, {}, {}, {src}
+          while #pending > 0 and #list < M.MAX_BELTS do
+            local b0 = table.remove(pending, 1)
+            if not seen_b[key(b0)] then
+              local part, _, cap = upstream(b0)
+              if cap then capped = true end
+              for _, b in ipairs(part) do
+                if not seen_b[key(b)] then
+                  seen_b[key(b)] = true; list[#list+1] = b
+                  for _, si in ipairs(into[key(b)] or {}) do
+                    local sp = try(function() local x = si.pickup_target; return x and x.valid and x or nil end)
+                    if sp and BELT[sp.type] and not seen_b[key(sp)] and not switched_off(si) and not filter_blocks(si, takes) then
+                      pending[#pending+1] = sp
+                      if #relays < 3 then relays[#relays+1] = string.format('%s %s from %s %s', si.name, at(si.position), sp.name, at(sp.position)) end
+                    end
+                  end
+                end
+              end
+            end
+          end
           local on, sources, gates = 0, {}, {}
           local live = 0
           for _, b in ipairs(list) do
@@ -159,6 +181,7 @@ return function(api)
           row.belts = (row.belts or 0) + #list
           local text = string.format('%s from %s %s: %d of its ammo on %d belt%s upstream%s', way, src.name, at(src.position), on, #list, #list == 1 and '' or 's',
             capped and ' (the first ' .. M.MAX_BELTS .. ')' or '')
+          if #relays > 0 then text = text .. '; through ' .. table.concat(relays, ', ') end
           if #sources > 0 then text = text .. '; put on them by ' .. table.concat(sources, ', ') end
           if live == 0 then
             row.stops[#row.stops+1] = string.format('%s: %s the belts upstream of %s %s: the %d on them, then dry', way,

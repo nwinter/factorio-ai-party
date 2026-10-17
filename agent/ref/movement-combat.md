@@ -98,3 +98,7 @@
   way first (`left_reach_first`). Attack lines say when the area clears (30 s after its last hit).
 - Out-of-fuel and out-of-ammo alerts list each entity's position and end with `refuel {alert: "KEY"}` /
   `rearm {alert: "KEY"}`: a tour over exactly those (an alert's centre can lie far from them: it joins touching areas).
+- A rearm refused for enemies says per place whether a worm or spawner (it stays) or passing enemies hold it;
+  `rearm {..., retry_when_clear: true}` waits until no enemy unit is within 48 tiles and rearms again (6 tries).
+- stay_in_turret_coverage walks up to `max_uncovered` (48) tiles outside coverage at each end (said in
+  `turret_coverage`) and through every covered area that joins; a refusal names where coverage is missing.

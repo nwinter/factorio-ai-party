@@ -91,7 +91,10 @@ return function(api)
     end
     local ch = p.character
     local reach = ch and ch.valid and ch.prototype and ch.prototype.item_pickup_distance or 1
+    assert(a.spoiled_first == nil or type(a.spoiled_first) == 'boolean', 'spoiled_first must be true or false')
+    local min_spoiled = a.min_spoiled ~= nil and api.integer(a.min_spoiled, nil, 0, 100, 'min_spoiled (0..100 percent)') or nil
     local action = {kind='pickup', belt=true, area=box, items=names, count=count, reach=reach, until_tick=game.tick + ticks,
+      spoiled_first=a.spoiled_first or nil, min_spoiled=min_spoiled,
       skips={}, skipped=0, taken=0, idle_since=game.tick, to=to, to_position=to and {x=to.position.x, y=to.position.y} or nil}
     api.start(p, action)
     return {until_tick=action.until_tick, area=box, belt_tiles=tiles, on_belts=on, count=count,
@@ -102,7 +105,51 @@ return function(api)
   local function quality_of(q) if type(q) == 'string' then return q end; return q and try(function() return q.name end) or 'normal' end
   -- Takes up to n wanted items off a belt's lanes into the character: what the inventory takes, each kept with its
   -- spoilage. Returns the count taken, or nil and 'inventory_full'.
+  -- The wanted stacks on a belt's lanes with their spoilage: {line, st, spoil (0..1)}, spoiled_first: the most spoiled
+  -- first; min_spoiled: only stacks at least that spoiled (d17 batch13 D2, Grok 4x: walking to a rotten egg, the return
+  -- inserter had taken it and the pickup grabbed the fresh ones instead).
+  local function stacks_of(e, action)
+    local wanted = {}
+    for _, name in ipairs(action.items) do wanted[name] = true end
+    local out = {}
+    for i = 1, try(function() return e.get_max_transport_line_index() end) or 0 do
+      local line = try(function() return e.get_transport_line(i) end)
+      for _, d in ipairs(line and try(function() return line.get_detailed_contents() end) or {}) do
+        local st = d.stack
+        if st and try(function() return st.valid_for_read end) and wanted[st.name] and (not action.quality or quality_of(st.quality) == action.quality) then
+          local sp = try(function() return st.spoil_percent end) or 0
+          if not action.min_spoiled or sp * 100 >= action.min_spoiled then out[#out+1] = {line=line, st=st, spoil=sp} end
+        end
+      end
+    end
+    if action.spoiled_first then table.sort(out, function(x, y) return x.spoil > y.spoil end) end
+    return out
+  end
+  M.stacks_of = stacks_of
+  local function take_chosen(p, e, action, n)
+    local got = 0
+    for _, c in ipairs(stacks_of(e, action)) do
+      if got >= n then break end
+      local st = c.st
+      if try(function() return st.valid_for_read end) then
+        local name, q, count = st.name, quality_of(st.quality), st.count
+        local k = math.min(n - got, count)
+        local put = p.insert{name=name, count=k, quality=q, spoil_percent=c.spoil}
+        if put == 0 then return got, 'inventory_full' end
+        if put >= count then try(function() st.clear() end) else try(function() st.count = count - put end) end
+        got = got + put
+        action.picked = action.picked or {}
+        action.picked[name] = (action.picked[name] or 0) + put
+        action.picked_spoil = action.picked_spoil or {}
+        if #action.picked_spoil < 16 then action.picked_spoil[#action.picked_spoil+1] = string.format('%s*%d at %d%% spoiled', name, put, math.floor(c.spoil * 100 + 0.5)) end
+        if api.trash and put > 0 then action.trashed = api.trash.count(p, action.trashed, name, q, put) end
+        if put < k then return got, 'inventory_full' end
+      end
+    end
+    return got
+  end
   local function take(p, e, action, n)
+    if action.spoiled_first or action.min_spoiled then return take_chosen(p, e, action, n) end
     local wanted = {}
     for _, name in ipairs(action.items) do wanted[name] = true end
     local got = 0
@@ -124,6 +171,10 @@ return function(api)
           got = got + off
           action.picked = action.picked or {}
           action.picked[name] = (action.picked[name] or 0) + off
+          if spoil and off > 0 then
+            action.picked_spoil = action.picked_spoil or {}
+            if #action.picked_spoil < 16 then action.picked_spoil[#action.picked_spoil+1] = string.format('%s*%d at %d%% spoiled', name, off, math.floor(spoil * 100 + 0.5)) end
+          end
           if api.trash and off > 0 then action.trashed = api.trash.count(p, action.trashed, name, q, off) end
           if put < k then return got, 'inventory_full' end
         end
@@ -139,7 +190,13 @@ return function(api)
       local wanted = {}
       for _, name in ipairs(action.items) do wanted[name] = true end
       local _, w = carried(e, wanted)
-      if w > 0 then out[#out+1] = e end
+      if w > 0 and (not action.min_spoiled or #stacks_of(e, action) > 0) then out[#out+1] = e end
+    end
+    -- spoiled_first: the belts holding the most spoiled stack first
+    if action.spoiled_first and #out > 1 then
+      local most = {}
+      for _, e in ipairs(out) do local l = stacks_of(e, action); most[e] = l[1] and l[1].spoil or 0 end
+      table.sort(out, function(x, y) return most[x] > most[y] end)
     end
     return out
   end
@@ -150,7 +207,14 @@ return function(api)
     for _, e in ipairs(belts_in(p.surface, p.force, action.area)) do
       if not action.skips[key(e.position)] then
         local _, w = carried(e, wanted)
-        if w > 0 then
+        if w > 0 and (action.min_spoiled or action.spoiled_first) then
+          -- (D2) the belt with the most spoiled stack, then the nearest
+          local l = stacks_of(e, action)
+          if #l > 0 then
+            local d = api.distance(p.position, e.position) - (action.spoiled_first and l[1].spoil * 1000 or 0)
+            if not bd or d < bd then best, bd = e, d end
+          end
+        elseif w > 0 then
           local d = api.distance(p.position, e.position)
           if not bd or d < bd then best, bd = e, d end
         end
