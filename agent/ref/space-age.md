@@ -1,192 +1,221 @@
-- Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`), and
-  so do tell, chat, say, operator, the board, research, platform calls and waits on `platform_arrived`/`platform_left`,
-  and every remote-view call with `platform=` or `surface=` (place_ghosts, deconstruct, configure, circuit_set,
-  requests with position, ...; the refusal lists them).
-- Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,
+- `platforms {platform?, compact?, eta_to?}`: our platforms, a row each: where it is, `speed_kms`, `leg_left_km`,
+  `eta_min` (at the current speed), `next_stop`, hub health, and `stops` (each stop's wait conditions with the time
+  left and items to go where it waits; a stop's wait line names a queue step, either lane, or standing order that
+  sends the platform on sooner). `departure`: the agents' queue steps and standing orders that send a platform on
+  beside its schedule. `freshness` gives spoilable science's effective research units now and, when the leg's ETA is
+  known, at arrival, as `science` and `preflight` count them. `inspect` of a hub shows the same speed and ETA fields.
+  With `platform`: one platform with its full hub inventory, `thrust_inputs` (a line per thruster input under half
+  full: the pumps, plants, crushers and chunks behind it and why they stop; a platform flying under 5 km/s is an alert
+  naming them), `tile_removals` and `construction_blocked` (why the hub cannot build now; it counts up to 1000 entity
+  and 3000 tile ghosts and says `at least` and how many were counted past that). `compact: true`: a line a platform,
+  blockers only when new to you. `eta_to: "vulcanus"`: each platform's ETA to that planet through its schedule, or why
+  there is none.
+- `./fh platform NAME`: one platform, the same read as `./fh call platform --args '{"name":"Kestrel"}'` (`platforms`
+  of that one): hub free slots, cargo, speed, next stop, ETA; `hub_chunks` (hub slots asteroid chunks take);
+  `ammo_rates` (per ammo type, made and used over the last leg, with the reserve at arrival; it counts the places
+  `platform_endurance` counts); `incoming` rockets; `freight` (per stop: what was expected down and up, what left the
+  hub, what came aboard, with what construction robots placed from a rocket's cargo at once as "built at once N" and
+  the platform's count before and after, and what spoiled; the rockets sent to it; the cargo pods sent down with what
+  each landing pad received and the pods still in flight; per leg what spoiled on the way); `spoiling` (when its
+  spoilable items spoil, against the arrival); `engine` (the last 60 and 180 s: mean, lowest and highest speed,
+  thruster fuel and oxidizer used and made, the thrusters' tanks at start and end, the pumps' share of time working).
+- `platform_arrived {platform, location?}` and `platform_left {platform, location?}`: wait conditions, in `./fh wait
+  --until`, `./fh sleep --until`, `wait_until`, queue steps and guards, and a standing order's `when`.
+  `platform_arrived` holds while the platform is stopped at `location` (a planet; without one, at any stop).
+  `platform_left` waits for its next departure from `location` (without one, from any stop): seen stopped there during
+  the wait, then gone; one begun in flight waits for the next stop and its departure. With no `timeout` (queued or
+  direct) either wait goes on past its default 60 s while the ETA is known: to the ETA plus a quarter and 10 s, at
+  most 54000 ticks (`extended` says so). The team alerts say when a platform stops at or leaves your planet.
+  Example: `./fh wait --until "platform_arrived Sunward gleba" --max 600`
+- `platform_create {name?, planet?}`: creates a platform over `planet` (default yours); as in the platform GUI it
+  waits for its starter pack, which a silo holding it in its rocket cargo launches on its own.
+- `platform_schedule {platform, stops, current?, paused?}`: each stop `{station, wait: [...]}`; a wait is `{type,
+  ticks?, condition?, compare: "and"|"or"}`. Types: `time` and `inactivity` (`ticks`), `all_requests_satisfied`,
+  `any_request_not_satisfied`, `any_request_zero`, and with a `condition`: `item_count` (an item), `fluid_count` (a
+  fluid), `circuit` (any signal on the hub's red and green wires: wire a tank or a combinator to the hub;
+  `circuit_note` when the hub has no wire). A condition is `"thruster-fuel >= 10000"` or `{signal, comparator, value |
+  signal2}`. `stops: []` clears the schedule; `current` is the 1-based stop to head for; `paused` pauses thrust and
+  the schedule. `wait_until` with `platform` takes `fluid_count` (`fluid, at_least | below`: the storage tanks) and
+  `circuit_signal` (`signal, at_least | below`: the hub's wires), the remote lane too.
+  Example: `./fh call platform_schedule --args '{"platform":"Sunward","stops":[{"station":"nauvis","wait":[{"type":"time","ticks":216000},{"type":"circuit","condition":"thruster-fuel >= 10000","compare":"and"}]},{"station":"gleba","wait":[{"type":"all_requests_satisfied"}]}]}'`
+- `platform_rename {platform, name}`: renames one, listing the queues, orders, plans and board items still naming the
+  old name (`still_named`; none changed).
+  Example: `./fh call platform_rename --args '{"platform":"Sunward","name":"Kestrel"}'`
+- `platform_endurance {platform, route?, forecast?, pessimistic?}`: per leg its km and minutes at its speed; per
+  ammunition, repair pack and thruster fluid aboard its stock, made and used per minute and the leg it runs out on;
+  hub slots free, power, solar power at the stops, and the asteroid chunks collected a minute. `route`: the locations
+  in order (default its schedule round to the current stop again), read from the current leg while flying; one
+  starting behind the ship is refused. Rates come from the last leg when stopped (else `flight use unknown`), from a
+  window inside the leg on one under 10 minutes old. Stock counts every place aboard: hub, turrets, belts (an
+  underground pair once), inserter hands and machines' outputs (`by_place`), with what moved between places since the
+  leg began (`since this leg began: hub -300, belts +300`; moves are not use); only ammunition that can reach a turret
+  counts. An item made aboard is capped by the ingredients aboard, two levels down, fluids included
+  (`ingredient-limited`), and the cap grows at the rate its ingredients are made aboard now (`more_per_min`). Rows add
+  `phases` (moving, still in space, stopped) and `flight` (the route and its last leg at the moving rate); `departure`
+  (each ammunition over the route: used, aboard, made, short or spare, a rocket's lift of it); `solar` with low and no
+  power counts; flying, each line's last 60 s. `forecast: true` adds per leg the asteroids its connection spawns by
+  kind against the legs flown lately, the shots one of each takes of each ammunition aboard (`none hurt`: the
+  ammunition cannot), and the use scaled from the legs flown, made meanwhile and left at each arrival; `pessimistic:
+  {speed, dwell_s}` slows the legs and adds time at each stop.
+  Example: `./fh call platform_endurance --args '{"platform":"Wayfarer","route":["gleba","aquilo","gleba"],"forecast":true,"pessimistic":{"speed":0.8,"dwell_s":300}}'`
+- `platform_supply {platform}`: the supply chain from collectors to guns (collectors, crushers, thruster fuel and
+  oxidizer makers, thrusters, guns), with the first stop named (`first_stop`); `chunks`: each chunk type with its
+  collectors, then the crushers whose recipe takes it and the hub; `chunk_flags`: a GUI filter keeping a chunk from
+  its crusher, a crusher stopped full over a full hub.
+- `platform_plan {platform, floor?, page?, ready?, salvage?}`: the platform as planned, built entities and ghosts
+  together: foundation islands, belt loops, head-on belts and side-loads. `floor: true`: the foundation the entity
+  ghosts need (footprints, tunnels, holes, links) as `place_ghosts_entries`, 256 a page (`page: N`); a tunnel runs to
+  the next underground of its name facing the same way (one crossing it is passed over); `tile_ghosts_held` names tile
+  ghosts counted as floor that the hub's foundation rules never build. `ready: {positions, area, tiles}`: one subset's
+  missing items, foundation support and settings. Floor and ready leave out the tiles a collector's rule keeps empty
+  (its front): rear support only. `salvage: 60`: foundation tiles to take up from the edge in, as deconstruct areas
+  (never one under an underground belt or pipe span, or at its ends).
+  Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
+- `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?}`: per item, what the ghosts
+  still need less hub stock and cargo in flight, what is built and what the hub asks. `pack: true` splits the rest
+  into rockets for `load_silo`. `request: true` keeps a hub request section (`platform_bom: NAME`) at what the ghosts
+  still need, lowered as they are built and removed when none is left (`request: false` removes it; `import_from`,
+  `area`; `min_payload: {item: N}`; a min_payload set on its slots is kept). `surface: "gleba"` with no platform:
+  every platform's active hub requests importing from that planet, a line a platform with what it lacks (asks, holds)
+  and where it is. Example: `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`
+- `platform_production {platform, item?}`: the platform's own production per item (totals, rates over 1m, 10m, 1h).
+  `wait_until {until: "produced", platform, item, at_least}` waits for it.
+  Example: `./fh call platform_production --args '{"platform":"Sunward","item":"space-science-pack"}'`
+- `platform_defense {platform, feed?}`: each asteroid collector's front and each hull side against turret ranges: the
+  turrets that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as
+  runs. It traces each turret's ammunition back: what can reach it (its inserters, the belts upstream and who loads
+  them, the hub) and what stops it; the ammunition that can reach each turret; the ammo stranded on belts no turret's
+  way reaches, per group with its belts and the call that recovers it (a belt `pickup` aboard, else `deconstruct` of
+  those belts into the hub). `feed: true` lists every turret. A team alert names turrets whose feeds ran dry while
+  ammunition aboard is stranded. `circuit_audit {platform}` reads a platform's misleading circuit readings (`./fh help
+  circuits-settings`). Example: `./fh call platform_defense --args '{"platform":"Sunward","feed":true}'`
+- `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure
+  conditions with what the hub holds against each.
+- `demolishers {surface?, near?}`: each demolisher territory the map draws, nearest first, and each demolisher in
+  sight now (name, head, health), else where a read last saw it.
+- `shipment {platform | item}`: per schedule stop its departure conditions, each hub request importing from that
+  planet with its state (delivered, in flight, launched, loading, waiting and the native gate holding it), what the
+  planet's landing pads ask of the hub, and the last visit's pad receipts and spills; with `item`, that item over
+  every platform. Cargo conflict lines (also in `preflight {platform}`): an item the hub holds that the landing pads
+  of two or more coming stops ask, per stop in order (ask, hold, what goes down there, what is left aboard). A
+  delivery, a spill or a hub_full gate comes once in team.alerts to who launched to the platform and its alert list.
+- `min_payload {platforms?, set?}`: every hub request that imports from a planet: platform, item, asks, holds, the
+  custom minimum payload and a full rocket of it by weight. `set: {item: N}` sets that number for those items on those
+  platforms (0 or false clears it), nothing else changed.
+  Example: `./fh call min_payload --args '{"platforms":"all","set":{"low-density-structure":50}}'`
+- `launch {position, platform | orbit, wait_ready?, wait_platform?, min_cargo?, arrived?, allow_empty?, cargo_for?,
+  surface?}`: launches the silo's rocket to `platform` in orbit of this planet. `wait_ready: true` waits for the
+  rocket and launches in the tick it is ready (a queue step too; a queued one whose rocket goes records `launched`);
+  with `platform` it also waits until the platform is in orbit of the silo's planet (`wait_platform`, the default
+  then); a plain tell does not end these waits (one with `wake: true` or an urgent alert does), and a wait that ends
+  before the launch ends `not_launched` with `launch_error`. `min_cargo` and `arrived: true` are read in the tick it
+  launches. A rocket with no cargo is refused (a launch spends its parts) unless `allow_empty: true`, naming science
+  in chests near the silo. A launch to another platform than the one the cargo was loaded for (`load_silo` `platform`)
+  is refused unless `cargo_for: "any"`. With the silo's automatic requests on, `launch {position, platform}` launches
+  with what the game loaded so far (they stay on). A launch step started while the last rocket is still leaving waits
+  for the next rocket (it never reports that launch). A launch waiting while its platform leaves is told (`launch:`
+  alerts); a rocket in flight holds the platform until its pod lands. The reply leads with `spoiled_percent` by item
+  and `went_up`. `./fh queue submit --file plan.json --args '{"dry_run":true}'` shows the silo cargo before each
+  queued launch step.
+  Example: `./fh call launch --args '{"position":{"x":65.5,"y":14.5},"platform":"Sunward","wait_ready":true}' --wait`
+- `silo {position?, surface?, why?}`: a silo's rocket parts X/50, what it lacks for the parts left (in the silo and at
+  its feeders), the cargo's kg and slots, the last launch, `robots_bringing` (what logistic robots carry or have
+  reserved toward it) and `requesting_for`. `rocket_ready` is true only for a built rocket (`built_parts` 50/50);
+  `next_parts` counts parts for the rocket after it. `platform_requests` flags each request a platform above makes:
+  matched (the planet's network holds it), below_min_payload, split_networks (another network holds it), hub_full,
+  filling. `why: true` (with `position`) follows the ingredient it is shortest of: its feeder chests (a requester's
+  request and its network's stock), then that item's chain on the planet down to the root, with makers not working.
+  `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically` on a silo)
+  take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk. A silo's
+  transfer inventories: `assembling_machine_input` (alias `parts`, the rocket-part ingredients) and
+  `rocket_silo_rocket` (alias `cargo`, what goes up with the rocket); `inspect` lists them with a call each. Silo
+  alerts: `silo_short.<item>` (parts stalled 2 min) and `silo_ready_idle` (a rocket ready 3 min, not launched).
+  Example: `./fh call silo --args '{"position":{"x":65.5,"y":14.5},"why":true}'`
+- `cargo {items | position, silo?, to_platform?, incoming?}`: weighs a rocket cargo list (or a chest, silo or pad at
+  `position`): each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets, and
+  one split into rockets that keeps each within both. With `silo` (and `to_platform`) it adds when that list can go up
+  (rockets, parts, the platform's arrival). `incoming: true` lists our platforms headed for your planet with their ETA
+  and hub cargo. Example: `./fh call cargo --args '{"items":{"thruster":2,"cargo-bay":4}}'`
+- `load_silo {position, items, to_total?, from?, walk?, up_to?, up_to_stock_at_start?, launch?, platform?,
+  wait_platform?, rockets?, launch_split?, wait_min?, auto_requests?, fresh_first?, dry_run?}`: loads `items` into the
+  rocket of the silo at `position` (without it the reply lists the silos here) from your inventory, then our chests in
+  reach, nearest first (any chest kind, logistic chests and a landing pad too), or from `from` (one chest `{x,y}` or
+  up to 16, in order); `to_total: true`: each count is the rocket's total. A spoiling item goes least spoiled first
+  (`fresh_first: false`: you, then the chests in order). `launch: true` launches in the tick the last count is aboard.
+  Before its rocket is there (with `launch`, ready) it waits while the silo makes parts: `ticks` is an idle window
+  grown to 3 times the longest interval seen between parts, capped at `gives_up_tick` (`silo_wait`: parts per minute
+  and the window); `wait_min: 15` waits through 15 minutes with no new part; `parts_short` and `last.why` name each
+  rocket-part ingredient the silo lacks. `walk: true` with `from` (chests anywhere on the silo's surface, a landing
+  pad too) walks between them and the silo as many trips as the load takes, in one timed call (outcomes `loaded`,
+  `launched`, `short`; `last.trips`, `last.stops`; `--wait` follows it): it loads nothing until the rocket is there,
+  takes the freshest stacks first (`last.freshness`) and skips a trip's other sources once you hold what the rocket
+  needs; without `from` it walks to the silo with what you hold. A walking load gives `loaded_items` (what you put
+  in), `aboard_before` and `kept` (taken, not loaded, still with you: a teammate's load met the count).
+  `up_to_stock_at_start: true` loads at most what you and the chests held when it began (`stock_at_start`), then ends
+  (launches with `launch`). `up_to: true` loads what fits and is held and launches with that (`up_to_short`). A list
+  over one rocket is refused unless `launch_split: true` (rockets queued in turn: `split`); `rockets: 3` with `launch`
+  queues the same load for 3 rockets. `platform` records whom the cargo is for. `wait_platform: true` (with `launch`
+  and `platform`): one timed call that loads nothing until the platform is stopped in orbit here, then loads and
+  launches in that tick as one rocket; it ends `launched`, or `failed` when the platform goes elsewhere. A rocket
+  holding what a platform above asks for is launched by the game when it stops, one item type a rocket: the wait then
+  ends `launched_by_game` (what went, and what stayed in the silo). A silo with automatic requests on is refused,
+  naming what is aboard; `auto_requests: "pause"` (with `launch`) turns them off for this manifest and back on after
+  its last launch, and a load that ends short or failed leaves them off (`auto_requests_kept_off`; `configure
+  {auto_requests: true}` turns them on); with them on, load_silo and preflight name the platforms' open requests a
+  rocket may go to. `dry_run: true` (and `preflight`): each item's weight, slots and sources, the rocket's room, the
+  split, the hub's free slots, cargo aboard that is not in the list (`foreign_cargo`) and automatic requests that are
+  on; nothing loads. The reply gives `freshness` at the top, `loaded` (per item `aboard_before`, `loaded`, `from`,
+  `freshness`), `cargo` (everything in the rocket) and `switches` (the silo's automatic requests and send to orbit
+  automatically; load_silo never sets them). A queued `load_silo` your own build or transfer interrupts is requeued
+  and goes on.
+  Example: `./fh call load_silo --args '{"position":{"x":65.5,"y":14.5},"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","to_total":true}' --wait`
+- `preflight {position?, items?, from?, platform?, surface?}`: a silo's cargo (without `position`: all visible indexed
+  silos, nearest first), arrival and ETA, and the requests less hub and rocket; with `platform`, incoming rockets,
+  `ammo_rates`, `hub_chunks` and cargo conflict lines (as `shipment`); without, the platforms stopped at or headed for
+  your planet. With `items` and `from` (one chest position or up to 16) it reads the source chests' stock and shorts,
+  and `manifest` checks the combined kg and slots with the cargo aboard; nothing moves. Ammunition counts only when it
+  can reach a turret.
+  Example: `./fh call preflight --args '{"position":{"x":65.5,"y":14.5},"platform":"Sunward","items":{"agricultural-science-pack":1000}}'`
+- `land`: from a platform stopped at a planet, drops you to it in a cargo pod (the core's Space Age part says where
+  you land and with what).
+- `drop {items, platform?, full?, dry_run?}`: sends one cargo pod (10 slots) of hub items to the planet below a
+  stopped platform; `short` says what stays in the hub. `full: true` sends every pod the list takes (each pod's items
+  in `pods`); `dry_run: true` shows the pod split first and the landing pad's room (`pad_room`: free slots, what takes
+  the rest; `spill`: what would land on the ground). A drop's landing line gives the container's exact position and
+  the other cargo pod containers within 8 tiles with what each holds; one sent to a full landing pad says it landed
+  beside it, where, and what each container holds. `scan` lists a cargo pod container with `holds`.
+  Example: `./fh call drop --args '{"platform":"Sunward","items":[{"item":"iron-plate","count":200}],"dry_run":true}'`
+- `freight_audit {item}`: one item across every planet and platform: stock, spoil times, silo room, unmet lab and
+  requester demand.
+- `where_is {item, surface?, limit?}`: where an item is on a surface: the total by kind and each place holding it,
+  nearest first; stacks lying on the ground in chunks our force sees now are `on_ground` (each 32-tile cell a place);
+  pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert. A spoilable item adds
+  `spoils_within_2_min` beside the total and per place.
+- `agriculture {surface?}`: agricultural towers, ghosts and recorded tower-loss positions.
+- Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`),
+  and so do tell, chat, say, operator, the board, research, platform calls, waits on `platform_arrived` and
+  `platform_left`, queue plans of the steps the remote lane allows, and every remote-view call with `platform=` or
+  `surface=` (place_ghosts, deconstruct, configure, circuit_set, requests with position, ...; the refusal lists them).
+  Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,
   blueprints, deconstruction, `circuit_set`, `wire`, `requests`, schedules) leave your character's action, queue and
-  standing orders running; so does a `configure` its checks refuse. `platforms` and `inspect` of a hub show each
-  platform's `speed_kms`, `leg_left_km`, `eta_min` (at the current speed) and `next_stop`; `stops` lists each stop's wait
-  conditions with time left and items to go where it waits. A platform flying under 5 km/s is an alert naming the
-  thruster input it lacks and the pumps, plants, crushers and chunks behind it (`platforms {platform}`:
-  `thrust_inputs`).
-- `rotate {platform: NAME, position, direction?}` (or `surface: NAME`) turns a ghost or built belt or inserter there by remote view.
-- `queue_submit {lane:"remote",steps:[...]}` runs platform waits, drops, schedules, platform configuration, platform `place_ghosts`/`deconstruct` (wait `{until:"platform_built",platform}` for the foundation) and body-independent reads alongside body work; queue controls accept the same lane, and status shows both.
-- `./fh view platform=Sunward --out sunward.png` shows platform foundation and structure footprints; `agriculture {surface:"gleba"}` lists towers, ghosts and recorded tower-loss positions.
-- `./fh call requests --args '{"platform":"NAME"}'` shows each hub section; `off: true` means it requests nothing
-  (`"section":N,"active":true` switches it on), and each request shows the planet it imports from. A `set` without
-  `section` edits the slot of the section that already requests the item (`sections_note` names a shared group or a second section).
-  Personal requests: `clear` (or `remove`): `["pumpjack"]` deletes the request and keeps what you hold; a `max` under what you hold is refused without `force: true` (the game trashes the rest).
-- `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without
-  a planet); it is also a `wait_until` condition, a queue guard and an order's `when`.
-  `platform_left Sunward [nauvis]` waits for its next departure (from nauvis, or from any stop): seen stopped there
-  during the wait, then gone; one begun in flight waits for the next stop and departure; the team alerts say when a platform stops at or leaves
-  your planet. `./fh call freight_audit --args '{"item":"agricultural-science-pack"}'` shows one item across every
-  planet and platform: stock, spoil times, silo room, unmet lab and requester demand.
-- `./fh call platform --args '{"name":"Kestrel"}'` is the same read as `./fh platform Kestrel` (platforms of that one).
-- `./fh platform NAME` also shows `freight` (per stop what was expected down and up, what left the hub, came aboard
-  (with what construction robots placed from a rocket's cargo at once: "built at once N", the platform's count before
-  and after) and spoiled, the rockets sent to it, the cargo pods sent down with what each landing pad received and the pods still
-  in flight; per leg what spoiled on the way), `spoiling` (when its spoilable items spoil, against the arrival) and
-  `engine` (the last 60 and 180 s: mean, lowest and highest speed, thruster fuel and oxidizer used and made, the
-  thrusters' tanks at start and end, the pumps' share of time working). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when
-  `from` is not given.
-- `./fh call platform_endurance --args '{"platform":"Wayfarer"}'` (optional `"route":["fulgora","aquilo"]`, default its schedule): each leg's km and minutes at its speed, and each ammunition, repair pack and thruster fluid aboard with its stock, made and used per minute, and the leg it runs out on; hub slots free, power, solar power at the stops. Stopped, the rates come from the last leg (or read `flight use unknown`); on a leg under 10 minutes old, from a window inside the leg; an item made aboard is capped by the ingredients aboard, two levels down and fluids included (`ingredient-limited`), and the cap grows at the rate its ingredients are made aboard now (`more_per_min`); stock counts every place aboard: hub, turrets, belts (an underground pair once), inserter hands and machines' outputs (`by_place`), with what moved between places since the leg began (`since this leg began: hub -300, belts +300`; moves are not use); a line gives the asteroid chunks collected a minute. `ammo_rates` (preflight, `fh platform`) counts the same places.
-- `platform_supply {platform}`: the supply chain from collectors to guns, with the first stop named.
-- `platform_plan {platform}`: foundation islands, belt loops, head-on belts and side-loads across built entities and ghosts.
-- `./fh call networks --args '{"platform":"Starling"}'` gives a platform's electric network line (capacity, draw, solar
-  power where it is and its panels' output, accumulators, machines on low power); accumulators are read at the call
-  (`acc_mj`, `acc_pct`, `acc_series` every 15 s over 3 min) and `"fresh":true` adds `draw_now_kw`; `power` takes `platform` too, and
-  `inspect` on a machine, solar panel or accumulator shows its maximum under `electricity`.
-- On a platform the hub removes a marked foundation tile only beside empty space (a north, east, south or west
+  standing orders running; so does a `configure` its checks refuse. Aboard, `observe` gives `player.body: "none"`.
+  `./fh view platform=Sunward --out sunward.png` draws a platform's foundation and structure footprints.
+- Hub requests: `requests {platform}` reads and sets a hub's sections (`./fh help circuits-settings`).
+- Platform foundation: the hub removes a marked foundation tile only beside empty space (a north, east, south or west
   neighbour), and never one that would join separate empty space; marked from the edge in, a row goes one tile at a
-  time. deconstruct's reply says `tiles_go` (in order) and `waiting` with why for every marked tile there;
-  `"dry_run":true` marks nothing; `platforms {platform}` shows `tile_removals`. Its `construction_blocked` counts up to 1000 entity and 3000 tile ghosts and says `at least` and how many were counted past that.
-- `./fh call cargo --args '{"items":{"thruster":2,"cargo-bay":4}}'` (or a chest, silo or pad `position`) weighs a
-  rocket cargo list: each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets,
-  and one split into rockets that keeps each within both. `./fh call silo` (or a `position`) shows a silo's rocket
-  parts X/50, what it lacks for the parts left (in the silo and at its feeders), the cargo's kg and slots, and the
-  last launch. `silo {position, why: true}` follows the ingredient it is shortest of: its feeder chests (a requester's
-  request and its network's stock), then that item's chain on the planet down to the root, with makers not working. `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically`
-  on a silo) take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
-  With automatic requests on, `launch {position, platform}` launches the rocket with what the game loaded so far (they
-  stay on); `load_silo` refuses, saying what is aboard.
-  `launch` refuses a rocket with no cargo (a launch spends its parts) unless `allow_empty: true`, naming science in
-  chests near the silo. A silo's transfer inventories: `assembling_machine_input` (alias `parts`, the rocket-part
-  ingredients) and `rocket_silo_rocket` (alias `cargo`, what goes up with the rocket); `inspect` lists them with a call each.
-- `cargo {incoming: true}` lists our platforms headed for your planet with their ETA and hub cargo; `cargo {items, silo, to_platform?}` adds when that list can go up (rockets, parts, the platform's arrival).
-- `./fh call load_silo --args '{"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","position":{"x":65.5,"y":14.5},"to_total":true}' --wait`
-  loads the list into the rocket from your inventory and our chests in reach (any chest kind, logistic chests and a
-  landing pad too, nearest first; `from` for given chests) and launches
-  in the same tick once every count is aboard; before the rocket is ready it waits for it. `./fh call preflight` (silo
-  `position` optional: all visible indexed silos nearest first; optional `items`, `platform`, `surface`) shows cargo,
-  arrival/ETA, requests less hub and rocket, and (with `platform`) incoming rockets, `ammo_rates`, `hub_chunks`; no platform lists those stopped/headed here. `launch` takes `min_cargo` and `arrived: true`,
-  read in the tick it launches; `fh queue submit --file plan.json --args '{"dry_run":true}'` queues nothing and shows
-  the silo cargo before each launch step. `load_silo` with `"walk": true` and `from` (chests anywhere on the silo's
-  surface) walks between them and the silo as many trips as the load takes, in one timed call (outcomes `loaded`,
-  `launched`, `short`; `last.trips`, `last.stops`; `--wait` follows it); at the silo it waits for a rocket (with `launch`, a ready one)
-  before it loads anything. `"up_to": true` loads what fits and what is held, and launches with what is aboard (short rows in `up_to_short`). A silo's `rocket_ready` is true only for a built
-  rocket (`built_parts` 50/50); `next_parts` counts parts for the rocket after it. A `load_silo` waiting for its rocket
-  waits while the silo makes parts (`ticks`: initial idle window, grown to 3 times the longest observed interval to
-  a part increase, capped at `gives_up_tick`); `silo_wait` reports the observed parts/minute and idle window.
-  A spoiling item goes in fresh first (the least
-  spoiled stacks of you and the chests; `"fresh_first": false` for the old order).
-- `platform_supply` adds `chunks` (each chunk type: collectors, then crushers whose recipe takes it and the hub) and
-  `chunk_flags` (a GUI filter keeping a chunk from its crusher, a crusher stopped full over a full hub).
-  `platform_endurance` adds `departure` (each ammunition over the route: used, aboard, made, short or spare, a rocket's
-  lift), `solar` with low and no power counts, and flying, each line's last 60 s. `platforms {compact: true}`: a line a
-  platform, blockers only when new to you. Platform loss alerts list each lost entity: rebuilt, a ghost there, or none.
-- A `load_silo` with launch over one rocket's lift is split into rockets queued in turn (`split`). `platforms` gives
-  `departure`: agents' queue steps and orders that send a platform on beside its schedule. `platform_endurance` lines
-  add `phases` (moving, still in space, stopped) and `flight` (the route and its last leg at the moving rate).
-  `platform_plan {platform, floor: true}` lists the foundation ghosts need (footprints, tunnels, holes, links) with
-  `place_ghosts_entries`; a tunnel runs to the next underground of its name facing the same way (one crossing it is
-  passed over), and `tile_ghosts_held` names tile ghosts counted as floor that the hub's foundation rules never build; `paste {preserve_existing_settings_and_wires: true}` adds only what is missing.
-- `platform_rename {platform, name}` renames one, listing queues, orders, plans and board items still naming the old
-  name. `platform_plan {platform, salvage: 60}` lists foundation tiles to take up from the edge in, as deconstruct areas (never one under an underground belt or pipe span, or at its ends).
-  `load_silo {rockets: 3, launch: true, ...}` queues the load for 3 rockets. With automatic requests on, load_silo and
-  preflight name the platforms' open requests a rocket may go to. A launch waiting while its platform leaves is told
-  (`launch:` alerts); a rocket in flight holds the platform until its pod lands.
-- `load_silo {walk: true}` without `from` walks to the silo with what you hold; a walking load takes the freshest
-  stacks first (`last.freshness`). `wait_min: 15` keeps a load waiting through 15 minutes with no new part;
-  `parts_short` (and `last.why`) names each rocket-part ingredient the silo lacks. The reply's `switches` gives the
-  silo's automatic requests and send to orbit automatically; load_silo never sets them.
-- `preflight {position,items,from}` reads source chest stock and shorts; `manifest` checks combined kg/slots including existing cargo. `from` is one chest position or up to 16; nothing moves.
-- `launch {position, wait_ready: true}` waits for the rocket and launches when it is ready (a queue step too); a tell does not end that wait (one with `wake: true` or an urgent alert does), and a wait that ends before the rocket is ready ends `not_launched` with `launch_error`; a queued `load_silo` your own build or transfer interrupts is requeued and goes on.
-- A drop's landing line gives the container's exact position and the other cargo pod containers within 8 tiles with
-  what each holds; `scan` lists a cargo pod container with `holds`.
-- `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list
-  takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first and the landing pad's room
-  (`pad_room`: free slots, what takes the rest, `spill`: what would land on the ground).
-- A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods, to
-  the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it). Pods still in
-  the air from our platforms are `where_is`'s `in_flight` and in a platform's arrival alert.
+  time. `deconstruct`'s reply says `tiles_go` (in order) and `waiting` with why for every marked tile there;
+  `"dry_run":true` marks nothing.
+- A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods,
+  to the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it).
+- Platform loss alerts list each lost entity: rebuilt, a ghost there, or none.
 - Gleba: `inspect` on an agricultural tower shows its `tower` state, seeds, output, which cells have soil for which
   seeds, and its plants with time to harvest; `transfer`, `feed` and `collect` work on its seeds and harvest.
 - Spoilage: `inspect`, `supply` and `stock` give the first stack to spoil and when; pentapod eggs say when they hatch
   into enemies (`hatch_warning`, `hatch`); `output_spoil` is what a machine's next products start at; `freshness`
   gives each item's spread (least and most spoiled, the share by count, the counts under 25/50/75%, how many spoil
-  within 10/30/60 min) in `inspect`, `supply` and every `platforms` row (the hub; `drop` dry_run for the items to drop,
-  `launch` for the rocket's cargo), and the moved batch's in `transfer`, `collect` and `load_silo` (a
-  science pack: how many a unit the running research takes, and its units left). Eggs of ours
-  hatching within 5 minutes on your surface top `team.alerts` (`eggs hatching: ...`) and wake `fh sleep` (`woke: eggs`).
-- Full `status` rechecks nearby recorded egg sites: enemies visible now, future/elapsed timer, and gun range coverage with ammo. An old timer alone is not a live hatch.
-- `./fh call min_payload` reads every hub request that imports from a planet: platform, item, asks, holds, the custom
-  minimum payload and a full rocket of it by weight; `{"platforms":"all","set":{"low-density-structure":50}}` sets that
-  number for those items on those platforms (0 or false clears it), nothing else changed.
-- `platform_endurance {"route":["gleba","aquilo","gleba"],"forecast":true,"pessimistic":{"speed":0.8,"dwell_s":300}}`:
-  per leg, the asteroids its connection spawns by kind against the legs flown lately, the shots one of each takes of
-  each ammunition aboard (`none hurt`: the ammunition cannot), and the use scaled from the legs flown, made meanwhile
-  and left at each arrival.
-- `load_silo` with a walk gives `loaded_items` (what you put in), `aboard_before` and `kept` (taken, not loaded, still
-  with you: a teammate's load met the count); `cargo` is everything in the rocket.
-- `launch {position, platform, wait_platform: true}` waits until the platform is in orbit of the silo's planet (and,
-  with `wait_ready`, the rocket is ready), then launches; a plain tell does not end it.
-- `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`: per item, what the ghosts still need less hub
-  stock and cargo in flight, what is built and what the hub asks; `pack` splits the rest into rockets for `load_silo`.
-- `load_silo {..., launch: true, auto_requests: "pause"}` loads a silo whose automatic requests are on. They go off for
-  this manifest and come back on after its last launch; a load that ends short or failed leaves them off
-  (`auto_requests_kept_off`; `configure {auto_requests: true}` turns them on). `dry_run` and preflight name cargo
-  aboard that is not in the list (`foreign_cargo`) and automatic requests that are on.
-- `platform_production {platform}`: the platform's own production per item (totals, rates over 1m, 10m, 1h);
-  `wait_until {until: produced, platform, item, at_least}`. `platform_plan {platform, ready: {positions, area, tiles}}`:
-  one subset's missing items, foundation support and settings. A launch to another platform than the cargo was loaded
-  for (load_silo `platform`) is refused (`cargo_for: "any"`); `launch {wait_ready, platform}` waits for the platform too.
-- `platforms {eta_to: "vulcanus"}`: each platform's ETA to that planet through its schedule, or why none.
-  `platform_plan {platform, floor: true, page: N}`: the floor entries 256 a page for place_ghosts. Silo alerts:
-  `silo_short.<item>` (parts stalled 2 min) and `silo_ready_idle` (a rocket ready 3 min, not launched).
-- `platform_defense {platform}`: each asteroid collector's front and each hull side against turret ranges: the turrets
-  that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as runs.
-- `platform_bom {surface: "gleba"}` (no platform): every platform's active hub requests importing from that planet,
-  a line a platform with what it lacks (asks, holds) and where it is.
-- `platform_bom {platform, request: true}` keeps a hub request section (`platform_bom: NAME`) at what the ghosts still
-  need, lowered as they are built and removed when none is left (`request: false` removes it; `import_from`, `area`;
-  `min_payload: {item: N}`; a min_payload set on its slots is kept).
-- `silo` rows' `platform_requests` flag each request: matched (the planet's network holds it), below_min_payload,
-  split_networks (another network holds it), hub_full, filling. A launch reply leads with `spoiled_percent` by item
-  and `went_up` (load_silo's `last` too).
-- `platform_endurance {route}` while flying reads the route from the current leg; a route starting behind the ship is
-  refused. A stop's wait line names a queue step (either lane) or order that will send the platform on sooner.
-- A launch step started while the last rocket is still leaving waits for the next rocket (never reports that launch).
-- `platform_defense` also traces each turret's ammunition back (`feed`): what can reach it (its inserters, the belts
-  upstream and who loads them, the hub) and what stops it, with the ammo stranded on belts no turret's way reaches;
-  `feed: true` lists every turret. platform_endurance and preflight count only ammunition that can reach a turret.
-  A team alert names turrets whose feeds ran dry while ammunition aboard is stranded.
-- platform_plan's floor and ready leave out the tiles a collector's rule keeps empty (its front): rear support only.
-- `load_silo {launch: true, platform, wait_platform: true}` is one timed call (`--wait` follows it): nothing goes into
-  the rocket until the platform is stopped in orbit here, then the load goes in and launches in that tick as one
-  rocket; it ends `launched`, or `failed` when the platform goes elsewhere. A rocket holding what a platform above
-  asks for is launched by the game when it stops, one item type a rocket: a launch wait then ends `launched_by_game`
-  (what went, and what stayed in the silo).
-- `load_silo {walk: true, from, up_to_stock_at_start: true}` loads at most what you and the chests held when it began
-  (`stock_at_start` says what), then ends (launches with launch) instead of touring on for a trickle.
-- `load_silo {dry_run: true}`: each item's weight, slots and sources, the rocket's room, the split and the platform
-  hub's free slots. A list over one rocket is refused unless `launch_split: true`.
-- `platform_defense` lists the ammunition that can reach each turret, and per stranded belt group its belts and the
-  call that recovers it (a belt pickup aboard, else `deconstruct` of those belts into the hub).
-- `circuit_audit {platform}`: whole-belt readers (`entire_belt_hold`) on one network whose belts overlap (counted
-  twice), and each asteroid collector whose filter the circuit sets: the filter it holds and the chunk signals there.
-- `load_silo {position, from: [..], walk: true}` takes from the sources in order (chests, a landing pad, anywhere on
-  the surface) and skips a trip's other sources once you hold what the rocket needs. `position` is the silo's (always
-  needed; without it the reply lists the silos here); `from` is one chest `{x,y}` or a list of them.
-- `platform_schedule {platform, stops}`: each stop `{station, wait: [...]}`; a wait is `{type, ticks?, condition?,
-  compare: "and"|"or"}`. Types: `time`/`inactivity` (`ticks`), `all_requests_satisfied`, `any_request_not_satisfied`,
-  `any_request_zero`, and with a `condition`: `item_count` (an item), `fluid_count` (a fluid), `circuit` (any signal on
-  the hub's red and green wires: wire a tank or a combinator to the hub). A condition is `"thruster-fuel >= 10000"` or
-  `{signal, comparator, value | signal2}`. A fuel guard: `{"station":"nauvis","wait":[{"type":"time","ticks":216000},
-  {"type":"circuit","condition":"thruster-fuel >= 10000","compare":"and"}]}`. `wait_until {until: "fluid_count",
-  platform, fluid, at_least | below}` counts the platform's storage tanks; `{until: "circuit_signal", platform, signal,
-  at_least | below}` reads the hub's wires (a queue step, the remote lane too).
-- `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure
-  conditions with what the hub holds against each.
-- `silo` gives `robots_bringing` (what logistic robots carry or have reserved toward it) and `requesting_for`.
-- `shipment {platform}` (or `{item}` over every platform): per schedule stop its departure conditions, each hub
-  request importing from that planet with its state (delivered, in flight, launched, loading, waiting and the native
-  gate holding it), what the planet's landing pads ask of the hub, and the last visit's pad receipts and spills. A
-  delivery, a spill or a hub_full gate comes once in team.alerts to who launched to the platform and its alert list.
-- `shipment` and `preflight {platform}` give cargo conflict lines: an item the hub holds that the landing pads of two
-  or more coming stops ask, per stop in order (ask, hold, what goes down there, what is left aboard).
-- A drop sent to a full landing pad says it landed beside it, where, and what each container holds.
-- `demolishers {surface?, near?}`: each demolisher territory the map draws, nearest first, and each demolisher in sight
-  now (name, head, health), else where a read last saw it.
-- A turret ghost's targeting (configure, place_ghosts configure) is checked once it is built; a turret that reads otherwise
-  is set to the ghost's and you are told.
+  within 10/30/60 min) in `inspect`, `supply` and every `platforms` row (the hub; `drop` dry_run for the items to
+  drop, `launch` for the rocket's cargo), and the moved batch's in `transfer`, `collect` and `load_silo` (a science
+  pack: how many a unit the running research takes, and its units left). Eggs of ours hatching within 5 minutes on
+  your surface top `team.alerts` (`eggs hatching: ...`) and wake `fh sleep` (`woke: eggs`). Full `status` rechecks
+  nearby recorded egg sites: enemies visible now, the timer (future or elapsed), and gun range coverage with ammo; a
+  timer alone is no live hatch.

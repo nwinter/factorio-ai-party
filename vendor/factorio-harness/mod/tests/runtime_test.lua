@@ -4524,8 +4524,9 @@ end)()
 end)()
 ;(function()
   -- Every example call runs as written (Luna, shift11: fh help launch / transfer; operator 10:50 item 6): the runtime's
-  -- own (describe's examples, printed by fh help) and every `fh call ACTION --args '{...}'` in docs/usage.md and
-  -- agent/team.md go through the argument check, and the alias fixer finds nothing to correct in them.
+  -- own (describe's examples, printed by fh help) and every `fh call ACTION --args '{...}'` in docs/usage.md,
+  -- agent/team.md and the topic files (agent/ref: one example per command, d17 topics) go through the argument check,
+  -- and the alias fixer finds nothing to correct in them.
   local function decode(text)
     local i=1
     local function ws() i=text:find('[^%s]',i) or #text+1 end
@@ -4594,7 +4595,10 @@ end)()
   end
   assert(d.actions.launch.examples and d.actions.transfer.examples,'launch and transfer carry examples')
   local docs,found=0,0
-  for _,path in ipairs({'docs/usage.md','../../agent/team.md'}) do
+  local paths={'docs/usage.md','../../agent/team.md'}
+  for _,topic in ipairs({'moving-items','building','circuits-settings','movement-combat','analysis','waits-queues','team',
+    'stream-people','space-age'}) do paths[#paths+1]='../../agent/ref/'..topic..'.md' end
+  for _,path in ipairs(paths) do
     -- (the compacted-module run works in a copy without the docs: describe's examples only there)
     local f=io.open(path)
     local text=f and f:read('a') or ''
@@ -5327,6 +5331,9 @@ do
   eq(ok,false); assert(tostring(err):find('^where is where_is: the call ran as where_is; '),'a failed alias call names the action: '..tostring(err))
   eq(d.actions.guards,nil); eq(d.actions.step_options,nil)
   assert(d.actions.queue_submit.guards:find('at most 8: queue_submit guards=',1,true),d.actions.queue_submit.guards)
+  -- once, however many times describe runs (the scheduler's schema table is not changed)
+  local _,times=call('describe',{}).actions.queue_submit.guards:gsub('at most 8: ','')
+  eq(times,1,'guards text once after a second describe')
   assert(d.actions.queue_submit.step_options:find('on_fail: abort',1,true),'step options under queue_submit')
   ok,err=pcall(call,'queue_submit',{steps={},step_options={}})
   eq(ok,false); assert(tostring(err):find('unknown argument step_options',1,true),'step_options is docs, not an argument: '..tostring(err))
