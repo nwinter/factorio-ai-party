@@ -184,8 +184,9 @@ return function(api)
   end
   -- Requests a network has not filled: per requester point and item, how much
   -- is missing (wanted minus held minus on the way).
+  -- The second list: keys of requests still under their count with a delivery on the way (logaudit.lua's waits).
   local function shortfalls(ln)
-    local out = {}
+    local out, coming_keys = {}, {}
     local points = try(function() return ln.requester_points end)
     if not points then
       points = {}
@@ -208,13 +209,15 @@ return function(api)
           else for _, c in pairs(coming) do if type(c) == 'table' and c.name == name then on_way = on_way + (c.count or 0) end end end
           local missing = f.count - have - on_way
           if missing > 0 then out[#out+1] = {key=unit .. '|' .. name .. '|' .. quality, name=name, missing=missing, e=owner} end
+          if on_way > 0 and have < f.count then coming_keys[#coming_keys+1] = unit .. '|' .. name .. '|' .. quality end
         end
       end
     end
-    return out
+    return out, coming_keys
   end
   local function watch_logistics(n)
-    local busy, unfilled = {}, {}
+    local busy, unfilled, waiting = {}, {}, {}
+    local was = n.waiting or {}
     for _, f in ipairs(forces()) do
       for _, surface in ipairs(surfaces()) do
         for _, ln in ipairs(logistic_networks(f, surface)) do
@@ -222,12 +225,14 @@ return function(api)
           if id then
             local all, idle = try(function() return ln.all_logistic_robots end) or 0, try(function() return ln.available_logistic_robots end) or 0
             if all > 0 and idle == 0 then busy[id] = n.busy[id] or game.tick end
-            for _, x in ipairs(shortfalls(ln)) do unfilled[x.key] = n.unfilled[x.key] or game.tick end
+            local short, coming = shortfalls(ln)
+            for _, x in ipairs(short) do unfilled[x.key] = n.unfilled[x.key] or game.tick end
+            for _, k in ipairs(coming) do waiting[k] = was[k] or game.tick end
           end
         end
       end
     end
-    n.busy, n.unfilled = busy, unfilled
+    n.busy, n.unfilled, n.waiting = busy, unfilled, waiting
   end
   -- Stock per logistic network every 5 min, the last 8 kept (35 min), for the look-ahead (lookahead.lua, Nick 12:35):
   -- items whose stock falls at the last 30 min's rate to zero within 2 hours (all game time).

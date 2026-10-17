@@ -1899,6 +1899,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.platbom and M.platbom.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platdefense and M.platdefense.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circaudit and M.circaudit.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.logaudit and M.logaudit.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.owed and M.owed.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.shipment and M.shipment.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
@@ -13385,6 +13386,7 @@ reads.platform_bom=true
 reads.platform_production=true
 reads.platform_defense=true
 reads.circuit_audit=true
+reads.logistics_audit=true
 reads.platform_gate=true
 reads.demolishers=true
 reads.dependency=true
@@ -14458,6 +14460,9 @@ function handlers.demolishers(p,a) return M.demolishers.read(p,a) end
 -- A platform's misleading circuit readings (circaudit.lua; d17 batch14 A7b, Sol).
 M.circaudit=require('circaudit'){platform=function(p,name) return space.platform(p,name) end,circuit_short=function(e) return M.circuits.short(e) end}
 function handlers.circuit_audit(p,a) return M.circaudit.read(p,a) end
+-- A logistic network's requesters by what keeps them short (logaudit.lua; d17 batch17 C2, Luna).
+M.logaudit=require('logaudit'){state=state,surface_named=function(f,a) return M.networks.surface_named(f,a) end}
+function handlers.logistics_audit(p,a) return M.logaudit.read(p,a) end
 -- Each ghost near a point or in an area: what places it and whether robots can build it (ghostlist.lua; A10, Muse).
 M.ghostlist=require('ghostlist'){position=position,distance=distance,integer=integer}
 function handlers.ghosts(p,a) return M.ghostlist.read(p,a) end

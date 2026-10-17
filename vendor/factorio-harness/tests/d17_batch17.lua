@@ -215,3 +215,66 @@ do
   has(gs[1].line,'pipe line cut at (-194.5,-300.5): 1 tile gone, 1s ago, none rebuilt; the line runs 5 tiles to (-199.5,-300.5) on one side, 6 tiles to (-188.5,-300.5) on the other; it carried crude-oil')
 end
 print('d17_batch17 C1 a long belt line cut is a team alert: ok')
+
+-- C2 (Luna, shift29: paged 109 requester chests to find 5 spoilage-only blockers): logistics_audit ranks a network's
+-- requesters by what keeps them short, with the network's free stock and the provider robots would take it from.
+do
+  defines={inventory={chest=1}}
+  game={tick=40000}
+  local function inv(contents,slots)
+    local used=0
+    for _,c in ipairs(contents) do used=used+math.ceil(c.count/50) end
+    local t={get_contents=function() return contents end,count_empty_stacks=function() return slots-used end,
+      can_insert=function(x) return used<slots end}
+    return setmetatable(t,{__len=function() return slots end})
+  end
+  local units=0
+  local function chest(x,y,contents,slots)
+    units=units+1
+    local i=inv(contents,slots)
+    local e={valid=true,type='logistic-container',name='requester-chest',unit_number=units,position={x=x,y=y},
+      get_inventory=function() return i end}
+    e.get_item_count=function(q) local n=0 for _,c in ipairs(contents) do if c.name==q.name then n=n+c.count end end return n end
+    return e
+  end
+  local function point(e,filters,coming) return {owner=e,filters=filters,targeted_items_deliver=coming or {}} end
+  local provider=chest(10.5,0.5,{{name='nutrients',quality='normal',count=400}},48); provider.name='passive-provider-chest'
+  local full=chest(74.5,62.5,{{name='spoilage',quality='normal',count=2400}},48)
+  local rotten=chest(4.5,10.5,{{name='spoilage',quality='normal',count=100},{name='nutrients',quality='normal',count=10}},48)
+  local waiting=chest(-6.5,26.5,{},48)
+  local unsent=chest(20.5,0.5,{},48)
+  local short=chest(15.5,53.5,{},48)
+  local done=chest(0.5,0.5,{{name='nutrients',quality='normal',count=10}},48)
+  local ch={owner={valid=true,type='character'},filters={{name='iron-plate',count=100}}}
+  local ln={network_id=98,requester_points={
+    point(short,{{name='processing-unit',quality='normal',count=20}}),
+    point(waiting,{{name='iron-bacteria',quality='normal',count=3}},{{name='iron-bacteria',quality='normal',count=3}}),
+    point(unsent,{{name='nutrients',quality='normal',count=10}}),
+    point(full,{{name='yumako-mash',quality='normal',count=60},{name='nutrients',quality='normal',count=10}}),
+    point(rotten,{{name='nutrients',quality='normal',count=60}},{{name='nutrients',quality='normal',count=20}}),
+    point(done,{{name='nutrients',quality='normal',count=10}}),ch},
+    get_supply_counts=function(q) local name=type(q)=='table' and q.name or q
+      if name=='nutrients' then return {['passive-provider']=400} end return {} end,
+    select_pickup_point=function(f) if f.name.name=='nutrients' then return {owner=provider} end end}
+  local surface={name='gleba',find_logistic_network_by_position=function() return ln end}
+  local st={networks={waiting={[waiting.unit_number..'|iron-bacteria|normal']=40000-24000}, unfilled={[short.unit_number..'|processing-unit|normal']=40000-7200}}}
+  local L=dofile('mod/agent-harness_0.1.0/logaudit.lua'){state=function() return st end}
+  local p={force={},surface=surface,position={x=0,y=0}}
+  local r=L.read(p,{})
+  eq(r.looked,6,'the character is left out'); eq(r.blocked,4); eq(r.coming,1); eq(r.filled,1)
+  local order={}
+  for i,x in ipairs(r.requesters) do order[i]=x.block end
+  eq(table.concat(order,' '),'full_unrequested waiting not_sent shortage')
+  has(r.lines[1],'requester-chest (74.5,62.5), 97 tiles: every slot taken, by items it does not request (48 of 48 slots: spoilage 2400 (spoiled, not requested)); asks yumako-mash 60 (has 0, no room, none free in the network); nutrients 10 (has 0, no room, 400 free in the network, robots take it from passive-provider-chest (10.5,0.5), 89 tiles (holds 400))')
+  has(r.lines[2],'deliveries on the way 5+ min; asks iron-bacteria 3 (has 0, 3 on the way for 6m40s, none free in the network)')
+  has(r.lines[3],'free in the network, nothing on the way; asks nutrients 10 (has 0, 400 free in the network, robots take it from passive-provider-chest (10.5,0.5), 10 tiles (holds 400))')
+  has(r.lines[4],'short in the network; asks processing-unit 20 (has 0, short 2m00s, none free in the network)')
+  has(r.summary,'logistic network #98 on gleba: 6 requesters looked at; 4 blocked: 1 full_unrequested, 1 waiting, 1 not_sent, 1 shortage; 1 under their count with deliveries on the way under 5 min; 1 filled; 1 more hold spoilage they do not request, with room left: (4.5,10.5) spoilage 100')
+  eq(r.requesters[1].asks[2].from.distance,89)
+  -- by id, and a missing id names the ids there
+  p.force={logistic_networks={gleba={ln}}}
+  eq(L.read(p,{network=98}).network,98)
+  local ok,err=pcall(L.read,p,{network=7})
+  assert(not ok and tostring(err):find('no logistic network #7 of ours on gleba (there: #98)',1,true),tostring(err))
+end
+print('d17_batch17 C2 logistics_audit ranks requesters by what blocks them: ok')
