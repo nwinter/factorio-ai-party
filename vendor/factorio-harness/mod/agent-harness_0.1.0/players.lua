@@ -365,17 +365,20 @@ return function(api)
   M.find, M.group = find, group
   M.schema = {
     players = {minutes='optional 1..240: the window for builds, removals and moves (default 10)', player='optional name: only that player',
-      returns='human players (bots and camera clients excluded) with online, group (guest|normal|...), position, and in the window: built and removed (count, items by name, area, how: mined|robot|destroyed, not_restored), pending_orders (deconstruct, upgrade), moves (big inventory moves: entity, position, took, put); votes on them (open or carried)'},
+      returns='human players (bots and camera clients excluded) with online, group (guest|normal|...), position, and in the window: built and removed (count, items by name, area, how: mined|robot|destroyed, not_restored), pending_orders (deconstruct, upgrade), moves (big inventory moves: entity, position, took, put); votes on them (open or carried); teammates: each other agent\'s character as the map shows it {name, where, surface, position, distance (on your surface), dead, offline, line}, nearest first (transfer {to_player: NAME} hands items to one within reach)'},
     restore = {player='the human player\'s name', minutes='optional 1..240 (default 30)',
       returns='cancelled (their pending deconstruction and upgrade orders), ghosts (placed where they removed something in the window), already (still there or a ghost already), blocked (something else stands there now), items. Ghosts are orders: robots or agents build them with real items'},
   }
-  function M.handlers.players(_, a)
+  function M.handlers.players(reader, a)
     local from = game.tick - minutes_arg(a.minutes, 10) * MINUTE
     local out = {}
     if a.player ~= nil then out[1] = summary(find(a.player), from)
     else for _, p in ipairs(humans()) do out[#out+1] = summary(p, from) end end
     local votes = api.votes_on and api.votes_on('player') or {}
-    return {players=out, votes=#votes > 0 and votes or nil, note=#out == 0 and 'no human players have joined this map' or nil}
+    -- the team's characters as the map shows them (d17 batch16 B2): where.lua list
+    local team = a.player == nil and api.teammates and reader and api.teammates(reader) or nil
+    return {players=out, votes=#votes > 0 and votes or nil, teammates=team and #team > 0 and team or nil,
+      note=#out == 0 and 'no human players have joined this map' .. (team and #team > 0 and '; teammates lists the agents\' characters' or '') or nil}
   end
   function M.handlers.restore(p, a)
     local target = find(a.player)

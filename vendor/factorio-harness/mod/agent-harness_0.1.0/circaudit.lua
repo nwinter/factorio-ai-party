@@ -45,7 +45,88 @@ return function(api)
     return set, n
   end
   local MODE
+  -- Networks across entities (d17 batch16 B3, Sol: deficit wiring took dozens of inspect calls and comparing networks
+  -- by hand): for the entities in an area or at positions, each red and green network one of them is on, by id: the
+  -- signals on it now (the game's counts, largest first, up to SIGNALS), and which of those entities are on it, each
+  -- with its circuit settings in a few words. On your surface, or a platform's with platform. Read only; bounded:
+  -- an area up to 128x128, 64 positions, 256 entities.
+  local SIGNALS, ENTITIES, LISTED = 24, 256, 16
+  local function box_of(v)
+    local lt, rb = v.left_top or v[1], v.right_bottom or v[2]
+    local function xy(q) return type(q) == 'table' and tonumber(q.x or q[1]), type(q) == 'table' and tonumber(q.y or q[2]) end
+    local x0, y0 = xy(lt); local x1, y1 = xy(rb)
+    assert(x0 and y0 and x1 and y1 and x1 > x0 and y1 > y0, 'area must be {left_top: {x, y}, right_bottom: {x, y}}')
+    assert(x1 - x0 <= 128 and y1 - y0 <= 128, 'area is at most 128x128')
+    return {{x0, y0}, {x1, y1}}
+  end
+  function M.networks_read(p, a)
+    local s, force, where = p.surface, p.force, 'your surface'
+    if a.platform ~= nil then
+      local pl = api.platform(p, a.platform)
+      s, force, where = pl.surface, pl.force, 'platform ' .. pl.name
+      assert(s, 'platform ' .. pl.name .. ' has no surface yet')
+    end
+    local list, seen = {}, {}
+    local function add(e) if e.valid and not seen[key(e)] and #list < ENTITIES then seen[key(e)] = true; list[#list+1] = e end end
+    if a.area ~= nil then
+      for _, e in ipairs(s.find_entities_filtered{area=box_of(a.area), force=force, limit=ENTITIES * 4}) do
+        if #networks(e) > 0 then add(e) end
+      end
+    end
+    if a.positions ~= nil then
+      assert(type(a.positions) == 'table' and #a.positions >= 1 and #a.positions <= 64, 'positions is a list of 1..64 {x, y}')
+      for i, q in ipairs(a.positions) do
+        local x, y = type(q) == 'table' and tonumber(q.x or q[1]), type(q) == 'table' and tonumber(q.y or q[2])
+        assert(x and y, 'positions[' .. i .. '] needs x and y')
+        for _, e in ipairs(s.find_entities_filtered{position={x, y}, force=force, limit=4}) do
+          if e.type ~= 'character' and #networks(e) > 0 then add(e) end
+        end
+      end
+    end
+    local nets, order = {}, {}
+    for _, e in ipairs(list) do
+      for _, n in ipairs(networks(e)) do
+        local k = n.color .. n.id
+        local row = nets[k]
+        if not row then
+          row = {id=n.id, color=n.color, members={}, signals={}}
+          local sigs = try(function() return n.net.signals end) or {}
+          table.sort(sigs, function(x, y) return math.abs(x.count) > math.abs(y.count) end)
+          for i, sg in ipairs(sigs) do
+            if i <= SIGNALS and sg.signal then row.signals[#row.signals+1] = {name=sg.signal.name, quality=sg.signal.quality, count=sg.count} end
+          end
+          row.signals_total = #sigs
+          row.connected = try(function() return n.net.connected_circuit_count end)
+          nets[k] = row; order[#order+1] = row
+        end
+        row.members[#row.members+1] = e
+      end
+    end
+    table.sort(order, function(x, y) if x.id ~= y.id then return x.id < y.id end return x.color < y.color end)
+    local lines, rows = {}, {}
+    for _, r in ipairs(order) do
+      local sig = {}
+      for i, sg in ipairs(r.signals) do sig[i] = sg.name .. (sg.quality and sg.quality ~= 'normal' and '@' .. sg.quality or '') .. ' ' .. sg.count end
+      local on = {}
+      for i, e in ipairs(r.members) do
+        if i <= LISTED then
+          local set = api.circuit_short and try(function() return api.circuit_short(e) end)
+          on[#on+1] = e.name .. ' ' .. at(e.position) .. (set and set ~= 'wired, default settings' and ' (' .. set .. ')' or '')
+        end
+      end
+      local members = {}
+      for _, e in ipairs(r.members) do members[#members+1] = {name=e.name, position={x=e.position.x, y=e.position.y}, unit_number=e.unit_number} end
+      rows[#rows+1] = {id=r.id, color=r.color, signals=r.signals, signals_total=r.signals_total, entities=members, connected_entities=r.connected}
+      lines[#lines+1] = string.format('%s #%d: %s%s; of these, %d on it%s: %s%s', r.color, r.id,
+        #sig > 0 and 'signals ' .. table.concat(sig, ', ') or 'no signal now', r.signals_total > #sig and string.format(' (+%d more)', r.signals_total - #sig) or '',
+        #r.members, r.connected and string.format(' (%d connected in all)', r.connected) or '', table.concat(on, '; '),
+        #r.members > LISTED and string.format('; +%d more', #r.members - LISTED) or '')
+    end
+    if #order == 0 then lines[1] = 'no entity there is on a red or green network' end
+    return {where=where, entities=#list, networks=rows, lines=lines}
+  end
   function M.read(p, a)
+    if a.area ~= nil or a.positions ~= nil then return M.networks_read(p, a) end
     local pl = api.platform(p, a.platform)
     local s = pl.surface
     assert(s, 'platform ' .. pl.name .. ' has no surface yet')
@@ -114,7 +195,7 @@ return function(api)
     end
     return {platform=pl.name, lines=lines, belt_readers=#readers, double_counts=#doubles > 0 and doubles or nil, collectors=#cols > 0 and cols or nil}
   end
-  M.schema = {circuit_audit = {platform='platform name',
-    returns='lines: belts reading their entire belt onto a circuit network, and each pair on one network whose whole belts share tiles (those items reach the network twice); each asteroid collector whose filters the circuit sets: the filter it holds now and the chunk signals on its networks with their values (only a positive one sets a filter). double_counts, collectors [{position, filters, chunk_signals}]. Read only'}}
+  M.schema = {circuit_audit = {platform='platform name (with area or positions: optional, else your surface)',area='optional {left_top, right_bottom} up to 128x128: read the networks of the entities in it',positions='optional 1..64 {x, y}: read the networks of the entities there',
+    returns='lines: belts reading their entire belt onto a circuit network, and each pair on one network whose whole belts share tiles (those items reach the network twice); each asteroid collector whose filters the circuit sets: the filter it holds now and the chunk signals on its networks with their values (only a positive one sets a filter). double_counts, collectors [{position, filters, chunk_signals}]. With area or positions instead: each red and green network one of those entities is on, by id: networks [{id, color, signals (largest first, 24; signals_total), entities (those of the set on it), connected_entities (all on it)}], and a line each: its signals now and the entities of the set on it with their circuit settings. Read only'}}
   return M
 end

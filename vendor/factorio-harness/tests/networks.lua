@@ -196,7 +196,7 @@ eq(#g,2); eq(g[2].kind,'no_power.network'); eq(g[2].n,1); eq(g[1].kind,'boiler_f
 eq(g[1].now_text,'2 boilers under 20 min of their own fuel at this draw, 1 under 10, 1 under 5, lowest 2 min')
 eq(g[1].line,'2 boilers under 20 min of their own fuel at this draw, 1 under 10, 1 under 5, not refilled, near (35,19) (electric #7: 11 boilers, '
   ..'1 with fuel at their feeders); boiler (66,16) 2 min: no inserter feeds it; boiler (4,22) 12 min: no inserter feeds it; '
-  ..'fuel within 64 tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50; belts: coal 16 on 2 tiles, nearest (31,13), (31,12); least-stocked feed chest wooden-chest (41,13): 400 coal (400 fuel items)')
+  ..'fuel within 64 tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50; belts: coal 16 on 2 tiles, nearest (31,13), (31,12); least-stocked feed chest wooden-chest (41,13): 400 coal (400 fuel items); minutes sampled 0 s before this alert (./fh call boilers reads each now)')
 -- The chest empties: lb1 is low too, its feeder and the empty chest named.
 chest_coal=0; run(5); storage.networks.views={}
 g=N.alert_groups(force)
@@ -550,19 +550,41 @@ lb2.fluidbox[1] = {name='water', amount=200}; lb2.fluidbox.get_capacity = functi
 lb2.fluidbox[2] = {name='steam', amount=12.4}
 lb1.burner.inventory.get_contents = function() return {{name='coal', quality='normal', count=lb1.burner.inventory[1].count}} end
 local you = {force=force, surface=nauvis}
+lb1.prototype.max_energy_usage = 30000  -- 1.8 MW
 local bo = N.boilers(you, {})
 eq(bo.surface, 'nauvis'); eq(bo.boilers, 12); eq(bo.not_working, 4); eq(#bo.networks, 2)
+-- d17 batch16 B1 (Haiku ~10x: whether to walk out and refuel): a line a boiler, not working first then the fewest
+-- minutes of its own fuel (20 coal at 1.8 MW: 0.7 min), its feed with the fuel there; read live with the tick
+eq(bo.lines[1], 'boiler (60,16) no fuel: coal*20 (burning coal), 0.7 min of its own fuel at full burn; feed: wooden-chest (41,13) 400 coal, rate not measured yet')
+assert(bo.read:find('^live %(tick %d+%)'), bo.read)
+eq(#bo.lines, 12, "every boiler")
+local find0 = nauvis.find_entities_filtered
+nauvis.find_entities_filtered = function(f)
+  local out = find0(f)
+  if f.area and f.type == 'boiler' then
+    local keep = {}
+    for _, e in ipairs(out) do
+      if e.position.x >= f.area[1][1] and e.position.x <= f.area[2][1] and e.position.y >= f.area[1][2] and e.position.y <= f.area[2][2] then keep[#keep+1] = e end
+    end
+    return keep
+  end
+  return out
+end
+local ba = N.boilers(you, {area={left_top={x=55,y=10},right_bottom={x=70,y=20}}})
+nauvis.find_entities_filtered = find0
+eq(ba.boilers, 2); eq(ba.area, '(55,10)-(70,20)')
+assert(not pcall(N.boilers, you, {area={left_top={x=5,y=5},right_bottom={x=1,y=1}}}))
 local g7, gnone = bo.networks[1], bo.networks[2]
 eq(g7.network, 7); eq(g7.total, 11); eq(g7.not_working, 3)
 eq(g7.line, 'electric #7: 11 boilers: 1 output full, 2 no fuel, 8 working')
--- the not-working first (by position), then up to 4 working; the rest counted
+-- the not-working first (by position), then the working ones
 eq(g7.boilers[1].position.x, 4); eq(g7.boilers[1].state, 'output full'); eq(g7.boilers[1].status, 'full_output'); eq(g7.boilers[1].working, false)
 eq(g7.boilers[1].feeder, 'no inserter feeds it'); eq(g7.boilers[1].feeder_has_fuel, false); eq(g7.boilers[1].burning, 'coal')
 local b1, b2 = g7.boilers[2], g7.boilers[3]
 eq(b1.position.x, 60); eq(b1.state, 'no fuel'); eq(b1.fuel, 'coal*20')
 eq(b1.feeder, 'burner-inserter (60,14) from wooden-chest (41,13) holding 400 coal'); eq(b1.feeder_has_fuel, true)
 eq(b2.position.x, 66); eq(b2.state, 'no fuel'); eq(b2.water, 'water 200/200'); eq(b2.steam, 'steam 12/200')
-eq(g7.boilers[4].state, 'working'); eq(g7.boilers[4].position.x, 6); eq(#g7.boilers, 7); eq(g7.more, 4)
+eq(g7.boilers[4].state, 'working'); eq(g7.boilers[4].position.x, 6); eq(#g7.boilers, 11); eq(g7.more, nil)  -- every boiler (d17 batch16 B1)
 eq(gnone.network, nil); eq(gnone.line, 'no electric network found: 1 boiler: 1 no water'); eq(gnone.boilers[1].state, 'no water')
 eq(gnone.boilers[1].water, 'empty')
 -- all working: networks by size; another surface by name

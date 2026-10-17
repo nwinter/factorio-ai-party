@@ -106,3 +106,38 @@ do
   prototypes=nil
 end
 print('d17_batch16 A3 floor under a span with a crossing underground: ok')
+
+-- B3 (Sol: deficit wiring took dozens of inspect calls and comparing networks by hand): circuit_audit with area or
+-- positions reads every red and green network those entities are on: its signals now and which of them are on it.
+do
+  defines={wire_connector_id={circuit_red=1,circuit_green=2}}
+  local red={network_id=544,connected_circuit_count=9,signals={{signal={name='iron-plate'},count=480},{signal={name='firearm-magazine'},count=901},{signal={name='rocket'},count=-3}}}
+  local green={network_id=12,signals={}}
+  local function ent(name,x,y,nets) return {valid=true,name=name,type=name,position={x=x,y=y},unit_number=math.floor(x*100+y),
+    get_circuit_network=function(w) return nets[w] end} end
+  local hub=ent('space-platform-hub',0,0,{[1]=red})
+  local i1=ent('fast-inserter',-3.5,4.5,{[1]=red})
+  local i2=ent('fast-inserter',-9.5,5.5,{[1]=red,[2]=green})
+  local belt=ent('transport-belt',2.5,2.5,{})
+  local all={hub,i1,i2,belt}
+  local s={find_entities_filtered=function(f)
+    if f.area then return all end
+    local out={}
+    for _,e in ipairs(all) do if e.position.x==f.position[1] and e.position.y==f.position[2] then out[#out+1]=e end end
+    return out
+  end}
+  local C=dofile('mod/agent-harness_0.1.0/circaudit.lua'){platform=function(_,name) return {name=name,surface=s,force='player'} end,
+    circuit_short=function(e) return e==i1 and 'enabled when iron-plate < 1000 (true now)' or 'wired, default settings' end}
+  local r=C.read({surface=s,force='player'},{platform='Meridian',area={left_top={x=-20,y=-5},right_bottom={x=5,y=10}}})
+  eq(r.where,'platform Meridian'); eq(r.entities,3,'the belt is on no network')
+  eq(#r.networks,2); eq(r.networks[1].id,12); eq(r.networks[2].id,544)
+  eq(r.networks[2].signals[1].name,'firearm-magazine','largest first')
+  has(r.lines[2],'red #544: signals firearm-magazine 901, iron-plate 480, rocket -3; of these, 3 on it (9 connected in all): '
+    ..'space-platform-hub (0,0); fast-inserter (-3.5,4.5) (enabled when iron-plate < 1000 (true now)); fast-inserter (-9.5,5.5)')
+  has(r.lines[1],'green #12: no signal now; of these, 1 on it: fast-inserter (-9.5,5.5)')
+  -- positions: only those entities
+  r=C.read({surface=s,force='player'},{positions={{x=-3.5,y=4.5}}})
+  eq(r.where,'your surface'); eq(r.entities,1); eq(#r.networks,1)
+  assert(not pcall(C.read,{surface=s,force='player'},{area={left_top={x=0,y=0},right_bottom={x=200,y=10}}}),'at most 128x128')
+end
+print('d17_batch16 B3 circuit networks across entities: ok')
