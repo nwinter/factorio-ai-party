@@ -6660,6 +6660,12 @@ fh watch    # deploy on every change
   (177,44), 77 tiles from gun-turret (104,20), heading west for (98,17), 7 tiles from it`; up to 4, nearest first.
   Copy: a rearm tour by Opus over 6 turrets ended topped_up with none (no tracked group headed there). A group made by
   script does not raise the gathering event, so the line was checked with fakes (tests/d17_batch18.lua).
+- C4 (Gemini): a moving train read by position failed as it moved. `train {train_id}` reads one of ours by its id
+  (game.train_manager.get_train_by_id; the game's trains list opens any of ours), with schedule, state, speed,
+  heading_to and the rest as a read by position, and takes the same settings. Every train read now gives `id` and
+  `front` {name, position, surface}; train {stops} already named ids (`train 15 heading there`). Not ours or no such
+  id: refused, naming train {stops}. Copy: train 15 on Fulgora read from Gemini twice, 2 s apart: front (-15.13,191)
+  at 4 km/h, then (-30.45,191) at 46 km/h, 147 tiles left to Fulgora Scrap North. tests/d17_batch18.lua.
 
 ## d17 batch20 (operator 15:25: the agents' 15:20 poll)
 - A1 (Haiku): `craft` refused 20 firearm-magazine over 650 in four requester chests (150 within 25 tiles), and a gun

@@ -13,12 +13,13 @@ return function(api)
     train = {stops='true: every train stop of ours on the surface (Gemini, d15 21:40: no call listed them), by name: position, rail beside it, limit, trains_count and the trains heading there or stopped at it (their front carriage and state); at most 200; surface= for another one',
       surface='a surface name (default yours): with stops, its stops; with position, the train or stop there, by remote view (ours, in a chunk our force sees now)',
       position='{x,y} of a train stop, or of a locomotive or wagon of the train (in sight, or by remote view in a visible chunk)',
+      train_id='a train of ours by its id instead of position, wherever it is and moving or not (train {stops: true} and every train read give id): as the game\'s trains list opens it',
       station='train stop: its station name (what schedules name)', limit='train stop: train limit 0..1000, or false to clear it',
       schedule='train: array of 0..32 {station, wait=[{type=time|inactivity|full|empty|item_count|fluid_count|circuit|passenger_present|..., ticks? (time, inactivity), compare? and|or, condition? {signal, comparator, value}}]}; [] clears',
       current='train: 1-based schedule entry to head for (default 1)',
       automatic='train: true runs the schedule, false is manual mode',
       path_to='train: a stop name: whether the rails lead there from the train as it drives, and where not (rail_break); a train in no_path gets it for the stop it heads for unasked',
-      returns='stop: name, limit, trains_count, rail (the rail it is beside, or none); train: schedule (one line per stop), current, automatic, state (on_the_path, wait_station, wait_signal, arrive_signal, arrive_station, no_path, destination_full, no_schedule, manual_control, manual_control_stop), why (what it waits for: the stop and its wait conditions, the signal ahead and its state, the stops of the destination name and their limits and trains, or that no stop has that name), at_stop, heading_to {stop, position, tiles_left}, speed_kmh, carriages, cargo, fluids, fuel (per locomotive); rail_break {to, line, train_side, stop_side, gap_tiles, ghosts, signals} (no_path, or path_to): the rails followed from the train (its front, and its back with a locomotive facing back) through every connection: whole (and when the engine still finds no path, the signals on that way), reaching the stop only facing the other way, or broken: the end of the rails from the train and of those into the stop nearest each other, the tiles between and the rail ghosts there'},
+      returns='stop: name, limit, trains_count, rail (the rail it is beside, or none); train: id, front {name, position, surface}, schedule (one line per stop), current, automatic, state (on_the_path, wait_station, wait_signal, arrive_signal, arrive_station, no_path, destination_full, no_schedule, manual_control, manual_control_stop), why (what it waits for: the stop and its wait conditions, the signal ahead and its state, the stops of the destination name and their limits and trains, or that no stop has that name), at_stop, heading_to {stop, position, tiles_left}, speed_kmh, carriages, cargo, fluids, fuel (per locomotive); rail_break {to, line, train_side, stop_side, gap_tiles, ghosts, signals} (no_path, or path_to): the rails followed from the train (its front, and its back with a locomotive facing back) through every connection: whole (and when the engine still finds no path, the signals on that way), reaching the stop only facing the other way, or broken: the end of the rails from the train and of those into the stop nearest each other, the tiles between and the rail ghosts there'},
   }
   local function at(pos) return string.format('(%g,%g)', math.floor(pos.x * 10 + 0.5) / 10, math.floor(pos.y * 10 + 0.5) / 10) end
   -- A schedule entry's wait conditions as the GUI lists them.
@@ -82,7 +83,8 @@ return function(api)
   -- What a train is doing and why it waits, as the locomotive GUI and the
   -- map show it.
   function M.train_view(train)
-    local out = {automatic=not train.manual_mode}
+    local out = {id=train.id, automatic=not train.manual_mode}
+    pcall(function() local f = train.front_stock; if f and f.valid then out.front = {name=f.name, position=f.position, surface=f.surface.name} end end)
     local sch
     pcall(function()
       sch = train.schedule
@@ -261,11 +263,22 @@ return function(api)
       return nil, e
     end
     local e, err
-    if #TRAIN_NAMES > 0 then e, err = lookup(TRAIN_NAMES) end
-    if not e then
-      local first = err
-      e, err = lookup(nil)
-      if not e then error(tostring(first or err):gsub('^[^:]*:%d+: ', ''), 0) end
+    if a.train_id ~= nil then
+      -- train_id (d17 batch18 C4, Gemini: a moving train's position is gone by the time the call reads it): the train
+      -- by its id, as the game's trains list opens any of ours; the ids are in train {stops} and in each train read.
+      assert(a.position == nil, 'give train_id or position, not both')
+      local id = api.integer(a.train_id, nil, 1, 2^31, 'train_id')
+      local t = game.train_manager and game.train_manager.get_train_by_id(id)
+      local front = t and t.valid and (t.front_stock or t.carriages[1])
+      assert(front and front.valid and front.force == p.force, string.format('no train of ours has id %d (train {stops: true} names the trains at or heading for each stop)', id))
+      e = front
+    else
+      if #TRAIN_NAMES > 0 then e, err = lookup(TRAIN_NAMES) end
+      if not e then
+        local first = err
+        e, err = lookup(nil)
+        if not e then error(tostring(first or err):gsub('^[^:]*:%d+: ', ''), 0) end
+      end
     end
     api.friendly(p, e)
     if e.type == 'train-stop' then

@@ -191,4 +191,20 @@ do
   eq(AV.groups_toward({name='nauvis'},{{name='stone-furnace',position={x=-500,y=0}}}),nil)
   game.forces=nil
 end
+-- C4 (Gemini: a moving train read by position failed as it moved): train {train_id} reads one of ours by its id.
+do
+  local force={name='player'}
+  local loco={valid=true,name='locomotive',type='locomotive',force=force,position={x=-30.45,y=191},surface={name='fulgora'}}
+  local train={valid=true,id=15,manual_mode=false,state=0,speed=0.2,front_stock=loco,carriages={loco},schedule=nil}
+  loco.train=train
+  local enemy={valid=true,id=16,front_stock={valid=true,force={name='enemy'}},carriages={}}
+  game={tick=0,train_manager={get_train_by_id=function(id) return ({[15]=train,[16]=enemy})[id] end}}
+  defines.train_state={on_the_path=0}
+  local T=dofile('mod/agent-harness_0.1.0/trains.lua'){integer=function(v) return v end,friendly=function() end}
+  local p={force=force,surface={name='nauvis'}}
+  local v=T.handlers.train(p,{train_id=15})
+  eq(v.id,15); eq(v.front.surface,'fulgora'); eq(v.front.position.x,-30.45)
+  local ok,err=pcall(T.handlers.train,p,{train_id=16}); assert(not ok); has(tostring(err),'no train of ours has id 16')
+  ok,err=pcall(T.handlers.train,p,{train_id=15,position={x=0,y=0}}); assert(not ok); has(tostring(err),'give train_id or position, not both')
+end
 print('d17 batch18 ok')

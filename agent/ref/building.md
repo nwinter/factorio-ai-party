@@ -117,12 +117,13 @@
   Example: `./fh call rail_route --args '{"from":{"x":0,"y":0},"to":{"x":0,"y":-200}}'`
 - `train_stop {position, name}`: puts a stop on the side of a straight rail that serves trains heading one way.
   Example: `./fh call train_stop --args '{"position":{"x":40,"y":-20},"name":"iron-pickup"}'`
-- `train {position, station?, limit?, schedule?, automatic?, path_to?}` or `{stops: true, surface?}`: on a stop, its
+- `train {position | train_id, station?, limit?, schedule?, automatic?, path_to?}` or `{stops: true, surface?}`: on a stop, its
   `station` and `limit`; on a locomotive, its `schedule` and `automatic`; `train {position}` reads a train's state and
   why it waits. A train in `no_path` reads `rail_break` (`path_to: "STOP"` for any stop): the rails followed from the
   train, whole, reaching the stop only facing away, or broken: where the rails from each side end, the gap, rail
   ghosts. `stops: true` lists every train stop of ours on a surface: name, position, rail, limit and the trains
-  heading there.
+  heading there (`train 15 heading there`). `train_id: 15` reads that train wherever it is, moving or not; a train
+  read gives its `id` and `front` (name, position, surface).
   Example: `./fh call train --args '{"position":{"x":40,"y":-30},"path_to":"iron-pickup"}'`
 - `clear_cliffs {positions}`: throws cliff explosives you hold at those cliffs, walking into their 10-tile range
   (`use_item {"item":"cliff-explosives","position":...}` too); `last.destroyed` names the cliffs gone, `last.left` the
