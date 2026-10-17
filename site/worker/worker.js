@@ -806,7 +806,10 @@ export class Live {
     if (!p) return json({ error: "no such poll" }, 404);
     const options = JSON.parse(p.options);
     const votes = this.sql.exec(`SELECT id, t, voter, name, option, comment, current, hidden, agent FROM votes WHERE poll = ?
-      ORDER BY id`, id).toArray().map((v) => ({ ...v, agent: !!v.agent, choice: options[v.option] ?? null }));
+      ORDER BY id`, id).toArray().map((v) => ({ ...v, agent: !!v.agent, choice: options[v.option] ?? null,
+        // operator only (token): the chat names this connection's hash posted under, to spot one person voting as many
+        chat_names: v.agent ? [] : this.sql.exec(`SELECT name, COUNT(*) AS n, MIN(t) AS first, MAX(t) AS last FROM chat
+          WHERE who = ? GROUP BY name ORDER BY n DESC`, v.voter).toArray() }));
     return json({ schema: SCHEMA, poll: this.pollView(p, Date.now() / 1000), votes });
   }
 
