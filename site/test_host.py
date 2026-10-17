@@ -5,7 +5,8 @@ disallow similar nicks"): python3 site/test_host.py
 - worker.js under node:sqlite (needs node 22): X-Host-Token matching HOST_TOKEN posts as NickWinter with host: true
   whatever the name box says, past the per-client limits (a cap of 30 a minute); a wrong token, or any token while no
   HOST_TOKEN is set, is 403 and nothing is stored; without the token Nick's name, look-alikes, "Operator" and the agents
-  are "that name is reserved"; GET /v1/chat carries host: true on host lines only; the CORS preflight allows the header.
+  are "that name is reserved"; GET /v1/chat carries host: true on host lines only; the CORS preflight allows the header;
+  poll votes and ideas refuse reserved names too, and the host link votes and suggests as NickWinter (a wrong one 403).
 - live.js in the chat test's stub DOM: ?host=TOKEN is kept in localStorage and taken out of the address bar, sent as
   X-Host-Token on chat posts and never in a GET URL, "Signed in as host" shows with Forget, which drops it; host
   lines (site and YouTube) carry a HOST badge; a refused link says so.
@@ -63,6 +64,32 @@ const TOKEN = process.argv[3];
     { ALLOWED_ORIGINS: 'http://127.0.0.1:8765' });
   out.preflight = pre.headers.get('Access-Control-Allow-Headers');
   out.rows = db.prepare('SELECT name, host FROM chat ORDER BY seq').all();
+  // polls (main 9ba5c637): votes and ideas take the same names and the host link (two minutes on: the cap test above
+  // used the host's 30 posts of this minute, which chat, votes and ideas share)
+  const realNow = Date.now;
+  const later = realNow() + 120000;
+  Date.now = () => later;
+  const pcall = async (path, body, opts = {}) => {
+    const headers = { 'x-client-ip': opts.ip || '1.2.3.4' };
+    if (opts.token != null) headers['X-Host-Token'] = opts.token;
+    if (opts.auth) headers.Authorization = 'Bearer ' + 'x'.repeat(20);
+    const r = await live.fetch(new Request('https://api.test' + path, { method: 'POST', body: JSON.stringify(body), headers }));
+    return { status: r.status, body: await r.json() };
+  };
+  const poll = await pcall('/v1/polls', { question: 'Which planet next?', options: ['Vulcanus', 'Gleba'], hours: 2 }, { auth: true });
+  const pid = poll.body.poll.id;
+  out.vote_reserved = await pcall(`/v1/polls/${pid}/vote`, { option: 0, name: 'N1ck Winter', comment: 'me' }, { ip: '5.5.5.1' });
+  out.vote_reserved2 = await pcall(`/v1/polls/${pid}/vote`, { option: 0, name: 'S0l' }, { ip: '5.5.5.2' });
+  out.vote_host = await pcall(`/v1/polls/${pid}/vote`, { option: 1, name: 'anyone', comment: 'Gleba please' }, { token: TOKEN, ip: '5.5.5.3' });
+  out.vote_wrong = await pcall(`/v1/polls/${pid}/vote`, { option: 1, name: 'NickWinter' }, { token: 'nope'.repeat(6), ip: '5.5.5.4' });
+  out.vote_viewer = await pcall(`/v1/polls/${pid}/vote`, { option: 0, name: 'Foobator', comment: 'lava' }, { ip: '5.5.5.5' });
+  out.idea_reserved = await pcall('/v1/polls/suggest', { name: 'Operat0r', question: 'More trains?', options: ['yes', 'no'] }, { ip: '5.5.5.6' });
+  out.idea_host = await pcall('/v1/polls/suggest', { name: 'x', question: 'More trains?', options: ['yes', 'no'] }, { token: TOKEN, ip: '5.5.5.7' });
+  out.idea_wrong = await pcall('/v1/polls/suggest', { name: 'x', question: 'Trains?', options: ['yes', 'no'] }, { token: 'n'.repeat(24), ip: '5.5.5.8' });
+  out.ideas = db.prepare('SELECT name FROM poll_ideas ORDER BY id').all();
+  const pv = await live.fetch(new Request('https://api.test/v1/polls'));
+  out.polls = await pv.json();
+  Date.now = realNow;
   process.stdout.write(JSON.stringify(out));
 })().catch((e) => { console.error(e); process.exit(1); });
 """
@@ -96,6 +123,19 @@ def worker():
     assert [x.get("host") for x in msgs[1:4]] == [True, True, True] and all("host" not in x for x in msgs if x["name"] != "NickWinter")
     assert "X-Host-Token" in o["preflight"], o["preflight"]
     assert ("NickWinter", 0) in [(r["name"], r["host"]) for r in o["rows"]] and len([r for r in o["rows"] if r["host"]]) == 30
+    # polls: a vote or idea under a reserved name is refused; the host link votes as the host; a wrong token is 403
+    for k in ("vote_reserved", "vote_reserved2", "idea_reserved"):
+        assert o[k]["status"] == 400 and o[k]["body"]["error"] == "that name is reserved", (k, o[k])
+    v = o["vote_host"]
+    assert v["status"] == 200 and v["body"]["vote"]["name"] == "NickWinter" and v["body"]["vote"]["host"] is True, v
+    for k in ("vote_wrong", "idea_wrong"):
+        assert o[k]["status"] == 403 and o[k]["body"]["error"] == "host link not valid", (k, o[k])
+    assert o["vote_viewer"]["status"] == 200 and "host" not in o["vote_viewer"]["body"]["vote"]
+    assert o["idea_host"]["status"] == 200 and [r["name"] for r in o["ideas"]] == ["NickWinter"], (o["idea_host"], o["ideas"])
+    p = next(x for x in (o["polls"].get("open") or o["polls"].get("polls") or []) if x["question"] == "Which planet next?")
+    assert p["counts"] == [1, 1], p["counts"]
+    com = {c["name"]: c for c in p["comments"]}
+    assert com["NickWinter"].get("host") is True and "host" not in com["Foobator"], p["comments"]
 
 
 def page():

@@ -1565,10 +1565,40 @@
     renderCams(s);
     renderSegment(s);
     renderLoadouts(s);
+    renderPollStrip(s);
     rotateWidgets();
     watchVoice();
     watchLoadoutClear();
     watchAlerts();
+  }
+
+  // The site's poll under the chat (serve.py pollstrip.py decides when: ~30 s every 10 min while open, the result for
+  // 60 s when it closes): the question, the top counts (viewers and agents apart), where to vote. Text only.
+  let pollKey = "";
+  function renderPollStrip(s) {
+    const box = $("poll-strip");
+    if (!box) return;
+    const p = s.poll && s.poll.strip;
+    if (!p) { box.hidden = true; pollKey = ""; return; }
+    const key = JSON.stringify(p);
+    box.hidden = false;
+    if (key === pollKey) return;
+    pollKey = key;
+    box.className = "poll-strip " + (p.kind === "result" ? "ps-result" : "ps-open");
+    box.replaceChildren();
+    const head = el("div", "ps-head");
+    head.append(el("span", "ps-tag", p.kind === "result" ? "POLL RESULT" : "POLL"), el("span", "ps-q", p.question || ""));
+    const list = el("div", "ps-rows");
+    for (const r of p.rows || []) {
+      const row = el("div", "ps-row");
+      row.append(el("span", "ps-label", r.label), el("span", "ps-n", `${r.n}`),
+        el("span", "ps-split", `viewers ${r.viewers} · agents ${r.agents}`));
+      list.append(row);
+    }
+    const foot = el("div", "ps-foot", p.kind === "result" ? `${p.total} votes · viewers ${p.viewer_total} · agents ${p.agent_total}`
+      : `Vote at ${p.url}`);
+    box.append(head, list, foot);
+    if (p.kind === "result") foot.append(el("span", "ps-url", ` · ${p.url}/polls`));
   }
 
   // Widgets under the cards (science, team board, Space) take turns in one slot instead of stacking, so chat keeps

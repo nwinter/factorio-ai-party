@@ -571,6 +571,10 @@ def main():
                          roster=roster, inbox=inbox, deletions=deletions)
     if feed:
         feed.start()
+    # the site's polls (pollstrip.py; RUN/polls.json from site/polls_relay.py): the overlay's strip, the hosts' fact
+    import pollstrip
+    polls = pollstrip.PollStrip(os.path.join(os.path.dirname(os.path.abspath(a.run)), "polls.json")) \
+        if a.run and not a.mock else None
     analyst = AnalystBoard()
     # the voice clips; the director reads which agent line is playing (say look= cues). The page's playback reports go
     # to audio-played.jsonl beside stream.json (the clips that ended early, and why)
@@ -676,6 +680,7 @@ def main():
                     feed.relay.set_roster([(ag["name"], ag.get("display_name")) for ag in snap["agents"]
                                            if ag.get("activity") != "offline"] or roster)
                 snap["analyst"] = analyst.public(now)
+                snap["poll"] = polls.step(now) if polls else None
                 if highlights:
                     highlights.step(snap, now)
                     snap["highlights"] = highlights.public()

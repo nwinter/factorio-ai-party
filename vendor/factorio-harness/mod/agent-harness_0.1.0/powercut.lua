@@ -303,7 +303,36 @@ return function(api)
         c.orphan_total == 1 and 'had' or 'had', where and ' ' .. where or '', counted(c.orphans, 5))
     end
     local now = joined(c) and 'joined again since (rebuilt or wired)' or (c.ghost and 'a ghost of the pole stands there' or 'no ghost of the pole there')
-    return head .. ': ' .. table.concat(parts, '; ') .. '; ' .. now
+    local okr, rejoin = pcall(M.rejoin_text, c)
+    return head .. ': ' .. table.concat(parts, '; ') .. '; ' .. now .. (okr and rejoin and '; ' .. rejoin or '')
+  end
+  -- The missing link (B2, Opus 12:20: the NW coal cut at 85h40; Haiku: networks renumber on a split, 995 then 2): each
+  -- lost pole, read now (rebuilt, a ghost there, or nothing), and the live poles at the gap's ends with the network
+  -- each is on now, as the map's power view shows them.
+  function M.rejoin_text(c)
+    local surface = game.get_surface(c.surface)
+    if not surface then return nil end
+    local lost = {}
+    for _, q in ipairs(c.poles) do
+      local built = try(function() return surface.find_entities_filtered{type='electric-pole', position=q.position, radius=0.5} end) or {}
+      local state = 'nothing there'
+      local pole
+      for _, b in ipairs(built) do if b.valid and b.type == 'electric-pole' then pole = b end end
+      if pole then state = pole.name .. ' built there'
+      else
+        for _, g in ipairs(try(function() return surface.find_entities_filtered{name='entity-ghost', position=q.position, radius=0.5} end) or {}) do
+          if try(function() return g.ghost_type end) == 'electric-pole' or try(function() return g.ghost_name end) == q.name then state = 'a ghost of ' .. g.ghost_name .. ' there' end
+        end
+      end
+      lost[#lost+1] = string.format('%s %s (%s)', q.name, at(q.position), state)
+    end
+    local ends = {}
+    for i, n in ipairs(c.ends or {}) do
+      if i > 4 then ends[#ends+1] = string.format('+%d more', #c.ends - 4); break end
+      if n.valid then ends[#ends+1] = string.format('%s %s on #%s now', n.name, at(n.position), tostring(net(n) or 'none')) end
+    end
+    return string.format('the missing link: %s%s', table.concat(lost, ', '),
+      #ends > 0 and ', between ' .. table.concat(ends, ' and ') or '')
   end
   -- team.alerts: each cut once to every agent; an agent's first reply looks back FIRST ticks.
   function M.lines(p, h)

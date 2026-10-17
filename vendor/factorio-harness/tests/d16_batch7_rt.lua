@@ -136,3 +136,14 @@ do
   astra('stop',{})
 end
 print('d16_batch7_rt A5 the replacing call says what it ended: ok')
+
+-- B1 (Muse 12:20: empty ground read the same whether never charted or charted and empty now; Gemini 14:49: area boxes
+-- went wrong): an inspect of empty ground says what the map says of its chunk; inspect {position, radius} reads the
+-- square round it as area does.
+do
+  fails(function() astra('inspect',{position={x=6.5,y=6.5}}) end,'(chunk (0,0) is in sight now (tick ')
+  -- nothing of ours there: area's refusal names the square read
+  fails(function() astra('inspect',{position={x=6.5,y=6.5},radius=4}) end,'no chest or machine of ours with its centre in (2.5,2.5)-(10.5,10.5)')
+  fails(function() astra('inspect',{radius=4}) end,'radius goes with position')
+end
+print('d16_batch7_rt B1 empty ground and inspect radius: ok')

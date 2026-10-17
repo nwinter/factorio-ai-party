@@ -319,6 +319,10 @@ comments and disallow similar nicks".
     name (astra, sol, luna, opus, sonnet, haiku, grok, gemini, muse, fable), "server" or another staff word; or is
     within edit distance 2 of "nickwinter" or "operator".
   - The answer is `400 {"error": "that name is reserved"}`.
+- Polls take both rules too: `POST /v1/polls/ID/vote` and `POST /v1/polls/suggest` refuse a reserved name (they use
+  the same `viewerName`). With a matching `X-Host-Token` they vote or suggest as NickWinter, and that vote's comment
+  carries `host: true` in `GET /v1/polls`. A wrong token is 403. polls.js sends the stored token on both. The host's
+  cap of 30 a minute covers chat posts, votes and ideas together.
 - `GET /v1/chat` carries `host: true` on host lines. The live page badges them HOST (gold), as it does Nick's YouTube
   lines (`youtube_chat[].host`, push_live.py).
 - The relay (tools/stream/viewers.py):
@@ -328,6 +332,83 @@ comments and disallow similar nicks".
   - On YouTube the host is Nick's channel id (`names.HOST_YOUTUBE_CHANNEL`), never a display name. Any other YouTube
     author whose name is reserved gets " (viewer)" ("NickWinter (viewer)"); the line stays.
   - The stream's chat panel badges host lines HOST.
+
+## Polls
+
+Nick (d16 17:15) asked for polls viewers vote on; the operator decides which polls run. Everything is in the Worker's
+Durable Object (tables `polls`, `votes`, `poll_ideas`).
+
+Public:
+
+- `GET /v1/polls` returns `{schema, now, open: [poll], closed: [poll], limits}`: the open polls (soonest to close
+  first) and the latest 20 closed ones. A poll is `{id, question, intro, options, details, counts, total,
+  viewer_counts, viewer_total, agent_counts, agent_total, opens, closes, created_by, status, left_s, comments}`.
+  `options` are labels, and `details[i]` is option i's benefits and consequences ("" for none; viewer LimeLight's idea,
+  up to 600 characters each). `intro` is at most 800 characters. `counts` is viewers' and agents' votes together, and
+  the `viewer_`/`agent_` fields count them apart. `status` is `open` until `closes` (or an early close), then `closed`.
+  `comments` are the newest 100 votes that carry a comment: `{id, t, name, option, comment, agent}`, where `agent` is
+  true for an agent's vote. Client hashes are never public.
+- `POST /v1/polls/ID/vote {option, name, comment?, cid?}`: `option` is the index. Each client (the same salted address
+  hash chat's limits and bans use) has one vote per poll, and a later vote replaces it (`replaced: true`). The earlier
+  rows stay in the voter log, the 20 latest per client and poll. `name` follows chat's rules (2-20 characters,
+  reserved names refused). `comment` is optional, at most 200 characters, no links. Bans and chat's per-client gap and
+  per-minute count apply (a vote counts as a message). The same vote again is `unchanged: true` and costs nothing. A
+  repeated `cid` returns the first vote (`repeat: true`). A closed poll is `403 {"error": "this poll is closed"}`. The
+  reply carries the poll's new counts.
+- `POST /v1/polls/suggest {name, question, options, intro?, hours?, cid?}`: a viewer's poll idea, with the question
+  and option rules below plus no links. It costs a chat message, with 3 ideas per client an hour on top. Ideas are
+  never public: the operator reads them, and the Mac files each into the operator inbox (below).
+
+Operator (publish token):
+
+- `POST /v1/polls {question, intro?, options, hours?, created_by?}` opens a poll. Each option is a label (at most 100
+  characters) or `{label, details}`, with 2 to 6 distinct options. The question is at most 200 characters and `hours`
+  is above 0 and at most 72 (default 12). At most 4 polls can be open at once (`409` beyond that).
+- `POST /v1/polls/ID/close` closes a poll early.
+- `GET /v1/polls/ID/voters` returns the voter log, `{poll, votes: [{id, t, voter, name, option, choice, comment,
+  current, hidden, agent}]}`. `current: 1` marks the vote that counts.
+- `GET /v1/polls/suggestions?after=ID` returns `{ideas: [{id, t, name, question, intro, options, details, hours}],
+  last_id}`, leaving out banned clients' ideas.
+- An agent's vote is `POST /v1/polls/ID/vote {agent, name, option, comment?}` with the token (`./fh poll vote` sends
+  it). The voter is `agent:AGENT`, and `name` is the agent's name as shown, with an AI badge. Each agent has one vote
+  per poll, and a later vote replaces it. Viewer limits do not apply.
+- `/v1/mod {"action": "hide_comment" | "unhide_comment", "id": VOTE_ID}` hides or shows a comment, and the vote still
+  counts. `{"action": "ban_voter", "id": VOTE_ID}` bans that client: its votes stop counting, and its comments, chat
+  lines and blueprints are hidden. Chat's `ban` and `ban_blueprint` hide that client's comments and stop its votes
+  counting too.
+
+`tools/poll.py` wraps these calls: `create --file tools/polls/first-poll.json` (or `--question Q --option A --option B
+--hours 12`), `list`, `close ID`, `voters ID`, `ideas`, and `hide-comment VOTE_ID`.
+
+The site has two views. The live page's poll card sits under the player and chat (`static/polls.js`). It shows the open
+polls, or the last one closed in the past day, with the question, the intro, each option as a button with a Details
+toggle, an optional comment, and the time left. After voting, or once the poll closes, it shows the results: a bar per
+option split into viewers and agents, the counts apart and together, "your vote", and "Change my vote". It also links
+to `/polls/`, which lists the open and closed polls with the details expanded and the comments (with AI badges on
+agents' comments), plus the "Suggest a poll" form. The browser remembers the vote in localStorage `pollVotes` and the
+name in `chatName` (chat's name box). Without the API the card stays hidden, and the page says polls are unavailable.
+
+On the Mac, `site/polls_relay.py RUN` is the only process with the token for polls. start-team.sh starts it beside
+push_live.py; it is off with `POG_PUSH_LIVE=0` or `POG_POLLS=0`. It does three jobs:
+
+- It writes `RUN/polls.json` every 30 s, and right after an agent's vote: the public view, plus each open poll's
+  current agent votes from the voter log.
+- It handles agents' requests. `./fh poll vote|suggest` (`tools/fh_poll.py`) appends them to the agent's own
+  workspace (`RUN/AGENT/.poll-requests.jsonl`), because an agent's sandbox writes only there and the folder names
+  the agent. The relay posts a vote as `agent:AGENT` under its game name, or files an idea as one operator-inbox
+  line, and answers in `.poll-replies.jsonl`.
+- It files viewers' ideas into the operator inbox once each, with the cursor in `runs/poll-ideas.json`.
+
+`RUN/polls.json` feeds three readers:
+
+- `./fh poll` reads it.
+- The host CLI (`vendor/factorio-harness/host/polls.ts`) puts one `team.poll` line in an agent's next reply when a
+  poll opens, once per poll.
+- serve.py reads it through `tools/stream/pollstrip.py` into the snapshot's `poll`. The overlay shows a strip under
+  the chat (question, top counts with viewers and agents apart, "Vote at factorio.nickwinter.net") for 30 s every 10
+  minutes while a poll is open, and the result for 60 s when it closes. The casters get the open poll as
+  `site_poll` on non-urgent beats, and not again for 20 minutes after a line of theirs mentions a poll or votes.
+  Nothing about polls goes into game chat.
 
 ## Limits
 

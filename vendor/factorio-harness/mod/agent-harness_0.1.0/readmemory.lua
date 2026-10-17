@@ -88,7 +88,11 @@ return function(api)
     end
     local out=recall(p,a,action)
     if action=='trace' and (not out or out.trace_unknown) and api.belt_trace then out=api.belt_trace(p,a) or out end
-    if not out then error(string.format('no recorded %s observation at (%g,%g) on %s; current chunk not visible',action,q.x,q.y,p.surface.name),0) end
+    if not out then
+      -- what the map says of the chunk (B1): never charted, or charted and out of sight with our last sight of it
+      local g=api.ground_state and api.ground_state(p,q)
+      error(string.format('no recorded %s observation at (%g,%g) on %s; %s',action,q.x,q.y,p.surface.name,g or 'current chunk not visible'),0)
+    end
     return out
   end
   return M
