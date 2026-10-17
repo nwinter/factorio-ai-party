@@ -88,13 +88,12 @@
   - an agricultural tower: its `empty_cells` and why; any entity its `damage_history`;
   - a burner whose burnt-result slot is full and that burns nothing reads `burnt_result_full` (in scan, supply,
     bottleneck and the status warning too), with what fills it, whatever the game's status reads.
-  `area` (or `position` with `radius`: the square round it) lists every chest's and machine's contents there (where
-  inspect reads) as one table: `holds`, `requests`, `recipe`, `status_name`. It always returns `entities` (64 a page:
-  `page`, `pages`, `next`) and `by_name` beside them, and counts what it does not list (`also`: inserters, poles, belts
-  by type); `name` filters by name. With `types` naming belts (`transport-belt`, `underground-belt`, `splitter`,
-  loaders), each belt's `holds` is its lanes (`right lane: rocket*4`; an underground's buried part as `... lane
-  underground`), or `empty`. `all: true` lists every entity there (belts, poles, inserters too) with its direction and
-  an inserter's pickup and drop; `compact: true` gives a line each. Example: `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}},"compact":true}'`
+  `area` (or `position` with `radius`: the square round it) lists every entity of ours there (where inspect reads):
+  belts, inserters, poles, chests, machines, ghosts, each with its position and direction, an inserter's pickup and
+  drop, and `holds`, `requests`, `recipe`, `status_name` where it has them. It always returns `entities` (64 a page:
+  `page`, `pages`, `next`) and `by_name` beside them; robots flying through are only counted (`also`). `types` or
+  `name` narrows it. A belt's `holds` is its lanes (`right lane: rocket*4`; an underground's buried part as `... lane
+  underground`), or `empty`. `compact: true` gives a line each. Example: `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}},"compact":true}'`
 - `ports {name, position, direction?, recipe?, mirror?, platform?}`: where each fluid port of an unbuilt machine is and
   the fluid the recipe puts there. Example: `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north","recipe":"electrolyte"}'`
 - `power {position?, radius?, area?, fragile?, by_cause?, platform?, surface?}`: per network `supply_line`: generators'
