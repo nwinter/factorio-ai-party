@@ -107,7 +107,8 @@ def dry_run():
         json.dump({"profiles": [{"id": "codex_account_b", "command": "codex-b", "windows": [
             {"label": "Codex · Weekly", "percent": 100, "resets_at": 4102444800}]}]}, open(qb, "w"))
         env = dict(os.environ, POG_DRY_RUN="1", POG_RESUME="shake4", POG_RESUME_DIR=prev, POG_TEAM_FILE=team,
-                   POG_CASTER="0", POG_ANALYST="0", POG_QUOTA_BRIEF=qb)
+                   POG_CASTER="0", POG_ANALYST="0", POG_QUOTA_BRIEF=qb,
+                   POG_QUOTA_BURN=os.path.join(tmp, "no-burn.tsv"))   # no rates: a full window warns all the same
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "resume-dry-test", "10"], env=env,
                            capture_output=True, text=True, cwd=ROOT)
         assert r.returncode == 0, r.stderr
