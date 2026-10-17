@@ -6530,3 +6530,19 @@ fh watch    # deploy on every change
   with 200 lines remembered and 20 a reply.
 - platalerts tells a platform's turret line again after 5 minutes. With the same words it now shows after 10
   (tests/platalerts.lua updated); a turret count or round count that changed shows at once.
+
+## d17 batch18 (operator 12:25: the agents' 12:20 poll)
+- A1 (Grok): the heating tower at (46.5,48.5) on Gleba ran dry while its fast inserter read waiting_for_source_items
+  with rocket fuel in the requester chest beside it. On world n (read only) and a copy of it: the arm works. The game's
+  inserters top a burner's fuel up only while it runs low. On the copy they kept the tower at 5-6 rocket fuel, and at
+  1-2 while 10 yumako seeds sat in its second fuel slot. Between top-ups the arm reads waiting_for_source_items. At full
+  power the tower burns 24 rocket fuel a minute (40 MW). Network 98 held 0 rocket fuel outside requester chests, and
+  Gleba made 631 and used 752 in the last hour. So the requester emptied, and Grok's hand loads covered the gap. Both
+  fuel slots taken by other fuels (seeds, spoilage, coal) keep rocket fuel out entirely.
+- inspect of an inserter whose status is waiting_for_source_items adds `pickup_wait` (and the compact line `waits:`):
+  - what its pickup holds of the items its filter lets through, or none;
+  - for a requester or buffer, what its logistic network holds of them outside requester chests;
+  - logistic robots within 4 tiles whose first order is to take from it;
+  - per item (2 at most), whether the drop target takes one now. Fuel: what its fuel slots hold, and how fast it burns
+    the item at full power. Else what it holds of it, or its recipe when it takes none.
+  2 ms for the whole inspect call on the copy (about 0.5 ms on n). tests/d17_batch18.lua.

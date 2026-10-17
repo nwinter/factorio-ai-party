@@ -34,6 +34,125 @@ return function(api)
     return n .. (type(q) == 'string' and q ~= 'normal' and '@' .. q or '')
   end
   M.item_name = item_name
+  -- Why an inserter waits for source items (d17 batch18 A1, Grok: a heating tower's arm read waiting_for_source_items
+  -- with rocket fuel in the requester beside it). On a copy of world n the game's arm kept the tower's fuel at about
+  -- 5 rocket fuel and waited above that (with 10 yumako seeds in its second fuel slot, at 1 or 2); the tower ran dry
+  -- when its network had no rocket fuel left to bring. The line says: what the pickup holds of the items the arm may
+  -- take (a requester or buffer: what its network holds of them outside requester chests; robots on their way to take
+  -- from it), and per item whether the drop target takes one now (a fuel inventory: what fills its slots) and what it
+  -- holds of it (fuel: how fast it burns at full power).
+  local function stack_name(f)
+    if type(f) == 'string' then return f end
+    if type(f) ~= 'table' then return nil end
+    local n = f.name
+    if type(n) ~= 'string' then n = try(function() return n.name end) end
+    return type(n) == 'string' and n or nil
+  end
+  local function contents_text(inv)
+    local parts = {}
+    for _, st in ipairs(try(function() return inv.get_contents() end) or {}) do
+      local n = stack_name(st)
+      if n then parts[#parts+1] = n .. ' ' .. st.count end
+    end
+    return #parts > 0 and table.concat(parts, ', ') or 'nothing'
+  end
+  local function source_items(src, at)
+    local got = {}
+    local function add(list)
+      for _, st in ipairs(list or {}) do
+        local n = stack_name(st)
+        if n then got[n] = (got[n] or 0) + st.count end
+      end
+    end
+    local t = src.type
+    if t == 'transport-belt' or t == 'underground-belt' or t == 'splitter' or t == 'loader' or t == 'loader-1x1' or t == 'linked-belt' then
+      for k = 1, try(function() return src.get_max_transport_line_index() end) or 2 do
+        add(try(function() return src.get_transport_line(k).get_contents() end))
+      end
+      return got, 'its lanes'
+    end
+    local inv = try(function() return src.get_output_inventory() end) or try(function() return src.get_inventory(defines.inventory.chest) end)
+    if not inv then return nil end
+    add(try(function() return inv.get_contents() end))
+    return got
+  end
+  function M.pickup_wait(e)
+    if e.type ~= 'inserter' or try(function() return e.status end) ~= defines.entity_status.waiting_for_source_items then return nil end
+    local src, dst = try(function() return e.pickup_target end), try(function() return e.drop_target end)
+    if not (src and src.valid) then return 'picks from the ground: no item lies at its pickup point' end
+    local names, filtered = {}, false
+    if try(function() return e.use_filters end) then
+      for k = 1, try(function() return e.filter_slot_count end) or 0 do
+        local n = stack_name(try(function() return e.get_filter(k) end))
+        if n then names[n] = true; filtered = true end
+      end
+    end
+    local black = filtered and try(function() return e.inserter_filter_mode end) == 'blacklist'
+    local got = source_items(src)
+    if not got then return string.format('%s (%g,%g) has no inventory it takes from', src.name, src.position.x, src.position.y) end
+    local rows = {}
+    for n, c in pairs(got) do
+      if not filtered or (black and not names[n]) or (not black and names[n]) then rows[#rows+1] = {n, c} end
+    end
+    table.sort(rows, function(a, b) return a[2] > b[2] end)
+    local parts = {}
+    local here = string.format('%s (%g,%g)', src.name, src.position.x, src.position.y)
+    if #rows == 0 then
+      local want = {}
+      for n in pairs(names) do want[#want+1] = n end
+      table.sort(want)
+      parts[1] = string.format('%s holds none of %s', here, filtered and (black and 'the items its filter lets through' or table.concat(want, ', ')) or 'any item')
+    else
+      local held = {}
+      for i = 1, math.min(3, #rows) do held[i] = rows[i][1] .. ' ' .. rows[i][2] end
+      parts[1] = string.format('%s holds %s%s', here, table.concat(held, ', '), #rows > 3 and ', ...' or '')
+    end
+    -- A requester or buffer: what its network can still bring of the items the arm takes.
+    local mode = try(function() return src.prototype.logistic_mode end)
+    if mode == 'requester' or mode == 'buffer' then
+      local net = try(function() return src.logistic_network end)
+      local want = {}
+      if filtered and not black then for n in pairs(names) do want[#want+1] = n end end
+      if #want == 0 then for i = 1, math.min(3, #rows) do want[i] = rows[i][1] end end
+      table.sort(want)
+      local nets = {}
+      for i = 1, math.min(3, #want) do
+        nets[i] = want[i] .. ' ' .. (net and (try(function() return net.get_item_count(want[i]) end) or 0) or 0)
+      end
+      if not net then parts[#parts+1] = 'it is in no logistic network'
+      elseif #nets > 0 then parts[#parts+1] = string.format('its logistic network %s holds %s outside requester chests', tostring(net.network_id), table.concat(nets, ', ')) end
+    end
+    local robots = 0
+    for _, r in ipairs(try(function() return src.surface.find_entities_filtered{type='logistic-robot', position=src.position, radius=4, limit=16} end) or {}) do
+      local o = try(function() return r.robot_order_queue[1] end)
+      if o and o.target == src and o.type == defines.robot_order_type.pickup then robots = robots + 1 end
+    end
+    if robots > 0 then parts[#parts+1] = string.format('%d logistic robot%s near it on the way to take from it', robots, robots == 1 and '' or 's') end
+    if not (dst and dst.valid) then return table.concat(parts, '; ') end
+    local there = string.format('%s (%g,%g)', dst.name, dst.position.x, dst.position.y)
+    local fuel = try(function() return dst.get_fuel_inventory() end)
+    for i = 1, math.min(2, #rows) do
+      local n = rows[i][1]
+      local fv = try(function() return prototypes.item[n].fuel_value end) or 0
+      local takes = try(function() return dst.can_insert{name=n, count=1} end)
+      if takes == false then
+        if fuel and fv > 0 then
+          parts[#parts+1] = string.format('%s takes no %s now: its %d fuel slots hold %s', there, n, #fuel, contents_text(fuel))
+        else
+          local r = try(function() return dst.get_recipe() end)
+          parts[#parts+1] = string.format('%s takes no %s now%s', there, n, r and ' (recipe ' .. r.name .. ')' or '')
+        end
+      elseif fuel and fv > 0 then
+        local use = try(function() return dst.prototype.get_max_energy_usage() end)
+        parts[#parts+1] = string.format('%s takes %s; its %d fuel slots hold %s (the game\'s arms top fuel up only while it runs low)%s', there, n, #fuel,
+          contents_text(fuel), use and use > 0 and string.format('; at full power it burns %.1f %s a minute', use * 3600 / fv, n) or '')
+      else
+        parts[#parts+1] = string.format('%s takes %s and holds %d of it (the game\'s arms fill a machine or turret only up to a limit)', there, n,
+          try(function() return dst.get_item_count(n) end) or 0)
+      end
+    end
+    return table.concat(parts, '; ')
+  end
   local function collector(e)
     return e.type == 'asteroid-collector' or (e.type == 'entity-ghost' and try(function() return e.ghost_type end) == 'asteroid-collector')
   end
@@ -340,6 +459,7 @@ return function(api)
       local held = try(function() local s = e.held_stack; return s and s.valid_for_read and s.count .. ' ' .. s.name or nil end)
       out.held = held or 'nothing'
       out.held_blocked=M.held_blocked(e)
+      out.pickup_wait=M.pickup_wait(e)
       out.pickup_target = where(try(function() return e.pickup_target end))
       out.drop_target = where(try(function() return e.drop_target end))
       -- Nothing to drop into: the tile its items land on (on a platform,

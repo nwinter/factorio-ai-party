@@ -55,6 +55,8 @@
 - `./fh call labs` says which labs lack which packs, which inserters feeding them are idle and why, and the research ETA.
 - `inspect` shows inserter pickup/drop tiles and fluid connection tiles (`fluid_connections[].joins` is where a pipe
   must go).
+- `inspect` of an inserter waiting for source items gives `pickup_wait`: what its pickup holds of what it may take
+  (a requester's network stock of it), and whether the drop target takes it now and what it holds (fuel slots too).
 - `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}}}'` lists every chest's
   and machine's contents in the area (where inspect reads, up to 64) as one table: `holds`, `requests`, `recipe`, `status_name`.
   With `types` naming belts (`transport-belt`, `underground-belt`, `splitter`, loaders), each belt's `holds` is its lanes
