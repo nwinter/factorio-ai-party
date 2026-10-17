@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Harness, luaString, parseReply, helperThread } from '../host/harness.js';
-import { bundleRuntime } from '../host/bundle.js';
+import { bundleRuntime, bundleId } from '../host/bundle.js';
 import { renderMap } from '../host/view.js';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises';
@@ -38,6 +38,23 @@ test('bundled sibling modules reload atomically with lexical require and UTF8', 
     const source = await bundleRuntime(resolve(folder,'runtime.lua'));
     const result = execFileSync('lua',['-e',`local result=(function()\n${source}\nend)(); io.write(result.value)`],{encoding:'utf8'});
     assert.equal(result,'café');
+  } finally {await rm(folder,{recursive:true,force:true});}
+});
+test('a bundle names its id (its content hash) as BUNDLE_ID on its first line, so line numbers stay its own', async () => {
+  await mkdir('.cache',{recursive:true});
+  const folder = await mkdtemp(resolve('.cache/bundle-'));
+  try {
+    await writeFile(resolve(folder,'runtime.lua'),'return {id=require("helper").id()}');
+    await writeFile(resolve(folder,'helper.lua'),'return {id=function() return BUNDLE_ID end}');
+    const source = await bundleRuntime(resolve(folder,'runtime.lua'));
+    const first = source.split('\n')[0]!;
+    const match = /^local BUNDLE_ID = '([0-9a-f]{16})'; local original_require = require$/.exec(first);
+    assert.ok(match, first);
+    assert.equal(match[1], bundleId(source.slice(first.length - 'local original_require = require'.length)));
+    const result = execFileSync('lua',['-e',`local result=(function()\n${source}\nend)(); io.write(result.id)`],{encoding:'utf8'});
+    assert.equal(result, match[1]);
+    await writeFile(resolve(folder,'helper.lua'),'return {id=function() return BUNDLE_ID, 2 end}');
+    assert.notEqual((await bundleRuntime(resolve(folder,'runtime.lua'))).split('\n')[0], first, 'another bundle, another id');
   } finally {await rm(folder,{recursive:true,force:true});}
 });
 test('headless PNG includes only provided local data and a valid RGB payload', () => {
