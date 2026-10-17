@@ -13,6 +13,7 @@
   names the closest valid name, and on `configure` and `circuit_set` what that entity takes. `configure {position,
   spoil_priority: fresh_first | spoiled_first | none}` sets an inserter's Spoil priority (built or ghost; `inspect`
   shows it).
+- A dry run lists blocked entities first and all of them in `blocked` (up to 200), apart from those needing tiles.
 - `"dry_run":true` on `place_ghosts`, `paste` or `build` places nothing and reports the plan: per entity whether it
   fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
   new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that

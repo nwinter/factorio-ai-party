@@ -70,6 +70,11 @@
   enemy spawners and worms within 50 tiles, and how many of our drills are on it.
 - `inspect` reads any entity on your surface in a chunk our radars see, by remote view (`by: remote view`); out of
   sight and coverage, the refusal names the nearest radar coverage.
+- `construction_robots {"sources": true}`: per group of waiting ghosts and item requests, the network's chests holding
+  the item (nearest 3) and whether the straight line from each passes within a worm's or spawner's reach the map shows.
+- `supply {"item":..., "all_stopped": true}` (and `bottleneck {item, all_stopped}`): every maker and user not working,
+  grouped by cluster with every position. `inspect {position, radius}` also counts what it does not list (`also`:
+  inserters, poles, belts by type).
 - `./fh call construction_robots` (or `{"network":N}`) reads the construction robots of the network you stand in: each
   in the air with its charge, cargo, orders and what holds it up (no storage for what it holds, target out of the
   area, waiting to charge).

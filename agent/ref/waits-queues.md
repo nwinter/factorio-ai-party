@@ -1,5 +1,8 @@
 - `./fh call wait_until --args '{"until":"researched","technology":"automation"}' --wait` (also `item_count`,
-  `crafting_done`) lets the factory run until a condition holds, without polling. Add `--wait-timeout 600000` to
+  `crafting_done`) lets the factory run until a condition holds, without polling. `item_count` takes `"surface":"nauvis"`
+  (with positions, those chests there; alone, our logistic networks there), in the remote lane too. A sleep that takes
+  no messages (a ship wait) is not ended by egg news unless you carry the eggs. `fh wait` after the action already
+  ended gives its result (`note` says it ended before your previous call). Add `--wait-timeout 600000` to
   wait up to 10 minutes (15 at most); hitting the limit fails with `timed_out`.
   A `platform_arrived` or `platform_left` wait with no `timeout` (queued or direct) goes on past its default 60 s while
   its ETA is known: to the ETA plus a quarter and 10 s, at most 54000 ticks (`extended` says so).

@@ -41,7 +41,7 @@ local chest=inv{stack('pentapod-egg',10,4*3600,0.73),stack('pentapod-egg',5,10*3
 local acc=S.inventory(chest,{},'chest')
 eq(#acc,2); eq(acc['pentapod-egg'].count,15); eq(acc['pentapod-egg'].soon,10); eq(acc.yumako.soon,0)
 local lines=S.lines(acc,8,'chest: ')
-eq(lines[1],'chest: pentapod-egg*15: the first hatches in 4m00s into big-wriggler-pentapod-premature (73% spoiled); 10 within 5 min')
+eq(lines[1],'chest: pentapod-egg*15: the first hatches in 4m00s into big-wriggler-pentapod-premature (that stack 73% spoiled; all 15: 33-73%, 60% by count); 10 within 5 min')
 eq(lines[2],'chest: yumako*20: the first spoils in 30m00s (50% spoiled)')
 eq(S.warning(acc),'15 pentapod-egg hatch into enemies (big-wriggler-pentapod-premature, one each): the first in 4m00s, 10 within 5 min')
 eq(S.warning(S.inventory(inv{stack('yumako',3,60,0.9)},{})),nil)
@@ -64,7 +64,7 @@ end
 local belt={get_max_transport_line_index=function() return 2 end,get_transport_line=function(i)
   return {get_detailed_contents=function() return i==1 and {{stack=stack('jelly',1,600,0.95)},{stack=stack('jelly',1,1200,0.9)}} or {} end} end}
 local b=S.belt(belt,{},'belt')
-eq(b.jelly.count,2); eq(S.lines(b)[1],'jelly*2: the first spoils in 10s (95% spoiled); all within 5 min')
+eq(b.jelly.count,2); eq(S.lines(b)[1],'jelly*2: the first spoils in 10s (that stack 95% spoiled; all 2: 90-95%, 93% by count); all within 5 min')
 
 -- Recipe outputs: the count-weighted spoilage of the spoilable ingredients
 -- (bioflux, read on a private copy: 15 mash at 80% and 12 jelly at 20% made bioflux at 53.5%).
@@ -142,6 +142,8 @@ local hb={}
 eq(#S.alert_lines({index=4,name='sol',surface={name='nauvis'}},hb,'sol'),1)
 -- A sleeper wakes on news after its sleep began.
 eq(S.news(sol,0,'sol') ~= nil,true); eq(S.news(sol,1,'sol'),nil)
+-- A sleep that takes no messages (a ship wait) hears only of eggs its character carries (E9, Grok 19:50).
+eq(S.news(sol,0,'sol',true),nil)
 -- Under 1 minute: news again, and told again.
 game.tick=game.tick+3*3600+900 -- about 55 s left
 run(1+10)

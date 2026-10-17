@@ -19,6 +19,7 @@ return function(api)
     end
     return n
   end
+  M.KINDS={'boiler','furnace','mining-drill','reactor','burner-generator','burner-inserter'}
   function M.start(p,a,fuel,count)
     assert(a.positions==nil,'from/area refuel takes area or radius, not positions')
     assert(a.walk~=false,'from/area refuel walks; walk=false is not supported')
@@ -31,7 +32,10 @@ return function(api)
       assert(rb.x>lt.x and rb.y>lt.y and rb.x-lt.x<=256 and rb.y-lt.y<=256,'area must be nonempty and at most 256x256')
       base.area={lt,rb}
     else base.position=a.position and api.position(a.position) or p.position;base.radius=api.integer(a.radius,32,1,256,'radius') end
-    local found,note=api.find_kinds(p,base,a.types)
+    -- No types: the kinds that burn fuel (E1, Muse 02:12: a 90x120 area was refused for its 440 belts and 114 robots).
+    local kinds=a.types or M.KINDS
+    local found,note=api.find_kinds(p,base,kinds)
+    if not a.types then note=(note and note..'; ' or '')..'types not given: boilers, furnaces, mining drills, reactors, burner generators and burner inserters' end
     -- (Opus 01:51: a base-sized area of boilers hit the limit) what the area holds by type, and the filter that narrows it.
     if #found>1024 then
       local by,order={},{}
@@ -43,6 +47,7 @@ return function(api)
         table.concat(parts,', '),#order>4 and ', ...' or ''),0)
     end
     local targets,hidden={},0
+    local burners,enough,other,chests,full=0,0,0,0,0
     -- feed_chests (Haiku, d15 06:20: "a one-call fill of every boiler feed chest from the nearest coal source"): the
     -- chests that inserters take from to feed those burners, each topped up to count, instead of the burners.
     assert(a.feed_chests==nil or type(a.feed_chests)=='boolean','feed_chests must be true or false')
@@ -52,18 +57,23 @@ return function(api)
         if not seen(p,e) then hidden=hidden+1
         elseif a.feed_chests then
           if api.fuel_inventory(e) and api.accepts(e,fuel) then
+            burners=burners+1
             for _,c in ipairs(api.feed_chests and api.feed_chests(p,e) or {}) do
               local k=key(c)
               if not chests_seen[k] then
                 chests_seen[k]=true
+                chests=chests+1
                 local inv=api.chest_inventory(c)
-                if inv and inv.get_item_count{name=fuel,quality=a.quality or 'normal'}<count then targets[#targets+1]=c end
+                if inv and inv.get_item_count{name=fuel,quality=a.quality or 'normal'}<count then targets[#targets+1]=c else full=full+1 end
               end
             end
           end
         else
           local inv=api.fuel_inventory(e)
-          if inv and api.accepts(e,fuel) and inv.get_item_count{name=fuel,quality=a.quality or 'normal'}<count then targets[#targets+1]=e end
+          if inv and api.accepts(e,fuel) then
+            burners=burners+1
+            if inv.get_item_count{name=fuel,quality=a.quality or 'normal'}<count then targets[#targets+1]=e else enough=enough+1 end
+          elseif inv then other=other+1 end
         end
       end
     end
@@ -88,6 +98,37 @@ return function(api)
     out.from=a.from;out.types_note=note;out.entities_not_in_sight=hidden>0 and hidden or nil
     if a.feed_chests then out.feed_chests=string.format('%d chest%s that inserters feed those burners from, each topped up to %d %s',#targets,#targets==1 and '' or 's',count,fuel) end
     out.until_tick=action.until_tick;out.needed=need(action);out.held=api.held(p,fuel,action.quality)
+    -- The stops in walking order (E1, Haiku: the walk and the stops reported); last.route says how it went.
+    if api.legs then out.legs,out.legs_more=api.legs(p,action.targets) end
+    -- Nothing to do: why (E1, Muse 4x: places 0 with no reason while fuel alerts named dry burners nearby).
+    if #targets==0 then
+      local where=a.area and 'the area' or 'radius '..base.radius
+      local parts={}
+      if a.feed_chests then
+        parts[#parts+1]=burners==0 and string.format('no burner in %s burns %s',where,fuel)
+          or chests==0 and string.format('%d burner%s in %s burn %s, and no inserter feeds one from a chest',burners,burners==1 and '' or 's',where,fuel)
+          or string.format('the %d chest%s feeding its %d burner%s hold %d %s or more',chests,chests==1 and '' or 's',burners,burners==1 and '' or 's',count,fuel)
+      else
+        parts[#parts+1]=burners==0 and string.format('no burner in %s burns %s',where,fuel)
+          or string.format('the %d burner%s in %s that burn %s hold %d or more',burners,burners==1 and '' or 's',where,fuel,count)
+      end
+      if other>0 then parts[#parts+1]=string.format('%d burn another fuel',other) end
+      if hidden>0 then parts[#parts+1]=string.format('%d not in sight (not counted)',hidden) end
+      out.nothing=table.concat(parts,'; ')
+      if api.nearest_outside then
+        local lt,rb=base.area and base.area[1],base.area and base.area[2]
+        local function inside(e)
+          if lt then return e.position.x>=lt.x and e.position.x<=rb.x and e.position.y>=lt.y and e.position.y<=rb.y end
+          return api.distance(base.position,e.position)<=base.radius
+        end
+        out.nearest_outside=api.nearest_outside(p,kinds,inside,function(e)
+          local inv=api.fuel_inventory(e)
+          return inv and api.accepts(e,fuel) and inv.get_item_count{name=fuel,quality=a.quality or 'normal'}<count
+        end,string.format('burner below %d %s',count,fuel))
+      end
+      action.why=out.nothing..(out.nearest_outside and '; '..out.nearest_outside or '')
+      action.nothing=out.nothing; action.nearest_outside=out.nearest_outside
+    end
     api.start(p,action)
     return out
   end

@@ -1847,9 +1847,24 @@ return function(api)
       end
     end
 
-    -- Rows: every entity that is not plainly placeable (all with details).
+    -- Rows: every entity that is not plainly placeable (all with details). Blocked ones first, and every one of them
+    -- in blocked (up to MAX_LISTED), apart from needs_tiles (E12, Astra 19:50: the first 30 rows were foundation
+    -- warnings and the true collisions were past them).
     local rows = {}
-    for _, r in ipairs(recs) do
+    local order, blocked = {}, {}
+    for _, r in ipairs(recs) do if r.status == 'blocked' or (r.collisions ~= nil and r.status ~= 'needs_tiles') then order[#order+1] = r end end
+    local nblocked = #order
+    for _, r in ipairs(recs) do if not (r.status == 'blocked' or (r.collisions ~= nil and r.status ~= 'needs_tiles')) then order[#order+1] = r end end
+    for i = 1, nblocked do
+      local r = order[i]
+      if #blocked < MAX_LISTED then
+        blocked[#blocked+1] = string.format('#%s %s%s: %s', tostring(r.copy and (r.copy..'.'..r.index) or r.index), tostring(r.name),
+          r.pos and string.format(' (%g,%g)', r.pos.x, r.pos.y) or '', tostring(r.why or r.note or r.status))
+      end
+    end
+    out.blocked = #blocked > 0 and blocked or nil
+    out.blocked_more = nblocked > #blocked and nblocked - #blocked or nil
+    for _, r in ipairs(order) do
       -- A paste lays its tiles and entities together; the other calls go in order.
       local problem = r.status == 'blocked' or r.status == 'needs_tiles' or r.reach ~= nil or r.collisions ~= nil
         or ((r.status == 'exists' or r.status == 'after_tiles') and kind ~= 'paste')

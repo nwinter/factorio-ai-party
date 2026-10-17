@@ -134,13 +134,28 @@ return function(api)
         n=inv.get_item_count(c.item)
         scope={'platform',c.platform}
         where=' in '..c.platform..' hub (landed stock; excludes incoming cargo and hub trash)'
+      elseif c.surface and not positions then
+        -- surface alone (E6, Sol board #755 and Gemini 19:50: from Aquilo, a wait on Nauvis U-235): what our logistic
+        -- networks there hold, as each network's GUI shows it
+        local s=game.get_surface(c.surface)
+        assert(s,'no surface '..tostring(c.surface))
+        local nets=p.force.logistic_networks and p.force.logistic_networks[s.name] or {}
+        for _,ln in ipairs(nets) do local ok,k=pcall(ln.get_item_count,c.item); if ok and k then n=n+k end end
+        scope={'surface',s.name}
+        where=string.format(' in our %d logistic network%s on %s',#nets,#nets==1 and '' or 's',s.name)
       elseif positions then
-        scope={tostring(p.surface.index or p.surface.name or '')}
-        local seen,silos=0,{}
+        -- surface: the chests at positions on that surface (E6), else yours
+        local surf=c.surface and game.get_surface(c.surface) or p.surface
+        assert(surf,'no surface '..tostring(c.surface))
+        scope={tostring(surf.index or surf.name or '')}
+        local seen,silos,dark=0,{},0
         for _,raw in ipairs(positions) do
           local pos=api.position(raw)
           scope[#scope+1]=pos.x..','..pos.y
-          for _,e in pairs(p.surface.find_entities_filtered{position=pos,radius=0.3,force=p.force}) do
+          local visible=surf==p.surface or pcall(function() return p.force.is_chunk_visible(surf,{x=math.floor(pos.x/32),y=math.floor(pos.y/32)}) end)
+            and p.force.is_chunk_visible(surf,{x=math.floor(pos.x/32),y=math.floor(pos.y/32)})
+          if not visible then dark=dark+1 end
+          for _,e in pairs(visible and surf.find_entities_filtered{position=pos,radius=0.3,force=p.force} or {}) do
             -- A silo's rocket stands on its centre and holds nothing of its own (the silo counts the cargo); a robot
             -- flying over a chest is not the chest (runtime.lua M.target_rank, Astra 07:05).
             if e.valid and e~=p.character and e.type~='rocket-silo-rocket' and e.type~='rocket-silo-rocket-shadow'
@@ -152,7 +167,8 @@ return function(api)
             end
           end
         end
-        where=' in '..seen..' entities'..(#silos>0 and '; '..table.concat(silos,'; ') or '')
+        where=' in '..seen..' entities'..(surf~=p.surface and ' on '..surf.name or '')..(dark>0 and string.format(' (%d position%s not in sight of our force now: not counted)',dark,dark==1 and '' or 's') or '')
+          ..(#silos>0 and '; '..table.concat(silos,'; ') or '')
       else
         n=p.get_main_inventory().get_item_count(c.item)
         scope={'character',tostring(p.index)}
@@ -337,6 +353,10 @@ return function(api)
       if c.platform~=nil then
         assert(type(c.platform)=='string' and #c.platform>0,'item_count platform requires a platform name')
         assert(c.position==nil and c.positions==nil and c.surface==nil,'item_count platform counts the hub; no position, positions or surface')
+      end
+      if c.surface~=nil then
+        assert(type(c.surface)=='string' and game.get_surface(c.surface),'item_count surface must be a surface name (nauvis, vulcanus, ...)')
+        assert(not game.get_surface(c.surface).platform,'item_count surface is a planet; a platform\'s hub: platform=NAME')
       end
       assert(c.at_least~=nil or c.below~=nil,'item_count requires at_least or below')
       if c.at_least~=nil then number(c.at_least,0,1e9,'at_least') end

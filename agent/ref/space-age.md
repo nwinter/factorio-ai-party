@@ -106,3 +106,12 @@
   science pack: how many a unit the running research takes, and its units left). Eggs of ours
   hatching within 5 minutes on your surface top `team.alerts` (`eggs hatching: ...`) and wake `fh sleep` (`woke: eggs`).
 - Full `status` rechecks nearby recorded egg sites: enemies visible now, future/elapsed timer, and gun range coverage with ammo. An old timer alone is not a live hatch.
+- `./fh call min_payload` reads every hub request that imports from a planet: platform, item, asks, holds, the custom
+  minimum payload and a full rocket of it by weight; `{"platforms":"all","set":{"low-density-structure":50}}` sets that
+  number for those items on those platforms (0 or false clears it), nothing else changed.
+- `platform_endurance {"route":["gleba","aquilo","gleba"],"forecast":true,"pessimistic":{"speed":0.8,"dwell_s":300}}`:
+  per leg, the asteroids its connection spawns by kind against the legs flown lately, the shots one of each takes of
+  each ammunition aboard (`none hurt`: the ammunition cannot), and the use scaled from the legs flown, made meanwhile
+  and left at each arrival.
+- `load_silo` with a walk gives `loaded_items` (what you put in), `aboard_before` and `kept` (taken, not loaded, still
+  with you: a teammate's load met the count); `cargo` is everything in the rocket.

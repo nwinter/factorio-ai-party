@@ -911,6 +911,38 @@ return function(api)
     end
     return out
   end
+  -- Every machine not working, grouped (E4, Opus 19:50, 3x: "list ALL not_working makers' positions grouped by cluster,
+  -- not just 3 worst"): a machine within GAP tiles of a group's box joins it; each group its box, counts by name and
+  -- state (missing ingredients), and every position. rows: {e, status, lacks}. At most MAX_STOPPED positions a read.
+  local GAP, MAX_STOPPED = 12, 256
+  function M.clusters(rows)
+    local groups = {}
+    table.sort(rows, function(x, y) if x.e.position.x ~= y.e.position.x then return x.e.position.x < y.e.position.x end return x.e.position.y < y.e.position.y end)
+    local listed = 0
+    for _, r in ipairs(rows) do
+      local q = r.e.position
+      local g
+      for _, h in ipairs(groups) do
+        if q.x >= h.x0 - GAP and q.x <= h.x1 + GAP and q.y >= h.y0 - GAP and q.y <= h.y1 + GAP then g = h; break end
+      end
+      if not g then g = {x0=q.x, y0=q.y, x1=q.x, y1=q.y, n=0, by={}, at={}}; groups[#groups+1] = g end
+      g.x0, g.y0, g.x1, g.y1 = math.min(g.x0, q.x), math.min(g.y0, q.y), math.max(g.x1, q.x), math.max(g.y1, q.y)
+      g.n = g.n + 1
+      local k = r.e.name .. ' ' .. r.status .. (#r.lacks > 0 and ' (missing ' .. table.concat(r.lacks, ', ') .. ')' or '')
+      g.by[k] = (g.by[k] or 0) + 1
+      if listed < MAX_STOPPED then g.at[#g.at+1] = at(q); listed = listed + 1 end
+    end
+    table.sort(groups, function(x, y) return x.n > y.n end)
+    local lines = {}
+    for _, g in ipairs(groups) do
+      local parts = {}
+      for k, n in pairs(g.by) do parts[#parts+1] = n .. ' ' .. k end
+      table.sort(parts)
+      lines[#lines+1] = string.format('%d near (%g,%g)-(%g,%g): %s; at %s%s', g.n, math.floor(g.x0), math.floor(g.y0), math.ceil(g.x1), math.ceil(g.y1),
+        table.concat(parts, ', '), table.concat(g.at, ' '), #g.at < g.n and ' ...' or '')
+    end
+    return #lines > 0 and lines or nil
+  end
   -- Machines by status (missing ingredients named), recipes, and the worst
   -- with positions: no power, then missing this item, other shortages,
   -- output full, low power, anything else not working.
@@ -998,7 +1030,7 @@ return function(api)
       end
       worst[i] = text
     end
-    return line, worst
+    return line, worst, ranked
   end
   -- The inserters feeding users: by status, and what the waiting ones' sources hold.
   function M.feeders(t, noun)
@@ -1348,14 +1380,24 @@ return function(api)
       assert(surface, 'no surface ' .. a.surface)
     end
     local force = p.force
-    local key = string.format('bottleneck|%s|%s|%s|%s', tostring(surface.index or surface.name), force.name, item, tostring(a.per_min))
+    assert(a.all_stopped == nil or type(a.all_stopped) == 'boolean', 'all_stopped is true or false')
+    local key = string.format('bottleneck|%s|%s|%s|%s|%s', tostring(surface.index or surface.name), force.name, item, tostring(a.per_min), tostring(a.all_stopped))
     return M.reuse(key, function()
       local names = prototypes.item[item] and {[item]=true} or {}
       local scan = M.scan(surface, force, names, {packs=M.packs_of(force), miners=true})
       local chain = M.chain(scan, force, surface, item)
-      local where, fixes, full_chests = {}, {}, {}
+      local where, fixes, full_chests, stopped = {}, {}, {}, {}
       for _, name in ipairs(chain.path or {}) do
         local rows = {}
+        if a.all_stopped then
+          local all = {}
+          for _, m in ipairs(scan.by_product and scan.by_product[name] or {}) do
+            local state = m.e.valid and (api.status_name(m.e) or 'unknown')
+            if state and state ~= 'working' then all[#all+1] = {e=m.e, status=state, lacks=(not m.miner) and missing(m.e, m, nil) or {}} end
+          end
+          local lines = M.clusters(all)
+          if lines then stopped[#stopped+1] = name .. ': ' .. table.concat(lines, ' | ') end
+        end
         for _, m in ipairs(scan.by_product and scan.by_product[name] or {}) do
           if #rows >= 3 then break end
           local state = m.e.valid and (api.status_name(m.e) or 'unknown')
@@ -1387,6 +1429,7 @@ return function(api)
       local shares = prototypes.fluid and prototypes.fluid[item] and not prototypes.item[item] and try(M.fluid_shares, surface, force, item) or nil
       return {item=item, surface=surface.name, line=chain.line, path=chain.path, root=chain.last, not_working=#where > 0 and where or nil,
         fixes=#fixes > 0 and fixes or nil, full_chests=#full_chests > 0 and full_chests or nil, steps=chain.tree, cut=chain.cut, target=target,
+        stopped=#stopped > 0 and stopped or nil,
         shares=shares}
     end)
   end
@@ -1469,7 +1512,7 @@ return function(api)
   M.helpers = {inventory=inventory, count=count, input_of=input_of, output_of=output_of, recipe_of=recipe_of, kind_of=kind_of,
     main=function(e) return inventory(e, MAIN[e.type] or 'chest') end}
 
-  M.schema = {supply = {compact='true: lines only (flow, where, makers, the stopped makers and users by position, the chests holding most), as the dozen reads a shift need',item='item or fluid name; fluids return 10-minute flow, connected segment stock/capacity, makers and users by status', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole; fluid segments touching it include their whole connected stock',
+  M.schema = {supply = {all_stopped='true: makers_stopped and users_stopped: every one not working, grouped by cluster (within 12 tiles of a group\'s box): count, box, by name and state (missing ingredients), every position (at most 256 a read)',compact='true: lines only (flow, where, makers, the stopped makers and users by position, the chests holding most), as the dozen reads a shift need',item='item or fluid name; fluids return 10-minute flow, connected segment stock/capacity, makers and users by status', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole; fluid segments touching it include their whole connected stock',
     radius='with near: 1..512 tiles (default 64); alone: that far around you, on your surface',
     returns='one read, the same for everyone: flow (made/used in 10 min); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); surplus_chest (the largest unreserved stock outside requester/buffer chests, with held and robot-pickup reservations); belt_lines (where it sits on belts: the belt tiles holding it joined into lines (side by side; an empty tile or an underground splits one), the 5 holding the most: "N on K belt tiles (x1,y1)-(x2,y2); most M at (x,y); out end (x,y) n, in end (x,y) n" (out: its items move on to no belt of the line; in: nothing of the line feeds it), then how many more lines hold how many); chests (largest 5; what a requester or buffer chest asks for; any other chest its free slots, e.g. 0/48 slots free); full_chests (chests with every slot used that the makers\' output inserters wait on or that hold the item: slots used/total, what fills them (item and count, the most slots first), the machines whose output waits on it); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); freshness (its spread over every place read: count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; chests adds each one\'s least and most spoiled and count-weighted %); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
 
@@ -1493,7 +1536,16 @@ return function(api)
     local force = p.force
     local key = string.format('supply|%s|%s|%s|%s', tostring(surface.index or surface.name), force.name, item,
       area and string.format('%g,%g,%g', area.position.x, area.position.y, area.radius) or '')
-    return M.reuse(key, function() return M.supply_fresh(surface, force, item, area) end)
+    local out = M.reuse(key, function() return M.supply_fresh(surface, force, item, area) end)
+    -- all_stopped: every maker and user not working, by cluster (E4); else those lines are left out
+    assert(a.all_stopped == nil or type(a.all_stopped) == 'boolean', 'all_stopped is true or false')
+    if type(out) == 'table' and not a.all_stopped and (out.makers_stopped or out.users_stopped) then
+      local copy = {}
+      for k, v in pairs(out) do copy[k] = v end
+      copy.makers_stopped, copy.users_stopped = nil, nil
+      out = copy
+    end
+    return out
   end
   function M.supply_fresh(surface, force, item, area)
     if prototypes.fluid and prototypes.fluid[item] then return M.fluid_supply(surface,force,item,area) end
@@ -1517,8 +1569,12 @@ return function(api)
     end
     local lines = M.network_lines(t, scan)
     if #lines > 0 then out.networks = lines end
-    out.makers, out.makers_worst = M.machines(t, t.makers, 'makers', scan, packs)
-    out.users, out.users_worst = M.machines(t, t.users, 'users', scan, packs)
+    local mr, ur
+    out.makers, out.makers_worst, mr = M.machines(t, t.makers, 'makers', scan, packs)
+    out.users, out.users_worst, ur = M.machines(t, t.users, 'users', scan, packs)
+    -- kept for all_stopped (returned only when asked)
+    out.makers_stopped = mr and M.clusters(mr) or nil
+    out.users_stopped = ur and M.clusters(ur) or nil
     if out.makers_worst and #out.makers_worst == 0 then out.makers_worst = nil end
     if out.users_worst and #out.users_worst == 0 then out.users_worst = nil end
     out.feeders = M.feeders(t)

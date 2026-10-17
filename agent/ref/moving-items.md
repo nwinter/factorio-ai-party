@@ -68,6 +68,12 @@
   comes again in `team.missed_while_asleep`. `place_ghosts` and `scan` take `"surface": "vulcanus"` (remote view).
 - `feed {clear_spoilage:true}` clears spoiled recipe waste and burnt results before top-ups, also walking; `entities.cleared` reports taken/left. `collect {outputs_only:true}` reads/takes machine outputs only, never fuel.
 - `refuel {area|radius,from:"nearest"|chest_position,fuel,count}` collects fuel from observed chests/belts and tops up burners in one enemy-checked tour; `--wait` waits through it, `last.sources`/`fuel_taken` report takes.
+  Without `types` it reads only burners (boilers, furnaces, drills, reactors, burner generators and inserters), so a
+  base-sized area is not refused for its belts; the reply's `legs` lists the stops and `last.route` the walk. Nothing
+  to do: `nothing` says why, and `nearest_outside` names the nearest dry burner outside the area.
+- A tile corner two entities touch is refused naming them; `"name": "requester-chest"` (or `unit_number`) picks one.
+- A built inserter that drops onto a belt says `belt_mismatch` when what it puts (a drill's ore, a machine's products,
+  a chest's contents) is neither on that belt nor taken by the inserters downstream (120 tiles).
 - `feed` takes `position` with `radius` (its centre); `feed {area}` over 64 machines walks one tour; `refuel {from: "nearest", from_radius: 128}` looks farther for fuel. `refuel {radius, from: "nearest", feed_chests: true}` fills the chests that inserters feed boilers from.
 - `collect {min_fresh: 70}` takes only stacks at least 70% fresh; `left_less_fresh` says what stayed. A transfer from
   a belt is refused naming `pickup {belt: true}`. `transfer {from: "nearest", to}` takes from a chest feeding `to` itself.
