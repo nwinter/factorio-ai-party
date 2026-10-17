@@ -70,7 +70,8 @@
   inserters are found round the machine unless given. `surplus` names what is already there over the batch's need
   (the machine would make more with it). The inserters need a logistic network for their logistic condition.
   Example: `./fh call assembler_batch --args '{"position":{"x":107.5,"y":-94.5},"count":8,"dry_run":true}'`
-- `requests {position | platform?, set?, clear?, clear_all?, section?, active?, construction_requests?, force?, surface?}`: a
+- `requests {position | platform?, set?, clear?, clear_all?, section?, active?, trash_unrequested?, construction_requests?,
+  force?, surface?}`: a
   requester or buffer chest's requests (`position`), a platform hub's (`platform`), or your own (no position; needs
   logistic robotics). `set` takes a list or a map `{item: min}`; an entry without `max` keeps the slot's max (`"max":
   "inf"` sets none). An edit echoes what is stored per item (`stored`) and keeps the import planet when `from` is not
@@ -78,6 +79,11 @@
   names a shared group or a second section). `clear` (or `remove`): `["pumpjack"]` deletes the request and keeps what
   you hold; a personal `max` under what you hold is refused without `force: true` (the game trashes the rest). With
   `surface` (a planet) and `position` it acts there by remote view where our force sees the chunk.
+  `trash_unrequested: true` sets the trash-unrequested switch of a requester or buffer chest, a hub or your own
+  logistics: robots take to storage what it holds that no request names (spoilage among it); the reply's
+  `trash_unrequested` names what the chest holds that goes. A passive provider, active provider or storage chest has no
+  such switch: robots take spoilage from it only to a requester or buffer that requests spoilage, and an inserter
+  filtered to spoilage moves it into the chest it drops into.
   - A hub: each section, `off: true` when it requests nothing (`"section":N,"active":true` switches it on), and each
     request's import planet; `construction_requests: true` switches the hub's Request missing construction materials
     on. A set entry's `min_payload` is the custom minimum payload; an edit that does not name it keeps it, and one

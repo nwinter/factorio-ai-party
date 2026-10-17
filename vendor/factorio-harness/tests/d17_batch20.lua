@@ -162,3 +162,32 @@ do
   eq(#calls,0)
 end
 print('d17_batch20 C1 circuit_gate: ok')
+
+-- C2 (Grok): requests {trash_unrequested}: the requester chest's switch; the reply says what robots now take to storage.
+do
+  defines.inventory=defines.inventory or {}; defines.inventory.chest=defines.inventory.chest or 1
+  prototypes.item=prototypes.item or {}; prototypes.item['yumako']={}; prototypes.item['spoilage']={}
+  local slots={{value={type='item',name='yumako',quality='normal'},min=200}}
+  local sec={index=1,is_manual=true,group='',active=true,filters_count=1,get_slot=function(i) return slots[i] or {} end}
+  setmetatable(sec,{__index=function(_,k) if k=='filters' then return slots end end})
+  local secs=setmetatable({get_section=function(i) return i==1 and sec or nil end},{__index=function(_,k) if k=='sections_count' then return 1 end end})
+  local point={trash_not_requested=false}
+  local chest={valid=true,name='requester-chest',type='logistic-container',position={x=-17.5,y=27.5},
+    get_logistic_sections=function() return secs end,get_requester_point=function() return point end,
+    get_inventory=function() return {get_contents=function() return {{name='yumako',count=150},{name='spoilage',count=34}} end} end}
+  local st={}
+  local space=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return st end,remote_entity=function() return chest end,
+    integer=function(v,d) return v==nil and d or v end,keep=function() return {} end,freight={where=function() return {} end}}
+  local r=space.requests({index=1,force={platforms={}}},{position={x=-17.5,y=27.5},trash_unrequested=true})
+  eq(point.trash_not_requested,true); eq(r.trash_unrequested,'on: robots take to storage what no request names: spoilage*34')
+  r=space.requests({index=1,force={platforms={}}},{position={x=-17.5,y=27.5},trash_unrequested=false})
+  eq(point.trash_not_requested,false); eq(r.trash_unrequested,'off: what no request names stays')
+  r=space.requests({index=1,force={platforms={}}},{position={x=-17.5,y=27.5}})
+  eq(r.trash_unrequested,nil)
+  local plain={valid=true,name='passive-provider-chest',type='logistic-container',position={x=0.5,y=0.5},get_logistic_sections=function() return nil end,get_requester_point=function() return nil end,
+    prototype={logistic_mode='passive-provider'}}
+  local space2=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return st end,remote_entity=function() return plain end,
+    integer=function(v,d) return v==nil and d or v end,keep=function() return {} end,freight={where=function() return {} end}}
+  fails(function() space2.requests({index=1,force={platforms={}}},{position={x=0.5,y=0.5},trash_unrequested=true}) end,'passive-provider-chest has no trash-unrequested switch (a requester or buffer chest, a hub and your own logistics have one); robots take spoilage from a passive-provider chest only to a requester or buffer chest that requests spoilage, and an inserter filtered to spoilage moves it into the chest it drops into')
+end
+print('d17_batch20 C2 trash unrequested: ok')

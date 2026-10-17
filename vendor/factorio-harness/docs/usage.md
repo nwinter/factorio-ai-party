@@ -6682,3 +6682,12 @@ fh watch    # deploy on every change
   comes from the agent's inventory and each step is an action the agent could call itself. A failed step stops it and
   says what was done and the calls left; no decider held or no tile within reach of both: refused first, with the
   calls. tests/d17_batch20.lua (the calls and their arguments, a failed step, the refusal).
+- C2 (Grok): spoilage filled yumako and nutrient chests and each clear was a walk (about 8 a shift). requests could
+  read the trash-unrequested switch (reqchest.lua, trash.lua) and not set it. `requests {position, trash_unrequested:
+  true|false}` sets it on a requester or buffer chest, a hub or your own logistics (`target: character`), read back from
+  the game; the reply's `trash_unrequested`: `on: robots take to storage what no request names: spoilage*34` (a chest:
+  what it holds now that no active section names), or `off`. Grok's spoilage clears in shift30 were 18 from passive
+  provider chests and 2 from requester chests. A passive provider, active provider or storage chest has no such
+  switch; the refusal says so with what the game does: robots take spoilage from it only to a requester or buffer
+  that requests spoilage, and an inserter filtered to spoilage moves it into the chest it drops into (an active
+  provider's contents go to storage). tests/d17_batch20.lua.
