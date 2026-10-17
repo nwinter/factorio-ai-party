@@ -201,3 +201,101 @@ do
   eq(#r.entities,1); eq(r.entities[1].alive,false); eq(#r.entities[1].hits,2)
 end
 print('d16_batch7 B8 damage log: ok')
+
+-- C6 (Astra 13:50: Wren's salvage took about 60 deconstruct calls and a second pass): tiles to take up from the edge
+-- in, leaving what stands, tile ghosts and underground spans, the rest joined.
+do
+  game={tick=0}
+  local tiles={}
+  for x=0,5 do for y=0,2 do tiles[#tiles+1]={position={x=x,y=y}} end end
+  local belt={valid=true,type='transport-belt',bounding_box={left_top={x=0.1,y=1.1},right_bottom={x=0.9,y=1.9}}}
+  local s={find_tiles_filtered=function() return tiles end,
+    find_entities_filtered=function(f) if f.type=='tile-ghost' then return {{position={x=5.5,y=0.5}}} end return {belt} end}
+  local hub={position={x=0.5,y=1.5}}
+  local PP=dofile('mod/agent-harness_0.1.0/platplan.lua'){}
+  local taken,areas=PP.salvage(s,{},hub,4)
+  eq(#taken,4)
+  for _,t in ipairs(taken) do
+    assert(not (t.x==0 and t.y==1),'the belt\'s tile stays'); assert(not (t.x==5 and t.y==0),'the tile ghost\'s tile stays')
+  end
+  -- the farthest from the hub first: (5,2) before anything at x<=3
+  eq(taken[#taken].y,2)
+  assert(#areas<=#taken)
+  -- every taken tile was on the edge and the rest stay joined: (4,1) is never taken while (5,1) stands alone
+  local left={}
+  for _,t in ipairs(tiles) do left[t.position.x..','..t.position.y]=true end
+  for _,t in ipairs(taken) do left[t.x..','..t.y]=nil end
+  local start,seen,stack,n='0,1',{['0,1']=true},{{0,1}},0
+  while #stack>0 do
+    local c=table.remove(stack); n=n+1
+    for _,d in ipairs({{1,0},{-1,0},{0,1},{0,-1}}) do
+      local k=(c[1]+d[1])..','..(c[2]+d[2])
+      if left[k] and not seen[k] then seen[k]=true; stack[#stack+1]={c[1]+d[1],c[2]+d[2]} end
+    end
+  end
+  local total=0; for _ in pairs(left) do total=total+1 end
+  eq(n,total,'the foundation left is one piece')
+end
+print('d16_batch7 C6 platform_plan salvage: ok')
+
+-- C8 (Astra 15:20): upgrade changes a ghost in place and marks a built entity, as the upgrade planner; another kind
+-- is skipped.
+do
+  game={tick=0}
+  prototypes={entity={['turbo-transport-belt']={fast_replaceable_group='transport-belt',collision_box={left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}},
+    ['transport-belt']={fast_replaceable_group='transport-belt',collision_box={left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}},
+    inserter={fast_replaceable_group='inserter',collision_box={left_top={x=-0.15,y=-0.15},right_bottom={x=0.15,y=0.15}}}}}
+  local list={}
+  local ghost={valid=true,type='entity-ghost',ghost_name='turbo-transport-belt',position={x=1.5,y=0.5}}
+  ghost.order_upgrade=function(o) ghost.ghost_name=o.target; return true end
+  local built={valid=true,type='transport-belt',name='turbo-transport-belt',position={x=2.5,y=0.5}}
+  built.order_upgrade=function() built.marked=true; return true end
+  local ins={valid=true,type='inserter',name='inserter',position={x=3.5,y=0.5},order_upgrade=function() error('not called') end}
+  list={ghost,built,ins}
+  local p={force={},surface={find_entities_filtered=function(f) if f.type=='entity-ghost' then return {ghost} end return list end}}
+  local U=dofile('mod/agent-harness_0.1.0/upgrade.lua'){position=function(q) return q end,read_sight=function() end}
+  local r=U.run(p,{area={left_top={x=0,y=0},right_bottom={x=8,y=2}},map={['turbo-transport-belt']='transport-belt',inserter='transport-belt'}})
+  eq(r.ghosts_upgraded,1); eq(r.marked_for_upgrade,1); eq(ghost.ghost_name,'transport-belt'); eq(built.marked,true)
+  has(r.skipped[1],'inserter (3.5,0.5): transport-belt is not of its kind')
+  has(r.line,'1 built entity marked for upgrade (construction robots replace them with 1 transport-belt')
+  prototypes=nil
+end
+print('d16_batch7 C8 upgrade: ok')
+
+-- C9 (Astra 15:20): with automatic requests on, the open requests of platforms over this planet for the load.
+do
+  game={tick=0}
+  defines={inventory={hub_main=1}}
+  local function filters(list) return {sections_count=1,get_section=function() return {active=true,filters=list} end} end
+  local hub={valid=true,get_inventory=function() return {get_item_count=function(n) return n=='space-platform-foundation' and 285 or 0 end} end,
+    get_logistic_sections=function() return filters({{value={name='space-platform-foundation'},min=400,import_from={name='fulgora'}},
+      {value={name='rocket'},min=100,import_from={name='nauvis'}},{value={name='holmium-plate'},min=50}}) end}
+  local far={valid=true,name='Wren',space_location={name='vulcanus'},hub=hub}
+  local here={valid=true,name='Von Braun',space_location={name='fulgora'},hub=hub}
+  local silo={surface={name='fulgora',planet={name='fulgora'}},force={platforms={far,here}}}
+  local R=dofile('mod/agent-harness_0.1.0/rocketload.lua'){}
+  local open=R.open_requests(silo,{['space-platform-foundation']=true,rocket=true})
+  eq(#open,1); eq(open[1],'Von Braun asks space-platform-foundation 400, holds 285 (115 short)')
+  eq(#R.open_requests(silo,nil),2,'every request of the platform here, the rocket one from nauvis left out')
+  defines=nil
+end
+print('d16_batch7 C9 open requests with automatic requests on: ok')
+
+-- C1 (Astra 13:30): a platform renamed, and what still names the old name; nothing of theirs changed.
+do
+  game={tick=0}
+  local pl={valid=true,name='Von Braun'}
+  local st={queues={[5]={current={action='load_silo',args={platform='Von Braun'}},pending={{action='wait_until',args={['until']='platform_arrived',platform='Von Braun'},label='wait'},{action='craft',args={recipe='Von Braunite'}}}}},
+    board={items={[697]={kind='task',status='open',title='Build Von Braun transport'},[698]={kind='note',status='done',title='Von Braun old'}}}}
+  local R=dofile('mod/agent-harness_0.1.0/platrename.lua'){state=function() return st end,platform=function() return pl end,name_of=function(i) return i==5 and 'astra' or nil end}
+  local p={force={platforms={pl,{valid=true,name='Wren'}}}}
+  local r=R.rename(p,{platform='Von Braun',name='Braun II'})
+  eq(pl.name,'Braun II'); eq(r.was,'Von Braun'); eq(#r.still_named,3)
+  eq(r.still_named[1],'astra\'s queue: pending step 1 wait_until (wait)')
+  eq(r.still_named[2],'astra\'s queue: the running step load_silo')
+  has(r.still_named[3],'board #697 (task)')
+  eq(st.queues[5].current.args.platform,'Von Braun','nothing of theirs changed')
+  fails(function() R.rename(p,{platform='Braun II',name='Wren'}) end,'another platform of ours is named Wren')
+  eq(R.names('the Von Braunite mine','Von Braun'),false)
+end
+print('d16_batch7 C1 platform_rename: ok')

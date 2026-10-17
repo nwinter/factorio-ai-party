@@ -76,3 +76,5 @@
   construction materials on.
 - Hand-mining ore yields one ore per cycle (2 s for iron); `last.mined` counts it. Rocks give stone and coal fast.
 - A burner's fuel slot holds one fuel type: you cannot add coal while wood remains.
+
+- `cancel_craft {all: true}` cancels every queued hand craft, the latest first.

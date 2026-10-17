@@ -64,6 +64,9 @@
   Entity `mine` takes one `position` per call or queue step; its `positions`/`area` require `tiles: true`.
   `mine {position, count: 200}` on ore, coal or stone mines 200 units in one call (outcome `mined`), going on to the next tile in reach.
 - `mine {position, dry_run: true}` and `deconstruct` (dry run and live) read `heat_loss`: heat-network parts cut off from every reactor and heating tower, and on Aquilo freezable pipes and machines that lose their last heater at 30 C or more.
+- `upgrade {area | position, to, from?}` or `{map: {"turbo-transport-belt": "transport-belt"}}`: the upgrade planner; a
+  ghost changes in place (wires and settings kept), a built one is marked for robots. A place_ghosts dry run over another
+  ghost now says blocked, as the call is. `placements {surface}` works from another planet; each spot gives `network`.
 - `deconstruct {area, cancel: true}` unmarks; pump dry runs show each port's tile and what is there; supply rows show stock robots have reserved.
 - `clear_cliffs {"positions":[{"x":82,"y":38.5}]}` throws cliff explosives you hold at those cliffs, walking into their 10-tile
   range (`use_item {"item":"cliff-explosives","position":...}` too); `last.destroyed` names the cliffs gone, `last.left` the rest.

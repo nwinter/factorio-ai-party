@@ -580,13 +580,13 @@ return function(api)
   end
 
   M.schema = {
-    placements={platform='optional platform name: spots on that space platform (Astra, d15 07:50: where a cargo bay fits, by the game\'s own build check, which knows the hub and bay attachment), near in platform coordinates (default its hub)',name='entity or item name (an item: the entity it places)',
+    placements={surface='optional planet name: spots there by remote view (a chunk our force sees), as the map lets a player plan them',platform='optional platform name: spots on that space platform (Astra, d15 07:50: where a cargo bay fits, by the game\'s own build check, which knows the hub and bay attachment), near in platform coordinates (default its hub)',name='entity or item name (an item: the entity it places)',
       near='optional {x,y} centre (default you): in sight, or by remote view in a chunk our force sees now',position='the same as near',
       radius='optional 1..24 (default 12 for an offshore-pump, else 10; past 24 searched at 24, said in note)',limit='optional 1..50 positions (default 10; past 50: 50)',
       direction='optional compass name or 0, 4, 8, 12: only this direction (default north, east, south, west; a building that does not turn has none)',
       separate='optional true: spots that do not overlap each other, so all of them can be built (each overlaps no spot nearer in the list); overlap: positions left out for that',
       powered='optional true: only spots with a tile in the supply area of one of our built electric poles (the game connects the machine there); unpowered: positions left out for that; poles: our poles whose area reaches the search',
-      returns='placements [{position, direction}]: where the entity fits now, nearest first, one per position, by the game\'s manual build check (as build and dry_run: water, cliffs, entities, tiles; no reach or item check); count; checked: positions the game checked (at most 200); blocked: positions an entity or tile was in the way of (a scan before the game check); unseen: positions in chunks our force does not see now (left out); more: true when positions were left unchecked; in_the_way (nothing fits): what stands in the search square by name with the nearest one, and the tiles it cannot stand on by name; overlapping: how many pairs of the listed spots overlap each other (without separate); no_supply: how many listed spots lie in no pole\'s supply area (without powered, an entity that takes electricity)'},
+      returns='placements [{position, direction, network (an electric entity: the electric network #N whose pole supplies the spot, or none), pole (that pole, or the nearest pole and how far)}]: where the entity fits now, nearest first, one per position, by the game\'s manual build check (as build and dry_run: water, cliffs, entities, tiles; no reach or item check); count; checked: positions the game checked (at most 200); blocked: positions an entity or tile was in the way of (a scan before the game check); unseen: positions in chunks our force does not see now (left out); more: true when positions were left unchecked; in_the_way (nothing fits): what stands in the search square by name with the nearest one, and the tiles it cannot stand on by name; overlapping: how many pairs of the listed spots overlap each other (without separate); no_supply: how many listed spots lie in no pole\'s supply area (without powered, an entity that takes electricity)'},
   }
   M.handlers = {}
   -- Gemini 10:50 (accumulators, recyclers: radius 16 found nothing in 400
@@ -669,9 +669,9 @@ return function(api)
       end
       if pairs_n > 0 then out.overlapping = string.format('%d pair%s of these spots overlap each other (each fits alone): separate=true lists spots that do not', pairs_n, pairs_n == 1 and '' or 's') end
     end
-    if #found > 0 and not a.powered and try(function() return proto.electric_energy_source_prototype end) then
+    if #found > 0 and try(function() return proto.electric_energy_source_prototype end) then
       local n = M.unpowered(p, proto, found)
-      if n and n > 0 then out.no_supply = string.format('%d of these spots lie in no pole\'s supply area: powered=true lists spots that do', n) end
+      if n and n > 0 and not a.powered then out.no_supply = string.format('%d of these spots lie in no pole\'s supply area: powered=true lists spots that do', n) end
     end
     if not turns then for _, s in ipairs(found) do s.direction = nil end end
     return out
@@ -688,7 +688,7 @@ return function(api)
       if e.valid then
         local q = try(function() return e.quality.name end)
         local d = try(function() return e.prototype.get_supply_area_distance(q or 'normal') end) or try(function() return e.prototype.supply_area_distance end) or 0
-        if d > 0 then poles[#poles+1] = {x=e.position.x, y=e.position.y, d=d} end
+        if d > 0 then poles[#poles+1] = {x=e.position.x, y=e.position.y, d=d, name=e.name, net=try(function() return e.electric_network_id end)} end
       end
     end
     local n = 0
@@ -697,9 +697,24 @@ return function(api)
       local l, t, r, bt = f.position.x + b[1], f.position.y + b[2], f.position.x + b[3], f.position.y + b[4]
       local fed = false
       for _, q in ipairs(poles) do
-        if l < q.x + q.d and r > q.x - q.d and t < q.y + q.d and bt > q.y - q.d then fed = true; break end
+        if l < q.x + q.d and r > q.x - q.d and t < q.y + q.d and bt > q.y - q.d then
+          fed = true
+          -- the network the spot would join (C10, Sol 15:21)
+          f.network = q.net and ('#' .. q.net) or nil; f.pole = string.format('%s (%g,%g)', q.name, q.x, q.y)
+          break
+        end
       end
-      if not fed then n = n + 1 end
+      if not fed then
+        n = n + 1
+        local best, bd
+        for _, q in ipairs(poles) do
+          local dd = ((q.x - f.position.x) ^ 2 + (q.y - f.position.y) ^ 2) ^ 0.5
+          if not bd or dd < bd then best, bd = q, dd end
+        end
+        f.network = 'none'
+        f.pole = best and string.format('in no supply area; the nearest pole %s (%g,%g) on #%s is %.1f tiles off', best.name, best.x, best.y, tostring(best.net), bd)
+          or 'in no supply area; no pole of ours within 20 tiles'
+      end
     end
     return n
   end

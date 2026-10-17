@@ -72,6 +72,11 @@
   `platform_endurance` adds `departure` (each ammunition over the route: used, aboard, made, short or spare, a rocket's
   lift), `solar` with low and no power counts, and flying, each line's last 60 s. `platforms {compact: true}`: a line a
   platform, blockers only when new to you. Platform loss alerts list each lost entity: rebuilt, a ghost there, or none.
+- `platform_rename {platform, name}` renames one, listing queues, orders, plans and board items still naming the old
+  name. `platform_plan {platform, salvage: 60}` lists foundation tiles to take up from the edge in, as deconstruct areas.
+  `load_silo {rockets: 3, launch: true, ...}` queues the load for 3 rockets. With automatic requests on, load_silo and
+  preflight name the platforms' open requests a rocket may go to. A launch waiting while its platform leaves is told
+  (`launch:` alerts); a rocket in flight holds the platform until its pod lands.
 - `load_silo {walk: true}` without `from` walks to the silo with what you hold; a walking load takes the freshest
   stacks first (`last.freshness`). `wait_min: 15` keeps a load waiting through 15 minutes with no new part;
   `parts_short` (and `last.why`) names each rocket-part ingredient the silo lacks. The reply's `switches` gives the

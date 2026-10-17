@@ -147,3 +147,15 @@ do
   fails(function() astra('inspect',{radius=4}) end,'radius goes with position')
 end
 print('d16_batch7_rt B1 empty ground and inspect radius: ok')
+
+-- C4 (Sonnet 13:51): the same load_silo for N rockets in one call, as N queue steps.
+do
+  astra('queue_cancel',{})
+  local r=astra('load_silo',{position={x=40.5,y=4.5},items={['iron-plate']=100},launch=true,platform='Swift',rockets=3})
+  eq(r.rockets,3); assert(r.note:find('3 load_silo steps appended to your queue',1,true),r.note)
+  local q=astra('queue_status',{args=true,pending=8})
+  eq(q.pending_count,3); eq(q.pending[1].action,'load_silo'); eq(q.pending[3].label,'rocket 3 of 3'); eq(q.pending[2].args.rockets,nil)
+  fails(function() astra('load_silo',{position={x=40.5,y=4.5},items={['iron-plate']=100},rockets=2}) end,'rockets goes with launch: true')
+  astra('queue_cancel',{})
+end
+print('d16_batch7_rt C4 load_silo for N rockets: ok')
