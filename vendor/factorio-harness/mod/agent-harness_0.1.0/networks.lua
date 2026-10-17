@@ -1917,6 +1917,9 @@ return function(api)
     if least then
       g.line=g.line..string.format('; least-stocked feed chest %s %s: %s (%d fuel items)',least.e.name,at(least.e.position.x,least.e.position.y),least.held or 'no fuel',least.count)
     end
+    -- the power view's sample (rebuilt every 60 s; d17 batch16 B1, Haiku: the numbers were often 80 s old)
+    local age = r.view_tick and math.floor((game.tick - r.view_tick) / 60)
+    if age then g.line = g.line .. string.format('; minutes sampled %d s before this alert (./fh call boilers reads each now)', age) end
     -- The fuel's own drills on the power these boilers make (Opus, twice: coal drills short of power fed the boilers that
     -- powered them): electric drills within SPIRAL_RADIUS on this network mining a fuel the boilers burn, by status.
     local spiral = surface and f and try(function() return timed('networks.spiral', M.spiral, surface, f, g.center, r.id, names) end)
@@ -2089,7 +2092,7 @@ return function(api)
     local v = view(f)
     local rows = {}
     for _, s in ipairs(v.surfaces) do
-      for _, r in ipairs(s.electric) do rows[#rows+1] = {s=s, r=r, electric=true} end
+      for _, r in ipairs(s.electric) do r.view_tick = v.tick; rows[#rows+1] = {s=s, r=r, electric=true} end
       for _, r in ipairs(s.logistic) do rows[#rows+1] = {s=s, r=r} end
     end
     return {force=f.name, rows=rows, i=1, out={}}

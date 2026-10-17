@@ -196,7 +196,7 @@ eq(#g,2); eq(g[2].kind,'no_power.network'); eq(g[2].n,1); eq(g[1].kind,'boiler_f
 eq(g[1].now_text,'2 boilers under 20 min of their own fuel at this draw, 1 under 10, 1 under 5, lowest 2 min')
 eq(g[1].line,'2 boilers under 20 min of their own fuel at this draw, 1 under 10, 1 under 5, not refilled, near (35,19) (electric #7: 11 boilers, '
   ..'1 with fuel at their feeders); boiler (66,16) 2 min: no inserter feeds it; boiler (4,22) 12 min: no inserter feeds it; '
-  ..'fuel within 64 tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50; belts: coal 16 on 2 tiles, nearest (31,13), (31,12); least-stocked feed chest wooden-chest (41,13): 400 coal (400 fuel items)')
+  ..'fuel within 64 tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50; belts: coal 16 on 2 tiles, nearest (31,13), (31,12); least-stocked feed chest wooden-chest (41,13): 400 coal (400 fuel items); minutes sampled 0 s before this alert (./fh call boilers reads each now)')
 -- The chest empties: lb1 is low too, its feeder and the empty chest named.
 chest_coal=0; run(5); storage.networks.views={}
 g=N.alert_groups(force)
