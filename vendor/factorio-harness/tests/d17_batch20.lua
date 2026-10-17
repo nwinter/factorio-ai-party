@@ -49,3 +49,27 @@ do
   fails(function() remote.check_step('craft',{recipe='x'}) end,'not supported in the remote lane')
 end
 print('d17_batch20 A4 min payload: ok')
+
+-- A5 (Gemini): conflicts names the footprint tiles the entity cannot stand on and the tile item that makes them buildable.
+do
+  local fixes
+  local C=dofile('mod/agent-harness_0.1.0/conflicts.lua'){compass={},tile_fixes=function() return fixes end,tile_rules=function() return nil end}
+  local surface={find_entities_filtered=function() return {} end}
+  local p={surface=surface,force={name='player'}}
+  local proto={name='steam-turbine',collision_mask={layers={object=true}}}
+  local target={proto=proto,pos={x=-54.5,y=112.5},dir=0,box={left_top={x=-56,y=110},right_bottom={x=-53,y=115}}}
+  fixes={}
+  for i=1,12 do fixes[i]={tile='oil-ocean-shallow',locked='foundation (not researched)'} end
+  for i=13,15 do fixes[i]={tile='oil-ocean-deep',locked='foundation (not researched)'} end
+  local r=C.read(p,{},target)
+  eq(r.line,'nothing stands in its way; steam-turbine cannot stand on 15 tiles of its footprint: oil-ocean-shallow 12 (foundation laid on it makes it buildable; foundation is not researched), oil-ocean-deep 3 (foundation laid on it makes it buildable; foundation is not researched)')
+  eq(r.tiles[1].count,12); eq(r.tiles[1].needs,'foundation'); eq(r.tiles[1].researched,false)
+  fixes={{tile='water',item='landfill'},{tile='out-of-map'}}
+  r=C.read(p,{},target)
+  eq(r.tiles_line,'steam-turbine cannot stand on 2 tiles of its footprint: water 1 (landfill laid on it makes it buildable), out-of-map 1 (no tile item makes it buildable)')
+  eq(r.tiles[1].researched,true)
+  fixes=nil
+  r=C.read(p,{},target)
+  eq(r.line,'nothing stands in its way'); eq(r.tiles,nil)
+end
+print('d17_batch20 A5 conflicts tiles: ok')

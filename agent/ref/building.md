@@ -75,8 +75,10 @@
   Example: `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'`
 - `nearest_water {position?, radius?}`: the nearest pumpable tile in charted ground (up to 256 tiles) with
   offshore-pump spots there.
-- `conflicts {name, position}` (a read): what building there takes away: everything in the way, the fluid segments that
-  split and the poles cut off.
+- `conflicts {name, position, direction?}` (a read): what building there takes away: everything in the way, the fluid
+  segments that split and the poles cut off; and the footprint tiles it cannot stand on (`tiles`, `tiles_line`: water,
+  oil ocean, lava, space, per tile kind with the tile item that makes them buildable, and when that item is not
+  researched).
   Example: `./fh call conflicts --args '{"name":"pumpjack","position":{"x":-4.5,"y":101.5}}'`
 - `build_path {points}`: lays belts along the points and mines the trees and rocks in its way by hand as it goes
   (`last.cleared`, `cleared_names`).

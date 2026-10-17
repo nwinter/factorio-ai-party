@@ -6618,3 +6618,11 @@ fh watch    # deploy on every change
     kept from the request cleared before)`. `min_payload: false` in a set entry clears it and forgets it.
   - The remote lane takes `min_payload` steps (they name their platforms; no body).
   tests/d17_batch20.lua.
+- A5 (Gemini): `conflicts` said `nothing stands in its way` for steam turbines over Fulgora's shallow oil ocean; build
+  then failed: `placement blocked by tiles: oil-ocean-shallow (needs foundation (not researched) ...)`. conflicts read
+  only entities. It now reads the footprint's tiles with the build refusal's own code (dryrun.tile_fixes: the
+  entity's collision mask against each tile; a tile ghost there that makes it buildable counts as laid): `tiles`
+  [{tile, count, needs, researched}] and `tiles_line`, also at the end of `line`: `nothing stands in its way;
+  steam-turbine cannot stand on 15 tiles of its footprint: oil-ocean-shallow 15 (foundation laid on it makes it
+  buildable; foundation is not researched)`. An entity with tile rules (an asteroid collector) gives the broken rule.
+  tests/d17_batch20.lua.
