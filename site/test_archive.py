@@ -78,7 +78,10 @@ def main():
 
         out = build(d, dict(content, archive=False, run_start="pub1"), runs)
         pages = sorted(str(p.relative_to(out)) for p in out.rglob("*.html"))
-        assert pages == ["404.html", "about/index.html", "agents/index.html", "chat/index.html", "chronicle/index.html", "index.html", "live/index.html", "polls/index.html",
+        assert pages == ["404.html", "about/index.html", "agents/index.html", "chat/index.html", "chronicle/index.html",
+                         "how/agents/index.html", "how/compare/index.html", "how/harness/index.html", "how/index.html",
+                         "how/lessons/index.html", "how/operations/index.html", "how/setup/index.html",
+                         "index.html", "live/index.html", "polls/index.html",
                          "runs/long/index.html", "runs/long/shift-1/index.html", "runs/long/shift-2/index.html",
                          "search/index.html", "timeline/index.html"], pages
         before = set(content["runs"]) | set(content["studies"]) | {"shake3", "shake4", "smoke-x1"}
