@@ -1034,6 +1034,9 @@ return function(api)
           extra.incoming_cargo = string.format('%d rocket%s on the way: %s', inc.rockets, inc.rockets == 1 and '' or 's', inc.cargo)
         end
         extra.ammo_rates = api.ammo and try(function() return api.ammo(pl) end) or nil
+        -- what of it can reach a turret, and what is stranded (d17 batch13 B1)
+        local tr = api.ammofeed and pl.surface and try(function() return api.ammofeed.trace(pl) end)
+        if tr then extra.ammo_feed = api.ammofeed.lines(tr, false)[1] end
         extra.hub_chunks = api.hub_chunks and try(function() return api.hub_chunks(pl) end) or nil
         -- Each empty turret taking ammo the hub holds, and what feeds it (platalerts.lua; Sol, Astra 00:21).
         local empty = api.empty_turrets and try(function() return api.empty_turrets(pl) end)

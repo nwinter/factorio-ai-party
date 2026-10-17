@@ -10327,7 +10327,7 @@ M.silo=require('silo'){state=state,cargo=M.cargo,position=position,status_name=f
 function handlers.silo(p,a) return M.silo.read(p,a) end
 -- A silo's rocket cargo in one call each (rocketload.lua; shift12 15:20): load_silo (Sonnet), preflight (Gemini),
 -- launch's min_cargo and arrived guard and a queue dry run's cargo (Luna).
-M.rocketload=require('rocketload'){last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
+M.rocketload=require('rocketload'){ammofeed={trace=function(pl) return M.ammofeed.trace(pl) end,lines=function(tr,all) return M.ammofeed.lines(tr,all) end},last_launch=function(silo) return M.silo.last_launch(silo) end,cargo=M.cargo,remote_entity=remote_entity,reason=reason,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   where=function(pl) return M.freight.where(pl) end,silos=function(p) return M.census.silos(p) end,
   ammo=function(pl) return M.freight.ammo(pl) end,incoming=function(pl) return M.freight.incoming(pl) end,
@@ -12646,7 +12646,7 @@ M.visuals=require('visuals'){state=state,lookup=function(index) return M.lookup(
 -- repair packs, hub health, to the platform's creator, workers and riders.
 -- What a platform's thrusters lack and the chain behind it (thrust.lua): the slow-flight alert and platforms {platform}.
 M.thrust=require('thrust'){circuit=function(e) return M.circuits.read(e) end}
-M.platalerts=require('platalerts'){state=state,platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
+M.platalerts=require('platalerts'){state=state,ammofeed={trace=function(pl) return M.ammofeed.trace(pl) end},platform_events=function(p,h) return M.freight and M.freight.event_lines(p,h) end,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
   lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end,
   thrust=function(pl) return M.thrust.read(pl) end,thrust_lowest=function(t) return M.thrust.lowest_text(t) end}
 -- Human players: their log and restore (players.lua). Bots, camera clients
@@ -13787,7 +13787,9 @@ M.platbom=require('platbom'){platform=function(p,name) return space.platform(p,n
 function handlers.platform_bom(p,a) return M.platbom.read(p,a) end
 function handlers.platform_production(p,a) return M.platbom.production(p,a) end
 -- A platform's turret cover of its collectors and hull (platdefense.lua; A4, Astra 01:50).
-M.platdefense=require('platdefense'){platform=function(p,name) return space.platform(p,name) end}
+-- A platform's ammunition by whether it can reach a turret (ammofeed.lua; d17 batch13 B1).
+M.ammofeed=require('ammofeed'){}
+M.platdefense=require('platdefense'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed}
 function handlers.platform_defense(p,a) return M.platdefense.read(p,a) end
 -- Each ghost near a point or in an area: what places it and whether robots can build it (ghostlist.lua; A10, Muse).
 M.ghostlist=require('ghostlist'){position=position,distance=distance,integer=integer}
@@ -13861,7 +13863,7 @@ function handlers.drops(p,a) return M.drops.read(p,a) end
 M.freight=require('freight'){state=state,spoil=M.spoil,pods=M.pods,departure=function(name) return M.departure and M.departure.lines(name) end}
 -- platform_endurance: a route's legs at the platform's speed and what its ammunition, repair packs, thruster fluids,
 -- power and hub space come to over it at today's rates (endurance.lua; Astra, d15: Wayfarer lost at Aquilo).
-M.endurance=require('endurance'){platform=function(p,name) return space.platform(p,name) end,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
+M.endurance=require('endurance'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
   leg=function(pl) return M.freight.leg(pl) end,segments=function(pl) return M.freight.segments(pl) end,ammo_counts=function(pl) return M.freight.ammo_counts(pl) end,
   path=function(a,b) return M.freight.path(a,b) end,stock_places=function(pl,want) return M.freight.stock_places(pl,want) end,
   places_text=function(sp,name) return M.freight.places_text(sp,name) end,moved_text=function(a,b,name) return M.freight.moved_text(a,b,name) end}

@@ -688,13 +688,15 @@ do
   end
   local b1,b2,u=belt(0.5,nil,'A',{{name='iron-ore',count=4}}),belt(1.5,nil,'A',{{name='iron-ore',count=3}}),belt(2.5,'underground-belt','A',{})
   local u2=belt(6.5,'underground-belt','B',{{name='iron-ore',count=8}})
-  u.neighbours=u2
+  u.neighbours=u2; u.belt_to_ground_type='input'; u2.belt_to_ground_type='output'
   b1.belt_neighbours.outputs={b2}; b2.belt_neighbours.inputs={b1}; b2.belt_neighbours.outputs={u}; u.belt_neighbours.inputs={b2}
   b2.get_circuit_network=function(w) return w==1 and {signals={{signal={name='iron-ore'},count=7}}} or nil end
   local C=dofile('mod/agent-harness_0.1.0/circuits.lua'){}
-  eq(C.belt_segment(b2),'this tile\'s line runs 3 tiles: back at transport-belt (0.5,0) (the belt starts there), on at underground-belt (2.5,0) (an underground; past it is not this line); it holds 7 iron-ore')
+  -- (d17 batch13 B2: the physical segment, then the whole belt entire_belt_hold reads, through the underground pair)
+  has(C.belt_segment(b2),'the physical segment only (the engine\'s transport line through this tile, not what the wire reads): 3 tiles, back at transport-belt (0.5,0) (the belt starts there), on at underground-belt (2.5,0) (an underground; past it is not this line); it holds 7 iron-ore.')
   b2.get_circuit_network=function(w) return w==1 and {signals={{signal={name='iron-ore'},count=15}}} or nil end
-  has(C.belt_segment(b2),'(the wires read: iron-ore 15 on the wires, which includes anything else on those networks)')
+  has(C.belt_segment(b2),'What read_contents_mode entire_belt_hold reads is the whole belt: 4 tiles followed through its inputs and outputs')
+  has(C.belt_segment(b2),'holding 15 iron-ore; the wires read 15 iron-ore')
 end
 print('d15_batch4 F4 belt segment: ok')
 
