@@ -6248,6 +6248,36 @@ do
     if r.requests and r.requests~='none' then parts[#parts+1]='requests '..r.requests end
     if r.direction then table.insert(parts,1,'facing '..r.direction) end
     if r.pickup then parts[#parts+1]='picks at '..r.pickup..', drops at '..tostring(r.drop) end
+    if e.type~='entity-ghost' then
+      -- (d17 batch20 B1, Luna: three Gleba breeders watched by paged dumps) what spoils in it: each spoilable item's
+      -- count and count-weighted spoiled share, the first to spoil (or hatch) and when, and the hatch warning; its
+      -- circuit and logistic conditions with the values now.
+      local acc,seen={},{}
+      local function add(name,where)
+        if seen[name] then return end
+        seen[name]=true
+        local ok,inv=pcall(inventory,e,name)
+        if ok then M.spoil.inventory(inv,acc,where) end
+      end
+      for _,name in ipairs(STORES) do add(name,'chest') end
+      for _,part in ipairs(PARTS) do add(part[1],part[2]) end
+      if BELT_ROW[e.type] then pcall(M.spoil.belt,e,acc,'belt')
+      elseif e.type=='inserter' then pcall(M.spoil.add,acc,e.held_stack,'hand') end
+      if #acc>0 then
+        local items={}
+        for i,x in ipairs(acc) do if i<=4 then items[i]=string.format('%s*%d %d%%',x.key,x.count,x.count>0 and math.floor(100*x.wsum/x.count+0.5) or 0) end end
+        local first
+        for _,x in ipairs(acc) do if not first or x.tick<first.tick then first=x end end
+        parts[#parts+1]='spoil: '..table.concat(items,', ')..(#acc>4 and ', ...' or '')..' spoiled; first: '..(first.where and first.where..' ' or '')..M.spoil.row_text(first)
+        local hatch=M.spoil.warning(acc)
+        if hatch then parts[#parts+1]='hatch: '..hatch end
+      end
+      local okb,cb=pcall(function() return e.get_control_behavior() end)
+      if okb and cb then
+        local okc,cparts=pcall(function() return M.circuits.condition_parts(e,M.circuits.read(e,cb),cb) end)
+        if okc and cparts and #cparts>0 then parts[#parts+1]='circuit: '..table.concat(cparts,', ') end
+      end
+    end
     local name=e.type=='entity-ghost' and 'ghost of '..e.ghost_name or e.name
     return string.format('%s (%g,%g)%s',name,e.position.x,e.position.y,#parts>0 and ': '..table.concat(parts,'; ') or '')
   end

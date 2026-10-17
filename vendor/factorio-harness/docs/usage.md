@@ -6626,3 +6626,16 @@ fh watch    # deploy on every change
   steam-turbine cannot stand on 15 tiles of its footprint: oil-ocean-shallow 15 (foundation laid on it makes it
   buildable; foundation is not researched)`. An entity with tile rules (an asteroid collector) gives the broken rule.
   tests/d17_batch20.lua.
+
+### Group B
+- B1 (Luna): watching three Gleba breeders and egg belts took paged full inspects, cut off when long. `inspect
+  {positions: [...], compact: true}` (1..32 positions, one line each, as before) now adds to each line:
+  - `spoil:` each spoilable item in it (its inventories, a belt's lanes, an inserter's hand): count and count-weighted
+    spoiled share (up to 4 items), then `first:` where, and the first stack's time to spoil or hatch;
+  - `hatch:` the hatch warning (how many hatch into what, the first in, how many within 5 min);
+  - `circuit:` its circuit condition with each signal's value on its red and green wires now and whether it holds; its
+    logistic condition with the item's count in the logistic network there; `it is off by its condition` or `it is on`
+    (circuits.condition_parts, which inserter_line now uses too).
+  e.g. `biochamber (6.5,4.5): recipe pentapod-egg; in: bioflux*40; spoil: bioflux*40 35% spoiled; first: in
+  bioflux*40: the first spoils in 2m00s (...); circuit: enabled when bioflux > 200 (on its wires: item:bioflux 150):
+  false now, it is off by its condition`. runtime_test.lua.

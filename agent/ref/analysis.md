@@ -93,7 +93,10 @@
   drop, and `holds`, `requests`, `recipe`, `status_name` where it has them. It always returns `entities` (64 a page:
   `page`, `pages`, `next`) and `by_name` beside them; robots flying through are only counted (`also`). `types` or
   `name` narrows it. A belt's `holds` is its lanes (`right lane: rocket*4`; an underground's buried part as `... lane
-  underground`), or `empty`. `compact: true` gives a line each. Example: `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}},"compact":true}'`
+  underground`), or `empty`. `compact: true` gives a line each (with `positions`, up to 32 in one reply): status,
+  health, recipe, what it holds, and `spoil:` (each spoilable item's count and spoiled share, the first to spoil or hatch
+  and when), `hatch:`, and `circuit:` (its circuit condition with each signal's value on its wires now, its logistic
+  condition with what the network holds, whether it is off by them). Example: `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}},"compact":true}'`
 - `ports {name, position, direction?, recipe?, mirror?, platform?}`: where each fluid port of an unbuilt machine is and
   the fluid the recipe puts there. Example: `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north","recipe":"electrolyte"}'`
 - `power {position?, radius?, area?, fragile?, by_cause?, platform?, surface?}`: per network `supply_line`: generators'
