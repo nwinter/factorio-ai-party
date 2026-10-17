@@ -95,7 +95,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   else
     echo "1. fresh: stop world $world, new instance save $run (seed $seed, $enemies enemies, space_age=$POG_SPACE_AGE), start server, deploy"
   fi
-  echo "2. directors cam1..3 join one at a time (tools/start-cams.sh: each in the game before the next, up to ${POG_CAM_WAIT:-180} s, a stuck one restarted once; then OBS's camera captures rehooked)"
+  echo "2. directors $(python3 tools/cams.py list) join one at a time (tools/start-cams.sh: each in the game before the next, up to ${POG_CAM_WAIT:-180} s, a stuck one restarted once; then OBS's camera captures rehooked)"
   for name in $members; do
     if [ -n "$resume" ]; then
       if [ -f "$prev_dir/$name/notes.md" ]; then notes="notes.md from $prev_dir/$name ($(wc -l < "$prev_dir/$name/notes.md" | tr -d ' ') lines)"; else notes="fresh notes.md (none in $resume)"; fi
@@ -129,13 +129,19 @@ log "player votes: $([ "${POG_PLAYERS:-0}" = 1 ] && echo "on (docs/PLAYERS-NOTES
 # The hosts' writer: POG_CASTER_MODEL on OpenRouter (Nick picked Opus 5.5 from the 2026-10-11 writer comparison,
 # docs/AUDIO-NOTES.md); urgent beats stay on the fast Workers AI model. Empty, or no OpenRouter key: Workers AI.
 cmodel=${POG_CASTER_MODEL-anthropic/claude-opus-5.5}
+# The director's clients (tools/cams.py): POG_CAMS a count (1-3) or names; Sunday 2026-10-18 POG_CAMS=1 (cam1 alone, Nick
+# plays on the box). POG_EXPECT_CAMS: how many the operator's watchdog expects in the game (switches.env below).
+cams=$(python3 tools/cams.py list)
+export POG_EXPECT_CAMS=$(python3 tools/cams.py count)
+log "cameras: $cams ($POG_EXPECT_CAMS client$([ "$POG_EXPECT_CAMS" = 1 ] && echo ': one camera, no inset or trio' || echo s))"
 # POG_CASTER_LOW_MODEL: the hosts' writer while YouTube says nobody (or one long-time viewer) is watching; empty: cmodel
 clow=${POG_CASTER_LOW_MODEL-anthropic/claude-haiku-5.5}
 # The switches this run starts with, for the next shift (tools/shift-change.sh starts it with the same ones).
 printf '%s\n' "POG_BROKER=${POG_BROKER:-0}" "POG_FULL_TOOLS=${POG_FULL_TOOLS:-0}" "POG_SPACE_AGE=$POG_SPACE_AGE" \
   "POG_YOUTUBE=$POG_YOUTUBE" "POG_CASTER_MODEL=$cmodel" "POG_CASTER_URGENT=${POG_CASTER_URGENT:-}" "POG_CASTER_LOW_MODEL=$clow" \
   "POG_CASTER=${POG_CASTER:-1}" "POG_ANALYST=${POG_ANALYST:-1}" "POG_PLAYERS=${POG_PLAYERS:-0}" \
-  "POG_VIEWER_RELAY=${POG_VIEWER_RELAY:-1}" "POG_TEAM_FILE=$team" > "$rundir/switches.env"
+  "POG_VIEWER_RELAY=${POG_VIEWER_RELAY:-1}" "POG_TEAM_FILE=$team" "POG_CAMS=${POG_CAMS:-3}" \
+  "POG_EXPECT_CAMS=$POG_EXPECT_CAMS" > "$rundir/switches.env"
 
 if [ -n "$resume" ]; then
   # 1. A later shift: the same instance and save (docs/HARNESS3-NOTES.md, round 7).
@@ -223,6 +229,7 @@ python3 - "$team" "$rundir/stream.json" "$run" "$minutes" <<'EOF'
 import json, os, sys
 sys.path.insert(0, "tools")
 from shift_times import shift as shift_times
+from cams import slots as cam_slots
 team, out, run, minutes = sys.argv[1:]
 # The shift's times for the site (a visitor between shifts sees when to come back): shifts run back to back, so the
 # next is expected when this one ends; POG_NEXT_SHIFT sets it ("02:47", an ISO time, or "none"). tools/shift_times.py
@@ -234,8 +241,9 @@ for line in open(team):
     agents[name] = {"model": label, "harness": harness}
 words = {2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six", 7: "Seven", 8: "Eight", 9: "Nine", 10: "Ten"}
 json.dump({"title": f"{words.get(len(agents), len(agents))} AIs, one factory", "subtitle": ("Factorio: Space Age" if os.environ.get("POG_SPACE_AGE") == "1" else "Factorio") + " co-op · real time · no cheats",
-           "space_age": os.environ.get("POG_SPACE_AGE") == "1", "shift": shift, "agents": agents, "cameras": [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2},
-                                         {"slot": "cam3", "player": 3}]}, open(out, "w"), indent=1)
+           "space_age": os.environ.get("POG_SPACE_AGE") == "1", "shift": shift, "agents": agents,
+           # the director's clients (tools/cams.py: POG_CAMS=1 is cam1 alone, Sunday 2026-10-18)
+           "cameras": cam_slots()}, open(out, "w"), indent=1)
 EOF
 # Viewer chat: the companion site's chat always; YouTube when POG_YOUTUBE (an @handle, channel id or video id) is set.
 viewers=(--viewers-site); [ -n "${POG_YOUTUBE:-}" ] && viewers+=(--viewers-youtube "$POG_YOUTUBE")
@@ -273,7 +281,8 @@ nohup python3 tools/chat-log.py --world "$world" --bot "$first_bot" "$rundir/cha
 echo $! >> "$rundir/stream-service.pid"
 helpers+=("chat-log:$!:$rundir/chat-log.err")
 # ./shot: bots have no client, so a director renders each screenshot; this copies them into the workspaces.
-nohup tools/shot-sync.sh "$rundir" "$world-client-cam1" "$world-client-cam2" "$world-client-cam3" \
+shot_dirs=(); for c in $cams; do shot_dirs+=("$world-client-$c"); done
+nohup tools/shot-sync.sh "$rundir" "${shot_dirs[@]}" \
   >"$rundir/shot-sync.log" 2>&1 &
 echo $! >> "$rundir/stream-service.pid"
 helpers+=("shot-sync:$!:$rundir/shot-sync.log")

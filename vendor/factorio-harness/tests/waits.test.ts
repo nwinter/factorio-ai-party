@@ -402,3 +402,50 @@ test('craft --wait sleeps until crafting_done',async()=>{
     const sl=seen.find(r=>r.action==='sleep'); assert.equal(sl.args.condition.until,'crafting_done'); assert.equal(sl.args.seconds,15);
   });
 });
+// d16 batch8 A2 (Grok 18:20: a tell cut load_silo --wait twice, and a launch then left packs in the inventory): a
+// walking or loading tour's --wait goes on through a tell (listed in told_during_wait) and ends on an urgent alert.
+test('load_silo and collect --wait go on through a tell and end on an urgent alert',async()=>{
+  let polls=0, urgentAsked=0;
+  await engine(request=>{
+    if(request.action==='load_silo')return {ok:true,tick:10,result:{op:'load_silo',walk:true,until_tick:9000}};
+    polls++;
+    if(request.args?.urgent_since!==undefined)urgentAsked++;
+    if(polls===1)return {ok:true,tick:20,result:{active:{kind:'gather',until_tick:9000},inbox:{tick:15,woke:'told',from:'sol'}}};
+    if(polls===2)return {ok:true,tick:30,result:{active:{kind:'gather',until_tick:9000},inbox:{tick:15,woke:'told',from:'sol'}}};
+    return {ok:true,tick:40,result:{active:false,last:{kind:'gather',op:'load_silo',outcome:'launched',tick:39}}};
+  },async port=>{
+    const {stdout}=await cli(port,['call','load_silo','--args','{"position":{"x":1,"y":1},"items":{"lab":1},"walk":true,"launch":true,"platform":"Swift"}','--wait']);
+    const out=JSON.parse(stdout);
+    assert.equal(out.ok,true,stdout); assert.ok(polls>=3,'the tell did not end it');
+    assert.deepEqual(out.result.completion.told_during_wait,['tell from sol at tick 15']);
+    assert.ok(urgentAsked>=2,'the polls ask for urgent alerts since the call');
+  });
+  polls=0;
+  await engine(request=>{
+    if(request.action==='collect')return {ok:true,tick:10,result:{op:'transfer',places:3,until_tick:9000}};
+    polls++;
+    return {ok:true,tick:20,result:{active:{kind:'gather',until_tick:9000},...(polls>=2?{urgent:'attack at (3,4), 12 tiles from you'}:{})}};
+  },async port=>{
+    // still running: exit 3, as a wait a tell ended
+    const {stdout}=await cli(port,['call','collect','--args','{"positions":[{"x":1,"y":1}],"item":"iron-plate","walk":true}','--wait']).catch((e:any)=>e);
+    const out=JSON.parse(stdout);
+    assert.equal(out.result.completion.outcome,'urgent',stdout); assert.equal(out.result.completion.from,'attack at (3,4), 12 tiles from you');
+    assert.match(out.result.completion.still_running,/^gather/);
+  });
+});
+// d16 batch8 A3 (Sonnet 18:20): `platform Wren at vulcanus`; a sleep on platform conditions alone goes on through tells.
+test('fh sleep --until platform NAME at PLANET waits through tells unless --wake-on-tells',async()=>{
+  const seen:any[]=[];
+  await engine(sleepEngine(seen),async port=>{
+    for (const until of ['platform Wren at vulcanus','platform "Big Ship" left gleba','ship Wren leaves nauvis']) {
+      assert.equal(JSON.parse((await cli(port,['sleep','30','--until',until])).stdout).result.woke,'condition');
+    }
+    await cli(port,['sleep','30','--until','platform Wren at vulcanus','--wake-on-tells']);
+    await cli(port,['sleep','30','--until','platform Wren at vulcanus|crafting_done']);
+    await assert.rejects(cli(port,['sleep','30','--until','platform Wren']),(error:any)=>/--until platform takes/.test(error.stdout));
+  });
+  const sleeps=seen.filter(r=>r.action==='sleep');
+  assert.deepEqual(sleeps.slice(0,3).map(r=>r.args.condition),[{until:'platform_arrived',platform:'Wren',location:'vulcanus'},
+    {until:'platform_left',platform:'Big Ship',location:'gleba'},{until:'platform_left',platform:'Wren',location:'nauvis'}]);
+  assert.deepEqual(sleeps.map(r=>r.args.wake_on_messages),[false,false,false,undefined,undefined],'tells end it with --wake-on-tells or another condition');
+});

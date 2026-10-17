@@ -524,6 +524,47 @@ return function(api)
             kept=api.keep.before(p.surface,spots)
           end
         end
+        -- preserve_existing_settings_and_wires (B5, Astra 2x: restoring missing hull undid live circuit and filter
+        -- settings, so the blueprint JSON was merged by hand): what already stands where the blueprint puts the same entity
+        -- (built, or a ghost of it) is left out of this paste, keeping its settings and wires; the rest is pasted, and a
+        -- wire from a new ghost to a left-out entity is joined to the one standing there. The paste position moves by the
+        -- change of the blueprint's center, so everything lands where the whole blueprint would.
+        local preserved,rewire
+        if a.preserve_existing_settings_and_wires~=nil then
+          assert(type(a.preserve_existing_settings_and_wires)=='boolean','preserve_existing_settings_and_wires must be true or false')
+        end
+        if a.preserve_existing_settings_and_wires then
+          local where=locate(p,a,entities,pos,direction,box,c)
+          local keep,standing,num={},{},{}
+          for _,e in ipairs(entities) do
+            local w=where(e)
+            local here
+            for _,o in ipairs(w and p.surface.find_entities_filtered{position=w,radius=0.3,force=p.force} or {}) do
+              local name=o.type=='entity-ghost' and o.ghost_name or o.name
+              if o.valid and name==e.name and o.type~='tile-ghost' then here=o end
+            end
+            if here then standing[e.entity_number]=here else keep[#keep+1]=e; num[e.entity_number]=#keep end
+          end
+          preserved=#entities-#keep
+          rewire={}
+          for _,e in ipairs(keep) do
+            local wires={}
+            for _,w in ipairs(e.wires or {}) do
+              if num[w[3]] then wires[#wires+1]={num[e.entity_number],w[2],num[w[3]],w[4]}
+              elseif standing[w[3]] then rewire[#rewire+1]={at=where(e),name=e.name,conn=w[2],other=standing[w[3]],other_conn=w[4]} end
+            end
+            e.wires=#wires>0 and wires or nil
+          end
+          for _,e in ipairs(keep) do e.entity_number=num[e.entity_number] end
+          assert(#keep>0 or #tiles>0,string.format('every one of the blueprint\'s %d entities already stands there (built or as its ghost): nothing to paste',#entities))
+          stack.set_blueprint_entities(keep)
+          local c2=center(keep,tiles)
+          local dx,dy=api.placewhy.rotate(c2.x-c.x,c2.y-c.y,direction)
+          if a.flip_horizontal then dx=-dx end
+          if a.flip_vertical then dy=-dy end
+          pos={x=pos.x+dx,y=pos.y+dy}
+          entities=keep
+        end
         local function ghosts()
           return p.surface.find_entities_filtered{area=box,type={'entity-ghost','tile-ghost'},force=p.force}
         end
@@ -591,6 +632,20 @@ return function(api)
           end
         end
         if kept and #kept>0 then out.requests_kept=api.keep.after(kept) end
+        if preserved then
+          local joined=0
+          for _,r in ipairs(rewire or {}) do
+            for _,g in ipairs(p.surface.find_entities_filtered{position=r.at,radius=0.3,force=p.force}) do
+              local name=g.type=='entity-ghost' and g.ghost_name or g.name
+              if g.valid and name==r.name and r.other.valid then
+                local ok=pcall(function() return g.get_wire_connector(r.conn,true).connect_to(r.other.get_wire_connector(r.other_conn,true)) end)
+                if ok then joined=joined+1 end
+              end
+            end
+          end
+          out.preserved=string.format('%d of the blueprint\'s entities already stood there (built or as their ghost) and were left as they are, their settings and wires kept; %d wire%s from new ghosts joined to them',
+            preserved,joined,joined==1 and '' or 's')
+        end
         out.ammo_requests=ammo_rows
         -- Inserter ghosts with nothing to take from or put into on their
         -- points (Astra's bypass inserter that reached no crusher; targets.lua).

@@ -59,6 +59,8 @@
   `below` works in reach and at positions too. refuel, feed and rearm that find nothing name the nearest one outside.
 - Artillery: `./fh call artillery` lists our artillery with shells, automatic targeting and the spawners and worms in range, nearest first; `configure {position, auto_targeting: false}` switches automatic targeting; `use_item {"item":"artillery-targeting-remote","position":{...}}` puts a flare there for the pieces in range.
 - `artillery` rows add `units_near`: enemy units within 64 tiles of each piece, their range, and how many of our turrets reach them.
+- `artillery` and the remote's reply give `shells_used` (shots fired, from the production statistics) and each piece's
+  `fed_by` inserters: a piece an inserter refills keeps its count after a shot.
 - Vehicles: vehicle {position, enter: true} gets into a car, tank, spidertron, locomotive or wagon; vehicle {exit:
   true}; vehicle {drive: {x,y}} drives a car or tank (timed); vehicle {position, go_to: {x,y}} walks a spidertron.
 - In a tank, car or spidertron you drive, `shoot` fires its gun: `--args '{"position":{"x":294,"y":-135},"gun":"tank-cannon"}'`

@@ -35,6 +35,12 @@
   standing order's rounds do not end it (`--wake-on-orders` makes them).
 - A collect standing at a machine that crafts is no stall (queue_status `waiting_at_machine` says which); a call that
   ends a running action says in `replaced` what that action had done and where its walk stopped.
+- A dropped game connection is ridden out: fh sends the call again with the same ID for up to 90 s (`retried`); the game
+  answers an ID it already ran from its record. `--wait` on collect, feed, transfer, load_silo, rearm, refuel, recover or
+  pickup goes on through tells (listed in `told_during_wait`) and ends on an urgent alert or a tell sent with --wake.
+- `fh sleep 900 --until 'platform Wren at vulcanus'` (or `left gleba`) goes on through tells (`--wake-on-tells` keeps
+  them waking it). `tell --wake` wakes a teammate every time; `ignoring` names a wait your tell does not end.
+  `queue_status` `paused_why` says what paused the queue.
 - Urgent wakes: `--urgent-radius N` (1..200) counts attacks, groups, losses and deaths only within N tiles of you. `--until "alert near=X,Y radius=R min_size=N"` (or `area=X1,Y1,X2,Y2`)
   wakes only on an attack, group or nest there and that big; `woke: alert` names the alert.
 - Conditional `sleep`, `wait_until`, and queue waits report `wait_estimates` (ETA and rate basis, or no estimate) and

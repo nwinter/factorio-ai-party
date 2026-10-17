@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { appendFile } from 'node:fs/promises';
-import { RconOutcomeUnknown } from './rcon.js';
+import { RconOutcomeUnknown, RconUnavailable } from './rcon.js';
 
 export interface Transport { command(command: string): Promise<string> }
 export interface Reply {
@@ -10,6 +10,21 @@ export interface Reply {
   result?: any;
   error?: any;
   warnings?: string[];
+  /** The request was sent again with the same ID across a drop (requestRetrying). */
+  retried?: {attempts: number, waited_s: number, first_error: string};
+}
+/** How long a request is retried across an RCON or broker drop (A1, shift24: Grok 3x, Luna 4x, Haiku 2x at 89h52-53
+ * for about a minute): FH_RETRY_MS, default 90 s. The same ID each time: the game answers an ID it applied from its
+ * record (the dedup window) and runs one it never got, so nothing is done twice. */
+export function retryBudgetMs(): number {
+  const n = Number(process.env.FH_RETRY_MS ?? 90000);
+  return Number.isFinite(n) && n >= 0 ? n : 90000;
+}
+const RETRY_STEPS = [1000, 2000, 4000, 8000, 10000];
+function retryable(error: unknown): boolean {
+  if (error instanceof RconOutcomeUnknown) return true;
+  // Nothing was sent: the connection or login failed. A rejected password is not a drop.
+  return error instanceof RconUnavailable && !/authentication rejected|path is longer/i.test(error.message);
 }
 
 /** Lua long strings preserve JSON and UTF-8 without interpreting escape sequences. */
@@ -70,14 +85,34 @@ export class Harness {
   constructor(readonly transport: Transport, readonly player = 1, readonly journal?: string, readonly bot?: string) {}
 
   async request(action: string, args: Record<string, unknown> = {}, id: string = randomUUID()): Promise<Reply> {
-    if (!runtimeTakesHelper || !helperThread() || args.helper !== undefined) return this.requestOnce(action, args, id);
-    const reply = await this.requestOnce(action, {...args, helper:true}, id);
+    if (!runtimeTakesHelper || !helperThread() || args.helper !== undefined) return this.requestRetrying(action, args, id);
+    const reply = await this.requestRetrying(action, {...args, helper:true}, id);
     // A runtime from before helper refuses the argument: once, then never again in this process.
     if (!reply.ok && /unknown argument helper\b/.test(String(reply.error?.message ?? ''))) {
       runtimeTakesHelper = false;
       return this.requestOnce(action, args, randomUUID());
     }
     return reply;
+  }
+
+  /** requestOnce, sent again with the same ID across a drop for up to retryBudgetMs(). */
+  async requestRetrying(action: string, args: Record<string, unknown> = {}, id: string = randomUUID()): Promise<Reply> {
+    const started = Date.now();
+    let first: unknown;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const reply = await this.requestOnce(action, args, id);
+        if (attempt > 0) reply.retried = {attempts:attempt + 1, waited_s:Math.round((Date.now() - started) / 100) / 10, first_error:String(first instanceof Error ? first.message : first)};
+        return reply;
+      } catch (error) {
+        if (!retryable(error)) throw error;
+        first ??= error;
+        const waited = Date.now() - started;
+        const budget = retryBudgetMs();
+        if (waited >= budget) throw error;
+        await new Promise(done => setTimeout(done, Math.min(RETRY_STEPS[Math.min(attempt, RETRY_STEPS.length - 1)] ?? 10000, budget - waited)));
+      }
+    }
   }
 
   async requestOnce(action: string, args: Record<string, unknown> = {}, id: string = randomUUID()): Promise<Reply> {

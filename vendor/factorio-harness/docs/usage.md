@@ -5636,3 +5636,54 @@ fh watch    # deploy on every change
   platform's alerts go to, when the platform leaves the silo's planet meanwhile, or when its time wait there ends within
   5 minutes. Checked on the copy: Grok's launch {wait_ready} at Gleba (parts 22/50) and Swift sent on: the line came on
   Grok's next reply.
+
+## d16 batch8 (operator 18:30; agents' requests at the 16:50 and 18:20 polls)
+- Drops (A1, Grok 3x, Luna 4x, Haiku 2x at 89h52-53 for about a minute: calls and waits ended outcome_unknown while the
+  action went on): the host sends a request again with the same ID across an RCON or broker drop for up to
+  `FH_RETRY_MS` (default 90 s; 1, 2, 4, 8, then 10 s apart). The game answers an ID it already ran from its record (the
+  dedup window), so an action is never done twice, and a `--wait` or `fh sleep` poll rides the drop out. A reply that
+  needed it says so in `retried`. Past the budget the call ends `outcome_unknown`, its recovery saying it was sent again.
+- `--wait` on a walking or loading tour (collect, feed, transfer, load_silo, rearm, refuel, recover, pickup; A2, Grok
+  18:20: a tell cut load_silo twice and a launch then left packs in the inventory) goes on through tells (listed in
+  `told_during_wait`) and ends on an urgent alert (the poll asks `status {peek, urgent_since}`; `--no-urgent` and
+  `--urgent-radius` as for sleeps) or on a tell sent with --wake. Other actions' waits end on a tell as before.
+- `fh sleep --until 'platform Wren at vulcanus'` (A3, Sonnet 18:20), `platform NAME left PLANET` (or leaves, from):
+  platform_arrived or platform_left there. A sleep on platform conditions alone goes on through tells (wake_on_messages
+  false; `--wake-on-tells` keeps them waking it); a tell with --wake and urgent alerts still end it.
+- Tells (A4, Haiku 16:50: a plain tell did not wake a sleeping teammate): the journals show each such tell went to a
+  teammate in a sleep that ignored messages, and its reply said `ignoring ...`; Haiku's tell --wake woke Sonnet. Now
+  `tell --wake` ends such a wait every time (it was once per 10 minutes per teammate; `woken` counts your wake tells to
+  each over 10 minutes), also a wait that takes tells only from others (`wake_from`), which `ignoring` now names, and an
+  fh `--wait` that goes on through tells.
+- `queue_status` `paused_why` (A5, Opus 2x: a queue that "paused itself after a craft step"; the journal shows a craft
+  step refused because 8 gun turrets sat in a requester nearby, and on_fail abort paused the plan): what paused it (a
+  step's failure and its reason, a guard, stop, a retreat, a call that ended your action) and when.
+- Artillery remote (A6, Haiku 18:49: "no shell fires with automatic targeting off, still 5 after 30 s"): on world n
+  (read only) the piece at (-89.5,270.5) had fired: artillery-shell used 3 in 10 minutes, no enemy left at the target,
+  and an inserter at (-90.5,272.5) refilled it from a requester chest asking for 5. On the copy the remote's flare drew a
+  shot within 5 s from the central and the south pieces. `artillery` and the remote's reply now give `shells_used` (the
+  production statistics, last minute and 10 minutes) and each piece's `fed_by` inserters.
+- `load_silo {launch: true}` over one rocket's lift or cargo slots (B1, Sonnet 18:20, 3x) is split in list order into
+  rockets by weight and stacks, each a load_silo step appended to your queue (`rocket 1 of N` ...) that loads and
+  launches in turn; `split` says how (not with to_total or up_to; an item heavier than the lift is refused).
+- `platforms` gives each platform `departure` (B2, Grok 6x: Swift's schedule read a 3600 s stop at Gleba while Sol's
+  queue sent it on once cargo landed): every agent's queue step and standing order that sets that platform's schedule
+  (platform_schedule), with the wait before it in the queue or the order's trigger; the compact line adds it.
+- `platform_endurance` (B3, Astra 18:20: Von Braun died on a short reserve; projections mixed flight with drift and stops
+  about 6 times): each ammunition row adds `phases`: used and made a minute while moving (flying, not paused), still in
+  space (paused or at speed 0) and stopped at a location, from each second's change (freight.lua; past 2 hours the sums
+  are halved, so recent flight counts most), and `flight`: at the moving rate, what the route's flight and its last leg
+  (the return) use against what is aboard and made. The per-second tracking: freight.tick about 0.8 ms a second in the
+  container with 5 platforms (about 0.15 ms on n).
+- `platform_plan {platform, floor: true}` (B4, Astra 18:20: Kestrel needed three floor corrections): the foundation every
+  entity ghost needs: its footprint, the tiles under an underground belt or pipe-to-ground pair (built or ghost; a ghost
+  entrance paired with the first exit of its name facing the same way within its reach), enclosed holes (not within 4
+  tiles of an asteroid collector or thruster, whose open space stays open), and the shortest run joining a needed group
+  to the hub's floor. Tiles built or with a tile ghost count as there. `place_ghosts_entries` gives the first 64 as
+  place_ghosts tile entries. On the copy: Peregrine needed 12 tiles under its ghosts.
+- `paste {preserve_existing_settings_and_wires: true}` (B5, Astra 2x): what already stands where the blueprint puts the
+  same entity (built, or its ghost) is left out, keeping its settings and wires; the rest is pasted where the whole
+  blueprint lands, and wires from new ghosts to what stands are joined; `preserved` counts them. Checked on the copy: a
+  captured inserter's filter changed to copper and its chest removed; the preserved paste put back only the chest ghost
+  and kept the copper filter and the red wire. A superforced paste without the option set the filter back to the
+  blueprint's iron plate; a normal paste left it.
