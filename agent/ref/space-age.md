@@ -172,6 +172,13 @@
   automatically; load_silo never sets them). A queued `load_silo` your own build or transfer interrupts is requeued
   and goes on.
   Example: `./fh call load_silo --args '{"position":{"x":65.5,"y":14.5},"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","to_total":true}' --wait`
+- `silo_stage {position, items, from, launch?, platform?, to_total?, auto_requests?, dry_run?}`: one queue plan for a
+  mixed load: reads the silo and the chests now, then takes what the rocket still needs (after what you carry) at each
+  chest in `from` (1..16, in that order; also the ingredients its crafts need), hand-crafts each item still missing
+  that you can craft (`craft` with `force`, then `wait_until crafting_done`), and runs `load_silo` with `walk`.
+  `missing` (in no chest given, not hand-craftable) and `raw_short` (ingredients for the crafts nowhere given) are said;
+  `dry_run: true` gives the plan and its steps, nothing queued. Example: `./fh call silo_stage --args
+  '{"position":{"x":65.5,"y":14.5},"items":{"pipe":40,"arithmetic-combinator":2},"from":[{"x":10.5,"y":10.5},{"x":12.5,"y":10.5}],"launch":true,"platform":"Swiftlet"}'`
 - `preflight {position?, items?, from?, platform?, surface?}`: a silo's cargo (without `position`: all visible indexed
   silos, nearest first), arrival and ETA, and the requests less hub and rocket; with `platform`, incoming rockets,
   `ammo_rates`, `hub_chunks` and cargo conflict lines (as `shipment`); without, the platforms stopped at or headed for

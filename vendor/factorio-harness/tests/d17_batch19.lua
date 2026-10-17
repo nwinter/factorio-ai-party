@@ -119,3 +119,52 @@ do
   defines=nil
 end
 print('d17_batch19 B2 a whole-belt read shorter than its belt names what it leaves out: ok')
+
+-- C1 (Haiku 5-8 times per 30 min on Swiftlet's mixed loads): silo_stage plans the takes at several chests, the hand
+-- crafts of what is short (ingredients from the chests too), and the load, as one queue plan.
+STAGE_FIXTURE=function()
+  defines={inventory={chest=1,rocket_silo_rocket=2}}
+  prototypes={item={}}
+  for _,n in ipairs({'arithmetic-combinator','electronic-circuit','copper-cable','iron-plate','copper-plate','pipe','processing-unit','low-density-structure'}) do prototypes.item[n]={name=n} end
+  local function chest(x,y,items)
+    local inv={get_item_count=function(n) return items[n] or 0 end}
+    return {valid=true,name='iron-chest',type='container',position={x=x,y=y},get_inventory=function() return inv end}
+  end
+  local silo={valid=true,name='rocket-silo',type='rocket-silo',position={x=65.5,y=14.5},get_inventory=function() return {get_item_count=function() return 0 end} end}
+  local a=chest(10.5,10.5,{pipe=30,['iron-plate']=6})
+  local b=chest(12.5,10.5,{['electronic-circuit']=8,['copper-cable']=50,['processing-unit']=10})
+  local at={['65.5,14.5']=silo,['10.5,10.5']=a,['12.5,10.5']=b}
+  local recipes={
+    ['arithmetic-combinator']={name='arithmetic-combinator',ingredients={{type='item',name='copper-cable',amount=5},{type='item',name='electronic-circuit',amount=5}},products={{name='arithmetic-combinator',amount=1}}},
+    ['electronic-circuit']={name='electronic-circuit',ingredients={{type='item',name='iron-plate',amount=1},{type='item',name='copper-cable',amount=3}},products={{name='electronic-circuit',amount=1}}},
+    ['copper-cable']={name='copper-cable',ingredients={{type='item',name='copper-plate',amount=1}},products={{name='copper-cable',amount=2}}},
+    pipe={name='pipe',ingredients={{type='item',name='iron-plate',amount=1}},products={{name='pipe',amount=1}}}}
+  local held={pipe=5}
+  local p={get_main_inventory=function() return {get_item_count=function(n) return held[n] or 0 end} end}
+  local submitted
+  local S=dofile('mod/agent-harness_0.1.0/stage.lua'){position=function(q) return {x=q.x or q[1],y=q.y or q[2]} end,
+    entity=function(_,q) return at[q.x..','..q.y] end,hand_recipe=function(_,item) return recipes[item] end,
+    submit=function(_,x) submitted=x; return {pending=#x.steps} end}
+  return S,p,function() return submitted end
+end
+do
+  local S,p,sub=STAGE_FIXTURE()
+  local args={position={x=65.5,y=14.5},items={pipe=40,['arithmetic-combinator']=2,['processing-unit']=10,['low-density-structure']=5},
+    from={{x=10.5,y=10.5},{x=12.5,y=10.5}},launch=true,platform='Swiftlet'}
+  local r=S.run(p,{position=args.position,items=args.items,from=args.from,launch=true,platform='Swiftlet',dry_run=true})
+  -- pipe: 5 carried, 30 from the first chest, 5 crafted from its plates; combinators: 2 crafted from 10 circuits (8 in
+  -- the second chest, 2 crafted along from a plate and 3 cables each) and 10 cables; processing units: 10 from the
+  -- second chest; low density structures: none anywhere. Plates: 7 needed, the first chest holds 6.
+  eq(r.plan[1],'take iron-plate 6, pipe 30 from iron-chest (10.5,10.5)')
+  eq(r.plan[2],'take copper-cable 16, electronic-circuit 8, processing-unit 10 from iron-chest (12.5,10.5)')
+  has(r.plan[3],'craft by hand arithmetic-combinator x2, pipe x5, then wait until the hand queue is done')
+  eq(r.plan[4],'load_silo at (65.5,14.5): arithmetic-combinator 2, low-density-structure 5, pipe 40, processing-unit 10, then launch')
+  eq(r.missing['low-density-structure'],5); eq(r.raw_short['iron-plate'],1,'7 plates needed, 6 in the chest')
+  has(r.short,'not in those chests, not hand-craftable: low-density-structure 5')
+  eq(#r.steps,5); eq(r.steps[1].on_short,'skip'); eq(r.steps[5].action,'load_silo'); eq(r.steps[5].args.walk,true); eq(r.steps[5].args.launch,true)
+  eq(sub(),nil,'dry run: nothing queued')
+  r=S.run(p,{position=args.position,items=args.items,from=args.from,launch=true,platform='Swiftlet'})
+  eq(r.queued,5); eq(#sub().steps,5)
+  has(r.line,'queued 5 steps: take iron-plate 6, pipe 30 from iron-chest (10.5,10.5);')
+end
+print('d17_batch19 C1 silo_stage plans takes, crafts and the load: ok')
