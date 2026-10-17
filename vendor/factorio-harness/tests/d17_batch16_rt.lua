@@ -168,3 +168,36 @@ do
   grok('order_remove',{name='defend'})
 end
 print('d17_batch16_rt A5 an armed standing order is a watch, not idle: ok')
+
+-- B2 (Muse 15:49: transfer {to: "haiku", items} failed; players lists humans only): players lists the teammates'
+-- characters with positions; transfer {to_player: NAME} hands items to one within reach, dropped at their feet as loot.
+do
+  prototypes=prototypes or {item={}}
+  prototypes.item['iron-plate']=prototypes.item['iron-plate'] or {name='iron-plate',type='item',get_spoil_ticks=function() return 0 end}
+  local spilled={}
+  surface.spill_item_stack=function(t) spilled[#spilled+1]=t; return {} end
+  local gi=runtime.bots.index_of('grok')
+  local si=runtime.bots.index_of('sol')
+  local gp,sp=runtime.lookup(gi),runtime.lookup(si)
+  gp.character.position={x=10,y=10}; sp.character.position={x=12,y=10}
+  local r=grok('players',{})
+  assert(r.teammates and #r.teammates>=2,'teammates listed')
+  local first=r.teammates[1]
+  eq(first.name,'sol'); eq(first.distance,2)
+  assert(first.line:find('Sunny on Nauvis at (12.0,10.0), 2 tiles E',1,true),first.line)
+  -- a give by name: from grok's inventory, dropped at Sol's feet
+  local inv=gp.character.get_main_inventory()
+  inv.remove=function(st) return math.min(st.count,gp.character.items[st.name] or 0) end
+  inv.get_item_count=function(q) return gp.character.items[type(q)=='table' and q.name or q] or 0 end
+  gp.character.items['iron-plate']=30
+  gp.character.can_reach_entity=function(e) return ((e.position.x-10)^2+(e.position.y-10)^2)^0.5<=10 end
+  local g=grok('transfer',{to_player='Sol',item='iron-plate',count=20})
+  eq(g.to_player,'sol'); eq(g.given[1],'iron-plate 20'); eq(#spilled,1); eq(spilled[1].stack.count,20); eq(spilled[1].position.x,12)
+  assert(spilled[1].enable_looted,'loot their character picks up')
+  assert(g.note:find("dropped at sol's feet (12.0,10.0)",1,true),g.note)
+  -- to as a name too; out of reach: refused with where to go
+  sp.character.position={x=40,y=10}
+  fails(function() grok('transfer',{to='sol',item='iron-plate',count=1}) end,"sol's character at (40.0,10.0) is 30.0 tiles away, out of your reach")
+  fails(function() grok('transfer',{to_player='nobody',item='iron-plate'}) end,'no teammate nobody; teammates: astra, sol')
+end
+print('d17_batch16_rt B2 teammates and a hand-over by name: ok')

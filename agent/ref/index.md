@@ -3,7 +3,7 @@
 Each topic, when to read it, and the commands it documents:
 
 - `moving-items`, when you move items by hand or a move comes back `short` or out of reach: `transfer` (give, take,
-  couriers), `collect` (machine outputs), `feed` (ingredients, packs, fuel), `refuel` (burners), `pickup` (belts,
+  couriers, to a teammate by name), `collect` (machine outputs), `feed` (ingredients, packs, fuel), `refuel` (burners), `pickup` (belts,
   ground), `mine` (by hand), `rotate`, `repair`, `inventory`, `craft`, `cancel_craft`.
 - `building`, when you place anything past a few hand builds: `build` (batches, settings, fast replace), `place_ghosts`,
   `construct` (ghosts by hand), `ghosts` (each ghost near you: what it needs, can robots build it), `deconstruct`, `upgrade` (the upgrade planner: ghosts in place), `paste`, `placements` (where it fits), `nearest_water`, `conflicts`, `build_path`,
