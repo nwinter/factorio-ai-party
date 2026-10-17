@@ -4,7 +4,13 @@ tools/bplibrary.py mirrors the library (blueprint_save and friends in the harnes
 runs/RUN/blueprints/index.json (every entry's facts) and NAME.txt (its blueprint string). The page reads the newest
 shift folder that has a copy: per entry its name, author, footprint, entity counts, description, uses, last use, the
 surface it was saved on, and the blueprint string behind a copy control, so a viewer can import it into their own
-game. No pictures yet.
+game.
+
+Pictures (d17 08:35): "Show the picture" loads FPSR's embed (fpsr.fprints.xyz/?embed=1, MIT, Factorio 2.x with Space
+Age, quality and elevated rails) in an iframe under the entry and hands it the string by postMessage, the documented
+third-party protocol (fpsr:ready -> fpsr:load {version: 1, blueprint} -> fpsr:loaded / fpsr:error). Nothing loads from
+FPSR until a viewer asks; "Hide" removes the iframe. FPSR's planner draws every entity and tile of the 23 library
+blueprints of shift 28; Factorio Blueprint Editor (base game only) refuses 14 of them (platforms, Aquilo, recyclers).
 """
 import json
 import re
@@ -46,6 +52,10 @@ STYLE = """<style>
 .bp-entry dd{margin:0}
 .bp-entry textarea{width:100%;height:5rem;font-family:monospace;font-size:.75rem;word-break:break-all}
 .bp-copy{margin-top:.25rem}
+.bp-pic{margin:.5rem 0}
+.bp-pic iframe{display:block;width:100%;height:24rem;border:1px solid var(--fx-border,#444);margin-top:.4rem;background:#1b1b1b}
+.bp-pic.is-large iframe{height:80vh}
+.bp-pic-note:empty{display:none}
 </style>"""
 
 COPY_JS = """<script>
@@ -59,6 +69,46 @@ document.addEventListener('click', function (ev) {
   else { box.select(); try { done(document.execCommand('copy')); } catch (e) { done(false); } }
 });
 </script>"""
+
+
+FPSR = "https://fpsr.fprints.xyz"  # the renderer's origin: the embed's src and the only target of the string
+
+# The picture: FPSR's embed in an iframe, given the entry's string once it says fpsr:ready (it repeats that every 250 ms
+# until a load arrives). Only messages from that iframe count; the string goes to FPSR's origin only.
+PIC_JS = """<script>
+(function () {
+  var FPSR = '@FPSR@';
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('[data-pic]');
+    if (!b) return;
+    var box = b.closest('.bp-pic'), note = box.querySelector('.bp-pic-note'), act = b.getAttribute('data-pic');
+    var frame = box.querySelector('iframe');
+    if (act === 'large') { box.classList.toggle('is-large'); b.textContent = box.classList.contains('is-large') ? 'Smaller' : 'Larger'; return; }
+    if (frame) {  // hide: the iframe goes, and its memory with it
+      window.removeEventListener('message', frame.onFpsr); frame.remove(); box.classList.remove('is-large'); note.textContent = '';
+      b.textContent = 'Show the picture'; box.querySelector('[data-pic=large]').hidden = true;
+      return;
+    }
+    var text = document.getElementById(box.getAttribute('data-for'));
+    if (!text) return;
+    frame = document.createElement('iframe');
+    frame.src = FPSR + '/?embed=1';
+    frame.title = 'Picture of ' + box.getAttribute('data-name') + ', drawn by FPSR';
+    frame.setAttribute('referrerpolicy', 'no-referrer');
+    note.textContent = 'Loading the picture from FPSR…';
+    frame.onFpsr = function (e) {
+      if (!frame.contentWindow || e.source !== frame.contentWindow || e.origin !== FPSR) return;
+      var d = e.data || {};
+      if (d.type === 'fpsr:ready') frame.contentWindow.postMessage({ type: 'fpsr:load', version: 1, blueprint: text.value }, FPSR);
+      else if (d.type === 'fpsr:loaded') note.textContent = '';
+      else if (d.type === 'fpsr:error') note.textContent = 'FPSR could not draw it: ' + String(d.message || 'unknown error').slice(0, 200);
+    };
+    window.addEventListener('message', frame.onFpsr);
+    box.appendChild(frame);
+    b.textContent = 'Hide the picture'; box.querySelector('[data-pic=large]').hidden = false;
+  });
+})();
+</script>""".replace("@FPSR@", FPSR)
 
 
 def build_page(lib, agent, avatar, esc, game_time, known=()):
@@ -94,7 +144,12 @@ def build_page(lib, agent, avatar, esc, game_time, known=()):
         desc = f'<p>{esc(e["description"])}</p>' if e.get("description") else ""
         if e.get("string"):
             box = f"bp-{i}"
-            string = (f'<details><summary>Blueprint string ({len(e["string"]):,} characters)</summary>'
+            pic = (f'<div class="bp-pic" data-for="{box}" data-name="{esc(e["name"])}">'
+                   '<button type="button" class="fx-btn fx-btn--small" data-pic="show">Show the picture</button> '
+                   '<button type="button" class="fx-btn fx-btn--small" data-pic="large" hidden>Larger</button> '
+                   f'<span class="muted small">drawn by <a href="{FPSR}/" rel="noopener">FPSR</a>, a blueprint renderer</span>'
+                   '<p class="bp-pic-note small muted" aria-live="polite"></p></div>')
+            string = pic + (f'<details><summary>Blueprint string ({len(e["string"]):,} characters)</summary>'
                       f'<textarea id="{box}" readonly aria-label="Blueprint string of {esc(e["name"])}">{esc(e["string"])}</textarea>'
                       f'<button type="button" class="fx-btn fx-btn--small bp-copy" data-for="{box}">Copy the blueprint string</button></details>')
         else:
@@ -104,7 +159,8 @@ def build_page(lib, agent, avatar, esc, game_time, known=()):
     when = f' (shift {lib["shift"]}, copied {esc(str(lib["written"]).replace("T", " "))})' if lib.get("written") else f' (shift {lib["shift"]})'
     body = ('<h1>Blueprints</h1><p class="lede">The team\'s shared blueprint library: what the agents saved for each other '
             f'with blueprint_save, as the last copy holds it{when}. Each string imports into your own game '
-            '(Import string in the blueprint library).</p>'
+            '(Import string in the blueprint library). "Show the picture" draws it with FPSR, a blueprint renderer on '
+            'another site, which the string is sent to.</p>'
             f'<p class="muted small">{len(lib["entries"])} blueprints; times are the copy\'s.</p>'
             f'<ul class="bp-list">{"".join(items)}</ul>')
-    return body, STYLE + "\n" + COPY_JS
+    return body, STYLE + "\n" + COPY_JS + "\n" + PIC_JS
