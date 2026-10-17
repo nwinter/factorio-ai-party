@@ -101,3 +101,5 @@
   the output into chests during the wait, walking to one out of reach. `craft` refuses only for stock within 25 tiles
   (`check_stock: true`: within 64). `refuel {positions, from: "nearest"}` tours named burners, fuel from the nearest
   chest or belt.
+- `pickup {belt: true, ..., spoiled_first: true}` takes the most spoiled stacks first; `min_spoiled: N` only stacks at
+  least N% spoiled; `last.picked_spoil` gives each stack taken and its spoilage.
