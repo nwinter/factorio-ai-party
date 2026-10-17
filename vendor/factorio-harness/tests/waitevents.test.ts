@@ -313,9 +313,11 @@ test('fh wait with nothing running: the last action ended before the previous ca
     // That call's reply (tick 6040) came after the gather ended (tick 640): the next wait says nothing ran.
     const json=JSON.parse((await cli(port,['wait','--until','idle','--max','150'],'json',{FH_PACE_FILE:pace})).stdout);
     assert.equal(json.ok,true); assert.equal(json.result.idle,true); assert.equal(json.result.nothing_running,true);
-    assert.equal(json.result.note,'nothing was running when this wait began: the last action, gather, ended timed_out 90 s ago, before your previous call');
+    assert.equal(json.result.note,'nothing was running when this wait began: the last action, gather, ended timed_out 90 s ago, before your previous call; its result is given as it ended');
+    // E10 (Luna 2x): the ended action's result is given, never as an error.
+    assert.equal(json.result.last.outcome,'timed_out');
     const {stdout}=await cli(port,['wait','--max','60'],'compact',{FH_PACE_FILE:pace});
-    assert.match(stdout,/^outcome: idle$/m); assert.doesNotMatch(stdout,/timed_out at its own tick limit|^error/m);
+    assert.match(stdout,/^outcome: timed_out$/m); assert.doesNotMatch(stdout,/^error/m);
     assert.match(stdout,/nothing was running when this wait began: the last action, gather, ended timed_out 90 s ago/);
   });
   // An action that ended after the previous call (a fast walk between its start and the wait) is still the wait's.

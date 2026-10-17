@@ -31,5 +31,5 @@ Each topic, when to read it, and the commands it documents:
   `profile`, `profiles`, `confess`, `chronicle`, `operator`, `poll` (the site's polls), `players`, `vote`, `votes`,
   `restore`.
 - `space-age`, for rockets, platforms and other planets: `platforms` and `platform NAME`, `platform_create`,
-  `platform_schedule`, `platform_rename`, `platform_endurance`, `platform_supply`, `platform_plan`, `launch`, `silo`, `cargo`, `load_silo`, `preflight`, `land`, `drop`,
+  `platform_schedule`, `platform_rename`, `platform_endurance`, `platform_supply`, `platform_plan`, `min_payload` (hub requests' custom minimum payload), `launch`, `silo`, `cargo`, `load_silo`, `preflight`, `land`, `drop`,
   `freight_audit`, `where_is`, `agriculture`, the remote queue lane; spoilage, Gleba.

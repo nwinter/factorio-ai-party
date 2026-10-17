@@ -793,11 +793,20 @@ return function(api)
     for _, r in ipairs(rows) do
       if r.held > 0 then list[#list+1] = {item=r.goal.name, quality=r.goal.quality, count=math.min(r.need, r.held)} end
     end
+    -- what the rocket held of each item asked at the tour's first silo stop (E9)
+    if not action.aboard_before and inv then
+      action.aboard_before = {}
+      for _, g in ipairs(action.goals or {}) do action.aboard_before[g.name] = (action.aboard_before[g.name] or 0) + (aboard(inv, g) or 0) end
+    end
     local n, full_rocket = 0, nil
     if #list > 0 then
       local out = M.load(p, {position=e.position, items=list, chests=false, fresh_first=action.load.fresh_first})
       for _, row in ipairs(out.loaded or {}) do
         n = n + (row.loaded or 0)
+        -- by item: what this tour put in, and what the rocket held before its first load (E9, Grok 19:50)
+        action.loaded_items = action.loaded_items or {}
+        action.loaded_items[row.item] = (action.loaded_items[row.item] or 0) + (row.loaded or 0)
+
         -- The loaded batch's spoilage (Grok 15:25: seen only after the launch).
         if row.freshness then action.freshness = action.freshness or {}; action.freshness[#action.freshness+1] = row.freshness end
         if row.why and (row.why:find('^weight') or row.why:find('cargo slots are full', 1, true)) then full_rocket = row.why end
@@ -864,6 +873,20 @@ return function(api)
     last.trips = action.trips; last.taken = action.taken; last.loaded = action.loaded; last.stops = action.rows
     last.cargo = action.cargo; last.rocket_weight = action.rocket_weight; last.launch = action.launch
     last.taken_items = next(action.items) and action.items or nil
+    -- What you put in apart from what was aboard before, and what you took and still hold (E9, Grok 19:50: two furnaces
+    -- and a gun read as rocket cargo while he held them: a teammate's, loaded earlier, met the count).
+    last.loaded_items = action.loaded_items
+    local before, kept = {}, {}
+    for item, n in pairs(action.aboard_before or {}) do if n > 0 then before[#before+1] = item .. ' ' .. n end end
+    for item, n in pairs(action.items or {}) do
+      local left = n - ((action.loaded_items or {})[item] or 0)
+      if left > 0 then kept[#kept+1] = string.format('%s %d%s', item, left, ((action.aboard_before or {})[item] or 0) > 0 and
+        string.format(' (the rocket held %d already toward the count)', action.aboard_before[item]) or '') end
+    end
+    table.sort(before); table.sort(kept)
+    last.aboard_before = #before > 0 and table.concat(before, ', ') or nil
+    last.kept = #kept > 0 and ('taken, not loaded, still with you: ' .. table.concat(kept, ', ')) or nil
+    last.cargo_note = last.cargo and 'cargo: everything in the rocket, what was aboard before your load included (aboard_before); loaded_items: what you put in' or nil
     last.freshness = action.freshness or last.freshness
     last.why = last.why or action.why
     last.silo_wait = action.silo_hold and M.wait_report({await_silo=action.silo_hold}) or nil

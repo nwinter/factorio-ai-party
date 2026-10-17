@@ -5751,3 +5751,57 @@ fh watch    # deploy on every change
   met and paused): `last.outcome` stayed the wait's `met`, which is no success for a launch step. A met wait and a
   launch that goes now records `launched`. On the copy, a queue of a ready launch, a waited launch (the rocket built
   while waiting) and a wait ran through without pausing; the waited one read `launched`.
+- refuel by area (E1, Haiku 19:50; Muse 4x): `refuel {area, from: "nearest"}` existed; Muse's 90x120 area was refused
+  for holding over 1024 entities (440 belts, 114 robots). Without `types` it now reads only burner kinds (boilers,
+  furnaces, mining drills, reactors, burner generators, burner inserters); on the copy that area gave 47 stops (79 ms in
+  the container). The reply gives `legs` (the stops in order) and `last.route` the walk. With nothing to do, `nothing`
+  says why (no burner there burns it; the N there hold count or more; chests feeding them full; burning another fuel;
+  not in sight) and `nearest_outside` names the nearest burner below count outside it, also in `last.why`.
+- Corner transfers (E2, Haiku): `name` and `unit_number` already picked one; the refusal said only "give the one meant
+  by its position" and added an example repeating the same call. It now says `"name": "requester-chest" (or
+  unit_number N) picks that one` and adds no example.
+- Inserter onto a belt (E3, Opus 19:50: copper ore on a plate line jammed 3 branches): `build` of an inserter whose
+  drop is a belt gives `belt_mismatch` when an item it will put (read from its pickup side: a drill's ore, a machine's
+  recipe products, a chest's contents, a belt's lanes) is neither on the belt nor taken by an inserter downstream
+  (their recipes, labs, filters; 120 tiles, one splitter output). On the copy: `burner-inserter (-286.5,-270.5) drops
+  iron-ore (from wooden-chest ...) onto transport-belt (-287.5,-270.5); over the next 120 belt tiles no inserter takes
+  from it, and the belt carries coal now`; 9 to 15 ms in the container.
+- `all_stopped: true` (E4, Opus 3x): supply gives `makers_stopped` and `users_stopped`, and bottleneck {item}
+  `stopped` per step: every one not working, grouped by cluster (within 12 tiles of a group's box) with counts by name
+  and state and every position (256 a read). On the copy: iron-plate's 87 stopped makers in clusters such as `31 near
+  (73,-178)-(130,-164): 28 stone-furnace no_ingredients (missing iron-ore), ...; at (73,-176) ...`.
+- `construction_robots {sources: true}` (E5, Sol 19:50: about 13 robots lost on a uranium line): per group of ghosts
+  and item requests waiting in the network's construction area (by item and 32-tile cell, the 16 largest), the
+  network's chests holding the item (nearest 3) and whether the straight line from each passes within the reach of a
+  worm or spawner the map shows. 30 ms in the container for network 243.
+- `wait_until item_count` with `surface` (E6, Sol board #755, Gemini 19:50): positions on that planet (not in sight now:
+  not counted, said so), or alone what our logistic networks there hold; the remote lane takes it. On the copy, Sol on
+  Aquilo queued a remote wait on Nauvis U-235 (`uranium-235 0 in our 4 logistic networks on nauvis`).
+- `inspect {position, radius}` (E7, Muse 19:50: a false destroyed-farm alarm): the area read lists chests and machines
+  only; standing inserters and poles were never in it. It now adds `also`: everything else of ours there by type
+  (`32 transport-belt, 6 ghost, 4 pipe, 3 generator, 2 electric-pole, ...`), and with only those there it answers
+  instead of refusing.
+- `min_payload {platforms?, set?}` (E8, Gemini 19:50): a new command. Reads every hub request importing from a planet
+  (platform, item, planet, asks, holds, custom minimum payload, a full rocket by weight) and sets the custom minimum
+  payload of named items over several platforms in one call (0 or false clears it); min, max, quality and import
+  planet stay. On the copy: Kestrel's low-density-structure set to 20, cleared, then back to 50.
+- Grok's three (E9): (1) the 91% was a belt's first egg (that stack), the 19% the batch he picked up later, both read
+  right (on the copy a belt egg read 31% by inspect and the engine alike). Hatch and spoil lines now give the spread as
+  transfer does: `(that stack 73% spoiled; all 15: 33-73%, 60% by count)`. (2) Egg news no longer ends a sleep that
+  takes no messages (a ship wait), unless the sleeper carries the eggs; it still reaches the next reply's team block.
+  (3) Luna had loaded 2 furnaces and a gun turret; Grok's load_silo then took his own but loaded none (the count was
+  met), and `cargo` named the rocket's contents. A walking load now gives `loaded_items`, `aboard_before` and `kept`
+  (taken, not loaded, still with you), and `cargo_note` says cargo is everything aboard.
+- `fh wait` after the action ended (E10, Luna 2x): it gave a bare idle line when the action ended before the previous
+  call. The ended action's result is now given (outcome, details), with the note, never an error exit.
+- `platform_endurance {forecast: true, pessimistic?}` (E11, Astra 19:50): per leg of the route, the asteroid kinds its
+  space connection spawns (mean spawn chance over the leg, beside the legs flown in the last 2 hours), shots per
+  asteroid for each ammunition aboard (prototype health against damage after resistances and our ammo and turret
+  bonuses; `none hurt`; rockets' projectile damage is not readable), and the use: the moving rate measured on the
+  legs flown (B3) times how much more shooting this leg's asteroids take, what is made meanwhile and what is left at
+  each arrival; `pessimistic {speed: 0.1..1, dwell_s}`. On the copy, Swift gleba-aquilo-gleba: firearm-magazine 89
+  shots per medium asteroid, big ones none hurt (Gleba's legs spawn none), about 200 used a leg; 42 ms in the
+  container.
+- `place_ghosts`/`paste`/`build` dry run (E12, Astra): blocked entities are listed first and all of them in `blocked`
+  (up to 200, `blocked_more`) apart from needs_tiles. On the copy, a hub collision listed ahead of two turrets needing
+  foundation.

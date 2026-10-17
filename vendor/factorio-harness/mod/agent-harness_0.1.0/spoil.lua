@@ -75,6 +75,7 @@ return function(api)
     return tick, try(function() return s.spoil_percent end) or 0
   end
   M.stack_spoil = stack_spoil
+  local function pc(x) return math.floor(x * 100 + 0.5) end
   -- Per item: count, the first stack to spoil (its tick and share), and how
   -- many spoil within WARN_TICKS. acc is {[key]=row} plus the rows in order.
   -- The spread too (Sol, 22:25: a chest of 1846 agricultural packs showed the oldest at 91% while hundreds were at
@@ -167,7 +168,6 @@ return function(api)
     end
     return x
   end
-  local function pc(x) return math.floor(x * 100 + 0.5) end
   -- "agricultural-science-pack*1846: spoiled 15-91%, 27% by count; under 25% 900, 25-50% 700, 50-75% 200, 75%+ 46;
   -- spoil within 10 min 46, 30 min 120, 60 min 400"
   function M.spread_text(r)
@@ -198,14 +198,22 @@ return function(api)
     return acc
   end
   -- "pentapod-egg*12: the first hatches in 3m10s into big-wriggler-pentapod-premature (78% spoiled)"; earliest first.
+  -- The first stack's share, and the whole spread as transfer and inspect give it (E9, Grok 19:50: a hatch line said 91%
+  -- for a belt's first egg; the eggs he picked up there read 19% as a batch: two numbers for different stacks).
+  local function share_text(r)
+    local first = math.floor(r.percent * 100 + 0.5)
+    if r.count > 1 and r.min and r.max and r.wsum and pc(r.min) ~= pc(r.max) then
+      return string.format('that stack %d%% spoiled; all %d: %d-%d%%, %d%% by count', first, r.count, pc(r.min), pc(r.max), pc(r.wsum / r.count))
+    end
+    return string.format('%d%% spoiled', first)
+  end
   function M.row_text(r)
     local h = M.hatch(r.name)
     local soon = r.soon > 0 and (r.soon < r.count and string.format('; %d within 5 min', r.soon) or '; all within 5 min') or ''
     if h then
-      return string.format('%s*%d: the first hatches in %s into %s (%d%% spoiled)%s', r.key, r.count, secs(r.tick - game.tick), h.entity,
-        math.floor(r.percent * 100 + 0.5), soon)
+      return string.format('%s*%d: the first hatches in %s into %s (%s)%s', r.key, r.count, secs(r.tick - game.tick), h.entity, share_text(r), soon)
     end
-    return string.format('%s*%d: the first spoils in %s (%d%% spoiled)%s', r.key, r.count, secs(r.tick - game.tick), math.floor(r.percent * 100 + 0.5), soon)
+    return string.format('%s*%d: the first spoils in %s (%s)%s', r.key, r.count, secs(r.tick - game.tick), share_text(r), soon)
   end
   function M.lines(acc, limit, prefix)
     local rows = {}
@@ -399,7 +407,8 @@ return function(api)
           if e.unit_number then job.done[e.unit_number] = true end
           for _, r in ipairs(M.hatching_in(e, names)) do
             job.found[#job.found+1] = {surface=e.surface.name, position={x=e.position.x, y=e.position.y}, entity=e.name, item=r.key, count=r.count,
-              soon=r.soon, tick=r.tick, percent=r.percent, by=try(function() return e.last_user and e.last_user.name end)}
+              soon=r.soon, tick=r.tick, percent=r.percent, min=r.min and pc(r.min), max=r.max and pc(r.max), mean=r.wsum and r.count > 0 and pc(r.wsum / r.count) or nil,
+              by=try(function() return e.last_user and e.last_user.name end)}
           end
         end
       end
@@ -430,7 +439,7 @@ return function(api)
       if e.valid and not (e.unit_number and job.done[e.unit_number]) then
         for _, r in ipairs(M.hatching_in(e, names)) do
           job.found[#job.found+1] = {surface=e.surface.name, position={x=e.position.x, y=e.position.y}, entity=e.name, item=r.key, count=r.count,
-            soon=r.soon, tick=r.tick, percent=r.percent, by=e.type == 'character' and api.character_name and api.character_name(e) or try(function() return e.last_user and e.last_user.name end)}
+            soon=r.soon, tick=r.tick, percent=r.percent, min=r.min and pc(r.min), max=r.max and pc(r.max), mean=r.wsum and r.count > 0 and pc(r.wsum / r.count) or nil, by=e.type == 'character' and api.character_name and api.character_name(e) or try(function() return e.last_user and e.last_user.name end)}
         end
       end
     end
@@ -481,9 +490,14 @@ return function(api)
   end
   function M.place_text(place, here)
     local h = M.hatch(place.item:match('^[^@]+'))
-    return string.format('%d %s in %s at %s%s: the first hatch%s in %s (%d%% spoiled)%s%s', place.count, place.item, place.entity, at(place.position),
+    -- the spread as transfer and inspect give it, beside the first stack's share (E9)
+    local share = string.format('%d%% spoiled', math.floor(place.percent * 100 + 0.5))
+    if place.count > 1 and place.min and place.max and place.mean and place.min ~= place.max then
+      share = string.format('that stack %d%% spoiled; all %d: %d-%d%%, %d%% by count', math.floor(place.percent * 100 + 0.5), place.count, place.min, place.max, place.mean)
+    end
+    return string.format('%d %s in %s at %s%s: the first hatch%s in %s (%s)%s%s', place.count, place.item, place.entity, at(place.position),
       place.surface ~= here and ' on ' .. place.surface or '', h and ' into ' .. h.entity or '', secs(place.tick - game.tick),
-      math.floor(place.percent * 100 + 0.5),
+      share,
       place.soon > 0 and (place.soon < place.count and string.format(', %d of them within 5 min', place.soon) or ', all within 5 min') or '',
       (place.others or 0) > 0 and string.format('; %d more in other holders within 64 tiles hatch within 5 min', place.others) or '')
   end
@@ -501,11 +515,14 @@ return function(api)
     return out
   end
   -- For a sleeper: news after seq that concerns this agent (waits.lua wakes it).
-  function M.news(p, seq, name)
+  -- carried_only: a sleep that takes no messages (a ship wait; E9, Grok 19:50: every egg alert woke one) hears only of
+  -- eggs its own character carries; the rest reach it in the team block of its next reply.
+  function M.news(p, seq, name, carried_only)
     local w = watch()
     local here = try(function() return p.surface.name end)
     for _, place in ipairs(w.places or {}) do
-      if place.news and place.news > seq and place.tick > game.tick and mine(p, name, place) then return 'eggs hatching: ' .. M.place_text(place, here) end
+      if place.news and place.news > seq and place.tick > game.tick and mine(p, name, place)
+        and (not carried_only or place.entity == 'character' and place.by == name) then return 'eggs hatching: ' .. M.place_text(place, here) end
     end
   end
   local nearby=require('eggnear'){}

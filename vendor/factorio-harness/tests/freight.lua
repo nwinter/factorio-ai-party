@@ -106,10 +106,10 @@ end
 sunward.space_location=nil; sunward.state=3; sunward.space_connection={from={name='nauvis'},to={name='gleba'},length=15000}; sunward.distance=0.5
 sunward.schedule={records={{station='gleba'}},current=1}; sunward.speed=7500/3600
 local lines=F.freshness(sunward)
-eq(lines[1],'agricultural-science-pack*400: the first spoils in 10s (90% spoiled); all within 5 min; arrival at gleba in 1m00s: 200 spoil before it, 200 arrive, the next spoils 1m30s after arrival')
+eq(lines[1],'agricultural-science-pack*400: the first spoils in 10s (that stack 90% spoiled; all 400: 50-90%, 70% by count); all within 5 min; arrival at gleba in 1m00s: 200 spoil before it, 200 arrive, the next spoils 1m30s after arrival')
 eq(#lines,1,'iron plate does not spoil')
 sunward.speed=0
-eq(F.freshness(sunward)[1],'agricultural-science-pack*400: the first spoils in 10s (90% spoiled); all within 5 min','no speed: no arrival')
+eq(F.freshness(sunward)[1],'agricultural-science-pack*400: the first spoils in 10s (that stack 90% spoiled; all 400: 50-90%, 70% by count); all within 5 min','no speed: no arrival')
 
 -- 6. platform_arrived reads the same rule: not met at a location while on its path.
 local C=dofile('mod/agent-harness_0.1.0/conditions.lua'){position=function(v) return v end,known=function() return true end,platform_where=F.where}

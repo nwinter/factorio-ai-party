@@ -419,7 +419,7 @@ return function(api)
     local news = record.board_seq and api.board_news(p, record.board_seq)
     if news then out.board = news; return 'board' end
     -- Eggs on this surface or built by the sleeper hatch within 5 minutes (spoil.lua).
-    local eggs = record.egg_seq and api.egg_news and api.egg_news(p, record.egg_seq)
+    local eggs = record.egg_seq and api.egg_news and api.egg_news(p, record.egg_seq, record.wake_messages == false)
     if eggs then out.eggs = eggs; return 'eggs' end
     if record.alert_seq and (api.state().alert_seq or 0) > record.alert_seq then
       -- Which alert woke it; with a filter only one that matches (the rest are skipped, the sleep goes on).

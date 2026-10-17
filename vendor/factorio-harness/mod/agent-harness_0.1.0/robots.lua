@@ -129,6 +129,98 @@ return function(api)
     error(string.format('no logistic network of ours covers %s on %s%s', at(pos), surface.name,
       best and string.format('; the nearest: network %d, %s %s, %.0f tiles away', best.net.network_id, best.owner.name, at(best.owner.position), bd) or ''), 0)
   end
+  -- sources (E5, Sol 19:50: about 13 construction robots lost on a uranium line, the storage chests across worms): per
+  -- group of pending ghosts and item requests in the network's construction area (by item and 32-tile cell), the
+  -- network's chests holding that item, nearest first (3), and whether the straight line from each to the group passes
+  -- within the reach of a worm or spawner the map shows (a worm's range, a spawner's units' 40 tiles). Facts the map and
+  -- the network's GUI give; robots fly straight. Bounded: 1000 ghosts, 16 groups, 512 chests read.
+  local MAX_GHOSTS, MAX_GROUPS, MAX_CHESTS = 1000, 16, 512
+  local function item_of_ghost(g)
+    if g.type == 'entity-ghost' then
+      local it = try(function() return g.ghost_prototype.items_to_place_this[1] end)
+      return it and (type(it.name) == 'string' and it.name or try(function() return it.name.name end)), 1
+    end
+    for _, r in ipairs(try(function() return g.item_requests end) or {}) do
+      local n = type(r.name) == 'string' and r.name or try(function() return r.name.name end)
+      if n then return n, r.count or 1 end
+    end
+  end
+  function M.sources(p, net)
+    local av = api.avoid and api.avoid()
+    local s, f = p.surface, p.force
+    local box
+    for _, c in ipairs(try(function() return net.cells end) or {}) do
+      local o = c.owner
+      local r = try(function() return c.construction_radius end) or 0
+      if o and o.valid and not try(function() return c.mobile end) and r > 0 then
+        local x, y = o.position.x, o.position.y
+        box = box and {math.min(box[1], x - r), math.min(box[2], y - r), math.max(box[3], x + r), math.max(box[4], y + r)} or {x - r, y - r, x + r, y + r}
+      end
+    end
+    if not box then return {'the network has no roboport with a construction area'} end
+    local ghosts = try(function() return s.find_entities_filtered{area={{box[1], box[2]}, {box[3], box[4]}}, type={'entity-ghost', 'item-request-proxy'}, force=f, limit=MAX_GHOSTS} end) or {}
+    local groups, order = {}, {}
+    for _, g in ipairs(ghosts) do
+      if g.valid and try(function() return net.find_cell_closest_to(g.position) end) then
+        local item, n = item_of_ghost(g)
+        if item then
+          local k = item .. '|' .. math.floor(g.position.x / 32) .. '|' .. math.floor(g.position.y / 32)
+          local gr = groups[k]
+          if not gr then gr = {item=item, n=0, count=0, sx=0, sy=0, kind=g.type == 'entity-ghost' and 'ghost' or 'item request'}; groups[k] = gr; order[#order+1] = gr end
+          gr.n = gr.n + 1; gr.count = gr.count + n; gr.sx = gr.sx + g.position.x; gr.sy = gr.sy + g.position.y
+        end
+      end
+    end
+    if #order == 0 then return {'no ghost or item request waits in its construction area'} end
+    table.sort(order, function(x, y) return x.n > y.n end)
+    local chests = {}
+    for _, list in ipairs({try(function() return net.storages end) or {}, try(function() return net.providers end) or {}}) do
+      for i, e in ipairs(list) do
+        if #chests >= MAX_CHESTS then break end
+        if e.valid and (e.type == 'logistic-container' or e.type == 'container') then chests[#chests+1] = e end
+      end
+    end
+    local holders = {}
+    local lines = {}
+    for gi, gr in ipairs(order) do
+      if gi > MAX_GROUPS then lines[#lines+1] = string.format('+%d more groups', #order - MAX_GROUPS); break end
+      local c = {x=gr.sx / gr.n, y=gr.sy / gr.n}
+      if not holders[gr.item] then
+        local h, seen = {}, {}
+        for _, e in ipairs(chests) do
+          local n = not seen[e.unit_number] and try(function() return e.get_item_count(gr.item) end) or 0
+          seen[e.unit_number] = true
+          if n > 0 then h[#h+1] = {e=e, n=n} end
+        end
+        holders[gr.item] = h
+      end
+      local near = {}
+      for _, h in ipairs(holders[gr.item]) do near[#near+1] = {e=h.e, n=h.n, d=((h.e.position.x - c.x) ^ 2 + (h.e.position.y - c.y) ^ 2) ^ 0.5} end
+      table.sort(near, function(x, y) return x.d < y.d end)
+      local parts = {}
+      for i = 1, math.min(3, #near) do
+        local h = near[i]
+        local crossing
+        if av then
+          local path = av.chunks_near({h.e.position, c}, 48)
+          if #path <= 256 then
+            local got = av.structures(s, f, path, 64)
+            for _, e in ipairs(got.list) do
+              local reach = av.reach(e.name, e.spawner)
+              local d = av.seg_dist(h.e.position, c, e)
+              if d <= reach and (not crossing or d - reach < crossing.d - crossing.reach) then crossing = {e=e, d=d, reach=reach} end
+            end
+          else crossing = 'unread' end
+        end
+        parts[#parts+1] = string.format('%s %s holds %d, %d tiles: %s', h.e.name, at(h.e.position), h.n, math.floor(h.d + 0.5),
+          crossing == 'unread' and 'the line is too long to read' or crossing and string.format('the straight line passes %d tiles from %s %s (reach %d)',
+            math.floor(crossing.d + 0.5), crossing.e.name, at(crossing.e), crossing.reach) or 'the straight line passes within reach of no worm or spawner the map shows')
+      end
+      lines[#lines+1] = string.format('%d %s%s for %s near %s: %s', gr.n, gr.kind, gr.n == 1 and '' or 's', gr.item, at(c),
+        #parts > 0 and table.concat(parts, '; ') or 'no chest in the network holds it')
+    end
+    return lines
+  end
   function M.read(p, a)
     local net = network_for(p, a)
     local flying = try(function() return net.construction_robots end) or {}
@@ -157,12 +249,14 @@ return function(api)
         net.network_id, all, all == 1 and '' or 's', idle, #flying, held_up > 0 and string.format(', %d held up', held_up) or '',
         #cells, #cells == 1 and '' or 's', storages, storages == 1 and '' or 's'),
       robots=#rows > 0 and rows or nil, robots_more=#flying > #rows and #flying - #rows or nil,
-      charging_queues=#queues > 0 and queues or nil}
+      charging_queues=#queues > 0 and queues or nil,
+      sources=a.sources and M.sources(p, net) or nil}
   end
   M.schema = {
     construction_robots = {position='optional {x,y}: the network covering it (default where you stand)',
       network='optional network id (the networks read lists them) instead of position',
       surface='optional planet name: read there by remote view',
+      sources='true: sources: per group of ghosts and item requests waiting in the construction area (by item, 32-tile cells; the largest 16), the network\'s chests holding that item, nearest first (3): what each holds, how far, and whether the straight line from it to the group passes within reach of a worm or spawner the map shows (which, how near, its reach)',
       returns='network, summary (construction robots: in roboports, in the air, held up; roboports; storage chests), robots: one line each for those in the air (the first 32; robots_more): position, energy %, what it holds, its orders (construct, deconstruct, upgrade, repair, deliver, pickup, explode_cliff: target and item, the first 3) and what holds it up: nowhere to put what it holds (no storage chest in the network has room for it), its target outside the network\'s construction area, waiting to charge at a roboport (its place in the queue), charging, outside every network\'s area; charging_queues: roboports with robots waiting to charge. Read only'},
   }
   return M

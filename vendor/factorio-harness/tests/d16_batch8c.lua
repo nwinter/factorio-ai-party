@@ -115,3 +115,21 @@ do
   eq(P.boxed(p,{}),nil,'walls alone: not drills or belts')
 end
 print('d16_batch8c C4 boxed in by drills and belts: ok')
+
+-- E11 (Astra 19:50): a leg's asteroids, and shots per asteroid after resistances and bonuses.
+do
+  prototypes={space_connection={['gleba-aquilo']={from={name='gleba'},to={name='aquilo'},length=30000,asteroid_spawn_definitions={
+      {asteroid='big-oxide-asteroid',type='entity',spawn_points={{distance=0,probability=0},{distance=0.4,probability=0.001},{distance=1,probability=0.001}}},
+      {asteroid='oxide-asteroid-chunk',type='asteroid-chunk',spawn_points={{distance=0,probability=0.5},{distance=1,probability=0.5}}}}}},
+    entity={['big-oxide-asteroid']={get_max_health=function() return 2000 end,resistances={physical={decrease=2000,percent=0.1},explosion={decrease=0,percent=0.1}}},
+      ['medium-oxide-asteroid']={get_max_health=function() return 400 end,resistances={physical={decrease=0,percent=0.1}}}},
+    item={['firearm-magazine']={get_ammo_type=function() return {category='bullet',action={{action_delivery={{type='instant',target_effects={{type='damage',damage={amount=5,type='physical'}}}}}}}} end}}}
+  local R=dofile('mod/agent-harness_0.1.0/routeammo.lua'){segments=function() return {} end}
+  local d=R.density('aquilo','gleba')
+  assert(math.abs(d['big-oxide-asteroid']-0.0008)<1e-9,tostring(d['big-oxide-asteroid'])); eq(d['oxide-asteroid-chunk'],nil,'chunks are not shot')
+  local force={get_ammo_damage_modifier=function() return 1 end,get_turret_attack_modifier=function() return 0 end}
+  eq(R.shots('big-oxide-asteroid','firearm-magazine',force),false,'under 1 a hit: none hurt')
+  eq(R.shots('medium-oxide-asteroid','firearm-magazine',force),45,'400 / (10 x 0.9)')
+  prototypes=nil
+end
+print('d16_batch8c E11 route asteroids and shots: ok')

@@ -1529,8 +1529,10 @@ async function main() {
         if (status === first && typeof last?.tick === 'number' && typeof priorTick === 'number' && last.tick < priorTick) {
           const ago = typeof status.tick === 'number' ? Math.max(0, Math.round((status.tick - last.tick)/60)) : undefined;
           const note = `nothing was running when this wait began: the last action, ${last.kind ?? 'an action'}, ended ${last.outcome ?? 'earlier'}`
-            + `${ago !== undefined ? ` ${ago} s ago` : ''}, before your previous call`;
-          const quiet = {...status, ok:true, result:{...status.result, last:undefined, note}};
+            + `${ago !== undefined ? ` ${ago} s ago` : ''}, before your previous call; its result is given as it ended`;
+          // Its result kept (E10, Luna 2x: a transfer and a load_silo that ended before fh wait read as a bare idle line),
+          // never an error exit for an old outcome (friction3).
+          const quiet = {...status, ok:true, result:{...status.result, note}};
           if (compactWaits) return withSlow(withTells(await brief(quiet, started)));
           const full = await finalReply(quiet);
           return withSlow(withTells({...full, result:{idle:true, nothing_running:true, note, last, last_combat:status.result?.last_combat,
