@@ -16,7 +16,10 @@
 return function(api)
   local M = {operator={}}
   local walk = api.walk or require('walk'){state=api.state}
-  local SLICE, PERIOD, NEST_BAND, ORE_BAND, ORE_WANT, ORE_EVERY = 200, 1800, 32, 2, 36000, 18000
+  -- SLICE: entities read a step. d16 perf: at 200 a Nauvis slice took 8-13 ms on world n with the memory hooks, and with
+  -- 770 steps a pass walk.every gives a step every tick, so the Nauvis walk ran 245 ticks at 22-44 ticks/s; at 100
+  -- a step is half that and the pass spreads over more of its period. GRID: points a step in the grid stages.
+  local SLICE, GRID, PERIOD, NEST_BAND, ORE_BAND, ORE_WANT, ORE_EVERY = 100, 800, 1800, 32, 2, 36000, 18000
   local function set(list) local t = {} for _, x in ipairs(list) do t[x] = true end return t end
   local STREAM = set{'assembling-machine', 'lab', 'mining-drill', 'furnace', 'inserter'}
   local SNAP_LIST = {'assembling-machine', 'furnace', 'mining-drill', 'lab', 'boiler', 'generator', 'solar-panel', 'accumulator',
@@ -371,7 +374,7 @@ return function(api)
       job.stage = #b.x > 0 and 'fill' or 'done'
     elseif job.stage == 'fill' then
       local C, cells = job.C, b.cells
-      local last = math.min(#b.x, b.i + SLICE * 4 - 1)
+      local last = math.min(#b.x, b.i + GRID - 1)
       for i = b.i, last do
         local cx, cy = math.floor(b.x[i] / C), math.floor(b.y[i] / C)
         local row = cells[cy]
@@ -390,7 +393,7 @@ return function(api)
     elseif job.stage == 'fine' then
       local k = b.core
       local fine, CC = k.fine, k.CC
-      local last = math.min(#b.x, b.i + SLICE * 4 - 1)
+      local last = math.min(#b.x, b.i + GRID - 1)
       for i = b.i, last do
         local x, y = b.x[i], b.y[i]
         if x >= k.bx0 - 8 and x <= k.bx1 + 8 and y >= k.by0 - 8 and y <= k.by1 + 8 then
@@ -470,7 +473,7 @@ return function(api)
         job.stage = 'done'
       end
     elseif job.planets and next(job.planets) and not job.planets_done then
-      -- Each other planet's coarse grid, in steps (SLICE * 4 points a step): its cell doubled from CELL until the
+      -- Each other planet's coarse grid, in steps (GRID points a step): its cell doubled from CELL until the
       -- planet's buildings fit PLANET_CELLS cells a side; a cell takes its most telling building, as Nauvis's.
       job.plist = job.plist or (function() local l = {} for k in pairs(job.planets) do l[#l+1] = k end table.sort(l) return l end)()
       job.pi = job.pi or 1
@@ -486,7 +489,7 @@ return function(api)
         P.grid, P.i = {}, 1
       end
       local C, grid = P.cell, P.grid
-      local last = math.min(#P.x, P.i + SLICE * 4 - 1)
+      local last = math.min(#P.x, P.i + GRID - 1)
       for i = P.i, last do
         local cx, cy = math.floor(P.x[i] / C), math.floor(P.y[i] / C)
         local row = grid[cy]

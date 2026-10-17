@@ -52,8 +52,8 @@ def reads(bot="sol", platform="Aegis"):
     spec = importlib.util.spec_from_file_location("analyst_game", os.path.join(os.path.dirname(os.path.abspath(__file__)), "analyst", "game.py"))
     A = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(A)
-    flow_items = ["iron-plate", "copper-plate", "steel-plate", "electronic-circuit", "advanced-circuit", "processing-unit",
-                  "plastic-bar", "sulfur", "iron-gear-wheel", "stone-brick"]
+    import model  # tools/stream: the stream's own item lists
+    flow_items = model.SPARK_ITEMS
     packs = ["automation-science-pack", "logistic-science-pack", "military-science-pack", "chemical-science-pack",
              "production-science-pack", "utility-science-pack", "space-science-pack", "metallurgic-science-pack",
              "electromagnetic-science-pack", "agricultural-science-pack", "cryogenic-science-pack"]
@@ -73,7 +73,7 @@ def reads(bot="sol", platform="Aegis"):
     return {
         "score": ("stream 3 s, score loop 120 s: pog.SCORE_LUA", timed_lua(pog.SCORE_LUA)),
         "extras": ("stream 3 s: harness STREAM_LUA", timed_lua(H.STREAM_LUA)),
-        "flows": ("stream 30 s: harness FLOW_LUA", timed_lua(items(H.FLOW_LUA, flow_items))),
+        "flows": ("stream 30 s: harness FLOW_LUA (the stream's SPARK_ITEMS)", timed_lua(items(H.FLOW_LUA, flow_items))),
         "used_flows": ("stream 30 s: harness USED_FLOW_LUA", timed_lua(items(H.USED_FLOW_LUA, packs))),
         "basemap": ("stream 60 s: harness BASEMAP_LUA (live map)", timed_lua(H.basemap_lua())),
         "basemap_ore": ("stream 300 s: BASEMAP_LUA with ore", timed_lua(H.basemap_lua(ore=True))),
