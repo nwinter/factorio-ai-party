@@ -435,7 +435,7 @@ do
   local S=dofile('mod/agent-harness_0.1.0/silo.lua'){}
   eq(S.auto_wait(silo,force,{{name='low-density-structure',count=14}}),'filling a rocket for Starling: low-density-structure 14 of 200 aboard (a full rocket by weight, 5 kg each); its network holds 30 more, under the 186 it still waits for; it goes up once the rocket holds what the silo requests (on 2.0.77 a full rocket of the item, or the request\'s min payload)')
   silo.transitional_request_target=nil
-  eq(S.auto_wait(silo,force,{}),'no platform taken up now; above nauvis: Starling asks low-density-structure 50 (holds 0, lacks 50), no min payload: a rocket waits for a full one, 200 by weight, the silo\'s network holds 30, under the 200 a rocket waits for')
+  eq(S.auto_wait(silo,force,{}),'no platform taken up now; above nauvis: below_min_payload: Starling asks low-density-structure 50 (holds 0, lacks 50), no min payload: a rocket waits for a full one, 200 by weight, the silo\'s network holds 30, under the 200 a rocket waits for')
 end
 print('d15_batch4 8 silo: ok')
 

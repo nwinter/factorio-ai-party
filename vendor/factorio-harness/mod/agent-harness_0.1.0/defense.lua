@@ -504,7 +504,10 @@ return function(api)
       area={{lt.x or lt[1],lt.y or lt[2]},{rb.x or rb[1],rb.y or rb[2]}}
     end
     local limit=math.max(1,math.min(40,math.floor(tonumber(a.limit) or MAX_FRONTS)))
-    local kind='turrets|'..s.name..'|'..(area and table.concat({area[1][1],area[1][2],area[2][1],area[2][2]},',') or 'all')
+    -- hand_fed_low (A3, Haiku 01:50): every hand-fed ammo turret under below rounds (default 10), nearest you first
+    assert(a.hand_fed_low==nil or type(a.hand_fed_low)=='boolean','hand_fed_low must be true or false')
+    local hfl_below=a.hand_fed_low and math.max(1,math.min(1000,math.floor(tonumber(a.below) or 10))) or nil
+    local kind='turrets|'..s.name..'|'..(area and table.concat({area[1][1],area[1][2],area[2][1],area[2][2]},',') or 'all')..(hfl_below and '|hfl'..hfl_below or '')
     local q={force=p.force,surface={index=s.index}}
     return cached(q,kind,limit,function()
       local found=s.find_entities_filtered{force=p.force,type=TURRET_TYPES,area=area,limit=MAX_FIND}
@@ -563,17 +566,37 @@ return function(api)
         if (x.hand_fed+x.low)~=(y.hand_fed+y.low) then return (x.hand_fed+x.low)>(y.hand_fed+y.low) end
         return x.turrets>y.turrets
       end)
+      local hfl
+      if hfl_below then
+        local here=p.position
+        local list={}
+        for _,r in ipairs(rows) do
+          if r.hand_fed and r.type=='ammo-turret' and (r.count or 0)<hfl_below then list[#list+1]=r end
+        end
+        local function d(r) return (r.position.x-here.x)^2+(r.position.y-here.y)^2 end
+        table.sort(list,function(x,y) return d(x)<d(y) end)
+        local lines,pos={},{}
+        for i,r in ipairs(list) do
+          if i<=64 then
+            lines[#lines+1]=string.format('%s %s: %s, %.0f tiles from you',r.name,at(r.position),r.ammo,math.sqrt(d(r)))
+            pos[#pos+1]={x=r.position.x,y=r.position.y}
+          end
+        end
+        hfl={count=#list,below=hfl_below,lines=lines,more=#list>64 and #list-64 or nil,
+          rearm=#pos>0 and 'rearm {positions: [the turrets above], count: '..math.max(hfl_below,10)..'} (no ammo named: each its own; walks to them)' or nil,positions=#pos>0 and pos or nil}
+      end
       local shown={}
       for i=1,math.min(limit,#fronts) do shown[i]=fronts[i] end
       local hand,low=0,0
       for _,f in ipairs(fronts) do hand,low=hand+f.hand_fed,low+f.low end
-      return {surface=s.name,count=#rows,fronts=shown[1] and shown or nil,hand_fed=hand,low=low,
+      return {surface=s.name,count=#rows,fronts=shown[1] and shown or nil,hand_fed=hand,low=low,hand_fed_low=hfl,
         capped=#found>=MAX_FIND and MAX_FIND..' turrets read' or nil,
         more=#fronts>limit and string.format('+%d more fronts: limit raises the count',#fronts-limit) or nil,
         note=#rows==0 and 'no turret of ours there' or nil}
     end)
   end
   M.schema.turrets={surface='optional surface name (default yours)',area='optional {left_top={x,y}, right_bottom={x,y}}',
+    hand_fed_low='optional true (A3): every hand-fed ammo turret (no inserter, robot request or pipe feeds it) under below rounds, nearest you first: hand_fed_low {count, below, lines (name, position, ammo, tiles from you; 64 at most), positions, rearm}',below='with hand_fed_low: 1..1000 rounds (default 10)',
     limit='optional: fronts listed (default '..MAX_FRONTS..', max 40)',
     returns='read, cached 10 s: count, hand_fed, low, fronts [{line, box, centre, turrets, kinds, hand_fed, low, turret_lines}]: turrets within '..FRONT
       ..' tiles of each other are one front; fronts with hand-fed or low turrets first, and in each the hand-fed and low turrets first (up to '..FRONT_ROWS..' lines). '

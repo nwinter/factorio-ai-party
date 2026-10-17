@@ -323,6 +323,12 @@ return function(api)
     row.trash = items_text(contents(trash), 8)
     if row.trash then words[#words+1] = 'trash slots: ' .. row.trash end
     row.auto_requests = try(function() return e.use_transitional_requests end) and true or false
+    -- each request a platform above makes of this planet, flagged (A8)
+    local okr, reqs = pcall(M.request_rows, e, force)
+    if okr and reqs and #reqs > 0 then
+      row.platform_requests = {}
+      for i, r in ipairs(reqs) do if i <= 8 then row.platform_requests[i] = {platform=r.platform, item=r.item, flag=r.flag, line=r.line} end end
+    end
     words[#words+1] = 'automatic requests ' .. (row.auto_requests and 'on (the silo launches for platforms\' requests itself)' or 'off')
     -- a load_silo auto_requests pause (B5): by whom, for how many more rockets
     local paused = api.pause_line and try(function() return api.pause_line(e) end)
@@ -439,7 +445,27 @@ return function(api)
               end
               if r.filling then words[#words+1] = 'the silo fills a rocket for ' .. pl.name .. ' now'
               elseif r.other_filling then words[#words+1] = 'the silo fills a rocket for ' .. target .. ' now' end
-              r.line = table.concat(words, ', ')
+              -- the flag (A8, Gemini 01:50: silos idle with rockets ready, the stock just under min_payload or split
+              -- across networks): matched, below_min_payload, split_networks (the planet's other networks hold the
+              -- rest: each named), hub_full, filling
+              local others, other_n = {}, 0
+              for _, o in pairs(try(function() return force.logistic_networks[e.surface.name] end) or {}) do
+                if not (ln and o.network_id == ln.network_id) then
+                  local n = math.max(0, try(function() return o.get_item_count(name) end) or 0)
+                  if n > 0 then
+                    other_n = other_n + n
+                    local cell = try(function() return o.cells[1].owner end)
+                    others[#others+1] = string.format('network %d%s holds %d', o.network_id, cell and cell.valid and string.format(' (near %d,%d)', cell.position.x, cell.position.y) or '', n)
+                  end
+                end
+              end
+              if r.filling then r.flag = 'filling'
+              elseif need_slots and free_slots and free_slots < need_slots then r.flag = 'hub_full'
+              elseif payload and net >= payload then r.flag = 'matched'
+              elseif payload and net + other_n >= payload then r.flag = 'split_networks'
+              else r.flag = 'below_min_payload' end
+              if #others > 0 and r.flag ~= 'matched' then words[#words+1] = 'other networks on ' .. e.surface.name .. ': ' .. table.concat(others, '; ', 1, math.min(3, #others)) end
+              r.line = r.flag .. ': ' .. table.concat(words, ', ')
               rows[#rows+1] = r
             end
           end
@@ -587,7 +613,7 @@ return function(api)
       .. 'crafting {part_progress, parts_left, part_s, productivity, rocket_eta_s (at this speed, while working)}, ingredients [{name, per_part, in_silo, in_hands '
       .. '(feeding inserters\' hands), at_sources (what their belts and chests hold), needed (for the parts left), short}], lacks (ingredients the silo holds too few '
       .. 'of for the next part), feeders {inserters, idle, sources}, cargo {kg, lift_kg, stacks, slots, items, over_kg}, trash, auto_requests and send_to_orbit_automatically (the GUI checkboxes; configure sets them), '
-      .. 'platforms_above (ours in orbit of this planet), last_launch {ago, tick, to, cargo, by}, line}]; rockets_launched (the force\'s count). '
+      .. 'platforms_above (ours in orbit of this planet), platform_requests [{platform, item, flag (matched: the silo\'s network holds the payload a rocket waits for; below_min_payload; split_networks: other networks on the planet hold the rest, named; hub_full: the payload takes more hub slots than are free; filling: the silo fills a rocket for it now), line}] (each request a platform above makes of this planet that its hub lacks), last_launch {ago, tick, to, cargo, by}, line}]; rockets_launched (the force\'s count). '
       .. 'Feeders: inserters within 8 tiles dropping into the silo. Launches are seen from when the harness was deployed. Read only'}}
   return M
 end

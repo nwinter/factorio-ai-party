@@ -92,6 +92,7 @@
 - A `feed` that gives nothing says why: a turret (feed loads none; `rearm` does, with what it holds), a chest
   (`transfer` puts items in), burners at or over the count, another fuel in every slot; `rearm`, `refuel` and `collect`
   name a target already holding enough or holding none.
+- With a `count`, from nearest skips chests holding less than it ahead of one that holds it all (`skipped_small`).
 - `transfer {from: "nearest", item, to, to_inventory}` is a courier from the freshest chest holding the item (then the
   nearest) straight to that machine, taking its freshest stacks first. `fresh_first: true` (or `fresh: true` on a
   courier) takes a spoilable item's least spoiled stacks first on any take or give.

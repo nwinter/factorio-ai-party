@@ -6,7 +6,7 @@ Each topic, when to read it, and the commands it documents:
   couriers), `collect` (machine outputs), `feed` (ingredients, packs, fuel), `refuel` (burners), `pickup` (belts,
   ground), `mine` (by hand), `rotate`, `repair`, `inventory`, `craft`, `cancel_craft`.
 - `building`, when you place anything past a few hand builds: `build` (batches, settings, fast replace), `place_ghosts`,
-  `construct` (ghosts by hand), `deconstruct`, `upgrade` (the upgrade planner: ghosts in place), `paste`, `placements` (where it fits), `nearest_water`, `conflicts`, `build_path`,
+  `construct` (ghosts by hand), `ghosts` (each ghost near you: what it needs, can robots build it), `deconstruct`, `upgrade` (the upgrade planner: ghosts in place), `paste`, `placements` (where it fits), `nearest_water`, `conflicts`, `build_path`,
   `grid` (tiles), `pole_route`, `belt_route`, `rail_route`, `train_stop`, `train` (stops, schedules), `clear_cliffs`, `heat_budget`,
   `outpost` (one tour), `blueprint_save`, `blueprint_capture`, `blueprint_list`, `blueprint_place`, `blueprint_rename`,
   `blueprint_delete` (the team library); landfill, tiles, nuclear.
@@ -31,5 +31,5 @@ Each topic, when to read it, and the commands it documents:
   `profile`, `profiles`, `confess`, `chronicle`, `operator`, `poll` (the site's polls), `players`, `vote`, `votes`,
   `restore`.
 - `space-age`, for rockets, platforms and other planets: `platforms` and `platform NAME`, `platform_create`,
-  `platform_schedule`, `platform_rename`, `platform_endurance`, `platform_supply`, `platform_plan`, `platform_bom` (what a platform's ghosts still need), `platform_production` (what a platform makes), `min_payload` (hub requests' custom minimum payload), `launch`, `silo`, `cargo`, `load_silo`, `preflight`, `land`, `drop`,
+  `platform_schedule`, `platform_rename`, `platform_endurance`, `platform_supply`, `platform_plan`, `platform_bom` (what a platform's ghosts still need), `platform_production` (what a platform makes), `platform_defense` (turret cover of collectors and hull), `min_payload` (hub requests' custom minimum payload), `launch`, `silo`, `cargo`, `load_silo`, `preflight`, `land`, `drop`,
   `freight_audit`, `where_is`, `agriculture`, the remote queue lane; spoilage, Gleba.
