@@ -2068,6 +2068,11 @@ return function(api)
       local ok, list = pcall(api.launch_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
+    -- A shipment delivered, spilled or held by a full hub (shipment.lua; d17 batch15 Group B).
+    if api.shipment_lines then
+      local ok, list = pcall(api.shipment_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     -- Hand-fed burner machines running dry within 10 minutes (burnerfuel.lua).
     if api.burner_lines then
       local ok, list = pcall(api.burner_lines, p, h)

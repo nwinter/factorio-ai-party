@@ -6367,3 +6367,18 @@ fh watch    # deploy on every change
   points' deliveries on the way), with the platform its automatic requests fill for (`requesting_for`). Copy (automatic
   requests switched on at Nauvis for a test, Swift asking iron plates): "logistic robots bringing (carrying or
   reserved): processing-unit 6 (automatic requests for platform Swift)".
+- Group B (Sol #614, 08:04; Astra 07:58, 08:05): new read `shipment {platform | item}` (shipment.lua), joining what
+  the native systems show: per stop of the schedule (its departure conditions, as platform_gate), each hub request
+  importing from that planet with a state: delivered (the hub holds the minimum), in flight (a rocket's pod coming
+  down onto the platform), launched (its pod rising over the planet), loading (a silo there with it in its rocket or
+  logistic robots bringing it, for this platform), waiting with the native gate holding it (the platform not stopped
+  there; no silo; no silo with automatic requests; the silo's request flag: hub_full, below_min_payload,
+  split_networks, matched, filling); what that planet's landing pads ask of the hub now (cargo kept for a later
+  stop); the last visit's pad receipts and spills (landed with no pad, where). rows [{platform, planet, item,
+  direction, state, ...}], states. Every 2 s one platform is read in turn (states only); a request turning delivered,
+  a spill, and a hub_full gate appearing go once to team.alerts of who last launched to the platform (silo records)
+  and those its alerts go to (platalerts). No automation. Copy: Swift at Nauvis read firearm-magazine 500 delivered,
+  processing-unit 50 waiting "no silo on nauvis has automatic requests on", agricultural-science-pack 500 from Gleba
+  waiting "the platform is not stopped at gleba"; Wren's crusher and explosives waiting hub_full. Cost on the copy:
+  Swift's read 23 ms with the dispatch (about 10 ms of it), the silo lists kept a minute in storage (their
+  whole-surface search was 5-8 ms a planet).

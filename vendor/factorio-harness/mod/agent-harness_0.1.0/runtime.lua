@@ -1880,6 +1880,7 @@ function handlers.describe()
   for name,schema in pairs(M.platdefense and M.platdefense.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circaudit and M.circaudit.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.owed and M.owed.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.shipment and M.shipment.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ghostlist and M.ghostlist.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.silo and M.silo.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.rocketload and M.rocketload.schema or {}) do description.actions[name]=schema end
@@ -12919,7 +12920,7 @@ M.board=require('board'){state=state,claims=M.claims,director=function(index) re
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
   platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,
   hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,
-  power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
+  power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
   science_line=function(p,h) return M.scienceline.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
@@ -13225,6 +13226,7 @@ reads.platform_production=true
 reads.platform_defense=true
 reads.circuit_audit=true
 reads.platform_gate=true
+reads.shipment=true
 reads.ghosts=true
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
@@ -14326,6 +14328,12 @@ M.powercut=require('powercut'){state=state}
 function handlers.drops(p,a) return M.drops.read(p,a) end
 -- What each platform carried stop by stop and leg by leg, and where it is (freight.lua; Luna, shift12 12:47).
 M.freight=require('freight'){state=state,spoil=M.spoil,pods=M.pods,departure=function(name) return M.departure and M.departure.lines(name) end}
+-- One read across a shipment's native systems (shipment.lua; d17 batch15 Group B, Sol #614, Astra).
+M.shipment=require('shipment'){state=state,stops=function(pl) return space.stops(pl) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
+  incoming=function(pl) return M.freight.incoming(pl) end,where=function(pl) return M.freight.where(pl) end,segments=function(pl) return M.freight.segments(pl) end,
+  pads=function(planet,force) return M.freight.pads(planet,force) end,request_rows=function(e,force) return M.silo.request_rows(e,force) end,
+  last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end}
+function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- platform_endurance: a route's legs at the platform's speed and what its ammunition, repair packs, thruster fluids,
 -- power and hub space come to over it at today's rates (endurance.lua; Astra, d15: Wayfarer lost at Aquilo).
 M.endurance=require('endurance'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
@@ -15222,6 +15230,7 @@ function M.tick_body(event)
   if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.owed.tick) end  -- unanswered mentions' reminders
   if event.tick%600==17 and M.platbom then pcall(M.timed,'platbom.tick',M.platbom.tick,event.tick) end  -- each hub's items by stop and leg (freight.lua)
   if M.research_target then pcall(M.timed,'research_target.tick',M.research_target.tick,event.tick) end  -- research target levels (researchtarget.lua)
+  if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end  -- shipment fact lines (shipment.lua)
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
   if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
   -- (after pods.lua's look: freight takes the new pods from it and counts each on its stop)

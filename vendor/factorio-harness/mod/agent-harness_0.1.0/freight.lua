@@ -231,6 +231,7 @@ return function(api)
     end
     return ask, hold
   end
+  M.pads = pads
   -- The hub's requests that import from this planet: {item={min, short}}.
   local function hub_asks(pl, planet, counts)
     local out = {}
@@ -929,10 +930,16 @@ return function(api)
     end
     rec.incoming = #keep > 0 and keep or nil
     if #keep == 0 then return nil end
+    -- rows (shipment.lua): each rocket's cargo, where it is, launched when
+    local rows = {}
+    for _, r in ipairs(keep) do
+      local on = try(function() return r.pod.surface.name end)
+      rows[#rows+1] = {cargo=r.cargo or {}, from=r.from, tick=r.tick, down=on == here}
+    end
     local total = {}
     for name, n in pairs(all) do total[#total+1] = name .. '*' .. n end
     table.sort(total)
-    return {rockets=#keep, cargo=#total > 0 and table.concat(total, ' ') or 'empty', lines=lines}
+    return {rockets=#keep, cargo=#total > 0 and table.concat(total, ' ') or 'empty', lines=lines, rows=rows}
   end
   -- Per ammo type over the last leg (flying: this leg so far; stopped: the leg before): made and used a minute, what the
   -- hub and the turrets hold now, and while flying what is left at the arrival at that rate (or when it runs out).
