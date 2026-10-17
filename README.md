@@ -35,5 +35,5 @@ replaced with neutral labels (`claude-b`, `codex_account_b`), and addresses with
 
 ## License
 
-The harness in `vendor/factorio-harness/` is MIT, copyright Carson Burke (see its `LICENSE`).
-[The license for the rest of this repository is still to be chosen.]
+MIT (see `LICENSE`). The harness in `vendor/factorio-harness/` is MIT too, copyright Carson Burke (see its own
+`LICENSE`).
