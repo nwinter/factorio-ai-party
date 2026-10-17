@@ -181,7 +181,44 @@ return function(api)
       end
     end
   end
+  -- surface (d17 batch17 A6, Gemini: the outstanding platform requests from the planet she is on): every platform's
+  -- active hub requests that import from that planet, with what its hub holds and how many it still lacks, and where
+  -- the platform is. Read only.
+  function M.from_surface(p, planet)
+    assert(type(planet) == 'string' and prototypes.space_location[planet], 'surface: a planet the platforms import from (nauvis, gleba, ...)')
+    local lines, rows = {}, {}
+    for _, pl in pairs(p.force.platforms) do
+      local hub = try(function() return pl.hub end)
+      if pl.valid and hub and hub.valid then
+        local inv = try(function() return hub.get_inventory(defines.inventory.hub_main) end)
+        local where = try(function() return pl.space_location and 'at ' .. pl.space_location.name end)
+          or try(function() local c = pl.space_connection; return c and 'flying ' .. c.from.name .. '<->' .. c.to.name end) or 'in space'
+        local secs = try(function() return hub.get_logistic_sections() end)
+        local asks = {}
+        for i = 1, secs and secs.sections_count or 0 do
+          local sec = secs.get_section(i)
+          if sec and sec.active ~= false then
+            for _, f in ipairs(sec.filters or {}) do
+              local v = f.value
+              local name = type(v) == 'table' and v.name or v
+              local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
+              if name and from == planet and (f.min or 0) > 0 then
+                local held = inv and try(function() return inv.get_item_count(name) end) or 0
+                local short = math.max(0, f.min - held)
+                rows[#rows+1] = {platform=pl.name, item=name, asks=f.min, holds=held, short=short, where=where}
+                if short > 0 then asks[#asks+1] = string.format('%s %d (asks %d, holds %d)', name, short, f.min, held) end
+              end
+            end
+          end
+        end
+        if #asks > 0 then lines[#lines+1] = string.format('%s (%s) lacks from %s: %s', pl.name, where, planet, table.concat(asks, ', ')) end
+      end
+    end
+    if #lines == 0 then lines[1] = 'no platform of ours lacks anything it asks from ' .. planet end
+    return {surface=planet, requests=rows, lines=lines}
+  end
   function M.read(p, a)
+    if a.surface ~= nil and a.platform == nil then return M.from_surface(p, a.surface) end
     assert(a.pack == nil or type(a.pack) == 'boolean', 'pack must be true or false')
     if a.request ~= nil then
       assert(type(a.request) == 'boolean', 'request is true or false')
@@ -284,7 +321,7 @@ return function(api)
   end
   M.schema = {platform_production = {platform='platform name', item='optional item or fluid name: that one only',
     returns='lines (the most made first), items [{name, kind, made, used (totals), made_per_min_1m|10m|1h, used_per_min_1m|10m|1h}], where; read only'},
-    platform_bom = {platform='platform name',
+    platform_bom = {platform='platform name (or surface)',surface='optional planet, without platform: every platform\'s active hub requests that import from it: requests [{platform, item, asks, holds, short, where}], lines (a line a platform with what it lacks)',
     request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them; false removes it. Your other requests stay as they are. Returns lines (item: request N from P (the ghosts need N; the hub holds H)), request, group, note',
     import_from='with request: the planet the items come from (default the one the platform is at)',
     min_payload='with request: {item: N}: the custom minimum payload of those items\' requests in the section (0 or false clears it); one set by min_payload on the section is kept through the rewrites too', area='with request: {left_top, right_bottom} or a list: only the ghosts there count',

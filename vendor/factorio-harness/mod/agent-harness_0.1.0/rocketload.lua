@@ -596,6 +596,27 @@ return function(api)
   -- weight and stacks, where it would come from (you, the chests in from, the chests in reach), the rocket's lift and
   -- slots and what is aboard, whether it fits one rocket and the split it would take, and the platform hub's free
   -- slots. A read.
+  -- What goes up beside a load (d17 batch16-17 A1, Astra and Sol: a rescue rocket went up with one gun turret the
+  -- silo's automatic requests had put in after a short load): cargo in the rocket that is not in the list, and the
+  -- silo's automatic requests when they are on (they fill the rocket with what the platforms ask of this planet).
+  -- {foreign (text or nil), auto_requests (text or nil), line}.
+  function M.goes_up_with(silo, list)
+    local inv = M.rocket_inventory(silo)
+    local want = {}
+    for _, r in ipairs(list or {}) do want[r.name .. '|' .. (r.quality or 'normal')] = true end
+    local foreign = {}
+    for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
+      if not want[c.name .. '|' .. (c.quality or 'normal')] then foreign[#foreign+1] = label(c) .. ' ' .. c.count end
+    end
+    local auto = try(function() return silo.use_transitional_requests end)
+    local out = {foreign=#foreign > 0 and table.concat(foreign, ', ') or nil,
+      auto_requests=auto and 'automatic requests are on: the silo loads what the platforms ask of this planet into the rocket (auto_requests: "pause" or false keeps them off for this load)' or nil}
+    local parts = {}
+    if out.foreign then parts[#parts+1] = 'aboard and not in this load, goes up with it: ' .. out.foreign end
+    if out.auto_requests then parts[#parts+1] = out.auto_requests end
+    out.line = #parts > 0 and table.concat(parts, '; ') or nil
+    return out
+  end
   function M.plan(p, a, silo, lift, slots)
     local list = M.items(a.items, 'items')
     local inv = M.rocket_inventory(silo)
@@ -647,9 +668,11 @@ return function(api)
       kg(total_g), stacks, kg(math.max(0, free_g)), math.max(0, free_slots), kg(lift), slots, kg(aboard_g), aboard_slots,
       fits and 'it fits one rocket' or (split and string.format('over one rocket: launch_split: true sends it as %d rockets (%s)', #split, table.concat(split, '; '))
         or string.format('over what this rocket takes now (%s aboard): to_total, a smaller list, or unload first', list_text(contents(inv)))))
+    local up = M.goes_up_with(silo, list)
+    if up.line then line = line .. '; ' .. up.line end
     return {dry_run=true, note='nothing loaded or queued', items=rows, kg=kg(total_g), slots=stacks, rocket={lift_kg=kg(lift), slots=slots, aboard_kg=kg(aboard_g), aboard_slots=aboard_slots,
       free_kg=kg(math.max(0, free_g)), free_slots=math.max(0, free_slots)}, fits_one_rocket=fits, split=split,
-      platform_hub_free_slots=hub_free, line=line}
+      platform_hub_free_slots=hub_free, foreign_cargo=up.foreign, auto_requests=up.auto_requests, line=line}
   end
   -- Each goal still short in the rocket: {goal, need (to load), held (you), take (from the chests: no more than fits
   -- under the rocket's lift now, less what you hold)}.
@@ -1284,6 +1307,8 @@ return function(api)
       end
       out.order = order
       words[#words+1] = #lacking > 0 and 'the list lacks ' .. table.concat(lacking, ', ') or 'the list is aboard'
+      local up = M.goes_up_with(silo, list)
+      if up.foreign then out.foreign_cargo = up.foreign; words[#words+1] = 'aboard and not in the list, goes up with it: ' .. up.foreign end
     end
     add_platforms(out, words, p, a, here, inv, held, extra_cache)
     -- Automatic requests on (Sol 04:50): what automatic loading waits for, per request of the platforms above (silo.lua).
@@ -1478,7 +1503,7 @@ return function(api)
   end
 
   M.schema = {
-    load_silo = {position='the rocket silo {x,y} (any tile of it), within reach', dry_run='optional true: load and queue nothing (a read): each item\'s weight, slots and sources (you, the chests in from or in reach; short), the rocket\'s lift, slots and what is aboard, whether it fits one rocket, the split it would take (rocket 1: ..., rocket 2: ...), the platform hub\'s free slots (with platform); line', launch_split='optional true, with launch: a list over one rocket\'s lift or slots goes as several rockets, one load_silo step each appended to your queue (rocket 1: ..., rocket 2: ...); without it such a list is refused, naming the split', up_to_stock_at_start='optional true: load at most what you and the chests in from hold when it begins (a walking tour does not tour on for items trickling in), then launch with launch; without walking, as up_to', wait_platform='optional true, with launch and platform: a ready rocket gets the cargo now (recorded for the platform) and launches when the platform is stopped in orbit here (launch {wait_platform}: a timed wait; staged says which); no rocket ready: the load waits for both and loads and launches in that tick',
+    load_silo = {position='the rocket silo {x,y} (any tile of it), within reach', dry_run='optional true: load and queue nothing (a read): each item\'s weight, slots and sources (you, the chests in from or in reach; short), the rocket\'s lift, slots and what is aboard, whether it fits one rocket, the split it would take (rocket 1: ..., rocket 2: ...), the platform hub\'s free slots (with platform); line', launch_split='optional true, with launch: a list over one rocket\'s lift or slots goes as several rockets, one load_silo step each appended to your queue (rocket 1: ..., rocket 2: ...); without it such a list is refused, naming the split', up_to_stock_at_start='optional true: load at most what you and the chests in from hold when it begins (a walking tour does not tour on for items trickling in), then launch with launch; without walking, as up_to', wait_platform='optional true, with launch and platform: one timed call: nothing goes into the rocket until the platform is stopped in orbit here, then the load goes in and launches in that tick as one rocket (a rocket holding what a platform above asks for is launched by the game, one item type a rocket); it ends launched, or failed when the platform goes elsewhere',
       items='the cargo to load: {"item-name": count} or [{"item", "count", "quality"}], 1..20 items',
       to_total='true: each count is what the rocket should hold in all (only the rest is loaded); default: each count is loaded on top of what it holds',
       from='optional chest {x,y} or 1..16 of them, within reach: take from these (after your inventory); default: your inventory, then our chests within reach, nearest first (at most 16): every chest kind (chests, logistic chests, linked and infinity chests) and a cargo landing pad. With walk: anywhere on the silo\'s surface, in sight or on the map',
@@ -1492,7 +1517,7 @@ return function(api)
       platform='with launch: the platform in orbit to send it to; without launch: the platform this cargo is for (recorded: a launch to another platform with it aboard is refused, naming both; cargo_for: "any" on launch sends it anyway)', orbit='with launch: true for no platform',
       min_cargo='with launch: as launch min_cargo', arrived='with launch: as launch arrived',
       split_part='(set by the split itself)', pause_left='(set by rockets or the split with auto_requests: the rockets left)',
-      auto_requests='false: the silo\'s automatic requests switched off (and left off) before the load; "pause", with launch (B5, Gemini: automatic requests kept sending bulk items while urgent ones waited): a silo with automatic requests on takes this load by hand: they go off now (the reply\'s auto_requests says so, and what was aboard, which stays) and back on after the manifest\'s last launch by you (rockets N, or a split\'s rockets: the first queued step that runs switches them off), or when a load of it ends without its launch (refused, failed, timed out: auto_requests_back says so). The silo read shows the pause; one over 2 game hours ends when the silo is next read',
+      auto_requests='false: the silo\'s automatic requests switched off (and left off) before the load; "pause", with launch (B5, Gemini: automatic requests kept sending bulk items while urgent ones waited): a silo with automatic requests on takes this load by hand: they go off now (the reply\'s auto_requests says so, and what was aboard, which stays) and back on after the manifest\'s last launch by you (rockets N, or a split\'s rockets: the first queued step that runs switches them off), or when the call is refused before anything is loaded (auto_requests_back); a load of it that ends without its launch (short, failed, timed out, stopped) leaves them off (auto_requests_kept_off says so; configure {auto_requests: true} turns them on). dry_run and preflight name cargo aboard that is not in the list (foreign_cargo) and automatic requests that are on. The silo read shows the pause; one over 2 game hours ends when the silo is next read',
       rockets='optional 2..20, with launch: true: the same load for that many rockets, as steps appended to your queue (labelled rocket 1 of N ...), each loading and launching one rocket in turn',
       launch_split='with launch: true, a list over one rocket\'s lift (1000 kg) or cargo slots is split in list order into rockets, each a load_silo step appended to your queue (rocket 1 of N ...) that loads and launches in turn; split says how (not with to_total or up_to)',
       wait_min='optional 1..60: the wait for the rocket goes on this many minutes with no new part (a queue step waiting for an ingredient on its way); waiting.parts_short and, when it runs out, last.why name each rocket-part ingredient the silo lacks: short of the next part and of the parts left, and what its input holds',

@@ -196,6 +196,40 @@ return function(api)
       local met=(c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
       return met,c.item..' '..n..where,estimate and {value=n,scope=table.concat(scope,':')} or nil
     end,
+    -- fluid_count {platform, fluid, at_least | below} (d17 batch17 A5, Astra board #842: Swift's reserve tanks had no
+    -- departure guard): the fluid in the platform's storage tanks, as each tank's window shows it.
+    fluid_count=function(p,c,estimate)
+      local pl=M.platform_named(p,c.platform)
+      local n,tanks=0,0
+      for _,e in pairs(pl.surface.find_entities_filtered{type='storage-tank',force=p.force,limit=256}) do
+        tanks=tanks+1
+        local ok,k=pcall(function() return e.get_fluid_count(c.fluid) end)
+        if ok and k then n=n+k end
+      end
+      local met=(c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
+      return met,string.format('%s %d in %s\'s %d storage tank%s',c.fluid,math.floor(n),c.platform,tanks,tanks==1 and '' or 's'),
+        estimate and {value=n,scope='fluid:'..c.platform..':'..c.fluid} or nil
+    end,
+    -- circuit_signal {platform, signal, at_least | below} (A5): the signal on the platform hub's red and green wires
+    -- together, as a circuit wait condition reads it.
+    circuit_signal=function(p,c,estimate)
+      local pl=M.platform_named(p,c.platform)
+      local hub=pl.hub
+      assert(hub and hub.valid,'platform '..c.platform..' has no hub')
+      local sig=M.signal_of(c.signal)
+      local n,wires=0,{}
+      for _,w in ipairs({{'red',defines.wire_connector_id.circuit_red},{'green',defines.wire_connector_id.circuit_green}}) do
+        local ok,net=pcall(function() return hub.get_circuit_network(w[2]) end)
+        if ok and net then
+          wires[#wires+1]=w[1]
+          local okv,v=pcall(function() return net.get_signal(sig) end)
+          if okv and v then n=n+v end
+        end
+      end
+      local met=#wires>0 and (c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
+      return met,#wires>0 and string.format('%s %d on %s\'s hub (%s)',c.signal,n,c.platform,table.concat(wires,' and '))
+        or string.format('%s\'s hub has no red or green wire: no signal to read',c.platform),estimate and {value=n,scope='circuit:'..c.platform..':'..c.signal} or nil
+    end,
     -- What machines made since the wait began (Grok 07:50: item_count on a provider that robots empty never rises, so a
     -- machine that makes things looks stopped): the products-finished counter each machine's GUI shows, on the given
     -- tiles (crafting machines: assemblers, furnaces, chemical plants, ...), counted from its value at the wait's first
@@ -380,7 +414,18 @@ return function(api)
       return n>0,n..' burners below '..c.count..' fuel'..(near and string.format(' (nearest %s at %d,%d)',near.name,math.floor(near.position.x),math.floor(near.position.y)) or '')
     end,
   }
-  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced|platform_built|platform_ready|all'
+  -- A platform of ours by name, and a signal by name (an item, a fluid or a virtual signal such as signal-A).
+  function M.platform_named(p,name)
+    for _,each in pairs(p.force.platforms) do if each.valid and each.name==name then return each end end
+    error('no platform of ours named '..tostring(name),0)
+  end
+  function M.signal_of(name)
+    if prototypes.item[name] then return {type='item',name=name} end
+    if prototypes.fluid[name] then return {type='fluid',name=name} end
+    if prototypes.virtual_signal and prototypes.virtual_signal[name] then return {type='virtual',name=name} end
+    error('unknown signal '..tostring(name)..' (an item, a fluid, or a virtual signal such as signal-A)',0)
+  end
+  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|fluid_count|circuit_signal|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced|platform_built|platform_ready|all'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
@@ -441,6 +486,14 @@ return function(api)
         assert(type(c.positions)=='table' and #c.positions>=1 and #c.positions<=64,'item_count positions takes 1..64 {x,y} (chests)')
         for _,pos in ipairs(c.positions) do api.position(pos) end
       end
+    end
+    if kind=='fluid_count' or kind=='circuit_signal' then
+      assert(type(c.platform)=='string' and #c.platform>0,kind..' requires platform (a platform name)')
+      if kind=='fluid_count' then assert(type(c.fluid)=='string' and prototypes.fluid[c.fluid],'fluid_count requires fluid (a fluid name: thruster-fuel, thruster-oxidizer, water, ...)')
+      else assert(type(c.signal)=='string','circuit_signal requires signal (an item, fluid or virtual signal name)'); M.signal_of(c.signal) end
+      assert(c.at_least~=nil or c.below~=nil,kind..' requires at_least or below')
+      if c.at_least~=nil then number(c.at_least,-2147483648,2147483647,'at_least') end
+      if c.below~=nil then number(c.below,-2147483648,2147483647,'below') end
     end
     if kind=='produced' then
       assert(c.item==nil or (type(c.item)=='string' and prototypes.item[c.item]),'produced item must be a known item')

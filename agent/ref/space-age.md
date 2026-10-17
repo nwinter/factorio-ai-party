@@ -82,7 +82,7 @@
   `place_ghosts_entries`; a tunnel runs to the next underground of its name facing the same way (one crossing it is
   passed over), and `tile_ghosts_held` names tile ghosts counted as floor that the hub's foundation rules never build; `paste {preserve_existing_settings_and_wires: true}` adds only what is missing.
 - `platform_rename {platform, name}` renames one, listing queues, orders, plans and board items still naming the old
-  name. `platform_plan {platform, salvage: 60}` lists foundation tiles to take up from the edge in, as deconstruct areas.
+  name. `platform_plan {platform, salvage: 60}` lists foundation tiles to take up from the edge in, as deconstruct areas (never one under an underground belt or pipe span, or at its ends).
   `load_silo {rockets: 3, launch: true, ...}` queues the load for 3 rockets. With automatic requests on, load_silo and
   preflight name the platforms' open requests a rocket may go to. A launch waiting while its platform leaves is told
   (`launch:` alerts); a rocket in flight holds the platform until its pod lands.
@@ -124,7 +124,9 @@
 - `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`: per item, what the ghosts still need less hub
   stock and cargo in flight, what is built and what the hub asks; `pack` splits the rest into rockets for `load_silo`.
 - `load_silo {..., launch: true, auto_requests: "pause"}` loads a silo whose automatic requests are on. They go off for
-  this manifest and come back on after its last launch, or when the load ends without one.
+  this manifest and come back on after its last launch; a load that ends short or failed leaves them off
+  (`auto_requests_kept_off`; `configure {auto_requests: true}` turns them on). `dry_run` and preflight name cargo
+  aboard that is not in the list (`foreign_cargo`) and automatic requests that are on.
 - `platform_production {platform}`: the platform's own production per item (totals, rates over 1m, 10m, 1h);
   `wait_until {until: produced, platform, item, at_least}`. `platform_plan {platform, ready: {positions, area, tiles}}`:
   one subset's missing items, foundation support and settings. A launch to another platform than the cargo was loaded
@@ -134,6 +136,8 @@
   `silo_short.<item>` (parts stalled 2 min) and `silo_ready_idle` (a rocket ready 3 min, not launched).
 - `platform_defense {platform}`: each asteroid collector's front and each hull side against turret ranges: the turrets
   that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as runs.
+- `platform_bom {surface: "gleba"}` (no platform): every platform's active hub requests importing from that planet,
+  a line a platform with what it lacks (asks, holds) and where it is.
 - `platform_bom {platform, request: true}` keeps a hub request section (`platform_bom: NAME`) at what the ghosts still
   need, lowered as they are built and removed when none is left (`request: false` removes it; `import_from`, `area`;
   `min_payload: {item: N}`; a min_payload set on its slots is kept).
@@ -148,8 +152,11 @@
   `feed: true` lists every turret. platform_endurance and preflight count only ammunition that can reach a turret.
   A team alert names turrets whose feeds ran dry while ammunition aboard is stranded.
 - platform_plan's floor and ready leave out the tiles a collector's rule keeps empty (its front): rear support only.
-- `load_silo {launch: true, platform, wait_platform: true}` loads a ready rocket now and launches when the platform
-  is stopped in orbit here (`staged` says so).
+- `load_silo {launch: true, platform, wait_platform: true}` is one timed call (`--wait` follows it): nothing goes into
+  the rocket until the platform is stopped in orbit here, then the load goes in and launches in that tick as one
+  rocket; it ends `launched`, or `failed` when the platform goes elsewhere. A rocket holding what a platform above
+  asks for is launched by the game when it stops, one item type a rocket: a launch wait then ends `launched_by_game`
+  (what went, and what stayed in the silo).
 - `load_silo {walk: true, from, up_to_stock_at_start: true}` loads at most what you and the chests held when it began
   (`stock_at_start` says what), then ends (launches with launch) instead of touring on for a trickle.
 - `load_silo {dry_run: true}`: each item's weight, slots and sources, the rocket's room, the split and the platform
@@ -161,6 +168,14 @@
 - `load_silo {position, from: [..], walk: true}` takes from the sources in order (chests, a landing pad, anywhere on
   the surface) and skips a trip's other sources once you hold what the rocket needs. `position` is the silo's (always
   needed; without it the reply lists the silos here); `from` is one chest `{x,y}` or a list of them.
+- `platform_schedule {platform, stops}`: each stop `{station, wait: [...]}`; a wait is `{type, ticks?, condition?,
+  compare: "and"|"or"}`. Types: `time`/`inactivity` (`ticks`), `all_requests_satisfied`, `any_request_not_satisfied`,
+  `any_request_zero`, and with a `condition`: `item_count` (an item), `fluid_count` (a fluid), `circuit` (any signal on
+  the hub's red and green wires: wire a tank or a combinator to the hub). A condition is `"thruster-fuel >= 10000"` or
+  `{signal, comparator, value | signal2}`. A fuel guard: `{"station":"nauvis","wait":[{"type":"time","ticks":216000},
+  {"type":"circuit","condition":"thruster-fuel >= 10000","compare":"and"}]}`. `wait_until {until: "fluid_count",
+  platform, fluid, at_least | below}` counts the platform's storage tanks; `{until: "circuit_signal", platform, signal,
+  at_least | below}` reads the hub's wires (a queue step, the remote lane too).
 - `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure
   conditions with what the hub holds against each.
 - `silo` gives `robots_bringing` (what logistic robots carry or have reserved toward it) and `requesting_for`.

@@ -774,7 +774,13 @@ local function finish(index, outcome)
     if ok then
       s.last[index].launch=r
       s.last[index].outcome=type(r)=='table' and r.launched==false and 'not_launched' or 'launched'
-    else s.last[index].outcome='launch_failed'; s.last[index].launch_error=(tostring(r):gsub('^[^:]*:%d+: ','')) end
+    else
+      -- the game launched it first (d17 batch17 A2, Grok 2x: a rocket holding what the platform above asks for is
+      -- launched by the game when it stops, one item type a rocket): said as what it sent and what stayed, not as a failure
+      local okg,g=pcall(M.game_launched,index,action)
+      if okg and g then s.last[index].outcome='launched_by_game'; s.last[index].launch=g
+      else s.last[index].outcome='launch_failed'; s.last[index].launch_error=(tostring(r):gsub('^[^:]*:%d+: ','')) end
+    end
   elseif action and action.then_launch and s.last[index] then
     -- Ended before the rocket was ready (Astra, board #635, twice: a tell ended the wait and --wait read it as done):
     -- nothing launched, said as the outcome.
@@ -796,12 +802,15 @@ local function finish(index, outcome)
     if rp then rp.enabled=true end
     if s.last[index] then s.last[index].personal_logistics='your personal logistic requests are back on' end
   end
-  -- load_silo {auto_requests: "pause"} that ended without its launch: the silo's automatic requests back on (B5).
-  if action and (action.handler=='load_silo' or action.op=='load_silo') and M.silo_unpause then
+  -- load_silo {auto_requests: "pause"} that ended without its launch (short, failed, timed out, stopped): the silo's
+  -- automatic requests stay off, as the agent set them (d17 batch17 A1, Astra and Sol: turned back on after a short
+  -- rescue load, they put one gun turret in and the next scarce Aquilo rocket went up with it). The pause record goes;
+  -- configure {auto_requests: true} turns them on.
+  if action and (action.handler=='load_silo' or action.op=='load_silo') and M.silo_keep_off then
     local o=s.last[index] and s.last[index].outcome or outcome
     if o~='fed' and o~='launched' and o~='loaded' then
-      local ok,line=pcall(M.silo_unpause,index,'the load ended '..tostring(o))
-      if ok and line and s.last[index] then s.last[index].auto_requests_back=line end
+      local ok,line=pcall(M.silo_keep_off,index,'the load ended '..tostring(o))
+      if ok and line and s.last[index] then s.last[index].auto_requests_kept_off=line end
     end
   end
   if action and action.borrowed_cursor then
@@ -10785,7 +10794,7 @@ M.rocketload=require('rocketload'){ammofeed={trace=function(pl) return M.ammofee
 -- load_silo {auto_requests: "pause"} (B5, Gemini 22:50: automatic requests kept sending bulk items while urgent defense
 -- and repair items waited, and a silo with them on takes no hand load): the silo's automatic requests go off for this
 -- manifest (its rockets: rockets N, or a split's) and back on after its last launch by this agent, or when a load of it
--- ends without its launch (failed, timed out, refused). Kept in storage by the silo's unit number; one older than 2
+-- is refused before loading (a load that ends short or failed leaves them off: d17 batch17 A1). Kept in storage by the silo's unit number; one older than 2
 -- game hours is switched back on when the silo is next read or loaded.
 M.SILO_PAUSE_TICKS=432000
 function M.silo_pauses() local st=state(); st.silo_pause=st.silo_pause or {}; return st.silo_pause end
@@ -10797,6 +10806,33 @@ function M.silo_unpause(index,why,unit)
     if (unit==nil and rec.by==index) or u==unit then
       if rec.silo and rec.silo.valid then rec.silo.use_transitional_requests=true end
       lines[#lines+1]=string.format('automatic requests of %s back on (%s)',rec.where or 'the silo',why)
+      M.silo_pauses()[u]=nil
+    end
+  end
+  return #lines>0 and table.concat(lines,'; ') or nil
+end
+-- A launch wait whose rocket the game launched itself since the wait began (A2): {by_game, cargo, to, tick, stayed, line}.
+function M.game_launched(index,action)
+  local t=action.then_launch
+  local p=M.lookup(index)
+  if not (t and t.position and p) then return nil end
+  local silo=remote_entity(p,{position=t.position})
+  local rec=M.silo.last_launch(silo)
+  if not (rec and rec.tick>=(action.start_tick or 0) and rec.by==nil) then return nil end
+  local inv=silo.get_inventory(defines.inventory.rocket_silo_rocket)
+  local stayed={}
+  for _,c in ipairs(inv and inv.get_contents() or {}) do stayed[#stayed+1]=c.name..'*'..c.count end
+  local left=#stayed>0 and table.concat(stayed,' ') or nil
+  return {by_game=true,tick=rec.tick,to=rec.to,cargo=rec.cargo,stayed=left,
+    line=string.format('the game launched the rocket %d s ago %s with %s (a rocket holding what a platform above asks for goes up on its own, one item type a rocket)%s',
+      math.floor((game.tick-rec.tick)/60),tostring(rec.to or ''),tostring(rec.cargo),left and '; still in the silo for the next rocket: '..left or '')}
+end
+-- A paused load that ended without its launch (A1): the pause ends and the requests stay off.
+function M.silo_keep_off(index,why)
+  local lines={}
+  for u,rec in pairs(M.silo_pauses()) do
+    if rec.by==index then
+      lines[#lines+1]=string.format('automatic requests of %s stay off (%s; configure {auto_requests: true} turns them on)',rec.where or 'the silo',why)
       M.silo_pauses()[u]=nil
     end
   end
@@ -10834,46 +10870,29 @@ function M.silo_pause(p,a,rockets)
   for _,c in ipairs(inv and inv.get_contents() or {}) do aboard[#aboard+1]=c.name..'*'..c.count end
   silo.use_transitional_requests=false
   M.silo_pauses()[silo.unit_number]={by=p.index,who=M.board.who(p),tick=game.tick,left=rockets or 1,silo=silo,where=string.format('%s (%g,%g)',silo.name,silo.position.x,silo.position.y)}
-  return string.format('automatic requests of %s (%g,%g) switched off for this load (%d rocket%s): back on after its last launch, or when a load of it ends without one%s',
+  return string.format('automatic requests of %s (%g,%g) switched off for this load (%d rocket%s): back on after its last launch; a load that ends short or failed leaves them off%s',
     silo.name,silo.position.x,silo.position.y,rockets or 1,(rockets or 1)==1 and '' or 's',#aboard>0 and '; the rocket already held '..table.concat(aboard,' ')..', which stays aboard' or '')
 end
 function handlers.load_silo(p,a)
   -- the silo (Grok d17 16:16: walk with from [chest] and no position failed "position requires x and y" and read as
   -- the from list being wrong): without position, the silos here and the call that works.
   if a.position==nil then error(M.launch_needs_silo(p,a,'load_silo'),0) end
-  -- wait_platform (d17 batch13 A4, Gemini: load_silo with arrived failed while the platform was still on its way):
-  -- the cargo goes into the ready rocket now, recorded for the platform, and launch {wait_platform} launches it when
-  -- the platform is stopped in orbit here. A rocket not ready yet: the load waits for the rocket and the platform as
-  -- load_silo {launch, platform} does, and loads and launches in that tick.
+  -- wait_platform (d17 batch13 A4, Gemini: load_silo with arrived failed while the platform was still on its way): one
+  -- timed call that ends when the rocket launches, or when the platform goes elsewhere. Nothing goes into the rocket
+  -- until the platform is stopped in orbit here; then the load goes in and launches in that tick, as one rocket
+  -- (d17 batch17 A2/A3, Grok 2x on Gleba: the cargo staged in the ready rocket ahead of Swift; when Swift stopped, the
+  -- game launched the rocket itself for Swift's requests, one item type a rocket: bioflux*40 went and the 500 packs
+  -- stayed for the next rocket, and the staged launch wait read launch_started as launch_failed).
   if a.wait_platform~=nil then
     assert(type(a.wait_platform)=='boolean','wait_platform must be true or false')
     local rest={}
     for k,v in pairs(a) do if k~='wait_platform' then rest[k]=v end end
     if not a.wait_platform then return handlers.load_silo(p,rest) end
     assert(a.launch==true and type(a.platform)=='string','wait_platform goes with launch: true and platform (the platform the rocket goes to)')
-    assert(not a.walk and a.from==nil and a.rockets==nil,'wait_platform loads in reach (no walk, from or rockets): it stages the cargo now and launches when the platform is in orbit')
-    local silo=remote_entity(p,{position=a.position})
-    assert(silo.type=='rocket-silo',silo.name..' is not a rocket silo')
-    if silo.rocket_silo_status~=defines.rocket_silo_status.rocket_ready then
-      local out=handlers.load_silo(p,rest)
-      if type(out)=='table' then out.wait_platform='no rocket ready to stage the cargo in: the load waits for the rocket and for '..a.platform..' in orbit, then loads and launches in that tick' end
-      return out
-    end
-    local stage={}
-    for k,v in pairs(rest) do if k~='launch' and k~='auto_requests' and k~='arrived' and k~='orbit' then stage[k]=v end end
-    local paused
-    if a.auto_requests=='pause' then paused=M.silo_pause(p,a,1)
-    elseif a.auto_requests==false then stage.auto_requests=false end
-    local out=handlers.load_silo(p,stage)
-    if type(out)~='table' or out.waiting then return out end
-    out.auto_requests=paused
-    local ok,l=pcall(handlers.launch,p,{position=a.position,platform=a.platform,wait_platform=true,timeout=a.ticks and integer(a.ticks,nil,1,54000,'ticks') or 54000})
-    if ok then
-      out.launch=l
-      out.staged=l and l.launched and 'loaded and launched now: '..a.platform..' was in orbit here'
-        or string.format('loaded into the ready rocket now (recorded for %s); it launches when %s is stopped in orbit here (launch {wait_platform}; a tell does not end that wait)',a.platform,a.platform)
-    else
-      out.staged='loaded into the ready rocket (recorded for '..a.platform..'); the launch wait did not start: '..reason(l)
+    assert(not a.walk and a.from==nil and a.rockets==nil,'wait_platform loads in reach (no walk, from or rockets): it waits for the platform, then loads and launches in one tick')
+    local out=handlers.load_silo(p,rest)
+    if type(out)=='table' then
+      out.wait_platform=string.format('nothing goes into the rocket until %s is stopped in orbit here: then the load goes in and launches in that tick, as one rocket (a rocket holding what a platform above asks for is launched by the game, one item type a rocket); this call ends when it launches, or when %s goes elsewhere (fh --wait follows it)',a.platform,a.platform)
     end
     return out
   end
@@ -14581,7 +14600,7 @@ M.urgent=require('urgent'){timed=M.timed,state=state,who=function(p) return M.bo
 M.open=require('open'){state=state,fullchest=M.supply.fullchest,claim_surface=function(i) return M.claims.surface_of(i) end,claim_stale=function(i) return M.claims.stale(i) end,
   alert_groups=function(f) return M.pushalerts.cached_groups(f) end,alert_text=function(g) return M.pushalerts.text(g,g.surface,nil,true) end,
   open_steps=function(me,max,pos) return M.board.open_steps(me,max,pos) end}
-space=space_module{departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+space=space_module{circuit_condition=function(c,what) return M.circuits.condition(c,what) end,departure=function(name) return M.departure and M.departure.lines(name) end,personal=function() return M.personal end,chronicle_created=function(pl,who) return M.chronicle.created_by(pl,who) end,freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   fresh_inv=function(force,inv,names,eta,extra) return M.fresh_inv(force,inv,names,eta,extra) end,fresh_percent=function(inv) return M.fresh_percent(inv) end,
   engine=function(pl) return M.engine.read(pl) end,
