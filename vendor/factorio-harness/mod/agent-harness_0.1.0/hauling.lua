@@ -66,6 +66,8 @@ return function(api)
     for _, st in ipairs(stacks) do n = n + (st.count or 0) end
     if n <= 0 then return end
     a.items = a.items + n
+    -- shells into an artillery piece: who loaded it (artycam.lua)
+    if direction ~= 'to_player' and api.put and entity_name then pcall(api.put, api.name and api.name(index) or tostring(index), pos, surface, stacks, entity_name) end
     a[src].items = a[src].items + n
     if ctx and not ctx.hauling_counted then
       ctx.hauling_counted = true
