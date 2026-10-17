@@ -65,6 +65,7 @@ end
 -- Refuelling uses stock's real tour/guard machinery, including belt pickup reach.
 do
   local F,S,action,carried,capacity,targets,sources= nil,nil,nil,0,100,{},{}
+  local named
   local f={is_chunk_visible=function() return true end}
   local p={force=f,position={x=0,y=0},character={prototype={item_pickup_distance=1}},reach_distance=10}
   p.can_reach_entity=function(e) return distance(p.position,e.position)<=10 end
@@ -80,7 +81,7 @@ do
       return F.feed_visit(pp,a,e)
     end,request_path=function(_,nav) nav.requested=true end,navigate=function() end,stop_walking=function() end}
   F=require('fuelround'){distance=distance,position=pos,integer=integer,find_kinds=function() return targets end,fuel_inventory=inv,
-    accepts=function() return true end,entity=function() return sources[1] end,held=function() return carried end,
+    accepts=function() return true end,entity=function(_,a) return named and named[a.position.x] or sources[1] end,held=function() return carried end,
     give=function(_,e,_,_,count) return {transferred=give(e,math.max(0,count-e.n))} end,
     start_tour=S.start_tour,screen=S.screen,tick=S.tick,start=function(_,a) action=a end,stop=function() end,
     take=function(_,e,_,_,n) local k=math.min(n,e.n,capacity-carried);e.n=e.n-k;carried=carried+k;return {transferred=k,inventory_full=carried==capacity} end,
@@ -106,6 +107,16 @@ do
   carried=0;targets={entity(8,0)};sources={entity(6,10,'container'),entity(12,10,'container')};danger[6]={};start();step();eq(action.fuel_round.source.targets[1].entity.position.x,12)
   danger[8]={};fails(start,'enemy reach');danger={}
   carried=0;targets={entity(8,0)};sources={};start();eq(step(),'out_of_items')
+  -- positions (d16 batch10 D6, Opus: the same burner drills refuelled by hand every 18 minutes): those burners only.
+  carried=0;capacity=100;danger={};p.position={x=0,y=0}
+  local d1,d2,other=entity(5,0,'mining-drill'),entity(7,9,'mining-drill'),entity(9,0,'mining-drill')
+  named={[5]=d1,[7]=d2};targets={other};sources={entity(3,40,'container')}
+  F.start(p,{positions={{x=5,y=0},{x=7,y=0}},from='nearest'},'coal',10)
+  eq(#action.targets,2,'the named ones, the full one too counted as enough')
+  for _=1,20 do if step() then break end end
+  eq(d1.n,10); eq(other.n,0,'not named: left alone')
+  fails(function() F.start(p,{positions={{x=5,y=0}},radius=10,from='nearest'},'coal',10) end,'give positions, area or radius')
+  named=nil
   -- feed_chests (Haiku, d15 06:20): the chests inserters feed the boilers from are topped up, not the boilers.
   carried=30;capacity=100;danger={};p.position={x=0,y=0}
   local boiler=entity(3,0,'boiler');local fc=entity(4,2,'container');boiler.feeders={fc,fc}

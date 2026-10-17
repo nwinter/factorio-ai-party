@@ -95,3 +95,8 @@
 - `transfer {from: "nearest", item, to, to_inventory}` is a courier from the freshest chest holding the item (then the
   nearest) straight to that machine, taking its freshest stacks first. `fresh_first: true` (or `fresh: true` on a
   courier) takes a spoilable item's least spoiled stacks first on any take or give.
+- A courier over a personal request's max says how much would arrive (`personal_logistics`, the dry run's `arrives`);
+  `personal_logistics: "pause"` switches your requests off for the move. `collect {wait_ticks, follow: true}` follows
+  the output into chests during the wait, walking to one out of reach. `craft` refuses only for stock within 25 tiles
+  (`check_stock: true`: within 64). `refuel {positions, from: "nearest"}` tours named burners, fuel from the nearest
+  chest or belt.

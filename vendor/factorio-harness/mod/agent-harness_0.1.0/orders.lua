@@ -292,7 +292,7 @@ return function(api)
     end
     local default_ticks=math.min(216000,math.max(3600,math.ceil(span/64)*3600,budget+600))
     local o={name=name,steps=items,when=when,priority=int(a.priority,5,1,9,'priority'),cooldown=int(a.cooldown_ticks,600,300,216000,'cooldown_ticks'),
-      interval=int(a.interval_ticks,1800,60,36000,'interval_ticks'),max_ticks=int(a.max_ticks,default_ticks,60,216000,'max_ticks'),
+      interval=int(a.interval_ticks,1800,60,216000,'interval_ticks'),max_ticks=int(a.max_ticks,default_ticks,60,216000,'max_ticks'),
       failures=0,runs=0,next_tick=game.tick}
     local b=book(p.index,true)
     local old,at=find(b,name)
@@ -378,7 +378,7 @@ return function(api)
       when='optional condition, as wait_until: until=ammo_below|item_count|ghosts_waiting|damaged|fuel_below|health_below|no_enemies|platform_arrived|platform_left|...; radius at most 256; ammo_below/fuel_below also take area up to 256x256, positions at most 16. The order runs when it holds. Without when: your default routine (one), run every interval_ticks while no trigger holds',
       priority='with when: 1..9 (default 5). The highest holding trigger runs first; a holding trigger stops a running order of lower priority (the default routine counts 0), which resumes after',
       cooldown_ticks='with when: 300..216000 (default 600) after a run before the trigger can fire again',
-      interval_ticks='default routine: 60..36000 (default 1800) from the end of a run to the next',
+      interval_ticks='default routine: 60..216000 (default 1800; up to an hour, D6: an 18-minute refuel round) from the end of a run to the next',
       max_ticks='60..216000 (default scales with scope and child ticks, at least 3600): a run that takes longer is stopped and counts as failed',
       returns='order, list. Orders run only while your character is free (no action, your queue empty and not repeating, a body on the map; between the rounds of a repeating queue, triggered orders, and the default routine with queue_repeat orders=all) and hold_s after your own last action. Your own character request or queue call stops a running order at once; it resumes after (a trigger only if it still holds). 3 failed runs in a row switch an order off. Every reply carries the orders line (which runs and why, or what they wait for)'},
     order_remove={name='order name'},

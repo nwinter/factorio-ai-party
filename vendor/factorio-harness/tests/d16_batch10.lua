@@ -199,3 +199,24 @@ do
   defines,prototypes=nil,nil
 end
 print('d16_batch10 C1 power by cause: ok')
+
+-- D4 (Astra: the produced wait found no machine counter on a platform): produced with platform counts its statistics.
+do
+  game={tick=0}
+  local C=dofile('mod/agent-harness_0.1.0/conditions.lua'){position=function(v) return v end,known=function() return true end}
+  local made=1000
+  local surface={name='platform-2'}
+  local p={force={platforms={{valid=true,name='Swift',surface=surface}},
+    get_item_production_statistics=function(s) assert(s==surface); return {get_input_count=function(n) return n=='firearm-magazine' and made or 0 end} end}}
+  prototypes={item={['firearm-magazine']={}}}
+  local c={['until']='produced',platform='Swift',item='firearm-magazine',at_least=50}
+  C.validate(c)
+  fails(function() C.validate({['until']='produced',platform='Swift',at_least=5}) end,'produced on a platform counts an item')
+  local rec={}
+  local met,saw=C.check(p,c,nil,rec)
+  eq(met,false); eq(saw,'made 0 firearm-magazine on platform Swift since the wait began (at least 50; the platform\'s production statistics)')
+  made=1060
+  eq((C.check(p,c,nil,rec)),true)
+  prototypes=nil
+end
+print('d16_batch10 D4 produced on a platform: ok')

@@ -108,3 +108,33 @@ test('--then refuses an action that changes the game, before sleeping; silo_part
     assert.deepEqual(seen[0].args.condition, {until:'rocket_parts', position:{x:14.5, y:140.5}});
   });
 });
+
+test('fh wait over a walking tour (gather) goes on through a plain tell; a --wake tell ends it (D10, Grok 00:22)', async () => {
+  let polls = 0, wake = false;
+  await engine(() => {
+    polls++;
+    const active = {kind:'gather', op:'load_silo', until_tick:900};
+    if (polls < 3) return {ok:true, tick:polls, result:{active}};
+    if (polls < 5) return {ok:true, tick:polls, result:{active, inbox:{tick:3, woke:'told', from:'sol'}, ...(wake ? {inbox_wake:{tick:3, woke:'told', from:'sol'}} : {})}};
+    return {ok:true, tick:polls, result:{active:false, combat:false, last:{kind:'gather', op:'load_silo', outcome:'launched', tick:5}}};
+  }, async port => {
+    const reply = JSON.parse((await cli(port, ['wait'])).stdout);
+    assert.equal(reply.ok, true); assert.equal(reply.result.last.outcome, 'launched');
+    assert.deepEqual(reply.result.told_during_wait, ['tell from sol at tick 3']);
+    polls = 0; wake = true;
+    const failed: any = await cli(port, ['wait']).then(() => assert.fail('exit 3 expected'), (e: any) => e);
+    assert.equal(failed.code, 3);
+  });
+});
+
+test('--until produced ITEM>=N on PLATFORM is the platform form (D4)', async () => {
+  const seen: any[] = [];
+  await engine(request => {
+    seen.push(request);
+    if (request.action === 'sleep') return {ok:true, result:{until_tick:1300}};
+    return {ok:true, result:{woke:'condition', until_tick:1300}};
+  }, async port => {
+    await cli(port, ['sleep', '5', '--until', 'produced firearm-magazine>=100 on Swift']);
+    assert.deepEqual(seen[0].args.condition, {until:'produced', item:'firearm-magazine', at_least:100, platform:'Swift'});
+  });
+});

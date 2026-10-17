@@ -288,7 +288,8 @@ return function(api)
     if a.launch then
       assert(a.platform ~= nil or a.orbit == true, 'launch needs platform=<name> (or orbit=true)')
     else
-      for k in pairs(LAUNCH_ARGS) do assert(a[k] == nil, k .. ' goes with launch=true') end
+      -- (platform without launch: the platform this cargo is for, recorded for the launch guard: D11)
+      for k in pairs(LAUNCH_ARGS) do assert(a[k] == nil or k == 'platform', k .. ' goes with launch=true') end
     end
     if a.from ~= nil then from_list(a.from) end
     if a.min_cargo ~= nil then M.items(a.min_cargo, 'min_cargo') end
@@ -443,6 +444,8 @@ return function(api)
       if moved > 0 then moved_all[#moved_all+1] = {name=r.name, quality=r.quality, count=moved} end
     end
     if #moved_all > 0 and api.moved then pcall(api.moved, p, silo, moved_all) end
+    -- what platform this cargo is for (D11: a launch elsewhere is refused)
+    if #moved_all > 0 and (a.platform or a.for_platform) and api.loaded_for then pcall(api.loaded_for, p, silo, a.platform or a.for_platform) end
     local out = {silo=string.format('%s at %s', silo.name, at(silo.position)), loaded=rows,
       cargo=list_text(contents(inv)), rocket_weight=api.rocket_weight(silo), slots=used_slots(inv) .. '/' .. #inv,
       chests=#chests > 0 and #chests or nil, complete=#short == 0, short=#short > 0 and short or nil,
@@ -800,7 +803,8 @@ return function(api)
     end
     local n, full_rocket = 0, nil
     if #list > 0 then
-      local out = M.load(p, {position=e.position, items=list, chests=false, fresh_first=action.load.fresh_first})
+      -- (the platform it is for, recorded by the load: D11)
+      local out = M.load(p, {position=e.position, items=list, chests=false, fresh_first=action.load.fresh_first, for_platform=action.load.platform})
       for _, row in ipairs(out.loaded or {}) do
         n = n + (row.loaded or 0)
         -- by item: what this tour put in, and what the rocket held before its first load (E9, Grok 19:50)
@@ -1361,7 +1365,7 @@ return function(api)
       unsafe_goal='with walk: true walks to such a stop anyway',
       up_to='true: load what fits (weight, slots) and what you and the chests hold; a short row is listed in up_to_short and does not fail the call or stop a launch, which goes with what is aboard (none of the list aboard: refused); with walk the tour ends loaded (or launched) instead of short',
       launch='true: launch once the rocket is ready, in the tick the cargo is loaded; needs platform (or orbit=true); refused (not launched, an error) when any count fell short (up_to aside); min_cargo and arrived are checked as launch checks them',
-      platform='with launch: the platform in orbit to send it to', orbit='with launch: true for no platform',
+      platform='with launch: the platform in orbit to send it to; without launch: the platform this cargo is for (recorded: a launch to another platform with it aboard is refused, naming both; cargo_for: "any" on launch sends it anyway)', orbit='with launch: true for no platform',
       min_cargo='with launch: as launch min_cargo', arrived='with launch: as launch arrived',
       split_part='(set by the split itself)', pause_left='(set by rockets or the split with auto_requests: the rockets left)',
       auto_requests='false: the silo\'s automatic requests switched off (and left off) before the load; "pause", with launch (B5, Gemini: automatic requests kept sending bulk items while urgent ones waited): a silo with automatic requests on takes this load by hand: they go off now (the reply\'s auto_requests says so, and what was aboard, which stays) and back on after the manifest\'s last launch by you (rockets N, or a split\'s rockets: the first queued step that runs switches them off), or when a load of it ends without its launch (refused, failed, timed out: auto_requests_back says so). The silo read shows the pause; one over 2 game hours ends when the silo is next read',

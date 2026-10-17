@@ -1043,6 +1043,37 @@ return function(api)
     end
     assert(a.near == nil and a.radius == nil, 'near and radius go with item')
     assert(a.position ~= nil, 'trace takes position (a machine or lab; forward=true for its output) or item')
+    -- circuit (D5, Astra 00:20: return-belt deadlocks took dozens of inspect calls): the machine's state, each inserter
+    -- feeding it (or taking from it) with its enable condition, its value now, filters and hand, and the circuit
+    -- networks on its wires followed back through combinators to what drives them (circuits.lua trace_from).
+    if a.circuit ~= nil then
+      assert(a.circuit == true, 'circuit is true')
+      assert(a.forward == nil and a.item == nil and a.upstream == nil and a.throughput == nil, 'circuit takes position (a machine, chest or inserter) alone')
+      local e = target(p, a)
+      local C = api.circuits and api.circuits()
+      assert(C, 'circuit reads need the circuits module')
+      local lines = {string.format('%s (%g,%g): %s', e.name, e.position.x, e.position.y, api.status_name and api.status_name(e) or 'status unknown')}
+      local list = {}
+      if e.type == 'inserter' then list = {e}
+      else
+        local b = e.bounding_box
+        for _, ins in ipairs(e.surface.find_entities_filtered{area={{b.left_top.x - 3, b.left_top.y - 3}, {b.right_bottom.x + 3, b.right_bottom.y + 3}}, type='inserter', force=e.force}) do
+          if ins.valid and (try(function() return ins.drop_target end) == e or try(function() return ins.pickup_target end) == e) then list[#list+1] = ins end
+        end
+      end
+      local wired = 0
+      for i, ins in ipairs(list) do
+        if i > 16 then lines[#lines+1] = string.format('+%d more inserters', #list - 16); break end
+        local into = try(function() return ins.drop_target end) == e
+        lines[#lines+1] = (e.type == 'inserter' and '' or (into and 'feeds it: ' or 'takes from it: ')) .. (try(function() return C.inserter_line(ins) end) or ins.name)
+        local t = try(function() return C.trace_from(ins) end) or {}
+        if #t > 0 then wired = wired + 1 end
+        for _, l in ipairs(t) do lines[#lines+1] = l end
+      end
+      if #list == 0 then lines[#lines+1] = 'no inserter puts into it or takes from it' end
+      if #list > 0 and wired == 0 then lines[#lines+1] = 'none of these inserters has a red or green wire: no circuit holds them' end
+      return {entity=e.name, position=e.position, lines=lines, inserters=#list, wired=wired}
+    end
     -- throughput (beltrate.lua; B1, Opus 21:20): a belt line's supply against its capacity, per lane.
     if a.throughput ~= nil then
       assert(a.throughput == true, 'throughput is true')
@@ -1082,6 +1113,7 @@ return function(api)
     forward='boolean: follow its output instead: the inserters taking from it and the belts they load, lane by lane, to where they end; on a belt tile, that belt\'s lanes from there (those carrying something now, else both); every walk names where other items join its lanes (merges)',
     throughput='true, with position on a belt tile: the line through it (every belt feeding it back, on to its end): per lane the mining drills dropping onto it (how many, working, on what) and what they put on at full speed against the slowest belt\'s lane capacity, and what the last 10 tiles hold; lines, lanes, tiles, lane_capacity_per_min, end',
     audit='boolean, with forward: where the walked lanes lose capacity: a belt side-loading both its carried lanes onto one lane, a curve made a side-load by an empty stub behind the turn tile (both lanes onto one), a route ending at missing tiles with the run going on within 4 tiles ahead (what it carries; a ghost waiting there), or against a belt facing another way; returns audit (lines; one line saying none were found)',
+    circuit='true, with position (a machine, chest or inserter): its state, each inserter feeding it or taking from it (enable condition and its value now, filters, hand, pickup and drop), and the red and green networks on each one\'s wires followed back through combinators (3 levels) to what drives them: each network\'s signals, the combinators putting out onto it (settings, output) and their input networks, constant combinators, entities reading into it (lines)',
     upstream='boolean, with position: from the target back along what feeds it to the first place each ingredient it lacks (all: every one; item: that one) stops or goes elsewhere: a feeder whose filter does not let it through or that is off by its circuit condition (the condition, the signal on its wires), each lane a feeder picks walked back through undergrounds, splitters and side-loads (the lane at the feeder: full, front item, a jammed mixed lane; the first tile back holding it; inserters taking it elsewhere on the way, with status, filter and what each holds; a splitter filter sending it to the other output; where it comes onto the lane; the first tile where another item joins), a chest it reads and what fills it, and a machine making it that is not working, traced the same way one level down. A thruster: each fluid by pipe to the machines making it, each traced so (back through crushers to the collectors). A hub, chest or belt tile: every lane feeding it',
     item='with upstream: the one ingredient or item to follow. Alone: an item instead of position: the routes from every machine making it (and every mining drill on a resource that gives it, from where it drops) to the labs, machines and chests taking it',
     surface='optional surface name for position or item (default yours); exclusive with platform',

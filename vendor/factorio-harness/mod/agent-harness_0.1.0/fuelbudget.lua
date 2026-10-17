@@ -144,6 +144,18 @@ return function(api)
       surface = game.get_surface(a.surface)
       assert(surface, 'no surface ' .. a.surface)
     end
+    -- boilers: true (D7): each boiler group's burn against the fuel in reach of it and the drills supplying it (fuelhours.lua)
+    assert(a.boilers == nil or type(a.boilers) == 'boolean', 'boilers must be true or false')
+    if a.boilers then
+      local key = 'boilers|' .. tostring(surface.index) .. '|' .. p.force.name
+      local c = cache[key]
+      if c and game.tick - c.tick < KEEP and c.out then return c.out end
+      M.hours = M.hours or require('fuelhours'){status_name=api.status_name}
+      local out = M.hours.read(p, a, surface)
+      out.surface_name = surface.name
+      cache[key] = {tick=game.tick, out=out}
+      return out
+    end
     local key = tostring(surface.index) .. '|' .. p.force.name
     local c = cache[key]
     if c and game.tick - c.tick < KEEP and c.out then return c.out end
@@ -185,6 +197,7 @@ return function(api)
     return out
   end
   M.schema = {fuel_budget = {surface='optional surface name (default yours)',
+    boilers='optional true (D7, Opus: slow brownouts seen late): the boilers in groups (within 8 tiles of each other), each with its burn a minute at full use, the fuel in their slots, in the chests and on the belt tiles feeding them (walked back), the drills dropping onto those belts and what they put on at full speed, the balance and the hours left when the burn is more: groups [{near, boilers, working, fuel, burn_per_min, held, in_chests, chests, on_belts, belt_tiles, drills, drills_working, supply_per_min, balance_per_min, hours_left}] (fewest hours first), lines, surface (each fuel made and used a minute, what the logistic networks hold); kept 10 s',
     returns='surface, as_of (the census pass the users come from; their state is read now), items [{item, made_per_min, used_per_min (production statistics, last 10 min), groups_burn_per_min, line}], groups (fewest minutes first) [{group (boilers, furnaces, burner drills, burner inserters, heating towers, burner generators, or recipe NAME for machines whose recipe takes a fuel item), machines, working, states, fuel [{item, burn_per_min (working machines at full use), held (in their fuel slots, or an ingredient user\'s input), minutes_left}], empty_fuel, minutes_left (the group\'s fewest), line}], read, capped, note; kept 10 seconds; fuel in chests, belts and hands is not counted'}}
   return M
 end

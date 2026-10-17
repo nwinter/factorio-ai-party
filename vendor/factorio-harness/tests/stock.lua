@@ -365,3 +365,45 @@ do
   eq(r.took,'copper-cable*12')
 end
 print('stock collect at several machines: ok')
+-- collect follow during the wait (d16 batch10 D1, Sol 00:20: a barrel sat in an output chest out of reach): a chest in
+-- reach is taken from; one out of reach becomes where the wait stands; a walk there that fails ends unreached, saying so.
+do
+  local function machine(x,n)
+    local o={n=n}
+    o.get_item_count=function(f) return f.name=='copper-cable' and o.n or 0 end
+    o.get_contents=function() return o.n>0 and {{name='copper-cable',quality='normal',count=o.n}} or {} end
+    o.is_empty=function() return o.n==0 end
+    local m={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=x,y=0},force=p.force,products_finished=0,out=o,
+      bounding_box={left_top={x=x-1.5,y=-1.5},right_bottom={x=x+1.5,y=1.5}},surface={find_entities_filtered=function() return {} end}}
+    m.get_output_inventory=function() return o end
+    m.get_recipe=function() return {name='copper-cable',products={{type='item',name='copper-cable',amount=2}}} end
+    return m
+  end
+  local function chest(x,n)
+    local c=machine(x,n); c.type='container'; c.name='iron-chest'
+    c.get_inventory=function() return c.out end
+    return c
+  end
+  local m,near,far=machine(2,0),chest(4,3),chest(30,5)
+  local api4={}
+  for k,v in pairs(api) do api4[k]=v end
+  api4.take=function(_,e,item,_,count)
+    local n=math.min(e.out.n,count); e.out.n=e.out.n-n
+    return {transferred=n,items={{name='copper-cable',count=n}}}
+  end
+  local walked
+  api4.request_path=function() end; api4.stop_walking=function() end
+  api4.navigate=function(_,nav) walked=nav.position; return 'unreachable' end
+  local W=dofile('mod/agent-harness_0.1.0/stock.lua')(api4)
+  local chests={{entity=near,name=near.name,position=near.position},{entity=far,name=far.name,position=far.position}}
+  W.output_takers=function() return {chests=chests,line='1 inserter'} end
+  local fp={position={x=0,y=0},force=p.force,reach_distance=10,can_reach_entity=function(e) return e~=far end}
+  game.tick=5000
+  local action=W.start_wait(fp,{item='copper-cable'},m,600)
+  action.follow=true
+  eq(W.tick(fp,action),nil); eq(action.got,3,'the chest in reach')
+  eq(action.targets[1].entity,far,'the far one holding it: the wait stands there now')
+  game.tick=5001; eq(W.tick(fp,action),'collected','3 taken before the walk'); eq(walked.x,30)
+  assert(action.why:find('its output inserters put copper-cable into iron-chest (30,0), out of reach: the wait walked there and takes from it; the walk to it ended unreachable out of reach',1,true),action.why)
+end
+print('stock collect follow during the wait: ok')
