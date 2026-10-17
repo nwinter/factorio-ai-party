@@ -12878,7 +12878,7 @@ for name,handler in pairs(clock.handlers) do handlers[name]=handler end
 -- Direct wait_ticks and sleep/sleep_check (waits.lua).
 -- Wakes a loop of sleeps throws away, shown again later (missed.lua; Opus, shift12 12:26).
 M.missed=require('missed'){state=state,clock_mode=function() return clock and clock.report().mode end}
-M.waits=require('waits'){state=state,integer=integer,wake_filter=function(a) return M.board.wake_filter(a) end,wakes=function(m,f) return M.board.wakes(m,f) end,
+M.waits=require('waits'){state=state,integer=integer,armed=function(index) return M.orders.armed(index) end,wake_filter=function(a) return M.board.wake_filter(a) end,wakes=function(m,f) return M.board.wakes(m,f) end,
   replace=function(p) if state().active[p.index] then finish(p.index,'replaced') else stop(p) end end,
   advance=function(p,ticks) return clock.handlers.advance(p,{ticks=ticks}) end,clock_mode=function() return clock.report().mode end,
   traveling=function(index) local b=M.bots.record(index); return b~=nil and b.travel~=nil end,
@@ -12983,6 +12983,7 @@ M.idle=require('idle'){state=state,agents=function() return M.board.agents() end
   mention_counts=function() return M.board.operator('mention_counts',{}) end,
   unread=function(index) return M.chat.unread(index,'peek') end,
   orders=function(index) return M.orders.report(index) end,
+  armed=function(index) return M.orders.armed(index) end,
   has_body=function(index)
     local ok,p=pcall(M.lookup,index)
     return ok and p~=nil and p.valid and p.character~=nil and p.character.valid or false
@@ -13631,6 +13632,7 @@ local function clock_line(p,peek)
   local idle=c and c.idle or 0
   local waited=c and c.craft_wait or 0
   local in_waits=c and c.in_waits or 0
+  local watch,watch_names=c and c.watch or 0,c and c.watch_names
   local kinds={}
   for kind in pairs(c and c.wait_kinds or {}) do kinds[#kinds+1]=kind end
   table.sort(kinds)
@@ -13646,17 +13648,23 @@ local function clock_line(p,peek)
   local function share(n) return since>0 and math.floor(100*n/since+0.5) or 0 end
   local waiting=waited>0 and string.format(', waiting on hand crafting %s of it (%d%%)',t(waited),share(waited)) or ''
   local slept=in_waits>0 and string.format(', %s of that in %s',t(in_waits),table.concat(kinds,'/')) or ''
-  return string.format('game %s; +%s since your last request, character idle %s of it (%d%%%s)%s; hand crafting %s queued',
-    t(game.tick),t(since),t(idle),share(idle),slept,waiting,t(craft*60))
+  local watched=watch>0 and string.format(', waiting on your armed standing orders (%s) %s of it (%d%%)',tostring(watch_names),t(watch),share(watch)) or ''
+  return string.format('game %s; +%s since your last request, character idle %s of it (%d%%%s)%s%s; hand crafting %s queued',
+    t(game.tick),t(since),t(idle),share(idle),slept,watched,waiting,t(craft*60))
 end
 local function idle_tick()
   local s=state()
   for index,c in pairs(s.clocks or {}) do
     M.waiteta.idle_tick(index)
     if not M.idle.busy(s,index) then
-      c.idle=c.idle+1
-      local kind=M.idle.waiting(s,index)
-      if kind then c.in_waits=(c.in_waits or 0)+1; c.wait_kinds=c.wait_kinds or {}; c.wait_kinds[kind]=true end
+      -- armed standing orders keep watch (orders.lua armed; d17 batch16 A5): waiting on them, not idle
+      local watch=M.orders.armed(index)
+      if watch then c.watch=(c.watch or 0)+1; c.watch_names=watch
+      else
+        c.idle=c.idle+1
+        local kind=M.idle.waiting(s,index)
+        if kind then c.in_waits=(c.in_waits or 0)+1; c.wait_kinds=c.wait_kinds or {}; c.wait_kinds[kind]=true end
+      end
     elseif s.active[index] and s.active[index].awaiting_craft then c.craft_wait=(c.craft_wait or 0)+1 end
   end
   -- When each character started standing (no action, no running queue, a body

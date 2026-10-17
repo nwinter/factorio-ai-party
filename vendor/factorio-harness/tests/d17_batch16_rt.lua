@@ -136,3 +136,35 @@ do
   sol('queue_cancel',{})
 end
 print('d17_batch16_rt A4 queue_pause holds: ok')
+
+-- A5 (Haiku d17: "the idle counter should not count a sleep that is holding a defence watch"): with a standing order
+-- armed, time with no action is waiting on it, not idle: the clock line, the sleep line and the idle report say so.
+do
+  local index=runtime.bots.index_of('grok')
+  grok('queue_cancel',{})
+  grok('order_set',{name='defend',when={['until']='health_below',fraction=0.5},steps={{action='wait_ticks',args={ticks=60}}},priority=7,cooldown_ticks=300})
+  grok('orders_resume',{})
+  grok('status',{brief=true})
+  advance(600)
+  local r=grok('status',{brief=true})
+  assert(r.clock and r.clock:find('character idle 0s of it (0%), waiting on your armed standing orders (defend) 10s of it (100%)',1,true),tostring(r.clock))
+  local sl=grok('sleep',{seconds=60})
+  local line=sl.while_asleep or ''
+  assert(line:find('your character waits on your armed standing orders (defend) for up to 60 s',1,true),line)
+  -- the idle report: on watch, not standing
+  local rep=op('idle_report',{})
+  local row
+  for _,a in ipairs(rep.agents or rep) do if a.name=='grok' or a.agent=='grok' then row=a end end
+  assert(row,'grok in the idle report')
+  local function find_text(t,depth) if depth>3 then return nil end for _,v in pairs(t) do if type(v)=='string' and v:find('on watch',1,true) then return v elseif type(v)=='table' then local f=find_text(v,depth+1) if f then return f end end end end
+  local w=find_text(row,0)
+  assert(w and w:find('on watch 100% (standing orders armed)',1,true),tostring(w))
+  -- paused orders: idle again
+  grok('orders_pause',{})
+  grok('status',{brief=true})
+  advance(300)
+  r=grok('status',{brief=true})
+  assert(r.clock:find('character idle 5s of it (100%',1,true) and not r.clock:find('armed',1,true),r.clock)
+  grok('order_remove',{name='defend'})
+end
+print('d17_batch16_rt A5 an armed standing order is a watch, not idle: ok')
