@@ -6353,3 +6353,19 @@ fh watch    # deploy on every change
   how many chunks and the territory's demolisher where our force sees it now. 0.01 ms a call.
 - B6 (Astra 2x): a squeeze walk ending short of its gap trail said "walked them from A to B" (B the trail's end, the
   walk stalled elsewhere); now "from A toward B and ended at C, N tiles short of it (outcome)".
+
+## d17 batch15 (operator 08:15; the 07:50 poll)
+- A1 (Muse): `recover {corpse, dry_run: true}` listed every corpse: the dry run returned before the corpse filter. It
+  reads the chosen corpse now. Copy: 4 corpses without corpse, 1 with corpse (76.7,173.1).
+- A2 (Grok ~6x): `supply {item}` adds `made_by_spoiling` for an item other items spoil into: each source with how many
+  are held in the places read and how many spoil within 5 min (about N a minute); the production statistics do not
+  count spoiling. The sources are read in the same pass. Copy, Gleba copper-ore: flow "made 0" and "copper-bacteria
+  spoils into copper-ore: 103 held in the places read, 103 of them within 5 min (about 21 a minute)".
+- A3 (Grok): new read `platform_gate {platform?}`: a line a platform: at station X, moving (the leg as flown) or stopped
+  (paused, no schedule, no path), and the current stop with each departure condition and what the hub holds against
+  it (as platforms' stops read them). Copy: "Swift: at station nauvis; stop 1 of 2: nauvis (waiting here): time
+  60m00s: 15m43s left; or sooner, when sol's remote queue ...".
+- A4 (Gemini): `silo` adds `robots_bringing`, what logistic robots carry or have reserved toward the silo (its logistic
+  points' deliveries on the way), with the platform its automatic requests fill for (`requesting_for`). Copy (automatic
+  requests switched on at Nauvis for a test, Swift asking iron plates): "logistic robots bringing (carrying or
+  reserved): processing-unit 6 (automatic requests for platform Swift)".

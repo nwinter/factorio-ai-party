@@ -8191,7 +8191,6 @@ function handlers.recover(p,a)
       end
     end
   end
-  if a.dry_run then return M.recover_dry(p,a,list,mode) end
   -- corpse (one corpse: its position, or unit_number) and stop_after (the nearest N) (D6, Muse 3x: a recover walked on
   -- to a second corpse across the map into enemies).
   local stop_after=a.stop_after~=nil and integer(a.stop_after,1,1,5,'stop_after (1..5 corpses, the nearest first)') or nil
@@ -8206,6 +8205,8 @@ function handlers.recover(p,a)
     if #kept==0 then error('corpse: none of yours there; yours: '..(#named>0 and table.concat(named,'; ') or 'none'),0) end
     list={kept[1]}
   end
+  -- (d17 batch15 A1, Muse: a dry run with corpse {x,y} listed another corpse) the dry run reads the corpse chosen
+  if a.dry_run then return M.recover_dry(p,a,list,mode) end
   local here,rows,elsewhere,left_out,unsafe={},{},{},{},{}
   for _,c in ipairs(list) do
     local okc,n=pcall(function() return c.entity.get_inventory(defines.inventory.character_corpse).get_item_count() end)
@@ -13228,6 +13229,7 @@ reads.platform_bom=true
 reads.platform_production=true
 reads.platform_defense=true
 reads.circuit_audit=true
+reads.platform_gate=true
 reads.ghosts=true
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
@@ -14255,6 +14257,8 @@ function handlers.platform_production(p,a) return M.platbom.production(p,a) end
 M.ammofeed=require('ammofeed'){}
 M.platdefense=require('platdefense'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed}
 function handlers.platform_defense(p,a) return M.platdefense.read(p,a) end
+-- One line a platform: where it is and what its departure waits on (space.lua M.gate; d17 batch15 A3, Grok).
+function handlers.platform_gate(p,a) return space.gate(p,a) end
 -- A platform's misleading circuit readings (circaudit.lua; d17 batch14 A7b, Sol).
 M.circaudit=require('circaudit'){platform=function(p,name) return space.platform(p,name) end}
 function handlers.circuit_audit(p,a) return M.circaudit.read(p,a) end

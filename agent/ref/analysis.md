@@ -131,3 +131,5 @@
 - `stock {item, surface}` adds `by_network`: each logistic network's hold in providers, storage and other holders.
 - `where_is` and `stock {item, surface}` count stacks lying on the ground in chunks our force sees now (`on_ground`;
   where_is lists each 32-tile cell as a place).
+- `supply` adds `made_by_spoiling` for an item others spoil into (copper-bacteria into copper-ore): how many are held
+  and spoil within 5 min; the production statistics do not count spoiling.

@@ -158,3 +158,6 @@
   twice), and each asteroid collector whose filter the circuit sets: the filter it holds and the chunk signals there.
 - `load_silo {from: [..], walk: true}` takes from the sources in order (chests, a landing pad, anywhere on the surface)
   and skips a trip's other sources once you hold what the rocket needs.
+- `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure
+  conditions with what the hub holds against each.
+- `silo` gives `robots_bringing` (what logistic robots carry or have reserved toward it) and `requesting_for`.
