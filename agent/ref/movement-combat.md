@@ -1,5 +1,6 @@
 - `move_to` never ends on a belt or a rail (it steps to the nearest free tile without one, `last.off_belt`). With no route for
-  your character it ends at once as `unreachable`, with `last.why` (closed in: the area and what closes it in) and
+  your character it ends at once as `unreachable`, with `last.why` (closed in: the area and what closes it in; boxed in
+  among our drills or belts with the area open: it names them and `"squeeze":true` or `"pathfind":false`) and
   `last.nearest_reachable`, plus `last.build_spot`: a spot you can reach within build reach of the target
   (`build_spot_note`; in a gap, `build_spot_squeeze` and the `"squeeze":true` call). A position nothing leads to (inside a
   machine, a silo, a landing pad) is walked near instead: it ends `arrived_near` at that build spot (`last.near_walk`;

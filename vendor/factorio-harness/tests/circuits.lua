@@ -330,8 +330,16 @@ r=astra('circuit_set',{position={x=8,y=0},decider={conditions={'signal-A > 5',{s
   outputs={'iron-plate',{signal='signal-B',constant=3}}}})
 eq(#decider_cb.parameters.conditions,2); eq(decider_cb.parameters.conditions[2].compare_type,'and'); eq(decider_cb.parameters.conditions[2].first_signal_networks.green,false)
 eq(decider_cb.parameters.outputs[1].copy_count_from_input,true); eq(decider_cb.parameters.outputs[2].copy_count_from_input,false); eq(decider_cb.parameters.outputs[2].constant,3)
-eq(r.circuit.decider.conditions[1],'signal-A > 5'); eq(r.circuit.decider.conditions[2],'and ice < 9 [red,both]')
-eq(r.circuit.decider.outputs[1],'iron-plate = input'); eq(r.circuit.decider.outputs[2],'signal-B = 3')
+eq(r.circuit.decider.conditions[1],'signal-A > 5 [reads red+green]'); eq(r.circuit.decider.conditions[2],'AND ice < 9 [reads red]')
+eq(r.circuit.decider.outputs[1],'iron-plate = the input count (copy) [from red+green]'); eq(r.circuit.decider.outputs[2],'signal-B = constant 3 [from red+green]')
+-- d16 batch8 C1 (Sol, shift24: compare_type and was written OR; the game's own rows were refused): compare_type, AND,
+-- a string row beginning with and, and the game's rows keep and; a later row must say and or or.
+r=astra('circuit_set',{position={x=8,y=0},decider={conditions={'signal-A < 100',{signal='ice',comparator='<',value=150,compare_type='AND'},'and iron-plate > 0',
+  {first_signal={type='virtual',name='signal-B'},comparator='=',constant=0,compare_type='and'}},outputs={{signal='signal-B',constant=1}}}})
+for i=2,4 do eq(decider_cb.parameters.conditions[i].compare_type,'and','row '..i) end
+eq(r.circuit.decider.conditions[2],'AND ice < 150 [reads red+green]'); eq(r.circuit.decider.conditions[4],'AND signal-B = 0 [reads red+green]')
+fails(function() astra('circuit_set',{position={x=8,y=0},decider={conditions={'signal-A < 100','ice < 150'},outputs={'iron-plate'}}}) end,'say how it joins the row before')
+fails(function() astra('circuit_set',{position={x=8,y=0},decider={conditions={'signal-A < 100'},outputs={{signal='iron-plate',copy_input=true,constant=2}}}}) end,'copy_input (the input count) or constant, not both')
 -- A refusal from the game comes back as a plain error and names what applied before it.
 setmetatable(arith_cb,{__newindex=function() error('invalid parameters') end}); arith_cb.parameters=nil
 fails(function() astra('circuit_set',{position={x=6,y=0},arithmetic={first='iron-plate',constant=2,output='signal-A'}}) end,'arithmetic: the game refused it: invalid parameters')

@@ -5687,3 +5687,41 @@ fh watch    # deploy on every change
   captured inserter's filter changed to copper and its chest removed; the preserved paste put back only the chest ghost
   and kept the copper filter and the red wire. A superforced paste without the option set the filter back to the
   blueprint's iron plate; a normal paste left it.
+- `circuit_set {decider}` (C1, Sol, shift24 tools/braun-carbon24-cascade.md: an and/AND row was written OR, and raw
+  decider_conditions were refused): a string row may begin with and or or (any case), a table row takes `compare` or
+  the game's `compare_type`, and the game's own rows (`first_signal`, `comparator`, `constant`, `second_signal`,
+  `compare_type`, `first_signal_networks`) are taken as they are; a row after the first that does not say how it joins
+  is refused. Outputs: `copy_input: true` (or `copy_count_from_input`) or `constant N`, not both. The read gives every
+  row's networks and each output as copy or constant: `AND iron-plate < 150 [reads red+green]`,
+  `ice = the input count (copy) [from green]`. Checked on the copy: an AND row and an OR row read back as given.
+- Research levels (C2, Sol 16:50: repeated entries of an infinite technology were dropped): on the copy the engine
+  queues a leveled technology several times, each entry the next level, as the research GUI does; the harness had
+  dropped the repeats. `research_queue` and `append` now keep them, up to the levels left (`over_levels` names a
+  technology named more times; `front` puts one in front). `research {target_level: {name: N}}` keeps a leveled
+  technology coming until level N is researched: every 5 s, when it is neither researching nor queued, no pending name
+  waits and the queue has room, its next level goes to the end (at most 16 targets a force, 100 levels past the one
+  researching; 0 removes one; stored with the harness state). `research {targets: true}` and the plain `research` read
+  give each target: researching level L (queued to level M), queued N times from place P (levels), or not queued (the
+  queue full, after the pending names), and the levels left. The tick: 1.9 ms over 360 ticks in the container.
+- `trace {position, forward: true, audit: true}` (C3, Opus 18:20: 3 of 4 trunks ran at half capacity): `audit` names,
+  along the belts the walk followed, a belt side-loading both its carried lanes onto one lane (at most half gets on;
+  whether that lane is full), a curve made a side-load (an empty stub of at most 3 tiles behind the turn tile keeps it
+  straight), and a route ending where the run goes on within 4 tiles ahead (the missing tiles, what that run carries,
+  "nothing reaches it from here"; a ghost waiting there; or a belt against it facing another way). On the copy, the NW
+  coal trunk: transport-belt (-291.5,-312.5) side-loads 4 coal on each lane onto the fast belt's right lane, which is
+  full. The audit adds little to the trace; trace forward on that trunk (186 tiles, 4 routes) costs about 260 ms in
+  the container with or without it, about 50 ms on n, which predates this batch.
+- move_to boxed in (C4, Opus 4x in shift25 at (-300,-305): "no path request found a way ... nor to anywhere within 48
+  tiles"; squeeze=true then walked out): when no path request starts where you stand and the area you can reach is not
+  closed in, and our drills or belts stand within 2.5 tiles, `last.why` adds `boxed in at (x,y) by 7
+  burner-mining-drill within 2.5 tiles ...` and names `squeeze=true` and `pathfind=false`. Reproduced on the copy at
+  Opus's spot; squeeze=true then arrived.
+- transfer farther (C5, Luna 18:20: a 39-tile transfer refused twice, split by hand into a walk and two calls):
+  transfer, collect, feed, rearm and refuel walk into reach by default within 64 tiles (mine, build, rotate and
+  configure keep 32; `walk: true` any distance, as before, which the refusal now says). `transfer {via: [{x,y}, ...]}`
+  (1..16) walks those points in order before the first stop (a walking transfer; with `to`, the courier's too); one not
+  reached ends it unreached, naming it. Every walking transfer's `last.route` says where it started, each via point and
+  stop as reached and the tiles walked; the reply's `legs` lists the via points first. On the copy: Luna's jelly take
+  48 tiles off walked by default (`from (49,0.4) -> passive-provider-chest (15.7,19.1): 53 tiles walked`), and the
+  give back through via (30,5) read `from (15.7,20) -> via 1 (29.9,4.2) -> passive-provider-chest (15.7,19.1): 76
+  tiles walked`.

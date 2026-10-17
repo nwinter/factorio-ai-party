@@ -748,8 +748,15 @@ return function(api)
     end
     return #out > 0 and out or nil
   end
+  -- audit=true (beltaudit.lua; Opus 18:20): where the walked lanes lose capacity.
+  local audit_mod
+  local function audit_of(budget)
+    audit_mod = audit_mod or require('beltaudit'){try=try, place=place, at=at, side=side, lanes_of=lanes_of, lane_text=lane_text, lane_near=lane_near, lane_full=lane_full}
+    return audit_mod.audit(budget.routes, budget.seen, 24)
+  end
+  M.audit_of = audit_of
   -- trace {position, forward} on a belt tile: its lanes from there (those carrying something now, else both).
-  local function from_belt(p, e)
+  local function from_belt(p, e, a)
     local idx_of, areas = cells(p.surface, p.force)
     local l = lanes_of(e)
     local out = {belt=e.name, position=e.position, lanes=string.format('left lane %s, right lane %s', lane_text(l.left), lane_text(l.right))}
@@ -765,6 +772,7 @@ return function(api)
     out.routes = {}
     for n, route in ipairs(budget.routes) do out.routes[n] = route_view(route) end
     out.merges = all_merges(out.routes)
+    if a and a.audit then out.audit = audit_of(budget) end
     out.cost = string.format('%d belt tiles, %d routes, %d inserter areas%s', budget.tiles, #budget.routes, areas(),
       budget.queued > 0 and string.format(' (%d more routes not walked: cap %d)', budget.queued, MAX_ROUTES) or '')
     return out
@@ -773,7 +781,7 @@ return function(api)
   -- trace {position, forward}: from a machine's output to where its items end up.
   function M.forward(p, a)
     local e = target(p, a)
-    if BELT[e.type] then return from_belt(p, e) end
+    if BELT[e.type] then return from_belt(p, e, a) end
     local idx_of, areas = cells(p.surface, p.force)
     local here = index(p.surface, p.force, {position=e.position, radius=radius_of(e) + REACH})
     local out = {entity=e.name, position=e.position, status=status(e), takers={}}
@@ -816,6 +824,7 @@ return function(api)
     for n, route in ipairs(budget.routes) do out.routes[n] = route_view(route) end
     if #out.routes == 0 then out.routes = nil end
     out.merges = out.routes and all_merges(out.routes) or nil
+    if a.audit then out.audit = audit_of(budget) end
     out.cost = string.format('%d belt tiles, %d routes, %d inserter areas%s', budget.tiles, #budget.routes, areas() + 1,
       budget.queued > 0 and string.format(' (%d more routes not walked: cap %d)', budget.queued, MAX_ROUTES) or '')
     return out
@@ -1033,6 +1042,8 @@ return function(api)
     end
     assert(a.near == nil and a.radius == nil, 'near and radius go with item')
     assert(a.position ~= nil, 'trace takes position (a machine or lab; forward=true for its output) or item')
+    assert(a.audit == nil or type(a.audit) == 'boolean', 'audit is true or false')
+    assert(not a.audit or a.forward, 'audit goes with forward (the belts walked from a machine\'s output or a belt tile)')
     if a.forward then
       assert(a.all == nil, 'all goes with a backward trace (no forward)')
       return M.forward(p, a)
@@ -1061,6 +1072,7 @@ return function(api)
   M.schema = {trace = {memory='without coverage: recorded trace with observation tick and age, or remembered belt layout (up to 512 tiles; stops at unknown routing); current state unknown; a visible trace stops at fog and attaches recorded layout',position='{x,y} of a machine or lab in sight (platform= for one on a platform); with forward also a belt tile',
     all='boolean: every ingredient, not only those it lacks for its next craft',
     forward='boolean: follow its output instead: the inserters taking from it and the belts they load, lane by lane, to where they end; on a belt tile, that belt\'s lanes from there (those carrying something now, else both); every walk names where other items join its lanes (merges)',
+    audit='boolean, with forward: where the walked lanes lose capacity: a belt side-loading both its carried lanes onto one lane, a curve made a side-load by an empty stub behind the turn tile (both lanes onto one), a route ending at missing tiles with the run going on within 4 tiles ahead (what it carries; a ghost waiting there), or against a belt facing another way; returns audit (lines; one line saying none were found)',
     upstream='boolean, with position: from the target back along what feeds it to the first place each ingredient it lacks (all: every one; item: that one) stops or goes elsewhere: a feeder whose filter does not let it through or that is off by its circuit condition (the condition, the signal on its wires), each lane a feeder picks walked back through undergrounds, splitters and side-loads (the lane at the feeder: full, front item, a jammed mixed lane; the first tile back holding it; inserters taking it elsewhere on the way, with status, filter and what each holds; a splitter filter sending it to the other output; where it comes onto the lane; the first tile where another item joins), a chest it reads and what fills it, and a machine making it that is not working, traced the same way one level down. A thruster: each fluid by pipe to the machines making it, each traced so (back through crushers to the collectors). A hub, chest or belt tile: every lane feeding it',
     item='with upstream: the one ingredient or item to follow. Alone: an item instead of position: the routes from every machine making it (and every mining drill on a resource that gives it, from where it drops) to the labs, machines and chests taking it',
     surface='optional surface name for position or item (default yours); exclusive with platform',

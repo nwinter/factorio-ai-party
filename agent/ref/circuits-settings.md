@@ -1,6 +1,11 @@
 - Circuits: circuit_set {position, platform?, enable | logistic | read | settings | signals | arithmetic | decider |
   selector}; wire {from, to, color: red|green, or none for copper}; inspect reads both back (in reach or by remote
   view, all of a platform).
+- Decider rows keep AND and OR as given: `"conditions":["signal-A > 0","and iron-plate < 150"]` (a row after the first
+  must say and or or), `{signal, comparator, value, compare, first_networks: "red"}`, or the game's own rows
+  (`first_signal`, `constant`, `compare_type`); outputs `{signal, copy_input: true}` (the input count) or
+  `{signal, constant: 1}`, with `networks`. The read shows `AND iron-plate < 150 [reads red+green]` and
+  `signal-B = constant 1 [from red+green]`.
 - Circuits: `./fh call circuit_set --args '{"platform":"NAME","position":{"x":-2.5,"y":-4.5},"enable":"ice < 300"}'`
   sets an entity's circuit condition, read switches, settings or combinator, in reach or by remote view (our entities
   in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`

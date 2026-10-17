@@ -39,9 +39,11 @@
   right_bottom}` for every machine (or chest) inside it; `inspect` of a machine shows `output_fill` (and `full`) and `output_stop`: where each product stops it, and whether a `full_output` is a full output or a machine short of an ingredient holding a few crafts' worth (the game reads it so).
   `feed` gives a burner fuel when its fuel slots are empty, or with `fuel` (`true` or a fuel name); a furnace with no
   recipe yet takes the `item`/`items` it smelts; each named machine gets a row (`gave` or `got`, and its `fuel`).
-- Out of reach within 32 tiles, `transfer`, `collect`, `feed`, `rearm`, `refuel`, `mine`, `build`, `rotate` and
+- Out of reach within 32 tiles (64 for `transfer`, `collect`, `feed`, `rearm` and `refuel`), those calls and `mine`, `build`, `rotate` and
   `configure` (modules by hand, a recipe change on a stocked machine) walk into reach first and then act, the reply's
-  `walking` line saying so; past 32 tiles the refusal names the same call with `"walk": true`; `"walk": false` refuses.
+  `walking` line saying so; past that the refusal names the same call with `"walk": true` (any distance); `"walk": false` refuses.
+  `transfer {"via":[{"x":30,"y":5}]}` walks those points in order first; a walking transfer's `last.route` gives where
+  it started, each via point and stop as reached, and the tiles walked.
   The destination is checked for enemies again when the call starts; a new worm in a previously clear area is included.
 - Mining walks use resource reach (2.7 tiles) for ore, trees, plants and rocks; buildings and laid tiles use entity reach (10). Queue steps use the same reaches.
 - Reach is measured to an entity's edge. `rotate` is one
