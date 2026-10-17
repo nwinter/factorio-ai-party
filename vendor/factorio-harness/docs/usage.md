@@ -6573,3 +6573,13 @@ fh watch    # deploy on every change
     ghost of wooden-chest has no logistic requests").
   - Copy: 11 entries with good and bad settings gave the same 3 set and 8 refused in a dry run and in the live call.
   tests/d17_batch18.lua, d17batch18.test.ts.
+  - Settings given in another form that the action's own call takes (aliases.lua: requests `set` as a map
+    {item: min}, configure's `mode`, ...) are read the same way in an entry (`settings_corrected` lists the readings).
+    Sol's `requests: {set: {iron-plate: 200, ...}}` is now set.
+- A4 (Sonnet): transfer refused `entity_position` twice and `mode: "take"` once in shift29 (the only transfer argument
+  refusals in shifts 20-29 besides Haiku's retry_when_clear). aliases.lua now reads `entity_position`,
+  `target_position`, `entity_pos` and `pos` as `position` (one position, none given), and `mode` take or give (or
+  to_player, to_entity, and the other direction words) as `direction`; the reply's `[ran as ...]` / corrected says
+  so. An unknown argument that ends or starts with a valid name (chest_position) names it as the closest name. The
+  refusal's example takes its position from it. Copy: Sonnet's call ran as `transfer {position, direction:
+  "to_player", ...}`.

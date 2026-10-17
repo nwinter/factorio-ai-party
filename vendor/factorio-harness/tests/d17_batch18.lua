@@ -60,4 +60,17 @@ local rows,line=ES.apply({},entries,{},{})
 eq(calls[1][1],'circuit_set');eq(calls[1][2],'fast-inserter');eq(calls[2][2],'requester-chest');has(line,'2 set')
 local drows,dline,n=ES.dry({},entries)
 eq(n,1);eq(drows[1].circuit,'ok');has(drows[2].requests,'set requires an array');has(dline,'1 would be set, 1 refused: entry 2 requests')
+-- A4 (Sonnet): transfer's entity_position is position, mode take is the direction.
+local A=dofile('mod/agent-harness_0.1.0/aliases.lua')({})
+local takes=function(action,key) return ({position=true,direction=true,item=true,count=true,positions=true,radius=true,set=true})[key]==true end
+local act,args,fixed=A.fix('transfer',{entity_position={x=22.5,y=136.5},mode='take',item='iron-plate',count=1},takes)
+eq(args.position.x,22.5);eq(args.entity_position,nil);eq(args.direction,'to_player');eq(args.mode,nil)
+has(table.concat(fixed.notes,'; '),'entity_position is position');has(table.concat(fixed.notes,'; '),'mode take is direction="to_player"')
+act,args=A.fix('transfer',{position={x=1,y=1},entity_position={x=2,y=2},item='coal'},takes);eq(args.entity_position.x,2) -- two places: not guessed
+-- A3: an entry's settings are read as the action's own call reads them (a requests set given as a map).
+local ES2=require('entryset'){check=function() end,position=function(p) return p end,reason=tostring,
+  fix=function(action,a) return A.fix(action,a,takes) end}
+local list={{name='requester-chest',position={x=5.5,y=160.5},requests={set={['iron-plate']=200,['copper-plate']=100}}}}
+local notes=ES2.check(list,{})
+eq(list[1].requests.set[1].item,'copper-plate');eq(list[1].requests.set[2].min,200);has(notes[1],'entry 1 requests: set as a map')
 print('d17 batch18 ok')

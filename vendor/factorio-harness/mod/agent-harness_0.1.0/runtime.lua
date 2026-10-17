@@ -12745,7 +12745,8 @@ end
 M.pumpcheck=require('pumpcheck'){read=function(e) return M.circuits.read(e) end}
 M.entryset=require('entryset'){check=function(action,args) return check_args(action,args) end,
   call=function(action,p,args) return handlers[action](p,args) end,position=position,reason=reason,
-  dry=function(p,entry,kind,args) return M.settings_dry(p,entry,kind,args) end}
+  dry=function(p,entry,kind,args) return M.settings_dry(p,entry,kind,args) end,
+  fix=function(action,args) return M.aliases.fix(action,args,M.takes) end}
 -- A place_ghosts dry run's settings (d17 batch18 A3, Sol: requests written with name instead of item passed the dry run
 -- and were refused live), checked by the code the real call runs on the ghost it places, given a stand-in of that ghost:
 -- requests (space.lua check_requests, on a chest that takes requests), configure's recipe (configure_check), modules
@@ -12813,8 +12814,9 @@ do
     local aliased=type(a)=='table' and M.entryset.normalize(a.entities) or 0
     if type(a)~='table' or not M.entryset.any(a.entities) then return M.dry_verdict(place(p,a),a) end
     local ctx={platform=a.platform,surface=a.surface}
-    M.entryset.check(a.entities,ctx)
+    local fixed=M.entryset.check(a.entities,ctx)
     local out=place(p,a)
+    if type(out)=='table' and #fixed>0 then out.settings_corrected=fixed end
     if a.dry_run==true then
       if type(out)=='table' then
         local rows,line,n=M.entryset.dry(p,a.entities)
@@ -12903,8 +12905,9 @@ do
     if entries and (a.action=='place_ghosts' or args.builds) then M.entryset.normalize(entries) end
     local judged=(a.action=='place_ghosts' or a.action=='build') and {dry_run=true} or nil
     if not entries or not M.entryset.any(entries) then return M.dry_verdict(dry(p,a),judged) end
-    M.entryset.check(entries,a.action=='place_ghosts' and {platform=args.platform,surface=args.surface} or {})
+    local fixed=M.entryset.check(entries,a.action=='place_ghosts' and {platform=args.platform,surface=args.surface} or {})
     local out=dry(p,a)
+    if #fixed>0 then out.settings_corrected=fixed end
     out.settings_planned=M.entryset.plan(entries)
     -- each checked as the real call checks it (A3)
     local rows,line,n=M.entryset.dry(p,entries)
@@ -13525,6 +13528,13 @@ function check_args(action,args)
         local d=(v==k..'s' or k==v..'s') and 0 or (#k>=3 and v:sub(1,#k)==k) and 1 or (#k>=4 and apart(k,v)) or 3
         if d<best then closest,best=v,d end
       end
+      -- A valid name the unknown one ends or starts with (A4, Sonnet: entity_position for position).
+      if not closest then
+        for _,v in ipairs(valid) do if #v>=4 and k:sub(-#v-1)=='_'..v then closest=v end end
+      end
+      if not closest then
+        for _,v in ipairs(valid) do if #v>=4 and k:sub(1,#v+1)==v..'_' then closest=v end end
+      end
       error('unknown argument '..k..' for '..action..'; valid: '..(#valid>0 and table.concat(valid,', ') or 'none')
         ..(closest and '; closest name: '..closest or ''),0)
     end
@@ -13544,6 +13554,10 @@ function M.transfer_example(a)
   end
   local from,to=pos(a.from_entity) or pos(a.from),pos(a.to_entity) or pos(a.to)
   local here=pos(a.position) or pos(a.target)
+  -- a position under another name (A4: chest_position): the example's position
+  if not here then
+    for k,v in pairs(a) do if type(k)=='string' and (k:find('position',1,true) or k:find('_pos$')) and pos(v) then here=pos(v) end end
+  end
   local function apart(u,v) return math.abs(u.x-v.x)>0.01 or math.abs(u.y-v.y)>0.01 end
   if here and to and not from and apart(here,to) then from,here=here,nil
   elseif here and from and not to and apart(here,from) then to,here=here,nil end

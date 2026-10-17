@@ -69,13 +69,23 @@ return function(api)
     end
     return moved
   end
-  -- Before anything is placed: shapes and argument names.
+  -- Before anything is placed: shapes and argument names. Each setting's arguments are first read as the action's own
+  -- call reads them (api.fix, aliases.lua: a requests set given as a map {item: min}, configure's mode ...; d17
+  -- batch18 A3, Sol: an entry's {set: {item: count}} was refused while requests itself took it). Returns those notes.
   function M.check(entries, ctx)
+    local notes = {}
     for i, e in ipairs(entries) do
       if has(e) then
         local where = 'entry ' .. i
         for _, k in ipairs(KINDS) do
           local v = e[k[1]]
+          if api.fix and type(v) == 'table' and next(v) ~= nil and #v == 0 then
+            local ok, _, args, fixed = pcall(api.fix, k[2], v)
+            if ok and type(args) == 'table' and fixed then
+              e[k[1]], v = args, args
+              for _, n in ipairs(fixed.notes or {}) do notes[#notes+1] = where .. ' ' .. k[1] .. ': ' .. n end
+            end
+          end
           if v ~= nil then
             assert(type(v) == 'table' and next(v) ~= nil and #v == 0, where .. ': ' .. k[1] .. ' is an object of ' .. k[2] .. ' arguments')
             assert(v.position == nil and v.positions == nil and v.platform == nil and v.surface == nil,
@@ -97,6 +107,7 @@ return function(api)
         end
       end
     end
+    return notes
   end
   -- The entry's name goes with its position (d17 batch18 A3, Sol: circuit settings on a ghost over a tree or a Vulcanus
   -- chimney went to the tree or chimney, "out of reach, and remote view works only on our own entities"); the
