@@ -11985,11 +11985,11 @@ function M.belt_nests(p,a,plan)
   end
   return #list>0 and list or nil
 end
--- The lines belt_route laid, per agent (the last ROUTES_KEPT): a re-run with the same from, via, to, belt and return
+-- The lines belt_route laid, per agent (the last M.ROUTES_KEPT): a re-run with the same from, via, to, belt and return
 -- keeps what stands of the line and places what is missing as ghosts (d17 batch20 A2, Sonnet: a 491-tile line re-run
 -- after it was cut). replan: true plans a new line instead.
-local ROUTES_KEPT=4
-local ROUTE_BELT_TYPES={['transport-belt']=true,['underground-belt']=true,splitter=true,loader=true,['loader-1x1']=true,['lane-splitter']=true,['linked-belt']=true}
+M.ROUTES_KEPT=4
+M.ROUTE_BELT_TYPES={['transport-belt']=true,['underground-belt']=true,splitter=true,loader=true,['loader-1x1']=true,['lane-splitter']=true,['linked-belt']=true}
 function M.route_key(p,a)
   local parts={p.surface.name,a.belt or 'transport-belt',a['return'] and 'return' or ''}
   local function add(v) local pos=position(v); parts[#parts+1]=math.floor(pos.x)..','..math.floor(pos.y) end
@@ -12009,7 +12009,7 @@ function M.route_repair(p,a,keyed)
     local here
     for _,o in ipairs(p.surface.find_entities_filtered{area={{x-0.1,y-0.1},{x+0.1,y+0.1}},force=p.force}) do
       local t=o.type=='entity-ghost' and o.ghost_type or o.type
-      if o.valid and ROUTE_BELT_TYPES[t] then here=o end
+      if o.valid and M.ROUTE_BELT_TYPES[t] then here=o end
     end
     if not here then missing[#missing+1]=e
     else
@@ -12057,7 +12057,7 @@ function handlers.belt_route(p,a)
     local list=st.belt_routes[p.index] or {}
     for i=#list,1,-1 do if list[i].key==keyed then table.remove(list,i) end end
     list[#list+1]={key=keyed,entities=plan.entities,route=plan.route,tick=game.tick}
-    while #list>ROUTES_KEPT do table.remove(list,1) end
+    while #list>M.ROUTES_KEPT do table.remove(list,1) end
     st.belt_routes[p.index]=list
   end
   return out
