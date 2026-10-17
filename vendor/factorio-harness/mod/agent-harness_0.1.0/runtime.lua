@@ -14592,7 +14592,7 @@ function handlers.circuit_audit(p,a) return M.circaudit.read(p,a) end
 M.logaudit=require('logaudit'){state=state,surface_named=function(f,a) return M.networks.surface_named(f,a) end}
 function handlers.logistics_audit(p,a) return M.logaudit.read(p,a) end
 -- Each ghost near a point or in an area: what places it and whether robots can build it (ghostlist.lua; A10, Muse).
-M.ghostlist=require('ghostlist'){position=position,distance=distance,integer=integer}
+M.ghostlist=require('ghostlist'){position=position,distance=distance,integer=integer,robot_row=function(r,net,cache) return M.robots.row(r,net,cache) end}
 function handlers.ghosts(p,a) return M.ghostlist.read(p,a) end
 -- What sends a platform on besides its schedule's waits: agents' queue steps and orders (departure.lua; Grok 16:50).
 M.research_target=require('researchtarget'){state=state}

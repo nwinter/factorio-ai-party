@@ -52,9 +52,41 @@ return function(api)
       filter.ghost_name = a.name
     end
     local found = s.find_entities_filtered(filter)
+    -- (d17 batch18 B3, Astra: three critical builds waited 10 min with 100+ idle robots; robots held spare poles with
+    -- nowhere to put them) Each ghost's robot: the flying construction robot of its network with an order on it anywhere
+    -- in its queue, read once a network (unit number -> robot and the order's place in its queue).
+    local assigned, rcache, held_text, told, MAX_FLYING = {}, {}, {}, {}, 256
+    local function robot_for(ln, g)
+      local id = ln.network_id
+      if not assigned[id] then
+        -- and the network's robots in the air held up, by what holds them (counts left out: wood*4 and wood*3 as one)
+        local map, held, n = {}, {}, 0
+        for i, r in ipairs(try(function() return ln.construction_robots end) or {}) do
+          for k, o in ipairs(r.valid and try(function() return r.robot_order_queue end) or {}) do
+            local u = o.target and try(function() return o.target.valid and o.target.unit_number end)
+            if u and not map[u] then map[u] = {r=r, k=k} end
+          end
+          if i <= MAX_FLYING and r.valid and api.robot_row then
+            n = n + 1
+            local _, stuck, why = api.robot_row(r, ln, rcache)
+            if stuck and why then local key = why:gsub('%*%d+', ''); held[key] = (held[key] or 0) + 1 end
+          end
+        end
+        local list, total = {}, 0
+        for why, c in pairs(held) do list[#list+1] = {why=why, c=c}; total = total + c end
+        table.sort(list, function(x, y) if x.c ~= y.c then return x.c > y.c end return x.why < y.why end)
+        local parts = {}
+        for i = 1, math.min(2, #list) do parts[i] = list[i].c .. ' ' .. list[i].why end
+        held_text[id] = total > 0 and string.format('%d of the %d construction robots of network %d in the air%s are held up: %s', total, n, id,
+          n >= MAX_FLYING and ' read' or '', table.concat(parts, '; ')) or nil
+        assigned[id] = map
+      end
+      local u = try(function() return g.unit_number end)
+      return u and assigned[id][u]
+    end
     local inv = s == p.surface and try(function() return p.get_main_inventory() end)
     local nets, held = {}, {}
-    local rows, by_name, by_verdict = {}, {}, {}
+    local rows, by_name, by_verdict, held_n = {}, {}, {}, 0
     for _, g in ipairs(found) do
       if g.valid then
         local item, count = item_of(g)
@@ -83,10 +115,25 @@ return function(api)
         else verdict = 'its network has no idle construction robot' end
         row.robots = verdict
         if best then row.network, row.idle_robots, row.network_holds = best.id, best.n.idle, best.has end
+        for _, ln in ipairs(covering) do
+          local hit = robot_for(ln, g)
+          if hit and hit.r.valid then
+            local line, stuck
+            if api.robot_row then line, stuck = api.robot_row(hit.r, ln, rcache) end
+            row.robot = line and string.format('%s (its order %d in the queue)', line, hit.k) or hit.r.name
+            row.robot_held = stuck or nil
+            break
+          end
+        end
+        if not row.robot and best then
+          row.robot = 'no robot has an order on it'
+          if held_text[best.id] and not told[best.id] then told[best.id] = true; told[#told+1] = held_text[best.id] end
+        end
         rows[#rows+1] = row
         local key = row.name .. (row.tile and ' (tile)' or '')
         by_name[key] = (by_name[key] or 0) + 1
         by_verdict[verdict] = (by_verdict[verdict] or 0) + 1
+        if row.robot_held then held_n = held_n + 1 end
       end
     end
     table.sort(rows, function(x, y) if x.distance ~= y.distance then return x.distance < y.distance end return x.name < y.name end)
@@ -97,10 +144,11 @@ return function(api)
     for i = (page - 1) * limit + 1, math.min(#rows, page * limit) do
       local r = rows[i]
       list[#list+1] = r
-      lines[#lines+1] = string.format('%s%s ghost %s, %d tiles: needs %s%s; %s%s', r.name, r.tile and ' tile' or '', at(r.position), r.distance,
+      lines[#lines+1] = string.format('%s%s ghost %s, %d tiles: needs %s%s; %s%s%s', r.name, r.tile and ' tile' or '', at(r.position), r.distance,
         r.item and (r.count .. ' ' .. r.item) or 'no item places it',
         r.you_hold and string.format(' (you hold %d)', r.you_hold) or '', r.robots,
-        r.network and string.format(' (network %d: %d idle construction robots, holds %d)', r.network, r.idle_robots, r.network_holds) or '')
+        r.network and string.format(' (network %d: %d idle construction robots, holds %d)', r.network, r.idle_robots, r.network_holds) or '',
+        r.robot and '; robot: ' .. r.robot or '')
     end
     local names, verdicts = {}, {}
     for k, n in pairs(by_name) do names[#names+1] = {k=k, n=n} end
@@ -112,6 +160,7 @@ return function(api)
     local summary = #rows == 0 and ('no ghost of ours ' .. covered .. (a.name and ' named ' .. a.name or ''))
       or string.format('%d ghost%s %s%s: %s%s; %s', #rows, #rows == 1 and '' or 's', covered, #found >= MAX and ' (the first ' .. MAX .. ')' or '',
         table.concat(nt, ', '), #names > 8 and string.format(', +%d more names', #names - 8) or '', table.concat(verdicts, '; '))
+        .. (held_n > 0 and string.format('; %d whose robot is held up', held_n) or '') .. (#told > 0 and '; ' .. table.concat(told, '; ') or '')
     local nextcmd
     if page < pages then
       nextcmd = string.format('ghosts {%s%s%s, limit: %d, page: %d}', where, a.surface and string.format(', surface: "%s"', s.name) or '',
@@ -124,6 +173,6 @@ return function(api)
   M.schema = {ghosts = {position='optional centre (default you; another surface needs one)', radius='1..256 around it (default 32)',
     area='optional {left_top, right_bottom} or [[x1,y1],[x2,y2]] instead (at most 512 a side)', surface='optional planet or platform name', name='optional: only ghosts of this entity or tile',
     limit='1..64 ghosts a page (default 24)', page='1.. the next ghosts, nearest first',
-    returns='summary (how many, by name, by robots verdict); ghosts [{name, tile, position, distance, item, count, you_hold, robots, network, idle_robots, network_holds}] nearest first, with lines: each ghost, what places it, and whether robots can build it (robots can build it; no roboport\'s construction area covers it; its network holds no ITEM; its network has no idle construction robot); page, pages, more, next. Read only'}}
+    returns='summary (how many, by name, by robots verdict); ghosts [{name, tile, position, distance, item, count, you_hold, robots, network, idle_robots, network_holds, robot, robot_held}] nearest first, with lines: each ghost, what places it, and whether robots can build it (robots can build it; no roboport\'s construction area covers it; its network holds no ITEM; its network has no idle construction robot), and robot: the flying construction robot with an order on it (anywhere in its queue: which place), its charge, what it holds, its orders and what holds it up (nowhere to put what it holds, waiting to charge or charging, its target outside the construction area), or no robot has an order on it; the summary counts those whose robot is held up, and for a network with such a ghost, how many of its construction robots in the air are held up and by what (the 2 most); page, pages, more, next. Read only'}}
   return M
 end

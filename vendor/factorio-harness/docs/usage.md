@@ -6605,3 +6605,16 @@ fh watch    # deploy on every change
   when neither). Copy: 8 groups on 5 surfaces, Grok's chamber among them (bioflux 0); the stock-capped gear assembler
   (iron-gear-wheel < 5) is not listed. The read over the copy's 1282 machines (128 off) took 3.7-4.3 ms, spread over
   the background read's slices. tests/pushalerts.lua, game_alerts_groups.lua.
+- B3 (Astra): three critical builds waited 10 min with 100+ idle robots; robots held spare poles with nowhere to put
+  them. ghosts: each ghost's `robot` is the construction robot in the air with an order on it anywhere in its queue
+  (unit numbers, read once a network): robots.lua's row for it (charge, cargo, orders, what holds it up) and the
+  order's place; else `no robot has an order on it`. The summary counts ghosts whose robot is held up and, for each
+  network with a ghost there, how many of its robots in the air are held up and by the two most common reasons
+  (counts dropped: wood*4 and wood*3 as one; the first 256 robots). robots.lua: a robot under 1% energy in no
+  roboport's queue is held up, `no charge (energy 0%)` (after the nowhere-to-put check); construction_robots adds
+  `ghosts_waiting`: each ghost in a held-up robot's queue with the robot, the order's place and the reason. Copy
+  (network 243 on nauvis): `41 ghosts ... 9 whose robot is held up; 50 of the 50 construction robots of network 243
+  in the air are held up: 28 nowhere to put wood: no storage chest in network 243 has room for it (24 storage chests
+  in it); 22 no charge (energy 0%)`; a pole ghost's robot: `... holds wood*4; orders: pickup ...; then construct
+  medium-electric-pole ghost at (86.5,156.5); no charge (energy 0%) (its order 2 in the queue)`. ghosts radius 64
+  took 24 ms on the copy, construction_robots 15 ms. tests/d17_batch18.lua.

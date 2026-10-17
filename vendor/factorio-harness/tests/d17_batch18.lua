@@ -93,4 +93,34 @@ local line,worst=SU.machines(t,{{e=m3,recipe=recipe,into={}},{e=m1,recipe=recipe
 has(worst[1],'(0,0) assembling-machine-2 input fast-inserter (1,2) off by its logistic condition artillery-shell < 20; its source wooden-chest (1,3) holds 40 tungsten-plate; so item_ingredient_shortage (missing tungsten-plate)')
 has(worst[2],'its requester requester-chest (9,3) asks for 5 tungsten-plate, one craft takes 10; it holds 0; so item_ingredient_shortage')
 has(worst[3],'(20,0) assembling-machine-2 item_ingredient_shortage');has(line,'2 of the short held back by an input inserter')
+-- B3 (Astra): a ghost's robot (an order on it anywhere in the queue) and what holds it; a robot with no charge in no
+-- roboport's queue is held up; construction_robots lists the ghosts waiting on held-up robots.
+defines.inventory.robot_cargo=9;defines.robot_order_type.construct=3
+local RB=dofile('mod/agent-harness_0.1.0/robots.lua'){position=function(v) return v end}
+local function cargo(list) return {get_contents=function() return list end} end
+local function bot(x,energy,items,queue) return {valid=true,name='construction-robot',position={x=x,y=0},energy=energy,prototype={max_energy=3000000},
+  robot_order_queue=queue,get_inventory=function() return cargo(items) end} end
+local pole={valid=true,type='entity-ghost',ghost_name='medium-electric-pole',name='entity-ghost',position={x=86.5,y=156.5},unit_number=501}
+local panel={valid=true,type='entity-ghost',ghost_name='solar-panel',name='entity-ghost',position={x=84.5,y=157.5},unit_number=502}
+local pchest={valid=true,type='logistic-container',name='passive-provider-chest',position={x=-34.5,y=-60.5}}
+local flat=bot(-2.5,0,{{name='wood',count=4,quality='normal'}},{{type=1,target=pchest},{type=3,target=pole}})
+local hover=bot(30,1500000,{{name='wood',count=3,quality='normal'}},{})
+local rcell={owner={valid=true,name='roboport',position={x=0,y=0},unit_number=9},charging_robots={},to_charge_robots={},is_in_construction_range=function() return true end}
+local rnet={valid=true,network_id=243,construction_robots={flat,hover},all_construction_robots=2,available_construction_robots=0,cells={rcell},storages={},
+  find_cell_closest_to=function() return rcell end,select_drop_point=function() return nil end,
+  get_item_count=function(n) return n=='medium-electric-pole' and 100 or 2582 end}
+local rforce={logistic_networks={nauvis={rnet}},find_logistic_network_by_position=function() return rnet end}
+local out=RB.read({surface={name='nauvis'},position={x=0,y=0},force=rforce},{})
+has(out.summary,'2 in the air, 2 held up')
+eq(out.ghosts_waiting[1],'medium-electric-pole ghost (86.5,156.5) waits on construction-robot (-2.5,0) (its order 2 of 2): no charge (energy 0%)')
+has(out.robots[2],'nowhere to put wood*3')
+prototypes.entity={}
+for _,g in ipairs({pole,panel}) do g.force=rforce; g.ghost_prototype={items_to_place_this={{name=g.ghost_name,count=1}}} end
+local surf={name='nauvis',find_entities_filtered=function() return {pole,panel} end,find_logistic_networks_by_construction_area=function() return {rnet} end}
+local GL=dofile('mod/agent-harness_0.1.0/ghostlist.lua'){position=function(v) return v end,integer=function(v,d) return v or d end,
+  distance=function(a,b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end,robot_row=function(r,net,c) return RB.row(r,net,c) end}
+local gr=GL.read({surface=surf,position={x=86,y=158},force=rforce,get_main_inventory=function() return nil end},{})
+has(gr.lines[1],'robot: construction-robot (-2.5,0): energy 0%; holds wood*4; orders: pickup passive-provider-chest at (-34.5,-60.5); then construct medium-electric-pole ghost at (86.5,156.5); no charge (energy 0%) (its order 2 in the queue)')
+has(gr.lines[2],'robot: no robot has an order on it')
+has(gr.summary,'1 whose robot is held up; 2 of the 2 construction robots of network 243 in the air are held up: 1 no charge (energy 0%); 1 nowhere to put wood: no storage chest in network 243 has room for it (0 storage chests in it)')
 print('d17 batch18 ok')
