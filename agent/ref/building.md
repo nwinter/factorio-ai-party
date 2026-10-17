@@ -26,7 +26,10 @@
   the refusal) names both sides: `picks from iron-chest (3.5,5.5), drops into stone-furnace (3,2.5)`. Fast replace
   over a chest of the same group keeps its contents in the new chest; what it cannot hold comes to you
   (`replaced.contents`), and with no room for that nothing moves; any fast replace keeps filters, wires, circuit
-  settings, a chest's limit and requests (`replaced.kept`, `not_kept`). Rails: `{item: "rail", entity: "straight-rail"
+  settings, a chest's limit and requests (`replaced.kept`, `not_kept`). Fast replace of one end of an underground pair
+  with another tier replaces its other end too when that is ours, in build reach and you hold the item for it
+  (`consumed: 2`, `replaced.pair`; a later entry for that end says `already`); else it is refused naming the other end
+  and a spot within reach of both. Rails: `{item: "rail", entity: "straight-rail"
   | "curved-rail-a" | "curved-rail-b" | "half-diagonal-rail"}`; stops, locomotives and wagons build as any entity.
   `{item: "rail-ramp", position, direction}` builds a ramp from one held ramp; the centre snaps to the ramp grid, with
   the same collision and reach checks.

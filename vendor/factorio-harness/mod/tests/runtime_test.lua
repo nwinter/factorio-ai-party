@@ -2898,6 +2898,55 @@ fails(function() call('build',{item='underground-belt',position={x=-5.5,y=-27.5}
 p.controller_type=1; p.position={x=-4,y=-28}; p.get_main_inventory=body.get_main_inventory
 entrance.neighbours=nil
 eq(call('build',{item='underground-belt',position={x=-5.5,y=-27.5},direction='west'}).entity.underground,'output')
+-- Fast-replacing one end of a pair replaces the other end too, in reach with the item for it; else refused naming it
+-- (d17 batch20 A3).
+;(function()
+  local box={left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}
+  local yellow={name='underground-belt',type='underground-belt',fast_replaceable_group='ug',collision_box=box}
+  local fast={name='fast-underground-belt',type='underground-belt',fast_replaceable_group='ug',collision_box=box,max_underground_distance=7}
+  local function ug(x,kind) return {valid=true,name='underground-belt',type='underground-belt',prototype=yellow,position={x=x,y=10.5},direction=4,belt_to_ground_type=kind,force=p.force,unit_number=900+x} end
+  local ents={ug(0.5,'input'),ug(4.5,'output')}
+  ents[1].neighbours=ents[2]; ents[2].neighbours=ents[1]
+  local fs=stack('fast-underground-belt',2); fs.prototype.place_result=fast
+  fs.clear=function() fs.count=0; fs.valid_for_read=false end
+  local inv={find_item_stack=function() return fs.count>0 and fs or nil end,get_item_count=function(f) return f.name=='fast-underground-belt' and fs.count or 0 end}
+  p.get_main_inventory=function() return inv end; body.get_main_inventory=p.get_main_inventory
+  local function near(e,pos,r) return math.abs(e.position.x-pos.x)<=r and math.abs(e.position.y-pos.y)<=r end
+  local find,create,replace=p.surface.find_entities_filtered,p.surface.create_entity,runtime.replace
+  p.surface.find_entities_filtered=function(f)
+    local out={}
+    if f.ghost_name or f.ghost_type or f.type=='item-entity' then return out end
+    for _,e in ipairs(ents) do
+      if e.valid and (not f.name or f.name==e.name) and (not f.type or f.type==e.type) and (f.area and e.position.x>=f.area.left_top.x and e.position.x<=f.area.right_bottom.x
+        and e.position.y>=f.area.left_top.y and e.position.y<=f.area.right_bottom.y or f.position and near(e,f.position,f.radius or 0.1)) then out[#out+1]=e end
+    end
+    return out
+  end
+  p.surface.create_entity=function(a)
+    local e={valid=true,name=a.name,type='underground-belt',prototype=fast,position=a.position,direction=a.direction,belt_to_ground_type=a.type,force=p.force,unit_number=950+#ents}
+    ents[#ents+1]=e; return e
+  end
+  runtime.replace={plan=function() return {} end,settings=function() return nil end,take=function(o) o.valid=false; return {} end,give=function() return nil end}
+  p.position={x=2.5,y=10.5}
+  -- one item only: refused, the other end named
+  fs.count=1
+  fails(function() call('build',{item='fast-underground-belt',position={x=0.5,y=10.5},direction='east',type='input'}) end,
+    'underground-belt (0.5,10.5) is one end of a pair with underground-belt (4.5,10.5): a fast-underground-belt does not pair with a underground-belt, so replacing one end alone breaks the belt; you hold 1 fast-underground-belt, the pair takes 2')
+  fs.count=2
+  local r=call('build',{item='fast-underground-belt',position={x=0.5,y=10.5},direction='east',type='input'})
+  eq(r.consumed,2); eq(ents[1].valid,false); eq(ents[2].valid,false); eq(ents[3].name,'fast-underground-belt'); eq(ents[4].belt_to_ground_type,'output'); eq(ents[4].position.x,4.5)
+  assert(r.replaced.pair:find('its other end underground-belt (4.5,10.5) replaced too',1,true),r.replaced.pair)
+  -- the batch's entry for the other end, after: already done
+  fs.count=1
+  local again=call('build',{item='fast-underground-belt',position={x=4.5,y=10.5},direction='east',type='output'})
+  eq(again.consumed,0); assert(again.already:find('replaced with its pair',1,true))
+  -- out of reach: refused with a spot within reach of both
+  ents={ug(0.5,'input'),ug(4.5,'output')}; ents[1].neighbours=ents[2]; ents[2].neighbours=ents[1]
+  fs.count=2; p.position={x=-4.5,y=10.5}; p.build_distance=6
+  fails(function() call('build',{item='fast-underground-belt',position={x=0.5,y=10.5},direction='east',type='input'}) end,
+    'the other end is 9.0 tiles from you, build reach 6; build replaces both ends from within 6 tiles of both, e.g. from (2.5,10.5)')
+  p.surface.find_entities_filtered,p.surface.create_entity,runtime.replace=find,create,replace
+end)()
 p.controller_type=defines.controllers.remote
 p.physical_controller_type=defines.controllers.remote
 fails(function() call('walk',{direction='east',ticks=1}) end,'living survival character')

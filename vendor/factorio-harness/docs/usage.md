@@ -6603,3 +6603,10 @@ fh watch    # deploy on every change
     its open end; the line stands as it is (`joined`). Later via points on it are passed; `to` on it ends the route at
     its head. `return` with such a via point is refused (lay the return line in its own call).
   tests/route.lua, runtime_test.lua.
+- A3 (Opus): fast-replacing underground-belt ends with fast-underground-belt one at a time left pairs of two tiers (a
+  fast-underground-belt does not pair with an underground-belt), and the belt stopped with no word. build replaced one
+  end (replace.lua) and left its partner. Now, as a player's fast replace does, the other end goes too when it is
+  ours, in build reach, and you hold a second item: `consumed: 2`, `replaced.pair` (the other end and its new belt
+  line); an entry for that end later in the same batch says `already`. Otherwise the build is refused before anything
+  changes, naming the other end, why (`you hold 1 ..., the pair takes 2`, or its distance and your build reach), and a
+  tile within reach of both. runtime_test.lua.

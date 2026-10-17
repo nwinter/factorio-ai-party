@@ -5371,6 +5371,26 @@ local function build_tile(p,a,stack,pos)
   assert(consumed>0,'no tile was placed (blocked or already there)')
   return {consumed=consumed,tile=tile,position={x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5}}
 end
+-- Fast-replacing one end of an underground pair with another tier (d17 batch20 A3, Opus: the pair broke, the belt
+-- stopped with no word): the other end goes too, as a player's fast-replace does, when it is ours, in build reach and
+-- you hold the item for it; else the build is refused naming it. nil when no pair is in question.
+function M.underground_pair(p,place,pos,item,quality)
+  local o
+  for _,e in pairs(p.surface.find_entities_filtered{position=pos,radius=0.1,type='underground-belt',force=p.force}) do
+    if e.valid and e.name~=place.name and e.prototype.fast_replaceable_group==place.fast_replaceable_group then o=e end
+  end
+  if not o then return nil end
+  local ok,other=pcall(function() return o.neighbours end)
+  if not (ok and other and other.valid and other.force==p.force) or other.name==place.name then return nil end
+  local held=p.get_main_inventory().get_item_count{name=item,quality=quality}
+  local d=distance(p.position,other.position)
+  if d<=p.build_distance and held>=2 then return {position=other.position,direction=other.direction,kind=other.belt_to_ground_type,name=other.name} end
+  local mid={x=math.floor((pos.x+other.position.x)/2)+0.5,y=math.floor((pos.y+other.position.y)/2)+0.5}
+  error(string.format('%s (%g,%g) is one end of a pair with %s (%g,%g): a %s does not pair with a %s, so replacing one end alone breaks the belt; %s; build replaces both ends from within %g tiles of both, e.g. from (%g,%g)',
+    o.name,o.position.x,o.position.y,other.name,other.position.x,other.position.y,place.name,other.name,
+    held<2 and string.format('you hold %d %s, the pair takes 2',held,item) or string.format('the other end is %.1f tiles from you, build reach %g',d,p.build_distance),
+    p.build_distance,mid.x,mid.y),0)
+end
 local function build_one(p,a)
   local pos=position(a.position)
   -- A turret out of reach: the refusal lists valid spots within reach toward it (shore.lua).
@@ -5441,6 +5461,11 @@ local function build_one(p,a)
     -- item. A build request must not silently change an occupied crossing.
     if e.valid and e.name==place.name and distance(e.position,pos)<0.1
       and (e.quality and e.quality.name or 'normal')==(a.quality or 'normal') then
+      -- (the other end of a pair an entry before replaced, this tick)
+      local done=state().pair_done
+      if done and done.tick==game.tick and e.unit_number and done[e.unit_number] then
+        return {consumed=0,entity=built_summary(e),already=string.format('%s (%g,%g) was replaced with its pair by an entry before',e.name,e.position.x,e.position.y)},{}
+      end
       error('target already contains this entity; use rotate explicitly or an underground crossing')
     end
     existing[e.unit_number or (e.name..'@'..e.position.x..','..e.position.y)]=true
@@ -5456,7 +5481,24 @@ local function build_one(p,a)
   -- Undergrounds are always placed directly with an explicit end: cursor
   -- building does not reliably make the exit of a pair from script.
   if direct then
+    local pair=place.type=='underground-belt' and M.underground_pair(p,place,pos,a.item,a.quality or 'normal') or nil
     local e,picked,replaced,need=build_direct(p,stack,pos,direction,a.quality or 'normal',a.type,place)
+    if pair then
+      local stack2=p.get_main_inventory().find_item_stack{name=a.item,quality=a.quality or 'normal'}
+      local ok2,e2,_,replaced2,need2=pcall(build_direct,p,stack2,pair.position,pair.direction,a.quality or 'normal',pair.kind,place)
+      if ok2 and e2 then
+        need=need+need2
+        local done=state().pair_done
+        if not done or done.tick~=game.tick then done={tick=game.tick}; state().pair_done=done end
+        if e2.unit_number then done[e2.unit_number]=true end
+        replaced=replaced or {}
+        replaced.pair=string.format('its other end %s (%g,%g) replaced too: %s',pair.name,pair.position.x,pair.position.y,built_summary(e2).belt or e2.name)
+        replaced.pair_contents=replaced2 and replaced2.contents or nil
+      else
+        replaced=replaced or {}
+        replaced.pair=string.format('its other end %s (%g,%g) was not replaced: %s; the pair is broken until it is',pair.name,pair.position.x,pair.position.y,ok2 and 'placement failed' or reason(e2))
+      end
+    end
     local joined=e.type=='electric-pole' and bridge_pole(e) or 0
     local recipe=a.recipe~=nil and M.set_built_recipe(e,a.recipe) or nil
     return {consumed=need,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced,recipe=recipe,snapped=snapped},{e}
