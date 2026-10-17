@@ -344,6 +344,26 @@ return function(api)
       local ok, w = pcall(M.auto_wait, e, force, loaded)
       if ok and w then row.auto_waits = w; words[#words+1] = 'automatic launch: ' .. w end
     end
+    -- (d17 batch15 A4, Gemini) what logistic robots carry or have reserved toward the silo now (its logistic points'
+    -- deliveries on the way), and the platform its automatic requests fill for
+    local coming = {}
+    local pts = try(function() return e.get_logistic_point() end)
+    if pts and pts.object_name then pts = {pts} end
+    for _, pt in pairs(pts or {}) do
+      for _, it in ipairs(try(function() return pt.targeted_items_deliver end) or {}) do
+        local k = it.name .. (it.quality and it.quality ~= 'normal' and '@' .. it.quality or '')
+        coming[k] = (coming[k] or 0) + (it.count or 0)
+      end
+    end
+    local cl = {}
+    for k, n in pairs(coming) do if n > 0 then cl[#cl+1] = k .. ' ' .. n end end
+    table.sort(cl)
+    local target = try(function() local t = e.transitional_request_target; return t and t.valid and t.name or nil end)
+    if #cl > 0 then
+      row.robots_bringing = table.concat(cl, ', ')
+      words[#words+1] = 'logistic robots bringing (carrying or reserved): ' .. row.robots_bringing .. (target and ' (automatic requests for platform ' .. target .. ')' or '')
+    end
+    row.requesting_for = target
     row.send_to_orbit_automatically = try(function() return e.send_to_orbit_automatically end) and true or false
     if row.send_to_orbit_automatically then words[#words+1] = 'send to orbit automatically on' end
     row.platforms_above = platforms_above(force, try(function() return e.surface.planet and e.surface.planet.name end))
@@ -619,7 +639,7 @@ return function(api)
     returns='silos [{name, position, surface, parts (X/required, the 2.0 rocket_parts_required, while the rocket is being built), built_parts (ready or rising: the built rocket\'s, 50/50), next_parts (once it is built: ready, rising or launching; the parts the silo makes for the rocket after it: a ready rocket with next_parts 6/50 is built and launches), rocket_ready (true only for a built rocket), rocket ("rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 13/50; last launch 4m10s ago to platform X"; rising into place; launching; or building, parts X/Y), state (the silo\'s rocket state), status, '
       .. 'crafting {part_progress, parts_left, part_s, productivity, rocket_eta_s (at this speed, while working)}, ingredients [{name, per_part, in_silo, in_hands '
       .. '(feeding inserters\' hands), at_sources (what their belts and chests hold), needed (for the parts left), short}], lacks (ingredients the silo holds too few '
-      .. 'of for the next part), feeders {inserters, idle, sources}, cargo {kg, lift_kg, stacks, slots, items, over_kg}, trash, auto_requests and send_to_orbit_automatically (the GUI checkboxes; configure sets them), '
+      .. 'of for the next part), feeders {inserters, idle, sources}, cargo {kg, lift_kg, stacks, slots, items, over_kg}, trash, robots_bringing (what logistic robots carry or have reserved toward the silo now) and requesting_for (the platform its automatic requests fill for), auto_requests and send_to_orbit_automatically (the GUI checkboxes; configure sets them), '
       .. 'platforms_above (ours in orbit of this planet), platform_requests [{platform, item, flag (matched: the silo\'s network holds the payload a rocket waits for; below_min_payload; split_networks: other networks on the planet hold the rest, named; hub_full: the payload takes more hub slots than are free; filling: the silo fills a rocket for it now), line}] (each request a platform above makes of this planet that its hub lacks), last_launch {ago, tick, to, cargo, by}, line}]; rockets_launched (the force\'s count). '
       .. 'Feeders: inserters within 8 tiles dropping into the silo. Launches are seen from when the harness was deployed. Read only'}}
   return M

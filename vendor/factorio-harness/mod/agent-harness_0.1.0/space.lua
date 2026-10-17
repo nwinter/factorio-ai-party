@@ -830,6 +830,35 @@ return function(api)
     end
     return out
   end
+  -- platform_gate {platform} (d17 batch15 A3, Grok: the full Swift record before every agricultural launch): one line
+  -- per platform: where it is (at a station, moving, stopped) and the current stop's departure conditions with what
+  -- the hub holds against each, as the schedule GUI shows them.
+  function M.gate(p,a)
+    local lines={}
+    for _,pl in pairs(p.force.platforms) do
+      if pl.valid and (a.platform==nil or pl.name==a.platform) then
+        local st=platform_states[pl.state] or '?'
+        local where=location(pl) or '?'
+        local sch=try(function() return pl.schedule end)
+        local records=sch and sch.records or {}
+        local cur=sch and sch.current or 1
+        local state
+        if try(function() return pl.paused end) then state='stopped (paused)'
+        elseif pl.state==defines.space_platform_state.waiting_at_station then state='at station '..where
+        elseif pl.state==defines.space_platform_state.on_the_path then state='moving '..where
+        else state='stopped ('..st:gsub('_',' ')..') at '..where end
+        local gate
+        if #records==0 then gate='no schedule'
+        else
+          local ls=M.stops(pl) or {}
+          gate=string.format('stop %d of %d: %s',cur,#records,(ls[cur] or '?'):gsub('^%d+ ',''))
+        end
+        lines[#lines+1]=string.format('%s: %s; %s',pl.name,state,gate)
+      end
+    end
+    if a.platform~=nil and #lines==0 then error('no platform of ours named '..tostring(a.platform),0) end
+    return {lines=lines,note='the schedule\'s wait conditions at the current stop, each with what the hub holds now; read only'}
+  end
   -- platforms {compact: true} (Astra 13:50: the full read is long): a line a platform: where, ammunition aboard (hub
   -- and turrets), thruster fuel and its 10-minute trend, the ghosts' missing items in all, and only the blockers this
   -- agent was not shown in its last compact read.
@@ -1561,6 +1590,7 @@ return function(api)
     return {landing=pl.space_location.name,note='the cargo pod takes ~20 s; actions fail until the character stands on the planet: poll status'}
   end
   M.schema={
+    platform_gate={platform='optional platform name (default every one of ours)',returns='lines: a line a platform: at station X, moving (the leg as flown, from->to with the share flown) or stopped (paused, no schedule, no path), and the current stop of its schedule with each departure condition and what the hub holds against it (item counts: holds N, met or N to go; time left; unmet requests); note. Read only'},
     requests={surface='optional planet name, with position: a requester or buffer chest or landing pad there by remote view, where our force sees the chunk (the reply\'s target says on which surface)',target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
       set='array of {item,min,max? (omitted: the slot\'s max is kept while at least min; "inf": none),quality?,from? (planet to import from, platform hubs; omitted: the planet the slot already has is kept),min_payload? (platform hubs: the GUI\'s custom minimum payload for the request, minimum_delivery_count; omitted: the slot\'s is kept; false clears it). Seen on 2.0.77 above Fulgora: with min_payload 10 and min 50, automatic silos sent rockets of 28, 10 and 12 stone, 50 in all; with none, one full rocket (100 concrete for a min of 50). min is how much the hub asks for; min_payload how little a rocket may carry for it} (a map {item: min} runs as that list); replaces that item\'s slot',clear='array of item names whose request slot is deleted (what is held stays)',remove='the same as clear',force='true: set a personal max under what you hold (the game moves the rest to your trash); without it such a set is refused',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       active='boolean: switch the section on or off (the GUI\'s checkbox; a section that is off requests nothing)',
