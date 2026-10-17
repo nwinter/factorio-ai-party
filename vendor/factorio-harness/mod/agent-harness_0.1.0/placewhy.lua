@@ -116,6 +116,30 @@ return function(api)
     return nil, true
   end
 
+  -- A tile inside an asteroid collector's forward clearance (A5, Astra 01:50: the floor brush said only "47 tiles
+  -- refused", the entity dry run "the game refuses foundation" with no why): the collector (built or a ghost) within
+  -- 8 tiles whose tile rule keeps that tile empty space, as text; nil when none.
+  function M.collector_ahead(surface, force, x, y)
+    local list = try(function() return surface.find_entities_filtered{area={{x - 8, y - 8}, {x + 9, y + 9}}, type='asteroid-collector', force=force} end) or {}
+    for _, g in ipairs(try(function() return surface.find_entities_filtered{area={{x - 8, y - 8}, {x + 9, y + 9}}, ghost_type='asteroid-collector', force=force} end) or {}) do list[#list+1] = g end
+    for _, c in ipairs(list) do
+      local ghost = c.type == 'entity-ghost'
+      local proto = ghost and try(function() return c.ghost_prototype end) or try(function() return c.prototype end)
+      for i, rule in ipairs(try(function() return proto.tile_buildability_rules end) or {}) do
+        local need = layers(rule.required_tiles)
+        local empty = false
+        for _, l in ipairs(need) do if l == 'empty_space' then empty = true end end
+        if empty then
+          local b = M.box_at(rule.area, c.position, c.direction)
+          if x + 0.5 >= b.left_top.x and x + 0.5 <= b.right_bottom.x and y + 0.5 >= b.left_top.y and y + 0.5 <= b.right_bottom.y then
+            return string.format('in front of %s%s (%g,%g) facing %s: its tile rule %d keeps tiles x %d..%d, y %d..%d empty space (its collection area)',
+              ghost and 'the ghost of ' or '', ghost and c.ghost_name or c.name, c.position.x, c.position.y, M.direction_name(c.direction), i,
+              math.floor(b.left_top.x + 0.01), math.ceil(b.right_bottom.x - 0.01) - 1, math.floor(b.left_top.y + 0.01), math.ceil(b.right_bottom.y - 0.01) - 1)
+          end
+        end
+      end
+    end
+  end
   -- How a built entity (or a ghost) differs from the blueprint entity at its
   -- spot: recipe, filters (inserters, loaders, asteroid collectors), modules.
   -- Returns {differs = {...}, fix = 'configure {...}'} or nil.

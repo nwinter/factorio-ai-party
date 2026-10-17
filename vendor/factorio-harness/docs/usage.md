@@ -6043,3 +6043,24 @@ fh watch    # deploy on every change
     - `launch {wait_ready, platform}` now waits for the platform too (`wait_platform` defaults to true there), and says
       the arrival as a state: `Kestrel is not in orbit of vulcanus yet (Kestrel at aquilo) (no arrival estimate: its
       schedule does not go to vulcanus)`, or `(its arrival in about N s)`.
+
+## d17 batch11 (operator 01:55; agents' requests at the 01:50 poll)
+- A0 (Sol 01:59, reproducible): `min_payload {platforms, set}` paused the body queue's running wait_until as
+  interrupted. It names its platforms in `platforms`, and the check that leaves remote calls alone reads `platform` and
+  `surface`, so it counted as a body action. min_payload and platform_rename are now passive, like the other remote
+  settings. On the copy, the older harness paused the queue ("a call of yours failed while your queue ran"); this one
+  leaves the wait_until running.
+- A1 (Sonnet): two silo push alerts in the team block (game_alerts kinds), sent to whoever claims the area, else the
+  silo's builder, else the nearest agent:
+  - `silo_short.<ingredient>`: rocket parts stalled 2 minutes, short of an ingredient. The line gives the parts, how
+    long since the last part, and what the silo holds of it; `silo {position, why: true}` follows the chain.
+  - `silo_ready_idle`: a built rocket not launched for 3 minutes, with its cargo and the platforms above.
+- A2 (Sonnet): `platforms {eta_to: PLANET}` gives each platform's ETA to that planet through its schedule (batch9
+  A4's estimate: the leg at its cruise, the stops' waits and what sends it on), or why there is none. On the copy:
+  `Swift (at gleba): to nauvis ETA 3107s before departure: leaves gleba when time 3600s; gleba->nauvis 15000 km at
+  78 km/s (its cruise): 192s`.
+- A5 (Astra): foundation refused in front of an asteroid collector names it, in place_ghosts' failures, the dry run's
+  blocked lines and tiles (`collector_clearance`), and the tile checks: `in front of asteroid-collector (-0.5,-33.5)
+  facing north: its tile rule 2 keeps tiles x -2..0, y -38..-35 empty space (its collection area)`.
+- A7 (Sol): `platform_plan {platform, floor: true, page: N}` gives the floor plan's place_ghosts entries 256 at a
+  time (place_ghosts' limit), in reading order, the same every read, with `page`, `pages` and the `next` call.

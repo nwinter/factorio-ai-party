@@ -378,7 +378,8 @@ return function(api)
       end
     end
     if engine == false or #blockers > 0 then
-      return {why=#blockers > 0 and 'blocked by '..table.concat(M.blocker_texts({blockers}), ', ') or 'the game refuses '..ti.result..' there now',
+      local ahead = #blockers == 0 and api.placewhy and api.placewhy.collector_ahead and api.placewhy.collector_ahead(surface, force, x, y)
+      return {why=#blockers > 0 and 'blocked by '..table.concat(M.blocker_texts({blockers}), ', ') or 'the game refuses '..ti.result..' there now'..(ahead and ': '..ahead or ''),
         blockers=blockers}
     end
     return {removes=removes}
@@ -730,7 +731,10 @@ return function(api)
             if all and kind == 'ghosts' then
               for _, one in ipairs(b) do tile_marked[one.entity.name..' '..at1(one.entity.position)] = true end
             elseif #b > 0 then why = 'blocked by '..table.concat(M.blocker_texts({b}), ', ')
-            else why = 'the game refuses it there now' end
+            else
+              local ahead = api.placewhy and api.placewhy.collector_ahead and api.placewhy.collector_ahead(s, force, x, y)
+              why = 'the game refuses it there now'..(ahead and ': '..ahead or '')
+            end
           end
         end
       end
@@ -940,7 +944,11 @@ return function(api)
                     if not dup and #marked < 4 then marked[#marked+1] = text end
                   end
                 elseif #b > 0 then lists[#lists+1] = b
-                else refused[#refused+1] = n.item..' at '..tile_text(n.x, n.y) end
+                else
+                  -- (in front of an asteroid collector: A5)
+                  local why = api.placewhy.collector_ahead and api.placewhy.collector_ahead(s, force, n.x, n.y)
+                  refused[#refused+1] = n.item..' at '..tile_text(n.x, n.y)..(why and ' ('..why..')' or '')
+                end
               end
             end
             if #lists > 0 then
@@ -1237,6 +1245,17 @@ return function(api)
           for j = 1, math.min(6, #loose) do shown[j] = tile_text(loose[j][1], loose[j][2]) end
           t.not_connected = string.format('%d new foundation tile%s no existing foundation, even through the other new tiles: %s%s (the foundation must stay one connected area; %s unbuilt)',
             #loose, #loose == 1 and ' touches' or 's touch', table.concat(shown, ' '), #loose > 6 and ' ...' or '', #loose == 1 and 'it stays' or 'these stay')
+        end
+        -- in front of an asteroid collector (A5, Astra 01:50): each planned tile its collection area keeps empty space
+        if api.placewhy and api.placewhy.collector_ahead then
+          local ahead, first = 0, nil
+          for _, c0 in pairs(new) do
+            if not c0.pending then
+              local why = api.placewhy.collector_ahead(s, force, c0[1], c0[2])
+              if why then ahead = ahead + 1; first = first or tile_text(c0[1], c0[2]) .. ' ' .. why end
+            end
+          end
+          if ahead > 0 then t.collector_clearance = string.format('%d new foundation tile%s refused in front of asteroid collectors (their tile rule keeps their collection area empty space): %s', ahead, ahead == 1 and ' is' or 's are', first) end
         end
         local hub = try(function() return s.platform.hub end)
         if hub and hub.valid then
