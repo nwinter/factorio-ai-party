@@ -35,8 +35,12 @@ return function(api)
       init = i + 1
     end
   end
-  -- The sender's name as an answer would name it: a viewer's without "viewer ".
-  local function sender(from) return (tostring(from or ''):gsub('^viewer ', '')) end
+  -- The sender's name as an answer would name it: a viewer's without "viewer " and the host's " (host)" tag
+  -- (d17 13:40: Opus answered "@NickWinter" and the mention to "NickWinter (host)" stayed open for 10 minutes).
+  local function sender(from)
+    local s = tostring(from or ''):gsub('^viewer ', '')
+    return (s:gsub(' %(host%)$', ''))
+  end
   function M.add(index, item)
     local l = list(index)
     for _, it in ipairs(l.items) do if it.key == item.key then return end end
