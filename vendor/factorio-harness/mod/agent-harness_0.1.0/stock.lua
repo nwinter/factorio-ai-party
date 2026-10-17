@@ -879,6 +879,28 @@ return function(api)
       if action.avoid_mode and api.avoid_start then api.avoid_start(p,action.nav,action.avoid_mode) end
       api.request_path(p,action.nav)
     end
+    -- An attack that starts while the walk is under way (d17 batch17 B1, Haiku: a rearm walked into attack #5203 at the
+    -- guns it went to, and was killed beside a live attack at (10,-103)): once a second the stop is checked against the
+    -- areas under attack now; inside one, the walk holds where it is (held_short says which attack and where) until the
+    -- attack has had no hit for 30 s, then goes on. unsafe_goal walks anyway.
+    if action.avoid_mode and not action.unsafe_goal and api.goal_check and game.tick>=(action.attack_check or 0) then
+      action.attack_check=game.tick+60
+      local okc,c=pcall(api.goal_check,p,p.position,t.position,action.avoid_mode)
+      local m=okc and c and c.m
+      if m and m.attack then
+        if not action.holding then
+          api.stop_walking(p)
+          action.holding={since=game.tick,name=m.name,at={x=math.floor(m.x+0.5),y=math.floor(m.y+0.5)}}
+          action.held_short=string.format('held short at (%.1f,%.1f): the stop (%g,%g) is in %s at (%d,%d), under attack now; the walk goes on when it has had no hit for 30 s',
+            p.position.x,p.position.y,t.position.x,t.position.y,m.name,action.holding.at.x,action.holding.at.y)
+        end
+        return nil
+      elseif action.holding then
+        action.holding=nil; action.held_short=nil; action.nav=nil
+        return nil
+      end
+    end
+    if action.holding then return nil end
     local outcome=api.navigate(p,action.nav)
     -- A leg round a nest ended: the next one starts.
     if outcome and action.nav.foes and api.leg_done and api.leg_done(p,action.nav,outcome) then outcome=nil end
@@ -893,6 +915,20 @@ return function(api)
         if #action.route_failures<8 then report.position=t.position;action.route_failures[#action.route_failures+1]=report end
         action.nav.why=report.why or action.nav.why
         if report.smaller_margins then action.nav.why=(action.nav.why or 'no route at requested clearance')..'; '..report.smaller_margins.line end
+      end
+      -- No path to it (d17 batch17 B2, Haiku ~6x: turrets in solar-panel pockets at (140..149,-40..-85) said only
+      -- "no path request found a way"): the fewest of our entities to mine for a way, as move_to says it.
+      if outcome=='unreachable' and api.corridor and not action.nav.corridor_said then
+        action.nav.corridor_said=true
+        local near=(t.entity and t.entity.valid and (p.reach_distance or 10)-1) or 2
+        local okc,c=pcall(api.corridor,p,action.nav.reachable or p.position,t.position,near)
+        if okc and c and c.mine and #c.mine>0 then
+          local names={}
+          for i,e in ipairs(c.mine) do if i<=6 then names[i]=string.format('%s (%g,%g)',e.name,e.position.x,e.position.y) end end
+          action.nav.why=(action.nav.why and action.nav.why..'; ' or '')..string.format('mining %s%s opens a way from (%.1f,%.1f) to (%.1f,%.1f)',
+            table.concat(names,' and '),#c.mine>6 and string.format(' (+%d more)',#c.mine-6) or '',c.from.x,c.from.y,c.to.x,c.to.y)
+          action.mine_for_a_way=action.mine_for_a_way or names
+        end
       end
       action.first_unreached=action.first_unreached or string.format('(%g,%g): %s%s',t.position.x,t.position.y,outcome,
         action.nav.why and ': '..action.nav.why or '')

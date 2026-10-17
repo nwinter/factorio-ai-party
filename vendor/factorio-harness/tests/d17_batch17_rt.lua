@@ -167,3 +167,22 @@ do
   force.platforms=nil
 end
 print('d17_batch17_rt A5 platform_schedule conditions: ok')
+
+-- B3 (Opus on the far-east route: no_safe_route for a roaming group, a lone big biter and an attack where he stood;
+-- he died standing where one such walk ended): a route given up only for enemies that move waits 5 s and plans again,
+-- up to 6 times; a worm or spawner in the way ends it as before; a hit while it stands ends it.
+do
+  local gp=runtime.lookup(runtime.bots.index_of('grok'))
+  local unit={attack=true,name='1 enemy unit (1 big-biter)',x=361,y=-209}
+  local nav={foes={block={m=unit,bl={x=361,y=-209,members={unit}}}}}
+  assert(runtime.avoid.moving_only(nav),'units only')
+  eq(runtime.unit_wait(gp,nav),true); eq(nav.path_state,'waiting_units'); eq(nav.unit_waits,1)
+  assert(nav.waited_for_units:find('stood and planned again 1 time, 5 s apart',1,true),nav.waited_for_units)
+  for _=2,6 do runtime.unit_wait(gp,nav) end
+  eq(nav.unit_waits,6); eq(runtime.unit_wait(gp,nav),false,'at most 6')
+  local worm={name='big-worm-turret',x=312,y=-135,range=38}
+  local nav2={foes={block={m=unit,bl={members={unit,worm}}}}}
+  eq(runtime.avoid.moving_only(nav2),nil,'a worm in the group: as before')
+  eq(runtime.unit_wait(gp,nav2),false)
+end
+print('d17_batch17_rt B3 a route blocked by moving enemies waits and plans again: ok')
