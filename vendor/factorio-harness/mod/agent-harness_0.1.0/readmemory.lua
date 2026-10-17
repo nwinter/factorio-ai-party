@@ -19,9 +19,14 @@ return function(api)
     local m=s.read_memory;m.read_entries=m.read_entries or {};m.read_slots=m.read_slots or {};m.read_next=m.read_next or 1;return m
   end
   local function key(p,q,kind) return p.force.name..'|'..p.surface.name..'|'..q.x..','..q.y..'|'..kind end
-  local function put(p,q,kind,value,box)
-    local m=store();local k=key(p,q,kind)
-    local v=copy(value)
+  -- fresh: value and box are tables observe just built from engine reads (plain fields, nothing else holds them), so
+  -- they are stored as they are; copy() would make the same tables again (d16 perf: the census observes every
+  -- building it reads, and the copies were most of a census step on world n).
+  local function put(p,q,kind,value,box,fresh)
+    local m=store()
+    local force,surface=p.force.name,p.surface.name
+    local k=force..'|'..surface..'|'..q.x..','..q.y..'|'..kind
+    local v=fresh and value or copy(value)
     -- Background sightings cannot evict detailed reads made by agents.
     local summary=kind=='summary'
     local entries,slots=summary and m.entries or m.read_entries,summary and m.slots or m.read_slots
@@ -30,17 +35,23 @@ return function(api)
       local old=slots[m[cursor]];if old then entries[old]=nil end
       slots[m[cursor]]=k;m[cursor]=m[cursor]%(summary and 2048 or 256)+1
     end
-    entries[k]={force=p.force.name,surface=p.surface.name,position=copy(q),kind=kind,value=v,box=copy(box),tick=game.tick}
+    entries[k]={force=force,surface=surface,position=fresh and {x=q.x,y=q.y} or copy(q),kind=kind,value=v,
+      box=fresh and box or copy(box),tick=game.tick}
   end
+  -- Each engine field read once (an entity's position and bounding box are new tables at every read).
   function M.observe(e,p)
-    if not e.valid or e.type=='character' or e.type=='resource' then return end
+    if not e.valid then return end
+    local t=e.type
+    if t=='character' or t=='resource' then return end
     p=p or {force=e.force,surface=e.surface}
-    if not api.visible(p,e.position) then return end
-    local v={name=e.name,type=e.type,position=copy(e.position),unit_number=e.unit_number,direction=e.direction,
+    local pos=e.position
+    if not api.visible(p,pos) then return end
+    local v={name=e.name,type=t,position={x=pos.x,y=pos.y},unit_number=e.unit_number,direction=e.direction,
       status_name=api.status_name(e),detail='last observed entity summary'}
-    if e.type=='entity-ghost' then v.ghost_name=e.ghost_name end
-    put(p,e.position,'summary',v,e.bounding_box)
-    if api.belt_observe and e.surface and e.force and e.bounding_box then api.belt_observe(e,p) end
+    if t=='entity-ghost' then v.ghost_name=e.ghost_name end
+    local box=e.bounding_box
+    put(p,pos,'summary',v,box,true)
+    if api.belt_observe and box then api.belt_observe(e,p) end
   end
   local function kind(action,a) return action=='trace' and ('trace:'..tostring(a.forward==true)..':'..tostring(a.all==true)) or 'inspect' end
   local function recall(p,a,action)

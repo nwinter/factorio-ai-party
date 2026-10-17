@@ -61,36 +61,33 @@ rcon.print(helpers.table_to_json{tick = game.tick, paused = game.tick_paused, re
   darkness = home.darkness, daytime = home.daytime})
 """
 
-# Production history for sparklines: item counts in the last hour, 2-minute buckets (one_hour precision has
-# 300 samples of 12 s; sample 1 is the newest). Summed over every surface (Space Age planets and platforms).
+# Production history for sparklines: item counts in the last hour, 30 two-minute buckets, oldest first, summed over
+# every surface (Space Age planets and platforms). The ten-hour precision's samples are two minutes each (sample 1 the
+# newest), so a bucket is one read; only surfaces where the item was ever made are read (d16 perf: the one-hour form,
+# ten samples a bucket on all 9 surfaces for 38 items, was about 118 ms in one tick every 30 s on world n, 342
+# item-surface pairs at 0.35 ms; 141 of them had ever made anything).
 FLOW_LUA = r"""
-local all = {}
-for _, s in pairs(game.surfaces) do all[#all+1] = game.forces.player.get_item_production_statistics(s) end
+local f = game.forces.player
 local out = {}
-for _, n in ipairs(ITEMS) do
-  local made = 0
-  if prototypes.item[n] then for _, stats in ipairs(all) do made = made + stats.get_input_count(n) end end
-  if made > 0 then
-  local series = {}
-  for b = 30, 1, -1 do
-    local c = 0
-    for _, stats in ipairs(all) do
-      for k = (b - 1) * 10 + 1, b * 10 do
-        c = c + stats.get_flow_count{name = n, category = "input", precision_index = defines.flow_precision_index.one_hour, sample_index = k, count = true}
+for _, s in pairs(game.surfaces) do
+  local st = f.get_item_production_statistics(s)
+  for _, n in ipairs(ITEMS) do
+    if prototypes.item[n] and st.get_input_count(n) > 0 then
+      local series = out[n] or {}
+      for b = 30, 1, -1 do
+        local c = st.get_flow_count{name = n, category = "input", precision_index = defines.flow_precision_index.ten_hours, sample_index = b, count = true}
+        series[31 - b] = (series[31 - b] or 0) + c
       end
+      out[n] = series
     end
-    series[#series+1] = c
-  end
-  out[n] = series
   end
 end
 rcon.print(helpers.table_to_json(out))
 """
 
 # Science packs the labs used, as FLOW_LUA's 30 two-minute buckets over the last hour, oldest first (the production
-# statistics' consumption side: labs are what consume science packs). The ten-hour precision's samples are two
-# minutes each, so a bucket is one read (FLOW_LUA's one-hour samples take ten). Only surfaces where a pack was ever
-# consumed are read.
+# statistics' consumption side: labs are what consume science packs), read the same way. Only surfaces where a pack
+# was ever consumed are read.
 USED_FLOW_LUA = r"""
 local f = game.forces.player
 local out = {}

@@ -18,13 +18,18 @@ return function(api)
     end
     return m.chunks[k]
   end
+  -- Each engine field read once (d16 perf: the census observes every belt it reads; a position is a new table at
+  -- every read).
   function M.observe(e,p)
-    local t=e.type=='entity-ghost' and e.ghost_type or e.type
+    local t=e.type
+    if t=='entity-ghost' then t=e.ghost_type end
     if BELT[t] then
-      local x,y=math.floor(e.position.x/32),math.floor(e.position.y/32)
-      if e.force.is_chunk_visible(e.surface,{x=x,y=y}) or p and p.position and
-        (e.position.x-p.position.x)^2+(e.position.y-p.position.y)^2<=32^2 then
-        local c=register(e.force,e.surface,x,y)
+      local pos=e.position
+      local x,y=math.floor(pos.x/32),math.floor(pos.y/32)
+      local f,s=e.force,e.surface
+      if f.is_chunk_visible(s,{x=x,y=y}) or p and p.position and
+        (pos.x-p.position.x)^2+(pos.y-p.position.y)^2<=32^2 then
+        local c=register(f,s,x,y)
         M.remember(c,e)
       end
     end
@@ -41,22 +46,26 @@ return function(api)
   end
   -- Each belt's previous item observation survives an empty sample. Missing
   -- tiles become alerts only after a later visible chunk snapshot confirms it.
+  local function item_count(e) return e.get_item_count() end
   function M.remember(c,e,tiles,p)
-    local ghost=e.type=='entity-ghost';local t=ghost and e.ghost_type or e.type
-    local row={name=ghost and e.ghost_name or e.name,position={x=e.position.x,y=e.position.y},direction=e.direction,
-      ghost=ghost or nil,type=t,tick=game.tick,by=e.last_user and e.last_user.name or nil}
-    local old=c.tiles and c.tiles[key(math.floor(e.position.x),math.floor(e.position.y))]
+    local et=e.type
+    local ghost=et=='entity-ghost';local t=ghost and e.ghost_type or et
+    local pos,user=e.position,e.last_user
+    local row={name=ghost and e.ghost_name or e.name,position={x=pos.x,y=pos.y},direction=e.direction,
+      ghost=ghost or nil,type=t,tick=game.tick,by=user and user.name or nil}
+    local old=c.tiles and c.tiles[key(math.floor(pos.x),math.floor(pos.y))]
     if not ghost then
-      local ok,n=pcall(function() return e.get_item_count() end)
+      local ok,n=pcall(item_count,e)
       row.carried_tick=ok and n>0 and game.tick or old and old.carried_tick
       row.items=ok and n or nil
     end
     if t=='underground-belt' and not ghost then
       row.belt_to_ground_type=e.belt_to_ground_type
       local other=e.neighbours
-      if other and other.valid and (e.force.is_chunk_visible(e.surface,{x=math.floor(other.position.x/32),y=math.floor(other.position.y/32)})
-        or p and p.position and (other.position.x-p.position.x)^2+(other.position.y-p.position.y)^2<=32^2) then
-        row.paired_with={x=other.position.x,y=other.position.y}
+      local op=other and other.valid and other.position
+      if op and (e.force.is_chunk_visible(e.surface,{x=math.floor(op.x/32),y=math.floor(op.y/32)})
+        or p and p.position and (op.x-p.position.x)^2+(op.y-p.position.y)^2<=32^2) then
+        row.paired_with={x=op.x,y=op.y}
       end
     end
     c.tiles=c.tiles or {};tiles=tiles or c.tiles
