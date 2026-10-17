@@ -5805,3 +5805,35 @@ fh watch    # deploy on every change
 - `place_ghosts`/`paste`/`build` dry run (E12, Astra): blocked entities are listed first and all of them in `blocked`
   (up to 200, `blocked_more`) apart from needs_tiles. On the copy, a hub collision listed ahead of two turrets needing
   foundation.
+
+## d16 batch9 (operator 21:25; agents' requests at the 21:20 poll)
+- move_to arrived short (A1, Opus 21:20, 2-3 times a shift): the journal's far ones (149 to 307 tiles) were walks round
+  nests whose `off_belt` stepped off a belt or rail at a corner. The step-off was kept on the walk, so each later leg
+  read arrived at once until the corners ran out. A nest leg now clears it, and corners step off nothing (only the last
+  leg does). Any end that would read arrived more than the tolerance + 3 tiles from the goal (+ 16 for arrived_near;
+  not within a target's reach) ends `stopped_short`, `why` saying where, how far and the legs round enemies.
+  Reproduced on the copy: Opus's walk from (418,-276) to (100,-175) with belts laid on its corners ended "arrived" at
+  (372.4,-200.2) under main; with this batch it arrived at (99.6,-173.7).
+- build stepping aside (A2, Muse 21:20: `built: 0` while the biolab went down a moment later, and the retry failed for
+  want of the item): the reply gives `not_yet`, `still_to_build` and `built_so_far` instead of `built`; the result is in
+  last (`last.result.built`). A build refused for want of the item names the entity of that item already standing at
+  the position. On the copy: a stone furnace on Opus's spot stepped aside, then read built 1, and the retry said
+  `stone-furnace already stands at (111,-149)`.
+- transfer dry run with `to` (A3, Luna 21:20: the source provider read as "the chest accepting the item"): `courier`
+  gives the source (the first holding the item, what it holds, robots' reservations), the destination (whether it
+  takes the item, the room), and how many would move; the route runs through both. On the copy: `takes spoilage from
+  iron-chest (3.5,15.5) holds 6400 spoilage, gives it at requester-chest (1.5,17.5): yes, takes spoilage into chest,
+  room for 9600: 500 would move (asked 500)`.
+- Grok's 21:21 (A4), beside batch8 E9 and B2 (live from 21:35): hatch, spoil and egg-alert lines now lead with the
+  count-weighted share and how many are at 50% or more: `(all 15: 60% spoiled by count, 10 at 50% or more, 33-73%; that
+  stack 73%)`. Arrival estimates: a ship speeding up (under 90% of its cruise, the last leg's top speed) flies the rest
+  at its cruise (`eta_from` says so), so a ship just launched no longer reads every pack spoiling before arrival;
+  platform_endurance takes the last leg's average then. Before departure, a stop where an agent's queue step or order
+  sends the platform on (B2's departure lines) counts its time waits as an upper bound and names the queue (`ETA ...
+  after gleba: sent on by sol's queue ...`).
+- `platform` (A5, Gemini 21:29: `fh call platform` was an unsupported action 14 times in shift25): an action now,
+  `platform {platform | name}` reads as `platforms {platform}`. Walking tours (load_silo, transfer, collect, feed,
+  rearm, refuel) end each leg once within transfer reach of the entity, as `move_to {target}` does, instead of walking
+  toward its centre (a silo's lies inside it). Gemini's failed silo walk started boxed in among storage chests (the C4
+  case); its why named the chest to mine. On the copy, a walking load from 30 tiles off stopped at (-78.7,82), within
+  reach, and loaded.

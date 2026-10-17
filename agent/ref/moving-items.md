@@ -86,3 +86,6 @@
 - A burner's fuel slot holds one fuel type: you cannot add coal while wood remains.
 
 - `cancel_craft {all: true}` cancels every queued hand craft, the latest first.
+- `transfer {from|positions with pick, to, dry_run: true}` gives `courier`: the source and what it holds (robots'
+  reservations), the destination and its room, and how many would move. Tour stops end once within transfer reach of
+  the entity (a silo, a pad), as `move_to {target}` does.

@@ -200,10 +200,19 @@ return function(api)
   -- "pentapod-egg*12: the first hatches in 3m10s into big-wriggler-pentapod-premature (78% spoiled)"; earliest first.
   -- The first stack's share, and the whole spread as transfer and inspect give it (E9, Grok 19:50: a hatch line said 91%
   -- for a belt's first egg; the eggs he picked up there read 19% as a batch: two numbers for different stacks).
+  -- A4 (Grok 21:21: an alert at 86-92% read as the whole chest that stale): the count-weighted share and how many are
+  -- over 50% first, then the first stack's.
+  local function spread_lead(count, mean, over50, first, min, max)
+    if count > 1 and min and max and min ~= max then
+      return string.format('all %d: %d%% spoiled by count, %d at 50%% or more, %d-%d%%; that stack %d%%', count, mean, over50 or 0, min, max, first)
+    end
+    return string.format('%d%% spoiled', first)
+  end
+  M.spread_lead = spread_lead
   local function share_text(r)
     local first = math.floor(r.percent * 100 + 0.5)
-    if r.count > 1 and r.min and r.max and r.wsum and pc(r.min) ~= pc(r.max) then
-      return string.format('that stack %d%% spoiled; all %d: %d-%d%%, %d%% by count', first, r.count, pc(r.min), pc(r.max), pc(r.wsum / r.count))
+    if r.count > 1 and r.min and r.max and r.wsum then
+      return spread_lead(r.count, pc(r.wsum / r.count), r.buckets and r.buckets[3] + r.buckets[4] or nil, first, pc(r.min), pc(r.max))
     end
     return string.format('%d%% spoiled', first)
   end
@@ -407,7 +416,7 @@ return function(api)
           if e.unit_number then job.done[e.unit_number] = true end
           for _, r in ipairs(M.hatching_in(e, names)) do
             job.found[#job.found+1] = {surface=e.surface.name, position={x=e.position.x, y=e.position.y}, entity=e.name, item=r.key, count=r.count,
-              soon=r.soon, tick=r.tick, percent=r.percent, min=r.min and pc(r.min), max=r.max and pc(r.max), mean=r.wsum and r.count > 0 and pc(r.wsum / r.count) or nil,
+              soon=r.soon, tick=r.tick, percent=r.percent, min=r.min and pc(r.min), max=r.max and pc(r.max), mean=r.wsum and r.count > 0 and pc(r.wsum / r.count) or nil, over50=r.buckets and r.buckets[3] + r.buckets[4] or nil,
               by=try(function() return e.last_user and e.last_user.name end)}
           end
         end
@@ -439,7 +448,7 @@ return function(api)
       if e.valid and not (e.unit_number and job.done[e.unit_number]) then
         for _, r in ipairs(M.hatching_in(e, names)) do
           job.found[#job.found+1] = {surface=e.surface.name, position={x=e.position.x, y=e.position.y}, entity=e.name, item=r.key, count=r.count,
-            soon=r.soon, tick=r.tick, percent=r.percent, min=r.min and pc(r.min), max=r.max and pc(r.max), mean=r.wsum and r.count > 0 and pc(r.wsum / r.count) or nil, by=e.type == 'character' and api.character_name and api.character_name(e) or try(function() return e.last_user and e.last_user.name end)}
+            soon=r.soon, tick=r.tick, percent=r.percent, min=r.min and pc(r.min), max=r.max and pc(r.max), mean=r.wsum and r.count > 0 and pc(r.wsum / r.count) or nil, over50=r.buckets and r.buckets[3] + r.buckets[4] or nil, by=e.type == 'character' and api.character_name and api.character_name(e) or try(function() return e.last_user and e.last_user.name end)}
         end
       end
     end
@@ -491,10 +500,8 @@ return function(api)
   function M.place_text(place, here)
     local h = M.hatch(place.item:match('^[^@]+'))
     -- the spread as transfer and inspect give it, beside the first stack's share (E9)
-    local share = string.format('%d%% spoiled', math.floor(place.percent * 100 + 0.5))
-    if place.count > 1 and place.min and place.max and place.mean and place.min ~= place.max then
-      share = string.format('that stack %d%% spoiled; all %d: %d-%d%%, %d%% by count', math.floor(place.percent * 100 + 0.5), place.count, place.min, place.max, place.mean)
-    end
+    local share = place.mean and spread_lead(place.count, place.mean, place.over50, math.floor(place.percent * 100 + 0.5), place.min, place.max)
+      or string.format('%d%% spoiled', math.floor(place.percent * 100 + 0.5))
     return string.format('%d %s in %s at %s%s: the first hatch%s in %s (%s)%s%s', place.count, place.item, place.entity, at(place.position),
       place.surface ~= here and ' on ' .. place.surface or '', h and ' into ' .. h.entity or '', secs(place.tick - game.tick),
       share,

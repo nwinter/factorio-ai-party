@@ -259,7 +259,7 @@ local done=bot('status',{}).last; eq(done.outcome,'fed'); eq(done.result.consume
 -- In a batch the entries before stay built, the rest go on after the step.
 c.position={x=6.1,y=0}; c.items['stone-furnace']=2
 local batch=bot('build',{item='stone-furnace',builds={{position={x=3,y=3}},{position={x=6,y=0}}}})
-eq(batch.built,1); assert(math.abs(batch.stepping_aside.to.x-6.85)<1e-9); eq(c.items['stone-furnace'],1)
+eq(batch.built,nil); eq(batch.built_so_far,1); eq(batch.still_to_build,1); assert(batch.not_yet:find('stepping aside first',1,true)); assert(math.abs(batch.stepping_aside.to.x-6.85)<1e-9); eq(c.items['stone-furnace'],1)
 c.position={x=6.7,y=0}; advance(1)
 done=bot('status',{}).last; eq(done.outcome,'fed'); eq(done.result.built,1); eq(done.result.built_before,1); eq(c.items['stone-furnace'],0)
 -- A queued build waits through the step and succeeds.

@@ -393,6 +393,11 @@ return function(api)
     if not p.can_reach_entity(e) then
       if not action.nav then
         action.nav={position=t.position,tolerance=t.pickup_reach and math.max(0.1,t.pickup_reach-0.2) or math.max(1,(p.reach_distance or 10)-3),max_stalls=6,replans=0,stalled=0,last_position=p.position}
+        -- an entity stop: arrived once within its transfer reach (A5, Gemini 21:29: a silo's centre lies inside it)
+        if t.entity and t.entity.valid and not t.pickup_reach and api.reach_target then
+          local okr,rt=pcall(api.reach_target,p,t.entity)
+          if okr and rt then action.nav.reach_target=rt end
+        end
         api.request_path(p,action.nav)
       end
       local outcome=api.navigate(p,action.nav)
@@ -752,6 +757,11 @@ return function(api)
         end
       end
       action.nav={position=t.position,tolerance=t.pickup_reach and math.max(0.1,t.pickup_reach-0.2) or math.max(1,(p.reach_distance or 10)-3),max_stalls=6,replans=0,stalled=0,last_position=p.position}
+      -- an entity stop: arrived once within its transfer reach (A5, Gemini 21:29: a silo's centre lies inside it)
+      if t.entity and t.entity.valid and not t.pickup_reach and api.reach_target then
+        local okr,rt=pcall(api.reach_target,p,t.entity)
+        if okr and rt then action.nav.reach_target=rt end
+      end
       -- avoid_mode (recover; transfer from: "nearest" walking, friction3: worms killed Opus on such a tour along a turret
       -- line): the walk keeps out of the enemy reach the map shows, as move_to's.
       if action.avoid_mode and api.avoid_start then api.avoid_start(p,action.nav,action.avoid_mode) end

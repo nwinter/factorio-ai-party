@@ -26,16 +26,21 @@ return function(api)
   -- km per minute: flying now, else the last finished leg's average.
   local function speed(pl)
     local v = try(function() return pl.speed end)
-    if type(v) == 'number' and v > 0 and try(function() return pl.space_connection end) then return v * 3600, 'now' end
+    local last, last_by
     local segs = api.segments and api.segments(pl) or {}
     for i = #segs, 1, -1 do
       local s = segs[i]
       if s.kind == 'leg' and not s.partial and s['end'] and s.from and s.to and s['end'] > s.start then
         local len = connection(s.from, s.to)
-        if len then return len / ((s['end'] - s.start) / 3600), string.format('the last leg %s->%s', s.from, s.to) end
+        if len then last, last_by = len / ((s['end'] - s.start) / 3600), string.format('the last leg %s->%s', s.from, s.to); break end
       end
     end
-    return nil, nil
+    if type(v) == 'number' and v > 0 and try(function() return pl.space_connection end) then
+      -- speeding up after a departure (A4): the last leg's average when it is higher
+      if last and v * 3600 < last * 0.9 then return last, last_by .. ' (it speeds up now, ' .. math.floor(v * 3600) .. ' km/min)' end
+      return v * 3600, 'now'
+    end
+    return last, last_by
   end
   -- The route as stops: given, else the schedule from its current record round to it.
   local function route_of(pl, given)

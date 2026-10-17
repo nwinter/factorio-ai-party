@@ -5250,4 +5250,16 @@ end)()
   eq(runtime.accepts_text(bio,{item='bioflux'}),'yes: biochamber (5.5,5.5) takes bioflux into fuel','a fuel the recipe does not take')
   eq(runtime.accepts_text(bio,{item='nutrients',inventory='fuel'}),'yes: biochamber (5.5,5.5) takes nutrients into fuel','inventory fuel named')
 end)()
+-- A1 (Opus 21:20): an end that says arrived far from the goal is stopped_short, with where and why.
+do
+  local saved={x=p.position.x,y=p.position.y}
+  p.position={x=318.6,y=-294.3}
+  local action={position={x=100,y=-175},tolerance=0.5,foes={goal={x=100,y=-175},tolerance=0.5,legs=3}}
+  eq(runtime.short_check(p,action,'arrived'),'stopped_short')
+  assert(action.why:find('the walk stopped at (318.6,-294.3), 249 tiles from (100,-175), after 3 legs round enemies',1,true),action.why)
+  p.position={x=101,y=-176}
+  eq(runtime.short_check(p,{position={x=100,y=-175},tolerance=0.5},'arrived'),'arrived')
+  eq(runtime.short_check(p,{position={x=110,y=-175},tolerance=0.5},'arrived_near'),'arrived_near','within 16 for arrived_near')
+  p.position=saved
+end
 print('runtime: '..assertions..' assertions passed')

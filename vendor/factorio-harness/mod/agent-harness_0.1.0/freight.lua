@@ -59,8 +59,13 @@ return function(api)
     local length = try(function() return c.length end) or 0
     local left = (1 - flown) * length
     local speed = try(function() return pl.speed end)
+    -- Speeding up (well under its cruise): the rest at cruise speed (A4).
+    local cruise = M.cruise and M.cruise(pl)
+    local at_cruise = cruise and type(speed) == 'number' and speed < cruise * 0.9
+    local v = at_cruise and cruise or speed
     return {from=back and to or from, to=back and from or to, flown=flown, length=length, left_km=left,
-      eta_ticks=type(speed) == 'number' and speed > 0 and left / speed or nil, back=back}
+      eta_ticks=type(v) == 'number' and v > 0 and left / v or nil, back=back,
+      eta_from=at_cruise and string.format('about: it speeds up (%.0f km/s now), the rest at its cruise of %.0f km/s', speed * 60, cruise * 60) or nil}
   end
   -- {at (a space location, when there), stopped (there and not on its path),
   -- leg (M.leg while flying), text}. The platforms row and platform_arrived
@@ -391,7 +396,23 @@ return function(api)
     M.phase_step(rec, pl, w)
     -- The last flying speed (the arrival estimate before a departure reads it).
     local v = w.leg and try(function() return pl.speed end)
-    if type(v) == 'number' and v > 0 then rec.speed, rec.speed_tick = v, tick end
+    if type(v) == 'number' and v > 0 then
+      rec.speed, rec.speed_tick = v, tick
+      -- Cruise: the top speed of each leg (A4, Grok 21:21: just after launch, at near-zero speed, every pack read as
+      -- spoiling before the arrival); a new leg keeps the last one's top as cruise until it passes it.
+      local lk = w.leg.from .. '>' .. w.leg.to
+      if rec.leg_key ~= lk then
+        if rec.leg_top then rec.cruise = rec.leg_top end
+        rec.leg_key, rec.leg_top = lk, 0
+      end
+      rec.leg_top = math.max(rec.leg_top or 0, v)
+    end
+  end
+  -- The speed an estimate flies at: the higher of now and the cruise (km a tick); nil before any flight seen.
+  function M.cruise(pl)
+    local rec = store()[pl.index]
+    local c = rec and math.max(rec.cruise or 0, rec.leg_top or 0) or 0
+    return c > 0 and c or nil
   end
   -- The arrival at `location` estimated before the platform leaves its stop (Sonnet, every shift: a wait for the
   -- platform at her planet said "no estimate" until it departed): the schedule from the current stop, its wait
@@ -461,7 +482,7 @@ return function(api)
     if try(function() return pl.paused end) then return nil, 'platform is paused' end
     local cur = sch.current or 1
     local rec = store()[pl.index]
-    local speed = rec and rec.speed
+    local speed = M.cruise(pl) or rec and rec.speed
     local seg = rec and rec.segs and rec.segs[#rec.segs]
     local started = seg and not seg['end'] and seg.kind == 'stop' and seg.start or nil
     local secs, untimed, parts = 0, {}, {}
@@ -469,7 +490,16 @@ return function(api)
     -- A stop's waits: joined by and, the platform leaves after the longest time condition and when the others are met
     -- (named, not timed); with an or among them, at most the shortest time condition (the others may end it sooner).
     local upper = false
+    -- What sends it on besides its waits (B2 departure.lua; A4, Grok 21:21: the estimate added the printed 3600 s while
+    -- a queue sent the ship on once cargo landed): at such a stop the time waits are an upper bound, the queue named.
+    local sent = api.departure and try(function() return api.departure(pl.name) end)
     local function waits(r, here_now)
+      if sent and #sent > 0 then
+        local list = {}
+        for k, c in ipairs(r.wait_conditions or {}) do list[#list+1] = (k > 1 and (c.compare_type == 'or' and 'or ' or 'and ') or '') .. wait_text(c) end
+        list[#list+1] = 'or sooner: ' .. sent[1]
+        return 0, {'sent on by ' .. sent[1]}, list
+      end
       local list, longest, shortest, other, any_or = {}, 0, nil, {}, false
       for k, c in ipairs(r.wait_conditions or {}) do
         if k > 1 and c.compare_type == 'or' then any_or = true end
@@ -490,7 +520,7 @@ return function(api)
       if not speed then return nil, 'no flying speed seen yet for ' .. pl.name end
       local s = route.km / speed / 60
       secs = secs + s
-      parts[#parts+1] = string.format('%s->%s %d km%s at %.0f km/s (its last speed): %ds', from, to, math.floor(route.km + 0.5),
+      parts[#parts+1] = string.format('%s->%s %d km%s at %.0f km/s (its cruise): %ds', from, to, math.floor(route.km + 0.5),
         #route.via > 0 and ' via ' .. table.concat(route.via, ', ') .. (route.also and ' (as short through ' .. route.also .. ')' or '') or '',
         speed * 60, math.floor(s + 0.5))
       return true
@@ -501,7 +531,8 @@ return function(api)
       if not leg.eta_ticks then return nil, 'its speed is zero or unread now' end
       secs = leg.eta_ticks / 60
       speed = speed or (leg.left_km > 0 and leg.left_km / leg.eta_ticks) or nil
-      parts[#parts+1] = string.format('flying %s->%s: %d km left at its speed now: %ds', leg.from, leg.to, math.floor(leg.left_km + 0.5), math.floor(secs + 0.5))
+      parts[#parts+1] = string.format('flying %s->%s: %d km left at %s: %ds', leg.from, leg.to, math.floor(leg.left_km + 0.5),
+        leg.eta_from and 'its cruise (it speeds up now)' or 'its speed now', math.floor(secs + 0.5))
       at = leg.to
       if leg.to == location then
         return {eta_s=math.ceil(secs), after_s=math.ceil(secs), line=string.format('ETA %ds: %s', math.ceil(secs), table.concat(parts, '; '))}

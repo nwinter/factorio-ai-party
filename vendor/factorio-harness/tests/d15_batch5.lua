@@ -179,7 +179,7 @@ do
   r=F.before_departure(pl,'vulcanus')
   -- 2500 ticks of flight left (42 s), 20 s at Gleba, 15000 km at 2 km a tick (125 s)
   eq(r.eta_s,math.ceil(2500/60+20+125))
-  has(r.line,'flying fulgora->gleba: 5000 km left at its speed now: 42s; stops at gleba (time 20s); gleba->vulcanus 15000 km at 120 km/s (its last speed): 125s')
+  has(r.line,'flying fulgora->gleba: 5000 km left at its speed now: 42s; stops at gleba (time 20s); gleba->vulcanus 15000 km at 120 km/s (its cruise): 125s')
   local W=dofile('mod/agent-harness_0.1.0/waiteta.lua'){before_departure=function(a,b) return F.before_departure(a,b) end}
   local row=W.estimate({},{['until']='platform_arrived',platform='Tern',location='vulcanus'},false,{platform=pl,leg=F.leg(pl)},{})
   eq(row.eta_s,r.eta_s); has(row.line,'through its schedule: flying fulgora->gleba')
