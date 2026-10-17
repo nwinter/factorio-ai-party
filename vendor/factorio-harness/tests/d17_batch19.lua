@@ -78,3 +78,44 @@ do
   defines,prototypes=nil,nil
 end
 print('d17_batch19 A3 platform_bom counts module requests and what robots carry: ok')
+
+-- B2 (Astra: Swiftlet's mixed-ingredient control deadlocked; inspect showed eight tiles and the whole-belt read covered
+-- fewer): a whole-belt reader whose belt segment (the belts sharing its total_segment_length, as the game counts the
+-- read) is shorter than the belt in line through it, undergrounds crossed, names the belts left out.
+do
+  defines={wire_connector_id={circuit_red=1,circuit_green=2},control_behavior={transport_belt={content_read_mode={entire_belt_hold=2}}}}
+  local belts={}
+  -- 8 tiles east, x=0..7; the reader at x=1; an underground pair at x=3 (input) and x=5 (output); the segment ends
+  -- after the underground's exit: x=0..5 are 6 tiles of it, x=6..7 another segment
+  local function belt(x,t,io)
+    local b={valid=true,type=t or 'transport-belt',name=t or 'transport-belt',belt_to_ground_type=io,unit_number=x+100,position={x=x+0.5,y=0.5},
+      belt_neighbours={inputs={},outputs={}}}
+    b.get_transport_line=function() return {total_segment_length=x<=5 and 6 or 2} end
+    b.get_control_behavior=function() return x==1 and {read_contents=true,read_contents_mode=2} or {} end
+    b.get_circuit_network=function(w) if x==1 and w==1 then return {network_id=12,signals={}} end end
+    belts[#belts+1]=b
+    return b
+  end
+  for x=0,7 do belt(x,(x==3 or x==5) and 'underground-belt' or nil,x==3 and 'input' or x==5 and 'output' or nil) end
+  for i=1,7 do
+    if belts[i].belt_to_ground_type~='input' then belts[i].belt_neighbours.outputs={belts[i+1]}; belts[i+1].belt_neighbours.inputs={belts[i]} end
+  end
+  -- (x=4 is under the ground: the input at x=3 pairs with the exit at x=5)
+  belts[4].neighbours=belts[6]; belts[6].neighbours=belts[4]
+  belts[5].belt_neighbours={inputs={},outputs={}}
+  table.remove(belts,5)
+  local surface={find_entities_filtered=function(f) if f.type=='asteroid-collector' then return {} end return belts end}
+  local pl={name='Swiftlet',surface=surface,force='player'}
+  local C=dofile('mod/agent-harness_0.1.0/circaudit.lua'){platform=function() return pl end}
+  local r=C.read({},{platform='Swiftlet'})
+  eq(r.belt_readers,1)
+  eq(#r.short_reads,1)
+  local s=r.short_reads[1]
+  eq(s.physical_belts,7); eq(s.segment_tiles,6); eq(#s.left_out,1); eq(s.left_out[1].side,'downstream'); eq(s.left_out[1].belts,2)
+  has(r.lines[1],'transport-belt (1.5,0.5) reads its whole belt onto red #12, and the game counts only its belt segment (6 tiles, 5 of the 7 belts in line); left out of the read: 2 belts downstream from (6.5,0.5) to (7.5,0.5)')
+  -- one segment all along: nothing said
+  for _,b in ipairs(belts) do b.get_transport_line=function() return {total_segment_length=7} end end
+  eq(C.read({},{platform='Swiftlet'}).short_reads,nil)
+  defines=nil
+end
+print('d17_batch19 B2 a whole-belt read shorter than its belt names what it leaves out: ok')
