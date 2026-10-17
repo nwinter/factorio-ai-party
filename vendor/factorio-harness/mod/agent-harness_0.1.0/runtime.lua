@@ -14624,7 +14624,7 @@ M.pushalerts=require('pushalerts'){belt_groups=function(f)
     return out
   end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,agents=function() return M.board.agents() end,who=M.board.who,
   first_spoil=function(inv) return survey.first_spoil(inv) end,
-  burnt_stuck=function(e) return M.burnt.stuck(e) end,
+  burnt_stuck=function(e) return M.burnt.stuck(e) end,condition_text=function(c) return M.circuits.condition_text(c) end,
   claim_surface=function(i) return M.claims.surface_of(i) end,
   status_name=function(e) return entity_status_names[e.status] end,
   place=function(index) return M.where.place(index) end,targets=M.targets,

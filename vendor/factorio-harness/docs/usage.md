@@ -6595,3 +6595,13 @@ fh watch    # deploy on every change
   3. Copy: supply engine-unit and iron-gear-wheel name the copy's engine lines held at `engine-unit < 500`; supply
   over iron-plate, electronic-circuit and engine-unit took 110 ms on the copy against 115 ms without the check (9
   reads each). tests/d17_batch18.lua.
+- B2 (Grok): the agricultural science biochamber stopped when the network's bioflux fell under 200, and nothing told
+  its builder. pushalerts.lua's scan now groups assemblers, furnaces, labs, drills and silos whose status is
+  disabled_by_control_behavior as `off_by_condition`. Each detail reads `biochamber (14.5,31.5)
+  (agricultural-science-pack): off by its logistic condition bioflux > 200 (bioflux 0 now)`: each unmet condition (an
+  ignored one, with no wire, is not unmet) with its first signal's value on the machine's red and green wires or in the
+  logistic network over it. A machine whose unmet conditions are all on what its recipe makes (a stock cap) is left
+  out. As every push alert, a new or grown group is one team line to its builders and claim owners (the nearest agent
+  when neither). Copy: 8 groups on 5 surfaces, Grok's chamber among them (bioflux 0); the stock-capped gear assembler
+  (iron-gear-wheel < 5) is not listed. The read over the copy's 1282 machines (128 off) took 3.7-4.3 ms, spread over
+  the background read's slices. tests/pushalerts.lua, game_alerts_groups.lua.

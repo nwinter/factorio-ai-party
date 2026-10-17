@@ -117,7 +117,10 @@
 - `game_alerts {kind?, surface?}`: the game's alerts and warnings in groups, worst first. `kind: "no_power"` groups
   connected machines without power by electric network, isolated drill networks included; `kind: "belt_cut"` names
   observed gaps in belts that carried items, and a rebuilt gap clears; a depleted-drill alert includes one remembered
-  placement on the same resource (`drill_sites` lists more).
+  placement on the same resource (`drill_sites` lists more). `kind: "off_by_condition"`: machines off by their own
+  circuit or logistic condition, each with the condition and what its signal reads now (`bioflux > 200 (bioflux 150
+  now)`); one whose unmet conditions are all on what its recipe makes (a stock cap) is not listed. A new group is one
+  team alert line to its builders and claim owners.
 - `belt_gaps {from, to, via?, surface?}`: remembered belt gaps and ghosts along the line, with observation ticks;
   unrecorded tiles are unknown. A leg that is not straight follows the remembered belt round its corners (`followed`).
   A missing tile in sight names what stands on it (`blocked_by`, `line`). Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
