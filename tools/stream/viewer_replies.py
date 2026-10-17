@@ -12,8 +12,12 @@ Not counted (shifts 15-16, chat.jsonl): a viewer named in the third person ("Foo
 and an agent's next line after a viewer's @mention of it that names nobody (33 and 67 lines, nearly all team status).
 The viewer line a reply answers: the named viewer's latest line before it within the window, one addressed to the
 replying agent ("@sol ...") first; with several viewers named, the latest of their lines.
+The Operator's replies (Nick, d16 18:32: one threaded under the wrong line): a viewer line to the Operator ("Operator,
+..." / "@operator ...") goes to RUN/operator-inbox.jsonl and never into the game chat, so for the Operator the viewer
+lines include the run's inbox rows from viewers (`inbox_lines`), and a line addressed to the Operator ("Operator," /
+"Operator:" / "@operator" at the start, any case) is the one it answers first.
 """
-import re
+import datetime, json, re
 
 WINDOW_S = 15 * 60  # a viewer "wrote recently": within this many seconds (game ticks / 60, else wall time)
 LEAD = (r"thanks|thank you|yes|no|yeah|yep|nope|sorry|hi|hey|hello|good|ok|okay|right|fair|true|understood|agreed|"
@@ -78,10 +82,53 @@ def speaker(line):
     return None
 
 
+def wall_t(line):
+    """A line's wall time: `t`, else chat.jsonl's `logged_at` (local time), else None."""
+    if line.get("t") is not None:
+        return float(line["t"])
+    try:
+        return datetime.datetime.fromisoformat(str(line.get("logged_at"))).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
 def _age_s(later, earlier):
     if later.get("tick") is not None and earlier.get("tick") is not None:
         return (later["tick"] - earlier["tick"]) / 60.0
-    return (later.get("t") or 0) - (earlier.get("t") or 0)
+    a, b = wall_t(later), wall_t(earlier)  # an inbox row has no game tick
+    return a - b if a is not None and b is not None else -1.0
+
+
+TO_OPERATOR = re.compile(r"^\s*(?:@operator\b|operator\s*[,:])", re.I)
+
+
+def inbox_lines(rows):
+    """The viewer rows of RUN/operator-inbox.jsonl ({t, agent: "viewer NAME", text, viewer: true, source}) as viewer lines
+    for classify: {from, viewer, text, t, source, inbox: true}. Agents' requests (no viewer) are left out."""
+    out = []
+    for r in rows or []:
+        if not isinstance(r, dict) or not r.get("viewer") or not str(r.get("agent") or "").lower().startswith("viewer "):
+            continue
+        line = {"from": r["agent"], "viewer": True, "text": str(r.get("text") or ""), "t": r.get("t"), "inbox": True}
+        if r.get("source"):
+            line["source"] = r["source"]
+        out.append(line)
+    return out
+
+
+def read_inbox(path):
+    """inbox_lines of an operator-inbox.jsonl file ([] when there is none)."""
+    rows = []
+    try:
+        with open(path) as f:
+            for raw in f:
+                try:
+                    rows.append(json.loads(raw))
+                except ValueError:
+                    pass
+    except OSError:
+        return []
+    return inbox_lines(rows)
 
 
 def bare(text):
@@ -98,13 +145,17 @@ def words(text, skip=()):
     return {w[:5] for w in re.findall(r"[a-z0-9']{4,}", str(text or "").lower()) if w not in STOP and w not in skip}
 
 
-def classify(line, viewer_lines):
+def classify(line, viewer_lines, inbox=()):
     """For an agent's or the Operator's line and the viewer lines before it (oldest first): None, or {kind: "reply"
-    | "to_viewers", to: [viewer names], answers: the viewer line it answers or None}."""
+    | "to_viewers", to: [viewer names], answers: the viewer line it answers or None}. inbox: the run's inbox_lines,
+    for the Operator's lines only."""
     who = speaker(line)
     if not who:
         return None
-    recent = [v for v in viewer_lines if viewer_name(v) and 0 <= _age_s(line, v) <= WINDOW_S]
+    lines = list(viewer_lines)
+    if who == "operator" and inbox:
+        lines = sorted(lines + list(inbox), key=lambda v: wall_t(v) or 0)
+    recent = [v for v in lines if viewer_name(v) and 0 <= _age_s(line, v) <= WINDOW_S]
     names = []
     for v in recent:
         n = viewer_name(v)
@@ -116,7 +167,8 @@ def classify(line, viewer_lines):
     if named:
         low = [n.lower() for n in named]
         pool = [v for v in recent if viewer_name(v).lower() in low]
-        to_me = [v for v in pool if re.match(r"^\s*@" + re.escape(who) + r"\b", str(v.get("text") or "").lower())]
+        to_me = [v for v in pool if re.match(r"^\s*@" + re.escape(who) + r"\b", str(v.get("text") or "").lower())
+                 or (who == "operator" and TO_OPERATOR.match(str(v.get("text") or "")))]
         pick = None
         if pool:
             # the latest, unless an earlier one shares at least two more words with the answer (chatfeed.js questionFor)
@@ -135,8 +187,9 @@ def classify(line, viewer_lines):
     return None
 
 
-def replies(lines, window_s=WINDOW_S):
-    """Every reply and viewer-addressed line in a chat log (oldest first) -> [(line, result)]."""
+def replies(lines, window_s=WINDOW_S, inbox=()):
+    """Every reply and viewer-addressed line in a chat log (oldest first) -> [(line, result)]. inbox: the run's
+    inbox_lines (viewers' lines to the Operator), for the Operator's replies."""
     out, viewers = [], []
     for line in lines:
         if viewer_name(line):
@@ -145,7 +198,7 @@ def replies(lines, window_s=WINDOW_S):
             while viewers and _age_s(line, viewers[0]) > window_s:
                 viewers.pop(0)
             continue
-        r = classify(line, viewers)
+        r = classify(line, viewers, inbox)
         if r:
             out.append((line, r))
     return out

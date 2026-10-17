@@ -91,6 +91,113 @@ def model_tests():
     assert len(m.viewer_replies) == 1 and all(c.get("seq") != 2 for c in m.chat)
 
 
+# Nick, d16 18:32: the Operator's 18:31 answer threaded under LimeLight555's 18:24 line. The rows as shift25 has them:
+# chat.jsonl (tick and logged_at, no t) and the operator inbox (t, no tick); the 18:31 line never reached the game chat.
+CHAT_1824 = {"seq": 9334, "tick": 19715887, "from": "viewer LimeLight555", "text": "@luna Luna, you should vote too. "
+             "Using blueprints reduces the time and resources taken during building and testing ships. It will also be "
+             "significantly more efficient.", "viewer": True, "source": "YouTube", "logged_at": "2026-10-16T18:24:14"}
+CHAT_1827 = {"seq": 9347, "tick": 19727301, "from": "luna", "away": "on Gleba", "text": "I can hear you, LimeLight. I "
+             "checked my fh vote tools: they only cover moderation and trust votes, and there is no action to cast the open "
+             "blueprint poll. I\u2019ll ask the operator for a poll vote action; our team will keep imports paused until the "
+             "poll closes.", "aloud": True, "logged_at": "2026-10-16T18:27:36"}
+REPLY_1831 = {"seq": 9355, "tick": 19740292, "from": "server", "text": "@LimeLight555 Operator: done: every agent has the "
+              "vote command, and ./fh poll shows them the intro and each option's benefits and consequences as written on "
+              "the poll page. I won't argue one side to them; your case in chat reaches them like any viewer's.",
+              "logged_at": "2026-10-16T18:31:26"}
+INBOX = [{"t": 1792197950.0, "agent": "viewer LimeLight", "text": "Operator, focus on western wall", "viewer": True, "source": "site"},
+         {"t": 1792200666.8, "agent": "viewer LimeLight555", "text": "Operator, can you instruct the agents on how to vote "
+          "and the benefits of using blueprints?", "viewer": True, "source": "youtube"},
+         {"t": 1792200700.0, "seq": 31, "agent": "sol", "text": "an agent's own request: not a viewer line"}]
+
+
+def operator_inbox_tests_in(d):
+    import datetime, json
+    # the logged_at times are the box's local time; t for the inbox row is epoch seconds: line them up here
+    t1831 = datetime.datetime.fromisoformat("2026-10-16T18:31:06.8").timestamp()
+    inbox_rows = [dict(r, t=t1831 + (r["t"] - 1792200666.8)) for r in INBOX]
+    lines = V.inbox_lines(inbox_rows)
+    assert [V.viewer_name(x) for x in lines] == ["LimeLight", "LimeLight555"] and all(x["inbox"] for x in lines), lines
+    # before: by word overlap, the 18:24 line ("vote", "blueprints") -- the reported bug
+    r = V.classify(REPLY_1831, [CHAT_1824])
+    assert r["answers"] is CHAT_1824, r
+    # now: the inbox line addressed to the Operator
+    r = V.classify(REPLY_1831, [CHAT_1824], lines)
+    assert r["kind"] == "reply" and r["to"] == ["LimeLight555"] and r["answers"]["text"].startswith("Operator, can you instruct"), r
+    row = V.row(REPLY_1831, r)
+    assert row["answers"] == {"name": "LimeLight555", "text": "Operator, can you instruct the agents on how to vote and the "
+                              "benefits of using blueprints?", "t": inbox_rows[1]["t"], "tick": None, "source": "youtube"}, row
+    # an agent's reply never looks at the inbox
+    luna = dict(REPLY_1831, **{"from": "luna", "text": "LimeLight555, I will vote once the action exists."})
+    assert V.classify(luna, [CHAT_1824], lines)["answers"] is CHAT_1824
+    # "@operator ..." and "Operator: ..." at the start, any case, count as to the Operator; "operator" later does not
+    for text, to_me in (("@Operator can you ...", True), ("OPERATOR: why ...", True), ("operator , hi", True),
+                        ("the operator is slow", False), ("Operators unite", False)):
+        assert bool(V.TO_OPERATOR.match(text)) == to_me, text
+    # older than the window: left out
+    old = V.inbox_lines([dict(inbox_rows[1], t=inbox_rows[1]["t"] - 20 * 60)])
+    assert V.classify(REPLY_1831, [CHAT_1824], old)["answers"] is CHAT_1824
+    # the archive's whole-log path (site/longrun.py): replies(chat, inbox=...) on chat.jsonl rows
+    got = V.replies([CHAT_1824, CHAT_1827, REPLY_1831], inbox=lines)
+    # (Luna's 18:27 "I can hear you, LimeLight." answers the 18:24 line; the Operator's 18:31 line the inbox one)
+    assert [(c["seq"], res["answers"].get("seq"), res["answers"].get("inbox", False)) for c, res in got] == \
+        [(9347, 9334, False), (9355, None, True)], got
+    # read_inbox: a file with a broken line
+    path = os.path.join(d, "operator-inbox.jsonl")
+    open(path, "w").write("\n".join(json.dumps(x) for x in inbox_rows) + "\n{broken\n")
+    assert [x["text"] for x in V.read_inbox(path)] == [x["text"] for x in lines]
+    assert V.read_inbox(os.path.join(d, "missing.jsonl")) == []
+    return path, inbox_rows
+
+
+def operator_inbox_model_tests(path, inbox_rows):
+    """The live page's path: serve.py hands the run's inbox to the model (set_inbox)."""
+    import model
+    import datetime
+    m = model.Model({"agents": {n: {} for n in ("luna", "sol")}})
+    m.set_inbox(path)
+    t = lambda c: datetime.datetime.fromisoformat(c["logged_at"]).timestamp()
+    for c in (CHAT_1824, CHAT_1827, REPLY_1831):
+        m._ingest_chat(dict(c, t=t(c)), t(c))
+    rows = [r for r in m.viewer_replies if r["by"] == "operator"]
+    assert len(rows) == 1 and rows[0]["answers"]["text"].startswith("Operator, can you instruct"), list(m.viewer_replies)
+    return rows[0]
+
+
+def live_answered_test(reply_row):
+    """The site's answered() (static/live.js) finds that line in the joined list: same name, text prefix, before."""
+    import json, shutil, subprocess
+    if not shutil.which("node"):
+        print("viewer replies: live.js part skipped (no node)")
+        return
+    site = os.path.join(os.path.dirname(os.path.dirname(HERE)), "site", "static", "live.js")
+    code = open(site).read()
+    fn = code[code.index("  function bareText(s)"):code.index("  function joinedChat()")]
+    # the live page's list: YouTube lines from the stream's lane (the 18:31 one is there: viewers.py keeps lines to the
+    # Operator in the lane) and the 18:24 one, oldest first
+    lst = [{"src": "yt", "name": "LimeLight555", "text": CHAT_1824["text"], "t": reply_row["t"] - 432},
+           {"src": "yt", "name": "LimeLight555", "text": reply_row["answers"]["text"], "t": reply_row["answers"]["t"]}]
+    js = fn + "\nprocess.stdout.write(JSON.stringify(answered(" + json.dumps(lst) + ", " + json.dumps(reply_row) + ")));"
+    r = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=10)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == 1, r.stdout
+
+
+def operator_inbox_all():
+    """The 18:31 case end to end: classify, the archive's replies(), the model (live page), live.js answered()."""
+    import tempfile, shutil
+    d = tempfile.mkdtemp()
+    try:
+        path, inbox_rows = operator_inbox_tests_in(d)
+        try:
+            import model  # noqa: F401
+        except Exception as e:
+            print(f"viewer replies: inbox model part skipped ({e})")
+            return
+        live_answered_test(operator_inbox_model_tests(path, inbox_rows))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def main():
     rule_tests()
     classify_tests()
@@ -100,7 +207,9 @@ def main():
         print(f"viewer replies: model part skipped ({e})")
     else:
         model_tests()
-    print("viewer replies: ok (@name, vocatives, viewer-addressed lines, third person left out, the answered line, model snapshot)")
+    operator_inbox_all()
+    print("viewer replies: ok (@name, vocatives, viewer-addressed lines, third person left out, the answered line, model snapshot, "
+          "the Operator's answer to an inbox line (d16 18:31) in classify, the archive, the model and live.js)")
 
 
 if __name__ == "__main__":

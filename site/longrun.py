@@ -617,7 +617,9 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
         if viewers:  # any viewer spoke (shown or hidden): the agents' and the Operator's answers, and the hosts'
             # (viewer_replies.py: a line naming a viewer who wrote in the last 15 minutes, @name or as a vocative, or
             # one that speaks to the viewers; the live page's site chat uses the same rule)
-            for c, vr in viewer_replies.replies(chat):
+            # (the Operator's replies also look at the shift's operator inbox: viewers' lines to the Operator never reach
+            # the game chat, so its answer is not threaded under another of their lines; such an answer stays in time order)
+            for c, vr in viewer_replies.replies(chat, inbox=viewer_replies.read_inbox(d / "operator-inbox.jsonl")):
                 who = viewer_replies.speaker(c)
                 if not keep(c["text"]) or (who != "operator" and who not in agents):
                     continue
