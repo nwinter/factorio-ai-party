@@ -5355,7 +5355,7 @@ local function build_one(p,a)
   -- numbers and belts on halves by failing first): whole-number coordinates go to the centre of the tile there, as
   -- place_ghosts and its dry run snap; said in snapped.
   local snapped
-  if (place.tile_width or 1)==1 and (place.tile_height or 1)==1 and place.type~='rail-ramp' and planner==nil then
+  if ((place.tile_width==1 and place.tile_height==1) or place.type=='transport-belt') and place.type~='rail-ramp' and planner==nil then
     local to={x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5}
     if math.abs(to.x-pos.x)>0.01 or math.abs(to.y-pos.y)>0.01 then
       if place.type~='transport-belt' then
