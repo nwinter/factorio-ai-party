@@ -166,6 +166,14 @@
 - `load_silo {position, from: [..], walk: true}` takes from the sources in order (chests, a landing pad, anywhere on
   the surface) and skips a trip's other sources once you hold what the rocket needs. `position` is the silo's (always
   needed; without it the reply lists the silos here); `from` is one chest `{x,y}` or a list of them.
+- `platform_schedule {platform, stops}`: each stop `{station, wait: [...]}`; a wait is `{type, ticks?, condition?,
+  compare: "and"|"or"}`. Types: `time`/`inactivity` (`ticks`), `all_requests_satisfied`, `any_request_not_satisfied`,
+  `any_request_zero`, and with a `condition`: `item_count` (an item), `fluid_count` (a fluid), `circuit` (any signal on
+  the hub's red and green wires: wire a tank or a combinator to the hub). A condition is `"thruster-fuel >= 10000"` or
+  `{signal, comparator, value | signal2}`. A fuel guard: `{"station":"nauvis","wait":[{"type":"time","ticks":216000},
+  {"type":"circuit","condition":"thruster-fuel >= 10000","compare":"and"}]}`. `wait_until {until: "fluid_count",
+  platform, fluid, at_least | below}` counts the platform's storage tanks; `{until: "circuit_signal", platform, signal,
+  at_least | below}` reads the hub's wires (a queue step, the remote lane too).
 - `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure
   conditions with what the hub holds against each.
 - `silo` gives `robots_bringing` (what logistic robots carry or have reserved toward it) and `requesting_for`.

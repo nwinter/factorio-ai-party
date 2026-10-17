@@ -633,6 +633,10 @@ return function(api)
     end
     return lines
   end
+  -- A condition as the game takes it ({first_signal, comparator, constant | second_signal}) from the forms circuit_set
+  -- takes (platform_schedule's wait conditions too: d17 batch17 A5), and back as text.
+  function M.condition(c, what) return condition(c, what) end
+  function M.condition_text(c) return condition_text(c) end
   -- One entity's circuit settings in a few words (circaudit.lua's network readback, d17 batch16 B3).
   function M.short(e) local c = try(function() return M.read(e) end); return short_settings(c) end
   function M.read(e, cb)

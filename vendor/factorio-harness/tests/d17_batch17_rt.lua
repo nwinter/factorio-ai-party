@@ -140,3 +140,30 @@ do
   grok('stop',{})
 end
 print('d17_batch17_rt A2/A3 wait_platform stages nothing ahead of the platform: ok')
+
+-- A5: platform_schedule takes a condition as circuit_set does and gives the game its form; a circuit wait on a hub with
+-- no wire says the hub has none.
+do
+  prototypes=prototypes or {}
+  prototypes.item=prototypes.item or {}; prototypes.item['iron-plate']=prototypes.item['iron-plate'] or {name='iron-plate'}
+  prototypes.fluid={['thruster-fuel']={name='thruster-fuel'}}
+  prototypes.virtual_signal={['signal-A']={name='signal-A'}}
+  prototypes.space_location={nauvis={},gleba={}}
+  defines.wire_connector_id={circuit_red=1,circuit_green=2}
+  local hub={valid=true,position={x=0,y=0},get_circuit_network=function() return nil end}
+  local swift={valid=true,name='Swift',index=3,hub=hub,state=6,space_location={name='nauvis'},surface={name='platform-3'},force=force}
+  force.platforms={swift}
+  local ok,r=pcall(grok,'platform_schedule',{platform='Swift',stops={{station='nauvis',wait={{type='time',ticks=216000},
+    {type='circuit',condition='thruster-fuel >= 10000',compare='and'}}},{station='gleba',wait={{type='item_count',condition={signal='iron-plate',comparator='>=',value=50}}}}}})
+  assert(ok,tostring(r))
+  local w=swift.schedule.records[1].wait_conditions[2]
+  eq(w.type,'circuit'); eq(w.condition.first_signal.type,'fluid'); eq(w.condition.first_signal.name,'thruster-fuel')
+  eq(w.condition.comparator,'>='); eq(w.condition.constant,10000)
+  eq(swift.schedule.records[2].wait_conditions[1].condition.first_signal.type,'item')
+  assert(r.circuit_note and r.circuit_note:find("the hub has none",1,true),tostring(r.circuit_note))
+  -- item_count with a fluid signal: refused, naming the form
+  fails(function() grok('platform_schedule',{platform='Swift',stops={{station='nauvis',wait={{type='item_count',condition='thruster-fuel >= 1'}}}}}) end,
+    'item_count takes an item signal')
+  force.platforms=nil
+end
+print('d17_batch17_rt A5 platform_schedule conditions: ok')

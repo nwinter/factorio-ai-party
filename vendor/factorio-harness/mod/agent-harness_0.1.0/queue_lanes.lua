@@ -14,8 +14,8 @@ return function(api)
     if action=='wait_ticks' then return end
     if action=='wait_until' then
       assert(WAITS[a['until']] or (a['until']=='item_count' and (type(a.platform)=='string' and a.platform~='' or type(a.surface)=='string' and a.surface~=''))
-        or (a['until']=='produced' and type(a.platform)=='string' and a.platform~=''),
-        'remote lane wait_until supports platform_arrived, platform_left, platform_built, researched, item_count with platform or surface, or produced with platform')
+        or ((a['until']=='produced' or a['until']=='fluid_count' or a['until']=='circuit_signal') and type(a.platform)=='string' and a.platform~=''),
+        'remote lane wait_until supports platform_arrived, platform_left, platform_built, researched, item_count with platform or surface, or produced, fluid_count or circuit_signal with platform')
       return
     end
     if action=='drop' or action=='platform_schedule' or PLATFORM_WRITES[action] then

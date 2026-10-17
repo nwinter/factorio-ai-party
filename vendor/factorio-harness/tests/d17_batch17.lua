@@ -46,3 +46,30 @@ do
   for _,t in ipairs(taken) do assert(not (t.x==9 and (t.y==0 or t.y==6)),'an endpoint tile was taken') end
 end
 print('d17_batch17 A4 salvage keeps tiles under underground pipe spans: ok')
+
+-- A5 (Astra, board #842: Swift's reserve tanks had no departure guard): wait_until fluid_count and circuit_signal on a
+-- platform, and platform_schedule's conditions in the forms circuit_set takes.
+do
+  defines={wire_connector_id={circuit_red=1,circuit_green=2},inventory={hub_main=1}}
+  prototypes={item={['iron-plate']={}},fluid={['thruster-fuel']={},water={}},virtual_signal={['signal-A']={}}}
+  game={tick=0}
+  local tanks={{get_fluid_count=function(f) return f=='thruster-fuel' and 6000 or 0 end},{get_fluid_count=function(f) return f=='thruster-fuel' and 5000 or 0 end}}
+  local red={get_signal=function(s) return s.name=='thruster-fuel' and 11000 or 0 end}
+  local hub={valid=true,get_circuit_network=function(id) return id==1 and red or nil end}
+  local swift={valid=true,name='Swift',hub=hub,surface={find_entities_filtered=function(f) assert(f.type=='storage-tank'); return tanks end}}
+  local p={force={platforms={swift}}}
+  local C=dofile('mod/agent-harness_0.1.0/conditions.lua'){}
+  C.validate({['until']='fluid_count',platform='Swift',fluid='thruster-fuel',at_least=10000})
+  local met,saw=C.check(p,{['until']='fluid_count',platform='Swift',fluid='thruster-fuel',at_least=10000})
+  eq(met,true); has(saw,"thruster-fuel 11000 in Swift's 2 storage tanks")
+  met=C.check(p,{['until']='fluid_count',platform='Swift',fluid='thruster-fuel',at_least=12000})
+  eq(met,false)
+  met,saw=C.check(p,{['until']='circuit_signal',platform='Swift',signal='thruster-fuel',at_least=10000})
+  eq(met,true); has(saw,"thruster-fuel 11000 on Swift's hub (red)")
+  assert(not pcall(C.validate,{['until']='fluid_count',platform='Swift',fluid='iron-plate',at_least=1}),'a fluid name')
+  assert(not pcall(C.validate,{['until']='circuit_signal',platform='Swift',signal='nonsense',at_least=1}),'a known signal')
+  hub.get_circuit_network=function() return nil end
+  met,saw=C.check(p,{['until']='circuit_signal',platform='Swift',signal='thruster-fuel',at_least=1})
+  eq(met,false); has(saw,'no red or green wire')
+end
+print('d17_batch17 A5 fluid_count and circuit_signal waits: ok')
