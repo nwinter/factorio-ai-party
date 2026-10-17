@@ -584,6 +584,21 @@ class Agent:
 
 
 class Model:
+    def set_inbox(self, path):
+        """runs/RUN/operator-inbox.jsonl: its viewer rows count as viewer lines for the Operator's replies."""
+        self.inbox_path, self.inbox_mtime, self.inbox_rows = path, None, []
+
+    def inbox_lines(self):
+        if not self.inbox_path:
+            return []
+        try:
+            m = os.stat(self.inbox_path).st_mtime_ns
+        except OSError:
+            return []
+        if m != self.inbox_mtime:
+            self.inbox_mtime, self.inbox_rows = m, viewer_replies.read_inbox(self.inbox_path)[-200:]
+        return self.inbox_rows
+
     def __init__(self, run):
         self.run = run
         self.agents = {}
@@ -593,6 +608,9 @@ class Model:
         # agents' and the Operator's lines that answer a viewer or speak to the viewers (viewer_replies.py; Nick, d15
         # 08:07): the live page's site chat shows them among the viewers' lines, so they outlive the chat window
         self.viewer_replies = deque(maxlen=40)
+        # viewers' lines to the Operator, which go to the run's operator inbox, not the game chat (viewer_replies.py):
+        # set_inbox; read again when the file changes
+        self.inbox_path, self.inbox_mtime, self.inbox_rows = None, None, []
         self.chat_seen = set()
         self.operator_requests = deque(maxlen=5)  # the last few agents' requests to the operator, for the snapshot
         self.alerts = deque(maxlen=30)
@@ -1025,7 +1043,8 @@ class Model:
         entry["lane"] = chat_lane(entry)
         self.chat.append(entry)
         if entry["lane"] not in ("viewer", "notice"):
-            r = viewer_replies.classify(entry, [c for c in self.chat if viewer_replies.viewer_name(c)])
+            r = viewer_replies.classify(entry, [c for c in self.chat if viewer_replies.viewer_name(c)],
+                                        self.inbox_lines() if viewer_replies.speaker(entry) == "operator" else ())
             if r:
                 self.viewer_replies.append(viewer_replies.row(entry, r))
         cl = None if sender else CHANGELOG_RE.match(clean_text(entry["text"]))
