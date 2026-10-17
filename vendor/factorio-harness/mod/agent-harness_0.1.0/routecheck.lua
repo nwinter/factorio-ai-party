@@ -56,8 +56,8 @@ return function(api)
         local d, q = closest(route, m)
         if m.attack then
           if d <= m.range + 16 then
-            rows[#rows+1] = {d=d, q=q, range=m.range, over=d - m.range, attack=true, x=m.x, y=m.y, name=m.name, group=m.group, ago=m.ago, size=m.size,
-              text=m.group and string.format('%s at %s, seen now (%d tiles): closest pass %.0f tiles at %s', m.name, at(m), m.range, d, at(q))
+            rows[#rows+1] = {d=d, q=q, range=m.range, over=d - m.range, attack=true, x=m.x, y=m.y, name=m.name, group=m.group or m.units, ago=m.ago, size=m.size,
+              text=(m.group or m.units) and string.format('%s at %s, seen now (%d tiles): closest pass %.0f tiles at %s', m.name, at(m), m.range, d, at(q))
                 or string.format('area under attack now round %s (%d tiles): closest pass %.0f tiles at %s', at(m), m.range, d, at(q))}
           end
         else
@@ -209,6 +209,13 @@ return function(api)
       end
     end
     return out
+  end
+  -- A walk with avoid_enemies false (d17 batch12 A1, Opus 02:09: a live walk with the check off crossed a nest the
+  -- dry run had routed round, and the reply named nothing): the reaches its straight legs come into, as enters, read
+  -- now on the chunks the map draws (a budget of chunks; nothing is planned round). nil when none.
+  function M.unchecked(p, points)
+    local blobs = hazards(p, points, MAX_CHUNKS)
+    return enters(points, enemies(points, blobs))
   end
   -- The whole read. points: {start, via..., goal}; mode: avoid.mode(...) or nil (avoid_enemies false).
   function M.check(p, points, mode)

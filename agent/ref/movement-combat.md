@@ -47,7 +47,13 @@
 - `./fh call recover --wait` walks to your own corpses on your surface, nearest first, and takes everything from each; a
   corpse keeps what you carried when you died and does not expire. One inside a worm's range is left out (`left_out`).
   `recover {"dry_run": true}` walks nowhere: each corpse's distance, items, whether recover walks to it, and its
-  `danger` (worms and spawners whose reach comes near it, attacks near it in the last 10 minutes).
+  `danger` (worms and spawners whose reach comes near it, attacks near it in the last 10 minutes), `killed_by` (what
+  killed you, where), `killer_now` (alive in sight and where, out of sight, or no longer alive) and `units_near`.
+- move_to's enemy check counts enemy units in sight near the way and groups seen now (where they head too); a group seen
+  ahead mid-walk stops the walk and walks you away (`last.retreated`). With `avoid_enemies: false` the reply's
+  `enters_unchecked` names the nests and units the straight legs cross.
+- `move_to {position, stay_in_turret_coverage: true}` keeps the route inside our armed turrets' reach (via points it
+  plans; `turret_coverage` says the way); a start or goal outside it, or no covered way, is refused with where it ends.
   `recover {"stop_after": 1}` walks to the nearest corpse only (`not_walked` names the rest); `{"corpse": {"x":..,"y":..}}`
   to that one. `use_item` gives `ready_tick` (when the next capsule can go); cooling down, the refusal names it.
 - Grenades and capsules: use_item {item, position}.
