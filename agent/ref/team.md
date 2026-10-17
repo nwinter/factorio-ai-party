@@ -112,3 +112,4 @@
 - `board_focus {id, step, blocker?, verify?}`: your current item and step, blocker and next verification in one line,
   shown on status and in your team block every 10 game minutes; `board_focus {agent?}` reads teammates' focus lines.
   A focused project step not done across 2 checks reads so here and in board_progress.
+- A lesson line says which of its keys matched the call (`matched: action build, entity big-electric-pole`).

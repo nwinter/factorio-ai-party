@@ -6484,3 +6484,21 @@ fh watch    # deploy on every change
   on a turret ghost (2 h at most, 64 ghosts). Every 2 s it reads the turret built in its place; one that reads other
   targeting is set to the ghost's, and the agent who set it is told once (team.alerts). Copy: Wren's gun turret
   watched, built with its targeting, forgotten, no line. tests/d17_backlog.lua covers an engine that loses it.
+- #653 (Sol): requester and buffer chests already took requests by remote view (requests {surface, position}). New
+  `deliver {position | positions, items, surface?}` (deliver.lua) brings fuel into a burner's fuel slots or ammunition
+  into a turret by item request (an insert plan, as a 2.0 blueprint's item requests). The construction robots of the
+  network covering it bring it from that network's stock. Each row names the network, what it holds and its free
+  construction robots. Passive, and allowed aboard with surface=. Modules go with configure; a machine's ingredients
+  are refused, naming inserters or a requester chest. Copy: 10 solid fuel into the heating tower at (-57.5,98.5) on
+  Fulgora from network 63; a robot brought it within about 2 s.
+- #688/#689: a lesson line says which keys matched the call, e.g. "(matched: action build, entity big-electric-pole)".
+  The rest was done in batch15 (df8a6e92).
+- #818 (Sol, for viewer Foobator): bottleneck {item, per_min} counted an ingredient that its recipe gives back
+  (asteroid crushing returns its chunk 1 time in 5) as needed whole. Each step's need is now net of what the same
+  recipe returns. New read `dependency {item, surface?}` (dependency.lua) joins, for the item and each solid ingredient
+  of its recipe there (the force's recipe of its name, else an enabled recipe that makes it): made and used a minute,
+  the planet stock and the minutes it covers at the net use, cargo pods coming down with it, our platforms carrying it
+  to a stop there whose pads ask it, and a rocket's load by weight. Per ingredient: what a craft takes (net) and what
+  the making now takes a minute, marked missing, short or ok; then feasible, sustained and the first unsatisfied.
+  Copy: quantum processors on Aquilo read "processing-unit ... stock 0 ... [missing]"; "feasible: no; first
+  unsatisfied: processing-unit". 3.5 ms on the copy.

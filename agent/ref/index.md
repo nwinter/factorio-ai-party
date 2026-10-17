@@ -4,7 +4,7 @@ Each topic, when to read it, and the commands it documents:
 
 - `moving-items`, when you move items by hand or a move comes back `short` or out of reach: `transfer` (give, take,
   couriers, to a teammate by name), `collect` (machine outputs), `feed` (ingredients, packs, fuel), `refuel` (burners), `pickup` (belts,
-  ground), `mine` (by hand), `rotate`, `repair`, `inventory`, `craft`, `cancel_craft`.
+  ground), `mine` (by hand), `rotate`, `repair`, `inventory`, `craft`, `cancel_craft`, `deliver` (fuel and ammunition by robots).
 - `building`, when you place anything past a few hand builds: `build` (batches, settings, fast replace), `place_ghosts`,
   `construct` (ghosts by hand), `ghosts` (each ghost near you: what it needs, can robots build it), `deconstruct`, `upgrade` (the upgrade planner: ghosts in place), `paste`, `placements` (where it fits), `nearest_water`, `conflicts`, `build_path`,
   `grid` (tiles), `pole_route`, `belt_route`, `rail_route`, `train_stop`, `train` (stops, schedules), `clear_cliffs`, `heat_budget`,
@@ -17,7 +17,7 @@ Each topic, when to read it, and the commands it documents:
   `shoot`, `use_item` (grenades, capsules), `equip` (gun and ammo slots), `vehicle` (enter, drive, remote),
   `equipment` (grids).
 - `analysis`, when something is starved or slow or you need numbers to plan: `progress` (the run by shift), `research`
-  and `research done`, `science` (packs), `supply` (one item), `bottleneck`, `trace`, `labs`, `inspect` (areas,
+  and `research done`, `science` (packs), `supply` (one item), `bottleneck`, `dependency` (an item's recipe inputs joined), `trace`, `labs`, `inspect` (areas,
   remote view), `ports`, `power` (networks, fragile poles), `fuel_budget`, `game_alerts`, `belt_gaps`, `pipe_gaps`,
   `danger`, `drill_sites`, `ores`, `stock` (where an item is), `reservations` (a network's robot reservations), `construction_robots`, `shortages` (the factory's
   shortages in one read), `damage_log` (what hit our entities); the factory digest.
