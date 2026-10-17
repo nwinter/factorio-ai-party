@@ -639,6 +639,21 @@ local function finish(index, outcome)
     last.first_unreached=action.first_unreached; last.why=last.why or (outcome=='unreached' and action.first_unreached) or nil
     -- held short of a live attack at its stop when it ended (d17 batch17 B1)
     last.held_short=action.held_short
+    -- (d17 batch18 C3, Opus) after a feed, rearm or refuel walk: enemy groups seen moving toward the places served
+    if action.op=='feed' or action.op=='rearm' or action.op=='refuel' or action.fuel_round then
+      local served={}
+      for i,t in ipairs(action.targets or {}) do
+        if i>=action.index then break end
+        local e=t.entity
+        if e and e.valid then served[#served+1]={name=e.name,position=e.position} end
+      end
+      local okg,lines=pcall(function()
+        local pl=M.lookup(index)
+        local ch=pl and pl.character
+        return M.avoid.groups_toward(ch and ch.valid and ch.surface or (pl and pl.surface),served)
+      end)
+      last.enemy_groups_toward=okg and lines or nil
+    end
     last.mine_for_a_way=action.mine_for_a_way  -- an unreachable stop: the fewest to mine for a way (B2)
     -- The route walked (C5, Luna 18:20): from where, each via point and stop as reached, the tiles moved.
     last.route=stock.route_text(action)

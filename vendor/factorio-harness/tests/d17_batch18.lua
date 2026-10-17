@@ -174,4 +174,21 @@ do
   local src=io.open('mod/agent-harness_0.1.0/runtime.lua'):read('a')
   has(src,"assert(action=='place_ghosts' or action=='belt_route','dry_run with surface checks place_ghosts or belt_route")
 end
+-- C3 (Opus): after a feed, rearm or refuel walk, the enemy groups our force sees now heading for the places served.
+do
+  local gstate={live_groups={}}
+  local function grp(x,y,n) local m={} for i=1,n do m[i]={} end return {valid=true,position={x=x,y=y},members=m} end
+  gstate.live_groups={{id=1,surface='nauvis',group=grp(177,44,11),target={x=98,y=17},first_kinds='8 small-biter, 3 small-spitter'},
+    {id=2,surface='nauvis',group=grp(-295,-92,3),target={x=-249,y=-82}},
+    {id=3,surface='nauvis',group=grp(130,20,4),target={x=200,y=20}},
+    {id=4,surface='nauvis',group=grp(400,400,2),target={x=110,y=20}}}
+  local sees={}
+  game.forces={player={name='player',players={{}},is_chunk_visible=function(_,c) return not (c.x>=12 and c.y>=12) end}}
+  local AV=dofile('mod/agent-harness_0.1.0/avoid.lua'){state=function() return gstate end,charted=function() return true end}
+  local lines=AV.groups_toward({name='nauvis'},{{name='gun-turret',position={x=100,y=20}},{name='gun-turret',position={x=104,y=20}}})
+  eq(#lines,1)
+  eq(lines[1],'enemy group of 11 (8 small-biter, 3 small-spitter) at (177,44), 77 tiles from gun-turret (104,20), heading west for (98,17), 7 tiles from it')
+  eq(AV.groups_toward({name='nauvis'},{{name='stone-furnace',position={x=-500,y=0}}}),nil)
+  game.forces=nil
+end
 print('d17 batch18 ok')

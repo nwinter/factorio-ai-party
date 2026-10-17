@@ -76,6 +76,8 @@
   nearest cluster first, `ticks` set by the tour's length; `below: 5` only those under 5 rounds (in reach and at
   positions too). Without `ammo` each turret gets the type it holds (`ammo_each`); one whose type you hold none of, or
   holding another type than asked, is left out and named. Finding nothing, it names the nearest turret outside.
+  When a walking feed, rearm or refuel tour ends, `enemy_groups_toward` lists the enemy groups in chunks our force sees
+  then that head for the places it served (size, where, tiles from the nearest such place, heading, target).
   `alert: "KEY"`: an out-of-ammo alert lists each turret's position and ends with `rearm {alert: "KEY"}`, a tour over
   exactly those. Refused for enemies, it says per place whether a worm or spawner (it stays) or passing enemies hold
   it; `retry_when_clear: true` waits until no enemy unit is within 48 tiles and rearms again (6 tries). `dry_run:

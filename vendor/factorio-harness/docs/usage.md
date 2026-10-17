@@ -6653,6 +6653,13 @@ fh watch    # deploy on every change
   a call; not on a platform. Copy: ghosts at (260.5,0.5) and (264.5,0.5) named both (the chest has no power source);
   a lamp ghost by a pole in the base and a lamp and chest built there say neither. 64 lamp ghosts placed in 21-23 ms
   on the copy with and without the notes. tests/d17_batch18_rt.lua.
+- C3 (Opus): after a walking feed, rearm or refuel tour (a fuel round too), last (and fh --wait) gives
+  `enemy_groups_toward`: the enemy groups the harness tracks (threat.lua live_groups: gathered, with a target) in a
+  chunk our force sees now (avoid.seen_now) whose target lies within 48 tiles of a place the tour served, or within
+  256 tiles of one and nearer to it than the group is. Each: `enemy group of 11 (8 small-biter, 3 small-spitter) at
+  (177,44), 77 tiles from gun-turret (104,20), heading west for (98,17), 7 tiles from it`; up to 4, nearest first.
+  Copy: a rearm tour by Opus over 6 turrets ended topped_up with none (no tracked group headed there). A group made by
+  script does not raise the gathering event, so the line was checked with fakes (tests/d17_batch18.lua).
 
 ## d17 batch20 (operator 15:25: the agents' 15:20 poll)
 - A1 (Haiku): `craft` refused 20 firearm-magazine over 650 in four requester chests (150 within 25 tiles), and a gun

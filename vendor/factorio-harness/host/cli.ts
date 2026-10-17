@@ -1277,7 +1277,9 @@ async function main() {
       // An item move that ran over time: what it moved and the inventory line after (Muse 06:27).
       moved: last?.moved, inv: last?.inv, route_failures: last?.route_failures,
       // A short feed still says how many stops remain when up_to makes its exit successful.
-      ...(last?.kind === 'gather' ? {left:last.left, short_allowed:last.short_allowed, short:last.short} : {}),
+      ...(last?.kind === 'gather' ? {left:last.left, short_allowed:last.short_allowed, short:last.short,
+        // after a feed, rearm or refuel walk: enemy groups our force sees heading for the places served (d17 batch18 C3)
+        enemy_groups_toward:last.enemy_groups_toward} : {}),
       ...(last?.fuel_taken !== undefined ? {fuel_taken:last.fuel_taken, sources:last.sources, source_read_capped:last.source_read_capped} : {}),
       // Transfer tours retain the inventory selected and local delivery/refusal facts in compact waits too.
       ...(last?.op === 'transfer' && Array.isArray(last.entities) ? {

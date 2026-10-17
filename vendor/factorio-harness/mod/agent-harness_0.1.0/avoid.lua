@@ -188,6 +188,49 @@ return function(api)
     return false
   end
 
+  -- Enemy groups on the move toward places just served (d17 batch18 C3, Opus: after a feed, rearm or refuel walk): each
+  -- group in a chunk our force sees now whose target lies within TOWARD_NEAR tiles of a served place, or within
+  -- TOWARD_FAR tiles of one and closer to it than the group is; its size, where it is, how far from the nearest such
+  -- place, the compass way to its target and the target. Up to 4 lines, nearest first.
+  local TOWARD_NEAR, TOWARD_FAR = 48, 256
+  local COMPASS = {'east', 'southeast', 'south', 'southwest', 'west', 'northwest', 'north', 'northeast'}
+  local function compass(dx, dy)
+    local a = (math.atan2 or math.atan)(dy, dx)
+    return COMPASS[(math.floor(a / (math.pi / 4) + 0.5) % 8) + 1]
+  end
+  function M.groups_toward(surface, places)
+    if not surface or #places == 0 then return nil end
+    local name = surface.name
+    local function d(a, b) return math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) end
+    local rows = {}
+    for _, g in ipairs(api.state().live_groups or {}) do
+      local grp = g.group
+      local pos = grp and try(function() return grp.valid and grp.position end)
+      local n = pos and (try(function() return #grp.members end) or 0) or 0
+      if pos and n > 0 and g.target and (g.surface == nil or g.surface == name) and M.seen_now(surface, pos) then
+        local best, bd
+        for _, pl in ipairs(places) do
+          local dt, dg = d(g.target, pl.position), d(pos, pl.position)
+          if dt <= TOWARD_NEAR or (dg <= TOWARD_FAR and dt < dg) then
+            if not bd or dg < bd then best, bd = pl, dg end
+          end
+        end
+        if best then
+          rows[#rows+1] = {d=bd, text=string.format('enemy group of %d%s at (%d,%d), %d tiles from %s (%g,%g), heading %s for (%d,%d), %d tiles from it',
+            n, g.first_kinds and ' (' .. g.first_kinds .. ')' or '', math.floor(pos.x), math.floor(pos.y), math.floor(bd + 0.5), best.name,
+            best.position.x, best.position.y, compass(g.target.x - pos.x, g.target.y - pos.y), g.target.x, g.target.y,
+            math.floor(d(g.target, best.position) + 0.5))}
+        end
+      end
+    end
+    if #rows == 0 then return nil end
+    table.sort(rows, function(x, y) return x.d < y.d end)
+    local out = {}
+    for i = 1, math.min(4, #rows) do out[i] = rows[i].text end
+    if #rows > 4 then out[#out+1] = string.format('+%d more groups', #rows - 4) end
+    return out
+  end
+
   -- Hostile forces: neither ours, neutral, friends nor at cease-fire.
   local function hostile(force)
     local out = {}
