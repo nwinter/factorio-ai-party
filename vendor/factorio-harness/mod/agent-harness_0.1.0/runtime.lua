@@ -1889,6 +1889,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.shipment and M.shipment.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.demolishers and M.demolishers.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ghostlist and M.ghostlist.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.silo and M.silo.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.rocketload and M.rocketload.schema or {}) do description.actions[name]=schema end
@@ -6484,6 +6485,8 @@ function M.configure_turret(e,a)
     for i,nm in ipairs(list) do e.set_priority_target(i,nm) end
   end
   if a.ignore_unprioritised~=nil then e.ignore_unprioritised_targets=a.ignore_unprioritised end
+  -- a ghost's targeting is checked again once it is built (turretwatch.lua; backlog #569)
+  if e.type=='entity-ghost' and M.turretwatch then pcall(M.turretwatch.watch,e,M.caller_index) end
   local now=M.turret_targets(e)
   return {name=name,position=e.position,ghost=e.type=='entity-ghost' or nil,priority_targets=now.list,ignore_unprioritised=now.ignore,targeting=now.line}
 end
@@ -12943,7 +12946,7 @@ M.board=require('board'){state=state,consequential={launch=true,platform_schedul
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
   platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,
   hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,
-  power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,progress_lines=function(p,h) return M.progress and M.progress.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
+  power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,progress_lines=function(p,h) return M.progress and M.progress.lines(p,h) end,turret_lines=function(p,h) return M.turretwatch and M.turretwatch.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
   science_line=function(p,h) return M.scienceline.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
@@ -13249,6 +13252,7 @@ reads.platform_production=true
 reads.platform_defense=true
 reads.circuit_audit=true
 reads.platform_gate=true
+reads.demolishers=true
 reads.shipment=true
 reads.board_progress=true
 reads.board_critical=true
@@ -13682,7 +13686,10 @@ local dispatch_request
 -- A failed request is counted for the agent's review (selfview.lua) and
 -- raised again unchanged (control.lua reads it as before).
 function M.dispatch(request)
+  -- the agent the request is for, while it runs (turretwatch.lua tells it what its ghosts became)
+  M.caller_index=type(request)=='table' and type(request.player)=='number' and request.player or nil
   local ok,result=pcall(M.dispatch_inner,request)
+  M.caller_index=nil
   if type(request)=='table' and type(request.player)=='number' and request.operator~=true then pcall(M.hauling.done,request.player) end
   if not ok then pcall(M.selfview.dispatch_failed,request,result); error(result,0) end
   return result
@@ -14298,6 +14305,11 @@ M.platdefense=require('platdefense'){platform=function(p,name) return space.plat
 function handlers.platform_defense(p,a) return M.platdefense.read(p,a) end
 -- One line a platform: where it is and what its departure waits on (space.lua M.gate; d17 batch15 A3, Grok).
 function handlers.platform_gate(p,a) return space.gate(p,a) end
+-- A turret ghost's targeting kept through its build (turretwatch.lua; backlog #569, Astra).
+M.turretwatch=require('turretwatch'){state=state,targets=function(e) return M.turret_targets(e) end,configure=function(e,a) return M.configure_turret(e,a) end}
+-- Demolisher territories and the heads our force sees (demolishers.lua; backlog #283, Sol).
+M.demolishers=require('demolishers'){state=state,position=function(v) return position(v) end}
+function handlers.demolishers(p,a) return M.demolishers.read(p,a) end
 -- A platform's misleading circuit readings (circaudit.lua; d17 batch14 A7b, Sol).
 M.circaudit=require('circaudit'){platform=function(p,name) return space.platform(p,name) end}
 function handlers.circuit_audit(p,a) return M.circaudit.read(p,a) end
@@ -15314,6 +15326,7 @@ function M.tick_body(event)
   if event.tick%600==17 and M.platbom then pcall(M.timed,'platbom.tick',M.platbom.tick,event.tick) end  -- each hub's items by stop and leg (freight.lua)
   if M.research_target then pcall(M.timed,'research_target.tick',M.research_target.tick,event.tick) end  -- research target levels (researchtarget.lua)
   if event.tick%3600==61 and M.lessonbook then pcall(M.timed,'lessonbook.tick',M.lessonbook.tick) end  -- lesson checks, surfacings (lessonbook.lua)
+  if event.tick%120==65 and M.turretwatch then pcall(M.timed,'turretwatch.tick',M.turretwatch.tick) end  -- turret ghosts' targeting once built
   if event.tick%120==53 and M.progress then pcall(M.timed,'progress.tick',M.progress.tick) end  -- owned board items' checks (progress.lua)
   if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end  -- shipment fact lines (shipment.lua)
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)

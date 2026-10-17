@@ -52,6 +52,11 @@ return function(api)
     if RAILS[proto.type] then return {x=pos.x, y=pos.y} end
     local w, h = proto.tile_width or 1, proto.tile_height or 1
     if (dir or 0) % 8 == 4 then w, h = h, w end
+    -- a cargo bay keeps to a 2-tile grid (backlog #555: a dry run at (-10,29) read placeable, the ghost stood at (-10,30))
+    if proto.type == 'cargo-bay' then
+      local function g(v, n) return math.floor((v - n / 2) / 2 + 0.5) * 2 + n / 2 end
+      return {x=g(pos.x, w), y=g(pos.y, h)}
+    end
     local function s(v, odd) return odd and math.floor(v)+0.5 or math.floor(v+0.5) end
     return {x=s(pos.x, w % 2 == 1), y=s(pos.y, h % 2 == 1)}
   end

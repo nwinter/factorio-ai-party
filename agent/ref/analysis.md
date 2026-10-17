@@ -133,3 +133,5 @@
   where_is lists each 32-tile cell as a place).
 - `supply` adds `made_by_spoiling` for an item others spoil into (copper-bacteria into copper-ore): how many are held
   and spoil within 5 min; the production statistics do not count spoiling.
+- The power line (and the science line's headroom) splits the rating: generators with no steam, fuel or plasma in now
+  are named, and headroom is against what can supply now; low-power machines are counted beside it.
