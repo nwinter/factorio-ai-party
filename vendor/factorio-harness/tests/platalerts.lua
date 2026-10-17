@@ -128,6 +128,8 @@ eq(has(alerts(sol),'turrets empty'),S..': 1 of 2 gun-turrets empty, 1 low (under
 jump(601); eq(has(alerts(sol),'turrets empty'),nil)
 t2.rounds=0; jump(601)
 eq(has(alerts(sol),'turrets empty'),S..': 2 of 2 gun-turrets empty; turrets hold 0 rounds, the hub firearm-magazine 920')
+-- (d17 alerts: the same words again only after 10 minutes in the team block; platalerts tells it again after 5)
+jump(5*3600); eq(has(alerts(sol),'2 of 2 gun-turrets empty'),nil)
 jump(5*3600); assert(has(alerts(sol),'2 of 2 gun-turrets empty'))
 -- The platforms read: the same defence for every platform, fresh.
 local prow=sol('platforms',{}).platforms[1]

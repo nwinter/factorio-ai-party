@@ -6498,3 +6498,5 @@ fh watch    # deploy on every change
   audit's 258 KB counted every earlier showing. The most repeated lines were the push alerts ("N inserters feeding
   logistic-chest ...", burner drills, furnaces) and a platform's turret line. Cost: 0.014 ms a reply in plain Lua
   with 200 lines remembered and 20 a reply.
+- platalerts tells a platform's turret line again after 5 minutes. With the same words it now shows after 10
+  (tests/platalerts.lua updated); a turret count or round count that changed shows at once.
