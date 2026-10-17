@@ -198,6 +198,56 @@ return function(api)
     end
     return lines, rows
   end
+  -- (Astra 09:20: Gleba's landing pads took all 500 processing units, 100 meant for Gleba and 400 for Aquilo) each item
+  -- the hub holds that the landing pads of two or more coming stops ask for: what each stop's pads ask, in the order the
+  -- schedule reaches them from where the platform is, and what the hub would have left after each at those asks.
+  function M.conflicts(pl)
+    local sch = try(function() return pl.schedule end)
+    local records = sch and sch.records or {}
+    if #records < 2 then return nil end
+    local w = api.where and try(function() return api.where(pl) end) or {}
+    local cur = sch.current or 1
+    -- the stops in the order coming: waiting at the current stop, it first; else the one it flies to first
+    local order, seen = {}, {}
+    for k = 0, #records - 1 do
+      local idx = (cur - 1 + k) % #records + 1
+      local st = records[idx].station
+      if st and not seen[st] then seen[st] = true; order[#order+1] = {i=idx, planet=st, here=w.stopped and w.at == st} end
+    end
+    local counts = api.hub_counts and try(function() return api.hub_counts(pl) end) or {}
+    -- what the hub requests itself it keeps (on the copy of world n, Swift stopped at Nauvis kept its 501 magazines,
+    -- 500 requested, under a pad ask of 1461): only the rest goes down
+    local keep = {}
+    for _, list in pairs(requests(pl)) do for item, min in pairs(list) do keep[item] = (keep[item] or 0) + min end end
+    local asks = {}
+    for _, o in ipairs(order) do
+      local ask, hold = {}, {}
+      if api.pads then local a1, h1 = api.pads(o.planet, pl.force); ask, hold = a1 or {}, h1 or {} end
+      for item, a in pairs(ask) do
+        local want = a - (hold[item] or 0)
+        if want > 0 and (counts[item] or 0) - (keep[item] or 0) > 0 then
+          asks[item] = asks[item] or {}
+          table.insert(asks[item], {stop=o, want=want, ask=a, hold=hold[item] or 0})
+        end
+      end
+    end
+    local lines = {}
+    for item, list in pairs(asks) do
+      if #list >= 2 then
+        local left, parts = counts[item] - (keep[item] or 0), {}
+        for _, x in ipairs(list) do
+          local take = math.min(left, x.want)
+          left = left - take
+          parts[#parts+1] = string.format('stop %d %s%s: its pads ask %d (hold %d), %d go down there, %d left aboard',
+            x.stop.i, x.stop.planet, x.stop.here and ' (here)' or '', x.ask, x.hold, take, left)
+        end
+        lines[#lines+1] = string.format('cargo conflict on %s: the hub holds %d %s%s; %s', pl.name, counts[item], item,
+          keep[item] and string.format(' (%d of them under its own request, kept)', math.min(counts[item], keep[item])) or '', table.concat(parts, '; '))
+      end
+    end
+    table.sort(lines)
+    return #lines > 0 and lines or nil
+  end
   function M.read(p, a)
     assert(a.platform == nil or type(a.platform) == 'string', 'platform is a platform name')
     assert(a.item == nil or (type(a.item) == 'string' and prototypes.item[a.item]), 'item is an item name')
@@ -209,6 +259,9 @@ return function(api)
         if n > 16 then break end
         local l, r = M.platform(pl, cache, a.item)
         for _, x in ipairs(l) do lines[#lines+1] = x end
+        for _, x in ipairs(M.conflicts(pl) or {}) do
+          if not a.item or x:find(' ' .. a.item .. ';', 1, true) then lines[#lines+1] = x end
+        end
         for _, x in ipairs(r) do rows[#rows+1] = x end
       end
     end
@@ -289,6 +342,6 @@ return function(api)
     return #out > 0 and out or nil
   end
   M.schema = {shipment = {platform='a platform name', item='or an item name: that item on every platform',
-    returns='lines: per platform stop (the schedule\'s stop with its departure conditions and what the hub holds against them), each hub request importing from that planet with its state: delivered, in flight (a rocket\'s pod coming down onto the platform), launched (its pod still rising), loading (a silo there with it in its rocket or logistic robots bringing it), waiting with the native gate holding it (the platform not stopped there, no silo with automatic requests, the silo\'s request flag: hub_full, below_min_payload, split_networks, matched, filling); what the planet\'s landing pads ask of the hub now; the last visit\'s pad receipts and spills (landed with no pad, where). rows [{platform, planet, item, direction up|down, state, ...}], states (counts). A delivered request, a spill and a hub_full gate appearing come once in team.alerts to who last launched to the platform and those its alerts go to. Read only'}}
+    returns='lines: per platform stop (the schedule\'s stop with its departure conditions and what the hub holds against them), each hub request importing from that planet with its state: delivered, in flight (a rocket\'s pod coming down onto the platform), launched (its pod still rising), loading (a silo there with it in its rocket or logistic robots bringing it), waiting with the native gate holding it (the platform not stopped there, no silo with automatic requests, the silo\'s request flag: hub_full, below_min_payload, split_networks, matched, filling); what the planet\'s landing pads ask of the hub now; the last visit\'s pad receipts and spills (landed with no pad, where); cargo conflict lines: an item the hub holds that the landing pads of two or more coming stops ask, each stop in the order reached with what its pads ask and hold, what goes down there and what is left aboard after it. rows [{platform, planet, item, direction up|down, state, ...}], states (counts). A delivered request, a spill and a hub_full gate appearing come once in team.alerts to who last launched to the platform and those its alerts go to. Read only'}}
   return M
 end

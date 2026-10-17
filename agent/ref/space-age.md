@@ -168,3 +168,5 @@
   request importing from that planet with its state (delivered, in flight, launched, loading, waiting and the native
   gate holding it), what the planet's landing pads ask of the hub, and the last visit's pad receipts and spills. A
   delivery, a spill or a hub_full gate comes once in team.alerts to who launched to the platform and its alert list.
+- `shipment` and `preflight {platform}` give cargo conflict lines: an item the hub holds that the landing pads of two
+  or more coming stops ask, per stop in order (ask, hold, what goes down there, what is left aboard).

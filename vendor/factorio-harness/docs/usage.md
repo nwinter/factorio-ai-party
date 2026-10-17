@@ -6384,3 +6384,56 @@ fh watch    # deploy on every change
   waiting "the platform is not stopped at gleba"; Wren's crusher and explosives waiting hub_full. Cost on the copy:
   Swift's read 23 ms with the dispatch (about 10 ms of it), the silo lists kept a minute in storage (their
   whole-surface search was 5-8 ms a planet).
+- Group B addition (Astra 09:20: Gleba's landing pads took all 500 processing units, 100 meant for Gleba and 400 for
+  Aquilo): `shipment` and `preflight {platform}` (cargo_conflicts) give a cargo conflict line for each item the hub
+  holds that the landing pads of two or more coming stops ask: each stop in the order the schedule reaches it, what
+  its pads ask and hold, what would go down there and what would be left aboard. The hub's own requested stock is left
+  out: on the copy Swift, stopped at Nauvis, kept its 501 magazines (500 requested) under a pad ask of 1461.
+- Group C (Sol 07:53, Astra 07:53; progress.lua): every 10 game minutes each owned open task, request and project is
+  checked (one a call, every 2 s): our entities in its area, else in its owner's active claims (robots, characters,
+  vehicles left out); what it needs (names with counts) reaching the count on its owner's planet; shipment lines of
+  platforms its title names; its board edits and notes. Any of them: progress. None: unchanged; across 2 checks:
+  stalled, unless its owner is in a sleep, wait step or wait_until or has a queue running (waiting). Each check puts
+  one line in the owner's reply (team.alerts): progress seen, its next action or blocker as last written (the owner's
+  last note, a project's next step), or that none is written. Nothing reassigns. `board_progress {owner?, id?}`: the
+  checks per item, stalled first, the age of the last board change, the owner's repeated failures (selfview) and
+  no-effect actions (idle) since, and for a stalled one the 20-minute rule with the owner's last request; with owner
+  or id, what changed since the check is read again. `board_critical`: blocked items (status blocked, or an open item
+  in blocked_by), those the team plan names (#id) first, then by open items waiting on them through blocked_by and
+  parent chains, each with what it waits on; agents standing a minute or more or waiting, with what they own. Copy:
+  59 owned items; board_progress 30 ms with dispatch (37 ms for one owner), board_critical 8 ms; one check 6-9 ms.
+- D1 (Sol 08:09, 08:12; Astra 08:09): gaps found in how lessons surface. An action key or any name key matched alone, so
+  #699 (build + big-electric-pole) showed on every build, an Aquilo chest's too, and #671 on every transfer; the names a
+  placement's entities list carries and build's item were not read; a call by surface= or platform= was matched on the
+  caller's surface; queue_submit, order_set and plan_save steps (which later run with no reply of their own) surfaced
+  nothing; lessons ranked by last verification only. Lessons surface from the harness on every matching call, so
+  compaction does not lose them. Now: an action key and the names both must hold; entities, items, the call's own
+  surface, a dry run's inner call, preflight as before a launch, and each queued step are read (the line says "for step
+  N action").
+- D2: a score per lesson (impact 0..5 as written, x2; applicability: its keys; evidence: verifications, at most 5;
+  recency: 3 within 2 h, 1 within 12 h, 0 stale); matched lessons rank by it. Before a consequential call (launch,
+  platform_schedule, construct, load_silo, their dry runs and queue steps, preflight) the best one shows alone as
+  "before this: ..." with its score, control and check. Copy: a load_silo dry run on Vulcanus read "before this: lesson
+  #812 ... score 14: impact 4 (a stale Gleba launch), applies to 2 keys, verified 1 time, 0h ago; control: ...;
+  unresolved: check not met".
+- D3: lessons take `control` and `check` (a wait_until condition, read every minute as the owner would); a lesson with a
+  check reads unresolved until it holds, then resolved with the tick. Copy: 500 calcite put in the chest the check
+  named; within the minute the lesson read "check met 0h ago (resolved)".
+- D4: `lesson_review {stale_hours?}`: open, retired, superseded and stale counts; checks resolved and unresolved;
+  duplicates (the same keys and 60% of title words alike: lesson_edit supersedes merges them); each lesson shown before
+  a call is kept 30 min: a failure of that agent matching the lesson's `failure` words in that time counts as did not
+  prevent, none as not (selfview's failures feed it). Counts, not notes. Copy: 21 open, 20 stale (12 h), 1 check
+  resolved.
+- Found in passing: `lesson_edit {status: "dropped"}` (retiring a lesson) was refused as an unknown argument: `status` is
+  a doc-only schema key for the argument check, as board_update's is; lesson_edit now takes it too.
+- D5: covered by D1's matching (an action key with names needs both; the call's own surface).
+- D6 (Astra 08:14 for Foobator): `ground_rule_add {text, lessons (1..4), exceptions?, supersedes?}`,
+  `ground_rule_retire {id, reason?}`, `ground_rules`: the team's own rules, at most 8 active, each from lessons it names,
+  shown once at each shift start in team.shift with those lessons' evidence ticks and when verified, and the exceptions;
+  the harness stores and shows what the agents wrote.
+- board_focus (Sol 09:37 for viewer Foobator): `board_focus {id, step, blocker?, verify?}` sets an agent's current
+  item (task, request or project), its step (a project step number, or text), blocker and next verification; one line
+  on every status reply and in the team block once every 10 game minutes; `board_focus {}` or `{agent}` reads the
+  team's or one teammate's lines. At each 10-minute check of that item, a focused project step not done (or a text
+  step with no progress seen) counts; across 2 checks the focus line and board_progress say "the focused step shows no
+  completion across 2 checks"; done clears it. Nothing is assigned.

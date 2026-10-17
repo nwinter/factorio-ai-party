@@ -1885,6 +1885,8 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.circaudit and M.circaudit.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.owed and M.owed.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.shipment and M.shipment.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ghostlist and M.ghostlist.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.silo and M.silo.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.rocketload and M.rocketload.schema or {}) do description.actions[name]=schema end
@@ -11019,7 +11021,19 @@ function handlers.load_silo_run(p,a)
       or string.format('waits while the silo makes parts: the idle window starts at %ds and grows to 3 times the longest observed interval to a part increase; at the latest tick %d',math.floor(ticks/60),await.give_up)) or nil},
     until_tick=until_tick,gives_up_tick=okw and await.give_up or nil}
 end
-function handlers.preflight(p,a) return M.rocketload.preflight(p,a) end
+function handlers.preflight(p,a)
+  local out=M.rocketload.preflight(p,a)
+  -- (d17 batch15, Astra 09:20) the platform's coming stops whose landing pads ask what the hub holds (shipment.lua)
+  if type(out)=='table' and type(a.platform)=='string' and M.shipment then
+    for _,pl in pairs(p.force.platforms) do
+      if pl.valid and pl.name==a.platform then
+        local ok,c=pcall(M.shipment.conflicts,pl)
+        if ok and c then out.cargo_conflicts=c end
+      end
+    end
+  end
+  return out
+end
 -- Circuit wires and settings (circuits.lua), train stops and schedules (trains.lua).
 M.circuits=require('circuits'){entity=entity,remote_entity=remote_entity,friendly=friendly,own_platform=own_platform,position=position,
   configure_filters=function(e,a) return M.configure_filters(e,a) end}
@@ -12978,7 +12992,9 @@ for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 -- Team board, reply hints, harness requests and saved plans (board.lua).
 -- Bots are never directors (and game.get_player refuses their indices).
 function M.is_director(index) return not M.bots.is_index(index) and M.cameras.director(index) end
-M.board=require('board'){state=state,claims=M.claims,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
+M.board=require('board'){state=state,consequential={launch=true,platform_schedule=true,construct=true,load_silo=true},
+  lesson_score=function(i) if M.lessonbook then return M.lessonbook.score(i) end end,lesson_extra=function(i) return M.lessonbook and M.lessonbook.extra(i) end,
+  lesson_fields=function(a,i) return M.lessonbook and M.lessonbook.fields(a,i) end,lesson_surfaced=function(index,list,action) if M.lessonbook then M.lessonbook.surfaced(index,list,action) end end,claims=M.claims,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
   profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
   submit=function(p,a) return handlers.queue_submit(p,a) end,
   research_lines=function(p,h) return M.research.lines(p,h) end,
@@ -12986,7 +13002,7 @@ M.board=require('board'){state=state,claims=M.claims,director=function(index) re
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
   platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,
   hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,
-  power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
+  power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,progress_lines=function(p,h) return M.progress and M.progress.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
   science_line=function(p,h) return M.scienceline.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
@@ -13086,7 +13102,7 @@ M.efficiency=require('efficiency'){state=state,force=function() return game.forc
       if ok and p and p.valid and M.board.who(p)==name then return r.items end
     end
   end}
-M.selfview=require('selfview'){state=state,is_read=function(action) return M.is_read(action) end,
+M.selfview=require('selfview'){state=state,on_failed=function(index,action,reason) if M.lessonbook then M.lessonbook.failed(index,action,reason) end end,is_read=function(action) return M.is_read(action) end,
   efficiency_line=function(name) return M.efficiency.review_line(name) end,
   talk=function(action) return M.idle.TALK[action]~=nil or M.board.handlers[action]~=nil or M.players.handlers[action]~=nil or M.votes.handlers[action]~=nil end,
   waiting=function(s,index) return M.idle.waiting(s,index) end,
@@ -13302,6 +13318,10 @@ reads.platform_defense=true
 reads.circuit_audit=true
 reads.platform_gate=true
 reads.shipment=true
+reads.board_progress=true
+reads.board_critical=true
+reads.lesson_review=true
+reads.ground_rules=true
 reads.ghosts=true
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
@@ -13312,7 +13332,7 @@ local TARGET={'name','unit_number'}
 local EXTRA_ARGS={attach={'offline'},build={'quality','entity'},collect={'count','quality'},rearm={'quality'},refuel={'quality'},
   move_to={'within'},shoot={'auto'},transfer=TARGET,mine={'unit_number'},repair=TARGET,inspect=TARGET,rotate=TARGET,
   configure={'name','unit_number','quality'},revive_ghost={'unit_number'},observe={'scope'},requests=TARGET,launch=TARGET,
-  board={'status'},board_post={'note'},board_update={'status','note'},plan_save={'note'}}
+  board={'status'},board_post={'note'},board_update={'status','note'},lesson_edit={'status'},plan_save={'note'}}
 EXTRA_ARGS.circuit_set=TARGET
 EXTRA_ARGS.trace=TARGET
 -- observe forwards to the scoped views; a scoped call is checked as that view.
@@ -13889,6 +13909,18 @@ function M.dispatch_inner(request)
     end
     -- Standing orders: which runs and why, or what they wait for (orders.lua).
     if p and p.valid and result.orders==nil then result.orders=M.orders.line(p.index) end
+    -- The agent's board focus (progress.lua board_focus): on status, and in the team block once every 10 game minutes.
+    if p and p.valid and M.progress and not M.is_director(p.index) then
+      local okf,fl=pcall(M.progress.focus_line,M.board.who(p))
+      if okf and fl then
+        if request.action=='status' then result.focus=fl end
+        local s=state(); s.focus_told=s.focus_told or {}
+        if not peek and (game.tick-(s.focus_told[p.index] or -36000))>=36000 then
+          s.focus_told[p.index]=game.tick
+          result.team=result.team or {}; result.team.focus=fl
+        end
+      end
+    end
     -- What the agent owes an answer (owed.lua; d17 batch14 B1): the oldest, on every reply.
     if p and p.valid and not M.is_director(p.index) and result.unanswered==nil then
       local oko,ul=pcall(M.owed.line,p.index)
@@ -13943,6 +13975,9 @@ function M.dispatch_inner(request)
         -- Each teammate's name, pronouns when set, and where when the team is spread out (where.lua; Nick 12:20).
         local okt,mates=pcall(M.where.shift_line,p)
         if okt and mates then shift.teammates=mates end
+        -- The team's ground rules, once a shift (lessonbook.lua; d17 batch15 D6).
+        local okg,rules=pcall(function() return M.lessonbook and M.lessonbook.rule_lines() end)
+        if okg and rules and #rules>0 then shift.ground_rules=rules end
         result.team=result.team or {}; result.team.shift=shift
       end
       -- The agent's own review, every 2 game hours (selfview.lua).
@@ -14422,6 +14457,43 @@ M.shipment=require('shipment'){state=state,stops=function(pl) return space.stops
   pads=function(planet,force) return M.freight.pads(planet,force) end,request_rows=function(e,force) return M.silo.request_rows(e,force) end,
   last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end}
 function handlers.shipment(p,a) return M.shipment.read(p,a) end
+-- Progress on owned board items from the game, stalls, blocked items ranked (progress.lua; d17 batch15 Group C).
+M.progress=require('progress'){state=state,items=function() return M.board.items() end,agents=function() return M.board.agents() end,
+  who=function(p) return M.board.who(p) end,since_request=function(name) return M.board.since_request(name) end,
+  plan_item=function() return M.board.plan_item() end,QUIET=M.board.QUIET,PROJECT_QUIET=M.board.PROJECT_QUIET,
+  force=function() return game.forces.player end,
+  owner_surface=function(name)
+    for _,ag in ipairs(M.board.agents()) do
+      if ag.name==name then local pl=M.lookup(ag.index); local c=pl and pl.valid and (pl.character or pl); return c and c.valid and c.surface and c.surface.name or nil end
+    end
+  end,
+  claim_surface=function(c) return M.claims.surface_of(c) end,
+  total=function(surface,item)
+    local s=game.get_surface(surface)
+    local ok,row=pcall(M.stock_planet_row,{force=game.forces.player},s,item)
+    return ok and row and row.total or nil
+  end,
+  shipment_events=function() return state().shipment and state().shipment.events or {} end,
+  shipment_seq=function() return state().shipment and state().shipment.seq or 0 end,
+  repeated=function(index,since) return M.selfview.repeated(index,since) end,
+  counted=function(index,minutes) return M.idle.counted(index,minutes) end,
+  waiting=function(index)
+    local s=state()
+    local w=M.idle.waiting(s,index)
+    if w then return w end
+    local q=s.queues and s.queues[index]
+    if q and not q.paused and q.current then return 'queue running: '..tostring(q.current.action) end
+  end,
+  standing=function(index) local t=state().stand and state().stand[index]; return t and game.tick-t or nil end}
+function handlers.board_progress(p,a) return M.progress.read(p,a) end
+function handlers.board_critical(p,a) return M.progress.critical(p,a) end
+function handlers.board_focus(p,a) return M.progress.focus(p,a) end
+-- Lessons scored, checked and reviewed; the team's ground rules (lessonbook.lua; d17 batch15 Group D).
+M.lessonbook=require('lessonbook'){state=state,items=function() return M.board.items() end,validate=function(c) return conditions.validate(c) end,
+  condition=function(p,c) return conditions.check(p,c) end,stale=M.board.LESSON_STALE,active=function(i) return M.board.ACTIVE[i.status]==true end,
+  who=function(p) return M.board.who(p) end,
+  player_of=function(name) for _,ag in ipairs(M.board.agents()) do if ag.name==name then local pl=M.lookup(ag.index); return pl and pl.valid and pl or nil end end end}
+for name,handler in pairs(M.lessonbook.handlers) do handlers[name]=handler end
 -- platform_endurance: a route's legs at the platform's speed and what its ammunition, repair packs, thruster fluids,
 -- power and hub space come to over it at today's rates (endurance.lua; Astra, d15: Wayfarer lost at Aquilo).
 M.endurance=require('endurance'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
@@ -15318,6 +15390,8 @@ function M.tick_body(event)
   if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.owed.tick) end  -- unanswered mentions' reminders
   if event.tick%600==17 and M.platbom then pcall(M.timed,'platbom.tick',M.platbom.tick,event.tick) end  -- each hub's items by stop and leg (freight.lua)
   if M.research_target then pcall(M.timed,'research_target.tick',M.research_target.tick,event.tick) end  -- research target levels (researchtarget.lua)
+  if event.tick%3600==61 and M.lessonbook then pcall(M.timed,'lessonbook.tick',M.lessonbook.tick) end  -- lesson checks, surfacings (lessonbook.lua)
+  if event.tick%120==53 and M.progress then pcall(M.timed,'progress.tick',M.progress.tick) end  -- owned board items' checks (progress.lua)
   if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end  -- shipment fact lines (shipment.lua)
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
   if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
