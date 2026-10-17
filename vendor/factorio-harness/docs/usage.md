@@ -5854,3 +5854,29 @@ fh watch    # deploy on every change
   gives the compact read for each planet with labs. The lab count is kept a minute (28 ms in the container for a
   whole-surface search). The science read itself costs about 220 ms in the container fresh on nauvis (about 44 ms on
   n, kept 10 s); that predates this batch, and all_surfaces runs it once per planet with labs.
+
+## d16 batch10 (operator 22:55; agents' requests at the 22:50 poll)
+- `until queue_done` and `silo_parts` (A1, Sonnet 22:50: `sleep {condition: {until: "queue_done"}}` was refused as an
+  invalid until, then about 10 polls of the silo): a sleep (`fh sleep`, `fh wait --until queue_done`, the sleep call)
+  ends when your queue finishes or stalls, a standing order's round too; with no queue running it ends at once, saying
+  so (a paused queue too). Elsewhere (a queue step, a guard) it is refused with that. `silo_parts` is `rocket_parts`,
+  and `rocket_parts` takes no `at_least` for every part: `--until "silo_parts>=40 at 14.5,140.5"`,
+  `--until "rocket_parts at 14.5,140.5"`. A refused until now lists the names and says a sleep also takes queue_done.
+  `{until: "all", conditions: [...]}` holds when every one does (B2 uses it).
+- `silo {position, why: true}` (A2, Sonnet 22:50: low-density-structure, then plastic, then coal found by hand): the
+  rocket-part ingredient the silo is shortest of (one it lacks for the next part first), each place its feeding
+  inserters take from (what it holds of it; a requester: its request, what its logistic network holds and robots
+  bring), and that item's chain on the silo's planet as `bottleneck {item}` reads it, with up to 3 makers not working
+  and fixes. On the copy, Fulgora's silo (-43.5,208.5): `low-density-structure: the silo holds 1 ...; requester-chest
+  (-37.5,205.5) holds 0, asks 100; its logistic network holds 0 (robots bringing 2); chain: low-density-structure: 16
+  of 20 working (4 item_ingredient_shortage)`, the 4 lacking copper-plate with a transfer each. 227 ms in the
+  container cold (about 45 ms on n), nearly all of it bottleneck's scan, which is kept 10 s (10 ms warm).
+- `fh sleep SECONDS --then ACTION [JSON]` and `fh wait --until ... --then ACTION [JSON]` (A3, Luna 22:50: dozens of
+  `sleep && inspect` chains that a Codex shell cut at its yield time): when the sleep ends, one read (`--then inspect
+  '{"position":...}'`, or `--then 'inspect {...}'`, or `--args`) runs and its reply comes with the wake (`then_read`;
+  `fh wait` prints the wake line, then the read). Read actions only (inspect, observe, status, silo, trace, platforms,
+  ...: runtime.lua's reads); any other is refused before sleeping. Urgent wakes, tells and the rest end the sleep as
+  before, and the read runs then too. A sleep replaced by a newer one runs no read (`then_skipped`), and its reply now
+  names the newer one: `replaced: a newer sleep began 2 s after this one (tick 1120), for 6 s until tick 1500,
+  until item_count nutrients (a later fh sleep, fh wait --until or sleep call: one sleep per agent); that call reports
+  its own wake, and this one ends here without one` (`replaced_by`).

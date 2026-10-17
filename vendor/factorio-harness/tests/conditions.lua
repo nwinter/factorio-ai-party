@@ -115,7 +115,12 @@ eq(met,true); assert(saw:find('^rocket parts 50/50 %(at least 50%)'),saw)
 silo.rocket_silo_status=7; silo.rocket_parts=6
 eq((check({['until']='rocket_parts',at_least=50,position={x=65.5,y=14.5}})),true,'a ready rocket has all its parts')
 silo.rocket_parts=0
-assert(not pcall(C.validate,{['until']='rocket_parts',position={x=1,y=1}}))
+-- no at_least: every part of the rocket (d16 batch10 A1)
+C.validate({['until']='rocket_parts',position={x=1,y=1}})
+silo.rocket_silo_status=1; silo.rocket_parts=49
+met,saw=check({['until']='rocket_parts',position={x=65.5,y=14.5}})
+eq(met,false); assert(saw:find('^rocket parts 49/50 %(at least 50%)'),saw)
+silo.rocket_parts=0
 assert(not pcall(C.validate,{['until']='rocket_parts',at_least=40}))
 assert(not pcall(C.validate,{['until']='rocket_parts',at_least=0,position={x=1,y=1}}))
 C.validate({['until']='rocket_parts',at_least=40,position={x=1,y=1}})

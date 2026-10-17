@@ -51,7 +51,10 @@ const help = `fh — Factorio agent CLI
   fh sleep SECONDS [--until COND]           Wait up to 900 s (never past the deadline) while your action and queue keep going;
                                             wakes on damage, death, a teammate's mention, a tell, board news, your queue finishing or
                                             stalling, or COND: researched [TECH] | crafting_done | item_count ITEM>=N [at X,Y X,Y] | rocket_ready X,Y (a silo)
-                                            | rocket_parts>=N at X,Y (the rocket being built at that silo has N parts)
+                                            | rocket_parts>=N at X,Y (the rocket being built at that silo has N parts; silo_parts too)
+                                            | queue_done (your queue finishes or stalls; at once when none runs)
+  fh sleep|wait ... --then ACTION [JSON]    When the sleep ends, one read (inspect, observe, status, silo, trace, ...) and its reply
+                                            with the wake (not when a newer sleep replaced it)
   fh view --out artifacts/map.png            Render a local schematic PNG, also works headless
   fh deploy [--file runtime.lua]             Validate and replace live Lua runtime
   fh watch [--file runtime.lua]              Deploy changed Lua; retain old code on invalid update
@@ -149,7 +152,7 @@ function parseUntil(text: string): Record<string, unknown> {
   const alternatives = splitAlternatives(trimmed);
   if (alternatives.length > 1) return {until:'any', conditions:alternatives.map(part => parseUntil(part))};
   const [kind = '', ...rest] = trimmed.split(/\s+/);
-  const usage = '--until takes researched [TECH], crafting_done, alert [KIND ...], item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, rocket_parts>=N at X,Y, produced [ITEM]>=N at X,Y [X,Y ...], platform_arrived PLATFORM [PLANET], platform_left PLATFORM [PLANET], platform PLATFORM at|left PLANET, or a wait_until condition as JSON; several joined by | (or a JSON list) wake on whichever holds first';
+  const usage = '--until takes researched [TECH], crafting_done, alert [KIND ...], item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, rocket_parts>=N at X,Y (silo_parts too; no count: every part), queue_done (fh sleep and fh wait only), produced [ITEM]>=N at X,Y [X,Y ...], platform_arrived PLATFORM [PLANET], platform_left PLATFORM [PLANET], platform PLATFORM at|left PLANET, or a wait_until condition as JSON; several joined by | (or a JSON list) wake on whichever holds first';
   if (kind === 'researched' || kind === 'research') {
     if (rest.length > 1) throw new Error(usage);
     return rest[0] ? {until:'researched', technology:rest[0]} : {until:'researched'};
@@ -192,12 +195,15 @@ function parseUntil(text: string): Record<string, unknown> {
     return kinds.length ? {until:'alert', kinds} : {until:'alert'};
   }
   // The rocket being built has at least N parts (Sonnet, shift14 22:50): rocket_parts>=N at X,Y (the silo); >N is N+1.
-  if (/^rocket_parts\b/.test(trimmed)) {
-    const m = trimmed.match(/^rocket_parts\s*(>=|>)?\s*(\d+)\s+(?:at\s+)?\(?(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\)?$/);
-    if (!m) throw new Error('--until rocket_parts takes a count and the silo position: rocket_parts>=40 at X,Y');
-    const n = Number(m[2]) + (m[1] === '>' ? 1 : 0);
-    return {until:'rocket_parts', at_least:n, position:{x:Number(m[3]), y:Number(m[4])}};
+  // silo_parts is the same (A1, Sonnet d16 22:50); with no count, every part of the rocket.
+  if (/^(?:rocket|silo)_parts\b/.test(trimmed)) {
+    const m = trimmed.match(/^(?:rocket|silo)_parts\s*(?:(>=|>)?\s*(\d+)\s+)?(?:at\s+)?\(?(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\)?$/);
+    if (!m) throw new Error('--until rocket_parts (or silo_parts) takes an optional count and the silo position: rocket_parts>=40 at X,Y, or rocket_parts at X,Y for every part');
+    const position = {x:Number(m[3]), y:Number(m[4])};
+    if (m[2] === undefined) return {until:'rocket_parts', position};
+    return {until:'rocket_parts', at_least:Number(m[2]) + (m[1] === '>' ? 1 : 0), position};
   }
+  if (kind === 'queue_done' && rest.length === 0) return {until:'queue_done'};
   // What machines made since the wait began (Grok 07:50: robots empty the provider, so item_count never rises):
   // produced ITEM>=N at X,Y [X,Y ...] (items), or produced>=N at X,Y (crafts).
   if (/^produced\b/.test(trimmed)) {
@@ -315,6 +321,26 @@ function splitAlternatives(text: string): string[] {
   return parts.map(part => part.trim()).filter(Boolean);
 }
 const TELL_WORDS = new Set(['tell','tells','mention','told']);
+// fh sleep/wait --then ACTION [JSON] (A3, Luna 22:50: a Codex shell returned after its yield time, a second sleep
+// replaced the first and its chained inspect ran without the wake): one read when the sleep ends, its reply with the
+// wake. Read actions only (runtime.lua's reads; tests/d16batch10.test.ts checks the list against it).
+const THEN_READS = new Set(['agriculture','artillery','belt_gaps','blueprint_list','boilers','bottleneck','cameras','cargo','conflicts',
+  'construction_robots','craftable','damage_log','danger','defense','drill_sites','drops','dry_run','flamers','freight_audit','fuel_budget',
+  'game_alerts','grid','heat_budget','inspect','inventory','labs','lookahead','map','nearest','nearest_water','networks','observe','ores',
+  'pipe_gaps','placements','platform','platform_endurance','platform_plan','platform_supply','platforms','ports','power','preflight',
+  'profiles','rates','recipes','reminders','research_options','reservations','review','scan','science','shortages','silo','status','stock',
+  'supply','technologies','trace','turrets','where_is']);
+/** --then's action and arguments: "ACTION", "ACTION {json}", with the JSON as the next positional or --args. */
+function thenCall(text: string | undefined, positional: string | undefined, argsText: string | undefined): {action: string, args: Record<string, unknown>} | undefined {
+  if (text === undefined) return undefined;
+  const trimmed = text.trim();
+  const m = trimmed.match(/^([a-z_]+)(?:\s+(\{[\s\S]*\}))?$/);
+  if (!m) throw new Error(`--then takes a read action and its arguments: --then inspect '{"position":{"x":1,"y":2}}' (not ${JSON.stringify(text)})`);
+  const action = m[1]!;
+  if (!THEN_READS.has(action)) throw new Error(`--then takes a read action (inspect, observe, status, silo, trace, platforms, ...), not ${action}: it would change the game while you sleep`);
+  const json = m[2] ?? positional ?? argsText;
+  return {action, args:json === undefined ? {} : object(JSON.parse(json), '--then arguments')};
+}
 /**
  * `fh wait --until EVENT`: tell (a tell or mention; any wait ends on those), alert (a new attack, enemy group or
  * enemy base alert; `alert KIND ...` for chosen kinds), or a sleep condition as for `fh sleep --until` (researched, item_count, crafting_done, ...);
@@ -617,7 +643,7 @@ async function main() {
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
     full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'}, look:{type:'string'}, fyi:{type:'boolean'}, wake:{type:'boolean'},
-    'text-file':{type:'string'}, 'deadline-file':{type:'string'}, until:{type:'string'},
+    'text-file':{type:'string'}, 'deadline-file':{type:'string'}, until:{type:'string'}, then:{type:'string'},
     max:{type:'string'}, title:{type:'string'},
   }});
   let command = positionals[0];
@@ -1372,6 +1398,16 @@ async function main() {
     if (!Number.isFinite(n) || n < 1 || n > 200) throw new Error(`--urgent-radius takes 1..200 tiles, not ${String(raw)}`);
     return n;
   }
+  // --then's read, run once when the sleep ends (not when a newer sleep replaced it: that call runs its own).
+  async function withThen(reply: Reply, then: {action: string, args: Record<string, unknown>} | undefined): Promise<Reply> {
+    if (!then || stopping) return reply;
+    if (reply.result?.woke === 'replaced') {
+      return {...reply, result:{...reply.result, then_skipped:`--then ${then.action} not run: this sleep was replaced, and the newer call runs its own`}};
+    }
+    const read = await execute(then.action, then.args);
+    const shown = read.ok ? {action:then.action, ...(read.result ?? {})} : {action:then.action, error:read.error};
+    return {...reply, result:{...(reply.result ?? {}), then_read:shown}};
+  }
   async function sleep(seconds: number, condition?: Record<string,unknown>, quiet = false, begunReply?: Reply): Promise<Reply> {
     const left = deadline === undefined ? undefined : deadline-Date.now();
     if (left !== undefined && left <= 1000) {
@@ -1471,8 +1507,12 @@ async function main() {
       pacer.see(check.tick);
       const theirs = check.result?.until_tick;
       if (check.ok && typeof mine === 'number' && typeof theirs === 'number' && theirs !== mine) {
+        // Which sleep replaced it (A3, Luna 22:50): when it began, for how long, and its condition.
+        const from = check.result?.sleep_started_tick, cond = check.result?.sleep_until;
+        const began = typeof from === 'number' ? ` began ${typeof firstTick === 'number' ? `${Math.max(0, Math.round((from-firstTick)/60))} s after this one ` : ''}(tick ${from}), for ${Math.round((theirs-from)/60)} s` : '';
         return {...check, ok:true, result:{woke:'replaced', waited_s:Math.round((Date.now()-begun)/1000), until_tick:mine,
-          note:`another sleep (until tick ${theirs}) started while this one ran and replaced it (one sleep per agent); that call reports its own wake`}};
+          replaced_by:{started_tick:from, until_tick:theirs, until:cond},
+          note:`replaced: a newer sleep${began} until tick ${theirs}${cond ? `, until ${cond}` : ''} (a later fh sleep, fh wait --until or sleep call: one sleep per agent); that call reports its own wake, and this one ends here without one`}};
       }
       if (!check.ok || check.result?.woke) break;
       await delay(1000);
@@ -1763,8 +1803,9 @@ async function main() {
       if (bridged) throw new Error('sleep needs the harness mod (not a bridge session)');
       const seconds = Number(positionals[1]);
       if (!Number.isSafeInteger(seconds) || seconds < 1 || seconds > 900) throw new Error('sleep requires SECONDS 1..900');
+      const then = thenCall(values.then, positionals[2], values.args);
       const reply = await sleep(seconds, untilEvent(values.until));
-      output(reply);
+      output(await withThen(reply, then));
       if (!reply.ok) process.exitCode=1;
     } else if (command === 'wait' && (values.until === undefined || /^\s*idle\s*$/.test(values.until)) && values.max !== undefined) {
       // fh wait --max S, fh wait --until idle --max S: the action (and combat) to end, at most S s; at once when idle.
@@ -1783,10 +1824,16 @@ async function main() {
       if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
       const max = integer(values.max, 600);
       if (max > 900) throw new Error('wait --max takes 1..900 seconds');
+      const then = thenCall(values.then, positionals[1], values.args);
       const reply = await sleep(max, untilEvent(values.until), true);
       // An older runtime delivered the team block with the sleep (full): the line, then the whole reply.
-      if (reply.ok && outputFormat === 'compact' && !reply.result?.full) process.stdout.write(operatorHead() + wakeLine(reply) + '\n');
-      else output(reply.ok ? {...reply, result:{...reply.result, line:wakeLine(reply)}} : reply);
+      if (reply.ok && outputFormat === 'compact' && !reply.result?.full) {
+        process.stdout.write(operatorHead() + wakeLine(reply) + '\n');
+        const read = await withThen(reply, then);
+        if (read.result?.then_read) output({ok:true, tick:read.tick, result:read.result.then_read});
+        else if (read.result?.then_skipped) process.stdout.write(`then: ${read.result.then_skipped}\n`);
+      }
+      else output(await withThen(reply.ok ? {...reply, result:{...reply.result, line:wakeLine(reply)}} : reply, then));
       if (!reply.ok) process.exitCode=1;
     } else if (command === 'wait') {
       if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
