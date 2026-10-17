@@ -126,19 +126,59 @@ return function(api)
             local dx, dy = g.target.x - pos.x, g.target.y - pos.y
             local len = math.sqrt(dx * dx + dy * dy)
             if len > 1 then local s = math.min(len, M.GROUP_AHEAD) / len; spots[2] = {x=pos.x + dx * s, y=pos.y + dy * s} end
+            -- where it heads, when near (A1, Opus 00:17: his goal was the group's target)
+            if len > M.GROUP_AHEAD and len <= M.GROUP_TARGET then spots[3] = {x=g.target.x, y=g.target.y} end
           end
           for k, q in ipairs(spots) do
             if not box or (q.x + r >= box[1] and q.x - r <= box[3] and q.y + r >= box[2] and q.y - r <= box[4]) then
-              out[#out+1] = {x=q.x, y=q.y, r=r, range=M.ATTACK_R, name=label .. (k == 2 and ' (ahead of it)' or ''), attack=true, group=true,
+              out[#out+1] = {x=q.x, y=q.y, r=r, range=M.ATTACK_R, name=label .. (k == 2 and ' (ahead of it)' or k == 3 and ' (where it heads)' or ''), attack=true, group=true,
                 id=key .. '#' .. k, ago=0, size=n}
             end
           end
         end
       end
     end
+    -- Enemy units our force sees now near the way (d17 batch12 A2, Opus: died to big biters roaming off a nest on a
+    -- route the check called safe; units outside a group were not counted): with a box, every unit in a chunk a
+    -- player force sees now, in 16-tile cells, each cell a disc of ATTACK_R + the margin round its units' middle, named
+    -- by how many and what; keyed by where they are, so a walk plans again as they move. Bounded: MAX_UNITS.
+    if box then
+      local list = try(function() return surface.find_entities_filtered{area={{box[1] - M.ATTACK_R, box[2] - M.ATTACK_R}, {box[3] + M.ATTACK_R, box[4] + M.ATTACK_R}},
+        type='unit', force='enemy', limit=M.MAX_UNITS} end) or {}
+      local seen, cells, order = {}, {}, {}
+      for _, u in ipairs(list) do
+        local q = u.valid and u.type == 'unit' and u.position
+        if q then
+          local ck = math.floor(q.x / 32) .. ',' .. math.floor(q.y / 32)
+          if seen[ck] == nil then seen[ck] = try(function() return M.seen_now(surface, q) end) or false end
+          if seen[ck] then
+            local k = math.floor(q.x / 16) .. ',' .. math.floor(q.y / 16)
+            local c = cells[k]
+            if not c then c = {n=0, sx=0, sy=0, kinds={}, k=k}; cells[k] = c; order[#order+1] = c end
+            c.n = c.n + 1; c.sx = c.sx + q.x; c.sy = c.sy + q.y
+            c.kinds[u.name] = (c.kinds[u.name] or 0) + 1
+          end
+        end
+      end
+      for _, c in ipairs(order) do
+        local parts = {}
+        for name, n in pairs(c.kinds) do parts[#parts+1] = n .. ' ' .. name end
+        table.sort(parts)
+        out[#out+1] = {x=c.sx / c.n, y=c.sy / c.n, r=M.ATTACK_R + mode.pad, range=M.ATTACK_R,
+          name=string.format('%d enemy unit%s (%s)', c.n, c.n == 1 and '' or 's', table.concat(parts, ', ')),
+          attack=true, units=true, id='u' .. c.k, ago=0, size=c.n}
+      end
+    end
     return out
   end
-  M.GROUP_AHEAD = 48
+  M.GROUP_AHEAD, M.GROUP_TARGET, M.MAX_UNITS, M.UNIT_REPLANS = 48, 160, 400, 8
+  -- A point inside an enemy group's disc (where it is, ahead of it, where it heads), groups seen now.
+  function M.in_group_way(surface, q)
+    for _, d in ipairs(M.attack_discs(surface, {attacks=true, pad=0})) do
+      if d.group and dist(d, q) < d.r then return d end
+    end
+    return nil
+  end
   -- A chunk a player force sees now (radar or a character).
   function M.seen_now(surface, pos)
     for _, force in pairs(game.forces) do
@@ -537,7 +577,8 @@ return function(api)
     f.pending = M.missing(surface, M.chunks_near({p.position, f.goal}, max_reach(mode)))
     -- The attacks under way now: the plan goes round those it meets; one that starts later is M.attack_ahead's.
     f.attacks_known = {}
-    for _, d in ipairs(M.attack_discs(surface, mode)) do f.attacks_known[d.id] = true end
+    local box = {math.min(f.origin.x, f.goal.x), math.min(f.origin.y, f.goal.y), math.max(f.origin.x, f.goal.x), math.max(f.origin.y, f.goal.y)}
+    for _, d in ipairs(M.attack_discs(surface, mode, box)) do f.attacks_known[d.id] = true end
     nav.foes = f
     return f
   end
@@ -548,10 +589,19 @@ return function(api)
     local f = nav.foes
     if not (f and f.mode and f.mode.attacks and f.attacks_known) then return nil end
     local here = p.position
-    for _, d in ipairs(M.attack_discs(p.surface, f.mode)) do
+    -- (a box from here to 96 tiles on toward the goal: the enemy units seen now on the next stretch count too)
+    local len = dist(here, f.goal)
+    local k = len > 96 and 96 / len or 1
+    local ahead = {x=here.x + (f.goal.x - here.x) * k, y=here.y + (f.goal.y - here.y) * k}
+    local box = {math.min(here.x, ahead.x), math.min(here.y, ahead.y), math.max(here.x, ahead.x), math.max(here.y, ahead.y)}
+    for _, d in ipairs(M.attack_discs(p.surface, f.mode, box)) do
       if not f.attacks_known[d.id] then
         f.attacks_known[d.id] = true
-        if seg_dist(here, f.goal, d) < math.min(d.r, dist(here, d) - 0.5) then return d end
+        -- (units that move from cell to cell plan the walk again at most UNIT_REPLANS times)
+        if seg_dist(here, f.goal, d) < math.min(d.r, dist(here, d) - 0.5) and not (d.units and (nav.unit_replans or 0) >= M.UNIT_REPLANS) then
+          if d.units then nav.unit_replans = (nav.unit_replans or 0) + 1 end
+          return d
+        end
       end
     end
     return nil
@@ -582,7 +632,9 @@ return function(api)
     for _, t in ipairs(f.at_ends) do if t == name then return end end
     f.at_ends[#f.at_ends+1] = name
   end
-  local function fit(blobs, here, final, f)
+  -- sub: final is a corner the plan chose, not the walk's goal (d17 batch12 A1, Opus 00:37: a corner inside a nest's
+  -- reach left the whole nest out of the check, and its big worms killed him): only here leaves a nest out.
+  local function fit(blobs, here, final, f, sub)
     local skip = {}
     if f.mode.strict then return skip end
     for bi, bl in ipairs(blobs) do
@@ -590,7 +642,7 @@ return function(api)
         local dh = dist(m, here)
         -- (an area under attack round here is not left out: it shrinks to just short of here below, so the way on
         -- goes no deeper into it; round1950a)
-        if (dh < m.range and not m.attack) or dist(m, final) < m.range then
+        if (dh < m.range and not m.attack) or (not sub and dist(m, final) < m.range) then
           skip[bi] = true
           if dist(m, f.origin or here) < m.r or dist(m, final) < m.r then at_ends(f, bl) end
           break
@@ -700,7 +752,8 @@ return function(api)
         return false
       end
     end
-    local skip = fit(blobs, here, final, f)
+    local sub = nav.leg and dist(final, f.goal) > 0.5 or false
+    local skip = fit(blobs, here, final, f, sub)
     local bi, m, d = M.crossing(pts, blobs, skip)
     if not bi then
       -- Endpoint fitting can shrink a short corridor leg's margin. Still report
@@ -714,7 +767,7 @@ return function(api)
     local around = M.chunks_near({here, final}, R)
     for _, ch in ipairs(near) do around[#around+1] = ch end
     blobs = M.blobs(surface, around, f.mode)
-    skip, bi = fit(blobs, here, final, f), nil
+    skip, bi = fit(blobs, here, final, f, sub), nil
     for bj, b in ipairs(blobs) do
       for _, mm in ipairs(b.members) do
         if mm.x == m.x and mm.y == m.y and mm.name == m.name then bi, m = bj, mm end
@@ -971,8 +1024,8 @@ return function(api)
   -- 'goal (-10,350) is inside big-worm-turret (-21,343) range 38 (13.0 tiles from it)'.
   function M.goal_text(label, goal, c)
     local m = c.m
-    if m.group then
-      return string.format('%s %s is within %g tiles of an %s at %s, seen now (%.1f tiles from it)', label, at(goal), m.range, m.name, at(m), c.d)
+    if m.group or m.units then
+      return string.format('%s %s is within %g tiles of %s%s at %s, seen now (%.1f tiles from it)', label, at(goal), m.range, m.group and 'an ' or '', m.name, at(m), c.d)
     elseif m.attack then
       -- when it clears (C4, Haiku 23:40: nine dry runs of recover waiting for it): an area counts as under attack until
       -- ATTACK_ACTIVE ticks after its last hit

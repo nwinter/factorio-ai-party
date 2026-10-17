@@ -6102,3 +6102,30 @@ fh watch    # deploy on every change
   stock (not reserved by robots) holds the count ahead of those before them that hold less, and names those in
   `skipped_small`. When no chest holds it all, the order stays. On the copy: a fresh chest holding 2 jelly was skipped
   for one holding 50 (40% spoiled) for a count of 10; for 100 the 2-jelly chest stayed first.
+
+## d17 batch12 (operator 03:15; Group A: Opus's deaths on routes called safe)
+- A1: Opus died 10 times in shift26-27 (6 and 4; no retreat_guard set). Causes (a death can have several): enemy units
+  roaming 48-81 tiles from a nest, counted by no check (5); the generic walk away when hit ending in death, toward
+  danger, too far or outrun (5); known worms or spawners entered (3: construct before batch10 C4 twice, and a planner
+  corner inside a nest's reach that exempted the whole nest); avoidance set off or to 0 by him (3); a group heading
+  for his goal (1); a tank (1); carried by a belt while asleep (1). The entries per death are in the batch report.
+- A2: move_to's enemy check (and the dry run, recover, tours that walk) counts the enemy units our force sees now near
+  the way: in 16-tile cells, each a disc of 24 tiles + the margin, named `3 enemy units (3 big-biter) at (-233,-237),
+  seen now`; units out of sight are not counted. A walk plans again round units that move onto its way (at most 8
+  times). An enemy group seen now also counts where it heads (within 160 tiles), and one seen on the way ahead stops
+  the walk, which walks away as when hit (the standing retreat_guard's to, else armed turret cover out of every group's
+  way, else away; `retreat: false` keeps walking). Planner corners no longer exempt a nest from the check (only the
+  walk's own goal does). `avoid_enemies: false` replies with `enters_unchecked`: the reaches the straight legs come
+  into. A walk away when hit says when the attacker is faster: `a big-biter runs 13.8 tiles/s, you 9.0: it is
+  faster`. On the copy: 3 big biters on Opus's route were named and planned round; a script group of 4 crossing his
+  walk stopped it (`retreated: enemy group of 4 heading for (-225,-240) (ahead of it) seen on the way ahead`) to the
+  cover of a gun turret.
+- A3: `move_to {position, stay_in_turret_coverage: true}` plans the route inside our armed turrets' reach (attack range
+  - 2, 4-tile cells, breadth first, then straight where it stays covered) as via points; `turret_coverage` says the way.
+  A start or goal outside it, or no covered way, is refused with where the coverage you are in ends nearest the goal.
+  On the copy: Muse's (27,212) to (30,90) refused, coverage ending at (29,188) 98 tiles short; in the base, straight
+  covered routes of 34-145 tiles; 3-10 ms beside the walk.
+- A4: a character's death records what killed it (the entity, where, the damage type, the hits of that episode).
+  recover's corpse lines and dry run give `killed_by`, `killer_now` (alive and where, in sight; alive out of sight; no
+  longer alive) and `units_near` (enemy units within 32 tiles of the corpse, seen now). batch10 C4's checks are kept.
+  On the copy: `killed_by: big-biter at (-24.4,104.9) (physical damage)`, `killer_now: ... no longer alive`.
