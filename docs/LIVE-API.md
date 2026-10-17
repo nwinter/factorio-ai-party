@@ -302,8 +302,9 @@ comments and disallow similar nicks".
 - `HOST_TOKEN` is a Worker secret (`npx wrangler secret put HOST_TOKEN --config site/worker/wrangler.toml`, 16
   characters or more). Nick's link is the live page with `?host=TOKEN`. The page keeps the token in localStorage
   (`hostToken`), takes it out of the address bar (`history.replaceState`), and sends it as the `X-Host-Token` header
-  with every `POST /v1/chat`. It never goes in a URL the page fetches or in a body. The page shows "Signed in as host
-  (your lines post as NickWinter)" with a Forget button, and the name box is off.
+  with every `POST /v1/chat`. It never goes in a URL the page fetches or in a body. The page shows "Signed in as host"
+  with a Forget button, and the name box is off. (The published page never names the owner: build.py's blocked-word
+  check fails the build on it.)
 - The Worker compares the header with `HOST_TOKEN` in constant time, like the publish token. A match posts as
   "NickWinter" with `host: true`, whatever the name box says. Bans, the per-client gap and per-minute limits and the
   duplicate rule do not apply; a cap of 30 host lines a minute does. The text rules (200 characters, no links)

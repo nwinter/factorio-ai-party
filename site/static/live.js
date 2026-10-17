@@ -212,9 +212,9 @@
       renderChat();
     });
   }
-  // The host link (Nick, d16 17:11): ?host=TOKEN once; kept in this browser, taken out of the address bar, and sent
-  // as X-Host-Token with each chat post (never in a URL the page fetches). The Worker posts those lines as NickWinter
-  // with a HOST badge and refuses a token that does not match.
+  // The host link (d16 17:11): ?host=TOKEN once; kept in this browser, taken out of the address bar, and sent as
+  // X-Host-Token with each chat post (never in a URL the page fetches). The Worker posts those lines under the host's
+  // name with a HOST badge and refuses a token that does not match.
   var hostToken = store('hostToken') || '';
   try {
     var qs = new URLSearchParams(location.search || '');
@@ -232,7 +232,7 @@
   function showHost() {
     if (hostLine) hostLine.hidden = !hostToken;
     var nb = chatForm && chatForm.querySelector('[name=name]');
-    if (nb) { nb.disabled = !!hostToken; if (hostToken) nb.placeholder = 'NickWinter'; }
+    if (nb) { nb.disabled = !!hostToken; if (hostToken) nb.placeholder = 'Host'; }
   }
   if (hostForget) hostForget.addEventListener('click', function () {
     hostToken = '';
