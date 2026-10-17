@@ -6238,3 +6238,22 @@ fh watch    # deploy on every change
   covered way: "coverage is missing between (42,188) and (46,132), 56 tiles apart" (the nearest points of the two
   covered areas). On the copy: from the main base, covered routes to (40,40) and (118,52); the south outpost and the
   NW coal field read with their gaps (56 and 198 tiles).
+- D1 (Grok): `load_silo {walk: true, ..., up_to_stock_at_start: true}`: each item's target is at most what was aboard,
+  what you held and what the chests in from held when the tour began (`stock_at_start` names any cut); that loaded,
+  the tour ends (launching with launch) instead of touring on while a machine trickles more in. In reach it acts as
+  up_to. On the copy: 50 iron plates asked with 7 on hand: "iron-plate: 7 of the 50 asked", the tour ended loaded 7.
+- D2 (Grok): `pickup {belt: true, ..., spoiled_first: true}` takes the most spoiled stacks first (each stack itself,
+  cleared from the belt as taken, with its spoilage), walking to the belt holding the most spoiled one;
+  `min_spoiled: N` takes only stacks at least N% spoiled and leaves fresh ones; `last.picked_spoil` lists each stack
+  taken with its spoilage (default pickups too). On the copy: yumako taken with picked_spoil "yumako*1 at 11% spoiled";
+  min_spoiled 95 took nothing (none that spoiled).
+- B1 fix (Astra, Sol; live since 05:53): the trace stopped at an inserter moving items from one belt onto another (a
+  relay), so fed turrets read STOPPED (Wren's bow guns; Meridian's west turret fed from the hub's rocket spine). It now
+  goes on through such inserters (and chains of them) to the belt each takes from, that belt's upstream and its
+  loaders; the way says `through fast-inserter (x,y) from transport-belt (x,y)`. A relay switched off by its circuit or
+  filtering the ammo out does not count. Lua test with both layouts; on the copy Wren's bow guns no longer read
+  STOPPED.
+- Test gate: in a fresh checkout `vendor/factorio-harness/.cache` does not exist, and four CLI tests (bridge journal,
+  board and plan commands, say, the deadline clock line) write there; run in parallel, 0 to 4 of them failed depending
+  on which test made it first (the merge gate saw 1). `npm test` creates `.cache` before the tests now; a fresh
+  worktree of cp2 then passed 322/322 (it failed 4 before).

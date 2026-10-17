@@ -86,3 +86,65 @@ do
   game=nil
   print('d17_batch13 A1 reminders: ok')
 end
+
+-- B1 relays (Astra: Wren's bow; Sol: Meridian's west turret, read STOPPED): an inserter moving items from one belt
+-- onto another feeds the turret's belt; the trace goes on through it to the belt it takes from and that belt's loaders.
+do
+  defines={inventory={turret_ammo=1,hub_main=2,chest=3},entity_status={disabled_by_control_behavior=99}}
+  prototypes={item={['firearm-magazine']={type='ammo',ammo_category='bullet'},rocket={type='ammo',ammo_category='rocket'}}}
+  local n=500
+  local function contents(t) local out={} for name,c in pairs(t) do out[#out+1]={name=name,count=c} end return out end
+  local function inv(t) return {get_contents=function() return contents(t) end} end
+  local function belt(x,y,items)
+    n=n+1
+    local b={valid=true,unit_number=n,type='transport-belt',name='transport-belt',position={x=x,y=y},belt_neighbours={inputs={}}}
+    b.get_max_transport_line_index=function() return 2 end
+    b.get_transport_line=function(i) return {get_contents=function() return i==1 and contents(items or {}) or {} end} end
+    return b
+  end
+  local function ins(x,y,from,to) n=n+1; return {valid=true,unit_number=n,type='inserter',name='fast-inserter',position={x=x,y=y},pickup_target=from,drop_target=to} end
+  local hub={valid=true,unit_number=1,type='space-platform-hub',name='space-platform-hub',position={x=0,y=0}}
+  hub.get_inventory=function() return inv({['firearm-magazine']=200,rocket=50}) end
+  local function run(turrets,belts,inserters)
+    local surface={find_entities_filtered=function(f)
+      local t=type(f.type)=='table' and f.type[1] or f.type
+      if t=='inserter' then return inserters end
+      if t=='ammo-turret' then return turrets end
+      if t=='transport-belt' then return belts end
+      return {}
+    end}
+    return dofile('mod/agent-harness_0.1.0/ammofeed.lua'){}.trace({surface=surface,force='player',hub=hub})
+  end
+  local function turret(x,y,cat)
+    n=n+1
+    local t={valid=true,unit_number=n,type='ammo-turret',name=cat=='rocket' and 'rocket-turret' or 'gun-turret',position={x=x,y=y},prototype={attack_parameters={ammo_categories={cat or 'bullet'}}}}
+    t.get_inventory=function() return inv({}) end
+    return t
+  end
+  -- Wren: relay (-2.5,-9.5) from belt (-2.5,-8.5) onto (-2.5,-10.5) -> (-3.5,-10.5) -> (-3.5,-12.5) -> the bow gun
+  local bow=turret(-3.5,-15)
+  local b1,b2,b3=belt(-3.5,-12.5,{['firearm-magazine']=4}),belt(-3.5,-10.5,{['firearm-magazine']=6}),belt(-2.5,-10.5,{['firearm-magazine']=5})
+  b1.belt_neighbours.inputs={b2}; b2.belt_neighbours.inputs={b3}
+  local spine=belt(-2.5,-8.5,{['firearm-magazine']=20})
+  local feeder=ins(-3.5,-13.5,b1,bow)
+  local relay=ins(-2.5,-9.5,spine,b3)
+  local loader=ins(-1.5,-7.5,hub,spine)
+  local tr=run({bow},{b1,b2,b3,spine},{feeder,relay,loader})
+  eq(#tr.rows[1].stops,0,'no stop: the relay feeds it'); eq(tr.hub_reaches,true); eq(tr.stranded,0)
+  eq(tr.rows[1].reaches,4+6+5+20+200)
+  has(tr.rows[1].ways[1],'through fast-inserter (-2.5,-9.5) from transport-belt (-2.5,-8.5)')
+  -- Meridian: relay (-12.5,-2.5) from the hub's rocket spine (-12.5,-1.5) onto (-12.5,-3.5), a lone belt
+  local west=turret(-12.5,-6.5,'rocket')
+  local lone,rspine=belt(-12.5,-3.5,{}),belt(-12.5,-1.5,{rocket=8})
+  local f2=ins(-12.5,-4.5,lone,west)
+  local r2=ins(-12.5,-2.5,rspine,lone)
+  local l2=ins(-11.5,-1.5,hub,rspine)
+  tr=run({west},{lone,rspine},{f2,r2,l2})
+  eq(#tr.rows[1].stops,0,'no stop: fed from the spine'); eq(tr.rows[1].reaches,8+50)
+  -- the relay switched off: stopped again, and said
+  r2.get_control_behavior=function() return {disabled=true} end
+  tr=run({west},{lone,rspine},{f2,r2,l2})
+  has(tr.rows[1].stops[1],'no inserter puts anything on the belts upstream of transport-belt (-12.5,-3.5)')
+  defines,prototypes=nil,nil
+  print('d17_batch13 B1 relays: ok')
+end
