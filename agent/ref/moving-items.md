@@ -109,7 +109,10 @@
   N fires only from ammo slot N); `status {"inventory": true}` adds it as one line.
 - `craft {recipe, count}` (or `recipes: [...]`): queues hand crafts. A craft of 3 s or more that stock within 25 tiles
   covers is refused unless `force: true` (`check_stock: true`: within 64), naming the stocking chests. One that queued
-  nothing for a recipe says `nothing_queued` with what is short (left out of `started`) and what you carry.
+  nothing for a recipe says `nothing_queued` with what is short (left out of `started`) and what you carry. Each short
+  ingredient names where the team keeps it: up to 3 nearest places within 128 tiles that can spare the shortfall (a
+  requester or buffer chest only what it holds over its request, robots' reservations off), else some of it, else
+  the logistic networks on your surface holding it and where robots would take it from.
   Example: `./fh call craft --args '{"recipe":"iron-gear-wheel","count":10}'`
 - `cancel_craft {recipe | index, count?}`: cancels queued hand crafts, the latest first (`all: true`: every one); the
   ingredients come back.

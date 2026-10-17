@@ -570,6 +570,38 @@ do
   s1.clear(); dst.inv[1].clear()
 end
 
+-- Where a craft's missing ingredient is kept (d17 batch19 B4, Haiku: "nearest 1 at (28.5,67.5)" while 33 iron plates
+-- were short, most of the stock in requester chests): places that can spare the shortfall, a requester only what it
+-- holds over its request; else some; else the logistic networks on the surface.
+do
+  local I='iron-plate'
+  local p=runtime.bots.lookup(runtime.bots.index_of('luna'))
+  local function chestx(pos,n,mode,asks)
+    local e=chest(pos,{[I]=n})
+    if mode then
+      e.type='logistic-container'; e.name=mode..'-chest'; e.prototype={name=e.name,type='logistic-container',logistic_mode=mode}
+      local pt={filters={{name=I,count=asks}},targeted_items_pickup={}}
+      e.get_logistic_point=function() return pt end
+    end
+    return e
+  end
+  local req=chestx({x=51.5,y=33.5},40,'requester',40)      -- 40 held for its own request of 40
+  local buf=chestx({x=53.5,y=33.5},30,'buffer',20)          -- 10 over its request
+  local prov=chestx({x=60.5,y=33.5},200,'passive-provider',0)
+  local function scan(list) local out={} for _,e in ipairs(list) do out[#out+1]={entity=e,name=e.name,position=e.position,count=e.inv.get_item_count(I),distance=dist(body.position,e.position)} end return {places=out} end
+  eq(runtime.where_kept(p,I,33,scan({req,buf,prov})),'enough at passive-provider-chest (60.5,33.5) 11 tiles, 200 free')
+  eq(runtime.where_kept(p,I,33,scan({req,buf})),'some at buffer-chest (53.5,33.5) 4 tiles, 10 free over its request')
+  -- none within 128 tiles: the logistic networks
+  local ln={network_id=12,get_item_count=function() return 1200 end,select_pickup_point=function() return {owner=prov} end}
+  local saved=force.logistic_networks
+  force.logistic_networks={[surface.name]={ln}}
+  eq(runtime.where_kept(p,I,33,scan({req})),'none to spare within 128 tiles; logistic network #12 holds 1200 (robots would take it from passive-provider-chest (60.5,33.5), 11 tiles)')
+  force.logistic_networks={}
+  assert(runtime.where_kept(p,I,33,{places={}}):find('none of ours to spare within 128 tiles or in a logistic network on',1,true))
+  force.logistic_networks=saved
+  for _,e in ipairs({req,buf,prov}) do e.inv.remove{name=I,count=e.inv.get_item_count(I)} end
+end
+
 -- A take from one machine's output given straight into another (Muse, shift18 12:46: productivity modules collected
 -- from one machine piled up in the character, 78 and growing, because the next took no more). What the target's input
 -- takes is read before the take (one stack and 64 by hand, measured on 2.0.77): none, nothing taken or walked; else

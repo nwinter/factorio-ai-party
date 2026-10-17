@@ -1785,7 +1785,7 @@ function handlers.describe(_,a)
       nearest_water={position='optional centre (default you)',radius='1..256 tiles (default 200)',returns='the nearest tile an offshore pump takes (a tile with a fluid: water, lava, an oil ocean, ammonia) in chunks the map has charted: tile, fluid, position, distance; pump_spots (offshore-pump placements within 12 tiles of it, as placements gives them); checked_chunks, uncharted_chunks; line. Read only'},
       stock={network='optional logistic network number (the networks read numbers them; surface= another): what it holds, largest first, item= one, limit 1..64',surface='optional planet or platform name (default yours), used throughout: with item and no position, that planet\'s whole stock of it as freight_audit counts it (networks, pads, plain chests and landed pods, silos, labs); with position, the places around it there; a platform is read whole',item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128). With item and no radius: total is the whole surface\'s (as with surface alone; within_radius gives the 128-tile total of the places listed); with radius: everything is that circle. covered says what was read, as_of whether a total is live or reused (and how old)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',places='optional "all" with item and no radius: every machine output and chest of ours on the surface holding it, nearest first (to position or you), limit a page; page= the next (page, pages, next say how many)',page='with places "all" (or more places than limit): 1.. the page of places, nearest first',holders='with item: only places of these kinds (provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle; each place says its kind and what robots have reserved there)',quality='default normal',
         returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance; a spoilable item: first_spoils_in (its first stack there), spoiled_percent, within_5_min}; made_by (crafters set to a recipe making it); held (your inventory); summary line (with the first to spoil, or for pentapod-egg and other items that hatch into enemies the first to hatch); hatches_into. Without item each line adds the first to spoil or hatch'},
-      craft={force='boolean: hand-craft even when nearby stock covers it',short='when fewer started than asked: the raw ingredients missing for the rest (e.g. "wood short 18 (held 2)"), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item; a craft of >=3 s of hand time that stock within 25 tiles of you covers is refused (errors) unless force=true; stock farther off is a note and the craft goes ahead',check_stock='optional true: refuse when stock within 64 tiles covers the craft (as before)',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
+      craft={force='boolean: hand-craft even when nearby stock covers it',short='when fewer started than asked: the raw ingredients missing for the rest, each with where the team keeps it (e.g. "iron-plate short 33 (held 7); enough at passive-provider-chest (60.5,33.5) 11 tiles, 200 free": up to 3 places within 128 tiles that can spare it, a requester or buffer chest only over its request; else some; else the logistic networks on your surface), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item; a craft of >=3 s of hand time that stock within 25 tiles of you covers is refused (errors) unless force=true; stock farther off is a note and the craft goes ahead',check_stock='optional true: refuse when stock within 64 tiles covers the craft (as before)',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
       rates={recipe='or, with no area or positions: every crafter on your surface (surface= another) set to this recipe, at most 512 (scope says how many)',item='or, with no area or positions: every crafter there set to a recipe making it, with statistics (made and used a minute over 10 min, the game\'s) and only its rows (rows_other counts the rest)',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',
         returns='rows per item: produced, consumed, net at full speed, by/into machines x count; power produced/consumed; errors (no_recipe, no_fuel, no_power, no_resources, ...)',
         note='Rate Calculator formulas: recipe, crafting speed, modules, beacons, productivity, quality, fuel, drill resources; our machines only'},
@@ -4598,6 +4598,45 @@ local function hand_recipe(p,item)
   local categories=p.character and p.character.prototype.crafting_categories or {}
   if recipe and recipe.enabled and takes(categories,recipe) then return recipe end
 end
+-- Where the team keeps a missing ingredient (d17 batch19 B4, Haiku: a craft short of iron named "nearest 1 at
+-- (28.5,67.5)", most of the stock in requester chests holding it for their own requests, and nothing at all past 128
+-- tiles): the nearest places of scan (stock.scan within 128 tiles) that can spare the shortfall, up to 3 (a requester
+-- or buffer chest only what it holds over its request, robots' pickup reservations off); else the nearest that can
+-- spare some; else each logistic network on your surface holding it and where its robots would take it from.
+function M.where_kept(p,item,need,scan)
+  local good,some=({}),({})
+  for _,x in ipairs(scan and scan.places or {}) do
+    local e=x.entity
+    local free=x.count
+    local okr,r=pcall(M.supply.reserved,e,item)
+    if okr and r then free=free-r end
+    local okm,mode=pcall(function() return e.prototype.logistic_mode end)
+    local over=''
+    if okm and (mode=='requester' or mode=='buffer') then
+      local okp,pt=pcall(function() return e.get_logistic_point(defines.logistic_member_index.logistic_container) end)
+      local min=okp and pt and M.reqchest and M.reqchest.request(pt,item) or 0
+      free=free-min; over=min>0 and ' over its request' or ''
+    end
+    if free>0 then
+      local t=string.format('%s (%g,%g) %d tiles, %d free%s',e.name,x.position.x,x.position.y,math.floor(x.distance+0.5),free,over)
+      if free>=need and #good<3 then good[#good+1]=t elseif free<need and #some<3 then some[#some+1]=t end
+    end
+  end
+  if #good>0 then return 'enough at '..table.concat(good,'; ') end
+  if #some>0 then return 'some at '..table.concat(some,'; ') end
+  local nets={}
+  for _,ln in ipairs(p.force.logistic_networks[p.surface.name] or {}) do
+    local okn,n=pcall(function() return ln.get_item_count(item) end)
+    if okn and n and n>0 and #nets<2 then
+      local okq,pick=pcall(function() return ln.select_pickup_point{name=item,position=p.position} end)
+      local o=okq and pick and pick.owner
+      nets[#nets+1]=string.format('logistic network #%d holds %d%s',ln.network_id,n,o and o.valid and string.format(' (robots would take it from %s (%g,%g), %d tiles)',
+        o.name,o.position.x,o.position.y,math.floor(distance(p.position,o.position)+0.5)) or '')
+    end
+  end
+  if #nets>0 then return 'none to spare within 128 tiles; '..table.concat(nets,'; ') end
+  return 'none of ours to spare within 128 tiles or in a logistic network on '..p.surface.name
+end
 local function craft_shortfall(p,name,count,notes)
   local have,short={},{}
   local inv=p.get_main_inventory()
@@ -4622,8 +4661,10 @@ local function craft_shortfall(p,name,count,notes)
   walk(p.force.recipes[name],count,0)
   local out={}
   for item,row in pairs(short) do
-    out[#out+1]=string.format('%s short %d (held %d)',item,row.need,row.held)
-    local ok,line=pcall(function() return stock.line(stock.scan(p,item,{radius=128})) end)
+    local oks,scan=pcall(stock.scan,p,item,{radius=128})
+    local okw,where=pcall(M.where_kept,p,item,row.need,oks and scan or nil)
+    out[#out+1]=string.format('%s short %d (held %d)%s',item,row.need,row.held,okw and where and '; '..where or '')
+    local ok,line=pcall(function() return oks and stock.line(scan) end)
     if ok and line and notes then notes[item]=line end
   end
   table.sort(out)
