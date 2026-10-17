@@ -235,7 +235,9 @@ return function(api)
       local required=e.prototype.rocket_parts_required
       local n=(ready or ROCKET_UP[state]) and required or e.rocket_parts
       local line=silo_line(e)
-      return n>=c.at_least,string.format('rocket parts %d/%d (at least %d); %s',n,required,c.at_least,line),
+      -- without at_least: every part of the rocket (A1, Sonnet 22:50)
+      local want=c.at_least or required
+      return n>=want,string.format('rocket parts %d/%d (at least %d); %s',n,required,want,line),
         estimate and {entity=e,parts=n,required=required} or nil
     end,
     crafting_done=function(p)
@@ -333,10 +335,36 @@ return function(api)
       return n>0,n..' burners below '..c.count..' fuel'..(near and string.format(' (nearest %s at %d,%d)',near.name,math.floor(near.position.x),math.floor(near.position.y)) or '')
     end,
   }
-  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced|platform_built'
+  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced|platform_built|all'
+  -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
+  M.ALIASES={silo_parts='rocket_parts'}
+  -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
+  -- conditions=[...]} met when each is; saw joins theirs. Members are plain conditions.
+  checks['all']=function(p,c,estimate,record)
+    local all,saws=true,{}
+    for i,m in ipairs(c.conditions) do
+      local met,saw=checks[m['until']](p,m,nil,record)
+      if not met then all=false end
+      saws[i]=(met and 'met: ' or 'not yet: ')..tostring(saw)
+    end
+    return all,table.concat(saws,'; ')
+  end
   -- Argument checks run when a plan is submitted, not when it first fires.
   function M.validate(c)
-    assert(type(c)=='table' and checks[c['until']],'until must be one of '..NAMES)
+    if type(c)=='table' and M.ALIASES[c['until']] then c['until']=M.ALIASES[c['until']] end
+    -- queue_done (A1, Sonnet 22:50) is a sleep's: fh sleep/fh wait --until queue_done; in a queue the next step is that.
+    if type(c)=='table' and c['until']=='queue_done' then
+      error('until queue_done is a sleep\'s (fh sleep SECONDS --until queue_done, fh wait --until queue_done, sleep {seconds, condition: {until: "queue_done"}}): it wakes when your queue finishes or stalls; in a queue the next step runs when this one ends',0)
+    end
+    assert(type(c)=='table' and checks[c['until']],'until must be one of '..NAMES..'; a sleep also takes queue_done')
+    if c['until']=='all' then
+      assert(type(c.conditions)=='table' and #c.conditions>=1 and #c.conditions<=8,'until=all takes conditions: 1..8 wait_until conditions, met when every one holds')
+      for _,m in ipairs(c.conditions) do
+        assert(type(m)=='table' and m['until']~='all' and m['until']~='any','until=all takes plain conditions')
+        M.validate(m)
+      end
+      return c
+    end
     if c.position~=nil then api.position(c.position) end
     if c.radius~=nil then number(c.radius,1,256,'radius') end
     local kind=c['until']
@@ -384,8 +412,7 @@ return function(api)
     if kind=='rocket_ready' then assert(c.position~=nil,'rocket_ready requires position (a rocket silo\'s, any tile of it)') end
     if kind=='rocket_parts' then
       assert(c.position~=nil,'rocket_parts requires position (a rocket silo\'s, any tile of it)')
-      assert(c.at_least~=nil,'rocket_parts requires at_least (parts of the rocket being built, 1..required)')
-      number(c.at_least,1,1000,'at_least')
+      if c.at_least~=nil then number(c.at_least,1,1000,'at_least') end
     end
     if kind=='ghosts_waiting' and c.at_least~=nil then number(c.at_least,1,100000,'at_least') end
     if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
@@ -397,6 +424,7 @@ return function(api)
     return c
   end
   function M.check(p,c,estimate,record)
+    if M.ALIASES[c['until']] then c['until']=M.ALIASES[c['until']] end
     if c['until']=='researched' then assert(p.force.technologies[c.technology],'unknown technology') end
     return checks[c['until']](p,c,estimate,record)
   end

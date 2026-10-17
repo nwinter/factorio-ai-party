@@ -16,7 +16,13 @@
 - `./fh sleep 600 --until "rocket_ready 65.5,14.5"` (or `wait_until {"until":"rocket_ready","position":...}`) waits for
   that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
   `--until "rocket_parts>=40 at 65.5,14.5"` (or `{"until":"rocket_parts","at_least":40,"position":...}`, also a queue
-  guard's `when`) waits for the rocket being built to have 40 parts.
+  guard's `when`) waits for the rocket being built to have 40 parts (`silo_parts` is the same name; with no count, every
+  part: `--until "rocket_parts at 65.5,14.5"`). `--until queue_done` (a sleep's only) wakes when your queue finishes or
+  stalls, a standing order's round too, and at once when none runs. `{"until":"all","conditions":[...]}` holds when
+  every one does.
+- `--then ACTION [JSON]` on `fh sleep` and `fh wait --until` runs one read when the sleep ends and returns it with the
+  wake: `./fh sleep 120 --until "item_count nutrients<50 at 4.5,15.5" --then inspect '{"position":{"x":4.5,"y":15.5}}'`
+  (read actions only). A sleep a newer one replaced runs none, and its `note` names the newer sleep.
   `--until "produced iron-gear-wheel>=50 at 10.5,20.5"` (or `{"until":"produced","item":...,"at_least":50,"positions":[...]}`, a wait or queue step) waits until those machines made 50 since the wait began (their products-finished counter).
   `./fh wait --until "item_count coal below 20 at 10,39"` wakes when that chest's coal falls under 20 (also `>=`, `<`,
   `above`; several `X,Y` are summed). `./fh wait --until "alert low_power starved"` wakes on a new or grown alert

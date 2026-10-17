@@ -361,7 +361,7 @@ test('a sleep replaced by a newer one ends (woke replaced) without reading the o
     return {ok:true,result:checks<2?{slept_s:1,until_tick:1801}:{slept_s:0,until_tick:5400}};
   },async port=>{
     const reply=JSON.parse((await cli(port,['sleep','30'])).stdout);
-    assert.equal(reply.ok,true); assert.equal(reply.result.woke,'replaced'); assert.match(reply.result.note,/another sleep \(until tick 5400\)/);
+    assert.equal(reply.ok,true); assert.equal(reply.result.woke,'replaced'); assert.match(reply.result.note,/^replaced: a newer sleep until tick 5400 \(a later fh sleep/);
   });
   const reads=seen.filter(isCheck); assert(reads.length>0 && reads.every(r=>r.args.peek===true),'no read of the other sleep');
 });

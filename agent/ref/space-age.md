@@ -44,7 +44,8 @@
   rocket cargo list: each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets,
   and one split into rockets that keeps each within both. `./fh call silo` (or a `position`) shows a silo's rocket
   parts X/50, what it lacks for the parts left (in the silo and at its feeders), the cargo's kg and slots, and the
-  last launch. `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically`
+  last launch. `silo {position, why: true}` follows the ingredient it is shortest of: its feeder chests (a requester's
+  request and its network's stock), then that item's chain on the planet down to the root, with makers not working. `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically`
   on a silo) take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
   With automatic requests on, `launch {position, platform}` launches the rocket with what the game loaded so far (they
   stay on); `load_silo` refuses, saying what is aboard.

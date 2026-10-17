@@ -455,7 +455,102 @@ return function(api)
       requesting_for = target, parts = rk.parts, built_parts = rk.built_parts, next_parts = rk.next_parts, rocket_ready = rk.rocket_ready, rocket = rk.rocket,
       state = try(function() return silo_states[e.rocket_silo_status] end)}
   end
+  -- silo {position, why: true} (A2, Sonnet 22:50: "a one-call 'why is this silo part short' chain trace down to the raw
+  -- input"; he found low-density-structure, then plastic, then no coal on Vulcanus by hand): the rocket-part
+  -- ingredient the silo is shortest of (one it lacks for the next part first, else the most short for the parts left,
+  -- else the least on hand against what the parts left need), the places its feeding inserters take from (what each
+  -- holds of it; a requester or buffer chest: its request and what its logistic network holds and has on the way), and
+  -- that item's chain on the silo's planet as bottleneck {item} reads it (makers by state and what most of them lack,
+  -- down to the first step whose makers mostly do not lack an ingredient: the root), with up to 3 makers not working.
+  local function source_entities(e)
+    local box = {left_top={x=e.position.x - FEED_REACH, y=e.position.y - FEED_REACH}, right_bottom={x=e.position.x + FEED_REACH, y=e.position.y + FEED_REACH}}
+    local out, seen = {}, {}
+    for _, ins in ipairs(try(function() return e.surface.find_entities_filtered{area=box, type='inserter', force=e.force, limit=MAX_FEEDERS} end) or {}) do
+      if ins.valid and try(function() return ins.drop_target end) == e then
+        local src = try(function() return ins.pickup_target end)
+        local key = src and src.valid and (src.unit_number or at(src.position))
+        if key and not seen[key] then seen[key] = true; out[#out+1] = src end
+      end
+    end
+    return out
+  end
+  local function source_line(src, item)
+    local held = holds(src, {[item]=true})[item] or 0
+    if src.type == 'logistic-container' then
+      local inv = try(function() return src.get_inventory(defines.inventory.chest) end)
+      held = inv and try(function() return inv.get_item_count(item) end) or held
+    end
+    local text = string.format('%s %s holds %d', src.name, at(src.position), held)
+    local pt = try(function() return src.get_logistic_point(defines.logistic_member_index.logistic_container) end)
+    if pt then
+      local asks
+      for _, f in ipairs(try(function() return pt.filters end) or {}) do
+        local n = type(f.name) == 'string' and f.name or try(function() return f.name.name end)
+        if n == item then asks = (asks or 0) + (f.count or 0) end
+      end
+      if try(function() return pt.mode end) == defines.logistic_mode.requester or try(function() return pt.mode end) == defines.logistic_mode.buffer then
+        text = text .. (asks and string.format(', asks %d', asks) or ', no request for it')
+      end
+      local coming = 0
+      for _, c in ipairs(try(function() return pt.targeted_items_deliver end) or {}) do
+        local n = type(c.name) == 'string' and c.name or try(function() return c.name.name end)
+        if n == item then coming = coming + (c.count or 0) end
+      end
+      local ln = try(function() return pt.logistic_network end)
+      if ln then
+        text = text .. string.format('; its logistic network holds %d (robots bringing %d)', try(function() return ln.get_item_count(item) end) or 0, coming)
+      else
+        text = text .. '; in no logistic network'
+      end
+    end
+    return text
+  end
+  function M.why(p, e, row)
+    local list = row.ingredients or {}
+    local pick, why_pick
+    for _, l in ipairs(row.lacks or {}) do
+      for _, r in ipairs(list) do if r.name == l and not pick then pick, why_pick = r, 'it lacks one for the next part' end end
+    end
+    if not pick then
+      for _, r in ipairs(list) do if r.short and (not pick or r.short > (pick.short or 0)) then pick, why_pick = r, 'the most short for the parts left' end end
+    end
+    if not pick then
+      local best
+      for _, r in ipairs(list) do
+        local share = (r.in_silo + r.in_hands + r.at_sources) / math.max(1, r.needed)
+        if r.needed > 0 and (not best or share < best) then pick, best, why_pick = r, share, 'the least on hand for the parts left' end
+      end
+    end
+    if not pick then
+      return {line=string.format('%s %s: no rocket part to make now (%s); nothing is short', e.name, at(e.position), row.rocket or row.state)}
+    end
+    local item = pick.name
+    local out = {item=item, picked=why_pick}
+    local srcs = {}
+    for i, src in ipairs(source_entities(e)) do if i <= 4 then srcs[#srcs+1] = source_line(src, item) end end
+    out.feeders = #srcs > 0 and srcs or nil
+    local words = {string.format('%s: the silo holds %d (%d a part, %d for the parts left; %s), %d in feeding inserters\' hands',
+      item, pick.in_silo, pick.per_part, pick.needed, why_pick, pick.in_hands)}
+    words[#words+1] = #srcs > 0 and table.concat(srcs, '; ') or 'no inserter feeds the silo'
+    local ok, chain = pcall(api.bottleneck, p, {item=item, surface=e.surface.name})
+    if ok and type(chain) == 'table' then
+      out.chain, out.root, out.path = chain.line, chain.root, chain.path
+      local nw = {}
+      for i, w in ipairs(chain.not_working or {}) do if i <= 3 then nw[i] = w end end
+      out.not_working = #nw > 0 and nw or nil
+      local fx = {}
+      for i, f in ipairs(chain.fixes or {}) do if i <= 3 then fx[i] = f end end
+      out.fixes = #fx > 0 and fx or nil
+      words[#words+1] = chain.line or ''
+      if chain.root then words[#words+1] = 'root: ' .. chain.root end
+    elseif not ok then
+      out.chain_error = tostring(chain)
+    end
+    out.line = table.concat(words, '; ')
+    return out
+  end
   function M.read(p, a)
+    assert(a.why == nil or type(a.why) == 'boolean', 'why must be true or false')
     local surface = p.surface
     if a.surface ~= nil then
       assert(type(a.surface) == 'string', 'surface must be a surface name')
@@ -476,10 +571,15 @@ return function(api)
     table.sort(silos, function(x, y) if x.position.x ~= y.position.x then return x.position.x < y.position.x end return x.position.y < y.position.y end)
     local rows = {}
     for _, e in ipairs(silos) do rows[#rows+1] = M.view(e, p.force) end
+    if a.why then
+      assert(#silos == 1, 'why reads one silo: give position (the silo nearest it)')
+      rows[1].why = M.why(p, silos[1], rows[1])
+    end
     return {surface=surface.name, silos=rows, rockets_launched=try(function() return p.force.rockets_launched end),
       note=#silos >= MAX_SILOS and 'the first ' .. MAX_SILOS .. ' silos' or nil}
   end
   M.schema = {silo = {position='optional {x,y}: the silo nearest it (default every silo on the surface)', surface='optional surface name (default yours)',
+    why='optional true, with position (or one silo there): why its rocket parts are short, as one read: the ingredient it is shortest of (one it lacks for the next part first), the places its feeding inserters take from (what each holds of it; a requester or buffer chest: its request, and what its logistic network holds and robots bring), and that item\'s chain on the silo\'s planet as bottleneck {item} reads it (each step\'s makers by state and what most of them lack, down to the root), with up to 3 makers not working and fixes: why {item, picked, feeders, chain, root, path, not_working, fixes, line}',
     returns='silos [{name, position, surface, parts (X/required, the 2.0 rocket_parts_required, while the rocket is being built), built_parts (ready or rising: the built rocket\'s, 50/50), next_parts (once it is built: ready, rising or launching; the parts the silo makes for the rocket after it: a ready rocket with next_parts 6/50 is built and launches), rocket_ready (true only for a built rocket), rocket ("rocket built (50/50 parts) and ready to launch, not launched; parts for the rocket after it 13/50; last launch 4m10s ago to platform X"; rising into place; launching; or building, parts X/Y), state (the silo\'s rocket state), status, '
       .. 'crafting {part_progress, parts_left, part_s, productivity, rocket_eta_s (at this speed, while working)}, ingredients [{name, per_part, in_silo, in_hands '
       .. '(feeding inserters\' hands), at_sources (what their belts and chests hold), needed (for the parts left), short}], lacks (ingredients the silo holds too few '

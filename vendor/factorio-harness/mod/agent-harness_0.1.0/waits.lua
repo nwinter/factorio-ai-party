@@ -26,7 +26,7 @@ return function(api)
   local WAKE_URGENT = 'true (default), false (fh --no-urgent) or {radius: 1..200} (fh --urgent-radius N: attacks, enemy groups, losses, in your claims too, and teammates\' deaths count only within N tiles of you; platform and power wakes as before): an urgent alert ends it (woke=urgent, urgent=the alert): our structures attacked within 40 tiles of you, an enemy group heading for a spot within 40 tiles of you, buildings destroyed by enemies in your fresh claims or within 40 tiles of you, a platform you hear about losing a building or its hub taking damage, a teammate dying on your surface, an electric network on your surface with 20+ machines half on low or no power that had power within the last 10 minutes; each wakes you once (again after 5 min if it grew)'
   M.schema = {
     wait_ticks = {ticks='1..54000 simulation ticks: the character stands idle that long (a direct timed action, outcome duration_elapsed, or told|mentioned when a tell or a teammate\'s mention ends it early, urgent when an urgent alert does (last.why names it); use --wait), or a queue step', wake_on_viewers=WAKE_VIEWERS, wake_from=WAKE_FROM, wake_on_operator=WAKE_OPERATOR, wake_on_urgent=WAKE_URGENT, wake_on_messages='boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply', pause_queue='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'},
-    sleep = {seconds='1..900; with no queue running, no action running and no condition it is capped at 300 (capped: "capped at 300 s: no queue, action or condition")', condition='optional wait_until condition {until=researched|item_count|rocket_ready|rocket_parts|crafting_done|..., ...}: the sleep also ends when it holds (woke=condition, saw); researched without technology means the research running now; item_count may take positions (chests); {until=alert}: a new attack, enemy group or enemy base alert (woke=alert, alert=which); {until=alert, area={left_top,right_bottom}|near={x,y} radius=R (default 100), surface=S (default yours), min_size=N}: only one in that area (an attack\'s position, a group\'s target or gathering point, a nest) and/or by N+ enemies (an attack by N+ attackers or a group of N+; nest news has no size); {until=alert, kinds=[low_power, no_power, no_fuel, ..., starved]}: a new or grown alert group of those kinds addressed to you, or (starved) a machine in your claims newly lacking ingredients (woke=alert, alert=its text); {until=any, conditions=[...]} (or a list): 1..8 conditions, alerts among them, whichever holds first wakes it (met names it)',
+    sleep = {seconds='1..900; with no queue running, no action running and no condition it is capped at 300 (capped: "capped at 300 s: no queue, action or condition")', condition='optional wait_until condition {until=researched|item_count|rocket_ready|rocket_parts|crafting_done|..., ...}: the sleep also ends when it holds (woke=condition, saw); researched without technology means the research running now; item_count may take positions (chests); {until=alert}: a new attack, enemy group or enemy base alert (woke=alert, alert=which); {until=alert, area={left_top,right_bottom}|near={x,y} radius=R (default 100), surface=S (default yours), min_size=N}: only one in that area (an attack\'s position, a group\'s target or gathering point, a nest) and/or by N+ enemies (an attack by N+ attackers or a group of N+; nest news has no size); {until=alert, kinds=[low_power, no_power, no_fuel, ..., starved]}: a new or grown alert group of those kinds addressed to you, or (starved) a machine in your claims newly lacking ingredients (woke=alert, alert=its text); {until=any, conditions=[...]} (or a list): 1..8 conditions, alerts among them, whichever holds first wakes it (met names it); {until=queue_done}: your queue finishing or stalling (a standing order\'s round too; woke=queue_done), at once when no queue of yours runs; {until=all, conditions=[...]}: when every one holds; silo_parts is rocket_parts',
       returns='open: one line of what is open for you (your board items, alert groups and idle or starved machines in your fresh claims, requests and tells to you unanswered; counts and up to 3 examples), also on the reply that reads the wake; capped when cut to 300 s; wait_estimates: each condition ETA in game seconds with rate basis, or no_estimate reason; idle_s: character idle seconds in this wait; wait_line: one-line summary',
       peek='boolean: the reply leaves the team block for your next reply (fh wait --until)', wake_on_viewers=WAKE_VIEWERS, wake_from=WAKE_FROM, wake_on_operator=WAKE_OPERATOR, wake_on_urgent=WAKE_URGENT,
       wake_on_messages='boolean default true; false (fh sleep/wait --wait-through-tells): no tell or mention ends it (they stay for your next reply); a tell sent with wake: true still does, once per 10 minutes per teammate; urgent alerts, damage, your queue finishing or stalling and the condition still end it',
@@ -191,9 +191,15 @@ return function(api)
     -- (Luna, 19:50: low power, starvation in a claim), a new or grown alert group of those kinds addressed to you, or
     -- starved: a machine in one of your claims that lacks ingredients and did not when the sleep began.
     local conditions, texts, alert, plain, kinds, filter = {}, {}, nil, nil, nil, nil
+    -- until queue_done (A1, Sonnet 22:50: refused as an invalid until, then about 10 polls of the silo): the sleep ends
+    -- when your queue finishes or stalls (a standing order's round too); no queue running: it ends at once.
+    local queue_wait
     for _, m in ipairs(members or {}) do
       assert(type(m) == 'table' and type(m['until']) == 'string', 'each condition is a wait_until condition: {until=..., ...}')
-      if m['until'] == 'alert' then
+      if m['until'] == 'queue_done' then
+        queue_wait = true
+        texts[#texts+1] = 'queue_done'
+      elseif m['until'] == 'alert' then
         alert = true
         if m.kinds ~= nil then
           local list = type(m.kinds) == 'string' and {m.kinds} or m.kinds
@@ -244,11 +250,12 @@ return function(api)
     -- A standing order's round is routine (Opus, shift17 12:20: about 30 sleeps a shift woke on copper-fuel rounds,
     -- queue_done): only the agent's own plan, or wake_on_orders, ends a sleep when it finishes or stalls.
     assert(a.wake_on_orders == nil or type(a.wake_on_orders) == 'boolean', 'wake_on_orders must be true or false')
-    if running(q) and (not q.order or a.wake_on_orders == true) then record.queue = true end
+    if running(q) and (not q.order or a.wake_on_orders == true or queue_wait) then record.queue = true end
     if running(q) and q.order and not record.queue then record.order = q.order.name end
     if running(queue_of(p.index,true)) then record.remote_queue=true end
+    local queue_idle = queue_wait and not record.queue and not record.remote_queue
     local capped
-    if not condition and not alert and not record.queue and not record.order and not record.remote_queue and not record.dead_until
+    if not condition and not alert and not queue_wait and not record.queue and not record.order and not record.remote_queue and not record.dead_until
       and not api.state().active[p.index] and seconds > IDLE_CAP then
       seconds = IDLE_CAP
       record.until_tick = game.tick + seconds * 60
@@ -279,8 +286,14 @@ return function(api)
     out.capped = capped
     out.until_tick = record.until_tick
     if #texts > 0 then out.condition = table.concat(texts, ' | ') end
+    -- A sleep that replaces another names itself to the one it replaced (A3, Luna 22:50): its start and condition.
+    record.condition_text = out.condition
     observe_conditions(p,record,out,true)
-    if record.met_condition then
+    if queue_idle and not record.met_condition then
+      record.woke='queue_done'; out.already_met=true
+      local why=q and q.paused and 'your queue is paused (queue_status; queue_resume)' or 'no queue of yours runs (queue_status)'
+      record.out={while_asleep=record.while_asleep,slept_s=0,until_tick=record.until_tick,woke='queue_done',queue=why..': until queue_done ends at once'}
+    elseif record.met_condition then
       record.woke='condition'; out.already_met=true
       record.out={while_asleep=record.while_asleep,slept_s=0,until_tick=record.until_tick,woke='condition',saw=record.met_condition.saw,
         met=#members>1 and record.met_condition.text or nil}
@@ -495,6 +508,9 @@ return function(api)
     end
     local reply=record.out or out
     if api.wait_info then api.wait_info(reply,record) end
+    -- Which sleep this is (A3): fh sleep names it when it replaced an earlier one.
+    reply.sleep_started_tick=record.start_tick
+    reply.sleep_until=record.condition_text
     return reply
   end
   return M
