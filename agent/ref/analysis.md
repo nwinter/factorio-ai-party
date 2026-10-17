@@ -1,6 +1,8 @@
 - `./fh progress` prints the run so far by shift from the recorded data (technologies, SPM, packs and plates a minute,
   rockets, deaths, loss alerts, machines running, made by machines and moved by hand), a run line and the last 3
   shifts; `--full` for each shift's technologies and packs, `--format json`.
+- `./fh call science --args '{"compact":true}'` reads your surface only; its first line says so and counts the labs on
+  other planets; `{"all_surfaces":true}` gives the compact read for each planet with labs.
 - `./fh research` shows the research queue: each technology's progress, who queued it, its packs, and when it should
   finish at the current lab throughput (or which pack it waits for). `./fh research done` lists what finished lately
   and what each unlocked. A leveled technology (mining-productivity-3) may stand in the queue several times, each the
@@ -42,6 +44,10 @@
   tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
   they end and what blocks them (on a belt tile, a drill or a chest: from there, forward), naming where other items join a lane (`joins
   transport-belt (12,5) carrying iron-plate on the left lane: your iron-ore mixes in`); `{"item":"chemical-science-pack"}` follows every route from its makers to the labs (for an ore, from the drills mining it).
+  `{"position":{"x":-290.5,"y":-312.5},"throughput":true}` on a belt tile reads the line through it (every belt feeding it
+  back, on to its end): per lane the mining drills dropping onto it (how many, working, on what) and what they put on
+  at full speed against the slowest belt's lane capacity, and what the last 10 tiles hold (give a tile near the end
+  to count every drill).
   `"forward":true,"audit":true` adds `audit`: where the walked lanes lose capacity (a belt side-loading both carried
   lanes onto one, a curve made a side-load by an empty stub behind the turn, a route ending at missing tiles with the run
   going on within 4 tiles, what it carries).

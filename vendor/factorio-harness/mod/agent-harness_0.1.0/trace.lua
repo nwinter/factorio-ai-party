@@ -1025,6 +1025,7 @@ return function(api)
     splitter_side=splitter_side, radius_of=radius_of, recipe_of=recipe_of, output_of=output_of, input_of=input_of, main=main,
     inventory=inventory, count=count}
   local upstream
+  local beltrate
   function M.trace(p, a)
     if a.upstream ~= nil then
       assert(type(a.upstream) == 'boolean', 'upstream must be true or false')
@@ -1042,6 +1043,13 @@ return function(api)
     end
     assert(a.near == nil and a.radius == nil, 'near and radius go with item')
     assert(a.position ~= nil, 'trace takes position (a machine or lab; forward=true for its output) or item')
+    -- throughput (beltrate.lua; B1, Opus 21:20): a belt line's supply against its capacity, per lane.
+    if a.throughput ~= nil then
+      assert(a.throughput == true, 'throughput is true')
+      assert(a.position ~= nil and a.forward == nil and a.item == nil and a.upstream == nil, 'throughput takes position (a belt tile) alone')
+      beltrate = beltrate or require('beltrate'){status_name=api.status_name}
+      return beltrate.read(p, target(p, a))
+    end
     assert(a.audit == nil or type(a.audit) == 'boolean', 'audit is true or false')
     assert(not a.audit or a.forward, 'audit goes with forward (the belts walked from a machine\'s output or a belt tile)')
     if a.forward then
@@ -1072,6 +1080,7 @@ return function(api)
   M.schema = {trace = {memory='without coverage: recorded trace with observation tick and age, or remembered belt layout (up to 512 tiles; stops at unknown routing); current state unknown; a visible trace stops at fog and attaches recorded layout',position='{x,y} of a machine or lab in sight (platform= for one on a platform); with forward also a belt tile',
     all='boolean: every ingredient, not only those it lacks for its next craft',
     forward='boolean: follow its output instead: the inserters taking from it and the belts they load, lane by lane, to where they end; on a belt tile, that belt\'s lanes from there (those carrying something now, else both); every walk names where other items join its lanes (merges)',
+    throughput='true, with position on a belt tile: the line through it (every belt feeding it back, on to its end): per lane the mining drills dropping onto it (how many, working, on what) and what they put on at full speed against the slowest belt\'s lane capacity, and what the last 10 tiles hold; lines, lanes, tiles, lane_capacity_per_min, end',
     audit='boolean, with forward: where the walked lanes lose capacity: a belt side-loading both its carried lanes onto one lane, a curve made a side-load by an empty stub behind the turn tile (both lanes onto one), a route ending at missing tiles with the run going on within 4 tiles ahead (what it carries; a ghost waiting there), or against a belt facing another way; returns audit (lines; one line saying none were found)',
     upstream='boolean, with position: from the target back along what feeds it to the first place each ingredient it lacks (all: every one; item: that one) stops or goes elsewhere: a feeder whose filter does not let it through or that is off by its circuit condition (the condition, the signal on its wires), each lane a feeder picks walked back through undergrounds, splitters and side-loads (the lane at the feeder: full, front item, a jammed mixed lane; the first tile back holding it; inserters taking it elsewhere on the way, with status, filter and what each holds; a splitter filter sending it to the other output; where it comes onto the lane; the first tile where another item joins), a chest it reads and what fills it, and a machine making it that is not working, traced the same way one level down. A thruster: each fluid by pipe to the machines making it, each traced so (back through crushers to the collectors). A hub, chest or belt tile: every lane feeding it',
     item='with upstream: the one ingredient or item to follow. Alone: an item instead of position: the routes from every machine making it (and every mining drill on a resource that gives it, from where it drops) to the labs, machines and chests taking it',

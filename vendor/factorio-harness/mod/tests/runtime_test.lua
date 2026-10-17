@@ -1753,7 +1753,7 @@ do
   eq(call('feed',{positions={{x=2,y=3}},item='coal'}).nothing_moved,'nothing given: 1 burner holds another fuel in every fuel slot (solid-fuel 4): no slot for coal')
   -- beside full ones: the full ones are the warning, the other fuel apart
   local full=call('feed',{positions={{x=1,y=3},{x=2,y=3},{x=3,y=3}},item='coal',up_to=true})
-  eq(full.nothing_moved,'nothing given: 2 machines hold 10 coal, at count 10 already; 1 burner holds another fuel in every fuel slot (solid-fuel 4): no slot for coal')
+  eq(full.nothing_moved,'nothing given: 2 machines hold 10 coal: at or over the 10 each is topped up to; 1 burner holds another fuel in every fuel slot (solid-fuel 4): no slot for coal')
   -- one that wants coal gets it; the other-fuel one is skipped, no warning
   b1.fuel[1].count=4
   local mixed=call('feed',{positions={{x=1,y=3},{x=2,y=3}},item='coal',up_to=true})
