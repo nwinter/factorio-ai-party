@@ -90,6 +90,7 @@
   direction: "to_player", item: "logistic-robot", count}` takes robots out of it, as its GUI does. `stock {item,
   surface}` gives a planet's whole stock of an item. `stock {item, holders: ["provider", "storage"], limit: 32}` lists only those kinds of place;
   each place says its `kind` and what robots have `reserved` there.
+- `stock {item, places: "all"}` lists every place on the surface holding it, nearest first, `limit` a page (`page`, `next`).
 - `stock {item}` with no radius totals the whole surface (named or yours; a platform is read whole) and lists the places
   within 128 tiles; `covered` says what was read, `as_of` whether a total is live or reused (and its age; `supply` too).
 - `belt_gaps` follows a leg that is not straight round the remembered belt's corners (`followed`); `surface` is read.

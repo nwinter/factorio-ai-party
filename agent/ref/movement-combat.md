@@ -60,6 +60,9 @@
 - `./fh call rearm --args '{"surface":true,"below":5}'` (or `"area"`, `"radius"` round you or round `"position"`) tops
   up every turret under 5 rounds in one walking tour, nearest cluster first, its `ticks` set by the tour's length;
   `below` works in reach and at positions too. refuel, feed and rearm that find nothing name the nearest one outside.
+  Without `ammo`, each turret gets the type it holds (`ammo_each`); one whose type you hold none of, or that holds
+  another type than the one asked, is left out and named. `turrets {hand_fed_low: true, below: 10}` lists the turrets
+  no inserter feeds under 10 rounds, nearest first.
 - Artillery: `./fh call artillery` lists our artillery with shells, automatic targeting and the spawners and worms in range, nearest first; `configure {position, auto_targeting: false}` switches automatic targeting; `use_item {"item":"artillery-targeting-remote","position":{...}}` puts a flare there for the pieces in range.
 - `artillery` rows add `units_near`: enemy units within 64 tiles of each piece, their range, and how many of our turrets reach them.
 - `artillery` and the remote's reply give `shells_used` (shots fired, from the production statistics) and each piece's

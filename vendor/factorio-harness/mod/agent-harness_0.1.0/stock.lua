@@ -156,9 +156,13 @@ return function(api)
       for _,x in ipairs(s.places) do if want[M.holder_kind(x.entity)] then kept[#kept+1]=x end end
       s={item=s.item,total=s.total,groups=s.groups,places=kept,makers=s.makers}
     end
+    -- page (A9, Muse: places past 128 tiles unfindable): places limit at a time, nearest first, from page 1.
+    local pages=math.max(1,math.ceil(#s.places/limit))
+    local page=api.integer(a.page,1,1,pages,'page')
+    local skip=(page-1)*limit
     local places={}
-    for i=1,math.min(limit,#s.places) do
-      local x=s.places[i]
+    for i=1,math.min(limit,#s.places-skip) do
+      local x=s.places[skip+i]
       local reserved=api.reserved and api.reserved(x.entity,a.item) or 0
       places[i]={name=x.name,position=x.position,count=x.count,distance=math.floor(x.distance+0.5),kind=M.holder_kind(x.entity),
         reserved=reserved>0 and reserved or nil,
@@ -166,7 +170,8 @@ return function(api)
         within_5_min=x.soon and x.soon>0 and x.soon or nil}
     end
     local h=api.spoil and api.spoil.hatch(a.item)
-    return {item=a.item,total=s.total,by_entity=s.groups,places=places,more=#s.places>limit and #s.places-limit or nil,
+    return {item=a.item,total=s.total,by_entity=s.groups,places=places,more=#s.places>skip+limit and #s.places-skip-limit or nil,
+      page=pages>1 and page or nil,pages=pages>1 and pages or nil,
       covered=whole and string.format('every machine output and chest of ours on %s',surface.name)
         or string.format('our machine outputs and chests within %d tiles of (%g,%g) on %s',radius,math.floor(centre.x),math.floor(centre.y),surface.name),
       as_of=string.format('live (tick %d)',game.tick),

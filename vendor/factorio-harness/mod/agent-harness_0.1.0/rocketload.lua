@@ -473,6 +473,8 @@ return function(api)
           api.reason and api.reason(launched) or tostring(launched), out.cargo, out.rocket_weight, M.as_is(silo, a)), 0)
       end
       out.launch = launched
+      -- what went up, spoil by item (A11)
+      out.spoiled_percent, out.went_up = launched.spoiled_percent, launched.went_up
     end
     return out
   end
@@ -876,6 +878,7 @@ return function(api)
     last.given = nil; last.items = nil
     last.trips = action.trips; last.taken = action.taken; last.loaded = action.loaded; last.stops = action.rows
     last.cargo = action.cargo; last.rocket_weight = action.rocket_weight; last.launch = action.launch
+    if action.launch then last.spoiled_percent, last.went_up = action.launch.spoiled_percent, action.launch.went_up end
     last.taken_items = next(action.items) and action.items or nil
     -- What you put in apart from what was aboard before, and what you took and still hold (E9, Grok 19:50: two furnaces
     -- and a gun read as rocket cargo while he held them: a teammate's, loaded earlier, met the count).

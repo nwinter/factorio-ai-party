@@ -136,7 +136,13 @@ turret(21,-4,{},launcher,'rocket-turret')
 local b1=turret(-60,0,{['firearm-magazine']=1}); local b2=turret(-62,3)
 local c1=turret(200,200)
 -- The whole surface: the nearest cluster first, then from where it ends; inside one, nearest first.
-local r=opus('rearm',{surface=true,below=5,count=10})
+-- Without ammo each turret gets its own type (A3): the piercing one and the rocket turret are left out, none held.
+local own=opus('rearm',{surface=true,below=5,count=10})
+eq(own.places,4)
+eq(own.none_held,'2 turrets left out, none of their ammo carried: rocket-turret (21,-4) is empty; gun-turret (24,2) wants piercing-rounds-magazine')
+eq(own.ammo_each,'each turret its own ammo: 4 firearm-magazine')
+opus('stop',{})
+local r=opus('rearm',{surface=true,below=5,count=10,ammo='firearm-magazine'})
 eq(r.places,5); eq(r.below,5); eq(r.count,10)
 eq(#r.clusters,3); eq(r.clusters[1],'2 turrets around (22,1), 20 tiles from you, holding 0-3 rounds')
 eq(r.clusters[2],'2 turrets around (-61,2), 84 tiles on from the cluster before, holding 0-1 rounds')
@@ -145,16 +151,16 @@ local order={}
 for i,t in ipairs(active('opus').targets) do order[i]=t.entity end
 eq(order[1],a1); eq(order[2],a2); eq(order[3],b1); eq(order[4],b2); eq(order[5],c1)
 -- An area: only what is inside it.
-r=opus('rearm',{area={left_top={x=-70,y=-10},right_bottom={x=-50,y=10}},below=5})
+r=opus('rearm',{area={left_top={x=-70,y=-10},right_bottom={x=-50,y=10}},below=5,ammo='firearm-magazine'})
 eq(r.places,2); eq(active('opus').targets[1].entity,b1)
 -- A radius: the same, clustered.
-r=opus('rearm',{radius=30,below=5})
+r=opus('rearm',{radius=30,below=5,ammo='firearm-magazine'})
 eq(r.places,2); eq(active('opus').targets[1].entity,a1)
 -- below defaults to count: the turret with 12 rounds is under 20.
-r=opus('rearm',{radius=30,count=20})
+r=opus('rearm',{radius=30,count=20,ammo='firearm-magazine'})
 eq(r.places,3); eq(r.below,20)
 -- Nothing in the radius: why, and the nearest one outside it.
-r=opus('rearm',{radius=10,below=5})
+r=opus('rearm',{radius=10,below=5,ammo='firearm-magazine'})
 eq(r.places,0); eq(r.nothing,'no turret there that takes firearm-magazine holds under 5 rounds')
 eq(r.nearest_outside,'nearest turret under 5 firearm-magazine outside it: gun-turret at (20,0), 20 tiles from you')
 local function advance(n) for _=1,n do tick=tick+1; game.tick=tick; runtime.tick{tick=tick} end end
@@ -208,7 +214,7 @@ local function route_len()
   for _,t in ipairs(active('opus').targets) do local q=t.entity.position; len=len+((q.x-at.x)^2+(q.y-at.y)^2)^0.5; at=q end
   return len
 end
-r=opus('rearm',{surface=true,below=5})
+r=opus('rearm',{surface=true,below=5,ammo='firearm-magazine'})
 eq(r.places,5); eq(r.ticks,math.ceil(route_len()*1.5/0.15)+60*5+600); assert(r.ticks>3600,r.ticks)
 eq(active('opus').until_tick,game.tick+r.ticks)
 -- ticks given: as given.
@@ -222,11 +228,11 @@ far.valid=false
 -- A turret under below whose slot holds other ammo, with no room for the call's: left out, and named.
 local full=turret(26,-3,{['piercing-rounds-magazine']=2})
 full.get_inventory(defines.inventory.turret_ammo).can_insert=function(st) eq(st.name,'firearm-magazine'); return false end
-r=opus('rearm',{radius=40,below=5})
+r=opus('rearm',{radius=40,below=5,ammo='firearm-magazine'})
 eq(r.places,2)
 for _,t in ipairs(active('opus').targets) do assert(t.entity~=full,'left out') end
 eq(r.no_room,'1 turret under 5 rounds with no room for firearm-magazine (its ammo slots hold other ammo): gun-turret (26,-3) holds piercing-rounds-magazine*2')
-r=opus('rearm',{position={x=26,y=-3},radius=2,below=5})
+r=opus('rearm',{position={x=26,y=-3},radius=2,below=5,ammo='firearm-magazine'})
 eq(r.places,0); eq(r.nothing,'no turret there that takes firearm-magazine holds under 5 rounds with room for it'); has(r.no_room,'gun-turret (26,-3)')
 full.valid=false
 -- below on the in-reach and positions forms: a turret holding below or more is left as it is.

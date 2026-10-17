@@ -112,3 +112,5 @@
 - `construct` walks round worms and spawners (not areas under attack unless `avoid_enemies: true`) and leaves out a
   ghost inside an enemy's reach (`left_out`; `unsafe_goal: true` builds it).
 - Foundation refused in front of an asteroid collector says so: its collection area is kept empty space.
+- `ghosts {position?, radius?, area?, name?, surface?}`: each ghost nearest first, the item that places it, and
+  whether robots can build it (no construction area covers it, its network holds none, no idle robot); `page` for more.

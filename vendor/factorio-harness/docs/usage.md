@@ -6064,3 +6064,41 @@ fh watch    # deploy on every change
   facing north: its tile rule 2 keeps tiles x -2..0, y -38..-35 empty space (its collection area)`.
 - A7 (Sol): `platform_plan {platform, floor: true, page: N}` gives the floor plan's place_ghosts entries 256 at a
   time (place_ghosts' limit), in reading order, the same every read, with `page`, `pages` and the `next` call.
+- A3 (Haiku): `rearm` without `ammo` gives each turret the ammo type it holds (the one it holds most of, else the
+  carried ammo it takes that you hold most of): `ammo_each` names them, and a turret whose type you hold none of is
+  left out (`none_held`) instead of refusing the tour. With `positions`, a turret holding another type than the one
+  asked is left out and named (`other_ammo`). `turrets {hand_fed_low: true, below: 10}` lists the ammo turrets no
+  inserter feeds under that many rounds, nearest first, with a rearm call for them. On the copy: 40 such turrets.
+- A4 (Astra): `platform_defense {platform}` reads a platform's turret cover: each asteroid collector's front (the middle
+  of its collection area, from its tile rule) with the turrets whose attack range reaches it, their ammo and what feeds
+  them (an inserter and its source, robots, or nothing: by hand), or NO turret with the nearest and how far past its
+  range; each hull side (foundation tiles with empty space on that side) with the edge tiles no turret reaches as runs,
+  the longest first; and the turrets empty or fed by hand. On the copy: Kestrel's 4 collectors 5-8 turrets each and no
+  gaps; Spindle's 4 collectors and 150 edge tiles with no turret at all; Meridian 7 turrets, 1 empty, 101 edge tiles
+  uncovered. 4-28 ms on the copy.
+- A6 (Sol): `platform_bom {platform, request: true}` sets a hub logistic section `platform_bom: NAME` to what the
+  platform's ghosts still need (items `=` the count left, import_from its location or `import_from`; `area` limits the
+  ghosts), and the harness re-applies it every 10 s: lowered as ghosts are built, removed when nothing is left, or by
+  `request: false`. The reply gives each request and why. On the copy: Meridian's 6 items set, kept over the tick,
+  removed with request: false.
+- A8 (Gemini): `silo` rows' `platform_requests` flag each platform request over that planet: `matched` (the silo's
+  logistic network holds it), `below_min_payload`, `split_networks` (another network on the planet holds it; it is
+  named), `hub_full`, `filling`. On the copy, Fulgora's flags include split_networks with network 96.
+- A9 (Muse): `stock {item, places: "all"}` lists every machine output and chest of ours on the surface holding the item,
+  nearest first (to `position`, you, or (0,0) on another surface), `limit` a page, with `page`, `pages` and `next`.
+  On the copy: 46 firearm-magazine places on Nauvis in 12 pages of 4; 16-60 ms on the copy.
+- A10 (Muse): `ghosts {position?, radius?, area?, name?, surface?, limit?, page?}` lists each ghost of ours (entity and
+  tile) nearest first: its name, position, the item that places it (how many you hold), and whether robots can build
+  it: `robots can build it`, `no roboport's construction area covers it`, `its network holds no ITEM`, `its network
+  has no idle construction robot` (with the network, its idle robots and what it holds). A summary counts them by
+  name and verdict. inspect only counts ghosts by type and construction_robots groups them by 32-tile cell. On the
+  copy: Muse's 9 gun-turret ghosts within 32 tiles, none in a construction area; Aquilo's 5 concrete ghosts in network
+  348 with no idle robot. 3-7 ms on the copy.
+- A11 (Grok): the launch reply (launch, load_silo with launch, and load_silo's walking tour `last`) leads with
+  `spoiled_percent` (each spoilable item's spoiled share by count) and `went_up` (`agricultural-science-pack 50 at 30%
+  spoiled by count`). The spread was already there under `launch.freshness` on both of Grok's Gleba launches (33% and
+  30% by count), nested. On the copy: a Gleba launch to orbit gave `{"agricultural-science-pack": 30, "bioflux": 0}`.
+- A12 (Grok): `transfer {from: "nearest", item, count}` (a courier with `to`, or a take) puts the chests whose free
+  stock (not reserved by robots) holds the count ahead of those before them that hold less, and names those in
+  `skipped_small`. When no chest holds it all, the order stays. On the copy: a fresh chest holding 2 jelly was skipped
+  for one holding 50 (40% spoiled) for a count of 10; for 100 the 2-jelly chest stayed first.

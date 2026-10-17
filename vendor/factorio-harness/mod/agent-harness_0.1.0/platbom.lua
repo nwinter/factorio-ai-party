@@ -50,8 +50,111 @@ return function(api)
     end
     return out
   end
+  -- request (A6, Sol 01:50: a fixed request kept refilling the hub after the build, about 40 foundation rockets it did
+  -- not need): a hub section of its own (logistic group "platform_bom: NAME") asking, for each item, what the
+  -- platform's ghosts (those in area, when given) still need, imported from import_from; kept so every 10 s (M.tick):
+  -- lowered as the ghosts are built, removed with the last of them. request: false removes it.
+  local function ghost_need(pl, force, areas)
+    local s = pl.surface
+    local need, known = {}, {}
+    local lists = {}
+    if areas then for _, ar in ipairs(areas) do lists[#lists+1] = s.find_entities_filtered{area=ar, type={'entity-ghost', 'tile-ghost'}, force=force} end
+    else lists[1] = s.find_entities_filtered{type={'entity-ghost', 'tile-ghost'}, force=force} end
+    for _, list in ipairs(lists) do
+      for _, g in ipairs(list) do
+        local key = g.type .. ':' .. g.ghost_name
+        local k = known[key]
+        if not k then local item, n = item_of(try(function() return g.ghost_prototype end)); k = {item=item, n=n}; known[key] = k end
+        if k.item then need[k.item] = (need[k.item] or 0) + k.n end
+      end
+    end
+    return need
+  end
+  local function store() local st = api.state and api.state() or {}; st.bom_requests = st.bom_requests or {}; return st.bom_requests end
+  local function section_of(hub, group, create)
+    local secs = try(function() return hub.get_logistic_sections() end)
+    if not secs then return nil end
+    for i = 1, secs.sections_count do
+      local sec = secs.get_section(i)
+      if sec and try(function() return sec.group end) == group then return sec, secs, i end
+    end
+    if create then return secs.add_section(group), secs end
+  end
+  -- Sets the section to need; returns lines (item, the request now, what the ghosts need, the hub holds).
+  local function apply(pl, rec, need)
+    local hub = pl.hub
+    local items = {}
+    for item, n in pairs(need) do items[#items+1] = {item=item, n=n} end
+    table.sort(items, function(x, y) return x.item < y.item end)
+    if #items == 0 then
+      local _, secs, i = section_of(hub, rec.group, false)
+      if secs and i then secs.remove_section(i) end
+      return {}, true
+    end
+    local sec = section_of(hub, rec.group, true)
+    local n = try(function() return sec.filters_count end) or 0
+    for i, it in ipairs(items) do
+      sec.set_slot(i, {value={type='item', name=it.item, quality='normal', comparator='='}, min=it.n, import_from=rec.import_from})
+    end
+    for i = #items + 1, n do pcall(sec.clear_slot, i) end
+    local inv = try(function() return hub.get_inventory(defines.inventory.hub_main) end)
+    local lines = {}
+    for _, it in ipairs(items) do
+      local held = inv and try(function() return inv.get_item_count(it.item) end) or 0
+      lines[#lines+1] = string.format('%s: request %d from %s (the ghosts need %d; the hub holds %d)', it.item, it.n, rec.import_from, it.n, held)
+    end
+    return lines, false
+  end
+  function M.request(p, a, pl)
+    assert(pl.hub and pl.hub.valid, 'platform ' .. pl.name .. ' has no hub yet')
+    local recs = store()
+    local group = 'platform_bom: ' .. pl.name
+    if a.request == false then
+      local _, secs, i = section_of(pl.hub, group, false)
+      if secs and i then secs.remove_section(i) end
+      recs[pl.index] = nil
+      return {platform=pl.name, request='removed', lines={'the platform_bom request section on ' .. pl.name .. '\'s hub is removed; its other requests are as they were'}}
+    end
+    local from = a.import_from or try(function() return pl.space_location.name end)
+    assert(type(from) == 'string' and prototypes.space_location[from], 'import_from: the planet the items come from (default the one the platform is at)')
+    local areas
+    if a.area ~= nil then
+      local list = (a.area.left_top or (a.area[1] and a.area[1].x)) and {a.area} or a.area
+      areas = {}
+      for _, ar in ipairs(list) do
+        local lt, rb = ar.left_top or ar[1], ar.right_bottom or ar[2]
+        assert(lt and rb and lt.x < rb.x and lt.y < rb.y, 'area: {left_top, right_bottom} or a list of them')
+        areas[#areas+1] = {{lt.x, lt.y}, {rb.x, rb.y}}
+      end
+    end
+    local rec = {group=group, import_from=from, areas=areas, force=p.force.name, by=api.who and api.who(p) or nil, tick=game.tick}
+    recs[pl.index] = rec
+    local lines, gone = apply(pl, rec, ghost_need(pl, p.force, areas))
+    if gone then recs[pl.index] = nil end
+    return {platform=pl.name, request=gone and 'nothing to request: no ghost' .. (areas and ' in the area' or '') or 'set',
+      group=group, lines=#lines > 0 and lines or {'no ghost' .. (areas and ' in the area' or '') .. ' on ' .. pl.name .. ': no request kept'},
+      note='a hub section of its own (logistic group "' .. group .. '"), set to what the ghosts' .. (areas and ' in the area' or '') .. ' still need; read again every 10 s: lowered as they are built, removed with the last; your other hub requests stay as they are'}
+  end
+  function M.tick(tick)
+    local recs = store()
+    for index, rec in pairs(recs) do
+      local pl
+      for _, f in pairs(game.forces) do
+        for _, x in pairs(f.platforms) do if x.valid and x.index == index then pl = x end end
+      end
+      if not (pl and pl.hub and pl.hub.valid) then recs[index] = nil
+      else
+        local ok, _, gone = pcall(apply, pl, rec, ghost_need(pl, pl.force, rec.areas))
+        if ok and gone then recs[index] = nil end
+      end
+    end
+  end
   function M.read(p, a)
     assert(a.pack == nil or type(a.pack) == 'boolean', 'pack must be true or false')
+    if a.request ~= nil then
+      assert(type(a.request) == 'boolean', 'request is true or false')
+      return M.request(p, a, api.platform(p, a.platform))
+    end
     local pl = api.platform(p, a.platform)
     local s, hub = pl.surface, pl.hub
     assert(s and hub and hub.valid, 'platform ' .. pl.name .. ' has no hub yet (waiting for its starter pack)')
@@ -150,6 +253,8 @@ return function(api)
   M.schema = {platform_production = {platform='platform name', item='optional item or fluid name: that one only',
     returns='lines (the most made first), items [{name, kind, made, used (totals), made_per_min_1m|10m|1h, used_per_min_1m|10m|1h}], where; read only'},
     platform_bom = {platform='platform name',
+    request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them; false removes it. Your other requests stay as they are. Returns lines (item: request N from P (the ghosts need N; the hub holds H)), request, group, note',
+    import_from='with request: the planet the items come from (default the one the platform is at)', area='with request: {left_top, right_bottom} or a list: only the ghosts there count',
     pack='optional true: the rest still to send split into rockets within a rocket\'s lift and cargo slots, heaviest items first, each into the first rocket with room (pack {rockets, fewest, split [{rocket, kg, slots, items}]}); load_silo {items, launch, platform} takes each rocket\'s list',
     returns='lines (one per item, most still to send first, then the total), items [{item, ghosts_need (what the entity and tile ghosts there need of it), built (entities or tiles of it already built there), hub (held), in_flight (in cargo pods headed for this platform), remaining (need less hub and in flight), asks (the hub\'s active requests)}], entity_ghosts, tile_ghosts, pods_in_flight, remaining_kg, fewest_rockets; module requests on ghosts are not counted. Read only'}}
   return M
