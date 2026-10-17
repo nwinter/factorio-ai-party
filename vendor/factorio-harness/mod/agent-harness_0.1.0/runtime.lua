@@ -5351,9 +5351,19 @@ local function build_one(p,a)
   -- place directly then, as in map view.
   local direct=in_map_view(p) or M.bots.is(p) or place.type=='underground-belt' or place.type=='rail-ramp' or planner~=nil or game.tick_paused==true
   assert(direct or not p.cursor_stack.valid_for_read,'cursor must be empty; clear it in the client first')
-  if place.type=='transport-belt' then
-    pos={x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5}
-    build_reach(p,pos,'snapped position')
+  -- A 1x1 entity stands on a tile centre (d17 batch17 C4, Muse: every new engineer learns that turrets sit on whole
+  -- numbers and belts on halves by failing first): whole-number coordinates go to the centre of the tile there, as
+  -- place_ghosts and its dry run snap; said in snapped.
+  local snapped
+  if (place.tile_width or 1)==1 and (place.tile_height or 1)==1 and place.type~='rail-ramp' and planner==nil then
+    local to={x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5}
+    if math.abs(to.x-pos.x)>0.01 or math.abs(to.y-pos.y)>0.01 then
+      if place.type~='transport-belt' then
+        snapped=string.format('(%g,%g) is a tile corner; a 1x1 %s stands on a tile centre: placed at (%g,%g)',pos.x,pos.y,place.name,to.x,to.y)
+      end
+      pos=to
+      build_reach(p,pos,'snapped position')
+    end
   end
   local direction=M.direction_of(a.direction or 'north'); assert(direction,'invalid direction: a compass name (north, east, south, west) or 0..15')
   if place.type=='rail-ramp' then
@@ -5385,7 +5395,7 @@ local function build_one(p,a)
     local e,picked,replaced,need=build_direct(p,stack,pos,direction,a.quality or 'normal',a.type,place)
     local joined=e.type=='electric-pole' and bridge_pole(e) or 0
     local recipe=a.recipe~=nil and M.set_built_recipe(e,a.recipe) or nil
-    return {consumed=need,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced,recipe=recipe},{e}
+    return {consumed=need,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced,recipe=recipe,snapped=snapped},{e}
   end
   local function held()
     local n=p.get_main_inventory().get_item_count{name=a.item,quality=a.quality or 'normal'}
@@ -5416,7 +5426,7 @@ local function build_one(p,a)
       end
     end
   end
-  return {consumed=before-after,entity=#placed==1 and placed[1] or nil,entities=#placed>1 and placed or nil,
+  return {consumed=before-after,snapped=snapped,entity=#placed==1 and placed[1] or nil,entities=#placed>1 and placed or nil,
     networks_joined=joined and joined>0 and joined or nil,recipe=recipe},ents
 end
 -- After a hand build: what it just built closed the character in where it

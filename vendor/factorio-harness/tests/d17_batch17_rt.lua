@@ -215,3 +215,29 @@ do
   surface.find_entities_filtered=was
 end
 print('d17_batch17_rt C3 a give inferred into the slots a target feeds from: ok')
+
+-- C4 (Muse: build of a 1x1 at whole-number coordinates failed): it goes to the centre of the tile there, said.
+do
+  local gi=runtime.bots.index_of('grok')
+  local gp=runtime.lookup(gi)
+  gp.character.position={x=28,y=221}
+  local pole={name='wooden-chest',type='container',tile_width=1,tile_height=1,collision_box={left_top={x=-0.15,y=-0.15},right_bottom={x=0.15,y=0.15}}}
+  prototypes.entity=prototypes.entity or {}; prototypes.entity['wooden-chest']=pole
+  prototypes.item['wooden-chest']={name='wooden-chest',type='item',place_result=pole,get_spoil_ticks=function() return 0 end}
+  gp.character.items['wooden-chest']=5
+  local placed
+  local was_create,was_find=surface.create_entity,surface.find_entities_filtered
+  surface.create_entity=function(args) placed=args; return {valid=true,name=args.name,type='container',position=args.position,force=force,surface=surface,unit_number=950,prototype=pole,
+    get_wire_connector=function() return {connection_count=0,connections={},connect_to=function() return true end} end,
+    bounding_box={left_top={x=args.position.x-0.15,y=args.position.y-0.15},right_bottom={x=args.position.x+0.15,y=args.position.y+0.15}}} end
+  surface.find_entities_filtered=function() return {} end
+  local inv=gp.character.get_main_inventory()
+  inv.find_item_stack=function(f) local n=gp.character.items[f.name] or 0; if n>0 then return {valid_for_read=true,name=f.name,count=n,prototype=prototypes.item[f.name]},1 end end
+  local ok,r=pcall(grok,'build',{item='wooden-chest',position={x=30,y=221}})
+  surface.create_entity,surface.find_entities_filtered=was_create,was_find
+  assert(placed and placed.position.x==30.5 and placed.position.y==221.5,'placed at the tile centre: '..tostring(placed and placed.position.x)..' '..tostring(r))
+  if ok then
+    assert(r.snapped and r.snapped:find('(30,221) is a tile corner; a 1x1 wooden-chest stands on a tile centre: placed at (30.5,221.5)',1,true),tostring(r.snapped))
+  else print('  (after placing at the tile centre, the fake engine stopped: '..tostring(r):sub(1,120)..')') end
+end
+print('d17_batch17_rt C4 a 1x1 build on a tile corner goes to the tile centre: ok')

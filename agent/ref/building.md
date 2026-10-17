@@ -37,6 +37,8 @@
   name. `map` and `grid` tell `walkable water` (`,` on the grid: shallow water, wetland, Fulgora's oil ocean, deep too)
   from water a character cannot cross (`~`).
 - `build` and `place_ghosts` entries take `recipe` for assemblers.
+- `build` of a 1x1 entity (chest, inserter, pole, pipe, wall) at whole-number coordinates places it at the centre of
+  that tile (x.5, y.5), as place_ghosts does; `snapped` says so. 2x2 entities (gun turrets) stand on whole numbers.
 - `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'` lists up to 10 (`limit`
   up to 50) positions where it fits now, nearest first, by the game's build check (`blocked`: positions something
   stands in); `"separate":true` lists spots that do not overlap each other, `"powered":true` only spots in one of our
