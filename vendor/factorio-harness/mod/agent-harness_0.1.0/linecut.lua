@@ -289,5 +289,103 @@ return function(api)
     st.cuts = keep
     return out
   end
+  -- A whole belt line from one of its belts (d17 batch20 B3, Sonnet: a cut 500 tiles off found by walking): both ways
+  -- through belt neighbours and underground pairs (a splitter: its first output or input; the others named), in chunks
+  -- our force sees now or within 32 tiles of you, as the map shows them. At each end, the tiles ahead in its direction
+  -- (behind, upstream) up to GAP: a belt of ours there facing the same way (built or ghost) is the line going on, and the
+  -- tiles between are a gap, each with what stands on it; else the line ends there. At most LINE tiles each way.
+  M.GAP, M.LINE = 16, 4096
+  function M.line(p, start)
+    local surface, force = p.surface, p.force
+    local function seen_now(q)
+      if p.position and (q.x - p.position.x)^2 + (q.y - p.position.y)^2 <= 32 * 32 then return true end
+      return try(function() return force.is_chunk_visible(surface, {x=math.floor(q.x / 32), y=math.floor(q.y / 32)}) end) == true
+    end
+    local function kind(e) return e.type == 'entity-ghost' and e.ghost_type or e.type end
+    local function belt_at(x, y)
+      for _, e in ipairs(try(function() return surface.find_entities_filtered{area={{x + 0.05, y + 0.05}, {x + 0.95, y + 0.95}}, force=force, limit=8} end) or {}) do
+        if e.valid and BELTS[kind(e)] then return e end
+      end
+    end
+    local gaps, branches, ghosts = {}, {}, 0
+    local visited = {}
+    local function walk(e, way)
+      local count, cur, why = 0, e, nil
+      local d
+      while count < M.LINE do
+        local k = key(cur)
+        if visited[k] then why = 'it loops back on itself at ' .. at(cur.position); break end
+        visited[k] = true
+        count = count + 1
+        if cur.type == 'entity-ghost' then ghosts = ghosts + 1 end
+        d = try(function() return cur.direction end) or 0
+        local list = try(function() return cur.belt_neighbours[way] end) or {}
+        local nxt = list[1]
+        if #list > 1 and #branches < 8 then
+          for i = 2, #list do branches[#branches+1] = string.format('%s %s also %s %s', cur.name, at(cur.position), way == 'outputs' and 'feeds' or 'is fed by', at(list[i].position)) end
+        end
+        if not nxt and kind(cur) == 'underground-belt' then
+          local pair = try(function() return cur.neighbours end)
+          local t = try(function() return cur.belt_to_ground_type end)
+          if pair and try(function() return pair.valid end) and ((way == 'inputs' and t == 'output') or (way == 'outputs' and t == 'input')) then nxt = pair end
+        end
+        if nxt and try(function() return nxt.valid end) then
+          if not seen_now(nxt.position) then why = 'it goes on into a chunk our force does not see now at ' .. at(nxt.position); break end
+          cur = nxt
+        else
+          -- The end: the tiles ahead (or behind) in its direction.
+          local v = VEC[d] or {0, 0}
+          local sign = way == 'outputs' and 1 or -1
+          local bx, by = math.floor(cur.position.x), math.floor(cur.position.y)
+          local missing, found = {}, nil
+          for i = 1, M.GAP do
+            local q = {x=bx + v[1] * i * sign + 0.5, y=by + v[2] * i * sign + 0.5}
+            if not seen_now(q) then why = 'nothing of the line in sight past ' .. at(cur.position) .. ' (the chunk at ' .. at(q) .. ' is not seen now)'; break end
+            local b = belt_at(math.floor(q.x), math.floor(q.y))
+            if b and (try(function() return b.direction end) == d) and not visited[key(b)] then found = b; break end
+            missing[#missing+1] = q
+          end
+          if found and #missing > 0 then
+            -- (in the line's own order: upstream the tiles were met backwards)
+            if way == 'inputs' then
+              local rev = {}
+              for i = #missing, 1, -1 do rev[#rev+1] = missing[i] end
+              missing = rev
+            end
+            local rows = {}
+            for i, q in ipairs(missing) do
+              local blk = M.blocker(surface, q)
+              rows[i] = blk and M.blocker_text(blk, 'on ' .. at(q)) or at(q) .. ' empty'
+            end
+            gaps[#gaps+1] = {from=missing[1], to=missing[#missing], tiles=#missing, between={at(cur.position), at(found.position)}, line=string.format('%d tile%s missing between %s and %s: %s',
+              #missing, #missing == 1 and '' or 's', at(way == 'outputs' and cur.position or found.position), at(way == 'outputs' and found.position or cur.position), table.concat(rows, '; '))}
+            cur = found
+          elseif found then cur = found
+          else
+            if not why then
+              local q = {x=bx + v[1] * sign + 0.5, y=by + v[2] * sign + 0.5}
+              local blk = M.blocker(surface, q)
+              why = blk and M.blocker_text(blk, 'on the next tile ' .. at(q)) or string.format('no belt of ours %s it in its direction within %d tiles', way == 'outputs' and 'ahead of' or 'behind', M.GAP)
+            end
+            break
+          end
+        end
+      end
+      if count >= M.LINE then why = 'followed ' .. M.LINE .. ' tiles' end
+      return {tiles=count, at=cur.position, why=why}
+    end
+    local down = walk(start, 'outputs')
+    visited[key(start)] = nil
+    local up = walk(start, 'inputs')
+    local total = down.tiles + up.tiles - 1
+    local out = {start=start.position, tiles=total, ghosts=ghosts > 0 and ghosts or nil,
+      head=string.format('%s: %s', at(up.at), up.why), ['end']=string.format('%s: %s', at(down.at), down.why),
+      gaps=#gaps > 0 and gaps or nil, branches=#branches > 0 and branches or nil}
+    local gl = {}
+    for i, g in ipairs(gaps) do if i <= 8 then gl[i] = g.line end end
+    out.line = string.format('the line through %s: %d belt tiles from %s to %s; %s', at(start.position), total, at(up.at), at(down.at),
+      #gaps == 0 and 'no gap in it' or string.format('%d gap%s: %s%s', #gaps, #gaps == 1 and '' or 's', table.concat(gl, ' | '), #gaps > 8 and ' | ...' or ''))
+    return out
+  end
   return M
 end

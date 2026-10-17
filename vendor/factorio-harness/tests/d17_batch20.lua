@@ -73,3 +73,32 @@ do
   eq(r.line,'nothing stands in its way'); eq(r.tiles,nil)
 end
 print('d17_batch20 A5 conflicts tiles: ok')
+
+-- B3 (Sonnet): belt_gaps {line}: the whole line through one belt, its gaps with what stands on each missing tile.
+do
+  local L=dofile('mod/agent-harness_0.1.0/linecut.lua'){state=function() return {} end}
+  local force={name='player',is_chunk_visible=function() return true end}
+  local grid={}
+  local function belt(x,y,d) local e={valid=true,name='transport-belt',type='transport-belt',position={x=x+0.5,y=y+0.5},direction=d or 4,force=force,unit_number=1000+x*7+y}; grid[x..','..y]=e; return e end
+  for x=0,40 do if x~=10 and x~=11 and x~=20 then belt(x,0) end end
+  local pole={valid=true,name='medium-electric-pole',type='electric-pole',position={x=20.5,y=0.5},force=force}
+  for _,e in pairs(grid) do
+    local x,y=math.floor(e.position.x),math.floor(e.position.y)
+    e.belt_neighbours=setmetatable({},{__index=function(_,k)
+      local o=k=='outputs' and grid[(x+1)..','..y] or k=='inputs' and grid[(x-1)..','..y] or nil
+      return {o}
+    end})
+  end
+  local surface={find_entities_filtered=function(f)
+    local x,y=math.floor(f.area[1][1]),math.floor(f.area[1][2])
+    local out={grid[x..','..y]}
+    if x==20 and y==0 then out[#out+1]=pole end
+    return out
+  end}
+  local r=L.line({surface=surface,force=force,position={x=30,y=0}},grid['30,0'])
+  eq(r.tiles,38)
+  eq(r.line,'the line through (30.5,0.5): 38 belt tiles from (0.5,0.5) to (40.5,0.5); 2 gaps: 1 tile missing between (19.5,0.5) and (21.5,0.5): medium-electric-pole (20.5,0.5) stands on (20.5,0.5) | 2 tiles missing between (9.5,0.5) and (12.5,0.5): (10.5,0.5) empty; (11.5,0.5) empty')
+  eq(r['end'],'(40.5,0.5): no belt of ours ahead of it in its direction within 16 tiles')
+  eq(r.head,'(0.5,0.5): no belt of ours behind it in its direction within 16 tiles')
+end
+print('d17_batch20 B3 belt line: ok')

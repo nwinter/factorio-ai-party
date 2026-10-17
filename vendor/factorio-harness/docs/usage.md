@@ -6646,3 +6646,13 @@ fh watch    # deploy on every change
   iron-ore under it (4 tiles)`. Stopped drills first, then the least ore under them, then reading order; up to 200
   lines (`drill_list_note` gives the count past that). One find over the patch's box and one small resource find per
   drill. A position with no patch within 8 tiles is refused with the nearest patch. tests/ores.lua.
+- B3 (Sonnet): finding a cut on a 500-tile belt line meant walking it. `belt_gaps {line: {x,y}}` (a belt,
+  underground or splitter of ours there, built or ghost) follows the line both ways (linecut.lua M.line, beside
+  batch17's line_cut code): belt neighbours, an underground to its pair, a splitter's first output or input (the
+  others in `branches`), in chunks our force sees now or within 32 tiles of you, up to 4096 tiles each way. At an end
+  it looks up to 16 tiles on in the belt's direction (upstream: behind it): a belt of ours facing the same way there
+  is the line going on; the tiles between are a gap, each `empty` or naming what stands on it (`medium-electric-pole
+  (20.5,0.5) stands on (20.5,0.5)`), and the walk goes on from that belt. Else the line stops there: `head` and `end`
+  say where and why (nothing within 16 tiles, what stands on the next tile, a chunk not seen now, a loop). `line`:
+  `the line through (30.5,0.5): 38 belt tiles from (0.5,0.5) to (40.5,0.5); 2 gaps: ...`. A gap that turns a corner
+  is not bridged (the probe is straight on). tests/d17_batch20.lua.
