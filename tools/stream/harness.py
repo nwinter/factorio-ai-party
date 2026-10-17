@@ -15,7 +15,8 @@ import pog  # noqa: E402  (tools/pog.py: Rcon client, ports, SCORE_LUA)
 # know it yet treats it as a failed mutation and stops player 1, so callers gate it on `has_bots_runtime()`.
 # `board` and `board_events` (docs/BOARD-API.md) are only sent once `describe` (read-only) lists them.
 # `platforms` (Space Age) is a read in the runtime; the overlay sends it only once the score lists a platform.
-READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "board", "board_events", "platforms"}
+# `reminders` (reminders.lua) is a read in the runtime; live.py stops asking a runtime that refuses it.
+READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "board", "board_events", "platforms", "reminders"}
 # Operator reads (eng/board audience.lua): every agent's `confess` lines, for viewers only. Gated on `describe`.
 OPERATOR_READS = {"confessions", "tells", "operator_requests", "attack_groups_live", "big_enemies_live", "hauling", "loadout", "clouds",
                   "efficiency", "chronicle"}
