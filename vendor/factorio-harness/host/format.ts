@@ -271,12 +271,12 @@ function lift(result: unknown): { body: unknown; notes: string[] } {
  *   queued; deadline in 3h43m  ->  game 98h40m; +1s, idle 0s (10%, 0s in sleep); deadline in 3h43m
  * A line of another shape is shown as it is.
  */
-const CLOCK = /^game (\S+); \+(\S+) since your last request, character idle (\S+) of it \((\d+)%(?:, (\S+) of that in ([^)]+))?\)(?:, waiting on hand crafting (\S+) of it \((\d+)%\))?; hand crafting (\S+) queued(.*)$/s;
+const CLOCK = /^game (\S+); \+(\S+) since your last request, character idle (\S+) of it \((\d+)%(?:, (\S+) of that in ([^),]+))?(?:, on watch: (.+?) for (\S+) of that)?\)(?:, waiting on hand crafting (\S+) of it \((\d+)%\))?; hand crafting (\S+) queued(.*)$/s;
 export function shortClock(line: string): string {
   const m = CLOCK.exec(line);
   if (!m) return line;
-  const [, game, since, idle, share, inWaits, kinds, waited, waitShare, queued, rest] = m;
-  return `game ${game}; +${since}, idle ${idle} (${share}%${inWaits ? `, ${inWaits} in ${kinds}` : ''})`
+  const [, game, since, idle, share, inWaits, kinds, watchNames, watched, waited, waitShare, queued, rest] = m;
+  return `game ${game}; +${since}, idle ${idle} (${share}%${inWaits ? `, ${inWaits} in ${kinds}` : ''}${watchNames ? `, on watch: ${watchNames} for ${watched}` : ''})`
     + (waited ? `, waiting on hand crafting ${waited} (${waitShare}%)` : '')
     + (queued !== '0s' ? `; hand crafting ${queued} queued` : '') + rest;
 }

@@ -122,3 +122,5 @@
   `avoid_nests: true` routes round them, `avoid_nests: false` lays it anyway.
 - On Vulcanus a build, ghost placement, paste or route inside a demolisher territory (as the map draws it) carries
   `demolisher_territory`, dry runs too.
+- `deconstruct` (and its dry run) counts robots in flight apart (`flying_robots`): the game does not mark them.
+- `placements` and place_ghosts' dry run keep a cargo bay to its 2-tile grid: the position offered is where it lands.

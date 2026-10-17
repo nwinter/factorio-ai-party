@@ -106,6 +106,7 @@ Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT),
          --wake-on-viewers (fh sleep, fh wait, --wait: a viewer's @mention ends it too; by default it waits for your next reply)
          --wake-from NAMES (fh sleep, fh wait, --wait: only a tell or mention from these comma-separated teammates, or operator, ends it)
          --no-operator-wake (the same waits: operator tells and reminder jobs do not end it; teammates' tells do)
+         --wake-local (the same waits: only tells and mentions to you, urgent news on your surface or in your claims, an alert on your surface)
          --no-urgent (fh sleep, fh wait --until, direct wait_ticks/wait_until: an urgent alert does not end it; by default it does)
          --urgent-radius N (the same waits: attacks, enemy groups, losses and teammates' deaths wake it only within N tiles of you, 1..200; default 40)
          --wake-on-orders (fh sleep, fh wait --until: a standing order's round finishing or stalling ends it; by default only your own plan's does)
@@ -332,7 +333,7 @@ const TELL_WORDS = new Set(['tell','tells','mention','told']);
 const THEN_READS = new Set(['agriculture','artillery','belt_gaps','blueprint_list','boilers','bottleneck','cameras','cargo','conflicts',
   'construction_robots','craftable','damage_log','danger','defense','drill_sites','drops','dry_run','flamers','freight_audit','fuel_budget',
   'game_alerts','grid','heat_budget','inspect','inventory','labs','lookahead','map','nearest','nearest_water','networks','observe','ores',
-  'pipe_gaps','placements','platform','platform_bom','platform_endurance','platform_production','platform_defense','circuit_audit','platform_gate','shipment','platform_plan','ghosts','platform_supply','platforms','ports','power','preflight',
+  'pipe_gaps','placements','platform','platform_bom','platform_endurance','platform_production','platform_defense','circuit_audit','platform_gate','demolishers','shipment','board_progress','board_critical','lesson_review','ground_rules','platform_plan','ghosts','platform_supply','platforms','ports','power','preflight',
   'profiles','rates','recipes','reminders','research_options','reservations','review','scan','science','shortages','silo','status','stock',
   'supply','technologies','trace','turrets','where_is']);
 /** --then's action and arguments: "ACTION", "ACTION {json}", with the JSON as the next positional or --args. */
@@ -683,7 +684,7 @@ async function main() {
     format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
     host:{type:'string'}, port:{type:'string'}, timeout:{type:'string'}, id:{type:'string'},
     file:{type:'string'}, out:{type:'string'}, mods:{type:'string'}, journal:{type:'string'},
-    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-tells':{type:'boolean'}, 'wake-from':{type:'string'}, 'no-operator-wake':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'urgent-radius':{type:'string'}, 'wake-on-orders':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
+    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-tells':{type:'boolean'}, 'wake-from':{type:'string'}, 'wake-local':{type:'boolean'}, 'no-operator-wake':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'urgent-radius':{type:'string'}, 'wake-on-orders':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
@@ -770,7 +771,7 @@ async function main() {
   }
   if (command === 'queue') {
     const operation = positionals[1] ?? 'status';
-    if (!['submit','repeat','status','edit','cancel','resume'].includes(operation)) throw new Error('queue expects submit, repeat, status, edit, cancel, or resume');
+    if (!['submit','repeat','status','edit','cancel','resume','pause'].includes(operation)) throw new Error('queue expects submit, repeat, status, edit, cancel, resume, or pause');
     let args = object(JSON.parse(values.args ?? '{}'),'args');
     // fh queue status orders: the standing orders' history entries too (round2250a, Grok: by default the plan last
     // submitted only).
@@ -1391,7 +1392,10 @@ async function main() {
     if (wakeFrom && !wakeFrom.includes(who)) return false;
     return true;
   }
-  const wakeArgs = (): Record<string, unknown> => ({...(wakeFrom ? {wake_from:wakeFrom} : {}), ...(noOperatorWake ? {wake_on_operator:false} : {})});
+  // --wake-local (d17 batch16 C1, Luna): only tells and mentions to you, urgent news on your surface or in your claims.
+  const wakeLocal = values['wake-local'] === true;
+  const wakeArgs = (): Record<string, unknown> => ({...(wakeFrom ? {wake_from:wakeFrom} : {}), ...(noOperatorWake ? {wake_on_operator:false} : {}),
+    ...(wakeLocal ? {wake_local:true} : {})});
   function wakeInbox(status: Reply, since?: number): {tick:number, woke?:string, from?:string} | undefined {
     if (since === undefined) return undefined;
     for (const inbox of [status.result?.inbox, wakeViewers ? status.result?.inbox_viewer : undefined]) {
@@ -1707,7 +1711,7 @@ async function main() {
     // --wait-through-tells: a direct wait no tell ends (wake_on_messages: false), also when it runs as a sleep.
     if (throughTells && (action === 'wait_ticks' || action === 'wait_until') && args.wake_on_messages === undefined) args = {...args, wake_on_messages:false};
     // --wake-from, --no-operator-wake: who may end a direct wait.
-    if ((action === 'wait_ticks' || action === 'wait_until') && args.wake_from === undefined && args.wake_on_operator === undefined) args = {...args, ...wakeArgs()};
+    if ((action === 'wait_ticks' || action === 'wait_until') && args.wake_from === undefined && args.wake_on_operator === undefined && args.wake_local === undefined) args = {...args, ...wakeArgs()};
     // --no-urgent: an urgent alert does not end a direct wait (by default it ends it, outcome urgent, last.why naming it).
     if (values['no-urgent'] === true && (action === 'wait_ticks' || action === 'wait_until') && args.wake_on_urgent === undefined) args = {...args, wake_on_urgent:false};
     // --urgent-radius N: urgent wakes only within N tiles of you.

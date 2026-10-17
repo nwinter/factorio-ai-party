@@ -945,9 +945,15 @@ return function(api)
     -- read of it failed "LuaEntity API call when LuaEntity was invalid"): what is read of an entity is read before the
     -- order, an entity gone by the time it is reached is skipped, and removed ghosts are counted apart.
     local removed,ghost_names,gone=0,{},0
+    -- (backlog #247, Astra 89h33: a dry run said would_mark 741 logistic robots, the live call changed 0) robots in flight
+    -- are not marked by the game's order (a planner leaves them): counted apart, in the dry run as live
+    local FLYING={['logistic-robot']=true,['construction-robot']=true,['combat-robot']=true,['capture-robot']=true}
+    local flying=0
     for _, e in ipairs(list) do
       local ok,t,n,mine=pcall(function() return e.valid and e.type,e.valid and e.name,e.valid and (e.force==p.force or e.force.name=='neutral') and e.type~='character' and e.minable end)
-      if not (ok and t) then gone=gone+1
+      if ok and t and FLYING[t] then
+        if mine and (not filters.entity_types or filters.entity_types[t]) and (not filters.entity_names or filters.entity_names[n]) then flying=flying+1 end
+      elseif not (ok and t) then gone=gone+1
       -- Items on the ground go with items_on_ground only (Sol, d15: a cancel on Starling said 146 while 12 entities had
       -- been marked; the rest were most likely items on the ground the platform had marked for pickup).
       elseif mine and t~='item-entity' and (not filters.entity_types or filters.entity_types[t]) and (not filters.entity_names or filters.entity_names[n]) then
@@ -983,6 +989,7 @@ return function(api)
       out.ghosts_removed=removed; out.ghosts_removed_by_name=table.concat(parts,', ')
     end
     if gone>0 then out.gone=gone..' found in the area were gone by the time they were reached (removed with a ghost before them)' end
+    if flying>0 then out.flying_robots=flying..' robots in flight in the area the filters name: the game does not mark robots in flight (by hand a robot in flight is mined as any entity in reach; robots in a roboport are taken out of its robot slots)' end
     if already>0 then out.already_marked=already..' already marked for deconstruction (deconstruct {area, cancel: true} or cancel_deconstruction unmarks them)' end
     if dry then
       out.changed=nil; out.would_mark=changed

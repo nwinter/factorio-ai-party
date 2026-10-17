@@ -25,6 +25,8 @@ What differs from the base game:
   blueprint's wires between what it placed (`wires`); `mode=superforced` marks our own entities in the way too. A
   blueprint holding a hub is placed by its hub on the platform's hub (`anchor`, `aligned` in the reply). Rockets launch on their own for the hub's requests when the silo has
   `auto_requests` on (`launch`). You cannot move items by hand on a platform.
+  `./fh wait --until "platform_arrived Sunward gleba"` (or `./fh sleep --until`, `wait_until`) ends when the platform
+  stops at that planet; `platform_left Sunward` when it leaves (`./fh help space-age`).
 - Riding a rocket (`launch ride=true platform=NAME`, standing at the silo) takes only your worn armor and guns. Ship
   everything else as cargo first; the harness refuses otherwise. Finish or cancel hand crafting and empty your hand
   too. The ride takes about 40 s; `status` shows `travel` (ascending, aboard, descending) and where you are.

@@ -322,6 +322,17 @@ return function(api)
     if b.error then parts[#parts+1]='error: '..b.error.message end
     return 'orders: '..table.concat(parts,'; ')
   end
+  -- Armed standing orders (d17 batch16 A5, Haiku: a sleep holding a defence watch counted as the character standing
+  -- idle): each order on, with a trigger or as the default round, while the orders are not paused and none runs. Their
+  -- names ("rearm, refuel"), or nil. The clock line, the sleep line and the idle report count that time as on watch.
+  function M.armed(index)
+    local b=book(index)
+    if not b or #b.list==0 or b.paused or killed() or api.scheduler.order(index) then return nil end
+    local names={}
+    for _,o in ipairs(b.list) do if not o.off then names[#names+1]=o.name end end
+    if #names==0 then return nil end
+    return table.concat(names,', ',1,math.min(3,#names))..(#names>3 and string.format(' +%d',#names-3) or '')
+  end
   -- The running order for the stream overlay ("auto: name") and the operator's idle report.
   function M.brief(index)
     local running=api.scheduler.order(index)
@@ -332,7 +343,7 @@ return function(api)
     if not b or #b.list==0 then return nil end
     local running=api.scheduler.order(index)
     return {set=#b.list,running=running and running.name or nil,reason=running and running.reason or nil,paused=b.paused or nil,
-      operator_paused=killed() and true or nil}
+      operator_paused=killed() and true or nil,armed=M.armed(index)}  -- armed: the orders keeping watch (d17 batch16 A5)
   end
   function M.handlers.order_set(p,a)
     local name=a.name

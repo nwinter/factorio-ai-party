@@ -1293,9 +1293,12 @@ return function(api)
       owner='optional teammate (default you)', item='key: an item name', recipe='key: a recipe name', entity='key: an entity name',
       action='key: an action (inspect, build, transfer, launch, ...)', surface='narrows the keys to one surface', position='key: {x,y} (within 8 tiles)',
       area='key: {left_top, right_bottom}', supersedes='optional item numbers it replaces (a lesson so replaced is retired)',
+      impact='optional 0..5 (default 1): what the failure it prevents costs, as you judge it; with applicability, verifications and recency it makes the lesson\'s score, which ranks matched lessons', prevented='optional text: what it prevented',
+      control='optional text: what in the factory must change', check='optional wait_until condition ({until: "item_count", item, at_least, ...}): the lesson reads unresolved until it holds (read every minute as its owner would)',
+      failure='optional words of the failure it names (action and reason, e.g. "transfer inventory_full"): a failure of the agent it was shown to within 30 min counts in lesson_review as not prevented',
       returns='lesson {id, rule, cause, fix, evidence_tick, last_verified, keys, line}; a lesson is a board item of kind lesson (board {kind: "lesson"} lists them); at most 150 active; one not verified for 12 game hours reads stale'},
     lesson_edit = {id='a lesson\'s number', rule='as lesson_add', cause='as lesson_add', fix='as lesson_add', invalidated_when='as lesson_add', item='as lesson_add', recipe='as lesson_add', entity='as lesson_add', action='as lesson_add', surface='as lesson_add', position='as lesson_add', area='as lesson_add',
-      status='open | dropped (retired)', supersedes='item numbers', returns='lesson and history (the earlier versions, last 8); any teammate edits'},
+      status='open | dropped (retired)', supersedes='item numbers', impact='as lesson_add', prevented='as lesson_add', control='as lesson_add', check='as lesson_add (false clears it)', failure='as lesson_add', returns='lesson and history (the earlier versions, last 8); any teammate edits'},
     lesson_verify = {id='a lesson\'s number', evidence_tick='optional: a newer evidence tick', returns='lesson with last_verified now and verified_by you'},
     lessons = {item='as lesson_add', recipe='as lesson_add', entity='as lesson_add', action='as lesson_add', surface='as lesson_add', near='{x,y}', all='true: retired ones too', limit='1..64 (default 20)',
       returns='lessons matching (none given: every active one), most recently verified first: rows and lines (the rule, who, evidence tick, verified how long ago, stale, cause, fix, when it no longer holds); a call that matches a lesson\'s keys (inspect, trace, build, place_ghosts, transfer, feed, collect, configure, load_silo, launch, craft, mine, rearm, refuel on that item, recipe, entity or place, or the action it names) carries up to 2 lines in lessons'},
@@ -1369,7 +1372,10 @@ return function(api)
   local function lesson_view(i)
     return {id=i.id, rule=i.title, cause=i.cause, fix=i.fix, evidence_tick=i.evidence_tick, last_verified=i.last_verified, verified_by=i.verified_by,
       invalidated_when=i.invalidated_when, owner=i.owner, keys=i.keys, status=i.status, supersedes=i.supersedes, superseded_by=i.superseded_by,
-      stale=game.tick - (i.last_verified or i.created_tick) > LESSON_STALE or nil, edits=i.history and #i.history or nil, line=lesson_line(i)}
+      stale=game.tick - (i.last_verified or i.created_tick) > LESSON_STALE or nil, edits=i.history and #i.history or nil, line=lesson_line(i),
+      impact=i.impact, prevented=i.prevented, control=i.control, check=i.check, resolved_tick=i.resolved_tick, failure=i.failure,
+      score=api.lesson_score and (api.lesson_score(i)) or nil, score_line=api.lesson_score and select(2, api.lesson_score(i)) or nil,
+      state=api.lesson_extra and api.lesson_extra(i) or nil}
   end
   local function lesson_add(by, a)
     assert(lesson_count() < MAX_LESSONS, string.format('the board holds at most %d lessons: retire one (lesson_edit {id, status: "dropped"}) or supersede it', MAX_LESSONS))
@@ -1381,6 +1387,8 @@ return function(api)
       assert(type(a.evidence_tick) == 'number' and a.evidence_tick >= 0 and a.evidence_tick <= game.tick, 'evidence_tick is a game tick, not in the future')
       i.evidence_tick = math.floor(a.evidence_tick)
     else i.evidence_tick = game.tick end
+    if api.lesson_fields then api.lesson_fields(a, i) end
+    i.verify_count = 1
     local sup = a.supersedes ~= nil and supersedes_arg(a.supersedes) or nil
     local b = store()
     i.id = b.next_id; b.next_id = b.next_id + 1
@@ -1423,7 +1431,8 @@ return function(api)
       end
       changed = true
     end
-    assert(changed, 'nothing to change: give rule, cause, fix, invalidated_when, a key, status or supersedes')
+    if api.lesson_fields and api.lesson_fields(a, i) then changed = true end
+    assert(changed, 'nothing to change: give rule, cause, fix, invalidated_when, a key, status, supersedes, impact, prevented, control, check or failure')
     i.history = i.history or {}
     table.insert(i.history, before)
     while #i.history > LESSON_HISTORY do table.remove(i.history, 1) end
@@ -1435,6 +1444,7 @@ return function(api)
     local i = lesson_of(a.id)
     assert(ACTIVE[i.status], 'lesson #' .. i.id .. ' is retired (dropped)')
     i.last_verified, i.verified_by, i.updated_tick = game.tick, by, game.tick
+    i.verify_count = (i.verify_count or 1) + 1
     if a.evidence_tick ~= nil then
       assert(type(a.evidence_tick) == 'number' and a.evidence_tick >= 0 and a.evidence_tick <= game.tick, 'evidence_tick is a game tick, not in the future')
       i.evidence_tick = math.floor(a.evidence_tick)
@@ -1450,9 +1460,12 @@ return function(api)
     if k.surface and q.surface and k.surface ~= q.surface then return false end
     local named = k.action or k.item or k.recipe or k.entity
     if named then
-      local hit = (k.action and k.action == q.action) or (k.item and q.items and q.items[k.item]) or (k.recipe and q.recipes and q.recipes[k.recipe])
-        or (k.entity and q.entities and q.entities[k.entity])
-      if not hit then return false end
+      -- (d17 batch15 D5, Sol: turret pole advice on Aquilo chest builds) an action key and the names both must hold:
+      -- a lesson keyed build + big-electric-pole is for builds of that pole, not for every build
+      if k.action and k.action ~= q.action then return false end
+      local names = k.item or k.recipe or k.entity
+      local hit = (k.item and q.items and q.items[k.item]) or (k.recipe and q.recipes and q.recipes[k.recipe]) or (k.entity and q.entities and q.entities[k.entity])
+      if names and not hit then return false end
     end
     if k.position or k.area then
       for _, pos in ipairs(q.positions or {}) do
@@ -1492,15 +1505,28 @@ return function(api)
   -- lesson names): at most 2 lines, most recently verified first. q: what the call names and where.
   local LESSON_CALLS = {inspect=true, trace=true, build=true, place_ghosts=true, transfer=true, feed=true, collect=true, configure=true,
     load_silo=true, launch=true, craft=true, mine=true, rearm=true, refuel=true}
-  function M.lessons_for(p, action, args)
-    local b = store()
-    if not b.items then return nil end
-    local any = false
-    for _, i in pairs(b.items) do if i.kind == 'lesson' then any = true; break end end
-    if not any or type(args) ~= 'table' then return nil end
-    local q = {action=action, surface=try(function() return p.surface.name end), items={}, recipes={}, entities={}, positions={}}
+  -- (d17 batch15 D1) the steps a queue or standing order carries, each checked as its own call
+  local STEP_CALLS = {queue_submit='steps', order_set='steps', plan_save='steps'}
+  local function lesson_query(p, action, args)
+    -- the call's own surface (surface=, platform=), else the caller's (D1: a remote call read the caller's)
+    local surface = type(args.surface) == 'string' and args.surface or nil
+    if not surface and type(args.platform) == 'string' then
+      for _, pl in pairs(try(function() return p.force.platforms end) or {}) do
+        if pl.valid and pl.name == args.platform then surface = try(function() return pl.surface.name end) end
+      end
+    end
+    surface = surface or try(function() return p.surface.name end)
+    local q = {action=action, surface=surface, items={}, recipes={}, entities={}, positions={}}
     local named = LESSON_CALLS[action]
     if named then
+      -- the entities a placement names (place_ghosts entities, build's)
+      for n, e in ipairs(type(args.entities) == 'table' and args.entities or {}) do
+        if n > 64 then break end
+        if type(e) == 'table' and type(e.name) == 'string' then q.entities[e.name] = true; q.items[e.name] = true end
+      end
+      if type(args.entity) == 'string' then q.entities[args.entity] = true end
+      -- an item a build or ghost places is the entity it places (build {item: big-electric-pole})
+      if type(args.item) == 'string' and try(function() return prototypes.entity[args.item] end) then q.entities[args.item] = true end
       if type(args.item) == 'string' then q.items[args.item] = true end
       if type(args.items) == 'table' then for k, v in pairs(args.items) do q.items[type(k) == 'string' and k or tostring(v)] = true end end
       if type(args.recipe) == 'string' then q.recipes[args.recipe] = true end
@@ -1521,15 +1547,69 @@ return function(api)
         end
       end
     end
+    return q, named
+  end
+  local function hits_for(p, action, args)
+    local q, named = lesson_query(p, action, args)
     local hits = {}
-    for _, i in pairs(b.items) do
+    for _, i in pairs(store().items) do
       if i.kind == 'lesson' and ACTIVE[i.status] and (named or (i.keys and i.keys.action == action)) and lesson_matches(i, q) then hits[#hits+1] = i end
     end
+    return hits
+  end
+  local function score(i) if api.lesson_score then return (api.lesson_score(i)) end return 0 end
+  function M.lessons_for(p, action, args)
+    local b = store()
+    if not b.items then return nil end
+    local any = false
+    for _, i in pairs(b.items) do if i.kind == 'lesson' then any = true; break end end
+    if not any or type(args) ~= 'table' then return nil end
+    local hits, seen = {}, {}
+    local function add(list, tag)
+      for _, i in ipairs(list) do if not seen[i.id] then seen[i.id] = true; hits[#hits+1] = {i=i, tag=tag} end end
+    end
+    local consequential = api.consequential and api.consequential[action] or false
+    add(hits_for(p, action, args), nil)
+    -- a dry run is read before its call (load_silo, construct dry runs; preflight before a launch)
+    local inner = action == 'dry_run' and type(args.action) == 'string' and type(args.args) == 'table'
+    if inner then add(hits_for(p, args.action, args.args), 'for ' .. args.action); consequential = consequential or (api.consequential and api.consequential[args.action]) end
+    if action == 'preflight' then consequential = true; add(hits_for(p, 'launch', args), 'for launch') end
+    -- a queue's or order's steps (D1: the steps it later runs show no reply of their own)
+    if STEP_CALLS[action] then
+      for n, st in ipairs(type(args.steps) == 'table' and args.steps or {}) do
+        if n > 32 then break end
+        if type(st) == 'table' and type(st.action) == 'string' then
+          add(hits_for(p, st.action, type(st.args) == 'table' and st.args or {}), 'for step ' .. n .. ' ' .. st.action)
+          if api.consequential and api.consequential[st.action] then consequential = true end
+        end
+      end
+    end
     if #hits == 0 then return nil end
-    table.sort(hits, function(x, y) return (x.last_verified or 0) > (y.last_verified or 0) end)
+    -- D2: the highest score first (impact, applicability, evidence, recency)
+    table.sort(hits, function(x, y)
+      local sx, sy = score(x.i), score(y.i)
+      if sx ~= sy then return sx > sy end
+      return (x.i.last_verified or 0) > (y.i.last_verified or 0)
+    end)
     local out = {}
-    for n = 1, math.min(2, #hits) do out[n] = lesson_line(hits[n], true) end
-    if #hits > 2 then out[#out+1] = string.format('+%d more: lessons {...}', #hits - 2) end
+    local show = consequential and 1 or 2
+    for n = 1, math.min(show, #hits) do
+      local i = hits[n].i
+      local line = lesson_line(i, true) .. (hits[n].tag and ' (' .. hits[n].tag .. ')' or '')
+      local extra = api.lesson_extra and api.lesson_extra(i)
+      if consequential then
+        local why
+        if api.lesson_score then local _; _, why = api.lesson_score(i) end
+        line = 'before this: ' .. line .. (why and '; ' .. why or '') .. (extra and '; ' .. extra or '')
+      elseif extra then line = line .. '; ' .. extra end
+      out[n] = line
+    end
+    if #hits > show then out[#out+1] = string.format('+%d more: lessons {...}', #hits - show) end
+    if api.lesson_surfaced then
+      local list = {}
+      for n = 1, math.min(show, #hits) do list[n] = hits[n].i end
+      pcall(api.lesson_surfaced, p.index, list, action)
+    end
     return out
   end
   M.handlers.lesson_add = function(p, a) return lesson_add(who(p), a) end
@@ -1701,6 +1781,9 @@ return function(api)
     return nil
   end
   M.resolve, M.agents, M.who = resolve, agents, who
+  -- (d17 batch15 Group C, progress.lua) the items, an agent's ticks since its last request and index, the plan item
+  M.items = function() return store().items end
+  M.since_request, M.plan_item, M.QUIET, M.PROJECT_QUIET, M.ACTIVE = since_request, plan_item, QUIET, PROJECT_QUIET, ACTIVE
   -- For chat reads (chat.lua): whether a logged message mentions this agent.
   -- A viewer's line mentions only an agent it names with @ (not @everyone).
   function M.mention_of(index, m)
@@ -1781,10 +1864,15 @@ return function(api)
   -- Who wakes a wait (Opus 06:33: only named teammates; Sonnet: not the operator's or automatic tells): wake_from, 1..16
   -- names (a teammate, or operator), and wake_on_operator false (operator tells and reminder jobs wait for the next
   -- reply); nil when neither is given.
+  -- wake_local (d17 batch16 C1, Luna on Gleba: waits woke within minutes for other agents' tells to the team, Nauvis
+  -- worm losses and other platforms' losses while her own loop was stable): a tell to the whole team does not wake it
+  -- (direct tells and mentions do; a tell sent with wake still does); urgent.lua and the alert condition keep to the
+  -- sleeper's surface and claims.
   function M.wake_filter(a)
-    if a.wake_from == nil and a.wake_on_operator == nil then return nil end
+    assert(a.wake_local == nil or type(a.wake_local) == 'boolean', 'wake_local must be true or false')
+    if a.wake_from == nil and a.wake_on_operator == nil and not a.wake_local then return nil end
     assert(a.wake_on_operator == nil or type(a.wake_on_operator) == 'boolean', 'wake_on_operator must be true or false')
-    local f = {operator=a.wake_on_operator}
+    local f = {operator=a.wake_on_operator, local_only=a.wake_local or nil}
     if a.wake_from ~= nil then
       local list = type(a.wake_from) == 'string' and {a.wake_from} or a.wake_from
       assert(type(list) == 'table' and #list >= 1 and #list <= 16, 'wake_from is 1..16 names (teammates, or operator)')
@@ -1799,6 +1887,7 @@ return function(api)
     local auto = from == 'operator' or from:find('^reminder') ~= nil
     if f.operator == false and auto then return false end
     if f.from and not f.from[from] then return false end
+    if f.local_only and m.team then return false end
     return true
   end
   function M.inbox_tick(index, viewers, filter)
@@ -2066,6 +2155,16 @@ return function(api)
     -- A platform leaving while a launch to it waits for its rocket (launchwatch.lua).
     if api.launch_lines then
       local ok, list = pcall(api.launch_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
+    -- A turret built from a ghost read other targeting than the ghost's (turretwatch.lua; backlog #569).
+    if api.turret_lines then
+      local ok, list = pcall(api.turret_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
+    -- The owner's 10-minute line on each owned board item (progress.lua; d17 batch15 C3).
+    if api.progress_lines then
+      local ok, list = pcall(api.progress_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
     -- A shipment delivered, spilled or held by a full hub (shipment.lua; d17 batch15 Group B).

@@ -114,4 +114,13 @@ step(15)
 for _=1,5 do eq(#D.lines(luna,hl),4,'four a reply; the rest wait for the next') end
 eq(#D.lines(luna,hl),0)
 D.lines(astra,ha); eq(ha.drops,nil,'astra\'s drops are gone from the list')
+-- 7. Backlog #812 (Aquilo drop 786): sent to a full landing pad, it came down beside it; said so, not "landed in the pad".
+do
+  container(41.5,42.5,{{name='asteroid-collector',count=2,quality='normal'},{name='explosives',count=200,quality='normal'}})
+  D.record(astra,{pod={valid=false},platform='Meridian',surface='vulcanus',pad={x=40,y=40},sent={'asteroid-collector*2','explosives*200'}})
+  step(15)
+  local got
+  for _,line in ipairs(D.lines(astra,ha)) do if line:find('Meridian',1,true) or line:find('explosives',1,true) then got=line end end
+  assert(got and got:find('was sent to the landing pad at (40,40), which took none of it (full): it landed beside it at (41.5,42.5) on vulcanus: cargo-pod-container with asteroid-collector*2 explosives*200',1,true),tostring(got))
+end
 print('drops: ok')

@@ -144,9 +144,14 @@ return function(api)
     if power then
       local text = string.format('power electric #%d', power.id)
       if power.draw_kw and power.capacity_kw > 0 then
-        local room = power.capacity_kw - power.draw_kw
-        local pct = math.floor(100 * room / power.capacity_kw + 0.5)
-        text = text .. string.format(': %s of %s, headroom %s (%d%%)', mw(power.draw_kw), mw(power.capacity_kw), mw(math.max(room, 0)), pct)
+        -- (backlog #527) headroom against what can supply now; the dry generators' rating and low-power machines named
+        local cap = power.supply_kw or power.capacity_kw
+        local room = cap - power.draw_kw
+        local pct = cap > 0 and math.floor(100 * room / cap + 0.5) or 0
+        text = text .. string.format(': %s of %s%s, headroom %s (%d%%)', mw(power.draw_kw), mw(cap),
+          (power.dry or 0) > 0 and string.format(' that can supply now (rated %s: %d generators with no steam, fuel or plasma in)', mw(power.capacity_kw), power.dry) or '',
+          mw(math.max(room, 0)), pct)
+        if (power.low_power or 0) > 0 then text = text .. string.format('; %d machines on low power', power.low_power) end
         key[#key+1] = math.floor(pct / 10)
       else text = text .. string.format(': %s capacity, no draw sample yet', mw(power.capacity_kw)) end
       if power.boilers > 0 then

@@ -159,6 +159,10 @@ test('compact output shortens the clock line, game time first; JSON keeps it (d1
   assert.equal(shortClock('game 99h29m; +2s since your last request, character idle 0s of it (0%), waiting on hand crafting 2s of it (100%); hand crafting 1m15s queued; deadline in 2h54m; game speed 55 ticks/s, 91% of normal'),
     'game 99h29m; +2s, idle 0s (0%), waiting on hand crafting 2s (100%); hand crafting 1m15s queued; deadline in 2h54m; game speed 55 ticks/s, 91% of normal');
   assert.equal(shortClock('game 1s'), 'game 1s', 'another shape as it is');
+  assert.equal(shortClock('game 2h01m; +5m00s since your last request, character idle 5m00s of it (100%, 4m30s of that in sleep/wait_ticks, on watch: rearm, refuel for 4m00s of that); hand crafting 0s queued'),
+    'game 2h01m; +5m00s, idle 5m00s (100%, 4m30s in sleep/wait_ticks, on watch: rearm, refuel for 4m00s)', 'standing orders on watch (batch16 A5)');
+  assert.equal(shortClock('game 2h01m; +9s since your last request, character idle 9s of it (100%, on watch: rearm for 9s of that); hand crafting 0s queued'),
+    'game 2h01m; +9s, idle 9s (100%, on watch: rearm for 9s)');
   const text = formatCompact({ ok: true, id: 'a', result: { outcome: 'arrived', clock: long } });
   assert.equal(text, 'outcome: arrived\nclock: "game 98h40m; +1s, idle 0s (10%, 0s in sleep); deadline in 3h43m"\n');
 });

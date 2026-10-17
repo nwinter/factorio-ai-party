@@ -53,6 +53,7 @@ import search as site_search  # noqa: E402  (site/search.py: /search/ and its in
 import timelapse  # noqa: E402  (site/timelapse.py: the base over time on the run page)
 import terrain  # noqa: E402  (site/terrain.py: /live/terrain/, map frames under the maps)
 import blueprints as bp_pages  # noqa: E402  (site/blueprints.py: /blueprints/, the team's blueprint library)
+import how as how_pages  # noqa: E402  (site/how.py: /how/, how it was made, from site/content/how/)
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
@@ -583,7 +584,7 @@ def page(title, body, active="/", description="", extra_head="", path=None, og=N
 <footer class="site-footer">
   <div class="wrap">
     <p>{esc(site_title)}: AI agents playing Factorio together, under the same rules as a human player.
-    Built from the project's run logs.{'' if PUBLIC else ' Preview build, not for sharing yet.'}</p>
+    Built from the project's run logs. <a href="/how/">How it was made</a>.{'' if PUBLIC else ' Preview build, not for sharing yet.'}</p>
   </div>
 </footer>
 <script src="/static/site.js" defer></script>
@@ -1405,7 +1406,7 @@ def build_home(runs, all_worlds):
 
 
 RULES_ALLOWED = ["Walking at character speed", "Mining and crafting at real speed, with a real inventory",
-                 "Placing, inserting and taking within reach", "Setting the research queue", "Importing blueprint strings",
+                 "Placing, inserting and taking within reach", "Setting the research queue", "Blueprints the team designed itself",
                  "Construction robots, once researched", "Writing their own scripts on top of the honest actions"]
 RULES_BANNED = ["Creating items or buildings from nothing", "Teleporting", "Seeing map areas nobody has explored",
                 "Changing the game speed of the live world", "Console commands, Lua, or talking to the server directly",
@@ -1428,7 +1429,7 @@ def build_about_compact():
     facts = [
         ("Players", "9 models from 5 labs, each in its own coding harness (Codex, Claude Code, Grok Build, Antigravity, "
                     "Muse Code). Same instructions apart from name and model."),
-        ("Controls", "One command-line tool, fh: more than 70 actions (look, walk, mine, craft, build, queue a plan, chat)."),
+        ("Controls", "One command-line tool, fh: more than 180 actions (look, walk, mine, craft, build, queue a plan, chat)."),
         ("Game", "Factorio 2.0.77 with Space Age, Quality and Elevated Rails. A small mod runs each action tick by tick, "
                  "under survival rules."),
         ("Clock", "Real time: the game runs while the agents think. Shifts of about 4 hours; the game is paused between "
@@ -1451,6 +1452,8 @@ def build_about_compact():
 <section>
   <h2>How it works</h2>
   <dl class="facts">{dl}</dl>
+  <p><a href="/how/">How it was made →</a> The machines, the harness, the agents, how the project is run, what we
+  learned and how it compares with other Factorio harnesses, in depth.</p>
 </section>
 <section class="fair">
   <h2>Fair-play rules</h2>
@@ -1936,6 +1939,7 @@ def main():
     write("polls/index.html", build_polls())
     shutil.copy(SITE / "live" / "state.example.json", out / "live" / "state.example.json")
     write("live/status.json", public_status(json.loads((SITE / "live" / "status.json").read_text())))
+    how_pages.build(out, page, markdown, esc)  # after the rest, so its links to the site's pages resolve
     write("404.html", page("Not found", '<h1>Not found</h1><p>That page doesn\'t exist. <a href="/">Back to the start</a>.</p>', None))
     for f in (SITE / "static").iterdir():
         if not f.is_file() or f.name.startswith("."):

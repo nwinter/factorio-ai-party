@@ -41,6 +41,9 @@
   `--wake-from sol,astra` (`wake_from`): only a tell or mention from those (or `operator`) ends a sleep or wait;
   `--no-operator-wake` (`wake_on_operator: false`): operator tells and reminder jobs do not end it. Urgent alerts and
   the action ending still end them.
+  `--wake-local` (`wake_local: true`) on `./fh sleep` and `./fh wait`: only what is yours ends it: tells and mentions to
+  you (a tell to the whole team waits for your next reply), urgent news on your surface or in your claims (another
+  platform's losses wait), and `--until alert` on your surface.
 - A sleep ends when the plan you submitted to your queue finishes or stalls (`queue_done`, `queue_stalled`); a
   standing order's rounds do not end it (`--wake-on-orders` makes them).
 - A collect standing at a machine that crafts is no stall (queue_status `waiting_at_machine` says which); a call that
@@ -64,6 +67,8 @@
 - A queue plan's rounds (refuel, rearm) keep going while you think; `wait_until` waits for one condition up to its
   timeout; `./fh sleep` and `./fh wait --until` leave the queue running.
 - The clock line counts a wait or sleep as idle: `game 98h40m; +5m00s, idle 5m00s (100%, 4m30s in wait_ticks)`.
+  With a standing order on (not paused, none running) it is still idle, and the clock and sleep lines add
+  `on watch: NAMES` (the orders that act when a trigger holds).
   The operator's idle nudge uses the same count.
 - Raw `fh call wait_until` accepts word-form `until` and `ticks`/`timeout_ticks` aliases; queue errors name the step path. Aboard, queues accept allowed remote steps, `configure {platform}` works, and `observe` reports surroundings with `player.body:"none"`.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
@@ -75,6 +80,10 @@
   `queue_repeat {condition: {until: ...}}` ends at a round boundary when met (before round one too); `feed up_to:true` ending `out_of_items` exits 0 from `--wait`/`fh wait`, with moved and stops left.
 - `queue_status {args: true}`: history with each step's arguments (and a finished loop's steps); status `active.progress` gives a tour's or courier's leg, distance left and moved so far; an interrupted queued transfer tour resumes from the stops left.
 - `./fh call stop` ends your running body action (a walk, tour, `load_silo` or gather) and starts nothing; `queue_cancel` (with `lane: "remote"` for the remote lane) cancels a queue.
+- `./fh queue pause` (`queue_pause`, `lane` too) pauses a queue and holds it: the running step goes back to the head
+  of pending, and nothing resumes it until `./fh queue resume` (or a submit or repeat that starts it). Without it, a
+  direct call that interrupts a queued `load_silo` lets the queue go on when that call ends. Replies with a paused queue
+  say what paused it (`paused_by`; `queue_held` on a direct call while you hold it).
 - A `craft` stock refusal names stocking chests and queue-step `on_fail`: `abort` pauses, `skip` continues,
   `goto:<label>` jumps to that pending label. Skipping acquires nothing; `transfer`/`collect` take stock explicitly.
 - Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, repairs,
@@ -104,3 +113,4 @@
   next_in_ticks}` puts the next run off; its owner's `every_ticks` there sets a new cadence.
 - `order_set {..., max_walk: N}`: the order waits (state says where and how far) while its place is over N tiles from
   you. `sleep {orders: false}` starts no standing order during the sleep.
+- A queue's transfer step that moves fewer than asked (a full target) succeeds short; `min_moved: N` beside its args fails it below N moved, and on_fail then applies.

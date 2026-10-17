@@ -68,12 +68,25 @@ return function(api)
     return false
   end
   local function settle(s, r)
-    if r.pad then
-      r.state, r.at, r.into = 'landed', r.pad, 'cargo-landing-pad'
-      return
-    end
     local surface = game.surfaces[r.surface]
-    local seen = r.last and r.last.surface == r.surface and r.last.position or r.near
+    -- (backlog #812, Aquilo drop 786: read "landed in the landing pad" while the pad was full and its cargo lay round it)
+    -- sent to a pad: landed in it unless a cargo pod container near the pad holds what was sent (the pad was full)
+    if r.pad then
+      local spilled
+      for _, e in pairs(surface and surface.find_entities_filtered{name='cargo-pod-container', position=r.pad, radius=SEARCH} or {}) do
+        if e.valid and not claimed(s, e.unit_number) then
+          for _, t in ipairs(contents(e) or {}) do
+            for _, w in ipairs(r.sent or {}) do if t:match('^([^@*]+)') == w:match('^([^@*]+)') then spilled = true end end
+          end
+        end
+      end
+      if not spilled then
+        r.state, r.at, r.into = 'landed', r.pad, 'cargo-landing-pad'
+        return
+      end
+      r.pad_full = r.pad
+    end
+    local seen = r.last and r.last.surface == r.surface and r.last.position or r.near or r.pad
     -- One holding what was sent comes first (another drop's container may lie nearer).
     local want = {}
     for _, t in ipairs(r.sent or {}) do want[t:match('^([^@*]+)')] = true end
@@ -140,8 +153,9 @@ return function(api)
     for _, n in ipairs(r.nearby or {}) do
       others[#others+1] = string.format('%s holds %s', at_text(n.position), n.holds and #n.holds > 0 and table.concat(n.holds, ' ') or 'nothing')
     end
-    return string.format('drop #%d landed at %s on %s: %s with %s (take them with transfer; it vanishes when empty)%s',
-      r.id, at_text(r.at), r.surface, r.into, held,
+    return string.format('drop #%d %s at %s on %s: %s with %s (take them with transfer; it vanishes when empty)%s',
+      r.id, r.pad_full and string.format('was sent to the landing pad at %s, which took none of it (full): it landed beside it', at_text(r.pad_full)) or 'landed',
+      at_text(r.at), r.surface, r.into, held,
       #others > 0 and string.format('; other cargo pod containers within %d tiles: %s%s', NEARBY, table.concat(others, '; '),
         r.nearby_more and string.format(' (+%d more)', r.nearby_more) or '') or '')
   end
