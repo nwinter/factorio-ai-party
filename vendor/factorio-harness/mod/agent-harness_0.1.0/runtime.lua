@@ -14392,7 +14392,7 @@ end}
 survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.machine_status(e) end,burnt_stuck=function(e) return M.burnt.stuck(e) end,
   research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
-M.supply=require('supply'){timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,
+M.supply=require('supply'){timed=M.timed,integer=integer,position=position,status_name=function(e) return M.machine_status(e) end,burnt_line=function(e) return M.burnt.line(e) end,spoil=M.spoil,state_text=function(e) return M.thrust.state_text(e) end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 -- compact (Muse 06:21: supply and science run to thousands of tokens, a dozen times a shift): lines with the places and
 -- the minutes only.

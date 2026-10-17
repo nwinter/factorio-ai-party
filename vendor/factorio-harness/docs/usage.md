@@ -6583,3 +6583,15 @@ fh watch    # deploy on every change
   so. An unknown argument that ends or starts with a valid name (chest_position) names it as the closest name. The
   refusal's example takes its position from it. Copy: Sonnet's call ran as `transfer {position, direction:
   "to_player", ...}`.
+- B1 (Sol): artillery-shell makers read tungsten-starved while their input inserter was off at a stock cap of 20 with
+  40 tungsten in its requester. supply's makers and users: a short machine (an ingredient or pack shortage) with an
+  inserter into it off by its circuit or logistic condition, or taking from a requester chest whose active sections ask
+  for less of a missing item than one craft takes, ranks after no power and before the shortages. Its worst row reads
+  `input fast-inserter (x,y) off by its circuit condition signal-A < 5 (signal-A 10 on its wires); its source
+  wooden-chest (x,y) holds 40 iron-plate; so item_ingredient_shortage (missing iron-plate)` (thrust.lua's state text;
+  an off inserter keeps its old pickup target, so the entity at its pickup position then), or `its requester ... asks
+  for 1 iron-plate, one craft takes 2; it holds 0; so ...`. The status line counts them (`N of the short held back by
+  ...`). The check (status, requester sections) runs for every short machine; the condition text only for the worst
+  3. Copy: supply engine-unit and iron-gear-wheel name the copy's engine lines held at `engine-unit < 500`; supply
+  over iron-plate, electronic-circuit and engine-unit took 110 ms on the copy against 115 ms without the check (9
+  reads each). tests/d17_batch18.lua.

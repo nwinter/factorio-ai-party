@@ -73,4 +73,24 @@ local ES2=require('entryset'){check=function() end,position=function(p) return p
 local list={{name='requester-chest',position={x=5.5,y=160.5},requests={set={['iron-plate']=200,['copper-plate']=100}}}}
 local notes=ES2.check(list,{})
 eq(list[1].requests.set[1].item,'copper-plate');eq(list[1].requests.set[2].min,200);has(notes[1],'entry 1 requests: set as a map')
+-- B1 (Sol): a short maker whose input inserter is off by its condition, or whose requester asks for less than one
+-- craft, reads as that before its shortage, ranked ahead of plain shortages.
+defines.entity_status.disabled_by_control_behavior=55
+defines.inventory.assembling_machine_input=2
+local function machine(x,id) return {valid=true,unit_number=id,name='assembling-machine-2',type='assembling-machine',position={x=x,y=0},
+  get_inventory=function() return {get_item_count=function() return 0 end} end} end
+local chest={valid=true,unit_number=90,name='wooden-chest',type='container',position={x=1,y=3},get_item_count=function(n) return n=='tungsten-plate' and 40 or 0 end}
+local req={valid=true,unit_number=91,name='requester-chest',type='logistic-container',position={x=9,y=3},prototype={logistic_mode='requester'},
+  get_item_count=function() return 0 end,get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,
+  filters={{value={name='tungsten-plate'},min=5}}} end} end}
+local m1,m2,m3=machine(0,81),machine(8,82),machine(20,83)
+local arm1={valid=true,unit_number=71,name='fast-inserter',position={x=1,y=2},status=55,pickup_target=chest}
+local arm2={valid=true,unit_number=72,name='fast-inserter',position={x=9,y=2},status=32,pickup_target=req}
+local recipe={name='artillery-shell',ingredients={{name='tungsten-plate',amount=10}}}
+local SU=require('supply'){status_name=function() return 'item_ingredient_shortage' end,state_text=function(i) return 'off by its logistic condition artillery-shell < 20' end}
+local t={item='artillery-shell',request_of={},spots={}}
+local line,worst=SU.machines(t,{{e=m3,recipe=recipe,into={}},{e=m1,recipe=recipe,into={arm1}},{e=m2,recipe=recipe,into={arm2}}},'makers',{},{})
+has(worst[1],'(0,0) assembling-machine-2 input fast-inserter (1,2) off by its logistic condition artillery-shell < 20; its source wooden-chest (1,3) holds 40 tungsten-plate; so item_ingredient_shortage (missing tungsten-plate)')
+has(worst[2],'its requester requester-chest (9,3) asks for 5 tungsten-plate, one craft takes 10; it holds 0; so item_ingredient_shortage')
+has(worst[3],'(20,0) assembling-machine-2 item_ingredient_shortage');has(line,'2 of the short held back by an input inserter')
 print('d17 batch18 ok')

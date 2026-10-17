@@ -26,7 +26,9 @@
   inserter hands, robots, characters), each logistic network's stock of it (free and reserved, and which requesters the
   reserved stock is for), its robots, every unmet requester with the reason (`inventory full: all 48 slots taken
   (spoilage 494 in 10 slots, ...)` first when its slots are all taken), machines that make and use it by status (the
-  worst 3 with positions) and the inserters feeding them. `surplus_chest` names the largest unreserved plain, storage
+  worst 3 with positions) and the inserters feeding them. A short machine whose input inserter is off by its circuit
+  or logistic condition, or whose requester asks for less than one craft, is named as that first (the condition and
+  what the source holds), ahead of plain shortages. `surplus_chest` names the largest unreserved plain, storage
   or provider stock (requester and buffer chests left out); `throughput` names a machine whose inserters carry less than
   its recipe at full speed, each inserter's rate a minute, and how many inserters like its fastest it takes (`trace
   {position}` on a machine gives the same); `full_chests` names chests with every slot used that the makers' output
