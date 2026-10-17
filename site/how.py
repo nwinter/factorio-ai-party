@@ -76,4 +76,4 @@ def build(out, page, markdown, esc):
                      f'<article class="prose how">{body}</article></div>')
         p = out / path.lstrip("/") / "index.html"
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(page(title, html_body, "/about/", summary, path=path))
+        p.write_text(page(title, html_body, "/how/", summary, path=path))
