@@ -191,3 +191,27 @@ do
   fails(function() space2.requests({index=1,force={platforms={}}},{position={x=0.5,y=0.5},trash_unrequested=true}) end,'passive-provider-chest has no trash-unrequested switch (a requester or buffer chest, a hub and your own logistics have one); robots take spoilage from a passive-provider chest only to a requester or buffer chest that requests spoilage, and an inserter filtered to spoilage moves it into the chest it drops into')
 end
 print('d17_batch20 C2 trash unrequested: ok')
+
+-- C3 (Opus): move_to {stand_off: {target, reach}}: the spot within reach of the target outside every reach + margin,
+-- nearest you; at the bare reach when no spot clears the margin; refused when none.
+do
+  local worm={x=0,y=0,range=38,name='big-worm-turret'}
+  local function discs(pad) return {{x=worm.x,y=worm.y,r=worm.range+pad,name=worm.name,range=worm.range}} end
+  local avoid={mode=function(v) if v==false then return nil end return {pad=4} end,
+    margin_discs=function(_,_,mode) return discs(mode.pad) end}
+  local walked
+  local S=dofile('mod/agent-harness_0.1.0/standoff.lua'){position=function(v) return {x=v.x,y=v.y} end,charted=function() return true end,avoid=avoid}
+  local p={position={x=-80,y=0}}
+  -- a spawner 30 tiles west of the worm as the target: spots within 36 of it, outside the worm's 38 + 4
+  local r=S.move(p,{stand_off={target={x=-30,y=0},reach=36}},function(b) walked=b; return {} end)
+  assert(walked.position.x<=-42 and ((walked.position.x+30)^2+walked.position.y^2)^0.5<=36,walked.position.x..','..walked.position.y)
+  eq(walked.stand_off,nil); has(r.stand_off,'outside every worm\'s range, spawner\'s reach and area under attack the map shows + 4; the nearest: big-worm-turret (0,0) reach 38')
+  -- the worm itself as the target with a 40-tile reach: no spot clears 38 + 4 within 40, one clears the bare 38
+  r=S.move(p,{stand_off={target={x=0,y=0},reach=40}},function(b) walked=b; return {} end)
+  has(r.stand_off,'(no spot clear of them by the walk\'s margin: at their bare reach)')
+  assert(((walked.position.x)^2+walked.position.y^2)^0.5>=38.5,walked.position.x)
+  -- a 36-tile weapon against a 38-tile worm: none
+  fails(function() S.move(p,{stand_off={target={x=0,y=0},reach=36}},function() return {} end) end,'no spot within 36 tiles of (0,0) lies outside every reach the map shows: big-worm-turret (0,0) reach 38')
+  fails(function() S.move(p,{stand_off={target={x=0,y=0},reach=36},position={x=1,y=1}},function() return {} end) end,'no position or target beside it')
+end
+print('d17_batch20 C3 stand_off: ok')

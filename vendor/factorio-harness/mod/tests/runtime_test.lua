@@ -5483,4 +5483,15 @@ do
   ok,err=pcall(call,'guards',{})
   eq(ok,false); assert(tostring(err):find('unsupported action'),tostring(err))
 end
+-- shoot aims within 32 tiles or the selected gun's range, the larger, in a chunk our force sees (d17 batch20 C3).
+do
+  local rows,where,vis=runtime.gun_rows,p.position,p.force.is_chunk_visible
+  runtime.gun_rows=function() return {{index=2,gun='rocket-launcher',range=36}} end
+  p.position={x=0,y=0}; p.force.is_chunk_visible=function() return true end
+  runtime.shoot_sight(p,{x=35,y=0},2)
+  fails(function() runtime.shoot_sight(p,{x=37,y=0},2) end,'firing position (37,0) is 37.0 tiles from you; shoot aims within 36 tiles (32, or the selected gun\'s range: 36, the larger)')
+  p.force.is_chunk_visible=function() return false end
+  fails(function() runtime.shoot_sight(p,{x=20,y=0},2) end,'20.0 tiles from you in a chunk our force does not see now')
+  runtime.gun_rows,p.position,p.force.is_chunk_visible=rows,where,vis
+end
 print('runtime: '..assertions..' assertions passed')

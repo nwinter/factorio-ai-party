@@ -6691,3 +6691,16 @@ fh watch    # deploy on every change
   switch; the refusal says so with what the game does: robots take spoilage from it only to a requester or buffer
   that requests spoilage, and an inserter filtered to spoilage moves it into the chest it drops into (an active
   provider's contents go to storage). tests/d17_batch20.lua.
+- C3 (Opus): died at 111h33 when the walk to a firing spot clipped a big worm's range; shoot refused five times in
+  shift30 with `firing position must be locally visible`.
+  - "Locally visible" was: within 32 tiles of the character and in a chunk our force sees now. A player aims at what
+    the screen and map show; a rocket launcher reaches 36 tiles. shoot now takes a position in a chunk our force sees
+    now within 32 tiles or the selected gun's range, the larger (M.shoot_sight); the refusal says the distance, the
+    limit and whether the chunk is seen now.
+  - `move_to {stand_off: {target: {x,y}, reach: N}}` (standoff.lua): the spot within N tiles of the target outside
+    every worm's range, spawner's reach and area under attack the map shows plus the avoid_enemies margin (as move_to's
+    own goal check counts them: avoid.margin_discs), the one nearest the character (rings round the target every tile
+    from N - 0.5 in, every 5 degrees, on charted chunks). With none clear of the margin it takes their bare reach and
+    says so; with none (a 36-tile weapon against a 38-tile worm) it is refused naming them. Then a plain move_to there,
+    with its avoidance on the way. The reply's `stand_off` names the spot, its distance from the target and the
+    nearest reach edge. tests/d17_batch20.lua, runtime_test.lua.
