@@ -6222,3 +6222,19 @@ fh watch    # deploy on every change
   placement refuses; for a cargo bay with no tiles to lay and nothing in the way, the plain ghost check now decides,
   and a refusal says why. On the copy the dry run and the placement agreed at every spot tried round Meridian's hub
   (Sol's case was not reproduced there).
+- C1 (Opus): a belt of ours (belt, underground, splitter) destroyed with items on it is recorded as it dies; every 2 s
+  the owner of the claim it lies in (else the agent who placed it, else the nearest agent on that surface) gets one
+  waking tell: how many belts, what destroyed them, each one's position and the way it faced, and what they carried.
+  inspect lists a ghost by its entity name with `ghost: true` and its direction (it read only "entity-ghost"). On the
+  copy: a loaded belt destroyed in Luna's Gleba claim #525 told her "1 belt carrying items destroyed in your claim
+  #525: transport-belt (15.5,15.5) facing south (they carried 4 yumako) ..."; inspect showed its ghost facing south.
+- C2 (Opus): after batch12 went live (03:41) Opus died once, at 04:31 (-287,-268): he worked the NW coal field
+  (construct, repair, rearm and refuel round (-300,-310)) in a sleep with wake_on_urgent false; a move_to there 2 s
+  before was refused for "an enemy group of 20 heading for (-305,-307)"; the group hit him standing, and the walk away
+  was outrun (it says: a big-spitter 9.0 tiles/s, you 2.4). His three stay_in_turret_coverage calls were refused for
+  a start or goal 6 to 32 tiles outside coverage. Now: a start or goal outside coverage is walked to or from the
+  nearest covered spot, up to `max_uncovered` tiles (default 48) at each end, said in turret_coverage ("the last 4
+  tiles, from (44,42), are outside it"); the box grows to 160 tiles round the way when nothing joins inside 48; no
+  covered way: "coverage is missing between (42,188) and (46,132), 56 tiles apart" (the nearest points of the two
+  covered areas). On the copy: from the main base, covered routes to (40,40) and (118,52); the south outpost and the
+  NW coal field read with their gaps (56 and 198 tiles).

@@ -91,3 +91,5 @@
   transfer, feed, collect, configure, load_silo, launch, craft, mine, rearm, refuel) carries up to 2 lines in
   `lessons`, each with who recorded it, its evidence tick and when it was last verified; one not verified for 12 game
   hours reads `stale`. At most 150 active.
+- A belt carrying items destroyed: the owner of the claim it lies in (else the nearest agent there) gets a waking tell
+  with each belt's position and direction and what it carried.
