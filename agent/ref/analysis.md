@@ -95,3 +95,9 @@
   to a chest with no room for the item).
 - `supply {item, compact: true}` and `science {compact: true}`: lines only (supply: flow, where, makers, the stopped
   makers and users by position, the chests holding most; science: one line a pack), about a fifth of the full reply.
+- `./fh call danger --args '{"position":{"x":-190,"y":-31}}'` (no position: where you stand): worms and spawners on the
+  map round it, enemy units in sight or radar coverage by name, and those more than 24 tiles from every spawner in packs
+  (`packs`: count, names, where, how far), apart from those by their nests; attacks, losses, groups, deaths there.
+- A full `status` gives `robots`: per planet or platform, all its logistic networks' robots by kind (idle, working,
+  charging, waiting to charge) and the networks with the most waiting. Its fuel and power warnings name the surface and
+  the first places (`fuel on nauvis: boiler 4/42 no_fuel at (-75,21.5) ...`).

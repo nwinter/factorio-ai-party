@@ -44,7 +44,10 @@ return function(api)
     return out
   end
   function M.read(p, a)
-    local pos = api.position(a.position)
+    -- no position: where you stand (D3, Haiku: observe {scope: danger} alone was refused 3 times)
+    local c0 = p.character
+    local pos = a.position ~= nil and api.position(a.position) or (c0 and c0.valid and {x=c0.position.x, y=c0.position.y})
+    assert(pos, 'danger takes position {x,y} (default where your character stands)')
     local r = a.radius == nil and 64 or a.radius
     assert(type(r) == 'number' and r >= 8 and r <= MAX_R, 'radius is 8..128 tiles')
     local s = a.surface and api.surface(p, a.surface) or p.surface
@@ -87,6 +90,13 @@ return function(api)
     for _, ch in ipairs(near) do
       if try(function() return f.is_chunk_visible(s, {x=ch[1], y=ch[2]}) end) then visible[ch[3]] = true else unseen = unseen + 1 end
     end
+    -- Units away from every spawner read (more than NEST tiles from one) are the mobile ones: grouped into packs (units
+    -- within PACK tiles of a pack's first), each with its counts, where and how far (D3, Haiku 18:20, 3x: "live mobile
+    -- biters and spitters near a point with their counts, not only spawners and worms").
+    local NEST, PACK = 24, 16
+    local nests = {}
+    for _, e in ipairs(got.list) do if e.spawner then nests[#nests+1] = e end end
+    local away, at_nests = {}, 0
     if next(visible) then
       for _, e in ipairs(try(function() return s.find_entities_filtered{position=pos, radius=r, type='unit', force=hostile(f), limit=500} end) or {}) do
         local cx, cy = math.floor(e.position.x / 32), math.floor(e.position.y / 32)
@@ -94,12 +104,33 @@ return function(api)
           units[e.name] = (units[e.name] or 0) + 1
           local d = dist(e.position, pos)
           if not un or d < un.d then un = {d=d, e=e} end
+          local home = false
+          for _, n in ipairs(nests) do if dist(n, e.position) <= NEST then home = true; break end end
+          if home then at_nests = at_nests + 1 else away[#away+1] = {e=e, d=d} end
         end
       end
     end
     out.units = next(units) and units or nil
     lines[#lines+1] = un and string.format('enemy units seen now within %d tiles: %s; nearest %s %d tiles from it', r, counts(units), un.e.name, round(un.d))
       or string.format('no enemy unit seen now within %d tiles', r)
+    if un then
+      table.sort(away, function(x, y) return x.d < y.d end)
+      local packs = {}
+      for _, u in ipairs(away) do
+        local into
+        for _, pk in ipairs(packs) do if dist(pk.first, u.e.position) <= PACK then into = pk; break end end
+        if not into then into = {first={x=u.e.position.x, y=u.e.position.y}, d=u.d, n=0, by={}}; packs[#packs+1] = into end
+        into.n = into.n + 1; into.by[u.e.name] = (into.by[u.e.name] or 0) + 1
+      end
+      local rows = {}
+      for i, pk in ipairs(packs) do
+        if i <= 6 then rows[i] = string.format('%d (%s) at %s, %d tiles from it', pk.n, counts(pk.by), at(pk.first), round(pk.d)) end
+      end
+      out.packs = #rows > 0 and rows or nil
+      lines[#lines+1] = #away > 0 and string.format('away from the nests (more than %d tiles from every spawner read): %d unit%s in %d pack%s: %s%s; %d by their nests',
+          NEST, #away, #away == 1 and '' or 's', #packs, #packs == 1 and '' or 's', table.concat(rows, '; '), #packs > 6 and '; ...' or '', at_nests)
+        or string.format('all %d by their nests (within %d tiles of a spawner)', at_nests, NEST)
+    end
     if unseen > 0 then lines[#lines+1] = string.format('%d of the %d chunks round it are not in sight of our force now (units there are not seen)', unseen, #near) end
     -- Attacks, losses and groups lately.
     local st = api.state()

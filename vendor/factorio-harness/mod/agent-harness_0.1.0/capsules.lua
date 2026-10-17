@@ -14,7 +14,7 @@ return function(api)
       position='{x,y} target for a thrown capsule: in sight, within its range (and beyond its minimum range); not for one used on yourself',
       quality='default normal',
       walk='cliff-explosives only: true walks into range first (as clear_cliffs)',
-      returns='used, kind (throw|self), target, projectile, distance, range, cooldown_ticks, left (how many you still hold), healed (self). Refused: not held, not a capsule, out of range (with the range), too close, cooling down (ticks left). cliff-explosives: a timed call, as clear_cliffs with that one position'},
+      returns='used, kind (throw|self), target, projectile, distance, range, cooldown_ticks, ready_tick (the tick the next capsule can go), left (how many you still hold), healed (self). Refused: not held, not a capsule, out of range (with the range), too close, cooling down (ticks left, and the tick it is ready). cliff-explosives: a timed call, as clear_cliffs with that one position'},
     clear_cliffs = {position='{x,y} a cliff (as scan lists it) or a spot whose blast reaches cliffs', positions='or 1..16 of them, cleared in order',
       walk='default true: walk into the explosives\' range of each spot first (pathfinding as move_to); false: a spot out of range ends out_of_range',
       item='default cliff-explosives', quality='default normal', ticks='1..36000 (default 7200)',
@@ -66,7 +66,8 @@ return function(api)
     local have = api.held(p, a.item, quality)
     assert(have > 0, 'no ' .. a.item .. ' held')
     local ready = ready_ticks()[p.index] or 0
-    if game.tick < ready then error(string.format('cooling down: %d ticks left before the next capsule', ready - game.tick), 0) end
+    -- the tick it is ready (D6, Muse: the cooldown's end was not said)
+    if game.tick < ready then error(string.format('cooling down: %d ticks left before the next capsule (ready at tick %d)', ready - game.tick, ready), 0) end
     local ap = ca.attack_parameters or {}
     local cooldown = math.max(1, math.floor(ap.cooldown or 30))
     local out = {used=a.item, quality=a.quality, cooldown_ticks=cooldown}
@@ -108,6 +109,7 @@ return function(api)
     local removed = p.get_main_inventory().remove{name=a.item, count=1, quality=quality}
     assert(removed == 1, 'could not take ' .. a.item .. ' from the inventory')
     ready_ticks()[p.index] = game.tick + cooldown
+    out.ready_tick = game.tick + cooldown
     out.left = have - 1
     return out
   end

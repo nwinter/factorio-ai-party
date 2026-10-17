@@ -1413,6 +1413,44 @@ return function(api)
   end
   -- The last view as it is, never computed here (urgent.lua reads it on every sleep check): nil before the first.
   function M.cached_view(f) return store().views[f.name] end
+  -- Robots per planet (D4, Haiku 16:50: "I had to use networks for each planet"): per surface of the last finished
+  -- view, each kind's robots over all its networks (idle, working, charging, waiting to charge) and the networks with
+  -- robots waiting to charge, most first. Reads the kept view only (nil before the first one).
+  function M.robot_lines(f)
+    local v = M.cached_view(f)
+    if not v then return nil end
+    local out = {}
+    for _, s in ipairs(v.surfaces or {}) do
+      local sum = {logistic={total=0, idle=0, working=0, charging=0, waiting=0}, construction={total=0, idle=0, working=0, charging=0, waiting=0}}
+      local nets, waits, untyped = 0, {}, 0
+      for _, r in ipairs(s.logistic or {}) do
+        local w = r.view
+        if w then
+          nets = nets + 1
+          local wait = 0
+          for _, k in ipairs({'logistic', 'construction'}) do
+            local x = w[k] or {}
+            for _, key in ipairs({'total', 'idle', 'working', 'charging', 'waiting'}) do sum[k][key] = sum[k][key] + (x[key] or 0) end
+            wait = wait + (x.waiting or 0)
+          end
+          if w.waiting then untyped = untyped + w.waiting; wait = wait + w.waiting end
+          if wait > 0 then waits[#waits+1] = {n=wait, text=string.format('#%s%s %d waiting', tostring(w.id or r.id),
+            w.center and string.format(' (%d,%d)', math.floor(w.center.x), math.floor(w.center.y)) or '', wait)} end
+        end
+      end
+      if nets > 0 and (sum.logistic.total + sum.construction.total) > 0 then
+        table.sort(waits, function(x, y) return x.n > y.n end)
+        local wl = {}
+        for i = 1, math.min(3, #waits) do wl[i] = waits[i].text end
+        local function kind(k, x) return string.format('%s %d: %d idle, %d working, %d charging, %d waiting', k, x.total, x.idle, x.working, x.charging, x.waiting) end
+        out[#out+1] = string.format('%s: %d network%s; robots %s; %s%s%s', s.platform or s.name, nets, nets == 1 and '' or 's',
+          kind('logistic', sum.logistic), kind('construction', sum.construction),
+          untyped > 0 and string.format('; %d more waiting to charge (kind not listed)', untyped) or '',
+          #wl > 0 and '; waiting to charge most: ' .. table.concat(wl, ', ') or '')
+      end
+    end
+    return #out > 0 and out or nil, v.tick
+  end
   -- The lines, the agent's surface first; at most `max` (the rest counted).
   -- While Nauvis is the only planet in play (runtime one_planet; Nick 12:35, item 4) a line names no planet.
   local function plain_line(f, line)

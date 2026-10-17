@@ -3979,10 +3979,11 @@ end)()
   p.surface.get_tile=function() return {name='grass-1',valid=true} end
   -- check_inserters (Luna, d15): a bad inserter refuses the call before anything is placed; all good, the rows ride along.
   local okc,errc=pcall(call,'place_ghosts',{check_inserters=true,entities={{name='inserter',position={x=2.5,y=0.5}},{name='inserter',position={x=6.5,y=0.5}}}})
-  assert(not okc and tostring(errc):find('check_inserters: 1 of 2 inserters would not work; nothing placed: #1 inserter (2.5,0.5): no pickup target, no drop target',1,true),tostring(errc))
+  assert(not okc and tostring(errc):find('check_inserters: 1 of 2 inserters would not work; nothing placed: #1 inserter (2.5,0.5): picks from nothing: the ground at (2.5,-0.5), drops into nothing: the ground at (2.5,1.5): no pickup target, no drop target',1,true),tostring(errc))
   eq(#made,0)
   local rc=call('place_ghosts',{check_inserters=true,entities={{name='inserter',position={x=6.5,y=0.5}}}})
   eq(rc.placed,1); eq(rc.inserter_check[1].ok,true); eq(rc.inserter_check[1].name,'inserter')
+  assert(rc.inserter_check[1].line:find('^#1 inserter %(6.5,0.5%): picks from .+, drops into .+: ok$'),rc.inserter_check[1].line)
   for i=#made,1,-1 do made[i]=nil end
   local r=call('place_ghosts',{entities={{name='inserter',position={x=2.5,y=0.5}},{name='inserter',position={x=6.5,y=0.5}}}})
   eq(r.placed,2); eq(#r.inserters_without_target,1); eq(r.inserters_without_target[1].position.x,2.5)

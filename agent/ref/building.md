@@ -3,7 +3,8 @@
   to_side}]`: set after every entry is placed, then the wires; the reply's `settings` and `settings_line` say what was
   set or refused (a refused setting leaves the entry placed); `dry_run` gives `settings_planned`. An entry's
   `settings: {...}` is read as those keys (`settings_alias`); a setting key such as `modules` at the entry's top level is refused with the shape.
-  `"check_inserters": true` checks every planned inserter's pickup, drop, power and filters first and places nothing if one would not work.
+  `"check_inserters": true` checks every planned inserter's pickup, drop, power and filters first and places nothing if one would not work;
+  each row's `line` (and the refusal) names both sides: `picks from iron-chest (3.5,5.5), drops into stone-furnace (3,2.5)`.
 - A `build` over a chest of the same fast-replace group keeps its contents in the new chest; what it cannot hold
   comes to you (`replaced.contents`), and with no room for that nothing moves; any fast replace keeps filters, wires,
   circuit settings, a chest's limit and requests (`replaced.kept`, `not_kept`). Inserter and loader filters show in
