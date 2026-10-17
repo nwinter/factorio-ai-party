@@ -15,6 +15,7 @@ import { writeFileSync, readFileSync, rmSync, appendFileSync, existsSync } from 
 import { formatCompact, finalLine, actionHelp, paginate } from './format.js';
 import { parseDeadline, deadlineText, timeLeftText } from './deadline.js';
 import { lookaheadDue } from './lookahead.js';
+import { pollNews } from './polls.js';
 import { bundleRuntime } from './bundle.js';
 import { startSession, stopSession, sessionConnection, connectSession, type SessionConnection } from './session.js';
 import { BridgeClient, BridgeOutcomeUnknown } from './bridge.js';
@@ -476,6 +477,17 @@ function withPace(value: unknown): unknown {
 // (default .lookahead.json next to the journal) keeps when the workspace's first call came and when it was last shown.
 let lookaheadFile: string | undefined;
 let lookaheadName = '';
+// The site's polls (polls.ts): a new open poll's line in the team block, once.
+let pollsFile: string | undefined, pollsSeenFile: string | undefined;
+function addPoll(reply: Reply, action: string, args: Record<string, unknown>) {
+  if (!pollsFile || !pollsSeenFile || !reply.ok || !reply.result || typeof reply.result !== 'object') return;
+  if (args?.peek === true || ['describe','sleep_check','profiles','cameras','lookahead'].includes(action)) return;
+  const lines = pollNews(pollsFile, pollsSeenFile, Date.now());
+  if (!lines.length) return;
+  const result = reply.result as Record<string, unknown>;
+  const team = result.team && typeof result.team === 'object' ? result.team as Record<string, unknown> : {};
+  reply.result = {...result, team:{...team, poll:[...(Array.isArray(team.poll) ? team.poll : []), ...lines]}};
+}
 function lookaheadLines(result: Record<string, unknown>): string[] {
   const lines = Array.isArray(result.lines) ? result.lines.filter((l): l is string => typeof l === 'string') : [];
   if (deadline !== undefined) lines.push(timeLeftText(deadline));
@@ -929,6 +941,9 @@ async function main() {
   projectsFile = process.env.FH_PROJECTS_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.projects.json') : undefined);
   lookaheadFile = process.env.FH_LOOKAHEAD_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.lookahead.json') : undefined);
   lookaheadName = bot ?? (values.journal ? dirname(resolve(values.journal)).split('/').pop() ?? '' : '');
+  // pog's RUN/polls.json: the workspace is the journal's folder, the run its parent
+  pollsFile = process.env.FH_POLLS_FILE || (values.journal ? resolve(dirname(dirname(resolve(values.journal))), 'polls.json') : undefined);
+  pollsSeenFile = process.env.FH_POLLS_SEEN || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-polls-seen.json') : undefined);
   {
     const inner = harness;
     harness = {request: async (...a: Parameters<Harness['request']>) => { const reply = await inner.request(...a); noteOperator(reply); noteProjects(reply); notePace(reply); return reply; }};
@@ -1769,6 +1784,7 @@ async function main() {
       addReference(reply, action);
       if (action === 'lookahead' && reply.ok && reply.result) reply.result = {lines:lookaheadLines(reply.result)};
       else await addLookahead(reply, action, args);
+      addPoll(reply, action, args);
       if (reply.ok && action === 'blueprint_export' && !args.layout && values.out) {
         await mkdir(dirname(resolve(values.out)),{recursive:true});
         await writeFile(values.out,reply.result.blueprint+'\n');

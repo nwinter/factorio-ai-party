@@ -3439,6 +3439,23 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     team's tokens and model calls; the run's packs per pack and the measures. `--last N`: the last N shifts (the run
     line and the trend still cover the run). `--format json`: all of it as JSON. Team numbers only: no agent is listed.
   - `fh progress --last 2`
+- `fh poll` (pog's `bin/fh`, `tools/fh_poll.py`; the stream site's polls, d16) makes no game call and uses no token
+  or network. It reads `RUN/polls.json`, which pog's `site/polls_relay.py` keeps fresh every 30 s, and prints each
+  open poll: id, question, intro, options with their details, counts (`viewers N, agents N` and together), closing
+  time, the agent's own vote and the vote call. It then prints the latest 3 closed polls' results. Data older than
+  5 minutes is printed with its age.
+  - `fh poll vote --args '{"id":N,"option":K,"comment":"..."}'`: one vote per agent per poll, and a later one replaces
+    it. A poll that is not open, an option out of range and a comment over 200 characters are refused before
+    anything is filed. The vote is appended to the workspace's `.poll-requests.jsonl` (the workspace is the
+    journal's folder). The relay posts it with the site's token as voter `agent:BOT` under the agent's game name and
+    answers in `.poll-replies.jsonl`. fh waits up to 20 s for that answer and prints the new counts.
+  - `fh poll suggest --args '{"question":"...","options":["...","..."],"hours":N}'`: a poll idea with 2-6 options
+    for the operator inbox (`runs/RUN/operator-inbox.jsonl`, `poll_idea: true`). Over 500 bytes it is refused, and
+    nothing is filed.
+  - Team block: when a poll opens, the next reply that is not a peek carries `team.poll`, one line with the id,
+    question, options and the vote call, once per poll per workspace (`host/polls.ts`). The file is `FH_POLLS_FILE`
+    (default `RUN/polls.json`, the journal's folder's parent). The polls already announced are kept in
+    `FH_POLLS_SEEN` (default `.fh-polls-seen.json` beside the journal).
 - Editing the queue as the research GUI does: `research {remove: NAME}` (or an array; `cancel` is the same) takes it
   out, with queued technologies that need it (`also_removed`); progress stays with the technology. `research {move:
   NAME, to: N}` puts it at position N (1 is researched now); a move ahead of a queued prerequisite or behind a queued

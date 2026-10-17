@@ -26,6 +26,8 @@ sys.dont_write_bytecode = True
 
 import voices  # noqa: E402
 from analyst_board import is_question, questions_on  # noqa: E402
+import pollstrip  # noqa: E402
+POLL_URL = pollstrip.site_host()
 sys.path.insert(0, os.path.dirname(HERE))
 from shift_times import shift_number  # noqa: E402
 
@@ -2585,6 +2587,10 @@ class Caster:
         if used:  # HOSTS6 item 2: a memory of framings across the shift, not only the last few lines
             facts["framings_used_lately"] = used
         story_facts(facts, e, getattr(self, "story", None), getattr(self, "gate", None), time.time())
+        # the site's open poll (pollstrip.py): offered while 20 minutes have passed since the hosts last mentioned one
+        poll = pollstrip.host_facts(s, getattr(self, "poll_said", 0.0), time.time(), POLL_URL)
+        if poll and e["prio"] < URGENT:
+            facts["site_poll"] = poll
         names = list(self.names(s).values())
         recent = list(self.recent)
         lines, backend, err, lat = [], "template", None, 0.0
@@ -2635,6 +2641,8 @@ class Caster:
             self.caster_free = max(self.caster_free, time.time() + 3)
             return
         self.remember_framings([line for _, line in lines])
+        if pollstrip.mentioned([line for _, line in lines]):
+            self.poll_said = time.time()
         for who, line in lines:
             self.recent.append(f"{CASTERS[who]['name']}: {line}")
             log(f"[{CASTERS[who]['name']}] ({e['kind']}{'/' + e['angle'] if e.get('angle') else ''}"

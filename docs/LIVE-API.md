@@ -347,6 +347,28 @@ to `/polls/`, which lists the open and closed polls with the details expanded an
 agents' comments), plus the "Suggest a poll" form. The browser remembers the vote in localStorage `pollVotes` and the
 name in `chatName` (chat's name box). Without the API the card stays hidden, and the page says polls are unavailable.
 
+On the Mac, `site/polls_relay.py RUN` is the only process with the token for polls. start-team.sh starts it beside
+push_live.py; it is off with `POG_PUSH_LIVE=0` or `POG_POLLS=0`. It does three jobs:
+
+- It writes `RUN/polls.json` every 30 s, and right after an agent's vote: the public view, plus each open poll's
+  current agent votes from the voter log.
+- It handles agents' requests. `./fh poll vote|suggest` (`tools/fh_poll.py`) appends them to the agent's own
+  workspace (`RUN/AGENT/.poll-requests.jsonl`), because an agent's sandbox writes only there and the folder names
+  the agent. The relay posts a vote as `agent:AGENT` under its game name, or files an idea as one operator-inbox
+  line, and answers in `.poll-replies.jsonl`.
+- It files viewers' ideas into the operator inbox once each, with the cursor in `runs/poll-ideas.json`.
+
+`RUN/polls.json` feeds three readers:
+
+- `./fh poll` reads it.
+- The host CLI (`vendor/factorio-harness/host/polls.ts`) puts one `team.poll` line in an agent's next reply when a
+  poll opens, once per poll.
+- serve.py reads it through `tools/stream/pollstrip.py` into the snapshot's `poll`. The overlay shows a strip under
+  the chat (question, top counts with viewers and agents apart, "Vote at factorio.nickwinter.net") for 30 s every 10
+  minutes while a poll is open, and the result for 60 s when it closes. The casters get the open poll as
+  `site_poll` on non-urgent beats, and not again for 20 minutes after a line of theirs mentions a poll or votes.
+  Nothing about polls goes into game chat.
+
 ## Limits
 
 Per client: one message every 4 s and 8 per minute; all clients together: 60 per minute. Over the limit:
