@@ -216,3 +216,22 @@ do
   for _,k in ipairs({'position','items','from','launch','platform','to_total','auto_requests','dry_run'}) do assert(runtime.takes('silo_stage',k),k) end
 end
 print('d17_batch19_rt C1 silo_stage steps pass the queue checks: ok')
+
+-- C2: assembler_batch's steps pass the queue's own checks, and its arguments are the schema's.
+do
+  for _,n in ipairs({'steel-plate','cargo-bay'}) do prototypes.item[n]=prototypes.item[n] or {name=n} end
+  local recipe={name='cargo-bay',products={{type='item',name='cargo-bay',amount=1}},ingredients={{type='item',name='steel-plate',amount=20}}}
+  local m={valid=true,unit_number=1,name='assembling-machine-2',type='assembling-machine',position={x=107.5,y=-94.5},force=force,
+    bounding_box={left_top={x=106,y=-96},right_bottom={x=109,y=-93}},get_recipe=function() return recipe end,get_inventory=function() return nil end}
+  local req={valid=true,unit_number=2,name='requester-chest',position={x=107.5,y=-97.5},prototype={logistic_mode='requester'},get_item_count=function() return 0 end}
+  local input={valid=true,unit_number=3,type='inserter',position={x=107.5,y=-96.5},pickup_target=req,drop_target=m}
+  local output={valid=true,unit_number=4,type='inserter',position={x=109.5,y=-94.5},pickup_target=m}
+  m.surface={find_entities_filtered=function() return {input,output} end}
+  local B=dofile('mod/agent-harness_0.1.0/batch.lua'){position=function(q) return q end,integer=function(v) return v end,
+    entity=function() return m end,submit=function() end}
+  local r=B.run({},{position={x=107.5,y=-94.5},count=8,dry_run=true})
+  local ok,q=pcall(sol,'queue_submit',{dry_run=true,steps=r.steps})
+  assert(ok,tostring(q))
+  for _,k in ipairs({'position','count','requester','input','output','dry_run'}) do assert(runtime.takes('assembler_batch',k),k) end
+end
+print('d17_batch19_rt C2 assembler_batch steps pass the queue checks: ok')

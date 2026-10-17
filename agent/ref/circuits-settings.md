@@ -54,6 +54,14 @@
   - A rocket silo: `auto_requests` and `send_to_orbit_automatically`; with `surface` (a planet) and `position` it acts
     there by remote view where our force sees the chunk.
   Example: `./fh call configure --args '{"position":{"x":23.5,"y":73.5},"recipe":"electronic-circuit"}'`
+- `assembler_batch {position, count, requester?, input?, output?, dry_run?}`: a finite batch of a machine's recipe as one
+  queue plan, each step a call whose reply says what it did: the output inserter held (logistic `PRODUCT < 0`) and the
+  input inserter held; the requester feeding it cleared, then asked for exactly what the batch still needs of each
+  ingredient (crafts x amount less what the machine and the requester hold now); waits for it; requests cleared; the
+  input on; waits for the products in the machine; the input off again; the output released. The requester and both
+  inserters are found round the machine unless given. `surplus` names what is already there over the batch's need
+  (the machine would make more with it). The inserters need a logistic network for their logistic condition.
+  Example: `./fh call assembler_batch --args '{"position":{"x":107.5,"y":-94.5},"count":8,"dry_run":true}'`
 - `requests {position | platform?, set?, clear?, section?, active?, construction_requests?, force?, surface?}`: a
   requester or buffer chest's requests (`position`), a platform hub's (`platform`), or your own (no position; needs
   logistic robotics). `set` takes a list or a map `{item: min}`; an entry without `max` keeps the slot's max (`"max":
