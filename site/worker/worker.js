@@ -323,6 +323,7 @@ export class Live {
         voter TEXT NOT NULL, name TEXT NOT NULL, option INTEGER NOT NULL, comment TEXT NOT NULL DEFAULT '', t REAL NOT NULL,
         cid TEXT, current INTEGER NOT NULL DEFAULT 1, hidden INTEGER NOT NULL DEFAULT 0, agent INTEGER NOT NULL DEFAULT 0)`);
       this.sql.exec(`CREATE INDEX IF NOT EXISTS votes_poll ON votes (poll, current)`);
+      try { this.sql.exec(`ALTER TABLE votes ADD COLUMN voided INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
       // host: a vote cast with the host link (shown as the host's on the comments)
       try { this.sql.exec(`ALTER TABLE votes ADD COLUMN host INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
       this.sql.exec(`CREATE TABLE IF NOT EXISTS poll_ideas (id INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
@@ -805,7 +806,7 @@ export class Live {
     const p = this.pollRow(id);
     if (!p) return json({ error: "no such poll" }, 404);
     const options = JSON.parse(p.options);
-    const votes = this.sql.exec(`SELECT id, t, voter, name, option, comment, current, hidden, agent FROM votes WHERE poll = ?
+    const votes = this.sql.exec(`SELECT id, t, voter, name, option, comment, current, hidden, agent, voided FROM votes WHERE poll = ?
       ORDER BY id`, id).toArray().map((v) => ({ ...v, agent: !!v.agent, choice: options[v.option] ?? null,
         // operator only (token): the chat names this connection's hash posted under, to spot one person voting as many
         chat_names: v.agent ? [] : this.sql.exec(`SELECT name, COUNT(*) AS n, MIN(t) AS first, MAX(t) AS last FROM chat
@@ -900,6 +901,13 @@ export class Live {
       // a poll comment (votes.id): hide it (the vote still counts), or ban whoever wrote it (their votes stop counting)
       case "hide_comment": this.sql.exec("UPDATE votes SET hidden = 1 WHERE id = ?", parseInt(body.id, 10)); break;
       case "unhide_comment": this.sql.exec("UPDATE votes SET hidden = 0 WHERE id = ?", parseInt(body.id, 10)); break;
+      // void_vote (Nick d17 07:40): a vote stops counting (current = 0, voided = 1), nothing else changes: no ban, chat kept
+      case "void_vote": {
+        const r = this.sql.exec("SELECT id, agent FROM votes WHERE id = ?", parseInt(body.id, 10)).toArray();
+        if (!r.length) return json({ error: "no such vote" }, 404);
+        this.sql.exec("UPDATE votes SET current = 0, voided = 1 WHERE id = ?", r[0].id);
+        break;
+      }
       case "ban_voter": {
         const r = this.sql.exec("SELECT voter, agent FROM votes WHERE id = ?", parseInt(body.id, 10)).toArray();
         if (!r.length) return json({ error: "no such vote" }, 404);
