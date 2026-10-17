@@ -27,7 +27,8 @@
   `"on_short": "skip"` are left out of it. `queue_repeat` takes `times` (rounds) and `for_ticks` (no round starts
   after that); the loop then ends with one `queue:` line (`done after N rounds: ...`) and `loop_done` in `queue_status`;
   its `orders` says which standing orders may run between its rounds (triggered ones by default). `transfer` is `{position, direction: "to_entity"|"to_player", item, count,
-  inventory?}` on any container (`./fh help transfer` shows calls that work; an argument refusal ends with one built
+  inventory?}` on any container (without `direction`: a give when the target holds the item only where it feeds from,
+  its fuel, ammunition or input, and you hold it too; `direction_note` says so) (`./fh help transfer` shows calls that work; an argument refusal ends with one built
   from your call, `launch`'s with the silos there); out of reach, it says the distance, your
   reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
   `collect` over several targets ends with a `tally` line; one where every target failed fails with the first reason

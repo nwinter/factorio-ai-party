@@ -160,3 +160,201 @@ do
   eq(#action.mine_for_a_way,2)
 end
 print('d17_batch17 B2 an unreachable tour stop names what to mine: ok')
+
+-- C1 (Opus, every shift: a 2-tile gap at (422.5,-249) idled 10 drills unnoticed): a long belt or pipe line cut is a
+-- team alert naming the cut tiles; a short one is not; one rebuilt is gone; a second death beside it joins it.
+do
+  game={tick=100}
+  local st={}
+  local L=dofile('mod/agent-harness_0.1.0/linecut.lua'){state=function() return st end}
+  local function belt(y) local b={valid=true,type='transport-belt',name='transport-belt',position={x=422.5,y=y},unit_number=1000+y*-1,
+    get_max_transport_line_index=function() return 2 end,get_transport_line=function() return {get_contents=function() return {{name='iron-ore',count=4}} end} end}
+    return b end
+  local line={}
+  for y=-235,-262,-1 do line[#line+1]=belt(y+0.5) end
+  for i,b in ipairs(line) do b.belt_neighbours={inputs={line[i-1]},outputs={line[i+1]}} end
+  local built={}
+  for _,b in ipairs(line) do built[b.position.y]=true end
+  local surface={name='nauvis',find_entities_filtered=function(f) if built[f.position[2]] then return {{valid=true}} end return {} end}
+  game.get_surface=function() return surface end
+  for _,b in ipairs(line) do b.surface=surface; b.force={name='player'}; b.last_user={name='opus'} end
+  local gap=line[15]   -- (422.5,-248.5)
+  L.note({entity=gap,tick=100,cause={valid=true,name='big-biter'}}); built[gap.position.y]=nil
+  L.note({entity=line[16],tick=101,cause={valid=true,name='big-biter'}}); built[line[16].position.y]=nil
+  eq(#st.linecut.cuts,1,'the second death joins the cut')
+  game.tick=101+1800
+  local gs=L.alert_groups({name='player'})
+  eq(#gs,1)
+  has(gs[1].line,'belt line cut at (422.5,-248.5), (422.5,-249.5): 2 tiles gone (2 by big-biter), 30s ago, none rebuilt')
+  has(gs[1].line,'the line runs 14 tiles to (422.5,-234.5) on one side, 13 tiles to (422.5,-261.5) on the other; it carried iron-ore')
+  eq(gs[1].by.opus,1,'who built it hears it')
+  -- rebuilt: gone
+  built[gap.position.y]=true; built[line[16].position.y]=true
+  eq(#L.alert_groups({name='player'}),0)
+  -- a short line: no alert
+  local a,b,c=belt(0.5),belt(1.5),belt(2.5)
+  a.belt_neighbours={inputs={},outputs={b}}; b.belt_neighbours={inputs={a},outputs={c}}; c.belt_neighbours={inputs={b},outputs={}}
+  for _,x in ipairs({a,b,c}) do x.surface=surface; x.force={name='player'} end
+  L.note({entity=b,tick=200})
+  eq(#st.linecut.cuts,0,'3 tiles is no long line')
+end
+do
+  game={tick=10}
+  local st={}
+  local L=dofile('mod/agent-harness_0.1.0/linecut.lua'){state=function() return st end}
+  local surface={name='nauvis',find_entities_filtered=function() return {} end}
+  game.get_surface=function() return surface end
+  local pipes={}
+  for i=1,12 do pipes[i]={valid=true,type='pipe',name='pipe',position={x=-200.5+i,y=-300.5},unit_number=2000+i,surface=surface,force={name='player'},
+    fluidbox={{name='crude-oil',amount=50}}} end
+  for i,pp in ipairs(pipes) do pp.neighbours={{pipes[i-1],pipes[i+1]}} end
+  L.note({entity=pipes[6],tick=10})
+  game.tick=70
+  local gs=L.alert_groups({name='player'})
+  eq(#gs,1)
+  has(gs[1].line,'pipe line cut at (-194.5,-300.5): 1 tile gone, 1s ago, none rebuilt; the line runs 5 tiles to (-199.5,-300.5) on one side, 6 tiles to (-188.5,-300.5) on the other; it carried crude-oil')
+end
+print('d17_batch17 C1 a long belt line cut is a team alert: ok')
+
+-- C2 (Luna, shift29: paged 109 requester chests to find 5 spoilage-only blockers): logistics_audit ranks a network's
+-- requesters by what keeps them short, with the network's free stock and the provider robots would take it from.
+do
+  defines={inventory={chest=1}}
+  game={tick=40000}
+  local function inv(contents,slots)
+    local used=0
+    for _,c in ipairs(contents) do used=used+math.ceil(c.count/50) end
+    local t={get_contents=function() return contents end,count_empty_stacks=function() return slots-used end,
+      can_insert=function(x) return used<slots end}
+    return setmetatable(t,{__len=function() return slots end})
+  end
+  local units=0
+  local function chest(x,y,contents,slots)
+    units=units+1
+    local i=inv(contents,slots)
+    local e={valid=true,type='logistic-container',name='requester-chest',unit_number=units,position={x=x,y=y},
+      get_inventory=function() return i end}
+    e.get_item_count=function(q) local n=0 for _,c in ipairs(contents) do if c.name==q.name then n=n+c.count end end return n end
+    return e
+  end
+  local function point(e,filters,coming) return {owner=e,filters=filters,targeted_items_deliver=coming or {}} end
+  local provider=chest(10.5,0.5,{{name='nutrients',quality='normal',count=400}},48); provider.name='passive-provider-chest'
+  local full=chest(74.5,62.5,{{name='spoilage',quality='normal',count=2400}},48)
+  local rotten=chest(4.5,10.5,{{name='spoilage',quality='normal',count=100},{name='nutrients',quality='normal',count=10}},48)
+  local waiting=chest(-6.5,26.5,{},48)
+  local unsent=chest(20.5,0.5,{},48)
+  local short=chest(15.5,53.5,{},48)
+  local done=chest(0.5,0.5,{{name='nutrients',quality='normal',count=10}},48)
+  local ch={owner={valid=true,type='character'},filters={{name='iron-plate',count=100}}}
+  local ln={network_id=98,requester_points={
+    point(short,{{name='processing-unit',quality='normal',count=20}}),
+    point(waiting,{{name='iron-bacteria',quality='normal',count=3}},{{name='iron-bacteria',quality='normal',count=3}}),
+    point(unsent,{{name='nutrients',quality='normal',count=10}}),
+    point(full,{{name='yumako-mash',quality='normal',count=60},{name='nutrients',quality='normal',count=10}}),
+    point(rotten,{{name='nutrients',quality='normal',count=60}},{{name='nutrients',quality='normal',count=20}}),
+    point(done,{{name='nutrients',quality='normal',count=10}}),ch},
+    get_supply_counts=function(q) local name=type(q)=='table' and q.name or q
+      if name=='nutrients' then return {['passive-provider']=400} end return {} end,
+    select_pickup_point=function(f) if f.name.name=='nutrients' then return {owner=provider} end end}
+  local surface={name='gleba',find_logistic_network_by_position=function() return ln end}
+  local st={networks={waiting={[waiting.unit_number..'|iron-bacteria|normal']=40000-24000}, unfilled={[short.unit_number..'|processing-unit|normal']=40000-7200}}}
+  local L=dofile('mod/agent-harness_0.1.0/logaudit.lua'){state=function() return st end}
+  local p={force={},surface=surface,position={x=0,y=0}}
+  local r=L.read(p,{})
+  eq(r.looked,6,'the character is left out'); eq(r.blocked,4); eq(r.coming,1); eq(r.filled,1)
+  local order={}
+  for i,x in ipairs(r.requesters) do order[i]=x.block end
+  eq(table.concat(order,' '),'full_unrequested waiting not_sent shortage')
+  has(r.lines[1],'requester-chest (74.5,62.5), 97 tiles: every slot taken, by items it does not request (48 of 48 slots: spoilage 2400 (spoiled, not requested)); asks yumako-mash 60 (has 0, no room, none free in the network); nutrients 10 (has 0, no room, 400 free in the network, robots take it from passive-provider-chest (10.5,0.5), 89 tiles (holds 400))')
+  has(r.lines[2],'deliveries on the way 5+ min; asks iron-bacteria 3 (has 0, 3 on the way for 6m40s, none free in the network)')
+  has(r.lines[3],'free in the network, nothing on the way; asks nutrients 10 (has 0, 400 free in the network, robots take it from passive-provider-chest (10.5,0.5), 10 tiles (holds 400))')
+  has(r.lines[4],'short in the network; asks processing-unit 20 (has 0, short 2m00s, none free in the network)')
+  has(r.summary,'logistic network #98 on gleba: 6 requesters looked at; 4 blocked: 1 full_unrequested, 1 waiting, 1 not_sent, 1 shortage; 1 under their count with deliveries on the way under 5 min; 1 filled; 1 more hold spoilage they do not request, with room left: (4.5,10.5) spoilage 100')
+  eq(r.requesters[1].asks[2].from.distance,89)
+  -- by id, and a missing id names the ids there
+  p.force={logistic_networks={gleba={ln}}}
+  eq(L.read(p,{network=98}).network,98)
+  local ok,err=pcall(L.read,p,{network=7})
+  assert(not ok and tostring(err):find('no logistic network #7 of ours on gleba (there: #98)',1,true),tostring(err))
+end
+print('d17_batch17 C2 logistics_audit ranks requesters by what blocks them: ok')
+
+-- C1 addition (Sonnet 12:20: a medium-electric-pole on a belt row's tile cut 6 coal drills for an hour; the drills
+-- said only waiting_for_space): a build that leaves a belt facing into another entity, with the line going on past it,
+-- is a team alert naming that entity; a cut tile something stands on names it; belt text and belt_gaps name it.
+do
+  game={tick=1000}
+  local player={name='player'}
+  local ents={}
+  local function box(x,y,w) return {left_top={x=x-w,y=y-w},right_bottom={x=x+w,y=y+w}} end
+  local surface
+  local function add(e) e.valid=true; e.surface=surface; e.force=e.force or player; e.bounding_box=box(e.position.x,e.position.y,e.w or 0.4); ents[#ents+1]=e; return e end
+  local function belt(x,y,dir,items)
+    return add({type='transport-belt',name='transport-belt',position={x=x,y=y},direction=dir,belt_neighbours={inputs={},outputs={}},
+      get_max_transport_line_index=function() return 1 end,get_transport_line=function() return {get_contents=function() return items or {} end} end})
+  end
+  surface={name='vulcanus',find_entities_filtered=function(f)
+    local out={}
+    local area=f.area
+    if f.position then local q=f.position; local x,y=q.x or q[1],q.y or q[2]; area={{x-0.01,y-0.01},{x+0.01,y+0.01}} end
+    for _,e in ipairs(ents) do
+      local ok=e.valid
+      if ok and area then local a,b=area[1],area[2]; local bb=e.bounding_box
+        ok=bb.left_top.x<b[1] and bb.right_bottom.x>a[1] and bb.left_top.y<b[2] and bb.right_bottom.y>a[2] end
+      if ok and f.type then local any=false; for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do if e.type==t then any=true end end; ok=any end
+      if ok and f.force then ok=e.force.name==(type(f.force)=='table' and f.force.name or f.force) end
+      if ok then out[#out+1]=e; if f.limit and #out>=f.limit then break end end
+    end
+    return out
+  end}
+  game.get_surface=function() return surface end
+  game.forces={player=player}
+  local row={}
+  for x=359.5,354.5,-1 do row[#row+1]=belt(x,95.5,12,{{name='coal',count=7}}) end
+  local pole=add({type='electric-pole',name='medium-electric-pole',position={x=353.5,y=95.5},w=0.15,last_user={name='sonnet'}})
+  local after={}
+  for x=352.5,349.5,-1 do after[#after+1]=belt(x,95.5,12) end
+  for i,b in ipairs(row) do b.belt_neighbours={inputs={row[i-1]},outputs={row[i+1]}} end
+  for i,b in ipairs(after) do b.belt_neighbours={inputs={after[i-1]},outputs={after[i+1]}} end
+  add({type='resource',name='coal',position={x=353.5,y=95.5},w=0.5,force={name='neutral'}})
+  local st={}
+  local L=dofile('mod/agent-harness_0.1.0/linecut.lua'){state=function() return st end}
+  eq(L.blocker(surface,{x=353.5,y=95.5}),pole,'the pole, not the ore under it')
+  L.built({entity=after[1]})
+  eq(#st.linecut.blocked,1)
+  L.built({entity=row[6]})
+  eq(#st.linecut.blocked,1,'kept once')
+  eq(#L.alert_groups(player),0,'not before 30 s')
+  game.tick=1000+3600
+  local gs=L.alert_groups(player)
+  eq(#gs,1); eq(gs[1].kind,'line_cut'); eq(gs[1].by.sonnet,1)
+  eq(gs[1].line,"belt line blocked at (353.5,95.5): medium-electric-pole (353.5,95.5) stands where the belt's next tile should be (placed by sonnet); the belt runs 6 tiles from (359.5,95.5) to (354.5,95.5) and stops there, holding coal 42; the line goes on from (352.5,95.5), 4 tiles to (349.5,95.5); seen 1m ago")
+  -- the pole moved and a belt there: gone
+  pole.valid=false
+  local bridge=belt(353.5,95.5,12)
+  eq(#L.alert_groups(player),0); eq(#st.linecut.blocked,0)
+  -- an inserter at a belt's end moves the items on; a belt past it facing back is another line: neither kept
+  bridge.valid=false
+  local ins=add({type='inserter',name='inserter',position={x=353.5,y=95.5},w=0.15})
+  L.built({entity=ins}); eq(#st.linecut.blocked,0,'inserter')
+  ins.valid=false; pole.valid=true
+  for _,b in ipairs(after) do b.direction=4 end
+  L.built({entity=pole}); eq(#st.linecut.blocked,0,'facing back')
+  for _,b in ipairs(after) do b.direction=12 end
+  L.built({entity=pole}); eq(#st.linecut.blocked,1,'the pole built last finds it too')
+  -- a cut tile a pole stands on names it
+  st.linecut.cuts={{id=99,kind='belt',surface='vulcanus',force='player',tick=game.tick,first=game.tick,tiles={{x=353.5,y=95.5,name='transport-belt'}},
+    causes={},placers={},a={n=5,last={x=358.5,y=95.5}},b={n=4,last={x=349.5,y=95.5}},carried={'coal'}}}
+  local cut
+  for _,g in ipairs(L.alert_groups(player)) do if g.key=='line_cut|99' then cut=g end end
+  has(cut.line,'1 tile gone, 0s ago, none rebuilt (medium-electric-pole (353.5,95.5) stands on (353.5,95.5) (placed by sonnet))')
+  -- belt_gaps: a missing tile names what stands there
+  local G=dofile('mod/agent-harness_0.1.0/beltgaps.lua'){state=function() return st end,position=function(q) return q end,
+    blocker=function(s,q) return L.blocker(s,q) end,blocker_text=function(e,w) return L.blocker_text(e,w) end}
+  player.is_chunk_visible=function() return true end
+  local p={force=player,surface=surface,position={x=355,y=95}}
+  local r=G.read(p,{from={x=359.5,y=95.5},to={x=349.5,y=95.5}})
+  eq(#r.missing,1); eq(r.missing[1].blocked_by.name,'medium-electric-pole')
+  eq(r.missing[1].line,'medium-electric-pole (353.5,95.5) stands on (353.5,95.5) (placed by sonnet)')
+end
+print('d17_batch17 C1 a belt line blocked by an entity on its tile is named: ok')

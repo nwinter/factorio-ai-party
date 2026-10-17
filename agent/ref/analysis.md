@@ -96,6 +96,8 @@
 - `stock {item}` with no radius totals the whole surface (named or yours; a platform is read whole) and lists the places
   within 128 tiles; `covered` says what was read, `as_of` whether a total is live or reused (and its age; `supply` too).
 - `belt_gaps` follows a leg that is not straight round the remembered belt's corners (`followed`); `surface` is read.
+  A missing tile in sight names what stands on it (`blocked_by`, `line`). A belt's text names what stands on the tile it
+  stops at: "(no belt takes them there: they stop at its end; medium-electric-pole (353.5,95.5) stands there)".
 - `shortages {surface?}`: machines stopped short of an ingredient (by recipe and ingredient), no fuel, low or no power,
   labs waiting for packs, and what requester chests lack, in lines. `bottleneck {item: "lubricant"}` adds `shares`: each
   recipe's machines and share of the fluid at full speed.
@@ -107,6 +109,14 @@
   chest, each requester short or with deliveries on the way (its request, what it holds, what is coming, no room when
   every slot is taken), the robots' orders by item and target, and `flags` (reservations while robots are idle, orders
   to a chest with no room for the item).
+- `logistics_audit {network}` or `{position}` (default: the network where you stand; `surface` optional; read only):
+  every requester of that logistic network, worst first: `full_unrequested` (every slot taken while a short item has
+  no room, by items it does not request, spoilage named), `full` (the same by its own items), `spoiled` (spoilage it
+  does not request, 4 or fewer slots left), `waiting` (deliveries on the way 5+ min while under its count), `not_sent`
+  (short with the item free in providers or storage, nothing on the way), `shortage` (none free in the network). Each
+  item with what it holds, what is on the way and for how long, the network's free count and the provider robots would
+  take it from (position, distance, count). The summary counts each kind and names the chests holding spoilage with
+  room left. 256 requesters a call; `next_from` gives `from` for the rest. Characters' requests are left out.
 - `supply {item, compact: true}` and `science {compact: true}`: lines only (supply: flow, where, makers, the stopped
   makers and users by position, the chests holding most; science: one line a pack), about a fifth of the full reply.
 - `./fh call danger --args '{"position":{"x":-190,"y":-31}}'` (no position: where you stand): worms and spawners on the

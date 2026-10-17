@@ -74,7 +74,11 @@ return function(api)
       if not taken then missing[#missing+1] = to[i] end
     end
     local text = head .. ' to ' .. list(to)
-    if #missing == #to then return text .. ' (no belt takes them there: they stop at its end)' end
+    if #missing == #to then
+      -- what stands there instead (Sonnet: a pole on the line's next tile cut a drill row for an hour)
+      local blk = #to == 1 and api.blocker and try(function() return api.blocker(e.surface, to[1]) end)
+      return text .. ' (no belt takes them there: they stop at its end' .. (blk and string.format('; %s %s stands there', blk.name, pt(blk.position)) or '') .. ')'
+    end
     if #missing > 0 then return text .. ' (no belt takes them at ' .. list(missing) .. ')' end
     local n = outputs[1]
     if #to == 1 and n and n.valid and n.direction ~= d then

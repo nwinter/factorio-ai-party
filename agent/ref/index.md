@@ -13,7 +13,7 @@
   `rearm`, `artillery`, `shoot`, `use_item`, `equip`, `vehicle`, `equipment`.
 - `analysis`, factory reads, the factory digest: `progress`, `research`, `research done`, `science`, `supply`,
   `bottleneck`, `trace`, `labs`, `inspect`, `ports`, `power`, `fuel_budget`, `game_alerts`, `belt_gaps`, `pipe_gaps`,
-  `danger`, `drill_sites`, `ores`, `stock`, `reservations`, `construction_robots`, `shortages`, `damage_log`, `dependency`.
+  `danger`, `drill_sites`, `ores`, `stock`, `reservations`, `logistics_audit`, `construction_robots`, `shortages`, `damage_log`, `dependency`.
 - `waits-queues`, waits, queues, standing orders, urgent wakes, slow game, harness updates: `wait_until`, `sleep
   --until`, `wait_ticks`, `sleep_check`, `queue_submit`, `queue_status`, `queue_edit`, `queue_cancel`, `queue_pause`,
   `queue_repeat`, `plan save`, `plan run`, `plan list`, `stop`, `order_set`, `orders`, `order_remove`, `orders_pause`,

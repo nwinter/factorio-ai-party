@@ -251,7 +251,14 @@ return function(api)
         if r.ghost then row.name=r.name;row.direction=r.direction;out.ghosts[#out.ghosts+1]=row else out.belts=out.belts+1 end
       elseif covered[key(t.x,t.y)] or under_followed[key(t.x,t.y)] then out.underground=out.underground+1
       elseif not c.tick then out.unknown[#out.unknown+1]=row
-      else out.missing[#out.missing+1]=row end
+      else
+        -- what stands on a missing tile now, in sight (Sonnet: a pole on the line's tile)
+        if api.blocker and #out.missing<32 and visible(c,f,s,p) then
+          local blk=api.blocker(s,row.position)
+          if blk then row.blocked_by={name=blk.name,position=blk.position,force=blk.force and blk.force.name};row.line=api.blocker_text(blk,'on ('..row.position.x..','..row.position.y..')') end
+        end
+        out.missing[#out.missing+1]=row
+      end
     end
     return out
   end
@@ -269,7 +276,11 @@ return function(api)
           if v.by then g.by[v.by]=(g.by[v.by] or 0)+1 end
           if #text<8 then
             g.at[#g.at+1]=v.position
-            text[#text+1]=string.format('(%g,%g), carried items at tick %d, missing at tick %d',v.position.x,v.position.y,v.carried_tick,v.tick)
+            -- what stands there now, in sight (Sonnet: a pole on the line's tile)
+            local f,s=game.forces[c.force],game.surfaces[c.surface]
+            local blk=api.blocker and f and s and f.is_chunk_visible(s,{x=c.x,y=c.y}) and api.blocker(s,v.position)
+            text[#text+1]=string.format('(%g,%g), carried items at tick %d, missing at tick %d%s',v.position.x,v.position.y,v.carried_tick,v.tick,
+              blk and '; '..api.blocker_text(blk,'there now') or '')
           end
         end
         g.rank=g.rank*1025+g.n
