@@ -1928,6 +1928,7 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.owed and M.owed.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.shipment and M.shipment.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.fleet and M.fleet.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.circgate and M.circgate.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.demolishers and M.demolishers.schema or {}) do description.actions[name]=schema end
@@ -11295,6 +11296,12 @@ end
 M.circuits=require('circuits'){entity=entity,remote_entity=remote_entity,friendly=friendly,own_platform=own_platform,position=position,
   configure_filters=function(e,a) return M.configure_filters(e,a) end}
 handlers.circuit_set=M.circuits.handlers.circuit_set
+-- circuit_gate: two or more tests on one entity, the game's way (a decider combinator); d17 batch20 C1, Grok.
+M.circgate=require('circgate'){entity=function(p,a) return entity(p,a,true) end,position=position,reason=reason,
+  build=function(p,a) return handlers.build(p,a) end,wire=function(p,a) return handlers.wire(p,a) end,
+  circuit_set=function(p,a) return handlers.circuit_set(p,a) end,
+  circuit_line=function(e) if e.type=='inserter' then return M.circuits.inserter_line(e) end return M.circuits.short(e) end}
+function handlers.circuit_gate(p,a) return M.circgate.handler(p,a) end
 -- The old name: queued plans and orders call handlers by name (direct calls run as circuit_set, aliases.lua).
 handlers.circuit=handlers.circuit_set
 M.trains=require('trains'){entity=entity,remote_entity=remote_entity,friendly=friendly,integer=integer,on_surface=function(p,name) return M.on_surface(p,name) end,

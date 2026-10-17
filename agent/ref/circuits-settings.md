@@ -21,6 +21,14 @@
 - `wire {from, to, color?, from_side?, to_side?, disconnect?, platform? | surface?}`: connects and removes red, green
   and copper wires (no `color`: copper), in reach or by remote view as `circuit_set`; `inspect` reads each wire's far
   end. Example: `./fh call wire --args '{"from":{"x":10.5,"y":4.5},"to":{"x":12.5,"y":4.5},"color":"red"}'`
+- `circuit_gate {position, all, at?, source?}`: two or more tests on one entity, the game's way: a decider combinator
+  from your inventory, placed in your build reach within wire reach of the entity and the source (`at` names the
+  tile), its conditions every test of `all` joined by and, output signal-check 1; the source (default: the roboport of
+  the entity's logistic network nearest it, set to read its network's items) on a red wire into it; its output on a
+  green wire to the entity, enabled when signal-check > 0 (a logistic condition on it is turned off). The steps are
+  build, circuit_set and wire calls, in order; one that fails stops it, naming what was done and the calls left. No
+  decider held or no tile that fits: refused before anything, with the calls.
+  Example: `./fh call circuit_gate --args '{"position":{"x":-17.5,"y":30.5},"all":["bioflux > 200","agricultural-science-pack < 500"]}'`
 - `circuit_audit {area | positions | platform}`: with `area` (up to 128x128) or `positions` (1..64), `platform`
   optional: every red and green network those entities are on, by id, each with its signals now (largest first) and
   which of them are on it with their settings, in one call. With `platform` alone: whole-belt readers

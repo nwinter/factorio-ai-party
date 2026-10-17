@@ -122,3 +122,43 @@ do
   fails(function() F.read({force={platforms={pl}}},{platform='Kestrel'}) end,'no platform of ours named Kestrel')
 end
 print('d17_batch20 B4 fleet: ok')
+
+-- C1 (Grok): circuit_gate: a decider from your inventory with every test, the roboport's items in, the entity's
+-- circuit condition on its output, by the actions an agent calls.
+do
+  defines.direction={north=0}; defines.build_check_type={manual=1}
+  prototypes.entity=prototypes.entity or {}
+  prototypes.entity['decider-combinator']={get_max_circuit_wire_distance=function() return 9 end}
+  local robo={valid=true,name='roboport',type='roboport',position={x=10,y=0},prototype={get_max_circuit_wire_distance=function() return 9 end}}
+  local placed
+  local surface={find_logistic_network_by_position=function() return {cells={{owner=robo}}} end,
+    can_place_entity=function(a) return not (a.position.x==5.5 and (a.position.y==0 or a.position.y==1)) end,
+    find_entities_filtered=function() return {placed} end}
+  local cbi={connect_to_logistic_network=true}
+  local ins={valid=true,name='fast-inserter',type='inserter',position={x=5.5,y=0.5},force='f',prototype={get_max_circuit_wire_distance=function() return 9 end},
+    get_control_behavior=function() return cbi end}
+  local held=1
+  local p={surface=surface,force='f',position={x=6,y=2},build_distance=10,get_main_inventory=function() return {get_item_count=function() return held end} end}
+  local calls={}
+  local fail_at
+  local function rec(kind) return function(_,a) calls[#calls+1]={kind,a}; if fail_at==#calls then error('wire does not reach',0) end
+    if kind=='build' then placed={valid=true,name='decider-combinator',position=a.position} end return {} end end
+  local G=dofile('mod/agent-harness_0.1.0/circgate.lua'){entity=function() return ins end,position=function(v) return {x=v.x,y=v.y} end,reason=function(e) return tostring(e) end,
+    build=rec('build'),wire=rec('wire'),circuit_set=rec('circuit_set'),circuit_line=function() return 'fast-inserter (5.5,0.5): enabled when signal-check > 0' end}
+  local r=G.handler(p,{position={x=5.5,y=0.5},all={'bioflux > 200','agricultural-science-pack < 500'}})
+  eq(#calls,6); eq(calls[1][1],'build'); eq(calls[1][2].item,'decider-combinator'); eq(calls[1][2].position.x,4.5); eq(calls[1][2].position.y,0)
+  eq(calls[2][2].read.logistic_network_contents,true); eq(calls[3][2].color,'red'); eq(calls[3][2].to_side,'input')
+  eq(calls[4][2].decider.conditions[2],'and agricultural-science-pack < 500'); eq(calls[4][2].decider.outputs[1].signal,'signal-check')
+  eq(calls[5][2].color,'green'); eq(calls[6][2].enable,'signal-check > 0'); eq(calls[6][2].logistic,false)
+  eq(r.line,'fast-inserter (5.5,0.5) runs only while bioflux > 200 and agricultural-science-pack < 500 (decider (4.5,0) reading roboport (10,0))')
+  has(r.done[6],'its logistic condition turned off')
+  -- a step that fails: what was done and the calls left
+  calls={}; fail_at=3
+  fails(function() G.handler(p,{position={x=5.5,y=0.5},all={'bioflux > 200','agricultural-science-pack < 500'}}) end,
+    'step 3 failed: wire does not reach; done: built decider-combinator at (4.5,0) from your inventory; roboport (10,0) reads its network\'s items; left: wire {from: (10,0), to: (4.5,0), color: red, to_side: input}')
+  -- none held: refused before anything, with the calls
+  calls={}; fail_at=nil; held=0
+  fails(function() G.handler(p,{position={x=5.5,y=0.5},all={'bioflux > 200'}}) end,'you hold no decider-combinator (the gate takes one from your inventory); the calls once you hold one: build {"item":"decider-combinator","position":{"x":4.5,"y":0},"direction":"north"}')
+  eq(#calls,0)
+end
+print('d17_batch20 C1 circuit_gate: ok')

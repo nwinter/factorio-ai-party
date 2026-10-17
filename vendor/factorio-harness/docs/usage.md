@@ -6668,3 +6668,17 @@ fh watch    # deploy on every change
   - `waits on`: the first waiting request at the stop it is at (else the first), with the gate holding it.
   Its cost is shipment's for the same platforms plus the gate line (shipment measured 61-77 ms for all platforms on
   the copy of world n). tests/d17_batch20.lua.
+
+### Group C
+- C1 (Grok): a gate on bioflux over 200 and agricultural science under 500 was flipped by hand about six times; an
+  inserter's logistic condition holds one test. The game's way is a decider combinator reading the logistic network
+  (a roboport set to read its items) with both tests joined by and, wired to the inserter's circuit condition. A
+  helper, `circuit_gate {position, all: [cond, ...], at?, source?}` (circgate.lua), does what a player does by hand
+  with the calls an agent has, in this order: `build` a decider-combinator from the character's inventory (a free tile
+  in build reach and within wire reach of the entity and the source, nearest the entity; or `at`); `circuit_set` the
+  roboport to read its network's items (when the source is a roboport); a red `wire` source -> decider input;
+  `circuit_set` the decider (every test, `and`, output signal-check 1); a green `wire` decider output -> entity;
+  `circuit_set` the entity enabled when signal-check > 0, its logistic condition off. It is survival-fair: the decider
+  comes from the agent's inventory and each step is an action the agent could call itself. A failed step stops it and
+  says what was done and the calls left; no decider held or no tile within reach of both: refused first, with the
+  calls. tests/d17_batch20.lua (the calls and their arguments, a failed step, the refusal).
