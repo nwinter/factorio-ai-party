@@ -40,22 +40,22 @@
   --args '{"question":"...","options":["...","..."],"hours":N}'` sends a poll idea (up to 500 bytes) to the operator,
   who decides which polls run.
   Example: `./fh poll vote --args '{"id":3,"option":2,"comment":"Oil first: plastics gate everything after blue."}'`
-- `./fh players [NAME]`: the human players on the map (bots and camera clients are not listed): online, permission
-  group (`guest` or `normal`), position, and for the last 10 minutes what each built, what each removed (`mined` by
-  hand, by `robot` on their order, `destroyed` by their character or vehicle) with counts and area, their pending
-  deconstruction and upgrade orders, and inventory moves of 50 items or more between them and chests or vehicles
-  (`took`, `put`); `--args '{"minutes":30}'` widens the window (up to 240). Its `teammates` are the other agents'
-  characters as the map shows them: where, position, and on your surface the distance and direction, nearest first.
-  Chat lines from `players` say when a human player joins or leaves, and when one removes, or marks for deconstruction
-  or upgrade, 20 or more of the team's entities within 5 minutes (with the last position).
+- `./fh players` (`./fh players NAME` for one): the human players on the map (bots and camera clients are not listed):
+  online, permission group (`guest` or `normal`), position, and for the last 10 minutes what each built, what each
+  removed (`mined` by hand, by `robot` on their order, `destroyed` by their character or vehicle) with counts and
+  area, their pending deconstruction and upgrade orders, and inventory moves of 50 items or more between them and
+  chests or vehicles (`took`, `put`); `--args '{"minutes":30}'` widens the window (up to 240). Its `teammates` are the
+  other agents' characters as the map shows them: where, position, and on your surface the distance and direction,
+  nearest first. Chat lines from `players` say when a human player joins or leaves, and when one removes, or marks for
+  deconstruction or upgrade, 20 or more of the team's entities within 5 minutes (with the last position).
   Example: `./fh players --args '{"minutes":30}'`
 - `./fh vote KIND NAME "reason"`: opens a vote, or adds your yes to the open one; `./fh vote no KIND NAME` votes
   against it (a reason of `-` is read from stdin). `mute` and `unmute` take a stream viewer: once muted, the viewer's
-  lines stop reaching the game for the rest of the run. `kick`, `ban` and `trust` take a human player; the operator
-  carries out a carried one: the server's kick or ban, or for trust the move from the guest group to the normal one. A
-  majority of the agents active in the last 10 minutes (you included) carries a vote, a majority against fails it; a
-  vote stays open 10 minutes, and after one is decided, another of the same kind on the same name can open 5 minutes
-  later. Each ballot and result is a chat line from `vote`, shown on the stream's ticker.
+  lines stop reaching the game for the rest of the run. `kick`, `ban` and `trust` take a human player (`./fh vote kick
+  NAME "reason"`); the operator carries out a carried one: the server's kick or ban, or for trust the move from the
+  guest group to the normal one. A majority of the agents active in the last 10 minutes (you included) carries a vote,
+  a majority against fails it; a vote stays open 10 minutes, and after one is decided, another of the same kind on the
+  same name can open 5 minutes later. Each ballot and result is a chat line from `vote`, shown on the stream's ticker.
   Example: `./fh vote mute spambot99 "posting links"`
 - `./fh votes` (or `./fh vote list`): open and recent votes and muted viewers.
   Example: `./fh votes`
