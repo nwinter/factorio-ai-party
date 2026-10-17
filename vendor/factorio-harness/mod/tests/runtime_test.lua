@@ -5303,4 +5303,29 @@ do
   eq(runtime.dispatch{action='describe',args={if_bundle='b0'},player=1}.actions~=nil,true,'another bundle: the whole describe')
   BUNDLE_ID=nil
 end
+-- d17 lean D1: action-name aliases resolve before everything else; the reply names the action; guards and
+-- step_options are queue_submit's docs, not actions.
+do
+  local d=call('describe',{})
+  for alias,real in pairs(runtime.ALIASES) do
+    assert(d.actions[real],'alias '..alias..' names an action: '..real)
+    eq(d.actions[alias],nil,'an alias is no action of its own: '..alias)
+    eq(d.aliases[alias],real)
+  end
+  local req={action='plan_list',args={},player=1}
+  local r=runtime.dispatch(req)
+  eq(req.action,'plans','the request runs as the action (control.lua reads its name after)')
+  eq(r.called_as,'plan_list is plans: the call ran as plans'); assert(r.max,'the plans reply')
+  local ok,err=pcall(call,'order',{})
+  eq(ok,false); assert(tostring(err):find('unsupported action'),'no alias for a name that could mean two actions: '..tostring(err))
+  ok,err=pcall(call,'where',{item='iron-plate',limit=999})
+  eq(ok,false); assert(tostring(err):find('^where is where_is: the call ran as where_is; '),'a failed alias call names the action: '..tostring(err))
+  eq(d.actions.guards,nil); eq(d.actions.step_options,nil)
+  assert(d.actions.queue_submit.guards:find('at most 8: queue_submit guards=',1,true),d.actions.queue_submit.guards)
+  assert(d.actions.queue_submit.step_options:find('on_fail: abort',1,true),'step options under queue_submit')
+  ok,err=pcall(call,'queue_submit',{steps={},step_options={}})
+  eq(ok,false); assert(tostring(err):find('unknown argument step_options',1,true),'step_options is docs, not an argument: '..tostring(err))
+  ok,err=pcall(call,'guards',{})
+  eq(ok,false); assert(tostring(err):find('unsupported action'),tostring(err))
+end
 print('runtime: '..assertions..' assertions passed')

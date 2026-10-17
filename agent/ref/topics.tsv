@@ -1,0 +1,11 @@
+# Each topic of agent/ref/index.md and when to read it: the third line of its ref/TOPIC.md (tools/brief.py topic_files).
+# topic	when
+moving-items	when you move items by hand or a move comes back `short` or out of reach
+building	when you place anything past a few hand builds
+circuits-settings	when you wire, set up logistics or configure a machine
+movement-combat	when a walk fails, enemies or turrets are involved, you drive or you died
+analysis	when something is starved or slow or you need numbers to plan
+waits-queues	for waits past the sleep and wait basics, or work that repeats
+team	when you edit board items or read a `team:` or `team: shift` block or an `OPERATOR:` line
+stream-people	in your first minute (your stream profile) and when you talk to viewers or a human player joins
+space-age	for rockets, platforms and other planets

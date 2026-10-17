@@ -49,7 +49,7 @@ function cli(port:number,args:string[],format:'json'|'compact'='json',extra:Reco
   return exec(process.execPath,['dist/host/cli.js','--format',format,'--port',String(port),...args],{env:{...env,...extra}});
 }
 const OPERATOR={seq:7,ago_s:30,text:'Operator (automatic, facts only): your character has stood idle for 12 min.'};
-test('an operator tell prints an OPERATOR: line on stderr and first on stdout, and is filed once for the hook',async()=>{
+test('an operator tell prints one OPERATOR: line, first on stdout, and is filed once for the hook; a workspace without the hook shows it 3 times',async()=>{
   const dir=await tempDir('fh-operator-');
   await writeFile(join(dir,'.context-hooks'),'claude haiku 140000\n');  // a workspace with the post-tool hook
   await engine(request=>({ok:true,result:{clock:'game 1s',position:{x:1,y:2},...(request.action==='status'?{operator:[OPERATOR]}:{})}}),async port=>{
@@ -61,7 +61,7 @@ test('an operator tell prints an OPERATOR: line on stderr and first on stdout, a
       if (i===0) {
         assert.equal(stdout.split('\n')[0],line);
         assert.equal(stdout.split('\n').filter(l=>l.startsWith('OPERATOR:')).length,1,'once on stdout');
-        assert.match(stderr,/^OPERATOR: Operator \(automatic/m);
+        assert.doesNotMatch(stderr,/OPERATOR:/,'not on stderr too (d17 lean C2: shells that show both printed it twice)');
       } else {
         assert.doesNotMatch(stdout+stderr,/OPERATOR:/,'not again in a later call');
       }
@@ -71,9 +71,14 @@ test('an operator tell prints an OPERATOR: line on stderr and first on stdout, a
     assert.match(again.stdout.split('\n')[0]!,/^OPERATOR: Operator \(automatic.*repeated on every reply until your next game action or message\)$/);
     const env=await cli(port,['call','status','--journal',join(dir,'journal.jsonl')],'compact',{FH_OPERATOR_REPEAT:'1'});
     assert.match(env.stdout.split('\n')[0]!,/^OPERATOR: /);
-    // a workspace without the hook (no .context-hooks; Gemini's): every call prints it, as before
+    // a workspace without the hook (no .context-hooks; Gemini's, which saw one on 31 replies): its first 3 replies
     const bare=await tempDir('fh-operator-bare-');
-    for (let i=0;i<2;i++) assert.match((await cli(port,['call','status','--journal',join(bare,'journal.jsonl')],'compact')).stdout.split('\n')[0]!,/^OPERATOR: .*repeated on every reply/);
+    const firsts=[];
+    for (let i=0;i<4;i++) firsts.push((await cli(port,['call','status','--journal',join(bare,'journal.jsonl')],'compact')).stdout.split('\n')[0]!);
+    assert.match(firsts[0]!,/^OPERATOR: .*\(sent 30 s ago; shown on 2 more replies\)$/);
+    assert.match(firsts[1]!,/^OPERATOR: .*shown on 1 more reply\)$/);
+    assert.match(firsts[2]!,/^OPERATOR: .*shown for the last time\)$/);
+    assert.doesNotMatch(firsts[3]!,/OPERATOR:/);
     // no operator file (no journal, no FH_OPERATOR_FILE): every call prints it, as before
     for (let i=0;i<2;i++) assert.match((await cli(port,['call','status'],'compact')).stdout.split('\n')[0]!,/^OPERATOR: .*repeated on every reply/);
     const filed=(await readFile(join(dir,'.operator-tells.jsonl'),'utf8')).trim().split('\n').map(l=>JSON.parse(l));

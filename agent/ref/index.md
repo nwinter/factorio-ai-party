@@ -1,35 +1,31 @@
 ## Reference topics
 
-Each topic, when to read it, and the commands it documents:
+`./fh help TOPIC` prints a topic; `./fh help ACTION` one command's arguments.
 
-- `moving-items`, when you move items by hand or a move comes back `short` or out of reach: `transfer` (give, take,
-  couriers, to a teammate by name), `collect` (machine outputs), `feed` (ingredients, packs, fuel), `refuel` (burners), `pickup` (belts,
-  ground), `mine` (by hand), `rotate`, `repair`, `inventory`, `craft`, `cancel_craft`, `deliver` (fuel and ammunition by robots).
-- `building`, when you place anything past a few hand builds: `build` (batches, settings, fast replace), `place_ghosts`,
-  `construct` (ghosts by hand), `ghosts` (each ghost near you: what it needs, can robots build it), `deconstruct`, `upgrade` (the upgrade planner: ghosts in place), `paste`, `placements` (where it fits), `nearest_water`, `conflicts`, `build_path`,
-  `grid` (tiles), `pole_route`, `belt_route`, `rail_route`, `train_stop`, `train` (stops, schedules), `clear_cliffs`, `heat_budget`,
-  `outpost` (one tour), `blueprint_save`, `blueprint_capture`, `blueprint_list`, `blueprint_place`, `blueprint_rename`,
-  `blueprint_delete` (the team library); landfill, tiles, nuclear.
-- `circuits-settings`, when you wire, set up logistics or configure a machine: `circuit_set` (conditions, combinators),
-  `wire`, `circuit_audit` (networks across entities), `configure` (recipe, modules, filters, priorities, quality), `requests` (logistic and personal).
-- `movement-combat`, when a walk fails, enemies or turrets are involved, you drive or you died: `move_to` (reach, via,
-  enemy margins, pockets), `retreat_guard`, `kite`, `recover` (your corpses), `turrets`, `rearm`, `artillery`,
-  `shoot`, `use_item` (grenades, capsules), `equip` (gun and ammo slots), `vehicle` (enter, drive, remote),
-  `equipment` (grids).
-- `analysis`, when something is starved or slow or you need numbers to plan: `progress` (the run by shift), `research`
-  and `research done`, `science` (packs), `supply` (one item), `bottleneck`, `dependency` (an item's recipe inputs joined), `trace`, `labs`, `inspect` (areas,
-  remote view), `ports`, `power` (networks, fragile poles), `fuel_budget`, `game_alerts`, `belt_gaps`, `pipe_gaps`,
-  `danger`, `drill_sites`, `ores`, `stock` (where an item is), `reservations` (a network's robot reservations), `logistics_audit` (a network's requesters by what blocks them), `construction_robots`, `shortages` (the factory's
-  shortages in one read), `damage_log` (what hit our entities); the factory digest.
-- `waits-queues`, for waits past the sleep and wait basics, or work that repeats: `wait_until` and `sleep --until` conditions,
-  `wait_ticks`, `sleep_check`, `queue_submit` (modes), `queue_status`, `queue_edit`, `queue_cancel`, `queue_pause`, `queue_repeat`, `plan save`, `plan run`,
-  `plan list`, `stop`, `order_set`, `orders`, `order_remove`, `orders_pause`, `orders_resume` (standing orders),
-  `reminder_add`, `reminder_ack`, `reminders`; urgent wakes, slow game, harness updates.
-- `team`, when you edit board items or read a `team:` or `team: shift` block or an `OPERATOR:` line: claims, `board projects`, `board_review`, `board_retire`, `lessons`, `lesson_add`, `lesson_edit`, `lesson_verify`, `review`,
-  `lookahead`, `networks`, `boilers`, `tells`, `board_progress` (owned items: progress seen, stalls), `board_critical` (blocked items ranked), `lesson_review`, `ground_rule_add`, `ground_rule_retire`, `ground_rules`, `board_focus` (your current item, step, blocker, next check).
-- `stream-people`, in your first minute (your stream profile) and when you talk to viewers or a human player joins:
-  `profile`, `profiles`, `confess`, `chronicle`, `chat_ack` (close an unanswered mention), `operator`, `poll` (the site's polls), `players`, `vote`, `votes`,
-  `restore`.
-- `space-age`, for rockets, platforms and other planets: `platforms` and `platform NAME`, `platform_create`,
-  `platform_schedule`, `platform_rename`, `platform_endurance`, `platform_supply`, `platform_plan`, `platform_bom` (what a platform's ghosts still need), `platform_production` (what a platform makes), `platform_defense` (turret cover of collectors and hull), `circuit_audit` (circuit readings that mislead: belts counted twice, collector filters), `platform_gate` (where a platform is and what its departure waits on), `demolishers` (territories on the map and the demolishers in sight), `shipment` (a platform's requests and cargo across silos, rockets, pads and the schedule), `min_payload` (hub requests' custom minimum payload), `launch`, `silo`, `cargo`, `load_silo`, `preflight`, `land`, `drop`,
-  `freight_audit`, `where_is`, `agriculture`, the remote queue lane; spoilage, Gleba.
+- `moving-items`, items by hand: `transfer`, `collect`, `feed`, `refuel`, `pickup`, `mine`, `rotate`, `repair`,
+  `inventory`, `craft`, `cancel_craft`, `deliver`.
+- `building`, placing and removing (landfill, tiles, nuclear): `build`, `place_ghosts`, `construct`, `ghosts`,
+  `deconstruct`, `upgrade`, `paste`, `placements`, `nearest_water`, `conflicts`, `build_path`, `grid`, `pole_route`,
+  `belt_route`, `rail_route`, `train_stop`, `train`, `clear_cliffs`, `heat_budget`, `outpost`, `blueprint_save`,
+  `blueprint_capture`, `blueprint_list`, `blueprint_place`, `blueprint_rename`, `blueprint_delete`.
+- `circuits-settings`, wires and machine settings: `circuit_set`, `wire`, `circuit_audit`, `configure`, `requests`.
+- `movement-combat`, walks, enemies, vehicles, death: `move_to`, `retreat_guard`, `kite`, `recover`, `turrets`,
+  `rearm`, `artillery`, `shoot`, `use_item`, `equip`, `vehicle`, `equipment`.
+- `analysis`, factory reads, the factory digest: `progress`, `research`, `research done`, `science`, `supply`,
+  `bottleneck`, `trace`, `labs`, `inspect`, `ports`, `power`, `fuel_budget`, `game_alerts`, `belt_gaps`, `pipe_gaps`,
+  `danger`, `drill_sites`, `ores`, `stock`, `reservations`, `logistics_audit`, `construction_robots`, `shortages`, `damage_log`, `dependency`.
+- `waits-queues`, waits, queues, standing orders, urgent wakes, slow game, harness updates: `wait_until`, `sleep
+  --until`, `wait_ticks`, `sleep_check`, `queue_submit`, `queue_status`, `queue_edit`, `queue_cancel`, `queue_pause`,
+  `queue_repeat`, `plan save`, `plan run`, `plan list`, `stop`, `order_set`, `orders`, `order_remove`, `orders_pause`,
+  `orders_resume`, `reminder_add`, `reminder_ack`, `reminders`.
+- `team`, board items, claims, `team:` and `OPERATOR:` lines: `board projects`, `board_review`, `board_retire`,
+  `board_progress`, `board_critical`, `board_focus`, `lessons`, `lesson_add`, `lesson_edit`, `lesson_verify`,
+  `lesson_review`, `ground_rule_add`, `ground_rule_retire`, `ground_rules`, `review`, `lookahead`, `networks`,
+  `boilers`, `tells`.
+- `stream-people`, stream profile, viewers, human players: `profile`, `profiles`, `confess`, `chronicle`, `chat_ack`,
+  `operator`, `poll`, `players`, `vote`, `votes`, `restore`.
+- `space-age`, rockets, platforms, planets, the remote queue lane, spoilage, Gleba: `platforms`, `platform NAME`,
+  waits `platform_arrived` and `platform_left`, `platform_create`, `platform_schedule`, `platform_rename`,
+  `platform_endurance`, `platform_supply`, `platform_plan`, `platform_bom`, `platform_production`, `platform_defense`,
+  `circuit_audit`, `platform_gate`, `demolishers`, `shipment`, `min_payload`, `launch`, `silo`, `cargo`, `load_silo`,
+  `preflight`, `land`, `drop`, `freight_audit`, `where_is`, `agriculture`.
