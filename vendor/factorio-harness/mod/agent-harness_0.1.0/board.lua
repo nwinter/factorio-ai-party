@@ -2126,6 +2126,11 @@ return function(api)
       local ok, list = pcall(api.hatch_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
+    -- Landed cargo pods on the ground, once an hour (landed.lua; d17 pods).
+    if api.pods_lines then
+      local ok, list = pcall(api.pods_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     -- One line per incident (threat.attack_line). An incident this agent was
     -- told about comes again, as "continues" with its totals, only after
     -- REPEAT_ATTACK; h.attacks holds what each agent was shown (id -> tick).

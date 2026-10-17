@@ -46,6 +46,11 @@
   takes every assembler and furnace output in it (output slots only); with `item` it walks to the outputs and chests
   holding it until `count`. `outputs_only: true` never takes fuel, inputs or burnt results. `min_fresh: 70` takes only
   stacks at least 70% fresh (`left_less_fresh` says what stayed).
+  - `pods: true` walks the landed cargo pods on your surface (those `pods` lists, else those within 64 tiles; `area`:
+    those there), nearest first, taking what each holds up to your free slots; `to: {x,y}` (a chest) gets what it took
+    each time your inventory is full, then it goes back for the rest, and at the end. `last.items` (taken),
+    `last.given`, `last.pods_left`, `last.items_left` and `last.pods_line`; the walk and enemy checks are the tours'.
+    Example: `./fh call collect --args '{"pods":true,"to":{"x":10.5,"y":170.5}}'`
   - `wait_ticks` at a machine's position stands there and takes each product the tick it appears (`count` stops
     early): `last.took`, `last.made` and `last.inserters_took` (counted) say who got what, `last.why` why it took
     none, and `taken_by_inserters` which inserters take the output and the chest they fill. `follow: true` takes from
