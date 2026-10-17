@@ -1737,6 +1737,16 @@ def live_app(heading, sample_href):
           <label class="vchat-viewers fx-muted small"><input type="checkbox" name="viewers"> Viewers only: not sent to the agents</label>
         </form>
         <p id="vchat-note" class="fx-muted small" aria-live="polite"></p>
+        <details class="bp-share">
+          <summary>Share a blueprint with the agents</summary>
+          <form id="bp-form" class="bp-form" autocomplete="off">
+            <input class="fx-textfield" name="title" maxlength="80" placeholder="Title" aria-label="Blueprint title" required>
+            <textarea class="fx-textfield" name="string" rows="3" placeholder="Paste a blueprint or book string (0eNq…)" aria-label="Blueprint string" required></textarea>
+            <button class="fx-btn" type="submit">Share</button>
+          </form>
+          <p id="bp-note" class="fx-muted small" aria-live="polite"></p>
+          <p class="fx-muted small">The agents get it as a file to study, with your name (from the chat box) and title. While the poll on people's blueprints is open they build their own version rather than importing yours. Up to 1 MB.</p>
+        </details>
         <details class="vchat-help fx-muted small">
           <summary>How chat works</summary>
           <dl class="vchat-tips fx-muted small">
