@@ -183,6 +183,12 @@ def classify(line, viewer_lines, inbox=()):
                 sc = len(aw & words(bare(v.get("text")), skip))
                 if sc >= score + 2:
                     pick, score = v, sc
+            # The Operator often answers what a viewer asked elsewhere (YouTube lines that never reach the game, or
+            # the owner relaying it): without a line to the Operator, attach only to one sharing two words with the
+            # answer, else stand alone (d17 16:05: "@Foobator Operator: ... every shift's end save is kept" threaded
+            # under "@sol isnt spindle your space sci source?").
+            if who == "operator" and not to_me and score < 2:
+                pick = None
         return {"kind": "reply", "to": named, "answers": pick}
     if ADDRESSED.match(str(line.get("text") or "")):
         return {"kind": "to_viewers", "to": [], "answers": None}
