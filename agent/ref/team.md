@@ -95,6 +95,8 @@
   150 active.
 - A belt carrying items destroyed: the owner of the claim it lies in (else the nearest agent there) gets a waking tell
   with each belt's position and direction and what it carried.
+- A long belt or pipe line (8+ tiles) cut where ours died is a team alert (`line_cut`): the cut tiles, what destroyed
+  them, how far the line runs either side and what it carried, until a belt or pipe stands there again.
 - `board_progress {owner?, id?}`: each owned open task, request and project with the game's evidence since its last
   10-minute check (entities built in its area or its owner's claims, what it needs reaching the count, shipment lines
   of platforms it names, board edits), the age of its last change, the owner's repeated failures and no-effect
