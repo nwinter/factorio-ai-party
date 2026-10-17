@@ -22,8 +22,10 @@
     first, and takes from a chest feeding `to` itself.
   - `pick: "first_with_stock" | "most_stock"` with `positions` and `item` or `items` (collect too) takes at one listed
     place holding it now (empty ones `skipped`, not short; none: nothing walked); `to` (`{x,y}` or `{item: {x,y}}`)
-    carries it on to that destination in the same call. `dry_run: true` on such a courier gives `courier`: the source
-    and what it holds (robots' reservations), the destination and its room, how many would move. Tour stops end once
+    carries it on to that destination in the same call. `dry_run: true` on such a courier gives `courier`, a preview:
+    the source and what it holds (robots' reservations), the destination and its room, how many would move; a
+    requester or buffer source's own request (`spare`: how many can leave it with its request still filled), the
+    destination's request and what robots bring each side now, and when the first stack spoils or hatches. Tour stops end once
     within transfer reach of the entity (a silo, a pad), as `move_to {target}` does.
   - `via: [{"x":30,"y":5}]` walks those points first; a walking transfer's `last.route` gives where it started, each
     via point and stop as reached, and the tiles walked.

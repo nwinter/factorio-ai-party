@@ -12340,6 +12340,43 @@ end
 -- what robots have reserved there), the destination (whether it takes the item, the room for it), and the count that
 -- would move: the least of count, what the source holds free and the room.
 M.COURIER_INVS={'chest','assembling_machine_input','furnace_source','lab_input','rocket_silo_rocket','cargo_wagon','car_trunk','spider_trunk','hub_main','cargo_landing_pad_main'}
+-- A side of a courier as its GUI shows it (d17 batch19 B3, Luna ~4x a shift: whether a move starves a request, spoils
+-- on the way or races the robots): a requester or buffer chest's request for the item (asks: its min) and what robots
+-- bring into it now (coming); the soonest spoil of its stacks of the item (spoil: ticks left, percent, hatches: an
+-- item whose spoiling makes an enemy, as spoil.lua reads it).
+function M.courier_side(e,item,quality)
+  local out={}
+  local okp,pt=pcall(function() return e.get_logistic_point(defines.logistic_member_index.logistic_container) end)
+  if okp and pt and M.reqchest then
+    local min,_,named=M.reqchest.request(pt,item)
+    if named and min>0 then out.asks=min end
+    local coming=0
+    local okc,list=pcall(function() return pt.targeted_items_deliver end)
+    for k,c in pairs(okc and list or {}) do
+      if type(c)=='number' and k==item then coming=coming+c
+      elseif type(c)=='table' and (type(c.name)=='table' and c.name.name or c.name)==item then coming=coming+(c.count or 0) end
+    end
+    if coming>0 then out.coming=coming end
+  end
+  local soon,pct
+  for _,name in ipairs(take_order) do
+    local ok,inv=pcall(inventory,e,name)
+    if ok and inv then
+      for i=1,#inv do
+        local st=inv[i]
+        if st.valid_for_read and st.name==item and (st.quality and st.quality.name or 'normal')==(quality or 'normal') then
+          local okt,t=pcall(function() return st.spoil_tick end)
+          if okt and t and t>0 and (not soon or t<soon) then soon=t; pct=st.spoil_percent end
+        end
+      end
+    end
+  end
+  if soon then
+    local okh,h=pcall(function() return M.spoil.hatch(item) end)
+    out.spoil={ticks=math.max(0,soon-game.tick),percent=math.floor((pct or 0)*100+0.5),hatches=okh and h and h.entity or nil}
+  end
+  return out
+end
 function M.courier_dry(p,a,list,dest)
   local item=a.item
   if type(item)~='string' then return {line='courier: name item to read what would move'} end
@@ -12369,6 +12406,24 @@ function M.courier_dry(p,a,list,dest)
   local free=src and math.max(0,(held or 0)-(reserved or 0)) or 0
   local want=a.count or free
   local moves=math.min(want,free,room or want)
+  -- B3: the source's request kept (spare: what can leave it with its request still filled), the destination's request
+  -- and deliveries, the soonest spoil or hatch of what would move
+  local sside=src and M.courier_side(src,item,a.quality) or {}
+  local dside=okd and d and M.courier_side(d,item,a.quality) or {}
+  local spare=sside.asks and math.max(0,free-sside.asks) or free
+  local function span(t) local s2=math.floor(t/60); return s2>=60 and string.format('%dm%02ds',math.floor(s2/60),s2%60) or s2..'s' end
+  local facts={}
+  if sside.asks then
+    facts[#facts+1]=string.format('the source asks %d itself%s: %d can leave it with its request still filled',sside.asks,
+      sside.coming and string.format(' (robots bring %d now)',sside.coming) or '',spare)
+  end
+  if dside.asks then
+    local short=math.max(0,dside.asks-entity_holds(d,item,a.quality)-(dside.coming or 0))
+    facts[#facts+1]=string.format('the destination asks %d%s; %d short of it',dside.asks,dside.coming and string.format(', robots bring %d now',dside.coming) or '',short)
+  elseif dside.coming then facts[#facts+1]=string.format('robots bring the destination %d now',dside.coming) end
+  if sside.spoil then
+    facts[#facts+1]=string.format('its first stack %s in %s (%d%% spoiled)',sside.spoil.hatches and 'hatches into '..sside.spoil.hatches or 'spoils',span(sside.spoil.ticks),sside.spoil.percent)
+  end
   -- What arrives: the courier carries it, and over a personal request's max the game trashes the rest (D3, Luna 00:20:
   -- 1000 iron plates moved with a max of 40; 40 arrived).
   local cap=a.personal_logistics~='pause' and M.trash.room(p,item,a.quality) or nil
@@ -12377,8 +12432,10 @@ function M.courier_dry(p,a,list,dest)
     (reserved or 0)>0 and string.format(' (robots have %d reserved)',reserved) or '') or 'no source of ours found there'
   local dest_text=okd and d and string.format('%s (%g,%g): %s%s',d.name,d.position.x,d.position.y,(M.accepts_text(d,{item=item,inventory=a.to_inventory}):gsub('^(%a+): [^%(]*%b() ','%1, ')),
     room and string.format(', room for %d',room) or '') or string.format('no entity of ours in sight at (%g,%g)',dest.x,dest.y)
-  return {from=src_text,to=dest_text,moves=moves,arrives=arrives,
-    line=string.format('takes %s from %s, gives it at %s: %d would move (asked %s)%s',item,src_text,dest_text,moves,a.count and tostring(a.count) or 'all',
+  return {from=src_text,to=dest_text,moves=moves,arrives=arrives,spare=spare,source_asks=sside.asks,source_coming=sside.coming,
+    dest_asks=dside.asks,dest_coming=dside.coming,spoil=sside.spoil,facts=#facts>0 and facts or nil,
+    line=string.format('takes %s from %s, gives it at %s: %d would move (asked %s)%s%s',item,src_text,dest_text,moves,a.count and tostring(a.count) or 'all',
+      #facts>0 and '; '..table.concat(facts,'; ') or '',
       arrives<moves and string.format('; %d would arrive: your personal request for %s has max %d, and the game moves what you carry over it to your trash slots (personal_logistics: "pause" switches them off for the move)',
         arrives,item,M.trash.cap(M.trash.limits(p),item,a.quality) or 0) or '')}
 end

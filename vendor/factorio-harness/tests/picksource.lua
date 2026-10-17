@@ -535,6 +535,41 @@ do
   yfarm.inv.remove{name=A,count=300}
 end
 
+-- A courier's dry run as a preview (d17 batch19 B3, Luna ~4x a shift): free stock after robot reservations, the
+-- source's own request kept (spare), the destination's request and what robots bring it, the first stack's spoil or
+-- hatch.
+do
+  local A='agricultural-science-pack'
+  prototypes.item[A]=prototypes.item[A] or {name=A,type='tool',stack_size=200}
+  local function requester(pos,asks,coming,reserved)
+    local e=chest(pos)
+    e.type='logistic-container'; e.name='requester-chest'
+    local pt={filters={{name=A,count=asks}},targeted_items_deliver={{name=A,quality='normal',count=coming}},targeted_items_pickup={{name=A,count=reserved or 0}}}
+    e.get_logistic_point=function() return pt end
+    return e
+  end
+  defines.logistic_member_index=defines.logistic_member_index or {logistic_container=0}
+  local src=requester({x=50.5,y=34.5},50,10,20)
+  local s1=src.inv[1]
+  s1.valid_for_read=true; s1.name=A; s1.quality={name='normal'}; s1.count=120; s1.spoil_percent=0.6; s1.spoil_tick=game.tick+3000
+  local p=runtime.bots.lookup(runtime.bots.index_of('luna'))
+  local r=runtime.courier_dry(p,{item=A,count=200},{src.position},yfarm.position)
+  eq(r.moves,100,'120 held, 20 reserved for robots'); eq(r.spare,50,'its own request of 50 kept')
+  assert(r.line:find('the source asks 50 itself (robots bring 10 now): 50 can leave it with its request still filled',1,true),r.line)
+  assert(r.line:find('its first stack spoils in 50s (60% spoiled)',1,true),r.line)
+  -- to a requester: what it asks, what robots bring it, how short it is
+  local dst=requester({x=52.5,y=34.5},30,5)
+  r=runtime.courier_dry(p,{item=A,count=10},{src.position},dst.position)
+  assert(r.line:find('the destination asks 30, robots bring 5 now; 25 short of it',1,true),r.line)
+  -- an item that hatches says so
+  local hatch=runtime.spoil.hatch
+  runtime.spoil.hatch=function(n) return n==A and {entity='small-wriggler-pentapod'} or false end
+  r=runtime.courier_dry(p,{item=A,count=10},{src.position},yfarm.position)
+  assert(r.line:find('its first stack hatches into small-wriggler-pentapod in 50s',1,true),r.line)
+  runtime.spoil.hatch=hatch
+  s1.clear(); dst.inv[1].clear()
+end
+
 -- A take from one machine's output given straight into another (Muse, shift18 12:46: productivity modules collected
 -- from one machine piled up in the character, 78 and growing, because the next took no more). What the target's input
 -- takes is read before the take (one stack and 64 by hand, measured on 2.0.77): none, nothing taken or walked; else
