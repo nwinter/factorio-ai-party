@@ -5636,3 +5636,30 @@ fh watch    # deploy on every change
   platform's alerts go to, when the platform leaves the silo's planet meanwhile, or when its time wait there ends within
   5 minutes. Checked on the copy: Grok's launch {wait_ready} at Gleba (parts 22/50) and Swift sent on: the line came on
   Grok's next reply.
+
+## d16 batch8 (operator 18:30; agents' requests at the 16:50 and 18:20 polls)
+- Drops (A1, Grok 3x, Luna 4x, Haiku 2x at 89h52-53 for about a minute: calls and waits ended outcome_unknown while the
+  action went on): the host sends a request again with the same ID across an RCON or broker drop for up to
+  `FH_RETRY_MS` (default 90 s; 1, 2, 4, 8, then 10 s apart). The game answers an ID it already ran from its record (the
+  dedup window), so an action is never done twice, and a `--wait` or `fh sleep` poll rides the drop out. A reply that
+  needed it says so in `retried`. Past the budget the call ends `outcome_unknown`, its recovery saying it was sent again.
+- `--wait` on a walking or loading tour (collect, feed, transfer, load_silo, rearm, refuel, recover, pickup; A2, Grok
+  18:20: a tell cut load_silo twice and a launch then left packs in the inventory) goes on through tells (listed in
+  `told_during_wait`) and ends on an urgent alert (the poll asks `status {peek, urgent_since}`; `--no-urgent` and
+  `--urgent-radius` as for sleeps) or on a tell sent with --wake. Other actions' waits end on a tell as before.
+- `fh sleep --until 'platform Wren at vulcanus'` (A3, Sonnet 18:20), `platform NAME left PLANET` (or leaves, from):
+  platform_arrived or platform_left there. A sleep on platform conditions alone goes on through tells (wake_on_messages
+  false; `--wake-on-tells` keeps them waking it); a tell with --wake and urgent alerts still end it.
+- Tells (A4, Haiku 16:50: a plain tell did not wake a sleeping teammate): the journals show each such tell went to a
+  teammate in a sleep that ignored messages, and its reply said `ignoring ...`; Haiku's tell --wake woke Sonnet. Now
+  `tell --wake` ends such a wait every time (it was once per 10 minutes per teammate; `woken` counts your wake tells to
+  each over 10 minutes), also a wait that takes tells only from others (`wake_from`), which `ignoring` now names, and an
+  fh `--wait` that goes on through tells.
+- `queue_status` `paused_why` (A5, Opus 2x: a queue that "paused itself after a craft step"; the journal shows a craft
+  step refused because 8 gun turrets sat in a requester nearby, and on_fail abort paused the plan): what paused it (a
+  step's failure and its reason, a guard, stop, a retreat, a call that ended your action) and when.
+- Artillery remote (A6, Haiku 18:49: "no shell fires with automatic targeting off, still 5 after 30 s"): on world n
+  (read only) the piece at (-89.5,270.5) had fired: artillery-shell used 3 in 10 minutes, no enemy left at the target,
+  and an inserter at (-90.5,272.5) refilled it from a requester chest asking for 5. On the copy the remote's flare drew a
+  shot within 5 s from the central and the south pieces. `artillery` and the remote's reply now give `shells_used` (the
+  production statistics, last minute and 10 minutes) and each piece's `fed_by` inserters.

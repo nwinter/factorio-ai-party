@@ -1747,7 +1747,7 @@ return function(api)
   function M.deliver(index, t)
     local box = inbox(index)
     -- An fyi tell (tells.lua) waits for the next reply: it wakes nobody (waits.lua) and supervisors don't count it.
-    box.list[#box.list+1] = {tell=t.seq, tick=t.tick, from=t.from, text=t.text, how='tell', team=t.team, fyi=t.fyi}
+    box.list[#box.list+1] = {tell=t.seq, tick=t.tick, from=t.from, text=t.text, how='tell', team=t.team, fyi=t.fyi, wake=t.wake}
     while #box.list > MAX_PENDING do table.remove(box.list, 1); box.dropped = box.dropped + 1 end
   end
   -- The tick of the newest undelivered mention or tell (nil when none), for
@@ -1772,7 +1772,7 @@ return function(api)
     return f
   end
   function M.wakes(m, f)
-    if not f then return true end
+    if not f or m.wake then return true end
     local from = tostring(m.from or ''):lower()
     local auto = from == 'operator' or from:find('^reminder') ~= nil
     if f.operator == false and auto then return false end
@@ -1783,7 +1783,7 @@ return function(api)
     local box = api.state().mentions and api.state().mentions[index]
     for i = #(box and box.list or {}), 1, -1 do
       local m = box.list[i]
-      if not m.fyi and (viewers or not m.viewer) and M.wakes(m, filter) then return m.tick, m.tell and 'told' or 'mentioned', m.from end
+      if not m.fyi and (viewers or not m.viewer) and M.wakes(m, filter) then return m.tick, m.tell and 'told' or 'mentioned', m.from, m.wake end
     end
     return nil
   end

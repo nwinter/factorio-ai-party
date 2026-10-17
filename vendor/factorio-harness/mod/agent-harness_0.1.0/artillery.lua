@@ -100,6 +100,30 @@ return function(api)
     return {count=#list, by_name=table.concat(counts, ', '), rows=rows, capped=#found >= UNITS or nil,
       line=string.format('%d enemy unit%s within %d tiles (%s)%s', #list, #list == 1 and '' or 's', NEAR, table.concat(counts, ', '), #found >= UNITS and ', the first ' .. UNITS .. ' read' or '')}
   end
+  -- The inserters that drop into a piece (A6, Haiku 18:49: its count stayed at 5 after a remote shot because an
+  -- inserter refilled it from a requester chest asking for 5; on world n the shot had fired and the worm was gone).
+  function M.fed_by(e)
+    local b = e.bounding_box
+    local list = {}
+    for _, i in ipairs(try(function() return e.surface.find_entities_filtered{type='inserter', force=e.force,
+        area={{b.left_top.x - 3, b.left_top.y - 3}, {b.right_bottom.x + 3, b.right_bottom.y + 3}}} end) or {}) do
+      if try(function() return i.drop_target end) == e then
+        local src = try(function() return i.pickup_target end)
+        list[#list+1] = string.format('%s (%g,%g) from %s', i.name, i.position.x, i.position.y,
+          src and src.valid and string.format('%s (%g,%g)', src.name, src.position.x, src.position.y) or 'nothing')
+      end
+    end
+    return #list > 0 and list or nil
+  end
+  -- Artillery shells the force used on a surface (its production statistics, as the production GUI shows): the last
+  -- minute and the last 10 minutes; a fired shell counts there even when an inserter puts another in the piece.
+  function M.shells_used(surface, force)
+    local st = try(function() return force.get_item_production_statistics(surface) end)
+    local P = defines.flow_precision_index
+    local function used(pi) return st and pi and math.floor((try(function() return st.get_flow_count{name='artillery-shell', category='output', precision_index=pi, count=true} end) or 0) + 0.5) or 0 end
+    local m1, m10 = used(P.one_minute), used(P.ten_minutes)
+    return string.format('artillery shells used on %s: %d in the last minute, %d in the last 10 minutes (the production statistics: a shot counts even when an inserter refills the piece)', surface.name, m1, m10), m1, m10
+  end
   function M.row(e)
     local range, min_range = M.range(e)
     local n, held = shells(e)
@@ -111,8 +135,10 @@ return function(api)
       r1(range), min_range, count, first and string.format(', the nearest %s (%g,%g) %g tiles away', first.name, first.position.x, first.position.y, first.distance) or '')
     local units = try(function() return M.units_near(e) end)
     if units then line = line .. '; ' .. units.line .. ': ' .. table.concat(units.rows, '; ') end
+    local fed = M.fed_by(e)
+    if fed then line = line .. '; refilled by ' .. table.concat(fed, ', ') end
     return {name=e.name, position={x=e.position.x, y=e.position.y}, shells=n, held=held ~= '' and held or nil, auto_targeting=auto,
-      range=r1(range), min_range=min_range, in_range=count, nearest=near, units_near=units, line=line}
+      range=r1(range), min_range=min_range, in_range=count, nearest=near, units_near=units, fed_by=fed, line=line}
   end
   -- artillery {position?, radius?, surface?}: our artillery pieces, nearest the centre first, at most MAX.
   function M.read(p, a)
@@ -133,7 +159,8 @@ return function(api)
       local row = M.row(all[i])
       rows[#rows+1], lines[#lines+1] = row, row.line
     end
-    return {surface=surface.name, artillery=rows, count=#all, more=#all > MAX and (#all - MAX) or nil, lines=lines,
+    local used = #all > 0 and M.shells_used(surface, p.force) or nil
+    return {surface=surface.name, artillery=rows, count=#all, more=#all > MAX and (#all - MAX) or nil, lines=lines, shells_used=used,
       note=#all == 0 and 'no artillery of ours on ' .. surface.name .. (a.radius and ' within ' .. a.radius .. ' tiles' or '') or
         'with automatic targeting on, a piece with shells fires at enemy spawners and worms in its range by itself; the game does not say which it picks next'}
   end
@@ -179,11 +206,15 @@ return function(api)
       local d = dist(e.position, pos)
       if d <= range and d >= min_range then
         local n = shells(e)
-        if n > 0 then reach[#reach+1] = string.format('%s (%g,%g) %g tiles, %d shells', e.name, e.position.x, e.position.y, r1(d), n)
+        local fed = n > 0 and M.fed_by(e)
+        if n > 0 then reach[#reach+1] = string.format('%s (%g,%g) %g tiles, %d shells%s', e.name, e.position.x, e.position.y, r1(d), n,
+          fed and ' (refilled by ' .. table.concat(fed, ', ') .. ': a shot fired leaves its count as it is; shells_used counts it)' or '')
         else empty[#empty+1] = string.format('%s (%g,%g)', e.name, e.position.x, e.position.y) end
       else out_of_reach = out_of_reach + 1 end
     end
+    local used_line = M.shells_used(p.surface, p.force)
     return {used=a.item, kind='artillery_remote', target=pos, flare=flare, by=held > 0 and 'held' or 'shortcut (artillery researched)',
+      shells_used=used_line .. '; read artillery again after the shot to see it counted',
       in_range=reach, in_range_no_shells=#empty > 0 and empty or nil, out_of_range=out_of_reach,
       line=string.format('flare at (%g,%g); %s', pos.x, pos.y, #reach > 0 and ('in range with shells: ' .. table.concat(reach, '; '))
         or 'no artillery of ours with shells reaches it' .. (#empty > 0 and (' (in range, no shells: ' .. table.concat(empty, ', ') .. ')') or ''))}
