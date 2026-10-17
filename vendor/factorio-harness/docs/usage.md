@@ -6080,7 +6080,7 @@ fh watch    # deploy on every change
   platform's ghosts still need (items `=` the count left, import_from its location or `import_from`; `area` limits the
   ghosts), and the harness re-applies it every 10 s: lowered as ghosts are built, removed when nothing is left, or by
   `request: false`. The reply gives each request and why. On the copy: Meridian's 6 items set, kept over the tick,
-  removed with request: false.
+  removed with request: false. `fh sleep --then platform_bom {request}` is refused (a change, not a read).
 - A8 (Gemini): `silo` rows' `platform_requests` flag each platform request over that planet: `matched` (the silo's
   logistic network holds it), `below_min_payload`, `split_networks` (another network on the planet holds it; it is
   named), `hub_full`, `filling`. On the copy, Fulgora's flags include split_networks with network 96.

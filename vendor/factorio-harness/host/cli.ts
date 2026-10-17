@@ -343,7 +343,10 @@ function thenCall(text: string | undefined, positional: string | undefined, args
   const action = m[1]!;
   if (!THEN_READS.has(action)) throw new Error(`--then takes a read action (inspect, observe, status, silo, trace, platforms, ...), not ${action}: it would change the game while you sleep`);
   const json = m[2] ?? positional ?? argsText;
-  return {action, args:json === undefined ? {} : object(JSON.parse(json), '--then arguments')};
+  const args = json === undefined ? {} : object(JSON.parse(json), '--then arguments');
+  // platform_bom {request} sets a hub request section (d17 batch11 A6): a change, not a read.
+  if (action === 'platform_bom' && args.request !== undefined) throw new Error('--then takes platform_bom as a read: request sets the hub\'s requests, call it on its own');
+  return {action, args};
 }
 /**
  * `fh wait --until EVENT`: tell (a tell or mention; any wait ends on those), alert (a new attack, enemy group or
