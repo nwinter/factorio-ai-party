@@ -9011,11 +9011,11 @@ end
 -- Slots a machine consumes from (fuel, ammunition, a machine's or lab's input, robots and repair packs in a roboport):
 -- the target holding the item only in these, with you holding it too, means a give (d17 batch17 C3, Muse 4x: topping
 -- up a turret holding 6 magazines was refused for direction).
-local FEED_SLOTS={fuel=true,furnace_source=true,assembling_machine_input=true,agricultural_tower_input=true,lab_input=true,
+M.FEED_SLOTS={fuel=true,furnace_source=true,assembling_machine_input=true,agricultural_tower_input=true,lab_input=true,
   turret_ammo=true,artillery_turret_ammo=true,artillery_wagon_ammo=true,car_ammo=true,spider_ammo=true,roboport_robot=true,roboport_material=true}
-local function feed_only(e,item,quality)
+function M.feed_only(e,item,quality)
   for _,name in ipairs(take_order) do
-    if not FEED_SLOTS[name] then
+    if not M.FEED_SLOTS[name] then
       local ok,inv=pcall(inventory,e,name)
       if ok and inv.get_item_count{name=item,quality=quality or 'normal'}>0 then return false end
     end
@@ -9033,7 +9033,7 @@ local function infer_direction(p,a)
     local ok,n,fed=pcall(function()
       local e=entity(p,{position=pos,name=pos.name or a.name,unit_number=pos.unit_number or a.unit_number})
       friendly(p,e)
-      return entity_holds(e,a.item,a.quality),feed_only(e,a.item,a.quality)
+      return entity_holds(e,a.item,a.quality),M.feed_only(e,a.item,a.quality)
     end)
     if ok then theirs=theirs+n; if not fed then feeding=false end end
   end
@@ -9129,7 +9129,7 @@ function M.transfer_walk_go(p,a,args,entities,far,fill,ticks)
     -- As infer_direction, over the entities found (out of reach too).
     local mine,theirs=args.item and held(p,args.item,args.quality)+crafting_count(p,args.item) or 0,0
     local feeding=true
-    for _,e in ipairs(entities) do if args.item then theirs=theirs+entity_holds(e,args.item,args.quality); if not feed_only(e,args.item,args.quality) then feeding=false end end end
+    for _,e in ipairs(entities) do if args.item then theirs=theirs+entity_holds(e,args.item,args.quality); if not M.feed_only(e,args.item,args.quality) then feeding=false end end end
     if args.item==nil or (theirs>0 and mine==0) then args.direction='to_player'
     elseif mine>0 and (theirs==0 or feeding) then args.direction='to_entity'
     elseif args.partial and mine==0 and theirs==0 then
