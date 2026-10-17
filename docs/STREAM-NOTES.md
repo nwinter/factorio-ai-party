@@ -1275,6 +1275,43 @@ agricultural count rose 3942 over shift12 while red rose 2149.
   site's long run (SPM per shift and in 10-minute windows from the score logs' `consumed`; logs without it show none)
   and `/live/`.
 
+## Maiden flights (2026-10-17, eng/d17-maiden)
+
+Viewer Foobator (d17 14:24): "please show new ships on their maiden flight on stream". A platform's first departure
+since it was built is a maiden flight. The director holds the camera on the ship through the departure and the first
+minute and a half of flight, and the hosts get a card and a headline.
+
+- Which departure is the first: chronicle_log.platform_history reads the platform_created, platform_left and
+  platform_renamed events in the chronicle files along the run chain (runs/RUN/chronicle.jsonl, then each
+  resumed-from shift's) when the stream service starts (serve.py, model.set_platform_history). It keeps each name's
+  newest creation (who built it, where) and its departures since. A ship built again under an old name starts over:
+  three ships have been called Kestrel. A renamed ship keeps its history under the new name. The live chronicle
+  events keep it current. A platform with no creation record never counts: it was built before the chronicle, or renamed before
+  the harness recorded renames.
+- Renames: chronicle.lua tracks platforms by index and used to update a renamed one's name silently. It now records
+  `platform_renamed {platform, from}`, a runtime change that needs a deploy. Two ships were renamed before that, on
+  Oct 17, and have not flown since they were built: Spindle (built as Peregrine by Sol at 89h21m) and Kestrel II
+  (built as Kestrel by Astra at 110h41m). Their first departures are not shown as maiden flights.
+- model.py: a platform_left event with no departure since the creation is a `maiden_flight` moment and a "space"
+  headline: platform, from, to, built by (the creation event's agent), game time; title "Maiden flight of Swiftlet to
+  Aquilo". A departure read more than 2 game minutes late (a restart catching up) only goes into the history.
+- The card: segments.py starts the moment as a space_moment segment, as for the other moments: the director starts it
+  within 150 s as soon as nothing else runs. The card shows the platform, the route, who built it and the game time,
+  over the ship framed for flight. The hosts' headline call names the ship, where it is going and who built it.
+- The camera: onecam.py takes the moment as a departure held `maiden_hold` (105 s) instead of `depart_hold` (60 s),
+  captioned "Swiftlet · maiden flight · Nauvis to Aquilo · built by Luna". If the plain departure is already on air, it
+  becomes the maiden flight. A moment older than `maiden_late` (90 s) when the director sees it is not shown. Each
+  moment is taken once, so once per ship.
+- Rank: as a departure. An operator look, platform hold or follow, a key battle or incoming group, an urgent shot (a
+  death, a big loss), a segment (its own card first) and a platform in danger come first. A departure cut short comes
+  back for what is left of it.
+- One camera (POG_CAMS=1): plain departures and platform visits stay off with one client, but a maiden flight moves the
+  one client to the ship, as a segment does.
+- Tests: tools/stream/test_maiden.py covers the history along a run chain, a reused name and a rename, the moment
+  and what is not one, three cameras and one camera, a departure already on air, a big loss and a segment first, the
+  card's facts and camera, the overlay rows, and the hosts' call. vendor/factorio-harness/tests/chronicle.lua covers the
+  rename event.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the

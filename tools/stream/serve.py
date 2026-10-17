@@ -562,6 +562,9 @@ def main():
             tokens_feed = tokens.TokenFeed(os.path.dirname(os.path.abspath(a.run))).start()
     if a.run and not a.mock:  # where each platform has been, kept across restarts (no false "first" arrivals)
         model.set_space_memory(os.path.join(os.path.dirname(os.path.abspath(a.run)), "space-memory.json"))
+        # each platform's creation and departures along the run chain: a first departure is a maiden flight
+        import chronicle_log
+        model.set_platform_history(chronicle_log.path_for(os.path.dirname(os.path.abspath(a.run))))
     hub = Hub()
     names = [n for k, cfg in (run.get("agents") or {}).items() for n in (k, (cfg or {}).get("display_name")) if n]
     roster = [(k, (cfg or {}).get("display_name")) for k, cfg in (run.get("agents") or {}).items()]

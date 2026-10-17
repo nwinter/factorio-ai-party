@@ -37,7 +37,8 @@ TYPES = {
     "recap": {"title": "Recap", "params": {"minutes": "window, 5..30 (default 10)"}, "seconds": [10, 20]},
     "attack_replay": {"title": "Attack replay", "params": {"area": "alert id"}, "seconds": [15, 40]},
     # Space Age: progress (planets, platforms, space science), and the moments model.py detects (first rocket,
-    # first platform, a platform reaching a new planet, the first landing there); the director starts a moment's
+    # first platform, a platform reaching a new planet, the first landing there, a platform's maiden flight: its first
+    # departure since it was built, viewer Foobator d17 14:24); the director starts a moment's
     # segment itself within MOMENT_FRESH_S, skipping the spacing, and casters may ask for one too.
     "space": {"title": "Space Age progress", "params": {}, "seconds": [10, 18]},
     "space_moment": {"title": "Space Age moment", "params": {"moment": "moment id (default: the newest not yet shown)"},
@@ -544,8 +545,8 @@ class Segments:
         elif facts.get("platform"):  # first platform, a platform reaching a planet: the platform itself
             view = next((p.get("view") for p in (snap.get("space") or {}).get("platforms") or []
                          if p.get("name") == facts["platform"] and p.get("view")), None)
-            if view:
-                camera = platform_shot(view)
+            if view:  # a maiden flight is under way: framed for flight (room ahead for asteroids)
+                camera = platform_shot(view, travelling=m["kind"] == "maiden_flight")
         return m["title"], facts, camera
 
     def build_spotlight(self, params, snap, now):
