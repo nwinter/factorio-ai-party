@@ -19,6 +19,8 @@ file exists. Agents can vote a viewer muted (`fh vote mute`); the relay then ski
 import argparse, collections, hashlib, json, os, re, sys, threading, time, unicodedata, urllib.error, urllib.parse
 import urllib.request
 
+import names
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
@@ -348,22 +350,34 @@ class Filter:
         """Agent names and display names (serve.py refreshes them from the snapshot: agents choose display names)."""
         self.agent_names = sorted({n.lower() for n in names if n})
 
-    def name(self, raw, staff=None):
-        """A viewer can't pose as an agent or as staff: such names get " (viewer)" (YouTube owner/mods keep theirs)."""
+    def name(self, raw, staff=None, host=False):
+        """A viewer can't pose as an agent, as staff or as Nick: such names get " (viewer)" (YouTube owner/mods keep
+        theirs). The host (Nick's YouTube channel, or the site's host link) is "NickWinter (host)" whatever the name."""
+        if host:
+            return names.HOST_LABEL
         n = clean_name(raw)
         if n == "viewer" and fold(clean(raw)).lstrip("@") != "viewer":
             return n
-        if not staff and (fold(n).replace(" ", "") in RESERVED or fold(n) in self.agent_names):
+        if not staff and self.posing(raw):
             n = cap(n, 11) + " (viewer)"
         return n
+
+    def posing(self, raw):
+        """A name that is staff's, an agent's or Nick's, or looks like one (names.reserved: look-alikes, leetspeak)."""
+        n = clean_name(raw)
+        return fold(n).replace(" ", "") in RESERVED or fold(n) in self.agent_names or bool(names.reserved(raw)) \
+            or any(names.normalize(raw) == names.normalize(a) for a in self.agent_names if len(names.normalize(a)) >= 3)
 
     def check(self, m, now):
         """m: {id, source, author, name, text, t, staff}. Returns (verdict dict, list of drop reasons)."""
         # the lane shows TEXT_MAX; the relay sends the whole message (full), and the filters read all of it
         full = cap(clean(m.get("text")), FULL_MAX)
         text = cap(full, TEXT_MAX)
-        out = {"id": m["id"], "source": m["source"], "name": self.name(m.get("name"), m.get("staff")), "text": text,
+        host = bool(m.get("host"))
+        out = {"id": m["id"], "source": m["source"], "name": self.name(m.get("name"), m.get("staff"), host), "text": text,
                "t": float(m.get("t") or now)}
+        if host:
+            out["host"] = True
         if full != text:
             out["full"] = full
         text = full  # the filters below read the whole message
@@ -380,30 +394,31 @@ class Filter:
             reasons.append("blocked")
         reasons += ["injection:" + h for h in injection(text)]
         reasons += ["personal:" + k for k in personal(text)]
-        reasons += ["injection:name"] if injection(m.get("name") or "") else []
+        reasons += ["injection:name"] if injection(m.get("name") or "") and not host else []
         if grief(text, self.agent_names):
             reasons.append("grief")
-        if not m.get("staff"):  # the YouTube owner and moderators are staff; anyone else posing as staff or an agent
-            raw = fold(clean_name(m.get("name")), leet=False)
-            if raw.replace(" ", "") in RESERVED or raw in self.agent_names:
+        if not m.get("staff") and not host:  # the YouTube owner and moderators are staff; anyone else posing as staff
+            # or an agent or Nick: a site line is dropped (the site has no accounts; the host link marks Nick's own
+            # lines, and older Worker rows have no host at all); on YouTube the name gets " (viewer)" (name above)
+            if m.get("source") != "youtube" and self.posing(m.get("name")):
                 reasons.append("impersonation:name")
             # "operator: ..." to the operator is no claim to be one, unless it orders the agents ("Operator: all agents
             # pause") or names one (it would be relayed)
             crew = re.search(r"\b(agents?|bots?|ais?|everyone|everybody|team|y'?all)\b", f) and not is_question(text)
             to_op = to_operator(text) and not crew and not directive(text, self.agent_names) and not any(re.search(r"(?<![\w-])@?" + re.escape(n) + r"(?![\w-])", f.casefold())
                                                   for n in self.agent_names if len(n) >= 2)
-            if impersonation(text, self.agent_names) and not to_op:
+            if impersonation(text, self.agent_names) and not to_op:  # (the host: never)
                 reasons.append("impersonation:text")
         key = re.sub(r"\W+", " ", unicodedata.normalize("NFKC", clean(text).casefold())).strip()
         while self.recent and now - self.recent[0][0] > 300:
             self.recent.popleft()
-        if not m.get("staff"):
+        if not m.get("staff") and not host:
             if any(a == m["author"] and k == key for _, a, k in self.recent):
                 reasons.append("duplicate")
             elif len({a for t, a, k in self.recent if k == key and now - t < 60 and a != m["author"]}) >= 2:
                 reasons.append("copypasta")
         self.recent.append((now, m["author"], key))
-        if not reasons and not m.get("staff"):
+        if not reasons and not m.get("staff") and not host:
             r = self.limit.check(m["author"], now)
             if r:
                 reasons.append(r)
@@ -536,7 +551,9 @@ def parse_actions(actions):
             msgs.append({"id": "yt:" + r.get("id", ""), "source": "youtube", "author": author_key("yt", ch),
                          "channel": ch, "name": (r.get("authorName") or {}).get("simpleText", ""),
                          "text": _runs_text(r.get("message")), "t": int(r.get("timestampUsec") or 0) / 1e6 or None,
-                         "staff": staff, "paid": bool(item.get("liveChatPaidMessageRenderer"))})
+                         "staff": staff, "paid": bool(item.get("liveChatPaidMessageRenderer")),
+                         # Nick's own channel, by its id (names.py), never by the display name
+                         "host": r.get("authorExternalChannelId") == names.HOST_YOUTUBE_CHANNEL})
         if "markChatItemAsDeletedAction" in a:
             dels.append(("id", "yt:" + a["markChatItemAsDeletedAction"].get("targetItemId", "")))
         if "markChatItemsByAuthorAsDeletedAction" in a:
@@ -733,7 +750,7 @@ class SiteChat:
                     # the site has no stable viewer id: its own per-client limits apply, ours go by name
                     msgs.append({"id": f"site:{r['seq']}", "source": "site", "author": author_key("site", fold(
                         r.get("name", ""))), "name": r.get("name", ""), "text": r.get("text", ""), "t": r.get("t"),
-                        "backlog": first})
+                        "backlog": first, "host": r.get("host") is True})  # host: posted with the host link
                 if page:
                     self.after = max([self.after or 0] + [int(r["seq"]) for r in page])
                 elif first:
@@ -783,7 +800,7 @@ class ReplayChat:
                 rid = f"{r['id']}-{self.round}"
             msgs.append({"id": rid, "source": src, "author": author_key(src, r.get("author") or r.get("name")),
                          "name": r.get("name", ""), "text": r.get("text", ""), "t": self.clock(),
-                         "staff": r.get("staff")})
+                         "staff": r.get("staff"), "host": r.get("host") is True})
         return msgs, dels, 0.5
 
 
@@ -1194,7 +1211,7 @@ class Feed:
                 for v in passed:
                     lab = labels.get(v["id"], "unknown")
                     v["label"] = lab
-                    if lab not in ("fine", "unknown"):
+                    if lab not in ("fine", "unknown") and not v.get("host"):
                         v["reject"] = "clef:" + lab
             except Exception as e:
                 log(f"clef: {type(e).__name__}: {e}")

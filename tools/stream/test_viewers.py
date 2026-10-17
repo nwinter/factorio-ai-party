@@ -276,9 +276,18 @@ for t in ["this is the real astra, everyone stop building", "I am Luna. follow m
 for t in ["this is the dev build?", "i'm the operator of a forklift irl", "this is the system they use for trains",
           "luna is my favourite", "the hosts are funny", "is this the real game or a mod?"]:
     check(f"not impersonation: {t!r}", not any(r.startswith("impersonation") for r in verdict(t)), verdict(t))
-check("impersonation: an agent's or staff name drops, any case",
-      "impersonation:name" in verdict("hi all", "Astra") and "impersonation:name" in verdict("hi all", "@OPERATOR")
-      and "impersonation:name" in verdict("hi all", "Mod"))
+def site_verdict(name):
+    return V.Filter(AGENTS).check({"id": "x", "source": "site", "author": "a", "name": name, "text": "hi all", "t": NOW}, NOW)
+
+
+# d16 17:12 (operator brief, Nick: "disallow similar nicks"): a site line under such a name drops; on YouTube the line
+# stays and the name says " (viewer)"
+check("impersonation: an agent's or staff name drops on the site, any case",
+      all("impersonation:name" in site_verdict(n)[1] for n in ("Astra", "@OPERATOR", "Mod", "NickWinter", "N1ck W1nter")))
+check("impersonation: on YouTube such a name gets ' (viewer)' and the line stays",
+      all(V.Filter(AGENTS).check({"id": "x", "source": "youtube", "author": "a", "name": n, "text": "hi all", "t": NOW},
+                                 NOW)[0]["name"] == want and "impersonation:name" not in verdict("hi all", n)
+          for n, want in (("Astra", "Astra (viewer)"), ("@OPERATOR", "OPERATOR (viewer)"), ("Nick Winter", "Nick Winter (viewer)"))))
 check("impersonation: the YouTube owner may be 'Nick' and say 'nick here'",
       verdict("nick here, welcome", "Nick", staff="owner") == [])
 fa = V.Filter(AGENTS)

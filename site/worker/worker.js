@@ -42,8 +42,47 @@ const BP = {
   keepBytes: 64 * 1024 * 1024,  // and at most this many string bytes
   pageMax: 20,
 };
-const RESERVED = ["astra", "sol", "luna", "opus", "sonnet", "haiku", "grok", "gemini", "muse", "fable", "operator",
-  "mod", "moderator", "admin", "caster", "system", "server", "player of games", "pog"];
+// Reserved names (Nick 17:11 on d16: "a host link so I can have verified comments and disallow similar nicks"). The
+// same rule as tools/stream/names.py (the relay), with the same tables; tools/stream/test_names.py runs both on one set
+// of names. normalizeName: zero-width characters out, Cyrillic/Greek look-alikes to Latin, compatibility forms and
+// accents folded, lower case, leetspeak (0 o, 1 l | i, 3 e, 4 @ a, 5 $ s, 7 t), only a-z kept.
+const ZERO_WIDTH = new Set([0xad,0x34f,0x61c,0x115f,0x1160,0x17b4,0x17b5,0x180e,0x200b,0x200c,0x200d,0x200e,0x200f,0x202a,0x202b,0x202c,0x202d,0x202e,0x2060,0x2061,0x2062,0x2063,0x2064,0x2066,0x2067,0x2068,0x2069,0x3164,0xfe0f,0xfeff,0xffa0]);
+const HOMOGLYPHS = {"А": "a", "В": "b", "Е": "e", "Ё": "e", "К": "k", "М": "m", "Н": "h", "О": "o", "Р": "p", "С": "c", "Т": "t", "Х": "x", "У": "y", "І": "i", "Ї": "i", "Ј": "j", "Ѕ": "s", "Ԁ": "d", "Ԛ": "q", "Ԝ": "w", "Ү": "y", "Һ": "h", "а": "a", "в": "b", "е": "e", "ё": "e", "к": "k", "м": "m", "н": "h", "о": "o", "р": "p", "с": "c", "т": "t", "х": "x", "у": "y", "і": "i", "ї": "i", "ј": "j", "ѕ": "s", "ԁ": "d", "ԛ": "q", "ԝ": "w", "ү": "y", "һ": "h", "ɡ": "g", "ո": "n", "ս": "u", "ⅰ": "i", "Α": "a", "Β": "b", "Ε": "e", "Ζ": "z", "Η": "h", "Ι": "i", "Κ": "k", "Μ": "m", "Ν": "n", "Ο": "o", "Ρ": "p", "Τ": "t", "Υ": "y", "Χ": "x", "α": "a", "β": "b", "ε": "e", "η": "n", "ι": "i", "κ": "k", "ν": "v", "ο": "o", "ρ": "p", "τ": "t", "υ": "u", "χ": "x", "ω": "w", "ϲ": "c", "ϳ": "j"};
+const LEET = {"0": "o", "1": "i", "l": "i", "|": "i", "3": "e", "4": "a", "@": "a", "5": "s", "$": "s", "7": "t"};
+const RESERVED_CONTAINS = ["nickwinter", "nickw"];
+const RESERVED_EXACT = ["nick", "winter", "astra", "sol", "luna", "opus", "sonnet", "haiku", "grok", "gemini", "muse", "fable", "server", "operator", "mod", "moderator", "admin", "caster", "system", "playerofgames", "pog"];
+const RESERVED_NEAR = ["nickwinter", "operator"];
+export function normalizeName(name) {
+  let s = [...String(name == null ? "" : name)].filter((c) => !ZERO_WIDTH.has(c.codePointAt(0))).join("");
+  s = [...s].map((c) => HOMOGLYPHS[c] || c).join("");
+  s = s.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
+  s = [...s].map((c) => HOMOGLYPHS[c] || LEET[c] || c).join("");
+  return s.replace(/[^a-z]/g, "");
+}
+function distance(a, b, cap = 3) {
+  if (Math.abs(a.length - b.length) >= cap) return cap;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur.push(Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)));
+    if (Math.min(...cur) >= cap) return cap;
+    prev = cur;
+  }
+  return Math.min(prev[b.length], cap);
+}
+const EXACT_N = new Map(RESERVED_EXACT.map((w) => [normalizeName(w), w]));
+// Why a name is reserved ("contains nickwinter", "is sol", "near operator"), or null.
+export function reservedName(name) {
+  const n = normalizeName(name);
+  if (!n) return null;
+  for (const w of RESERVED_CONTAINS) if (n.includes(w)) return "contains " + w;
+  if (EXACT_N.has(n)) return "is " + EXACT_N.get(n);
+  for (const w of RESERVED_NEAR) if (distance(n, w) <= 2) return "near " + w;
+  return null;
+}
+// The host link (Nick, 17:11): the page sends HOST_TOKEN (a Worker secret) as X-Host-Token with each chat post; a match
+// posts as the host, a wrong one is refused.
+const HOST = { name: "NickWinter", perMinute: 30 };
 
 const BASE_HEADERS = {
   "X-Robots-Tag": "noindex, nofollow",
@@ -95,7 +134,7 @@ export default {
           ...BASE_HEADERS,
           "Access-Control-Allow-Origin": origin,
           "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type",
+          "Access-Control-Allow-Headers": "Content-Type, X-Host-Token",
           "Access-Control-Max-Age": "86400",
           Vary: "Origin",
         },
@@ -139,13 +178,22 @@ export default {
   },
 };
 
-function tokenOk(req, env) {
-  const want = env.PUBLISH_TOKEN || "";
-  const got = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+function sameSecret(want, got) {
+  want = String(want || "");
+  got = String(got || "");
   if (want.length < 16 || got.length !== want.length) return false;
   let diff = 0;
   for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ got.charCodeAt(i);
   return diff === 0;
+}
+
+function tokenOk(req, env) {
+  return sameSecret(env.PUBLISH_TOKEN, (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, ""));
+}
+
+// The host's chat posts: X-Host-Token against the HOST_TOKEN secret, in constant time like tokenOk.
+function hostOk(req, env) {
+  return sameSecret(env.HOST_TOKEN, req.headers.get("X-Host-Token"));
 }
 
 // Strip control, bidi-override and zero-width characters; collapse whitespace.
@@ -232,6 +280,9 @@ export class Live {
       // channel (viewer LimeLight555, d16 10:36): "viewers" lines stay on the site; GET /v1/chat leaves them out unless
       // asked (channels=all), so the Mac's relay to the game never reads them
       try { this.sql.exec(`ALTER TABLE chat ADD COLUMN channel TEXT NOT NULL DEFAULT 'game'`); } catch (e) { /* already there */ }
+      // host: a line posted with the host link (Nick, d16 17:11)
+      try { this.sql.exec(`ALTER TABLE chat ADD COLUMN host INTEGER NOT NULL DEFAULT 0`); } catch (e) { /* already there */ }
+      this.hostTimes = [];
       this.sql.exec(`CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS bans (who TEXT PRIMARY KEY, t REAL NOT NULL)`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS blueprints (id INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
@@ -335,7 +386,7 @@ export class Live {
     const limit = Math.max(1, Math.min(CHAT.pageMax, parseInt(url.searchParams.get("limit") || "50", 10) || 50));
     const after = parseInt(url.searchParams.get("after") || "", 10);
     const all = url.searchParams.get("channels") === "all";
-    const cols = all ? "seq, t, name, text, channel" : "seq, t, name, text";
+    const cols = all ? "seq, t, name, text, channel, host" : "seq, t, name, text, host";
     const only = all ? "" : " AND channel = 'game'";
     let rows;
     if (Number.isFinite(after)) {
@@ -345,6 +396,8 @@ export class Live {
       rows = this.sql.exec(`SELECT ${cols} FROM chat WHERE hidden = 0${only} ORDER BY seq DESC LIMIT ?`, limit)
         .toArray().reverse();
     }
+    // host: true on a line posted with the host link; the field is absent on the rest
+    rows = rows.map(({ host, ...r }) => (host ? { ...r, host: true } : r));
     const maxRow = this.sql.exec("SELECT COALESCE(MAX(seq), 0) AS m FROM chat").toArray()[0];
     const hidden = this.sql.exec("SELECT seq FROM chat WHERE hidden = 1 ORDER BY seq DESC LIMIT 200").toArray().map((r) => r.seq);
     return json({
@@ -362,7 +415,10 @@ export class Live {
     if (text.length > 4096) return json({ error: "too large" }, 413);
     const body = JSON.parse(text || "{}");
     const who = await this.who(req);
-    if (this.sql.exec("SELECT 1 FROM bans WHERE who = ?", who).toArray().length) {
+    // The host link: a token that does not match is refused, never posted as a viewer's line
+    const host = req.headers.get("X-Host-Token") != null;
+    if (host && !hostOk(req, this.env)) return json({ error: "host link not valid" }, 403);
+    if (!host && this.sql.exec("SELECT 1 FROM bans WHERE who = ?", who).toArray().length) {
       return json({ error: "you can't post right now" }, 403);
     }
     // The same message again (a second press, a retry after a slow reply): the first one, before any limit.
@@ -371,36 +427,50 @@ export class Live {
     const channel = body.channel == null ? "game" : String(body.channel);
     if (channel !== "game" && channel !== "viewers") return json({ error: "channel must be game or viewers" }, 400);
     if (cid) {
-      const had = this.sql.exec("SELECT seq, t, name, text, channel FROM chat WHERE cid = ? AND who = ?", cid, who).toArray();
-      if (had.length) return json({ ok: true, repeat: true, message: had[0] });
+      const had = this.sql.exec("SELECT seq, t, name, text, channel, host FROM chat WHERE cid = ? AND who = ?", cid, who).toArray();
+      if (had.length) {
+        const { host: h, ...m } = had[0];
+        return json({ ok: true, repeat: true, message: h ? { ...m, host: true } : m });
+      }
     }
     const msg = tidy(body.text);
     if (!msg) return json({ error: "empty message" }, 400);
     if ([...msg].length > CHAT.maxLen) return json({ error: `messages are at most ${CHAT.maxLen} characters` }, 400);
     if (LINK.test(msg)) return json({ error: "links are not allowed" }, 400);
-    const name = this.viewerName(body.name);
-    if (name.error) return json(name, 400);
     const now = Date.now();
-    const limited = this.limit(who, now);
-    if (limited) return limited;
-    const last = this.lastText.get(who);
-    if (last && last.text === msg.toLowerCase() && now - last.at < 120000) return json({ error: "duplicate message" }, 400);
-    this.count(who, now);
-    this.lastText.set(who, { text: msg.toLowerCase(), at: now });
-    if (this.lastText.size > 5000) this.lastText.clear();
+    let name;
+    if (host) {
+      // the host's name whatever the box says; no per-client limits, a cap against a runaway page
+      name = { name: HOST.name };
+      this.hostTimes = this.hostTimes.filter((t) => now - t < 60000);
+      if (this.hostTimes.length >= HOST.perMinute) return json({ error: "slow down", retry_after_s: 10 }, 429);
+      this.hostTimes.push(now);
+    } else {
+      name = this.viewerName(body.name);
+      if (name.error) return json(name, 400);
+      const limited = this.limit(who, now);
+      if (limited) return limited;
+      const last = this.lastText.get(who);
+      if (last && last.text === msg.toLowerCase() && now - last.at < 120000) return json({ error: "duplicate message" }, 400);
+      this.count(who, now);
+      this.lastText.set(who, { text: msg.toLowerCase(), at: now });
+      if (this.lastText.size > 5000) this.lastText.clear();
+    }
 
     const t = now / 1000;
-    const row = this.sql.exec("INSERT INTO chat (t, name, text, who, cid, channel) VALUES (?, ?, ?, ?, ?, ?) RETURNING seq",
-      t, name.name, msg, who, cid, channel).toArray()[0];
+    const row = this.sql.exec("INSERT INTO chat (t, name, text, who, cid, channel, host) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING seq",
+      t, name.name, msg, who, cid, channel, host ? 1 : 0).toArray()[0];
     this.sql.exec("DELETE FROM chat WHERE seq <= ?", row.seq - CHAT.keep);
-    return json({ ok: true, message: { seq: row.seq, t, name: name.name, text: msg, channel } });
+    const out = { seq: row.seq, t, name: name.name, text: msg, channel };
+    if (host) out.host = true;
+    return json({ ok: true, message: out });
   }
 
   // A viewer's name, as chat takes it: {name} or {error}.
   viewerName(raw) {
     const name = tidy(raw).slice(0, 20) || "viewer";
     if (!/^[\p{L}\p{N} _.'-]{2,20}$/u.test(name)) return { error: "names are 2-20 letters, digits, spaces or _ . ' -" };
-    if (RESERVED.includes(name.toLowerCase())) return { error: "that name is reserved" };
+    if (reservedName(name)) return { error: "that name is reserved" };
     return { name };
   }
 

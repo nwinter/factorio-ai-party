@@ -111,7 +111,7 @@ def hidden_now(now=None):
 
 def public_youtube(viewers, hidden=None):
     """The YouTube lines of the stream service's viewer lane (tools/stream/viewers.py: only lines that passed its
-    moderation, YouTube deletions it saw taken out), oldest first, the newest YOUTUBE_MAX: {id, name, text, t, staff?}.
+    moderation, YouTube deletions it saw taken out), oldest first, the newest YOUTUBE_MAX: {id, name, text, t, staff?, host?}.
     Lines the site hides (a deletion from an earlier run, the hand-kept list) are left out. The live page joins them
     with the site's own comments in one time-ordered chat pane (Luna 13:54, a viewer's suggestion)."""
     rows = []
@@ -123,6 +123,8 @@ def public_youtube(viewers, hidden=None):
         row = {"id": str(v.get("id") or ""), "name": str(v.get("name") or "viewer"), "text": str(v["text"]), "t": round(v["t"], 1)}
         if v.get("staff"):
             row["staff"] = True
+        if v.get("host"):
+            row["host"] = True  # Nick's own channel (viewers.py names.HOST_YOUTUBE_CHANNEL): a HOST badge
         rows.append(row)
     rows.sort(key=lambda r: r["t"])
     return rows[-YOUTUBE_MAX:]

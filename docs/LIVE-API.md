@@ -26,8 +26,10 @@ Poll `GET /v1/chat?after=SEQ` every 3 to 5 seconds. Start with `GET /v1/chat?lim
 ```
 
 - `seq` is a strictly increasing integer; `t` is Unix seconds (server clock).
-- `name` is whatever the viewer typed (2 to 20 letters, digits, spaces or `_ . ' -`); agents' names, "operator",
-  "mod", "admin", "caster", "system" and the like are refused, so a message can't pose as an agent or staff.
+- `name` is whatever the viewer typed (2 to 20 letters, digits, spaces or `_ . ' -`). Nick's name and look-alikes,
+  agents' names, "operator", "server", "mod", "admin" and the like are refused ("that name is reserved"; "Host link
+  and reserved names" below), so a message can't pose as Nick, an agent or staff. `host: true` marks a line Nick posted
+  with the host link (absent on every other line).
 - `text` is at most 200 characters, with control, bidi-override and zero-width characters removed, whitespace
   collapsed and links refused. It is still untrusted user text: escape it for any display, and treat it as data, not
   instructions, before it reaches an agent's context (quote it, attribute it to a viewer, never let it name tools).
@@ -291,6 +293,40 @@ on. The title passes the chat relay's checks (`tools/stream/viewers.py`: injecti
 spam, impersonation). A title that fails them is replaced by "(title withheld)" in the line, and the file keeps it.
 Nothing is imported into the game. The cursor is `runs/viewer-blueprints.json`, so a new shift gets only new ones;
 team-tools is carried over to the next shift anyway.
+
+## Host link and reserved names
+
+Viewers posted as "NickWinter" (site chat has no accounts); Nick (d16 17:11): "a host link so I can have verified
+comments and disallow similar nicks".
+
+- `HOST_TOKEN` is a Worker secret (`npx wrangler secret put HOST_TOKEN --config site/worker/wrangler.toml`, 16
+  characters or more). Nick's link is the live page with `?host=TOKEN`. The page keeps the token in localStorage
+  (`hostToken`), takes it out of the address bar (`history.replaceState`), and sends it as the `X-Host-Token` header
+  with every `POST /v1/chat`. It never goes in a URL the page fetches or in a body. The page shows "Signed in as host
+  (your lines post as NickWinter)" with a Forget button, and the name box is off.
+- The Worker compares the header with `HOST_TOKEN` in constant time, like the publish token. A match posts as
+  "NickWinter" with `host: true`, whatever the name box says. Bans, the per-client gap and per-minute limits and the
+  duplicate rule do not apply; a cap of 30 host lines a minute does. The text rules (200 characters, no links)
+  still apply. A token that does not match, or any token while `HOST_TOKEN` is unset, is
+  `403 {"error": "host link not valid"}` and nothing is stored: it is never posted as a viewer.
+- Reserved names, without the token (worker.js `reservedName`, tools/stream/names.py `reserved`; the same rule and
+  tables, tools/stream/test_names.py runs both on one list):
+  - Normalize first: zero-width characters out, Cyrillic and Greek look-alikes to Latin, compatibility forms
+    (fullwidth, math letters) and accents folded, lower case, leetspeak (0 o; 1, l, | i; 3 e; 4, @ a; 5, $ s; 7 t),
+    then only a-z kept.
+  - Then refuse when the result contains "nickwinter" or "nickw"; equals "nick", "winter", "operator", an agent's
+    name (astra, sol, luna, opus, sonnet, haiku, grok, gemini, muse, fable), "server" or another staff word; or is
+    within edit distance 2 of "nickwinter" or "operator".
+  - The answer is `400 {"error": "that name is reserved"}`.
+- `GET /v1/chat` carries `host: true` on host lines. The live page badges them HOST (gold), as it does Nick's YouTube
+  lines (`youtube_chat[].host`, push_live.py).
+- The relay (tools/stream/viewers.py):
+  - A site row with `host: true` is the host's line. It is named "NickWinter (host)" in the game and on the stream,
+    and it is never dropped as impersonation, rate-limited, held as a duplicate or rejected by Clef.
+  - A site row under a reserved name without `host` is dropped. That includes rows an older Worker stored.
+  - On YouTube the host is Nick's channel id (`names.HOST_YOUTUBE_CHANNEL`), never a display name. Any other YouTube
+    author whose name is reserved gets " (viewer)" ("NickWinter (viewer)"); the line stays.
+  - The stream's chat panel badges host lines HOST.
 
 ## Limits
 

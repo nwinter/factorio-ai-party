@@ -459,6 +459,9 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .vchat-form[hidden] { display: none; }
 .vchat-form .vchat-viewers { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; }
 .vchat .c-src-viewers { background: #5b8fb9; color: #111; }
+.vchat .c-src-host { background: var(--fx-yellow, #e8c547); color: #111; }
+.vchat-host { display: flex; align-items: center; gap: 8px; margin: 4px 0 0; color: var(--fx-heading); }
+.vchat-host[hidden] { display: none; }
 .bp-share { margin-top: 6px; }
 .bp-share summary { cursor: pointer; }
 .bp-form { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin-top: 6px; }
