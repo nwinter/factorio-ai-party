@@ -16,6 +16,7 @@ import { formatCompact, finalLine, actionHelp, paginate } from './format.js';
 import { parseDeadline, deadlineText, timeLeftText } from './deadline.js';
 import { lookaheadDue } from './lookahead.js';
 import { pollNews } from './polls.js';
+import { trimRepeats, type ShownState } from './repeats.js';
 import { bundleRuntime } from './bundle.js';
 import { startSession, stopSession, sessionConnection, connectSession, type SessionConnection } from './session.js';
 import { BridgeClient, BridgeOutcomeUnknown } from './bridge.js';
@@ -616,9 +617,20 @@ function withCliNote(value: unknown): unknown {
   const result = reply.result && typeof reply.result === 'object' ? reply.result as Record<string, unknown> : {};
   return {...reply, result:{...result, corrected:typeof result.corrected === 'string' ? `${note}; ${result.corrected}` : note}};
 }
+// The orders and lessons lines when they changed or every 10 minutes (host/repeats.ts): FH_SHOWN_FILE, default
+// .fh-shown.json next to the journal, keeps what this workspace last showed; without a journal every reply shows them.
+let shownFile: string | undefined;
+function withoutRepeats(value: unknown): unknown {
+  if (!shownFile) return value;
+  let state: ShownState = {};
+  try { state = JSON.parse(readFileSync(shownFile, 'utf8')); } catch { /* the workspace's first reply */ }
+  const out = trimRepeats(value, state, Date.now());
+  if (out.changed) { try { writeFileSync(shownFile, JSON.stringify(out.state)); } catch { /* shown again next time */ } }
+  return out.reply;
+}
 function output(value: unknown) {
   value = withPace(withDeadline(withCliNote(value)));
-  if (outputFormat === 'compact') writePaged(operatorHead() + formatCompact(withoutOperator(value)));
+  if (outputFormat === 'compact') writePaged(operatorHead() + formatCompact(withoutOperator(withoutRepeats(value))));
   else process.stdout.write(JSON.stringify(value) + '\n');
   // JSON stays one document on stdout; the error:/warning: line goes to stderr
   // so a reader of the terminal (or 2>&1 | tail -1) still sees it.
@@ -1004,6 +1016,7 @@ async function main() {
   journalPath = values.journal ? resolve(values.journal) : undefined;
   retriedId = values.id;
   projectsFile = process.env.FH_PROJECTS_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.projects.json') : undefined);
+  shownFile = process.env.FH_SHOWN_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-shown.json') : undefined);
   describeCache = process.env.FH_DESCRIBE_CACHE || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-describe.json') : undefined);
   lookaheadFile = process.env.FH_LOOKAHEAD_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.lookahead.json') : undefined);
   lookaheadName = bot ?? (values.journal ? dirname(resolve(values.journal)).split('/').pop() ?? '' : '');

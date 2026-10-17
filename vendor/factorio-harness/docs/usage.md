@@ -2391,6 +2391,9 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     - `for_ticks` still holds: a round an order held back to or past the end does not start, and the loop ends there.
     - When the loop ends, its `orders` setting goes with it: the queue is free, and every order may run as at any free
       time.
+  - In compact output the orders line, and a call's `lessons` lines, show when their text changed since the workspace
+    last showed them and at least every 10 minutes (host/repeats.ts; state in FH_SHOWN_FILE, default .fh-shown.json
+    next to the journal); JSON output always carries them.
   - The orders line, during a round: `waiting for your repeating plan's round (orders run between its rounds:
     triggered ones)`; with `none`, `waiting for your repeating plan (orders: none)`. `queue_status` and the queue write
     replies show `orders_between_rounds`.

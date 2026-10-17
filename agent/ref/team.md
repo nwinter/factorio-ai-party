@@ -90,6 +90,7 @@
   recipe, entity or action (at its place and on its surface when it names them: inspect, trace, build, place_ghosts,
   transfer, feed, collect, configure, load_silo, launch, craft, mine, rearm, refuel) carries up to 2 lines in
   `lessons`, each with who recorded it, its evidence tick and when it was last verified; one not verified for 12 game
-  hours reads `stale`. At most 150 active.
+  hours reads `stale`; the same lines are shown again only after 10 minutes (`--format json` always has them). At most
+  150 active.
 - A belt carrying items destroyed: the owner of the claim it lies in (else the nearest agent there) gets a waking tell
   with each belt's position and direction and what it carried.

@@ -85,8 +85,8 @@
   `when` is your default routine, run every `interval_ticks` while no trigger holds. Up to 6 orders of 32 steps. They
   run only while your character is free (no action, your queue empty, or a repeating queue between its rounds:
   triggered orders by default, `queue_repeat {"orders":"all"}` the default routine too, `"none"` none), 20 s after your own last action; your own
-  action or queue call stops a running order at once and it resumes after. Every reply's `orders:` line says which
-  runs and why. `./fh call orders` lists them; `order_remove`, `orders_pause`, `orders_resume`.
+  action or queue call stops a running order at once and it resumes after. A reply's `orders:` line says which
+  runs and why; it is shown when it changed and at least every 10 minutes (`--format json` always has it). `./fh call orders` lists them; `order_remove`, `orders_pause`, `orders_resume`.
 - `order_set` can take fuel from a named chest then `feed {area, walk:true}` over several furnace areas on `fuel_below`; the complete `keep-furnaces-fueled` call is in usage.md.
 - `reminder_add {message, every_ticks or due_in_ticks, recipients?}` sends you (or teammates) a private line when due, as a tell; `reminder_ack {id, result}` records what the review found; `reminders` lists them. They never act in the game.
 - A harness update keeps waits, timed collects, tours, mining, building, repairs, queues and orders running with their end
