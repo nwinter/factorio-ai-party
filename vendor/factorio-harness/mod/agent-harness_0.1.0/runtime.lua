@@ -13246,14 +13246,14 @@ end
 -- (rounded up), the rest of wait_until's arguments as the condition, and the wake options.
 function M.wait_as_sleep(request)
   local a=request.args
-  local args={wake_on_messages=a.wake_on_messages,wake_on_viewers=a.wake_on_viewers,wake_on_urgent=a.wake_on_urgent,wake_from=a.wake_from,wake_on_operator=a.wake_on_operator}
+  local args={wake_on_messages=a.wake_on_messages,wake_on_viewers=a.wake_on_viewers,wake_on_urgent=a.wake_on_urgent,wake_from=a.wake_from,wake_on_operator=a.wake_on_operator,wake_local=a.wake_local}
   if request.action=='wait_ticks' then
     args.seconds=math.max(1,math.min(900,math.ceil((tonumber(a.ticks) or 60)/60)))
   else
     args.seconds=math.max(1,math.min(900,math.ceil((tonumber(a.timeout) or 3600)/60)))
     local c={}
     for k,v in pairs(a) do
-      if k~='timeout' and k~='pause_queue' and k~='wake_on_messages' and k~='wake_on_viewers' and k~='wake_on_urgent' and k~='wake_from' and k~='wake_on_operator' then c[k]=v end
+      if k~='timeout' and k~='pause_queue' and k~='wake_on_messages' and k~='wake_on_viewers' and k~='wake_on_urgent' and k~='wake_from' and k~='wake_on_operator' and k~='wake_local' then c[k]=v end
     end
     args.condition=c
   end
@@ -13274,9 +13274,10 @@ function handlers.wait_until(p,a)
   local messages=a.wake_on_messages
   local urgent=urgent_on and M.urgent.base(p,urgent_radius) or nil
   local wake_filter=M.board.wake_filter(a)
-  if a.pause_queue~=nil or a.wake_on_viewers~=nil or messages~=nil or a.wake_on_urgent~=nil or a.wake_from~=nil or a.wake_on_operator~=nil then
+  if urgent and a.wake_local==true then urgent.local_only=true end  -- wake_local (d17 batch16 C1)
+  if a.pause_queue~=nil or a.wake_on_viewers~=nil or messages~=nil or a.wake_on_urgent~=nil or a.wake_from~=nil or a.wake_on_operator~=nil or a.wake_local~=nil then
     local copy={}
-    for k,v in pairs(a) do if k~='pause_queue' and k~='wake_on_viewers' and k~='wake_on_messages' and k~='wake_on_urgent' and k~='wake_from' and k~='wake_on_operator' then copy[k]=v end end
+    for k,v in pairs(a) do if k~='pause_queue' and k~='wake_on_viewers' and k~='wake_on_messages' and k~='wake_on_urgent' and k~='wake_from' and k~='wake_on_operator' and k~='wake_local' then copy[k]=v end end
     a=copy
   end
   conditions.validate(a)

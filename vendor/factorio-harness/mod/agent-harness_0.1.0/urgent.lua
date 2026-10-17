@@ -270,7 +270,9 @@ return function(api)
         if news(told, key, i.total or 0) then
           local why
           if i.platform then
-            if api.platform_hears and api.platform_hears(p, i.platform) then why = 'platform ' .. i.platform .. ' lost buildings' end
+            -- wake_local (C1): only the platform you are on
+            local here = not base.local_only or (i.surface or '') == surface
+            if here and api.platform_hears and api.platform_hears(p, i.platform) then why = 'platform ' .. i.platform .. ' lost buildings' end
           elseif i.surface == surface then
             local claim = my_claim(p, surface, i.box)
             if claim and base.radius and not (pos and box_dist(i.box, pos) <= base.radius) then claim = nil end
@@ -298,7 +300,8 @@ return function(api)
         local name = pl and try(function() return pl.name end)
         local lost = now - (base.hub[index] or 0)
         base.hub[index] = now
-        if name and api.platform_hears and api.platform_hears(p, name) then
+        local aboard = not base.local_only or try(function() return pl.surface.name end) == surface
+        if name and aboard and api.platform_hears and api.platform_hears(p, name) then
           local hub = try(function() return pl.hub end)
           local health = hub and try(function() return hub.valid and hub.health end)
           local max = hub and try(function() return hub.valid and hub.max_health end)
