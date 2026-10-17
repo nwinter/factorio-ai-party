@@ -104,3 +104,6 @@
   ground at (42.5,190.5)`), with `inserter` (its direction in words) and `io_warning`.
 - `placements` that finds no spot adds `fewest_to_clear`: up to 3 spots (within 12 tiles) whose blockers are all ours
   and minable, or trees and rocks, with how many to mine first and which (`(47,187): mine 2 first (accumulator 2): ...`).
+- `build` where you stand on the footprint steps aside first: the reply gives `not_yet`, `still_to_build` and
+  `built_so_far` (nothing of that entry is built yet); `--wait` or status `last.built` counts it. A retry with the item
+  gone names the entity already standing there.

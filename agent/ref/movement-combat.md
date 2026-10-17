@@ -82,3 +82,5 @@
 - A `move_to` dry run lists `closed_in_on_route` (pockets every 8 tiles on the straight legs and at via points) and, with
   no way round, `via_round`; a walk ending `no_safe_route` gives `last.via_round`. `vehicle {remote: true, vehicle,
   go_to}` sends a spidertron by remote view; `auto_target_without_gunner` and `auto_target_with_gunner` set its switches.
+- A move_to that would end `arrived` more than its tolerance + 3 tiles from the goal ends `stopped_short` instead,
+  `last.why` saying where it stopped, how far and after how many legs round enemies.

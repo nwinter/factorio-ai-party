@@ -401,15 +401,20 @@ do
   st.freight={[3]={segs={{kind='stop',at='gleba',start=9400}},speed=2}}  -- 2 km a tick: 120 km/s
   local r=F.before_departure(pl,'nauvis')
   eq(r.after_s,175); eq(r.eta_s,nil)
-  eq(r.line,'ETA 175s after gleba: all_requests_satisfied: leaves gleba when time 60s and all_requests_satisfied; gleba->nauvis 15000 km at 120 km/s (its last speed): 125s')
+  eq(r.line,'ETA 175s after gleba: all_requests_satisfied: leaves gleba when time 60s and all_requests_satisfied; gleba->nauvis 15000 km at 120 km/s (its cruise): 125s')
   pl.schedule.records[1].wait_conditions={{type='time',ticks=3600}}
   r=F.before_departure(pl,'nauvis')
   eq(r.eta_s,175); has(r.line,'ETA 175s before departure: leaves gleba when time 60s')
   eq(select(2,F.before_departure(pl,'vulcanus')),'its schedule does not go to vulcanus')
   st.freight[3].speed=nil
   eq(select(2,F.before_departure(pl,'nauvis')),'no flying speed seen yet for Starling')
-  -- waiteta uses it while no leg is flown.
+  -- A queue that sends it on sooner (A4, Grok 21:21: the printed 3600 s wait was added): that stop's waits are not timed.
   st.freight[3].speed=2
+  local F2=dofile('mod/agent-harness_0.1.0/freight.lua'){state=function() return st end,departure=function(name) return {"sol's queue: wait_until item_count ... then platform_schedule Starling (nauvis)"} end}
+  r=F2.before_departure(pl,'nauvis')
+  eq(r.eta_s,nil); eq(r.after_s,125)
+  has(r.line,"ETA 125s after gleba: sent on by sol's queue: wait_until item_count ... then platform_schedule Starling (nauvis): leaves gleba when time 60s or sooner: sol's queue")
+  -- waiteta uses it while no leg is flown.
   local W=dofile('mod/agent-harness_0.1.0/waiteta.lua'){before_departure=function(a,b) return F.before_departure(a,b) end}
   local row=W.estimate({},{['until']='platform_arrived',platform='Starling',location='nauvis'},false,{platform=pl},{})
   eq(row.eta_s,175); has(row.line,'platform_arrived Starling: ETA 175s (before departure: leaves gleba when time 60s')
