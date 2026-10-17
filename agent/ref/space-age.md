@@ -24,7 +24,8 @@
   planet and platform: stock, spoil times, silo room, unmet lab and requester demand.
 - `./fh call platform --args '{"name":"Kestrel"}'` is the same read as `./fh platform Kestrel` (platforms of that one).
 - `./fh platform NAME` also shows `freight` (per stop what was expected down and up, what left the hub, came aboard
-  and spoiled, the rockets sent to it, the cargo pods sent down with what each landing pad received and the pods still
+  (with what construction robots placed from a rocket's cargo at once: "built at once N", the platform's count before
+  and after) and spoiled, the rockets sent to it, the cargo pods sent down with what each landing pad received and the pods still
   in flight; per leg what spoiled on the way), `spoiling` (when its spoilable items spoil, against the arrival) and
   `engine` (the last 60 and 180 s: mean, lowest and highest speed, thruster fuel and oxidizer used and made, the
   thrusters' tanks at start and end, the pumps' share of time working). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when

@@ -383,7 +383,7 @@ return function(api)
     local seg = rec.segs[#rec.segs]
     if key and key ~= rec.key then
       local was = seg and not seg['end'] and seg or nil
-      if was then was['end'], was.last, was.ammo1, was.places1 = tick, copy(rec.prev or counts), ammo_counts(pl), M.places_snapshot(pl) end
+      if was then was['end'], was.last, was.ammo1, was.places1, was.built1 = tick, copy(rec.prev or counts), ammo_counts(pl), M.places_snapshot(pl), M.built_now(pl, was) end
       -- Arrivals and departures for the team alert (Gemini, 16:50); not the first look's stop.
       if was and was.kind == 'stop' then M.event(pl, 'left', was.at, tick, w.leg and w.leg.to) end
       seg = open(rec, pl, w, counts, tick, rec.key == nil)
@@ -634,6 +634,35 @@ return function(api)
     local all = store()
     for index in pairs(all) do if not seen[index] then all[index] = nil end end
   end
+  -- Built at once from the delivery (d17 batch16 A2, Grok/Wren: rocket-turret "came aboard 0" while the hull went from
+  -- 9 turrets to 14: construction robots took each turret from the hub to a ghost within the second it arrived, so
+  -- the hub never rose). For each rocket cargo item that places an entity or a tile, the platform's count of it when
+  -- the first rocket of the stop is ordered (built0) and at the stop's end or the read (built1); the rise counts as
+  -- came aboard and is said apart. A count by name on a platform surface (hundreds of entities).
+  local function placed(name)
+    local item = try(function() return prototypes.item[name] end)
+    local e = item and try(function() return item.place_result end)
+    if e then return 'entity', e.name end
+    local t = item and try(function() return item.place_as_tile_result end)
+    local tile = t and try(function() return t.result end)
+    if tile then return 'tile', tile.name end
+  end
+  function M.built_count(pl, name)
+    local kind, what = placed(name)
+    if not kind then return nil end
+    local s = try(function() return pl.surface end)
+    if not s then return nil end
+    if kind == 'entity' then return try(function() return s.count_entities_filtered{name=what, force=pl.force} end) end
+    return try(function() return s.count_tiles_filtered{name=what} end)
+  end
+  local function built_now(pl, seg)
+    if not seg.built0 then return nil end
+    local out = {}
+    for name in pairs(seg.built0) do out[name] = M.built_count(pl, name) end
+    return out
+  end
+  M.built_now = built_now
+
   -- on_rocket_launch_ordered: a rocket whose cargo pod goes to a platform's hub
   -- counts on that platform's stop.
   function M.on_launch(event)
@@ -656,6 +685,12 @@ return function(api)
     seg.rockets = seg.rockets or {n=0, cargo={}}
     seg.rockets.n = seg.rockets.n + 1
     add_contents(seg.rockets.cargo, inv and try(function() return inv.get_contents() end))
+    for name in pairs(seg.rockets.cargo) do
+      if not (seg.built0 and seg.built0[name]) then
+        local n = M.built_count(pl, name)
+        if n then seg.built0 = seg.built0 or {}; seg.built0[name] = n end
+      end
+    end
   end
 
   -- Cargo pods from the hub ----------------------------------------------------
@@ -821,8 +856,10 @@ return function(api)
       received_items=d.received and d.received.cargo or nil, landed=d.landed and d.landed.n or nil, gone=d.gone and d.gone.n or nil,
       in_flight=fly.n, in_flight_items=fly.n > 0 and fly.cargo or nil, in_flight_pods=fly.n > 0 and fly.units or nil}
   end
-  function M.segment(seg, now, counts_now, flying)
+  function M.segment(seg, now, counts_now, flying, pl)
     local last = seg.last or counts_now or {}
+    local built1 = seg.built1 or (not seg['end'] and pl and built_now(pl, seg)) or {}
+    local function built(name) return seg.built0 and seg.built0[name] and built1[name] and math.max(0, built1[name] - seg.built0[name]) or 0 end
     local rows = {}
     if seg.kind == 'stop' then
       -- The items the stop is about: expected down or up, rocket cargo, spoiled.
@@ -832,6 +869,7 @@ return function(api)
       for name in pairs(seg.up or {}) do want(name) end
       for name in pairs(seg.rockets and seg.rockets.cargo or {}) do want(name) end
       for name in pairs(seg.spoiled) do want(name) end
+      for name in pairs(seg.built0 or {}) do if built(name) > 0 then want(name) end end
       -- and any spoilable item whose count changed over the stop
       for _, t in ipairs({seg.first, last}) do
         for name in pairs(t) do if (seg.first[name] or 0) ~= (last[name] or 0) and M.spoils(name) then want(name) end end
@@ -839,16 +877,20 @@ return function(api)
       table.sort(order)
       local parts = {}
       for _, name in ipairs(order) do
-        local a, b, s = seg.first[name] or 0, last[name] or 0, seg.spoiled[name] or 0
-        local left, came = math.max(0, a - b - s), math.max(0, b - a + s)
+        local a, b, s, k = seg.first[name] or 0, last[name] or 0, seg.spoiled[name] or 0, built(name)
+        local left, came = math.max(0, a - b - s - k), math.max(0, b - a + s + k)
         local dn, up = seg.down and seg.down[name], seg.up and seg.up[name]
         local bits = {}
         if dn then bits[#bits+1] = string.format('expected down %d (landing pads ask %d, hold %d)', dn.expected, dn.ask, dn.hold) end
         if up then bits[#bits+1] = string.format('expected up %d (the hub asks %d from %s)', up.short, up.min, seg.at) end
         if left > 0 or dn then bits[#bits+1] = string.format('left the hub %d', left) end
         if came > 0 or up then bits[#bits+1] = string.format('came aboard %d', came) end
+        if k > 0 then
+          bits[#bits+1] = string.format('built at once %d (construction robots placed it from the hub: %d -> %d on the platform)',
+            k, seg.built0[name], built1[name])
+        end
         if s > 0 then bits[#bits+1] = string.format('spoiled aboard %d', s) end
-        rows[#rows+1] = {item=name, held_at_arrival=a, held_at_end=b, left=left, came=came, spoiled=s,
+        rows[#rows+1] = {item=name, held_at_arrival=a, held_at_end=b, left=left, came=came, spoiled=s, built=k > 0 and k or nil,
           expected_down=dn and dn.expected or nil, expected_up=up and up.short or nil}
         parts[#parts+1] = name .. ': ' .. table.concat(bits, ', ')
       end
@@ -1026,7 +1068,7 @@ return function(api)
     local flying = {}
     for _, p in ipairs(rec.pods or {}) do flying[p.seg] = flying[p.seg] or {}; table.insert(flying[p.seg], p) end
     for i = #rec.segs, math.max(1, #rec.segs - M.SHOW + 1), -1 do
-      out[#out+1] = M.segment(rec.segs[i], game.tick, now, flying[rec.segs[i].start])
+      out[#out+1] = M.segment(rec.segs[i], game.tick, now, flying[rec.segs[i].start], pl)
     end
     return out
   end
