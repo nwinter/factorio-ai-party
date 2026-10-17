@@ -1725,12 +1725,17 @@ return function(api)
         local box = inbox(a.index)
         box.list[#box.list+1] = {seq=m.seq, tick=m.tick, from=m.from, text=m.text, how='@', viewer=true, source=m.source}
         while #box.list > MAX_PENDING do table.remove(box.list, 1); box.dropped = box.dropped + 1 end
+        -- (d17 batch14 B1) owed an answer until one comes (owed.lua)
+        if M.owed then pcall(M.owed.add, a.index, {key='m' .. m.seq, seq=m.seq, tick=m.tick, from=m.from, text=m.text, viewer=true, source=m.source}) end
       end
     end
   end
   function M.on_message(m)
     local text = m.text:lower()
     local everyone = to_everyone(text)
+    -- (d17 batch14 B1) an agent's say answers what it names the sender of (owed.lua)
+    if M.owed and m.player then pcall(M.owed.said, m.player, m.text) end
+    local asks = m.text:find('?', 1, true) ~= nil
     for _, a in ipairs(agents()) do
       if a.index ~= m.player then
         local how = mention_how(a, text, everyone)
@@ -1738,6 +1743,10 @@ return function(api)
           local box = inbox(a.index)
           box.list[#box.list+1] = {seq=m.seq, tick=m.tick, from=m.from, text=m.text, how=how, aloud=m.aloud}
           while #box.list > MAX_PENDING do table.remove(box.list, 1); box.dropped = box.dropped + 1 end
+          -- owed: an @mention, or a mention by name or @everyone that asks
+          if M.owed and (how == '@' or asks) then
+            pcall(M.owed.add, a.index, {key='m' .. m.seq, seq=m.seq, tick=m.tick, from=m.from, text=m.text})
+          end
         end
       end
     end
@@ -1746,6 +1755,19 @@ return function(api)
   -- counts for supervisors like a mention; chat reads never deliver it.
   function M.deliver(index, t)
     local box = inbox(index)
+    -- (d17 batch14 B1, owed.lua) a teammate's tell that asks is owed an answer; a tell answers what its recipient asked
+    -- (a team tell: what it names the sender of)
+    if M.owed and t.player then
+      if not t.fyi and tostring(t.text or ''):find('?', 1, true) then
+        pcall(M.owed.add, index, {key='t' .. tostring(t.seq), seq=t.seq, tick=t.tick, from=t.from, text=t.text, tell=true})
+      end
+      if t.team then pcall(M.owed.said, t.player, t.text)
+      else
+        for _, a in ipairs(agents()) do
+          if a.index == index then pcall(M.owed.told, t.player, {a.name, a.display_name or a.name}) end
+        end
+      end
+    end
     -- An fyi tell (tells.lua) waits for the next reply: it wakes nobody (waits.lua) and supervisors don't count it.
     box.list[#box.list+1] = {tell=t.seq, tick=t.tick, from=t.from, text=t.text, how='tell', team=t.team, fyi=t.fyi, wake=t.wake}
     while #box.list > MAX_PENDING do table.remove(box.list, 1); box.dropped = box.dropped + 1 end

@@ -129,3 +129,5 @@
   stands within 3 tiles (`not_at` says so).
 - `scan {fields: "inventory"}` on belts gives their items per lane (`L: ... | R: ...`), on a platform too.
 - `stock {item, surface}` adds `by_network`: each logistic network's hold in providers, storage and other holders.
+- `where_is` and `stock {item, surface}` count stacks lying on the ground in chunks our force sees now (`on_ground`;
+  where_is lists each 32-tile cell as a place).

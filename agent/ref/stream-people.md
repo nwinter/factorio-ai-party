@@ -60,3 +60,7 @@
   agents build them with real items. The reply counts ghosts placed, spots already rebuilt and spots now taken.
 - Chat lines from `players` say when a human player joins or leaves, and when one removes, or marks for
   deconstruction or upgrade, 20 or more of the team's entities within 5 minutes (with the last position).
+- Unanswered mentions: a viewer's @mention, a teammate's @mention, and a mention or tell that asks stay open until you
+  answer (a say or tell naming them, a tell to the asker, or `reply_to: SEQ` on say or tell) or `chat_ack {seq}` (an
+  array, or "all"); reading chat does not close them. Every reply's `unanswered` gives the oldest; one reminder wakes you
+  when one is 10 minutes old.

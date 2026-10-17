@@ -40,6 +40,34 @@ return function(api)
     end
     return n
   end
+  -- (d17 batch14 B2, Sol: a cargo pad's overflow spilled landed hardware and where_is and stock read 0) an item's stacks
+  -- lying on the ground, as a player sees them: in chunks our force sees now. {count, stacks, cells [{position (the
+  -- cell's first stack), count, stacks}] by 32-tile cell, most first}; MAX_GROUND stacks read.
+  M.MAX_GROUND = 20000
+  function M.on_ground(force, surface, item)
+    local list = surface.find_entities_filtered{type='item-entity', limit=M.MAX_GROUND}
+    local seen, cells, order, count, stacks = {}, {}, {}, 0, 0
+    for _, e in ipairs(list) do
+      local ok, st = pcall(function() return e.stack end)
+      if ok and st and st.valid_for_read and st.name == item then
+        local q = e.position
+        local cx, cy = math.floor(q.x / 32), math.floor(q.y / 32)
+        local k = cx .. ',' .. cy
+        if seen[k] == nil then
+          local okv, v = pcall(function() return force.is_chunk_visible(surface, {x=cx, y=cy}) end)
+          seen[k] = okv and v == true
+        end
+        if seen[k] then
+          count, stacks = count + st.count, stacks + 1
+          local c = cells[k]
+          if not c then c = {position={x=q.x, y=q.y}, count=0, stacks=0}; cells[k] = c; order[#order+1] = c end
+          c.count, c.stacks = c.count + st.count, c.stacks + 1
+        end
+      end
+    end
+    table.sort(order, function(x, y) return x.count > y.count end)
+    return {count=count, stacks=stacks, cells=order, capped=#list >= M.MAX_GROUND or nil}
+  end
   function M.where_is(p, a)
     local item = a.item
     assert(type(item) == 'string' and item ~= '', 'item is required (an item name, e.g. automation-science-pack)')
@@ -119,6 +147,20 @@ return function(api)
           lands=r.pad and string.format('landing pad (%g,%g)', r.pad.x, r.pad.y) or 'the ground (no pad takes it)'}
       end
     end
+    -- on the ground (B2): a place per 32-tile cell
+    local okg, g = pcall(M.on_ground, p.force, surface, item)
+    if okg and g.count > 0 then
+      add('on_ground', g.count)
+      for _, c in ipairs(g.cells) do
+        places[#places+1] = {kind='ground', entity=string.format('%d stack%s on the ground', c.stacks, c.stacks == 1 and '' or 's'), position=c.position, count=c.count,
+          distance=dist(c.position)}
+      end
+      table.sort(places, function(x, y)
+        if x.distance and y.distance and x.distance ~= y.distance then return x.distance < y.distance end
+        if x.count ~= y.count then return x.count > y.count end
+        return x.position.x < y.position.x
+      end)
+    end
     local total = 0
     for _, n in pairs(totals) do total = total + n end
     -- A spoilable item: what of it spoils within 2 minutes in the places read (the first SOON_PLACES, the most held first).
@@ -148,7 +190,7 @@ return function(api)
   end
   M.schema = {
     where_is = {item='item name', limit='1..50 places (default 15)', surface='optional surface name (default yours)',
-      returns='total and by_kind (a spoilable item: spoils_within_2_min and spoil_note, each place its own spoils_within_2_min; chest, lab, machine, vehicle, pad, hub, roboport, belts, inserter_hands, characters, in_flight); places: each chest, lab, machine, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, distance}, nearest first (belts and inserter hands as totals only); more: places past the limit; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
+      returns='total and by_kind (a spoilable item: spoils_within_2_min and spoil_note, each place its own spoils_within_2_min; chest, lab, machine, vehicle, pad, hub, roboport, belts, inserter_hands, characters, in_flight, on_ground: stacks lying on the ground in chunks our force sees now); places: each chest, lab, machine, vehicle, pad, hub and teammate holding it {kind, entity or agent, position, count, distance} (kind ground: the stacks on the ground in one 32-tile cell, entity says how many), nearest first (belts and inserter hands as totals only); more: places past the limit; in_flight: cargo pods from our platforms still in the air toward this surface {platform, state (awaiting_launch, ascending, descending, parking), count, lands}. Read only'},
   }
   return M
 end

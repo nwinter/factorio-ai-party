@@ -118,3 +118,36 @@ do
   game=nil; prototypes=nil
   print('d17_batch14 Opus 13:46/13:48 walks keep the enemy margin: ok')
 end
+
+-- B1 (Sol for viewer Foobator): a viewer's @mention stays owed through reads until a say names them; one reminder at 10 min.
+do
+  game={tick=0}
+  local st,woke={},{}
+  local O=dofile('mod/agent-harness_0.1.0/owed.lua'){state=function() return st end,deliver=function(index,t) woke[#woke+1]={index=index,t=t} end}
+  O.add(3,{key='m41',seq=41,tick=0,from='viewer Foobator',text='@sol what is Swift carrying?',viewer=true,source='YouTube'})
+  game.tick=600*60
+  has(O.line(3),'1 unanswered (oldest 10m00s ago: viewer Foobator (YouTube) #41')
+  O.tick(); O.tick()
+  eq(#woke,1,'one reminder'); eq(woke[1].t.wake,true); has(woke[1].t.text,'viewer Foobator asked you 10m00s ago')
+  eq(O.said(3,'Swift carries iron for Aquilo'),0,'a say not naming them answers nothing')
+  eq(O.said(3,'@Foobator Swift carries iron for Aquilo'),1)
+  eq(O.line(3),nil)
+  O.add(3,{key='t9',seq=9,tick=game.tick,from='luna',text='can you send 50?',tell=true})
+  eq(O.told(3,{'luna'}),1,'a tell to the asker answers it')
+  O.add(3,{key='m50',seq=50,tick=game.tick,from='astra',text='@sol ready?'})
+  eq(O.ack(3,50),1)
+  game=nil
+  print('d17_batch14 B1 unanswered mentions: ok')
+end
+
+-- B2 (Sol): stacks on the ground in chunks our force sees now count, by 32-tile cell.
+do
+  local S=dofile('mod/agent-harness_0.1.0/stores.lua'){agents=function() return {} end}
+  local function stack(name,n,x,y) return {stack={valid_for_read=true,name=name,count=n},position={x=x,y=y}} end
+  local ents={stack('iron-gear-wheel',1,-27,118),stack('iron-gear-wheel',1,-26,119),stack('iron-plate',5,-27,118),stack('iron-gear-wheel',1,500,500)}
+  local surface={find_entities_filtered=function() return ents end}
+  local force={is_chunk_visible=function(_,c) return c.x<10 end}
+  local g=S.on_ground(force,surface,'iron-gear-wheel')
+  eq(g.count,2,'the unseen chunk left out'); eq(#g.cells,1); eq(g.cells[1].stacks,2)
+  print('d17_batch14 B2 items on the ground: ok')
+end

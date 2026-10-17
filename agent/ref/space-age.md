@@ -156,3 +156,5 @@
   call that recovers it (a belt pickup aboard, else `deconstruct` of those belts into the hub).
 - `circuit_audit {platform}`: whole-belt readers (`entire_belt_hold`) on one network whose belts overlap (counted
   twice), and each asteroid collector whose filter the circuit sets: the filter it holds and the chunk signals there.
+- `load_silo {from: [..], walk: true}` takes from the sources in order (chests, a landing pad, anywhere on the surface)
+  and skips a trip's other sources once you hold what the rocket needs.

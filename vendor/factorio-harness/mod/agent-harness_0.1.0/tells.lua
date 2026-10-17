@@ -61,6 +61,7 @@ return function(api)
   M.schema = {
     tell = {to='a teammate name or display name, several (array or "luna,sol"), or "team" for everyone',
       text='1..500 characters, one line (longer is cut to 500; the reply says so)',
+      reply_to='optional seq (or array): the chat line or tell this answers; it closes as unanswered (a tell to the asker does too)',
       fyi='true: for their information; it waits for their next reply (marked fyi) and wakes nobody: routine updates, no answer needed',
       wake='true (fh tell --wake): also ends a recipient\'s wait that this tell would not end: a direct wait_ticks, wait_until or sleep that ignores messages (wake_on_messages: false, fh --wait-through-tells) or takes them only from others (wake_from), and an fh --wait that goes on through tells; every time (woken counts your wake tells to each in the last 10 minutes)',
       returns='seq and to (cut {length, kept} when the text was cut; away "sol is on Vulcanus" for recipients on another planet, platform or in a cargo pod; ignoring "sonnet is in a wait_until that ignores messages until tick T (about N min)" for a recipient no tell wakes now; woken and not_woken with wake): the line goes to each recipient\'s next reply (team: tells), wakes them if asleep (woke=told), and stays out of the game chat; viewers see it as text on the stream\'s logistics ticker, never spoken'},
@@ -77,6 +78,8 @@ return function(api)
     local s = store()
     s.seq = s.seq + 1
     local t = {seq=s.seq, tick=game.tick, player=p.index, from=me, to=names, team=team or nil, text=text, fyi=a.fyi or nil, wake=a.wake or nil}
+    -- (d17 batch14 B1) reply_to: the chat line or tell this answers (owed.lua)
+    if a.reply_to ~= nil and api.on_reply then pcall(api.on_reply, p.index, a.reply_to) end
     s.log[#s.log+1] = t
     while #s.log > MAX_LOG do table.remove(s.log, 1) end
     local index = {}

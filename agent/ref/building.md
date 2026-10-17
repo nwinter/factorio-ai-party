@@ -118,3 +118,7 @@
   the train, whole, reaching the stop only facing away, or broken: where the rails from each side end, the gap, rail ghosts.
 - place_ghosts counts an entry already standing as asked (same ghost or the built entity) apart: `already_placed`,
   `already`; only real refusals are `failed`.
+- `belt_route` refuses a line through a worm's range or a spawner's 40 tiles (dry run: `nests_on_route`);
+  `avoid_nests: true` routes round them, `avoid_nests: false` lays it anyway.
+- On Vulcanus a build, ghost placement, paste or route inside a demolisher territory (as the map draws it) carries
+  `demolisher_territory`, dry runs too.

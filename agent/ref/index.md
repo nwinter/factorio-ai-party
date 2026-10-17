@@ -28,7 +28,7 @@ Each topic, when to read it, and the commands it documents:
 - `team`, when you edit board items or read a `team:` or `team: shift` block or an `OPERATOR:` line: claims, `board projects`, `board_review`, `board_retire`, `lessons`, `lesson_add`, `lesson_edit`, `lesson_verify`, `review`,
   `lookahead`, `networks`, `boilers`, `tells`.
 - `stream-people`, in your first minute (your stream profile) and when you talk to viewers or a human player joins:
-  `profile`, `profiles`, `confess`, `chronicle`, `operator`, `poll` (the site's polls), `players`, `vote`, `votes`,
+  `profile`, `profiles`, `confess`, `chronicle`, `chat_ack` (close an unanswered mention), `operator`, `poll` (the site's polls), `players`, `vote`, `votes`,
   `restore`.
 - `space-age`, for rockets, platforms and other planets: `platforms` and `platform NAME`, `platform_create`,
   `platform_schedule`, `platform_rename`, `platform_endurance`, `platform_supply`, `platform_plan`, `platform_bom` (what a platform's ghosts still need), `platform_production` (what a platform makes), `platform_defense` (turret cover of collectors and hull), `circuit_audit` (circuit readings that mislead: belts counted twice, collector filters), `min_payload` (hub requests' custom minimum payload), `launch`, `silo`, `cargo`, `load_silo`, `preflight`, `land`, `drop`,
