@@ -84,12 +84,15 @@
   `short`. On water and Gleba wetland it shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost
   under it (`tiles_under`, `tiles_note`).
   Example: `./fh call pole_route --args '{"from":{"x":10.5,"y":10.5},"to":{"x":80.5,"y":10.5}}'`
-- `belt_route {from, to, via?, return?, landfill?, cliffs?, avoid_nests?, avoid_enemies?}`: lays a belt line as ghosts
+- `belt_route {from, to, via?, return?, landfill?, cliffs?, avoid_nests?, avoid_enemies?, replan?}`: lays a belt line as ghosts
   (legs up to 1000 tiles), over trees and wild plants it marks, water only with `"landfill": true`; `return` adds the
   line back beside it, crossing under it where its side is blocked. It goes round cliffs (an underground passes under
   one; `cliffs: true` passes over and marks them) and names what its ghosts mark for mining (`to_mine`: trees, rocks,
   cliffs with positions). A `from` on an existing chain follows it to its open end, up to 4096 tiles
-  (`existing_count`), and names blocked connection tiles. A line through a worm's range or a spawner's 40 tiles is
+  (`existing_count`), and names blocked connection tiles. A re-run of one of your last 4 lines (same from, via, to,
+  belt, return) keeps what stands and places the missing tiles as ghosts (`repair`, `kept`, `differs`: standing belts
+  facing otherwise); `replan: true` plans a new line. A via point on the from chain is passed (`via_passed`); one on
+  another standing line of ours makes the route feed that line's head and go on from its open end (`joined`). A line through a worm's range or a spawner's 40 tiles is
   refused (dry run: `nests_on_route`); `avoid_nests: true` routes round them, `false` lays it anyway. `avoid_enemies:
   N` keeps belts, underground spans and returns outside charted enemy reach plus N tiles (0..32; true=8;
   omitted/false disables); endpoints inside are refused. Belts, undergrounds and splitters say where items go in

@@ -3405,7 +3405,7 @@ local made={ghosts={}}
 p.surface.find_entities_filtered=function(f)
   -- (the search for belts and belt ghosts around the last belt ghost placed: last_belt)
   local out={}
-  if type(f.type)=='table' and f.area and f.area[1] then
+  if (type(f.type)=='table' or f.type==nil) and f.area and f.area[1] then
     for _,g in ipairs(made.ghosts) do
       if g.position.x>=f.area[1][1] and g.position.x<=f.area[2][1] and g.position.y>=f.area[1][2] and g.position.y<=f.area[2][2] then out[#out+1]=g end
     end
@@ -3429,6 +3429,21 @@ local kinds={}
 for _,a in ipairs(made) do if a.type then kinds[#kinds+1]=a.type..'@'..a.position.x end end
 eq(table.concat(kinds,','),'input@2.5,output@5.5')
 eq(routed.last_belt,'transport-belt (6.5,0.5): moves items east to (7.5,0.5); fed from (5.5,0.5)')
+-- A re-run of the same line keeps what stands and places what is missing (d17 batch20 A2).
+do
+  for i,g in ipairs(made.ghosts) do if g.position.x==1.5 then table.remove(made.ghosts,i); break end end
+  local n=#made
+  local dry=call('belt_route',{from={x=0,y=0},to={x=6,y=0},dry_run=true})
+  eq(#made,n); eq(dry.belt_route.tiles,1); eq(dry.belt_route.kept,4); eq(dry.summary,'1 placeable (of 1)')
+  assert(dry.belt_route.repair:find('(5 belts and undergrounds): 4 stand, 1 missing, which a call without dry_run places as ghosts; replan: true plans a new line',1,true),dry.belt_route.repair)
+  local again=call('belt_route',{from={x=0,y=0},to={x=6,y=0}})
+  eq(again.placed,1); eq(#made,n+1); eq(made[#made].position.x,1.5); eq(again.route,'E2 uE3 E1')
+  local whole=call('belt_route',{from={x=0,y=0},to={x=6,y=0}})
+  eq(whole.placed,0); eq(whole.kept,5); eq(#made,n+1)
+  made.ghosts[1].direction=8
+  local turned=call('belt_route',{from={x=0,y=0},to={x=6,y=0}})
+  assert(turned.differs[1]:find('faces south (the line: east)',1,true),turned.differs[1]); made.ghosts[1].direction=4
+end
 p.surface.find_entities_filtered=function() return {} end
 p.surface.create_entity=function(a) made[#made+1]=a; return {valid=true,position=a.position} end
 assert(call('place_ghosts',{entities={{name='transport-belt',position={x=0,y=0},type='input'}}}).failed[1].error:find('underground belts only',1,true))

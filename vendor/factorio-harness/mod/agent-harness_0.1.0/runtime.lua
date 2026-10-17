@@ -1749,11 +1749,12 @@ function handlers.describe(_,a)
       belt_route={avoid_nests='optional true: route round the worms and spawners the map shows (avoid_enemies 4 unless given); false: lay a line through their reach anyway. Without avoid_nests or avoid_enemies a line whose tiles lie inside a worm\'s range or a spawner\'s 40 tiles is refused, naming them (a dry run lists them in nests_on_route)',cliffs='optional true: pass over cliffs (the ghost marks them, one cliff-explosives each); by default the line goes round them (an underground pair still passes under one)',avoid_enemies='optional true or clearance 0..32 tiles: keep every belt tile and underground span outside charted worms (range + clearance), spawners (40 + clearance) and current attack areas (24 + clearance); true is 8; omitted/false disables; endpoints inside are refused; search margin expands, existing budgets stay',from='{x,y} first belt tile, or a tile in an existing chain to follow to its open end (at most 4096 existing tiles (route.lua CHAIN), listed in existing (over 8: the first and last 3, with existing_count); already connected returns connected=true and zero new tiles); blocked connections name the tile and reason; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
         belt='transport belt entity (default transport-belt); undergrounds of the same tier hop obstacles',undergrounds='default true',lane='left|right: side-load onto this lane of the belt at to (it needs an input from behind)',
         to_direction='free to: last belt direction (default straight on)',dry_run='plan only, place nothing: each belt checked as a place_ghosts dry run checks it, belt_route holds the plan',details='list every entity',
-        via='1..16 {x,y} tiles the line passes in order (each leg from, via points, to is at most 1000 tiles)',
+        via='1..16 {x,y} tiles the line passes in order (each leg from, via points, to is at most 1000 tiles); one on the from chain is passed (via_passed); one on another standing line of ours: the route feeds that line\'s head and goes on from its open end, the line kept (joined); to on it: the route ends at its head',
+        replan='optional true: plan a new line even when you laid one with the same from, via, to, belt and return (by default such a re-run keeps what stands of that line and places what is missing: repair, kept, differs)',
         landfill='true: water and wetland a tile item makes buildable are used too (its tile ghosts are laid under the belts; tiles cost more than going round); default false: never',
         ['return']='true: a second line back beside it, from beside its last belt to beside its first, the other way (return_side left|right of the line, default whichever starts and ends free, right first); it follows the row beside the line, crosses under the line where its side is blocked, and is searched as a line of its own where the row has no way on',
         return_side='left|right (with return)',
-        returns='route (runs like E12 N3, uE5 = underground pair east spanning 5), tiles, items (belts, undergrounds, landfill), missing (vs inventory), arrival {mode straight|curve|side_load|end, lane}, legs (tiles per leg), over_trees_or_plants (tiles whose trees, rocks or wild plants placing marks), landfill {item: tiles}, return {route, tiles, side, from, to, crossings (times it passes under the line), apart (its belts with no belt of the line next to them), short_of (it ends at the nearest tile reached, when its end, within 24 tiles, was not reached within the budget), ...}, cost {placement_checks, expansions}, placed/failed/bounds (construct defaults to them), obstacles_marked, tiles_laid',
+        returns='route (runs like E12 N3, uE5 = underground pair east spanning 5); a re-run of one of your last 4 lines (same from, via, to, belt, return): repair (when laid, how many stand and are missing), kept, differs (standing belts facing otherwise than the line, up to 8), and only the missing tiles placed; via_passed, joined (via points on standing belts); tiles, items (belts, undergrounds, landfill), missing (vs inventory), arrival {mode straight|curve|side_load|end, lane}, legs (tiles per leg), over_trees_or_plants (tiles whose trees, rocks or wild plants placing marks), landfill {item: tiles}, return {route, tiles, side, from, to, crossings (times it passes under the line), apart (its belts with no belt of the line next to them), short_of (it ends at the nearest tile reached, when its end, within 24 tiles, was not reached within the budget), ...}, cost {placement_checks, expansions}, placed/failed/bounds (construct defaults to them), obstacles_marked, tiles_laid',
         note='a weighted search over charted ground within 24 tiles of each leg\'s ends, within 8000 placement checks and 8000 expansions (12000 and 13000 with the return line), at most 2048 belts and undergrounds a call; an end closed in is named after 1000 expansions; trees, rocks and wild plants are passed over (marked, construct mines them) at a small cost, and cliffs too (marked; one cliff-explosives each: cliffs_marked, cliffs_note); buildings and a force\'s own plants never; undergrounds hop anything but lava and empty space; never passes a tile an existing belt outputs into; turns and undergrounds cost extra'},
       pole_route={from='{x,y}',to='{x,y}',waypoints='optional 1..16 {x,y} to pass through, in order (legs <=512 tiles, route <=1024)',item='pole item (default small-electric-pole)',spacing='tiles between poles (default: wire reach minus room for a 2-tile sideways shift: small 7, medium 8, big 29)',dry_run='boolean: plan only; returns positions',
         note='places pole ghosts along straight legs, shifting a blocked spot up to 2 tiles sideways within wire reach, reusing own poles/ghosts already on the line; returns poles, held, short (craft that many), failed (with reasons), bounds; then construct builds it (trees under ghosts are marked and cleared). Each placed pole joins every network in wire reach'},
@@ -11884,8 +11885,62 @@ function M.belt_nests(p,a,plan)
   end
   return #list>0 and list or nil
 end
+-- The lines belt_route laid, per agent (the last ROUTES_KEPT): a re-run with the same from, via, to, belt and return
+-- keeps what stands of the line and places what is missing as ghosts (d17 batch20 A2, Sonnet: a 491-tile line re-run
+-- after it was cut). replan: true plans a new line instead.
+local ROUTES_KEPT=4
+local ROUTE_BELT_TYPES={['transport-belt']=true,['underground-belt']=true,splitter=true,loader=true,['loader-1x1']=true,['lane-splitter']=true,['linked-belt']=true}
+function M.route_key(p,a)
+  local parts={p.surface.name,a.belt or 'transport-belt',a['return'] and 'return' or ''}
+  local function add(v) local pos=position(v); parts[#parts+1]=math.floor(pos.x)..','..math.floor(pos.y) end
+  add(a.from)
+  for _,v in ipairs(type(a.via)=='table' and a.via or {}) do add(v) end
+  add(a.to)
+  return table.concat(parts,'|')
+end
+function M.route_repair(p,a,keyed)
+  local kept=state().belt_routes and state().belt_routes[p.index]
+  local mem
+  for _,r in ipairs(kept or {}) do if r.key==keyed then mem=r end end
+  if not mem then return nil end
+  local missing,differs,standing={},{},0
+  for _,e in ipairs(mem.entities) do
+    local x,y=e.position.x,e.position.y
+    local here
+    for _,o in ipairs(p.surface.find_entities_filtered{area={{x-0.1,y-0.1},{x+0.1,y+0.1}},force=p.force}) do
+      local t=o.type=='entity-ghost' and o.ghost_type or o.type
+      if o.valid and ROUTE_BELT_TYPES[t] then here=o end
+    end
+    if not here then missing[#missing+1]=e
+    else
+      standing=standing+1
+      local dir=directions[e.direction]
+      if here.direction~=dir and #differs<8 then
+        differs[#differs+1]=string.format('%s at %s faces %s (the line: %s)',here.type=='entity-ghost' and 'ghost of '..here.ghost_name or here.name,M.pathing.at(here.position),
+          M.direction_name(here.direction) or tostring(here.direction),e.direction)
+      end
+    end
+  end
+  local items={}
+  for _,e in ipairs(missing) do items[e.name]=(items[e.name] or 0)+1 end
+  return {entities=missing,items=items,route=mem.route,tiles=#missing,kept=standing,differs=#differs>0 and differs or nil,
+    repair=string.format('the line you laid with these from, via and to %s ago (%d belts and undergrounds): %d stand, %d missing%s; replan: true plans a new line',
+      ago(game.tick-mem.tick),#mem.entities,standing,#missing,#missing>0 and (a.dry_run and ', which a call without dry_run places as ghosts' or ', placed as ghosts') or '')}
+end
 function handlers.belt_route(p,a)
   a=M.belt_args(a)
+  assert(a.replan==nil or type(a.replan)=='boolean','replan must be true or false')
+  local keyed=M.route_key(p,a)
+  local fix=not a.replan and M.route_repair(p,a,keyed)
+  if fix then
+    local nests=M.belt_nests(p,a,fix)
+    if nests and not a.dry_run then
+      error(string.format('the missing tiles lie inside the reach of worms or spawners the map shows: %s; avoid_nests: false lays them anyway',table.concat(nests,'; ')),0)
+    end
+    local out=place_route(p,a,fix,{repair=fix.repair,route=fix.route,tiles=fix.tiles,items=fix.items,kept=fix.kept,differs=fix.differs,nests_on_route=nests})
+    out.obstacles_marked=out.obstacles_marked or nil
+    return out
+  end
   local plan=route.plan(p,a)
   local nests=M.belt_nests(p,a,plan)
   if nests and not a.dry_run then
@@ -11893,8 +11948,18 @@ function handlers.belt_route(p,a)
       table.concat(nests,'; ')),0)
   end
   local out=place_route(p,a,plan,{nests_on_route=nests,route=plan.route,tiles=plan.tiles,items=plan.items,arrival=plan.arrival,extends=plan.extends,existing=plan.existing,connected=plan.connected,avoid_enemies=plan.avoid_enemies,avoidance_waypoints=plan.avoidance_waypoints,
-    legs=plan.legs,over_trees_or_plants=plan.over_trees_or_plants,landfill=plan.landfill,['return']=plan['return'],cost=plan.cost})
+    legs=plan.legs,over_trees_or_plants=plan.over_trees_or_plants,landfill=plan.landfill,['return']=plan['return'],cost=plan.cost,
+    via_passed=plan.via_passed,joined=plan.joined})
   out.obstacles_marked=out.obstacles_marked or nil
+  if not a.dry_run and (out.placed or 0)>0 then
+    local st=state()
+    st.belt_routes=st.belt_routes or {}
+    local list=st.belt_routes[p.index] or {}
+    for i=#list,1,-1 do if list[i].key==keyed then table.remove(list,i) end end
+    list[#list+1]={key=keyed,entities=plan.entities,route=plan.route,tick=game.tick}
+    while #list>ROUTES_KEPT do table.remove(list,1) end
+    st.belt_routes[p.index]=list
+  end
   return out
 end
 -- Rails (rails.lua): rail_route plans the 2.0 rail planner's pieces around
@@ -12739,7 +12804,8 @@ function handlers.dry_run(p,a)
     elseif action=='belt_route' then
       -- The line (and its return line) as belt_route plans it (route.lua), each belt checked.
       inner=M.belt_args(inner)
-      belt_plan=route.plan(q,inner)
+      -- A re-run of a line laid before: only its missing tiles (route_repair).
+      belt_plan=not inner.replan and M.route_repair(q,{dry_run=true},M.route_key(q,inner)) or route.plan(q,inner)
       belt_plan.nests_on_route=M.belt_nests(q,inner,belt_plan)
       for i,e in ipairs(belt_plan.entities) do plan.entities[i]={index=i,name=e.name,position=e.position,direction=directions[e.direction],type=e.type} end
     elseif kind=='ghosts' then

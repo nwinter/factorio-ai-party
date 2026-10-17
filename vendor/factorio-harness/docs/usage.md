@@ -6590,3 +6590,16 @@ fh watch    # deploy on every change
   time that stock within 25 tiles covered, unless `force: true`. Now `craft` always hand-crafts from your inventory and
   says where the stock is (`stock`: the factory's holders, nearest and largest, how much within 25 tiles of you).
   `check_stock: true` refuses as before over stock within 64 tiles. runtime_test.lua.
+- A2 (Sonnet): a re-run of a 491-tile belt_route after parts of the line were destroyed was refused twice: `via point 1
+  (258.5,-197.5) is taken by our transport-belt`. Two changes:
+  - belt_route remembers each agent's last 4 lines it placed (the planned belts and undergrounds). A call with the
+    same from, via, to, belt and return keeps what stands (a belt or ghost of ours on the tile) and places only the
+    missing tiles as ghosts: `repair` (when it was laid, how many stand, how many are missing), `kept`, `differs` (up
+    to 8 standing belts that face otherwise than the line). A dry run says the same and places nothing.
+    `replan: true` plans a new line.
+  - The planner (route.lua) takes via points on standing belts of ours. One on the from chain is passed already
+    (`via_passed`). One on another standing line: the route feeds that line's head (back along it to the tile nothing
+    feeds: the belt behind, a lone side feed into a curve, an underground exit's entrance) and the next leg starts at
+    its open end; the line stands as it is (`joined`). Later via points on it are passed; `to` on it ends the route at
+    its head. `return` with such a via point is refused (lay the return line in its own call).
+  tests/route.lua, runtime_test.lua.
