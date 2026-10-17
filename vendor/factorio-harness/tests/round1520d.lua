@@ -176,6 +176,25 @@ train.carriages[1].position={x=-10,y=3}
 eq(runtime.train_guard(p,{position={x=0,y=20}},{x=0,y=3},{x=0,y=20}),false)
 -- Rails beyond 4 tiles ahead are not looked at.
 eq(runtime.train_guard(p,{position={x=0,y=-20}},{x=0,y=9},{x=0,y=-20}),false)
+-- A double track (d17 batch14 A5, Opus at (383,-288)): on the first track with a train coming over the second, ahead,
+-- the walk backs off to where it last stood off the rails, and the wait says so.
+do
+  local second=rail(0,5)
+  local nav2={position={x=0,y=20}}
+  local saved=trains[1]
+  trains[1]=nil
+  tick=tick+10; game.tick=tick
+  eq(runtime.train_guard(p,nav2,{x=0,y=0.5},nav2.position),false)  -- off the rails: remembered
+  trains[1]=train; train.speed=0.5; train.carriages[1].position={x=-20,y=5}; train.path={current=1,size=1,rails={second}}
+  tick=tick+10; game.tick=tick
+  local r,to=runtime.train_guard(p,nav2,{x=0,y=3},nav2.position)
+  eq(r,'backing'); eq(to.x,0); eq(to.y,0.5)
+  tick=tick+10; game.tick=tick; train.speed=0
+  runtime.train_guard(p,nav2,{x=0,y=0.5},nav2.position)
+  has(nav2.train_waits[1],'backing off the rails to (0.0,0.5)')
+  trains[1]=saved
+  second.valid=false
+end
 
 -- 2. A move_to stops short of the rails while the train comes, says so in status, then walks on; last.train_waits.
 trains[1]=train; train.speed=0.5; train.carriages[1].position={x=-30,y=3}; train.path={current=1,size=4,rails={r1,r2,r3,far}}

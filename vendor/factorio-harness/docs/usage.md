@@ -6257,3 +6257,22 @@ fh watch    # deploy on every change
   board and plan commands, say, the deadline clock line) write there; run in parallel, 0 to 4 of them failed depending
   on which test made it first (the merge gate saw 1). `npm test` creates `.cache` before the tests now; a fresh
   worktree of cp2 then passed 322/322 (it failed 4 before).
+
+## d17 batch14 (operator 06:25; the 06:20 poll)
+- A5 (Opus: killed by our own train crossing at (383,-288), 06:15): his walk north from (383,-262) to (383,-300) died
+  3.3 s in, on a double track. The walk's train check (shift12) left off while the character stood on a rail ("walk
+  on off it"), so from the first track it walked onto the second as the train came. Now the rails underfoot are
+  told from those ahead: on a rail with a train coming over the rails ahead, the walk backs off to where it last stood
+  off the rails (within 8 tiles) and waits there (train_waits: "..., backing off the rails to (x,y)"); with none known,
+  it walks on off them as before. move_to and its dry run give `rail_crossings`: each place a straight leg crosses
+  ground rails (one per 8 tiles, at most 8) with each moving train whose path crosses there now (where, how fast, about
+  how soon), else the automatic trains on the surface. On the copy (its own line was cut at x=383 by the nest there;
+  16 rail ghosts revived to run the test): "crosses rails at (143,-131): a train (locomotive at (423,-357), 82 km/h)
+  whose path crosses here, about 16 s off". round1520d has a double-track case.
+- A9 (Astra 2x): a load_silo {launch} list over one rocket's lift or slots was split into queued steps without being
+  asked (batch8 B1). Now it is refused, naming the split, unless `launch_split: true`; `load_silo {dry_run: true}`
+  queues nothing and gives each item's weight, slots and sources (you, the chests in from or in reach; short), the
+  rocket's lift, slots and what is aboard, whether it fits one rocket, the split, and the platform hub's free slots.
+  On the copy: 1500 iron plates and 10 undergrounds read "1700 kg in 16 slots ... over one rocket: launch_split: true
+  sends it as 2 rockets (rocket 1: iron-plate 1000 (1000 kg); rocket 2: iron-plate 500, underground-belt 10 (700 kg))",
+  Swift's hub 28 free slots; the launch without launch_split was refused with that plan.
