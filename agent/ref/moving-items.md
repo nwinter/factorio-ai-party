@@ -107,3 +107,4 @@
   the fuel, so a chest behind many belts is found.
 - `transfer` gives `freshness` (the moved stacks' spread) and takes `spoiled_first: true` and `min_spoil` (alias
   `min_spoiled`) or `max_fresh` to move only the rotten tail; `load_silo` gives `freshness` at the top.
+- `transfer` gives and takes a fusion reactor's fuel (fusion power cells), as any burner's.

@@ -337,11 +337,19 @@ g2.position={x=0,y=27}; advance(1)
 eq(last('grok').outcome,'collected'); eq(k5.valid,false)
 has(last('grok').train_waits[1],'s at (0.0,0.0) for a train (locomotive at (-30,3), 108 km/h) to pass the rails ahead at (0.0,3.0)')
 trains[1]=nil
--- A tour that ends in reach on a rail says so (last.on_rails).
+-- A tour that ends in reach on a rail walks off the rails first, then ends (backlog #820, Opus 105h09: a recover
+-- that ended on the rails at its stop, and a locomotive killed him there); last.off_rails says where.
 local k6=corpse(0,10,{stone=1},tick-10)
 b.corpses={{surface='nauvis',position={x=0,y=10},tick=tick-10}}
 g2.position={x=0.1,y=3}
 grok('recover',{avoid_enemies=false}); advance(1)
-eq(last('grok').outcome,'collected'); eq(k6.valid,false)
-eq(last('grok').on_rails,'you stand on straight-rail (0,3)')
+eq(k6.valid,false,'collected at once')
+local act=storage.agent_harness.active[index('grok')]
+assert(act and act.rail_exit,'walking off the rails before it ends')
+-- (the fake engine answers no path requests: steer straight at the spot, and be there)
+act.nav.path_state=nil; act.nav.direct=true
+g2.position={x=act.rail_exit.position.x,y=act.rail_exit.position.y}; advance(1)
+eq(last('grok').outcome,'collected')
+has(last('grok').off_rails,'the tour ended on a rail at (0.1,3.0): walked off the rails to')
+eq(last('grok').on_rails,nil)
 print('round1520d: ok')

@@ -638,6 +638,7 @@ local function finish(index, outcome)
     last.first_unreached=action.first_unreached; last.why=last.why or (outcome=='unreached' and action.first_unreached) or nil
     -- The route walked (C5, Luna 18:20): from where, each via point and stop as reached, the tiles moved.
     last.route=stock.route_text(action)
+    last.off_rails=action.off_rails
     -- Places left out for the enemy check (round1950a): how many, and the first 8; at the call too (round2120a).
     last.danger=action.danger; last.dangers=action.dangers
     last.left_out=action.left_out; last.left_out_count=action.left_out_count
@@ -1605,7 +1606,8 @@ end
 local function contents(inv) return inv and inv.get_contents() or {} end
 local inventories = {
   chest = {'container','logistic-container','linked-container','temporary-container','infinity-container'},
-  fuel = {'furnace','assembling-machine','boiler','burner-generator','inserter','mining-drill','lab','car','locomotive','reactor','spider-vehicle'},
+  -- (backlog #255, Sol 91h09: transfer of fusion power cells to a fusion reactor read "no inventory") fusion-reactor too
+  fuel = {'furnace','assembling-machine','boiler','burner-generator','inserter','mining-drill','lab','car','locomotive','reactor','spider-vehicle','fusion-reactor'},
   burnt_result = {'furnace','assembling-machine','boiler','burner-generator','mining-drill','car','locomotive','reactor'},
   furnace_source = {'furnace'}, furnace_result = {'furnace'},
   assembling_machine_input = {'assembling-machine','rocket-silo'}, assembling_machine_output = {'assembling-machine','rocket-silo'},
@@ -14593,6 +14595,9 @@ stock=stock_module{distance=distance,integer=integer,position=position,claims=M.
   avoid_report=function(out,nav) return M.avoid.report(out,nav) end,
   avoid_start=function(p,nav,mode) return M.avoid.start(p,nav,mode) end,
   stop_walking=function(p) p.walking_state={walking=false,direction=defines.direction.north} end,
+  -- a tour ending on rails walks off them (backlog #820)
+  rail_under=function(p,pos) return p.character and M.rail_under(p,pos)~=nil end,
+  off_rail_spot=function(p) local spot=M.pathing.off_belt_spot(p,p.position,4,nil,function(c) return M.rail_under(p,c,0.35)~=nil end); return spot end,
   -- A tour's legs round the worms the map shows (avoid.lua), as a walk's: each leg's end starts the next.
   leg_done=function(p,nav,outcome) return M.avoid.leg_done(p,nav,outcome) end,
   -- A courier's destination found on arrival: within reach of its position, then the entity there.

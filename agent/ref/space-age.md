@@ -167,3 +167,4 @@
   delivery, a spill or a hub_full gate comes once in team.alerts to who launched to the platform and its alert list.
 - `shipment` and `preflight {platform}` give cargo conflict lines: an item the hub holds that the landing pads of two
   or more coming stops ask, per stop in order (ask, hold, what goes down there, what is left aboard).
+- A drop sent to a full landing pad says it landed beside it, where, and what each container holds.
