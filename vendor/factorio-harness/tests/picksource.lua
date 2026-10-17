@@ -503,6 +503,38 @@ do
   yfarm.inv.remove{name=A,count=50}
 end
 
+-- A courier's spoil filter (d17 batch19 A2, Grok twice: min_spoil with spoiled_first on a courier took the younger
+-- agricultural packs and left the rotten stack): the take moves only stacks at least that spoiled, the most spoiled
+-- first, and last says what it left.
+do
+  local A='agricultural-science-pack'
+  prototypes.item[A]=prototypes.item[A] or {name=A,type='tool',stack_size=200}
+  local packs=chest({x=50.5,y=29.5},{})
+  local function put(i,count,pct)
+    local s=packs.inv[i]
+    s.valid_for_read=true; s.name=A; s.quality={name='normal'}; s.count=count; s.spoil_percent=pct; s.spoil_tick=game.tick+3600
+  end
+  put(1,200,0.2); put(2,100,0.55); put(3,200,0.7)
+  -- Grok 18:56:13, word for word but the places
+  luna('transfer',{count=200,item=A,pick='first_with_stock',positions={packs.position},to=yfarm.position,spoiled_first=true,min_spoil=50,walk=true})
+  advance(3)
+  local last=luna('status').last
+  eq(last.delivered,200)
+  eq(last.freshness[1]:match('^[^;]*'),'agricultural-science-pack*200: spoiled 70%, 70% by count')
+  eq(packs.inv[3].valid_for_read,false,'the rotten stack went'); eq(packs.inv[1].count,200,'the younger stays')
+  assert(last.left_less_fresh and last.left_less_fresh:find('200 left where they were: less than 50% spoiled (the least spoiled 20%)',1,true),tostring(last.left_less_fresh))
+  -- min_spoil alone: the 55% and 70% stacks, the 20% one left
+  put(3,200,0.7)
+  yfarm.inv.remove{name=A,count=200}
+  luna('transfer',{count=500,item=A,pick='first_with_stock',positions={packs.position},to=yfarm.position,min_spoil=50,up_to=true})
+  advance(3)
+  last=luna('status').last
+  eq(last.delivered,300)
+  eq(packs.inv[1].count,200)
+  for i=1,3 do packs.inv[i].clear() end
+  yfarm.inv.remove{name=A,count=300}
+end
+
 -- A take from one machine's output given straight into another (Muse, shift18 12:46: productivity modules collected
 -- from one machine piled up in the character, 78 and growing, because the next took no more). What the target's input
 -- takes is read before the take (one stack and 64 by hand, measured on 2.0.77): none, nothing taken or walked; else
