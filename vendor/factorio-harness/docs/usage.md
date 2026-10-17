@@ -58,7 +58,12 @@ fh call status
   launch --args '{"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`; transfer has a give, a take and a pick;
   describe's `examples`). fh help keeps that describe per runtime bundle (FH_DESCRIBE_CACHE, default .fh-describe.json
   next to the journal): it asks `describe {if_bundle}`, which answers `{bundle, unchanged}` while the same bundle runs,
-  and reads the whole describe again after a deploy (bundles carry their content hash as BUNDLE_ID). An argument refusal ends with one: for transfer built from the call itself (`; for this
+  and reads the whole describe again after a deploy (bundles carry their content hash as BUNDLE_ID). Action-name
+  aliases (runtime.lua M.ALIASES, describe `aliases`): silos, lab, dangers, boiler, logistic_networks, where, plan_list and
+  order_status run as silo, labs, danger, boilers, networks, where_is, plans and orders, resolved before argument checks
+  and the read tables; the reply's `called_as` names the action, and `fh help ALIAS` prints the action's help. Queue
+  step options and guards are documented under queue_submit (`step_options`, `guards`), not as actions of their own.
+  An argument refusal ends with one: for transfer built from the call itself (`; for this
   call:` and the call), else the action's own (`; e.g. fh call technologies --args '{"prefix":"automation"}'`); a number out of range says its range and the value (`radius out of range: a whole
   number 1..128, got 500`). Refusals no longer start with the runtime's line (`agent-harness/runtime:31061: `). Every example, in describe, this file and the agents' brief (agent/ref/), is checked against the argument
   check by the runtime test.

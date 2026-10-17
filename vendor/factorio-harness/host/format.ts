@@ -145,6 +145,12 @@ function sortKeys(value: unknown): unknown {
 }
 export function actionHelp(describe: unknown, action: string, max = 1400): string {
   const actions = record(describe) && record(describe.actions) ? describe.actions : {};
+  // An alias (the runtime's M.ALIASES, d17 lean D1) prints the action it runs as.
+  const aliases = record(describe) && record(describe.aliases) ? describe.aliases : {};
+  const real = aliases[action];
+  if (!record(actions[action]) && typeof real === 'string' && record(actions[real])) {
+    return `${action} is ${real}: the call runs as ${real}\n` + actionHelp(describe, real, max);
+  }
   const schema = actions[action];
   if (!record(schema)) {
     const names = Object.keys(actions).sort();

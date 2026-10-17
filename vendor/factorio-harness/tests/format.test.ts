@@ -162,3 +162,8 @@ test('compact output shortens the clock line, game time first; JSON keeps it (d1
   const text = formatCompact({ ok: true, id: 'a', result: { outcome: 'arrived', clock: long } });
   assert.equal(text, 'outcome: arrived\nclock: "game 98h40m; +1s, idle 0s (10%, 0s in sleep); deadline in 3h43m"\n');
 });
+test('fh help ALIAS prints the action an alias runs as (d17 lean D1)', () => {
+  const describe = { actions: { silo: { position: 'optional silo', returns: 'silos' } }, aliases: { silos: 'silo', gone: 'nothing' } };
+  assert.equal(actionHelp(describe, 'silos'), "silos is silo: the call runs as silo\nsilo: fh call silo --args '{...}'\n  position: optional silo\nreturns: silos\n");
+  assert.match(actionHelp(describe, 'gone'), /^unknown action gone/);
+});
