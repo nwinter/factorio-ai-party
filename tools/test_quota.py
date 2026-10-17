@@ -29,7 +29,11 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         team = os.path.join(d, "team.tsv")
         open(team, "w").write(TEAM)
-        # Gemini at 95%, resetting in 1h54m; at 8%/h (agent/quota-burn.tsv) it runs dry 37.5 minutes into a one-hour shift.
+        # Burn rates from a fixture, not the measured agent/quota-burn.tsv (also read by the script run below).
+        os.environ["POG_QUOTA_BURN"] = burn = os.path.join(d, "burn.tsv")
+        open(burn, "w").write("# profile\twindow\tpercent_per_agent_hour\nagy_local\tGemini · 5-hour\t8\n"
+                              "codex_account_b\tCodex · Weekly\t1.3\n")
+        # Gemini at 95%, resetting in 1h54m; at 8%/h it runs dry 37.5 minutes into a one-hour shift.
         now, b = brief(95, 6840)
         lines = quota_check.check(b, team, 60, now)
         warn = [l for l in lines if l.startswith("WARNING")]
