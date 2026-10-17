@@ -150,3 +150,5 @@
   is stopped in orbit here (`staged` says so).
 - `load_silo {walk: true, from, up_to_stock_at_start: true}` loads at most what you and the chests held when it began
   (`stock_at_start` says what), then ends (launches with launch) instead of touring on for a trickle.
+- `load_silo {dry_run: true}`: each item's weight, slots and sources, the rocket's room, the split and the platform
+  hub's free slots. A list over one rocket is refused unless `launch_split: true`.

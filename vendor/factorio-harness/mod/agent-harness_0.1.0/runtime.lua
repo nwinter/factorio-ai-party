@@ -3977,6 +3977,15 @@ function handlers.move_to(p,a)
       under=oku and u or nil
     end
   end
+  -- the rails the straight legs cross, and the trains on them (d17 batch14 A5)
+  local crossings
+  if p.surface.platform==nil then
+    local pts={{x=p.position.x,y=p.position.y}}
+    for _,q in ipairs(via or {}) do pts[#pts+1]=q end
+    pts[#pts+1]=target
+    local okc,c=pcall(M.routecheck.rail_crossings,p,pts)
+    crossings=okc and c or nil
+  end
   -- avoid_enemies false: what the straight legs come into, said (A1, Opus 02:09)
   local unchecked
   if a.avoid_enemies==false and p.surface.platform==nil then
@@ -3987,7 +3996,7 @@ function handlers.move_to(p,a)
     unchecked=oku and u or nil
   end
   return {until_tick=game.tick+ticks,limit=limit_text,position=target,pathfinding=not action.direct,combat=combat,avoid_enemies=foes and M.avoid.describe(foes.mode) or nil,under_range=under,
-    enters_unchecked=unchecked,
+    enters_unchecked=unchecked,rail_crossings=crossings,
     retreat=back and M.retreat.line(back) or nil,
     via=via and #via or nil,legs=via and #via+1 or nil,via_added=via_added,unsafe_goal=unsafe and table.concat(unsafe,'; ') or nil,
     target=rt and {name=rt.name,position=rt.center,unit_number=rt.unit_number} or nil,reach=rt and string.format('%s %g',rt.kind,rt.r) or nil,
@@ -10622,6 +10631,20 @@ function handlers.load_silo(p,a)
   return handlers.load_silo_run(p,a)
 end
 function handlers.load_silo_run(p,a)
+  -- dry_run (A9): the plan, nothing loaded or queued
+  if a.dry_run~=nil then
+    assert(type(a.dry_run)=='boolean','dry_run must be true or false')
+    if a.dry_run then
+      assert(a.items~=nil,'dry_run reads a list: items')
+      local silo=remote_entity(p,{position=a.position})
+      assert(silo.type=='rocket-silo',silo.name..' is not a rocket silo')
+      local okc,l,sl=pcall(M.cargo.limits,silo)
+      return M.rocketload.plan(p,a,silo,okc and l or 1000000,okc and sl or 20)
+    end
+    local rest={}
+    for k,v in pairs(a) do if k~='dry_run' then rest[k]=v end end
+    a=rest
+  end
   -- rockets (Sonnet 13:51): the same load for N rockets in one call, as N queue steps appended to your queue, each
   -- loading and launching one rocket in turn (each waits for its rocket as a single load_silo does).
   if a.rockets~=nil then
@@ -10652,12 +10675,22 @@ function handlers.load_silo_run(p,a)
         local okc,l,sl=pcall(M.cargo.limits,silo); if okc and l then lift,slots=l,sl or slots end
       end
       local parts,total=M.rocketload.split(list,lift,slots)
+      -- (A9) a split only when asked: launch_split: true; else refused, naming it
+      if parts and not a.launch_split then
+        local lines={}
+        for i,part in ipairs(parts) do
+          local t={}; for _,r in ipairs(part) do t[#t+1]=r.name..' '..r.count end
+          lines[i]=string.format('rocket %d: %s',i,table.concat(t,', '))
+        end
+        error(string.format('the list is over one rocket (%s kg; lift %g kg, %d slots): it would go as %d rockets (%s); launch_split: true sends it so, or load less; dry_run: true shows each item\'s weight and slots; nothing loaded or queued',
+          total,lift/1000,slots,#parts,table.concat(lines,'; ')),0)
+      end
       if parts then
         local function args_for(part,left)
           local c={}
           for k,v in pairs(a) do c[k]=v end
           c.items={}; for i,r in ipairs(part) do c.items[i]={item=r.name,count=r.count,quality=r.quality} end
-          c.split_part=true
+          c.split_part=true; c.launch_split=nil
           if a.auto_requests~=nil then c.pause_left=left end
           return c
         end
@@ -14408,10 +14441,19 @@ navigate=function(p,nav)
     if game.tick>=nav.retry_tick then nav.retry_tick=nil; request_path(p,nav); return end
   end
   -- A moving train on its way over the rails a few tiles ahead: wait short of them until it has passed (M.train_guard).
-  if M.train_guard(p,nav,pos,goal) then
+  local tg,back_to=M.train_guard(p,nav,pos,goal)
+  if tg=='backing' then
+    -- off the rails the way it came (A5), every tick until off them
+    nav.backing_to=back_to
+    steer(p,back_to,nav); nav.stalled=0; nav.progress_tick=nil; nav.sidestep=nil
+    return
+  elseif tg then
+    if nav.backing_to and M.rail_under(p,pos) then steer(p,nav.backing_to,nav); nav.stalled=0; nav.progress_tick=nil; return end
+    nav.backing_to=nil
     p.walking_state={walking=false,direction=defines.direction.north}; nav.stalled=0; nav.progress_tick=nil; nav.sidestep=nil
     return
   end
+  nav.backing_to=nil
   -- Flipping between two spots is a stall in disguise.
   if oscillating and near then return 'arrived_near' end
   nav.stalled=(moved<0.01 or oscillating) and (nav.stalled or 0)+1 or 0
@@ -14486,8 +14528,8 @@ function M.train_done(nav)
   local into=(a and a~=nav and a.nav==nav) and a or nav
   into.train_waits=into.train_waits or {}
   if #into.train_waits<4 then
-    into.train_waits[#into.train_waits+1]=string.format('waited %.1f s at (%.1f,%.1f) for %s to pass the rails ahead at (%.1f,%.1f)',
-      (game.tick-w.since)/60,w.at.x,w.at.y,w.train,w.rails.x,w.rails.y)
+    into.train_waits[#into.train_waits+1]=string.format('waited %.1f s at (%.1f,%.1f) for %s to pass the rails ahead at (%.1f,%.1f)%s',
+      (game.tick-w.since)/60,w.at.x,w.at.y,w.train,w.rails.x,w.rails.y,w.backed and string.format(', backing off the rails to (%.1f,%.1f)',w.backed.x,w.backed.y) or '')
   end
   return false
 end
@@ -14528,13 +14570,25 @@ function M.train_guard(p,nav,pos,goal)
   local x0,y0,x1,y1=pos.x,pos.y,pos.x,pos.y
   for _,q in ipairs(pts) do x0=math.min(x0,q.x); y0=math.min(y0,q.y); x1=math.max(x1,q.x); y1=math.max(y1,q.y) end
   local rails=s.find_entities_filtered{area={{x0-1,y0-1},{x1+1,y1+1}},type=M.RAIL_TYPES,limit=16}
-  if #rails==0 or M.rail_under(p,pos) then return M.train_done(nav) end
-  local ahead,cx,cy={},0,0
-  for _,r in ipairs(rails) do
-    ahead[r.unit_number or (r.position.x..','..r.position.y)]=true
-    cx,cy=cx+r.position.x,cy+r.position.y
+  -- Standing on a rail (d17 batch14 A5, Opus: killed by our own train at (383,-288) on a double track: on the first
+  -- track the check was off and the walk went on onto the second as a train came): the rails underfoot count too, and
+  -- with a train coming the character goes back to where it last stood off the rails (backing), then waits there.
+  local under=M.rail_under(p,pos)
+  if not under then nav.offrail={x=pos.x,y=pos.y} end
+  if #rails==0 then return M.train_done(nav) end
+  local under_set={}
+  if under then
+    local h=M.pathing.half(p.character)
+    for _,r in ipairs(s.find_entities_filtered{area={{pos.x-h,pos.y-h},{pos.x+h,pos.y+h}},type=M.RAIL_TYPES,limit=8}) do under_set[r.unit_number or (r.position.x..','..r.position.y)]=true end
   end
-  local crossing={x=cx/#rails,y=cy/#rails}
+  local ahead,cx,cy,n={},0,0,0
+  for _,r in ipairs(rails) do
+    local k=r.unit_number or (r.position.x..','..r.position.y)
+    if not under_set[k] then ahead[k]=true; cx,cy,n=cx+r.position.x,cy+r.position.y,n+1 end
+  end
+  -- only the rails underfoot: walk on off them
+  if n==0 then return M.train_done(nav) end
+  local crossing={x=cx/n,y=cy/n}
   local okt,trains=pcall(function() return game.train_manager.get_trains{surface=s} end)
   local danger
   for _,t in ipairs(okt and trains or {}) do
@@ -14564,10 +14618,18 @@ function M.train_guard(p,nav,pos,goal)
     end
   end
   if not danger then return M.train_done(nav) end
+  -- Standing on a rail (d17 batch14 A5, Opus: killed by our own train at (383,-288) on a double track: on the first
+  -- track the check was off and the walk went on onto the second as a train came) with a train coming over the rails
+  -- ahead: back to where it last stood off the rails (within 8 tiles), then wait there; none known: walk on off them.
+  if under and not (nav.offrail and distance(pos,nav.offrail)<=8) then return M.train_done(nav) end
   if not nav.train_wait then
     local st=danger.stock
     nav.train_wait={since=game.tick,at={x=pos.x,y=pos.y},rails=crossing,index=p.index,
       train=string.format('a train (%s at (%.0f,%.0f), %.0f km/h)',st.name,st.position.x,st.position.y,danger.speed*216)}
+  end
+  if under then
+    nav.train_wait.backed=nav.train_wait.backed or {x=nav.offrail.x,y=nav.offrail.y}
+    return 'backing',nav.offrail
   end
   return true
 end

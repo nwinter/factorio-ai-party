@@ -217,6 +217,63 @@ return function(api)
     local blobs = hazards(p, points, MAX_CHUNKS)
     return enters(points, enemies(points, blobs))
   end
+  -- Rail crossings on the way (d17 batch14 A5, Opus: killed by our own locomotive crossing the line at (383,-288)):
+  -- each place a straight leg crosses ground rails (rails within a tile of the line, one per 8 tiles), with the trains
+  -- moving whose path goes over them now (where, how fast, how soon), else the automatic trains on the surface (a
+  -- schedule can bring one): the walk stops short of a crossing while a train comes. At most CROSSINGS.
+  local CROSSINGS = 8
+  local RAILS = {'straight-rail', 'half-diagonal-rail', 'curved-rail-a', 'curved-rail-b', 'legacy-straight-rail', 'legacy-curved-rail'}
+  function M.rail_crossings(p, route)
+    local s = p.surface
+    local found, seen = {}, {}
+    for i = 2, #route do
+      local a, b = route[i - 1], route[i]
+      local len = dist(a, b)
+      local steps = math.max(1, math.ceil(len / 2))
+      for k = 0, steps do
+        local q = {x=a.x + (b.x - a.x) * k / steps, y=a.y + (b.y - a.y) * k / steps}
+        local list = try(function() return s.find_entities_filtered{area={{q.x - 1, q.y - 1}, {q.x + 1, q.y + 1}}, type=RAILS, limit=4} end) or {}
+        for _, r in ipairs(list) do
+          local key = r.unit_number or (r.position.x .. ',' .. r.position.y)
+          if not seen[key] then
+            seen[key] = true
+            local near
+            for _, c in ipairs(found) do if dist(c.at, r.position) <= 8 then near = c end end
+            if near then near.rails[key] = true
+            elseif #found < CROSSINGS then found[#found+1] = {at={x=r.position.x, y=r.position.y}, rails={[key]=true}} end
+          end
+        end
+      end
+    end
+    if #found == 0 then return nil end
+    local trains = try(function() return game.train_manager.get_trains{surface=s} end) or {}
+    local auto = 0
+    for _, t in ipairs(trains) do if t.valid and not t.manual_mode then auto = auto + 1 end end
+    local out = {}
+    for _, c in ipairs(found) do
+      local movers = {}
+      for _, t in ipairs(trains) do
+        local speed = t.valid and math.abs(t.speed) or 0
+        local path = speed > 0.001 and try(function() return t.path end)
+        if path then
+          local over = try(function()
+            for k = path.current, math.min(path.size, path.current + 300) do
+              local r = path.rails[k]
+              if r and r.valid and c.rails[r.unit_number or (r.position.x .. ',' .. r.position.y)] then return true end
+            end
+          end)
+          if over then
+            local lead = t.carriages[1]
+            local d = lead and dist(lead.position, c.at) or 0
+            movers[#movers+1] = string.format('a train (%s at %s, %.0f km/h) whose path crosses here, about %.0f s off', lead and lead.name or '?', lead and at(lead.position) or '?', speed * 216, d / speed / 60)
+          end
+        end
+      end
+      out[#out+1] = string.format('crosses rails at %s: %s', at(c.at), #movers > 0 and table.concat(movers, '; ')
+        or (auto > 0 and string.format('no train coming now; %d automatic train%s on this surface (a schedule can bring one)', auto, auto == 1 and '' or 's') or 'no train runs on this surface now'))
+    end
+    return out
+  end
   -- The whole read. points: {start, via..., goal}; mode: avoid.mode(...) or nil (avoid_enemies false).
   function M.check(p, points, mode)
     local blobs, unread = hazards(p, points, MAX_CHUNKS)
@@ -241,6 +298,7 @@ return function(api)
     out.enemies = #list > 0 and list or nil
     out.enemies_none = #rows == 0 and 'no worm, spawner, area under attack or enemy group seen now within reach of the route' or nil
     out.enters = enters(route, rows)
+    out.rail_crossings = M.rail_crossings(p, route)
     if not out.enters and #rows > 0 then out.enters_none = 'the planned route comes into no worm\'s or spawner\'s reach, and within 24 tiles of no attack or enemy group seen now' end
     out.under_range = under(rows, mode)
     if unread > 0 then

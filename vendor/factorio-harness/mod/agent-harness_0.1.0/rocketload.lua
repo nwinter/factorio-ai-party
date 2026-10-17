@@ -587,6 +587,66 @@ return function(api)
     end
     return n
   end
+  -- load_silo {dry_run: true} (d17 batch14 A9, Astra 2x: a manifest that looked to fit was split into a second rocket
+  -- carrying 2-3 undergrounds, and the queue had to be cancelled): the plan, nothing loaded or queued. Each item's
+  -- weight and stacks, where it would come from (you, the chests in from, the chests in reach), the rocket's lift and
+  -- slots and what is aboard, whether it fits one rocket and the split it would take, and the platform hub's free
+  -- slots. A read.
+  function M.plan(p, a, silo, lift, slots)
+    local list = M.items(a.items, 'items')
+    local inv = M.rocket_inventory(silo)
+    local aboard_g, aboard_slots = 0, 0
+    for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do aboard_g = aboard_g + weight(c.name) * c.count end
+    if inv then aboard_slots = #inv - (try(function() return inv.count_empty_stacks() end) or #inv) end
+    local chests = {}
+    for _, pos in ipairs(a.from ~= nil and from_list(a.from) or {}) do
+      local c = try(function() return api.sight_entity(p, pos) end)
+      if c and chest_inventory(c) then chests[#chests+1] = c end
+    end
+    if #chests == 0 and a.chests ~= false then chests = M.chests_in_reach(p, silo) end
+    local rows, total_g, stacks = {}, 0, 0
+    for _, r in ipairs(list) do
+      local w, ss = weight(r.name), stack_size(r.name)
+      local st = math.ceil(r.count / ss)
+      total_g = total_g + w * r.count; stacks = stacks + st
+      local src, have = {}, held_of(p, r)
+      if have > 0 then src[#src+1] = 'you ' .. have end
+      for _, c in ipairs(chests) do
+        local n = try(function() return chest_inventory(c).get_item_count{name=r.name, quality=r.quality} end) or 0
+        if n > 0 and #src < 5 then src[#src+1] = string.format('%s %s %d', c.name, at(c.position), n); have = have + n end
+      end
+      rows[#rows+1] = {item=label(r), count=r.count, each_kg=kg(w), kg=kg(w * r.count), stacks=st, sources=#src > 0 and table.concat(src, ', ') or 'none in reach or in from',
+        short=have < r.count and r.count - have or nil}
+    end
+    local free_g = a.to_total and lift or (lift - aboard_g)
+    local free_slots = slots - aboard_slots
+    local fits = total_g <= free_g and stacks <= free_slots
+    local okp, parts = pcall(M.split, list, lift, slots)
+    local split
+    if okp and parts then
+      split = {}
+      for i, part in ipairs(parts) do
+        local t, g = {}, 0
+        for _, r in ipairs(part) do t[#t+1] = r.name .. ' ' .. r.count; g = g + weight(r.name) * r.count end
+        split[i] = string.format('rocket %d: %s (%g kg)', i, table.concat(t, ', '), kg(g))
+      end
+    end
+    local hub_free
+    if a.platform ~= nil then
+      for _, pl in pairs(p.force.platforms) do
+        if pl.valid and pl.name == a.platform and pl.hub and pl.hub.valid then
+          hub_free = try(function() return pl.hub.get_inventory(defines.inventory.hub_main).count_empty_stacks() end)
+        end
+      end
+    end
+    local line = string.format('%g kg in %d slots, the rocket takes %g kg and %d slots more (lift %g kg, %d slots; aboard %g kg in %d): %s',
+      kg(total_g), stacks, kg(math.max(0, free_g)), math.max(0, free_slots), kg(lift), slots, kg(aboard_g), aboard_slots,
+      fits and 'it fits one rocket' or (split and string.format('over one rocket: launch_split: true sends it as %d rockets (%s)', #split, table.concat(split, '; '))
+        or string.format('over what this rocket takes now (%s aboard): to_total, a smaller list, or unload first', list_text(contents(inv)))))
+    return {dry_run=true, note='nothing loaded or queued', items=rows, kg=kg(total_g), slots=stacks, rocket={lift_kg=kg(lift), slots=slots, aboard_kg=kg(aboard_g), aboard_slots=aboard_slots,
+      free_kg=kg(math.max(0, free_g)), free_slots=math.max(0, free_slots)}, fits_one_rocket=fits, split=split,
+      platform_hub_free_slots=hub_free, line=line}
+  end
   -- Each goal still short in the rocket: {goal, need (to load), held (you), take (from the chests: no more than fits
   -- under the rocket's lift now, less what you hold)}.
   local function needs(p, action)
@@ -1402,7 +1462,7 @@ return function(api)
   end
 
   M.schema = {
-    load_silo = {position='the rocket silo {x,y} (any tile of it), within reach', up_to_stock_at_start='optional true: load at most what you and the chests in from hold when it begins (a walking tour does not tour on for items trickling in), then launch with launch; without walking, as up_to', wait_platform='optional true, with launch and platform: a ready rocket gets the cargo now (recorded for the platform) and launches when the platform is stopped in orbit here (launch {wait_platform}: a timed wait; staged says which); no rocket ready: the load waits for both and loads and launches in that tick',
+    load_silo = {position='the rocket silo {x,y} (any tile of it), within reach', dry_run='optional true: load and queue nothing (a read): each item\'s weight, slots and sources (you, the chests in from or in reach; short), the rocket\'s lift, slots and what is aboard, whether it fits one rocket, the split it would take (rocket 1: ..., rocket 2: ...), the platform hub\'s free slots (with platform); line', launch_split='optional true, with launch: a list over one rocket\'s lift or slots goes as several rockets, one load_silo step each appended to your queue (rocket 1: ..., rocket 2: ...); without it such a list is refused, naming the split', up_to_stock_at_start='optional true: load at most what you and the chests in from hold when it begins (a walking tour does not tour on for items trickling in), then launch with launch; without walking, as up_to', wait_platform='optional true, with launch and platform: a ready rocket gets the cargo now (recorded for the platform) and launches when the platform is stopped in orbit here (launch {wait_platform}: a timed wait; staged says which); no rocket ready: the load waits for both and loads and launches in that tick',
       items='the cargo to load: {"item-name": count} or [{"item", "count", "quality"}], 1..20 items',
       to_total='true: each count is what the rocket should hold in all (only the rest is loaded); default: each count is loaded on top of what it holds',
       from='optional chest {x,y} or 1..16 of them, within reach: take from these (after your inventory); default: your inventory, then our chests within reach, nearest first (at most 16): every chest kind (chests, logistic chests, linked and infinity chests) and a cargo landing pad. With walk: anywhere on the silo\'s surface, in sight or on the map',
