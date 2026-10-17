@@ -23,14 +23,21 @@ return function(api)
   -- Camera clients are named pog-cam1.. or pog-director (tools/win/start-client.ps1
   -- -PlayerName); they count as directors before their first camera call too.
   local DIRECTOR_NAMES = {'^pog%-cam%d*$', '^pog%-director%d*$'}
-  function M.director(index)
-    if store()[index] ~= nil or directors()[index] then return true end
-    local p = game.get_player(index)
-    if not (p and p.valid) then return false end
-    if p.controller_type == defines.controllers.spectator then return true end
+  -- Only camera clients are directors: a person the operator makes a spectator or a god to look around (d17 16:40:
+  -- Nick, spectating, was taken for a camera: forced back to spectator every 5 s, his map and tooltips hidden) is not,
+  -- and one recorded as a director that way is forgotten.
+  local function camera_name(p)
     for _, pattern in ipairs(DIRECTOR_NAMES) do
       if (p.name or ''):match(pattern) then return true end
     end
+    return false
+  end
+  function M.director(index)
+    if store()[index] ~= nil then return true end
+    local p = game.get_player(index)
+    if not (p and p.valid) then return directors()[index] == true end
+    if camera_name(p) then return true end
+    if directors()[index] then directors()[index] = nil end
     return false
   end
   -- A clean picture: no GUI but entity info (alt-mode), as OBS captures it.
