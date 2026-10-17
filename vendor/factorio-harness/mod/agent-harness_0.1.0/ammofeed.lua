@@ -233,11 +233,12 @@ return function(api)
     local done = {}
     for i, x in ipairs(loose) do
       if not done[i] then
-        local g = {n=0, count=0, x0=math.huge, y0=math.huge, x1=-math.huge, y1=-math.huge}
+        local g = {n=0, count=0, x0=math.huge, y0=math.huge, x1=-math.huge, y1=-math.huge, belts={}}
         local queue = {i}; done[i] = true
         while #queue > 0 do
           local j = table.remove(queue); local y = loose[j]
           g.n = g.n + 1; g.count = g.count + y.n
+          g.belts[#g.belts+1] = y
           local q = y.e.position
           g.x0, g.y0, g.x1, g.y1 = math.min(g.x0, q.x), math.min(g.y0, q.y), math.max(g.x1, q.x), math.max(g.y1, q.y)
           for k, z in ipairs(loose) do
@@ -258,16 +259,40 @@ return function(api)
     -- hub ammo no inserter takes toward a turret: stranded too
     local hub_stranded = {}
     if not any_hub then for name, n in pairs(hub_ammo) do hub_stranded[name] = n end end
-    local glines = {}
+    local glines, recover = {}, {}
     for i, g in ipairs(groups) do
-      if i <= 6 then glines[i] = string.format('%d on %d belt%s in (%g,%g)-(%g,%g)', g.count, g.n, g.n == 1 and '' or 's', g.x0, g.y0, g.x1, g.y1) end
+      if i <= 6 then
+        glines[i] = string.format('%d on %d belt%s in (%g,%g)-(%g,%g)', g.count, g.n, g.n == 1 and '' or 's', g.x0, g.y0, g.x1, g.y1)
+        -- (d17 batch14 A7a, Sol: 80 rounds recovered by deconstructing and rebuilding 20 reserve belts during an urgent
+        -- empty west) the belts holding it, and what else of ours the box round them holds (a deconstruct takes that too)
+        table.sort(g.belts, function(x, y) return x.n > y.n end)
+        local bl = {}
+        for k, y in ipairs(g.belts) do if k <= 8 then bl[k] = string.format('%s %s %d', y.e.name, at(y.e.position), y.n) end end
+        local box = {left_top={x=math.floor(g.x0), y=math.floor(g.y0)}, right_bottom={x=math.floor(g.x1) + 1, y=math.floor(g.y1) + 1}}
+        local others = 0
+        for _, b in ipairs(all) do
+          local q = b.position
+          if q.x >= box.left_top.x and q.x <= box.right_bottom.x and q.y >= box.left_top.y and q.y <= box.right_bottom.y then others = others + 1 end
+        end
+        others = others - g.n
+        recover[i] = {count=g.count, belts=bl, belts_more=g.n > 8 and g.n - 8 or nil, area=box, other_belts_in_area=others > 0 and others or nil}
+      end
     end
-    return {rows=rows, reaches=reaches, stranded=stranded, stranded_groups=glines, stranded_more=#groups > 6 and #groups - 6 or nil,
+    return {rows=rows, reaches=reaches, stranded=stranded, stranded_groups=glines, stranded_recover=recover, stranded_more=#groups > 6 and #groups - 6 or nil,
       hub_ammo=hub_total, hub_reaches=any_hub, turret_own=turret_own, on_belts_reached=belt_reach, in_sources=src_total,
       stranded_by=stranded_by, hub_stranded=hub_stranded}
   end
   -- The read's lines: the totals, the turrets low or empty with what reaches them and what stops it, the stranded stock.
-  function M.lines(tr, all)
+  -- The call that would recover a stranded group: a belt pickup where your character stands on that surface (aboard),
+  -- else a deconstruct of those belts (the hub takes them and the items on them; place them again after).
+  function M.recover_line(r, platform, aboard)
+    local a = string.format('{left_top: {x: %g, y: %g}, right_bottom: {x: %g, y: %g}}', r.area.left_top.x, r.area.left_top.y, r.area.right_bottom.x, r.area.right_bottom.y)
+    local call = aboard and string.format('pickup {belt: true, area: %s}', a)
+      or string.format('deconstruct {platform: "%s", area: %s, entity_types: ["transport-belt", "underground-belt", "splitter"]} (the hub takes the belts and the items on them; blueprint_capture the area first to place them again)', platform, a)
+    return string.format('stranded %d on %s%s; recovered by %s%s', r.count, table.concat(r.belts, ', '), r.belts_more and string.format(' +%d more belts', r.belts_more) or '',
+      call, r.other_belts_in_area and string.format('; that area also holds %d other belt%s of ours', r.other_belts_in_area, r.other_belts_in_area == 1 and '' or 's') or '')
+  end
+  function M.lines(tr, all, platform, aboard)
     local lines = {}
     lines[#lines+1] = string.format('ammunition that can reach a turret: %d (turrets %d, belts on their ways %d, sources %d%s); stranded: %d%s',
       tr.reaches, tr.turret_own, tr.on_belts_reached, tr.in_sources, tr.hub_ammo > 0 and string.format(', hub %d%s', tr.hub_ammo, tr.hub_reaches and '' or ' NOT reaching any turret: no inserter takes it toward one') or '',
@@ -284,6 +309,16 @@ return function(api)
       end
     end
     if shown > 16 then lines[#lines+1] = string.format('+%d more turrets', shown - 16) end
+    -- (d17 batch14 A7a) every turret's reach in one line
+    local each = {}
+    for i, row in ipairs(tr.rows) do if i <= 32 then each[i] = string.format('%s %d', at(row.position), row.reaches) end end
+    if #each > 0 then
+      lines[#lines+1] = 'ammunition that can reach each turret: ' .. table.concat(each, ', ') .. (#tr.rows > 32 and string.format(', +%d more', #tr.rows - 32) or '')
+    end
+    for _, r in ipairs(tr.stranded_recover or {}) do lines[#lines+1] = M.recover_line(r, platform, aboard) end
+    if (tr.stranded_recover and #tr.stranded_recover > 0) then
+      lines[#lines+1] = tr.hub_reaches and 'the hub\'s ammunition reaches a turret (an inserter takes it toward one)' or 'the hub\'s ammunition reaches NO turret: no inserter takes it toward one'
+    end
     return lines
   end
   return M

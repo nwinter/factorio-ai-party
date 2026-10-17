@@ -137,7 +137,38 @@ return function(api)
     o.resume=nil; o.held=nil
     o.next_tick=game.tick+(o.when and o.cooldown or o.interval)
   end
+  -- Where an order works (A2): its first step's position (or first of positions, or its area's middle), else its
+  -- condition's position; nil when none is named.
+  local function place_of(o)
+    local st=o.steps and o.steps[1]
+    local a=st and st.args or {}
+    local q=a.position or (type(a.positions)=='table' and a.positions[1]) or nil
+    if not q and type(a.area)=='table' then
+      local lt,rb=a.area.left_top or a.area[1],a.area.right_bottom or a.area[2]
+      if lt and rb then q={x=((lt.x or lt[1])+(rb.x or rb[1]))/2,y=((lt.y or lt[2])+(rb.y or rb[2]))/2} end
+    end
+    q=q or (o.when and o.when.position)
+    if type(q)~='table' then return nil end
+    local x,y=q.x or q[1],q.y or q[2]
+    return type(x)=='number' and type(y)=='number' and {x=x,y=y} or nil
+  end
+  -- max_walk (A2): an order whose place lies farther than that from you waits (said in its state), looked at again in
+  -- 10 s; true when it may start.
+  local function near_enough(index,o)
+    if not o.max_walk then return true end
+    local q=place_of(o)
+    if not q then return true end
+    local ok,p=pcall(api.player,index)
+    local c=ok and p and p.character
+    if not (c and c.valid) then return true end
+    local d=math.sqrt((c.position.x-q.x)^2+(c.position.y-q.y)^2)
+    if d<=o.max_walk then o.far=nil; return true end
+    o.far=string.format('its place (%g,%g) lies %.0f tiles from you, over max_walk %d',q.x,q.y,d,o.max_walk)
+    o.next_tick=game.tick+600
+    return false
+  end
   local function start(index,o)
+    if not near_enough(index,o) then return end
     local why=o.resume and 'resumed' or o.when and o.held and o.held.saw or 'default routine'
     local items=o.resume or o.steps
     o.resume=nil
@@ -195,6 +226,9 @@ return function(api)
       return
     end
     if paused(b) or away(index) then return end
+    -- a sleep with orders: false (A2): none starts while it runs
+    local sl=(api.state().sleeps or {})[index]
+    if sl and sl.no_orders and game.tick<(sl.until_tick or 0) then return end
     if busy(index) then b.busy_tick=game.tick; return end
     if game.tick-M.since(index,b)<b.hold then return end
     local p=api.player(index)
@@ -227,6 +261,7 @@ return function(api)
     if o.off then return 'off' end
     if killed() then return 'paused by the operator' end
     if o.resume then return 'resumes when free' end
+    if o.far and game.tick<o.next_tick then return 'waits: '..o.far end
     if o.enemy_wait then
       local w=o.enemy_wait
       return string.format('waiting for enemies%s to clear (%s), looks again in %s s',w.at and string.format(' near (%g,%g)',w.at.x,w.at.y) or '',w.now or w.reason,secs(math.max(0,o.next_tick-game.tick)))
@@ -335,6 +370,7 @@ return function(api)
     local default_ticks=math.min(216000,math.max(3600,math.ceil(span/64)*3600,budget+600))
     local o={name=name,steps=items,when=when,priority=int(a.priority,5,1,9,'priority'),cooldown=int(a.cooldown_ticks,600,300,216000,'cooldown_ticks'),
       interval=int(a.interval_ticks,1800,60,216000,'interval_ticks'),max_ticks=int(a.max_ticks,default_ticks,60,216000,'max_ticks'),
+      max_walk=a.max_walk~=nil and int(a.max_walk,nil,1,1000,'max_walk') or nil,
       failures=0,runs=0,next_tick=game.tick}
     local b=book(p.index,true)
     local old,at=find(b,name)
@@ -415,7 +451,7 @@ return function(api)
     return {ok=true,tick=game.tick,on=k and true or false,since_tick=k and k.tick or nil,stopped=stopped,agents_with_orders=agents}
   end
   M.schema={
-    order_set={name='1..32 letters, digits, - or _; the same name replaces that order (and switches one that went off back on)',
+    order_set={name='1..32 letters, digits, - or _; the same name replaces that order (and switches one that went off back on)',max_walk='optional 1..1000 tiles: the order starts only while its place (its first step\'s position, positions or area, else its when\'s position) lies within that many tiles of you; farther, it waits (its state says how far)',
       steps='1..32 plan steps, as queue_submit (action, args, wait, label, on_fail)',
       when='optional condition, as wait_until: until=ammo_below|item_count|ghosts_waiting|damaged|fuel_below|health_below|no_enemies|platform_arrived|platform_left|...; radius at most 256; ammo_below/fuel_below also take area up to 256x256, positions at most 16. The order runs when it holds. Without when: your default routine (one), run every interval_ticks while no trigger holds',
       priority='with when: 1..9 (default 5). The highest holding trigger runs first; a holding trigger stops a running order of lower priority (the default routine counts 0), which resumes after',

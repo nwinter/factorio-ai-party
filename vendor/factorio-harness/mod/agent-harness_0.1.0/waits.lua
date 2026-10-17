@@ -30,7 +30,7 @@ return function(api)
       returns='open: one line of what is open for you (your board items, alert groups and idle or starved machines in your fresh claims, requests and tells to you unanswered; counts and up to 3 examples), also on the reply that reads the wake; capped when cut to 300 s; wait_estimates: each condition ETA in game seconds with rate basis, or no_estimate reason; idle_s: character idle seconds in this wait; wait_line: one-line summary',
       peek='boolean: the reply leaves the team block for your next reply (fh wait --until)', wake_on_viewers=WAKE_VIEWERS, wake_from=WAKE_FROM, wake_on_operator=WAKE_OPERATOR, wake_on_urgent=WAKE_URGENT,
       wake_on_messages='boolean default true; false (fh sleep/wait --wait-through-tells): no tell or mention ends it (they stay for your next reply); a tell sent with wake: true still does, once per 10 minutes per teammate; urgent alerts, damage, your queue finishing or stalling and the condition still end it',
-      wake_on_orders='boolean default false: a standing order\'s round finishing or stalling ends the sleep too (by default only your own plan\'s does; the order keeps running)',
+      orders='optional false: no standing order starts while this sleep runs (one already running goes on; orders_pause {seconds} holds them for a set time)',wake_on_orders='boolean default false: a standing order\'s round finishing or stalling ends the sleep too (by default only your own plan\'s does; the order keeps running)',
       note='fh sleep SECONDS [--until ...]: waits while the game runs (in turns mode it advances the game); your current action and queue keep going, and the reply says first which (while_asleep). Returns early when your character takes damage or dies, a teammate\'s message mentions you (a viewer\'s @mention waits for your next reply unless wake_on_viewers), a teammate tells you something (tell), a board item of yours is assigned or changed by someone else, eggs of ours on your surface or built by you will hatch within 5 minutes (eggs), an urgent alert (urgent, see wake_on_urgent), your running queue finishes or stalls (a step fails, or a walking step has not moved you for 30 s), or the condition holds; a dead bot sleeps until it respawns. sleep_check reports woke=damaged|died|respawned|urgent|mentioned|told|board|eggs|alert|queue_done|queue_stalled|condition|elapsed'},
     sleep_check = {peek='boolean: leave mentions unread (the CLI polls with peek, then reads once)', returns='woke (nil while sleeping), slept_s, health/lost when damaged, urgent (the urgent alert), alert (the alert that woke an until=alert sleep), mention, tell, board, eggs, queue (what finished or stalled), saw (the condition), queue_steps (steps your queue finished during the sleep), wait_estimates (current ETA/rate basis or no_estimate for each condition), idle_s (character idle seconds in this wait), wait_line (one line)'},
   }
@@ -241,6 +241,10 @@ return function(api)
     local record = {start_tick=game.tick, until_tick=game.tick + seconds * 60, health=c and c.valid and c.health or nil,
       conditions=condition and conditions or nil, wake_viewers=a.wake_on_viewers == true or nil,wait_alert=alert}
     if a.wake_on_messages == false then record.wake_messages = false end
+    -- orders: false (d17 batch14 A2, Haiku: a standing order walked him 31 tiles during a sleep): no standing order
+    -- starts while this sleep runs (one running goes on)
+    assert(a.orders == nil or a.orders == false, 'orders is false: no standing order starts during this sleep')
+    if a.orders == false then record.no_orders = true end
     record.wake_filter = api.wake_filter and api.wake_filter(a) or nil
     -- A dead bot sleeps until it respawns (or a mention, or time up).
     record.dead_until = api.dead_until and api.dead_until(p.index) or nil

@@ -573,6 +573,11 @@ return function(api)
   function M.start(p, nav, mode)
     local surface = p.surface
     if not mode or surface.platform ~= nil then return nil end
+    -- (d17 batch14, Opus 13:48 death: a recover tour's leg fell back to a spot within the corpse's reach, which clears
+    -- the leg's fields, foes among them, and started again only when nav.avoid_mode was set, which a tour's nav was not:
+    -- the reach walk went 32 tiles from a spawner and inside a big worm's range) the mode stays on the nav, so every walk
+    -- started again on it plans round the nests as its first did.
+    nav.avoid_mode = nav.avoid_mode or mode
     local f = {mode=mode, goal={x=nav.position.x, y=nav.position.y}, origin={x=p.position.x, y=p.position.y}, tolerance=nav.tolerance, detours=0, skips=0}
     f.pending = M.missing(surface, M.chunks_near({p.position, f.goal}, max_reach(mode)))
     -- The attacks under way now: the plan goes round those it meets; one that starts later is M.attack_ahead's.
@@ -977,6 +982,19 @@ return function(api)
       if d < m.range and (not inside or d - m.range < inside.d - inside.m.range) then inside = {m=m, d=d} end
     end
     return inside
+  end
+  -- The worms and spawners (and areas under attack, as mode counts them) whose reach + the margin comes within R tiles
+  -- of point, on the chunks the map draws: [{x, y, r (reach + margin), name, range, spawner}] (d17 batch14, Opus 13:46:
+  -- construct stood him 40.0 tiles from a spawner, inside its 44 with the margin, to build; spitters killed him there).
+  function M.margin_discs(p, point, mode, R)
+    if not mode or p.surface.platform ~= nil then return {} end
+    local discs, out = {}, {}
+    read_discs(p, mode, point, discs, {}, R + max_reach(mode))
+    for _, m in ipairs(discs) do
+      local r = (mode.distance and math.max(mode.distance, m.range) or m.range) + mode.pad
+      if dist(m, point) < R + r then out[#out+1] = {x=m.x, y=m.y, r=r, name=m.name, range=m.range, spawner=m.spawner} end
+    end
+    return out
   end
   -- goal_check's first step alone (round2120a: a tour checks each of its stops at the call): the weapon whose own
   -- reach holds goal, {m, d, nest}, or nil; no safe spot is worked out.

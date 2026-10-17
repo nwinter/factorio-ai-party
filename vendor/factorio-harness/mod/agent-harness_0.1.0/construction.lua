@@ -176,7 +176,7 @@ return function(api)
     -- By default worms and spawners only: building in an area under attack is what defending it takes (on a copy of
     -- world n, Opus's construct begun inside attack #4338 found no leg out of it and read every ghost unreachable).
     if mode and a.avoid_enemies==nil then mode.attacks=nil end
-    action.avoid_mode=mode
+    action.avoid_mode=mode; action.unsafe_goal=a.unsafe_goal or nil
     local inside_n,inside_by,checked=0,{},0
     local function add(e,ghost) add_mine(action,e,ghost) end
     -- Tile ghosts (landfill, paths) are placed like tiles from the cursor;
@@ -699,10 +699,19 @@ return function(api)
     local live={}
     for _,rec in ipairs(action.pending) do if rec.ghost.valid then live[#live+1]=rec end end
     local build_reach,mine_reach=reach(p)-1,reach(p,{mine=true})
+    -- (d17 batch14, Opus 13:46: stood 40.0 tiles from a biter spawner to build, inside its 40 + 4, and spitters killed
+    -- him there) no stand inside a worm's or spawner's reach + the margin, as a walk keeps out of it; unsafe_goal: any.
+    local danger=action.avoid_mode and not action.unsafe_goal and api.margin_discs and api.margin_discs(p,gp,action.avoid_mode,far+1) or {}
     local best,best_score
     for _,c in ipairs(candidates) do
       local ok=not (target.blocked_at and api.distance(c,target.blocked_at)<1.5)
       for _,bad in ipairs(target.bad_stands or {}) do if api.distance(c,bad)<1.5 then ok=false end end
+      for _,m in ipairs(danger) do
+        if ok and api.distance(c,m)<m.r then
+          ok=false
+          target.margin_by=target.margin_by or string.format('%s (%g,%g) (%s %g + %g)',m.name,math.floor(m.x+0.5),math.floor(m.y+0.5),m.spawner and 'sight' or 'range',m.range,m.r-m.range)
+        end
+      end
       if ok and can_stand(p,live,c) then
         local cover=0
         for _,rec in ipairs(live) do
@@ -919,7 +928,7 @@ return function(api)
         end
         return
       end
-      fail(action,rec,'no free stand point in reach'); gone[rec]=true
+      fail(action,rec,rec.margin_by and 'no stand point in reach outside the reach of '..rec.margin_by..' (unsafe_goal: true builds it)' or 'no free stand point in reach'); gone[rec]=true
     end
     -- Only ghosts whose obstacles could not be mined remain.
     for _,rec in ipairs(action.pending) do

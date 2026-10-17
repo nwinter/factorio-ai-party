@@ -104,3 +104,9 @@
   `turret_coverage`) and through every covered area that joins; a refusal names where coverage is missing.
 - Rail crossings: move_to and its dry run give `rail_crossings` (each place the route crosses rails, with any train
   whose path crosses there now). On a rail with a train coming over the next track, a walk backs off the rails.
+- A walk refused `unreachable` or `no_safe_route` names a `staging` spot or via point from teammates' walks of the last
+  30 minutes near you and the goal.
+- `rearm {radius|area|surface, dry_run: true}`: the stops it would walk, each turret's rounds and what it gets, those
+  wanting ammo you do not carry, and the route.
+- A walk that falls back to a spot within its target's reach (recover, transfer, feed tours) keeps the enemy margin;
+  `construct` stands no nearer a worm or spawner than its reach + the margin (refused ghosts name it).

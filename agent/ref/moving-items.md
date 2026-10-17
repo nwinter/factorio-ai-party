@@ -103,3 +103,7 @@
   chest or belt.
 - `pickup {belt: true, ..., spoiled_first: true}` takes the most spoiled stacks first; `min_spoiled: N` only stacks at
   least N% spoiled; `last.picked_spoil` gives each stack taken and its spoilage.
+- `refuel {from: "nearest"}` reads chests and belts apart (2048 and 1024) and the logistic network's pickup point for
+  the fuel, so a chest behind many belts is found.
+- `transfer` gives `freshness` (the moved stacks' spread) and takes `spoiled_first: true` and `min_spoil` (alias
+  `min_spoiled`) or `max_fresh` to move only the rotten tail; `load_silo` gives `freshness` at the top.
