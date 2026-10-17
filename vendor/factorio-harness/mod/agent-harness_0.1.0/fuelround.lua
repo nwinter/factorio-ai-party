@@ -3,7 +3,8 @@
 return function(api)
   local M={}
   local CHEST={container=true,['logistic-container']=true}
-  local SOURCES={'container','logistic-container','transport-belt','underground-belt','splitter'}
+  local CHEST_TYPES,BELT_TYPES={'container','logistic-container'},{'transport-belt','underground-belt','splitter'}
+  M.MAX_CHESTS,M.MAX_BELTS=2048,1024
   local function seen(p,e)
     return api.distance(p.position,e.position)<=32 or p.force.is_chunk_visible(p.surface,{x=math.floor(e.position.x/32),y=math.floor(e.position.y/32)})
   end
@@ -167,12 +168,28 @@ return function(api)
   end
   local function source(p,action)
     local r=action.fuel_round
-    local list=r.from and {r.from} or r.nearest and p.surface.find_entities_filtered{position=p.position,radius=r.radius or 64,force=p.force,type=SOURCES,limit=257} or {}
-    r.source_read_capped=#list==257 or r.source_read_capped
-    local places={}
-    for i=1,math.min(256,#list) do
-      local e=list[i]
-      if e.valid and not r.tried[key(e)] and seen(p,e) and stock(e,action.item,action.quality)>0 then places[#places+1]={entity=e,position=e.position} end
+    -- (d17 batch14 A8, Luna: 94 rocket fuel in a passive provider 32 tiles off went unfound behind 256 belts) chests and
+    -- belts read apart, MAX_CHESTS and MAX_BELTS each, and the logistic network's own pickup point for the fuel
+    local list
+    if r.from then list={r.from}
+    elseif r.nearest then
+      local radius=r.radius or 64
+      local chests=p.surface.find_entities_filtered{position=p.position,radius=radius,force=p.force,type=CHEST_TYPES,limit=M.MAX_CHESTS+1}
+      local belts=p.surface.find_entities_filtered{position=p.position,radius=radius,force=p.force,type=BELT_TYPES,limit=M.MAX_BELTS+1}
+      r.source_read_capped=#chests>M.MAX_CHESTS or #belts>M.MAX_BELTS or r.source_read_capped
+      list={}
+      for i=1,math.min(M.MAX_CHESTS,#chests) do list[#list+1]=chests[i] end
+      for i=1,math.min(M.MAX_BELTS,#belts) do list[#list+1]=belts[i] end
+      local ok,pt=pcall(function()
+        local net=p.surface.find_logistic_network_by_position(p.position,p.force)
+        return net and net.select_pickup_point{name={name=action.item,quality=action.quality},position=p.position}
+      end)
+      local owner=ok and pt and pt.owner
+      if owner and owner.valid and api.distance(p.position,owner.position)<=radius then list[#list+1]=owner end
+    else list={} end
+    local places,dup={},{}
+    for _,e in ipairs(list) do
+      if e.valid and not dup[key(e)] and not r.tried[key(e)] and seen(p,e) and stock(e,action.item,action.quality)>0 then dup[key(e)]=true; places[#places+1]={entity=e,position=e.position} end
     end
     table.sort(places,function(x,y) return api.distance(p.position,x.position)<api.distance(p.position,y.position) end)
     local kept,left=api.screen(p,places,action.avoid_mode,action.unsafe_goal)
@@ -211,7 +228,7 @@ return function(api)
     end
     if api.held(p,action.item,action.quality)==0 and need(action)>0 then
       if r.attempts>=64 or not source(p,action) then
-        action.why=r.attempts>=64 and 'fuel round reached 64 source attempts' or ('no eligible '..action.item..' found in the selected source'..(r.nearest and 's within '..(r.radius or 64)..' tiles' or '')..(r.source_read_capped and ' (source read capped at 256)' or ''))
+        action.why=r.attempts>=64 and 'fuel round reached 64 source attempts' or ('no eligible '..action.item..' found in the selected source'..(r.nearest and 's within '..(r.radius or 64)..' tiles' or '')..(r.source_read_capped and string.format(' (source read capped at %d chests and %d belts)',M.MAX_CHESTS,M.MAX_BELTS) or ''))
         return 'out_of_items'
       end
       return nil

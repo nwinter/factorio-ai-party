@@ -122,3 +122,10 @@
   reach and the drills supplying it, with the hours left.
 - `where_is` and `stock` for a spoilable item give `spoils_within_2_min` beside the total (and per place).
 - `inspect {area}` always returns `entities` (64 a page: `page`, `pages`, `next`) and `by_name` beside them.
+- `fuel_budget {boilers: true}` lists each boiler under 5 fuel with its feeding inserters (burner fuel, no power, not
+  connected), the nearest chest or belt holding the fuel, and one `refuel {positions, fuel, count, from: "nearest"}` call.
+- `inspect {area, all: true}` lists every entity there (belts, poles, inserters too) with its direction and an
+  inserter's pickup and drop; `compact: true` gives a line each. `inspect {position}` with nothing there lists what
+  stands within 3 tiles (`not_at` says so).
+- `scan {fields: "inventory"}` on belts gives their items per lane (`L: ... | R: ...`), on a platform too.
+- `stock {item, surface}` adds `by_network`: each logistic network's hold in providers, storage and other holders.

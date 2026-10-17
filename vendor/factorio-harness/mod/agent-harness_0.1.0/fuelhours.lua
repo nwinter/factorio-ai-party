@@ -12,6 +12,7 @@
 return function(api)
   local M = {}
   local MAX_BOILERS, GAP, BELT_TILES, MAX_DRILLS = 512, 8, 3000, 256
+  local LOW_FUEL, SOURCE = 5, 96
   local BELT = {['transport-belt']=true, ['underground-belt']=true, splitter=true}
   local CHEST = {container=true, ['logistic-container']=true}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -188,12 +189,63 @@ return function(api)
       out[#out+1] = row
       if main then fuels[main] = true end
       row.drills_not_supplying = #st_text > 0 and table.concat(st_text, ', ') or nil
+      -- (d17 batch14 A1, Haiku: about every 10 min a boiler run dry and a hunt for coal) the boilers low on fuel, each
+      -- with what feeds it and whether that has power, the nearest fuel source, and one refuel call for them
+      local low, positions, low_line = {}, {}, nil
+      for _, b in ipairs(g) do
+        local inv = try(function() return b.get_fuel_inventory() end)
+        local n = inv and (try(function() return inv.get_item_count() end) or 0) or 0
+        -- (a heat exchanger is a boiler with no fuel slot: left out)
+        if inv and n < LOW_FUEL and #low < 16 then
+          local feeds = {}
+          local bb = b.bounding_box
+          for _, i in ipairs(try(function() return b.surface.find_entities_filtered{area={{bb.left_top.x - 3, bb.left_top.y - 3}, {bb.right_bottom.x + 3, bb.right_bottom.y + 3}}, type='inserter', force=force} end) or {}) do
+            if try(function() return i.drop_target end) == b then
+              local st = api.status_name and api.status_name(i) or 'unknown'
+              local power
+              if try(function() return i.burner end) then
+                local fi = try(function() return i.get_fuel_inventory() end)
+                local f = fi and (try(function() return fi.get_item_count() end) or 0) or 0
+                power = f > 0 and 'burner with ' .. f .. ' fuel' or (try(function() return i.burner.remaining_burning_fuel end) or 0) > 0 and 'burner, burning its last' or 'burner with NO fuel'
+              else
+                power = (st == 'no_power' or st == 'low_power') and st:gsub('_', ' ') or ((try(function() return i.electric_network_id end) and 'powered') or 'NOT connected to power')
+              end
+              local src = try(function() local x = i.pickup_target; return x and x.valid and x end)
+              feeds[#feeds+1] = string.format('%s %s (%s) from %s', i.name, at(i.position), power, src and src.name .. ' ' .. at(src.position) or 'nothing')
+            end
+          end
+          low[#low+1] = string.format('%s %s holds %d: %s', b.name, at(b.position), n, #feeds > 0 and table.concat(feeds, '; ') or 'no inserter feeds it')
+          positions[#positions+1] = string.format('[%g,%g]', b.position.x, b.position.y)
+        end
+      end
+      -- (no fuel seen in the group: coal, what boilers burn first)
+      local want = main or (#low > 0 and 'coal') or nil
+      if #low > 0 and want then
+        row.low = low
+        -- the nearest chest holding the fuel (logistic or plain), else the nearest belt carrying it, within SOURCE tiles
+        local best, bd
+        for _, c in ipairs(try(function() return g[1].surface.find_entities_filtered{position=center, radius=SOURCE, type={'container', 'logistic-container'}, force=force, limit=512} end) or {}) do
+          local n = try(function() return c.get_item_count(want) end) or 0
+          if n >= 10 then local d = math.sqrt((c.position.x - center.x) ^ 2 + (c.position.y - center.y) ^ 2); if not bd or d < bd then best, bd = {e=c, n=n}, d end end
+        end
+        if not best then
+          for _, b in ipairs(try(function() return g[1].surface.find_entities_filtered{position=center, radius=math.min(SOURCE, 48), type='transport-belt', force=force, limit=400} end) or {}) do
+            local n = lane_count(b, want)
+            if n > 0 then local d = math.sqrt((b.position.x - center.x) ^ 2 + (b.position.y - center.y) ^ 2); if not bd or d < bd then best, bd = {e=b, n=n, belt=true}, d end end
+          end
+        end
+        row.source = best and string.format('%s %s %s %d %s, %.0f tiles from the boilers', best.e.name, at(best.e.position), best.belt and 'carries' or 'holds', best.n, want, bd)
+          or string.format('no chest holding 10 %s or belt carrying it within %d tiles', main, SOURCE)
+        row.refuel = string.format('refuel {positions: [%s], fuel: "%s", count: 20%s}', table.concat(positions, ', '), want, best and not best.belt and ', from: "nearest", from_radius: ' .. math.min(128, math.ceil(bd) + 8) or '')
+        low_line = string.format('  low (under %d %s): %s; fuel: %s; %s', LOW_FUEL, want, table.concat(low, ' | '), row.source, row.refuel)
+      end
       lines[#lines+1] = string.format('%d boiler%s near %s (%d working) burn %s %g/min at full use; hold %d in their slots, %d in %d chest%s and %d on %d belt tile%s feeding them; %d drill%s on those belts (%d working) put up to %g/min%s: %s',
         #g, #g == 1 and '' or 's', row.near, working, main or 'no fuel', row.burn_per_min, held, in_chests, nchests, nchests == 1 and '' or 's', on_belts, #m.tiles,
         #m.tiles == 1 and '' or 's', drills + gone, drills + gone == 1 and '' or 's', dworking, row.supply_per_min,
         #st_text > 0 and ' (working or backed up; not counted: ' .. table.concat(st_text, ', ') .. ')' or '',
         hours and string.format('short %g/min, about %.1f h of fuel in reach of them (%d)', -row.balance_per_min, hours, stock)
           or (burn > 0 and string.format('the drills cover the burn (+%g/min)', row.balance_per_min) or 'nothing burning now'))
+      if low_line then lines[#lines+1] = low_line end
     end
     if capped then lines[#lines+1] = string.format('the belts were walked back %d tiles in all, the cap: farther drills are not counted', BELT_TILES) end
     table.sort(out, function(x, y) return (x.hours_left or math.huge) < (y.hours_left or math.huge) end)

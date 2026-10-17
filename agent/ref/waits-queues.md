@@ -102,3 +102,5 @@
   (`platform_built` takes the same subset).
 - `reminder_add {..., wake: false}`: its line comes with your next reply and wakes no wait. `reminder_ack {id, result,
   next_in_ticks}` puts the next run off; its owner's `every_ticks` there sets a new cadence.
+- `order_set {..., max_walk: N}`: the order waits (state says where and how far) while its place is over N tiles from
+  you. `sleep {orders: false}` starts no standing order during the sleep.

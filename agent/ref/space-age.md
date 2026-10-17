@@ -152,3 +152,7 @@
   (`stock_at_start` says what), then ends (launches with launch) instead of touring on for a trickle.
 - `load_silo {dry_run: true}`: each item's weight, slots and sources, the rocket's room, the split and the platform
   hub's free slots. A list over one rocket is refused unless `launch_split: true`.
+- `platform_defense` lists the ammunition that can reach each turret, and per stranded belt group its belts and the
+  call that recovers it (a belt pickup aboard, else `deconstruct` of those belts into the hub).
+- `circuit_audit {platform}`: whole-belt readers (`entire_belt_hold`) on one network whose belts overlap (counted
+  twice), and each asteroid collector whose filter the circuit sets: the filter it holds and the chunk signals there.

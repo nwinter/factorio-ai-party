@@ -6276,3 +6276,55 @@ fh watch    # deploy on every change
   On the copy: 1500 iron plates and 10 undergrounds read "1700 kg in 16 slots ... over one rocket: launch_split: true
   sends it as 2 rockets (rocket 1: iron-plate 1000 (1000 kg); rocket 2: iron-plate 500, underground-belt 10 (700 kg))",
   Swift's hub 28 free slots; the launch without launch_split was refused with that plan.
+- A1 (Haiku: a boiler ran dry about every 10 min): `fuel_budget {boilers: true}` lists, per boiler group, each boiler
+  under 5 fuel (heat exchangers left out; 16 at most) with the inserters that feed it and their power (burner fuel,
+  no power, NOT connected), the nearest chest holding 10+ of its fuel within 96 tiles (else a belt within 48), and one
+  `refuel {positions, fuel, count: 20, from: "nearest", from_radius}` call for them. A first read cost 27 ms more on the
+  copy (about 5 ms on n).
+- A2 (Haiku moved 31 tiles by a standing order mid-sleep): `order_set {max_walk: N}`: the order waits while its place
+  lies over N tiles from you (state: "waits: ... lies N tiles from you, over max_walk"); `sleep {orders: false}`
+  starts no standing order during that sleep.
+- A3 (Muse: an unreachable walk with no hint): `unreachable` and `no_safe_route` replies add `staging`: from every
+  agent's walked trails of the last 30 minutes, a trail within 16 tiles of you and 48 of the goal gives via points,
+  else the trail point nearest the goal within 48 tiles is a staging spot (`staging_via`, `staging_spot`).
+- A4: `rearm {radius|area|surface, dry_run: true}` plans the tour without walking: each turret with its rounds and
+  what it would get, those wanting ammo you carry none of, below, left_out, and the route read as move_to dry_run.
+- A6 (Opus 3x): `inspect {area, all: true}` lists every entity of ours there (no type filter, characters left out),
+  each with its direction, and an inserter's pickup and drop; compact lines say "facing X" and "picks at ..., drops
+  at ...".
+- A7 (Sol): `platform_defense` adds a line with the ammunition that can reach each turret (32 per line) and
+  `feed.turrets [{position, holds, reaches, stopped}]`; per stranded belt group (6 at most) its belts (most first, 8
+  named), the call that recovers it (`pickup {belt: true, area}` when your character stands on that surface, else
+  `deconstruct {platform, area, entity_types: belts}`: the hub takes the belts and the items on them; capture the area
+  first to place them again), the other belts of ours in that area, and whether the hub's ammunition reaches a turret.
+  On the copy, Kestrel: three groups (15 on 4 belts at (-2.5,5.5)-(-2.5,8.5), 8, 4), each with its call.
+  New read `circuit_audit {platform}` (circaudit.lua): belts reading their entire belt onto a network, and each pair on
+  one network whose whole belts share tiles (the items reach it twice); each asteroid collector whose filters the
+  circuit sets, with the filter it holds and the chunk signals on its networks with values (only a positive one sets a
+  filter). On the copy: Swift's two collectors hold no filter with metallic -5 and carbonic -8 on green #401; Wren's
+  likewise with carbonic -4 and oxide -3; Kestrel's two whole-belt readers do not overlap.
+- A8 (Luna: 94 rocket fuel in a passive provider 32 tiles off was not found): `refuel {from: "nearest"}` read the first
+  257 chests and belts together within from_radius; near Luna's spot on the copy 163 chests and 814 belts stood, and
+  that read missed the chest. Chests (2048) and belts (1024) are now read apart, and the logistic network's pickup
+  point for the fuel is added. fuel_budget's refuel call caps from_radius at 128 (refuel's own limit).
+- A10 (Astra): `scan {fields: "inventory"}` gives a belt's items per lane, as `lanes` does.
+- A11 (Gemini): `stock {item, surface}` adds `by_network`, a line per logistic network holding the item: providers
+  (active and passive provider chests), storage, and other holders (requester, buffer, landing pad ...) with counts;
+  4.7 ms on the copy for iron-plate on nauvis.
+- A12 (Gemini): `inspect {position}` with nothing there lists every entity within 3 tiles (`not_at` says so); with
+  none, the refusal as before.
+- A13 (Grok): `transfer` gives `freshness` (the moved stacks' spread, a line per item) and takes `spoiled_first: true`
+  (the most spoiled stacks first), `min_spoil` (alias `min_spoiled`) or `max_fresh`; stacks outside it stay
+  (`left_less_fresh`). `load_silo` gives `freshness` at the top. On the copy: `min_spoil: 90` from a chest of bioflux
+  24-97% spoiled moved 150 at 95-97%.
+- Opus's deaths at 13:46 and 13:48 (operator): (1) `construct` over (19,167)-(105,193) left out the ghosts within a
+  spawner's own 40 tiles but stood him at (76.7,173.1), 40.0 tiles from biter-spawner (116.5,177.5) and 43.9 from a
+  spitter spawner, inside their 44 with the margin; acid killed him there. A stand inside a worm's or spawner's reach +
+  the margin is no longer chosen (unsafe_goal: any); a ghost with no other stand fails naming it. On the copy (n's
+  14:26 autosave) the old code walked to (97.2,191.3), 31 tiles from a spitter spawner, to mine trees; the new one
+  refused those 5. (2) `recover` toward that corpse from (235.5,-152.3): its leg fell back to a spot within the
+  corpse's reach, which clears the leg's fields (foes among them) and started avoidance again only when
+  `nav.avoid_mode` was set, which a tour's nav never was. The walk went to 31.9 tiles from biter-spawner (197.5,-24.5)
+  and inside big-worm (199,-30)'s range; big biters killed him at (156,-8). `avoid.start` keeps the mode on the nav.
+  On the copy, from (182,-116.2), the old code walked to 31.9 tiles and was hit; the new one ends no_safe_route at
+  (158.9,-66.3).
