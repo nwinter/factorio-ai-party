@@ -186,3 +186,32 @@ do
   eq(runtime.unit_wait(gp,nav2),false)
 end
 print('d17_batch17_rt B3 a route blocked by moving enemies waits and plans again: ok')
+
+-- C3 (Muse 4x: transfer of 14 magazines to a turret holding 6 refused for direction): with the target holding the item
+-- only in slots it feeds from, an omitted direction is a give, said; a chest holding it too stays refused.
+do
+  local gi=runtime.bots.index_of('grok')
+  local gp=runtime.lookup(gi)
+  gp.character.position={x=28,y=221}
+  gp.character.items['firearm-magazine']=20
+  defines.inventory.turret_ammo=defines.inventory.turret_ammo or 30
+  local function inv(n) return {valid=true,get_item_count=function(f) return f.name=='firearm-magazine' and n or 0 end} end
+  local turret={valid=true,name='gun-turret',type='ammo-turret',force=force,surface=surface,position={x=30,y=221},unit_number=901,
+    get_inventory=function(i) if i==defines.inventory.turret_ammo then return inv(6) end end}
+  local chest={valid=true,name='iron-chest',type='container',force=force,surface=surface,position={x=32,y=221},unit_number=902,
+    get_inventory=function(i) if i==defines.inventory.chest then return inv(6) end end}
+  local was=surface.find_entities_filtered
+  surface.find_entities_filtered=function(f)
+    local q=f.position or (f.area and {x=(f.area[1][1] or f.area[1].x),y=0})
+    if f.position and f.position.x==30 then return {turret} end
+    if f.position and f.position.x==32 then return {chest} end
+    return {}
+  end
+  local dir,note=runtime.infer_direction(gp,{position={x=30,y=221},item='firearm-magazine',count=14})
+  eq(dir,'to_entity')
+  assert(note and note:find('you hold 20 firearm-magazine and the target holds it only in the slots it feeds from (6)',1,true),tostring(note))
+  local ok,err=pcall(runtime.infer_direction,gp,{position={x=32,y=221},item='firearm-magazine',count=14})
+  assert(not ok and tostring(err):find('direction is required',1,true),tostring(err))
+  surface.find_entities_filtered=was
+end
+print('d17_batch17_rt C3 a give inferred into the slots a target feeds from: ok')
