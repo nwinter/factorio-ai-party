@@ -2218,14 +2218,18 @@ crafted=call('craft',{recipe='iron-gear-wheel',count=100})
 eq(crafted.no_assembler['iron-gear-wheel'],'none of our assemblers is set to iron-gear-wheel; one assembling-machine-2 makes these 100 in ~67s without the character')
 assert(crafted.blocks:find('~50s of hand crafting queued (this: ~50s)',1,true),crafted.blocks)
 p.crafting_queue=nil; p.force.recipes['assembling-machine-2']=nil; have['iron-gear-wheel']=4
--- Our machines already hold the product: a covered craft is refused unless forced.
+-- Our machines already hold the product: the craft goes ahead from the inventory and names the stock (d17 batch20
+-- A1); check_stock: true refuses.
 local find_before_stock=p.surface.find_entities_filtered
 local gear_out={get_item_count=function(f) return f.name=='iron-gear-wheel' and 200 or 0 end}
 local gear_machine={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=12,y=5},
   get_output_inventory=function() return gear_out end,get_recipe=function() return {products={{type='item',name='iron-gear-wheel'}}} end}
 p.surface.find_entities_filtered=function(f) return f.radius and {gear_machine} or {} end
 have['iron-gear-wheel']=100
-fails(function() call('craft',{recipe='iron-gear-wheel',count=100}) end,'not crafted: 200 iron-gear-wheel held by our factory (200 in 1 assembling-machine-2); nearest 200 at (12,5) 13 tiles away; collect item=iron-gear-wheel radius=15 gathers it; 200 of it within 25 tiles of you; craft force=true')
+do local near_went=call('craft',{recipe='iron-gear-wheel',count=100})
+eq(near_went.started,100)
+eq(near_went.stock['iron-gear-wheel'],'200 iron-gear-wheel held by our factory (200 in 1 assembling-machine-2); nearest 200 at (12,5) 13 tiles away; collect item=iron-gear-wheel radius=15 gathers it (crafted from your inventory anyway: 200 of it within 25 tiles of you; check_stock: true refuses a craft that stock within 64 tiles covers)') end
+fails(function() call('craft',{recipe='iron-gear-wheel',count=100,check_stock=true}) end,'not crafted: 200 iron-gear-wheel held by our factory (200 in 1 assembling-machine-2); nearest 200 at (12,5) 13 tiles away; collect item=iron-gear-wheel radius=15 gathers it; (check_stock: true counts stock within 64 tiles); craft without check_stock hand-crafts from your inventory')
 -- Existing on_fail: skip continues after a real stock refusal; no chest is
 -- silently drained. Requesters in the journal were feeding other machines.
 ;(function()
@@ -2235,7 +2239,7 @@ fails(function() call('craft',{recipe='iron-gear-wheel',count=100}) end,'not cra
   local chest={valid=true,name='requester-chest',type='logistic-container',position={x=20.5,y=59.5},
     get_inventory=function() return gear_out end}
   p.surface.find_entities_filtered=function(f) return f.radius and {chest} or {} end
-  -- the chest is over 25 tiles away: refused only with check_stock (d16 batch10 D9)
+  -- the chest is over 25 tiles away: refused with check_stock
   local ok,err=pcall(call,'craft',{recipe='iron-gear-wheel',count=100,check_stock=true})
   eq(ok,false);assert(err:find('requester-chest (20.5,59.5) holds 200',1,true),err)
   for _,part in ipairs({'abort (default) pauses','skip continues','goto:<label>','skipping does not acquire items'}) do assert(err:find(part,1,true),err) end
@@ -2247,7 +2251,7 @@ fails(function() call('craft',{recipe='iron-gear-wheel',count=100}) end,'not cra
   eq(gear_out.get_item_count{name='iron-gear-wheel'},200,'stock was only read')
   -- without check_stock the far stock is a note and the craft goes ahead
   local went=call('craft',{recipe='iron-gear-wheel',count=100})
-  eq(went.started,100); assert(went.stock['iron-gear-wheel']:find('crafted anyway: 0 of it within 25 tiles of you',1,true),went.stock['iron-gear-wheel'])
+  eq(went.started,100); assert(went.stock['iron-gear-wheel']:find('crafted from your inventory anyway: 0 of it within 25 tiles of you',1,true),went.stock['iron-gear-wheel'])
   storage.agent_harness.queues,storage.agent_harness.active=oldqueues,oldactive
   p.surface.find_entities_filtered=find
 end)()
@@ -2255,8 +2259,8 @@ local forced=call('craft',{recipe='iron-gear-wheel',count=100,force=true})
 eq(forced.started,100); assert(forced.stock['iron-gear-wheel']:find('200 iron-gear-wheel held',1,true))
 -- A short craft (under 3 s of hand time) goes ahead and just names the stock.
 eq(call('craft',{recipe='iron-gear-wheel',count=2}).started,2)
-local batch_refused=call('craft',{recipes={{recipe='iron-gear-wheel',count=50}}})
-eq(batch_refused.started['iron-gear-wheel'],nil); assert(batch_refused.errors['iron-gear-wheel']:find('not crafted',1,true))
+local batch_went=call('craft',{recipes={{recipe='iron-gear-wheel',count=50}}})
+eq(batch_went.started['iron-gear-wheel'],50); eq(batch_went.errors,nil); assert(batch_went.stock['iron-gear-wheel']:find('crafted from your inventory anyway',1,true))
 -- collect with a radius walks the stock back: here the machine is in reach.
 local gear_slots=inv(stack('iron-gear-wheel',30))
 gear_out.get_item_count=gear_slots.get_item_count

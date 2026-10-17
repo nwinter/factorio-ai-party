@@ -1481,12 +1481,12 @@ fh queue repeat --file plan.json
 - `wait_ticks` and `wait_until` are queue steps and also direct timed actions (see Waiting below).
 - A failed step pauses the queue. Use `on_fail` (`abort`, `skip`, `goto:<label>`) and `guards` to handle failures instead.
   `on_fail` is on the step, outside `args`: `{"action":"craft","args":{"recipe":"iron-gear-wheel","count":10},"on_fail":"skip"}`.
-  A stock refusal from `craft` names up to four nearest stocking chests (name, position, count), from its existing
-  64-tile stock check, and states the options: `abort` (default) pauses, `skip` continues, `goto:<label>` continues at
-  that pending label. Skipping acquires no items. `craft {force: true}` permits hand crafting despite factory stock;
-  `transfer {direction: "from_entity", position, item, count}` or `collect` explicitly takes stock. `craft` does not
-  withdraw it from a chest. The existing refusal applies when stock covers the requested product and its hand craft
-  takes at least 3 seconds.
+  `craft` hand-crafts from your inventory whatever stock the factory holds, and names that stock (`stock`). With
+  `check_stock: true` a craft of at least 3 seconds of hand time that stock within 64 tiles covers is refused: the
+  refusal names up to four nearest stocking chests (name, position, count) and states the options: `abort` (default)
+  pauses, `skip` continues, `goto:<label>` continues at that pending label. Skipping acquires no items.
+  `transfer {direction: "from_entity", position, item, count}` or `collect` takes stock; `craft` does not withdraw it
+  from a chest.
 - A step that runs short (outcome `out_of_items`, `nothing_collected` or `inventory_full`, or a transfer's `no ITEM in
   inventory`) is done, not failed, with `"on_short": "skip"` on the step or `"up_to": true` in a `transfer`, `collect`
   or `feed` step's args: its history entry has `ok: true` and `short: true`, and the plan goes on. Other failures
@@ -6583,3 +6583,10 @@ fh watch    # deploy on every change
   so. An unknown argument that ends or starts with a valid name (chest_position) names it as the closest name. The
   refusal's example takes its position from it. Copy: Sonnet's call ran as `transfer {position, direction:
   "to_player", ...}`.
+
+## d17 batch20 (operator 15:25: the agents' 15:20 poll)
+- A1 (Haiku): `craft` refused 20 firearm-magazine over 650 in four requester chests (150 within 25 tiles), and a gun
+  with no ammo went without. The rule (runtime.lua craft_stock, d16 batch10 D9) refused a craft of 3 s or more of hand
+  time that stock within 25 tiles covered, unless `force: true`. Now `craft` always hand-crafts from your inventory and
+  says where the stock is (`stock`: the factory's holders, nearest and largest, how much within 25 tiles of you).
+  `check_stock: true` refuses as before over stock within 64 tiles. runtime_test.lua.
