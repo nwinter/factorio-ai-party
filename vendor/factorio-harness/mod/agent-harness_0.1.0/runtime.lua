@@ -9747,7 +9747,7 @@ local transfer_directed
 -- A teammate by name (d17 batch16 B2, Muse: transfer {to: "haiku"} could not hand over a uranium-235; players lists
 -- humans only): their player and character, or an error naming the agents.
 function M.teammate(p,name)
-  assert(type(name)=='string' and name~='','to_player is a teammate\'s name')
+  assert(type(name)=='string' and name~='','to_player is a teammate\'s name (a give to them); a take into your inventory is direction: "to_player"')
   local want=name:lower()
   local names={}
   for _,ag in ipairs(M.board.agents() or {}) do
