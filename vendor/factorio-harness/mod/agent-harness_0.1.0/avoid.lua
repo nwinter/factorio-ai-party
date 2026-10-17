@@ -168,10 +168,44 @@ return function(api)
           name=string.format('%d enemy unit%s (%s)', c.n, c.n == 1 and '' or 's', table.concat(parts, ', ')),
           attack=true, units=true, id='u' .. c.k, ago=0, size=c.n}
       end
+      -- Demolishers near the way, head and whole body (d17 batch18 C5, viewer Foobator: the walk checks found the head
+      -- only): their segment entities in a chunk our force sees now, per demolisher in DEMO_CELL-tile cells, each cell a
+      -- disc of ATTACK_R + the margin round its segments' middle, widened by the farthest segment from it, so every
+      -- segment keeps the margin. Only the area round the way is read.
+      local segs = try(function() return surface.find_entities_filtered{area={{box[1] - M.ATTACK_R, box[2] - M.ATTACK_R}, {box[3] + M.ATTACK_R, box[4] + M.ATTACK_R}},
+        type={'segmented-unit', 'segment'}, force='enemy', limit=M.MAX_SEGMENTS} end) or {}
+      local dcells, dorder = {}, {}
+      for _, e in ipairs(segs) do
+        local q = e.valid and e.position
+        if q then
+          local ck = math.floor(q.x / 32) .. ',' .. math.floor(q.y / 32)
+          if seen[ck] == nil then seen[ck] = try(function() return M.seen_now(surface, q) end) or false end
+          if seen[ck] then
+            local unit = try(function() return e.segmented_unit end)
+            local uid = unit and try(function() return unit.unit_number end) or 0
+            local k = uid .. '@' .. math.floor(q.x / M.DEMO_CELL) .. ',' .. math.floor(q.y / M.DEMO_CELL)
+            local c = dcells[k]
+            if not c then
+              c = {n=0, sx=0, sy=0, pts={}, k=k, head=false, name=unit and try(function() return unit.prototype.name end) or e.name}
+              dcells[k] = c; dorder[#dorder+1] = c
+            end
+            c.n = c.n + 1; c.sx = c.sx + q.x; c.sy = c.sy + q.y; c.pts[#c.pts+1] = q
+            if e.type == 'segmented-unit' then c.head = true end
+          end
+        end
+      end
+      for _, c in ipairs(dorder) do
+        local mx, my, far = c.sx / c.n, c.sy / c.n, 0
+        for _, q in ipairs(c.pts) do far = math.max(far, dist({x=mx, y=my}, q)) end
+        out[#out+1] = {x=mx, y=my, r=M.ATTACK_R + mode.pad + far, range=M.ATTACK_R,
+          name=string.format('%s %s (%d segment%s)', c.name, c.head and 'head' or 'body', c.n, c.n == 1 and '' or 's'),
+          attack=true, units=true, demolisher=true, id='d' .. c.k, ago=0, size=c.n}
+      end
     end
     return out
   end
   M.GROUP_AHEAD, M.GROUP_TARGET, M.MAX_UNITS, M.UNIT_REPLANS = 48, 160, 400, 8
+  M.DEMO_CELL, M.MAX_SEGMENTS = 8, 1024
   -- A point inside an enemy group's disc (where it is, ahead of it, where it heads), groups seen now.
   function M.in_group_way(surface, q)
     for _, d in ipairs(M.attack_discs(surface, {attacks=true, pad=0})) do

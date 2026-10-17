@@ -6666,6 +6666,23 @@ fh watch    # deploy on every change
   `front` {name, position, surface}; train {stops} already named ids (`train 15 heading there`). Not ours or no such
   id: refused, naming train {stops}. Copy: train 15 on Fulgora read from Gemini twice, 2 s apart: front (-15.13,191)
   at 4 km/h, then (-30.45,191) at 46 km/h, 147 tiles left to Fulgora Scrap North. tests/d17_batch18.lua.
+- C5 (viewer Foobator 13:38): demolishers.lua gave the head only, and the walk checks found the head only. Engine
+  (2.0.77, read on the copy): LuaSegmentedUnit.segments lists the head first (its entity is the segmented-unit),
+  then the body, each a LuaSegment with entity (type segment, force enemy), position and orientation; a small
+  demolisher had 42 segments about 1.2 tiles apart, 51 tiles of body; a segment entity's segmented_unit is its unit.
+  - demolishers: a demolisher with any segment in a chunk our force sees now is in sight; `body`: segments in sight of
+    all, the line through them simplified (points within 1.5 tiles, at most 16), length, tiles under the segments'
+    boxes, the box, the head's heading and speed. Copy (a radar placed near it): `small-demolisher: head at
+    (299,357), health 30000/30000, seen now; body 51 tiles long over 279 tiles (42 of its 42 segments in sight), box
+    (277,311)-(301,359), along (299,357) (290,342) (286,320) (279,312); head moving southeast at 4 km/h`. A body seen
+    without its head is remembered at its first body point.
+  - Walk planning, stand points and tours (avoid.lua attack_discs with a box: the area round the way only): the
+    segmented-unit and segment entities seen now, per demolisher in 8-tile cells, each a disc of 24 + the margin
+    round the cell's middle, widened by its farthest segment, so every segment keeps the margin; named `small-demolisher
+    body (7 segments)` or `head`. Copy: move_to dry run to (265,330) named three body discs and refused the goal
+    without unsafe_goal; 313-tile dry runs took median 106 ms with it, 99-101 ms without (the dry run's own cost).
+  - safety.threats (walking's stop-and-defend check, kite): a demolisher is one unit at its nearest segment in sight,
+    named by its head. tests/d17_batch18.lua.
 
 ## d17 batch20 (operator 15:25: the agents' 15:20 poll)
 - A1 (Haiku): `craft` refused 20 firearm-magazine over 650 in four requester chests (150 within 25 tiles), and a gun

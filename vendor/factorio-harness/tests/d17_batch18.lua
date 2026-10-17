@@ -207,4 +207,45 @@ do
   local ok,err=pcall(T.handlers.train,p,{train_id=16}); assert(not ok); has(tostring(err),'no train of ours has id 16')
   ok,err=pcall(T.handlers.train,p,{train_id=15,position={x=0,y=0}}); assert(not ok); has(tostring(err),'give train_id or position, not both')
 end
+-- C5 (viewer Foobator): a demolisher's whole body: the demolishers read, the walk discs and the threat check.
+do
+  local our={name='player',get_friend=function() return false end,get_cease_fire=function() return false end,players={{}},
+    is_chunk_visible=function() return true end,is_chunk_charted=function() return true end}
+  local enemy={name='enemy'}
+  game={tick=600,forces={player=our,enemy=enemy}}
+  -- a body along x from the head at (300,350) back to (250,350), segments 2 tiles apart, a bend at (270,350) going north
+  local segs,ents={},{}
+  local unit={unit_number=77,health=30000,max_health=30000,speed=0.02,prototype={name='small-demolisher'}}
+  for i=1,26 do
+    local x,y=300-(i-1)*2,350
+    if x<270 then y=350-(270-x); x=270 end
+    local e={valid=true,type=i==1 and 'segmented-unit' or 'segment',name=i==1 and 'small-demolisher' or 'small-demolisher-segment',position={x=x,y=y},force=enemy,segmented_unit=unit}
+    ents[i]=e
+    segs[i]={position={x=x,y=y},orientation=0.25,entity=e,prototype={collision_box={left_top={x=-1.6,y=-0.5},right_bottom={x=1.6,y=0.5}}}}
+  end
+  unit.segments=segs
+  local D=dofile('mod/agent-harness_0.1.0/demolishers.lua'){state=function() return {} end,position=function(v) return v end}
+  local b=D.body(unit,{name='vulcanus'},our)
+  eq(b.segments,26); eq(b.segments_seen,26); eq(b.length,50); eq(b.heading,'east'); eq(b.speed_kmh,4); eq(#b.line,3)
+  eq(b.line[1].x,300); eq(b.line[2].x,270); eq(b.line[2].y,350); eq(b.line[3].y,330)
+  has(D.body_text(b),'body 50 tiles long over')
+  -- the walk's discs: every segment within ATTACK_R + the margin of a disc's middle
+  local AV=dofile('mod/agent-harness_0.1.0/avoid.lua'){state=function() return {} end,charted=function() return true end}
+  local surf={name='vulcanus',find_entities_filtered=function(f) if type(f.type)=='table' and f.type[1]=='segmented-unit' then return ents end return {} end}
+  local discs=AV.attack_discs(surf,{attacks=true,pad=4},{240,320,310,360})
+  local heads,bodies=0,0
+  for _,d in ipairs(discs) do if d.demolisher then if d.name:find('head',1,true) then heads=heads+1 else bodies=bodies+1 end end end
+  eq(heads,1); assert(bodies>=4,'body cells '..bodies)
+  for _,e in ipairs(ents) do
+    local inside=false
+    for _,d in ipairs(discs) do if d.demolisher and ((d.x-e.position.x)^2+(d.y-e.position.y)^2)^0.5+AV.ATTACK_R+4<=d.r+0.001 then inside=true end end
+    assert(inside,'segment at '..e.position.x..','..e.position.y..' keeps the margin')
+  end
+  -- the threat check: one demolisher, at its nearest segment
+  local SF=dofile('mod/agent-harness_0.1.0/safety.lua'){known=function() return true end,visible=function() return true end,
+    distance=function(a,c) return ((a.x-c.x)^2+(a.y-c.y)^2)^0.5 end}
+  local p={force=our,surface={find_entities_filtered=function() return ents end}}
+  local t=SF.threats(p,{x=270,y=320},16)
+  eq(#t.units,1); eq(t.units[1].entity.name,'small-demolisher'); eq(math.floor(t.units[1].distance+0.5),10)
+end
 print('d17 batch18 ok')

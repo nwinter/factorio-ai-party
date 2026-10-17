@@ -24,8 +24,8 @@
     edge). `mine_out: true` marks those, mines them by hand (a timed construct; contents to your inventory) and walks
     again once (`last.mining_out`).
 - Enemies: it keeps out of the range of the worms the map shows (+ 4 tiles), 40 tiles of a spawner (+ 4) and 24 tiles
-    of an area under attack now (hit in the last 30 s; + 4), and away from enemy units in sight near the way and
-    groups seen now (and where they head), walking legs around them (`last.avoided_enemies`; a new attack re-plans,
+    of an area under attack now (hit in the last 30 s; + 4), and away from enemy units in sight near the way (a
+    demolisher's head and every body segment), and groups seen now (and where they head), walking legs around them (`last.avoided_enemies`; a new attack re-plans,
     `last.replanned`; a path crossing only a margin may be walked, `last.passed_within_margin`). A group seen ahead
     mid-walk stops it and walks you away (`last.retreated`). A walk begun inside a reach goes out the shortest way
     first (`left_reach_first`). A goal inside one is refused (`unsafe_goal: true` goes anyway). No way round:
