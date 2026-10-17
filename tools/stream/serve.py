@@ -614,6 +614,35 @@ def main():
                 traceback.print_exc()
             time.sleep(max(0.2, a.poll - (time.time() - t)))
 
+    # Artillery shells in flight (onecam maybe_artillery; viewer Foobator 12:48): the harness's artillery_live read on
+    # its own pace (every half second while a piece is loaded with targets in range, else 10 s), since a shell is up
+    # under 4 s and the main poll comes every few seconds; a new shell wakes the ticker at once.
+    arty = {"res": None}
+    wake = threading.Event()
+
+    def artillery_poller():
+        seen = set()
+        while True:
+            every = 10.0
+            h = getattr(source, "h", None)
+            if h and getattr(source, "has_artillery", False):
+                try:
+                    res, _ = h.operator_read("artillery_live", {})
+                    res["read_at"] = time.time()
+                    with lock:
+                        arty["res"] = res
+                    every = max(0.5, float(res.get("every") or 10.0))
+                    new = [x["key"] for x in res.get("shells") or [] if x.get("key") and x["key"] not in seen]
+                    if new:
+                        seen.update(new)
+                        if len(seen) > 2000:
+                            seen = set(new)
+                        wake.set()
+                except Exception as e:
+                    print(f"[artillery] read failed: {type(e).__name__}: {e}", flush=True)
+                    every = 30.0
+            time.sleep(every)
+
     page_version = static_version()
 
     def ticker():
@@ -623,6 +652,7 @@ def main():
             try:
                 with lock:
                     snap = model.snapshot(now, cams)
+                    snap["artillery"] = arty["res"]
                 snap["segment"] = segments.step(snap, now)
                 if mode == "onecam":  # no layout change while a replay is (about to be) on air
                     cur = segments.cur
@@ -691,7 +721,10 @@ def main():
                 hub.publish(snap)
             except Exception:
                 traceback.print_exc()
-            time.sleep(1.0)
+            # a cut timed for an artillery impact steps sooner; a new shell wakes it at once (artillery_poller)
+            soon = director.next_wake(time.time()) if hasattr(director, "next_wake") else None
+            wake.wait(1.0 if soon is None else min(1.0, soon))
+            wake.clear()
 
     def decisions(n=60):
         try:
@@ -701,6 +734,8 @@ def main():
             return []
 
     threading.Thread(target=poller, daemon=True).start()
+    if getattr(source, "h", None):
+        threading.Thread(target=artillery_poller, daemon=True).start()
     threading.Thread(target=ticker, daemon=True).start()
     try:
         server = ThreadingHTTPServer((a.host, a.port), make_handler(hub, decisions, segments=segments, replays=replays,

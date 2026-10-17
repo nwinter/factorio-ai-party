@@ -241,6 +241,18 @@ ONECAM = {
     "cue_agent_gap": 180.0,  # one shown cue per agent this often
     "cue_gap": 45.0,        # shown cues together at most this often
     "cue_late": 3.0,        # a line that started playing longer ago than this is no cue (missed tick, a restart)
+    # Artillery impacts (viewer Foobator, 2026-10-17 12:48: "if there is only one arty shell in flight and nothing else
+    # interesting has happened, can you show the impact on screen"): the harness's artillery_live shells (serve.py
+    # reads it every half second while a piece is loaded with targets in range) -> a cut to the target before the shell
+    # lands, held through the impact, then back to the story; below every urgent shot, battle, operator hold, segment
+    # and fight (maybe_artillery)
+    "artillery": True,
+    "arty_gap": 180.0,      # an artillery shot at most this often
+    "arty_lead": 0.6,       # a shell landing sooner than this is let go (the cut would come after it)
+    "arty_after": 4.0,      # held this long after the (last) impact
+    "arty_max": 20.0,       # an artillery shot at most this long, more shells landing there or not
+    "arty_near": 32.0,      # tiles: a later shell landing this close to the shot's target extends it
+    "arty_zoom": 0.8,
     # Attention (Nick, 2026-10-13 12:00: "can we give a better feel in the stream for what they are paying attention
     # to?"; module doc): the agent on air looks or works away from its character -> the spot in the inset beside it
     "attention": True,
@@ -421,6 +433,9 @@ class OneCam(Director):
         self.cue_last = {}      # agent -> when its last cue was shown
         self.last_cue = -1e9
         self.cues = []          # (t, agent, decision, label)
+        self.arty_seen = set()  # artillery shell keys already judged
+        self.last_arty = -1e9
+        self.artys = []         # (t, decision, why, label)
         self.fight_cands = {}  # fight episode -> {score, t, pieces, text, taken?}: candidates for a battle
         self.incoming = None   # a followed enemy group: {id, since, label, score, until}
         self.last_incoming = -1e9
@@ -515,7 +530,16 @@ class OneCam(Director):
 
     def ready(self, slot, now):
         t = self.state.get(slot)
-        return bool(t) and now - t.get("framed", t.get("since", now)) >= self.cfg["ready_s"]
+        need = self.pending.get("ready_s") if self.pending and self.pending["slot"] == slot else None
+        return bool(t) and now - t.get("framed", t.get("since", now)) >= (self.cfg["ready_s"] if need is None else need)
+
+    def next_wake(self, now):
+        """Seconds until the director should step again sooner than serve.py's 1 s tick (a cut timed to land before
+        an artillery shell), else None."""
+        if self.pending and self.pending.get("ready_s") is not None:
+            t = self.state.get(self.pending["slot"]) or {}
+            return max(0.05, t.get("framed", now) + self.pending["ready_s"] - now)
+        return None
 
     # -- alerts -----------------------------------------------------------------------------------------------
     def attack_target(self, snapshot, by_name, scores, now):
@@ -980,6 +1004,7 @@ class OneCam(Director):
             self.maybe_platform(scores, now, segment)
             self.maybe_trio(by_name, scores, ranked, now)
         self.maybe_cue(snapshot, by_name, scores, now, segment)
+        self.maybe_artillery(snapshot, by_name, scores, now, segment)
         self.maybe_enemy_pip(snapshot, by_name, scores, now)
         self.release_maps(now)
         shown = [self.onair, self.inset and self.inset["slot"]] + list((self.trio or {}).get("tiles", {}).values())
@@ -1620,6 +1645,94 @@ class OneCam(Director):
                                         "slot": "program", "reason": f"cue {decision}: {why}", "cue": entry}) + "\n")
             print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} cue {decision} ({why}): {label}"
                   f"{' (inferred)' if look.get('inferred') else ''}", flush=True)
+
+    # -- artillery impacts --------------------------------------------------------------------------------------
+    @staticmethod
+    def arty_name(name):
+        return str(name or "").replace("-", " ")
+
+    def arty_label(self, sh, by_name):
+        """'💥 Artillery · Opus's artillery turret (298, -320) → big spitter nest (398, -320), 100 tiles, with 1 medium
+        worm turret'"""
+        piece, t = sh.get("piece") or {}, sh.get("target") or {}
+        by = sh.get("by") or piece.get("by")
+        who = next((a.get("display_name") or a["name"] for a in by_name.values() if by and a["name"].lower() == str(by).lower()), by)
+        pp, tp = sh.get("from") or piece.get("position") or {}, t.get("position") or {}
+        text = (f"💥 Artillery · {who + chr(39) + 's' if who else 'Our'} {self.arty_name(piece.get('name') or 'artillery')} "
+                f"({round(pp.get('x', 0))}, {round(pp.get('y', 0))}) → {self.arty_name(t.get('name'))} "
+                f"({round(tp.get('x', 0))}, {round(tp.get('y', 0))})")
+        if sh.get("distance"):
+            text += f", {sh['distance']} tiles"
+        if t.get("around"):
+            text += f", with {self.arty_name(t['around'])}"
+        return text
+
+    def arty_busy(self, by_name, now, segment):
+        """What outranks an artillery shot now, or None: an operator look, platform hold or follow, a battle, an
+        incoming group, a segment, a replay or trio, an urgent shot (a death, a loss) held, a fight anywhere, or the
+        agent on air fighting."""
+        cur = self.state.get(self.onair) or {}
+        busy = ("an operator look" if self.look else "an operator platform hold" if self.plat else
+                "an operator follow" if self.fol else "a battle" if self.battle else
+                "an incoming group" if self.incoming else "a segment" if segment else
+                "a replay or a trio" if (self.hold_layout or self.mode == "trio") else
+                "an urgent shot" if self.pending or (cur.get("subject") in HOLDS and now < cur.get("until", 0)) else
+                "a fight" if any(now - self.fight_t(f) < self.cfg["fight_quiet"] for f in self.fight_list) else None)
+        subj = cur.get("subject")
+        if not busy and subj in by_name and self.fighting(subj, by_name, now):
+            busy = f"{subj} fighting on air"
+        return busy
+
+    def maybe_artillery(self, snapshot, by_name, scores, now, segment=None):
+        """A shell in flight (snapshot artillery: artillery_live's last read, read_at its wall time) -> a cut to its
+        target if nothing outranks it and it lands at least arty_lead from now, at most once per arty_gap; held
+        arty_after past the impact, longer (up to arty_max) while more shells land there. Each decision is logged."""
+        cfg = self.cfg
+        art = snapshot.get("artillery") or {}
+        if not cfg["artillery"] or not art.get("shells"):
+            return
+        read_at = float(art.get("read_at") or now)
+        cur = self.state.get(self.onair) or {}
+        shot = cur.get("artillery") if now < cur.get("until", 0) else None
+        for sh in art["shells"]:
+            key = sh.get("key")
+            t = (sh.get("target") or {}).get("position")
+            if not key or not t or key in self.arty_seen:
+                continue
+            self.arty_seen.add(key)
+            lands = read_at + float(sh.get("eta_ticks") or 0) / 60.0
+            label = self.arty_label(sh, by_name)
+            if shot:  # a shot on air: a shell landing beside its target holds it longer
+                if sh.get("surface") == shot["surface"] and dist(t, shot["target"]) <= cfg["arty_near"]:
+                    cur["until"] = min(shot["since"] + cfg["arty_max"], max(cur["until"], lands + cfg["arty_after"]))
+                    shot["shells"] += 1
+                continue
+            lead = lands - now
+            if lead < cfg["arty_lead"]:
+                decision, why = "drop", f"lands in {lead:.1f} s"
+            elif now - self.last_arty < cfg["arty_gap"]:
+                decision, why = "drop", f"spacing: the last artillery shot {int(now - self.last_arty)} s ago"
+            else:
+                busy = self.arty_busy(by_name, now, segment)
+                decision, why = ("drop", busy) if busy else ("cut", f"nothing more interesting on air; lands in {lead:.1f} s")
+            if decision == "cut":
+                shot = {"surface": sh.get("surface"), "target": t, "since": now, "shells": 1, "key": key}
+                target = {"agents": [], "subject": "@work", "position": {"x": t["x"], "y": t["y"]},
+                          "surface": sh.get("surface") or "nauvis", "zoom": cfg["arty_zoom"], "exact_zoom": True,
+                          "until": min(now + cfg["arty_max"], lands + cfg["arty_after"]), "work": label, "artillery": shot}
+                self.urgent(target, f"artillery: {label}", scores, now)
+                if self.pending:  # framed on a standby: cut in time for the impact
+                    self.pending["ready_s"] = max(0.2, min(cfg["ready_s"], lead - 0.5))
+                self.last_arty = now
+            self.artys.append((now, decision, why, label))
+            entry = {"key": key, "decision": decision, "why": why, "label": label, "lead": round(lead, 2)}
+            if self.log_path:
+                with open(self.log_path, "a") as f:
+                    f.write(json.dumps({"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)),
+                                        "slot": "program", "reason": f"artillery {decision}: {why}", "artillery": entry}) + "\n")
+            print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} artillery {decision} ({why}): {label}", flush=True)
+        if len(self.arty_seen) > 2000:
+            self.arty_seen = set(list(self.arty_seen)[-500:])
 
     # -- attention ---------------------------------------------------------------------------------------------
     def attention_far(self, a, by_name, now):
