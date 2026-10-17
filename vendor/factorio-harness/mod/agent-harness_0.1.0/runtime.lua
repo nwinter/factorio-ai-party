@@ -7958,6 +7958,20 @@ function feeding.why(p,es,a)
   local silos=0
   for _,e in ipairs(es) do if e.type=='rocket-silo' then silos=silos+1 end end
   if silos>0 then notes[#notes+1]='feed fills a rocket silo\'s rocket-part ingredients; its rocket cargo: load_silo, or transfer {inventory: "rocket_silo_rocket"}' end
+  -- Turrets and chests named to feed (B2, Muse 21:20, about 6 times: "none of the machines wants an item" for gun
+  -- turrets): which call fills them, and what a turret holds now.
+  local turrets,chests={},0
+  for _,e in ipairs(es) do
+    if e.type=='ammo-turret' or e.type=='artillery-turret' then
+      local inv=e.get_inventory(e.type=='artillery-turret' and defines.inventory.artillery_turret_ammo or defines.inventory.turret_ammo)
+      local held={}
+      for _,c in ipairs(inv and inv.get_contents() or {}) do held[#held+1]=c.name..' '..c.count end
+      turrets[#turrets+1]=string.format('%s (%g,%g) holds %s',e.name,e.position.x,e.position.y,#held>0 and table.concat(held,', ') or 'no ammo')
+    elseif e.type=='container' or e.type=='logistic-container' then chests=chests+1 end
+  end
+  if #turrets>0 then notes[#notes+1]=string.format('feed loads no turret; rearm {ammo, positions} does: %s%s',table.concat(turrets,'; ',1,math.min(#turrets,4)),#turrets>4 and '; ...' or '') end
+  if chests>0 then notes[#notes+1]=string.format('%d chest%s: feed fills machines; transfer {direction: "to_entity"} puts items in a chest',chests,chests==1 and '' or 's') end
+  if #order==0 and #es>0 and #turrets+chests==#es then return table.concat(notes,'; ') end
   if #order==0 then
     local base=silos==#es and string.format('the rocket silo%s rocket-part recipe takes none of what was named',silos==1 and '\'s' or 's\'')
       or string.format('none of the %d machines wants an item (no recipe set, or not a machine feed fills)',#es)
@@ -7971,7 +7985,7 @@ function feeding.why(p,es,a)
     if have<=keep then
       parts[#parts+1]=string.format('you carry %d %s%s; %d machine%s hold %s',have,item,keep>0 and ' (keep '..keep..')' or '',b.n,b.n==1 and '' or 's',hold)
     else
-      parts[#parts+1]=string.format('%d machine%s hold %s %s, at count %d already',b.n,b.n==1 and '' or 's',hold,item,b.count)
+      parts[#parts+1]=string.format('%d machine%s hold%s %s %s: at or over the %d each is topped up to',b.n,b.n==1 and '' or 's',b.n==1 and 's' or '',hold,item,b.count)
     end
   end
   for _,note in ipairs(notes) do parts[#parts+1]=note end
@@ -12927,7 +12941,42 @@ M.trace=require('trace'){state_text=function(e) return M.thrust.state_text(e) en
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,supply=M.supply,spoil=M.spoil}
 function handlers.labs(p,a) return M.labs.view(p,a) end
+-- The labs of ours on each planet (B3, Luna 21:20: on Gleba the read showed zero labs and did not say it read Gleba
+-- only): {surface=n} for those with labs, and how many work.
+function M.labs_by_surface(force)
+  -- kept a minute a force (a whole-surface find: 28 ms on a copy of world n's 45 labs, in the container)
+  local st=state(); st.labs_cache=st.labs_cache or {}
+  local c=st.labs_cache[force.name]
+  if c and game.tick-c.tick<3600 then return c.rows end
+  local out={}
+  for _,sf in pairs(game.surfaces) do
+    if not sf.platform then
+      local ok,list=pcall(function() return sf.find_entities_filtered{type='lab',force=force} end)
+      if ok and list and #list>0 then
+        local working=0
+        for _,l in ipairs(list) do if l.valid and entity_status_names[l.status]=='working' then working=working+1 end end
+        out[#out+1]={surface=sf.name,labs=#list,working=working}
+      end
+    end
+  end
+  table.sort(out,function(x,y) return x.labs>y.labs end)
+  st.labs_cache[force.name]={tick=game.tick,rows=out}
+  return out
+end
 function handlers.science(p,a)
+  -- all_surfaces: the compact read for each planet with labs (B3)
+  if a.all_surfaces~=nil then
+    assert(a.all_surfaces==true and a.surface==nil,'all_surfaces is true, without surface')
+    local blocks={}
+    for _,row in ipairs(M.labs_by_surface(p.force)) do
+      local args={}
+      for k,v in pairs(a) do if k~='all_surfaces' then args[k]=v end end
+      args.surface=row.surface; args.compact=true
+      local ok,r=pcall(handlers.science,p,args)
+      blocks[#blocks+1]={surface=row.surface,labs=row.labs,working=row.working,lines=ok and r.lines or {'not read: '..reason(r)}}
+    end
+    return {all_surfaces=true,surfaces=blocks,note=#blocks==0 and 'no lab of ours on any planet' or nil}
+  end
   if a.compact~=nil then
     assert(type(a.compact)=='boolean','compact must be true or false')
     local args={}
@@ -12936,7 +12985,16 @@ function handlers.science(p,a)
     if not a.compact or type(out)~='table' then return out end
     -- compact: one line a pack (made and used in 10 min, makers and their states, labs lacking), largest holders left out.
     local lines={}
-    if out.research then lines[1]='research: '..tostring(out.research) end
+    -- the scope first: this surface only, and the labs elsewhere (B3)
+    local here=a.surface or (p.surface and p.surface.name)
+    local others,mine={},nil
+    for _,row in ipairs(M.labs_by_surface(p.force)) do
+      if row.surface==here then mine=row
+      elseif #others<4 then others[#others+1]=string.format('%s %d labs (%d working)',row.surface,row.labs,row.working) end
+    end
+    lines[1]=string.format('scope: %s only (%s)%s',tostring(here),mine and string.format('%d labs, %d working',mine.labs,mine.working) or 'no lab of ours here',
+      #others>0 and '; other planets: '..table.concat(others,', ')..' (surface: NAME, or all_surfaces: true)' or '')
+    if out.research then lines[#lines+1]='research: '..tostring(out.research) end
     for _,pk in ipairs(out.packs or {}) do lines[#lines+1]=(tostring(pk.line or pk.pack):gsub('; largest holders:.*$','')) end
     return {surface=out.surface,compact=true,lines=lines,as_of=out.as_of,clock=out.clock,team=out.team}
   end

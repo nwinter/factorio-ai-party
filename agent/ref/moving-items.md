@@ -89,3 +89,6 @@
 - `transfer {from|positions with pick, to, dry_run: true}` gives `courier`: the source and what it holds (robots'
   reservations), the destination and its room, and how many would move. Tour stops end once within transfer reach of
   the entity (a silo, a pad), as `move_to {target}` does.
+- A `feed` that gives nothing says why: a turret (feed loads none; `rearm` does, with what it holds), a chest
+  (`transfer` puts items in), burners at or over the count, another fuel in every slot; `rearm`, `refuel` and `collect`
+  name a target already holding enough or holding none.

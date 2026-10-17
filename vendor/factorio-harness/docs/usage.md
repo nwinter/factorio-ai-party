@@ -5837,3 +5837,20 @@ fh watch    # deploy on every change
   toward its centre (a silo's lies inside it). Gemini's failed silo walk started boxed in among storage chests (the C4
   case); its why named the chest to mine. On the copy, a walking load from 30 tiles off stopped at (-78.7,82), within
   reach, and loaded.
+- `trace {position, throughput: true}` (B1, Opus 21:20: 14 drills added before learning both trunks were full): from a
+  belt tile, every belt feeding it (back through side-loads and undergrounds) and on to the line's end; per lane the
+  mining drills dropping onto the tiles walked back (how many, working, on what), what they put on at full speed (mining
+  speed with speed bonus over the resource's mining time, with productivity) against the slowest belt's lane capacity
+  (4 items a tile at its speed), and what the last 10 tiles hold. On the copy: the far-east iron trunk's lanes get 110%
+  and 140% of a yellow lane at full speed, and its end holds 26 and 40 of 40; NW coal 130% and 75% (5 drills on
+  exhausted ore). 11 to 22 ms in the container (about 2 to 4 ms on n).
+- feed, collect, rearm doing nothing (B2, Muse 21:20, about 6 times): the journal shows most said why already
+  (`nothing_moved`, and batch8 E1 for refuel). feed on a turret said "none of the machines wants an item (no recipe set,
+  or not a machine feed fills)"; it now says `feed loads no turret; rearm {ammo, positions} does: gun-turret (-14,-57)
+  holds firearm-magazine 30`, and on chests that transfer puts items in. Burners at or over the count read `1 machine
+  holds 50 coal: at or over the 10 each is topped up to`. rearm already said `already holds 30 firearm-magazine`.
+- science scope (B3, Luna 21:20): the compact read's first line is the scope: `scope: gleba only (no lab of ours here);
+  other planets: nauvis 45 labs (0 working) (surface: NAME, or all_surfaces: true)`. `science {all_surfaces: true}`
+  gives the compact read for each planet with labs. The lab count is kept a minute (28 ms in the container for a
+  whole-surface search). The science read itself costs about 220 ms in the container fresh on nauvis (about 44 ms on
+  n, kept 10 s); that predates this batch, and all_surfaces runs it once per planet with labs.
