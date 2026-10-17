@@ -113,3 +113,4 @@
   next_in_ticks}` puts the next run off; its owner's `every_ticks` there sets a new cadence.
 - `order_set {..., max_walk: N}`: the order waits (state says where and how far) while its place is over N tiles from
   you. `sleep {orders: false}` starts no standing order during the sleep.
+- A queue's transfer step that moves fewer than asked (a full target) succeeds short; `min_moved: N` beside its args fails it below N moved, and on_fail then applies.

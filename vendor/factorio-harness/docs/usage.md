@@ -6437,3 +6437,24 @@ fh watch    # deploy on every change
   team's or one teammate's lines. At each 10-minute check of that item, a focused project step not done (or a text
   step with no progress seen) counts; across 2 checks the focus line and board_progress say "the focused step shows no
   completion across 2 checks"; done clears it. Nothing is assigned.
+
+## d17 backlog (the board's open harness requests, operator 06:10 and 10:05)
+- #820 (Opus 105h09): his recover ended "collected" at (255.4,-175.3), standing on the rails at its stop. A locomotive
+  killed him there 2.3 tiles on. The train guard runs only while a walk is under way, and a tour stop is visited
+  whenever the target is in reach, on a rail or not. A tour (stock.lua: transfer, feed, collect, recover, refuel and
+  rearm walks) that would end on a ground rail now walks to the nearest free tile off the rails first, with the train
+  guard on that walk, then ends with its outcome; `last.off_rails` says where. move_to already stepped off rails on
+  arrival (round1520d). Copy: a tour that stopped on the rail at (134.5,-130.8) walked off to (135.4,-129.7), then
+  ended "transferred".
+- #812 (Aquilo drop 786): where_is counted spilled freight since batch14 B2. drop's own report read "landed in the
+  landing pad" for any drop sent to a pad. Now, when a cargo pod container near the pad holds what was sent, it says
+  "was sent to the landing pad at (x,y), which took none of it (full): it landed beside it at (x,y)", with what that
+  container and the others near it hold. tests/drops.lua 7.
+- #247: transfer targets have been settled since a1b6ee0a (a building before a robot over it). The note's other half:
+  deconstruct {entity_names: [logistic-robot]} dry run said would_mark 741 and the live call changed 0. Robots in flight
+  are now counted apart in both, as `flying_robots` ("the game does not mark robots in flight"). Copy: 533 in the Nauvis
+  base's area, would_mark 0.
+- #255: the step guard has existed since 66603261 (min_moved on a transfer step fails it below N moved; on_short). The
+  note's other half: transfer to a fusion-reactor read "no inventory", because the type was missing from the fuel
+  inventories. It is in now. Copy: 1 fusion power cell into the Aquilo reactor at (36,22), inspect then read "fuel:
+  fusion-power-cell*7".

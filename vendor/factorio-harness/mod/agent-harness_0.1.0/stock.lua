@@ -765,7 +765,35 @@ return function(api)
     return 'unreached'
   end
   -- Returns an outcome when the gathering is over.
+  -- (backlog #820, Opus 105h09: a recover ended "collected" standing on the rails at its stop and a locomotive killed him
+  -- 2.3 tiles on) a tour that ends on a ground rail walks off it first, to the nearest free tile off the rails (the
+  -- train guard keeps watch on that walk), then ends with its outcome; last.off_rails says where.
+  local function ending(p,action,outcome)
+    if outcome==nil or action.rail_exit or not (api.rail_under and api.off_rail_spot) then return outcome end
+    if not api.rail_under(p,p.position) then return outcome end
+    local spot=api.off_rail_spot(p)
+    if not spot then return outcome end
+    action.rail_exit={position=spot,outcome=outcome,tick=game.tick,from={x=p.position.x,y=p.position.y}}
+    action.nav={position=spot,tolerance=0.3,max_stalls=6,replans=0,stalled=0,last_position=p.position,off_belts=true}
+    api.request_path(p,action.nav)
+    return nil
+  end
+  local function rail_exit_tick(p,action)
+    local r=action.rail_exit
+    local outcome=api.navigate(p,action.nav)
+    if outcome or game.tick-r.tick>300 then
+      api.stop_walking(p)
+      action.off_rails=string.format('the tour ended on a rail at (%.1f,%.1f): walked off the rails to (%.1f,%.1f)%s',r.from.x,r.from.y,p.position.x,p.position.y,
+        api.rail_under(p,p.position) and ' (still on a rail: the walk off was cut short)' or '')
+      return r.outcome
+    end
+    return nil
+  end
   function M.tick(p,action)
+    if action.rail_exit then return rail_exit_tick(p,action) end
+    return ending(p,action,M.tour_tick(p,action))
+  end
+  function M.tour_tick(p,action)
     if action.wait then return M.wait_tick(p,action) end
     local pos=p.position
     if action.walk_last then action.tiles=(action.tiles or 0)+api.distance(action.walk_last,pos) else action.walk_from={x=pos.x,y=pos.y} end
