@@ -855,7 +855,7 @@ local function stop_combat(index,outcome)
       or (combat.auto and string.format('nothing fired: no enemy the gun could reach within radius %d',combat.radius or 24)) or 'nothing fired'
   end
   state().last_combat[index]={outcome=outcome,tick=game.tick,ammo_used=used,reloads=combat and combat.reloads,equipped=combat and combat.equipped,
-    gun_used=combat and combat.gun_used,why_none=why_none,
+    gun_used=combat and combat.gun_used,why_none=why_none,held_blast=combat and combat.held_blast,held_blast_ticks=combat and combat.held_blast_n,
     vehicle=combat and combat.vehicle,gun=combat and combat.gun,guns=guns,kills=combat and combat.kills,retreated=combat and combat.retreated,
     why=combat and combat.retreated and (combat.retreated.why..(combat.retreated.going and '; '..combat.retreated.going or '')) or nil}
 end
@@ -1730,7 +1730,7 @@ function handlers.describe(_,a)
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
       equipment={operation='insert|remove|list (default list)',item='owned equipment item for insert',position='{x,y} grid cell; optional for insert',quality='default normal',vehicle='optional: a vehicle\'s grid instead of your armor\'s, by unit_number or {x,y} (a tank 6x8 and a spidertron 10x6 have one; a car, locomotive or wagon does not); insert and remove in reach or seated, as its GUI allows; list also by remote view in a chunk our force sees',returns='insert/remove: what moved, where, grid (size, equipment, free_cells, shield, battery_mj); list: the same with rows (each piece at its cell)'},revive_ghost={position='{x,y}',name='optional entity-ghost'},
-      shoot={retreat='optional {to: {x,y}, health_below: 0..1, shield_below: 0..1} (any one triggers; default health_below 0.4): checked every 5 ticks; when the health (or the armor\'s shield) falls under it during the action, the action ends retreated and you go back to `to` at once (on foot walking with avoid_enemies and the guns on auto while ammunition lasts; driving: the vehicle driven back); last.retreated: why, from, health, to; the walk back ends retreated on arrival; false: not even the standing retreat_guard',position='{x,y} or auto=true',ticks='1..600',vehicle='optional: the vehicle whose guns fire (unit_number or {x,y}): the one you sit in as its gunner; a vehicle you drive by remote view is refused (its guns fire for a gunner seated in it or a player driving it remotely, and an agent\'s character has no player); a whole drive\'s fire: vehicle {drive, combat: true}',radius='1..32 (in a vehicle 1..36, default its gun\'s range)',gun_slot='1..3 (in a vehicle: 1..its guns)',
+      shoot={fire_anyway='optional true: fire area ammunition (explosive rockets and shells) even when the blast at the target reaches our own entities; without it such a shot is refused, naming them, and auto fire holds at such a target (last: held_blast)',retreat='optional {to: {x,y}, health_below: 0..1, shield_below: 0..1} (any one triggers; default health_below 0.4): checked every 5 ticks; when the health (or the armor\'s shield) falls under it during the action, the action ends retreated and you go back to `to` at once (on foot walking with avoid_enemies and the guns on auto while ammunition lasts; driving: the vehicle driven back); last.retreated: why, from, health, to; the walk back ends retreated on arrival; false: not even the standing retreat_guard',position='{x,y} or auto=true',ticks='1..600',vehicle='optional: the vehicle whose guns fire (unit_number or {x,y}): the one you sit in as its gunner; a vehicle you drive by remote view is refused (its guns fire for a gunner seated in it or a player driving it remotely, and an agent\'s character has no player); a whole drive\'s fire: vehicle {drive, combat: true}',radius='1..32 (in a vehicle 1..36, default its gun\'s range)',gun_slot='1..3 (in a vehicle: 1..its guns)',
         gun='in a vehicle: a gun name (tank-cannon, tank-machine-gun, tank-flamethrower, vehicle-machine-gun, spidertron-rocket-launcher-1..4)',
         ammo='in a vehicle: an ammo name (cannon-shell, explosive-cannon-shell, firearm-magazine, flamethrower-ammo, rocket, ...): the gun that takes it, its slot loaded from your inventory when empty or holding another kind',
         note='seated in a car, tank or spidertron as its gunner (the driver, unless driver_is_gunner is off and a passenger sits in) it fires the vehicle\'s selected gun from the vehicle\'s ammo slots; the turret turns toward the target as a player\'s cursor turns it; position= aims at the entity there (not our own), auto=true at the nearest enemy in radius; vehicle {drive} goes on while it fires; reply: vehicle, seat, gun, gun_slot, range, guns (each slot with its ammo), target, out_of_range',
@@ -5611,7 +5611,9 @@ function handlers.build(p,a)
     for k,v in pairs(a) do rest[k]=v end
     return step_aside(r.aside,rest)
   end
-  assert(type(a.builds)=='table' and #a.builds>=1 and #a.builds<=64,'builds requires 1..64 {item,position,direction} entries')
+  -- More than 64 entries (d17 batch19 D3, Opus 65 and Sonnet 72, refused): worked in batches of 64 in this call, one
+  -- reply (batches says how many), up to 256.
+  assert(type(a.builds)=='table' and #a.builds>=1 and #a.builds<=256,'builds requires 1..256 {item,position,direction} entries (more than 64: worked in batches of 64, one reply)')
   assert(a.skip_failed==nil or type(a.skip_failed)=='boolean','skip_failed must be true or false')
   assert(a.all==nil or type(a.all)=='boolean','all must be true or false')
   local skip=a.skip_failed==true or a.all==true
@@ -5721,7 +5723,9 @@ function handlers.build(p,a)
   -- all: how many of the batch's entries stand and how many were not built.
   local total=#a.builds+(a.index_before or 0)
   local summary=skip and #failed>0 and string.format('%d of %d built; %d not built (failed)',#placed+(a.built_before or 0),total,#failed) or nil
+  local entries=#a.builds+(a.index_before or 0)
   return result({built=#placed,placed=placed,built_before=a.built_before,failed=#failed>0 and failed or nil,summary=summary,inserters_without_target=loose,
+    batches=entries>64 and string.format('%d entries in %d batches of up to 64, one reply',entries,math.ceil(entries/64)) or nil,
     inserters_without_target_count=nloose and nloose>#loose and nloose or nil,
     closed_in=M.closed_in_note(p,built),outside_logistic_coverage=cover,underground_side_feed=side,last_belt=okb and last_belt or nil,
     belts=belt_lines,belts_more=belts_more and belts_more>0 and belts_more or nil,
@@ -10469,8 +10473,53 @@ function M.gun_rows(p)
   end
   return out
 end
+-- Area ammunition (d17 batch19 D1, Opus: one explosive rocket at a spawner took ~19 of our solar panels and poles, and
+-- auto-fired rockets cut our belts twice): the blast radius of an ammo item, the largest area its own action or its
+-- projectile's attack and final attack hit (read on 2.0.77: explosive-rocket 6.5, explosive-cannon-shell 4,
+-- explosive-uranium-cannon-shell 4.25; a plain rocket or bullet: none), cached.
+M.BLAST={}
+function M.blast_radius(ammo)
+  if M.BLAST[ammo]~=nil then return M.BLAST[ammo] or nil end
+  local best=0
+  local seen={}
+  local function walk(t,depth)
+    if type(t)~='table' or depth>12 or seen[t] then return end
+    seen[t]=true
+    if t.type=='area' and type(t.radius)=='number' and t.radius>best then best=t.radius end
+    for k,v in pairs(t) do
+      if k=='projectile' and type(v)=='string' then
+        local pr=prototypes.entity[v]
+        if pr then
+          local ok,r=pcall(function() return pr.attack_result end); if ok then walk(r,depth+1) end
+          local ok2,f=pcall(function() return pr.final_attack_result end); if ok2 then walk(f,depth+1) end
+        end
+      elseif type(v)=='table' then walk(v,depth+1) end
+    end
+  end
+  local okp,at=pcall(function() return prototypes.item[ammo].get_ammo_type() end)
+  if okp and at then walk(at.action,0) end
+  M.BLAST[ammo]=best>0 and best or false
+  return best>0 and best or nil
+end
+-- Our entities a blast of radius r at pos would reach (characters left out): {n, line} or nil.
+function M.blast_hits(p,pos,r)
+  local by,order,n={},{},0
+  for _,e in ipairs(p.surface.find_entities_filtered{position=pos,radius=r,force=p.force,limit=200}) do
+    if e.valid and e.type~='character' and e.type~='entity-ghost' and e.type~='tile-ghost' and e.type~='item-request-proxy' then
+      n=n+1
+      if not by[e.name] then by[e.name]={n=0,at=e.position}; order[#order+1]=e.name end
+      by[e.name].n=by[e.name].n+1
+    end
+  end
+  if n==0 then return nil end
+  table.sort(order,function(x,y) return by[x].n>by[y].n end)
+  local parts={}
+  for i,name in ipairs(order) do if i<=6 then parts[#parts+1]=string.format('%d %s (one at (%g,%g))',by[name].n,name,by[name].at.x,by[name].at.y) end end
+  return {n=n,line=string.format('%d of ours within its %g-tile blast at (%g,%g): %s%s',n,r,pos.x,pos.y,table.concat(parts,', '),#order>6 and ', ...' or '')}
+end
 function handlers.shoot(p,a)
   local ticks=integer(a.ticks,60,1,MAX_TICKS,'ticks')
+  assert(a.fire_anyway==nil or type(a.fire_anyway)=='boolean','fire_anyway must be true or false')
   -- vehicle=: a vehicle's guns (operator 08:32). Seated in it, as below; by remote view the game fires them for a
   -- gunner seated in it or a player driving it remotely, and an agent's character has no player (vehicles.lua).
   if a.vehicle~=nil then
@@ -10528,10 +10577,19 @@ function handlers.shoot(p,a)
     gun={slot=sel,name='empty'}
     why={no_compatible_ammo=string.format('gun slot %s holds no gun',tostring(sel))}
   end
+  -- Area ammunition: a fixed target whose blast reaches ours is refused; auto fire holds at such a target (D1).
+  local blast=gun_row and gun_row.ammo and gun_row.count>0 and M.blast_radius(gun_row.ammo) or nil
+  if blast and pos and a.fire_anyway~=true then
+    local hit=M.blast_hits(p,pos,blast)
+    if hit then
+      error(string.format('%s bursts %g tiles round where it hits: %s; nothing fired (fire_anyway: true shoots anyway; gun_slot picks a gun without area ammunition)',
+        gun_row.ammo,blast,hit.line),0)
+    end
+  end
   state().combat=state().combat or {}
   combat_targets()[p.index]=nil
   state().combat[p.index]={until_tick=game.tick+ticks,position=pos,auto=a.auto==true,radius=integer(a.radius,24,1,32,'radius'),ammo_start=ammo,
-    gun_used=gun,why_start=why}
+    gun_used=gun,why_start=why,blast=blast and {radius=blast,ammo=gun_row.ammo} or nil,fire_anyway=a.fire_anyway==true or nil}
   M.retreat.arm(p,state().combat[p.index],back)
   local out={until_tick=game.tick+ticks,ammo=ammo,gun=gun,equipped=equipped,retreat=back and M.retreat.line(back) or nil}
   for k,v in pairs(why or {}) do out[k]=v end
@@ -12771,7 +12829,7 @@ function handlers.dry_run(p,a)
         for x=x0,x1 do for y=y0,y1 do plan.tiles[#plan.tiles+1]={copy=copy,name=tile,position={x=x+0.5+k*dx,y=y+0.5+k*dy}} end end
       end
     elseif kind=='build' then
-      if inner.builds~=nil then assert(type(inner.builds)=='table' and #inner.builds>=1 and #inner.builds<=64,'builds requires 1..64 {item,position,direction} entries') end
+      if inner.builds~=nil then assert(type(inner.builds)=='table' and #inner.builds>=1 and #inner.builds<=256,'builds requires 1..256 {item,position,direction} entries') end
       for i,b in ipairs(inner.builds or {inner}) do
         assert(type(b)=='table','each build must be an object')
         local item=b.item or inner.item
@@ -15803,6 +15861,14 @@ function M.tick_body(event)
       if action.auto then
         local e=M.combat_scan(p,action,index,event.tick)
         if e then target=e.position end
+        -- (area ammunition: no shot at a target whose blast reaches ours; held_blast says the last such)
+        if e and action.blast and not action.fire_anyway then
+          local okh,hit=pcall(M.blast_hits,p,e.position,action.blast.radius)
+          if okh and hit then
+            target=nil; e=nil
+            action.held_blast=string.format('held fire at %s: %s',action.blast.ammo,hit.line); action.held_blast_n=(action.held_blast_n or 0)+1
+          end
+        end
         if e then action.fired_tick=event.tick end
       elseif target then action.fired_tick=event.tick end
       p.shooting_state={state=target and defines.shooting.shooting_enemies or defines.shooting.not_shooting,position=target or p.position}
