@@ -124,7 +124,9 @@
 - `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`: per item, what the ghosts still need less hub
   stock and cargo in flight, what is built and what the hub asks; `pack` splits the rest into rockets for `load_silo`.
 - `load_silo {..., launch: true, auto_requests: "pause"}` loads a silo whose automatic requests are on. They go off for
-  this manifest and come back on after its last launch, or when the load ends without one.
+  this manifest and come back on after its last launch; a load that ends short or failed leaves them off
+  (`auto_requests_kept_off`; `configure {auto_requests: true}` turns them on). `dry_run` and preflight name cargo
+  aboard that is not in the list (`foreign_cargo`) and automatic requests that are on.
 - `platform_production {platform}`: the platform's own production per item (totals, rates over 1m, 10m, 1h);
   `wait_until {until: produced, platform, item, at_least}`. `platform_plan {platform, ready: {positions, area, tiles}}`:
   one subset's missing items, foundation support and settings. A launch to another platform than the cargo was loaded

@@ -796,12 +796,15 @@ local function finish(index, outcome)
     if rp then rp.enabled=true end
     if s.last[index] then s.last[index].personal_logistics='your personal logistic requests are back on' end
   end
-  -- load_silo {auto_requests: "pause"} that ended without its launch: the silo's automatic requests back on (B5).
-  if action and (action.handler=='load_silo' or action.op=='load_silo') and M.silo_unpause then
+  -- load_silo {auto_requests: "pause"} that ended without its launch (short, failed, timed out, stopped): the silo's
+  -- automatic requests stay off, as the agent set them (d17 batch17 A1, Astra and Sol: turned back on after a short
+  -- rescue load, they put one gun turret in and the next scarce Aquilo rocket went up with it). The pause record goes;
+  -- configure {auto_requests: true} turns them on.
+  if action and (action.handler=='load_silo' or action.op=='load_silo') and M.silo_keep_off then
     local o=s.last[index] and s.last[index].outcome or outcome
     if o~='fed' and o~='launched' and o~='loaded' then
-      local ok,line=pcall(M.silo_unpause,index,'the load ended '..tostring(o))
-      if ok and line and s.last[index] then s.last[index].auto_requests_back=line end
+      local ok,line=pcall(M.silo_keep_off,index,'the load ended '..tostring(o))
+      if ok and line and s.last[index] then s.last[index].auto_requests_kept_off=line end
     end
   end
   if action and action.borrowed_cursor then
@@ -10765,7 +10768,7 @@ M.rocketload=require('rocketload'){ammofeed={trace=function(pl) return M.ammofee
 -- load_silo {auto_requests: "pause"} (B5, Gemini 22:50: automatic requests kept sending bulk items while urgent defense
 -- and repair items waited, and a silo with them on takes no hand load): the silo's automatic requests go off for this
 -- manifest (its rockets: rockets N, or a split's) and back on after its last launch by this agent, or when a load of it
--- ends without its launch (failed, timed out, refused). Kept in storage by the silo's unit number; one older than 2
+-- is refused before loading (a load that ends short or failed leaves them off: d17 batch17 A1). Kept in storage by the silo's unit number; one older than 2
 -- game hours is switched back on when the silo is next read or loaded.
 M.SILO_PAUSE_TICKS=432000
 function M.silo_pauses() local st=state(); st.silo_pause=st.silo_pause or {}; return st.silo_pause end
@@ -10777,6 +10780,17 @@ function M.silo_unpause(index,why,unit)
     if (unit==nil and rec.by==index) or u==unit then
       if rec.silo and rec.silo.valid then rec.silo.use_transitional_requests=true end
       lines[#lines+1]=string.format('automatic requests of %s back on (%s)',rec.where or 'the silo',why)
+      M.silo_pauses()[u]=nil
+    end
+  end
+  return #lines>0 and table.concat(lines,'; ') or nil
+end
+-- A paused load that ended without its launch (A1): the pause ends and the requests stay off.
+function M.silo_keep_off(index,why)
+  local lines={}
+  for u,rec in pairs(M.silo_pauses()) do
+    if rec.by==index then
+      lines[#lines+1]=string.format('automatic requests of %s stay off (%s; configure {auto_requests: true} turns them on)',rec.where or 'the silo',why)
       M.silo_pauses()[u]=nil
     end
   end
@@ -10814,7 +10828,7 @@ function M.silo_pause(p,a,rockets)
   for _,c in ipairs(inv and inv.get_contents() or {}) do aboard[#aboard+1]=c.name..'*'..c.count end
   silo.use_transitional_requests=false
   M.silo_pauses()[silo.unit_number]={by=p.index,who=M.board.who(p),tick=game.tick,left=rockets or 1,silo=silo,where=string.format('%s (%g,%g)',silo.name,silo.position.x,silo.position.y)}
-  return string.format('automatic requests of %s (%g,%g) switched off for this load (%d rocket%s): back on after its last launch, or when a load of it ends without one%s',
+  return string.format('automatic requests of %s (%g,%g) switched off for this load (%d rocket%s): back on after its last launch; a load that ends short or failed leaves them off%s',
     silo.name,silo.position.x,silo.position.y,rockets or 1,(rockets or 1)==1 and '' or 's',#aboard>0 and '; the rocket already held '..table.concat(aboard,' ')..', which stays aboard' or '')
 end
 function handlers.load_silo(p,a)
