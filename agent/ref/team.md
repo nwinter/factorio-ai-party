@@ -93,3 +93,10 @@
   hours reads `stale`. At most 150 active.
 - A belt carrying items destroyed: the owner of the claim it lies in (else the nearest agent there) gets a waking tell
   with each belt's position and direction and what it carried.
+- `board_progress {owner?, id?}`: each owned open task, request and project with the game's evidence since its last
+  10-minute check (entities built in its area or its owner's claims, what it needs reaching the count, shipment lines
+  of platforms it names, board edits), the age of its last change, the owner's repeated failures and no-effect
+  actions, and its state: progress, waiting (owner in a wait or running queue), unchanged, stalled (unchanged across 2
+  checks, with the 20-minute rule). Each check also puts one line in the owner's reply.
+- `board_critical`: blocked items, those the team plan names (#id) first, then by how many open items wait on them,
+  with what each waits on; and the agents standing or waiting now.

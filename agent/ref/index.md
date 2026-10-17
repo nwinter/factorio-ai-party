@@ -26,7 +26,7 @@ Each topic, when to read it, and the commands it documents:
   `plan list`, `stop`, `order_set`, `orders`, `order_remove`, `orders_pause`, `orders_resume` (standing orders),
   `reminder_add`, `reminder_ack`, `reminders`; urgent wakes, slow game, harness updates.
 - `team`, when you edit board items or read a `team:` or `team: shift` block or an `OPERATOR:` line: claims, `board projects`, `board_review`, `board_retire`, `lessons`, `lesson_add`, `lesson_edit`, `lesson_verify`, `review`,
-  `lookahead`, `networks`, `boilers`, `tells`.
+  `lookahead`, `networks`, `boilers`, `tells`, `board_progress` (owned items: progress seen, stalls), `board_critical` (blocked items ranked).
 - `stream-people`, in your first minute (your stream profile) and when you talk to viewers or a human player joins:
   `profile`, `profiles`, `confess`, `chronicle`, `chat_ack` (close an unanswered mention), `operator`, `poll` (the site's polls), `players`, `vote`, `votes`,
   `restore`.

@@ -6382,3 +6382,21 @@ fh watch    # deploy on every change
   waiting "the platform is not stopped at gleba"; Wren's crusher and explosives waiting hub_full. Cost on the copy:
   Swift's read 23 ms with the dispatch (about 10 ms of it), the silo lists kept a minute in storage (their
   whole-surface search was 5-8 ms a planet).
+- Group B addition (Astra 09:20: Gleba's landing pads took all 500 processing units, 100 meant for Gleba and 400 for
+  Aquilo): `shipment` and `preflight {platform}` (cargo_conflicts) give a cargo conflict line for each item the hub
+  holds that the landing pads of two or more coming stops ask: each stop in the order the schedule reaches it, what
+  its pads ask and hold, what would go down there and what would be left aboard. The hub's own requested stock is left
+  out: on the copy Swift, stopped at Nauvis, kept its 501 magazines (500 requested) under a pad ask of 1461.
+- Group C (Sol 07:53, Astra 07:53; progress.lua): every 10 game minutes each owned open task, request and project is
+  checked (one a call, every 2 s): our entities in its area, else in its owner's active claims (robots, characters,
+  vehicles left out); what it needs (names with counts) reaching the count on its owner's planet; shipment lines of
+  platforms its title names; its board edits and notes. Any of them: progress. None: unchanged; across 2 checks:
+  stalled, unless its owner is in a sleep, wait step or wait_until or has a queue running (waiting). Each check puts
+  one line in the owner's reply (team.alerts): progress seen, its next action or blocker as last written (the owner's
+  last note, a project's next step), or that none is written. Nothing reassigns. `board_progress {owner?, id?}`: the
+  checks per item, stalled first, the age of the last board change, the owner's repeated failures (selfview) and
+  no-effect actions (idle) since, and for a stalled one the 20-minute rule with the owner's last request; with owner
+  or id, what changed since the check is read again. `board_critical`: blocked items (status blocked, or an open item
+  in blocked_by), those the team plan names (#id) first, then by open items waiting on them through blocked_by and
+  parent chains, each with what it waits on; agents standing a minute or more or waiting, with what they own. Copy:
+  59 owned items; board_progress 30 ms with dispatch (37 ms for one owner), board_critical 8 ms; one check 6-9 ms.

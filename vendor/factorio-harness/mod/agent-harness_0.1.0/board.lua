@@ -1701,6 +1701,9 @@ return function(api)
     return nil
   end
   M.resolve, M.agents, M.who = resolve, agents, who
+  -- (d17 batch15 Group C, progress.lua) the items, an agent's ticks since its last request and index, the plan item
+  M.items = function() return store().items end
+  M.since_request, M.plan_item, M.QUIET, M.PROJECT_QUIET, M.ACTIVE = since_request, plan_item, QUIET, PROJECT_QUIET, ACTIVE
   -- For chat reads (chat.lua): whether a logged message mentions this agent.
   -- A viewer's line mentions only an agent it names with @ (not @everyone).
   function M.mention_of(index, m)
@@ -2066,6 +2069,11 @@ return function(api)
     -- A platform leaving while a launch to it waits for its rocket (launchwatch.lua).
     if api.launch_lines then
       local ok, list = pcall(api.launch_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
+    -- The owner's 10-minute line on each owned board item (progress.lua; d17 batch15 C3).
+    if api.progress_lines then
+      local ok, list = pcall(api.progress_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
     -- A shipment delivered, spilled or held by a full hub (shipment.lua; d17 batch15 Group B).
