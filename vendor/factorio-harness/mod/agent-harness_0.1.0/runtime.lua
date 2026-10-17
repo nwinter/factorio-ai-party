@@ -14482,7 +14482,14 @@ M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.netw
 -- The game's alerts and key warnings, pushed to the agents they concern (pushalerts.lua).
 -- Lightning attractors on Fulgora whose catches have nowhere to go, and full accumulators beside them (lightning.lua).
 M.lightning=require('lightning'){}
-M.pushalerts=require('pushalerts'){belt_groups=function(f) return M.beltgaps.alert_groups(f) end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,agents=function() return M.board.agents() end,who=M.board.who,
+-- A long belt or pipe line cut (linecut.lua; d17 batch17 C1, Opus): a team alert naming the cut tiles.
+M.linecut=require('linecut'){state=state}
+M.pushalerts=require('pushalerts'){belt_groups=function(f)
+    local out=M.beltgaps.alert_groups(f)
+    local ok,cuts=pcall(M.linecut.alert_groups,f)
+    for _,g in ipairs(ok and cuts or {}) do out[#out+1]=g end
+    return out
+  end,drill_site=function(f,g) return M.drill_sites.group(f,g) end,state=state,timed=M.timed,agents=function() return M.board.agents() end,who=M.board.who,
   first_spoil=function(inv) return survey.first_spoil(inv) end,
   burnt_stuck=function(e) return M.burnt.stuck(e) end,
   claim_surface=function(i) return M.claims.surface_of(i) end,
@@ -15724,6 +15731,11 @@ function M.on_event(event)
     -- A belt of ours carrying items destroyed (d17 batch13 C1): its claim's owner is told (M.belt_cut_tell).
     if e and e.valid and (e.type=='transport-belt' or e.type=='underground-belt' or e.type=='splitter') and e.force and e.force.name~='enemy' and e.force.name~='neutral' then
       pcall(M.note_belt_cut,event)
+    end
+    -- a long belt or pipe line cut: a team alert (linecut.lua, d17 batch17 C1)
+    if e and e.valid and (e.type=='transport-belt' or e.type=='underground-belt' or e.type=='splitter' or e.type=='pipe' or e.type=='pipe-to-ground')
+      and e.force and e.force.name~='enemy' and e.force.name~='neutral' and M.linecut then
+      pcall(M.linecut.note,event)
     end
     if e and e.valid and e.force and e.force.name=='enemy' and (e.type=='unit-spawner' or e.type=='turret') and event.force and event.force.name~='enemy' then
       s.kills=s.kills or {}

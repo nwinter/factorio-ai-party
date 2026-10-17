@@ -160,3 +160,58 @@ do
   eq(#action.mine_for_a_way,2)
 end
 print('d17_batch17 B2 an unreachable tour stop names what to mine: ok')
+
+-- C1 (Opus, every shift: a 2-tile gap at (422.5,-249) idled 10 drills unnoticed): a long belt or pipe line cut is a
+-- team alert naming the cut tiles; a short one is not; one rebuilt is gone; a second death beside it joins it.
+do
+  game={tick=100}
+  local st={}
+  local L=dofile('mod/agent-harness_0.1.0/linecut.lua'){state=function() return st end}
+  local function belt(y) local b={valid=true,type='transport-belt',name='transport-belt',position={x=422.5,y=y},unit_number=1000+y*-1,
+    get_max_transport_line_index=function() return 2 end,get_transport_line=function() return {get_contents=function() return {{name='iron-ore',count=4}} end} end}
+    return b end
+  local line={}
+  for y=-235,-262,-1 do line[#line+1]=belt(y+0.5) end
+  for i,b in ipairs(line) do b.belt_neighbours={inputs={line[i-1]},outputs={line[i+1]}} end
+  local built={}
+  for _,b in ipairs(line) do built[b.position.y]=true end
+  local surface={name='nauvis',find_entities_filtered=function(f) if built[f.position[2]] then return {{valid=true}} end return {} end}
+  game.get_surface=function() return surface end
+  for _,b in ipairs(line) do b.surface=surface; b.force={name='player'}; b.last_user={name='opus'} end
+  local gap=line[15]   -- (422.5,-248.5)
+  L.note({entity=gap,tick=100,cause={valid=true,name='big-biter'}}); built[gap.position.y]=nil
+  L.note({entity=line[16],tick=101,cause={valid=true,name='big-biter'}}); built[line[16].position.y]=nil
+  eq(#st.linecut.cuts,1,'the second death joins the cut')
+  game.tick=101+1800
+  local gs=L.alert_groups({name='player'})
+  eq(#gs,1)
+  has(gs[1].line,'belt line cut at (422.5,-248.5), (422.5,-249.5): 2 tiles gone (2 by big-biter), 30s ago, none rebuilt')
+  has(gs[1].line,'the line runs 14 tiles to (422.5,-234.5) on one side, 13 tiles to (422.5,-261.5) on the other; it carried iron-ore')
+  eq(gs[1].by.opus,1,'who built it hears it')
+  -- rebuilt: gone
+  built[gap.position.y]=true; built[line[16].position.y]=true
+  eq(#L.alert_groups({name='player'}),0)
+  -- a short line: no alert
+  local a,b,c=belt(0.5),belt(1.5),belt(2.5)
+  a.belt_neighbours={inputs={},outputs={b}}; b.belt_neighbours={inputs={a},outputs={c}}; c.belt_neighbours={inputs={b},outputs={}}
+  for _,x in ipairs({a,b,c}) do x.surface=surface; x.force={name='player'} end
+  L.note({entity=b,tick=200})
+  eq(#st.linecut.cuts,0,'3 tiles is no long line')
+end
+do
+  game={tick=10}
+  local st={}
+  local L=dofile('mod/agent-harness_0.1.0/linecut.lua'){state=function() return st end}
+  local surface={name='nauvis',find_entities_filtered=function() return {} end}
+  game.get_surface=function() return surface end
+  local pipes={}
+  for i=1,12 do pipes[i]={valid=true,type='pipe',name='pipe',position={x=-200.5+i,y=-300.5},unit_number=2000+i,surface=surface,force={name='player'},
+    fluidbox={{name='crude-oil',amount=50}}} end
+  for i,pp in ipairs(pipes) do pp.neighbours={{pipes[i-1],pipes[i+1]}} end
+  L.note({entity=pipes[6],tick=10})
+  game.tick=70
+  local gs=L.alert_groups({name='player'})
+  eq(#gs,1)
+  has(gs[1].line,'pipe line cut at (-194.5,-300.5): 1 tile gone, 1s ago, none rebuilt; the line runs 5 tiles to (-199.5,-300.5) on one side, 6 tiles to (-188.5,-300.5) on the other; it carried crude-oil')
+end
+print('d17_batch17 C1 a long belt line cut is a team alert: ok')
