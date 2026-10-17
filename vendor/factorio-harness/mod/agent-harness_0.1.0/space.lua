@@ -822,6 +822,11 @@ return function(api)
       end
       local tag=waiting and i==cur and 'waiting here' or (i==nxt and (waiting and 'next' or 'flying to it')) or nil
       out[i]=string.format('%d %s%s: %s',i,rec.station or '?',tag and ' ('..tag..')' or '',#ws>0 and table.concat(ws,' ') or 'no wait condition')
+      -- (C8, Grok) the stop it waits at: a queue step or order that sets its schedule may send it on before these waits
+      if waiting and i==cur then
+        local dep=api.departure and try(function() return api.departure(pl.name) end)
+        if dep and #dep>0 then out[i]=out[i]..'; or sooner, when '..table.concat(dep,' | ')..' runs' end
+      end
     end
     return out
   end

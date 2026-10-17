@@ -79,6 +79,28 @@ return function(api)
     local ok,p=pcall(api.player,index)
     if not (ok and p and p.character) then return 'character (dead, riding or aboard)' end
   end
+  M.ENEMY_RECHECK, M.ENEMY_WAIT_MAX = 600, 108000
+  local function transient(reason)
+    local r=tostring(reason or '')
+    return r:find('under attack now',1,true) or r:find('seen now',1,true) or r:find('attack #',1,true) or nil
+  end
+  -- Orders waiting out enemies (C2), due again: the place clear of the enemies our force sees now, run; still there,
+  -- look again in ENEMY_RECHECK ticks; past ENEMY_WAIT_MAX, a failure.
+  local function enemy_waits(index,b)
+    for _,o in ipairs(b.list) do
+      local w=o.enemy_wait
+      if w and game.tick>=o.next_tick then
+        local there=api.enemies_near and api.enemies_near(index,w.at)
+        if not there then o.enemy_wait=nil
+        elseif game.tick-w.since>M.ENEMY_WAIT_MAX then
+          o.enemy_wait=nil; o.failures=o.failures+1
+          o.last={outcome='failed',reason='enemies there for '..secs(M.ENEMY_WAIT_MAX)..' s: '..short(there),tick=game.tick}
+          if o.failures>=MAX_FAILS then o.off=o.last.reason end
+          o.next_tick=game.tick+(o.when and o.cooldown or o.interval)
+        else w.now=short(there); o.next_tick=game.tick+M.ENEMY_RECHECK end
+      end
+    end
+  end
   -- A run's end (scheduler.lua order_result): done or failed sets the next
   -- time; interrupted keeps the remaining steps to resume.
   local function settle(b,r)
@@ -93,10 +115,24 @@ return function(api)
       o.last={outcome='stopped',reason=r.reason,tick=r.tick or game.tick}
       return
     end
+    -- Refused for enemies that come and go (d17 batch12 C2, Luna: a spoilage top-up order switched itself off after
+    -- three refusals during a short wriggler attack): an area under attack now, enemy units or a group seen now. Not a
+    -- failure: the order waits for the place to be clear of the enemies seen there and runs again (checked every
+    -- ENEMY_RECHECK ticks; after ENEMY_WAIT_MAX it counts as a failure after all).
+    if r.outcome=='failed' and transient(r.reason) then
+      local x,y=tostring(r.reason):match('%((%-?[%d%.]+),(%-?[%d%.]+)%)')
+      o.enemy_wait=o.enemy_wait or {since=game.tick}
+      o.enemy_wait.reason=short(r.reason); o.enemy_wait.at=x and {x=tonumber(x),y=tonumber(y)} or nil
+      o.last={outcome='waiting',reason='enemies there: '..short(r.reason),tick=r.tick or game.tick}
+      o.resume=nil; o.held=nil
+      o.next_tick=game.tick+M.ENEMY_RECHECK
+      return
+    end
     if r.outcome=='failed' then
       o.failures=o.failures+1
       if o.failures>=MAX_FAILS then o.off=short(r.reason) end
     else o.failures=0; o.runs=o.runs+1 end
+    o.enemy_wait=nil
     o.last={outcome=r.outcome=='failed' and 'failed' or 'done',reason=r.reason and short(r.reason) or nil,tick=r.tick or game.tick}
     o.resume=nil; o.held=nil
     o.next_tick=game.tick+(o.when and o.cooldown or o.interval)
@@ -136,6 +172,7 @@ return function(api)
   end
   local function look(index,b)
     settle(b,api.scheduler.order_result(index))
+    enemy_waits(index,b)
     local running=api.scheduler.order(index)
     if running then
       local o=find(b,running.name)
@@ -190,6 +227,10 @@ return function(api)
     if o.off then return 'off' end
     if killed() then return 'paused by the operator' end
     if o.resume then return 'resumes when free' end
+    if o.enemy_wait then
+      local w=o.enemy_wait
+      return string.format('waiting for enemies%s to clear (%s), looks again in %s s',w.at and string.format(' near (%g,%g)',w.at.x,w.at.y) or '',w.now or w.reason,secs(math.max(0,o.next_tick-game.tick)))
+    end
     if game.tick<o.next_tick then return (o.when and 'cooling ' or 'next in ')..secs(o.next_tick-game.tick)..' s' end
     if o.when then return o.held and o.held.tick>game.tick-600 and (o.held.met and 'holds' or 'not holding') or 'ready' end
     return 'ready'
@@ -239,6 +280,7 @@ return function(api)
       end
     end
     for _,o in ipairs(b.list) do
+      if o.enemy_wait then parts[#parts+1]=o.name..' waits for enemies'..(o.enemy_wait.at and string.format(' near (%g,%g)',o.enemy_wait.at.x,o.enemy_wait.at.y) or '')..' to clear (not a failure)' end
       if o.off then parts[#parts+1]=o.name..' off after '..MAX_FAILS..' failures: '..o.off..' (order_set it again)'
       elseif o.failures>0 and o.last then parts[#parts+1]=o.name..' failed '..o.failures..'/'..MAX_FAILS..': '..(o.last.reason or '?') end
     end

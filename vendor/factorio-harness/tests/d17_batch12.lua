@@ -109,3 +109,70 @@ do
   defines,prototypes=nil,nil
   print('d17_batch12 A0 min_payload kept in the platform_bom section: ok')
 end
+
+-- C6 (Sol: a second load_silo launch step read the first one's launch as made under it): the game's launch-ordered
+-- event a few ticks after our launch call updates that record instead of making a new one.
+do
+  local st={}
+  game={tick=1000}
+  local S=dofile('mod/agent-harness_0.1.0/silo.lua'){state=function() return st end}
+  local silo={unit_number=7,surface={name='gleba'},position={x=65.5,y=14.5}}
+  S.record(silo,{by='sol',to='platform Swift',cargo='agricultural-science-pack*500',called=true})
+  game.tick=1002
+  S.record(silo,{cargo='agricultural-science-pack*500',to='platform Swift',ordered=true})
+  local r=S.last_launch(silo)
+  assert(r.tick==1000 and r.by=='sol' and r.ordered,'one launch, one record: '..tostring(r.tick))
+  -- a later launch is a new record
+  game.tick=5000
+  S.record(silo,{cargo='bioflux*40',ordered=true})
+  assert(S.last_launch(silo).tick==5000)
+  game=nil
+  print('d17_batch12 C6 one launch, one record: ok')
+end
+
+-- C2 (Luna: a top-up order went off after three refusals during a short attack): a refusal for enemies that come and go
+-- (an area under attack now, units or a group seen now) is no failure; the order waits for the place to clear.
+do
+  game={tick=1}
+  local st={}
+  local result
+  local enemies='3 enemy units (3 small-wriggler-pentapod) at (2,18)'
+  local started=0
+  local api={state=function() return st end,last_seen=function() return game.tick end,player=function() return {character={valid=true}} end,busy=function() return nil end,
+    condition=function() return true,'ok' end,
+    scheduler={order_result=function() local r=result; result=nil; return r end,order=function() return nil end,free=function() return true end,
+      resting=function() return nil end,run_order=function() started=started+1 end,loop_orders=function() return nil end},
+    enemies_near=function() return enemies end}
+  local O=dofile('mod/agent-harness_0.1.0/orders.lua')(api)
+  st.orders={[1]={list={{name='topup',steps={{action='feed'}},interval=600,cooldown=600,max_ticks=3600,failures=0,runs=0,next_tick=0,priority=0}},hold=0,rr=0,busy_tick=0,drove_tick=0}}
+  local o=st.orders[1].list[1]
+  local function fail(reason) result={name='topup',outcome='failed',reason=reason,tick=game.tick}; game.tick=game.tick+60; O.tick() end
+  for _=1,3 do fail('goal (2,18) is within 24 tiles of attack #12 at (2,18), an area under attack now (last hit 2s ago)') end
+  assert(o.failures==0 and not o.off,'enemy refusals are no failures')
+  assert(o.enemy_wait and o.enemy_wait.at.x==2,'waits for (2,18)')
+  assert(O.line(1):find('topup waits for enemies near (2,18) to clear (not a failure)',1,true),O.line(1))
+  -- still there: no run; clear: it runs
+  local before=started
+  game.tick=o.next_tick; O.tick()
+  for _=1,120 do game.tick=game.tick+1; O.tick() end
+  assert(started==before,'no run while enemies are there')
+  enemies=nil
+  for _=1,1200 do game.tick=game.tick+1; O.tick() end
+  assert(o.enemy_wait==nil and started>before,'runs once the place is clear '..tostring(o.enemy_wait)..' '..started..' '..before..' '..tostring(O.line(1)))
+  -- a worm (it stays) still counts as a failure
+  fail('goal (5,5) is inside big-worm-turret (9,9) range 38 (5.0 tiles from it)')
+  assert(o.failures==1)
+  game=nil
+  print('d17_batch12 C2 orders wait out enemies: ok')
+end
+
+-- C8 (Grok: Swift read 59 minutes left at Vulcanus while a remote-lane queue was about to send it on): the departure
+-- lines read the remote lane too.
+do
+  local st={queues={},remote_queues={[3]={current={action='wait_until',args={['until']='item_count',item='agricultural-science-pack',platform='Swift',at_least=500}},
+    pending={{action='platform_schedule',args={platform='Swift',stops={{station='gleba'}}}}}}}}
+  local D=dofile('mod/agent-harness_0.1.0/departure.lua'){state=function() return st end,name_of=function() return 'grok' end}
+  local l=D.lines('Swift')
+  assert(l and l[1]:find("grok's remote queue: wait_until item_count",1,true) and l[1]:find('platform_schedule Swift (gleba)',1,true),tostring(l and l[1]))
+  print('d17_batch12 C8 the remote lane sends platforms on: ok')
+end

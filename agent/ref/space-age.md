@@ -138,3 +138,6 @@
 - `silo` rows' `platform_requests` flag each request: matched (the planet's network holds it), below_min_payload,
   split_networks (another network holds it), hub_full, filling. A launch reply leads with `spoiled_percent` by item
   and `went_up` (load_silo's `last` too).
+- `platform_endurance {route}` while flying reads the route from the current leg; a route starting behind the ship is
+  refused. A stop's wait line names a queue step (either lane) or order that will send the platform on sooner.
+- A launch step started while the last rocket is still leaving waits for the next rocket (never reports that launch).

@@ -116,3 +116,5 @@
   whether robots can build it (no construction area covers it, its network holds none, no idle robot); `page` for more.
 - A train in `no_path` reads `rail_break` (`train {position}`; `path_to: "STOP"` for any stop): the rails followed from
   the train, whole, reaching the stop only facing away, or broken: where the rails from each side end, the gap, rail ghosts.
+- place_ghosts counts an entry already standing as asked (same ghost or the built entity) apart: `already_placed`,
+  `already`; only real refusals are `failed`.

@@ -23,7 +23,14 @@ return function(api)
     local s = api.state()
     local out = {}
     local function who(i) return api.name_of and api.name_of(i) or ('agent ' .. tostring(i)) end
-    for index, q in pairs(s[api.queue_key or 'queues'] or {}) do
+    -- both lanes (d17 batch12 C8, Grok: Swift read 59 minutes left at Vulcanus while a remote-lane queue was about to
+    -- send it on: platform steps run in the remote lane, which was not read)
+    local lanes = {}
+    for _, key in ipairs({api.queue_key or 'queues', 'remote_queues'}) do
+      for index, q in pairs(s[key] or {}) do lanes[#lanes+1] = {index=index, q=q, remote=key == 'remote_queues'} end
+    end
+    for _, lane in ipairs(lanes) do
+      local index, q = lane.index, lane.q
       local seq = {}
       if q.current then seq[#seq+1] = q.current end
       for _, st in ipairs(q.pending or {}) do seq[#seq+1] = st end
@@ -34,7 +41,7 @@ return function(api)
         if st.action == 'platform_schedule' and type(a) == 'table' and a.platform == name and a.stops ~= nil then
           local prev = seq[i - 1]
           local wait = prev and prev.action == 'wait_until' and type(prev.args) == 'table' and cond_text(prev.args) or nil
-          out[#out+1] = string.format('%s\'s queue%s: %s then platform_schedule %s (%s)%s', who(index), q.paused and ' (paused)' or '',
+          out[#out+1] = string.format('%s\'s %squeue%s: %s then platform_schedule %s (%s)%s', who(index), lane.remote and 'remote ' or '', q.paused and ' (paused)' or '',
             wait and ('wait_until ' .. wait) or 'right after its step before', name, stops_text(a), looped and '; it repeats' or '')
         end
       end
@@ -51,6 +58,10 @@ return function(api)
       end
     end
     table.sort(out)
+    -- (a repeating queue holds its steps in its pending list and its loop: each line once)
+    local once, seen = {}, {}
+    for _, l in ipairs(out) do if not seen[l] then seen[l] = true; once[#once+1] = l end end
+    out = once
     return #out > 0 and out or nil
   end
   return M
