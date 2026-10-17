@@ -216,7 +216,14 @@
   time. `deconstruct`'s reply says `tiles_go` (in order) and `waiting` with why for every marked tile there;
   `"dry_run":true` marks nothing.
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods,
-  to the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it).
+  to the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it). A `drop` to
+  a planet with no pad lands the same way, near its `near` spot.
+- `pods {surface?, position?}`: the landed cargo pods (cargo-pod-containers) on a planet: how many, what they hold by
+  item, the nearest (to `position`, default you), each one's position and holding (`at`), the landing pads and their
+  free slots; `coverage` says how far the sweep that finds them looks (1024 tiles round (0,0)) and when it last went
+  over that planet. The status (`landed_pods`) and, once an hour, your team block say them too, e.g. "Vulcanus: 104
+  landed cargo pods hold 10,059 items (iron-plate 3283, ...); nearest (3.5,5.5), 7 tiles; landing pad (12,176) 80 of
+  80 slots free". `collect {pods: true}` empties them. Example: `./fh call pods --args '{"surface":"vulcanus"}'`
 - Platform loss alerts list each lost entity: rebuilt, a ghost there, or none.
 - Gleba: `inspect` on an agricultural tower shows its `tower` state, seeds, output, which cells have soil for which
   seeds, and its plants with time to harvest; `transfer`, `feed` and `collect` work on its seeds and harvest.
