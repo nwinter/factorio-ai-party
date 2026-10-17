@@ -176,7 +176,9 @@ fails(function() R.load(p,{position={x=65.5,y=14.5},items={['agricultural-scienc
 api.launch=real_launch
 -- Arguments.
 fails(function() R.load(p,{position={x=65.5,y=14.5},items={['iron-plate']=1},launch=true}) end,'launch needs platform=<name> (or orbit=true)')
-fails(function() R.load(p,{position={x=65.5,y=14.5},items={['iron-plate']=1},platform='Sunward'}) end,'platform goes with launch=true')
+-- platform without launch: the platform the cargo is for (d16 batch10 D11); orbit still goes with launch
+R.check({items={['iron-plate']=1},platform='Sunward'})
+fails(function() R.load(p,{position={x=65.5,y=14.5},items={['iron-plate']=1},orbit=true}) end,'orbit goes with launch=true')
 fails(function() R.load(p,{position={x=65.5,y=14.5},items={['iron-plate']=1},to_total='yes'}) end,'to_total must be true or false')
 -- Automatic requests on: the game takes no cargo by hand.
 silo.use_transitional_requests=true

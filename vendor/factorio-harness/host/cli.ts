@@ -43,7 +43,8 @@ const help = `fh — Factorio agent CLI
   fh call ACTION [--args JSON] [--id ID]      Execute an action; keep ID on uncertain outcomes
   fh call walk --args '{"direction":"east","ticks":60}' --wait
   fh wait [--max S]                         Block until the character's current action (and combat) ends, at most S s (at once when
-                                            idle; --until idle is the same); a tell or a teammate's mention ends the wait early
+                                            idle; --until idle is the same); a tell or a teammate's mention ends the wait early,
+                                            except over a walking or loading tour (collect, transfer, load_silo, feed, rearm, ...)
                                             (exit 3: it still runs; --wait-through-tells keeps waiting)
   fh wait --until tell|alert|COND [--max S] One blocking wait, one line out: ends on a tell or a teammate's mention, a new alert (alert),
                                             a sleep condition (researched [TECH], item_count ITEM>=N, rocket_ready X,Y, ...), or after S s (default 600, up to 900);
@@ -152,7 +153,7 @@ function parseUntil(text: string): Record<string, unknown> {
   const alternatives = splitAlternatives(trimmed);
   if (alternatives.length > 1) return {until:'any', conditions:alternatives.map(part => parseUntil(part))};
   const [kind = '', ...rest] = trimmed.split(/\s+/);
-  const usage = '--until takes researched [TECH], crafting_done, alert [KIND ...], item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, rocket_parts>=N at X,Y (silo_parts too; no count: every part), queue_done (fh sleep and fh wait only), produced [ITEM]>=N at X,Y [X,Y ...], platform_arrived PLATFORM [PLANET], platform_left PLATFORM [PLANET], platform PLATFORM at|left PLANET, or a wait_until condition as JSON; several joined by | (or a JSON list) wake on whichever holds first';
+  const usage = '--until takes researched [TECH], crafting_done, alert [KIND ...], item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, rocket_parts>=N at X,Y (silo_parts too; no count: every part), queue_done (fh sleep and fh wait only), produced [ITEM]>=N at X,Y [X,Y ...] (or ITEM>=N on PLATFORM), platform_arrived PLATFORM [PLANET], platform_left PLATFORM [PLANET], platform PLATFORM at|left PLANET, or a wait_until condition as JSON; several joined by | (or a JSON list) wake on whichever holds first';
   if (kind === 'researched' || kind === 'research') {
     if (rest.length > 1) throw new Error(usage);
     return rest[0] ? {until:'researched', technology:rest[0]} : {until:'researched'};
@@ -207,6 +208,9 @@ function parseUntil(text: string): Record<string, unknown> {
   // What machines made since the wait began (Grok 07:50: robots empty the provider, so item_count never rises):
   // produced ITEM>=N at X,Y [X,Y ...] (items), or produced>=N at X,Y (crafts).
   if (/^produced\b/.test(trimmed)) {
+    // On a platform (D4, Astra): produced ITEM>=N on PLATFORM, from its production statistics.
+    const on = trimmed.match(/^produced\s*([a-z][\w-]*)\s*(>=|>)\s*(\d+)\s+on\s+(?:platform\s+)?(?:"([^"]+)"|'([^']+)'|(\S+))$/);
+    if (on) return {until:'produced', item:on[1], at_least:Number(on[3]) + (on[2] === '>' ? 1 : 0), platform:on[4] ?? on[5] ?? on[6]};
     const m = trimmed.match(/^produced\s*(?:([a-z][\w-]*)\s*)?(>=|>)\s*(\d+)\s+(?:at|in)\s+(.+)$/);
     if (!m) throw new Error('--until produced takes an optional item, a count and the machines: produced iron-gear-wheel>=50 at X,Y [X,Y ...] (produced>=N: crafts)');
     const positions = (m[4] ?? '').split(/[\s;]+/).filter(Boolean).map(pair => {
@@ -327,7 +331,7 @@ const TELL_WORDS = new Set(['tell','tells','mention','told']);
 const THEN_READS = new Set(['agriculture','artillery','belt_gaps','blueprint_list','boilers','bottleneck','cameras','cargo','conflicts',
   'construction_robots','craftable','damage_log','danger','defense','drill_sites','drops','dry_run','flamers','freight_audit','fuel_budget',
   'game_alerts','grid','heat_budget','inspect','inventory','labs','lookahead','map','nearest','nearest_water','networks','observe','ores',
-  'pipe_gaps','placements','platform','platform_bom','platform_endurance','platform_plan','platform_supply','platforms','ports','power','preflight',
+  'pipe_gaps','placements','platform','platform_bom','platform_endurance','platform_production','platform_plan','platform_supply','platforms','ports','power','preflight',
   'profiles','rates','recipes','reminders','research_options','reservations','review','scan','science','shortages','silo','status','stock',
   'supply','technologies','trace','turrets','where_is']);
 /** --then's action and arguments: "ACTION", "ACTION {json}", with the JSON as the next positional or --args. */
@@ -1592,12 +1596,25 @@ async function main() {
       ending = overtime(pacer, deadline, cap);
       if (ending !== 'go') break;
       await delay(pollDelay(status, started));
-      status = await poll();
+      // A walking or loading tour (gather, feed: collect, transfer, load_silo, rearm, refuel, recover walks; a walk into
+      // reach for one) goes on through plain tells here too, as --wait does (D10, Grok 00:22: a tell ended fh wait on a
+      // rocket load and an egg handoff, and robots took the eggs); an urgent alert or a tell with --wake ends it.
+      const wasActive = status.result?.active;
+      const tour = !!wasActive && (['gather','feed'].includes(wasActive.kind) || ['collect','feed','load_silo','rearm','refuel','recover','transfer','pickup'].includes(wasActive.walking_for));
+      status = await poll(tour && values['no-urgent'] !== true ? since : undefined);
       pacer.see(status.tick);
       if (!status.ok) return status;
       const active = status.result?.active;
+      const body = !!active && (['gather','feed'].includes(active.kind) || ['collect','feed','load_silo','rearm','refuel','recover','transfer','pickup'].includes(active.walking_for));
+      if (active && body && typeof status.result?.urgent === 'string') {
+        return interruptedReply({...status, result:{...status.result, interrupted:{inbox:{tick:status.tick ?? 0, woke:'urgent', from:status.result.urgent}, active}}}, started, undefined, active.kind);
+      }
+      const wakeTell = status.result?.inbox_wake;
+      if (active && body && since !== undefined && typeof wakeTell?.tick === 'number' && wakeTell.tick >= since) {
+        return interruptedReply({...status, result:{...status.result, interrupted:{inbox:wakeTell, active}}}, started, undefined, active.kind);
+      }
       if (active && told(status, since) && active.kind !== 'wait_ticks' && active.kind !== 'wait_until') {
-        if (!throughTells) return interruptedReply({...status, result:{...status.result, interrupted:{inbox:wakeInbox(status, since), active}}}, started, undefined, active.kind);
+        if (!throughTells && !body) return interruptedReply({...status, result:{...status.result, interrupted:{inbox:wakeInbox(status, since), active}}}, started, undefined, active.kind);
         noteTell(wakeInbox(status, since));
       }
     }

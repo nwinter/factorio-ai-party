@@ -123,3 +123,7 @@
   stock and cargo in flight, what is built and what the hub asks; `pack` splits the rest into rockets for `load_silo`.
 - `load_silo {..., launch: true, auto_requests: "pause"}` loads a silo whose automatic requests are on. They go off for
   this manifest and come back on after its last launch, or when the load ends without one.
+- `platform_production {platform}`: the platform's own production per item (totals, rates over 1m, 10m, 1h);
+  `wait_until {until: produced, platform, item, at_least}`. `platform_plan {platform, ready: {positions, area, tiles}}`:
+  one subset's missing items, foundation support and settings. A launch to another platform than the cargo was loaded
+  for (load_silo `platform`) is refused (`cargo_for: "any"`); `launch {wait_ready, platform}` waits for the platform too.

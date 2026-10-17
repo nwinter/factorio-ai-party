@@ -2220,7 +2220,7 @@ local gear_machine={valid=true,name='assembling-machine-2',type='assembling-mach
   get_output_inventory=function() return gear_out end,get_recipe=function() return {products={{type='item',name='iron-gear-wheel'}}} end}
 p.surface.find_entities_filtered=function(f) return f.radius and {gear_machine} or {} end
 have['iron-gear-wheel']=100
-fails(function() call('craft',{recipe='iron-gear-wheel',count=100}) end,'not crafted: 200 iron-gear-wheel held by our factory (200 in 1 assembling-machine-2); nearest 200 at (12,5) 13 tiles away; collect item=iron-gear-wheel radius=15 gathers it; craft force=true')
+fails(function() call('craft',{recipe='iron-gear-wheel',count=100}) end,'not crafted: 200 iron-gear-wheel held by our factory (200 in 1 assembling-machine-2); nearest 200 at (12,5) 13 tiles away; collect item=iron-gear-wheel radius=15 gathers it; 200 of it within 25 tiles of you; craft force=true')
 -- Existing on_fail: skip continues after a real stock refusal; no chest is
 -- silently drained. Requesters in the journal were feeding other machines.
 ;(function()
@@ -2230,15 +2230,19 @@ fails(function() call('craft',{recipe='iron-gear-wheel',count=100}) end,'not cra
   local chest={valid=true,name='requester-chest',type='logistic-container',position={x=20.5,y=59.5},
     get_inventory=function() return gear_out end}
   p.surface.find_entities_filtered=function(f) return f.radius and {chest} or {} end
-  local ok,err=pcall(call,'craft',{recipe='iron-gear-wheel',count=100})
+  -- the chest is over 25 tiles away: refused only with check_stock (d16 batch10 D9)
+  local ok,err=pcall(call,'craft',{recipe='iron-gear-wheel',count=100,check_stock=true})
   eq(ok,false);assert(err:find('requester-chest (20.5,59.5) holds 200',1,true),err)
   for _,part in ipairs({'abort (default) pauses','skip continues','goto:<label>','skipping does not acquire items'}) do assert(err:find(part,1,true),err) end
-  call('queue_submit',{steps={{action='craft',args={recipe='iron-gear-wheel',count=100},on_fail='skip'},
+  call('queue_submit',{steps={{action='craft',args={recipe='iron-gear-wheel',count=100,check_stock=true},on_fail='skip'},
     {action='wait_ticks',args={ticks=1}}}})
   advance(30)
   local q=call('queue_status',{history='all'})
   eq(q.paused,false);eq(q.pending_count,0);eq(q.history[1].ok,false);eq(q.history[2].ok,true)
   eq(gear_out.get_item_count{name='iron-gear-wheel'},200,'stock was only read')
+  -- without check_stock the far stock is a note and the craft goes ahead
+  local went=call('craft',{recipe='iron-gear-wheel',count=100})
+  eq(went.started,100); assert(went.stock['iron-gear-wheel']:find('crafted anyway: 0 of it within 25 tiles of you',1,true),went.stock['iron-gear-wheel'])
   storage.agent_harness.queues,storage.agent_harness.active=oldqueues,oldactive
   p.surface.find_entities_filtered=find
 end)()
@@ -5265,5 +5269,21 @@ do
   eq(runtime.short_check(p,{position={x=100,y=-175},tolerance=0.5},'arrived'),'arrived')
   eq(runtime.short_check(p,{position={x=110,y=-175},tolerance=0.5},'arrived_near'),'arrived_near','within 16 for arrived_near')
   p.position=saved
+end
+-- D8 (Gemini 00:20): other spots within reach of a target when no path led to the first; one tried is not offered again.
+do
+  local saved,surf=p.position,p.surface
+  p.position={x=0,y=0}
+  local chest={valid=true,name='iron-chest',position={x=30.5,y=203.5},bounding_box={left_top={x=30.15,y=203.15},right_bottom={x=30.85,y=203.85}}}
+  local blocked=function(q) return q.x<30 end
+  p.surface={find_non_colliding_position=function(_,q) if blocked(q) then return nil end return {x=q.x,y=q.y} end}
+  local rt={entity=chest,center=chest.position,r=10,box={30.15,203.15,30.85,203.85}}
+  local q=runtime.reach_ring(p,rt,{})
+  assert(q and q.x>=30 and runtime.reach_dist(q,rt)<=9.75,'a free spot within reach')
+  local q2=runtime.reach_ring(p,rt,{q})
+  assert(q2 and ((q2.x-q.x)^2+(q2.y-q.y)^2)^0.5>=2,'another spot, not the tried one')
+  blocked=function() return true end
+  eq(runtime.reach_ring(p,rt,{}),nil,'nowhere free: none')
+  p.position,p.surface=saved,surf
 end
 print('runtime: '..assertions..' assertions passed')

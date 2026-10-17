@@ -185,6 +185,19 @@ return function(api)
       assert(record,'produced counts from the start of a wait: a wait_until step or a direct wait_until (not a guard, an order\'s when or a loop condition)')
       local base=record.produced_base or {}
       record.produced_base=base
+      -- On a platform (D4, Astra ~10 times: the produced wait found no machine counter there): the platform's own item
+      -- production statistics, made since the wait began.
+      if c.platform~=nil then
+        local pl
+        for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each end end
+        if not pl then error('no platform of ours named '..tostring(c.platform),0) end
+        if not pl.surface then error('platform '..c.platform..' has no surface yet',0) end
+        local now=p.force.get_item_production_statistics(pl.surface).get_input_count(c.item)
+        if base.platform==nil then base.platform=now end
+        local made=now-base.platform
+        return made>=c.at_least,string.format('made %d %s on platform %s since the wait began (at least %d; the platform\'s production statistics)',made,c.item,c.platform,c.at_least),
+          estimate and {value=made,scope='produced:platform:'..c.platform..':'..c.item} or nil
+      end
       local crafts,items,seen,machines=0,0,0,0
       local positions=c.positions or {c.position}
       local scope={tostring(p.surface.index or p.surface.name or '')}
@@ -396,7 +409,12 @@ return function(api)
     end
     if kind=='produced' then
       assert(c.item==nil or (type(c.item)=='string' and prototypes.item[c.item]),'produced item must be a known item')
-      assert(c.position~=nil or c.positions~=nil,'produced requires position or positions (the machines, 1..64 {x,y})')
+      if c.platform~=nil then
+        assert(type(c.platform)=='string' and #c.platform>0,'produced platform takes a platform name')
+        assert(c.item~=nil and c.position==nil and c.positions==nil,'produced on a platform counts an item (item=...) from its production statistics: no position or positions')
+      else
+        assert(c.position~=nil or c.positions~=nil,'produced requires position or positions (the machines, 1..64 {x,y}), or platform and item')
+      end
       if c.positions~=nil then
         assert(type(c.positions)=='table' and #c.positions>=1 and #c.positions<=64,'produced positions takes 1..64 {x,y} (machines)')
         for _,pos in ipairs(c.positions) do api.position(pos) end

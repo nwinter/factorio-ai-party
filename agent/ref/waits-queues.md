@@ -94,3 +94,5 @@
 - When the game runs slow, sleeps and `--wait` keep waiting while it advances (`slow_game: 18 ticks/s, 30% of normal`,
   also on the clock line) and end `paused` when it stops. `game_unreachable` means nothing was sent; after a server
   restart from a save, one reply says `rolled_back` and lists in `redo` what you changed since, which is gone.
+- `fh wait` over a walking or loading tour goes on through plain tells (an urgent alert or a `--wake` tell ends it).
+  The default routine's `interval_ticks` runs up to 216000 (an hour).

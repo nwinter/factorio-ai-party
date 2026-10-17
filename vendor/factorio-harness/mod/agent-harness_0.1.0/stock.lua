@@ -401,14 +401,55 @@ return function(api)
         api.request_path(p,action.nav)
       end
       local outcome=api.navigate(p,action.nav)
-      if outcome then api.stop_walking(p); action.unreached=1; action.why='the walk to it ended '..outcome..' out of reach'; return 'unreached' end
+      if outcome then
+        api.stop_walking(p); action.unreached=1
+        action.why=(action.followed_to and action.followed_to..'; ' or '')..'the walk to it ended '..outcome..' out of reach'
+        return action.got>0 and 'collected' or 'unreached'
+      end
       return nil
     end
     if not action.waiting then
       api.stop_walking(p); action.nav=nil; action.visited=1
       local now=counts(output_of(e))
       action.waiting={since=game.tick,finished=finished(e),output=now,per_craft=per_craft(e),last=now,arrived={},grabbed={},gone={},hands={}}
-      action.wait_end=game.tick+action.wait
+      -- (a followed chest keeps the wait's end: D1)
+      action.wait_end=action.wait_end or game.tick+action.wait
+    end
+    -- follow during the wait (D1, Sol 00:20: one finished barrel sat in an output chest out of reach while the wait stood
+    -- at the machine until a rescue by hand): every half second, the chests its output inserters fill; one in reach that
+    -- holds the item is taken from, one out of reach becomes where the wait stands (walked to, as into reach of the
+    -- machine), and a walk that ends out of reach ends the wait unreached, saying where the items are.
+    if action.follow and action.machine==nil and game.tick>=(action.follow_next or 0) then
+      action.follow_next=game.tick+30
+      local okt,tk=pcall(M.output_takers,e,action.item)
+      for _,c in ipairs(okt and tk and tk.chests or {}) do
+        local ch=c.entity
+        local inv=ch.valid and output_of(ch)
+        local n=inv and (action.item and inv.get_item_count{name=action.item,quality=action.quality or 'normal'} or (not inv.is_empty() and 1 or 0)) or 0
+        if n>0 then
+          if p.can_reach_entity(ch) then
+            action.trash_tally=action.trash_tally or {}
+            local ok,out=pcall(api.take,p,ch,action.item,action.quality,math.min(10000,action.want-action.got),nil,action.trash_tally)
+            if ok and out.transferred>0 then
+              action.got=action.got+out.transferred
+              for _,st in ipairs(out.items or {{name=action.item,count=out.transferred}}) do
+                if st.name and st.count and st.count>0 then action.items[st.name]=(action.items[st.name] or 0)+st.count end
+              end
+              local k=string.format('%s (%g,%g)',ch.name,ch.position.x,ch.position.y)
+              action.followed_took=action.followed_took or {}
+              action.followed_took[k]=(action.followed_took[k] or 0)+out.transferred
+              if out.inventory_full then return 'inventory_full' end
+            end
+          else
+            action.machine=string.format('%s (%g,%g)',e.name,e.position.x,e.position.y)
+            action.followed_to=string.format('its output inserters put %s into %s (%g,%g), out of reach: the wait walked there and takes from it',
+              action.item or 'its products',ch.name,ch.position.x,ch.position.y)
+            action.targets[1]={entity=ch,position=ch.position}
+            action.waiting=nil; action.nav=nil
+            return nil
+          end
+        end
+      end
     end
     local w=action.waiting
     pcall(watch,w,e)
@@ -480,6 +521,14 @@ return function(api)
       return #parts>0 and table.concat(parts,' ') or 'none'
     end
     local out={took=line(action.items),waited_s=math.floor((game.tick-w.since)/6+0.5)/10}
+    -- follow during the wait (D1)
+    if action.followed_took then
+      local parts={}
+      for k,n in pairs(action.followed_took) do parts[#parts+1]=k..' '..n end
+      table.sort(parts)
+      out.followed_took=table.concat(parts,', ')
+    end
+    out.followed_to=action.followed_to and action.followed_to..' (from '..tostring(action.machine)..')' or nil
     if action.also then
       local parts={}
       for k,n in pairs(action.also_took or {}) do parts[#parts+1]=k..' '..n end

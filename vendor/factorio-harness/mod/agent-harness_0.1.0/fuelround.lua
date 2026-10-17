@@ -21,12 +21,24 @@ return function(api)
   end
   M.KINDS={'boiler','furnace','mining-drill','reactor','burner-generator','burner-inserter'}
   function M.start(p,a,fuel,count)
-    assert(a.positions==nil,'from/area refuel takes area or radius, not positions')
     assert(a.walk~=false,'from/area refuel walks; walk=false is not supported')
-    assert(a.area~=nil or a.radius~=nil,'from requires area or radius')
+    assert(a.area~=nil or a.radius~=nil or a.positions~=nil,'from requires area, radius or positions')
     assert(a.from==nil or a.from=='nearest' or type(a.from)=='table','from must be nearest or a chest position')
     local base={limit=1025}
-    if a.area then
+    -- positions (D6, Opus 00:20: the same 25 burner coal drills refuelled by hand every 18 minutes): those burners, by
+    -- position, as a standing order's step: refuel {positions, from: "nearest", fuel, count} (order_set ... interval).
+    local named
+    if a.positions~=nil then
+      assert(a.area==nil and a.radius==nil,'give positions, area or radius: one of them')
+      assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=128,'positions takes 1..128 burners {x,y}')
+      named={}
+      for _,q in ipairs(a.positions) do
+        local ok,e=pcall(api.entity,p,{position=api.position(q)})
+        if not ok then error('positions: '..tostring(e):gsub('^[^:]*:%d+: ',''),0) end
+        named[#named+1]=e
+      end
+      base.position=p.position; base.radius=256
+    elseif a.area then
       assert(a.radius==nil and a.position==nil,'give area, or position and radius')
       local lt,rb=api.position(a.area.left_top or a.area[1]),api.position(a.area.right_bottom or a.area[2])
       assert(rb.x>lt.x and rb.y>lt.y and rb.x-lt.x<=256 and rb.y-lt.y<=256,'area must be nonempty and at most 256x256')
@@ -34,8 +46,9 @@ return function(api)
     else base.position=a.position and api.position(a.position) or p.position;base.radius=api.integer(a.radius,32,1,256,'radius') end
     -- No types: the kinds that burn fuel (E1, Muse 02:12: a 90x120 area was refused for its 440 belts and 114 robots).
     local kinds=a.types or M.KINDS
-    local found,note=api.find_kinds(p,base,kinds)
-    if not a.types then note=(note and note..'; ' or '')..'types not given: boilers, furnaces, mining drills, reactors, burner generators and burner inserters' end
+    local found,note
+    if named then found=named else found,note=api.find_kinds(p,base,kinds) end
+    if not a.types and not named then note=(note and note..'; ' or '')..'types not given: boilers, furnaces, mining drills, reactors, burner generators and burner inserters' end
     -- (Opus 01:51: a base-sized area of boilers hit the limit) what the area holds by type, and the filter that narrows it.
     if #found>1024 then
       local by,order={},{}
@@ -102,7 +115,7 @@ return function(api)
     if api.legs then out.legs,out.legs_more=api.legs(p,action.targets) end
     -- Nothing to do: why (E1, Muse 4x: places 0 with no reason while fuel alerts named dry burners nearby).
     if #targets==0 then
-      local where=a.area and 'the area' or 'radius '..base.radius
+      local where=named and 'the positions given' or a.area and 'the area' or 'radius '..base.radius
       local parts={}
       if a.feed_chests then
         parts[#parts+1]=burners==0 and string.format('no burner in %s burns %s',where,fuel)
@@ -115,7 +128,7 @@ return function(api)
       if other>0 then parts[#parts+1]=string.format('%d burn another fuel',other) end
       if hidden>0 then parts[#parts+1]=string.format('%d not in sight (not counted)',hidden) end
       out.nothing=table.concat(parts,'; ')
-      if api.nearest_outside then
+      if api.nearest_outside and not named then
         local lt,rb=base.area and base.area[1],base.area and base.area[2]
         local function inside(e)
           if lt then return e.position.x>=lt.x and e.position.x<=rb.x and e.position.y>=lt.y and e.position.y<=rb.y end

@@ -498,6 +498,93 @@ return function(api)
     return string.format('this tile\'s line runs %d tiles: %s; it holds %s%s', tiles, table.concat(ends, ', '),
       #parts > 0 and table.concat(parts, ', ') or 'nothing', #diff > 0 and ' (the wires read: ' .. table.concat(diff, ', ') .. ', which includes anything else on those networks)' or '')
   end
+  -- The circuit networks an entity's red and green wires join, followed back to what drives them (D5, Astra 00:20:
+  -- mixed return-belt deadlocks took dozens of inspect calls): each network (its id and signals now) with the entities
+  -- on it: a combinator whose output side is on it is a source (its settings, and its input side's networks followed
+  -- the same way, DEPTH levels at most), a constant combinator (its signals), anything else with circuit settings (what
+  -- it reads: a chest, belt, tank, roboport, ...). At most NET_ENTS entities a network, NETS networks in all.
+  local DEPTH, NET_ENTS, NETS = 3, 24, 12
+  local function short_settings(c)
+    if not c then return 'no circuit settings' end
+    if c.arithmetic then return 'arithmetic ' .. c.arithmetic.text end
+    if c.decider then return 'decider if ' .. table.concat(c.decider.conditions or {}, ' ') .. ' then ' .. table.concat(c.decider.outputs or {}, ', ') end
+    if c.selector then
+      local parts = {}
+      for k2, v in pairs(c.selector) do parts[#parts+1] = k2 .. '=' .. tostring(v) end
+      table.sort(parts)
+      return 'selector ' .. table.concat(parts, ' ')
+    end
+    if c.signals then
+      local parts = {}
+      for i, sg in ipairs(c.signals) do if i <= 6 then parts[i] = sg.name .. ' ' .. sg.count end end
+      return 'constant ' .. (c.on == false and '(off) ' or '') .. (#parts > 0 and table.concat(parts, ', ') or 'nothing')
+    end
+    local parts = {}
+    for k2, v in pairs(c.settings or {}) do parts[#parts+1] = k2 .. '=' .. tostring(v) end
+    table.sort(parts)
+    if type(c.enable) == 'string' then parts[#parts+1] = 'enabled when ' .. c.enable .. (c.enable_met == false and ' (false now)' or c.enable_met == true and ' (true now)' or '') end
+    return #parts > 0 and table.concat(parts, ', ') or 'wired, default settings'
+  end
+  function M.trace_from(e)
+    local lines, nets_seen, count = {}, {}, 0
+    local function out_rows(c)
+      local parts = {}
+      for i, sg in ipairs(c and c.output or {}) do if i <= 4 then parts[i] = sg.name .. ' ' .. sg.count end end
+      return #parts > 0 and table.concat(parts, ', ') or 'nothing'
+    end
+    local function walk(conn, label, depth, indent)
+      local net = try(function() return conn.owner.get_circuit_network(conn.wire_connector_id) end)
+      local id = net and try(function() return net.network_id end)
+      if not id or nets_seen[id] or count >= NETS then return end
+      nets_seen[id] = true; count = count + 1
+      local sigs, more = signal_rows(try(function() return net.signals end))
+      local st = {}
+      for i, sg in ipairs(sigs) do if i <= 6 then st[i] = sg.name .. ' ' .. sg.count end end
+      local seen, queue, ents, n = {}, {conn}, {}, 0
+      local i = 1
+      while i <= #queue and n < 4 * NET_ENTS do
+        local c = queue[i]; i = i + 1
+        local key = tostring(c.owner.unit_number) .. ':' .. tostring(c.wire_connector_id)
+        if not seen[key] then
+          seen[key] = true; n = n + 1
+          if c.owner ~= conn.owner or c.wire_connector_id ~= conn.wire_connector_id then ents[#ents+1] = c end
+          for _, w in pairs(try(function() return c.connections end) or {}) do
+            if w.target and (w.origin == nil or w.origin == player_origin()) then queue[#queue+1] = w.target end
+          end
+        end
+      end
+      lines[#lines+1] = string.format('%s%s network %s: %s%s', indent, label, tostring(id), #st > 0 and table.concat(st, ', ') or 'no signal', more and ', ...' or '')
+      local listed = 0
+      for _, c in ipairs(ents) do
+        local o = c.owner
+        if listed >= NET_ENTS then lines[#lines+1] = indent .. '  ...'; break end
+        if o.valid and o ~= e and o.type ~= 'electric-pole' then
+          listed = listed + 1
+          local side = side_of(o, c.wire_connector_id)
+          local info = try(function() return M.read(o) end)
+          local text = string.format('%s  %s (%g,%g)%s: %s', indent, o.name, o.position.x, o.position.y, side and ' ' .. side .. ' side' or '', short_settings(info))
+          if COMBINATOR[etype(o)] and side == 'output' then
+            lines[#lines+1] = text .. '; puts out ' .. out_rows(info)
+            if depth < DEPTH then
+              for _, w in ipairs({defines.wire_connector_id.combinator_input_red, defines.wire_connector_id.combinator_input_green}) do
+                local ic = w and try(function() return o.get_wire_connector(w, false) end)
+                if ic then walk(ic, (w == defines.wire_connector_id.combinator_input_red and 'red' or 'green') .. ' input', depth + 1, indent .. '    ') end
+              end
+            end
+          elseif COMBINATOR[etype(o)] then
+            lines[#lines+1] = text .. ' (reads it)'
+          else
+            lines[#lines+1] = text
+          end
+        end
+      end
+    end
+    for _, w in ipairs({defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green}) do
+      local c = try(function() return e.get_wire_connector(w, false) end)
+      if c then walk(c, w == defines.wire_connector_id.circuit_red and 'red' or 'green', 1, '  ') end
+    end
+    return lines
+  end
   function M.read(e, cb)
     if cb == nil then cb = try(function() return e.get_control_behavior() end) end
     local wires, nets = wires_of(e)

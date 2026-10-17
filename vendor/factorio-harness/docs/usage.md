@@ -5977,3 +5977,69 @@ fh watch    # deploy on every change
   - A hand load into a silo with automatic requests on leads its short line with the setting: `blocked by the silo's
     automatic requests (on): ...` (`blocked_by`). It used to say only that rocket_silo_rocket refused the item.
   - `load_silo {auto_requests: false}` (Haiku tried it) switches them off and leaves them off before the load.
+- Group D (the 00:20 poll):
+  - D1, collect `follow` (Sol: a finished barrel sat in an output chest out of reach until a rescue by hand). Follow
+    used to be checked only at the call. During the wait it now looks every half second at the chests the output
+    inserters fill:
+    - a chest in reach holding the item is taken from (`last.followed_took`);
+    - one out of reach becomes where the wait stands: walked to, and the wait goes on there (`last.followed_to`);
+    - a walk there that fails ends the wait (`unreached`, or `collected` if some was taken), why naming where the items are.
+  - D2, `platform_plan {platform, ready: {positions, area, tiles}}` (Sol: Meridian's core read against a capped list
+    with the deferred hull in it) reads only that subset:
+    - the entity ghosts at the positions and in the area, and the tile ghosts in tiles;
+    - what they need against the hub (missing);
+    - support under each footprint: built foundation, waiting on tile ghosts, or over empty space with none (never built);
+    - assembler ghosts with no recipe;
+    - positions holding a built entity or nothing.
+    On the copy, Meridian's 24x24 core read 65 ghosts and 148 tile ghosts: what the hub lacks, 25 on floor, 40 waiting
+    on tile ghosts. 20 ms in the container.
+  - D3, transfers through your inventory (Luna: 1000 iron plates moved with a personal max of 40; 40 arrived).
+    - A courier whose carry is over a personal request's max says so in `personal_logistics`, with about how many
+      would arrive.
+    - The dry run's courier line gives `arrives`.
+    - `personal_logistics: "pause"` switches your personal requests off for the move and back on when it ends.
+    On the copy, with a max of 40: the dry run said 35 would arrive; the plain move delivered 40 of 200; with the pause,
+    all 200.
+  - D4, `platform_production {platform, item?}` (Astra ~10 times): the platform's own production statistics per item
+    and fluid, made and used, totals and the rate a minute over 1 min, 10 min and 1 h. `wait_until {until: produced,
+    platform, item, at_least}` (word form `--until "produced ITEM>=N on PLATFORM"`, the remote lane too) counts from
+    them. On the copy, Swift read iron plate 222.9 made and 221.7 used a minute; the wait for 20 plates was met. 6 ms.
+  - D5, `trace {position, circuit: true}` (Astra: return-belt deadlocks took dozens of inspect calls) gives the
+    machine's state, then for each inserter feeding it or taking from it:
+    - its enable or logistic condition and the value now, filters, hand, pickup and drop;
+    - the red and green networks on its wires, followed back through combinators (3 levels): each network's signals,
+      the combinators putting out onto it with their settings and output, their input networks, constant combinators,
+      and the entities reading into it.
+    On the copy, a Fulgora recycler's feeder read `enabled when signal-A > 50 (signal-A 100): true now`, from an
+    accumulator's charge, and a decider whose inputs are the roboport's item counts and a constant combinator. 4 to 25 ms.
+  - D6, refuel `from` with `positions` (Opus: the same 25 burner drills refuelled by hand every 18 minutes, twice to
+    his death). `refuel {positions, from: "nearest", fuel, count}` walks a tour of those burners, taking fuel from the
+    nearest chest or belt to each, with move_to's enemy checks; as a standing order, `order_set {name, interval_ticks,
+    steps: [...]}`. The default routine's interval now runs up to 216000 ticks (1 h; it was 10 minutes). On the copy,
+    3 unfuelled burner drills on the NW coal trunk got 5 coal each from the belts beside them.
+  - D7, `fuel_budget {boilers: true}` (Opus ~6 times: slow brownouts seen late) gives:
+    - the boilers in groups (within 8 tiles; groups sharing a feeding belt are one);
+    - their burn at full use and the fuel in their slots;
+    - the fuel in the chests and on the belts feeding them (walked back, 3000 tiles in all);
+    - the drills on those belts: what the working and backed-up ones put on at full speed, and the others by state;
+    - the balance and the hours left;
+    - each fuel made and used a minute on the surface.
+    On the copy, Nauvis's main group: 20 boilers (4 working) burn 108 coal/min; 1050 within reach; 41 drills, 4
+    working (12 out of fuel, 19 on low power, 6 exhausted); short 18/min, about 1.0 h. 77 to 106 ms in the container
+    (15 to 21 ms on n), kept 10 s.
+  - D8, walking transfers (Gemini: a walk aborted because the one spot beside a chest had rails or pipes round it).
+    When no path reaches a target and the spot within reach the give-up found has no path either, up to 4 more spots
+    round it within reach are tried, nearest you first (`last.reach_walk` lists the ones tried).
+  - D9, craft (Gemini: refused over stock 60 tiles away or in another network). It now refuses only when stock within
+    25 tiles of you covers the craft. Stock farther off is a note (`crafted anyway: ...`). `check_stock: true` refuses
+    over stock within 64 tiles, as before.
+  - D10, `fh wait` over a walking or loading tour (Grok: a tell ended the wait on a rocket load and an egg handoff, and
+    robots took the eggs). It goes on through plain tells, as `--wait` on those calls already did. An urgent alert or a
+    tell with `--wake` ends it. Grok also asked for fresh-first on collect: `collect {fresh_first: true}`.
+  - D11, the launch guard (Haiku: a stale armed launch; about once a launch a not-in-orbit error).
+    - load_silo records the platform a load is for: `platform` with launch, or alone without it.
+    - A launch, armed (`wait_ready`) or direct, to another platform with that cargo aboard is refused, naming both
+      (`cargo_for: "any"` sends it anyway). A launch clears the record.
+    - `launch {wait_ready, platform}` now waits for the platform too (`wait_platform` defaults to true there), and says
+      the arrival as a state: `Kestrel is not in orbit of vulcanus yet (Kestrel at aquilo) (no arrival estimate: its
+      schedule does not go to vulcanus)`, or `(its arrival in about N s)`.

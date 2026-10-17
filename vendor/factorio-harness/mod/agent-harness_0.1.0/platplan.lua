@@ -386,9 +386,133 @@ return function(api)
     table.sort(list, function(u, v) if u.y ~= v.y then return u.y < v.y end return u.x < v.x end)
     return list, why
   end
+  -- ready {positions?, area?, tiles?} (D2, Sol 00:20: Meridian's 779-tile core read against a capped 1000-ghost list that
+  -- mixed in the hull he deferred on purpose): a chosen subset only. The entity ghosts at the positions and in the area,
+  -- the tile ghosts in tiles (one area or a list): what they need of each item against what the hub holds (missing),
+  -- the support under each entity ghost's footprint (built foundation, a tile ghost, or empty space with none: never
+  -- built), and settings (an assembler ghost with no recipe); positions that hold a built entity or nothing are said.
+  local READY_MAX = 2000
+  local function item_of(proto)
+    local list = proto and try(function() return proto.items_to_place_this end)
+    local f = list and list[1]
+    if not f then return nil end
+    return type(f.name) == 'string' and f.name or try(function() return f.name.name end), f.count or 1
+  end
+  local function areas_of(v, what)
+    assert(type(v) == 'table', what .. ' is an area {left_top, right_bottom} or a list of them')
+    local list = (v.left_top or v[1] and type(v[1]) == 'table' and v[1].x ~= nil) and {v} or v
+    local out = {}
+    for _, ar in ipairs(list) do
+      local lt, rb = ar.left_top or ar[1], ar.right_bottom or ar[2]
+      assert(lt and rb and lt.x < rb.x and lt.y < rb.y and rb.x - lt.x <= 256 and rb.y - lt.y <= 256, what .. ': each area nonempty, at most 256x256')
+      out[#out+1] = {{lt.x, lt.y}, {rb.x, rb.y}}
+    end
+    assert(#out >= 1 and #out <= 16, what .. ': 1..16 areas')
+    return out
+  end
+  function M.ready(p, pl, r)
+    assert(type(r) == 'table' and (r.positions ~= nil or r.area ~= nil or r.tiles ~= nil), 'ready is {positions, area, tiles}: the ghosts at those positions, in that area, the tile ghosts in those tiles (any of them)')
+    local s, force = pl.surface, pl.force
+    local ghosts, seen, built_at, none_at = {}, {}, {}, {}
+    local function add(g) if g.valid and g.type == 'entity-ghost' and not seen[g.unit_number] and #ghosts < READY_MAX then seen[g.unit_number] = true; ghosts[#ghosts+1] = g end end
+    if r.positions ~= nil then
+      assert(type(r.positions) == 'table' and #r.positions >= 1 and #r.positions <= 512, 'ready.positions takes 1..512 {x,y}')
+      for _, q in ipairs(r.positions) do
+        local pos = api.position and api.position(q) or q
+        local here = s.find_entities_filtered{position=pos, radius=0.6, force=force}
+        local got = false
+        for _, e in ipairs(here) do if e.type == 'entity-ghost' then add(e); got = true end end
+        if not got then
+          local b
+          for _, e in ipairs(here) do if e.type ~= 'tile-ghost' then b = e end end
+          if b then built_at[#built_at+1] = string.format('%s %s', b.name, at(b.position.x, b.position.y)) else none_at[#none_at+1] = at(pos.x, pos.y) end
+        end
+      end
+    end
+    if r.area ~= nil then
+      for _, ar in ipairs(areas_of(r.area, 'ready.area')) do
+        for _, g in ipairs(s.find_entities_filtered{area=ar, type='entity-ghost', force=force, limit=READY_MAX}) do add(g) end
+      end
+    end
+    -- tile ghosts: those in tiles, and those under the entity ghosts' footprints
+    local tg, tg_n = {}, 0
+    local function tile_ghosts(ar)
+      for _, t in ipairs(s.find_entities_filtered{area=ar, type='tile-ghost', force=force, limit=40000}) do
+        local key = k(math.floor(t.position.x), math.floor(t.position.y))
+        if not tg[key] then tg[key] = t; tg_n = tg_n + 1 end
+      end
+    end
+    local chosen_tiles = 0
+    if r.tiles ~= nil then
+      for _, ar in ipairs(areas_of(r.tiles, 'ready.tiles')) do
+        local before = tg_n
+        tile_ghosts(ar)
+        chosen_tiles = chosen_tiles + (tg_n - before)
+      end
+    end
+    local need, names = {}, {}
+    if chosen_tiles > 0 then
+      for _, t in pairs(tg) do
+        local item, n = item_of(try(function() return t.ghost_prototype end))
+        if item then need[item] = (need[item] or 0) + n end
+      end
+    end
+    local on_floor, waiting, empty, no_recipe = 0, {}, {}, {}
+    for _, g in ipairs(ghosts) do
+      names[g.ghost_name] = (names[g.ghost_name] or 0) + 1
+      local item, n = item_of(try(function() return g.ghost_prototype end))
+      if item then need[item] = (need[item] or 0) + n end
+      local b = g.bounding_box
+      local x0, y0 = math.floor(b.left_top.x + 0.01), math.floor(b.left_top.y + 0.01)
+      local x1, y1 = math.ceil(b.right_bottom.x - 0.01) - 1, math.ceil(b.right_bottom.y - 0.01) - 1
+      local pending, missing = false, false
+      for x = x0, x1 do
+        for y = y0, y1 do
+          local name = try(function() return s.get_tile(x, y).name end)
+          if name ~= 'space-platform-foundation' then
+            local key = k(x, y)
+            if not tg[key] then
+              local t = s.find_entities_filtered{position={x + 0.5, y + 0.5}, radius=0.1, type='tile-ghost', force=force}[1]
+              if t then tg[key] = t end
+            end
+            if tg[key] then pending = true else missing = true end
+          end
+        end
+      end
+      local where = string.format('%s %s', g.ghost_name, at(g.position.x, g.position.y))
+      if missing then empty[#empty+1] = where elseif pending then waiting[#waiting+1] = where else on_floor = on_floor + 1 end
+      if g.ghost_type == 'assembling-machine' and not try(function() return g.get_recipe() end) then no_recipe[#no_recipe+1] = where end
+    end
+    local inv = pl.hub and pl.hub.valid and try(function() return pl.hub.get_inventory(defines.inventory.hub_main) end)
+    local rows, miss = {}, {}
+    for item, n in pairs(need) do
+      local held = inv and try(function() return inv.get_item_count(item) end) or 0
+      rows[#rows+1] = {item=item, need=n, hub=held, missing=math.max(0, n - held)}
+      if n > held then miss[#miss+1] = string.format('%s %d (hub holds %d)', item, n - held, held) end
+    end
+    table.sort(rows, function(x, y) if x.missing ~= y.missing then return x.missing > y.missing end return x.item < y.item end)
+    table.sort(miss)
+    local nm = {}
+    for n, c in pairs(names) do nm[#nm+1] = c .. ' ' .. n end
+    table.sort(nm)
+    local function first(list) return #list > 0 and table.concat(list, ', ', 1, math.min(#list, LIST)) .. (#list > LIST and string.format(' +%d more', #list - LIST) or '') or nil end
+    local lines = {string.format('the subset: %d entity ghost%s (%s), %d tile ghost%s in tiles', #ghosts, #ghosts == 1 and '' or 's', #nm > 0 and table.concat(nm, ', ') or 'none',
+      chosen_tiles, chosen_tiles == 1 and '' or 's')}
+    lines[#lines+1] = #miss > 0 and 'missing from the hub: ' .. table.concat(miss, ', ') or 'the hub holds every item the subset needs'
+    lines[#lines+1] = string.format('support: %d on built foundation, %d waiting on tile ghosts%s, %d over empty space with no tile ghost (never built until one is placed)%s',
+      on_floor, #waiting, #waiting > 0 and ' (' .. first(waiting) .. ')' or '', #empty, #empty > 0 and ': ' .. first(empty) or '')
+    if #no_recipe > 0 then lines[#lines+1] = 'settings: assembler ghosts with no recipe: ' .. first(no_recipe) end
+    if #built_at > 0 then lines[#lines+1] = 'positions holding a built entity, no ghost: ' .. first(built_at) end
+    if #none_at > 0 then lines[#lines+1] = 'positions with nothing of ours: ' .. first(none_at) end
+    if #ghosts >= READY_MAX then lines[#lines+1] = string.format('the first %d ghosts read', READY_MAX) end
+    return {platform=pl.name, ready={ghosts=#ghosts, tile_ghosts=chosen_tiles, items=rows, on_foundation=on_floor, waiting_on_tiles=#waiting, over_empty=#empty,
+      over_empty_list=#empty > 0 and empty or nil, no_recipe=#no_recipe > 0 and no_recipe or nil, built_at=#built_at > 0 and built_at or nil, nothing_at=#none_at > 0 and none_at or nil},
+      lines=lines}
+  end
   function M.read(p, a)
     assert(type(a.platform) == 'string', 'platform is required (a platform name)')
     local pl = api.platform(p, a.platform)
+    if a.ready ~= nil then return M.ready(p, pl, a.ready) end
     if a.floor ~= nil then
       assert(a.floor == true, 'floor must be true')
       local list, why = M.floor(pl.surface, pl.force, pl.hub and pl.hub.valid and pl.hub or nil)
@@ -440,7 +564,7 @@ return function(api)
     return {platform=pl.name, foundation_tiles=ntiles, hub_group=main and main.size or nil, islands=islands, belts=nbelts, loops=loops,
       head_on=#head > 0 and head or nil, side_loads=#side > 0 and side or nil, lines=lines}
   end
-  M.schema = {platform_plan = {platform='platform name',floor='true: the foundation every entity ghost needs, as a placement plan: floor_needed and by (footprints, tunnels under underground belt and pipe-to-ground pairs, holes enclosed by floor, links joining a needed group to the hub\'s floor), rows, place_ghosts_entries (the first 64 tiles as place_ghosts entries), line; tiles built or with a tile ghost count as there',salvage='optional 1..2000: a read of up to that many built foundation tiles to take up, from the edge in, farthest from the hub first, each with nothing of ours on it (built or ghost), no tile ghost, no underground span under it, and the foundation left joined round it: salvage (how many), areas (rectangles of neighbouring tiles, each a deconstruct {platform, area, tiles: true}), tiles (the first 64), line',
+  M.schema = {platform_plan = {platform='platform name',ready='optional {positions (1..512 {x,y}), area (an area or a list), tiles (an area or a list of areas)}: that subset only (D2): the entity ghosts at the positions and in the area, the tile ghosts in tiles; what they need of each item against the hub (lines: missing from the hub), the support under each entity ghost (on built foundation, waiting on tile ghosts, over empty space with no tile ghost: never built), settings (assembler ghosts with no recipe), and positions holding a built entity or nothing: ready {ghosts, tile_ghosts, items [{item, need, hub, missing}], on_foundation, waiting_on_tiles, over_empty, over_empty_list, no_recipe, built_at, nothing_at}, lines',floor='true: the foundation every entity ghost needs, as a placement plan: floor_needed and by (footprints, tunnels under underground belt and pipe-to-ground pairs, holes enclosed by floor, links joining a needed group to the hub\'s floor), rows, place_ghosts_entries (the first 64 tiles as place_ghosts entries), line; tiles built or with a tile ghost count as there',salvage='optional 1..2000: a read of up to that many built foundation tiles to take up, from the edge in, farthest from the hub first, each with nothing of ours on it (built or ghost), no tile ghost, no underground span under it, and the foundation left joined round it: salvage (how many), areas (rectangles of neighbouring tiles, each a deconstruct {platform, area, tiles: true}), tiles (the first 64), line',
     returns='a platform as planned, built and ghosts together (read only): foundation_tiles (built and tile ghosts), hub_group (the 4-joined tiles with the hub), islands [{size, ghost_tiles, tile, line}] (groups no foundation joins with the hub), belts (transport belts, undergrounds and splitters, built and ghosts), loops [{belts, ghosts, exits, first, line}] (belts whose items come round again; exits 0: no belt leaves it), head_on (a belt moving its items into one facing it), side_loads (a belt feeding the side of another), lines'}}
   return M
 end
