@@ -26,7 +26,9 @@
   inserter hands, robots, characters), each logistic network's stock of it (free and reserved, and which requesters the
   reserved stock is for), its robots, every unmet requester with the reason (`inventory full: all 48 slots taken
   (spoilage 494 in 10 slots, ...)` first when its slots are all taken), machines that make and use it by status (the
-  worst 3 with positions) and the inserters feeding them. `surplus_chest` names the largest unreserved plain, storage
+  worst 3 with positions) and the inserters feeding them. A short machine whose input inserter is off by its circuit
+  or logistic condition, or whose requester asks for less than one craft, is named as that first (the condition and
+  what the source holds), ahead of plain shortages. `surplus_chest` names the largest unreserved plain, storage
   or provider stock (requester and buffer chests left out); `throughput` names a machine whose inserters carry less than
   its recipe at full speed, each inserter's rate a minute, and how many inserters like its fastest it takes (`trace
   {position}` on a machine gives the same); `full_chests` names chests with every slot used that the makers' output
@@ -114,7 +116,10 @@
 - `game_alerts {kind?, surface?}`: the game's alerts and warnings in groups, worst first. `kind: "no_power"` groups
   connected machines without power by electric network, isolated drill networks included; `kind: "belt_cut"` names
   observed gaps in belts that carried items, and a rebuilt gap clears; a depleted-drill alert includes one remembered
-  placement on the same resource (`drill_sites` lists more).
+  placement on the same resource (`drill_sites` lists more). `kind: "off_by_condition"`: machines off by their own
+  circuit or logistic condition, each with the condition and what its signal reads now (`bioflux > 200 (bioflux 150
+  now)`); one whose unmet conditions are all on what its recipe makes (a stock cap) is not listed. A new group is one
+  team alert line to its builders and claim owners.
 - `belt_gaps {from, to, via?, surface?}`: remembered belt gaps and ghosts along the line, with observation ticks;
   unrecorded tiles are unknown. A leg that is not straight follows the remembered belt round its corners (`followed`).
   A missing tile in sight names what stands on it (`blocked_by`, `line`). Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
@@ -137,7 +142,8 @@
   tiles; `radius` (up to 1024) reads that circle only; `covered` says what was read, `as_of` whether a total is live or
   reused (and its age). `places: "all"`: every place on the surface holding it, nearest first, `limit` a page (`page`,
   `next`). `holders: ["provider", "storage"]`: only those kinds of place; each place says its `kind` and what robots
-  have `reserved` there. With `surface`, `by_network`: each logistic network's hold in providers, storage and other
+  have `reserved` there, and `reserved_for` where those robots deliver it (`5 to requester-chest (97.5,41.5)`, the 3
+  largest). With `surface`, `by_network`: each logistic network's hold in providers, storage and other
   holders, and `on_ground`: stacks lying on the ground in chunks our force sees now. A spoilable item adds
   `spoils_within_2_min` beside the total and per place. `network: 96` (the number `networks` and an `inspect` of a
   roboport give): what a logistic network holds, its robots, and `roboports`: the robots each roboport holds, most
@@ -157,7 +163,8 @@
   Characters' requests are left out.
 - `construction_robots {network? | position?, sources?, surface?}`: the construction robots of the network you stand in
   (or `network`): each in the air with its charge, cargo, orders and what holds it up (no storage for what it holds,
-  target out of the area, waiting to charge). `sources: true`: per group of waiting ghosts and item requests, the
+  target out of the area, waiting to charge, no charge); `ghosts_waiting`: each ghost in a held-up robot's queue.
+  `sources: true`: per group of waiting ghosts and item requests, the
   network's chests holding the item (nearest 3) and whether the straight line from each passes within a worm's or
   spawner's reach the map shows.
 - `shortages {surface?}`: machines stopped short of an ingredient (by recipe and ingredient), no fuel, low or no power,

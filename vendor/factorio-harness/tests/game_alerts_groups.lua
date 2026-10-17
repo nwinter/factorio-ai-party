@@ -51,7 +51,7 @@ print('game_alerts_groups outpost_turret_lost: ok')
 -- positions, or their first), or with no position at all (said so). Each reads with a line; none fails the call.
 local CELL_KINDS={'no_power','unconnected','low_power','no_fuel','no_ammo','flamer_dry','rebuilt_empty','burnt_full',
   'no_material_for_construction','not_enough_construction_robots','not_enough_repair_packs','no_storage','train_out_of_fuel',
-  'unclaimed_cargo','collector_path_blocked','input_spoilage','output_chest_full','catalyst_gone','heat_no_fuel',
+  'unclaimed_cargo','collector_path_blocked','input_spoilage','off_by_condition','output_chest_full','catalyst_gone','heat_no_fuel',
   'outpost_ammo_low','outpost_turret_lost','lost_source.boiler','lost_target.furnace','out_of_ore.iron-ore','out_of_ore.unknown',
   'some_new_game_alert'}
 local LINE_KINDS={'power_high','boiler_fuel','feed_chest_low','accumulators_draining','no_power.network','construction_wait',

@@ -73,4 +73,94 @@ local ES2=require('entryset'){check=function() end,position=function(p) return p
 local list={{name='requester-chest',position={x=5.5,y=160.5},requests={set={['iron-plate']=200,['copper-plate']=100}}}}
 local notes=ES2.check(list,{})
 eq(list[1].requests.set[1].item,'copper-plate');eq(list[1].requests.set[2].min,200);has(notes[1],'entry 1 requests: set as a map')
+-- B1 (Sol): a short maker whose input inserter is off by its condition, or whose requester asks for less than one
+-- craft, reads as that before its shortage, ranked ahead of plain shortages.
+defines.entity_status.disabled_by_control_behavior=55
+defines.inventory.assembling_machine_input=2
+local function machine(x,id) return {valid=true,unit_number=id,name='assembling-machine-2',type='assembling-machine',position={x=x,y=0},
+  get_inventory=function() return {get_item_count=function() return 0 end} end} end
+local chest={valid=true,unit_number=90,name='wooden-chest',type='container',position={x=1,y=3},get_item_count=function(n) return n=='tungsten-plate' and 40 or 0 end}
+local req={valid=true,unit_number=91,name='requester-chest',type='logistic-container',position={x=9,y=3},prototype={logistic_mode='requester'},
+  get_item_count=function() return 0 end,get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,
+  filters={{value={name='tungsten-plate'},min=5}}} end} end}
+local m1,m2,m3=machine(0,81),machine(8,82),machine(20,83)
+local arm1={valid=true,unit_number=71,name='fast-inserter',position={x=1,y=2},status=55,pickup_target=chest}
+local arm2={valid=true,unit_number=72,name='fast-inserter',position={x=9,y=2},status=32,pickup_target=req}
+local recipe={name='artillery-shell',ingredients={{name='tungsten-plate',amount=10}}}
+local SU=require('supply'){status_name=function() return 'item_ingredient_shortage' end,state_text=function(i) return 'off by its logistic condition artillery-shell < 20' end}
+local t={item='artillery-shell',request_of={},spots={}}
+local line,worst=SU.machines(t,{{e=m3,recipe=recipe,into={}},{e=m1,recipe=recipe,into={arm1}},{e=m2,recipe=recipe,into={arm2}}},'makers',{},{})
+has(worst[1],'(0,0) assembling-machine-2 input fast-inserter (1,2) off by its logistic condition artillery-shell < 20; its source wooden-chest (1,3) holds 40 tungsten-plate; so item_ingredient_shortage (missing tungsten-plate)')
+has(worst[2],'its requester requester-chest (9,3) asks for 5 tungsten-plate, one craft takes 10; it holds 0; so item_ingredient_shortage')
+has(worst[3],'(20,0) assembling-machine-2 item_ingredient_shortage');has(line,'2 of the short held back by an input inserter')
+-- B3 (Astra): a ghost's robot (an order on it anywhere in the queue) and what holds it; a robot with no charge in no
+-- roboport's queue is held up; construction_robots lists the ghosts waiting on held-up robots.
+defines.inventory.robot_cargo=9;defines.robot_order_type.construct=3
+local RB=dofile('mod/agent-harness_0.1.0/robots.lua'){position=function(v) return v end}
+local function cargo(list) return {get_contents=function() return list end} end
+local function bot(x,energy,items,queue) return {valid=true,name='construction-robot',position={x=x,y=0},energy=energy,prototype={max_energy=3000000},
+  robot_order_queue=queue,get_inventory=function() return cargo(items) end} end
+local pole={valid=true,type='entity-ghost',ghost_name='medium-electric-pole',name='entity-ghost',position={x=86.5,y=156.5},unit_number=501}
+local panel={valid=true,type='entity-ghost',ghost_name='solar-panel',name='entity-ghost',position={x=84.5,y=157.5},unit_number=502}
+local pchest={valid=true,type='logistic-container',name='passive-provider-chest',position={x=-34.5,y=-60.5}}
+local flat=bot(-2.5,0,{{name='wood',count=4,quality='normal'}},{{type=1,target=pchest},{type=3,target=pole}})
+local hover=bot(30,1500000,{{name='wood',count=3,quality='normal'}},{})
+local rcell={owner={valid=true,name='roboport',position={x=0,y=0},unit_number=9},charging_robots={},to_charge_robots={},is_in_construction_range=function() return true end}
+local rnet={valid=true,network_id=243,construction_robots={flat,hover},all_construction_robots=2,available_construction_robots=0,cells={rcell},storages={},
+  find_cell_closest_to=function() return rcell end,select_drop_point=function() return nil end,
+  get_item_count=function(n) return n=='medium-electric-pole' and 100 or 2582 end}
+local rforce={logistic_networks={nauvis={rnet}},find_logistic_network_by_position=function() return rnet end}
+local out=RB.read({surface={name='nauvis'},position={x=0,y=0},force=rforce},{})
+has(out.summary,'2 in the air, 2 held up')
+eq(out.ghosts_waiting[1],'medium-electric-pole ghost (86.5,156.5) waits on construction-robot (-2.5,0) (its order 2 of 2): no charge (energy 0%)')
+has(out.robots[2],'nowhere to put wood*3')
+prototypes.entity={}
+for _,g in ipairs({pole,panel}) do g.force=rforce; g.ghost_prototype={items_to_place_this={{name=g.ghost_name,count=1}}} end
+local surf={name='nauvis',find_entities_filtered=function() return {pole,panel} end,find_logistic_networks_by_construction_area=function() return {rnet} end}
+local GL=dofile('mod/agent-harness_0.1.0/ghostlist.lua'){position=function(v) return v end,integer=function(v,d) return v or d end,
+  distance=function(a,b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end,robot_row=function(r,net,c) return RB.row(r,net,c) end}
+local gr=GL.read({surface=surf,position={x=86,y=158},force=rforce,get_main_inventory=function() return nil end},{})
+has(gr.lines[1],'robot: construction-robot (-2.5,0): energy 0%; holds wood*4; orders: pickup passive-provider-chest at (-34.5,-60.5); then construct medium-electric-pole ghost at (86.5,156.5); no charge (energy 0%) (its order 2 in the queue)')
+has(gr.lines[2],'robot: no robot has an order on it')
+has(gr.summary,'1 whose robot is held up; 2 of the 2 construction robots of network 243 in the air are held up: 1 no charge (energy 0%); 1 nowhere to put wood: no storage chest in network 243 has room for it (0 storage chests in it)')
+-- B4 (Haiku): an out-of-fuel line names the nearest fuel its most common burner takes (chest first, else belt) and
+-- refuel over the burners' area taking it from the nearest.
+do
+  prototypes.item={coal={fuel_category='chemical',fuel_value=4e6},nutrients={fuel_category='nutrients',fuel_value=2e6},['iron-plate']={fuel_value=0}}
+  prototypes.entity={['stone-furnace']={burner_prototype={fuel_categories={chemical=true}}},biochamber={burner_prototype={fuel_categories={nutrients=true}}}}
+  defines.inventory.chest=1
+  local function holder(name,x,y,list) return {valid=true,name=name,position={x=x,y=y},get_inventory=function() return {get_contents=function() return list end} end} end
+  local near,far=holder('iron-chest',100,-20,{{name='coal',count=120,quality='normal'}}),holder('wooden-chest',140,-20,{{name='coal',count=500,quality='normal'}})
+  local fsurf={find_entities_filtered=function(f) if f.type[1]=='container' then return {far,near,holder('iron-chest',97,-22,{{name='iron-plate',count=50}})} end return {} end}
+  game.get_surface=function(n) return n=='nauvis' and fsurf or nil end
+  local PA=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return {board={items={}}} end,agents=function() return {} end,who=function(p) return p.name end}
+  local g={kind='no_fuel',key='no_fuel|nauvis|1,-1',surface='nauvis',n=3,names={['stone-furnace']=2,biochamber=1},by={},center={x=96,y=-26},
+    at={{x=96,y=-14},{x=96,y=-38},{x=95,y=-26}},status_entities={{position={x=96,y=-14}},{position={x=96,y=-38}},{position={x=95,y=-26}}}}
+  local line=PA.text(g,'nauvis')
+  has(line,'nearest fuel: coal 120 in iron-chest (100,-20), 7 tiles from (96,-26); refuel {area: [[93,-40],[98,-12]], from: "nearest", fuel: "coal"}')
+  lacks(line,'refuel {alert')
+  lacks(PA.text(g,'nauvis',nil,true),'nearest fuel')
+  game.get_surface=nil
+end
+-- B5 (Haiku): stock's places with stock reserved for robots name where those robots deliver it.
+do
+  defines.robot_order_type={pickup=1,deliver=2}
+  prototypes.item['iron-plate']={}
+  local req={valid=true,name='requester-chest',type='logistic-container',unit_number=12,position={x=97.5,y=41.5}}
+  local me={valid=true,type='character',name='character',player={name='haiku'},position={x=5,y=5}}
+  local prov={valid=true,name='passive-provider-chest',type='logistic-container',unit_number=11,position={x=-2.5,y=-1.5}}
+  local function order(t,item,n) return {type=t,target_item={name=item},target_count=n,target=t==1 and prov or nil} end
+  local r1={valid=true,robot_order_queue={order(1,'iron-plate',3),{type=2,target=req}}}
+  local r2={valid=true,robot_order_queue={order(1,'iron-plate',2),{type=2,target=req}}}
+  local r3={valid=true,robot_order_queue={order(1,'iron-plate',1),{type=2,target=me}}}
+  local r4={valid=true,robot_order_queue={order(1,'copper-plate',4),{type=2,target=req}}}
+  prov.logistic_network={valid=true,network_id=243,logistic_robots={r1,r2,r3,r4}}
+  local ST=dofile('mod/agent-harness_0.1.0/stock.lua'){integer=function(v,d) return v or d end,position=function(v) return v end,
+    reserved=function(e) return e==prov and 6 or 0 end,spoil={spoils=function() return false end,hatch=function() return nil end}}
+  ST.scan=function() return {item='iron-plate',total=8,groups={},places={{entity=prov,name=prov.name,position=prov.position,count=8,distance=3}}} end
+  ST.line=function() return '' end
+  local out=ST.view({position={x=0,y=0},surface={name='nauvis'},get_main_inventory=function() return {get_item_count=function() return 0 end} end},{item='iron-plate'})
+  eq(out.places[1].reserved,6)
+  eq(out.places[1].reserved_for,'5 to requester-chest (97.5,41.5), 1 to the character of haiku (5,5)')
+end
 print('d17 batch18 ok')

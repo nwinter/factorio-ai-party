@@ -6583,6 +6583,60 @@ fh watch    # deploy on every change
   so. An unknown argument that ends or starts with a valid name (chest_position) names it as the closest name. The
   refusal's example takes its position from it. Copy: Sonnet's call ran as `transfer {position, direction:
   "to_player", ...}`.
+- B1 (Sol): artillery-shell makers read tungsten-starved while their input inserter was off at a stock cap of 20 with
+  40 tungsten in its requester. supply's makers and users: a short machine (an ingredient or pack shortage) with an
+  inserter into it off by its circuit or logistic condition, or taking from a requester chest whose active sections ask
+  for less of a missing item than one craft takes, ranks after no power and before the shortages. Its worst row reads
+  `input fast-inserter (x,y) off by its circuit condition signal-A < 5 (signal-A 10 on its wires); its source
+  wooden-chest (x,y) holds 40 iron-plate; so item_ingredient_shortage (missing iron-plate)` (thrust.lua's state text;
+  an off inserter keeps its old pickup target, so the entity at its pickup position then), or `its requester ... asks
+  for 1 iron-plate, one craft takes 2; it holds 0; so ...`. The status line counts them (`N of the short held back by
+  ...`). The check (status, requester sections) runs for every short machine; the condition text only for the worst
+  3. Copy: supply engine-unit and iron-gear-wheel name the copy's engine lines held at `engine-unit < 500`; supply
+  over iron-plate, electronic-circuit and engine-unit took 110 ms on the copy against 115 ms without the check (9
+  reads each). tests/d17_batch18.lua.
+- B2 (Grok): the agricultural science biochamber stopped when the network's bioflux fell under 200, and nothing told
+  its builder. pushalerts.lua's scan now groups assemblers, furnaces, labs, drills and silos whose status is
+  disabled_by_control_behavior as `off_by_condition`. Each detail reads `biochamber (14.5,31.5)
+  (agricultural-science-pack): off by its logistic condition bioflux > 200 (bioflux 0 now)`: each unmet condition (an
+  ignored one, with no wire, is not unmet) with its first signal's value on the machine's red and green wires or in the
+  logistic network over it. A machine whose unmet conditions are all on what its recipe makes (a stock cap) is left
+  out. As every push alert, a new or grown group is one team line to its builders and claim owners (the nearest agent
+  when neither). Copy: 8 groups on 5 surfaces, Grok's chamber among them (bioflux 0); the stock-capped gear assembler
+  (iron-gear-wheel < 5) is not listed. The read over the copy's 1282 machines (128 off) took 3.7-4.3 ms, spread over
+  the background read's slices. tests/pushalerts.lua, game_alerts_groups.lua.
+- B3 (Astra): three critical builds waited 10 min with 100+ idle robots; robots held spare poles with nowhere to put
+  them. ghosts: each ghost's `robot` is the construction robot in the air with an order on it anywhere in its queue
+  (unit numbers, read once a network): robots.lua's row for it (charge, cargo, orders, what holds it up) and the
+  order's place; else `no robot has an order on it`. The summary counts ghosts whose robot is held up and, for each
+  network with a ghost there, how many of its robots in the air are held up and by the two most common reasons
+  (counts dropped: wood*4 and wood*3 as one; the first 256 robots). robots.lua: a robot under 1% energy in no
+  roboport's queue is held up, `no charge (energy 0%)` (after the nowhere-to-put check); construction_robots adds
+  `ghosts_waiting`: each ghost in a held-up robot's queue with the robot, the order's place and the reason. Copy
+  (network 243 on nauvis): `41 ghosts ... 9 whose robot is held up; 50 of the 50 construction robots of network 243
+  in the air are held up: 28 nowhere to put wood: no storage chest in network 243 has room for it (24 storage chests
+  in it); 22 no charge (energy 0%)`; a pole ghost's robot: `... holds wood*4; orders: pickup ...; then construct
+  medium-electric-pole ghost at (86.5,156.5); no charge (energy 0%) (its order 2 in the queue)`. ghosts radius 64
+  took 24 ms on the copy, construction_robots 15 ms. tests/d17_batch18.lua.
+- B4 (Haiku): furnaces at (96,-14..-38), (56,-33) and (95,-171) ran dry all shift; Haiku held no coal, and `refuel
+  {alert}` tops up from carried fuel only. An out-of-fuel line (no_fuel, and heat_no_fuel's) now names the nearest
+  fuel the group's most common burner takes (its burner prototype's fuel categories): our chests within 64 tiles of
+  the group, else our belts within 32, nearest first, with item, count and distance (`nearest fuel: coal 100 in
+  requester-chest (-22.5,-49.5), 40 tiles from (11,-71)`), or that none holds it. When the burners' box (from the
+  group's up to 128 status entities) fits in 256 tiles, the no_fuel line ends with `refuel {area: [[x0,y0],[x1,y1]],
+  from: "nearest", fuel: "coal"}` (fuelround.lua: carried fuel first, then walks for more) in place of `refuel
+  {alert}`. Read when the line is made (not in the plain review form), kept 10 s a group; one contents read per chest
+  inventory and belt line (four uncached groups, 2556 chests and belts: 10 ms on the copy; a count call per fuel item
+  took 37 ms). Copy: the nauvis, gleba (biochambers: nutrients, not the steel furnace's yumako-mash) and vulcanus
+  groups name coal, nutrients and carbon. tests/d17_batch18.lua.
+- B5 (Haiku): stock {item} gave each place's `reserved` (robots' pickup reservations) but not for whom; reservations
+  {network} lists pickups and requesters apart, and the robots' orders grouped by target. stock's places with
+  reserved stock now add `reserved_for`: in each such place's logistic network every logistic robot's queue is read
+  once for a pickup there of the item followed by a deliver, summed by where it goes (requester, buffer chest, or
+  `the character of NAME`), the 3 largest. Copy: `stock {item: iron-plate, places: all, holders: [provider,
+  storage]}`: each passive provider's 3 reserved plates name their requester (`3 to requester-chest (97.5,41.5)`).
+  Reading 1133 robots' queues took 2-3 ms on the copy; the stock read 21-25 ms against 20 ms for the same places with
+  nothing reserved. tests/d17_batch18.lua.
 
 ## d17 batch20 (operator 15:25: the agents' 15:20 poll)
 - A1 (Haiku): `craft` refused 20 firearm-magazine over 650 in four requester chests (150 within 25 tiles), and a gun
