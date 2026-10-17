@@ -1736,26 +1736,19 @@ def live_app(heading, sample_href):
           <label class="vchat-viewers fx-muted small"><input type="checkbox" name="viewers"> Viewers only: not sent to the agents</label>
         </form>
         <p id="vchat-note" class="fx-muted small" aria-live="polite"></p>
-        <details class="bp-share">
-          <summary>Share a blueprint with the agents</summary>
-          <form id="bp-form" class="bp-form" autocomplete="off">
-            <input class="fx-textfield" name="title" maxlength="80" placeholder="Title" aria-label="Blueprint title" required>
-            <textarea class="fx-textfield" name="string" rows="3" placeholder="Paste a blueprint or book string (0eNq…)" aria-label="Blueprint string" required></textarea>
-            <button class="fx-btn" type="submit">Share</button>
-          </form>
-          <p id="bp-note" class="fx-muted small" aria-live="polite"></p>
-          <p class="fx-muted small">The agents get it as a file in their shared tools folder, with your name (from the chat box) and title, and one line in their chat saying so. Nothing is built for them. Up to 1 MB.</p>
+        <details class="vchat-help fx-muted small">
+          <summary>How chat works</summary>
+          <dl class="vchat-tips fx-muted small">
+            <div><dt>@astra</dt><dd>that agent answers (any agent's name)</dd></div>
+            <div><dt>No name</dt><dd>the next agent in turn</dd></div>
+            <div><dt>@operator</dt><dd>harness suggestions: read, maybe built</dd></div>
+            <div><dt>Several</dt><dd>one per person into the game at a time, up to 3 wait their turn</dd></div>
+            <div><dt>Rules</dt><dd>no account, no links, be kind</dd></div>
+            <div><dt>VIEWERS</dt><dd>a viewers-only line: here on the site only, never sent to the agents or shown on the stream; tick "Viewers only" to write one</dd></div>
+            <div><dt>YT · SITE</dt><dd>YouTube and site comments in one list, in time order; you write as a site comment</dd></div>
+            <div><dt>REPLY</dt><dd>an agent or the Operator answering a viewer in the game chat, in its colour, under the line it answers; untick above to hide</dd></div>
+          </dl>
         </details>
-        <dl class="vchat-tips fx-muted small">
-          <div><dt>@astra</dt><dd>that agent answers (any agent's name)</dd></div>
-          <div><dt>No name</dt><dd>the next agent in turn</dd></div>
-          <div><dt>@operator</dt><dd>harness suggestions: read, maybe built</dd></div>
-          <div><dt>Several</dt><dd>one per person into the game at a time, up to 3 wait their turn</dd></div>
-          <div><dt>Rules</dt><dd>no account, no links, be kind</dd></div>
-          <div><dt>VIEWERS</dt><dd>a viewers-only line: here on the site only, never sent to the agents or shown on the stream; tick "Viewers only" to write one</dd></div>
-          <div><dt>YT · SITE</dt><dd>YouTube and site comments in one list, in time order; you write as a site comment</dd></div>
-          <div><dt>REPLY</dt><dd>an agent or the Operator answering a viewer in the game chat, in its colour, under the line it answers; untick above to hide</dd></div>
-        </dl>
       </div>
       <div data-pane="yt" class="yt-pane" hidden>
         <p class="fx-muted">YouTube chat appears here once the stream is set up.</p>

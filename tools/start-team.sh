@@ -300,8 +300,9 @@ if [ "${POG_PUSH_LIVE:-1}" != 0 ] && { [ -f site/worker/.secrets.json ] || [ -n 
   helpers+=("push-live:$!:$rundir/push-live.log")
 fi
 # Viewers' blueprints shared on the site (site/viewer_blueprints.py): pulled into team-tools/viewer-blueprints/, one
-# fact line each in game chat while the viewer relay is on. POG_VIEWER_BLUEPRINTS=0: off.
-if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_VIEWER_BLUEPRINTS:-1}" != 0 ] && \
+# fact line each in game chat while the viewer relay is on. Off unless POG_VIEWER_BLUEPRINTS=1: Nick (d16 17:00) does not
+# want designs from outside the team brought to the agents.
+if [ "${POG_PUSH_LIVE:-1}" != 0 ] && [ "${POG_VIEWER_BLUEPRINTS:-0}" = 1 ] && \
    { [ -f site/worker/.secrets.json ] || [ -n "${POG_LIVE_TOKEN:-}" ]; }; then
   nohup python3 -u site/viewer_blueprints.py "$rundir" --world "$world" >"$rundir/viewer-blueprints.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
