@@ -71,7 +71,7 @@ return function(api)
     end
     local e=api.remote_entity(p,a)
     local secs=e.get_logistic_sections and e.get_logistic_sections()
-    assert(secs,e.name..' has no logistic requests')
+    assert(secs,(e.type=='entity-ghost' and 'the ghost of '..e.ghost_name or e.name)..' has no logistic requests')
     -- By remote view on another surface (surface=, Astra 02:20): the reply names it.
     local remote=type(p)=='table' and rawget(p,'__remote')
     return e.name..' at '..string.format('(%g,%g)',e.position.x,e.position.y)..(remote and ' on '..e.surface.name or ''),secs,e

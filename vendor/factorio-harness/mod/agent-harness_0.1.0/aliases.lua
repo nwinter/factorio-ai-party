@@ -113,6 +113,21 @@ return function(api)
     -- ({to_entity={x,y}}, Haiku shift09): the direction, and the position. A direction named the other way round
     -- (from_entity, to_chest ...) is its to_entity/to_player name.
     if action == 'transfer' then
+      -- The target's position by another name (d17 batch18 A4, Sonnet: entity_position twice, refused): position;
+      -- mode take or give (Sonnet, once): the direction.
+      for _, wrong in ipairs{'entity_position', 'target_position', 'entity_pos', 'pos'} do
+        if is_pos(out[wrong]) and out.position == nil and out.positions == nil and not takes(action, wrong) then
+          out.position, out[wrong] = out[wrong], nil
+          notes[#notes+1] = wrong .. ' is position'
+        end
+      end
+      if type(out.mode) == 'string' and out.direction == nil and not takes(action, 'mode') then
+        local d = (out.mode == 'to_player' or out.mode == 'to_entity') and out.mode or DIRECTION[out.mode]
+        if d then
+          notes[#notes+1] = 'mode ' .. out.mode .. ' is direction="' .. d .. '"'
+          out.direction, out.mode = d, nil
+        end
+      end
       -- The same target named twice (Muse, shift11 17:18: position and to_entity, then position and to, both at the
       -- silo, 8 refusals during a rocket load): the one position, and the side it names.
       for _, d in ipairs{'to_entity', 'from_entity', 'to', 'from'} do

@@ -36,6 +36,8 @@
     courier (`positions` and `to`) too. The reply gives `freshness` (the moved stacks' spread) and `left_less_fresh`
     (what the filter left where it was, e.g. "200 left where they were: less than 50% spoiled (the least spoiled
     20%)"); a timed one in `last`.
+  - Other names taken: `entity_position`, `target_position`, `pos` are `position`; `mode: "take"` or `"give"` is the
+    direction; `amount`, `quantity` are `count` (the reply's corrected line shows the call as it ran).
   Example: `./fh call transfer --args '{"position":{"x":15.5,"y":59.5},"direction":"to_entity","item":"rocket-fuel","count":50}'`
 - `collect {positions | area | radius, item?, count?, chests?, outputs_only?, wait_ticks?, follow?, min_fresh?}`:
   takes machine outputs; chests only when you name their positions or pass `chests: true`. `radius` without `item`

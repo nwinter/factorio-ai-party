@@ -75,6 +75,9 @@
     requester whose slots are all taken shows `slots_full` and `requests_blocked`; a take from a chest names what
     robots have reserved there;
   - inserters: pickup and drop tiles; a built inserter with no pickup or drop target is flagged (build replies too);
+  - an inserter waiting for source items: `pickup_wait` (compact: `waits:`): what its pickup holds of what it may take,
+    a requester's network stock of it, robots taking from it, and whether the drop target takes it now and what it
+    holds (fuel slots and burn rate at full power; the game's arms top fuel up only while it runs low);
   - fluid connection tiles (`fluid_connections[].joins` is where a pipe must go); a ghost shows its fluid ports as
     `ports` does; a heat entity its heat connections and temperature; `inspect.heating` reports freezing, demand,
     adjacent heat buffers and the heat connections there;
