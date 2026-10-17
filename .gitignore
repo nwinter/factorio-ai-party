@@ -16,3 +16,6 @@ runs/*/*/.grok-home/
 runs/*/agent-stats.json
 site-shots/
 runs/*/tokens.json
+
+# ./fh more pages (live game state)
+.fh-more.txt
