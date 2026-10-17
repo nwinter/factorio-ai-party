@@ -41,7 +41,6 @@
   Example: `./fh call construct --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":40,"y":30}}}' --wait`
 - `ghosts {position?, radius?, area?, name?, surface?}`: each ghost nearest first, the item that places it, and whether
   robots can build it (no construction area covers it, its network holds none, no idle robot); `page` for more.
-  Example: `./fh call ghosts --args '{"radius":64}'`
 - `deconstruct {area, tiles?, cancel?, dry_run?}`: marks for deconstruction. `tiles: ["landfill"]` marks built landfill
   and removes our landfill tile ghosts there (`tile_ghosts_removed`); `cancel: true` unmarks. It and its dry run count
   robots in flight apart (`flying_robots`: the game does not mark them) and read `heat_loss`: heat-network parts cut
@@ -68,7 +67,6 @@
   Example: `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'`
 - `nearest_water {position?, radius?}`: the nearest pumpable tile in charted ground (up to 256 tiles) with
   offshore-pump spots there.
-  Example: `./fh call nearest_water --args '{"radius":256}'`
 - `conflicts {name, position}` (a read): what building there takes away: everything in the way, the fluid segments that
   split and the poles cut off.
   Example: `./fh call conflicts --args '{"name":"pumpjack","position":{"x":-4.5,"y":101.5}}'`
@@ -77,7 +75,6 @@
   Example: `./fh call build_path --args '{"points":[{"x":0.5,"y":0.5},{"x":20.5,"y":0.5}]}' --wait`
 - `grid {position?, radius?}`: one character per tile; `,` is `walkable water` (shallow water, wetland, Fulgora's oil
   ocean, deep too), `~` water a character cannot cross; `map` tells them apart the same way.
-  Example: `./fh call grid --args '{"radius":16}'`
 - `pole_route {from, to}`: from a powered pole, lays pole ghosts along a line and reports how many poles you are
   `short`. On water and Gleba wetland it shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost
   under it (`tiles_under`, `tiles_note`).
@@ -126,14 +123,12 @@
   `blueprint_save`.
   Example: `./fh call blueprint_capture --args '{"area":{"left_top":{"x":30,"y":0},"right_bottom":{"x":60,"y":20}}}'`
 - `blueprint_list {name?}`: the library's entries (author, size, counts, last used); `name` gives one in full.
-  Example: `./fh call blueprint_list --args '{"name":"smelter-row"}'`
 - `blueprint_place {name, position, direction?, platform?, dry_run?}`: pastes a library entry, as `paste`; a platform's
   layout goes on another platform with `platform: "Swift"`.
   Example: `./fh call blueprint_place --args '{"name":"smelter-row","position":{"x":90,"y":0},"dry_run":true}'`
 - `blueprint_rename {name, new_name}`: its author any time, anyone after 24 game hours unused.
   Example: `./fh call blueprint_rename --args '{"name":"smelter-row","new_name":"smelter-row-v2"}'`
 - `blueprint_delete {name}`: who may, as `blueprint_rename`.
-  Example: `./fh call blueprint_delete --args '{"name":"smelter-row-v2"}'`
 - Dry runs (`"dry_run": true` on `build`, `place_ghosts`, `paste`) place nothing and report the plan: per entity
   whether it fits or what blocks it and where, blocked entities first and all of them in `blocked` (up to 200) apart
   from those needing tiles; the tiles an entry needs (landfill, foundation, shallow oil, water, and on a platform the

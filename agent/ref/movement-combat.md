@@ -87,7 +87,6 @@
   statistics) and `fed_by` inserters (a piece one refills keeps its count after a shot). `configure {position,
   auto_targeting: false}` switches targeting off; `use_item {"item":"artillery-targeting-remote","position":{...}}`
   puts a flare there for the pieces in range.
-  Example: `./fh call artillery`
 - `shoot {position | auto, gun?, ammo?, ticks?}`: fires at the position (`auto: true`: the nearest enemy); replies
   `gun {slot, name, range, ammo_slot, ammo, count}` and `no_compatible_ammo` or `out_of_range` when it will not fire,
   `last_combat.why_none` when nothing fired. In a tank, car or spidertron you drive it fires the vehicle's gun (`gun:

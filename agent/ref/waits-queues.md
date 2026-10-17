@@ -38,10 +38,9 @@
 - `wait_ticks {ticks, pause_queue?}`: your character stands idle `ticks` (1..54000): a direct timed action (outcome
   `duration_elapsed`, or `told` or `mentioned` when a tell or mention ends it early) or a queue step. A direct
   `wait_ticks` or `wait_until` while your queue runs runs as a sleep (`as_sleep`) and the queue keeps going;
-  `pause_queue: true` pauses the queue for the wait instead. Example:
-  `./fh call wait_ticks --args '{"ticks":600}' --wait`
+  `pause_queue: true` pauses the queue for the wait instead.
 - `sleep_check`: the running sleep's state (`woke`, `slept_s`, `saw`) with `wait_estimates` and `idle_s` refreshed;
-  wake replies refresh them too, and `fh wait --until` puts them on its line. Example: `./fh call sleep_check`
+  wake replies refresh them too, and `fh wait --until` puts them on its line.
 - `queue_submit {steps, mode?, guards?, lane?, dry_run?}` (`./fh queue submit --file plan.json`): runs steps
   `{action, args, wait?, label?, on_fail?, min_moved?, on_short?}` inside the game; an error names the step's path.
   Into a repeating plan `mode` is required (the refusal names the job): `replace` stops it, `ahead` interrupts and
@@ -66,12 +65,11 @@
 - `queue_edit {id, steps?, to?}`: `id: "job-12"` deletes a pending step (`steps`: replace it, `to: N`: move it); the
   active step is untouched. Example: `./fh call queue_edit --args '{"id":"job-12","to":1}'`
 - `queue_cancel {lane?, clear?}`: cancels a queue (`lane: "remote"` for the remote lane); `clear: false` keeps the
-  pending steps. Example: `./fh call queue_cancel --args '{"lane":"remote"}'`
+  pending steps.
 - `queue_pause {lane?}` (`./fh queue pause`): pauses a queue and holds it: the running step goes back to the head of
   pending, and nothing resumes it until `./fh queue resume` (or a submit or repeat that starts it). Without it, a
   direct call that interrupts a queued `load_silo` lets the queue go on when that call ends. Replies with a paused
-  queue say what paused it (`paused_by`; `queue_held` on a direct call while you hold it). Example:
-  `./fh call queue_pause --args '{"lane":"body"}'`
+  queue say what paused it (`paused_by`; `queue_held` on a direct call while you hold it).
 - `queue_repeat {steps, interval_ticks?, times?, for_ticks?, condition?, orders?, name?}`: replaces the queue with a
   repeating plan. `times` (rounds) and `for_ticks` (no round starts after that) end the loop with one `queue:` line
   (`done after N rounds: ...`) and `loop_done` in `queue_status`; `condition: {until: ...}` ends it at a round
@@ -83,9 +81,9 @@
 - `./fh plan save NAME --file plan.json` (`plan_save`): stores a queue plan (a JSON array of steps). Example:
   `./fh plan save refuel-round --file plan.json`
 - `./fh plan run NAME` (`plan_run`): runs a saved plan again. Example: `./fh plan run refuel-round`
-- `./fh plan list`: your saved plans (`fh call plans` is the same read). Example: `./fh plan list`
+- `./fh plan list`: your saved plans (`fh call plans` is the same read).
 - `stop`: ends your running body action (a walk, tour, `load_silo` or gather) and starts nothing. A call that ends a
-  running action says in `replaced` what that action had done and where its walk stopped. Example: `./fh call stop`
+  running action says in `replaced` what that action had done and where its walk stopped.
 - `order_set {name, steps, when?, priority?, interval_ticks?, max_walk?}`: a standing order: runs its queue steps
   whenever its `when` holds (any `wait_until` condition; radius up to 256, `ammo_below`/`fuel_below` areas up to
   256x256). One order without `when` is your default routine, run every `interval_ticks` (up to 216000, an hour) while
@@ -99,18 +97,17 @@
   is shown when it changed and at least every 10 minutes (`--format json` always has it). A fuel round that takes from
   a named chest and feeds several furnace areas on `fuel_below` is in usage.md (`keep-furnaces-fueled`). Example:
   `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":"ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[{"action":"rearm","args":{"radius":20}}]}'`
-- `orders`: lists your standing orders with their state, runs, failures and last run. Example: `./fh call orders`
-- `order_remove {name}`: deletes one. Example: `./fh call order_remove --args '{"name":"rearm"}'`
+- `orders`: lists your standing orders with their state, runs, failures and last run.
+- `order_remove {name}`: deletes one.
 - `orders_pause {seconds?}`: holds them (default until `orders_resume`); a running order stops and resumes after.
-  Example: `./fh call orders_pause --args '{"seconds":600}'`
-- `orders_resume`: lets them run again. Example: `./fh call orders_resume`
+- `orders_resume`: lets them run again.
 - `reminder_add {message, every_ticks | due_in_ticks, recipients?, wake?}`: sends you (or teammates) a private line
   when due, as a tell; `wake: false`: the line comes with the next reply and wakes no wait. Reminders never act in the
   game. Example: `./fh call reminder_add --args '{"message":"check the boiler feed chests","every_ticks":54000}'`
 - `reminder_ack {id, result, next_in_ticks?, every_ticks?}`: records what the review found; `next_in_ticks` puts the
   next run off; its owner's `every_ticks` there sets a new cadence. Example:
   `./fh call reminder_ack --args '{"id":3,"result":"all boilers fed","next_in_ticks":36000}'`
-- `reminders`: lists them. Example: `./fh call reminders`
+- `reminders`: lists them.
 - What ends a wait (`./fh sleep`, `./fh wait`, `--wait`, direct `wait_ticks`/`wait_until`), besides the core's list:
   `--wait-through-tells` (`wake_on_messages: false`): no tell or mention ends it (`told_during_wait` lists them; on
   `--wait` and `./fh wait` on an action too), a tell sent with `--wake` still does; `--wake-from sol,astra`

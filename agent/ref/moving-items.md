@@ -99,14 +99,12 @@
   Example: `./fh call repair --args '{"positions":[{"x":12.5,"y":4.5},{"x":15.5,"y":4.5}]}' --wait`
 - `inventory`: main, ammo, armor and equipment, trash and cursor in one small reply, guns and ammo per slot (gun slot
   N fires only from ammo slot N); `status {"inventory": true}` adds it as one line.
-  Example: `./fh call inventory`
 - `craft {recipe, count}` (or `recipes: [...]`): queues hand crafts. A craft of 3 s or more that stock within 25 tiles
   covers is refused unless `force: true` (`check_stock: true`: within 64), naming the stocking chests. One that queued
   nothing for a recipe says `nothing_queued` with what is short (left out of `started`) and what you carry.
   Example: `./fh call craft --args '{"recipe":"iron-gear-wheel","count":10}'`
 - `cancel_craft {recipe | index, count?}`: cancels queued hand crafts, the latest first (`all: true`: every one); the
   ingredients come back.
-  Example: `./fh call cancel_craft --args '{"all":true}'`
 - `deliver {position | positions, items, surface?}`: fuel or ammunition into a burner or turret by item request, as a
   blueprint's: the construction robots of the network covering it bring it (the row names that network's stock and
   free robots). Modules: `configure`; ingredients: inserters or a requester chest.

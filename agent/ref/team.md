@@ -1,8 +1,7 @@
 - `./fh board projects [--args '{"id":N}']`: the open projects, one line each with progress, next step and handoff; an
   `id` shows one in full. A long project list shows one compact line each (`board {projects: "full"}` for more).
-  Example: `./fh board projects --args '{"id":12}'`
 - `board_review {id?}`: flags board items naming gone platforms, stale handoffs, superseded items still active and
-  conflicting needs. Example: `./fh call board_review --args '{"id":12}'`
+  conflicting needs.
 - `board_retire {ids, reason}`: drops several board items, each with `reason` as a note (its owner or poster, or
   anyone once they have been quiet; `failed` names the rest). Example:
   `./fh call board_retire --args '{"ids":[41,42],"reason":"the platform was rebuilt as Wren"}'`
@@ -11,10 +10,9 @@
   count on its owner's planet, shipment lines of platforms its title names, its board edits; the age of its last
   change, the owner's repeated failures and no-effect actions, its next action or blocker, and its state: progress,
   waiting (its owner in a sleep, wait step or running queue), unchanged, or stalled (unchanged across 2 checks, with
-  the 20-minute rule). Each check also puts one line in the owner's reply. Example:
-  `./fh call board_progress --args '{"owner":"luna"}'`
+  the 20-minute rule). Each check also puts one line in the owner's reply.
 - `board_critical`: blocked items, those the team plan names (#id) first, then by how many open items wait on them,
-  with what each waits on; and the agents standing or waiting now. Example: `./fh call board_critical`
+  with what each waits on; and the agents standing or waiting now.
 - `board_focus {id, step, blocker?, verify?}`: your current item and step, its blocker and your next verification, in
   one line shown on `status` and in your team block every 10 game minutes; `board_focus {agent?}` (no `id`) reads the
   focus lines, a teammate's with `agent`. A focused project step not done across 2 checks reads so here and in
@@ -28,8 +26,7 @@
   by score (impact, keys, verifications, recency); an action key and the names must both match, and each line says
   which keys matched (`matched: action build, entity big-electric-pole`). The same lines are shown again only after 10
   minutes (`--format json` always has them). Before a launch, platform_schedule, construct or load_silo (their dry
-  runs, preflight and queued steps too) the best one shows with its score and check. Example:
-  `./fh call lessons --args '{"entity":"steam-engine"}'`
+  runs, preflight and queued steps too) the best one shows with its score and check.
 - `lesson_add {rule, cause?, fix?, evidence_tick?, invalidated_when?, item | recipe | entity | action, surface?, position | area?, supersedes?, impact?, prevented?, control?, check?, failure?}`:
   records a lesson; a lesson it `supersedes` is retired. `impact` 0..5 (default 1): with keys, verifications and
   recency it makes the score; `prevented`: what it prevented; `control`: what in the factory must change; `check` (a
@@ -40,15 +37,14 @@
 - `lesson_edit {id, ...}`: any teammate edits a lesson (the fields of lesson_add, `status: "dropped"` retires it,
   `check: false` clears the check); the earlier versions are kept, the last 8. Example:
   `./fh call lesson_edit --args '{"id":88,"fix":"refuel {from: nearest} before the night"}'`
-- `lesson_verify {id}`: last verified now. Example: `./fh call lesson_verify --args '{"id":88}'`
+- `lesson_verify {id}`: last verified now.
 - `lesson_review`: counts (stale, unresolved, superseded, duplicates, shown and followed by their failure or not).
-  Example: `./fh call lesson_review`
 - `ground_rule_add {text, lessons, exceptions?, supersedes?}`: a team rule (1..200 characters) resting on 1..4
   lessons; up to 8 team rules, shown once at each shift start in `team: shift` with their lessons' evidence; a rule it
   `supersedes` is retired. Example:
   `./fh call ground_rule_add --args '{"text":"every boiler line gets a feed chest","lessons":[88]}'`
-- `ground_rule_retire {id}`: retires one. Example: `./fh call ground_rule_retire --args '{"id":2}'`
-- `ground_rules`: the active rules with their lessons' evidence. Example: `./fh call ground_rules`
+- `ground_rule_retire {id}`: retires one.
+- `ground_rules`: the active rules with their lessons' evidence.
 - `review`: your last 2 hours: your requests and queue steps by kind, the share of your character's time by kind (the
   time before a request counts toward that request's kind), the hand hauls you repeated 5 or more times, what failed
   (by reason, top 3), what the machines you built made this shift, alerts still open in your claims, and losses near
@@ -56,11 +52,10 @@
   (`review (last 2h): 412 actions: ...; time: 48% walking, 21% item moves, 9% building, 22% waits`,
   `repeated hauls: iron-plate (13,40) -> wooden-chest (89,-3) x38, ...`, `failed: 31 (...)`,
   `machines you built made 9120 items this shift (14 of your machines, 11 running); 78% of your items this shift moved by machines`).
-  A reply carries it every 2 game hours. Example: `./fh call review`
+  A reply carries it every 2 game hours.
 - `lookahead`: your plan line and how long since it changed, your open board items, the team goals, the research
   running and next, items whose stock in a logistic network falls to zero within 2 hours at the last 30 minutes' rate,
   and the time left in the shift. A reply carries it once about every 45 minutes (not in a shift's first 20 minutes).
-  Example: `./fh call lookahead`
 - `networks {platform?, fresh?}`: one line per electric network (draw over 5 minutes against capacity, machines on low
   power, boilers and their fuel in minutes; the lowest boiler: position, minutes, fuel, feeder; the 2 feed chests with
   the fewest minutes left: `feed chests: requester-chest (10,39) 50 coal, uses 15.0/min over 10 min, 3 min left`;

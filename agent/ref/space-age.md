@@ -9,7 +9,7 @@
   naming them), `tile_removals` and `construction_blocked` (why the hub cannot build now; it counts up to 1000 entity
   and 3000 tile ghosts and says `at least` and how many were counted past that). `compact: true`: a line a platform,
   blockers only when new to you. `eta_to: "vulcanus"`: each platform's ETA to that planet through its schedule, or why
-  there is none. Example: `./fh call platforms --args '{"eta_to":"vulcanus"}'`
+  there is none.
 - `./fh platform NAME`: one platform, the same read as `./fh call platform --args '{"name":"Kestrel"}'` (`platforms`
   of that one): hub free slots, cargo, speed, next stop, ETA; `hub_chunks` (hub slots asteroid chunks take);
   `ammo_rates` (per ammo type, made and used over the last leg, with the reserve at arrival; it counts the places
@@ -19,7 +19,6 @@
   each landing pad received and the pods still in flight; per leg what spoiled on the way); `spoiling` (when its
   spoilable items spoil, against the arrival); `engine` (the last 60 and 180 s: mean, lowest and highest speed,
   thruster fuel and oxidizer used and made, the thrusters' tanks at start and end, the pumps' share of time working).
-  Example: `./fh platform Kestrel`
 - `platform_arrived {platform, location?}` and `platform_left {platform, location?}`: wait conditions, in `./fh wait
   --until`, `./fh sleep --until`, `wait_until`, queue steps and guards, and a standing order's `when`.
   `platform_arrived` holds while the platform is stopped at `location` (a planet; without one, at any stop).
@@ -30,7 +29,6 @@
   Example: `./fh wait --until "platform_arrived Sunward gleba" --max 600`
 - `platform_create {name?, planet?}`: creates a platform over `planet` (default yours); as in the platform GUI it
   waits for its starter pack, which a silo holding it in its rocket cargo launches on its own.
-  Example: `./fh call platform_create --args '{"name":"Sunward"}'`
 - `platform_schedule {platform, stops, current?, paused?}`: each stop `{station, wait: [...]}`; a wait is `{type,
   ticks?, condition?, compare: "and"|"or"}`. Types: `time` and `inactivity` (`ticks`), `all_requests_satisfied`,
   `any_request_not_satisfied`, `any_request_zero`, and with a `condition`: `item_count` (an item), `fluid_count` (a
@@ -64,7 +62,6 @@
   oxidizer makers, thrusters, guns), with the first stop named (`first_stop`); `chunks`: each chunk type with its
   collectors, then the crushers whose recipe takes it and the hub; `chunk_flags`: a GUI filter keeping a chunk from
   its crusher, a crusher stopped full over a full hub.
-  Example: `./fh call platform_supply --args '{"platform":"Sunward"}'`
 - `platform_plan {platform, floor?, page?, ready?, salvage?}`: the platform as planned, built entities and ghosts
   together: foundation islands, belt loops, head-on belts and side-loads. `floor: true`: the foundation the entity
   ghosts need (footprints, tunnels, holes, links) as `place_ghosts_entries`, 256 a page (`page: N`); a tunnel runs to
@@ -93,17 +90,15 @@
   ammunition aboard is stranded. `circuit_audit {platform}` reads a platform's misleading circuit readings (`./fh help
   circuits-settings`). Example: `./fh call platform_defense --args '{"platform":"Sunward","feed":true}'`
 - `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure
-  conditions with what the hub holds against each. Example: `./fh call platform_gate --args '{"platform":"Sunward"}'`
+  conditions with what the hub holds against each.
 - `demolishers {surface?, near?}`: each demolisher territory the map draws, nearest first, and each demolisher in
   sight now (name, head, health), else where a read last saw it.
-  Example: `./fh call demolishers --args '{"surface":"vulcanus"}'`
 - `shipment {platform | item}`: per schedule stop its departure conditions, each hub request importing from that
   planet with its state (delivered, in flight, launched, loading, waiting and the native gate holding it), what the
   planet's landing pads ask of the hub, and the last visit's pad receipts and spills; with `item`, that item over
   every platform. Cargo conflict lines (also in `preflight {platform}`): an item the hub holds that the landing pads
   of two or more coming stops ask, per stop in order (ask, hold, what goes down there, what is left aboard). A
   delivery, a spill or a hub_full gate comes once in team.alerts to who launched to the platform and its alert list.
-  Example: `./fh call shipment --args '{"platform":"Sunward"}'`
 - `min_payload {platforms?, set?}`: every hub request that imports from a planet: platform, item, asks, holds, the
   custom minimum payload and a full rocket of it by weight. `set: {item: N}` sets that number for those items on those
   platforms (0 or false clears it), nothing else changed.
@@ -182,7 +177,7 @@
   can reach a turret.
   Example: `./fh call preflight --args '{"position":{"x":65.5,"y":14.5},"platform":"Sunward","items":{"agricultural-science-pack":1000}}'`
 - `land`: from a platform stopped at a planet, drops you to it in a cargo pod (the core's Space Age part says where
-  you land and with what). Example: `./fh call land`
+  you land and with what).
 - `drop {items, platform?, full?, dry_run?}`: sends one cargo pod (10 slots) of hub items to the planet below a
   stopped platform; `short` says what stays in the hub. `full: true` sends every pod the list takes (each pod's items
   in `pods`); `dry_run: true` shows the pod split first and the landing pad's room (`pad_room`: free slots, what takes
@@ -191,13 +186,12 @@
   beside it, where, and what each container holds. `scan` lists a cargo pod container with `holds`.
   Example: `./fh call drop --args '{"platform":"Sunward","items":[{"item":"iron-plate","count":200}],"dry_run":true}'`
 - `freight_audit {item}`: one item across every planet and platform: stock, spoil times, silo room, unmet lab and
-  requester demand. Example: `./fh call freight_audit --args '{"item":"agricultural-science-pack"}'`
+  requester demand.
 - `where_is {item, surface?, limit?}`: where an item is on a surface: the total by kind and each place holding it,
   nearest first; stacks lying on the ground in chunks our force sees now are `on_ground` (each 32-tile cell a place);
   pods still in the air from our platforms are `in_flight`, also in a platform's arrival alert. A spoilable item adds
-  `spoils_within_2_min` beside the total and per place. Example: `./fh call where_is --args '{"item":"pentapod-egg"}'`
+  `spoils_within_2_min` beside the total and per place.
 - `agriculture {surface?}`: agricultural towers, ghosts and recorded tower-loss positions.
-  Example: `./fh call agriculture --args '{"surface":"gleba"}'`
 - Aboard a platform (no body) every read works (scan, inspect, science, supply, ... with `platform=` or `surface=`),
   and so do tell, chat, say, operator, the board, research, platform calls, waits on `platform_arrived` and
   `platform_left`, queue plans of the steps the remote lane allows, and every remote-view call with `platform=` or

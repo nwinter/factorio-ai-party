@@ -25,7 +25,7 @@
   optional: every red and green network those entities are on, by id, each with its signals now (largest first) and
   which of them are on it with their settings, in one call. With `platform` alone: whole-belt readers
   (`entire_belt_hold`) on one network whose belts overlap (counted twice), and each asteroid collector whose filter the
-  circuit sets: the filter it holds and the chunk signals there. Example: `./fh call circuit_audit --args '{"platform":"Starling"}'`
+  circuit sets: the filter it holds and the chunk signals there.
 - `configure {position | positions, platform? | surface?, recipe?, quality?, modules?, by?, filters?, filter_mode?,
   use_filters?, spoil_priority?, storage_filter?, input_priority?, output_priority?, filter?, priority_targets?,
   ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?}`: a machine's or building's

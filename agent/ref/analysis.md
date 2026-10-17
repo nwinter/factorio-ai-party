@@ -9,8 +9,7 @@
   more than it has levels left). `target_level: {"mining-productivity-3": 8}` keeps adding its next level until 8 is
   researched (at most 16 targets, 100 levels ahead; 0 removes one); `targets: true` and the plain read say per target
   what is researching or queued and the levels left. Example: `./fh call research --args '{"target_level":{"mining-productivity-3":8}}'`
-- `research_done` (`./fh research done`): what finished lately, newest first, and what each unlocked. Example:
-  `./fh research done`
+- `research_done` (`./fh research done`): what finished lately, newest first, and what each unlocked.
 - `science {pack?, surface?, compact?, all_surfaces?}`: counts each pack the research needs (or `pack`) over your whole
   surface, the same for everyone wherever they stand: made and used in 10 minutes, the assemblers set to it and their
   states, packs in chests, in landing pads and hubs, on belts, in labs and carried, and the largest holders (landing
@@ -22,7 +21,6 @@
   a mined or pumped step names its drills or pumps, their states (working, output full, no resource left) and what
   they put into. `compact: true`: one line a pack, your surface only, about a fifth of the full reply; its first line
   says so and counts the labs on other planets; `all_surfaces: true` gives the compact read for each planet with labs.
-  Example: `./fh call science --args '{"pack":"logistic-science-pack"}'`
 - `supply {item, near?, radius?, surface?, compact?, all_stopped?}`: one item or fluid: where it sits (chests by kind,
   belts (`belt_lines`: the 5 belt lines holding the most, with their ends and the tile with the most), machine outputs,
   inserter hands, robots, characters), each logistic network's stock of it (free and reserved, and which requesters the
@@ -64,7 +62,7 @@
   their wires followed back through combinators. `surface` reads another surface, `platform` a platform. Out of sight
   it returns dated last-seen memory. It flags a held-item refusal. Example: `./fh call trace --args '{"position":{"x":-290.5,"y":-312.5},"forward":true,"audit":true}'`
 - `labs {surface?, position?, radius?}`: which labs lack which packs, which inserters feeding them are idle and why,
-  and the research ETA; `surface` reads that surface. Example: `./fh call labs --args '{"surface":"gleba"}'`
+  and the research ETA; `surface` reads that surface.
 - `inspect {position | positions | area | position+radius, surface? | platform?, types?, all?, compact?, page?}`:
   reads entities without reach: any entity in sight, or on your surface in a chunk our radars see, by remote view
   (`by: remote view`); out of sight and coverage, the refusal names the nearest radar coverage, and a recorded entity
@@ -104,17 +102,17 @@
   with how many machines and where (wires leaving the radius count as power). `by_cause: true` ranks each network's
   draw by entity name (last 5 s); when roboports draw, it adds the robots flying, charging and waiting, what the flying
   ones draw, their trip lengths and the requesters with the most on the way. `platform` reads a platform's networks;
-  `power` is also an observe scope. Example: `./fh call power --args '{"by_cause":true}'`
+  `power` is also an observe scope.
 - `fuel_budget {surface?, boilers?}`: each fuel made and used per minute, and each group of fuel users (boilers,
   furnaces, burner drills, heating towers, `recipe plastic-bar`, ...) with what it burns per minute and the minutes its
   own fuel lasts, fewest first. `boilers: true`: each boiler group's burn against the fuel in reach and the drills
   supplying it, with the hours left, and each boiler under 5 fuel with its feeding inserters (burner fuel, no power,
   not connected), the nearest chest or belt holding the fuel, and one `refuel {positions, fuel, count, from: "nearest"}`
-  call. Example: `./fh call fuel_budget --args '{"boilers":true}'`
+  call.
 - `game_alerts {kind?, surface?}`: the game's alerts and warnings in groups, worst first. `kind: "no_power"` groups
   connected machines without power by electric network, isolated drill networks included; `kind: "belt_cut"` names
   observed gaps in belts that carried items, and a rebuilt gap clears; a depleted-drill alert includes one remembered
-  placement on the same resource (`drill_sites` lists more). Example: `./fh call game_alerts --args '{"kind":"no_power"}'`
+  placement on the same resource (`drill_sites` lists more).
 - `belt_gaps {from, to, via?, surface?}`: remembered belt gaps and ghosts along the line, with observation ticks;
   unrecorded tiles are unknown. A leg that is not straight follows the remembered belt round its corners
   (`followed`). Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
@@ -131,7 +129,7 @@
   (`occupied_by`). Example: `./fh call drill_sites --args '{"position":{"x":120.5,"y":-44.5}}'`
 - `ores {resource?, surface?, min_amount?, limit?, position?}`: the patches on the charted map (one resource, or every
   one), nearest first: amount left (oil: yield), distance from you and from our nearest building, enemy spawners and
-  worms within 50 tiles, and how many of our drills are on it. Example: `./fh call ores --args '{"resource":"iron-ore"}'`
+  worms within 50 tiles, and how many of our drills are on it.
 - `stock {item?, network?, surface?, position?, radius?, places?, holders?, limit?, page?}`: where an item is. With
   `item` and no radius: the whole surface's total (named or yours; a platform is read whole) and the places within 128
   tiles; `radius` (up to 1024) reads that circle only; `covered` says what was read, `as_of` whether a total is live or
@@ -150,9 +148,9 @@
   (or `network`): each in the air with its charge, cargo, orders and what holds it up (no storage for what it holds,
   target out of the area, waiting to charge). `sources: true`: per group of waiting ghosts and item requests, the
   network's chests holding the item (nearest 3) and whether the straight line from each passes within a worm's or
-  spawner's reach the map shows. Example: `./fh call construction_robots --args '{"sources":true}'`
+  spawner's reach the map shows.
 - `shortages {surface?}`: machines stopped short of an ingredient (by recipe and ingredient), no fuel, low or no power,
-  labs waiting for packs, and what requester chests lack, in lines. Example: `./fh call shortages --args '{"surface":"nauvis"}'`
+  labs waiting for packs, and what requester chests lack, in lines.
 - `damage_log {position?, radius?, surface?}`: what hit our entities there (alive or destroyed), each source's position
   and facing, for hits our force saw. Empty ground says if its chunk was never charted, is charted and out of sight
   (with our last sight of it), or is in sight. Example: `./fh call damage_log --args '{"position":{"x":67,"y":-170},"radius":16}'`
