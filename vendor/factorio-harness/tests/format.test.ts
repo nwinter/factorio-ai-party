@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatCompact, actionHelp, paginate, finalLine } from '../host/format.js';
+import { formatCompact, actionHelp, paginate, finalLine, shortClock } from '../host/format.js';
 
 test('fh help ACTION: one action in about 1 KB; an unknown name lists the actions it resembles', () => {
   const describe = {actions:{craft:{recipe:'recipe name', count:'1..1000 (default 1)', returns:'queued, '+'x'.repeat(400), note:'n'},
@@ -151,4 +151,14 @@ test('build dry-run pockets appear on the final warning line', () => {
     planned_boundary:[{index:1,name:'accumulator',position:{x:3,y:0},tiles:'2,-1..3,0'}]}]}};
   assert.match(finalLine(reply) ?? '', /warning: walkable pockets:.*accumulator/);
   assert.match(finalLine(reply) ?? '', /2,-1\.\.3,0/);
+});
+test('compact output shortens the clock line, game time first; JSON keeps it (d17 lean C3)', () => {
+  const long = 'game 98h40m; +1s since your last request, character idle 0s of it (10%, 0s of that in sleep); hand crafting 0s queued; deadline in 3h43m';
+  assert.equal(shortClock(long), 'game 98h40m; +1s, idle 0s (10%, 0s in sleep); deadline in 3h43m');
+  assert.equal(shortClock('game 98h25m; +2s since your last request, character idle 2s of it (100%); hand crafting 0s queued'), 'game 98h25m; +2s, idle 2s (100%)');
+  assert.equal(shortClock('game 99h29m; +2s since your last request, character idle 0s of it (0%), waiting on hand crafting 2s of it (100%); hand crafting 1m15s queued; deadline in 2h54m; game speed 55 ticks/s, 91% of normal'),
+    'game 99h29m; +2s, idle 0s (0%), waiting on hand crafting 2s (100%); hand crafting 1m15s queued; deadline in 2h54m; game speed 55 ticks/s, 91% of normal');
+  assert.equal(shortClock('game 1s'), 'game 1s', 'another shape as it is');
+  const text = formatCompact({ ok: true, id: 'a', result: { outcome: 'arrived', clock: long } });
+  assert.equal(text, 'outcome: arrived\nclock: "game 98h40m; +1s, idle 0s (10%, 0s in sleep); deadline in 3h43m"\n');
 });

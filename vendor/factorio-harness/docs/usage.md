@@ -4569,7 +4569,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   2 minutes (shift07: Sonnet's back-to-back waits, with a few seconds of its plan between them, read as busy for 70
   minutes; Grok's and Muse's short walks and Gemini's transfers never counted under a 20 s-in-one-go rule). The clock
   line on every reply uses the same definition (one `busy()`): `character idle 5m00s of it (100%, 4m30s of that in
-  wait_ticks)`.
+  wait_ticks)`. Compact output shows that line shorter (host/format.ts shortClock, d17): `game 98h40m; +5m00s, idle
+  5m00s (100%, 4m30s in wait_ticks)`, hand crafting only when some is queued, then the deadline and a slow game as
+  they are; JSON keeps the runtime's line, which tools/idle_report.py, handover.py and analysis/sleep_share.py read.
   `alive`, `action`, `action_until_s`, `queue {state: none|empty|paused|running, steps}`, `sleeping_s`, `sleep_left_s`,
   `unread_chat`, `unread_mentions` (tells included), `unread_tells`, `unread_board`, `last_request_s`, `stand_ended
   {s_ago, why}` and `counted` (args `minutes`, default and at most 10): game actions, those with no effect, reads,

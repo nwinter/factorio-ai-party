@@ -63,7 +63,7 @@
   groups and idle or starved machines in your fresh claims, and requests and tells to you unanswered.
 - A queue plan's rounds (refuel, rearm) keep going while you think; `wait_until` waits for one condition up to its
   timeout; `./fh sleep` and `./fh wait --until` leave the queue running.
-- The clock line counts a wait or sleep as idle: `character idle 5m00s of it (100%, 4m30s of that in wait_ticks)`.
+- The clock line counts a wait or sleep as idle: `game 98h40m; +5m00s, idle 5m00s (100%, 4m30s in wait_ticks)`.
   The operator's idle nudge uses the same count.
 - Raw `fh call wait_until` accepts word-form `until` and `ticks`/`timeout_ticks` aliases; queue errors name the step path. Aboard, queues accept allowed remote steps, `configure {platform}` works, and `observe` reports surroundings with `player.body:"none"`.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
