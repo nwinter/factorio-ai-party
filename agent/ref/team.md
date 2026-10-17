@@ -96,7 +96,13 @@
 - A belt carrying items destroyed: the owner of the claim it lies in (else the nearest agent there) gets a waking tell
   with each belt's position and direction and what it carried.
 - A long belt or pipe line (8+ tiles) cut where ours died is a team alert (`line_cut`): the cut tiles, what destroyed
-  them, how far the line runs either side and what it carried, until a belt or pipe stands there again.
+  them, how far the line runs either side and what it carried, until a belt or pipe stands there again. Something else
+  standing on a cut tile is named. A belt line blocked by what stands on its tile is the same alert: a build (yours or a
+  player's; robots' builds are not seen) that leaves a belt facing into a tile with no belt but another entity, and a
+  belt within 2 tiles past it facing the same way, e.g. "belt line blocked at (353.5,95.5): medium-electric-pole
+  (353.5,95.5) stands where the belt's next tile should be (placed by sonnet); the belt runs 6 tiles from (359.5,95.5)
+  to (354.5,95.5) and stops there, holding coal 42; the line goes on from (352.5,95.5)", after 30 s, until the entity
+  or either belt is gone or a belt stands there. An inserter there is not counted.
 - `board_progress {owner?, id?}`: each owned open task, request and project with the game's evidence since its last
   10-minute check (entities built in its area or its owner's claims, what it needs reaching the count, shipment lines
   of platforms it names, board edits), the age of its last change, the owner's repeated failures and no-effect
