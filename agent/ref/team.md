@@ -93,3 +93,21 @@
   hours reads `stale`. At most 150 active.
 - A belt carrying items destroyed: the owner of the claim it lies in (else the nearest agent there) gets a waking tell
   with each belt's position and direction and what it carried.
+- `board_progress {owner?, id?}`: each owned open task, request and project with the game's evidence since its last
+  10-minute check (entities built in its area or its owner's claims, what it needs reaching the count, shipment lines
+  of platforms it names, board edits), the age of its last change, the owner's repeated failures and no-effect
+  actions, and its state: progress, waiting (owner in a wait or running queue), unchanged, stalled (unchanged across 2
+  checks, with the 20-minute rule). Each check also puts one line in the owner's reply.
+- `board_critical`: blocked items, those the team plan names (#id) first, then by how many open items wait on them,
+  with what each waits on; and the agents standing or waiting now.
+- Lessons: `lesson_add`/`lesson_edit` take `impact` (0..5) and `prevented`, `control` (what must change), `check` (a
+  wait_until condition: the lesson reads unresolved until it holds) and `failure` (its failure's words). Matched lessons
+  rank by score (impact, keys, verifications, recency); before a launch, platform_schedule, construct or load_silo (their
+  dry runs, preflight and queued steps too) the best one shows with its score and check. An action key and the names
+  both must match. `lesson_review`: counts (stale, unresolved, superseded, duplicates, shown and followed by their
+  failure or not).
+- `ground_rule_add {text, lessons, exceptions?, supersedes?}`, `ground_rule_retire {id}`, `ground_rules`: up to 8 team
+  rules, shown once at each shift start in team.shift with their lessons' evidence.
+- `board_focus {id, step, blocker?, verify?}`: your current item and step, blocker and next verification in one line,
+  shown on status and in your team block every 10 game minutes; `board_focus {agent?}` reads teammates' focus lines.
+  A focused project step not done across 2 checks reads so here and in board_progress.

@@ -142,6 +142,8 @@ return function(api)
     local key = reason_key(action, reason)
     local b = bucket(rec(index), minute())
     b.f[key] = (b.f[key] or 0) + 1
+    -- (d17 batch15 D4) a failure after a lesson naming it was shown (lessonbook.lua)
+    if api.on_failed then pcall(api.on_failed, index, action, reason) end
     local s = api.state()
     s.selfview_team = s.selfview_team or {}
     local id = math.floor(game.tick / TEAM_BUCKET)
@@ -156,6 +158,20 @@ return function(api)
     row.n = row.n + 1
     local who = api.name and api.name(index) or tostring(index)
     row.by[who] = (row.by[who] or 0) + 1
+  end
+  -- (d17 batch15 C1, progress.lua) an agent's failures since tick by key (action and reason), those failing 2+ times.
+  function M.repeated(index, since)
+    local a = api.state().selfview and api.state().selfview[index]
+    if not a then return {} end
+    local from = math.floor(since / MINUTE)
+    local sum = {}
+    for k, b in pairs(a.m) do
+      if k >= from then for key, n in pairs(b.f or {}) do sum[key] = (sum[key] or 0) + n end end
+    end
+    local out = {}
+    for key, n in pairs(sum) do if n >= 2 then out[#out+1] = {key=key, n=n} end end
+    table.sort(out, function(x, y) return x.n > y.n end)
+    return out
   end
   -- A failed request (runtime.lua dispatch): not peeks, operators or directors.
   function M.dispatch_failed(request, err)
