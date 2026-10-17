@@ -82,7 +82,7 @@
   `place_ghosts_entries`; a tunnel runs to the next underground of its name facing the same way (one crossing it is
   passed over), and `tile_ghosts_held` names tile ghosts counted as floor that the hub's foundation rules never build; `paste {preserve_existing_settings_and_wires: true}` adds only what is missing.
 - `platform_rename {platform, name}` renames one, listing queues, orders, plans and board items still naming the old
-  name. `platform_plan {platform, salvage: 60}` lists foundation tiles to take up from the edge in, as deconstruct areas.
+  name. `platform_plan {platform, salvage: 60}` lists foundation tiles to take up from the edge in, as deconstruct areas (never one under an underground belt or pipe span, or at its ends).
   `load_silo {rockets: 3, launch: true, ...}` queues the load for 3 rockets. With automatic requests on, load_silo and
   preflight name the platforms' open requests a rocket may go to. A launch waiting while its platform leaves is told
   (`launch:` alerts); a rocket in flight holds the platform until its pod lands.
