@@ -56,7 +56,7 @@ return function(api)
         local d, q = closest(route, m)
         if m.attack then
           if d <= m.range + 16 then
-            rows[#rows+1] = {d=d, q=q, range=m.range, over=d - m.range, attack=true, x=m.x, y=m.y,
+            rows[#rows+1] = {d=d, q=q, range=m.range, over=d - m.range, attack=true, x=m.x, y=m.y, name=m.name, group=m.group, ago=m.ago, size=m.size,
               text=m.group and string.format('%s at %s, seen now (%d tiles): closest pass %.0f tiles at %s', m.name, at(m), m.range, d, at(q))
                 or string.format('area under attack now round %s (%d tiles): closest pass %.0f tiles at %s', at(m), m.range, d, at(q))}
           end
@@ -74,6 +74,61 @@ return function(api)
     table.sort(rows, function(a, b) if a.over ~= b.over then return a.over < b.over end return a.text < b.text end)
     return rows
   end
+  -- Where the route is inside each reach it enters (C2, Opus 22:50: two deaths on long walks past a nest; C4, Haiku
+  -- 23:40: died walking into an attack the alerts showed): every worm and spawner whose own reach, and every area under
+  -- attack now and enemy group seen now (24 tiles) the planned route comes into, with where it goes in and comes out
+  -- (read every tile along the route) and how near it passes; the deepest first, at most ENTERS named.
+  local ENTERS = 32
+  local function enters(route, rows)
+    local out = {}
+    for _, r in ipairs(rows) do
+      if r.d < r.range then
+        -- each leg's part inside the disc: where the segment meets the circle (|a + t(b - a) - r| = range, 0..1)
+        local first, last, tiles = nil, nil, 0
+        local R2 = r.range * r.range
+        for i = 1, #route - 1 do
+          local a, b = route[i], route[i + 1]
+          local dx, dy = b.x - a.x, b.y - a.y
+          local fx, fy = a.x - r.x, a.y - r.y
+          local A2, B2, C2 = dx * dx + dy * dy, 2 * (fx * dx + fy * dy), fx * fx + fy * fy - R2
+          local t0, t1
+          if A2 < 1e-9 then
+            if C2 < 0 then t0, t1 = 0, 1 end
+          else
+            local disc = B2 * B2 - 4 * A2 * C2
+            if disc > 0 then
+              local sq = math.sqrt(disc)
+              t0, t1 = math.max(0, (-B2 - sq) / (2 * A2)), math.min(1, (-B2 + sq) / (2 * A2))
+              if t0 >= t1 then t0, t1 = nil, nil end
+            end
+          end
+          if t0 then
+            local p0, p1 = {x=a.x + dx * t0, y=a.y + dy * t0}, {x=a.x + dx * t1, y=a.y + dy * t1}
+            first = first or p0; last = p1
+            tiles = tiles + (t1 - t0) * math.sqrt(A2)
+          end
+        end
+        if first then
+          local what
+          if r.attack then
+            what = r.group and string.format('%s at %s, seen now (%d tiles)', r.name, at(r), r.range)
+              or string.format('%s at %s, under attack now (last hit %d s ago%s; %d tiles round it)', r.name or 'attack', at(r), r.ago or 0,
+                r.size and string.format(', %d attackers seen', r.size) or '', r.range)
+          else
+            what = string.format('%s %s (%s %d)', r.name, at(r), r.spawner and 'its units come' or 'range', r.range)
+          end
+          out[#out+1] = {deep=r.range - r.d, text=string.format('%s: the route is inside it from %s to %s, about %.0f tiles, %.0f tiles from it at its nearest',
+            what, at(first), at(last), tiles, r.d)}
+        end
+      end
+    end
+    table.sort(out, function(x, y) return x.deep > y.deep end)
+    local list = {}
+    for i = 1, math.min(ENTERS, #out) do list[i] = out[i].text end
+    if #out > ENTERS then list[#list+1] = (#out - ENTERS) .. ' more' end
+    return #list > 0 and list or nil
+  end
+  M.enters = enters
   -- The worms on the route whose range is more than N (avoid_enemies {distance: N}).
   local function under(rows, mode)
     if not (mode and mode.distance) then return nil end
@@ -178,6 +233,8 @@ return function(api)
     if #rows > SHOW then list[#list+1] = (#rows - SHOW) .. ' more' end
     out.enemies = #list > 0 and list or nil
     out.enemies_none = #rows == 0 and 'no worm, spawner, area under attack or enemy group seen now within reach of the route' or nil
+    out.enters = enters(route, rows)
+    if not out.enters and #rows > 0 then out.enters_none = 'the planned route comes into no worm\'s or spawner\'s reach, and within 24 tiles of no attack or enemy group seen now' end
     out.under_range = under(rows, mode)
     if unread > 0 then
       out.unread_chunks = string.format('%d chunks along the route not read (%d a call; the farthest from you): their worms and spawners are not listed; the chunks read are kept a minute, so the same dry run again reads the next ones', unread, MAX_CHUNKS)

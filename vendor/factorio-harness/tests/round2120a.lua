@@ -174,7 +174,7 @@ haiku('stop')
 -- An area under attack now (threat.lua's incident, last hit within 30 s) counts as well.
 storage.agent_harness.damage={['nauvis:0,-1']={id=1548,at={x=-58,y=-4},first=tick,last=tick,hits=3,damage=90,surface='nauvis',size=2,kinds={['small-biter']=2}}}
 r=haiku('rearm',{surface=true,below=5})
-eq(r.places,1); eq(#r.left_out,3); eq(r.left_out[2],'gun-turret (-60,0) is within 24 tiles of attack #1548 at (-58,-4), an area under attack now (last hit 0s ago, 2 attackers seen) (4.5 tiles from it)')
+eq(r.places,1); eq(#r.left_out,3); eq(r.left_out[2],'gun-turret (-60,0) is within 24 tiles of attack #1548 at (-58,-4), an area under attack now (last hit 0s ago, 2 attackers seen) (4.5 tiles from it); it clears in about 30 s (tick 1800) unless hit again (an area counts as under attack 30 s after its last hit)')
 storage.agent_harness.damage={}
 haiku('stop')
 

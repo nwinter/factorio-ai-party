@@ -2570,7 +2570,8 @@ fails(function() call('observe',{scope='scan',fields={'bogus'}}) end,'unknown fi
   fails(function() call('observe',{scope='nearest',type={'boiler','spawners'}}) end,'unknown entity type spawners; types like it: unit-spawner')
   fails(function() call('observe',{scope='scan',area=area,type='gizmo'}) end,'unknown entity type gizmo; types are names such as assembling-machine')
   eq(call('observe',{scope='scan',area=area,type='mining-drill'}).total,0,'a known type with nothing there: an empty result')
-  fails(function() call('inspect',{area=area,types={'electric-mining-drill'}}) end,'unknown entity type electric-mining-drill: it is an entity name')
+  -- inspect reads an entity name in types as a name (d16 batch10 C3): none there is said as for that name
+  fails(function() call('inspect',{area=area,types={'electric-mining-drill'}}) end,'no electric-mining-drill of ours with its centre in (42,0)-(48,7)')
   prototypes.entity['electric-mining-drill']=nil
 end)()
 -- positions picks just the entities on those tiles; views reject arguments they would ignore.
@@ -4261,7 +4262,10 @@ end)()
   fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}}) end,'no chest or machine of ours with its centre in (0,0)-(64,10) in a chunk our force sees now (1 in chunks it does not')
   list={}
   for i=1,65 do list[i]=chest(i%30+0.5,math.floor(i/30)+0.5,{}) end
-  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=31,y=3}}}) end,'65 entities in the area; at most 64')
+  -- over the 64 rows: counts by name instead (d16 batch10 C3)
+  local over=call('inspect',{area={left_top={x=0,y=0},right_bottom={x=31,y=3}}})
+  eq(over.count,65); eq(over.entities,nil); eq(over.by_name[1].count,65)
+  assert(over.note:find('65 entities in the area, over the 64 listed one by one: counts by name instead',1,true),over.note)
   p.surface.find_entities_filtered,p.position,p.force.is_chunk_visible=find,at,vis
   for k,v in pairs(inv_defs) do defines.inventory[k]=v end
 end)()

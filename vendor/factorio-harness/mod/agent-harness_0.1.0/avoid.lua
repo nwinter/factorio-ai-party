@@ -65,6 +65,7 @@ return function(api)
     if mode.distance then
       return string.format('worms and spawners (%g tiles from each; their reach not counted) and areas under attack now (%d tiles)', mode.distance, M.ATTACK_R)
     end
+    if not mode.attacks then return string.format('worms (range + %g) and spawners (%d tiles + %g)', mode.pad, M.SPAWNER_REACH, mode.pad) end
     return string.format('worms (range + %g), spawners (%d tiles + %g) and areas under attack now (%d tiles + %g)', mode.pad, M.SPAWNER_REACH, mode.pad,
       M.ATTACK_R, mode.pad)
   end
@@ -613,6 +614,45 @@ return function(api)
     end
     return skip
   end
+  -- The shortest way out of the worms and spawners whose reach (with the margin) holds here, when the goal lies
+  -- outside them (C2, Opus 22:50: a walk begun 15 tiles from a big worm went west along it, since a nest holding the
+  -- start was left out of the plan, and ended no_safe_route at 18 health; he died): of 32 directions, the nearest point
+  -- outside every such disc, the one nearer the goal on a tie (2 tiles). nil when here is in none, or the goal is in one.
+  function M.exit_point(here, final, blobs)
+    local inside = {}
+    for _, bl in ipairs(blobs) do
+      for _, m in ipairs(bl.members) do
+        if not m.attack and dist(m, here) < m.r then
+          if dist(m, final) < m.r then return nil end
+          inside[#inside+1] = m
+        end
+      end
+    end
+    if #inside == 0 then return nil end
+    -- (only the discs a 160-tile ray can meet; 2-tile steps: at most 32 x 80 points)
+    local discs = {}
+    for _, bl in ipairs(blobs) do for _, m in ipairs(bl.members) do if not m.attack and dist(m, here) < m.r + 162 then discs[#discs+1] = m end end end
+    local best, bs, bg
+    for k = 0, 31 do
+      local ang = 2 * math.pi * k / 32
+      local ux, uy = math.cos(ang), math.sin(ang)
+      for step = 2, 160, 2 do
+        local q = {x=here.x + ux * step, y=here.y + uy * step}
+        local clear = true
+        for _, m in ipairs(discs) do if dist(q, m) < m.r + 1 then clear = false; break end end
+        if clear then
+          local g = dist(q, final)
+          if not best or step < bs - 2 or (step <= bs + 2 and g < bg) then best, bs, bg = q, step, g end
+          break
+        end
+      end
+    end
+    if not best then return nil end
+    local names = {}
+    for i, m in ipairs(inside) do if i <= 3 then names[i] = string.format('%s %s (%.0f tiles; %s %g)', m.name, at(m), dist(m, here), m.spawner and 'sight' or 'range', m.range) end end
+    return {x=math.floor(best.x) + 0.5, y=math.floor(best.y) + 0.5}, string.format('the walk began inside the reach of %s%s: it went out the shortest way first, %d tiles to (%g,%g), then on',
+      table.concat(names, ', '), #inside > 3 and string.format(' and %d more', #inside - 3) or '', bs, math.floor(best.x) + 0.5, math.floor(best.y) + 0.5)
+  end
   local function passed(f, m, d)
     f.passed = f.passed or {}
     local k = m.name .. at(m)
@@ -646,6 +686,20 @@ return function(api)
     if not any and f.mode.attacks then any = #M.attack_discs(surface, f.mode) > 0 end
     if not any then return true end
     local blobs = M.blobs(surface, near, f.mode)
+    -- Begun inside a worm's or spawner's reach (the margin with it): out the shortest way first, then on (C2).
+    if not f.exit_done and not f.mode.strict and not nav.vehicle then
+      f.exit_done = true
+      local q, text = M.exit_point(here, final, blobs)
+      if q then
+        f.exit = text
+        local vias = {q, {x=final.x, y=final.y}}
+        if nav.leg then for _, v in ipairs(f.vias or {}) do vias[#vias+1] = v end end
+        f.vias = vias
+        nav.found = nil
+        api.leg(p, nav)
+        return false
+      end
+    end
     local skip = fit(blobs, here, final, f)
     local bi, m, d = M.crossing(pts, blobs, skip)
     if not bi then
@@ -920,8 +974,12 @@ return function(api)
     if m.group then
       return string.format('%s %s is within %g tiles of an %s at %s, seen now (%.1f tiles from it)', label, at(goal), m.range, m.name, at(m), c.d)
     elseif m.attack then
-      return string.format('%s %s is within %g tiles of %s at %s, an area under attack now (last hit %ds ago%s) (%.1f tiles from it)', label, at(goal),
-        m.range, m.name, at(m), m.ago or 0, m.size and m.size > 0 and string.format(', %d attackers seen', m.size) or '', c.d)
+      -- when it clears (C4, Haiku 23:40: nine dry runs of recover waiting for it): an area counts as under attack until
+      -- ATTACK_ACTIVE ticks after its last hit
+      local left = math.max(0, math.ceil(M.ATTACK_ACTIVE / 60 - (m.ago or 0)))
+      return string.format('%s %s is within %g tiles of %s at %s, an area under attack now (last hit %ds ago%s) (%.1f tiles from it); it clears in about %d s (tick %d) unless hit again (an area counts as under attack %d s after its last hit)', label, at(goal),
+        m.range, m.name, at(m), m.ago or 0, m.size and m.size > 0 and string.format(', %d attackers seen', m.size) or '', c.d,
+        left, game.tick + left * 60, M.ATTACK_ACTIVE / 60)
     elseif m.spawner then
       return string.format('%s %s is within %g tiles of %s %s, its units\' reach (%.1f tiles from it)', label, at(goal), m.range, m.name, at(m), c.d)
     end
@@ -963,6 +1021,7 @@ return function(api)
       last.passed_within_margin = list
     end
     if f.why then last.why = f.why end
+    if f.exit then last.left_reach_first = f.exit end
     if nav.margin_probe then last.smaller_margins=nav.margin_probe.result or {line="smaller-margin check interrupted; no complete route verified"} end
     if nav.attack_replan then last.replanned = nav.attack_replan end
   end

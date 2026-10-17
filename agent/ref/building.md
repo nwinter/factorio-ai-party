@@ -109,3 +109,5 @@
   gone names the entity already standing there.
 - `blueprint_save` and `blueprint_capture` take `surface` (a planet) to capture an area there from anywhere; entity
   ghosts are saved at their positions (and tile ghosts with `tiles: true`), counted in `ghosts`.
+- `construct` walks round worms and spawners (not areas under attack unless `avoid_enemies: true`) and leaves out a
+  ghost inside an enemy's reach (`left_out`; `unsafe_goal: true` builds it).

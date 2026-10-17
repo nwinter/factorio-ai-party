@@ -5930,3 +5930,50 @@ fh watch    # deploy on every change
     hand, ends when the silo is next read.
   On the copy, Fulgora's auto silo took 50 magazines to Meridian by a walking load and launched; its requests came back
   on. A 5-rocket split paused when its first step ran; cancelling the queue switched the requests back on.
+- `power {by_cause: true, surface?}` (C1, Opus 22:50: roboports took 55 of 81 MW during the coal shortage) gives:
+  - each electric network on the surface ranked by what draws, by entity name as the electric network GUI lists
+    consumption (last 5 s), against what it makes;
+  - when roboports draw (or `robots: true`), per logistic network:
+    - logistic robots flying, idle, charging and waiting to charge, and construction robots busy;
+    - what one flying robot draws: its speed with our research times its energy a tile, plus its energy a tick;
+    - so what the flying ones draw in all;
+    - a sample of their trips (tiles through their orders, and where they go: requesters, storage, providers);
+    - the requesters with the most on its way.
+  On the copy, Nauvis network 2 drew 56.3 MW, roboport 43.1 MW (77%). 759 of 3145 logistic robots were flying at about
+  44 kW each (8.25 tiles/s with the +175% speed research), about 34 MW. Trips averaged 74 tiles (longest 319), 89% to
+  requesters, led by iron plate. 54 ms in the container cold (about 11 ms on n), 8 ms warm.
+- move_to deaths (C2, Opus 22:50). What the journal shows:
+  - 95h31: `move_to (-22,545)` from (-290,-302) was refused (a via point in a worm's range). The `construct` sent with
+    it over (-32..-12,535..555) walked there itself. Construct's walk had no enemy checks: it walked straight through
+    big-worm (-282,-190)'s range, and Opus died there.
+  - 95h43: a construct over (-262..-242,-168..-148) walked Opus to (-247,-156), 15 tiles from a big worm. The next
+    move_to (-222,-132) began inside that reach. avoid.lua leaves a nest holding the start out of the plan, so the legs
+    went west along the worm to (-255,-157), ended `no_safe_route` at 18 health, and he died.
+  The changes:
+  - construct walks with move_to's enemy checks, by default worms and spawners only: legs go round them. A ghost
+    inside a worm's or spawner's own reach is left out (`left_out` names them; `unsafe_goal: true` builds them). Areas
+    under attack are left out of construct's default because building defenses during an attack is the point; on the
+    copy, a construct begun inside attack #4338 under move_to's margins found no leg out.
+  - A walk begun inside a worm's or spawner's reach (with its margin) whose goal is outside goes out the shortest way
+    first, then plans on (`last.left_reach_first`).
+  - The dry run's (move_to, tours) `enters` names every worm and spawner whose reach the planned route enters, and
+    every area under attack or enemy group seen now within 24 tiles of it (C4), with where the route goes in and comes
+    out (up to 32, deepest first).
+  On the copy:
+  - From death 2's spot, main's harness walked west toward the worm first and arrived at 88 health; this batch went
+    straight out and arrived at 300.
+  - A construct from (-205,-146) to a ghost at (-310,-160): under main Opus walked straight into the nest and died;
+    with this batch he went round to the south at 300 health and built it.
+  - The dry run to (-221,-147) names `attack #4338 ... (last hit 0 s ago, 19 attackers seen; 24 tiles round it): the
+    route is inside it from (-214,-136) to (-221,-147)`.
+- `inspect` over an area (C3, Gemini 22:50: six "N entities in the area; at most 64" refusals):
+  - over 64, it gives counts by name (type, states, where they lie) instead;
+  - `name` (one or a list) now filters in area mode (it was ignored: `names: ["recycler"]` counted every machine);
+  - an entity name given in `types` reads as a name (four refusals: fast-inserter, recycler, ...).
+  On the copy: 231 logistic chests as 4 rows, recyclers alone by name.
+- Haiku 23:40 (C4):
+  - recover's and every walk's attack line says when the area clears: `it clears in about 9 s (tick T) unless hit
+    again (an area counts as under attack 30 s after its last hit)`. Haiku ran recover's dry run 9 times waiting.
+  - A hand load into a silo with automatic requests on leads its short line with the setting: `blocked by the silo's
+    automatic requests (on): ...` (`blocked_by`). It used to say only that rocket_silo_rocket refused the item.
+  - `load_silo {auto_requests: false}` (Haiku tried it) switches them off and leaves them off before the load.
