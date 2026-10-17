@@ -11,7 +11,7 @@ Each topic, when to read it, and the commands it documents:
   `outpost` (one tour), `blueprint_save`, `blueprint_capture`, `blueprint_list`, `blueprint_place`, `blueprint_rename`,
   `blueprint_delete` (the team library); landfill, tiles, nuclear.
 - `circuits-settings`, when you wire, set up logistics or configure a machine: `circuit_set` (conditions, combinators),
-  `wire`, `configure` (recipe, modules, filters, priorities, quality), `requests` (logistic and personal).
+  `wire`, `circuit_audit` (networks across entities), `configure` (recipe, modules, filters, priorities, quality), `requests` (logistic and personal).
 - `movement-combat`, when a walk fails, enemies or turrets are involved, you drive or you died: `move_to` (reach, via,
   enemy margins, pockets), `retreat_guard`, `kite`, `recover` (your corpses), `turrets`, `rearm`, `artillery`,
   `shoot`, `use_item` (grenades, capsules), `equip` (gun and ammo slots), `vehicle` (enter, drive, remote),

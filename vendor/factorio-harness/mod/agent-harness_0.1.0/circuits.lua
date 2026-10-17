@@ -633,6 +633,8 @@ return function(api)
     end
     return lines
   end
+  -- One entity's circuit settings in a few words (circaudit.lua's network readback, d17 batch16 B3).
+  function M.short(e) local c = try(function() return M.read(e) end); return short_settings(c) end
   function M.read(e, cb)
     if cb == nil then cb = try(function() return e.get_control_behavior() end) end
     local wires, nets = wires_of(e)

@@ -14343,7 +14343,7 @@ function handlers.platform_defense(p,a) return M.platdefense.read(p,a) end
 -- One line a platform: where it is and what its departure waits on (space.lua M.gate; d17 batch15 A3, Grok).
 function handlers.platform_gate(p,a) return space.gate(p,a) end
 -- A platform's misleading circuit readings (circaudit.lua; d17 batch14 A7b, Sol).
-M.circaudit=require('circaudit'){platform=function(p,name) return space.platform(p,name) end}
+M.circaudit=require('circaudit'){platform=function(p,name) return space.platform(p,name) end,circuit_short=function(e) return M.circuits.short(e) end}
 function handlers.circuit_audit(p,a) return M.circaudit.read(p,a) end
 -- Each ghost near a point or in an area: what places it and whether robots can build it (ghostlist.lua; A10, Muse).
 M.ghostlist=require('ghostlist'){position=position,distance=distance,integer=integer}
