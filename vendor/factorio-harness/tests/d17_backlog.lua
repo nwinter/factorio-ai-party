@@ -34,3 +34,38 @@ do
   game=nil
   print('d17_backlog #569 turret ghost targeting kept: ok')
 end
+
+-- #653 (Sol): fuel by item request into a burner's fuel slots (partial stacks of it first, then empty ones), filled by robots;
+-- an ingredient is refused, naming what brings it.
+do
+  _G.defines={inventory={turret_ammo=7,fuel=1}}
+  _G.prototypes={item={['solid-fuel']={type='item',fuel_value=12e6,stack_size=50},['iron-plate']={type='item',stack_size=100}}}
+  local made
+  local slots={{valid_for_read=true,name='solid-fuel',count=45},{valid_for_read=false}}
+  local inv={index=1}
+  for i,s in ipairs(slots) do inv[i]=s end
+  local e={valid=true,name='heating-tower',type='reactor',position={x=-57.5,y=98.5},force='player',
+    get_fuel_inventory=function() return inv end,get_inventory=function() return nil end,
+    surface={create_entity=function(a) made=a; return {valid=true} end}}
+  local D=dofile('mod/agent-harness_0.1.0/deliver.lua'){carrier=function() return 'construction robots of logistic network 63 bring them' end}
+  local row=D.deliver_one({},e,{['solid-fuel']=20,['iron-plate']=5})
+  eq(row.requested,'solid-fuel*20')
+  local rows=made.modules[1].items.in_inventory
+  eq(rows[1].stack,0); eq(rows[1].count,5,'the partial stack first'); eq(rows[2].stack,1); eq(rows[2].count,15)
+  assert(row.refused and row.refused[1]:find('iron-plate is neither fuel nor ammunition',1,true),row.refused and row.refused[1])
+  defines=nil; prototypes=nil
+  print('d17_backlog #653 deliver by item request: ok')
+end
+
+-- #818 (Sol 105h16): a recipe that gives back some of an ingredient (crushing returns a chunk 1 time in 5) needs it net.
+do
+  _G.prototypes={recipe={carbon={name='carbon',energy=2,ingredients={{name='carbonic-asteroid-chunk',amount=1}},
+    products={{name='carbon',amount=10},{name='carbonic-asteroid-chunk',amount=1,probability=0.2}}}},item={},entity={}}
+  local R=dofile('mod/agent-harness_0.1.0/ratechain.lua'){}
+  local plan=R.plan({},'carbon',100,{recipes={}},function() return 0 end)
+  local chunk
+  for _,st in ipairs(plan.steps) do if st.item=='carbonic-asteroid-chunk' then chunk=st end end
+  eq(chunk.need_per_min,8,'10 crafts a minute, each net 0.8 chunk')
+  prototypes=nil
+  print('d17_backlog #818 returned ingredients net: ok')
+end

@@ -94,7 +94,10 @@ return function(api)
           local crafts = rate / out
           for _, ing in ipairs(try(function() return c.recipe.ingredients end) or {}) do
             local amount = ing.amount or (((ing.amount_min or 0) + (ing.amount_max or 0)) / 2)
-            visit(ing.name, crafts * amount, depth + 1, path)
+            -- (backlog #818, Sol 105h16: asteroid crushing returns a chunk 1 time in 5; bottleneck needed 523/min of
+            -- carbonic chunks against 566/min of machines) net of what the same recipe gives back of it
+            amount = amount - per_craft(c.recipe, ing.name, 0)
+            if amount > 0 then visit(ing.name, crafts * amount, depth + 1, path) end
           end
         end
       end

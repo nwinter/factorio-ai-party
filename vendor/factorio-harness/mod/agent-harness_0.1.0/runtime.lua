@@ -1905,6 +1905,8 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.progress and M.progress.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.demolishers and M.demolishers.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.deliver and M.deliver.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.dependency and M.dependency.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ghostlist and M.ghostlist.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.silo and M.silo.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.rocketload and M.rocketload.schema or {}) do description.actions[name]=schema end
@@ -11324,6 +11326,13 @@ handlers.placements=M.shore.handlers.placements
 M.details=require('details'){}
 -- A machine's modules in one call (configure modules; Astra and Gemini, shift12 15:10).
 M.modules=require('modules'){out_of_reach=function(p,e) return M.out_of_reach(p,e) end}
+-- Fuel and ammunition by item request, filled by robots (deliver.lua; backlog #653, Sol).
+M.deliver=require('deliver'){carrier=function(e,w) return M.modules.carrier(e,w) end,remote_entity=remote_entity,on_surface=function(p,name) return M.on_surface(p,name) end}
+function handlers.deliver(p,a) return M.deliver.handler(p,a) end
+-- An item and its recipe's ingredients joined: rates, stock, freight on the way, rocket loads (dependency.lua; #818).
+M.dependency=require('dependency'){total=function(force,surface,item) local ok,r=pcall(M.stock_planet_row,{force=force},surface,item); return ok and r and r.total or 0 end,
+  in_flight=function(force,to) return M.pods and M.pods.in_flight(force,to) end,pads=function(planet,force) return M.freight.pads(planet,force) end}
+function handlers.dependency(p,a) return M.dependency.read(p,a) end
 -- Gleba farming reads and burner fuel (farm.lua).
 M.farm=require('farm'){}
 M.drill_sites=require('drill_sites'){state=state,integer=integer,entity=remote_entity,on_surface=function(p,name) return M.on_surface(p,name) end}
@@ -13317,7 +13326,7 @@ function handlers.wait_until(p,a)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
-local passive={reminder_add=true,reminder_edit=true,reminder_remove=true,reminder_ack=true,reminder_snooze=true,reminders=true,retreat_guard=true,order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,chronicle=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
+local passive={reminder_add=true,reminder_edit=true,reminder_remove=true,reminder_ack=true,reminder_snooze=true,reminders=true,retreat_guard=true,order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,chronicle=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true,deliver=true}
 -- circuit_set and wire (circuits.lua) leave the character and its queue alone, as circuit did.
 passive.circuit_set=true; passive.wire=true
 -- Remote platform and hub settings (A0, Sol 01:59: min_payload {platforms, set} paused the body queue's running
@@ -13338,6 +13347,7 @@ reads.platform_defense=true
 reads.circuit_audit=true
 reads.platform_gate=true
 reads.demolishers=true
+reads.dependency=true
 reads.shipment=true
 reads.board_progress=true
 reads.board_critical=true

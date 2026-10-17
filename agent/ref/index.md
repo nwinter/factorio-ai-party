@@ -3,7 +3,7 @@
 `./fh help TOPIC` prints a topic; `./fh help ACTION` one command's arguments.
 
 - `moving-items`, items by hand: `transfer`, `collect`, `feed`, `refuel`, `pickup`, `mine`, `rotate`, `repair`,
-  `inventory`, `craft`, `cancel_craft`.
+  `inventory`, `craft`, `cancel_craft`, `deliver`.
 - `building`, placing and removing (landfill, tiles, nuclear): `build`, `place_ghosts`, `construct`, `ghosts`,
   `deconstruct`, `upgrade`, `paste`, `placements`, `nearest_water`, `conflicts`, `build_path`, `grid`, `pole_route`,
   `belt_route`, `rail_route`, `train_stop`, `train`, `clear_cliffs`, `heat_budget`, `outpost`, `blueprint_save`,
@@ -13,7 +13,7 @@
   `rearm`, `artillery`, `shoot`, `use_item`, `equip`, `vehicle`, `equipment`.
 - `analysis`, factory reads, the factory digest: `progress`, `research`, `research done`, `science`, `supply`,
   `bottleneck`, `trace`, `labs`, `inspect`, `ports`, `power`, `fuel_budget`, `game_alerts`, `belt_gaps`, `pipe_gaps`,
-  `danger`, `drill_sites`, `ores`, `stock`, `reservations`, `construction_robots`, `shortages`, `damage_log`.
+  `danger`, `drill_sites`, `ores`, `stock`, `reservations`, `construction_robots`, `shortages`, `damage_log`, `dependency`.
 - `waits-queues`, waits, queues, standing orders, urgent wakes, slow game, harness updates: `wait_until`, `sleep
   --until`, `wait_ticks`, `sleep_check`, `queue_submit`, `queue_status`, `queue_edit`, `queue_cancel`, `queue_pause`,
   `queue_repeat`, `plan save`, `plan run`, `plan list`, `stop`, `order_set`, `orders`, `order_remove`, `orders_pause`,

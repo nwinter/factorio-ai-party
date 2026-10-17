@@ -135,3 +135,7 @@
   and spoil within 5 min; the production statistics do not count spoiling.
 - The power line (and the science line's headroom) splits the rating: generators with no steam, fuel or plasma in now
   are named, and headroom is against what can supply now; low-power machines are counted beside it.
+- `dependency {item, surface?}`: the item and each ingredient of its recipe there: made and used a minute, stock and
+  minutes left, pods coming down and platforms carrying it to a stop there, a rocket's load by weight; missing, short
+  or ok each; feasible, sustained and the first unsatisfied.
+- bottleneck {item, per_min} counts an ingredient net of what its recipe gives back (asteroid crushing).
