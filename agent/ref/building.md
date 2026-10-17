@@ -50,6 +50,9 @@
   Example: `./fh call construct --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":40,"y":30}}}' --wait`
 - `ghosts {position?, radius?, area?, name?, surface?}`: each ghost nearest first, the item that places it, and whether
   robots can build it (no construction area covers it, its network holds none, no idle robot); `page` for more.
+  `robot`: the robot in the air with an order on it (its place in that robot's queue, its charge, cargo and what holds
+  it up), or `no robot has an order on it`; the summary adds how many of the network's robots in the air are held up
+  and by what.
 - `deconstruct {area, tiles?, cancel?, dry_run?}`: marks for deconstruction. `tiles: ["landfill"]` marks built landfill
   and removes our landfill tile ghosts there (`tile_ghosts_removed`); `cancel: true` unmarks. It and its dry run count
   robots in flight apart (`flying_robots`: the game does not mark them) and read `heat_loss`: heat-network parts cut

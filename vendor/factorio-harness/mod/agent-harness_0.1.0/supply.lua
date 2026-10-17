@@ -943,6 +943,64 @@ return function(api)
     end
     return #lines > 0 and lines or nil
   end
+  -- What holds a short machine's input back before the shortage itself (d17 batch18 B1, Sol: artillery shells read
+  -- tungsten-starved while the input arm was off at a stock cap of 20 with 40 tungsten in its requester): an inserter
+  -- into it off by its circuit or logistic condition (the condition, what its source holds of the missing items), or a
+  -- requester chest an inserter takes from that asks for less of a missing item than one craft takes.
+  local function held_back(e, u, lacks)
+    if #lacks == 0 or u.lab then return nil end
+    local arms = {}
+    for _, f in ipairs(u.feeders or {}) do arms[#arms+1] = f.e end
+    for _, i in ipairs(u.into or {}) do arms[#arms+1] = i end
+    local need = {}
+    for _, ing in ipairs(u.recipe and u.recipe.ingredients or {}) do need[ing.name] = ing.amount end
+    local seen = {}
+    for _, i in ipairs(arms) do
+      if i.valid and not seen[i.unit_number] then
+        seen[i.unit_number] = true
+        if try(function() return i.status end) == (defines.entity_status or {}).disabled_by_control_behavior then return {arm=i} end
+        local src = try(function() return i.pickup_target end)
+        if src and src.valid and src.type == 'logistic-container' and try(function() return src.prototype.logistic_mode end) == 'requester' then
+          local secs = try(function() return src.get_logistic_sections() end)
+          for _, name in ipairs(lacks) do
+            local want, named = 0, false
+            for k = 1, secs and secs.sections_count or 0 do
+              local sec = try(function() return secs.get_section(k) end)
+              if sec and sec.active ~= false then
+                for _, fl in ipairs(try(function() return sec.filters end) or {}) do
+                  local v = fl.value
+                  if v and (type(v) == 'table' and v.name or v) == name then named = true; want = want + (fl.min or 0) * (try(function() return sec.multiplier end) or 1) end
+                end
+              end
+            end
+            if named and need[name] and want < need[name] then return {src=src, item=name, want=want, need=need[name]} end
+          end
+        end
+      end
+    end
+  end
+  -- Its words, for the worst only (the condition read costs a circuit read).
+  local function held_text(h, lacks)
+    if h.src then
+      return string.format('its requester %s %s asks for %d %s, one craft takes %d; it holds %d', h.src.name, at(h.src.position), h.want, h.item, h.need,
+        try(function() return h.src.get_item_count(h.item) end) or 0)
+    end
+    local i = h.arm
+    -- (an inserter off by its condition keeps the pickup target it had; the one at its pickup position then)
+    local src = try(function() return i.pickup_target end) or try(function()
+      for _, c in ipairs(i.surface.find_entities_filtered{position=i.pickup_position, limit=4}) do if c ~= i and c.type ~= 'character' then return c end end
+    end)
+    local holds = {}
+    if src and src.valid then
+      for _, name in ipairs(lacks) do
+        local n = try(function() return src.get_item_count(name) end) or 0
+        if n > 0 then holds[#holds+1] = n .. ' ' .. name end
+      end
+    end
+    local where = src and src.valid and string.format('%s %s holds %s', src.name, at(src.position), #holds > 0 and table.concat(holds, ', ') or 'none of ' .. table.concat(lacks, ', ')) or 'no source'
+    local why = api.state_text and try(api.state_text, i) or 'off by its circuit or logistic condition'
+    return string.format('input %s %s %s; its source %s', i.name, at(i.position), why, where)
+  end
   -- Machines by status (missing ingredients named), recipes, and the worst
   -- with positions: no power, then missing this item, other shortages,
   -- output full, low power, anything else not working.
@@ -951,7 +1009,7 @@ return function(api)
     -- by_name: the machines counted, by name (Astra, 06:19: a line naming only the worst three read as "7 AM2" with an
     -- electromagnetic plant among the makers; every crafter type counts: assemblers, furnaces, silos, and Space Age's
     -- electromagnetic plants, foundries, cryogenic plants, biochambers, crushers and recyclers, which are of those types).
-    local states, short, recipes, ranked, by_name = {}, {}, {}, {}, {}
+    local states, short, recipes, ranked, by_name, held_n = {}, {}, {}, {}, {}, 0
     for _, u in ipairs(list) do
       local e = u.e
       local status = api.status_name(e) or 'unknown'
@@ -963,8 +1021,10 @@ return function(api)
         for _, name in ipairs(lacks) do bump(short, 'missing ' .. name) end
         local lacks_it = false
         for _, name in ipairs(lacks) do if name == t.item then lacks_it = true end end
-        local rank = (status == 'no_power' or status == 'burnt_result_full') and 1 or (SHORT[status] and lacks_it) and 2 or SHORT[status] and 3 or FULL[status] and 4 or status == 'low_power' and 5 or 6
-        ranked[#ranked+1] = {u=u, e=e, status=status, lacks=lacks, rank=rank}
+        local held = SHORT[status] and held_back(e, u, lacks) or nil
+        if held then held_n = held_n + 1 end
+        local rank = (status == 'no_power' or status == 'burnt_result_full') and 1 or held and 1.5 or (SHORT[status] and lacks_it) and 2 or SHORT[status] and 3 or FULL[status] and 4 or status == 'low_power' and 5 or 6
+        ranked[#ranked+1] = {u=u, e=e, status=status, lacks=lacks, rank=rank, held=held}
       end
     end
     local parts = {}
@@ -977,6 +1037,7 @@ return function(api)
       parts[#parts+1] = text
     end
     if (states.working or 0) == 0 then table.insert(parts, 1, '0 working') end
+    if held_n > 0 then parts[#parts+1] = string.format('%d of the short held back by an input inserter\'s condition or a requester asking for less than one craft', held_n) end
     local line = string.format('%d %s (%s): %s', #list, role, short_list(by_name, 4), table.concat(parts, ', '))
     if role ~= 'labs' then line = line .. '; ' .. (role == 'users' and 'for ' or 'recipes ') .. short_list(recipes, 4) end
     local c = scan.area and scan.area.position
@@ -993,7 +1054,7 @@ return function(api)
     local worst = {}
     for i = 1, math.min(WORST, #ranked) do
       local w = ranked[i]
-      local text = at(w.e.position) .. ' ' .. w.e.name .. ' ' .. w.status
+      local text = at(w.e.position) .. ' ' .. w.e.name .. ' ' .. (w.held and held_text(w.held, w.lacks) .. '; so ' or '') .. w.status
       if #w.lacks > 0 then text = text .. ' (missing ' .. table.concat(w.lacks, ', ') .. ')' end
       if w.status == 'burnt_result_full' and api.burnt_line then text = text .. ' (' .. (try(api.burnt_line, w.e) or '') .. ')' end
       if role ~= 'makers' then
@@ -1514,7 +1575,7 @@ return function(api)
 
   M.schema = {supply = {all_stopped='true: makers_stopped and users_stopped: every one not working, grouped by cluster (within 12 tiles of a group\'s box): count, box, by name and state (missing ingredients), every position (at most 256 a read)',compact='true: lines only (flow, where, makers, the stopped makers and users by position, the chests holding most), as the dozen reads a shift need',item='item or fluid name; fluids return 10-minute flow, connected segment stock/capacity, makers and users by status', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole; fluid segments touching it include their whole connected stock',
     radius='with near: 1..512 tiles (default 64); alone: that far around you, on your surface',
-    returns='one read, the same for everyone: flow (made/used in 10 min); made_by_spoiling (an item others spoil into: each source, how many are held in the places read and how many spoil within 5 min; the production statistics do not count spoiling); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); surplus_chest (the largest unreserved stock outside requester/buffer chests, with held and robot-pickup reservations); belt_lines (where it sits on belts: the belt tiles holding it joined into lines (side by side; an empty tile or an underground splits one), the 5 holding the most: "N on K belt tiles (x1,y1)-(x2,y2); most M at (x,y); out end (x,y) n, in end (x,y) n" (out: its items move on to no belt of the line; in: nothing of the line feeds it), then how many more lines hold how many); chests (largest 5; what a requester or buffer chest asks for; any other chest its free slots, e.g. 0/48 slots free); full_chests (chests with every slot used that the makers\' output inserters wait on or that hold the item: slots used/total, what fills them (item and count, the most slots first), the machines whose output waits on it); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); freshness (its spread over every place read: count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; chests adds each one\'s least and most spoiled and count-weighted %); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
+    returns='one read, the same for everyone: flow (made/used in 10 min); made_by_spoiling (an item others spoil into: each source, how many are held in the places read and how many spoil within 5 min; the production statistics do not count spoiling); where (the total and each place: belts, chests by kind, landing pads, platform hubs, vehicles, machine outputs, users\' inputs, silo rockets, labs, inserter hands, robots, characters); surplus_chest (the largest unreserved stock outside requester/buffer chests, with held and robot-pickup reservations); belt_lines (where it sits on belts: the belt tiles holding it joined into lines (side by side; an empty tile or an underground splits one), the 5 holding the most: "N on K belt tiles (x1,y1)-(x2,y2); most M at (x,y); out end (x,y) n, in end (x,y) n" (out: its items move on to no belt of the line; in: nothing of the line feeds it), then how many more lines hold how many); chests (largest 5; what a requester or buffer chest asks for; any other chest its free slots, e.g. 0/48 slots free); full_chests (chests with every slot used that the makers\' output inserters wait on or that hold the item: slots used/total, what fills them (item and count, the most slots first), the machines whose output waits on it); networks (per logistic network with a requester for it: providers, storage and buffers held, reserved and free, its requester chests\' stock, robots carrying it, due at requesters, logistic robots idle/out/carrying/charging, requesters met/on the way/unmet with reasons; then up to 5 unmet with position, have/want and reason: not in a logistic network, logistics off, off by its circuit condition, inventory full (every slot taken: what fills them, the most slots first, spoilage named; before any robot reason), no idle robots, all N held are reserved, only buffer chests hold it, none in providers or storage, below its minimum delivery, free stock and idle robots); makers, users (assemblers, furnaces, silos; labs for packs the research needs: counts by status with the missing ingredients); makers_worst, users_worst (3 with positions; a short one whose input inserter is off by its circuit or logistic condition, or whose requester asks for less than one craft, first: the condition and what its source holds; a user\'s stock, the feeder carrying it and that source\'s request, the nearest stock); feeders (inserters into users by status, what the waiting ones\' sources hold); takers (inserters out of makers); throughput (up to 5 makers or users whose inserters in, or a maker\'s out, carry less than its recipe at full speed: each inserter\'s rate, the share of full speed, how many like its fastest it takes); counted; spoil (a spoilable item: the first stack to spoil, where and when, % spoiled, how many of those read spoil within 5 min); freshness (its spread over every place read: count, least and most spoiled stack, the count-weighted spoiled %, how many under 25%, 25-50%, 50-75%, 75%+, and how many spoil within 10, 30 and 60 min; chests adds each one\'s least and most spoiled and count-weighted %); hatch instead for an item that hatches into enemies when it spoils (pentapod-egg, biter-egg): into what, the first to hatch and when. Read only'}}
 
   function M.supply(p, a)
     local item = a.item

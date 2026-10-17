@@ -53,7 +53,7 @@ return function(api)
     end
     return q.charging, q.waiting
   end
-  local function blocker(r, net, cargo, orders, cache)
+  local function blocker(r, net, cargo, orders, cache, pct)
     if not net then return 'outside every logistic network\'s area' end
     local cell = cell_of(net, r.position)
     if cell then
@@ -75,6 +75,8 @@ return function(api)
           table.concat(nowhere, ' '), net.network_id, storages, storages == 1 and '' or 's')
       end
     end
+    -- (d17 batch18 B3) no charge left, in no roboport's queue
+    if pct and pct < 1 then return 'no charge (energy 0%)' end
     for _, o in ipairs(orders) do
       local t = o.target and try(function() return o.target.valid and o.target end)
       if t then
@@ -91,7 +93,8 @@ return function(api)
     local max = try(function() return r.prototype.get_max_energy and r.prototype.get_max_energy() end) or try(function() return r.prototype.max_energy end) or 3000000
     local cargo = stacks(try(function() return r.get_inventory(defines.inventory.robot_cargo) end))
     local queue = try(function() return r.robot_order_queue end) or {}
-    local parts = {string.format('energy %d%%', math.floor(energy * 100 / math.max(1, max) + 0.5))}
+    local pct = energy * 100 / math.max(1, max)
+    local parts = {string.format('energy %d%%', math.floor(pct + 0.5))}
     local held = {}
     for i, st in ipairs(cargo) do held[i] = st.text end
     parts[#parts+1] = #held > 0 and 'holds ' .. table.concat(held, ' ') or 'holds nothing'
@@ -101,9 +104,9 @@ return function(api)
       for i = 1, math.min(3, #queue) do list[i] = (order_text(queue[i])) end
       parts[#parts+1] = 'order' .. (#queue > 1 and 's' or '') .. ': ' .. table.concat(list, '; then ') .. (#queue > 3 and string.format(' (+%d more)', #queue - 3) or '')
     end
-    local why = blocker(r, net, cargo, queue, cache)
+    local why = blocker(r, net, cargo, queue, cache, pct)
     if why then parts[#parts+1] = why end
-    return string.format('%s %s: %s', r.name, at(r.position), table.concat(parts, '; ')), why ~= nil
+    return string.format('%s %s: %s', r.name, at(r.position), table.concat(parts, '; ')), why ~= nil, why, queue
   end
   local function network_for(p, a)
     local surface = p.surface
@@ -224,11 +227,20 @@ return function(api)
   function M.read(p, a)
     local net = network_for(p, a)
     local flying = try(function() return net.construction_robots end) or {}
-    local rows, held_up, cache = {}, 0, {}
+    local rows, held_up, cache, waits = {}, 0, {}, {}
     for i, r in ipairs(flying) do
       if r.valid then
-        local line, stuck = M.row(r, net, cache)
-        if stuck then held_up = held_up + 1 end
+        local line, stuck, why, queue = M.row(r, net, cache)
+        if stuck then
+          held_up = held_up + 1
+          -- (d17 batch18 B3, Astra) the ghosts in a held-up robot's queue wait on it
+          for k, o in ipairs(queue) do
+            local t = o.target and try(function() return o.target.valid and o.target end)
+            if t and (t.type == 'entity-ghost' or t.type == 'tile-ghost') and #waits < MAX_ROWS then
+              waits[#waits+1] = string.format('%s ghost %s waits on %s %s (its order %d of %d): %s', t.ghost_name, at(t.position), r.name, at(r.position), k, #queue, why)
+            end
+          end
+        end
         if #rows < MAX_ROWS then rows[#rows+1] = line end
       end
     end
@@ -249,7 +261,7 @@ return function(api)
         net.network_id, all, all == 1 and '' or 's', idle, #flying, held_up > 0 and string.format(', %d held up', held_up) or '',
         #cells, #cells == 1 and '' or 's', storages, storages == 1 and '' or 's'),
       robots=#rows > 0 and rows or nil, robots_more=#flying > #rows and #flying - #rows or nil,
-      charging_queues=#queues > 0 and queues or nil,
+      charging_queues=#queues > 0 and queues or nil, ghosts_waiting=#waits > 0 and waits or nil,
       sources=a.sources and M.sources(p, net) or nil}
   end
   M.schema = {
@@ -257,7 +269,7 @@ return function(api)
       network='optional network id (the networks read lists them) instead of position',
       surface='optional planet name: read there by remote view',
       sources='true: sources: per group of ghosts and item requests waiting in the construction area (by item, 32-tile cells; the largest 16), the network\'s chests holding that item, nearest first (3): what each holds, how far, and whether the straight line from it to the group passes within reach of a worm or spawner the map shows (which, how near, its reach)',
-      returns='network, summary (construction robots: in roboports, in the air, held up; roboports; storage chests), robots: one line each for those in the air (the first 32; robots_more): position, energy %, what it holds, its orders (construct, deconstruct, upgrade, repair, deliver, pickup, explode_cliff: target and item, the first 3) and what holds it up: nowhere to put what it holds (no storage chest in the network has room for it), its target outside the network\'s construction area, waiting to charge at a roboport (its place in the queue), charging, outside every network\'s area; charging_queues: roboports with robots waiting to charge. Read only'},
+      returns='network, summary (construction robots: in roboports, in the air, held up; roboports; storage chests), robots: one line each for those in the air (the first 32; robots_more): position, energy %, what it holds, its orders (construct, deconstruct, upgrade, repair, deliver, pickup, explode_cliff: target and item, the first 3) and what holds it up: no charge (energy under 1%, in no roboport\'s queue), nowhere to put what it holds (no storage chest in the network has room for it), its target outside the network\'s construction area, waiting to charge at a roboport (its place in the queue), charging, outside every network\'s area; charging_queues: roboports with robots waiting to charge; ghosts_waiting: each ghost in a held-up robot\'s queue (the first 32): the robot, the order\'s place in its queue, what holds it up. Read only'},
   }
   return M
 end
