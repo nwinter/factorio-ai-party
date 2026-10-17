@@ -502,8 +502,12 @@ return function(api)
         -- generator with plasma; the rest of the rating is dry
         local ready = true
         if e.type == 'generator' or e.type == 'fusion-generator' then
-          local fb = try(function() return e.fluidbox[1] end)
-          ready = fb ~= nil and (fb.amount or 0) > 0
+          -- (an empty fluidbox slot reads nil; one not read at all counts as ready)
+          local slots = try(function() return #e.fluidbox end)
+          if slots and slots > 0 then
+            local fb = try(function() return e.fluidbox[1] end)
+            ready = fb ~= nil and (fb.amount or 0) > 0
+          end
         elseif e.type == 'burner-generator' then
           local b = try(function() return e.burner end)
           ready = b ~= nil and ((try(function() return b.remaining_burning_fuel end) or 0) > 0 or not (try(function() return b.inventory.is_empty() end)))
