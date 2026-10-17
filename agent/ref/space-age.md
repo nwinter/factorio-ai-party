@@ -72,6 +72,11 @@
   `platform_endurance` adds `departure` (each ammunition over the route: used, aboard, made, short or spare, a rocket's
   lift), `solar` with low and no power counts, and flying, each line's last 60 s. `platforms {compact: true}`: a line a
   platform, blockers only when new to you. Platform loss alerts list each lost entity: rebuilt, a ghost there, or none.
+- A `load_silo` with launch over one rocket's lift is split into rockets queued in turn (`split`). `platforms` gives
+  `departure`: agents' queue steps and orders that send a platform on beside its schedule. `platform_endurance` lines
+  add `phases` (moving, still in space, stopped) and `flight` (the route and its last leg at the moving rate).
+  `platform_plan {platform, floor: true}` lists the foundation ghosts need (footprints, tunnels, holes, links) with
+  `place_ghosts_entries`; `paste {preserve_existing_settings_and_wires: true}` adds only what is missing.
 - `platform_rename {platform, name}` renames one, listing queues, orders, plans and board items still naming the old
   name. `platform_plan {platform, salvage: 60}` lists foundation tiles to take up from the edge in, as deconstruct areas.
   `load_silo {rockets: 3, launch: true, ...}` queues the load for 3 rockets. With automatic requests on, load_silo and

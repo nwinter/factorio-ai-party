@@ -240,6 +240,39 @@ return function(api)
     for _, name in ipairs(order) do out[#out+1] = name .. ' ' .. by[name] end
     return out
   end
+  -- A list over one rocket's lift or cargo slots, split into rockets (B1, Sonnet 18:20: three times a launch hit the
+  -- 1000 kg lift and the queue had to be rewritten): in list order, each rocket filled by weight and by stacks.
+  -- Returns the rockets' lists, or nil when it fits in one.
+  function M.split(list, lift, slots)
+    local total, stacks = 0, 0
+    for _, r in ipairs(list) do
+      total = total + weight(r.name) * r.count
+      local ss = try(function() return prototypes.item[r.name].stack_size end) or 50
+      stacks = stacks + math.ceil(r.count / ss)
+    end
+    if total <= lift and stacks <= slots then return nil end
+    local rockets, cur, g, used = {}, {}, 0, 0
+    local function close() if #cur > 0 then rockets[#rockets+1] = cur end; cur, g, used = {}, 0, 0 end
+    for _, r in ipairs(list) do
+      local left = r.count
+      local w = weight(r.name)
+      local ss = try(function() return prototypes.item[r.name].stack_size end) or 50
+      while left > 0 do
+        local by_weight = w > 0 and math.floor((lift - g) / w) or left
+        local by_slots = (slots - used) * ss
+        local n = math.min(left, by_weight, by_slots)
+        if n <= 0 then
+          if #cur == 0 then error(string.format('one %s (%g kg) does not fit under a rocket\'s lift (%g kg)', r.name, kg(w), kg(lift)), 0) end
+          close()
+        else
+          cur[#cur+1] = {name=r.name, quality=r.quality, count=n}
+          g = g + w * n; used = used + math.ceil(n / ss); left = left - n
+        end
+      end
+    end
+    close()
+    return rockets, kg(total)
+  end
   local LAUNCH_ARGS = {platform=true, orbit=true, min_cargo=true, arrived=true}
   function M.check(a)
     M.items(a.items, 'items')
@@ -1307,7 +1340,9 @@ return function(api)
       launch='true: launch once the rocket is ready, in the tick the cargo is loaded; needs platform (or orbit=true); refused (not launched, an error) when any count fell short (up_to aside); min_cargo and arrived are checked as launch checks them',
       platform='with launch: the platform in orbit to send it to', orbit='with launch: true for no platform',
       min_cargo='with launch: as launch min_cargo', arrived='with launch: as launch arrived',
+      split_part='(set by the split itself)',
       rockets='optional 2..20, with launch: true: the same load for that many rockets, as steps appended to your queue (labelled rocket 1 of N ...), each loading and launching one rocket in turn',
+      launch_split='with launch: true, a list over one rocket\'s lift (1000 kg) or cargo slots is split in list order into rockets, each a load_silo step appended to your queue (rocket 1 of N ...) that loads and launches in turn; split says how (not with to_total or up_to)',
       wait_min='optional 1..60: the wait for the rocket goes on this many minutes with no new part (a queue step waiting for an ingredient on its way); waiting.parts_short and, when it runs out, last.why name each rocket-part ingredient the silo lacks: short of the next part and of the parts left, and what its input holds',
       ticks='1..36000 (default 3600): how long to wait for the rocket (no rocket yet, or not ready for a launch) with no new rocket part: the idle window grows to at least 3 times the longest observed interval to a part increase; the wait goes on while the silo makes parts (or the rocket moves on to ready), 1 game hour at most in all (gives_up_tick); with walk, the whole tour (default 18000)',
       returns='silo, loaded [{item, asked, aboard_before, loaded, aboard, from (you N, iron-chest (x,y) N), freshness (a spoilable item: the loaded batch\'s spread and, for a pack the running research takes, how many a unit the running research takes and its units left), short, why (weight, slots, or what you and the chests held)}], cargo, rocket_weight, slots (used/total), chests (how many were read), complete, short; launch (the launch reply) with launch=true. No rocket yet, or launch=true before the rocket is ready: a timed action (until_tick, waiting {why, rocket}; outcome fed | failed | timed_out; last.result holds the reply). Into the rocket only what fits under its 1000 kg lift and in its cargo slots; a silo with automatic requests on is refused'},
