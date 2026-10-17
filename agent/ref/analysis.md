@@ -143,7 +143,8 @@
   tiles; `radius` (up to 1024) reads that circle only; `covered` says what was read, `as_of` whether a total is live or
   reused (and its age). `places: "all"`: every place on the surface holding it, nearest first, `limit` a page (`page`,
   `next`). `holders: ["provider", "storage"]`: only those kinds of place; each place says its `kind` and what robots
-  have `reserved` there. With `surface`, `by_network`: each logistic network's hold in providers, storage and other
+  have `reserved` there, and `reserved_for` where those robots deliver it (`5 to requester-chest (97.5,41.5)`, the 3
+  largest). With `surface`, `by_network`: each logistic network's hold in providers, storage and other
   holders, and `on_ground`: stacks lying on the ground in chunks our force sees now. A spoilable item adds
   `spoils_within_2_min` beside the total and per place. `network: 96` (the number `networks` and an `inspect` of a
   roboport give): what a logistic network holds, its robots, and `roboports`: the robots each roboport holds, most

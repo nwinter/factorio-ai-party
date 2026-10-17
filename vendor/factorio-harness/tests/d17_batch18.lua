@@ -142,4 +142,25 @@ do
   lacks(PA.text(g,'nauvis',nil,true),'nearest fuel')
   game.get_surface=nil
 end
+-- B5 (Haiku): stock's places with stock reserved for robots name where those robots deliver it.
+do
+  defines.robot_order_type={pickup=1,deliver=2}
+  prototypes.item['iron-plate']={}
+  local req={valid=true,name='requester-chest',type='logistic-container',unit_number=12,position={x=97.5,y=41.5}}
+  local me={valid=true,type='character',name='character',player={name='haiku'},position={x=5,y=5}}
+  local prov={valid=true,name='passive-provider-chest',type='logistic-container',unit_number=11,position={x=-2.5,y=-1.5}}
+  local function order(t,item,n) return {type=t,target_item={name=item},target_count=n,target=t==1 and prov or nil} end
+  local r1={valid=true,robot_order_queue={order(1,'iron-plate',3),{type=2,target=req}}}
+  local r2={valid=true,robot_order_queue={order(1,'iron-plate',2),{type=2,target=req}}}
+  local r3={valid=true,robot_order_queue={order(1,'iron-plate',1),{type=2,target=me}}}
+  local r4={valid=true,robot_order_queue={order(1,'copper-plate',4),{type=2,target=req}}}
+  prov.logistic_network={valid=true,network_id=243,logistic_robots={r1,r2,r3,r4}}
+  local ST=dofile('mod/agent-harness_0.1.0/stock.lua'){integer=function(v,d) return v or d end,position=function(v) return v end,
+    reserved=function(e) return e==prov and 6 or 0 end,spoil={spoils=function() return false end,hatch=function() return nil end}}
+  ST.scan=function() return {item='iron-plate',total=8,groups={},places={{entity=prov,name=prov.name,position=prov.position,count=8,distance=3}}} end
+  ST.line=function() return '' end
+  local out=ST.view({position={x=0,y=0},surface={name='nauvis'},get_main_inventory=function() return {get_item_count=function() return 0 end} end},{item='iron-plate'})
+  eq(out.places[1].reserved,6)
+  eq(out.places[1].reserved_for,'5 to requester-chest (97.5,41.5), 1 to the character of haiku (5,5)')
+end
 print('d17 batch18 ok')

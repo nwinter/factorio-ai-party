@@ -6629,3 +6629,11 @@ fh watch    # deploy on every change
   inventory and belt line (four uncached groups, 2556 chests and belts: 10 ms on the copy; a count call per fuel item
   took 37 ms). Copy: the nauvis, gleba (biochambers: nutrients, not the steel furnace's yumako-mash) and vulcanus
   groups name coal, nutrients and carbon. tests/d17_batch18.lua.
+- B5 (Haiku): stock {item} gave each place's `reserved` (robots' pickup reservations) but not for whom; reservations
+  {network} lists pickups and requesters apart, and the robots' orders grouped by target. stock's places with
+  reserved stock now add `reserved_for`: in each such place's logistic network every logistic robot's queue is read
+  once for a pickup there of the item followed by a deliver, summed by where it goes (requester, buffer chest, or
+  `the character of NAME`), the 3 largest. Copy: `stock {item: iron-plate, places: all, holders: [provider,
+  storage]}`: each passive provider's 3 reserved plates name their requester (`3 to requester-chest (97.5,41.5)`).
+  Reading 1133 robots' queues took 2-3 ms on the copy; the stock read 21-25 ms against 20 ms for the same places with
+  nothing reserved. tests/d17_batch18.lua.
