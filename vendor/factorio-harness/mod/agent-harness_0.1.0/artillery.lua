@@ -119,7 +119,7 @@ return function(api)
   -- minute and the last 10 minutes; a fired shell counts there even when an inserter puts another in the piece.
   function M.shells_used(surface, force)
     local st = try(function() return force.get_item_production_statistics(surface) end)
-    local P = defines.flow_precision_index
+    local P = defines.flow_precision_index or {}
     local function used(pi) return st and pi and math.floor((try(function() return st.get_flow_count{name='artillery-shell', category='output', precision_index=pi, count=true} end) or 0) + 0.5) or 0 end
     local m1, m10 = used(P.one_minute), used(P.ten_minutes)
     return string.format('artillery shells used on %s: %d in the last minute, %d in the last 10 minutes (the production statistics: a shot counts even when an inserter refills the piece)', surface.name, m1, m10), m1, m10
