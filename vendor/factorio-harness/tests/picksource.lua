@@ -602,6 +602,46 @@ do
   for _,e in ipairs({req,buf,prov}) do e.inv.remove{name=I,count=e.inv.get_item_count(I)} end
 end
 
+-- collect {pods: true, to} (d17 pods, Nick 15:45: landed cargo pods nobody empties): a tour over the landed pods
+-- nearest first, taking all they hold; each time the inventory is full what it took goes to the chest, then back to the
+-- pod for the rest; at the end the rest goes too. last: taken, given, pods_left.
+do
+  prototypes.item['copper-plate']=prototypes.item['copper-plate'] or {name='copper-plate',type='item',stack_size=50}
+  for i=1,#main do main[i].clear() end
+  local function pod(x,y,stacks)
+    local e=chest({x=x,y=y},{})
+    e.name='cargo-pod-container'; e.type='temporary-container'; e.prototype={name='cargo-pod-container',type='temporary-container'}
+    for i,st in ipairs(stacks) do local sl=e.inv[i]; sl.valid_for_read=true; sl.name=st[1]; sl.quality={name='normal'}; sl.count=st[2] end
+    return e
+  end
+  local function full(name,n) local t={} for i=1,n do t[i]={name,50} end return t end
+  local a=pod(51.5,30.5,full('iron-plate',12))
+  local b=pod(48.5,30.5,full('iron-plate',10))
+  local list=full('copper-plate',2)
+  local c=pod(52.5,33.5,list)
+  local big=chest({x=53.5,y=31.5},{})
+  local inv48=inventory(48); big.inv=inv48; big.get_inventory=function(i) return i==defines.inventory.chest and inv48 or nil end; big.get_output_inventory=function() return inv48 end
+  local r=luna('collect',{pods=true,to={x=53.5,y=31.5}})
+  eq(r.pods,3); assert(r.to:find('(53.5,31.5)',1,true),tostring(r.to))
+  for _=1,8 do advance(3) end
+  local last=luna('status').last
+  eq(inv48.get_item_count('iron-plate'),1100); eq(inv48.get_item_count('copper-plate'),100)
+  eq(main.get_item_count('iron-plate'),0,'nothing kept back')
+  eq(last.given['iron-plate'],1100); eq(last.pods_left,0)
+  assert(last.pods_line:find('3 of the 3 landed pods visited and emptied, what was taken put in the chest; 0 still hold 0 items (2 trips)',1,true),tostring(last.pods_line))
+  -- without to: up to your free slots, and what is left is said
+  inv48.remove{name='iron-plate',count=1100}; inv48.remove{name='copper-plate',count=100}
+  a=pod(51.5,29.5,full('iron-plate',15)); b=pod(48.5,29.5,full('iron-plate',10))
+  luna('collect',{pods=true})
+  for _=1,6 do advance(3) end
+  last=luna('status').last
+  eq(last.outcome,'inventory_full'); eq(main.get_item_count('iron-plate'),1000)
+  assert(last.pods_line:find('still hold 250 items',1,true),tostring(last.pods_line))
+  fails(function() luna('collect',{pods=true,item='iron-plate'}) end,'takes everything the containers hold')
+  for i=1,#main do main[i].clear() end
+  for _,e in ipairs({a,b,c}) do for i=1,#e.inv do e.inv[i].clear() end end
+end
+
 -- A take from one machine's output given straight into another (Muse, shift18 12:46: productivity modules collected
 -- from one machine piled up in the character, 78 and growing, because the next took no more). What the target's input
 -- takes is read before the take (one stack and 64 by hand, measured on 2.0.77): none, nothing taken or walked; else
