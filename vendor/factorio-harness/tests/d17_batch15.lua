@@ -86,3 +86,29 @@ do
   game=nil; prototypes=nil
   print('d17_batch15 B cargo conflict across stops: ok')
 end
+
+-- Group D: a lesson shown before a call, then that agent's failure it names within 30 min: did not prevent; none: not.
+do
+  game={tick=1000}
+  local st={}
+  local items={[9]={id=9,kind='lesson',status='open',title='Load fresh packs first',failure='load_silo short',keys={action='load_silo'},impact=3,verify_count=2,last_verified=1000,created_tick=0},
+    [10]={id=10,kind='lesson',status='open',title='Hub full stalls builds',failure='construct hub_full',keys={entity='space-platform-hub'},created_tick=0}}
+  local L=dofile('mod/agent-harness_0.1.0/lessonbook.lua'){state=function() return st end,items=function() return items end,stale=12*216000,
+    active=function(i) return i.status=='open' end,who=function(p) return p.name end}
+  local n,why=L.score(items[9])
+  eq(n,3*2+1+2+3); assert(why:find('impact 3, applies to 1 key, verified 2 times',1,true),why)
+  L.surfaced(1,{items[9],items[10]},'load_silo')
+  game.tick=2000; L.failed(1,'load_silo','short: calcite 100 short (what you and the chests held)')
+  L.failed(2,'construct','hub_full')
+  game.tick=1000+L.WINDOW+1; L.tick()
+  local r=L.review({},{})
+  eq(r.counts.repeat_,1); eq(r.counts.no_repeat,1)
+  -- ground rules: at most 8, each from lessons
+  for k=1,8 do L.rule_add({name='astra'},{text='rule '..k,lessons={9}}) end
+  local ok,err=pcall(L.rule_add,{name='astra'},{text='ninth',lessons={9}})
+  assert(not ok and tostring(err):find('at most 8 ground rules',1,true),tostring(err))
+  L.rule_retire({name='sol'},{id=3})
+  eq(#L.rule_lines(),7)
+  game=nil
+  print('d17_batch15 D lessons scored and followed: ok')
+end

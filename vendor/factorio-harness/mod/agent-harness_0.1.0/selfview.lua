@@ -142,6 +142,8 @@ return function(api)
     local key = reason_key(action, reason)
     local b = bucket(rec(index), minute())
     b.f[key] = (b.f[key] or 0) + 1
+    -- (d17 batch15 D4) a failure after a lesson naming it was shown (lessonbook.lua)
+    if api.on_failed then pcall(api.on_failed, index, action, reason) end
     local s = api.state()
     s.selfview_team = s.selfview_team or {}
     local id = math.floor(game.tick / TEAM_BUCKET)
