@@ -134,9 +134,9 @@ def operator_inbox_tests_in(d):
     for text, to_me in (("@Operator can you ...", True), ("OPERATOR: why ...", True), ("operator , hi", True),
                         ("the operator is slow", False), ("Operators unite", False)):
         assert bool(V.TO_OPERATOR.match(text)) == to_me, text
-    # older than the window: left out
+    # older than the window: left out (and the chat line shares under two words, so the reply stands alone, d17 16:05)
     old = V.inbox_lines([dict(inbox_rows[1], t=inbox_rows[1]["t"] - 20 * 60)])
-    assert V.classify(REPLY_1831, [CHAT_1824], old)["answers"] is CHAT_1824
+    assert V.classify(REPLY_1831, [CHAT_1824], old)["answers"] is None
     # the archive's whole-log path (site/longrun.py): replies(chat, inbox=...) on chat.jsonl rows
     got = V.replies([CHAT_1824, CHAT_1827, REPLY_1831], inbox=lines)
     # (Luna's 18:27 "I can hear you, LimeLight." answers the 18:24 line; the Operator's 18:31 line the inbox one)
