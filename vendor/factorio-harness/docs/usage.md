@@ -6683,6 +6683,23 @@ fh watch    # deploy on every change
     without unsafe_goal; 313-tile dry runs took median 106 ms with it, 99-101 ms without (the dry run's own cost).
   - safety.threats (walking's stop-and-defend check, kite): a demolisher is one unit at its nearest segment in sight,
     named by its head. tests/d17_batch18.lua.
+- C6 (viewer Foobator, operator 15:10): a starving captive spawner turns into a hostile biter spawner. Game data
+  (space-age entities.lua, as the brief quotes it): 350 health; production_health_effect not_producing -1/60 a tick, so
+  1 HP a second while it makes nothing; the API gives no production_health_effect, so the rate is that constant. Its
+  dying_trigger_effect, read on the copy: create-entity biter-spawner, as_enemy, protected.
+  - pushalerts.lua: a captive-biter-spawner of ours whose status is not working is `captive_starving` (under 120 s
+    left: `captive_urgent`): `captive-biter-spawner (29.5,-56.5): health 347/350, not producing (its fuel slot is empty
+    (it burns bioflux)); it loses 1 HP a second while it makes nothing, so it dies in about 5.8 min, and a hostile
+    biter-spawner takes its place` (output full: what fills it; else its status). It goes to its builder and the
+    builders of the inserters dropping into it (and claim owners; else the nearest agent).
+  - Its death (on_entity_died) is kept 10 min as `captive_died`, naming what stands in its place now: `captive-biter-
+    spawner (263.5,8.5) died 32s ago; a hostile biter-spawner (force enemy) stands in its place at (263.5,8.5)`.
+  - captive_urgent and captive_died are told in the team block's urgent part (always shown, once a group, again when
+    it grows) and wake sleeps (urgent.lua), not in the 2.5-minute push digest. inspect gives the same line as
+    `starving`.
+  - Copy: three unfed spawners on nauvis (one at 100 health) went captive_starving, then captive_urgent, then
+    captive_died with the biter-spawner at the same position; Opus's team block carried the died line.
+    tests/d17_batch18.lua, game_alerts_groups.lua.
 
 ## d17 batch20 (operator 15:25: the agents' 15:20 poll)
 - A1 (Haiku): `craft` refused 20 firearm-magazine over 650 in four requester chests (150 within 25 tiles), and a gun

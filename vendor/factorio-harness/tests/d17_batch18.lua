@@ -248,4 +248,23 @@ do
   local t=SF.threats(p,{x=270,y=320},16)
   eq(#t.units,1); eq(t.units[1].entity.name,'small-demolisher'); eq(math.floor(t.units[1].distance+0.5),10)
 end
+-- C6 (viewer Foobator): a starving captive spawner: where, health, minutes left at 1 HP a second, why; urgent under 2 min.
+do
+  defines.entity_status={working=1,no_fuel=53,full_output=20}
+  prototypes={item={bioflux={fuel_category='food'},coal={fuel_category='chemical'}}}
+  game={tick=0,forces={}}
+  local PA=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return {} end,agents=function() return {} end,who=function(p) return p.name end}
+  local function spawner(hp,status,fuel,out)
+    return {valid=true,name='captive-biter-spawner',position={x=29.5,y=-56.5},health=hp,max_health=350,status=status,
+      prototype={burner_prototype={fuel_categories={food=true}}},burner={remaining_burning_fuel=0},
+      get_fuel_inventory=function() return {is_empty=function() return fuel==0 end} end,
+      get_output_inventory=function() return {get_contents=function() return out or {} end} end}
+  end
+  local kind,line=PA.captive(spawner(300,53,0))
+  eq(kind,'captive_starving')
+  eq(line,'captive-biter-spawner (29.5,-56.5): health 300/350, not producing (its fuel slot is empty (it burns bioflux)); it loses 1 HP a second while it makes nothing, so it dies in about 5.0 min, and a hostile biter-spawner takes its place')
+  kind,line=PA.captive(spawner(90,20,5,{{name='biter-egg',count=100}}))
+  eq(kind,'captive_urgent'); has(line,'its output is full (100 biter-egg)'); has(line,'about 1.5 min')
+  eq(PA.captive(spawner(350,1,5)),nil)
+end
 print('d17 batch18 ok')

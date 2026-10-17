@@ -5934,6 +5934,8 @@ function handlers.inspect(p,a)
   -- 27 to look up); an entity no pole reaches says so in power ("unpowered: ...") while the engine reads low_power.
   out.status=e.status
   out.status_name=entity_status_names[out.status]
+  -- a captive spawner not producing: its health, the minutes it has left and why (pushalerts.lua; d17 batch18 C6)
+  if e.name=='captive-biter-spawner' then local okc,_,line=pcall(M.pushalerts.captive,e); out.starving=okc and line or nil end
   out.energy=e.energy
   out.fluids=e.get_fluid_contents()
   out.electric_network_id=e.electric_network_id
@@ -13510,7 +13512,7 @@ M.board=require('board'){state=state,consequential={launch=true,platform_schedul
   attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,news_lines=function(from,since,reader) return threat.news_lines(from,since,reader) end,
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
   platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,
-  hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,
+  hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,captive_lines=function(p,h) return M.pushalerts.captive_lines(p,h) end,
   power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,progress_lines=function(p,h) return M.progress and M.progress.lines(p,h) end,turret_lines=function(p,h) return M.turretwatch and M.turretwatch.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
   science_line=function(p,h) return M.scienceline.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
@@ -15091,7 +15093,7 @@ M.chronicle=require('chronicle'){state=state,where=function(pl) return M.freight
   owner=function(c) return M.character_owner(c) end}
 for name,handler in pairs(M.chronicle.handlers) do handlers[name]=handler end
 -- Urgent alerts that end every sleep and direct wait (Nick, d15 06:17; urgent.lua), and until=alert's filter.
-M.urgent=require('urgent'){timed=M.timed,state=state,who=function(p) return M.board.who(p) end,
+M.urgent=require('urgent'){timed=M.timed,state=state,who=function(p) return M.board.who(p) end,captive=function(p) return M.pushalerts.urgent_captive(p) end,
   attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,
   claim_surface=function(i) return M.claims.surface_of(i) end,claim_stale=function(i) return M.claims.stale(i) end,
   platform_hears=function(p,name) return M.platalerts.hears(p,name) end,power_view=function(f) return M.networks.cached_view(f) end,
@@ -16258,6 +16260,8 @@ function M.on_event(event)
       if not ok then s.chronicle_errors={count=((s.chronicle_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
     end
     if e.type=='agricultural-tower' then M.agriculture.died(e,event.cause and event.cause.valid and event.cause.name or nil) end
+    -- a captive spawner of ours: its group names what takes its place (pushalerts.lua; d17 batch18 C6)
+    if e.name=='captive-biter-spawner' then pcall(M.pushalerts.captive_died,e) end
     if LOSS.not_lost[e.type] then return end
     s.alerts=nil -- superseded by incidents
     -- A turret of ours that died: its ghost requests the ammo it held (turretammo.lua); a fault is counted.

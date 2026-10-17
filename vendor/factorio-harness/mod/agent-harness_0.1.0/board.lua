@@ -2121,6 +2121,11 @@ return function(api)
       lines[#lines+1] = string.format('you were hit %d times (%d damage) by %s, %s ago; %s', hit.hits, round(hit.damage), hit.by or 'enemies',
         ago(game.tick - hit.last), alive and 'health ' .. round(c.health or 0) or 'your character died')
     end
+    -- A captive spawner of this agent's dying within 2 minutes or dead (pushalerts.lua; d17 batch18 C6).
+    if api.captive_lines then
+      local ok, list = pcall(api.captive_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     -- Eggs of ours on this agent's surface or built by it that hatch within 5 minutes (spoil.lua).
     if api.hatch_lines then
       local ok, list = pcall(api.hatch_lines, p, h)
