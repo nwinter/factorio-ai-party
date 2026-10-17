@@ -64,7 +64,7 @@ Your character stands still while you think, and the clock does not.
 - A direct action that drives your character (walk, `move_to`, build, mine, transfer, collect, feed and the like)
   pauses your running queue at once; `./fh queue resume` continues it. A direct `wait_ticks` or `wait_until` while
   your queue runs runs as a sleep and the queue keeps going (`as_sleep`; `"pause_queue":true` pauses it). Reads, `sleep`, `say`, `tell`, the board, `craft` and `research` leave the queue running.
-- An `OPERATOR:` line (on stderr, and first on stdout) is a message from the operator.
+- An `OPERATOR:` line (first on stdout) is a message from the operator.
 - Small electric poles supply only a 5x5 area. Inserters pick up from the tile behind and drop on the tile in front;
   check the edge tiles of 3x3 machines. An inserter's `direction` is the side it picks up from (`direction: east` takes
   from the east, drops west; a belt's is where items go); `build` replies say it in words.

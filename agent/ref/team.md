@@ -80,7 +80,7 @@
 - `./fh tell`: The reply's `ignoring` names a recipient in a wait that ignores messages (and until when); `--wake` ends that wait too, each time.
   Viewers see tells on the stream's logistics ticker. `./fh tells` lists the last 30 tells you received
   (time, sender, fyi), shown before or not; `./fh tells --since N` lists the ones you sent and received after N.
-- `OPERATOR:` lines: fh prints each message once;
+- `OPERATOR:` lines: fh prints each message once (on 3 replies in a workspace without a context hook);
   later replies that still carry it leave it out (`--operator-repeat` prints it on every reply). With `--format json`
   stdout is one JSON document and the message is only in the reply's `result.operator`.
 - Lessons: short rules a teammate tested, board items of kind `lesson`. `lesson_add {rule, cause?, fix?, evidence_tick?,

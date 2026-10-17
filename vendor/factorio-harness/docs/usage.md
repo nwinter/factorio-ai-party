@@ -4578,14 +4578,16 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   standing 21%"). `tell {to, text}` sends a tell from `operator`, like a teammate's: in the next reply's team tells,
   waking a sleeper (woke=told), never in the game chat. It also rides on every reply to that agent as
   `operator [{seq, ago_s, text}]` (peeks, reads and waits included; the newest 3) until the agent's next game action
-  or message; in compact output fh prints each as an `OPERATOR:` line on stderr as soon as a reply carries it and first
-  on stdout (`--format json` keeps it in the document only), and
+  or message; in compact output fh prints each as an `OPERATOR:` line on stdout as soon as a reply carries it, once per
+  fh call (it went to stderr too until d17, so a shell showing both printed it twice; `--format json` keeps it in the
+  document only), and
   files it in `.operator-tells.jsonl` beside `--journal` (or `FH_OPERATOR_FILE`) for a post-tool hook. Each message is
   printed once (Muse, shift17 10:50: "operator repeat banners flood stdout and bury command output when piped"): a later
   fh call whose reply still carries a message already in that file leaves it out of stdout and stderr; the post-tool
-  hook (pog tools/context.py) puts each new one in the model's context once. It is printed on every reply, as before,
-  with `--operator-repeat` (or `FH_OPERATOR_REPEAT=1`), in a workspace without the hook (no `.context-hooks` beside the
-  file: Gemini's), and without an operator file.
+  hook (pog tools/context.py) puts each new one in the model's context once. In a workspace without the hook (no `.context-hooks`
+  beside the file: Gemini's) it is printed on the first 3 replies that carry it (the file gets a line per showing; it
+  was every reply until the next game action, and Gemini saw one 31 times in shift27). It is printed on every reply
+  with `--operator-repeat` (or `FH_OPERATOR_REPEAT=1`) and without an operator file.
 - Operator factory digest (`factory_digest.lua`, `tools/factory_digest.py`): the idle-nudge supervisor sends
   a team tell on its first poll at or after the run deadline minus 2 hours, before the deadline, once per run.
   No deadline means no automatic digest. `POG_IDLE_NUDGE=0` disables this supervisor and the scheduled digest.
