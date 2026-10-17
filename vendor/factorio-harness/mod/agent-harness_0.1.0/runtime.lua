@@ -385,6 +385,7 @@ local function finish(index, outcome)
             (function() local t={} for i,q in ipairs(rw.tried) do t[i]=at(q) end return table.concat(t,', ') end)()) or '')
       end
     end
+    if action.waited_for_units then last.waited_for_units=action.waited_for_units end
     if outcome=='no_safe_route' and here then
       local okb,back=pcall(M.walked_back,index,here,action.via and action.via.final or action.position,action.surface_name)
       if okb and back then last.walked_back=back end
@@ -14749,6 +14750,22 @@ M.fuelround=require('fuelround'){
   belt_count=function(...) return M.beltpick.count(...) end,belt_take=function(...) return M.beltpick.take(...) end,
   stop=function(p) p.walking_state={walking=false,direction=defines.direction.north} end,
   start=function(p,action) if state().active[p.index] then finish(p.index,'replaced') else stop(p) end;state().active[p.index]=action end}
+-- A route given up only for enemies that move (d17 batch17 B3, Opus on the far-east route: no_safe_route for a roaming
+-- group, a lone big biter and an attack where he stood; standing where such a walk ended, he died): stand, and plan
+-- again after 5 s, up to 6 times (nav.unit_waits; the reply's last.waited_for_units says for what); worms and spawners
+-- end it as before.
+M.UNIT_WAIT_TICKS,M.UNIT_WAITS=300,6
+function M.unit_wait(p,nav)
+  local who=M.avoid.moving_only and M.avoid.moving_only(nav)
+  if not who or (nav.unit_waits or 0)>=M.UNIT_WAITS then return false end
+  nav.unit_waits=(nav.unit_waits or 0)+1
+  nav.unit_wait_until=game.tick+M.UNIT_WAIT_TICKS
+  nav.waited_for_units=string.format('no way round %s (enemies that move): stood and planned again %d time%s, 5 s apart',who,nav.unit_waits,nav.unit_waits==1 and '' or 's')
+  nav.path_state='waiting_units'
+  local c=p.character
+  nav.unit_wait_health=c and c.valid and c.health or nil
+  return true
+end
 -- Shared walking controller (move_to, construct). Follows the engine path when
 -- one exists, else steers directly. A stall of a few ticks first sidesteps
 -- perpendicular to the heading, then re-paths with a wider goal radius, and
@@ -14756,9 +14773,21 @@ M.fuelround=require('fuelround'){
 local STALL_TICKS,SIDESTEP_TICKS,MAX_STALLS,MAX_REPLANS,PROGRESS_TICKS=8,12,15,5,90
 navigate=function(p,nav)
   local pos,goal=p.position,nav.position
+  -- waiting for enemies that move to clear the way (M.unit_wait), then planned again
+  if nav.path_state=='waiting_units' then
+    p.walking_state={walking=false,direction=defines.direction.north}
+    -- hit while it stands: the walk ends now, and the retreat on a hit with no action running takes over
+    local c=p.character
+    if nav.unit_wait_health and c and c.valid and c.health<nav.unit_wait_health then nav.waited_for_units=(nav.waited_for_units or '')..'; hit while standing: ended'; return 'no_safe_route' end
+    if game.tick<(nav.unit_wait_until or 0) then return end
+    nav.path_state=nil; nav.foes=nil; nav.found=nil
+    if nav.avoid_mode and not nav.direct then M.avoid.start(p,nav,nav.avoid_mode) end
+    request_path(p,nav); return
+  end
   if nav.path_state=='unsafe' then
     p.walking_state={walking=false,direction=defines.direction.north}
     if M.margin_probe.tick(p,nav) then return end
+    if M.unit_wait(p,nav) then return end
     return 'no_safe_route'
   end
   -- A move_to never ends on a belt (shift08: Grok's arrivals on the y=-27.5
@@ -14871,6 +14900,7 @@ navigate=function(p,nav)
   if nav.path_state=='unsafe' then
     p.walking_state={walking=false,direction=defines.direction.north}
     if M.margin_probe.tick(p,nav) then return end
+    if M.unit_wait(p,nav) then return end
     return 'no_safe_route'
   end
   -- Closed in: the way out by mining, a tick after the flood (pathing.lua dig_step).

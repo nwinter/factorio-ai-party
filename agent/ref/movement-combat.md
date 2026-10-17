@@ -15,7 +15,8 @@
 - `move_to` keeps out of the range of the worms the map shows (+ 4 tiles), 40 tiles of a spawner (+ 4) and 24 tiles of
   an area under attack now (an attack hit in the last 30 s; + 4), walking legs around them (`last.avoided_enemies`;
   a new attack on the way re-plans, `last.replanned`); a goal inside one is refused (`unsafe_goal: true` goes anyway);
-  no way round: `no_safe_route`. The walking tours (rearm, refuel, feed, collect, transfer `walk`) and `mine` check
+  no way round: `no_safe_route`; when only enemies that move (units, a group, an attack) are in the way, it stands and
+  plans again every 5 s, up to 6 times (`last.waited_for_units`), and a hit while it stands ends it. The walking tours (rearm, refuel, feed, collect, transfer `walk`) and `mine` check
   each place the same way, at the call too: the reply's `left_out` names the stops left out, and a tour whose every
   stop lies in such a reach is refused (`last.danger`, `last.dangers` for those found on the way); an attack that starts
   at the stop while a tour or recover walks there holds the walk where it is until it has had no hit for 30 s

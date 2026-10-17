@@ -793,6 +793,7 @@ return function(api)
     if f.detours >= M.MAX_DETOURS then
       if margin_only() then return true end
       nav.path_state = 'unsafe'
+      f.block = {m=m, bl=bl}
       f.why = string.format('path still crosses the requested clearance of %s; %d detours tried', f.crossed, f.detours)
       return false
     end
@@ -824,6 +825,7 @@ return function(api)
     if (not vias or #vias == 0) and margin_only() then return true end
     if not vias or #vias == 0 then
       nav.path_state = 'unsafe'
+      f.block = {m=m, bl=bl}
       f.why = string.format('no way to %s around %s: the path passes %s', at(final), M.name(bl), f.crossed)
       return false
     end
@@ -1081,6 +1083,15 @@ return function(api)
     if not c.spot then return '; no spot within 128 tiles of it is outside every reach the map shows' end
     return string.format('; the nearest safe spot toward it: %s, %d tiles from it, outside every worm\'s range, spawner\'s %d tiles and area under attack (%d tiles), + %g, the map shows',
       at(c.spot), math.floor(dist(c.spot, goal) + 0.5), M.SPAWNER_REACH, M.ATTACK_R, mode.pad)
+  end
+  -- A route given up for enemies that move (d17 batch17 B3, Opus on the far-east route: walks ended no_safe_route for a
+  -- roaming group, a lone big biter or an attack round where he stood, and he stood there; one such stop he died at):
+  -- the disc it crosses and every disc of its group are units, groups or attacks, none a worm or spawner. Their names.
+  function M.moving_only(nav)
+    local b = nav.foes and nav.foes.block
+    if not (b and b.m and b.m.attack) then return nil end
+    for _, mm in ipairs(b.bl and b.bl.members or {}) do if not mm.attack then return nil end end
+    return M.name(b.bl or {members={b.m}})
   end
   function M.step_clear(p,nav,to)
     local mode=nav.foes and nav.foes.mode or nav.avoid_mode
