@@ -2157,6 +2157,11 @@ return function(api)
       local ok, list = pcall(api.launch_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
+    -- A turret built from a ghost read other targeting than the ghost's (turretwatch.lua; backlog #569).
+    if api.turret_lines then
+      local ok, list = pcall(api.turret_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     -- The owner's 10-minute line on each owned board item (progress.lua; d17 batch15 C3).
     if api.progress_lines then
       local ok, list = pcall(api.progress_lines, p, h)

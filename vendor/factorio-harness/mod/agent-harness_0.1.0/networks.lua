@@ -454,7 +454,7 @@ return function(api)
   -- one call rebuilt the view): the generators, the machines, the boilers,
   -- the rows. Between steps ctx holds plain data and entities, linked by id.
   local function new_net(id, poles, cx, cy)
-    return {id=id, poles=poles, center={x=cx, y=cy}, cap_kw=0, solar_peak_kw=0, solar=0,
+    return {id=id, poles=poles, center={x=cx, y=cy}, cap_kw=0, ready_kw=0, dry=0, dry_kw=0, dry_names={}, solar_peak_kw=0, solar=0,
       acc=0, acc_j=0, acc_buf=0, machines=0, low=0, none=0, powerless={names={}, by={}, at={}}, boilers={}, gens=0}
   end
   local function e_ctx(n, f, surface)
@@ -495,7 +495,25 @@ return function(api)
         net.accs = net.accs or {}
         if #net.accs < ACC_READ then net.accs[#net.accs+1] = e end
       elseif e.type ~= 'electric-energy-interface' then
-        net.cap_kw = net.cap_kw + max_output(e) * 60 / 1000
+        local kw = max_output(e) * 60 / 1000
+        net.cap_kw = net.cap_kw + kw
+        -- (backlog #527, Sol: 94 MW capacity with 177 machines on low power; the rating counted 29 dry boilers' engines)
+        -- what it can make now: a steam engine or turbine with steam in, a burner generator with fuel, a fusion
+        -- generator with plasma; the rest of the rating is dry
+        local ready = true
+        if e.type == 'generator' or e.type == 'fusion-generator' then
+          -- (an empty fluidbox slot reads nil; one not read at all counts as ready)
+          local slots = try(function() return #e.fluidbox end)
+          if slots and slots > 0 then
+            local fb = try(function() return e.fluidbox[1] end)
+            ready = fb ~= nil and (fb.amount or 0) > 0
+          end
+        elseif e.type == 'burner-generator' then
+          local b = try(function() return e.burner end)
+          ready = b ~= nil and ((try(function() return b.remaining_burning_fuel end) or 0) > 0 or not (try(function() return b.inventory.is_empty() end)))
+        end
+        if ready then net.ready_kw = net.ready_kw + kw
+        else net.dry = net.dry + 1; net.dry_kw = net.dry_kw + kw; net.dry_names[e.name] = (net.dry_names[e.name] or 0) + 1 end
         if e.type == 'generator' then
           local sid = segment(e, 1)
           if sid then ctx.seg_net[sid] = {id=net.id, gen=e.name} end
@@ -574,11 +592,12 @@ return function(api)
         net.draw = d
         local solar_now = d and d.by['solar-panel'] or 0
         net.capacity_kw = net.cap_kw + solar_now
+        net.supply_kw = net.ready_kw + solar_now
         -- A platform (Astra, 13:10): no night in space, so its panels make their output at the solar power where it
         -- is; that counts in its capacity (their output now is what the network draws of them).
         local plat = try(function() return surface.platform end)
         local sun = (plat or net.solar > 0) and M.solar(surface) or nil
-        if plat then net.platform, net.capacity_kw = plat.name, net.cap_kw + net.solar_peak_kw end
+        if plat then net.platform, net.capacity_kw, net.supply_kw = plat.name, net.cap_kw + net.solar_peak_kw, net.ready_kw + net.solar_peak_kw end
         net.solar_power, net.solar_power_text = sun and sun.percent, sun and sun.text
         -- Boilers: their fuel at the draw of the generators they feed, shared evenly.
         if #net.boilers > 0 and d then
@@ -651,6 +670,14 @@ return function(api)
         elseif net.poles == 0 then
           parts[#parts+1] = string.format('capacity %s; no draw figures (the game gives a network\'s statistics through its poles)', mw(net.capacity_kw))
         else parts[#parts+1] = string.format('capacity %s; no draw sample yet', mw(net.capacity_kw)) end
+        -- the dry part of the rating (#527): what can supply now
+        if net.dry > 0 then
+          local dn = {}
+          for name, c in pairs(net.dry_names) do dn[#dn+1] = c .. ' ' .. name end
+          table.sort(dn)
+          parts[#parts+1] = string.format('of that, %s from %d generator%s with no steam, fuel or plasma in now (%s): %s can supply now',
+            mw(net.dry_kw), net.dry, net.dry == 1 and '' or 's', table.concat(dn, ', '), mw(net.supply_kw))
+        end
         if plat then
           parts[#parts+1] = net.solar > 0 and string.format('solar %d panels, %s now, %s at this solar power (%s)', net.solar, mw(solar_now), mw(net.solar_peak_kw), sun.text)
             or string.format('no solar panels (%s)', sun.text)
@@ -1407,7 +1434,7 @@ return function(api)
     -- The falling feed chest with the fewest minutes left (Haiku, 12:20), for status's science line.
     local x = best.feed_rates and best.feed_rates[1]
     local feed = x and x.minutes_left and {min=x.minutes_left, line=string.format('%s %s %s, %s', x.chest, at(x.position.x, x.position.y), x.held, x.rate)} or nil
-    return {id=best.id, capacity_kw=best.capacity_kw, draw_kw=best.draw and best.draw.avg or nil, boilers=#best.boilers,
+    return {id=best.id, capacity_kw=best.capacity_kw, supply_kw=best.supply_kw, dry=best.dry, dry_kw=best.dry_kw, low_power=best.low, draw_kw=best.draw and best.draw.avg or nil, boilers=#best.boilers,
       fed=best.fed, low=best.fuel_low and #best.fuel_low or 0, low_min=best.fuel_low and best.fuel_low[1] and best.fuel_low[1].min or nil,
       feed=feed}
   end
