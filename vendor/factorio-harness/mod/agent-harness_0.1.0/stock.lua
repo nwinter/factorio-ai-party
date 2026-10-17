@@ -879,6 +879,28 @@ return function(api)
       if action.avoid_mode and api.avoid_start then api.avoid_start(p,action.nav,action.avoid_mode) end
       api.request_path(p,action.nav)
     end
+    -- An attack that starts while the walk is under way (d17 batch17 B1, Haiku: a rearm walked into attack #5203 at the
+    -- guns it went to, and was killed beside a live attack at (10,-103)): once a second the stop is checked against the
+    -- areas under attack now; inside one, the walk holds where it is (held_short says which attack and where) until the
+    -- attack has had no hit for 30 s, then goes on. unsafe_goal walks anyway.
+    if action.avoid_mode and not action.unsafe_goal and api.goal_check and game.tick>=(action.attack_check or 0) then
+      action.attack_check=game.tick+60
+      local okc,c=pcall(api.goal_check,p,p.position,t.position,action.avoid_mode)
+      local m=okc and c and c.m
+      if m and m.attack then
+        if not action.holding then
+          api.stop_walking(p)
+          action.holding={since=game.tick,name=m.name,at={x=math.floor(m.x+0.5),y=math.floor(m.y+0.5)}}
+          action.held_short=string.format('held short at (%.1f,%.1f): the stop (%g,%g) is in %s at (%d,%d), under attack now; the walk goes on when it has had no hit for 30 s',
+            p.position.x,p.position.y,t.position.x,t.position.y,m.name,action.holding.at.x,action.holding.at.y)
+        end
+        return nil
+      elseif action.holding then
+        action.holding=nil; action.held_short=nil; action.nav=nil
+        return nil
+      end
+    end
+    if action.holding then return nil end
     local outcome=api.navigate(p,action.nav)
     -- A leg round a nest ended: the next one starts.
     if outcome and action.nav.foes and api.leg_done and api.leg_done(p,action.nav,outcome) then outcome=nil end

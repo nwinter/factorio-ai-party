@@ -636,6 +636,8 @@ local function finish(index, outcome)
     -- The first place not reached and why (stock.lua: a walk that ended unreachable, no_safe_route, blocked ...).
     last.route_failures=action.route_failures
     last.first_unreached=action.first_unreached; last.why=last.why or (outcome=='unreached' and action.first_unreached) or nil
+    -- held short of a live attack at its stop when it ended (d17 batch17 B1)
+    last.held_short=action.held_short
     -- The route walked (C5, Luna 18:20): from where, each via point and stop as reached, the tiles moved.
     last.route=stock.route_text(action)
     last.off_rails=action.off_rails
@@ -1134,6 +1136,7 @@ local function active(index)
     leg=action.kind=='move_to' and action.via and string.format('%d of %d',action.via.index,#action.via.points+1) or nil,
     -- A walking tour's or a courier's progress (Muse, Luna, shift19): leg N of M, the walk left, moved so far.
     progress=action.kind=='gather' and not action.wait and M.tour_progress(index,action) or nil,
+    held_short=action.held_short,  -- a tour waiting short of a live attack at its stop (d17 batch17 B1)
     remote=action.kind=='drive' and action.remote and action.vehicle and action.vehicle.valid and
       string.format('%s at (%.1f,%.1f) by remote view',action.vehicle.name,action.vehicle.position.x,action.vehicle.position.y) or nil}
 end

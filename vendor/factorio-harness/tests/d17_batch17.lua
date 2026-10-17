@@ -94,3 +94,43 @@ do
   assert(not pcall(B.read,{force={platforms={}}},{surface='nowhere'}),'a planet')
 end
 print('d17_batch17 A6 platform_bom by surface: ok')
+
+-- B1 (Haiku: a rearm walked into attack #5203 at the guns it went to): an attack that starts at a tour's stop while the
+-- walk is under way holds the walk short until the attack has had no hit for 30 s, then it goes on; said in held_short.
+do
+  game={tick=0}
+  local function distance(a,b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end
+  local function integer(v,d) return v or d end
+  local f={is_chunk_visible=function() return true end}
+  local p={force=f,position={x=0,y=0},reach_distance=10}
+  p.can_reach_entity=function(e) return distance(p.position,e.position)<=10 end
+  local turret={valid=true,type='ammo-turret',name='gun-turret',force=f,position={x=76,y=-191}}
+  local attack
+  local stopped,navs=0,0
+  local S=dofile('mod/agent-harness_0.1.0/stock.lua'){distance=distance,integer=integer,
+    goal_inside=function() return nil end,
+    goal_check=function() return attack end,goal_text=function(_,to) return 'place' end,
+    visit=function() return {transferred=10} end,
+    request_path=function(_,nav) nav.requested=true end,navigate=function() navs=navs+1 end,stop_walking=function() stopped=stopped+1 end}
+  local action=S.start_tour(p,'rearm',{turret},3600,{avoid_mode={}})
+  local function step() game.tick=game.tick+1; return S.tick(p,action) end
+  step(); assert(action.nav and action.nav.requested,'walking')
+  -- the attack starts at the guns while the walk is under way
+  attack={m={attack=true,name='attack #5203',x=70,y=-185}}
+  for _=1,61 do step() end
+  assert(action.holding,'held')
+  has(action.held_short,'the stop (76,-191) is in attack #5203 at (70,-185), under attack now; the walk goes on when it has had no hit for 30 s')
+  eq(stopped,1,'stopped walking once')
+  local before=navs
+  for _=1,30 do step() end
+  eq(navs,before,'no walking while held')
+  -- the attack over: the walk goes on (a new path)
+  attack=nil
+  for _=1,61 do step() end
+  eq(action.holding,nil); eq(action.held_short,nil)
+  p.position={x=74,y=-188}
+  local r
+  for _=1,5 do r=step(); if r then break end end
+  eq(r,'topped_up')
+end
+print('d17_batch17 B1 a tour holds short of a live attack at its stop: ok')
