@@ -114,8 +114,8 @@
   observed gaps in belts that carried items, and a rebuilt gap clears; a depleted-drill alert includes one remembered
   placement on the same resource (`drill_sites` lists more).
 - `belt_gaps {from, to, via?, surface?}`: remembered belt gaps and ghosts along the line, with observation ticks;
-  unrecorded tiles are unknown. A leg that is not straight follows the remembered belt round its corners
-  (`followed`). Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
+  unrecorded tiles are unknown. A leg that is not straight follows the remembered belt round its corners (`followed`).
+  A missing tile in sight names what stands on it (`blocked_by`, `line`). Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
 - `pipe_gaps {from, to, via?}`: a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts where
   neighbours do not join or the line stops. Example: `./fh call pipe_gaps --args '{"from":{"x":10,"y":5},"to":{"x":10,"y":40}}'`
 - `danger {position?, radius?, surface?}`: a destination before a trip (no position: where you stand): worms and

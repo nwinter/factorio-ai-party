@@ -91,7 +91,8 @@
   N` keeps belts, underground spans and returns outside charted enemy reach plus N tiles (0..32; true=8;
   omitted/false disables); endpoints inside are refused. Belts, undergrounds and splitters say where items go in
   `belt` (inspect, observe rows, build replies; `last_belt` for a batch): `moves items south to (-22.5,-28.5); fed
-  from (-22.5,-30.5)`.
+  from (-22.5,-30.5)`; at a line's end it names what stands on the tile it stops at: `(no belt takes them there:
+  they stop at its end; medium-electric-pole (353.5,95.5) stands there)`.
   Example: `./fh call belt_route --args '{"from":{"x":0,"y":0},"to":{"x":600,"y":40},"return":true}'`
 - `rail_route {from, to, signals?}`: lays 2.0 rails (16 headings; straight, half-diagonal and two curve pieces, a curve
   3 rails) around water, cliffs and buildings as ghosts and builds those in reach (`"signals": 30` adds one-way
