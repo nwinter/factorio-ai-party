@@ -112,14 +112,12 @@ return function(api)
           if order then ended(index, 'order') elseif #work * 60 >= BRIEF then ended(index, 'worked') end
         else
           local w = waiting(s, index)
-          -- armed standing orders keep watch (orders.lua armed; d17 batch16 A5, Haiku): counted apart, not standing
-          if api.armed and api.armed(index) then
-            b.watch = (b.watch or 0) + 1
-            if s.stand[index] then ended(index, 'watch') end
-          else
-            if w == 'sleep' then b.asleep = b.asleep + 1 elseif w then b.waiting = b.waiting + 1 else b.stand = b.stand + 1 end
-            if not s.stand[index] then s.stand[index] = game.tick end
-          end
+          if w == 'sleep' then b.asleep = b.asleep + 1 elseif w then b.waiting = b.waiting + 1 else b.stand = b.stand + 1 end
+          if not s.stand[index] then s.stand[index] = game.tick end
+          -- armed standing orders (orders.lua armed; d17 batch16 A5, Haiku): the time is also on watch, named; it is
+          -- still standing (operator, cp4: most agents keep rearm/refuel armed, and the idle nudge must still fire)
+          local armed = api.armed and api.armed(index)
+          if armed then b.watch = (b.watch or 0) + 1; b.watch_names = armed end
         end
       end
     end
@@ -173,6 +171,7 @@ return function(api)
       if k > id - minutes then
         c.busy_s, c.waiting_s, c.asleep_s, c.standing_s = c.busy_s + b.busy, c.waiting_s + b.waiting, c.asleep_s + b.asleep, c.standing_s + b.stand
         c.watch_s = c.watch_s + (b.watch or 0)
+        if b.watch_names and (not c.watch_k or k > c.watch_k) then c.watch_k, c.watch_names = k, b.watch_names end
         c.actions, c.no_effect, c.reads, c.messages = c.actions + b.acts, c.no_effect + b.noops, c.reads + b.reads, c.messages + b.talk
         for n, k2 in pairs(b.sleeps) do c.sleeps[n] = (c.sleeps[n] or 0) + k2 end
         for w, k2 in pairs(b.waits) do c.waits[w] = (c.waits[w] or 0) + k2 end
@@ -187,7 +186,7 @@ return function(api)
       if h.ok then steps = steps + 1 end
     end
     c.queue_steps = steps
-    local total = c.busy_s + c.waiting_s + c.asleep_s + c.standing_s + c.watch_s
+    local total = c.busy_s + c.waiting_s + c.asleep_s + c.standing_s  -- on watch overlaps asleep, waiting and standing
     local function pct(n) return total > 0 and math.floor(100 * n / total + 0.5) or 0 end
     local sl = {}
     for n, k in pairs(c.sleeps) do sl[#sl+1] = {n, k} end
@@ -203,7 +202,8 @@ return function(api)
       c.reads, c.reads == 1 and '' or 's', c.messages, c.messages == 1 and '' or 's',
       pct(c.busy_s), pct(c.asleep_s), #sleeps > 0 and ' (' .. table.concat(sleeps, ', ') .. ')' or '',
       pct(c.waiting_s), #waits > 0 and ' (' .. table.concat(waits, ', ') .. ')' or '', pct(c.standing_s))
-      .. (c.watch_s > 0 and string.format(', on watch %d%% (standing orders armed)', pct(c.watch_s)) or '')
+      .. (c.watch_s > 0 and string.format(', on watch %d%% of it (standing orders armed: %s)', pct(c.watch_s), tostring(c.watch_names)) or '')
+    c.watch_k = nil
     c.clock = clock(total)
     return c
   end

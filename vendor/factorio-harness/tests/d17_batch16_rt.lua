@@ -137,8 +137,9 @@ do
 end
 print('d17_batch16_rt A4 queue_pause holds: ok')
 
--- A5 (Haiku d17: "the idle counter should not count a sleep that is holding a defence watch"): with a standing order
--- armed, time with no action is waiting on it, not idle: the clock line, the sleep line and the idle report say so.
+-- A5 (Haiku d17: "the idle counter should not count a sleep that is holding a defence watch"; operator cp4: standing
+-- still accrues so the idle nudge fires as before): with a standing order armed, idle time is also on watch, named, in
+-- the clock line, the sleep line and the idle report; the report's orders name it for the nudge.
 do
   local index=runtime.bots.index_of('grok')
   grok('queue_cancel',{})
@@ -147,27 +148,30 @@ do
   grok('status',{brief=true})
   advance(600)
   local r=grok('status',{brief=true})
-  assert(r.clock and r.clock:find('character idle 0s of it (0%), waiting on your armed standing orders (defend) 10s of it (100%)',1,true),tostring(r.clock))
+  assert(r.clock and r.clock:find('character idle 10s of it (100%, on watch: defend for 10s of that)',1,true),tostring(r.clock))
   local sl=grok('sleep',{seconds=60})
   local line=sl.while_asleep or ''
-  assert(line:find('your character waits on your armed standing orders (defend) for up to 60 s',1,true),line)
-  -- the idle report: on watch, not standing
+  assert(line:find('your character stands idle for up to 60 s, on watch: your standing orders (defend) run when a trigger holds',1,true),line)
+  advance(3600)
+  -- the idle report: still standing (the nudge fires as before), on watch named, the orders' armed for the nudge text
   local rep=op('idle_report',{})
   local row
   for _,a in ipairs(rep.agents or rep) do if a.name=='grok' or a.agent=='grok' then row=a end end
   assert(row,'grok in the idle report')
+  assert((row.standing_s or 0)>=60,'standing accrues: '..tostring(row.standing_s))
+  eq(row.orders and row.orders.armed,'defend')
   local function find_text(t,depth) if depth>3 then return nil end for _,v in pairs(t) do if type(v)=='string' and v:find('on watch',1,true) then return v elseif type(v)=='table' then local f=find_text(v,depth+1) if f then return f end end end end
   local w=find_text(row,0)
-  assert(w and w:find('on watch 100% (standing orders armed)',1,true),tostring(w))
-  -- paused orders: idle again
+  assert(w and w:find('asleep',1,true) and w:find('on watch',1,true) and w:find('(standing orders armed: defend)',1,true),tostring(w))
+  -- paused orders: idle, nothing on watch
   grok('orders_pause',{})
   grok('status',{brief=true})
   advance(300)
   r=grok('status',{brief=true})
-  assert(r.clock:find('character idle 5s of it (100%',1,true) and not r.clock:find('armed',1,true),r.clock)
+  assert(r.clock:find('character idle 5s of it (100%',1,true) and not r.clock:find('on watch',1,true),r.clock)
   grok('order_remove',{name='defend'})
 end
-print('d17_batch16_rt A5 an armed standing order is a watch, not idle: ok')
+print('d17_batch16_rt A5 an armed standing order is named on watch; standing still counts: ok')
 
 -- B2 (Muse 15:49: transfer {to: "haiku", items} failed; players lists humans only): players lists the teammates'
 -- characters with positions; transfer {to_player: NAME} hands items to one within reach, dropped at their feet as loot.

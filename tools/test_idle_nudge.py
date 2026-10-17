@@ -109,6 +109,11 @@ def main():
     t = N.nudge_text(row("astra", 12, orders={"set": 1, "paused": True, "operator_paused": True}))
     assert "Standing orders: 1 set, paused by the operator." in t, t
     assert "Standing orders" not in N.nudge_text(row("astra", 12))
+    # armed orders (d17 batch16 A5, cp4): the nudge still fires (standing accrues), and its text names the orders on watch
+    armed = {"set": 2, "armed": "rearm, refuel"}
+    assert n.due(row("astra", 30, action="sleep", sleeping_s=1800, orders=armed), T0 + 900) is None
+    t = N.nudge_text(row("haiku", 30, action="sleep", sleeping_s=1800, orders=armed))
+    assert "Standing orders: 2 set, none running; on watch: rearm, refuel." in t and "sleeping 30 min" in t, t
     # an order that ran a while does not leave this process's own count standing when it ends
     o = N.Nudger([], start=T0)
     o.observe(row("astra", 0, orders={"set": 1, "running": "restock-ammo"}), T0 + 600)

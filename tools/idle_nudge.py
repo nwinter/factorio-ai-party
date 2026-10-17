@@ -58,7 +58,9 @@ def orders_text(o):
         return ""
     n = o["set"]
     state = "paused by the operator" if o.get("operator_paused") else "paused" if o.get("paused") else "none running"
-    return f" Standing orders: {n} set, {state}."
+    # armed (d17 batch16 A5, cp4): the orders on watch are named; the standing time still counts and the nudge fires
+    watch = f"; on watch: {o['armed']}" if o.get("armed") else ""
+    return f" Standing orders: {n} set, {state}{watch}."
 
 
 WAITS = ("wait_ticks", "wait_until", "sleep")  # not work (idle.lua WAITS)

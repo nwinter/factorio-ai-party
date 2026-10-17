@@ -67,8 +67,8 @@
   `./fh plan run` to repeat it); `wait_until` for one condition, with a timeout of a few minutes; `./fh sleep` or
   `./fh wait --until` for a wait that leaves the queue running.
 - The clock line counts a wait or sleep as idle: `character idle 5m00s of it (100%, 4m30s of that in wait_ticks)`.
-  With a standing order on (not paused, none running) that time is `waiting on your armed standing orders (NAMES)`
-  instead, and the sleep line says the character waits on them.
+  With a standing order on (not paused, none running) it is still idle, and the clock and sleep lines add
+  `on watch: NAMES` (the orders that act when a trigger holds).
   The operator's idle nudge uses the same count.
 - Raw `fh call wait_until` accepts word-form `until` and `ticks`/`timeout_ticks` aliases; queue errors name the step path. Aboard, queues accept allowed remote steps, `configure {platform}` works, and `observe` reports surroundings with `player.body:"none"`.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
