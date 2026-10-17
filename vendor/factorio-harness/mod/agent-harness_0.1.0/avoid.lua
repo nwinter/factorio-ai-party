@@ -266,6 +266,49 @@ return function(api)
   -- The discs of the read chunks, one nest (structures within NEST tiles of
   -- each other) one disc: its centre the middle of their box, its radius
   -- reaching past every member's own disc.
+  -- A via point clear of the nest that blocks the straight way (C7, Muse 12:20: no_safe_route gave no detour): the
+  -- first group of worms and spawners the line from a to b crosses, as the map shows them, and a point beside it on
+  -- either side, outside every weapon's reach plus the margin, on charted ground; the nearer to the line's two ends.
+  function M.via_round(p, a, b, mode)
+    if not mode then return nil end
+    local blobs = M.blobs(p.surface, M.chunks_near({a, b}, 48), mode)
+    local dx, dy = b.x - a.x, b.y - a.y
+    local L = (dx * dx + dy * dy) ^ 0.5
+    if L < 1 then return nil end
+    local ux, uy = dx / L, dy / L
+    local best
+    for _, bl in ipairs(blobs) do
+      for _, d in ipairs(bl.members) do
+        local t = (d.x - a.x) * ux + (d.y - a.y) * uy
+        local off = math.abs((d.x - a.x) * uy - (d.y - a.y) * ux)
+        if t > 0 and t < L and off < d.r and (not best or t < best.t) then best = {t=t, blob=bl} end
+      end
+    end
+    if not best then return nil end
+    local m = best.blob.members
+    local cx, cy = 0, 0
+    for _, d in ipairs(m) do cx, cy = cx + d.x, cy + d.y end
+    cx, cy = cx / #m, cy / #m
+    local R = 0
+    for _, d in ipairs(m) do R = math.max(R, dist({x=cx, y=cy}, d) + d.r) end
+    local function inside(q)
+      for _, bl in ipairs(blobs) do for _, d in ipairs(bl.members) do if dist(q, d) < d.r then return d end end end
+    end
+    local first = m[1]
+    local options = {}
+    for _, side in ipairs({1, -1}) do
+      for _, extra in ipairs({6, 16, 32}) do
+        local q = {x=math.floor(cx - uy * side * (R + extra)) + 0.5, y=math.floor(cy + ux * side * (R + extra)) + 0.5}
+        local charted = p.force.is_chunk_charted(p.surface, {x=math.floor(q.x / 32), y=math.floor(q.y / 32)})
+        if charted and not inside(q) then options[#options+1] = {q=q, len=dist(a, q) + dist(q, b)}; break end
+      end
+    end
+    table.sort(options, function(u, v) return u.len < v.len end)
+    local o = options[1]
+    if not o then return {text=string.format('no charted point within %d tiles beside the %d worms and spawners round (%d,%d) is clear of them', math.floor(R + 32), #m, math.floor(cx), math.floor(cy))} end
+    return {via=o.q, text=string.format('via (%g,%g) passes beside the %d worms and spawners round (%d,%d) (%s first, reach %g with the margin), %.0f tiles in all: move_to {position, via: [{x: %g, y: %g}]}',
+      o.q.x, o.q.y, #m, math.floor(cx), math.floor(cy), first.name or 'an attack', first.r, o.len, o.q.x, o.q.y)}
+  end
   function M.blobs(surface, chunks, mode)
     local c = cache(surface)
     local discs, done = {}, {}

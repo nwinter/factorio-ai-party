@@ -3479,6 +3479,24 @@ p.crafting_queue={{index=1,recipe='copper-cable',count=12,prerequisite=true},{in
 p.cancel_crafting=function(c) cancels[#cancels+1]=c.index..':'..c.count end
 eq(call('cancel_craft',{recipe='lab',count=6}).cancelled,6); eq(table.concat(cancels,','),'3:4,2:2')
 fails(function() call('cancel_craft',{recipe='iron-chest'}) end,'no queued crafts')
+-- d16 batch7 C3 (Sonnet 13:51: duplicate hand crafts twice): cancel_craft {all: true}, the latest first.
+do
+  local kept_q,kept_c=p.crafting_queue,p.cancel_crafting
+  local q={{index=1,recipe='copper-cable',count=12,prerequisite=true},{index=2,recipe='lab',count=5},{index=3,recipe='iron-gear-wheel',count=4}}
+  local log={}
+  p.crafting_queue=q
+  p.cancel_crafting=function(c)
+    log[#log+1]=c.index..':'..c.count
+    table.remove(q,c.index)
+    if #q==1 and q[1].prerequisite then table.remove(q,1) end
+    for i,e in ipairs(q) do e.index=i end
+  end
+  local r=call('cancel_craft',{all=true})
+  eq(r.cancelled,9); eq(table.concat(log,','),'3:4,2:5'); eq(r.recipes.lab,5); eq(r.recipes['iron-gear-wheel'],4)
+  fails(function() call('cancel_craft',{all=true}) end,'the crafting queue is empty')
+  fails(function() call('cancel_craft',{all=true,recipe='lab'}) end,'all cancels the whole queue')
+  p.crafting_queue,p.cancel_crafting=kept_q,kept_c
+end
 -- Status shows the hand-crafting queue and the time it still needs.
 p.force.recipes={lab={energy=2},['copper-cable']={energy=0.5}}
 p.character.character_crafting_speed_modifier=0; p.force.manual_crafting_speed_modifier=0; p.crafting_queue_progress=0.5

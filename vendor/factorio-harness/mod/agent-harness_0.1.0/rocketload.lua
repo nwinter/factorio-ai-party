@@ -262,7 +262,37 @@ return function(api)
   end
   -- A silo with automatic requests on takes no cargo by hand (Sonnet, 3 times: the auto rocket stalled 4+ minutes short
   -- of 1000 kg and the reply only said how to turn them off): what is aboard, and that launch sends it as it is.
-  function M.auto_text(silo)
+  -- C9 (Astra 15:20: a Wren kit split across rockets twice): with automatic requests on, the open requests of
+  -- platforms stopped over this planet for the items given, as the platforms' hub GUIs show them (asked, held, short,
+  -- the import planet): the game may send a rocket there with part of a load. items: {name=true} or nil (every request).
+  function M.open_requests(silo, items)
+    local planet = try(function() return silo.surface.planet and silo.surface.planet.name end) or silo.surface.name
+    local out = {}
+    for _, pl in pairs(try(function() return silo.force.platforms end) or {}) do
+      local here = try(function() return pl.space_location and pl.space_location.name end)
+      local hub = try(function() return pl.hub end)
+      if pl.valid and here == planet and hub and hub.valid then
+        local inv = try(function() return hub.get_inventory(defines.inventory.hub_main) end)
+        local secs = try(function() return hub.get_logistic_sections() end)
+        for i = 1, secs and secs.sections_count or 0 do
+          local sec = secs.get_section(i)
+          if sec and sec.active ~= false then
+            for _, f in ipairs(sec.filters or {}) do
+              local v = f.value
+              local name = type(v) == 'table' and v.name or v
+              local from = f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))
+              if name and (not items or items[name]) and (f.min or 0) > 0 and (from == nil or from == planet) then
+                local held = inv and try(function() return inv.get_item_count(name) end) or 0
+                if held < f.min then out[#out+1] = string.format('%s asks %s %d, holds %d (%d short)', pl.name, name, f.min, held, f.min - held) end
+              end
+            end
+          end
+        end
+      end
+    end
+    return out
+  end
+  function M.auto_text(silo, items)
     local inv = M.rocket_inventory(silo)
     local held = {}
     for _, s in ipairs(inv and try(function() return inv.get_contents() end) or {}) do if #held < 6 then held[#held+1] = s.name .. '*' .. s.count end end
@@ -274,6 +304,11 @@ return function(api)
       .. 'its rocket holds ' .. (#held > 0 and table.concat(held, ' ') or 'nothing') .. (kg and (' (' .. kg .. ')') or '')
       .. '; launch {position, platform} launches the rocket with what is aboard now, and automatic requests stay on; '
       .. 'launch {position, auto_requests=false} turns them off to load by hand'
+      .. (function()
+        local open = M.open_requests(silo, items)
+        return #open > 0 and '; open requests of platforms over this planet the game fills from this silo (a rocket may go with part of them): '
+          .. table.concat(open, '; ', 1, math.min(8, #open)) or '; no platform over this planet has an open request for these items'
+      end)()
   end
   -- The silo's two GUI switches as they stand (Grok 15:25: a partial rocket left before the kit was complete). load_silo
   -- never sets either; configure {auto_requests} and {send_to_orbit_automatically} (alias auto_launch) do.
@@ -292,7 +327,9 @@ return function(api)
     local silo = api.reach_entity(p, a.position)
     assert(silo.type == 'rocket-silo', silo.name .. ' at ' .. at(silo.position) .. ' is not a rocket silo')
     if try(function() return silo.use_transitional_requests end) then
-      error(M.auto_text(silo), 0)
+      local names = {}
+      for _, r in ipairs(M.items(a.items, 'items')) do names[r.name] = true end
+      error(M.auto_text(silo, names), 0)
     end
     local list = M.items(a.items, 'items')
     local inv = M.rocket_inventory(silo)
@@ -442,7 +479,7 @@ return function(api)
       line=string.format('the silo at %s makes no part: %s', at(silo.position), table.concat(parts_txt, '; '))}
   end
   function M.wait_fields(silo, ticks)
-    return {stall=ticks, idle_ticks=ticks, give_up=game.tick + math.max(ticks, M.MAX_WAIT), mark=progress_mark(silo), silo=silo,
+    return {stall=ticks, idle_ticks=ticks, give_up=game.tick + math.max(ticks, M.MAX_WAIT), mark=progress_mark(silo), silo=silo, since=game.tick,
       parts=try(function() return silo.rocket_parts end) or 0, part_tick=game.tick, parts_added=0, observed_ticks=0}
   end
   -- The measured cadence belongs to this wait and this silo.
@@ -571,7 +608,9 @@ return function(api)
     local silo = api.sight_entity(p, a.position)
     assert(silo.type == 'rocket-silo', silo.name .. ' at ' .. at(silo.position) .. ' is not a rocket silo')
     if try(function() return silo.use_transitional_requests end) then
-      error(M.auto_text(silo), 0)
+      local names = {}
+      for _, r in ipairs(M.items(a.items, 'items')) do names[r.name] = true end
+      error(M.auto_text(silo, names), 0)
     end
     local chests, far = {}, try(function() return p.can_reach_entity(silo) end) ~= true
     for _, pos in ipairs(a.from ~= nil and from_list(a.from) or {}) do
@@ -1067,6 +1106,14 @@ return function(api)
     if out.auto_requests and api.auto_wait then
       local okw, w = pcall(api.auto_wait, silo, p.force, held)
       if okw and w then out.auto_waits = w; words[#words+1] = 'automatic loading: ' .. w end
+      -- The platforms' open requests for the list (C9): a rocket may go to one with part of it.
+      local names
+      if a.items then names = {}; for _, r in ipairs(M.items(a.items, 'items')) do names[r.name] = true end end
+      local oko, open = pcall(M.open_requests, silo, names)
+      if oko and #open > 0 then
+        out.open_requests = open
+        words[#words+1] = 'automatic requests on: open requests of platforms over this planet (a rocket may go to one with part of a load): ' .. table.concat(open, '; ', 1, math.min(8, #open))
+      end
     end
     -- What launch would refuse now.
     local refuse = {}
@@ -1260,6 +1307,7 @@ return function(api)
       launch='true: launch once the rocket is ready, in the tick the cargo is loaded; needs platform (or orbit=true); refused (not launched, an error) when any count fell short (up_to aside); min_cargo and arrived are checked as launch checks them',
       platform='with launch: the platform in orbit to send it to', orbit='with launch: true for no platform',
       min_cargo='with launch: as launch min_cargo', arrived='with launch: as launch arrived',
+      rockets='optional 2..20, with launch: true: the same load for that many rockets, as steps appended to your queue (labelled rocket 1 of N ...), each loading and launching one rocket in turn',
       wait_min='optional 1..60: the wait for the rocket goes on this many minutes with no new part (a queue step waiting for an ingredient on its way); waiting.parts_short and, when it runs out, last.why name each rocket-part ingredient the silo lacks: short of the next part and of the parts left, and what its input holds',
       ticks='1..36000 (default 3600): how long to wait for the rocket (no rocket yet, or not ready for a launch) with no new rocket part: the idle window grows to at least 3 times the longest observed interval to a part increase; the wait goes on while the silo makes parts (or the rocket moves on to ready), 1 game hour at most in all (gives_up_tick); with walk, the whole tour (default 18000)',
       returns='silo, loaded [{item, asked, aboard_before, loaded, aboard, from (you N, iron-chest (x,y) N), freshness (a spoilable item: the loaded batch\'s spread and, for a pack the running research takes, how many a unit the running research takes and its units left), short, why (weight, slots, or what you and the chests held)}], cargo, rocket_weight, slots (used/total), chests (how many were read), complete, short; launch (the launch reply) with launch=true. No rocket yet, or launch=true before the rocket is ready: a timed action (until_tick, waiting {why, rocket}; outcome fed | failed | timed_out; last.result holds the reply). Into the rocket only what fits under its 1000 kg lift and in its cargo slots; a silo with automatic requests on is refused'},

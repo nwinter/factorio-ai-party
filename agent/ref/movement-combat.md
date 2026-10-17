@@ -73,3 +73,7 @@
   remote view while your character stays put; its guns do not fire that way.
 - `equipment {"vehicle":311799,"operation":"insert","item":"energy-shield-equipment"}` works a tank's (6x8) or spidertron's
   (10x6) equipment grid in reach or seated; `"operation":"list"` shows it, also by remote view; `inspect` on it too.
+
+- A `move_to` dry run lists `closed_in_on_route` (pockets every 8 tiles on the straight legs and at via points) and, with
+  no way round, `via_round`; a walk ending `no_safe_route` gives `last.via_round`. `vehicle {remote: true, vehicle,
+  go_to}` sends a spidertron by remote view; `auto_target_without_gunner` and `auto_target_with_gunner` set its switches.

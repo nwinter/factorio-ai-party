@@ -219,9 +219,9 @@ return function(api)
   -- remote view); the refusal lists them from here.
   -- blueprint_save and blueprint_capture (Astra, d15 18:35: cloning platform Starling into a new platform Swift).
   -- rotate (Astra, Sol, d15 batch5 D4): ghosts and built belts and inserters by remote view.
-  M.PLATFORM_ACTIONS = {'rotate', 'place_ghosts', 'deconstruct', 'cancel_deconstruction', 'paste', 'blueprint_place', 'blueprint_save', 'blueprint_capture', 'grid', 'scan', 'inspect',
+  M.PLATFORM_ACTIONS = {'rotate', 'upgrade', 'place_ghosts', 'deconstruct', 'cancel_deconstruction', 'paste', 'blueprint_place', 'blueprint_save', 'blueprint_capture', 'grid', 'scan', 'inspect',
     'configure', 'flush', 'circuit_set', 'circuit', 'wire', 'ports', 'cargo', 'trace', 'power', 'conflicts', 'placements'}
-  M.SURFACE_ACTIONS = {'rates', 'rotate', 'inspect', 'circuit_set', 'circuit', 'wire', 'ores', 'launch', 'configure', 'silo', 'preflight', 'requests',
+  M.SURFACE_ACTIONS = {'rates', 'rotate', 'upgrade', 'placements', 'inspect', 'circuit_set', 'circuit', 'wire', 'ores', 'launch', 'configure', 'silo', 'preflight', 'requests',
     'place_ghosts', 'scan', 'conflicts', 'deconstruct', 'cancel_deconstruction', 'trace'}
   M.ABOARD_NOTE = 'every read (status, scan, inspect, science, supply, networks, platforms, map, ...: of the platform, or of a planet with surface=) but inventory and craftable; '
     .. 'tell, chat, say, operator, board and votes; research; platform_schedule, platform_create, requests (platform= or position=), drop (hub items down to the planet) and land; '
@@ -391,7 +391,7 @@ return function(api)
     end
   end
   -- Aboard, the bot does what a player in the hub can: remote view.
-  local ABOARD = {status=true, describe=true, platforms=true, platform_create=true, platform_schedule=true, land=true, drop=true, drops=true, game_alerts=true,
+  local ABOARD = {status=true, describe=true, platforms=true, platform_create=true, platform_schedule=true, platform_rename=true, land=true, drop=true, drops=true, game_alerts=true,
     review=true, networks=true, boilers=true, research=true, research_next=true, technologies=true, recipes=true, say=true, chat=true, confess=true, confessions=true, chronicle=true,
     profile=true, clock=true, advance=true, sleep=true, sleep_check=true, wait_ticks=true, queue_status=true, queue_cancel=true, queue_submit=true, queue_repeat=true, queue_edit=true, queue_resume=true,
     blueprint_import=true, blueprint_list=true, blueprint_export=true, blueprint_delete=true, cameras=true, profiles=true, ports=true, cargo=true}

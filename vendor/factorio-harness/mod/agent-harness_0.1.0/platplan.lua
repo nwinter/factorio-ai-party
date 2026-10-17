@@ -169,9 +169,113 @@ return function(api)
     return head, side, loops
   end
 
+  -- salvage (C6, Astra 13:50: Wren's salvage took about 60 deconstruct calls and a second pass): up to n built foundation
+  -- tiles to take up, from the edge in, farthest from the hub first. A tile qualifies when nothing of ours stands on it
+  -- (built or ghost, whole footprints), no planned tile ghost is there, no underground belt passes under it, and the
+  -- foundation left stays joined round it (its remaining neighbours meet within the 8 tiles round it), so everything
+  -- still on the hub's foundation stays joined to it and every planned ghost keeps its tiles. Read only.
+  function M.salvage(s, force, hub, n)
+    local built = try(function() return s.find_tiles_filtered{name='space-platform-foundation', limit=MAX_TILES} end) or {}
+    local tile = {}
+    for _, t in ipairs(built) do tile[k(t.position.x, t.position.y)] = true end
+    local keep = {}
+    for _, g in ipairs(try(function() return s.find_entities_filtered{type='tile-ghost', limit=MAX_TILES} end) or {}) do
+      keep[k(math.floor(g.position.x), math.floor(g.position.y))] = true
+    end
+    local ents = try(function() return s.find_entities_filtered{force=force} end) or {}
+    for _, e in ipairs(ents) do
+      if e.valid and e.type ~= 'tile-ghost' then
+        local b = e.bounding_box
+        for x = math.floor(b.left_top.x), math.ceil(b.right_bottom.x) - 1 do
+          for y = math.floor(b.left_top.y), math.ceil(b.right_bottom.y) - 1 do keep[k(x, y)] = true end
+        end
+        if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'input' then
+          local o = try(function() local nb = e.neighbours; return nb and nb.valid and nb or nil end)
+          if o then
+            local x, y, tx, ty = math.floor(e.position.x), math.floor(e.position.y), math.floor(o.position.x), math.floor(o.position.y)
+            local dx, dy = tx > x and 1 or tx < x and -1 or 0, ty > y and 1 or ty < y and -1 or 0
+            while (x ~= tx or y ~= ty) and math.abs(x - tx) + math.abs(y - ty) <= 64 do x, y = x + dx, y + dy; keep[k(x, y)] = true end
+          end
+        end
+      end
+    end
+    local hx, hy = hub and math.floor(hub.position.x) or 0, hub and math.floor(hub.position.y) or 0
+    local RING = {{-1,-1},{0,-1},{1,-1},{1,0},{1,1},{0,1},{-1,1},{-1,0}}
+    -- removing (x,y) keeps its remaining 4-neighbours joined through the ring of 8 round it
+    local function local_ok(x, y)
+      local on, first = {}, nil
+      for i, d in ipairs(RING) do on[i] = tile[k(x + d[1], y + d[2])] == true end
+      local orth = {}
+      for _, i in ipairs({2, 4, 6, 8}) do if on[i] then orth[#orth+1] = i end end
+      if #orth == 0 then return false end
+      local seen, stack = {[orth[1]]=true}, {orth[1]}
+      while #stack > 0 do
+        local i = table.remove(stack)
+        for _, j in ipairs({(i % 8) + 1, ((i - 2) % 8) + 1}) do
+          if on[j] and not seen[j] then seen[j] = true; stack[#stack+1] = j end
+        end
+      end
+      for _, i in ipairs(orth) do if not seen[i] then return false end end
+      return true
+    end
+    local function edge(x, y)
+      for _, d in ipairs({{1,0},{-1,0},{0,1},{0,-1}}) do if not tile[k(x + d[1], y + d[2])] then return true end end
+      return false
+    end
+    local taken = {}
+    for _ = 1, 64 do
+      if #taken >= n then break end
+      local cand = {}
+      for key in pairs(tile) do
+        if not keep[key] then
+          local x, y = math.floor(key / 65536) - 32768, key % 65536 - 32768
+          if edge(x, y) then cand[#cand+1] = {x=x, y=y, d=(x - hx) ^ 2 + (y - hy) ^ 2} end
+        end
+      end
+      table.sort(cand, function(u, v) if u.d ~= v.d then return u.d > v.d end if u.y ~= v.y then return u.y < v.y end return u.x < v.x end)
+      local progress = false
+      for _, c in ipairs(cand) do
+        if #taken >= n then break end
+        local key = k(c.x, c.y)
+        if tile[key] and edge(c.x, c.y) and local_ok(c.x, c.y) then
+          tile[key] = nil; taken[#taken+1] = {x=c.x, y=c.y}; progress = true
+        end
+      end
+      if not progress then break end
+    end
+    -- Rows of neighbouring tiles as areas (one deconstruct call each).
+    table.sort(taken, function(u, v) if u.y ~= v.y then return u.y < v.y end return u.x < v.x end)
+    local areas = {}
+    for _, t in ipairs(taken) do
+      local last = areas[#areas]
+      if last and last.y == t.y and last.x1 == t.x - 1 then last.x1 = t.x
+      else areas[#areas+1] = {y=t.y, x0=t.x, x1=t.x} end
+    end
+    -- the same run on the next rows: one rectangle
+    local rects, open = {}, {}
+    for _, r in ipairs(areas) do
+      local key = r.x0 .. ':' .. r.x1
+      local o = open[key]
+      if o and o.y1 == r.y - 1 then o.y1 = r.y
+      else o = {x0=r.x0, x1=r.x1, y0=r.y, y1=r.y}; open[key] = o; rects[#rects+1] = o end
+    end
+    local out = {}
+    for i, r in ipairs(rects) do out[i] = {left_top={x=r.x0, y=r.y0}, right_bottom={x=r.x1 + 1, y=r.y1 + 1}} end
+    return taken, out, #built >= MAX_TILES
+  end
   function M.read(p, a)
     assert(type(a.platform) == 'string', 'platform is required (a platform name)')
     local pl = api.platform(p, a.platform)
+    if a.salvage ~= nil then
+      local n = api.integer and api.integer(a.salvage, nil, 1, 2000, 'salvage') or a.salvage
+      local taken, areas, capped = M.salvage(pl.surface, pl.force, pl.hub and pl.hub.valid and pl.hub or nil, n)
+      local list = {}
+      for i, t in ipairs(taken) do if i <= 64 then list[#list+1] = at(t.x + 0.5, t.y + 0.5) end end
+      return {platform=pl.name, salvage=#taken, asked=n, areas=areas,
+        line=string.format('%d of %d foundation tiles can come up from the edge in (nothing of ours on them, no tile ghost, no underground span under them, the rest of the foundation stays joined round each)%s: %d areas (rectangles of tiles), one deconstruct {platform, area, tiles: true} each',
+          #taken, n, capped and string.format(' (the first %d tiles read)', MAX_TILES) or '', #areas),
+        tiles=list, tiles_more=#taken > 64 and #taken - 64 or nil}
+    end
     local s, hub = pl.surface, pl.hub
     local groups, ntiles, capped = foundation(s, hub and hub.valid and hub or nil)
     local islands = {}
@@ -195,7 +299,7 @@ return function(api)
     return {platform=pl.name, foundation_tiles=ntiles, hub_group=main and main.size or nil, islands=islands, belts=nbelts, loops=loops,
       head_on=#head > 0 and head or nil, side_loads=#side > 0 and side or nil, lines=lines}
   end
-  M.schema = {platform_plan = {platform='platform name',
+  M.schema = {platform_plan = {platform='platform name',salvage='optional 1..2000: a read of up to that many built foundation tiles to take up, from the edge in, farthest from the hub first, each with nothing of ours on it (built or ghost), no tile ghost, no underground span under it, and the foundation left joined round it: salvage (how many), areas (rectangles of neighbouring tiles, each a deconstruct {platform, area, tiles: true}), tiles (the first 64), line',
     returns='a platform as planned, built and ghosts together (read only): foundation_tiles (built and tile ghosts), hub_group (the 4-joined tiles with the hub), islands [{size, ghost_tiles, tile, line}] (groups no foundation joins with the hub), belts (transport belts, undergrounds and splitters, built and ghosts), loops [{belts, ghosts, exits, first, line}] (belts whose items come round again; exits 0: no belt leaves it), head_on (a belt moving its items into one facing it), side_loads (a belt feeding the side of another), lines'}}
   return M
 end

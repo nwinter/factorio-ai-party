@@ -1063,7 +1063,13 @@ return function(api)
             rec.note = (rec.note and rec.note..'; ' or '')..string.format('%s marks %s for removal%s', kind == 'ghosts' and 'place_ghosts' or 'the paste',
               table.concat(marked, ', '), kind == 'ghosts' and ' (construct mines trees and rocks)' or '')
           end
-          if #ghosts > 0 and rec.status ~= 'blocked' then
+          -- place_ghosts puts no ghost over another one (C8, Astra 15:20: ordinary belts read placeable over turbo-belt
+          -- ghosts, then placed 0; checked on the copy of world n: "placement blocked"): blocked, as the call will be.
+          if #ghosts > 0 and rec.status ~= 'blocked' and kind == 'ghosts' then
+            rec.status = 'blocked'
+            reasons[#reasons+1] = 'blocked by '..table.concat(ghosts, ', ', 1, math.min(3, #ghosts))
+              ..': place_ghosts puts no ghost over another; upgrade {position, to} changes a ghost in place to another of its kind (a belt to a belt, an inserter to an inserter), keeping its wires and settings'
+          elseif #ghosts > 0 and rec.status ~= 'blocked' then
             rec.note = (rec.note and rec.note..'; ' or '')..'over '..table.concat(ghosts, ', ', 1, math.min(3, #ghosts))
           end
           if mine and manual and rec.status ~= 'blocked' then

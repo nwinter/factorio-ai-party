@@ -5572,3 +5572,50 @@ fh watch    # deploy on every change
   source the game names: a fire or projectile that outlived it). Hits from one source within a second are one row; the
   last 8 rows an entity, 512 entities. `inspect` adds `damage_history`. On the copy the log adds about 6-12 ms per 1000
   hits in the container (about 0.002 ms a hit on n).
+- `platform_rename {platform, name}` (C1, Astra 13:30): renames one of our platforms, as its GUI does, refusing another
+  platform's name; `still_named` lists each agent's queue steps (pending and running), running action, standing orders,
+  saved plans and open board items that name the old name. Nothing of theirs is changed. Platform schedules and
+  logistic requests name planets, so a rename leaves them as they are. Checked on the copy: Von Braun to Braun II and
+  back, two board items named.
+- C2 (blueprint_import) was dropped by the operator: no designs from outside the team.
+- `cancel_craft {all: true}` (C3, Sonnet 13:51): every queued hand craft, the latest first; `recipes` and `returned`.
+- `load_silo {rockets: 2..20, launch: true, ...}` (C4, Sonnet 13:51): the same load for that many rockets, as steps
+  appended to your queue labelled `rocket 1 of N` ...; each loads and launches one rocket in turn.
+- Spidertrons (C5, from batch6 F1): `vehicle {remote: true, vehicle: UNIT_NUMBER or {x,y}, go_to}` sends one by remote
+  view (in a chunk our force sees); `auto_target_without_gunner` and `auto_target_with_gunner` (true or false) set the
+  GUI's two switches on the one at position, the one you ride, or by remote view; `targeting` gives both. Checked on the
+  copy: a spidertron created at (70,-80) walked to (80,-80) on a remote go_to; the switch read back off.
+- `platform_plan {platform, salvage: 1..2000}` (C6, Astra 13:50: Wren's salvage took about 60 deconstruct calls and a
+  second pass): built foundation tiles to take up, from the edge in, farthest from the hub first: nothing of ours on
+  them (built or ghost footprints), no tile ghost, no underground belt passing under them, and the foundation left joined
+  round each (its remaining neighbours meet within the 8 tiles round it). `areas` gives them as rectangles, one
+  `deconstruct {platform, area, tiles: true}` each. On the copy: 60 tiles of Wren in about 36 ms in the container.
+- `move_to` dry run (C7, Opus 13:51: boxed in by trees mid-route at (347,-187)): `closed_in_on_route` names pockets at
+  points every 8 tiles on the straight legs and at corners and via points (at most 24 points read: up to about 63 ms in
+  the container, about 13 ms on n). Checked on the copy: a ring of trees round (78.5,-75) on a route from (57,-75) to
+  (120,-75) was found at (81,-75). With no way round at the margins, `via_round` names a via point beside the first
+  nest the line crosses, outside every reach plus the margin, on charted ground; a live walk that ends `no_safe_route`
+  gives it in `last.via_round` and `last.via_point`.
+- `upgrade {position | positions | area, to, from?}` or `{map: {from: to, ...}}` (C8, Astra 15:20: a belt change took 174
+  deconstruct calls and a repaste): the upgrade planner. A ghost is changed in place; a built entity is marked for
+  upgrade, for construction robots with the item. The target must share the fast-replace group and size; others are
+  `skipped`. Checked on the copy (2.0.77): a turbo-transport-belt ghost became a transport-belt ghost, direction kept;
+  an inserter ghost became a fast-inserter ghost with its filter and red wire kept; a built belt was marked for
+  fast-transport-belt. `surface` and `platform` work as for place_ghosts. A `place_ghosts` dry run over another entity's
+  ghost now reads blocked, naming upgrade (on the copy it read placeable over a turbo-belt ghost and the call placed 0).
+- Automatic requests (C9, Astra 15:20: a Wren kit split across rockets twice): load_silo's refusal while a silo's
+  automatic requests are on, and `preflight` (`open_requests`), list the open requests of platforms stopped over the
+  planet for the load's items (asked, held, short; requests importing from another planet left out): the game may
+  send a rocket there with part of a load. Checked on the copy: Von Braun's foundation request at 400 with 285 held read
+  `Von Braun asks space-platform-foundation 400, holds 285 (115 short)`.
+- `placements {surface}` (C10, Sol 15:21) reads another planet by remote view; an electric entity's spots give
+  `network` (the electric network #N whose pole supplies the spot, or none) and `pole` (that pole, or the nearest and how
+  far). Checked on the copy: Sol on Aquilo got Nauvis radar spots on network #2.
+- Launches and departures (C11, Luna 15:21): checked on the copy (2.0.77), a platform with a rocket in flight to it does
+  not leave: Swift, sent on at once after a launch to it, stayed at Nauvis about 37 s until the pod landed (its state read
+  no_schedule meanwhile), then left with the 100 copper plates aboard; with no rocket in flight it left at once. So a pod
+  in flight never misses its platform; the risk is a launch still waiting for its rocket. A `launch:` line in team.alerts
+  tells the agent whose launch waits (load_silo with launch, a walking load_silo, launch {wait_ready}), and those the
+  platform's alerts go to, when the platform leaves the silo's planet meanwhile, or when its time wait there ends within
+  5 minutes. Checked on the copy: Grok's launch {wait_ready} at Gleba (parts 22/50) and Swift sent on: the line came on
+  Grok's next reply.

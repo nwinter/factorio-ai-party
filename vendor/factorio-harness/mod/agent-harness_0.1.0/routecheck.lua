@@ -19,6 +19,7 @@ return function(api)
   local function dist(a, b) return ((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) ^ 0.5 end
   local function at(q) return string.format('(%g,%g)', math.floor(q.x + 0.5), math.floor(q.y + 0.5)) end
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  local POCKET_STEP, POCKETS = 8, 24
   -- The nearest point of segment a-b to q.
   local function nearest_on(a, b, q)
     local dx, dy = b.x - a.x, b.y - a.y
@@ -183,6 +184,36 @@ return function(api)
     end
     local start = closed_at(p, points[1], false)
     local goal = closed_at(p, points[#points], true)
+    -- Pockets along the whole route (C7, Opus 13:51: boxed in by trees mid-route at (347,-187) and killed): each via
+    -- point, and points on the straight legs every POCKET_STEP tiles (at most POCKETS), read as at the ends.
+    local pockets, looked = {}, 0
+    for i = 2, #route do
+      local a0, b0 = route[i - 1], route[i]
+      local L = dist(a0, b0)
+      local steps = math.floor(L / POCKET_STEP)
+      for j = 1, steps do
+        if looked >= POCKETS then break end
+        local q = {x=a0.x + (b0.x - a0.x) * j / (steps + 1), y=a0.y + (b0.y - a0.y) * j / (steps + 1)}
+        looked = looked + 1
+        local c = closed_at(p, q, false)
+        if c and not c.stuck then pockets[#pockets+1] = string.format('%s on leg %d: %s', at({x=math.floor(q.x * 10 + 0.5) / 10, y=math.floor(q.y * 10 + 0.5) / 10}), i - 1, c.text) end
+      end
+      if i < #route and looked < POCKETS then
+        looked = looked + 1
+        local c = closed_at(p, b0, false)
+        if c and not c.stuck then pockets[#pockets+1] = string.format('%s (a corner or via point): %s', at(b0), c.text) end
+      end
+    end
+    if #pockets > 0 then
+      out.closed_in_on_route = {}
+      for i = 1, math.min(SHOW, #pockets) do out.closed_in_on_route[i] = pockets[i] end
+      if #pockets > SHOW then out.closed_in_on_route[#out.closed_in_on_route+1] = (#pockets - SHOW) .. ' more' end
+    end
+    out.route_points_checked = looked > 0 and string.format('%d points on the route checked for pockets (every %d tiles, at most %d)', looked, POCKET_STEP, POCKETS) or nil
+    if no_way and A and A.via_round then
+      local v = try(function() return A.via_round(p, points[1], points[#points], mode) end)
+      if v then out.via_round = v.text; out.via_point = v.via end
+    end
     if start then out.closed_in_start = 'where you stand: ' .. start.text end
     if goal then
       out.closed_in_goal = 'the goal: ' .. goal.text
