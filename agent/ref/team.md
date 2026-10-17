@@ -105,23 +105,26 @@
 - Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, power cuts
-  (`power cut #1: small-electric-pole (x,y) destroyed by big-biter ...: split electric network #57 in 2: #212 has no power (31 poles, ...): 20 electric-mining-drill, ...`;
-  `scan` rows of poles give `network` and `wires`; `inspect` gives `electric_network_id` and `circuit.wires`), and the
-  game's alerts and warnings for areas you claimed, built or are nearest:
-  `8 assembling-machine-2 no power near (125,40)`, `12 gun-turret out of ammo near (67,-170)`, turrets rebuilt empty
-  (built with no ammo, still empty 60 s later, named), ghosts waiting for materials, inserters that lost their pickup
-  or drop target (by what they feed, with what each read and puts into), an electric network drawing 85% or more of
-  its capacity for 2 minutes, boilers under 20 minutes of their own fuel that nothing refills (their feeding inserters
-  have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel fell about as fast
-  as they burn over 2+ minutes, or by a quarter of their burn over 4+ minutes; again under 10 and 5; each low boiler
-  with its feeder and that source, or that no inserter feeds it, and the fuel in chests and on belts within 64 tiles),
-  a boiler's feed chest under 20 of its fuel with nothing put into it for 5 minutes (boiler, chest, count, feeder), a
-  logistic network with no idle logistic robot for 10 minutes, a science colour whose makers here have all stood still
-  for 5+ minutes (with its chain's first short step), Fulgora's lightning attractors no pole reaches or in a network
-  with no accumulator and nothing drawing power, full accumulators in an attractor network, mining drills out of ore
-  (the ore, drills still mining there, the nearest untapped patch), ghosts waiting 5+ min on robots with their items
-  in the network, requests unfilled 5+ min with the item free in the network (and what the robots are doing); at most
-  one digest every 2.5 minutes, new or worse only (`./fh call game_alerts` lists them all). It also carries `review`
+  (`power cut #1: small-electric-pole (x,y) destroyed by big-biter ...: split electric network #57 in 2: #212 has no
+  power (31 poles, ...): 20 electric-mining-drill, ...`; `scan` rows of poles give `network` and `wires`; `inspect`
+  gives `electric_network_id` and `circuit.wires`), and the game's alerts and warnings for areas you claimed, built or
+  are nearest: `8 assembling-machine-2 no power near (125,40)`, `12 gun-turret out of ammo near (67,-170)`, turrets
+  rebuilt empty (built with no ammo, still empty 60 s later, named), ghosts waiting for materials, inserters that lost
+  their pickup or drop target (by what they feed, with what each read and puts into), an electric network drawing 85%
+  or more of its capacity for 2 minutes, boilers under 20 minutes of their own fuel that nothing refills (their
+  feeding inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel
+  fell about as fast as they burn over 2+ minutes, or by a quarter of their burn over 4+ minutes; again under 10 and
+  5; each low boiler with its feeder and that source, or that no inserter feeds it, and the fuel in chests and on
+  belts within 64 tiles), a boiler's feed chest under 20 of its fuel with nothing put into it for 5 minutes (boiler,
+  chest, count, feeder), a logistic network with no idle logistic robot for 10 minutes, a science colour whose makers
+  here have all stood still for 5+ minutes (with its chain's first short step), Fulgora's lightning attractors no pole
+  reaches or in a network with no accumulator and nothing drawing power, full accumulators in an attractor network,
+  mining drills out of ore (the ore, drills still mining there, the nearest untapped patch), ghosts waiting 5+ min on
+  robots with their items in the network, requests unfilled 5+ min with the item free in the network (and what the
+  robots are doing); at most one digest every 2.5 minutes, new or worse only (`./fh call game_alerts` lists them all).
+  An alert you were shown with the same words is shown again only after 10 minutes (a changed count, age or position
+  shows at once); alerts that wake a sleep (your character hit, eggs, attacks, enemy groups, losses, power cuts, a
+  platform hub's damage) always show; `status` alerts and `game_alerts` list everything. It also carries `review`
   (every 2 game hours), `lookahead` (about every 45 minutes) and `science`: one line, at most every 5 minutes and only
   when it changed: the research, labs working N of M, the pack the most labs hold none of with made and used per
   minute and the first short step of its chain, the largest electric network's draw, capacity and headroom, and its

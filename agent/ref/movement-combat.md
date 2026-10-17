@@ -23,15 +23,16 @@
     fewest to mine for one (never a rocket silo, landing pad or platform hub; a goal inside a building: the way to its
     edge). `mine_out: true` marks those, mines them by hand (a timed construct; contents to your inventory) and walks
     again once (`last.mining_out`).
-  - Enemies: it keeps out of the range of the worms the map shows (+ 4 tiles), 40 tiles of a spawner (+ 4) and 24
-    tiles of an area under attack now (hit in the last 30 s; + 4), and away from enemy units in sight near the way and
+- Enemies: it keeps out of the range of the worms the map shows (+ 4 tiles), 40 tiles of a spawner (+ 4) and 24 tiles
+    of an area under attack now (hit in the last 30 s; + 4), and away from enemy units in sight near the way and
     groups seen now (and where they head), walking legs around them (`last.avoided_enemies`; a new attack re-plans,
     `last.replanned`; a path crossing only a margin may be walked, `last.passed_within_margin`). A group seen ahead
     mid-walk stops it and walks you away (`last.retreated`). A walk begun inside a reach goes out the shortest way
     first (`left_reach_first`). A goal inside one is refused (`unsafe_goal: true` goes anyway). No way round:
     `no_safe_route`, with `last.smaller_margins` (the largest smaller margin with a complete engine route, its closest
     nest pass, or why the check failed), `last.via_round`, and for a walk back `last.walked_back` (the way you walked
-    out, as via points).
+    out, as via points). When only enemies that move (units, a group, an attack) are in the way, it stands and plans
+    again every 5 s, up to 6 times (`last.waited_for_units`); a hit while it stands ends it.
   - `avoid_enemies`: `true` adds 8 tiles; a number (0..32) is a hard margin; `{distance: N}` keeps N tiles from every
     worm and spawner, their reach not counted (a worm whose range is more than N can hit you); `false` checks nothing,
     and `enters_unchecked` names the nests and units the straight legs cross.
@@ -117,7 +118,10 @@
   Example: `./fh call equipment --args '{"vehicle":311799,"operation":"insert","item":"energy-shield-equipment"}'`
 - The walking tours (rearm, refuel, feed, collect, transfer `walk`) and `mine` check each place for enemies as
   `move_to` does, at the call too: `left_out` names the stops left out, and a tour whose every stop lies in such a
-  reach is refused (`last.danger`, `last.dangers` for those found on the way). A walk that falls back to a spot within
-  its target's reach (recover, transfer, feed tours) keeps the enemy margin; a tour (transfer, feed, collect, recover)
+  reach is refused (`last.danger`, `last.dangers` for those found on the way). An attack that starts at the stop while
+  a tour or `recover` walks there holds the walk where it is until it has had no hit for 30 s (`held_short` in status
+  and `last`). A stop no path leads to (a turret closed in by solar panels) names the fewest of ours to mine for a way
+  (`last.first_unreached`, `last.mine_for_a_way`), as `move_to` does. A walk that falls back to a spot within its
+  target's reach (recover, transfer, feed tours) keeps the enemy margin; a tour (transfer, feed, collect, recover)
   that ends on a ground rail walks off the rails first (`last.off_rails`). Attack lines say when the area clears (30 s
   after its last hit).

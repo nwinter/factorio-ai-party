@@ -57,6 +57,16 @@ class FakeHarness:
     def used_flows(self, items):
         return {"automation-science-pack": [4] * 30}
 
+    def planets(self):
+        # (live.py's per-planet map tab, 76f9c577: the fake had none and every live round read errors.planet_map)
+        return [{"name": "vulcanus", "buildings": 3, "cell": 4, "w": 2, "h": 1}]
+
+    def planet_map(self, surface):
+        if surface != "vulcanus":
+            return None
+        return {"tick": self.tick, "cell": 4, "x0": 0, "y0": 128, "w": 2, "h": 1, "rows": ["SB"], "buildings": 3,
+                "surface": surface}
+
     def basemap(self, ore=False):
         m = {"tick": self.tick, "cell": 4, "x0": -8, "y0": -4, "w": 3, "h": 2, "rows": ["SBA", ".D"], "nests": [],
              "buildings": 5}
@@ -98,7 +108,9 @@ class FakeHarness:
         if action == "board" and args.get("kind") == "project":
             if self.no_projects:
                 raise RuntimeError("kind must be task, request, claim, note or harness")
-            assert args.get("status") == "active", args
+            assert args.get("status") in ("active", "done"), args
+            if args.get("status") == "done":  # live.py reads the last finished ones too
+                return {"items": [], "matched": 0, "open_unowned": 1}, self.tick
             items = [{"id": 6, "kind": "project", "title": "Nuclear plant", "owner": "astra", "requested_by": "luna",
                       "status": "doing", "progress": "3 of 7 steps", "next_steps": ["[ ] 4. turbines"], "updated_tick": 4}]
             return {"items": items, "matched": 1, "open_unowned": 1}, self.tick
@@ -111,6 +123,9 @@ class FakeHarness:
         if action == "chat":
             assert args.get("peek") is True
             return {"messages": [{"seq": 5, "tick": 10, "from": "Astra", "text": "[color=1,0,0]Iron[/color] ok"}], "cursor": 5}, self.tick
+        if action == "reminders":
+            assert args.get("all") is True
+            return {"reminders": [], "count": 0, "tick": self.tick}, self.tick
         raise AssertionError(action)
 
     def camera(self, body):
@@ -327,7 +342,8 @@ def main():
         b["changelog"][0]["request"] == "Save build orders", b["changelog"]
     # open projects come from their own read (they outlive the newest 60 items), with their progress
     assert b["projects"] == [{"id": 6, "title": "Nuclear plant", "owner": "astra", "agent": "astra", "status": "doing",
-                              "progress": "3 of 7 steps", "done": 3, "total": 7, "next": "4. turbines", "goal": None}] \
+                              "progress": "3 of 7 steps", "done": 3, "total": 7, "next": "4. turbines", "goal": None,
+                              "requested_by": "luna"}] \
         and b["projects_total"] == 1, b["projects"]  # next: its first step not done (the site's Team plan)
     # a runtime older than projects refuses the kind: the rest of the board still comes
     osrc = LiveSource("test", run, harness=FakeHarness(board=True, no_projects=True))
