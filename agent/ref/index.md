@@ -4,7 +4,7 @@ Each topic, when to read it, and the commands it documents:
 
 - `moving-items`, when you move items by hand or a move comes back `short` or out of reach: `transfer` (give, take,
   couriers, to a teammate by name), `collect` (machine outputs), `feed` (ingredients, packs, fuel), `refuel` (burners), `pickup` (belts,
-  ground), `mine` (by hand), `rotate`, `repair`, `inventory`, `craft`, `cancel_craft`.
+  ground), `mine` (by hand), `rotate`, `repair`, `inventory`, `craft`, `cancel_craft`, `deliver` (fuel and ammunition by robots).
 - `building`, when you place anything past a few hand builds: `build` (batches, settings, fast replace), `place_ghosts`,
   `construct` (ghosts by hand), `ghosts` (each ghost near you: what it needs, can robots build it), `deconstruct`, `upgrade` (the upgrade planner: ghosts in place), `paste`, `placements` (where it fits), `nearest_water`, `conflicts`, `build_path`,
   `grid` (tiles), `pole_route`, `belt_route`, `rail_route`, `train_stop`, `train` (stops, schedules), `clear_cliffs`, `heat_budget`,
@@ -17,7 +17,7 @@ Each topic, when to read it, and the commands it documents:
   `shoot`, `use_item` (grenades, capsules), `equip` (gun and ammo slots), `vehicle` (enter, drive, remote),
   `equipment` (grids).
 - `analysis`, when something is starved or slow or you need numbers to plan: `progress` (the run by shift), `research`
-  and `research done`, `science` (packs), `supply` (one item), `bottleneck`, `trace`, `labs`, `inspect` (areas,
+  and `research done`, `science` (packs), `supply` (one item), `bottleneck`, `dependency` (an item's recipe inputs joined), `trace`, `labs`, `inspect` (areas,
   remote view), `ports`, `power` (networks, fragile poles), `fuel_budget`, `game_alerts`, `belt_gaps`, `pipe_gaps`,
   `danger`, `drill_sites`, `ores`, `stock` (where an item is), `reservations` (a network's robot reservations), `construction_robots`, `shortages` (the factory's
   shortages in one read), `damage_log` (what hit our entities); the factory digest.
@@ -31,5 +31,5 @@ Each topic, when to read it, and the commands it documents:
   `profile`, `profiles`, `confess`, `chronicle`, `chat_ack` (close an unanswered mention), `operator`, `poll` (the site's polls), `players`, `vote`, `votes`,
   `restore`.
 - `space-age`, for rockets, platforms and other planets: `platforms` and `platform NAME`, `platform_create`,
-  `platform_schedule`, `platform_rename`, `platform_endurance`, `platform_supply`, `platform_plan`, `platform_bom` (what a platform's ghosts still need), `platform_production` (what a platform makes), `platform_defense` (turret cover of collectors and hull), `circuit_audit` (circuit readings that mislead: belts counted twice, collector filters), `platform_gate` (where a platform is and what its departure waits on), `demolishers` (territories on the map and the demolishers in sight), `deliver` (fuel and ammunition by robots), `dependency` (an item's recipe inputs joined), `shipment` (a platform's requests and cargo across silos, rockets, pads and the schedule), `min_payload` (hub requests' custom minimum payload), `launch`, `silo`, `cargo`, `load_silo`, `preflight`, `land`, `drop`,
+  `platform_schedule`, `platform_rename`, `platform_endurance`, `platform_supply`, `platform_plan`, `platform_bom` (what a platform's ghosts still need), `platform_production` (what a platform makes), `platform_defense` (turret cover of collectors and hull), `circuit_audit` (circuit readings that mislead: belts counted twice, collector filters), `platform_gate` (where a platform is and what its departure waits on), `demolishers` (territories on the map and the demolishers in sight), `shipment` (a platform's requests and cargo across silos, rockets, pads and the schedule), `min_payload` (hub requests' custom minimum payload), `launch`, `silo`, `cargo`, `load_silo`, `preflight`, `land`, `drop`,
   `freight_audit`, `where_is`, `agriculture`, the remote queue lane; spoilage, Gleba.
