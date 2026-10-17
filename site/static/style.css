@@ -423,6 +423,12 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .player-wrap { aspect-ratio: 16 / 9; background: #0d0c0d; border: 2px solid #111; border-radius: var(--fx-r-1); overflow: hidden; position: relative;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, .10), var(--fx-inset-shadow), var(--fx-shadow-window); }
 .player-wrap iframe { width: 100%; height: 100%; border: 0; display: block; }
+/* The player keeps its column's width (16:9 from it); stretched to a taller chat panel's row it grew wider than its
+   column and covered the chat (d16 17:40). */
+.player-wrap { align-self: start; }
+.vchat-help { margin-top: 8px; }
+.vchat-help summary { cursor: pointer; }
+.vchat-help .vchat-tips { margin-top: 6px; }
 .player-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
   text-align: center; padding: 16px; color: var(--fx-text); background: repeating-linear-gradient(135deg, #191819 0 14px, #1f1e1f 14px 28px); }
 .player-placeholder p { margin: .2rem 0; }
