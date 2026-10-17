@@ -413,6 +413,12 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .prose h3 { scroll-margin-top: 80px; }
 .prose li { margin: .25rem 0; }
 .prose .table-wrap table { font-size: .86rem; }
+/* how it was made (/how/): page tabs, and each section's summary paragraph set apart */
+.how-tabs { display: flex; flex-wrap: wrap; gap: .4rem; margin: 1rem 0 1.6rem; font-size: .9rem; }
+.how-tabs a { padding: .3rem .7rem; border: 1px solid var(--line); border-radius: 4px; color: var(--ink-2); text-decoration: none; }
+.how-tabs a[aria-current=page] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.prose.how p.summary { font-size: 1.05rem; color: var(--ink-2); border-left: 3px solid var(--accent); padding-left: .8rem; }
+.prose.how .run-list h2 { margin-top: 0; }
 
 /* live page: game-GUI panels (always dark) beside the stream */
 .live-head-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
