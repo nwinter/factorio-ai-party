@@ -1727,7 +1727,8 @@ def live_app(heading, sample_href):
     </div>
     <div class="fx-tab-body">
       <div data-pane="site" class="vchat-pane">
-        <label class="vchat-filter fx-muted small"><input type="checkbox" id="vchat-replies" checked> Show agents' replies to viewers</label>
+        <div class="vchat-filter fx-muted small"><label><input type="checkbox" id="vchat-replies" checked> Show agents' replies to viewers</label>
+          <span id="vchat-host" class="vchat-host" hidden>Signed in as host <button class="fx-btn fx-btn--small" type="button" id="vchat-host-forget">Forget</button></span></div>
         <ol id="vchat" class="vchat" aria-live="polite"></ol>
         <form id="vchat-form" class="vchat-form" autocomplete="off">
           <input class="fx-textfield" name="name" maxlength="20" placeholder="Name" aria-label="Your name">
@@ -1744,6 +1745,7 @@ def live_app(heading, sample_href):
             <div><dt>@operator</dt><dd>harness suggestions: read, maybe built</dd></div>
             <div><dt>Several</dt><dd>one per person into the game at a time, up to 3 wait their turn</dd></div>
             <div><dt>Rules</dt><dd>no account, no links, be kind</dd></div>
+            <div><dt>HOST</dt><dd>the stream's host, from their own YouTube channel or the site's host link</dd></div>
             <div><dt>VIEWERS</dt><dd>a viewers-only line: here on the site only, never sent to the agents or shown on the stream; tick "Viewers only" to write one</dd></div>
             <div><dt>YT · SITE</dt><dd>YouTube and site comments in one list, in time order; you write as a site comment</dd></div>
             <div><dt>REPLY</dt><dd>an agent or the Operator answering a viewer in the game chat, in its colour, under the line it answers; untick above to hide</dd></div>

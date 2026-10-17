@@ -117,8 +117,8 @@
     return -1;
   }
   function joinedChat() {
-    var all = chatMsgs.map(function (m) { return { src: m.channel === 'viewers' ? 'viewers' : 'site', name: m.name, text: m.text, t: m.t, k: 's' + m.seq }; })
-      .concat(ytLines.map(function (m) { return { src: 'yt', name: m.name, text: m.text, t: m.t, k: 'y' + m.id }; }));
+    var all = chatMsgs.map(function (m) { return { src: m.channel === 'viewers' ? 'viewers' : 'site', name: m.name, text: m.text, t: m.t, k: 's' + m.seq, host: m.host === true }; })
+      .concat(ytLines.map(function (m) { return { src: 'yt', name: m.name, text: m.text, t: m.t, k: 'y' + m.id, host: m.host === true }; }));
     all.sort(function (a, b) { return (a.t || 0) - (b.t || 0) || (a.k < b.k ? -1 : 1); });
     all = all.slice(-150);
     if (!showReplies || !replyLines.length) return all;
@@ -160,8 +160,9 @@
     chatList.innerHTML = all.length ? all.map(function (m) {
       var t = new Date(m.t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       if (m.src === 'agent') return replyHtml(m, t);
-      return '<li class="c-' + m.src + '"><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-' + m.src + '">' +
-        (m.src === 'yt' ? 'YT' : m.src === 'viewers' ? 'VIEWERS' : 'SITE') + '</span> <b>' + esc(m.name) + '</b> <span class="c-text">' + esc(m.text) + '</span></li>';
+      var src = m.host ? 'host' : m.src;
+      return '<li class="c-' + m.src + (m.host ? ' c-host' : '') + '"><span class="c-time">' + esc(t) + '</span> <span class="c-src c-src-' + src + '">' +
+        (m.host ? 'HOST' : m.src === 'yt' ? 'YT' : m.src === 'viewers' ? 'VIEWERS' : 'SITE') + '</span> <b>' + esc(m.name) + '</b> <span class="c-text">' + esc(m.text) + '</span></li>';
     }).join('') : '<li class="fx-muted">No messages yet. Say hello.</li>';
     if (atEnd || !chatList.dataset.seen) chatList.scrollTop = chatList.scrollHeight;
     chatList.dataset.seen = '1';
@@ -211,6 +212,35 @@
       renderChat();
     });
   }
+  // The host link (d16 17:11): ?host=TOKEN once; kept in this browser, taken out of the address bar, and sent as
+  // X-Host-Token with each chat post (never in a URL the page fetches). The Worker posts those lines under the host's
+  // name with a HOST badge and refuses a token that does not match.
+  var hostToken = store('hostToken') || '';
+  try {
+    var qs = new URLSearchParams(location.search || '');
+    if (qs.has('host')) {
+      var given = String(qs.get('host') || '').trim();
+      if (given) { hostToken = given; store('hostToken', given); }
+      qs.delete('host');
+      if (window.history && history.replaceState) {
+        var rest = qs.toString();
+        history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + (location.hash || ''));
+      }
+    }
+  } catch (e) { /* an old browser: no host link */ }
+  var hostLine = $('#vchat-host'), hostForget = $('#vchat-host-forget');
+  function showHost() {
+    if (hostLine) hostLine.hidden = !hostToken;
+    var nb = chatForm && chatForm.querySelector('[name=name]');
+    if (nb) { nb.disabled = !!hostToken; if (hostToken) nb.placeholder = 'Host'; }
+  }
+  if (hostForget) hostForget.addEventListener('click', function () {
+    hostToken = '';
+    try { localStorage.removeItem('hostToken'); } catch (e) { /* nothing kept */ }
+    showHost();
+    if (chatNote) chatNote.textContent = 'Host link forgotten in this browser.';
+  });
+  showHost();
   if (chatForm) {
     var nameIn = chatForm.querySelector('[name=name]'), textIn = chatForm.querySelector('[name=text]');
     // Viewers only (viewer LimeLight555, d16 10:36): the line stays on this site, never sent to the agents or the
@@ -241,10 +271,16 @@
       store('chatName', body.name);
       sending = true; if (sendBtn) sendBtn.disabled = true;
       chatNote.textContent = 'Sending…';
-      fetch(API + '/v1/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      var headers = { 'Content-Type': 'application/json' };
+      if (hostToken) headers['X-Host-Token'] = hostToken;
+      fetch(API + '/v1/chat', { method: 'POST', headers: headers, body: JSON.stringify(body) })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
         .then(function (res) {
           if (!res.ok) {
+            if (hostToken && res.d && res.d.error === 'host link not valid') {
+              chatNote.textContent = 'This host link is not valid, so nothing was sent. Use Forget above, or open the current host link.';
+              return;
+            }
             chatNote.textContent = (res.d && res.d.error ? label(res.d.error) : 'Could not send') +
               (res.d && res.d.retry_after_s ? ' (try again in ' + res.d.retry_after_s + ' s)' : '') + '.';
             return;

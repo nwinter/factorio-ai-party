@@ -506,7 +506,7 @@
           qm.append(el("span", "from" + (p.v.staff ? " staff" : ""), p.v.name || "viewer"),
             el("span", "tag vtag", p.kind === "qa" ? "viewer asked" : "viewer"), node._dlv);
           qc.append(qm, el("div", "text", p.v.text || ""));
-          q.append(el("div", "vbadge" + (p.v.source === "site" ? " site" : ""), p.v.source === "site" ? "SITE" : "YT"), qc);
+          q.append(vbadge(p.v), qc);
           node.append(q);
         }
         for (const m of p.answers || []) {
@@ -595,7 +595,7 @@
         node._dlv = el("span", "dlv");  // delivery: "→ Astra", "→ team", "not sent: too soon" (updated every render)
         meta.append(node._from, el("span", "tag vtag", "viewer"), node._dlv, node._when);
         content.append(meta, el("div", "text", v.text || ""));
-        node.append(el("div", "vbadge" + (v.source === "site" ? " site" : ""), v.source === "site" ? "SITE" : "YT"), content);
+        node.append(vbadge(v), content);
         shown.set(key, node);
       } else if (!node && m.lane === "operator") {
         node = operatorRow(m);
@@ -871,6 +871,13 @@
       n.classList.add("out");
       setTimeout(() => { n.remove(); alertNodes.delete(id); }, 800);
     }
+  }
+
+  // A viewer line's badge: HOST for Nick's own lines (viewers.py: his YouTube channel, or the site's host link), else
+  // where it was written
+  function vbadge(v) {
+    if (v.host) return el("div", "vbadge host", "HOST");
+    return el("div", "vbadge" + (v.source === "site" ? " site" : ""), v.source === "site" ? "SITE" : "YT");
   }
 
   function renderCams(s) {

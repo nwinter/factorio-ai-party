@@ -461,10 +461,15 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .vchat .c-agent-name { color: var(--ac, var(--fx-heading)); }
 .vchat .c-to { font-size: 0.85em; }
 .vchat-filter { display: flex; align-items: center; gap: 6px; padding: 2px 8px; }
+.vchat-filter label { display: inline-flex; align-items: center; gap: 6px; }
 .vchat-form { display: grid; grid-template-columns: 6.5em 1fr auto; gap: 6px; margin-top: 8px; }
 .vchat-form[hidden] { display: none; }
 .vchat-form .vchat-viewers { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; }
 .vchat .c-src-viewers { background: #5b8fb9; color: #111; }
+.vchat .c-src-host { background: var(--fx-yellow, #e8c547); color: #111; }
+/* the host link's line shares the replies row (the chat panel stays no taller than the player) */
+.vchat-host { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--fx-heading); white-space: nowrap; }
+.vchat-host[hidden] { display: none; }
 .bp-share { margin-top: 6px; }
 .bp-share summary { cursor: pointer; }
 .bp-form { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin-top: 6px; }

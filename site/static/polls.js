@@ -10,6 +10,13 @@
   var REFRESH = (mode === 'page' ? 30 : 15) * 1000;
   var list = root.querySelector('.polls-list');
 
+  // The host link (live.js keeps it as localStorage hostToken): sent as X-Host-Token, so the host's vote or idea is
+  // theirs; never in a URL.
+  function postHeaders() {
+    var h = { 'Content-Type': 'application/json' };
+    try { var t = localStorage.getItem('hostToken'); if (t) h['X-Host-Token'] = t; } catch (e) { /* no storage */ }
+    return h;
+  }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -168,7 +175,7 @@
     body.cid = pending[id].cid;
     if (body.name) store('chatName', body.name);
     sending[id] = true; notes[id] = 'Sending…'; render();
-    fetch(API + '/v1/polls/' + id + '/vote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    fetch(API + '/v1/polls/' + id + '/vote', { method: 'POST', headers: postHeaders(), body: JSON.stringify(body) })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
         if (!res.ok) {
@@ -221,7 +228,7 @@
       body.cid = ideaCid;
       if (body.name) store('chatName', body.name);
       ideaSending = true; ideaNote.textContent = 'Sending…';
-      fetch(API + '/v1/polls/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      fetch(API + '/v1/polls/suggest', { method: 'POST', headers: postHeaders(), body: JSON.stringify(body) })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
         .then(function (res) {
           if (!res.ok) {

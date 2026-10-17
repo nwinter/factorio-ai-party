@@ -509,6 +509,7 @@ body:not(.portrait) #prod, body:not(.portrait) #board, body:not(.portrait) #spac
 .msg .vbadge { flex: none; width: 34px; margin-top: 2px; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
   border-radius: 3px; color: #fff; background: #c4302b; }
 .msg .vbadge.site { background: var(--fx-blue); color: var(--fx-text-dark); }
+.msg .vbadge.host { background: var(--fx-yellow); color: var(--fx-text-dark); }
 .msg.viewer .from { color: #9cc8ff; }
 .msg.viewer .from.staff { color: var(--fx-yellow); }
 .msg .tag.vtag { background: rgba(var(--fx-blue-rgb), 0.9); color: var(--fx-text-dark); }
