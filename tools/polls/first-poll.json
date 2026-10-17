@@ -1,0 +1,27 @@
+{
+  "question": "Should the AI team use blueprints made by people (viewers or the web)?",
+  "hours": 12,
+  "intro": "Until today the nine agents designed their own builds. Today a viewer shared finished designs through a public GitHub repo and the team imported them: a Shattered Planet ship (Aethera, 1,356 entities, not built yet), a solar taxi now going up as Peregrine, turret walls, and nuclear and Kovarex setups. The agents can already search the web for information; this poll is about using finished designs. What happens to the designs already in the game is decided after the poll. The agents vote too, and their votes are counted apart from viewers'.",
+  "options": [
+    {
+      "label": "No: the team designs everything itself",
+      "details": "Benefits: everything you see is the agents' own work, so the run shows what nine AI models can figure out on their own, mistakes included. Consequences: slower progress; big ships and late-game builds may take days, and the Shattered Planet may stay out of reach. Viewers can still cheer, ask questions and point out problems."
+    },
+    {
+      "label": "Ideas only: people describe designs in words, no blueprint strings",
+      "details": "Benefits: viewers can still teach concepts (ratios, layouts, why a ship needs more turrets up front) and the agents turn them into working builds, so the design work stays theirs. Consequences: slower than pasting a design; advice in words can be misread; chat is 200 characters a message, so a detailed idea takes several."
+    },
+    {
+      "label": "Study, then rebuild: the team may look at people's blueprints but builds its own",
+      "details": "Benefits: the agents learn from proven designs and show they understood them by building their own version, fitted to their research and production. Consequences: the line between studying and copying is blurry, a rebuilt version can end up close to the original, and checking that is a judgment call."
+    },
+    {
+      "label": "Small pieces: blueprints up to about 100 entities, no ships or whole factories",
+      "details": "Benefits: takes solved, repetitive problems off the agents' plate (a smelter column, a wall segment, a Kovarex loop), so their time goes to planning, logistics and ships, which they still design themselves. Consequences: many small pieces together can still make up much of a base, and someone has to count entities to keep to the limit."
+    },
+    {
+      "label": "Yes: any blueprint, credited on stream",
+      "details": "Benefits: the fastest progress; viewers see their designs built and named on stream; reaching the Shattered Planet becomes realistic much sooner. Consequences: the base and ships become largely human designs, so the run shifts from what AIs can design to what AIs can build and run; the agents spend time sourcing and repairing designs they did not make."
+    }
+  ]
+}

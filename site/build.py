@@ -517,7 +517,7 @@ def nav_items():
     if archive():
         return [("/", "Live"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies"),
                 ("/about/", "About")]
-    return [("/", "Live")] + ([("/runs/long/", "The run"), ("/agents/", "Agents"), ("/timeline/", "Timeline"), ("/chronicle/", "Chronicle"),
+    return [("/", "Live"), ("/polls/", "Polls")] + ([("/runs/long/", "The run"), ("/agents/", "Agents"), ("/timeline/", "Timeline"), ("/chronicle/", "Chronicle"),
                                ("/chat/", "Chat")] + ([("/blueprints/", "Blueprints")] if BLUEPRINTS else []) + [("/search/", "Search")]
                               if LONG else []) + [("/about/", "About")]
 
@@ -1695,7 +1695,7 @@ def public_status(st):
 
 
 LIVE_HEAD = ('<script src="/static/avatar.js" defer></script>\n<script src="/static/mapview.js" defer></script>\n'
-             '<script src="/static/live.js" defer></script>')
+             '<script src="/static/live.js" defer></script>\n<script src="/static/polls.js" defer></script>')
 
 
 def live_app(heading, sample_href):
@@ -1756,6 +1756,7 @@ def live_app(heading, sample_href):
     </div>
   </aside>
 </div>
+<section id="polls" class="polls-card fx-root fx-panel live-panel" data-mode="card" data-api="{esc(api)}" aria-label="Poll" hidden><div class="polls-list"></div></section>
 <section class="live-run-head"><h2 id="run-title">Waiting for the next run</h2><p id="run-sub" class="muted"></p>
 <p id="next-shift" class="live-next" hidden></p></section>
 <div id="offline" class="live-offline"></div>
@@ -1766,6 +1767,35 @@ def live_app(heading, sample_href):
 <a href="{sample_href}">Sample view</a>.</p>
 </div>
 """
+
+
+def build_polls():
+    """/polls/: the open and closed polls with their comments, and a form for a viewer's poll idea (static/polls.js,
+    the live API's /v1/polls; Nick, d16 17:15)."""
+    api = CONFIG.get("live_api_url") or ""
+    opts = "".join(f'<input class="fx-textfield" name="option{i}" maxlength="100" placeholder="Option {i}"'
+                   f'{" required" if i <= 2 else ""} aria-label="Option {i}">' for i in range(1, 7))
+    body = f"""
+<h1>Polls</h1>
+<p class="lede">The operator opens polls on questions about the run; anyone can vote here, once per poll (a later vote
+replaces the earlier one), with an optional comment. Results show after you vote and when a poll closes.</p>
+<section id="polls" class="polls-page" data-mode="page" data-api="{esc(api)}"><div class="polls-list"><p class="muted">Loading the polls…</p></div></section>
+<section class="poll-idea-box">
+<h2>Suggest a poll</h2>
+<p class="muted small">A question and 2 to 6 answers. Ideas go to the operator only, who decides whether to run them.
+No links; chat's rules apply.</p>
+<form id="poll-idea" class="poll-idea" autocomplete="off">
+  <input class="fx-textfield" name="name" maxlength="20" placeholder="Name" aria-label="Your name">
+  <input class="fx-textfield" name="question" maxlength="200" placeholder="Question" aria-label="Question" required>
+  <div class="poll-idea-opts">{opts}</div>
+  <input class="fx-textfield" name="hours" type="number" min="1" max="72" step="1" placeholder="Hours open (optional)" aria-label="Hours open">
+  <button class="fx-btn" type="submit">Send the idea</button>
+  <p class="poll-idea-note small muted" aria-live="polite"></p>
+</form>
+</section>
+"""
+    return page("Polls", body, "/polls/", "Vote on questions about the run, and suggest a poll.",
+                extra_head='<script src="/static/polls.js" defer></script>', path="/polls/")
 
 
 def build_live():
@@ -1901,6 +1931,7 @@ def main():
         for sid, st in CONTENT["studies"].items():
             write(f"studies/{sid}/index.html", build_study(sid, st))
     write("live/index.html", build_live())
+    write("polls/index.html", build_polls())
     shutil.copy(SITE / "live" / "state.example.json", out / "live" / "state.example.json")
     write("live/status.json", public_status(json.loads((SITE / "live" / "status.json").read_text())))
     write("404.html", page("Not found", '<h1>Not found</h1><p>That page doesn\'t exist. <a href="/">Back to the start</a>.</p>', None))

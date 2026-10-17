@@ -47,7 +47,7 @@ def main():
         assert "navigator.clipboard" in page
         home = (out / "index.html").read_text()
         nav = re.search(r'<nav class="site-nav".*?</nav>', home, re.S).group(0)
-        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Blueprints", "Search", "About"], nav
+        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "Polls", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Blueprints", "Search", "About"], nav
     print("site blueprints: ok (the library page from the newest shift's copy, strings to copy, linked from the nav)")
 
 
