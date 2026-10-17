@@ -9,7 +9,7 @@
 //                             channel "viewers": on the site only, never relayed to the agents (default "game")
 //   POST /v1/mod              hide/unhide/ban/unban/open/close (Authorization: Bearer PUBLISH_TOKEN)
 //   POST /v1/here             {id}: an open live page, once a minute; GET /v1/state counts them as site_watching
-//   POST /v1/blueprints       a viewer shares a blueprint {name, title, string, cid?}: checked to decode to a blueprint
+//   POST /v1/blueprints       a viewer shares a blueprint {name, title, string, cid?} (closed unless mod bp_open): checked to decode to a blueprint
 //                             or book, under chat's rules and limits (viewer LimeLight, d16 16:17)
 //   GET  /v1/blueprints?after=ID, GET /v1/blueprints/ID   the shared ones, for the Mac (Authorization: PUBLISH_TOKEN)
 //   GET  /v1/polls            open polls and the latest closed ones: counts, comments, time left (public)
@@ -561,6 +561,8 @@ export class Live {
 
   async postBlueprint(req, text) {
     if (this.get("chat_open") === "0") return json({ error: "chat is closed" }, 403);
+    // Nick d17 08:30 after poll #1: designs come from the team; viewers' ideas go in chat, in words. Mod bp_open/bp_close.
+    if (this.get("bp_open") !== "1") return json({ error: "blueprint sharing is closed: describe ideas in chat" }, 403);
     if (text.length > BP.maxString + 4096) return json({ error: `blueprint strings are at most ${BP.maxString} characters` }, 413);
     const body = JSON.parse(text || "{}");
     const who = await this.who(req);
@@ -920,9 +922,11 @@ export class Live {
       }
       case "close": this.put("chat_open", "0"); break;
       case "open": this.put("chat_open", "1"); break;
+      case "bp_close": this.put("bp_open", "0"); break;
+      case "bp_open": this.put("bp_open", "1"); break;
       // a fresh start (the public run): hide every message so far; seq keeps counting, so pollers lose nothing new
       case "clear": this.sql.exec("UPDATE chat SET hidden = 1"); break;
-      default: return json({ error: "action must be hide, unhide, ban, unban, open, close, clear, hide_blueprint, " +
+      default: return json({ error: "action must be hide, unhide, ban, unban, open, close, bp_open, bp_close, clear, hide_blueprint, " +
         "unhide_blueprint, ban_blueprint, hide_comment, unhide_comment or ban_voter" }, 400);
     }
     return json({ ok: true });
