@@ -11,7 +11,7 @@ import { loadPace, savePace, seeTick, seeDown, slowNote, rolledBack, Pacer, over
 import { Harness, retryBudgetMs, type Reply } from './harness.js';
 import { renderMap } from './view.js';
 import { parseLook } from './look.js';
-import { writeFileSync, readFileSync, rmSync, appendFileSync, existsSync } from 'node:fs';
+import { writeFileSync, readFileSync, rmSync, appendFileSync, existsSync, renameSync } from 'node:fs';
 import { formatCompact, finalLine, actionHelp, paginate } from './format.js';
 import { parseDeadline, deadlineText, timeLeftText } from './deadline.js';
 import { lookaheadDue } from './lookahead.js';
@@ -331,7 +331,7 @@ const TELL_WORDS = new Set(['tell','tells','mention','told']);
 const THEN_READS = new Set(['agriculture','artillery','belt_gaps','blueprint_list','boilers','bottleneck','cameras','cargo','conflicts',
   'construction_robots','craftable','damage_log','danger','defense','drill_sites','drops','dry_run','flamers','freight_audit','fuel_budget',
   'game_alerts','grid','heat_budget','inspect','inventory','labs','lookahead','map','nearest','nearest_water','networks','observe','ores',
-  'pipe_gaps','placements','platform','platform_bom','platform_endurance','platform_production','platform_defense','circuit_audit','platform_gate','platform_plan','ghosts','platform_supply','platforms','ports','power','preflight',
+  'pipe_gaps','placements','platform','platform_bom','platform_endurance','platform_production','platform_defense','circuit_audit','platform_gate','shipment','platform_plan','ghosts','platform_supply','platforms','ports','power','preflight',
   'profiles','rates','recipes','reminders','research_options','reservations','review','scan','science','shortages','silo','status','stock',
   'supply','technologies','trace','turrets','where_is']);
 /** --then's action and arguments: "ACTION", "ACTION {json}", with the JSON as the next positional or --args. */
@@ -522,6 +522,25 @@ function withPace(value: unknown): unknown {
 // The look-ahead block (Nick 12:35; when: lookahead.ts), shown once in a reply as `lookahead`. FH_LOOKAHEAD_FILE
 // (default .lookahead.json next to the journal) keeps when the workspace's first call came and when it was last shown.
 let lookaheadFile: string | undefined;
+// fh help's describe cache (FH_DESCRIBE_CACHE, default .fh-describe.json next to the journal): {bundle, describe}.
+let describeCache: string | undefined;
+export function readDescribeCache(path: string | undefined): {bundle: string, describe: Record<string, unknown>} | undefined {
+  if (!path) return undefined;
+  try {
+    const cached = JSON.parse(readFileSync(path, 'utf8'));
+    return typeof cached?.bundle === 'string' && cached.describe && typeof cached.describe === 'object' ? cached : undefined;
+  } catch { return undefined; }
+}
+/** Keeps a describe that names its bundle (written whole, then renamed, so a parallel fh never reads half of it). */
+export function keepDescribe(path: string | undefined, describe: unknown) {
+  const bundle = describe && typeof describe === 'object' ? (describe as Record<string, unknown>).bundle : undefined;
+  if (!path) return;
+  // A runtime without bundle ids: nothing to keep, and no stale bundle to ask about next time.
+  if (typeof bundle !== 'string') { rmSync(path, { force: true }); return; }
+  const temp = `${path}.${process.pid}.tmp`;
+  try { writeFileSync(temp, JSON.stringify({bundle, describe})); renameSync(temp, path); }
+  catch { rmSync(temp, { force: true }); }
+}
 let lookaheadName = '';
 // The site's polls (polls.ts): a new open poll's line in the team block, once.
 let pollsFile: string | undefined, pollsSeenFile: string | undefined;
@@ -985,6 +1004,7 @@ async function main() {
   journalPath = values.journal ? resolve(values.journal) : undefined;
   retriedId = values.id;
   projectsFile = process.env.FH_PROJECTS_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.projects.json') : undefined);
+  describeCache = process.env.FH_DESCRIBE_CACHE || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-describe.json') : undefined);
   lookaheadFile = process.env.FH_LOOKAHEAD_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.lookahead.json') : undefined);
   lookaheadName = bot ?? (values.journal ? dirname(resolve(values.journal)).split('/').pop() ?? '' : '');
   // pog's RUN/polls.json: the workspace is the journal's folder, the run its parent
@@ -1140,6 +1160,21 @@ async function main() {
     const stale = status.result?.note !== undefined && status.result?.last === undefined;
     const result = stale ? {...fresh.result, last:undefined, note:status.result!.note} : fresh.result;
     return {...fresh, result, ok:status.ok, ...(status.error ? {error:status.error} : {})};
+  }
+  // fh help ACTION's describe, kept per runtime bundle (d17 audit: 540-1070 help calls a shift each pulled the whole
+  // 280 KB describe over RCON): the workspace's describe cache holds the last describe and its bundle id, and the game,
+  // asked with if_bundle, answers {unchanged} while that bundle runs. A runtime without bundle ids (the mod's folder
+  // runtime, or one from before them) is read whole each time, as before.
+  async function helpDescribe(): Promise<Reply> {
+    const cached = readDescribeCache(describeCache);
+    if (cached) {
+      const reply = await execute('describe',{if_bundle:cached.bundle});
+      if (reply.ok && reply.result?.unchanged === true && reply.result?.bundle === cached.bundle) return {...reply, result:cached.describe};
+      if (reply.ok && reply.result?.actions) { keepDescribe(describeCache, reply.result); return reply; }
+    }
+    const reply = await execute('describe',{});
+    if (reply.ok) keepDescribe(describeCache, reply.result);
+    return reply;
   }
   const compactWaits = !bridged && !values.full && outputFormat === 'compact';
   const OBSERVE_SELF = {radius:1,limit:1,exclude_resources:true,entity_types:['character']};
@@ -1868,7 +1903,7 @@ async function main() {
         ...(ready ? {} : {error:bridge.error ?? player?.error ?? {code:'player_not_ready',message:bridge.result?.in_game ? 'The player has no character (dead, spectating, or in a cutscene)' : 'The client is not in a multiplayer game'}})});
       if (!ready) process.exitCode=1;
     } else if (command === 'help') {
-      const reply = await execute('describe',{});
+      const reply = await helpDescribe();
       if (!reply.ok) { output(reply); process.exitCode=1; }
       else {
         const dir = refDir(), topic = dir ? commandTopics(dir).get(positionals[1] ?? '') : undefined;

@@ -81,6 +81,14 @@ return function(api)
     for u, x in pairs(list) do n = n + 1; if x.tick < at_tick then oldest, at_tick = u, x.tick end end
     if n > MAX_RECORDS and oldest then list[oldest] = nil end
   end
+  -- The newest launch recorded to a platform with who made it ({tick, cargo, to, by, surface}), or nil (shipment.lua).
+  function M.last_to(platform)
+    local best
+    for _, r in pairs(records()) do
+      if r.to == 'platform ' .. platform and (not best or r.tick > best.tick) then best = r end
+    end
+    return best
+  end
   -- The silo's last launch as recorded ({tick, cargo, to, by}), or nil.
   function M.last_launch(silo)
     local unit = try(function() return silo.unit_number end)

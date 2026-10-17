@@ -1700,7 +1700,11 @@ M.EXAMPLES={
   ores={{resource='coal',limit=5}},
   pickup={{position={x=-128,y=-22},radius=3}},
 }
-function handlers.describe()
+function handlers.describe(_,a)
+  -- The bundle this runtime came in (host/bundle.ts BUNDLE_ID; nil for the mod's folder runtime). fh help keeps this
+  -- describe per bundle (host/cli.ts helpDescribe): a call naming the bundle it holds gets two fields back, not 280 KB.
+  local bundle=BUNDLE_ID
+  if bundle and type(a)=='table' and a.if_bundle==bundle then return {bundle=bundle,unchanged=true} end
   -- walk on every call that acts on a target in reach (autowalk.lua)
   local WALK='default (omitted): a target out of reach within 32 tiles of you (transfer, collect, feed, rearm and refuel: 64; to its edge; build: to the position) is walked into reach first and the call is made there, one timed call (the reply\'s walking line says so; fh call waits for it as --wait does; a queue step waits for it); past that refused, naming this call with walk: true; true: walks there from farther too (any distance; transfer also via); false: out of reach is refused, nothing walked. The walk keeps move_to\'s enemy checks: a goal inside a weapon\'s reach the map shows is refused unless unsafe_goal, and avoid_enemies goes round the nests'
   local description = {protocol=1, version='0.1.0', max_action_ticks=MAX_TICKS, deduplication_window=256, deduplication_bytes=8*1024*1024,
@@ -1720,7 +1724,7 @@ function handlers.describe()
       belt_gaps={from='first tile {x,y}',to='last tile {x,y}',via='optional 1..16 corner positions; a straight leg is read tile by tile; a leg that is not straight follows the remembered belt round its corners (each belt\'s direction, undergrounds to their exits; across a gap on the way the belt went while that nears the end, else toward it; from either end), refused when it does not lead there; at most 512 tiles',surface='optional surface name (default yours)',returns='followed (legs followed round corners); missing and ghosts with observed_tick; unknown means no recorded observation, never a missing belt; observations lists each chunk and age/current flag; visible chunks refreshed (at most 4); otherwise the remembered layout, including observed underground spans; no live entity reads in fog. Memory starts when installed, up to 256 chunks, discovered by the census or this call, one visible chunk refreshed per second'},
       drill_sites=M.drill_sites.schema,
       agriculture={surface='optional surface name (default yours)',returns='towers [{name, position, state (built, ghost, destroyed), status, seeds, lost_tick, cause, line}], as_of (census discovery tick), pending, history; current visible towers and ghosts, plus up to 256 recorded tower deaths since this history was installed; rebuilt positions show the current tower'},
-      describe={}, inventory={full='true: the stacks as lists {name, quality, count}, as observe player has them',returns='the character\'s inventories as short lines (name*count, name@quality*count, or empty): inventory (main), free (slots), guns and ammo per slot (1 pistol, 2 empty, 3 empty (selected: 1); 1 empty, 2 piercing-rounds-magazine*75, 3 empty: gun slot N fires only from ammo slot N), ammo_idle (ammo in a slot whose gun slot does not fire it, and the guns it fits), armor, equipment (in the armor\'s grid), trash (trash slots, when any), cursor (the stack or ghost in hand, when any), crafting (hand queue), warnings (nearly full, hoarding); status {inventory=true} gives it in one line'},
+      describe={if_bundle='optional: the bundle id of a describe you hold; when it is this runtime\'s, the reply is {bundle, unchanged=true} only'}, inventory={full='true: the stacks as lists {name, quality, count}, as observe player has them',returns='the character\'s inventories as short lines (name*count, name@quality*count, or empty): inventory (main), free (slots), guns and ammo per slot (1 pistol, 2 empty, 3 empty (selected: 1); 1 empty, 2 piercing-rounds-magazine*75, 3 empty: gun slot N fires only from ammo slot N), ammo_idle (ammo in a slot whose gun slot does not fire it, and the guns it fits), armor, equipment (in the armor\'s grid), trash (trash slots, when any), cursor (the stack or ghost in hand, when any), crafting (hand queue), warnings (nearly full, hoarding); status {inventory=true} gives it in one line'},
       map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true: regions of water (a character cannot cross it), walkable water (shallow water, wetland, oil ocean: a character walks through) and lava',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={platform='optional owned platform: bounded schematic tile_runs [{x,y,count,name}], tile_count, entities with footprints and directions, centred on its hub or position; works aboard',position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)',returns='player, entities, resource_patches, ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the radius by item (rows for them only with entity_types/entity_names)'},
       status={urgent_since='with peek (fh --wait polls): an urgent alert since this tick is given as urgent (one line), as a sleep wakes on it',urgent_radius='with urgent_since: 1..200 tiles',since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
         reports='combat (while a shoot runs: the shoot\'s own record plus target {name, position, distance}: the enemy it aims at now, or a shoot at a position\'s spot; none with nothing in range; fired_tick: the last tick it fired at something; kills_10s: kills by the character or its vehicle in the last 10 s; hurt); hurt (also in brief: the last hit by another force on the character or the vehicle it rides in the last 5 minutes: tick, ago_s, by (the attacker, else the damage type), at, damage (hits under 10 s apart add up), what (the vehicle hit)); teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); storm (on Fulgora: the sky now, as networks has it, with bolts_near: lightning within 64 tiles of you); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name; power_cuts: one line per pole death that split its electric network or left machines with no pole, as team.alerts tells it (powercut.lua); latest: one line per loss incident (a raid: losses within 32 tiles on one surface) with causes; incidents: the same as rows {id, surface, platform, box {x0,y0,x1,y1}, total, names, by, first_tick, last_tick, line}; attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel and low_power with the first places and the surface, labs missing packs, research idle or ending); robots (a full status: per planet or platform, every logistic network\'s robots summed by kind: total, idle, working, charging, waiting to charge, and the networks with the most waiting; from the network view kept for a minute)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
@@ -1880,6 +1884,7 @@ function handlers.describe()
   for name,schema in pairs(M.platdefense and M.platdefense.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circaudit and M.circaudit.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.owed and M.owed.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.shipment and M.shipment.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ghostlist and M.ghostlist.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.silo and M.silo.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.rocketload and M.rocketload.schema or {}) do description.actions[name]=schema end
@@ -1910,6 +1915,7 @@ function handlers.describe()
     if s then s.examples=list end
   end
   description.runtime_fault=state().runtime_fault or false
+  description.bundle=bundle
   return description
 end
 function handlers.attach(p,a)
@@ -12922,7 +12928,7 @@ M.board=require('board'){state=state,claims=M.claims,director=function(index) re
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
   platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,
   hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,
-  power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
+  power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
   science_line=function(p,h) return M.scienceline.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
@@ -13236,6 +13242,7 @@ reads.platform_production=true
 reads.platform_defense=true
 reads.circuit_audit=true
 reads.platform_gate=true
+reads.shipment=true
 reads.ghosts=true
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
@@ -13941,7 +13948,8 @@ dispatch_request=function(request)
     local view=request.action=='observe' and type(request.args)=='table' and type(request.args.scope)=='string' and request.args.scope or request.action
     error(tostring(args_err)..(ok and hint or '')..M.example_text(view,request.args),0)
   end
-  if request.action=='describe' or request.action=='profiles' or request.action=='cameras' then return handler() end
+  if request.action=='describe' then return handler(nil,request.args) end
+  if request.action=='profiles' or request.action=='cameras' then return handler() end
   if M.bots.is_index(request.player) and (request.action=='attach' or request.action=='detach') then
     return {bot=M.bots.record(request.player).name,attached=request.action=='attach',note='bots need no attach'}
   end
@@ -14349,6 +14357,12 @@ M.powercut=require('powercut'){state=state}
 function handlers.drops(p,a) return M.drops.read(p,a) end
 -- What each platform carried stop by stop and leg by leg, and where it is (freight.lua; Luna, shift12 12:47).
 M.freight=require('freight'){state=state,spoil=M.spoil,pods=M.pods,departure=function(name) return M.departure and M.departure.lines(name) end}
+-- One read across a shipment's native systems (shipment.lua; d17 batch15 Group B, Sol #614, Astra).
+M.shipment=require('shipment'){state=state,stops=function(pl) return space.stops(pl) end,hub_counts=function(pl) return M.freight.hub_counts(pl) end,
+  incoming=function(pl) return M.freight.incoming(pl) end,where=function(pl) return M.freight.where(pl) end,segments=function(pl) return M.freight.segments(pl) end,
+  pads=function(planet,force) return M.freight.pads(planet,force) end,request_rows=function(e,force) return M.silo.request_rows(e,force) end,
+  last_to=function(name) return M.silo.last_to(name) end,hears=function(p,name) return M.platalerts.hears(p,name) end,who=function(p) return M.board.who(p) end}
+function handlers.shipment(p,a) return M.shipment.read(p,a) end
 -- platform_endurance: a route's legs at the platform's speed and what its ammunition, repair packs, thruster fluids,
 -- power and hub space come to over it at today's rates (endurance.lua; Astra, d15: Wayfarer lost at Aquilo).
 M.endurance=require('endurance'){platform=function(p,name) return space.platform(p,name) end,ammofeed=M.ammofeed,phase_rates=function(pl,name) return M.freight.phase_rates(pl,name) end,
@@ -15245,6 +15259,7 @@ function M.tick_body(event)
   if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.owed.tick) end  -- unanswered mentions' reminders
   if event.tick%600==17 and M.platbom then pcall(M.timed,'platbom.tick',M.platbom.tick,event.tick) end  -- each hub's items by stop and leg (freight.lua)
   if M.research_target then pcall(M.timed,'research_target.tick',M.research_target.tick,event.tick) end  -- research target levels (researchtarget.lua)
+  if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end  -- shipment fact lines (shipment.lua)
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
   if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
   -- (after pods.lua's look: freight takes the new pods from it and counts each on its stop)

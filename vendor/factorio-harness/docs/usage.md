@@ -56,7 +56,9 @@ fh call status
 - Arguments go in `--args JSON` or `--args-file F`. `fh describe` lists every action's arguments; `fh help ACTION`
   (or `fh call ACTION --help`) prints one action's in about 1 KB, led by calls that work as written (`example: fh call
   launch --args '{"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`; transfer has a give, a take and a pick;
-  describe's `examples`). An argument refusal ends with one: for transfer built from the call itself (`; for this
+  describe's `examples`). fh help keeps that describe per runtime bundle (FH_DESCRIBE_CACHE, default .fh-describe.json
+  next to the journal): it asks `describe {if_bundle}`, which answers `{bundle, unchanged}` while the same bundle runs,
+  and reads the whole describe again after a deploy (bundles carry their content hash as BUNDLE_ID). An argument refusal ends with one: for transfer built from the call itself (`; for this
   call:` and the call), else the action's own (`; e.g. fh call technologies --args '{"prefix":"automation"}'`); a number out of range says its range and the value (`radius out of range: a whole
   number 1..128, got 500`). Refusals no longer start with the runtime's line (`agent-harness/runtime:31061: `). Every example, in describe, this file and the agents' brief (agent/ref/), is checked against the argument
   check by the runtime test.
@@ -6367,3 +6369,18 @@ fh watch    # deploy on every change
   points' deliveries on the way), with the platform its automatic requests fill for (`requesting_for`). Copy (automatic
   requests switched on at Nauvis for a test, Swift asking iron plates): "logistic robots bringing (carrying or
   reserved): processing-unit 6 (automatic requests for platform Swift)".
+- Group B (Sol #614, 08:04; Astra 07:58, 08:05): new read `shipment {platform | item}` (shipment.lua), joining what
+  the native systems show: per stop of the schedule (its departure conditions, as platform_gate), each hub request
+  importing from that planet with a state: delivered (the hub holds the minimum), in flight (a rocket's pod coming
+  down onto the platform), launched (its pod rising over the planet), loading (a silo there with it in its rocket or
+  logistic robots bringing it, for this platform), waiting with the native gate holding it (the platform not stopped
+  there; no silo; no silo with automatic requests; the silo's request flag: hub_full, below_min_payload,
+  split_networks, matched, filling); what that planet's landing pads ask of the hub now (cargo kept for a later
+  stop); the last visit's pad receipts and spills (landed with no pad, where). rows [{platform, planet, item,
+  direction, state, ...}], states. Every 2 s one platform is read in turn (states only); a request turning delivered,
+  a spill, and a hub_full gate appearing go once to team.alerts of who last launched to the platform (silo records)
+  and those its alerts go to (platalerts). No automation. Copy: Swift at Nauvis read firearm-magazine 500 delivered,
+  processing-unit 50 waiting "no silo on nauvis has automatic requests on", agricultural-science-pack 500 from Gleba
+  waiting "the platform is not stopped at gleba"; Wren's crusher and explosives waiting hub_full. Cost on the copy:
+  Swift's read 23 ms with the dispatch (about 10 ms of it), the silo lists kept a minute in storage (their
+  whole-surface search was 5-8 ms a planet).

@@ -5292,4 +5292,15 @@ end
 eq(runtime.keeps('min_payload',{platforms='Meridian',set={calcite=50}}),true)
 eq(runtime.keeps('platform_rename',{platform='Wren',name='Wren II'}),true)
 eq(runtime.keeps('build',{position={x=1,y=1},item='iron-chest'}),false,'a body action still takes over')
+-- d17 lean A1: describe names its bundle; if_bundle with that id answers two fields, any other id the whole describe.
+do
+  eq(runtime.dispatch{action='describe',args={},player=1}.bundle,nil,'a folder runtime has no bundle id')
+  BUNDLE_ID='b1'
+  local whole=runtime.dispatch{action='describe',args={},player=1}
+  eq(whole.bundle,'b1'); assert(whole.actions.describe.if_bundle,'if_bundle is described')
+  local same=runtime.dispatch{action='describe',args={if_bundle='b1'},player=1}
+  eq(same.unchanged,true); eq(same.bundle,'b1'); eq(same.actions,nil)
+  eq(runtime.dispatch{action='describe',args={if_bundle='b0'},player=1}.actions~=nil,true,'another bundle: the whole describe')
+  BUNDLE_ID=nil
+end
 print('runtime: '..assertions..' assertions passed')
