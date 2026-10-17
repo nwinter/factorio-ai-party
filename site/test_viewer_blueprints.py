@@ -252,9 +252,9 @@ setTimeout(() => {
     assert len(o["sent"]) == 1 and o["sent"][0]["name"] == "LimeLight" and o["sent"][0]["title"] == "Aethera", o
     assert o["sent"][0]["string"] == "0eNqabcdef" and len(o["sent"][0]["cid"]) == 24, o
     assert o["note"].startswith("Shared as #7: a book of 2 blueprints, 4 entities") and o["left"] == "", o
-    # the page has the box (shelved d16 17:00, back d16 20:25: the agents study shared designs and build their own)
+    # the page leaves the box out (Nick d17 08:30 after poll #1: designs come from the team; viewers' ideas in words only)
     html = Path(SITE, "build.py").read_text()
-    assert 'id="bp-form"' in html and 'name="string"' in html
+    assert 'id="bp-form"' not in html
 
 
 if __name__ == "__main__":
