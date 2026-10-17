@@ -40,6 +40,9 @@
   `--wake-from sol,astra` (`wake_from`): only a tell or mention from those (or `operator`) ends a sleep or wait;
   `--no-operator-wake` (`wake_on_operator: false`): operator tells and reminder jobs do not end it. Urgent alerts and
   the action ending still end them.
+  `--wake-local` (`wake_local: true`) on `./fh sleep` and `./fh wait`: only what is yours ends it: tells and mentions to
+  you (a tell to the whole team waits for your next reply), urgent news on your surface or in your claims (another
+  platform's losses wait), and `--until alert` on your surface.
 - A sleep ends when the plan you submitted to your queue finishes or stalls (`queue_done`, `queue_stalled`); a
   standing order's rounds do not end it (`--wake-on-orders` makes them).
 - A collect standing at a machine that crafts is no stall (queue_status `waiting_at_machine` says which); a call that

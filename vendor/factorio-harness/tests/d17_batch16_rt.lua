@@ -201,3 +201,38 @@ do
   fails(function() grok('transfer',{to_player='nobody',item='iron-plate'}) end,'no teammate nobody; teammates: astra, sol')
 end
 print('d17_batch16_rt B2 teammates and a hand-over by name: ok')
+
+-- C1 (Luna on Gleba: waits woke for other agents' tells to the team, Nauvis worm losses and other platforms' losses
+-- while her own loop was stable): wake_local wakes only for what is the sleeper's. Default unchanged.
+do
+  local f=runtime.board.wake_filter({wake_local=true})
+  assert(f and f.local_only,'a filter')
+  eq(runtime.board.wakes({from='astra',team=true},f),false,'a tell to the whole team waits')
+  eq(runtime.board.wakes({from='astra'},f),true,'a tell to you wakes')
+  eq(runtime.board.wakes({from='astra',team=true,wake=true},f),true,'a tell sent with wake still does')
+  eq(runtime.board.wakes({from='astra',team=true},nil),true,'default unchanged')
+  fails(function() runtime.board.wake_filter({wake_local='yes'}) end,'wake_local must be true or false')
+  -- urgent: another platform's losses wake only when you are aboard it
+  local gi=runtime.bots.index_of('grok')
+  local gp=runtime.lookup(gi)
+  local old_hears=runtime.platalerts and runtime.platalerts.hears
+  storage.agent_harness.losses={{id=1397,platform='Meridian',surface='platform-5',box={-3,5,-1,7},first=game.tick+1,last=game.tick+1,
+    causes={['big-oxide-asteroid']=19},names={['transport-belt']=20},total=24}}
+  local base=runtime.urgent.base(gp,nil)
+  local base_local=runtime.urgent.base(gp,nil); base_local.local_only=true
+  jump(2)
+  local saved=runtime.urgent_hears
+  if runtime.platalerts then runtime.platalerts.hears=function() return true end end
+  local plain_line=runtime.urgent.check(gp,base)
+  local local_line=runtime.urgent.check(gp,base_local)
+  if runtime.platalerts then runtime.platalerts.hears=old_hears end
+  assert(plain_line and plain_line:find('platform Meridian lost buildings',1,true),tostring(plain_line))
+  eq(local_line,nil,'not aboard Meridian: it waits')
+  storage.agent_harness.losses={}
+  -- a sleep with wake_local and a plain alert condition: the alert keeps to the sleeper's surface
+  local r=grok('sleep',{seconds=60,wake_local=true,condition={['until']='alert'}})
+  local rec=storage.agent_harness.sleeps[gi]
+  assert(rec and rec.wake_local and rec.alert_filter and rec.alert_filter.surface=='nauvis','alert on your surface')
+  assert(rec.wake_filter and rec.wake_filter.local_only,'tells filtered')
+end
+print('d17_batch16_rt C1 wake_local: ok')

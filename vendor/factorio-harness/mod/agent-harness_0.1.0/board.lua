@@ -1781,10 +1781,15 @@ return function(api)
   -- Who wakes a wait (Opus 06:33: only named teammates; Sonnet: not the operator's or automatic tells): wake_from, 1..16
   -- names (a teammate, or operator), and wake_on_operator false (operator tells and reminder jobs wait for the next
   -- reply); nil when neither is given.
+  -- wake_local (d17 batch16 C1, Luna on Gleba: waits woke within minutes for other agents' tells to the team, Nauvis
+  -- worm losses and other platforms' losses while her own loop was stable): a tell to the whole team does not wake it
+  -- (direct tells and mentions do; a tell sent with wake still does); urgent.lua and the alert condition keep to the
+  -- sleeper's surface and claims.
   function M.wake_filter(a)
-    if a.wake_from == nil and a.wake_on_operator == nil then return nil end
+    assert(a.wake_local == nil or type(a.wake_local) == 'boolean', 'wake_local must be true or false')
+    if a.wake_from == nil and a.wake_on_operator == nil and not a.wake_local then return nil end
     assert(a.wake_on_operator == nil or type(a.wake_on_operator) == 'boolean', 'wake_on_operator must be true or false')
-    local f = {operator=a.wake_on_operator}
+    local f = {operator=a.wake_on_operator, local_only=a.wake_local or nil}
     if a.wake_from ~= nil then
       local list = type(a.wake_from) == 'string' and {a.wake_from} or a.wake_from
       assert(type(list) == 'table' and #list >= 1 and #list <= 16, 'wake_from is 1..16 names (teammates, or operator)')
@@ -1799,6 +1804,7 @@ return function(api)
     local auto = from == 'operator' or from:find('^reminder') ~= nil
     if f.operator == false and auto then return false end
     if f.from and not f.from[from] then return false end
+    if f.local_only and m.team then return false end
     return true
   end
   function M.inbox_tick(index, viewers, filter)
