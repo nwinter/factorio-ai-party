@@ -54,3 +54,55 @@ do
   has(done.line,'rocket-turret: came aboard 5, built at once 5 (construction robots placed it from the hub: 9 -> 14 on the platform)')
 end
 print('d17_batch16 A2 freight built at once: ok')
+
+-- A3 (Astra on Wren, board #825): the floor audit said 0 needed while the built pair (-0.5,-17.5) -> (-0.5,-14.5)
+-- (southward) stood over empty (-1,-16): an east-going underground at (-0.5,-16.5) crossing the span ended the walk
+-- there. The exit is the next one of the name facing the same way; a crossing one is passed over. Pipes too.
+do
+  game={tick=0}
+  prototypes={entity={['underground-belt']={max_underground_distance=5},
+    ['pipe-to-ground']={fluidbox_prototypes={{pipe_connections={{},{max_underground_distance=10}}}}}}}
+  local tiles={}
+  for x=-4,4 do for y=-20,-10 do if not (x==-1 and y==-16) and not (x==3 and y==-15) then tiles[#tiles+1]={position={x=x,y=y}} end end end
+  local function ub(x,y,dir,io,name)
+    return {valid=true,type=name or 'underground-belt',name=name or 'underground-belt',position={x=x,y=y},direction=dir,belt_to_ground_type=io,
+      bounding_box={left_top={x=x-.4,y=y-.4},right_bottom={x=x+.4,y=y+.4}}}
+  end
+  local built={ub(-0.5,-17.5,8,'input'),ub(-0.5,-14.5,8,'output'),        -- the southward pair
+    ub(-0.5,-16.5,4,'input'),ub(1.5,-16.5,4,'output'),                      -- the crossing east-going pair
+    ub(3.5,-17.5,0,nil,'pipe-to-ground'),ub(3.5,-12.5,8,nil,'pipe-to-ground'), -- a pipe tunnel south (each faces its pipe, outward)
+    ub(3.5,-15.5,4,nil,'pipe-to-ground')}                                   -- a crossing pipe-to-ground in that tunnel
+  local s={find_tiles_filtered=function() return tiles end,
+    find_entities_filtered=function(f)
+      if f.type=='entity-ghost' or f.type=='tile-ghost' then return {} end
+      if type(f.type)=='table' and f.type[1]=='underground-belt' then return built end
+      return {}
+    end}
+  local PP=dofile('mod/agent-harness_0.1.0/platplan.lua'){}
+  local list,why=PP.floor(s,{},{position={x=0.5,y=-15.5}})
+  local at={}
+  for _,t in ipairs(list) do at[t.x..','..t.y]=t.kind end
+  eq(at['-1,-16'],'tunnel','under the southward span past the crossing underground')
+  eq(at['3,-15'],'tunnel','under the pipe tunnel past the crossing pipe-to-ground')
+  eq(why.tunnel,2)
+  -- a same-way entrance between: the first entrance has no exit (the game pairs nothing across it); nothing asked
+  built={ub(-0.5,-17.5,8,'input'),ub(-0.5,-16.5,8,'input'),ub(-0.5,-14.5,8,'output')}
+  list,why=PP.floor(s,{},{position={x=0.5,y=-15.5}})
+  eq(why.tunnel,1,'only the second entrance\'s span (-1,-16)')
+  -- the reply names a tile ghost the hub's foundation rules hold back (it counts as floor, and is never built)
+  built={}
+  local tg={valid=true,type='tile-ghost',ghost_name='space-platform-foundation',position={x=10.5,y=-30.5}}
+  local floor={}
+  for _,t in ipairs(tiles) do floor[t.position.x..','..t.position.y]=true end
+  s.find_entities_filtered=function(f)
+    if f.type=='tile-ghost' then return {tg} end
+    return {}
+  end
+  s.get_tile=function(x,y) return {name=floor[x..','..y] and 'space-platform-foundation' or 'empty-space'} end
+  local PP2=dofile('mod/agent-harness_0.1.0/platplan.lua'){platform=function() return {name='Wren',surface=s,force={},hub={valid=true,position={x=0.5,y=-15.5}}} end}
+  local r=PP2.read({},{platform='Wren',floor=true})
+  eq(#r.tile_ghosts_held,1)
+  has(r.line,'1 tile ghost counted as floor the hub does not build (foundation rules): tile ghost (10.5,-30.5) space-platform-foundation: no foundation among the 8 tiles round it')
+  prototypes=nil
+end
+print('d17_batch16 A3 floor under a span with a crossing underground: ok')

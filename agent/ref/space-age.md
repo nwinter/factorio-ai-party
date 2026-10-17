@@ -79,7 +79,8 @@
   `departure`: agents' queue steps and orders that send a platform on beside its schedule. `platform_endurance` lines
   add `phases` (moving, still in space, stopped) and `flight` (the route and its last leg at the moving rate).
   `platform_plan {platform, floor: true}` lists the foundation ghosts need (footprints, tunnels, holes, links) with
-  `place_ghosts_entries`; `paste {preserve_existing_settings_and_wires: true}` adds only what is missing.
+  `place_ghosts_entries`; a tunnel runs to the next underground of its name facing the same way (one crossing it is
+  passed over), and `tile_ghosts_held` names tile ghosts counted as floor that the hub's foundation rules never build; `paste {preserve_existing_settings_and_wires: true}` adds only what is missing.
 - `platform_rename {platform, name}` renames one, listing queues, orders, plans and board items still naming the old
   name. `platform_plan {platform, salvage: 60}` lists foundation tiles to take up from the edge in, as deconstruct areas.
   `load_silo {rockets: 3, launch: true, ...}` queues the load for 3 rockets. With automatic requests on, load_silo and
