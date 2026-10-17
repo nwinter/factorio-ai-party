@@ -73,3 +73,24 @@ do
   eq(met,false); has(saw,'no red or green wire')
 end
 print('d17_batch17 A5 fluid_count and circuit_signal waits: ok')
+
+-- A6 (Gemini 10:56): platform_bom {surface}: every platform's active requests importing from that planet, short ones.
+do
+  defines={inventory={hub_main=1}}
+  prototypes={space_location={gleba={},nauvis={}},item={}}
+  local function hub(held, filters)
+    return {valid=true,get_inventory=function() return {get_item_count=function(n) return held[n] or 0 end} end,
+      get_logistic_sections=function() return {sections_count=1,get_section=function() return {active=true,filters=filters} end} end}
+  end
+  local swift={valid=true,name='Swift',space_location={name='nauvis'},hub=hub({['agricultural-science-pack']=120},{
+    {value={name='agricultural-science-pack'},min=500,import_from={name='gleba'}},{value={name='bioflux'},min=40,import_from='gleba'},
+    {value={name='processing-unit'},min=50,import_from={name='nauvis'}}})}
+  local wren={valid=true,name='Wren',space_location={name='gleba'},hub=hub({bioflux=40},{{value={name='bioflux'},min=40,import_from={name='gleba'}}})}
+  local B=dofile('mod/agent-harness_0.1.0/platbom.lua'){}
+  local r=B.read({force={platforms={swift,wren}}},{surface='gleba'})
+  eq(#r.requests,3,'nauvis requests left out')
+  eq(r.lines[1],'Swift (at nauvis) lacks from gleba: agricultural-science-pack 380 (asks 500, holds 120), bioflux 40 (asks 40, holds 0)')
+  eq(#r.lines,1,'Wren holds what it asks')
+  assert(not pcall(B.read,{force={platforms={}}},{surface='nowhere'}),'a planet')
+end
+print('d17_batch17 A6 platform_bom by surface: ok')

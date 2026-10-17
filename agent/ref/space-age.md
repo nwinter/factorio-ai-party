@@ -136,6 +136,8 @@
   `silo_short.<item>` (parts stalled 2 min) and `silo_ready_idle` (a rocket ready 3 min, not launched).
 - `platform_defense {platform}`: each asteroid collector's front and each hull side against turret ranges: the turrets
   that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as runs.
+- `platform_bom {surface: "gleba"}` (no platform): every platform's active hub requests importing from that planet,
+  a line a platform with what it lacks (asks, holds) and where it is.
 - `platform_bom {platform, request: true}` keeps a hub request section (`platform_bom: NAME`) at what the ghosts still
   need, lowered as they are built and removed when none is left (`request: false` removes it; `import_from`, `area`;
   `min_payload: {item: N}`; a min_payload set on its slots is kept).
