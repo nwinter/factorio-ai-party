@@ -103,12 +103,16 @@
     const aw = words(m.text, skip);
     const agent = String(m.agent || "").toLowerCase();
     const atAgent = (text) => !!agent && new RegExp("(^|\\s)@" + esc(agent) + "\\b").test(String(text || "").toLowerCase());
+    // the Operator's answer to a question asked elsewhere (YouTube, relayed by the owner) attaches only to a line to
+    // the Operator or one sharing two words with it (d17 16:05; viewer_replies.py classify does the same)
+    const operator = agent === "operator" || /^(server|operator)$/i.test(String(m.from || ""));
     const best = (rows, text, mine) => {
       const own = rows.filter(mine);
       const pool = own.length ? own : rows;  // oldest first
       if (!pool.length) return null;
       let pick = pool[pool.length - 1], score = overlap(aw, words(text(pick), skip));
       for (const r of pool) { const sc = overlap(aw, words(text(r), skip)); if (sc >= score + 2) { pick = r; score = sc; } }
+      if (operator && !own.length && score < 2) return null;
       return pick;
     };
     const cs = copies.filter((c) => c.vname === name && before(c) && recent(c));

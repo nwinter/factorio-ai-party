@@ -845,6 +845,13 @@ return function(api)
       -- transfer {walk} filling a count over several chests (from: "nearest"): done once it is taken.
       if action.fill and action.got>=action.fill then return 'transferred' end
       local t=action.targets[action.index]
+      -- collect {pods, to} (d17 pods): what the tour took and still carries goes to the chest before it ends
+      if not t and action.pods and action.pods.to and not action.pods.final and api.pods_owed and api.pods_owed(p,action)>0 then
+        action.pods.final=true
+        local c=action.pods.to
+        action.targets[#action.targets+1]={entity=c,position=c.position,deposit=true}
+        t=action.targets[action.index]
+      end
       if not t then return done(action) end
       if t.find and not t.entity and api.near(p,t.position) then
         local ok,e=pcall(api.find,p,t.position)
@@ -864,7 +871,8 @@ return function(api)
         action.index=action.index+1; action.nav=nil
       elseif (t.pickup_reach and api.distance(p.position,t.position)<=t.pickup_reach) or (not t.pickup_reach and p.can_reach_entity(t.entity)) then
         local ok,out
-        if action.op then ok,out=pcall(api.visit,p,action,t.entity)
+        if t.deposit then ok,out=pcall(api.pods_deposit,p,action,t.entity)
+        elseif action.op then ok,out=pcall(api.visit,p,action,t.entity)
         else
           -- tally: what each take puts over the personal request max (trash.lua)
           action.trash_tally=action.trash_tally or {}
@@ -879,7 +887,13 @@ return function(api)
             local key=st.name..(st.quality and '@'..st.quality or '')
             action.items[key]=(action.items[key] or 0)+st.count
           end
-          if out.inventory_full then return 'inventory_full' end
+          if out.inventory_full and action.pods and action.pods.to and not t.deposit then
+            -- full: to the chest, then back to this container for the rest
+            local c=action.pods.to
+            table.insert(action.targets,action.index,{entity=t.entity,position=t.position})
+            table.insert(action.targets,action.index,{entity=c,position=c.position,deposit=true})
+            action.pods.trips=(action.pods.trips or 1)+1
+          elseif out.inventory_full then return 'inventory_full' end
           if out.stop then return out.stop end
           if out.wait then api.stop_walking(p);return nil end
         else
