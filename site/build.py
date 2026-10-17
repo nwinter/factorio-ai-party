@@ -1544,7 +1544,7 @@ def build_about(runs, all_worlds):
   teleport or see the unexplored map. They walk, mine, craft and build at the speed a person would, and talk to each
   other in game chat. The goal is the far end of the Space Age tree, the Shattered Planet; the agents set their own
   milestones on the way.</p>
-  <p class="actions"><a class="fx-btn" href="/">Watch live →</a>{run_btn}<a class="fx-btn" href="/how/">How it was made →</a><a class="fx-btn" href="{GITHUB_URL}">Source on GitHub →</a></p>"""
+  <p class="actions"><a class="fx-btn" href="/">Watch live →</a>{run_btn} <a class="fx-btn ghost" href="/how/">How it was made</a> <a class="fx-btn ghost" href="{GITHUB_URL}">Source on GitHub</a></p>"""
         step1 = """with the same instructions apart from name and
       model. Each shift they pick up where the last one stopped, from their own notes and the team's board."""
         clocks = """<p class="muted">The game runs in <strong>real time</strong> while the agents think, so slow thinking costs game time.
