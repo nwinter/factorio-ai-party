@@ -17,7 +17,8 @@ return function(api)
       schedule='train: array of 0..32 {station, wait=[{type=time|inactivity|full|empty|item_count|fluid_count|circuit|passenger_present|..., ticks? (time, inactivity), compare? and|or, condition? {signal, comparator, value}}]}; [] clears',
       current='train: 1-based schedule entry to head for (default 1)',
       automatic='train: true runs the schedule, false is manual mode',
-      returns='stop: name, limit, trains_count, rail (the rail it is beside, or none); train: schedule (one line per stop), current, automatic, state (on_the_path, wait_station, wait_signal, arrive_signal, arrive_station, no_path, destination_full, no_schedule, manual_control, manual_control_stop), why (what it waits for: the stop and its wait conditions, the signal ahead and its state, the stops of the destination name and their limits and trains, or that no stop has that name), at_stop, heading_to {stop, position, tiles_left}, speed_kmh, carriages, cargo, fluids, fuel (per locomotive)'},
+      path_to='train: a stop name: whether the rails lead there from the train as it drives, and where not (rail_break); a train in no_path gets it for the stop it heads for unasked',
+      returns='stop: name, limit, trains_count, rail (the rail it is beside, or none); train: schedule (one line per stop), current, automatic, state (on_the_path, wait_station, wait_signal, arrive_signal, arrive_station, no_path, destination_full, no_schedule, manual_control, manual_control_stop), why (what it waits for: the stop and its wait conditions, the signal ahead and its state, the stops of the destination name and their limits and trains, or that no stop has that name), at_stop, heading_to {stop, position, tiles_left}, speed_kmh, carriages, cargo, fluids, fuel (per locomotive); rail_break {to, line, train_side, stop_side, gap_tiles, ghosts, signals} (no_path, or path_to): the rails followed from the train (its front, and its back with a locomotive facing back) through every connection: whole (and when the engine still finds no path, the signals on that way), reaching the stop only facing the other way, or broken: the end of the rails from the train and of those into the stop nearest each other, the tiles between and the rail ghosts there'},
   }
   local function at(pos) return string.format('(%g,%g)', math.floor(pos.x * 10 + 0.5) / 10, math.floor(pos.y * 10 + 0.5) / 10) end
   -- A schedule entry's wait conditions as the GUI lists them.
@@ -313,7 +314,23 @@ return function(api)
       assert(type(a.automatic) == 'boolean', 'automatic must be boolean')
       train.manual_mode = not a.automatic
     end
-    return M.train_view(train)
+    local view = M.train_view(train)
+    -- Where its way is broken (railbreak.lua; d17 batch12 B1, Opus): no_path, or asked for a stop name (path_to).
+    assert(a.path_to == nil or (type(a.path_to) == 'string' and #a.path_to > 0), 'path_to is a train stop name')
+    local name = a.path_to
+    if not name and view.state == 'no_path' then
+      pcall(function() local sch = train.schedule; local r = sch and sch.records[sch.current]; name = r and r.station end)
+    end
+    if name and api.railbreak then
+      local list = stops_named(train, name)
+      if #list == 0 then view.rail_break = {line='no train stop is named ' .. name}
+      else
+        local ok, rb = pcall(api.railbreak.find, train, list)
+        view.rail_break = ok and rb or {line='the rails could not be read: ' .. tostring(rb)}
+      end
+      view.rail_break.to = name
+    end
+    return view
   end
   return M
 end

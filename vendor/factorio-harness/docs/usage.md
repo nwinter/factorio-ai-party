@@ -6129,3 +6129,13 @@ fh watch    # deploy on every change
   recover's corpse lines and dry run give `killed_by`, `killer_now` (alive and where, in sight; alive out of sight; no
   longer alive) and `units_near` (enemy units within 32 tiles of the corpse, seen now). batch10 C4's checks are kept.
   On the copy: `killed_by: big-biter at (-24.4,104.9) (physical damage)`, `killer_now: ... no longer alive`.
+- B1 (Opus): a train read in `no_path` gives `rail_break` for the stop it heads for (`train {position, path_to:
+  STOP}` for any stop): the rails are followed from the train as it drives (its front, and its back with a locomotive
+  facing back) through every left, straight and right connection. Whole: said, with the engine's own path length, or
+  when the engine still finds no path, the signals on that way. Reaching the stop's rail only driving away from it:
+  said (no loop to turn round; locomotives all one way). Broken: the rails into the stop are followed backward too,
+  and the two ends nearest each other are named, the tiles between and the rail ghosts there. On the copy, a rail cut
+  next to Astra Nuclear: `the line is broken: the rails from the train end at straight-rail (131,-131), its end at
+  (130,-131) facing west; the rails into the stop end at straight-rail (127,-131), its end at (128,-131) facing east;
+  2 tiles between them; 1 rail ghost waits there to be built: straight-rail (129,-131)`. 51 ms on the copy (the whole
+  network read from both sides; at most 30000 rail ends a side).

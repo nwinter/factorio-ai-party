@@ -114,3 +114,5 @@
 - Foundation refused in front of an asteroid collector says so: its collection area is kept empty space.
 - `ghosts {position?, radius?, area?, name?, surface?}`: each ghost nearest first, the item that places it, and
   whether robots can build it (no construction area covers it, its network holds none, no idle robot); `page` for more.
+- A train in `no_path` reads `rail_break` (`train {position}`; `path_to: "STOP"` for any stop): the rails followed from
+  the train, whole, reaching the stop only facing away, or broken: where the rails from each side end, the gap, rail ghosts.
