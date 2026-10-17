@@ -608,6 +608,9 @@ body.seg-full #alerts .alert:not(:last-child) { display: none; }
 #segment.lower .srow .k { min-width: 96px; font-size: 14px; }
 #segment.lower .snote { font-size: 15px; }
 #segment.lower .sbar { height: 12px; }
+/* the site's address on some cards (segments.py SITE): small, at the card's foot above the time bar */
+#segment .ssite { font-size: 15px; color: var(--muted); letter-spacing: 0.02em; }
+#segment.full .ssite { font-size: 20px; }
 .spanel { box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; padding: 14px 22px 16px; overflow: hidden;
   background: rgba(var(--fx-frame-rgb), 0.95); border-radius: var(--fx-r-2); box-shadow: var(--fx-bevel), var(--fx-shadow-window); }
 .stitle { display: flex; align-items: center; gap: 12px; font-size: 26px; font-weight: 700; color: var(--head); white-space: nowrap; overflow: hidden; }

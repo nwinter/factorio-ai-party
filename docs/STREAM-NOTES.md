@@ -291,6 +291,15 @@ landscape, 130 px portrait, more if a caption is taller) and a lower card (spotl
 up" card) rises above a caption while one shows. Fixes the pilot's 01:41 shot, where Rook's caption covered the
 replay card.
 
+The site's address on some cards (Nick, YouTube chat Oct 14 22:02; eng/d17-site8): every 2nd accepted segment that
+is not a replay carries `site: "factorio.nickwinter.net"` (segments.py `SITE`; `site_every` in stream.json
+`segments`, 0 turns it off). The card shows one line, "More on the run: factorio.nickwinter.net", at its foot above
+the time bar (15 px on a lower card, 20 px on a full panel, muted), on both the landscape and the vertical page. It
+stays inside the card, which already rises above the voice captions and never covers the agents' chat or bubbles. It
+is outside `facts`, so the casters neither see nor say it. Shift 28 had 13 non-replay segments in about 3 hours (ids
+up to seg-18, 5 of them replays), so this is about two lines an hour, each up for the card's 10-45 s. Checked in a
+stub DOM (tools/stream/test_sitecard.py), not yet seen in OBS.
+
 ## Space Age
 
 Data (read-only): `score` (tools/pog.py) gives rockets launched, `planets` (surfaces with our entities) and

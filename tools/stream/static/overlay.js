@@ -1362,7 +1362,9 @@
       }
       box._time = el("div", "stime");
       box._time.append(el("i"));
-      panel.append(title, segmentBody(seg), box._time);
+      panel.append(title, segmentBody(seg));
+      if (seg.site) panel.append(el("div", "ssite", "More on the run: " + seg.site));  // segments.py SITE, some cards
+      panel.append(box._time);
       box.append(panel);
       box.hidden = false;
       box._t0 = seg.started * 1000 + Date.now() - s.now * 1000; // local ms
