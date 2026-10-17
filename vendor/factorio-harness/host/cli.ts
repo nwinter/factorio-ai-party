@@ -16,6 +16,7 @@ import { formatCompact, finalLine, actionHelp, paginate } from './format.js';
 import { parseDeadline, deadlineText, timeLeftText } from './deadline.js';
 import { lookaheadDue } from './lookahead.js';
 import { pollNews } from './polls.js';
+import { trimRepeats, type ShownState } from './repeats.js';
 import { bundleRuntime } from './bundle.js';
 import { startSession, stopSession, sessionConnection, connectSession, type SessionConnection } from './session.js';
 import { BridgeClient, BridgeOutcomeUnknown } from './bridge.js';
@@ -332,7 +333,7 @@ const TELL_WORDS = new Set(['tell','tells','mention','told']);
 const THEN_READS = new Set(['agriculture','artillery','belt_gaps','blueprint_list','boilers','bottleneck','cameras','cargo','conflicts',
   'construction_robots','craftable','damage_log','danger','defense','drill_sites','drops','dry_run','flamers','freight_audit','fuel_budget',
   'game_alerts','grid','heat_budget','inspect','inventory','labs','lookahead','map','nearest','nearest_water','networks','observe','ores',
-  'pipe_gaps','placements','platform','platform_bom','platform_endurance','platform_production','platform_defense','circuit_audit','platform_gate','demolishers','shipment','board_progress','board_critical','lesson_review','ground_rules','platform_plan','ghosts','platform_supply','platforms','ports','power','preflight',
+  'pipe_gaps','placements','platform','platform_bom','platform_endurance','platform_production','platform_defense','circuit_audit','platform_gate','demolishers','dependency','shipment','board_progress','board_critical','lesson_review','ground_rules','platform_plan','ghosts','platform_supply','platforms','ports','power','preflight',
   'profiles','rates','recipes','reminders','research_options','reservations','review','scan','science','shortages','silo','status','stock',
   'supply','technologies','trace','turrets','where_is']);
 /** --then's action and arguments: "ACTION", "ACTION {json}", with the JSON as the next positional or --args. */
@@ -402,32 +403,39 @@ function agoText(seconds: number): string {
 }
 // Shown once per message (Muse, shift17 10:50: "operator repeat banners flood stdout and bury command output when
 // piped"): a tell an earlier fh call already filed in the operator file is left out of this call's output; the
-// workspace hook (pog tools/context.py) shows each new one in the model's context once. --operator-repeat (or
-// FH_OPERATOR_REPEAT=1) prints it on every reply that carries it, as before; so does a workspace without the hook
-// (no .context-hooks beside the operator file) or a call without an operator file.
-let operatorRepeat = false;
-function operatorFiled(seq: number): boolean {
-  if (!operatorFile || operatorRepeat) return false;
-  try { return readFileSync(operatorFile, 'utf8').includes(`"seq":${seq},`); } catch { return false; }
+// workspace hook (pog tools/context.py) shows each new one in the model's context once. A workspace without the hook
+// (no .context-hooks beside the operator file; Gemini's) shows each on its first OPERATOR_SHOWS replies (d17 lean C2:
+// Gemini saw one on 31 replies when it was every reply until its next game action): the file gets a line per showing.
+// --operator-repeat (or FH_OPERATOR_REPEAT=1) prints it on every reply that carries it; so does a call without an
+// operator file. Within one fh process a message prints once, on stdout as soon as a reply carries it (it went to
+// stderr and to stdout before, so a shell that shows both printed it twice).
+export const OPERATOR_SHOWS = 3;
+let operatorRepeat = false, operatorNoHook = false;
+function operatorShown(seq: number): number {
+  if (!operatorFile) return 0;
+  try { return readFileSync(operatorFile, 'utf8').split(`"seq":${seq},`).length - 1; } catch { return 0; }
 }
 function noteOperator(reply: unknown) {
   const lines = reply && typeof reply === 'object' ? (reply as Reply).result?.operator : undefined;
   if (!Array.isArray(lines)) return;
   for (const o of lines) {
     if (typeof o?.seq !== 'number' || typeof o.text !== 'string' || operatorLines.has(o.seq)) continue;
-    if (operatorFiled(o.seq)) { operatorLines.set(o.seq, ''); operatorPrinted.add(o.seq); continue; }
-    const line = `OPERATOR: ${o.text} (sent ${agoText(Number(o.ago_s ?? 0))}; ${operatorFile && !operatorRepeat
-      ? 'shown once: later replies leave it out' : 'repeated on every reply until your next game action or message'})`;
+    const shown = operatorShown(o.seq);
+    if (operatorFile && !operatorRepeat && shown >= (operatorNoHook ? OPERATOR_SHOWS : 1)) {
+      operatorLines.set(o.seq, ''); operatorPrinted.add(o.seq); continue;
+    }
+    const left = OPERATOR_SHOWS - shown - 1;
+    const line = `OPERATOR: ${o.text} (sent ${agoText(Number(o.ago_s ?? 0))}; ${!operatorFile || operatorRepeat
+      ? 'repeated on every reply until your next game action or message'
+      : operatorNoHook ? (left > 0 ? `shown on ${left} more repl${left === 1 ? 'y' : 'ies'}` : 'shown for the last time')
+      : 'shown once: later replies leave it out'})`;
     operatorLines.set(o.seq, line);
-    // JSON keeps the tell in result.operator and leaves stderr without it: scripts read `--format json 2>&1`
+    // JSON keeps the tell in result.operator and prints nothing more: scripts read `--format json 2>&1`
     // (Muse, shift12: an OPERATOR line ahead of the document on every data call until the next game action).
-    if (outputFormat !== 'json') process.stderr.write(line + '\n');
-    if (operatorFile) {
-      try {
-        let seen = '';
-        try { seen = readFileSync(operatorFile, 'utf8'); } catch { /* first one */ }
-        if (!seen.includes(`"seq":${o.seq},`)) appendFileSync(operatorFile, JSON.stringify({seq:o.seq, text:o.text, at:new Date().toISOString()}) + '\n');
-      } catch (error) { process.stderr.write(`operator file: ${String(error)}\n`); }
+    if (outputFormat !== 'json') { process.stdout.write(line + '\n'); operatorPrinted.add(o.seq); }
+    if (operatorFile && (operatorNoHook || shown === 0)) {
+      try { appendFileSync(operatorFile, JSON.stringify({seq:o.seq, text:o.text, at:new Date().toISOString()}) + '\n'); }
+      catch (error) { process.stderr.write(`operator file: ${String(error)}\n`); }
     }
   }
 }
@@ -617,9 +625,20 @@ function withCliNote(value: unknown): unknown {
   const result = reply.result && typeof reply.result === 'object' ? reply.result as Record<string, unknown> : {};
   return {...reply, result:{...result, corrected:typeof result.corrected === 'string' ? `${note}; ${result.corrected}` : note}};
 }
+// The orders and lessons lines when they changed or every 10 minutes (host/repeats.ts): FH_SHOWN_FILE, default
+// .fh-shown.json next to the journal, keeps what this workspace last showed; without a journal every reply shows them.
+let shownFile: string | undefined;
+function withoutRepeats(value: unknown): unknown {
+  if (!shownFile) return value;
+  let state: ShownState = {};
+  try { state = JSON.parse(readFileSync(shownFile, 'utf8')); } catch { /* the workspace's first reply */ }
+  const out = trimRepeats(value, state, Date.now());
+  if (out.changed) { try { writeFileSync(shownFile, JSON.stringify(out.state)); } catch { /* shown again next time */ } }
+  return out.reply;
+}
 function output(value: unknown) {
   value = withPace(withDeadline(withCliNote(value)));
-  if (outputFormat === 'compact') writePaged(operatorHead() + formatCompact(withoutOperator(value)));
+  if (outputFormat === 'compact') writePaged(operatorHead() + formatCompact(withoutOperator(withoutRepeats(value))));
   else process.stdout.write(JSON.stringify(value) + '\n');
   // JSON stays one document on stdout; the error:/warning: line goes to stderr
   // so a reader of the terminal (or 2>&1 | tail -1) still sees it.
@@ -997,14 +1016,15 @@ async function main() {
     client = rcon;
   }
   operatorFile = process.env.FH_OPERATOR_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.operator-tells.jsonl') : undefined);
-  // A workspace without the post-tool hook (no .context-hooks beside the operator file; Gemini's) keeps the repeats:
-  // nothing else would put a missed tell in front of the model.
-  operatorRepeat = values['operator-repeat'] === true || process.env.FH_OPERATOR_REPEAT === '1'
-    || (operatorFile !== undefined && !existsSync(resolve(dirname(operatorFile), '.context-hooks')));
+  // A workspace without the post-tool hook (no .context-hooks beside the operator file; Gemini's) shows each tell on
+  // OPERATOR_SHOWS replies: nothing else would put a missed tell in front of the model.
+  operatorRepeat = values['operator-repeat'] === true || process.env.FH_OPERATOR_REPEAT === '1';
+  operatorNoHook = operatorFile !== undefined && !existsSync(resolve(dirname(operatorFile), '.context-hooks'));
   paceFile = process.env.FH_PACE_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-pace.json') : undefined);
   journalPath = values.journal ? resolve(values.journal) : undefined;
   retriedId = values.id;
   projectsFile = process.env.FH_PROJECTS_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.projects.json') : undefined);
+  shownFile = process.env.FH_SHOWN_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-shown.json') : undefined);
   describeCache = process.env.FH_DESCRIBE_CACHE || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-describe.json') : undefined);
   lookaheadFile = process.env.FH_LOOKAHEAD_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.lookahead.json') : undefined);
   lookaheadName = bot ?? (values.journal ? dirname(resolve(values.journal)).split('/').pop() ?? '' : '');

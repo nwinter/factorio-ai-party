@@ -1467,14 +1467,25 @@ return function(api)
       local hit = (k.item and q.items and q.items[k.item]) or (k.recipe and q.recipes and q.recipes[k.recipe]) or (k.entity and q.entities and q.entities[k.entity])
       if names and not hit then return false end
     end
+    -- (backlog #688/#689, Sol and Astra: why a lesson showed) the keys that matched, in words
+    local why = {}
+    if k.action then why[#why+1] = 'action ' .. k.action end
+    if k.item and q.items and q.items[k.item] then why[#why+1] = 'item ' .. k.item end
+    if k.recipe and q.recipes and q.recipes[k.recipe] then why[#why+1] = 'recipe ' .. k.recipe end
+    if k.entity and q.entities and q.entities[k.entity] then why[#why+1] = 'entity ' .. k.entity end
+    if k.surface then why[#why+1] = 'surface ' .. k.surface end
     if k.position or k.area then
       for _, pos in ipairs(q.positions or {}) do
-        if k.area and pos.x >= k.area.left_top.x and pos.x <= k.area.right_bottom.x and pos.y >= k.area.left_top.y and pos.y <= k.area.right_bottom.y then return true end
-        if k.position and (pos.x - k.position.x) ^ 2 + (pos.y - k.position.y) ^ 2 <= NEAR_LESSON ^ 2 then return true end
+        if k.area and pos.x >= k.area.left_top.x and pos.x <= k.area.right_bottom.x and pos.y >= k.area.left_top.y and pos.y <= k.area.right_bottom.y then
+          why[#why+1] = 'its area'; return true, table.concat(why, ', ')
+        end
+        if k.position and (pos.x - k.position.x) ^ 2 + (pos.y - k.position.y) ^ 2 <= NEAR_LESSON ^ 2 then
+          why[#why+1] = string.format('within %d tiles of (%g,%g)', NEAR_LESSON, k.position.x, k.position.y); return true, table.concat(why, ', ')
+        end
       end
       return false
     end
-    return named ~= nil
+    return named ~= nil, table.concat(why, ', ')
   end
   local function lessons_read(a)
     local q = {surface=a.surface, action=a.action, items=a.item and {[a.item]=true}, recipes=a.recipe and {[a.recipe]=true},
@@ -1551,11 +1562,14 @@ return function(api)
   end
   local function hits_for(p, action, args)
     local q, named = lesson_query(p, action, args)
-    local hits = {}
+    local hits, whys = {}, {}
     for _, i in pairs(store().items) do
-      if i.kind == 'lesson' and ACTIVE[i.status] and (named or (i.keys and i.keys.action == action)) and lesson_matches(i, q) then hits[#hits+1] = i end
+      if i.kind == 'lesson' and ACTIVE[i.status] and (named or (i.keys and i.keys.action == action)) then
+        local ok, why = lesson_matches(i, q)
+        if ok then hits[#hits+1] = i; whys[i.id] = why end
+      end
     end
-    return hits
+    return hits, whys
   end
   local function score(i) if api.lesson_score then return (api.lesson_score(i)) end return 0 end
   function M.lessons_for(p, action, args)
@@ -1565,21 +1579,21 @@ return function(api)
     for _, i in pairs(b.items) do if i.kind == 'lesson' then any = true; break end end
     if not any or type(args) ~= 'table' then return nil end
     local hits, seen = {}, {}
-    local function add(list, tag)
-      for _, i in ipairs(list) do if not seen[i.id] then seen[i.id] = true; hits[#hits+1] = {i=i, tag=tag} end end
+    local function add(list, whys, tag)
+      for _, i in ipairs(list) do if not seen[i.id] then seen[i.id] = true; hits[#hits+1] = {i=i, tag=tag, why=whys and whys[i.id]} end end
     end
     local consequential = api.consequential and api.consequential[action] or false
-    add(hits_for(p, action, args), nil)
+    do local l, w = hits_for(p, action, args); add(l, w, nil) end
     -- a dry run is read before its call (load_silo, construct dry runs; preflight before a launch)
     local inner = action == 'dry_run' and type(args.action) == 'string' and type(args.args) == 'table'
-    if inner then add(hits_for(p, args.action, args.args), 'for ' .. args.action); consequential = consequential or (api.consequential and api.consequential[args.action]) end
-    if action == 'preflight' then consequential = true; add(hits_for(p, 'launch', args), 'for launch') end
+    if inner then local l, w = hits_for(p, args.action, args.args); add(l, w, 'for ' .. args.action); consequential = consequential or (api.consequential and api.consequential[args.action]) end
+    if action == 'preflight' then consequential = true; local l, w = hits_for(p, 'launch', args); add(l, w, 'for launch') end
     -- a queue's or order's steps (D1: the steps it later runs show no reply of their own)
     if STEP_CALLS[action] then
       for n, st in ipairs(type(args.steps) == 'table' and args.steps or {}) do
         if n > 32 then break end
         if type(st) == 'table' and type(st.action) == 'string' then
-          add(hits_for(p, st.action, type(st.args) == 'table' and st.args or {}), 'for step ' .. n .. ' ' .. st.action)
+          local l, w = hits_for(p, st.action, type(st.args) == 'table' and st.args or {}); add(l, w, 'for step ' .. n .. ' ' .. st.action)
           if api.consequential and api.consequential[st.action] then consequential = true end
         end
       end
@@ -1595,7 +1609,7 @@ return function(api)
     local show = consequential and 1 or 2
     for n = 1, math.min(show, #hits) do
       local i = hits[n].i
-      local line = lesson_line(i, true) .. (hits[n].tag and ' (' .. hits[n].tag .. ')' or '')
+      local line = lesson_line(i, true) .. (hits[n].tag and ' (' .. hits[n].tag .. ')' or '') .. (hits[n].why and hits[n].why ~= '' and ' (matched: ' .. hits[n].why .. ')' or '')
       local extra = api.lesson_extra and api.lesson_extra(i)
       if consequential then
         local why

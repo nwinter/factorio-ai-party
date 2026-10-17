@@ -116,7 +116,7 @@
 - `./fh call power --args '{"by_cause":true}'` ranks each network's draw by entity name (last 5 s); when roboports draw,
   it adds the robots flying, charging and waiting, what the flying ones draw, their trip lengths and the requesters
   with the most on the way.
-- `inspect {area | position+radius}` over 64 entities gives counts by name instead; `name` filters by name there.
+- `inspect {area | position+radius}`: `name` filters by name there.
 - `trace {position, circuit: true}`: a machine's inserters with their conditions, and the circuit networks on their
   wires followed back through combinators. `fuel_budget {boilers: true}`: each boiler group's burn against the fuel in
   reach and the drills supplying it, with the hours left.
@@ -135,3 +135,7 @@
   and spoil within 5 min; the production statistics do not count spoiling.
 - The power line (and the science line's headroom) splits the rating: generators with no steam, fuel or plasma in now
   are named, and headroom is against what can supply now; low-power machines are counted beside it.
+- `dependency {item, surface?}`: the item and each ingredient of its recipe there: made and used a minute, stock and
+  minutes left, pods coming down and platforms carrying it to a stop there, a rocket's load by weight; missing, short
+  or ok each; feasible, sustained and the first unsatisfied.
+- bottleneck {item, per_min} counts an ingredient net of what its recipe gives back (asteroid crushing).

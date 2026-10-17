@@ -58,7 +58,12 @@ fh call status
   launch --args '{"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`; transfer has a give, a take and a pick;
   describe's `examples`). fh help keeps that describe per runtime bundle (FH_DESCRIBE_CACHE, default .fh-describe.json
   next to the journal): it asks `describe {if_bundle}`, which answers `{bundle, unchanged}` while the same bundle runs,
-  and reads the whole describe again after a deploy (bundles carry their content hash as BUNDLE_ID). An argument refusal ends with one: for transfer built from the call itself (`; for this
+  and reads the whole describe again after a deploy (bundles carry their content hash as BUNDLE_ID). Action-name
+  aliases (runtime.lua M.ALIASES, describe `aliases`): silos, lab, dangers, boiler, logistic_networks, where, plan_list and
+  order_status run as silo, labs, danger, boilers, networks, where_is, plans and orders, resolved before argument checks
+  and the read tables; the reply's `called_as` names the action, and `fh help ALIAS` prints the action's help. Queue
+  step options and guards are documented under queue_submit (`step_options`, `guards`), not as actions of their own.
+  An argument refusal ends with one: for transfer built from the call itself (`; for this
   call:` and the call), else the action's own (`; e.g. fh call technologies --args '{"prefix":"automation"}'`); a number out of range says its range and the value (`radius out of range: a whole
   number 1..128, got 500`). Refusals no longer start with the runtime's line (`agent-harness/runtime:31061: `). Every example, in describe, this file and the agents' brief (agent/ref/), is checked against the argument
   check by the runtime test.
@@ -2391,6 +2396,9 @@ ports and their joins. Heater searches are local, capped at 65 entities per plac
     - `for_ticks` still holds: a round an order held back to or past the end does not start, and the loop ends there.
     - When the loop ends, its `orders` setting goes with it: the queue is free, and every order may run as at any free
       time.
+  - In compact output the orders line, and a call's `lessons` lines, show when their text changed since the workspace
+    last showed them and at least every 10 minutes (host/repeats.ts; state in FH_SHOWN_FILE, default .fh-shown.json
+    next to the journal); JSON output always carries them.
   - The orders line, during a round: `waiting for your repeating plan's round (orders run between its rounds:
     triggered ones)`; with `none`, `waiting for your repeating plan (orders: none)`. `queue_status` and the queue write
     replies show `orders_between_rounds`.
@@ -4469,8 +4477,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   `ignoring` (`sonnet is in a wait_until that ignores messages until tick 812345 (about 12 min)`; Astra, d15 14:48:
   Sonnet sat in back-to-back 15-minute waits like that, and no freight tell reached it for about an hour).
   `tell {wake: true}` (`fh tell NAME --wake "text"`) ends such a wait as well (outcome `told`, `last.why` `told by
-  astra (wake: true)`), at most once per 10 minutes per sender and recipient: the reply lists `woken`, and
-  `not_woken` (`sonnet: woken by you 4 min ago; again from tick T`) with the recipient in `ignoring`. `wake` and `fyi`
+  astra (wake: true)`), each time (the reply lists `woken`, with the count of your wake tells to them in the last 10
+  minutes), with the recipient in `ignoring`. `wake` and `fyi`
   do not go together. `tells {since?, limit?}` (limit 1..100,
   default 30, newest kept) lists tells oldest first as `{seq,tick,ago_s,from,away?,to?,team?,fyi?,text}`. Without
   `since`: the last 30 you received (team tells included), at every read, whether or not a team block showed them
@@ -4566,7 +4574,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   2 minutes (shift07: Sonnet's back-to-back waits, with a few seconds of its plan between them, read as busy for 70
   minutes; Grok's and Muse's short walks and Gemini's transfers never counted under a 20 s-in-one-go rule). The clock
   line on every reply uses the same definition (one `busy()`): `character idle 5m00s of it (100%, 4m30s of that in
-  wait_ticks)`.
+  wait_ticks)`. Compact output shows that line shorter (host/format.ts shortClock, d17): `game 98h40m; +5m00s, idle
+  5m00s (100%, 4m30s in wait_ticks)`, hand crafting only when some is queued, then the deadline and a slow game as
+  they are; JSON keeps the runtime's line, which tools/idle_report.py, handover.py and analysis/sleep_share.py read.
   `alive`, `action`, `action_until_s`, `queue {state: none|empty|paused|running, steps}`, `sleeping_s`, `sleep_left_s`,
   `unread_chat`, `unread_mentions` (tells included), `unread_tells`, `unread_board`, `last_request_s`, `stand_ended
   {s_ago, why}` and `counted` (args `minutes`, default and at most 10): game actions, those with no effect, reads,
@@ -4575,14 +4585,16 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   standing 21%"). `tell {to, text}` sends a tell from `operator`, like a teammate's: in the next reply's team tells,
   waking a sleeper (woke=told), never in the game chat. It also rides on every reply to that agent as
   `operator [{seq, ago_s, text}]` (peeks, reads and waits included; the newest 3) until the agent's next game action
-  or message; in compact output fh prints each as an `OPERATOR:` line on stderr as soon as a reply carries it and first
-  on stdout (`--format json` keeps it in the document only), and
+  or message; in compact output fh prints each as an `OPERATOR:` line on stdout as soon as a reply carries it, once per
+  fh call (it went to stderr too until d17, so a shell showing both printed it twice; `--format json` keeps it in the
+  document only), and
   files it in `.operator-tells.jsonl` beside `--journal` (or `FH_OPERATOR_FILE`) for a post-tool hook. Each message is
   printed once (Muse, shift17 10:50: "operator repeat banners flood stdout and bury command output when piped"): a later
   fh call whose reply still carries a message already in that file leaves it out of stdout and stderr; the post-tool
-  hook (pog tools/context.py) puts each new one in the model's context once. It is printed on every reply, as before,
-  with `--operator-repeat` (or `FH_OPERATOR_REPEAT=1`), in a workspace without the hook (no `.context-hooks` beside the
-  file: Gemini's), and without an operator file.
+  hook (pog tools/context.py) puts each new one in the model's context once. In a workspace without the hook (no `.context-hooks`
+  beside the file: Gemini's) it is printed on the first 3 replies that carry it (the file gets a line per showing; it
+  was every reply until the next game action, and Gemini saw one 31 times in shift27). It is printed on every reply
+  with `--operator-repeat` (or `FH_OPERATOR_REPEAT=1`) and without an operator file.
 - Operator factory digest (`factory_digest.lua`, `tools/factory_digest.py`): the idle-nudge supervisor sends
   a team tell on its first poll at or after the run deadline minus 2 hours, before the deadline, once per run.
   No deadline means no automatic digest. `POG_IDLE_NUDGE=0` disables this supervisor and the scheduled digest.
@@ -5126,7 +5138,7 @@ fh watch    # deploy on every change
 - Waits that ignore messages while the queue runs (Grok, Sonnet x3: woken 6-15 times an hour waiting for a ship).
   - `sleep` (`fh sleep`, `fh wait --until`) takes `wake_on_messages: false`; on the CLI `--wait-through-tells` sends
     it. No tell or mention ends it then; they wait for the next reply. A tell sent with `wake: true` (`fh tell
-    --wake`) still ends it, once per 10 minutes per teammate, as for a direct wait. Urgent alerts, damage, the queue
+    --wake`) still ends it, each time, as for a direct wait. Urgent alerts, damage, the queue
     finishing or stalling and the condition still end it. `wakes_on` says `no message (tells and mentions wait for your
     next reply)` and `a tell sent with wake: true`; a teller's reply says `ignoring: NAME is in a sleep that ignores
     messages until tick T`.
@@ -6484,6 +6496,24 @@ fh watch    # deploy on every change
   on a turret ghost (2 h at most, 64 ghosts). Every 2 s it reads the turret built in its place; one that reads other
   targeting is set to the ghost's, and the agent who set it is told once (team.alerts). Copy: Wren's gun turret
   watched, built with its targeting, forgotten, no line. tests/d17_backlog.lua covers an engine that loses it.
+- #653 (Sol): requester and buffer chests already took requests by remote view (requests {surface, position}). New
+  `deliver {position | positions, items, surface?}` (deliver.lua) brings fuel into a burner's fuel slots or ammunition
+  into a turret by item request (an insert plan, as a 2.0 blueprint's item requests). The construction robots of the
+  network covering it bring it from that network's stock. Each row names the network, what it holds and its free
+  construction robots. Passive, and allowed aboard with surface=. Modules go with configure; a machine's ingredients
+  are refused, naming inserters or a requester chest. Copy: 10 solid fuel into the heating tower at (-57.5,98.5) on
+  Fulgora from network 63; a robot brought it within about 2 s.
+- #688/#689: a lesson line says which keys matched the call, e.g. "(matched: action build, entity big-electric-pole)".
+  The rest was done in batch15 (df8a6e92).
+- #818 (Sol, for viewer Foobator): bottleneck {item, per_min} counted an ingredient that its recipe gives back
+  (asteroid crushing returns its chunk 1 time in 5) as needed whole. Each step's need is now net of what the same
+  recipe returns. New read `dependency {item, surface?}` (dependency.lua) joins, for the item and each solid ingredient
+  of its recipe there (the force's recipe of its name, else an enabled recipe that makes it): made and used a minute,
+  the planet stock and the minutes it covers at the net use, cargo pods coming down with it, our platforms carrying it
+  to a stop there whose pads ask it, and a rocket's load by weight. Per ingredient: what a craft takes (net) and what
+  the making now takes a minute, marked missing, short or ok; then feasible, sustained and the first unsatisfied.
+  Copy: quantum processors on Aquilo read "processing-unit ... stock 0 ... [missing]"; "feasible: no; first
+  unsatisfied: processing-unit". 3.5 ms on the copy.
 
 ## d17 alerts (operator 11:30; the audit's item 8)
 - team.alerts leaves out an alert line this agent was shown with the same words in the last 10 minutes (board.lua

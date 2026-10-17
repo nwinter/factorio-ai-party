@@ -111,7 +111,7 @@ export function formatCompact(value: unknown): string {
   }
   if (record(value) && typeof value.ok === 'boolean') {
     const { ok, id, result, error, ...rest } = value;
-    const { body, notes } = lift(result);
+    const { body, notes } = lift(record(result) && typeof result.clock === 'string' ? { ...result, clock: shortClock(result.clock) } : result);
     if (!ok) {
       render({ id, ...rest, error_result: body }, '', 0);
       lines.push(`error: ${errorText(error)}${notes.length ? '; ' + notes.join('; ') : ''}`);
@@ -145,6 +145,12 @@ function sortKeys(value: unknown): unknown {
 }
 export function actionHelp(describe: unknown, action: string, max = 1400): string {
   const actions = record(describe) && record(describe.actions) ? describe.actions : {};
+  // An alias (the runtime's M.ALIASES, d17 lean D1) prints the action it runs as.
+  const aliases = record(describe) && record(describe.aliases) ? describe.aliases : {};
+  const real = aliases[action];
+  if (!record(actions[action]) && typeof real === 'string' && record(actions[real])) {
+    return `${action} is ${real}: the call runs as ${real}\n` + actionHelp(describe, real, max);
+  }
   const schema = actions[action];
   if (!record(schema)) {
     const names = Object.keys(actions).sort();
@@ -255,4 +261,22 @@ function lift(result: unknown): { body: unknown; notes: string[] } {
     }
   }
   return { body, notes };
+}
+/**
+ * The clock line as compact output shows it (d17 lean C3: 133 bytes on every reply, 1 MB a shift): the game time first,
+ * then the time since the last request and the idle share, without the words that never change, and hand crafting only
+ * when some is queued; what follows (the deadline, a slow game) as it is. The JSON reply keeps the runtime's line
+ * (tools/idle_report.py, tools/handover.py and tools/analysis/sleep_share.py read it from the journals).
+ *   game 98h40m; +1s since your last request, character idle 0s of it (10%, 0s of that in sleep); hand crafting 0s
+ *   queued; deadline in 3h43m  ->  game 98h40m; +1s, idle 0s (10%, 0s in sleep); deadline in 3h43m
+ * A line of another shape is shown as it is.
+ */
+const CLOCK = /^game (\S+); \+(\S+) since your last request, character idle (\S+) of it \((\d+)%(?:, (\S+) of that in ([^),]+))?(?:, on watch: (.+?) for (\S+) of that)?\)(?:, waiting on hand crafting (\S+) of it \((\d+)%\))?; hand crafting (\S+) queued(.*)$/s;
+export function shortClock(line: string): string {
+  const m = CLOCK.exec(line);
+  if (!m) return line;
+  const [, game, since, idle, share, inWaits, kinds, watchNames, watched, waited, waitShare, queued, rest] = m;
+  return `game ${game}; +${since}, idle ${idle} (${share}%${inWaits ? `, ${inWaits} in ${kinds}` : ''}${watchNames ? `, on watch: ${watchNames} for ${watched}` : ''})`
+    + (waited ? `, waiting on hand crafting ${waited} (${waitShare}%)` : '')
+    + (queued !== '0s' ? `; hand crafting ${queued} queued` : '') + rest;
 }

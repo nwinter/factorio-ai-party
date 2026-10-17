@@ -110,3 +110,6 @@
 - `transfer` gives `freshness` (the moved stacks' spread) and takes `spoiled_first: true` and `min_spoil` (alias
   `min_spoiled`) or `max_fresh` to move only the rotten tail; `load_silo` gives `freshness` at the top.
 - `transfer` gives and takes a fusion reactor's fuel (fusion power cells), as any burner's.
+- `deliver {position(s), items, surface?}`: fuel or ammunition into a burner or turret by item request, as a
+  blueprint's item requests: the construction robots of the network covering it bring it (the row names that network's
+  stock and free robots). Modules: configure; ingredients: inserters or a requester chest.
