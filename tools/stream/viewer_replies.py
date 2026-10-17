@@ -63,7 +63,9 @@ def viewer_name(line):
     """The viewer's name of a relayed viewer line ({from: "viewer NAME", viewer: true}), else None."""
     frm = str(line.get("from") or "")
     if line.get("viewer") or frm.lower().startswith("viewer "):
-        return frm[7:] if frm.lower().startswith("viewer ") else frm
+        name = frm[7:] if frm.lower().startswith("viewer ") else frm
+        # the host's " (host)" tag is not part of the name agents answer to (d17 13:40: "@NickWinter" went unmatched)
+        return re.sub(r"\s*\(host\)$", "", name)
     return None
 
 
