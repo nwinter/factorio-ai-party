@@ -1844,7 +1844,13 @@ function handlers.describe(_,a)
   -- action"): their text goes under queue_submit's entry (d17 lean D1).
   local sched=scheduler and scheduler.schema or {}
   for name,schema in pairs(sched) do if name~='guards' and name~='step_options' then description.actions[name]=schema end end
-  local qs=description.actions.queue_submit
+  -- a copy: the schema is the scheduler's own table, and describe runs many times (each call added the text again)
+  local qs=nil
+  if description.actions.queue_submit then
+    qs={}
+    for k,v in pairs(description.actions.queue_submit) do qs[k]=v end
+    description.actions.queue_submit=qs
+  end
   if qs and sched.guards then
     qs.guards=(qs.guards and qs.guards..'; ' or '')..'at most '..tostring(sched.guards.max)..': '..sched.guards.usage
   end
