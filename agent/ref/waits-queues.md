@@ -10,8 +10,11 @@
   ghost left) and `platform_ready` (`platform` with `positions`, `area` or `tiles`: that part's ghosts only;
   `platform_built` takes the same subset); `fluid_count` (`platform`, `fluid`, `at_least` or `below`: its storage
   tanks) and `circuit_signal` (`platform`, `signal`, `at_least` or `below`: the hub's red and green wires), queue
-  steps and the remote lane too; `platform_arrived`, `platform_left` (`./fh help space-age`); `all` (`conditions`: met
-  when every one holds); also `no_enemy_structures`, `no_enemies`, `units_clear`, `turrets_idle`, `ammo_below`,
+  steps and the remote lane too, e.g. `{"until":"fluid_count","platform":"Swift","fluid":"thruster-fuel","at_least":12000}`;
+  `platform_arrived`, `platform_left` (`./fh help space-age`); `all` (`conditions`: 1..8 plain conditions, met when
+  every one holds; in the remote lane when each is one the lane takes), e.g. `{"until":"all","conditions":[{"until":
+  "fluid_count","platform":"Swift","fluid":"thruster-fuel","at_least":12000},{"until":"fluid_count","platform":"Swift",
+  "fluid":"thruster-oxidizer","at_least":12000}]}`; also `no_enemy_structures`, `no_enemies`, `units_clear`, `turrets_idle`, `ammo_below`,
   `fuel_below`, `health_below`, `health_above`, `damaged`, `ghosts_waiting` (`./fh help wait_until`). `until` also
   takes the `--until` words (`"item_count yumako>=40"`), and `ticks` or `timeout_ticks` for `timeout` (1..54000 ticks,
   default 3600; with `--wait` it comes from `--wait-timeout`: `600000` is 10 minutes, 15 at most); hitting it fails

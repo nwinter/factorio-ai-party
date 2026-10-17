@@ -9681,7 +9681,9 @@ function M.pick_source(p,a,verb)
   -- fresh_first (B1, Grok 22:50), or fresh: true on a courier: the least spoiled stacks of it first.
   assert(a.fresh_first==nil or type(a.fresh_first)=='boolean','fresh_first must be true or false')
   local take={direction='to_player',item=best.item,quality=a.quality,outputs_only=a.outputs_only,count=counts[best.item] or a.count,keep=a.keep,keep_max=a.keep_max,inventory=a.from_inventory or a.inventory,
-    up_to=a.up_to==true and true or nil,ticks=a.ticks,fresh_first=(a.fresh_first or (a.fresh_first==nil and a.fresh==true)) or nil}
+    up_to=a.up_to==true and true or nil,ticks=a.ticks,fresh_first=(a.fresh_first or (a.fresh_first==nil and a.fresh==true)) or nil,
+    -- (batch19 A2, Grok twice: the courier's take dropped these, and moved the younger packs with the rotten left)
+    spoiled_first=a.spoiled_first,min_spoil=a.min_spoil,min_spoiled=a.min_spoiled,max_fresh=a.max_fresh,min_fresh=a.min_fresh}
   -- With to on a crafting machine: what its input takes now, read before the take; none: nothing taken, nothing walked;
   -- else the take is at most that (the rest stays in the source).
   local to_takes
@@ -13855,6 +13857,7 @@ function M.moved_last(index,action,last)
   elseif action.kind=='gather' then
     n=action.got or 0
     names[#names+1]=action.item
+    last.left_less_fresh=action.left_less_fresh
     for k in pairs(action.items or {}) do names[#names+1]=k end
     -- A courier (pick with to): taken at the picked place, delivered at the destination; moved is what arrived.
     if action.legs then
@@ -14845,6 +14848,11 @@ stock=stock_module{corridor=function(p,from,goal,near) return M.pathing.corridor
       if t.items then action.entries=out.entries; action.short=out.short end
       -- The moved batch's spoilage over the tour (the courier's take leg only: its give moves the same items).
       if out.fresh and not (action.legs and action.index>1) then action.fresh=M.fresh_merge(action.fresh or {},out.fresh) end
+      -- What a spoil filter left where it was (min_spoil, max_fresh, min_fresh): last.left_less_fresh
+      if out.left_less_fresh then
+        local q=string.format('(%g,%g): %s',epos.x,epos.y,out.left_less_fresh)
+        action.left_less_fresh=action.left_less_fresh and action.left_less_fresh..'; '..q or q
+      end
       local moved=t.item and {{name=t.item,count=out.transferred,quality=t.quality}} or out.items or {}
       for _,st in ipairs(moved) do
         if (st.count or 0)>0 then

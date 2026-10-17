@@ -32,8 +32,10 @@
     would arrive (`personal_logistics`, the dry run's `arrives`); `personal_logistics: "pause"` switches your requests
     off for the move.
   - Spoilage: `fresh_first: true` (`fresh: true` on a courier) takes the least spoiled stacks first on any take or
-    give; `spoiled_first: true` and `min_spoil` (alias `min_spoiled`) or `max_fresh` move only the rotten tail. The
-    reply gives `freshness` (the moved stacks' spread).
+    give; `spoiled_first: true` and `min_spoil` (alias `min_spoiled`) or `max_fresh` move only the rotten tail, on a
+    courier (`positions` and `to`) too. The reply gives `freshness` (the moved stacks' spread) and `left_less_fresh`
+    (what the filter left where it was, e.g. "200 left where they were: less than 50% spoiled (the least spoiled
+    20%)"); a timed one in `last`.
   - Other names taken: `entity_position`, `target_position`, `pos` are `position`; `mode: "take"` or `"give"` is the
     direction; `amount`, `quantity` are `count` (the reply's corrected line shows the call as it ran).
   Example: `./fh call transfer --args '{"position":{"x":15.5,"y":59.5},"direction":"to_entity","item":"rocket-fuel","count":50}'`
