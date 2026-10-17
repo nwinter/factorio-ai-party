@@ -12,7 +12,8 @@ The core is agent/PLAYBOOK.md, the team section (agent/team.md) or co-op (agent/
 commands (agent/ref/index.md) and the compaction instructions (agent/compact.md); tools/launch-agent.sh adds
 agent/harness-KIND.md and tools/full_tools.py the "Your tools" paragraph before the compaction instructions. Every agent
 reads the core at the start of every context window, so it stays under 20 KB (tools/test_brief.py); a command's
-details go in its topic file, with one index entry in agent/ref/index.md. The topic files are agent/ref/*.md (Space
+details go in its topic file, with one index entry in agent/ref/index.md (the topic's scope in a few words and
+the command names; when to read each topic, the third line of its file, is in agent/topics.tsv). The topic files are agent/ref/*.md (Space
 Age worlds add agent/spaceage.md at the head of space-age); `./fh help TOPIC` prints one, and fh names the topic of
 the call in an argument refusal (ref/commands.tsv, written here from the index).
 """
@@ -30,7 +31,7 @@ def index_text():
 
 
 def index():
-    """[(topic, read-it-when, [commands])] from agent/ref/index.md, in its order; topic None for the core's own list."""
+    """[(topic, scope, [commands])] from agent/ref/index.md, in its order; topic None for the core's own list."""
     out = []
     for item in re.split(r"\n- ", "\n" + index_text().split("\n- ", 1)[1]):
         item = " ".join(item.split())
@@ -103,12 +104,24 @@ def core(player, time_text, coop, mate="", mate_notes="", role=""):
     return fill(text, values(player, mate, mate_notes, role))
 
 
-def topic_files(player):
-    """{topic: text} for ref/: each topic's file with a heading, when to read it, and its facts."""
+def whens():
+    """{topic: when to read it} from agent/topics.tsv (the index itself names each topic's scope in a few words)."""
     out = {}
-    for topic, when, _ in index():
+    for line in open(os.path.join(AGENT, "topics.tsv")):
+        if line.strip() and not line.startswith("#"):
+            topic, when = line.rstrip("\n").split("\t", 1)
+            out[topic] = when
+    return out
+
+
+def topic_files(player):
+    """{topic: text} for ref/: each topic's file with a heading, when to read it (agent/topics.tsv), and its facts."""
+    out = {}
+    when_of = whens()
+    for topic, _, _ in index():
         if not topic:
             continue
+        when = when_of[topic]
         body = open(os.path.join(REF, topic + ".md")).read().rstrip("\n")
         if topic == "space-age" and os.environ.get("POG_SPACE_AGE") == "1":
             sa = open(os.path.join(AGENT, "spaceage.md")).read().strip().split("\n", 1)[1].strip()
