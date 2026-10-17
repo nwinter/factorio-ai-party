@@ -122,3 +122,6 @@
   shown on status and in your team block every 10 game minutes; `board_focus {agent?}` reads teammates' focus lines.
   A focused project step not done across 2 checks reads so here and in board_progress.
 - A lesson line says which of its keys matched the call (`matched: action build, entity big-electric-pole`).
+- `team.alerts`: an alert you were shown with the same words is shown again only after 10 minutes (a changed count,
+  age or position shows at once). Alerts that wake a sleep (your character hit, eggs, attacks, enemy groups, losses,
+  power cuts, a platform hub's damage) always show; `status` alerts and `game_alerts` list everything.

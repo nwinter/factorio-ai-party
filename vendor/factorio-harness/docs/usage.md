@@ -6514,3 +6514,19 @@ fh watch    # deploy on every change
   the making now takes a minute, marked missing, short or ok; then feasible, sustained and the first unsatisfied.
   Copy: quantum processors on Aquilo read "processing-unit ... stock 0 ... [missing]"; "feasible: no; first
   unsatisfied: processing-unit". 3.5 ms on the copy.
+
+## d17 alerts (operator 11:30; the audit's item 8)
+- team.alerts leaves out an alert line this agent was shown with the same words in the last 10 minutes (board.lua
+  alerts_seen, kept per agent in its hint state). A changed count, age or position is new words and shows at once.
+  The 10 minutes match the host's orders and lessons lines (host/repeats.ts). The kinds that wake a sleep always show:
+  your character hit, eggs hatching, attacks, nest news, enemy groups, losses, power cuts, and a platform's hub damage.
+  status alerts and game_alerts list everything. Only non-peek replies build the team block, so a peek poll marks
+  nothing as shown.
+- Measured on the journals (replies the agent read, peek polls left out): alert bytes repeated word for word at any
+  earlier time were 18.0% (shift27), 18.6% (shift28) and 8.6% (shift29). Within 10 minutes they were 5.6%, 6.9% and
+  3.2%. With the wake kinds kept, the rule leaves out 62 KB (4.2%), 88 KB (5.1%) and 29 KB (3.0%) a shift. The
+  audit's 258 KB counted every earlier showing. The most repeated lines were the push alerts ("N inserters feeding
+  logistic-chest ...", burner drills, furnaces) and a platform's turret line. Cost: 0.014 ms a reply in plain Lua
+  with 200 lines remembered and 20 a reply.
+- platalerts tells a platform's turret line again after 5 minutes. With the same words it now shows after 10
+  (tests/platalerts.lua updated); a turret count or round count that changed shows at once.
