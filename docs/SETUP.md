@@ -232,6 +232,10 @@ tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_ha
 - Runtime size: `fh deploy` compacts the bundle (about 411 KB in October 2026) and sends bundles over 512 KiB in
   chunks, which needs the server's mod to have the chunked install (`control.lua` from eng/harness2, October 2026).
   A world started before that takes at most 524288 bytes per deploy; restart it with the current mod to go higher.
+- After a mid-shift runtime deploy (`POG_WORLD=n bin/fh deploy`), `python3 tools/refresh_workspaces.py runs/RUN` writes
+  every workspace's describe.json (one read of the new runtime's describe), ref/ and the core's command index again from
+  this checkout; the rest of each AGENTS.md stays. fh help ACTION follows the deploy by itself (its describe is kept per
+  bundle id).
 - After a `control.lua` change, restarting the server on the same save works, but each client's mod copy must be
   refreshed too (`scp -r .../agent-harness_0.1.0 pogwin:D:/pog/inst/<world>-client<slot>/mods/`), else joining fails
   with `multiplayer.script-mismatch`. Re-running `start-client.ps1` while its task exists printed nothing and did not
