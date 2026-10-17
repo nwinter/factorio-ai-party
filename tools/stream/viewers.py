@@ -1128,6 +1128,7 @@ class Feed:
         self.filt = filt or Filter()
         self.clf = classifier
         self.relay = relay
+        self.commands = None               # (message, now) -> True when it was the host's command (hostview.py)
         self.lock = threading.Lock()
         self.lane_msgs = collections.deque(maxlen=LANE_MAX)
         self.authors = {}                  # message id -> author key (for author deletions)
@@ -1182,6 +1183,14 @@ class Feed:
         passed = []
         for m in msgs:
             self.remember(m)
+            # the host's own commands ("!view": hostview.py), never shown or relayed; anyone else's "!view" is chat
+            if m.get("host") and self.commands:
+                try:
+                    if self.commands(m, now):
+                        self.dropped["command"] += 1
+                        continue
+                except Exception as e:  # noqa: BLE001
+                    log(f"command: {type(e).__name__}: {e}")
             if m.get("author") in self.deleted_authors:  # a deleted author's later messages: never shown or relayed
                 self.dropped["deleted"] += 1
                 continue
