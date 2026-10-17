@@ -336,7 +336,7 @@ return function(api)
     return 'the silo at ' .. at(silo.position) .. ' has automatic requests on: the game fills its rocket for the platforms\' requests and takes no cargo by hand; '
       .. 'its rocket holds ' .. (#held > 0 and table.concat(held, ' ') or 'nothing') .. (kg and (' (' .. kg .. ')') or '')
       .. '; launch {position, platform} launches the rocket with what is aboard now, and automatic requests stay on; '
-      .. 'launch {position, auto_requests=false} turns them off to load by hand'
+      .. 'launch {position, auto_requests=false} turns them off to load by hand; load_silo {..., launch: true, auto_requests: "pause"} turns them off for this load and back on after its launch'
       .. (function()
         local open = M.open_requests(silo, items)
         return #open > 0 and '; open requests of platforms over this planet the game fills from this silo (a rocket may go with part of them): '
@@ -1363,7 +1363,8 @@ return function(api)
       launch='true: launch once the rocket is ready, in the tick the cargo is loaded; needs platform (or orbit=true); refused (not launched, an error) when any count fell short (up_to aside); min_cargo and arrived are checked as launch checks them',
       platform='with launch: the platform in orbit to send it to', orbit='with launch: true for no platform',
       min_cargo='with launch: as launch min_cargo', arrived='with launch: as launch arrived',
-      split_part='(set by the split itself)',
+      split_part='(set by the split itself)', pause_left='(set by rockets or the split with auto_requests: the rockets left)',
+      auto_requests='"pause", with launch (B5, Gemini: automatic requests kept sending bulk items while urgent ones waited): a silo with automatic requests on takes this load by hand: they go off now (the reply\'s auto_requests says so, and what was aboard, which stays) and back on after the manifest\'s last launch by you (rockets N, or a split\'s rockets: the first queued step that runs switches them off), or when a load of it ends without its launch (refused, failed, timed out: auto_requests_back says so). The silo read shows the pause; one over 2 game hours ends when the silo is next read',
       rockets='optional 2..20, with launch: true: the same load for that many rockets, as steps appended to your queue (labelled rocket 1 of N ...), each loading and launching one rocket in turn',
       launch_split='with launch: true, a list over one rocket\'s lift (1000 kg) or cargo slots is split in list order into rockets, each a load_silo step appended to your queue (rocket 1 of N ...) that loads and launches in turn; split says how (not with to_total or up_to)',
       wait_min='optional 1..60: the wait for the rocket goes on this many minutes with no new part (a queue step waiting for an ingredient on its way); waiting.parts_short and, when it runs out, last.why name each rocket-part ingredient the silo lacks: short of the next part and of the parts left, and what its input holds',

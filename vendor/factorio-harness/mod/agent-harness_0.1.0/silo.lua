@@ -324,6 +324,9 @@ return function(api)
     if row.trash then words[#words+1] = 'trash slots: ' .. row.trash end
     row.auto_requests = try(function() return e.use_transitional_requests end) and true or false
     words[#words+1] = 'automatic requests ' .. (row.auto_requests and 'on (the silo launches for platforms\' requests itself)' or 'off')
+    -- a load_silo auto_requests pause (B5): by whom, for how many more rockets
+    local paused = api.pause_line and try(function() return api.pause_line(e) end)
+    if paused then row.auto_requests_paused = paused; words[#words+1] = paused end
     if row.auto_requests then
       local ok, w = pcall(M.auto_wait, e, force, loaded)
       if ok and w then row.auto_waits = w; words[#words+1] = 'automatic launch: ' .. w end

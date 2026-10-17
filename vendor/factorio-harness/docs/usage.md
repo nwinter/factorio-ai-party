@@ -5880,3 +5880,53 @@ fh watch    # deploy on every change
   names the newer one: `replaced: a newer sleep began 2 s after this one (tick 1120), for 6 s until tick 1500,
   until item_count nutrients (a later fh sleep, fh wait --until or sleep call: one sleep per agent); that call reports
   its own wake, and this one ends here without one` (`replaced_by`).
+- Fresh-first transfers (B1, Grok 22:50, twice: a breeder fed the stalest nutrients, or two trips through the
+  inventory). `transfer {from: "nearest", item, to, to_inventory}` was rewritten to a give at `to` and refused. It is
+  now a courier from the first chest holding the item, freshest first (then nearest), straight to the machine. The
+  courier takes that chest's freshest stacks first; `fresh: false` gives nearest and slot order. `fresh_first: true`
+  (or `fresh: true` on a courier with positions and `to`) takes a spoilable item's least spoiled stacks first, on any
+  take or give. On the copy:
+  - Grok's call took nutrients from the 51%-spoiled requester ahead of the 75% provider into the breeder (7.5,20.5).
+  - A courier from the provider (4.5,15.5) took its 38%-spoiled stack. Slot order would have taken the first stack,
+    at 44%.
+- `launch {platform, wait_platform: true}` (B2, Grok 22:50: a sleep chained into launch ended on a tell, and the launch
+  failed with the platform not in orbit yet) waits until that platform is stopped in orbit of the silo's planet, as
+  `platform_arrived` reads it, then launches in that tick.
+  - With `wait_ready` it waits for the rocket too: both in one wait (`until: all`).
+  - A tell does not end the wait. A tell with `--wake` or an urgent alert does, and nothing launches
+    (`not_launched`, `launch_error` naming what it waited for).
+  - The refusal for a platform not in orbit names the option.
+  On the copy: launching to Kestrel (at Aquilo) from Vulcanus waited, then ended `not_launched`: "...before Kestrel was
+  in orbit of vulcanus".
+- `platform_bom {platform, pack?}` (B3, Sol 22:50: reconciled by hand every five minutes) gives, per item:
+  - what the platform's entity and tile ghosts still need;
+  - what is built of it there;
+  - what the hub holds;
+  - what is in flight to it (cargo pods headed for this platform, from any planet);
+  - what the hub's requests ask;
+  - what is left to send.
+  `pack: true` splits the rest into rockets within the lift and slots, heaviest first, each list ready for
+  `load_silo {items, launch}`. Module requests on ghosts are not counted. On the copy, Meridian read 1242 entity
+  ghosts and 2852 tile ghosts. After a rocket of 50 pipe was launched to it, the pipe line read `hub holds 100, 50 in
+  flight; 15 to send`. Cost: 47 ms in the container (about 10 ms on n); 24 ms of it is the cargo-pod search over every
+  surface.
+- `blueprint_save` on another planet (B4, Sol 22:50). The 20-entity copper pilot "failed while two foundries were
+  still ghosts". The journal shows Sol stood on Aquilo and the area was on Vulcanus, so nothing was found. Ghosts were
+  never the block: the save already keeps entity ghosts at their positions, and tile ghosts with `tiles: true`.
+  - `blueprint_save` and `blueprint_capture` take `surface` (a planet, by remote view).
+  - The refusal names the surface it looked on and the option.
+  - The reply counts `ghosts` and `tile_ghosts`.
+  On the copy, Sol's area from Aquilo was refused naming aquilo; with `surface: vulcanus` it saved 51 entities; a turret
+  block saved 21 entities, 7 of them ghosts.
+- `load_silo {..., launch: true, auto_requests: "pause"}` (B5, Gemini 22:50: automatic requests kept sending bulk items
+  while defense and repair items waited, and a silo with them on refuses a hand load). load_silo already loads a named
+  list, launches it, and splits one over a rocket's lift into queued steps (`launch_split`). What was missing was the
+  silo with automatic requests on.
+  - The pause switches its automatic requests off for this manifest and back on after the manifest's last launch by
+    you, or when a load of it ends without a launch (refused, failed, timed out, interrupted: `auto_requests_back`).
+  - What was aboard stays aboard.
+  - For rockets N or a split, the first queued step that runs makes the pause.
+  - The silo read shows it (`auto_requests_paused`). One over 2 game hours, or one whose silo was switched back on by
+    hand, ends when the silo is next read.
+  On the copy, Fulgora's auto silo took 50 magazines to Meridian by a walking load and launched; its requests came back
+  on. A 5-rocket split paused when its first step ran; cancelling the queue switched the requests back on.
