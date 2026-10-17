@@ -13734,8 +13734,8 @@ local function clock_line(p,peek)
   local function share(n) return since>0 and math.floor(100*n/since+0.5) or 0 end
   local waiting=waited>0 and string.format(', waiting on hand crafting %s of it (%d%%)',t(waited),share(waited)) or ''
   local slept=in_waits>0 and string.format(', %s of that in %s',t(in_waits),table.concat(kinds,'/')) or ''
-  local watched=watch>0 and string.format(', waiting on your armed standing orders (%s) %s of it (%d%%)',tostring(watch_names),t(watch),share(watch)) or ''
-  return string.format('game %s; +%s since your last request, character idle %s of it (%d%%%s)%s%s; hand crafting %s queued',
+  local watched=watch>0 and string.format(', on watch: %s for %s of that',tostring(watch_names),t(watch)) or ''
+  return string.format('game %s; +%s since your last request, character idle %s of it (%d%%%s%s)%s; hand crafting %s queued',
     t(game.tick),t(since),t(idle),share(idle),slept,watched,waiting,t(craft*60))
 end
 local function idle_tick()
@@ -13743,14 +13743,12 @@ local function idle_tick()
   for index,c in pairs(s.clocks or {}) do
     M.waiteta.idle_tick(index)
     if not M.idle.busy(s,index) then
-      -- armed standing orders keep watch (orders.lua armed; d17 batch16 A5): waiting on them, not idle
+      c.idle=c.idle+1
+      local kind=M.idle.waiting(s,index)
+      if kind then c.in_waits=(c.in_waits or 0)+1; c.wait_kinds=c.wait_kinds or {}; c.wait_kinds[kind]=true end
+      -- armed standing orders (orders.lua armed; d17 batch16 A5): idle still, and on watch, named
       local watch=M.orders.armed(index)
-      if watch then c.watch=(c.watch or 0)+1; c.watch_names=watch
-      else
-        c.idle=c.idle+1
-        local kind=M.idle.waiting(s,index)
-        if kind then c.in_waits=(c.in_waits or 0)+1; c.wait_kinds=c.wait_kinds or {}; c.wait_kinds[kind]=true end
-      end
+      if watch then c.watch=(c.watch or 0)+1; c.watch_names=watch end
     elseif s.active[index] and s.active[index].awaiting_craft then c.craft_wait=(c.craft_wait or 0)+1 end
   end
   -- When each character started standing (no action, no running queue, a body

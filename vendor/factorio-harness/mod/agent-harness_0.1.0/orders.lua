@@ -343,7 +343,7 @@ return function(api)
     if not b or #b.list==0 then return nil end
     local running=api.scheduler.order(index)
     return {set=#b.list,running=running and running.name or nil,reason=running and running.reason or nil,paused=b.paused or nil,
-      operator_paused=killed() and true or nil}
+      operator_paused=killed() and true or nil,armed=M.armed(index)}  -- armed: the orders keeping watch (d17 batch16 A5)
   end
   function M.handlers.order_set(p,a)
     local name=a.name
