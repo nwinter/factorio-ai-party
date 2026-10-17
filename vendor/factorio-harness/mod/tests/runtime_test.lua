@@ -307,7 +307,7 @@ advance(1)
 local paused_warning=call('status').warnings[1]
 assert(paused_warning:find('queue: paused with 1 pending step (first: job-',1,true),paused_warning)
 assert(paused_warning:find(' walk [after]); paused when job-',1,true),paused_warning)
-assert(paused_warning:find(' rotate failed: entity not found at (1,0): nothing within 3 tiles; target an',1,true),paused_warning)
+assert(paused_warning:find(' rotate failed: entity not found at (1,0): nothing within 3 tiles (chunk (0,0) is in sight now (tick ',1,true),paused_warning)
 assert(paused_warning:find('radius=3); queue resume runs them',1,true),paused_warning)
 assert(call('queue_status').last_failure.result.reason:find('entity not found at (1,0)',1,true))
 call('queue_cancel',{})
@@ -3529,7 +3529,7 @@ eq(call('inspect',{position=ins.position}).fluid_connections,nil)
   eq(call('inspect',{position={x=21.5,y=1.5}}).name,'assembling-machine-1')
   eq(call('inspect',{position={21.5,1.5}}).name,'assembling-machine-1') -- [x,y] as the engine takes it
   fails(function() call('inspect',{position={x=25.5,y=0.5}}) end,
-    'entity not found at (25.5,0.5): nearest small-electric-pole (24.5,0.5) 1.0 tiles; target an entity\'s position as scan lists it (observe scope=scan position={x=25.5,y=0.5} radius=3)')
+    'entity not found at (25.5,0.5): nearest small-electric-pole (24.5,0.5) 1.0 tiles (chunk (0,0) is in sight now (tick '..game.tick..')); target an entity\'s position as scan lists it (observe scope=scan position={x=25.5,y=0.5} radius=3)')
   fails(function() call('inspect',{position={x=30.5,y=0.5}}) end,'entity not found at (30.5,0.5): nothing within 3 tiles')
   world={pole,{valid=true,name='wooden-chest',type='container',position={x=24.5,y=0.5},half=0.5,force=p.force}}
   fails(function() call('inspect',{position={x=24.5,y=0.5}}) end,'ambiguous target: small-electric-pole and wooden-chest at (24.5,0.5); specify name or unit_number')

@@ -1384,9 +1384,53 @@ return function(api)
         for _, row in ipairs(chain.tree or {}) do made[row.item] = row.made_per_min end
         target = ratechain.plan(scan.by_product or {}, item, a.per_min, force, function(name) return made[name] end)
       end
+      local shares = prototypes.fluid and prototypes.fluid[item] and not prototypes.item[item] and try(M.fluid_shares, surface, force, item) or nil
       return {item=item, surface=surface.name, line=chain.line, path=chain.path, root=chain.last, not_working=#where > 0 and where or nil,
-        fixes=#fixes > 0 and fixes or nil, full_chests=#full_chests > 0 and full_chests or nil, steps=chain.tree, cut=chain.cut, target=target}
+        fixes=#fixes > 0 and fixes or nil, full_chests=#full_chests > 0 and full_chests or nil, steps=chain.tree, cut=chain.cut, target=target,
+        shares=shares}
     end)
+  end
+  -- A shared fluid's users (B5, Sonnet, every shift: lubricant and heavy oil split between lines): every crafter of ours
+  -- on the surface whose recipe takes it, by recipe: machines, how many work now, what they take at full speed (the
+  -- recipe's amount at each machine's crafting speed) and that as a share of all the users' full-speed take, against what
+  -- the surface used and made in the last 10 minutes.
+  local SHARE_CRAFTERS = 4096
+  function M.fluid_shares(surface, force, fluid)
+    local list = try(function() return surface.find_entities_filtered{type={'assembling-machine', 'furnace'}, force=force, limit=SHARE_CRAFTERS} end) or {}
+    local by, order, total, makers, make_rate = {}, {}, 0, 0, 0
+    for _, e in ipairs(list) do
+      local r = e.valid and try(function() return e.get_recipe() end)
+      if r then
+        local speed = try(function() return e.crafting_speed end) or 1
+        local energy = try(function() return r.energy end) or 1
+        for _, ing in ipairs(try(function() return r.ingredients end) or {}) do
+          if ing.name == fluid then
+            local g = by[r.name]
+            if not g then g = {recipe=r.name, machines=0, working=0, per_min=0}; by[r.name] = g; order[#order+1] = g end
+            g.machines = g.machines + 1
+            if api.status_name and api.status_name(e) == 'working' then g.working = g.working + 1 end
+            local rate = ing.amount * 60 * speed / energy
+            g.per_min = g.per_min + rate; total = total + rate
+          end
+        end
+        for _, pr in ipairs(try(function() return r.products end) or {}) do
+          if pr.name == fluid then makers = makers + 1; make_rate = make_rate + (pr.amount or 0) * 60 * speed / energy end
+        end
+      end
+    end
+    if #order == 0 then return nil end
+    table.sort(order, function(x, y) return x.per_min > y.per_min end)
+    local stats = try(function() return force.get_fluid_production_statistics(surface) end)
+    local function per(cat) return stats and (try(function() return stats.get_flow_count{name=fluid, category=cat, precision_index=defines.flow_precision_index.ten_minutes, count=true} end) or 0) / 10 or 0 end
+    local lines = {string.format('%s on %s: used %d/min, made %d/min (last 10 min); %d maker%s at full speed %d/min; its users at full speed %d/min:',
+      fluid, surface.name, math.floor(per('output') + 0.5), math.floor(per('input') + 0.5), makers, makers == 1 and '' or 's', math.floor(make_rate + 0.5), math.floor(total + 0.5))}
+    for i, g in ipairs(order) do
+      if i > 8 then lines[#lines+1] = string.format('+%d more recipes', #order - 8); break end
+      lines[#lines+1] = string.format('%s: %d machine%s (%d working) take %d/min at full speed, %d%% of the users\' take',
+        g.recipe, g.machines, g.machines == 1 and '' or 's', g.working, math.floor(g.per_min + 0.5), total > 0 and math.floor(g.per_min * 100 / total + 0.5) or 0)
+    end
+    if #list >= SHARE_CRAFTERS then lines[#lines+1] = string.format('the first %d crafters read', SHARE_CRAFTERS) end
+    return lines
   end
   local function packs_of(force)
     local tech, packs = force.current_research, {}

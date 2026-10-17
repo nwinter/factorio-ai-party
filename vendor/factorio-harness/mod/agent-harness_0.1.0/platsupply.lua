@@ -41,6 +41,125 @@ return function(api)
     return out
   end
   local function recipe_of(e) return try(function() local r = e.get_recipe(); return r and r.name end) end
+  -- What an inserter lets through by its filters (the GUI's whitelist or blacklist; set by the circuit network:
+  -- dynamic, not judged). Returns allow(name), a text, and whether the filter is static.
+  local function filter_of(i)
+    if not try(function() return i.use_filters end) then return function() return true end, nil, true end
+    local mode = try(function() return i.inserter_filter_mode end) or 'whitelist'
+    local set, names = {}, {}
+    for k = 1, try(function() return i.filter_slot_count end) or 0 do
+      local f = try(function() return i.get_filter(k) end)
+      local n = f and (type(f) == 'string' and f or f.name)
+      if n and not set[n] then set[n] = true; names[#names+1] = n end
+    end
+    local cb = try(function() return i.get_control_behavior() end)
+    local dynamic = cb and try(function() return cb.circuit_set_filters end) or false
+    local allow = mode == 'blacklist' and function(n) return not set[n] end or function(n) return set[n] == true end
+    return allow, mode .. ': ' .. (#names > 0 and table.concat(names, ', ') or 'nothing'), not dynamic
+  end
+  local BELT = {['transport-belt']=true, ['underground-belt']=true, splitter=true, ['lane-splitter']=true, loader=true, ['loader-1x1']=true, ['linked-belt']=true}
+  -- Each asteroid chunk type from the collectors that take it, through the inserters and belts, to the crushers whose
+  -- recipe takes it and to the hub (B3, Astra on Wren 4+ times): where each goes, a static inserter filter that keeps a
+  -- collected type out, and a crusher stopped with its output full while the hub it unloads into is full.
+  function M.trace(s, force, hub)
+    local by_pickup = {}
+    for _, i in ipairs(try(function() return s.find_entities_filtered{type='inserter', force=force} end) or {}) do
+      local src = try(function() return i.pickup_target end)
+      if src and src.valid then
+        local k = src.unit_number or src
+        by_pickup[k] = by_pickup[k] or {}
+        local list = by_pickup[k]; list[#list+1] = i
+      end
+    end
+    local function takers_of(e) return by_pickup[e.unit_number or e] or {} end
+    local chunks = {}
+    for name in pairs(prototypes.item) do if name:find('%-asteroid%-chunk$') then chunks[#chunks+1] = name end end
+    table.sort(chunks)
+    local rows, flags, flagged = {}, {}, {}
+    local function flag(t) if not flagged[t] then flagged[t] = true; flags[#flags+1] = t end end
+    local function takes(cr, chunk)
+      local r = try(function() return cr.get_recipe() end)
+      for _, ing in ipairs(r and try(function() return r.ingredients end) or {}) do if ing.name == chunk then return true end end
+      return false
+    end
+    local collectors = try(function() return s.find_entities_filtered{type='asteroid-collector', force=force} end) or {}
+    for _, chunk in ipairs(chunks) do
+      local from, dest, seen, belts = 0, {}, {}, 0
+      local function reach(e, via)
+        if not (e and e.valid) then return end
+        local k = e.unit_number or e
+        if seen[k] then return end
+        seen[k] = true
+        if e.type == 'space-platform-hub' then dest['the hub'] = true; return end
+        if e.type == 'assembling-machine' or e.type == 'furnace' then
+          -- an inserter puts a chunk only into a machine whose recipe takes it
+          if takes(e, chunk) then
+            local crusher = (try(function() return e.prototype.crafting_categories end) or {}).crushing
+            dest[string.format('%s %s %s', crusher and 'crusher' or e.name, at(e.position), recipe_of(e) or '')] = true
+          end
+          return
+        end
+        if BELT[e.type] then
+          belts = belts + 1
+          if belts > 512 then return end
+          for _, i in ipairs(takers_of(e)) do
+            local allow, text, static = filter_of(i)
+            local d = try(function() return i.drop_target end)
+            if allow(chunk) then reach(d, i)
+            elseif static and d and d.valid and (d.type == 'space-platform-hub' or ((d.type == 'assembling-machine' or d.type == 'furnace') and takes(d, chunk))) then
+              -- only an inserter that would feed the chunk where it is used: the hub, or a machine whose recipe takes it
+              flag(string.format('%s %s (%s) takes from the belt %s into %s %s, whose %s takes %s, and keeps it out', i.name, at(i.position), text, at(e.position),
+                d.name, at(d.position), d.type == 'space-platform-hub' and 'store' or 'recipe ' .. (recipe_of(d) or ''), chunk))
+            end
+          end
+          for _, o in ipairs(try(function() return e.belt_neighbours.outputs end) or {}) do reach(o) end
+          if e.type == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'input' then reach(try(function() return e.neighbours end)) end
+          return
+        end
+        -- a chest takes any item; a turret, a ghost or anything else takes no chunk
+        if e.type == 'container' or e.type == 'logistic-container' then dest[string.format('%s %s', e.name, at(e.position))] = true end
+      end
+      for _, c in ipairs(collectors) do
+        local fl, any = {}, false
+        for k = 1, try(function() return c.filter_slot_count end) or 0 do
+          local f = try(function() return c.get_filter(k) end)
+          local n = f and (type(f) == 'string' and f or f.name)
+          if n then any = true; fl[n] = true end
+        end
+        if not any or fl[chunk] then
+          from = from + 1
+          for _, i in ipairs(takers_of(c)) do
+            local allow, text, static = filter_of(i)
+            if allow(chunk) then reach(try(function() return i.drop_target end), i)
+            elseif static then flag(string.format('%s %s (%s) takes from collector %s, which collects %s, and keeps it out', i.name, at(i.position), text, at(c.position), chunk)) end
+          end
+        end
+      end
+      if from > 0 then
+        local list = {}
+        for d in pairs(dest) do list[#list+1] = d end
+        table.sort(list)
+        rows[#rows+1] = string.format('%s: %d collector%s; %s%s', chunk, from, from == 1 and '' or 's',
+          #list > 0 and 'goes to ' .. table.concat(list, ', ', 1, math.min(6, #list)) .. (#list > 6 and string.format(' (+%d more)', #list - 6) or '') or 'goes nowhere (no inserter path out of its collectors)',
+          belts > 0 and string.format(' (over %d belt tiles)', math.min(belts, 512)) or '')
+      end
+    end
+    -- A crusher stopped with its output full while what takes its output drops into a full hub.
+    local free = hub and hub.valid and try(function() return hub.get_inventory(defines.inventory.hub_main).count_empty_stacks() end)
+    for _, e in ipairs(try(function() return s.find_entities_filtered{type='assembling-machine', force=force} end) or {}) do
+      if (try(function() return e.prototype.crafting_categories end) or {}).crushing and status(e) == 'full_output' then
+        local into_hub = false
+        for _, i in ipairs(takers_of(e)) do
+          local d = try(function() return i.drop_target end)
+          if d and d.valid and d.type == 'space-platform-hub' then into_hub = true end
+        end
+        if into_hub and free == 0 then
+          flag(string.format('crusher %s %s stopped with its output full; its output inserters drop into the hub, which has no free slot', at(e.position), recipe_of(e) or ''))
+        end
+      end
+    end
+    return rows, flags
+  end
   function M.read(p, a)
     assert(type(a.platform) == 'string', 'platform is required (a platform name)')
     local pl = api.platform(p, a.platform)
@@ -147,9 +266,11 @@ return function(api)
     for _ in pairs(tile_ghosts) do nt = nt + 1 end
     lines[#lines+1] = 'ghosts: ' .. (#gl > 0 and table.concat(gl, ', ', 1, math.min(8, #gl)) or 'no entity ghosts') .. (nt > 0 and string.format('; %d tile ghosts', nt) or '')
     table.insert(lines, 1, 'first stop: ' .. (first or 'none: every collector, crusher and maker works, no thruster is short, no gun is empty'))
-    return {platform=pl.name, first_stop=first, lines=lines}
+    local okt, chunks, flags = pcall(M.trace, s, force, pl.hub)
+    return {platform=pl.name, first_stop=first, lines=lines, chunks=okt and #chunks > 0 and chunks or nil,
+      chunk_flags=okt and flags and #flags > 0 and flags or nil, trace_error=not okt and tostring(chunks) or nil}
   end
   M.schema = {platform_supply = {platform='platform name',
-    returns='lines, in the chain\'s order: first stop (the first of these not working: a collector (not working, no inserter takes from it, or foundation ghosts in its open space), a crusher, a fuel or oxidizer maker, a thruster under half, an empty gun); collectors (status, chunks held, filters, the inserters taking from them and where they put the chunks); crushers (recipe, status, input and output); thruster-fuel and thruster-oxidizer makers (status, what they hold, fluids); thrusters; guns (an empty one with what feeds it); ghosts by name, apart. first_stop. Read only'}}
+    returns='lines, in the chain\'s order: first stop (the first of these not working: a collector (not working, no inserter takes from it, or foundation ghosts in its open space), a crusher, a fuel or oxidizer maker, a thruster under half, an empty gun); collectors (status, chunks held, filters, the inserters taking from them and where they put the chunks); crushers (recipe, status, input and output); thruster-fuel and thruster-oxidizer makers (status, what they hold, fluids); thrusters; guns (an empty one with what feeds it); ghosts by name, apart. first_stop. chunks: each asteroid chunk type its collectors take, where it goes through the inserters (their filters) and belts: the crushers (one whose recipe does not take it says so), the hub. chunk_flags: a static inserter filter (whitelist or blacklist set in its GUI) that keeps a collected type out, and a crusher stopped with its output full while its output inserters drop into a hub with no free slot. Read only'}}
   return M
 end

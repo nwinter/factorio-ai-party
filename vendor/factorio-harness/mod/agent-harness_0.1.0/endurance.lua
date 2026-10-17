@@ -125,6 +125,7 @@ return function(api)
           or string.format('last 1 min, flying %s: the window holds the stop it left too', mins(leg_min))
       end
     end
+    local function rate1(stats, name, cat) return stats and P.one_minute and (try(function() return stats.get_flow_count{name=name, category=cat, precision_index=P.one_minute, count=true} end) or 0) or 0 end
     local function rate(stats, name, cat) return stats and win_p and (try(function() return stats.get_flow_count{name=name, category=cat, precision_index=win_p, count=true} end) or 0) / win_min or 0 end
     local function leg_now_rate(name)
       if not (open_leg and open_leg.ammo0 and api.ammo_counts) then return nil end
@@ -309,6 +310,32 @@ return function(api)
         end
       end
     end
+    -- Flying (Astra 12:20): the last 60 s apart from the window's average, which holds the leg's stalls and stops.
+    if flying and P.one_minute then
+      for _, row in ipairs(rows) do
+        local m1, u1 = rate1(items_stats, row.name, 'input'), rate1(items_stats, row.name, 'output')
+        row.last_minute = {made=round(m1, 1), used=round(u1, 1)}
+        row.line = row.line .. string.format('; last 60 s: made %g/min, used %g/min', row.last_minute.made, row.last_minute.used)
+      end
+    end
+    -- The departure check (Sol 13:50: Swift left with too little ammunition, repeatedly): for each ammunition used over
+    -- the route at the rates above, what it needs, what is aboard and made on the way, and a rocket's lift of it.
+    local departure = {}
+    local lift = try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000
+    for _, row in ipairs(rows) do
+      local item = prototypes.item[row.name]
+      if total_min and total_min > 0 and row.used_per_min > 0 and item and item.type == 'ammo' then
+        local need = row.used_per_min * total_min
+        local have = row.stock + row.made_per_min * total_min
+        local w = try(function() return item.weight end)
+        local per_rocket = w and w > 0 and math.floor(lift / w) or nil
+        local short = math.ceil(need - have)
+        departure[#departure+1] = string.format('%s over the route (%s): uses about %d at %g/min; %d aboard and about %d made on the way: %s%s',
+          row.name, mins(total_min), math.floor(need + 0.5), row.used_per_min, row.stock, math.floor(row.made_per_min * total_min + 0.5),
+          short > 0 and string.format('%d short', short) or string.format('%d to spare', -short),
+          per_rocket and string.format('; a rocket lifts %d of it%s', per_rocket, short > 0 and string.format(' (%d rocket%s for the shortfall)', math.ceil(short / per_rocket), math.ceil(short / per_rocket) == 1 and '' or 's') or '') or '')
+      end
+    end
     local fluids = {['thruster-fuel']=true, ['thruster-oxidizer']=true}
     local fstock = fluid_stock(pl, fluids)
     for _, name in ipairs({'thruster-fuel', 'thruster-oxidizer'}) do
@@ -335,6 +362,24 @@ return function(api)
       end
       power = string.format('makes %d kW, draws %d kW now', math.floor(sum('output', st.output_counts) + 0.5), math.floor(sum('input', st.input_counts) + 0.5))
     end
+    -- Solar capacity here against the draw (Astra 12:20): the panels' peak at this location's solar power, and the
+    -- machines on low or no power now, as their status icons show.
+    local panels, peak = 0, 0
+    for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{type='solar-panel', force=pl.force} end) or {}) do
+      panels = panels + 1
+      peak = peak + ((try(function() return e.prototype.get_max_energy_production(e.quality) end) or try(function() return e.prototype.max_energy_production end) or 0) * 60 / 1000)
+    end
+    -- at a stop, the location's solar power in space (the platform surface's own property read 100 at Gleba's 200%)
+    local sp = here and try(function() return prototypes.space_location[here].solar_power_in_space end)
+    local low, none = 0, 0
+    local LOW, NONE = try(function() return defines.entity_status.low_power end), try(function() return defines.entity_status.no_power end)
+    for _, e in ipairs(try(function() return pl.surface.find_entities_filtered{force=pl.force, type={'assembling-machine', 'furnace', 'inserter', 'ammo-turret', 'asteroid-collector', 'radar', 'roboport', 'lab', 'beacon'}} end) or {}) do
+      local stt = try(function() return e.status end)
+      if stt and stt == LOW then low = low + 1 elseif stt and stt == NONE then none = none + 1 end
+    end
+    local solar_line = panels > 0 and string.format('%d solar panels: %d kW at full sun%s; %d machines on low power, %d on no power now', panels, math.floor(peak + 0.5),
+      sp and string.format(', about %d kW at %s\'s %d%% solar power', math.floor(peak * sp / 100 + 0.5), here, math.floor(sp + 0.5)) or ' (flying: the stops\' solar power is on the hub line)', low, none)
+      or string.format('no solar panels; %d machines on low power, %d on no power now', low, none)
     local solar = {}
     local seen = {}
     for _, l in ipairs(legs) do
@@ -367,11 +412,14 @@ return function(api)
       lines={'route: ' .. (#legs_text > 0 and table.concat(legs_text, '; ') or 'no legs') .. (total_min and '; in all ' .. mins(total_min) or ''),
         'hub: ' .. string.format('%d of %d slots free', free, slots) .. (power and '; power ' .. power or '') .. (#solar > 0 and '; solar power ' .. table.concat(solar, ', ') or ''),
         'asteroid chunks collected: ' .. (#chunks > 0 and table.concat(chunks, ', ') or 'none') .. ' (' .. (win_text or 'last 10 min') .. ')'
-          .. (places and places.capped and string.format('; belts past the first %d not counted', places.capped) or '')},
+          .. (places and places.capped and string.format('; belts past the first %d not counted', places.capped) or ''),
+        'power: ' .. solar_line .. (power and ' (the network ' .. power .. ')' or '')},
+      solar=solar_line, low_power=low, no_power=none,
+      departure=#departure > 0 and departure or nil,
       chunks_collected=#chunks > 0 and chunks or nil,
       note='rates: flying, the platform\'s production statistics over the last 10 minutes (on a leg younger than that, the last 5 or 1 minute within the leg, and ammunition from the leg\'s own counts); stopped, the last finished leg\'s for ammunition (rate_from), else the flight rate is unknown and nothing is projected; a rate that changes on the way (fights near a planet, thrust) changes the projection'}
   end
   M.schema = {platform_endurance = {platform='platform name', route='optional list of space locations to fly through in order (default: its schedule from the current stop round to it again)',
-    returns='legs [{from, to, km, minutes}], total_km, total_minutes, speed_km_per_min and speed_from (now while flying, else the last finished leg\'s average), resources [{name, stock (every place aboard), by_place {hub, turrets, belts (an underground pair once), hands (inserters), machines (outputs)}, places, moved (each place\'s change since the leg the rates come from began: loading told from use), made_per_min, used_per_min, rate_from, flight_rate (unknown: stopped with no flight rate on record; nothing projected), ingredient_limited {more, item, have, per_craft, fluid, below {more, item, have}, ingredient_made_per_min, more_per_min} (made from ingredients aboard, two levels down, fluids in tanks and the makers counted: at most more now, growing by more_per_min at the rates the ingredients are made aboard now), lasts_min, runs_out_on, at_end, line}] for each ammunition and repair pack aboard or used, thruster-fuel and thruster-oxidizer, hub_slots, power, solar_power at the stops, chunks_collected (asteroid chunks made a minute), lines; read only'}}
+    returns='departure (each ammunition used on the route: what the route uses at the rates read, what is aboard and made on the way, short or to spare, and a rocket\'s lift of it); solar (the solar panels\' peak, at a stop at its solar power, and the machines on low or no power now) with low_power and no_power; flying, each resource line adds the last 60 s apart (last_minute {made, used}); legs [{from, to, km, minutes}], total_km, total_minutes, speed_km_per_min and speed_from (now while flying, else the last finished leg\'s average), resources [{name, stock (every place aboard), by_place {hub, turrets, belts (an underground pair once), hands (inserters), machines (outputs)}, places, moved (each place\'s change since the leg the rates come from began: loading told from use), made_per_min, used_per_min, rate_from, flight_rate (unknown: stopped with no flight rate on record; nothing projected), ingredient_limited {more, item, have, per_craft, fluid, below {more, item, have}, ingredient_made_per_min, more_per_min} (made from ingredients aboard, two levels down, fluids in tanks and the makers counted: at most more now, growing by more_per_min at the rates the ingredients are made aboard now), lasts_min, runs_out_on, at_end, line}] for each ammunition and repair pack aboard or used, thruster-fuel and thruster-oxidizer, hub_slots, power, solar_power at the stops, chunks_collected (asteroid chunks made a minute), lines; read only'}}
   return M
 end

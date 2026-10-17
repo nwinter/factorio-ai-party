@@ -75,6 +75,13 @@
 - `stock {item}` with no radius totals the whole surface (named or yours; a platform is read whole) and lists the places
   within 128 tiles; `covered` says what was read, `as_of` whether a total is live or reused (and its age; `supply` too).
 - `belt_gaps` follows a leg that is not straight round the remembered belt's corners (`followed`); `surface` is read.
+- `shortages {surface?}`: machines stopped short of an ingredient (by recipe and ingredient), no fuel, low or no power,
+  labs waiting for packs, and what requester chests lack, in lines. `bottleneck {item: "lubricant"}` adds `shares`: each
+  recipe's machines and share of the fluid at full speed.
+- `damage_log {position, radius?, surface?}`: what hit our entities there (alive or destroyed), each source's position and
+  facing, for hits our force saw; `inspect` gives an entity's `damage_history`. Empty ground says if its chunk was never
+  charted, is charted and out of sight (with our last sight of it), or is in sight; `inspect {position, radius}` reads
+  the square round it.
 - `reservations {network, item?}` (read only): what robots have reserved to pick up at each provider and storage
   chest, each requester short or with deliveries on the way (its request, what it holds, what is coming, no room when
   every slot is taken), the robots' orders by item and target, and `flags` (reservations while robots are idle, orders

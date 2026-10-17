@@ -67,6 +67,11 @@
   a part increase, capped at `gives_up_tick`); `silo_wait` reports the observed parts/minute and idle window.
   A spoiling item goes in fresh first (the least
   spoiled stacks of you and the chests; `"fresh_first": false` for the old order).
+- `platform_supply` adds `chunks` (each chunk type: collectors, then crushers whose recipe takes it and the hub) and
+  `chunk_flags` (a GUI filter keeping a chunk from its crusher, a crusher stopped full over a full hub).
+  `platform_endurance` adds `departure` (each ammunition over the route: used, aboard, made, short or spare, a rocket's
+  lift), `solar` with low and no power counts, and flying, each line's last 60 s. `platforms {compact: true}`: a line a
+  platform, blockers only when new to you. Platform loss alerts list each lost entity: rebuilt, a ghost there, or none.
 - `load_silo {walk: true}` without `from` walks to the silo with what you hold; a walking load takes the freshest
   stacks first (`last.freshness`). `wait_min: 15` keeps a load waiting through 15 minutes with no new part;
   `parts_short` (and `last.why`) names each rocket-part ingredient the silo lacks. The reply's `switches` gives the
