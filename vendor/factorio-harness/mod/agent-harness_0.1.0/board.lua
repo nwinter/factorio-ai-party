@@ -2152,6 +2152,9 @@ return function(api)
       local ok, list = pcall(api.power_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
+    -- (d17 alerts) the kinds that wake a sleep (urgent.lua: your character hit, eggs, attacks, enemy groups, losses,
+    -- power cuts) come before here and always show; what follows shows again only after REPEAT_SHOWN (alerts_seen below)
+    local urgent_upto = #lines
     -- A platform leaving while a launch to it waits for its rocket (launchwatch.lua).
     if api.launch_lines then
       local ok, list = pcall(api.launch_lines, p, h)
@@ -2197,7 +2200,27 @@ return function(api)
       local ok, list = pcall(api.push_lines, p, h)
       for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
     end
-    return #lines > 0 and lines or nil
+    return M.alerts_seen(h, lines, urgent_upto)
+  end
+  -- (d17 audit item 8: in shift27 18% of the team block's alert bytes were an alert that agent had been shown word for
+  -- word) an alert line this agent was shown with the same words in the last REPEAT_SHOWN (10 minutes, as the host's
+  -- orders and lessons lines: host/repeats.ts) is left out; a changed count, age or position is new words and shows.
+  -- The first urgent_upto lines (the kinds that wake a sleep) and a platform's hub damage always show. status alerts and
+  -- game_alerts list everything. h.alerts_seen: text -> tick shown, kept REPEAT_SHOWN.
+  M.REPEAT_SHOWN = 36000
+  function M.alerts_seen(h, lines, urgent_upto)
+    local seen = h.alerts_seen or {}
+    for text, tick in pairs(seen) do if game.tick - tick >= M.REPEAT_SHOWN then seen[text] = nil end end
+    local out = {}
+    for i, line in ipairs(lines) do
+      local always = i <= (urgent_upto or 0) or line:find('space-platform-hub', 1, true) ~= nil
+      if always or not seen[line] then
+        out[#out+1] = line
+        if not always then seen[line] = game.tick end
+      end
+    end
+    h.alerts_seen = next(seen) and seen or nil
+    return #out > 0 and out or nil
   end
   -- Who hears what on the stream: once per agent (h.stream_note holds the
   -- version shown; a new version is shown once again).

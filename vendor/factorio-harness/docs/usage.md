@@ -6484,3 +6484,17 @@ fh watch    # deploy on every change
   on a turret ghost (2 h at most, 64 ghosts). Every 2 s it reads the turret built in its place; one that reads other
   targeting is set to the ghost's, and the agent who set it is told once (team.alerts). Copy: Wren's gun turret
   watched, built with its targeting, forgotten, no line. tests/d17_backlog.lua covers an engine that loses it.
+
+## d17 alerts (operator 11:30; the audit's item 8)
+- team.alerts leaves out an alert line this agent was shown with the same words in the last 10 minutes (board.lua
+  alerts_seen, kept per agent in its hint state). A changed count, age or position is new words and shows at once.
+  The 10 minutes match the host's orders and lessons lines (host/repeats.ts). The kinds that wake a sleep always show:
+  your character hit, eggs hatching, attacks, nest news, enemy groups, losses, power cuts, and a platform's hub damage.
+  status alerts and game_alerts list everything. Only non-peek replies build the team block, so a peek poll marks
+  nothing as shown.
+- Measured on the journals (replies the agent read, peek polls left out): alert bytes repeated word for word at any
+  earlier time were 18.0% (shift27), 18.6% (shift28) and 8.6% (shift29). Within 10 minutes they were 5.6%, 6.9% and
+  3.2%. With the wake kinds kept, the rule leaves out 62 KB (4.2%), 88 KB (5.1%) and 29 KB (3.0%) a shift. The
+  audit's 258 KB counted every earlier showing. The most repeated lines were the push alerts ("N inserters feeding
+  logistic-chest ...", burner drills, furnaces) and a platform's turret line. Cost: 0.014 ms a reply in plain Lua
+  with 200 lines remembered and 20 a reply.
