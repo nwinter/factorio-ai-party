@@ -63,7 +63,7 @@
   more, its construction backlog: ghosts, deconstruction and upgrade orders, those waiting 5+ min and the oldest, and
   the cause; deliveries stuck with the item free) and the turrets with ammo used in the last hour, and `drills out of
   ore` per surface (`./fh call networks` shows them any time;
-  `./fh call boilers` lists each boiler by network, the stopped ones first: state, fuel, water, its feeder and what
+  `./fh call boilers` lists every boiler (up to 64) by network, the stopped ones first: state, fuel, water, its feeder and what
   the feeder takes from with the fuel there, and a feed chest's fuel use per minute over the last 10 minutes with the
   minutes left at that rate; its `lines` are one a boiler, read live (`read` gives the tick), not working first, then
   the fewest minutes of its own fuel at full burn, with its feed (`area` limits it to a box); the networks line names the lowest boiler (position, minutes, fuel, feeder), the 2 feed

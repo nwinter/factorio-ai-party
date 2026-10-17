@@ -2240,7 +2240,9 @@ return function(api)
     for _, g in ipairs(groups) do
       local keep = {}
       for _, r in ipairs(g.boilers) do
-        if left > 0 and (not r.working or g.not_working == 0 or #keep < g.not_working + 4) then
+        -- every boiler up to BOILERS_MAX (d17 batch16 B1: a line each; on world n 14 boilers' feeders, 285 belt tiles,
+        -- read in 1.8 ms, so Nauvis's 49 in about 6 ms)
+        if left > 0 then
           keep[#keep+1] = r; left = left - 1
         end
       end
@@ -2351,7 +2353,7 @@ return function(api)
         .. 'boilers [{position, name, state (working, no fuel, output full, no water, low water, ...), status (the game\'s name), working, '
         .. 'fuel (its fuel slots, e.g. coal*5), burning, water and steam (amount/capacity), feeder (the inserter dropping into it and '
         .. 'what it takes from, with the fuel there, or no inserter feeds it), feeder_has_fuel}], more}], networks with a boiler not '
-        .. 'working first, and those boilers first in each; at most 64 rows (more: rows left out, all working); lines: one a boiler shown, not working first then the fewest minutes (its name, place, state, fuel and what burns, own_fuel_min: minutes of its own fuel at full burn, and its feed: the inserter and the belt or chest it takes from with the fuel there, or the feed chest with its rate); read: live, with the tick. Read only'},
+        .. 'working first, and those boilers first in each; at most 64 rows in all (more: rows left out); lines: one a boiler shown, not working first then the fewest minutes (its name, place, state, fuel and what burns, own_fuel_min: minutes of its own fuel at full burn, and its feed: the inserter and the belt or chest it takes from with the fuel there, or the feed chest with its rate); read: live, with the tick. Read only'},
     networks = {surface='optional planet or surface name, or a platform\'s name',platform='optional platform name or index (its surface\'s networks)',fresh='optional boolean: read each electric network\'s draw now too (draw_now_kw, the last 5 s of its statistics); accumulators are read now always; the rest is the view of as_of (rebuilt every 60 s)',
       returns='surfaces [{surface, platform (on a platform surface), electric [{id, poles, center, draw_kw {avg, now, over_s}, capacity_kw, generators_kw, solar, solar_peak_kw (on a platform: at the solar power where it is), solar_power (percent), solar_power_text, '
         .. 'acc, acc_mj, acc_max_mj, acc_pct (accumulators read now), acc_series (what they held every 15 s over the last 3 min, from the 5 s samples), draw_now_kw (fresh), machines, low, none, boilers, fuel_min, boilers_fed, boilers_under_20_min, boilers_under_10_min, lowest_boiler_min, line (its accumulator part read now)}], logistic [{id, roboports, personal, center, '
