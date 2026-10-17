@@ -638,6 +638,7 @@ local function finish(index, outcome)
     last.first_unreached=action.first_unreached; last.why=last.why or (outcome=='unreached' and action.first_unreached) or nil
     -- held short of a live attack at its stop when it ended (d17 batch17 B1)
     last.held_short=action.held_short
+    last.mine_for_a_way=action.mine_for_a_way  -- an unreachable stop: the fewest to mine for a way (B2)
     -- The route walked (C5, Luna 18:20): from where, each via point and stop as reached, the tiles moved.
     last.route=stock.route_text(action)
     last.off_rails=action.off_rails
@@ -14602,7 +14603,7 @@ function M.last_drop(index)
   local last=state().last_drop and state().last_drop[index]
   return last and game.tick-last.tick<=3600 and last or nil
 end
-stock=stock_module{distance=distance,integer=integer,position=position,claims=M.claims,spoil=M.spoil,
+stock=stock_module{corridor=function(p,from,goal,near) return M.pathing.corridor(body(p) or p,from,goal,near) end,distance=distance,integer=integer,position=position,claims=M.claims,spoil=M.spoil,
   -- a stop's transfer reach, as move_to {target} walks to it (A5, Gemini 21:29: a silo's centre lies inside it)
   reach_target=function(p,e) return M.walk_target(p,{target={position=e.position,unit_number=e.unit_number,name=e.name}}) end,
   reserved=function(e,item) local ok,r=pcall(M.supply.reserved,e,item); return ok and r or 0 end,

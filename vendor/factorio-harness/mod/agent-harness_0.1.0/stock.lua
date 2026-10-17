@@ -916,6 +916,20 @@ return function(api)
         action.nav.why=report.why or action.nav.why
         if report.smaller_margins then action.nav.why=(action.nav.why or 'no route at requested clearance')..'; '..report.smaller_margins.line end
       end
+      -- No path to it (d17 batch17 B2, Haiku ~6x: turrets in solar-panel pockets at (140..149,-40..-85) said only
+      -- "no path request found a way"): the fewest of our entities to mine for a way, as move_to says it.
+      if outcome=='unreachable' and api.corridor and not action.nav.corridor_said then
+        action.nav.corridor_said=true
+        local near=(t.entity and t.entity.valid and (p.reach_distance or 10)-1) or 2
+        local okc,c=pcall(api.corridor,p,action.nav.reachable or p.position,t.position,near)
+        if okc and c and c.mine and #c.mine>0 then
+          local names={}
+          for i,e in ipairs(c.mine) do if i<=6 then names[i]=string.format('%s (%g,%g)',e.name,e.position.x,e.position.y) end end
+          action.nav.why=(action.nav.why and action.nav.why..'; ' or '')..string.format('mining %s%s opens a way from (%.1f,%.1f) to (%.1f,%.1f)',
+            table.concat(names,' and '),#c.mine>6 and string.format(' (+%d more)',#c.mine-6) or '',c.from.x,c.from.y,c.to.x,c.to.y)
+          action.mine_for_a_way=action.mine_for_a_way or names
+        end
+      end
       action.first_unreached=action.first_unreached or string.format('(%g,%g): %s%s',t.position.x,t.position.y,outcome,
         action.nav.why and ': '..action.nav.why or '')
       action.index=action.index+1; action.nav=nil; action.unreached=(action.unreached or 0)+1; api.stop_walking(p)
