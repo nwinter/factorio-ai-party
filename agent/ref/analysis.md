@@ -94,6 +94,8 @@
 - `stock {item}` with no radius totals the whole surface (named or yours; a platform is read whole) and lists the places
   within 128 tiles; `covered` says what was read, `as_of` whether a total is live or reused (and its age; `supply` too).
 - `belt_gaps` follows a leg that is not straight round the remembered belt's corners (`followed`); `surface` is read.
+  A missing tile in sight names what stands on it (`blocked_by`, `line`). A belt's text names what stands on the tile it
+  stops at: "(no belt takes them there: they stop at its end; medium-electric-pole (353.5,95.5) stands there)".
 - `shortages {surface?}`: machines stopped short of an ingredient (by recipe and ingredient), no fuel, low or no power,
   labs waiting for packs, and what requester chests lack, in lines. `bottleneck {item: "lubricant"}` adds `shares`: each
   recipe's machines and share of the fluid at full speed.

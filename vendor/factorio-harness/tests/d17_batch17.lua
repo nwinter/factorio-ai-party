@@ -278,3 +278,83 @@ do
   assert(not ok and tostring(err):find('no logistic network #7 of ours on gleba (there: #98)',1,true),tostring(err))
 end
 print('d17_batch17 C2 logistics_audit ranks requesters by what blocks them: ok')
+
+-- C1 addition (Sonnet 12:20: a medium-electric-pole on a belt row's tile cut 6 coal drills for an hour; the drills
+-- said only waiting_for_space): a build that leaves a belt facing into another entity, with the line going on past it,
+-- is a team alert naming that entity; a cut tile something stands on names it; belt text and belt_gaps name it.
+do
+  game={tick=1000}
+  local player={name='player'}
+  local ents={}
+  local function box(x,y,w) return {left_top={x=x-w,y=y-w},right_bottom={x=x+w,y=y+w}} end
+  local surface
+  local function add(e) e.valid=true; e.surface=surface; e.force=e.force or player; e.bounding_box=box(e.position.x,e.position.y,e.w or 0.4); ents[#ents+1]=e; return e end
+  local function belt(x,y,dir,items)
+    return add({type='transport-belt',name='transport-belt',position={x=x,y=y},direction=dir,belt_neighbours={inputs={},outputs={}},
+      get_max_transport_line_index=function() return 1 end,get_transport_line=function() return {get_contents=function() return items or {} end} end})
+  end
+  surface={name='vulcanus',find_entities_filtered=function(f)
+    local out={}
+    local area=f.area
+    if f.position then local q=f.position; local x,y=q.x or q[1],q.y or q[2]; area={{x-0.01,y-0.01},{x+0.01,y+0.01}} end
+    for _,e in ipairs(ents) do
+      local ok=e.valid
+      if ok and area then local a,b=area[1],area[2]; local bb=e.bounding_box
+        ok=bb.left_top.x<b[1] and bb.right_bottom.x>a[1] and bb.left_top.y<b[2] and bb.right_bottom.y>a[2] end
+      if ok and f.type then local any=false; for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do if e.type==t then any=true end end; ok=any end
+      if ok and f.force then ok=e.force.name==(type(f.force)=='table' and f.force.name or f.force) end
+      if ok then out[#out+1]=e; if f.limit and #out>=f.limit then break end end
+    end
+    return out
+  end}
+  game.get_surface=function() return surface end
+  game.forces={player=player}
+  local row={}
+  for x=359.5,354.5,-1 do row[#row+1]=belt(x,95.5,12,{{name='coal',count=7}}) end
+  local pole=add({type='electric-pole',name='medium-electric-pole',position={x=353.5,y=95.5},w=0.15,last_user={name='sonnet'}})
+  local after={}
+  for x=352.5,349.5,-1 do after[#after+1]=belt(x,95.5,12) end
+  for i,b in ipairs(row) do b.belt_neighbours={inputs={row[i-1]},outputs={row[i+1]}} end
+  for i,b in ipairs(after) do b.belt_neighbours={inputs={after[i-1]},outputs={after[i+1]}} end
+  add({type='resource',name='coal',position={x=353.5,y=95.5},w=0.5,force={name='neutral'}})
+  local st={}
+  local L=dofile('mod/agent-harness_0.1.0/linecut.lua'){state=function() return st end}
+  eq(L.blocker(surface,{x=353.5,y=95.5}),pole,'the pole, not the ore under it')
+  L.built({entity=after[1]})
+  eq(#st.linecut.blocked,1)
+  L.built({entity=row[6]})
+  eq(#st.linecut.blocked,1,'kept once')
+  eq(#L.alert_groups(player),0,'not before 30 s')
+  game.tick=1000+3600
+  local gs=L.alert_groups(player)
+  eq(#gs,1); eq(gs[1].kind,'line_cut'); eq(gs[1].by.sonnet,1)
+  eq(gs[1].line,"belt line blocked at (353.5,95.5): medium-electric-pole (353.5,95.5) stands where the belt's next tile should be (placed by sonnet); the belt runs 6 tiles from (359.5,95.5) to (354.5,95.5) and stops there, holding coal 42; the line goes on from (352.5,95.5), 4 tiles to (349.5,95.5); seen 1m ago")
+  -- the pole moved and a belt there: gone
+  pole.valid=false
+  local bridge=belt(353.5,95.5,12)
+  eq(#L.alert_groups(player),0); eq(#st.linecut.blocked,0)
+  -- an inserter at a belt's end moves the items on; a belt past it facing back is another line: neither kept
+  bridge.valid=false
+  local ins=add({type='inserter',name='inserter',position={x=353.5,y=95.5},w=0.15})
+  L.built({entity=ins}); eq(#st.linecut.blocked,0,'inserter')
+  ins.valid=false; pole.valid=true
+  for _,b in ipairs(after) do b.direction=4 end
+  L.built({entity=pole}); eq(#st.linecut.blocked,0,'facing back')
+  for _,b in ipairs(after) do b.direction=12 end
+  L.built({entity=pole}); eq(#st.linecut.blocked,1,'the pole built last finds it too')
+  -- a cut tile a pole stands on names it
+  st.linecut.cuts={{id=99,kind='belt',surface='vulcanus',force='player',tick=game.tick,first=game.tick,tiles={{x=353.5,y=95.5,name='transport-belt'}},
+    causes={},placers={},a={n=5,last={x=358.5,y=95.5}},b={n=4,last={x=349.5,y=95.5}},carried={'coal'}}}
+  local cut
+  for _,g in ipairs(L.alert_groups(player)) do if g.key=='line_cut|99' then cut=g end end
+  has(cut.line,'1 tile gone, 0s ago, none rebuilt (medium-electric-pole (353.5,95.5) stands on (353.5,95.5) (placed by sonnet))')
+  -- belt_gaps: a missing tile names what stands there
+  local G=dofile('mod/agent-harness_0.1.0/beltgaps.lua'){state=function() return st end,position=function(q) return q end,
+    blocker=function(s,q) return L.blocker(s,q) end,blocker_text=function(e,w) return L.blocker_text(e,w) end}
+  player.is_chunk_visible=function() return true end
+  local p={force=player,surface=surface,position={x=355,y=95}}
+  local r=G.read(p,{from={x=359.5,y=95.5},to={x=349.5,y=95.5}})
+  eq(#r.missing,1); eq(r.missing[1].blocked_by.name,'medium-electric-pole')
+  eq(r.missing[1].line,'medium-electric-pole (353.5,95.5) stands on (353.5,95.5) (placed by sonnet)')
+end
+print('d17_batch17 C1 a belt line blocked by an entity on its tile is named: ok')

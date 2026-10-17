@@ -111,3 +111,13 @@ eq(#lines, 2); eq(more, 1)
 lines, more = B.lines({chest})
 eq(#lines, 0); eq(more, 0)
 print('beltflow: ok')
+
+-- A belt end with an entity on its next tile names it (d17 batch17 C1, Sonnet: a pole on a belt row's tile).
+do
+  local B2 = dofile('mod/agent-harness_0.1.0/beltflow.lua'){blocker = function(s, q)
+    if q.x == 2000.5 and q.y == 95.5 then return {name = 'medium-electric-pole', position = {x = 2000.5, y = 95.5}} end
+  end}
+  local e1 = belt(2001.5, 95.5, W)
+  eq(B2.line(e1), 'moves items west to (2000.5,95.5) (no belt takes them there: they stop at its end; medium-electric-pole (2000.5,95.5) stands there); no belt feeds it')
+end
+print('beltflow: a belt end names what stands on its next tile')
