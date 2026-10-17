@@ -78,10 +78,10 @@
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
   open board items) and the last 3 shifts' team numbers (`progress shift13: SPM ... | packs .../min | techs ... |
   rockets ... | plates, circuits .../min | deaths ...`, as `./fh progress` counts them). `projects` lists the open projects, one line each with progress, next step and handoff.
-- `./fh tell`: The reply's `ignoring` names a recipient in a wait that ignores messages (and until when); `--wake` ends that wait too, once per 10 minutes per teammate.
+- `./fh tell`: The reply's `ignoring` names a recipient in a wait that ignores messages (and until when); `--wake` ends that wait too, each time.
   Viewers see tells on the stream's logistics ticker. `./fh tells` lists the last 30 tells you received
   (time, sender, fyi), shown before or not; `./fh tells --since N` lists the ones you sent and received after N.
-- `OPERATOR:` lines: fh prints each message once;
+- `OPERATOR:` lines: fh prints each message once (on 3 replies in a workspace without a context hook);
   later replies that still carry it leave it out (`--operator-repeat` prints it on every reply). With `--format json`
   stdout is one JSON document and the message is only in the reply's `result.operator`.
 - Lessons: short rules a teammate tested, board items of kind `lesson`. `lesson_add {rule, cause?, fix?, evidence_tick?,
@@ -91,7 +91,8 @@
   recipe, entity or action (at its place and on its surface when it names them: inspect, trace, build, place_ghosts,
   transfer, feed, collect, configure, load_silo, launch, craft, mine, rearm, refuel) carries up to 2 lines in
   `lessons`, each with who recorded it, its evidence tick and when it was last verified; one not verified for 12 game
-  hours reads `stale`. At most 150 active.
+  hours reads `stale`; the same lines are shown again only after 10 minutes (`--format json` always has them). At most
+  150 active.
 - A belt carrying items destroyed: the owner of the claim it lies in (else the nearest agent there) gets a waking tell
   with each belt's position and direction and what it carried.
 - `board_progress {owner?, id?}`: each owned open task, request and project with the game's evidence since its last

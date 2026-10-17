@@ -1831,7 +1831,22 @@ function handlers.describe(_,a)
       'Screenshots require a graphical client controlling the requested player; headless hosts do not render',
       'Vehicles and fluid transfers are unsupported',
       'Walk/mine completion is bounded by ticks; inspect status and observe to verify outcomes'}}
-  for name,schema in pairs(scheduler and scheduler.schema or {}) do description.actions[name]=schema end
+  -- guards and step_options document queue_submit and have no handler (a call to either failed "unsupported
+  -- action"): their text goes under queue_submit's entry (d17 lean D1).
+  local sched=scheduler and scheduler.schema or {}
+  for name,schema in pairs(sched) do if name~='guards' and name~='step_options' then description.actions[name]=schema end end
+  local qs=description.actions.queue_submit
+  if qs and sched.guards then
+    qs.guards=(qs.guards and qs.guards..'; ' or '')..'at most '..tostring(sched.guards.max)..': '..sched.guards.usage
+  end
+  if qs and sched.step_options then
+    local keys,parts={},{}
+    for k in pairs(sched.step_options) do keys[#keys+1]=k end
+    table.sort(keys)
+    for _,k in ipairs(keys) do parts[#parts+1]=k..': '..sched.step_options[k] end
+    qs.step_options='options a step takes besides its action and args: '..table.concat(parts,'; ')
+  end
+  description.aliases=M.ALIASES
   for name,schema in pairs(M.orders and M.orders.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(clock and clock.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.chat and M.chat.schema or {}) do description.actions[name]=schema end
@@ -13343,7 +13358,7 @@ reads.ghosts=true
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
 -- that document results rather than inputs are not arguments.
-local DOC_ONLY={returns=true,note=true,reports=true,outcomes=true,status=true,usage=true,checked=true,max=true,examples=true,produced=true,platform_built=true}
+local DOC_ONLY={step_options=true,returns=true,note=true,reports=true,outcomes=true,status=true,usage=true,checked=true,max=true,examples=true,produced=true,platform_built=true}
 local TARGET={'name','unit_number'}
 local EXTRA_ARGS={attach={'offline'},build={'quality','entity'},collect={'count','quality'},rearm={'quality'},refuel={'quality'},
   move_to={'within'},shoot={'auto'},transfer=TARGET,mine={'unit_number'},repair=TARGET,inspect=TARGET,rotate=TARGET,
@@ -13775,11 +13790,30 @@ end
 local dispatch_request
 -- A failed request is counted for the agent's review (selfview.lua) and
 -- raised again unchanged (control.lua reads it as before).
+-- Action-name aliases (d17 lean D1): names agents called that are no action, where the action meant is plain (the d17
+-- audit found 34 such names, 68 calls in shift22-28; an unknown name also stopped the running action). Resolved
+-- first, so check_args, the read tables and the scope lists see the action itself; the reply's called_as names it.
+-- Names that could mean two actions (trains, order, alerts, player, find, take, ...) have none.
+M.ALIASES={silos='silo',lab='labs',dangers='danger',boiler='boilers',logistic_networks='networks',where='where_is',
+  plan_list='plans',order_status='orders'}
+function M.resolve_alias(request)
+  if type(request)~='table' or request.operator==true or type(request.action)~='string' then return nil end
+  local real=M.ALIASES[request.action]
+  if not real or handlers[request.action] then return nil end
+  local called=string.format('%s is %s: the call ran as %s',request.action,real,real)
+  request.action=real
+  return called
+end
 function M.dispatch(request)
   -- the agent the request is for, while it runs (turretwatch.lua tells it what its ghosts became)
   M.caller_index=type(request)=='table' and type(request.player)=='number' and request.player or nil
+  local called_as=M.resolve_alias(request)
   local ok,result=pcall(M.dispatch_inner,request)
   M.caller_index=nil
+  if called_as then
+    if ok and type(result)=='table' then result.called_as=called_as
+    elseif not ok then result=called_as..'; '..tostring(result) end
+  end
   if type(request)=='table' and type(request.player)=='number' and request.operator~=true then pcall(M.hauling.done,request.player) end
   if not ok then pcall(M.selfview.dispatch_failed,request,result); error(result,0) end
   return result
