@@ -156,8 +156,9 @@
   call that recovers it (a belt pickup aboard, else `deconstruct` of those belts into the hub).
 - `circuit_audit {platform}`: whole-belt readers (`entire_belt_hold`) on one network whose belts overlap (counted
   twice), and each asteroid collector whose filter the circuit sets: the filter it holds and the chunk signals there.
-- `load_silo {from: [..], walk: true}` takes from the sources in order (chests, a landing pad, anywhere on the surface)
-  and skips a trip's other sources once you hold what the rocket needs.
+- `load_silo {position, from: [..], walk: true}` takes from the sources in order (chests, a landing pad, anywhere on
+  the surface) and skips a trip's other sources once you hold what the rocket needs. `position` is the silo's (always
+  needed; without it the reply lists the silos here); `from` is one chest `{x,y}` or a list of them.
 - `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure
   conditions with what the hub holds against each.
 - `silo` gives `robots_bringing` (what logistic robots carry or have reserved toward it) and `requesting_for`.

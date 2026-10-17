@@ -10750,6 +10750,9 @@ function M.silo_pause(p,a,rockets)
     silo.name,silo.position.x,silo.position.y,rockets or 1,(rockets or 1)==1 and '' or 's',#aboard>0 and '; the rocket already held '..table.concat(aboard,' ')..', which stays aboard' or '')
 end
 function handlers.load_silo(p,a)
+  -- the silo (Grok d17 16:16: walk with from [chest] and no position failed "position requires x and y" and read as
+  -- the from list being wrong): without position, the silos here and the call that works.
+  if a.position==nil then error(M.launch_needs_silo(p,a,'load_silo'),0) end
   -- wait_platform (d17 batch13 A4, Gemini: load_silo with arrived failed while the platform was still on its way):
   -- the cargo goes into the ready rocket now, recorded for the platform, and launch {wait_platform} launches it when
   -- the platform is stopped in orbit here. A rocket not ready yet: the load waits for the rocket and the platform as
@@ -13375,7 +13378,7 @@ function M.with_example(action,args,msg)
 end
 -- launch without its silo (Luna, shift11 17:43: launch {platform:"Sunward"} failed as "position requires x and y",
 -- twice): the silos on the surface, a ready rocket first, and the call that works.
-function M.launch_needs_silo(p,a)
+function M.launch_needs_silo(p,a,action)
   local list={}
   local ok,silos=pcall(function() return p.surface.find_entities_filtered{type='rocket-silo',force=p.force} end)
   for _,s in ipairs(ok and silos or {}) do
@@ -13396,7 +13399,12 @@ function M.launch_needs_silo(p,a)
       list[i].ready and 'rocket ready' or tostring(states[s.rocket_silo_status] or s.rocket_silo_status),list[i].ready and '' or parts_text)
   end
   local ex={position=list[1] and {x=list[1].s.position.x,y=list[1].s.position.y} or {x=0,y=0},platform=a.platform,orbit=a.platform==nil and a.orbit or nil}
-  return string.format("launch takes the silo: position (or unit_number); e.g. fh call launch --args '%s'; silos on %s: %s",
+  local takes='launch takes the silo: position (or unit_number)'
+  if action=='load_silo' then
+    ex.launch=a.launch; ex.walk=a.walk; ex.from=a.from; ex.items=a.items
+    takes='load_silo takes the silo: position (the silo; from is the chests: one {x,y} or a list of them)'
+  end
+  return string.format("%s; e.g. fh call %s --args '%s'; silos on %s: %s",takes,action or 'launch',
     M.aliases.encode(ex),p.surface.name,#parts>0 and table.concat(parts,'; ')..(#list>4 and string.format(' (%d in all)',#list) or '') or 'none')
 end
 -- An unknown argument of configure or circuit_set also names what the entity at the position takes (Luna 06:20:
