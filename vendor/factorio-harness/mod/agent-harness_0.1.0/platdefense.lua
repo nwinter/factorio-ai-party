@@ -138,10 +138,20 @@ return function(api)
     lines[#lines+1] = string.format('%d turrets: %d empty%s, %d fed by nothing (by hand)', #turrets, #empty, #empty > 0 and ' (' .. table.concat(empty, ', ', 1, math.min(6, #empty)) .. ')' or '', hand)
     local trows = {}
     for i, t in ipairs(turrets) do if i <= 64 then trows[i] = {name=t.name, position=t.position, range=t.range, ammo=t.ammo, feed=t.feed} end end
-    return {platform=pl.name, lines=lines, collectors=collectors, sides=side_rows, turrets=trows,
+    -- (d17 batch13 B1) each turret's way back to its ammunition: what can reach it and what is stranded
+    local feed
+    if api.ammofeed then
+      local ok, tr = pcall(api.ammofeed.trace, pl)
+      if ok then
+        feed = {reaches=tr.reaches, stranded=tr.stranded, stranded_groups=tr.stranded_groups, hub_reaches=tr.hub_reaches,
+          lines=api.ammofeed.lines(tr, a.feed == true)}
+        for _, l in ipairs(feed.lines) do lines[#lines+1] = l end
+      else feed = {error=tostring(tr)} end
+    end
+    return {platform=pl.name, lines=lines, collectors=collectors, sides=side_rows, turrets=trows, feed=feed,
       note='a turret reaches what lies within its attack range of its centre; a collector\'s front is the middle of its collection area; the hull\'s edge tiles are foundation tiles with empty space beside them'}
   end
-  M.schema = {platform_defense = {platform='platform name',
-    returns='lines: each asteroid collector\'s front (the middle of its collection area) with the turrets whose range reaches it (ammo, fed by: an inserter and its source, robots, or nothing: by hand), or NO turret with the nearest and how far past its range; each hull side (north, east, south, west: foundation tiles with empty space on that side) with the edge tiles no turret reaches as runs, the longest first; the turrets (empty, fed by hand). collectors [{position, front, covered_by}], sides [{side, edge_tiles, uncovered, gaps}], turrets [{name, position, range, ammo, feed}]. Read only'}}
+  M.schema = {platform_defense = {platform='platform name', feed='optional true: every turret\'s way to its ammunition (default: those low, under 10 that can reach them, or stopped)',
+    returns='lines: each asteroid collector\'s front (the middle of its collection area) with the turrets whose range reaches it (ammo, fed by: an inserter and its source, robots, or nothing: by hand), or NO turret with the nearest and how far past its range; each hull side (north, east, south, west: foundation tiles with empty space on that side) with the edge tiles no turret reaches as runs, the longest first; the turrets (empty, fed by hand); then the ammunition: what can reach a turret (turrets, the belts on their ways, sources, the hub when an inserter takes from it toward one) against what is stranded (on belts no turret\'s way reaches, by group with their area), and each turret low or stopped: what it holds, what can reach it (each inserter and its way: the hub, a chest or machine, or a belt with the ammo on the belts upstream and who puts items on them) and what stops it (no feeder, an inserter or belt switched off by its circuit, a filter leaving its ammo out, belts nothing feeds: dry after what is on them). feed {reaches, stranded, stranded_groups, hub_reaches, lines}. collectors [{position, front, covered_by}], sides [{side, edge_tiles, uncovered, gaps}], turrets [{name, position, range, ammo, feed}]. Read only'}}
   return M
 end

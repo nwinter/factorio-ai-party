@@ -71,7 +71,7 @@ return function(api)
       set_requests='requester or buffer chest: true sets its requests from the wires (circuit_exclusive_mode_of_operation set_requests); false: none. Chests in 2.0.77: read: {contents: true} is send_contents on a requester or buffer; provider and storage chests send their contents whenever wired, with no switch; no chest has a logistic network condition. A roboport: read: {logistic_network_contents: true} is read_items_mode logistics (missing_requests: true the missing requests)',
       logistic='a condition as enable, on the logistic network (connects it); false: off. The game reads the network whose logistic area holds the entity\'s centre (circuit.logistic_reads names it and its count, or none: never met)',
       read='{switch: bool}: hand, contents, resources, speed, ammo, ... (read_X); train stop names',
-      settings='{name: value}: any switch, mode, signal or condition by its readback name; inserters and loaders also filters (item names), filter_mode (whitelist|blacklist), use_filters, as configure sets them (reply filters: the line)',
+      settings='{name: value}: any switch, mode, signal or condition by its readback name; inserters and loaders also filters (item names), filter_mode (whitelist|blacklist), use_filters, as configure sets them (reply filters: the line). A belt\'s read_contents_mode (with read_contents: true): pulse (each item as it enters this tile), hold (what this tile holds now), entire_belt_hold (what the whole belt holds: inspect\'s circuit.belt_segment names the physical segment and the whole belt apart, with the wires\' read)',
       signals='constant combinator: [{signal, count}] (first section; [] clears)', on='constant combinator: on/off',
       arithmetic='{first, operation (+ - * / % ^ << >> AND OR XOR), second, output}',
       decider='{first, comparator, constant|second, output, copy_input} or {conditions, outputs}: conditions rows "carbon < 150" (a row after the first begins with and / or: "and sulfur < 100"), {signal, comparator, value|signal2, compare: and|or (compare_type too), first_networks, second_networks: red|green|both}, or the game\'s own rows {first_signal, comparator, constant|second_signal, compare_type}; a row after the first must say and or or; outputs {signal, copy_input: true (the input count) | constant N, networks}; the read shows each row\'s networks and each output as copy or constant',
@@ -495,8 +495,56 @@ return function(api)
       if next(wired) and (wired[n] or 0) ~= c then diff[#diff+1] = string.format('%s %d on the wires', n, wired[n] or 0) end
     end
     table.sort(parts)
-    return string.format('this tile\'s line runs %d tiles: %s; it holds %s%s', tiles, table.concat(ends, ', '),
-      #parts > 0 and table.concat(parts, ', ') or 'nothing', #diff > 0 and ' (the wires read: ' .. table.concat(diff, ', ') .. ', which includes anything else on those networks)' or '')
+    -- The whole belt (d17 batch13 B2, Astra: the segment read 1 tile while the wire counted 179 items along the route):
+    -- the belts this one joins through its inputs and outputs, one each way (an underground to its pair), up to SEG
+    -- tiles each way; a splitter or a side-load ends it. What entire_belt_hold reads is the belt, not the line above.
+    local seen, whole, wtiles = {}, {}, 0
+    local function add(b)
+      local k = b.unit_number or (b.position.x .. ',' .. b.position.y)
+      if seen[k] then return false end
+      seen[k] = true; wtiles = wtiles + 1
+      for k2 = 1, 2 do
+        for _, c in ipairs(try(function() return b.get_transport_line(k2).get_contents() end) or {}) do
+          local n = type(c.name) == 'string' and c.name or try(function() return c.name.name end)
+          if n then whole[n] = (whole[n] or 0) + c.count end
+        end
+      end
+      return true
+    end
+    add(e)
+    local wends = {}
+    for _, way in ipairs({'inputs', 'outputs'}) do
+      local cur, steps, stop = e, 0, nil
+      while steps < SEG do
+        local bn = try(function() return cur.belt_neighbours end)
+        local list = bn and bn[way] or {}
+        local nxt = #list == 1 and list[1] or nil
+        if not nxt and cur.type == 'underground-belt' then
+          local pair = try(function() return cur.neighbours end)
+          local t = try(function() return cur.belt_to_ground_type end)
+          if pair and pair.valid and ((way == 'inputs' and t == 'output') or (way == 'outputs' and t == 'input')) then nxt = pair end
+        end
+        if not nxt or nxt.type == 'splitter' then
+          stop = #list > 1 and string.format('at %s (%d belts %s it)', where(cur), #list, way == 'inputs' and 'feed' or 'take from')
+            or (nxt and string.format('at %s (a splitter)', where(nxt))) or string.format('at %s (the belt %s there)', where(cur), way == 'inputs' and 'starts' or 'ends')
+          break
+        end
+        if not add(nxt) then stop = 'round a loop'; break end
+        cur = nxt; steps = steps + 1
+      end
+      wends[#wends+1] = (way == 'inputs' and 'back ' or 'on ') .. (stop or string.format('past %d tiles (not read further)', SEG))
+    end
+    local wparts = {}
+    for n2, c in pairs(whole) do wparts[#wparts+1] = c .. ' ' .. n2 end
+    table.sort(wparts)
+    local wire_parts = {}
+    for n2, c in pairs(wired) do wire_parts[#wire_parts+1] = c .. ' ' .. n2 end
+    table.sort(wire_parts)
+    return string.format('the physical segment only (the engine\'s transport line through this tile, not what the wire reads): %s, %s; it holds %s. '
+      .. 'What read_contents_mode entire_belt_hold reads is the whole belt: %d tiles followed through its inputs and outputs (%s), holding %s; the wires read %s (anything else on those networks included)',
+      tiles == 1 and '1 tile' or tiles .. ' tiles', table.concat(ends, ', '), #parts > 0 and table.concat(parts, ', ') or 'nothing',
+      wtiles, table.concat(wends, ', '), #wparts > 0 and table.concat(wparts, ', ') or 'nothing',
+      #wire_parts > 0 and table.concat(wire_parts, ', ') or 'nothing')
   end
   -- The circuit networks an entity's red and green wires join, followed back to what drives them (D5, Astra 00:20:
   -- mixed return-belt deadlocks took dozens of inspect calls): each network (its id and signals now) with the entities

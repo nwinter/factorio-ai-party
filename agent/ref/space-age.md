@@ -141,3 +141,8 @@
 - `platform_endurance {route}` while flying reads the route from the current leg; a route starting behind the ship is
   refused. A stop's wait line names a queue step (either lane) or order that will send the platform on sooner.
 - A launch step started while the last rocket is still leaving waits for the next rocket (never reports that launch).
+- `platform_defense` also traces each turret's ammunition back (`feed`): what can reach it (its inserters, the belts
+  upstream and who loads them, the hub) and what stops it, with the ammo stranded on belts no turret's way reaches;
+  `feed: true` lists every turret. platform_endurance and preflight count only ammunition that can reach a turret.
+  A team alert names turrets whose feeds ran dry while ammunition aboard is stranded.
+- platform_plan's floor and ready leave out the tiles a collector's rule keeps empty (its front): rear support only.

@@ -366,6 +366,38 @@ return function(api)
             seen.turrets, seen.turrets_tick = level, game.tick
           end
         else seen.turrets = nil end
+        -- Feeds running dry while the platform's total looks enough (d17 batch13 B1, Kestrel: the bow turrets ran empty
+        -- while hundreds of magazines sat on a rear loop): turrets with nothing more coming (no ammo on the way to them
+        -- and nothing that loads it) and under 20 rounds, while 20 or more aboard are stranded or in the hub. Read with
+        -- the scan (ammofeed.lua), told again after REPEAT or when more turrets starve.
+        if api.ammofeed and sc.turrets > 0 then
+          local fr = r.feed
+          if not (fr and game.tick - fr.tick < SCAN_TICKS) then
+            local okt, tr = pcall(api.ammofeed.trace, pl)
+            fr = {tick=game.tick, tr=okt and tr or nil}
+            r.feed = fr
+          end
+          local tr = fr.tr
+          local starving, x0, y0, x1, y1 = {}, math.huge, math.huge, -math.huge, -math.huge
+          for _, row in ipairs(tr and tr.rows or {}) do
+            if row.reaches == row.own and row.own < 2 * LOW_AMMO then
+              starving[#starving+1] = row
+              local q = row.position
+              x0, y0, x1, y1 = math.min(x0, q.x), math.min(y0, q.y), math.max(x1, q.x), math.max(y1, q.y)
+            end
+          end
+          local spare = tr and (tr.stranded + (tr.hub_reaches and 0 or tr.hub_ammo)) or 0
+          if #starving > 0 and spare >= 2 * LOW_AMMO then
+            if #starving > (seen.starving or 0) or game.tick - (seen.starving_tick or -REPEAT) >= REPEAT then
+              local first = starving[1]
+              lines[#lines+1] = string.format('platform %s: %d turret%s in (%g,%g)-(%g,%g) can reach under %d rounds and nothing more comes (%s %s: %s) while %d aboard can reach no turret%s; platform_defense {platform: "%s"} traces each feed',
+                name, #starving, #starving == 1 and '' or 's', x0, y0, x1, y1, 2 * LOW_AMMO, first.name, at(first.position),
+                #first.stops > 0 and first.stops[1] or 'its feed is dry', spare,
+                #tr.stranded_groups > 0 and ' (on belts: ' .. table.concat(tr.stranded_groups, '; ', 1, math.min(3, #tr.stranded_groups)) .. ')' or ' (in the hub, no inserter takes it toward a turret)', pl.name)
+              seen.starving, seen.starving_tick = #starving, game.tick
+            end
+          else seen.starving = nil end
+        end
         -- Flying under 5 km/s: which thrusters lack which input, and the chain behind it.
         if sc.slow then
           local t = sc.slow.thrust

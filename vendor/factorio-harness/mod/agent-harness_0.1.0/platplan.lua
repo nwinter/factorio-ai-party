@@ -8,6 +8,37 @@
 return function(api)
   local M = {}
   local MAX_TILES, MAX_BELTS, LIST = 40000, 8000, 8
+  -- The tiles an entity (or ghost) stands on that need foundation (d17 batch13 B3, Sol: Meridian's west asteroid
+  -- collector at (-23.5,6.5) was asked for 3 floor tiles in front that the build then refuses): its box's tiles, less
+  -- those a tile rule of its prototype keeps as empty space (an asteroid collector's collection area in front), the
+  -- rule's area turned with the entity. {list of {x, y}, void (how many left out)}.
+  local function rot(x, y, dir) for _ = 1, math.floor(((dir or 0) % 16) / 4) do x, y = -y, x end return x, y end
+  function M.footprint(e)
+    local ok, b = pcall(function() return e.bounding_box end)
+    if not ok or not b then return {}, 0 end
+    local proto = e.type == 'entity-ghost' and (pcall(function() return e.ghost_prototype end) and e.ghost_prototype) or (pcall(function() return e.prototype end) and e.prototype)
+    local voids = {}
+    local okr, rules = pcall(function() return proto.tile_buildability_rules end)
+    for _, rule in ipairs(okr and rules or {}) do
+      local empty = false
+      for l in pairs(rule.required_tiles and rule.required_tiles.layers or {}) do if l == 'empty_space' then empty = true end end
+      if empty and rule.area then
+        local dir = e.direction
+        local x1, y1 = rot(rule.area.left_top.x, rule.area.left_top.y, dir)
+        local x2, y2 = rot(rule.area.right_bottom.x, rule.area.right_bottom.y, dir)
+        voids[#voids+1] = {e.position.x + math.min(x1, x2), e.position.y + math.min(y1, y2), e.position.x + math.max(x1, x2), e.position.y + math.max(y1, y2)}
+      end
+    end
+    local out, void = {}, 0
+    for x = math.floor(b.left_top.x + 0.01), math.ceil(b.right_bottom.x - 0.01) - 1 do
+      for y = math.floor(b.left_top.y + 0.01), math.ceil(b.right_bottom.y - 0.01) - 1 do
+        local cx, cy, skip = x + 0.5, y + 0.5, false
+        for _, v in ipairs(voids) do if cx > v[1] and cx < v[3] and cy > v[2] and cy < v[4] then skip = true end end
+        if skip then void = void + 1 else out[#out+1] = {x=x, y=y} end
+      end
+    end
+    return out, void
+  end
   local VEC = {[0]={0,-1}, [4]={1,0}, [8]={0,1}, [12]={-1,0}}
   local BELT = {['transport-belt']=true, ['underground-belt']=true, splitter=true}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -280,10 +311,7 @@ return function(api)
     local function want(x, y, kind) local key = k(x, y); if not have[key] and not need[key] then need[key] = {x=x, y=y, kind=kind}; why[kind] = why[kind] + 1 end end
     local ghosts = try(function() return s.find_entities_filtered{type='entity-ghost', force=force, limit=8192} end) or {}
     for _, g in ipairs(ghosts) do
-      local b = g.bounding_box
-      for x = math.floor(b.left_top.x), math.ceil(b.right_bottom.x) - 1 do
-        for y = math.floor(b.left_top.y), math.ceil(b.right_bottom.y) - 1 do want(x, y, 'foot') end
-      end
+      for _, t in ipairs((M.footprint(g))) do want(t.x, t.y, 'foot') end
     end
     -- Tunnels: underground belts and pipes-to-ground, built or ghost.
     local unders = {}
@@ -462,12 +490,10 @@ return function(api)
       names[g.ghost_name] = (names[g.ghost_name] or 0) + 1
       local item, n = item_of(try(function() return g.ghost_prototype end))
       if item then need[item] = (need[item] or 0) + n end
-      local b = g.bounding_box
-      local x0, y0 = math.floor(b.left_top.x + 0.01), math.floor(b.left_top.y + 0.01)
-      local x1, y1 = math.ceil(b.right_bottom.x - 0.01) - 1, math.ceil(b.right_bottom.y - 0.01) - 1
       local pending, missing = false, false
-      for x = x0, x1 do
-        for y = y0, y1 do
+      for _, ft in ipairs((M.footprint(g))) do
+        local x, y = ft.x, ft.y
+        do
           local name = try(function() return s.get_tile(x, y).name end)
           if name ~= 'space-platform-foundation' then
             local key = k(x, y)

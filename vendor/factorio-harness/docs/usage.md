@@ -6173,3 +6173,26 @@ fh watch    # deploy on every change
 - C8 (Grok): the departure lines (what sends a platform on) read the remote queue lane too, where platform steps run;
   the stop a platform waits at says `or sooner, when ... runs`. On the copy Swift's stop named Sol's remote-lane
   platform_schedule steps, missed before.
+
+## d17 batch13 (operator 04:55; the 04:50 poll)
+- B1 (Astra, Sol: Kestrel lost 100+ entities with magazines stranded on a rear loop): ammofeed.lua follows each ammo
+  turret back: its feeding inserters and their pickups (the hub, a chest or machine, or a belt), every belt upstream of
+  a belt pickup (inputs, underground pairs, a loop whole) with the turret's ammo on them, and the inserters putting
+  items on those belts with their pickups; what stops it: no feeder, an inserter or belt switched off by its circuit,
+  a filter leaving its ammo out, belts nothing loads (dry after what is on them). Ammunition that can reach a turret
+  (turrets, belts on their ways, sources, the hub when an inserter takes from it toward one) against stranded (on
+  belts no turret's way reaches, by group and area; hub stock no inserter takes toward a turret).
+  - `platform_defense` adds `feed` and its lines (low or stopped turrets; `feed: true` all).
+  - `platform_endurance` projects only reachable ammunition: a row says `N more aboard can reach no turret
+    (stranded: ...), not counted`, and `ammo_feed` gives both totals. preflight with a platform adds `ammo_feed`.
+  - A team alert: `platform Kestrel: 11 turrets in (-14,-14)-(6.5,24.5) can reach under 20 rounds and nothing more
+    comes (...) while 27 aboard can reach no turret (on belts: ...)`, told again after 5 min or when more starve.
+  On the copy: Kestrel 164 reachable, 27 stranded on three belt groups; Meridian's (0,-25) turret's loader switched
+  off, two turrets with no feeder. 23 ms for Kestrel on the copy.
+- B2 (Astra): inspect's `belt_segment` (a belt reading entire_belt_hold) says the physical segment only, then the whole
+  belt that mode reads, followed through inputs, outputs and underground pairs (a splitter or a side-load ends it),
+  with its items and the wires' read. circuit_set's settings help lists read_contents_mode: pulse, hold,
+  entire_belt_hold. On the copy, Kestrel (-10.5,-6.5): segment 1 tile, whole belt 38 tiles.
+- B3 (Sol): platform_plan floor and ready use each ghost's tiles less those a tile rule of its prototype keeps empty
+  (an asteroid collector's collection area, turned with it): rear support only. On the copy Meridian's west collector
+  ghost at (-24.5,-14.5) reads on foundation (its two rear columns are floor; the front column is empty space).

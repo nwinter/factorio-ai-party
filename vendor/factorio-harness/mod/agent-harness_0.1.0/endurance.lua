@@ -316,9 +316,23 @@ return function(api)
     local ammo = {}
     for name, item in pairs(prototypes.item) do if item.type == 'ammo' or item.type == 'repair-tool' then ammo[#ammo+1] = name end end
     table.sort(ammo)
+    -- Only what can reach a turret (d17 batch13 B1, Kestrel: 610 magazines aboard and a positive forecast while
+    -- hundreds sat on a rear loop no turret's feed reached): the ammunition stranded on belts no turret's way reaches,
+    -- or in a hub no inserter takes from toward a turret, is left out of the stock projected, and said.
+    local ammo_feed
+    local tr = api.ammofeed and pl.surface and try(function() return api.ammofeed.trace(pl) end)
+    local stranded_of = {}
+    if tr then
+      for name, n in pairs(tr.stranded_by or {}) do stranded_of[name] = (stranded_of[name] or 0) + n end
+      for name, n in pairs(tr.hub_stranded or {}) do stranded_of[name] = (stranded_of[name] or 0) + n end
+    end
+    local all_held = {}
+    for name, n in pairs(held) do all_held[name] = n end
+    for name, n in pairs(stranded_of) do held[name] = math.max(0, (held[name] or 0) - n) end
     for _, name in ipairs(ammo) do
       local made, used = rate(items_stats, name, 'input'), rate(items_stats, name, 'output')
-      if (held[name] or 0) > 0 or made > 0 or used > 0 then
+      local n_rows = #rows
+      if (held[name] or 0) > 0 or (stranded_of[name] or 0) > 0 or made > 0 or used > 0 then
         local lm2, lu2, from2
         if flying and win_text and prototypes.item[name].type == 'ammo' then lm2, lu2, from2 = leg_now_rate(name) end
         if lm2 then project(name, held[name] or 0, lm2, lu2, nil, from2)
@@ -330,6 +344,16 @@ return function(api)
           else project(name, held[name] or 0, made, used, nil, 'stopped, and no finished leg on record for it', true) end
         end
       end
+      local st = stranded_of[name]
+      if st and st > 0 and #rows > n_rows then
+        local row = rows[#rows]
+        row.stranded, row.aboard = st, all_held[name]
+        row.line = row.line .. string.format('; %d more aboard can reach no turret (stranded: %s), not counted', st,
+          (tr.hub_stranded or {})[name] and 'in the hub, no inserter takes it toward a turret' or 'on belts no turret\'s way reaches: ' .. table.concat(tr.stranded_groups, '; ', 1, math.min(3, #tr.stranded_groups)))
+      end
+    end
+    if tr then
+      ammo_feed = string.format('ammunition that can reach a turret %d, stranded %d (platform_defense {platform} traces each turret\'s way)', tr.reaches, tr.stranded)
     end
     -- Flying (Astra 12:20): the last 60 s apart from the window's average, which holds the leg's stalls and stops.
     if flying and P.one_minute then
@@ -475,14 +499,14 @@ return function(api)
         l.now and ' (the rest of the leg it flies)' or l.none and ' (no space connection between them)'
           or l.via_for and ' (on the way ' .. l.via_for .. (l.also and ', ' .. l.also or '') .. ')' or '')
     end
-    return {platform=pl.name, route=route_by, route_note=route_note, legs=legs, total_km=round(total_km, 0), total_minutes=total_min and round(total_min, 1) or nil,
+    return {platform=pl.name, route=route_by, route_note=route_note, ammo_feed=ammo_feed, legs=legs, total_km=round(total_km, 0), total_minutes=total_min and round(total_min, 1) or nil,
       speed_km_per_min=v and round(v, 1) or nil, speed_from=v_by or 'unknown: stopped, and no finished leg on record (times unknown)',
       resources=rows, hub_slots=string.format('%d of %d free', free, slots), power=power, solar_power=#solar > 0 and table.concat(solar, ', ') or nil,
       lines={'route: ' .. (#legs_text > 0 and table.concat(legs_text, '; ') or 'no legs') .. (total_min and '; in all ' .. mins(total_min) or ''),
         'hub: ' .. string.format('%d of %d slots free', free, slots) .. (power and '; power ' .. power or '') .. (#solar > 0 and '; solar power ' .. table.concat(solar, ', ') or ''),
         'asteroid chunks collected: ' .. (#chunks > 0 and table.concat(chunks, ', ') or 'none') .. ' (' .. (win_text or 'last 10 min') .. ')'
           .. (places and places.capped and string.format('; belts past the first %d not counted', places.capped) or ''),
-        'power: ' .. solar_line .. (power and ' (the network ' .. power .. ')' or '')},
+        'power: ' .. solar_line .. (power and ' (the network ' .. power .. ')' or ''), ammo_feed},
       solar=solar_line, low_power=low, no_power=none,
       departure=#departure > 0 and departure or nil, forecast=forecast,
       chunks_collected=#chunks > 0 and chunks or nil,

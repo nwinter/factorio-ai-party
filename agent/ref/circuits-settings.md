@@ -29,3 +29,5 @@
   ignore_unprioritised: true}` sets a turret's (or ghost's) priority list as its GUI does; inspect reads it back;
   blueprints keep it.
 - `configure {platform | surface, position, recipe}` changes an empty idle machine remotely; a remote refusal never walks the body. Aboard, `configure {position, recipe}` uses the current platform. `belt_route` follows an existing belt chain from `from` to its open end and names blocked connection tiles.
+- A belt's `read_contents_mode`: pulse, hold (this tile), entire_belt_hold (the whole belt); inspect's
+  `belt_segment` names the physical segment and the whole belt apart, beside what the wires read.
