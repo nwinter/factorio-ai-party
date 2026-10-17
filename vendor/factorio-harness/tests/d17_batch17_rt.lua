@@ -95,3 +95,48 @@ do
   eq(silo.use_transitional_requests,true); assert(line:find('back on (the load was refused)',1,true),line)
 end
 print('d17_batch17_rt A1 a short paused load leaves automatic requests off: ok')
+
+-- A2 (Grok 2x on Gleba): when Swift stopped, the game launched the rocket itself (one item type a rocket: bioflux*40
+-- went, the 500 packs stayed), and the launch wait read launch_started as launch_failed. It says what went and stayed.
+do
+  local index=runtime.bots.index_of('grok')
+  defines.inventory=defines.inventory or {}; defines.inventory.rocket_silo_rocket=21
+  local cargo={get_contents=function() return {{name='agricultural-science-pack',quality='normal',count=500}} end}
+  local silo={valid=true,name='rocket-silo',type='rocket-silo',unit_number=777,force=force,surface=surface,position={x=65.5,y=14.5},
+    get_inventory=function(i) if i==21 then return cargo end end,bounding_box={left_top={x=61,y=10},right_bottom={x=70,y=19}}}
+  local was=surface.find_entities_filtered
+  surface.find_entities_filtered=function(f) return {silo} end
+  jump(60)
+  runtime.silo.record(silo,{cargo='bioflux*40',to='platform Swift',ordered=true})
+  local g=runtime.game_launched(index,{then_launch={position={x=65.5,y=14.5},platform='Swift'},start_tick=game.tick-30})
+  assert(g and g.by_game,'the game launched it')
+  assert(g.line:find('with bioflux*40',1,true) and g.line:find('still in the silo for the next rocket: agricultural-science-pack*500',1,true),g.line)
+  -- our own launch (by set) or one before the wait began is not the game's
+  local h=runtime.game_launched(index,{then_launch={position={x=65.5,y=14.5}},start_tick=game.tick+10})
+  eq(h,nil)
+  surface.find_entities_filtered=was
+end
+print('d17_batch17_rt A2 a launch the game made first is said as such: ok')
+
+-- A2/A3: load_silo {wait_platform} stages nothing in a ready rocket: it is the load with launch and platform, which
+-- loads nothing while the platform is on its way and loads and launches in the tick it is in orbit.
+do
+  local seen
+  local real=runtime.rocketload.load
+  runtime.rocketload.load=function(p,a) seen=a; return {wait=true,platform=true,why='platform Swift is flying nauvis->gleba 26%, headed to gleba: nothing is loaded until it is in orbit there'} end
+  local silo={valid=true,name='rocket-silo',type='rocket-silo',unit_number=778,force=force,surface=surface,position={x=65.5,y=14.5},
+    bounding_box={left_top={x=61,y=10},right_bottom={x=70,y=19}},rocket_silo_status=defines.rocket_silo_status and defines.rocket_silo_status.rocket_ready}
+  local was=surface.find_entities_filtered
+  surface.find_entities_filtered=function(f) return {silo} end
+  local gp=runtime.lookup(runtime.bots.index_of('grok'))
+  gp.character.position={x=60,y=14}
+  local ok,r=pcall(grok,'load_silo',{position={x=65.5,y=14.5},items={['agricultural-science-pack']=500,bioflux=40},launch=true,platform='Swift',wait_platform=true})
+  surface.find_entities_filtered=was
+  runtime.rocketload.load=real
+  assert(seen,'the load ran: '..tostring(r))
+  eq(seen.wait_platform,nil); eq(seen.launch,true); eq(seen.platform,'Swift')
+  assert(ok and type(r)=='table',tostring(r))
+  assert(r.wait_platform and r.wait_platform:find('nothing goes into the rocket until Swift is stopped in orbit here',1,true),tostring(r.wait_platform))
+  grok('stop',{})
+end
+print('d17_batch17_rt A2/A3 wait_platform stages nothing ahead of the platform: ok')

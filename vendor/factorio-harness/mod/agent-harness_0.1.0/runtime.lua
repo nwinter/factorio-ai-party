@@ -774,7 +774,13 @@ local function finish(index, outcome)
     if ok then
       s.last[index].launch=r
       s.last[index].outcome=type(r)=='table' and r.launched==false and 'not_launched' or 'launched'
-    else s.last[index].outcome='launch_failed'; s.last[index].launch_error=(tostring(r):gsub('^[^:]*:%d+: ','')) end
+    else
+      -- the game launched it first (d17 batch17 A2, Grok 2x: a rocket holding what the platform above asks for is
+      -- launched by the game when it stops, one item type a rocket): said as what it sent and what stayed, not as a failure
+      local okg,g=pcall(M.game_launched,index,action)
+      if okg and g then s.last[index].outcome='launched_by_game'; s.last[index].launch=g
+      else s.last[index].outcome='launch_failed'; s.last[index].launch_error=(tostring(r):gsub('^[^:]*:%d+: ','')) end
+    end
   elseif action and action.then_launch and s.last[index] then
     -- Ended before the rocket was ready (Astra, board #635, twice: a tell ended the wait and --wait read it as done):
     -- nothing launched, said as the outcome.
@@ -10785,6 +10791,22 @@ function M.silo_unpause(index,why,unit)
   end
   return #lines>0 and table.concat(lines,'; ') or nil
 end
+-- A launch wait whose rocket the game launched itself since the wait began (A2): {by_game, cargo, to, tick, stayed, line}.
+function M.game_launched(index,action)
+  local t=action.then_launch
+  local p=M.lookup(index)
+  if not (t and t.position and p) then return nil end
+  local silo=remote_entity(p,{position=t.position})
+  local rec=M.silo.last_launch(silo)
+  if not (rec and rec.tick>=(action.start_tick or 0) and rec.by==nil) then return nil end
+  local inv=silo.get_inventory(defines.inventory.rocket_silo_rocket)
+  local stayed={}
+  for _,c in ipairs(inv and inv.get_contents() or {}) do stayed[#stayed+1]=c.name..'*'..c.count end
+  local left=#stayed>0 and table.concat(stayed,' ') or nil
+  return {by_game=true,tick=rec.tick,to=rec.to,cargo=rec.cargo,stayed=left,
+    line=string.format('the game launched the rocket %d s ago %s with %s (a rocket holding what a platform above asks for goes up on its own, one item type a rocket)%s',
+      math.floor((game.tick-rec.tick)/60),tostring(rec.to or ''),tostring(rec.cargo),left and '; still in the silo for the next rocket: '..left or '')}
+end
 -- A paused load that ended without its launch (A1): the pause ends and the requests stay off.
 function M.silo_keep_off(index,why)
   local lines={}
@@ -10835,39 +10857,22 @@ function handlers.load_silo(p,a)
   -- the silo (Grok d17 16:16: walk with from [chest] and no position failed "position requires x and y" and read as
   -- the from list being wrong): without position, the silos here and the call that works.
   if a.position==nil then error(M.launch_needs_silo(p,a,'load_silo'),0) end
-  -- wait_platform (d17 batch13 A4, Gemini: load_silo with arrived failed while the platform was still on its way):
-  -- the cargo goes into the ready rocket now, recorded for the platform, and launch {wait_platform} launches it when
-  -- the platform is stopped in orbit here. A rocket not ready yet: the load waits for the rocket and the platform as
-  -- load_silo {launch, platform} does, and loads and launches in that tick.
+  -- wait_platform (d17 batch13 A4, Gemini: load_silo with arrived failed while the platform was still on its way): one
+  -- timed call that ends when the rocket launches, or when the platform goes elsewhere. Nothing goes into the rocket
+  -- until the platform is stopped in orbit here; then the load goes in and launches in that tick, as one rocket
+  -- (d17 batch17 A2/A3, Grok 2x on Gleba: the cargo staged in the ready rocket ahead of Swift; when Swift stopped, the
+  -- game launched the rocket itself for Swift's requests, one item type a rocket: bioflux*40 went and the 500 packs
+  -- stayed for the next rocket, and the staged launch wait read launch_started as launch_failed).
   if a.wait_platform~=nil then
     assert(type(a.wait_platform)=='boolean','wait_platform must be true or false')
     local rest={}
     for k,v in pairs(a) do if k~='wait_platform' then rest[k]=v end end
     if not a.wait_platform then return handlers.load_silo(p,rest) end
     assert(a.launch==true and type(a.platform)=='string','wait_platform goes with launch: true and platform (the platform the rocket goes to)')
-    assert(not a.walk and a.from==nil and a.rockets==nil,'wait_platform loads in reach (no walk, from or rockets): it stages the cargo now and launches when the platform is in orbit')
-    local silo=remote_entity(p,{position=a.position})
-    assert(silo.type=='rocket-silo',silo.name..' is not a rocket silo')
-    if silo.rocket_silo_status~=defines.rocket_silo_status.rocket_ready then
-      local out=handlers.load_silo(p,rest)
-      if type(out)=='table' then out.wait_platform='no rocket ready to stage the cargo in: the load waits for the rocket and for '..a.platform..' in orbit, then loads and launches in that tick' end
-      return out
-    end
-    local stage={}
-    for k,v in pairs(rest) do if k~='launch' and k~='auto_requests' and k~='arrived' and k~='orbit' then stage[k]=v end end
-    local paused
-    if a.auto_requests=='pause' then paused=M.silo_pause(p,a,1)
-    elseif a.auto_requests==false then stage.auto_requests=false end
-    local out=handlers.load_silo(p,stage)
-    if type(out)~='table' or out.waiting then return out end
-    out.auto_requests=paused
-    local ok,l=pcall(handlers.launch,p,{position=a.position,platform=a.platform,wait_platform=true,timeout=a.ticks and integer(a.ticks,nil,1,54000,'ticks') or 54000})
-    if ok then
-      out.launch=l
-      out.staged=l and l.launched and 'loaded and launched now: '..a.platform..' was in orbit here'
-        or string.format('loaded into the ready rocket now (recorded for %s); it launches when %s is stopped in orbit here (launch {wait_platform}; a tell does not end that wait)',a.platform,a.platform)
-    else
-      out.staged='loaded into the ready rocket (recorded for '..a.platform..'); the launch wait did not start: '..reason(l)
+    assert(not a.walk and a.from==nil and a.rockets==nil,'wait_platform loads in reach (no walk, from or rockets): it waits for the platform, then loads and launches in one tick')
+    local out=handlers.load_silo(p,rest)
+    if type(out)=='table' then
+      out.wait_platform=string.format('nothing goes into the rocket until %s is stopped in orbit here: then the load goes in and launches in that tick, as one rocket (a rocket holding what a platform above asks for is launched by the game, one item type a rocket); this call ends when it launches, or when %s goes elsewhere (fh --wait follows it)',a.platform,a.platform)
     end
     return out
   end
