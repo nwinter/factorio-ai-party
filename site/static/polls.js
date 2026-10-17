@@ -49,7 +49,10 @@
     return (chat && chat.value.trim()) || store('chatName') || '';
   }
 
-  var data = null, fetchedAt = 0, drafts = {}, changing = {}, notes = {}, sending = {}, pending = {}, opened = {};
+  var data = null, fetchedAt = 0, drafts = {}, changing = {}, notes = {}, sending = {}, pending = {}, opened = {}, pastOpen = {};
+  // a link to /polls/#poll-ID opens that past poll
+  var hashId = /^#poll-(\d+)$/.exec((typeof location !== 'undefined' && location.hash) || '');
+  if (hashId) pastOpen[hashId[1]] = true;
 
   // An option's details (benefits and consequences; viewer LimeLight's idea): a toggle on the card, shown on /polls/.
   function details(p, i) {
@@ -126,16 +129,36 @@
     }
     var open = data.open || [], closed = data.closed || [];
     if (mode === 'card') {
-      // the open polls; with none, the last one closed in the past day, with its result
-      var shown = open.length ? open : closed.filter(function (p) { return data.now - p.closes < 86400; }).slice(0, 1);
-      root.hidden = !shown.length;
-      list.innerHTML = shown.map(function (p) { return pollHtml(p, elapsed); }).join('');
+      // d17 08:30: the card shows open polls only. With none open: one line for a poll closed in the past day
+      // (its winner, a link to the past polls), else nothing.
+      if (open.length) {
+        root.hidden = false;
+        list.innerHTML = open.map(function (p) { return pollHtml(p, elapsed); }).join('');
+        return;
+      }
+      var last = closed.filter(function (p) { return data.now - p.closes < 86400; })[0];
+      root.hidden = !last;
+      list.innerHTML = last ? '<p class="polls-past-line small"><a href="/polls/#past">Past polls</a> <span class="muted">· last: ' +
+        esc(last.question) + ' (' + esc(winner(last)) + ')</span></p>' : '';
       return;
     }
+    // /polls/: open polls in full, then "Past polls", each closed one collapsed to a line (question, when, winner)
     list.innerHTML = '<h2>Open</h2>' + (open.length ? open.map(function (p) { return pollHtml(p, elapsed); }).join('')
       : '<p class="muted">No poll is open right now.</p>') +
-      '<h2>Closed</h2>' + (closed.length ? closed.map(function (p) { return pollHtml(p, elapsed); }).join('')
-      : '<p class="muted">None yet.</p>');
+      '<h2 id="past">Past polls</h2>' + (closed.length ? closed.map(pastHtml).join('') : '<p class="muted">None yet.</p>');
+  }
+
+  // A closed poll's result in words: "won: OPTION", "tie: A / B", or "no votes"
+  function winner(p) {
+    if (!p.total) return 'no votes';
+    var max = Math.max.apply(null, p.counts), top = [];
+    p.options.forEach(function (o, i) { if (p.counts[i] === max) top.push(o); });
+    return (top.length > 1 ? 'tie: ' + top.join(' / ') : 'won: ' + top[0]) + ', ' + max + ' of ' + p.total + (p.total === 1 ? ' vote' : ' votes');
+  }
+  function pastHtml(p) {
+    return '<details class="poll-past" id="poll-' + p.id + '"' + (pastOpen[p.id] ? ' open' : '') + '><summary data-past="' + p.id + '">' +
+      '<span class="poll-past-q">' + esc(p.question) + '</span> <span class="poll-past-meta small muted">closed ' + esc(when(p.closes)) +
+      ' · ' + esc(winner(p)) + '</span></summary>' + pollHtml(p, 0) + '</details>';
   }
 
   function find(id) {
@@ -193,6 +216,8 @@
   }
 
   root.addEventListener('click', function (ev) {
+    var past = closest(ev.target, 'data-past');
+    if (past) { var pid = past.getAttribute('data-past'); pastOpen[pid] = !pastOpen[pid]; return; }  // kept across refreshes
     var art = closest(ev.target, 'data-poll');
     if (!art) return;
     var id = parseInt(art.getAttribute('data-poll'), 10);

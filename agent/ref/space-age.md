@@ -161,3 +161,7 @@
 - `platform_gate {platform?}`: a line a platform: at station, moving or stopped, and the current stop's departure
   conditions with what the hub holds against each.
 - `silo` gives `robots_bringing` (what logistic robots carry or have reserved toward it) and `requesting_for`.
+- `shipment {platform}` (or `{item}` over every platform): per schedule stop its departure conditions, each hub
+  request importing from that planet with its state (delivered, in flight, launched, loading, waiting and the native
+  gate holding it), what the planet's landing pads ask of the hub, and the last visit's pad receipts and spills. A
+  delivery, a spill or a hub_full gate comes once in team.alerts to who launched to the platform and its alert list.

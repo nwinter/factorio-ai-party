@@ -20,6 +20,10 @@ from model import SCIENCE, platform_shot
 STARTING_S = 2.5   # page fade-in; the caster writes its exchange now and speaks on "live"
 ENDED_S = 5.0      # "ended" stays in the snapshot this long, then the segment is gone
 URGENT = ("attack", "death", "loss")
+# The site's address on a share of segment cards (Nick, YouTube chat Oct 14 22:02; d17): a small line at the card's
+# foot, every site_every-th segment that is not a replay (about 4-5 an hour in shift28, so about two lines an hour).
+# It is not in "facts": the casters read those; this is the page's alone.
+SITE = "factorio.nickwinter.net"
 
 TYPES = {
     # Analysis segments are a small card on the main camera, up for about as long as it takes to read (Nick on shake7:
@@ -78,8 +82,10 @@ def human(item):
 class Segments:
     def __init__(self, spacing=180.0, lull_after=360.0, urgent_quiet=20.0, overview_zoom=0.2, spotlight_zoom=0.9,
                  recap_every=1200.0, replay_spacing=90.0, cheap_quiet=180.0, hauling_every=1800.0,
-                 tokens_every=1800.0, efficiency_every=1800.0):
+                 tokens_every=1800.0, efficiency_every=1800.0, site_every=2):
         self.spacing = spacing            # seconds between segment starts, whoever asks
+        self.site_every = max(0, int(site_every))  # 0: never
+        self.site_turn = 0
         # Replays skip `spacing` (replays.py), so they have their own: one start per replay_spacing (shake12: three in
         # 41 s). A single cheap building's loss airs only when no segment has started for cheap_quiet and no fight cut
         # for 60 s; the same loss line airs once in replay_repeat (live.py re-reports a loss: shake12 aired several
@@ -257,6 +263,10 @@ class Segments:
             seg = {"id": f"seg-{next(self.ids)}", "type": kind, "clip": clip, "state": "queued", "seconds": seconds, "title": title,
                    "facts": facts, "by": str(body.get("by") or "caster"), "reason": str(body.get("reason") or ""),
                    "camera": camera, "queued": now}
+            if kind != "attack_replay" and self.site_every:
+                self.site_turn += 1
+                if self.site_turn % self.site_every == 0:
+                    seg["site"] = SITE
             self.queue = seg
             if kind == "recap":
                 self.last_recap = now
@@ -389,6 +399,8 @@ class Segments:
         out = {k: cur[k] for k in ("id", "type", "state", "started", "ends", "title", "facts", "by", "reason")}
         if cur.get("cut"):
             out["cut"] = cur["cut"]
+        if cur.get("site"):
+            out["site"] = cur["site"]
         return out
 
     def camera(self):

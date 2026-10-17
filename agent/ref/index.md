@@ -24,5 +24,6 @@
   `operator`, `poll`, `players`, `vote`, `votes`, `restore`.
 - `space-age`, rockets, platforms, planets, the remote queue lane, spoilage, Gleba: `platforms`, `platform NAME`,
   `platform_create`, `platform_schedule`, `platform_rename`, `platform_endurance`, `platform_supply`, `platform_plan`,
-  `platform_bom`, `platform_production`, `platform_defense`, `circuit_audit`, `platform_gate`, `min_payload`,
-  `launch`, `silo`, `cargo`, `load_silo`, `preflight`, `land`, `drop`, `freight_audit`, `where_is`, `agriculture`.
+  `platform_bom`, `platform_production`, `platform_defense`, `circuit_audit`, `platform_gate`, `shipment`,
+  `min_payload`, `launch`, `silo`, `cargo`, `load_silo`, `preflight`, `land`, `drop`, `freight_audit`, `where_is`,
+  `agriculture`.
