@@ -7,8 +7,9 @@
   hidden comment drops out while its vote counts, a banned voter's vote stops counting, the voter log and the ideas
   need the token, a viewer's idea is checked and never public;
 - static/polls.js in a stub DOM (needs node): the live page's card votes, keeps the choice per browser, shows the
-  results after voting, and says so when the API is down; the /polls/ page lists open and closed polls with comments
-  and sends an idea.
+  results after voting, and says so when the API is down; with no poll open it shows one line linking the past polls
+  (Nick d17 08:30), or nothing after a day; the /polls/ page lists open polls, then past polls collapsed to their
+  question, close time and winner, with results and comments inside, and sends an idea.
 """
 import json, os, shutil, subprocess, sys, tempfile
 
@@ -85,6 +86,9 @@ Date.now = () => clock;
   out.after_ban = await call('GET', '/v1/polls');
   out.banned_vote = await V({ option: 1, name: 'yes fan' }, '192.0.2.3');
   out.banned_chat = await call('POST', '/v1/chat', { name: 'yes fan', text: 'hi' }, { ip: '192.0.2.3' });
+  // void_vote (Nick d17 07:40): Haiku's vote stops counting, in the open poll and once it is closed
+  out.void = await call('POST', '/v1/mod', { action: 'void_vote', id: out.a3.body.vote.id }, tok);
+  out.after_void = await call('GET', '/v1/polls');
   // ideas: checked, rate limited, never public, the operator reads them with the token
   const S = (b, ip) => call('POST', '/v1/polls/suggest', b, { ip });
   out.idea_link = await S({ name: 'idea fan', question: 'Visit www.example.com?', options: ['a', 'b'] }, '192.0.2.17');
@@ -170,6 +174,8 @@ def worker_tests():
     p = o["after_ban"]["body"]["open"][0]
     assert p["counts"] == [1, 0, 2, 1, 0] and p["viewer_total"] == 2 and p["agent_total"] == 2, p
     assert st("banned_vote") == 403 and st("banned_chat") == 403
+    p = o["after_void"]["body"]["open"][0]
+    assert st("void") == 200 and p["counts"] == [1, 0, 1, 1, 0] and p["agent_counts"] == [0, 0, 1, 0, 0] and p["total"] == 3, p
     # ideas
     assert "links" in err("idea_link") and st("idea_one") == 400
     assert st("idea") == 200 and o["idea_again"]["body"].get("repeat") is True
@@ -183,12 +189,14 @@ def worker_tests():
     assert st("timed_out") == 403
     f = o["final"]["body"]
     assert f["open"] == [] and [p["question"] for p in f["closed"]] == ["Two?", poll["question"]], f
-    assert f["closed"][1]["counts"] == [1, 0, 2, 1, 0] and f["closed"][1]["left_s"] == 0
+    assert f["closed"][1]["counts"] == [1, 0, 1, 1, 0] and f["closed"][1]["total"] == 3 and f["closed"][1]["left_s"] == 0  # voided stays out
 
 
 POLLS_JS = r"""
-// static/polls.js in a stub DOM: argv[2] polls.js, argv[3] "card" | "page" | "down". Prints what happened.
+// static/polls.js in a stub DOM: argv[2] polls.js, argv[3] "card" | "card-closed" | "card-old" | "page" | "page-hash" |
+// "down". Prints what happened.
 const mode = process.argv[3];
+global.location = { hash: mode === 'page-hash' ? '#poll-0' : '' };
 const stored = {};
 global.localStorage = { getItem: (k) => (k in stored ? stored[k] : null), setItem: (k, v) => { stored[k] = String(v); } };
 function el(attrs) {
@@ -201,15 +209,15 @@ function el(attrs) {
   return e;
 }
 const list = el({});
-const root = el({ hidden: true, dataset: { mode: mode === 'card' ? 'card' : 'page', api: 'https://api.test' }, kids: { '.polls-list': list } });
+const root = el({ hidden: true, dataset: { mode: mode.startsWith('card') ? 'card' : 'page', api: 'https://api.test' }, kids: { '.polls-list': list } });
 const chatName = el({ value: 'fan_1' });
 const ideaFields = {};
 for (const n of ['name', 'question', 'option1', 'option2', 'option3', 'option4', 'option5', 'option6', 'hours']) ideaFields['[name=' + n + ']'] = el({});
 ideaFields['.poll-idea-note'] = el({});
 const idea = el({ kids: ideaFields });
 global.document = { hidden: false, activeElement: null,
-  getElementById: (id) => (id === 'polls' ? root : id === 'poll-idea' && mode !== 'card' ? idea : null),
-  querySelector: (s) => (s === '#vchat-form [name=name]' && mode === 'card' ? chatName : null) };
+  getElementById: (id) => (id === 'polls' ? root : id === 'poll-idea' && !mode.startsWith('card') ? idea : null),
+  querySelector: (s) => (s === '#vchat-form [name=name]' && mode.startsWith('card') ? chatName : null) };
 global.window = global;
 let realSetInterval = setInterval;
 global.setInterval = () => 0;
@@ -221,6 +229,11 @@ const P1 = { id: 1, question: 'Should the AI team use blueprints made by people?
     { id: 8, t: now - 30, name: 'Grok', option: 0, comment: 'we design our own', agent: true }] };
 const P0 = { id: 0, question: 'Trains or belts?', options: ['Trains', 'Belts'], counts: [5, 2], total: 7, opens: now - 90000,
   closes: now - 3600, created_by: 'operator', status: 'closed', left_s: 0, comments: [{ id: 3, t: now - 7200, name: 'Foobator', option: 1, comment: 'belts forever' }] };
+const PT = { id: 2, question: 'Nauvis or Vulcanus first?', options: ['Nauvis', 'Vulcanus'], counts: [2, 2], total: 4, opens: now - 200000,
+  closes: now - 172800, created_by: 'operator', status: 'closed', left_s: 0, comments: [] };
+const PN = { id: 3, question: 'Name the train?', options: ['Choo', 'Tchoo'], counts: [0, 0], total: 0, opens: now - 300000,
+  closes: now - 259200, created_by: 'operator', status: 'closed', left_s: 0, comments: [] };
+const OLD = Object.assign({}, P0, { closes: now - 2 * 86400 });
 const posts = [];
 let refuse = 1;
 global.fetch = (url, opts) => {
@@ -236,7 +249,9 @@ global.fetch = (url, opts) => {
     }
     return ok({ ok: true });
   }
-  return ok({ schema: 1, now, open: [P1], closed: [P0] });
+  if (mode === 'card-closed') return ok({ schema: 1, now, open: [], closed: [P0, PT] });
+  if (mode === 'card-old') return ok({ schema: 1, now, open: [], closed: [OLD] });
+  return ok({ schema: 1, now, open: [P1], closed: [P0, PT, PN] });
 };
 require(process.argv[2]);
 const out = { posts };
@@ -263,6 +278,8 @@ const click = (attrs) => (root.on.click || []).forEach((f) => f({ target: el({ a
     (idea.on.submit || []).forEach((f) => f({ preventDefault() {} }));
     await tick(20);
     out.idea_note = ideaFields['.poll-idea-note'].textContent; out.idea_cleared = ideaFields['[name=question]'].value;
+    click({ 'data-past': '0' }); (root.on.focusout || []).forEach((f) => f({})); await tick(5);
+    out.past_clicked = list.innerHTML;  // opened by a click, kept open by the next render
   }
   process.stdout.write(JSON.stringify(out), () => process.exit(0));
 })();
@@ -277,7 +294,7 @@ def page_tests():
     with tempfile.TemporaryDirectory() as d:
         js = os.path.join(d, "polls_page.cjs")
         open(js, "w").write(POLLS_JS)
-        for mode in ("card", "page", "down"):
+        for mode in ("card", "card-closed", "card-old", "page", "page-hash", "down"):
             r = subprocess.run(["node", js, os.path.join(SITE, "static", "polls.js"), mode], capture_output=True, text=True, timeout=30)
             assert r.returncode == 0, r.stderr
             outs[mode] = json.loads(r.stdout)
@@ -302,14 +319,36 @@ def page_tests():
     assert "Change my vote" in c["voted"] and json.loads(c["stored"]["pollVotes"]) == {"1": 2}
     assert c["stored"].get("chatName") == "fan_1"
     assert c["changing"].count("data-vote=") == 3 and "is-mine" in c["changing"]
-    # the page: open and closed polls, the closed one's results and comments, escaped
+    # the card with no poll open (Nick d17 08:30): one line, the last poll closed in the past day with its winner and a
+    # link to the past polls; never the closed poll's results or buttons. Older than a day: nothing.
+    cc = outs["card-closed"]["first"]
+    assert outs["card-closed"]["hidden_first"] is False and cc.count("<p") == 1, cc
+    assert cc == ('<p class="polls-past-line small"><a href="/polls/#past">Past polls</a> <span class="muted">· last: '
+                  'Trains or belts? (won: Trains, 5 of 7 votes)</span></p>'), cc
+    assert "poll-results" not in cc and "data-vote" not in cc and "Nauvis" not in cc
+    assert outs["card-old"]["hidden_first"] is True and outs["card-old"]["first"] == "", outs["card-old"]
+    # the page: open polls in full first, then "Past polls", each closed one a collapsed <details> whose summary has the
+    # question, when it closed and the winner (a tie names both; none: no votes); results and comments inside, escaped
     pg = outs["page"]
-    assert "<h2>Open</h2>" in pg["first"] and "<h2>Closed</h2>" in pg["first"] and "POLL CLOSED" in pg["first"], pg["first"]
-    assert '<li class="is-agent"><b>Grok</b> <span class="poll-ai">AI</span>' in pg["first"], pg["first"]
-    assert '<p class="poll-det-text small">Benefits: their own work.</p>' in pg["first"] and "<details" not in pg["first"]
-    assert "belts forever" in pg["first"] and "let them &lt;b&gt;learn&lt;/b&gt;" in pg["first"] and "<b>learn" not in pg["first"]
-    i_closed = pg["first"].index("<h2>Closed</h2>")
-    assert "poll-results" in pg["first"][i_closed:] and "5 · 71%" in pg["first"], pg["first"]
+    f = pg["first"]
+    i_past = f.index('<h2 id="past">Past polls</h2>')
+    assert "<h2>Open</h2>" in f[:i_past] and "Should the AI team" in f[:i_past] and "data-vote=" in f[:i_past], f
+    assert "Trains or belts" not in f[:i_past] and "<h2>Closed</h2>" not in f
+    assert '<li class="is-agent"><b>Grok</b> <span class="poll-ai">AI</span>' in f, f
+    assert '<p class="poll-det-text small">Benefits: their own work.</p>' in f[:i_past] and "<details" not in f[:i_past]
+    assert "let them &lt;b&gt;learn&lt;/b&gt;" in f and "<b>learn" not in f
+    past = f[i_past:]
+    assert past.count('<details class="poll-past"') == 3 and " open>" not in past, past
+    assert ('<details class="poll-past" id="poll-0"><summary data-past="0"><span class="poll-past-q">Trains or belts?</span> '
+            '<span class="poll-past-meta small muted">closed ') in past, past
+    assert "· won: Trains, 5 of 7 votes</span></summary>" in past and "· tie: Nauvis / Vulcanus, 2 of 4 votes</span></summary>" in past
+    assert "· no votes</span></summary>" in past
+    d0 = past[past.index('id="poll-0"'):past.index("</details>")]
+    assert "poll-results" in d0 and "5 · 71%" in d0 and "belts forever" in d0 and "POLL CLOSED" in d0, d0
+    assert '<details class="poll-past" id="poll-0" open>' in pg["past_clicked"] and pg["past_clicked"].count(" open>") == 1
+    # a link to /polls/#poll-0 opens that one
+    ph = outs["page-hash"]["first"]
+    assert '<details class="poll-past" id="poll-0" open>' in ph and '<details class="poll-past" id="poll-2">' in ph, ph
     assert pg["posts"] == [{"url": "https://api.test/v1/polls/suggest", "body": {
         "name": "idea fan", "question": "Trains or belts?", "options": ["Trains", "Belts"], "hours": 6, "cid": pg["posts"][0]["body"]["cid"]}}], pg["posts"]
     assert pg["idea_note"] == "Sent to the operator. Thanks." and pg["idea_cleared"] == ""
@@ -321,8 +360,9 @@ def main():
     worker_tests()
     page_tests()
     print("polls: ok (worker: create with the token, one vote per client replacing the last, chat's rules, hide and ban, "
-          "the voter log and ideas for the operator only, closing early and by the clock; the card and /polls/ page vote, "
-          "keep the choice, show results, send an idea, and say when the API is down)")
+          "a voided vote out of the counts, the voter log and ideas for the operator only, closing early and by the clock; the card "
+          "shows open polls only (else one line to the past polls), /polls/ collapses past polls; vote, keep the choice, show "
+          "results, send an idea, and say when the API is down)")
 
 
 if __name__ == "__main__":
