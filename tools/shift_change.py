@@ -30,7 +30,10 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KEYS = ["POG_BROKER", "POG_FULL_TOOLS", "POG_SPACE_AGE", "POG_YOUTUBE", "POG_CASTER_MODEL", "POG_CASTER_URGENT",
-        "POG_CASTER_LOW_MODEL", "POG_CASTER", "POG_ANALYST", "POG_PLAYERS", "POG_VIEWER_RELAY", "POG_TEAM_FILE"]
+        "POG_CASTER_LOW_MODEL", "POG_CASTER", "POG_ANALYST", "POG_PLAYERS", "POG_VIEWER_RELAY", "POG_TEAM_FILE", "POG_CAMS"]
+# Set in the operator's environment at a shift change, these beat what PREV ran with (POG_CAMS=1 at the Saturday 21:30
+# change for Sunday's one camera, POG_CAMS=3 to go back); the rest carry over from PREV.
+ENV_FIRST = ("POG_CAMS",)
 # A harness fault in a reply ("runtime:8746 attempt to compare number with nil"), not an agent's argument error: those
 # carry the same "runtime.lua:NNN:" position (radius out of range, unknown field, out of reach; shake12 had 20 in 7 min).
 LUA_ERROR = re.compile(r"attempt to (compare|index|call|perform arithmetic|concatenate)|bad argument|stack overflow")
@@ -87,6 +90,10 @@ def team_file(rundir):
 def switches(rundir, ps=ps_args):
     """{KEY: (value, source)} for the switches the run tells."""
     out = {}
+    # 00. The operator's own setting for this change (ENV_FIRST)
+    for k in ENV_FIRST:
+        if os.environ.get(k, "").strip():
+            out[k] = (os.environ[k].strip(), "the environment")
     # 0. The viewer relay's live switch (rm/touch runs/RUN/viewers-relay.on mid-run) beats what the run started with.
     if os.path.exists(os.path.join(rundir, "start.log")) or os.path.exists(os.path.join(rundir, "switches.env")):
         out["POG_VIEWER_RELAY"] = ("1" if os.path.exists(os.path.join(rundir, "viewers-relay.on")) else "0", "viewers-relay.on")

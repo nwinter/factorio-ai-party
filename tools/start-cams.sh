@@ -48,7 +48,9 @@ wait_join() {  # CAM -> 0 once joined, 1 after wait_s
 }
 
 bad=0
-for cam in ${POG_CAMS:-cam1 cam2 cam3}; do  # POG_CAMS: a subset when the box is short of memory (2026-10-14 19:30)
+# POG_CAMS: a count (1-3) or names, a subset when the box is short of memory (2026-10-14 19:30); POG_CAMS=1 is cam1 alone
+# (Sunday 2026-10-18: Nick plays on the box). tools/cams.py reads it for start-team and the stream service too.
+for cam in $(python3 tools/cams.py list); do
   if joined "pog-$cam"; then
     if running "$cam"; then say "$cam: already in the game"; continue; fi
     # 12:00 2026-10-16: right after stop-client the server still lists the player for a few seconds, so this skipped
