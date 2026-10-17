@@ -1439,8 +1439,8 @@ fh queue cancel --args '{"lane":"remote"}'
 
 The remote lane accepts `wait_ticks`; `wait_until` with `platform_arrived`,
 `platform_left` or `researched`, or `item_count` with an explicit platform hub; `drop`, `platform_schedule`, `configure`,
-`circuit_set`, `circuit`, `wire`, `requests` and `flush` with an explicit `platform`;
-and read actions that need no body. `observe` requires `platform` or a scope other
+`circuit_set`, `circuit`, `wire`, `requests` and `flush` with an explicit `platform`; `min_payload` (it names its
+platforms); and read actions that need no body. `observe` requires `platform` or a scope other
 than `craftable` or `sleep_check`. `inventory`, `craftable`, `sleep_check`,
 `dry_run`, `screenshot`, body conditions and body actions are refused. Validation
 names the step or guard path and checks the entire submitted plan before changing
@@ -6610,3 +6610,11 @@ fh watch    # deploy on every change
   line); an entry for that end later in the same batch says `already`. Otherwise the build is refused before anything
   changes, naming the other end, why (`you hold 1 ..., the pair takes 2`, or its distance and your build reach), and a
   tile within reach of both. runtime_test.lua.
+- A4 (Sol): `requests {clear_all}` on a hub, then `set`, dropped every custom minimum payload (small freight then
+  waited for full rockets: plastic 1500, concrete 80, foundry 3, carbon fiber 400), and `min_payload` in a remote lane
+  queue was refused (`action min_payload is not supported in the remote lane`).
+  - A hub keeps the minimum payload of each slot that `clear_all` or `clear` removes, per item and quality. A later
+    `set` of that item without `min_payload` (in the same call or after) takes it again: `stored` says `(min payload N
+    kept from the request cleared before)`. `min_payload: false` in a set entry clears it and forgets it.
+  - The remote lane takes `min_payload` steps (they name their platforms; no body).
+  tests/d17_batch20.lua.

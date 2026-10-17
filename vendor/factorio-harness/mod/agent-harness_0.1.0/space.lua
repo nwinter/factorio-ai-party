@@ -277,8 +277,26 @@ return function(api)
       end
       sec=(a.active~=nil or a.clear_all) and default_section() or nil
       touched=sec
+      -- A hub's custom minimum payloads outlive a clear (d17 batch20 A4, Sol: requests clear_all, then set, and small
+      -- freight waited for full rockets): each cleared slot's is kept per hub and item, and a later set of that item
+      -- without min_payload takes it again; min_payload false forgets it.
+      local mpmem
+      if hub and hub.valid and hub.unit_number and api.state then
+        local st=api.state()
+        st.hub_min_payload=st.hub_min_payload or {}
+        mpmem=st.hub_min_payload[hub.unit_number] or {}
+        st.hub_min_payload[hub.unit_number]=mpmem
+      end
+      local function remember(f)
+        if not (mpmem and f and f.minimum_delivery_count and f.value) then return end
+        local q=f.value.quality
+        mpmem[(f.value.name or '?')..'|'..(type(q)=='table' and q.name or q or 'normal')]=f.minimum_delivery_count
+      end
       if a.active~=nil then sec.active=a.active; changed=true end
-      if a.clear_all then changed=changed or (sec.filters_count or 0)>0; sec.filters={} end
+      if a.clear_all then
+        for _,f in pairs(try(function() return sec.filters end) or {}) do remember(f) end
+        changed=changed or (sec.filters_count or 0)>0; sec.filters={}
+      end
       local sections_touched,seen_sec={},{}
       local function touch(s_) touched=touched or s_; if not seen_sec[s_.index] then seen_sec[s_.index]=true; sections_touched[#sections_touched+1]=s_.index end end
       if sec then touch(sec) end
@@ -292,6 +310,7 @@ return function(api)
         local i,found=slot_of(csec,item_name(name),'normal')
         if found then
           local was=filter_text(csec.get_slot(i),is_hub)
+          remember(csec.get_slot(i))
           csec.clear_slot(i); changed=true
           stored[#stored+1]=name..': cleared'..(was and ' (was '..was..')' or '')
         else stored[#stored+1]=name..': no request to clear in section '..csec.index end
@@ -321,11 +340,16 @@ return function(api)
         -- The minimum payload: the one named (false clears it), else the slot's, as for the import planet.
         local mp,mp_kept=e.min_payload,false
         if mp==nil and old and old.minimum_delivery_count then mp=old.minimum_delivery_count; mp_kept=true end
+        local mkey=name..'|'..quality
+        local mp_back
+        if mp==nil and mpmem and mpmem[mkey] then mp=mpmem[mkey]; mp_back=mp end
+        if mpmem and (e.min_payload~=nil or mp_back) then mpmem[mkey]=nil end
         local was=old and filter_text(old,is_hub)
         ssec.set_slot(i,{value={type='item',name=name,quality=quality,comparator='='},min=min,max=max,import_from=from,minimum_delivery_count=mp or nil}); changed=true
         local now=filter_text(ssec.get_slot(i),is_hub) or name
         stored[#stored+1]=now..max_note..(kept and is_hub and ' (import planet kept: not named in this edit)' or '')
-          ..(mp_kept and ' (min payload kept: not named in this edit)' or '')..(was and was~=now and ' (was '..was..')' or '')
+          ..(mp_kept and ' (min payload kept: not named in this edit)' or '')
+          ..(mp_back and string.format(' (min payload %d kept from the request cleared before)',mp_back) or '')..(was and was~=now and ' (was '..was..')' or '')
       end
       if not touched then touch(default_section()) end
       if #sections_touched>1 then table.sort(sections_touched); others[#others+1]='sections changed: '..table.concat(sections_touched,', ') end
