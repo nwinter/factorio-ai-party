@@ -111,6 +111,27 @@ local exit=belt(4,0,4,'underground-belt','output'); exit.force=mine; entry.neigh
 r=R.plan(p,{from={x=0,y=0},to={x=8,y=0}})
 eq(#r.existing,2); eq(r.route,'E4')
 reset()
+-- A re-run over a line with gaps (d17 batch20 A2, Sonnet): via points on the from chain are passed, one on a standing
+-- line makes the route feed its head and go on from its open end; to on a standing line ends the route at its head.
+for x=0,20 do if x~=3 and x~=12 then belt(x,0,4) end end
+r=R.plan(p,{from={x=0,y=0},via={{x=2,y=0},{x=5,y=0},{x=10,y=0},{x=15,y=0}},to={x=20,y=0}})
+eq(#r.entities,2); eq(at(r,3,0).direction,'east'); eq(at(r,12,0).direction,'east'); eq(r.arrival.mode,'straight')
+eq(r.via_passed[1],'via 1 (2.5,0.5): on the line from from, laid already')
+eq(r.via_passed[2],'via 3 (10.5,0.5): on the standing line joined at via 2')
+eq(r.joined[1],'via 2 (5.5,0.5): our standing line from (4.5,0.5) to (11.5,0.5) (8 tiles) is kept; the route feeds its head (4.5,0.5) and goes on from its open end (12.5,0.5)')
+eq(r.joined[2],'via 4 (15.5,0.5): our standing line from (13.5,0.5) to (20.5,0.5) (8 tiles) is kept; the route feeds its head (13.5,0.5) and the line runs on to to')
+fails(function() R.plan(p,{from={x=0,y=0},via={{x=5,y=0}},to={x=20,y=0},['return']=true}) end,'lay the return line in a call of its own')
+-- Whole: connected, the via points passed.
+belt(3,0,4); belt(12,0,4)
+r=R.plan(p,{from={x=0,y=0},via={{x=5,y=0}},to={x=20,y=0}})
+eq(r.connected,true); eq(r.via_passed[1],'via 1 (5.5,0.5): on the line, laid already')
+reset()
+-- A standing line entered by a curve: its head is the first tile of the curve's feed.
+belt(6,-2,8); belt(6,-1,8); belt(6,0,4); belt(7,0,4); belt(8,0,4)
+r=R.plan(p,{from={x=0,y=-6},via={{x=7,y=0}},to={x=14,y=0}})
+assert(r.joined[1]:find('from (6.5,-1.5) to (8.5,0.5) (5 tiles)',1,true),r.joined[1])
+eq(at(r,6,-2),nil); eq(at(r,6,-3).direction,'south'); eq(at(r,9,0).direction,'east'); assert(at(r,14,0))
+reset()
 -- Only charted ground is used; bad inputs are refused.
 uncharted=1
 fails(function() R.plan(p,{from={x=0,y=0},to={x=40,y=0}}) end,'not charted')

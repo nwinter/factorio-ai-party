@@ -1749,11 +1749,12 @@ function handlers.describe(_,a)
       belt_route={avoid_nests='optional true: route round the worms and spawners the map shows (avoid_enemies 4 unless given); false: lay a line through their reach anyway. Without avoid_nests or avoid_enemies a line whose tiles lie inside a worm\'s range or a spawner\'s 40 tiles is refused, naming them (a dry run lists them in nests_on_route)',cliffs='optional true: pass over cliffs (the ghost marks them, one cliff-explosives each); by default the line goes round them (an underground pair still passes under one)',avoid_enemies='optional true or clearance 0..32 tiles: keep every belt tile and underground span outside charted worms (range + clearance), spawners (40 + clearance) and current attack areas (24 + clearance); true is 8; omitted/false disables; endpoints inside are refused; search margin expands, existing budgets stay',from='{x,y} first belt tile, or a tile in an existing chain to follow to its open end (at most 4096 existing tiles (route.lua CHAIN), listed in existing (over 8: the first and last 3, with existing_count); already connected returns connected=true and zero new tiles); blocked connections name the tile and reason; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
         belt='transport belt entity (default transport-belt); undergrounds of the same tier hop obstacles',undergrounds='default true',lane='left|right: side-load onto this lane of the belt at to (it needs an input from behind)',
         to_direction='free to: last belt direction (default straight on)',dry_run='plan only, place nothing: each belt checked as a place_ghosts dry run checks it, belt_route holds the plan',details='list every entity',
-        via='1..16 {x,y} tiles the line passes in order (each leg from, via points, to is at most 1000 tiles)',
+        via='1..16 {x,y} tiles the line passes in order (each leg from, via points, to is at most 1000 tiles); one on the from chain is passed (via_passed); one on another standing line of ours: the route feeds that line\'s head and goes on from its open end, the line kept (joined); to on it: the route ends at its head',
+        replan='optional true: plan a new line even when you laid one with the same from, via, to, belt and return (by default such a re-run keeps what stands of that line and places what is missing: repair, kept, differs)',
         landfill='true: water and wetland a tile item makes buildable are used too (its tile ghosts are laid under the belts; tiles cost more than going round); default false: never',
         ['return']='true: a second line back beside it, from beside its last belt to beside its first, the other way (return_side left|right of the line, default whichever starts and ends free, right first); it follows the row beside the line, crosses under the line where its side is blocked, and is searched as a line of its own where the row has no way on',
         return_side='left|right (with return)',
-        returns='route (runs like E12 N3, uE5 = underground pair east spanning 5), tiles, items (belts, undergrounds, landfill), missing (vs inventory), arrival {mode straight|curve|side_load|end, lane}, legs (tiles per leg), over_trees_or_plants (tiles whose trees, rocks or wild plants placing marks), landfill {item: tiles}, return {route, tiles, side, from, to, crossings (times it passes under the line), apart (its belts with no belt of the line next to them), short_of (it ends at the nearest tile reached, when its end, within 24 tiles, was not reached within the budget), ...}, cost {placement_checks, expansions}, placed/failed/bounds (construct defaults to them), obstacles_marked, tiles_laid',
+        returns='route (runs like E12 N3, uE5 = underground pair east spanning 5); a re-run of one of your last 4 lines (same from, via, to, belt, return): repair (when laid, how many stand and are missing), kept, differs (standing belts facing otherwise than the line, up to 8), and only the missing tiles placed; via_passed, joined (via points on standing belts); tiles, items (belts, undergrounds, landfill), missing (vs inventory), arrival {mode straight|curve|side_load|end, lane}, legs (tiles per leg), over_trees_or_plants (tiles whose trees, rocks or wild plants placing marks), landfill {item: tiles}, return {route, tiles, side, from, to, crossings (times it passes under the line), apart (its belts with no belt of the line next to them), short_of (it ends at the nearest tile reached, when its end, within 24 tiles, was not reached within the budget), ...}, cost {placement_checks, expansions}, placed/failed/bounds (construct defaults to them), obstacles_marked, tiles_laid',
         note='a weighted search over charted ground within 24 tiles of each leg\'s ends, within 8000 placement checks and 8000 expansions (12000 and 13000 with the return line), at most 2048 belts and undergrounds a call; an end closed in is named after 1000 expansions; trees, rocks and wild plants are passed over (marked, construct mines them) at a small cost, and cliffs too (marked; one cliff-explosives each: cliffs_marked, cliffs_note); buildings and a force\'s own plants never; undergrounds hop anything but lava and empty space; never passes a tile an existing belt outputs into; turns and undergrounds cost extra'},
       pole_route={from='{x,y}',to='{x,y}',waypoints='optional 1..16 {x,y} to pass through, in order (legs <=512 tiles, route <=1024)',item='pole item (default small-electric-pole)',spacing='tiles between poles (default: wire reach minus room for a 2-tile sideways shift: small 7, medium 8, big 29)',dry_run='boolean: plan only; returns positions',
         note='places pole ghosts along straight legs, shifting a blocked spot up to 2 tiles sideways within wire reach, reusing own poles/ghosts already on the line; returns poles, held, short (craft that many), failed (with reasons), bounds; then construct builds it (trees under ghosts are marked and cleared). Each placed pole joins every network in wire reach'},
@@ -1763,7 +1764,7 @@ function handlers.describe(_,a)
         returns='route (runs like E12 N3, uE10 = pipe-to-ground pair east spanning 10), tiles, items, missing (vs inventory), joins {from,to: name, ghost?, position, fluid} for ends joined to an entity (a pipe ghost there is joined as part of its line: name is what it builds, ghost=true), placed/failed/bounds (construct defaults to them), segment_extent (tiles, with joined pipes; a joined ghost line counts as built) and, past the limit, extent_warning + pumps [{position,direction}]',
         note='plain pipe connects on every side, so it never goes where another pipe, machine connection or ghost would connect to it (only at a joined end); pipe-to-ground pairs pass beside or under those, belts and obstacles, never along another underground pipe axis or beneath lava/space; free ends stay plain pipe; refuses an end two entities connect to, a machine with several connections (give the tile), and joining two different known fluids; searches charted ground within 16 tiles around from and to'},
       cargo={silo='optional {x,y} of a rocket silo, with items: dependency {rockets, queued_ahead (your queued launches at it), parts_now, parts_needed, parts_per_min_full_speed, rocket_parts_made_per_min (the surface, last 10 min), parts_ready_in_s, platform_eta_s (to_platform: through its schedule), earliest_s, line}: when the list can go up',to_platform='with silo: the platform the list goes to (its arrival through its schedule)',incoming='optional true: our platforms headed for your planet (planet= another), flying to it or with it in their schedule: platforms [{platform, where, eta_s, eta (through its schedule: the leg it flies, its stops\' waits, the shortest way between stops), hub (its cargo, the largest stacks first), line}], soonest first (limit 1..32, default 8)',planet='with incoming: a planet name',limit='with incoming: 1..32',one_rocket='optional true, with items as a list: one rocket loaded in the list\'s order, each item as many as still fit by weight and slots: items with kg, kg, slots, room_kg, room_slots, left_over (what of the list does not fit), line',top_up='optional item name: after the list, fill the room left with as many of it as fit (implies one_rocket)',items='{name: count} or [{name, count, quality}]: a rocket cargo list (items, not fluids)',position='or a chest, rocket silo (its loaded cargo), landing pad, platform hub, wagon or vehicle in sight: what it holds',platform='optional platform name (a hub or chest there)',returns='lift (kg and cargo slots a rocket), items [{name, quality, count, each_kg, kg, stacks, per_rocket (alone in one rocket: by weight and by slots), share (of a rocket\'s lift)}] heaviest first, total_kg, stacks, fewest (rockets by total weight and stacks), rockets and split [{rocket, kg, slots, items}] (one split: heaviest first, each into the first rocket with room), too_heavy; a read, nothing moves'},
-      conflicts={name='the entity to build (or the item that places it), e.g. pumpjack',position='{x,y} where it would stand (snapped like a build), e.g. a well\'s position',direction='optional compass name or 0..15 (default north)',surface='optional planet name (remote view there)',platform='optional platform name (platform coordinates)',returns='a read, nothing changes: name, position (snapped), footprint; remove [{name, position, kind (ours, ghost, tree or rock, cliff, force NAME), note}]: every entity whose collision meets it there, ours first; resource (under it: a drill\'s mining area, a pumpjack\'s centre tile; yield for wells); fluid (each fluid segment our fluid entities in the way are in: its fluid, what joins them, and whether taking them away splits it: the machines and pipes on each side); power (each of our poles in the way: its network and the wires that go; whether the poles it joined stay joined; a group cut off: its poles, the machines in their supply areas and whether a generator, solar panel or accumulator is among them); unpowered_after (machines no pole\'s supply area covers once they are gone); supplied_by (an electric entity: the pole whose supply area covers it then); line'},
+      conflicts={name='the entity to build (or the item that places it), e.g. pumpjack',position='{x,y} where it would stand (snapped like a build), e.g. a well\'s position',direction='optional compass name or 0..15 (default north)',surface='optional planet name (remote view there)',platform='optional platform name (platform coordinates)',returns='a read, nothing changes: name, position (snapped), footprint; remove [{name, position, kind (ours, ghost, tree or rock, cliff, force NAME), note}]: every entity whose collision meets it there, ours first; tiles [{tile, count, needs (the tile item laid on them that makes them buildable), researched}] and tiles_line: the footprint tiles it cannot stand on (water, oil ocean, lava, space ...; a tile ghost that makes one buildable counts as laid), or the broken tile rule of an entity with tile rules; resource (under it: a drill\'s mining area, a pumpjack\'s centre tile; yield for wells); fluid (each fluid segment our fluid entities in the way are in: its fluid, what joins them, and whether taking them away splits it: the machines and pipes on each side); power (each of our poles in the way: its network and the wires that go; whether the poles it joined stay joined; a group cut off: its poles, the machines in their supply areas and whether a generator, solar panel or accumulator is among them); unpowered_after (machines no pole\'s supply area covers once they are gone); supplied_by (an electric entity: the pole whose supply area covers it then); line'},
       ports={name='entity (or the item that places it), e.g. electromagnetic-plant',position='{x,y} where it would stand (snapped like a build)',direction='north|east|south|west (default north)',recipe='optional recipe: which ports open and the fluid each carries',mirror='optional boolean: the H/V flip of fluid machines',platform='optional platform name (platform coordinates)',returns='ports [{at (the entity tile with the connection), joins (the tile outside it where a pipe joins), direction, flow input|output, fluid, box, there (what stands on joins now)}], closed (ports this recipe closes); a read, nothing is built; inspect of a ghost with a recipe shows the same in fluid_connections (fluid_connections_closed)'},
       dry_run={action='place_ghosts|paste|blueprint_place|build',args='that call\'s arguments (details=true: every entry with its footprint); the same as the call with dry_run=true'},
       place_ghosts={check_inserters='true: the call\'s dry run first; every planned inserter\'s pickup and drop (what stands there), power (a pole\'s supply area, built or planned; a build only) and filters (one that takes none) are checked, and any problem refuses the whole call before anything is placed, naming every inserter that would not work; all good: the call runs and inserter_check lists each inserter [{index, name, position, pickup, drop, filters, power, ok, line: #1 burner-inserter (3.5,4.5) facing north: picks from iron-chest (3.5,5.5), drops into stone-furnace (3,2.5): ok}] (a refusal gives each failing one\'s line, both sides named)',dry_run='boolean: place nothing; check the plan instead (a read: the running action and queue go on): per entity ok or why not (what collides and where, water/lava/out of map/platform empty space), tiles it needs first (landfill, foundation; on a platform also the empty tiles new foundation would enclose), power (wire reach, groups of planned poles with no wire path to a built pole, machines no supply area covers), standing spots that reach every placement, items vs held; inserters [{index, name, position, direction, pickup, drop, missing}]: what stands on each planned inserter\'s pickup and drop point (built, planned in this call, a ghost; or none: the ground, empty space, or what is there that takes no items), missing \'no pickup target\' / \'no drop target\'; inserters_without_target (count); connections and connections_open: each fluid and heat connection of the plan, as build dry_run; cliffs (placeable entries over cliffs: placing marks each, one cliff explosive each; none before cliff explosives are researched) and cliffs_under [{name, position}]: the cliffs the placement marks, as the engine finds them in each entry\'s box',entities='1..256 {name,position,direction? (a compass name or 0..15 as inspect prints),type? input|output for undergrounds,recipe? an assembling machine ghost\'s recipe (checked first, as build checks it; recipes in the reply counts them)} at absolute positions in charted chunks; no items needed; a tile or tile item name (landfill, stone-brick, concrete, space-platform-foundation) makes a tile ghost',ammo='turret ghosts request ammo, which the construction robots that build them bring from the logistic network (2.0 item requests): an ammo item name, {name?, count?}, or false for none; an entities entry\'s own ammo comes first. Default item: of the ammo the turret takes, the one the logistic network there holds most of (none there: the first, firearm-magazine for a gun turret); default count: the turret\'s automated ammo count (10 for a gun turret), at most what its slots hold. Returns ammo_requests [{item, count (each), ghosts, network_holds (what the network at the first holds; none when no network covers it)}]',
@@ -1785,7 +1786,7 @@ function handlers.describe(_,a)
       nearest_water={position='optional centre (default you)',radius='1..256 tiles (default 200)',returns='the nearest tile an offshore pump takes (a tile with a fluid: water, lava, an oil ocean, ammonia) in chunks the map has charted: tile, fluid, position, distance; pump_spots (offshore-pump placements within 12 tiles of it, as placements gives them); checked_chunks, uncharted_chunks; line. Read only'},
       stock={network='optional logistic network number (the networks read numbers them; surface= another): what it holds, largest first, item= one, limit 1..64',surface='optional planet or platform name (default yours), used throughout: with item and no position, that planet\'s whole stock of it as freight_audit counts it (networks, pads, plain chests and landed pods, silos, labs); with position, the places around it there; a platform is read whole',item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128). With item and no radius: total is the whole surface\'s (as with surface alone; within_radius gives the 128-tile total of the places listed); with radius: everything is that circle. covered says what was read, as_of whether a total is live or reused (and how old)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',places='optional "all" with item and no radius: every machine output and chest of ours on the surface holding it, nearest first (to position or you), limit a page; page= the next (page, pages, next say how many)',page='with places "all" (or more places than limit): 1.. the page of places, nearest first',holders='with item: only places of these kinds (provider, storage, requester, buffer, chest, machine, wagon, pad, vehicle; each place says its kind and what robots have reserved there)',quality='default normal',
         returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance; a spoilable item: first_spoils_in (its first stack there), spoiled_percent, within_5_min}; made_by (crafters set to a recipe making it); held (your inventory); summary line (with the first to spoil, or for pentapod-egg and other items that hatch into enemies the first to hatch); hatches_into. Without item each line adds the first to spoil or hatch'},
-      craft={force='boolean: hand-craft even when nearby stock covers it',short='when fewer started than asked: the raw ingredients missing for the rest, each with where the team keeps it (e.g. "iron-plate short 33 (held 7); enough at passive-provider-chest (60.5,33.5) 11 tiles, 200 free": up to 3 places within 128 tiles that can spare it, a requester or buffer chest only over its request; else some; else the logistic networks on your surface), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item; a craft of >=3 s of hand time that stock within 25 tiles of you covers is refused (errors) unless force=true; stock farther off is a note and the craft goes ahead',check_stock='optional true: refuse when stock within 64 tiles covers the craft (as before)',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
+      craft={force='boolean: overrides check_stock; the stock line then has no crafted-anyway part',short='when fewer started than asked: the raw ingredients missing for the rest, each with where the team keeps it (e.g. "iron-plate short 33 (held 7); enough at passive-provider-chest (60.5,33.5) 11 tiles, 200 free": up to 3 places within 128 tiles that can spare it, a requester or buffer chest only over its request; else some; else the logistic networks on your surface), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item (where it is, how much within 25 tiles of you); the craft goes ahead from your inventory',check_stock='optional true: refuse a craft of >=3 s of hand time that stock within 64 tiles covers',returns='started; moved 0, timed (crafts land in your inventory as each finishes), inv (the inventory line, with the products); hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
       rates={recipe='or, with no area or positions: every crafter on your surface (surface= another) set to this recipe, at most 512 (scope says how many)',item='or, with no area or positions: every crafter there set to a recipe making it, with statistics (made and used a minute over 10 min, the game\'s) and only its rows (rows_other counts the rest)',area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',
         returns='rows per item: produced, consumed, net at full speed, by/into machines x count; power produced/consumed; errors (no_recipe, no_fuel, no_power, no_resources, ...)',
         note='Rate Calculator formulas: recipe, crafting speed, modules, beacons, productivity, quality, fuel, drill resources; our machines only'},
@@ -4551,9 +4552,10 @@ function M.rehold_tool(p,action)
   if hold_tool(p,{item=tool}) then action.borrowed_cursor=true end
 end
 end
--- Hand-crafting what our machines already made wastes the character's time:
--- stock of the product within STOCK_RADIUS is stated, and a craft of at least
--- STOCK_REFUSE_S of hand time that the stock covers is refused unless forced.
+-- Stock of the product our machines and chests hold within STOCK_RADIUS is stated with every craft; a player can
+-- always hand-craft from their own inventory, so the craft goes ahead (d17 batch20 A1, Haiku: refused magazines over
+-- 650 in requester chests, which stopped a rearm). check_stock: true (force='check') refuses a craft of at least
+-- STOCK_REFUSE_S of hand time that the stock covers.
 local STOCK_RADIUS,STOCK_REFUSE_S=64,3
 M.STOCK_NEAR=25
 local function craft_stock(p,name,count,force,notes)
@@ -4565,14 +4567,11 @@ local function craft_stock(p,name,count,force,notes)
   if s.total==0 then return end
   local line=stock.line(s)
   local wanted=count*(product.amount or product.amount_max or 1)
-  -- Refused only for stock within M.STOCK_NEAR tiles of you (D9, Gemini 00:20: a craft refused over stock 60 tiles away
-  -- or in another network, which a walk or a robot had to bring); check_stock: true (force='check') counts the 64.
   local near=0
   for _,x in ipairs(s.places) do
     if (x.position.x-p.position.x)^2+(x.position.y-p.position.y)^2<=M.STOCK_NEAR*M.STOCK_NEAR then near=near+x.count end
   end
-  local covers=force=='check' and s.total or near
-  if force~=true and covers>=wanted and (recipe.energy or 0.5)*count/hand_speed(p)>=STOCK_REFUSE_S then
+  if force=='check' and s.total>=wanted and (recipe.energy or 0.5)*count/hand_speed(p)>=STOCK_REFUSE_S then
     local chests={}
     for _,x in ipairs(s.places) do
       local t=x.entity.type
@@ -4581,10 +4580,10 @@ local function craft_stock(p,name,count,force,notes)
       end
     end
     error('not crafted: '..line..(#chests>0 and '; stocked in '..table.concat(chests,'; ') or '')
-      ..(force=='check' and '; (check_stock: true counts stock within '..STOCK_RADIUS..' tiles)' or string.format('; %d of it within %d tiles of you',near,M.STOCK_NEAR))
-      ..'; craft force=true allows hand crafting despite this stock; queue step on_fail: abort (default) pauses the plan, skip continues with the next step, goto:<label> continues at that pending label; skipping does not acquire items',0)
+      ..'; (check_stock: true counts stock within '..STOCK_RADIUS..' tiles)'
+      ..'; craft without check_stock hand-crafts from your inventory; queue step on_fail: abort (default) pauses the plan, skip continues with the next step, goto:<label> continues at that pending label; skipping does not acquire items',0)
   end
-  if s.total>=wanted and force~=true then line=line..string.format(' (crafted anyway: %d of it within %d tiles of you; check_stock: true refuses a craft that stock within %d tiles covers)',near,M.STOCK_NEAR,STOCK_RADIUS) end
+  if s.total>=wanted and force~=true then line=line..string.format(' (crafted from your inventory anyway: %d of it within %d tiles of you; check_stock: true refuses a craft that stock within %d tiles covers)',near,M.STOCK_NEAR,STOCK_RADIUS) end
   notes[product.name]=line
 end
 -- Why a hand craft started fewer than asked: the raw items it runs out of,
@@ -5374,6 +5373,26 @@ local function build_tile(p,a,stack,pos)
   assert(consumed>0,'no tile was placed (blocked or already there)')
   return {consumed=consumed,tile=tile,position={x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5}}
 end
+-- Fast-replacing one end of an underground pair with another tier (d17 batch20 A3, Opus: the pair broke, the belt
+-- stopped with no word): the other end goes too, as a player's fast-replace does, when it is ours, in build reach and
+-- you hold the item for it; else the build is refused naming it. nil when no pair is in question.
+function M.underground_pair(p,place,pos,item,quality)
+  local o
+  for _,e in pairs(p.surface.find_entities_filtered{position=pos,radius=0.1,type='underground-belt',force=p.force}) do
+    if e.valid and e.name~=place.name and e.prototype.fast_replaceable_group==place.fast_replaceable_group then o=e end
+  end
+  if not o then return nil end
+  local ok,other=pcall(function() return o.neighbours end)
+  if not (ok and other and other.valid and other.force==p.force) or other.name==place.name then return nil end
+  local held=p.get_main_inventory().get_item_count{name=item,quality=quality}
+  local d=distance(p.position,other.position)
+  if d<=p.build_distance and held>=2 then return {position=other.position,direction=other.direction,kind=other.belt_to_ground_type,name=other.name} end
+  local mid={x=math.floor((pos.x+other.position.x)/2)+0.5,y=math.floor((pos.y+other.position.y)/2)+0.5}
+  error(string.format('%s (%g,%g) is one end of a pair with %s (%g,%g): a %s does not pair with a %s, so replacing one end alone breaks the belt; %s; build replaces both ends from within %g tiles of both, e.g. from (%g,%g)',
+    o.name,o.position.x,o.position.y,other.name,other.position.x,other.position.y,place.name,other.name,
+    held<2 and string.format('you hold %d %s, the pair takes 2',held,item) or string.format('the other end is %.1f tiles from you, build reach %g',d,p.build_distance),
+    p.build_distance,mid.x,mid.y),0)
+end
 local function build_one(p,a)
   local pos=position(a.position)
   -- A turret out of reach: the refusal lists valid spots within reach toward it (shore.lua).
@@ -5444,6 +5463,11 @@ local function build_one(p,a)
     -- item. A build request must not silently change an occupied crossing.
     if e.valid and e.name==place.name and distance(e.position,pos)<0.1
       and (e.quality and e.quality.name or 'normal')==(a.quality or 'normal') then
+      -- (the other end of a pair an entry before replaced, this tick)
+      local done=state().pair_done
+      if done and done.tick==game.tick and e.unit_number and done[e.unit_number] then
+        return {consumed=0,entity=built_summary(e),already=string.format('%s (%g,%g) was replaced with its pair by an entry before',e.name,e.position.x,e.position.y)},{}
+      end
       error('target already contains this entity; use rotate explicitly or an underground crossing')
     end
     existing[e.unit_number or (e.name..'@'..e.position.x..','..e.position.y)]=true
@@ -5459,7 +5483,24 @@ local function build_one(p,a)
   -- Undergrounds are always placed directly with an explicit end: cursor
   -- building does not reliably make the exit of a pair from script.
   if direct then
+    local pair=place.type=='underground-belt' and M.underground_pair(p,place,pos,a.item,a.quality or 'normal') or nil
     local e,picked,replaced,need=build_direct(p,stack,pos,direction,a.quality or 'normal',a.type,place)
+    if pair then
+      local stack2=p.get_main_inventory().find_item_stack{name=a.item,quality=a.quality or 'normal'}
+      local ok2,e2,_,replaced2,need2=pcall(build_direct,p,stack2,pair.position,pair.direction,a.quality or 'normal',pair.kind,place)
+      if ok2 and e2 then
+        need=need+need2
+        local done=state().pair_done
+        if not done or done.tick~=game.tick then done={tick=game.tick}; state().pair_done=done end
+        if e2.unit_number then done[e2.unit_number]=true end
+        replaced=replaced or {}
+        replaced.pair=string.format('its other end %s (%g,%g) replaced too: %s',pair.name,pair.position.x,pair.position.y,built_summary(e2).belt or e2.name)
+        replaced.pair_contents=replaced2 and replaced2.contents or nil
+      else
+        replaced=replaced or {}
+        replaced.pair=string.format('its other end %s (%g,%g) was not replaced: %s; the pair is broken until it is',pair.name,pair.position.x,pair.position.y,ok2 and 'placement failed' or reason(e2))
+      end
+    end
     local joined=e.type=='electric-pole' and bridge_pole(e) or 0
     local recipe=a.recipe~=nil and M.set_built_recipe(e,a.recipe) or nil
     return {consumed=need,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced,recipe=recipe,snapped=snapped},{e}
@@ -12025,8 +12066,62 @@ function M.belt_nests(p,a,plan)
   end
   return #list>0 and list or nil
 end
+-- The lines belt_route laid, per agent (the last M.ROUTES_KEPT): a re-run with the same from, via, to, belt and return
+-- keeps what stands of the line and places what is missing as ghosts (d17 batch20 A2, Sonnet: a 491-tile line re-run
+-- after it was cut). replan: true plans a new line instead.
+M.ROUTES_KEPT=4
+M.ROUTE_BELT_TYPES={['transport-belt']=true,['underground-belt']=true,splitter=true,loader=true,['loader-1x1']=true,['lane-splitter']=true,['linked-belt']=true}
+function M.route_key(p,a)
+  local parts={p.surface.name,a.belt or 'transport-belt',a['return'] and 'return' or ''}
+  local function add(v) local pos=position(v); parts[#parts+1]=math.floor(pos.x)..','..math.floor(pos.y) end
+  add(a.from)
+  for _,v in ipairs(type(a.via)=='table' and a.via or {}) do add(v) end
+  add(a.to)
+  return table.concat(parts,'|')
+end
+function M.route_repair(p,a,keyed)
+  local kept=state().belt_routes and state().belt_routes[p.index]
+  local mem
+  for _,r in ipairs(kept or {}) do if r.key==keyed then mem=r end end
+  if not mem then return nil end
+  local missing,differs,standing={},{},0
+  for _,e in ipairs(mem.entities) do
+    local x,y=e.position.x,e.position.y
+    local here
+    for _,o in ipairs(p.surface.find_entities_filtered{area={{x-0.1,y-0.1},{x+0.1,y+0.1}},force=p.force}) do
+      local t=o.type=='entity-ghost' and o.ghost_type or o.type
+      if o.valid and M.ROUTE_BELT_TYPES[t] then here=o end
+    end
+    if not here then missing[#missing+1]=e
+    else
+      standing=standing+1
+      local dir=directions[e.direction]
+      if here.direction~=dir and #differs<8 then
+        differs[#differs+1]=string.format('%s at %s faces %s (the line: %s)',here.type=='entity-ghost' and 'ghost of '..here.ghost_name or here.name,M.pathing.at(here.position),
+          M.direction_name(here.direction) or tostring(here.direction),e.direction)
+      end
+    end
+  end
+  local items={}
+  for _,e in ipairs(missing) do items[e.name]=(items[e.name] or 0)+1 end
+  return {entities=missing,items=items,route=mem.route,tiles=#missing,kept=standing,differs=#differs>0 and differs or nil,
+    repair=string.format('the line you laid with these from, via and to %s ago (%d belts and undergrounds): %d stand, %d missing%s; replan: true plans a new line',
+      ago(game.tick-mem.tick),#mem.entities,standing,#missing,#missing>0 and (a.dry_run and ', which a call without dry_run places as ghosts' or ', placed as ghosts') or '')}
+end
 function handlers.belt_route(p,a)
   a=M.belt_args(a)
+  assert(a.replan==nil or type(a.replan)=='boolean','replan must be true or false')
+  local keyed=M.route_key(p,a)
+  local fix=not a.replan and M.route_repair(p,a,keyed)
+  if fix then
+    local nests=M.belt_nests(p,a,fix)
+    if nests and not a.dry_run then
+      error(string.format('the missing tiles lie inside the reach of worms or spawners the map shows: %s; avoid_nests: false lays them anyway',table.concat(nests,'; ')),0)
+    end
+    local out=place_route(p,a,fix,{repair=fix.repair,route=fix.route,tiles=fix.tiles,items=fix.items,kept=fix.kept,differs=fix.differs,nests_on_route=nests})
+    out.obstacles_marked=out.obstacles_marked or nil
+    return out
+  end
   local plan=route.plan(p,a)
   local nests=M.belt_nests(p,a,plan)
   if nests and not a.dry_run then
@@ -12034,8 +12129,18 @@ function handlers.belt_route(p,a)
       table.concat(nests,'; ')),0)
   end
   local out=place_route(p,a,plan,{nests_on_route=nests,route=plan.route,tiles=plan.tiles,items=plan.items,arrival=plan.arrival,extends=plan.extends,existing=plan.existing,connected=plan.connected,avoid_enemies=plan.avoid_enemies,avoidance_waypoints=plan.avoidance_waypoints,
-    legs=plan.legs,over_trees_or_plants=plan.over_trees_or_plants,landfill=plan.landfill,['return']=plan['return'],cost=plan.cost})
+    legs=plan.legs,over_trees_or_plants=plan.over_trees_or_plants,landfill=plan.landfill,['return']=plan['return'],cost=plan.cost,
+    via_passed=plan.via_passed,joined=plan.joined})
   out.obstacles_marked=out.obstacles_marked or nil
+  if not a.dry_run and (out.placed or 0)>0 then
+    local st=state()
+    st.belt_routes=st.belt_routes or {}
+    local list=st.belt_routes[p.index] or {}
+    for i=#list,1,-1 do if list[i].key==keyed then table.remove(list,i) end end
+    list[#list+1]={key=keyed,entities=plan.entities,route=plan.route,tick=game.tick}
+    while #list>M.ROUTES_KEPT do table.remove(list,1) end
+    st.belt_routes[p.index]=list
+  end
   return out
 end
 -- Rails (rails.lua): rail_route plans the 2.0 rail planner's pieces around
@@ -12426,7 +12531,9 @@ end
 -- there, with what stands on that tile now.
 -- What a planned build takes away (conflicts.lua; Sonnet, shift14 21:20: rich sulfuric acid wells under pipes, poles
 -- and tanks): every entity in the way, the resource under it, and the fluid segments and power links taking them cuts.
-M.conflicts=require('conflicts'){compass=compass_names}
+M.conflicts=require('conflicts'){compass=compass_names,
+  tile_fixes=function(surface,force,proto,pos,dir) return M.dryrun.tile_fixes(surface,force,proto,pos,dir) end,
+  tile_rules=function(surface,proto,pos,dir) return (M.placewhy.tile_rules(surface,proto,pos,dir)) end}
 function handlers.conflicts(p,a)
   assert(type(a.name)=='string','name: the entity to build (or the item that places it), e.g. pumpjack')
   local proto=prototypes.entity[a.name]
@@ -12880,7 +12987,8 @@ function handlers.dry_run(p,a)
     elseif action=='belt_route' then
       -- The line (and its return line) as belt_route plans it (route.lua), each belt checked.
       inner=M.belt_args(inner)
-      belt_plan=route.plan(q,inner)
+      -- A re-run of a line laid before: only its missing tiles (route_repair).
+      belt_plan=not inner.replan and M.route_repair(q,{dry_run=true},M.route_key(q,inner)) or route.plan(q,inner)
       belt_plan.nests_on_route=M.belt_nests(q,inner,belt_plan)
       for i,e in ipairs(belt_plan.entities) do plan.entities[i]={index=i,name=e.name,position=e.position,direction=directions[e.direction],type=e.type} end
     elseif kind=='ghosts' then

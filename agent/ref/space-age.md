@@ -104,7 +104,7 @@
   delivery, a spill or a hub_full gate comes once in team.alerts to who launched to the platform and its alert list.
 - `min_payload {platforms?, set?}`: every hub request that imports from a planet: platform, item, asks, holds, the
   custom minimum payload and a full rocket of it by weight. `set: {item: N}` sets that number for those items on those
-  platforms (0 or false clears it), nothing else changed.
+  platforms (0 or false clears it), nothing else changed. It runs in the remote lane too.
   Example: `./fh call min_payload --args '{"platforms":"all","set":{"low-density-structure":50}}'`
 - `launch {position, platform | orbit, wait_ready?, wait_platform?, min_cargo?, arrived?, allow_empty?, cargo_for?,
   surface?}`: launches the silo's rocket to `platform` in orbit of this planet. `wait_ready: true` waits for the

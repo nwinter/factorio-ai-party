@@ -2267,14 +2267,18 @@ crafted=call('craft',{recipe='iron-gear-wheel',count=100})
 eq(crafted.no_assembler['iron-gear-wheel'],'none of our assemblers is set to iron-gear-wheel; one assembling-machine-2 makes these 100 in ~67s without the character')
 assert(crafted.blocks:find('~50s of hand crafting queued (this: ~50s)',1,true),crafted.blocks)
 p.crafting_queue=nil; p.force.recipes['assembling-machine-2']=nil; have['iron-gear-wheel']=4
--- Our machines already hold the product: a covered craft is refused unless forced.
+-- Our machines already hold the product: the craft goes ahead from the inventory and names the stock (d17 batch20
+-- A1); check_stock: true refuses.
 local find_before_stock=p.surface.find_entities_filtered
 local gear_out={get_item_count=function(f) return f.name=='iron-gear-wheel' and 200 or 0 end}
 local gear_machine={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=12,y=5},
   get_output_inventory=function() return gear_out end,get_recipe=function() return {products={{type='item',name='iron-gear-wheel'}}} end}
 p.surface.find_entities_filtered=function(f) return f.radius and {gear_machine} or {} end
 have['iron-gear-wheel']=100
-fails(function() call('craft',{recipe='iron-gear-wheel',count=100}) end,'not crafted: 200 iron-gear-wheel held by our factory (200 in 1 assembling-machine-2); nearest 200 at (12,5) 13 tiles away; collect item=iron-gear-wheel radius=15 gathers it; 200 of it within 25 tiles of you; craft force=true')
+do local near_went=call('craft',{recipe='iron-gear-wheel',count=100})
+eq(near_went.started,100)
+eq(near_went.stock['iron-gear-wheel'],'200 iron-gear-wheel held by our factory (200 in 1 assembling-machine-2); nearest 200 at (12,5) 13 tiles away; collect item=iron-gear-wheel radius=15 gathers it (crafted from your inventory anyway: 200 of it within 25 tiles of you; check_stock: true refuses a craft that stock within 64 tiles covers)') end
+fails(function() call('craft',{recipe='iron-gear-wheel',count=100,check_stock=true}) end,'not crafted: 200 iron-gear-wheel held by our factory (200 in 1 assembling-machine-2); nearest 200 at (12,5) 13 tiles away; collect item=iron-gear-wheel radius=15 gathers it; (check_stock: true counts stock within 64 tiles); craft without check_stock hand-crafts from your inventory')
 -- Existing on_fail: skip continues after a real stock refusal; no chest is
 -- silently drained. Requesters in the journal were feeding other machines.
 ;(function()
@@ -2284,7 +2288,7 @@ fails(function() call('craft',{recipe='iron-gear-wheel',count=100}) end,'not cra
   local chest={valid=true,name='requester-chest',type='logistic-container',position={x=20.5,y=59.5},
     get_inventory=function() return gear_out end}
   p.surface.find_entities_filtered=function(f) return f.radius and {chest} or {} end
-  -- the chest is over 25 tiles away: refused only with check_stock (d16 batch10 D9)
+  -- the chest is over 25 tiles away: refused with check_stock
   local ok,err=pcall(call,'craft',{recipe='iron-gear-wheel',count=100,check_stock=true})
   eq(ok,false);assert(err:find('requester-chest (20.5,59.5) holds 200',1,true),err)
   for _,part in ipairs({'abort (default) pauses','skip continues','goto:<label>','skipping does not acquire items'}) do assert(err:find(part,1,true),err) end
@@ -2296,7 +2300,7 @@ fails(function() call('craft',{recipe='iron-gear-wheel',count=100}) end,'not cra
   eq(gear_out.get_item_count{name='iron-gear-wheel'},200,'stock was only read')
   -- without check_stock the far stock is a note and the craft goes ahead
   local went=call('craft',{recipe='iron-gear-wheel',count=100})
-  eq(went.started,100); assert(went.stock['iron-gear-wheel']:find('crafted anyway: 0 of it within 25 tiles of you',1,true),went.stock['iron-gear-wheel'])
+  eq(went.started,100); assert(went.stock['iron-gear-wheel']:find('crafted from your inventory anyway: 0 of it within 25 tiles of you',1,true),went.stock['iron-gear-wheel'])
   storage.agent_harness.queues,storage.agent_harness.active=oldqueues,oldactive
   p.surface.find_entities_filtered=find
 end)()
@@ -2304,8 +2308,8 @@ local forced=call('craft',{recipe='iron-gear-wheel',count=100,force=true})
 eq(forced.started,100); assert(forced.stock['iron-gear-wheel']:find('200 iron-gear-wheel held',1,true))
 -- A short craft (under 3 s of hand time) goes ahead and just names the stock.
 eq(call('craft',{recipe='iron-gear-wheel',count=2}).started,2)
-local batch_refused=call('craft',{recipes={{recipe='iron-gear-wheel',count=50}}})
-eq(batch_refused.started['iron-gear-wheel'],nil); assert(batch_refused.errors['iron-gear-wheel']:find('not crafted',1,true))
+local batch_went=call('craft',{recipes={{recipe='iron-gear-wheel',count=50}}})
+eq(batch_went.started['iron-gear-wheel'],50); eq(batch_went.errors,nil); assert(batch_went.stock['iron-gear-wheel']:find('crafted from your inventory anyway',1,true))
 -- collect with a radius walks the stock back: here the machine is in reach.
 local gear_slots=inv(stack('iron-gear-wheel',30))
 gear_out.get_item_count=gear_slots.get_item_count
@@ -2943,6 +2947,55 @@ fails(function() call('build',{item='underground-belt',position={x=-5.5,y=-27.5}
 p.controller_type=1; p.position={x=-4,y=-28}; p.get_main_inventory=body.get_main_inventory
 entrance.neighbours=nil
 eq(call('build',{item='underground-belt',position={x=-5.5,y=-27.5},direction='west'}).entity.underground,'output')
+-- Fast-replacing one end of a pair replaces the other end too, in reach with the item for it; else refused naming it
+-- (d17 batch20 A3).
+;(function()
+  local box={left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}
+  local yellow={name='underground-belt',type='underground-belt',fast_replaceable_group='ug',collision_box=box}
+  local fast={name='fast-underground-belt',type='underground-belt',fast_replaceable_group='ug',collision_box=box,max_underground_distance=7}
+  local function ug(x,kind) return {valid=true,name='underground-belt',type='underground-belt',prototype=yellow,position={x=x,y=10.5},direction=4,belt_to_ground_type=kind,force=p.force,unit_number=900+x} end
+  local ents={ug(0.5,'input'),ug(4.5,'output')}
+  ents[1].neighbours=ents[2]; ents[2].neighbours=ents[1]
+  local fs=stack('fast-underground-belt',2); fs.prototype.place_result=fast
+  fs.clear=function() fs.count=0; fs.valid_for_read=false end
+  local inv={find_item_stack=function() return fs.count>0 and fs or nil end,get_item_count=function(f) return f.name=='fast-underground-belt' and fs.count or 0 end}
+  p.get_main_inventory=function() return inv end; body.get_main_inventory=p.get_main_inventory
+  local function near(e,pos,r) return math.abs(e.position.x-pos.x)<=r and math.abs(e.position.y-pos.y)<=r end
+  local find,create,replace=p.surface.find_entities_filtered,p.surface.create_entity,runtime.replace
+  p.surface.find_entities_filtered=function(f)
+    local out={}
+    if f.ghost_name or f.ghost_type or f.type=='item-entity' then return out end
+    for _,e in ipairs(ents) do
+      if e.valid and (not f.name or f.name==e.name) and (not f.type or f.type==e.type) and (f.area and e.position.x>=f.area.left_top.x and e.position.x<=f.area.right_bottom.x
+        and e.position.y>=f.area.left_top.y and e.position.y<=f.area.right_bottom.y or f.position and near(e,f.position,f.radius or 0.1)) then out[#out+1]=e end
+    end
+    return out
+  end
+  p.surface.create_entity=function(a)
+    local e={valid=true,name=a.name,type='underground-belt',prototype=fast,position=a.position,direction=a.direction,belt_to_ground_type=a.type,force=p.force,unit_number=950+#ents}
+    ents[#ents+1]=e; return e
+  end
+  runtime.replace={plan=function() return {} end,settings=function() return nil end,take=function(o) o.valid=false; return {} end,give=function() return nil end}
+  p.position={x=2.5,y=10.5}
+  -- one item only: refused, the other end named
+  fs.count=1
+  fails(function() call('build',{item='fast-underground-belt',position={x=0.5,y=10.5},direction='east',type='input'}) end,
+    'underground-belt (0.5,10.5) is one end of a pair with underground-belt (4.5,10.5): a fast-underground-belt does not pair with a underground-belt, so replacing one end alone breaks the belt; you hold 1 fast-underground-belt, the pair takes 2')
+  fs.count=2
+  local r=call('build',{item='fast-underground-belt',position={x=0.5,y=10.5},direction='east',type='input'})
+  eq(r.consumed,2); eq(ents[1].valid,false); eq(ents[2].valid,false); eq(ents[3].name,'fast-underground-belt'); eq(ents[4].belt_to_ground_type,'output'); eq(ents[4].position.x,4.5)
+  assert(r.replaced.pair:find('its other end underground-belt (4.5,10.5) replaced too',1,true),r.replaced.pair)
+  -- the batch's entry for the other end, after: already done
+  fs.count=1
+  local again=call('build',{item='fast-underground-belt',position={x=4.5,y=10.5},direction='east',type='output'})
+  eq(again.consumed,0); assert(again.already:find('replaced with its pair',1,true))
+  -- out of reach: refused with a spot within reach of both
+  ents={ug(0.5,'input'),ug(4.5,'output')}; ents[1].neighbours=ents[2]; ents[2].neighbours=ents[1]
+  fs.count=2; p.position={x=-4.5,y=10.5}; p.build_distance=6
+  fails(function() call('build',{item='fast-underground-belt',position={x=0.5,y=10.5},direction='east',type='input'}) end,
+    'the other end is 9.0 tiles from you, build reach 6; build replaces both ends from within 6 tiles of both, e.g. from (2.5,10.5)')
+  p.surface.find_entities_filtered,p.surface.create_entity,runtime.replace=find,create,replace
+end)()
 p.controller_type=defines.controllers.remote
 p.physical_controller_type=defines.controllers.remote
 fails(function() call('walk',{direction='east',ticks=1}) end,'living survival character')
@@ -3450,7 +3503,7 @@ local made={ghosts={}}
 p.surface.find_entities_filtered=function(f)
   -- (the search for belts and belt ghosts around the last belt ghost placed: last_belt)
   local out={}
-  if type(f.type)=='table' and f.area and f.area[1] then
+  if (type(f.type)=='table' or f.type==nil) and f.area and f.area[1] then
     for _,g in ipairs(made.ghosts) do
       if g.position.x>=f.area[1][1] and g.position.x<=f.area[2][1] and g.position.y>=f.area[1][2] and g.position.y<=f.area[2][2] then out[#out+1]=g end
     end
@@ -3474,6 +3527,21 @@ local kinds={}
 for _,a in ipairs(made) do if a.type then kinds[#kinds+1]=a.type..'@'..a.position.x end end
 eq(table.concat(kinds,','),'input@2.5,output@5.5')
 eq(routed.last_belt,'transport-belt (6.5,0.5): moves items east to (7.5,0.5); fed from (5.5,0.5)')
+-- A re-run of the same line keeps what stands and places what is missing (d17 batch20 A2).
+do
+  for i,g in ipairs(made.ghosts) do if g.position.x==1.5 then table.remove(made.ghosts,i); break end end
+  local n=#made
+  local dry=call('belt_route',{from={x=0,y=0},to={x=6,y=0},dry_run=true})
+  eq(#made,n); eq(dry.belt_route.tiles,1); eq(dry.belt_route.kept,4); eq(dry.summary,'1 placeable (of 1)')
+  assert(dry.belt_route.repair:find('(5 belts and undergrounds): 4 stand, 1 missing, which a call without dry_run places as ghosts; replan: true plans a new line',1,true),dry.belt_route.repair)
+  local again=call('belt_route',{from={x=0,y=0},to={x=6,y=0}})
+  eq(again.placed,1); eq(#made,n+1); eq(made[#made].position.x,1.5); eq(again.route,'E2 uE3 E1')
+  local whole=call('belt_route',{from={x=0,y=0},to={x=6,y=0}})
+  eq(whole.placed,0); eq(whole.kept,5); eq(#made,n+1)
+  made.ghosts[1].direction=8
+  local turned=call('belt_route',{from={x=0,y=0},to={x=6,y=0}})
+  assert(turned.differs[1]:find('faces south (the line: east)',1,true),turned.differs[1]); made.ghosts[1].direction=4
+end
 p.surface.find_entities_filtered=function() return {} end
 p.surface.create_entity=function(a) made[#made+1]=a; return {valid=true,position=a.position} end
 assert(call('place_ghosts',{entities={{name='transport-belt',position={x=0,y=0},type='input'}}}).failed[1].error:find('underground belts only',1,true))
