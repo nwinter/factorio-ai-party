@@ -93,15 +93,34 @@ return function(api)
     end
     local sec = section_of(hub, rec.group, true)
     local n = try(function() return sec.filters_count end) or 0
+    -- Each item's slot options as they stand (d17 batch12 A0, Sol: the rewrite every 10 s erased the custom minimum
+    -- payload min_payload had set, so small hardware waited for a full rocket): its min_payload and max are kept, the
+    -- request's own min_payload map wins, and a slot already as wanted is not written again.
+    local was = {}
+    for i = 1, n do
+      local f = try(function() return sec.get_slot(i) end)
+      local v = f and f.value
+      local name = v and (type(v.name) == 'string' and v.name or try(function() return v.name.name end))
+      if name then was[name] = {slot=i, min=f.min, max=f.max, mp=f.minimum_delivery_count, from=f.import_from and (type(f.import_from) == 'string' and f.import_from or try(function() return f.import_from.name end))} end
+    end
     for i, it in ipairs(items) do
-      sec.set_slot(i, {value={type='item', name=it.item, quality='normal', comparator='='}, min=it.n, import_from=rec.import_from})
+      local w = was[it.item]
+      local mp = rec.min_payload and rec.min_payload[it.item]
+      if mp == nil and w then mp = w.mp end
+      if mp == false or mp == 0 then mp = nil end
+      it.mp = mp
+      if not (w and w.slot == i and w.min == it.n and w.mp == mp and w.from == rec.import_from) then
+        sec.set_slot(i, {value={type='item', name=it.item, quality='normal', comparator='='}, min=it.n, max=w and w.max or nil,
+          import_from=rec.import_from, minimum_delivery_count=mp})
+      end
     end
     for i = #items + 1, n do pcall(sec.clear_slot, i) end
     local inv = try(function() return hub.get_inventory(defines.inventory.hub_main) end)
     local lines = {}
     for _, it in ipairs(items) do
       local held = inv and try(function() return inv.get_item_count(it.item) end) or 0
-      lines[#lines+1] = string.format('%s: request %d from %s (the ghosts need %d; the hub holds %d)', it.item, it.n, rec.import_from, it.n, held)
+      lines[#lines+1] = string.format('%s: request %d from %s (the ghosts need %d; the hub holds %d)%s', it.item, it.n, rec.import_from, it.n, held,
+        it.mp and string.format('; custom minimum payload %d', it.mp) or '')
     end
     return lines, false
   end
@@ -127,7 +146,20 @@ return function(api)
         areas[#areas+1] = {{lt.x, lt.y}, {rb.x, rb.y}}
       end
     end
-    local rec = {group=group, import_from=from, areas=areas, force=p.force.name, by=api.who and api.who(p) or nil, tick=game.tick}
+    -- min_payload {item: N} (A0): the custom minimum payload of those items' requests (0 or false clears it)
+    local mpmap
+    if a.min_payload ~= nil then
+      assert(type(a.min_payload) == 'table' and a.min_payload[1] == nil, 'min_payload is {item: N, ...} (0 or false clears it)')
+      mpmap = {}
+      for item, n in pairs(a.min_payload) do
+        assert(prototypes.item[item], 'min_payload: unknown item ' .. tostring(item))
+        assert(n == false or (type(n) == 'number' and n == math.floor(n) and n >= 0 and n <= 1000000), 'min_payload ' .. item .. ': 1..1000000, or 0 or false to clear')
+        mpmap[item] = n
+      end
+    end
+    local old = recs[pl.index]
+    if not mpmap and old and old.min_payload then mpmap = old.min_payload end
+    local rec = {group=group, import_from=from, areas=areas, force=p.force.name, by=api.who and api.who(p) or nil, tick=game.tick, min_payload=mpmap}
     recs[pl.index] = rec
     local lines, gone = apply(pl, rec, ghost_need(pl, p.force, areas))
     if gone then recs[pl.index] = nil end
@@ -254,7 +286,8 @@ return function(api)
     returns='lines (the most made first), items [{name, kind, made, used (totals), made_per_min_1m|10m|1h, used_per_min_1m|10m|1h}], where; read only'},
     platform_bom = {platform='platform name',
     request='optional true (A6): keep a hub section of its own (logistic group "platform_bom: NAME") asking for what the platform\'s ghosts still need (import_from, default the planet it is at; area: only the ghosts there), read again every 10 s: lowered as they are built, removed with the last of them; false removes it. Your other requests stay as they are. Returns lines (item: request N from P (the ghosts need N; the hub holds H)), request, group, note',
-    import_from='with request: the planet the items come from (default the one the platform is at)', area='with request: {left_top, right_bottom} or a list: only the ghosts there count',
+    import_from='with request: the planet the items come from (default the one the platform is at)',
+    min_payload='with request: {item: N}: the custom minimum payload of those items\' requests in the section (0 or false clears it); one set by min_payload on the section is kept through the rewrites too', area='with request: {left_top, right_bottom} or a list: only the ghosts there count',
     pack='optional true: the rest still to send split into rockets within a rocket\'s lift and cargo slots, heaviest items first, each into the first rocket with room (pack {rockets, fewest, split [{rocket, kg, slots, items}]}); load_silo {items, launch, platform} takes each rocket\'s list',
     returns='lines (one per item, most still to send first, then the total), items [{item, ghosts_need (what the entity and tile ghosts there need of it), built (entities or tiles of it already built there), hub (held), in_flight (in cargo pods headed for this platform), remaining (need less hub and in flight), asks (the hub\'s active requests)}], entity_ghosts, tile_ghosts, pods_in_flight, remaining_kg, fewest_rockets; module requests on ghosts are not counted. Read only'}}
   return M

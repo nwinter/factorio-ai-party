@@ -10516,7 +10516,8 @@ M.circuits=require('circuits'){entity=entity,remote_entity=remote_entity,friendl
 handlers.circuit_set=M.circuits.handlers.circuit_set
 -- The old name: queued plans and orders call handlers by name (direct calls run as circuit_set, aliases.lua).
 handlers.circuit=handlers.circuit_set
-M.trains=require('trains'){entity=entity,remote_entity=remote_entity,friendly=friendly,integer=integer,on_surface=function(p,name) return M.on_surface(p,name) end}
+M.trains=require('trains'){entity=entity,remote_entity=remote_entity,friendly=friendly,integer=integer,on_surface=function(p,name) return M.on_surface(p,name) end,
+  railbreak=require('railbreak'){}}
 handlers.train=M.trains.handlers.train
 -- Vehicles (vehicles.lua): get in and out, drive a car, send a spidertron.
 M.vehicles=require('vehicles'){entity=entity,friendly=friendly,integer=integer,position=position,distance=distance,assert_visible=assert_visible,
