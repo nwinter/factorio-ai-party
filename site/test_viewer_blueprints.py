@@ -127,6 +127,9 @@ const cases = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8'));
   };
   const out = {};
   const post = (b, ip) => call('POST', '/v1/blueprints', b, { ip });
+  // closed by default since cc91811a (sharing off after poll #1); the rest runs with mod bp_open, then bp_close again
+  out.default_closed = await post({ name: 'Foobator', title: 'Smelter row', string: cases.bp }, '6.6.6.1');
+  out.bp_open = await call('POST', '/v1/mod', { action: 'bp_open' }, { auth: true });
   out.bp = await post({ name: 'Foobator', title: 'Smelter row', string: cases.bp });
   out.book = await post({ name: 'LimeLight', title: 'Aethera', string: cases.book, cid: 'c'.repeat(24) }, '9.9.9.1');
   out.book_again = await post({ name: 'LimeLight', title: 'Aethera', string: cases.book, cid: 'c'.repeat(24) }, '9.9.9.1');
@@ -162,6 +165,8 @@ const cases = JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8'));
   out.hourly = [];
   for (let i = 0; i < 7; i++) { t += 20000; out.hourly.push((await post({ name: 'fan', title: 'n' + i, string: cases.many[i] }, '8.8.8.8')).status); }
   Date.now = realNow;
+  await call('POST', '/v1/mod', { action: 'bp_close' }, { auth: true });
+  out.reclosed = await post({ name: 'fan', title: 'late', string: cases.many[6] }, '6.6.6.2');
   process.stdout.write(JSON.stringify(out));
 })().catch((e) => { console.error(e); process.exit(1); });
 """
@@ -185,6 +190,9 @@ def worker():
                            capture_output=True, text=True, timeout=60)
         assert r.returncode == 0, r.stderr
         o = json.loads(r.stdout)
+    for k in ("default_closed", "reclosed"):
+        assert o[k]["status"] == 403 and "sharing is closed" in o[k]["body"]["error"], (k, o[k])
+    assert o["bp_open"]["status"] == 200, o["bp_open"]
     b = o["bp"]["body"]["blueprint"]
     assert o["bp"]["status"] == 200 and b["kind"] == "blueprint" and b["entities"] == 12 and b["label"] == "Smelter", o["bp"]
     k = o["book"]["body"]["blueprint"]
