@@ -6,7 +6,7 @@ its 5-hour window and ran dry 47 minutes in).
 
 Reads `ai-usage agent --json` (read-only; falls back to its cached ~/.cache/ai-usage/agent-brief.json), maps each team
 member's route to an ai-usage profile, and projects each quota window over the run with the hourly burn in
-agent/quota-burn.tsv times the agents on that profile. Prints one line per profile and window; a line starting
+agent/quota-burn.tsv (or the file POG_QUOTA_BURN names; none: no burn rates) times the agents on that profile. Prints one line per profile and window; a line starting
 "WARNING" for a window likely to run dry before the run ends. Always exits 0: the warnings are for the operator.
 """
 import json
@@ -43,7 +43,10 @@ def load_brief(path=None):
 
 def burn_rates():
     rates = {}
-    for line in open(os.path.join(ROOT, "agent", "quota-burn.tsv")):
+    path = os.environ.get("POG_QUOTA_BURN") or os.path.join(ROOT, "agent", "quota-burn.tsv")
+    if not os.path.isfile(path):
+        return rates   # the public export has no measured rates: only a full window warns
+    for line in open(path):
         if line.strip() and not line.startswith("#"):
             profile, window, rate = line.rstrip("\n").split("\t")
             rates[(profile, window)] = float(rate)

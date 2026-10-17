@@ -13,9 +13,19 @@ return function(api)
     a=a or {}
     if action=='wait_ticks' then return end
     if action=='wait_until' then
-      assert(WAITS[a['until']] or (a['until']=='item_count' and (type(a.platform)=='string' and a.platform~='' or type(a.surface)=='string' and a.surface~=''))
-        or ((a['until']=='produced' or a['until']=='fluid_count' or a['until']=='circuit_signal') and type(a.platform)=='string' and a.platform~=''),
-        'remote lane wait_until supports platform_arrived, platform_left, platform_built, researched, item_count with platform or surface, or produced, fluid_count or circuit_signal with platform')
+      -- (all: every member one the lane takes; Sol, board #874: a fuel and an oxidizer wait together)
+      local function remote_ok(c)
+        if type(c)~='table' then return false end
+        if c['until']=='all' then
+          if type(c.conditions)~='table' or #c.conditions==0 then return false end
+          for _,m in ipairs(c.conditions) do if not remote_ok(m) then return false end end
+          return true
+        end
+        return WAITS[c['until']] or (c['until']=='item_count' and (type(c.platform)=='string' and c.platform~='' or type(c.surface)=='string' and c.surface~=''))
+          or ((c['until']=='produced' or c['until']=='fluid_count' or c['until']=='circuit_signal') and type(c.platform)=='string' and c.platform~='')
+      end
+      assert(remote_ok(a),
+        'remote lane wait_until supports platform_arrived, platform_left, platform_built, researched, item_count with platform or surface, or produced, fluid_count or circuit_signal with platform, and all of those')
       return
     end
     if action=='drop' or action=='platform_schedule' or PLATFORM_WRITES[action] then

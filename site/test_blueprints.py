@@ -120,7 +120,7 @@ def main():
         assert page.count('data-pic="show"') == 1 and "fpsr:load" in page and "<iframe" not in page, page
         home = (out / "index.html").read_text()
         nav = re.search(r'<nav class="site-nav".*?</nav>', home, re.S).group(0)
-        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "Polls", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Blueprints", "Search", "About"], nav
+        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "Polls", "The run", "Agents", "Timeline", "Chronicle", "Chat", "Blueprints", "Search", "How it was made", "About", "GitHub"], nav
     picture_tests()
     print("site blueprints: ok (the library page from the newest shift's copy, strings to copy, linked from the nav; "
           "pictures by FPSR's embed on request, the string to FPSR's iframe only)")

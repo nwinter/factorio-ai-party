@@ -24,8 +24,10 @@
 - `circuit_audit {area | positions | platform}`: with `area` (up to 128x128) or `positions` (1..64), `platform`
   optional: every red and green network those entities are on, by id, each with its signals now (largest first) and
   which of them are on it with their settings, in one call. With `platform` alone: whole-belt readers
-  (`entire_belt_hold`) on one network whose belts overlap (counted twice), and each asteroid collector whose filter the
-  circuit sets: the filter it holds and the chunk signals there.
+  (`entire_belt_hold`) on one network whose belts overlap (counted twice); each whole-belt reader whose read is shorter
+  than the belt in line through it (the game reads the reader's belt segment), with the belts left out upstream and
+  downstream, undergrounds crossed (`short_reads`); and each asteroid collector whose filter the circuit sets: the
+  filter it holds and the chunk signals there.
 - `configure {position | positions, platform? | surface?, recipe?, quality?, modules?, by?, filters?, filter_mode?,
   use_filters?, spoil_priority?, storage_filter?, input_priority?, output_priority?, filter?, priority_targets?,
   ignore_unprioritised?, auto_targeting?, auto_requests?, send_to_orbit_automatically?}`: a machine's or building's
@@ -52,6 +54,14 @@
   - A rocket silo: `auto_requests` and `send_to_orbit_automatically`; with `surface` (a planet) and `position` it acts
     there by remote view where our force sees the chunk.
   Example: `./fh call configure --args '{"position":{"x":23.5,"y":73.5},"recipe":"electronic-circuit"}'`
+- `assembler_batch {position, count, requester?, input?, output?, dry_run?}`: a finite batch of a machine's recipe as one
+  queue plan, each step a call whose reply says what it did: the output inserter held (logistic `PRODUCT < 0`) and the
+  input inserter held; the requester feeding it cleared, then asked for exactly what the batch still needs of each
+  ingredient (crafts x amount less what the machine and the requester hold now); waits for it; requests cleared; the
+  input on; waits for the products in the machine; the input off again; the output released. The requester and both
+  inserters are found round the machine unless given. `surplus` names what is already there over the batch's need
+  (the machine would make more with it). The inserters need a logistic network for their logistic condition.
+  Example: `./fh call assembler_batch --args '{"position":{"x":107.5,"y":-94.5},"count":8,"dry_run":true}'`
 - `requests {position | platform?, set?, clear?, section?, active?, construction_requests?, force?, surface?}`: a
   requester or buffer chest's requests (`position`), a platform hub's (`platform`), or your own (no position; needs
   logistic robotics). `set` takes a list or a map `{item: min}`; an entry without `max` keeps the slot's max (`"max":

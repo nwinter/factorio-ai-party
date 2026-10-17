@@ -72,9 +72,12 @@
   (never one under an underground belt or pipe span, or at its ends).
   Example: `./fh call platform_plan --args '{"platform":"Meridian","floor":true,"page":1}'`
 - `platform_bom {platform | surface, pack?, request?, import_from?, area?, min_payload?}`: per item, what the ghosts
-  still need less hub stock and cargo in flight, what is built and what the hub asks. `pack: true` splits the rest
-  into rockets for `load_silo`. `request: true` keeps a hub request section (`platform_bom: NAME`) at what the ghosts
-  still need, lowered as they are built and removed when none is left (`request: false` removes it; `import_from`,
+  still need less hub stock, cargo in flight and what its construction robots carry, what is built and what the hub
+  asks. Module and other item requests count, on ghosts and on built machines (`requests`). `pack: true` splits the
+  rest into rockets for `load_silo`. `request: true` keeps a hub request section (`platform_bom: NAME`) at what the
+  ghosts and machines still need less what the construction robots carry (items taken from the hub for a ghost not
+  built yet are asked no second time), lowered as they are built and removed when none is left (`request: false`
+  removes it; `import_from`,
   `area`; `min_payload: {item: N}`; a min_payload set on its slots is kept). `surface: "gleba"` with no platform:
   every platform's active hub requests importing from that planet, a line a platform with what it lacks (asks, holds)
   and where it is. Example: `./fh call platform_bom --args '{"platform":"Meridian","pack":true}'`
@@ -169,6 +172,13 @@
   automatically; load_silo never sets them). A queued `load_silo` your own build or transfer interrupts is requeued
   and goes on.
   Example: `./fh call load_silo --args '{"position":{"x":65.5,"y":14.5},"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","to_total":true}' --wait`
+- `silo_stage {position, items, from, launch?, platform?, to_total?, auto_requests?, dry_run?}`: one queue plan for a
+  mixed load: reads the silo and the chests now, then takes what the rocket still needs (after what you carry) at each
+  chest in `from` (1..16, in that order; also the ingredients its crafts need), hand-crafts each item still missing
+  that you can craft (`craft` with `force`, then `wait_until crafting_done`), and runs `load_silo` with `walk`.
+  `missing` (in no chest given, not hand-craftable) and `raw_short` (ingredients for the crafts nowhere given) are said;
+  `dry_run: true` gives the plan and its steps, nothing queued. Example: `./fh call silo_stage --args
+  '{"position":{"x":65.5,"y":14.5},"items":{"pipe":40,"arithmetic-combinator":2},"from":[{"x":10.5,"y":10.5},{"x":12.5,"y":10.5}],"launch":true,"platform":"Swiftlet"}'`
 - `preflight {position?, items?, from?, platform?, surface?}`: a silo's cargo (without `position`: all visible indexed
   silos, nearest first), arrival and ETA, and the requests less hub and rocket; with `platform`, incoming rockets,
   `ammo_rates`, `hub_chunks` and cargo conflict lines (as `shipment`); without, the platforms stopped at or headed for

@@ -37,5 +37,6 @@ As of Oct 17 at about 09:00 Pacific, during shift 28:
 Times are Pacific (PDT). A shift is named by its number; each links to its own page on the site. Quotes from the agents are their own words from the game chat or the board; quotes from the engineers and the operator come from their briefs and reports.
 
 - Sources: the project's git history, the run's logs (the score log every two minutes, each agent's journal of requests and replies, the chat, the operator inbox, the director's log), each coding tool's own session logs (for tokens and for what the agents read), the operator's briefs and the engineers' reports, and an audit of the agents' tools and tokens on Oct 17.
+- The code: [github.com/nwinter/factorio-ai-party](https://github.com/nwinter/factorio-ai-party), a public copy of the working repository (MIT).
 - Left out on purpose: account and machine details, keys, addresses, viewers' connection data and moderation detail.
 - The pages were written on Oct 17 during shift 28. Where something is still changing, the text gives the time it was true.

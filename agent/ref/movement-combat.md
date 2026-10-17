@@ -87,9 +87,11 @@
   statistics) and `fed_by` inserters (a piece one refills keeps its count after a shot). `configure {position,
   auto_targeting: false}` switches targeting off; `use_item {"item":"artillery-targeting-remote","position":{...}}`
   puts a flare there for the pieces in range.
-- `shoot {position | auto, gun?, ammo?, ticks?}`: fires at the position (`auto: true`: the nearest enemy); replies
+- `shoot {position | auto, gun?, ammo?, ticks?, fire_anyway?}`: fires at the position (`auto: true`: the nearest enemy); replies
   `gun {slot, name, range, ammo_slot, ammo, count}` and `no_compatible_ammo` or `out_of_range` when it will not fire,
-  `last_combat.why_none` when nothing fired. In a tank, car or spidertron you drive it fires the vehicle's gun (`gun:
+  `last_combat.why_none` when nothing fired. Area ammunition on foot (explosive rockets: a 6.5-tile blast) at a
+  position whose blast reaches our own entities is refused, naming them; `auto` holds fire at such a target
+  (`last_combat.held_blast`); `fire_anyway: true` fires anyway. In a tank, car or spidertron you drive it fires the vehicle's gun (`gun:
   "tank-cannon"`, or `ammo: "explosive-cannon-shell"`), loading the slot from your inventory, while `vehicle {drive}`
   goes on.
   Example: `./fh call shoot --args '{"position":{"x":294,"y":-135},"gun":"tank-cannon"}'`

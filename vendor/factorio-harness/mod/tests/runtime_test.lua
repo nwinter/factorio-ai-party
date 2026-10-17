@@ -587,6 +587,20 @@ wood.count=5
 local skipped=call('build',{item='wooden-chest',skip_failed=true,builds={{position={x=4,y=0}},{position={x=8,y=0}},{position={x=9,y=0}}}})
 eq(skipped.built,2); eq(skipped.placed[2].x,9.5); eq(#skipped.failed,1); eq(skipped.failed[1].index,2); eq(skipped.failed[1].position.x,8)
 assert(skipped.failed[1].error:find('placement blocked',1,true),skipped.failed[1].error); eq(wood.count,3)
+-- More than 64 entries (d17 batch19 D3, Opus 65 and Sonnet 72, refused): worked in batches of 64, one reply.
+do
+  local list={}
+  for x=-9,9 do for y=-9,9 do
+    if #list<70 and (x*x+y*y)<=81 and not (x==0 and y==0) then list[#list+1]={position={x=x,y=y}} end
+  end end
+  eq(#list,70)
+  wood.count=80
+  local big=call('build',{item='wooden-chest',all=true,builds=list})
+  eq(big.built+#(big.failed or {}),70); eq(big.batches,'70 entries in 2 batches of up to 64, one reply')
+  list[257]=list[1]
+  for i=71,256 do list[i]=list[1] end
+  fails(function() call('build',{item='wooden-chest',builds=list}) end,'builds requires 1..256')
+end
 -- all (Muse, shift13): the same as skip_failed, with each row's item and a summary.
 ;(function()
 wood.count=5
@@ -1969,6 +1983,41 @@ do
   eq(r.gun.slot,1); eq(r.gun.ammo,'firearm-magazine'); eq(r.gun.count,10); eq(r.out_of_range,'pistol reaches 15 tiles; the target is '..string.format('%.1f',math.sqrt((30-p.position.x)^2+p.position.y^2))..' away')
   advance(5)
   p.get_inventory=kept; p.character.selected_gun_index=1
+end
+-- Area ammunition (d17 batch19 D1, Opus: one explosive rocket at a spawner took ~19 of our solar panels and poles): a
+-- shot whose blast at the target reaches ours is refused, naming them; fire_anyway shoots.
+do
+  local GI,AI=defines.inventory.character_guns,defines.inventory.character_ammo
+  prototypes.entity=prototypes.entity or {}
+  prototypes.entity['explosive-rocket']={attack_result={{type='direct',action_delivery={{type='instant',target_effects={{type='nested-result',action={type='area',radius=6.5}}}}}}}}
+  prototypes.item['explosive-rocket']={get_ammo_type=function() return {action={{action_delivery={{type='projectile',projectile='explosive-rocket'}}}}} end}
+  prototypes.item['firearm-magazine'].get_ammo_type=function() return {action={{type='direct',action_delivery={{type='instant',source_effects={{type='create-explosion',radius=5}}}}}}} end
+  eq(runtime.blast_radius('explosive-rocket'),6.5); eq(runtime.blast_radius('firearm-magazine'),nil,'no area')
+  local function slot(name,count) return {valid_for_read=name~=nil,name=name,count=count or 0} end
+  local guns={slot('rocket-launcher'),slot(nil),slot(nil)}
+  local ammo={slot('explosive-rocket',10),slot(nil),slot(nil)}
+  ammo.get_item_count=function() return 10 end; ammo.get_contents=function() return {} end
+  local kept,find=p.get_inventory,p.surface.find_entities_filtered
+  p.get_inventory=function(i) if i==GI then return guns elseif i==AI then return ammo end return kept(i) end
+  p.character.selected_gun_index=1
+  local panels={}
+  for i=1,3 do panels[i]={valid=true,name='solar-panel',type='solar-panel',position={x=6+i,y=2}} end
+  p.surface.find_entities_filtered=function(f) if f.radius and f.force then return panels end return find(f) end
+  fails(function() call('shoot',{position={x=8,y=0},ticks=4}) end,
+    'explosive-rocket bursts 6.5 tiles round where it hits: 3 of ours within its 6.5-tile blast at (8,0): 3 solar-panel (one at (7,2)); nothing fired (fire_anyway: true shoots anyway')
+  local r=call('shoot',{position={x=8,y=0},ticks=4,fire_anyway=true})
+  eq(r.gun.ammo,'explosive-rocket')
+  advance(5)
+  -- auto fire holds at a target whose blast reaches ours, and last_combat says so
+  local scan=runtime.combat_scan
+  runtime.combat_scan=function() return {valid=true,position={x=8,y=0}} end
+  call('shoot',{auto=true,ticks=4})
+  advance(2); eq(p.shooting_state.state,0,'held')
+  advance(4)
+  local lc=call('status').last_combat
+  assert(lc.held_blast and lc.held_blast:find('held fire at explosive-rocket: 3 of ours within its 6.5-tile blast at (8,0)',1,true),tostring(lc.held_blast))
+  runtime.combat_scan=scan
+  p.surface.find_entities_filtered=find; p.get_inventory=kept
 end
 ammo_left=10
 call('detach'); p.connected=false; fails(function() call('walk',{direction='east'}) end,'join a graphical Factorio client')
@@ -4268,7 +4317,7 @@ end)()
   fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=9,y=9}},position={x=1,y=1}}) end,'give area, positions or position: one of them')
   fails(function() call('inspect',{position={x=1.5,y=1.5},types={'container'}}) end,'types goes with area')
   list={far}
-  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}}) end,'no chest or machine of ours with its centre in (0,0)-(64,10) in a chunk our force sees now (1 in chunks it does not')
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}}) end,'no entity of ours with its centre in (0,0)-(64,10) in a chunk our force sees now (1 in chunks it does not')
   list={}
   for i=1,65 do list[i]=chest(i%30+0.5,math.floor(i/30)+0.5,{}) end
   -- over the 64 rows: one shape, a page of entities with by_name beside them (d17 batch13 A3)

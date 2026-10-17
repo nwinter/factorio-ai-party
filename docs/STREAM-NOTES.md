@@ -617,6 +617,45 @@ a battle, a follow, an incoming group, a segment or an agent fighting on air, th
 replay or a trio it is dropped. One cue per agent per `cue_agent_gap` (180 s), cues `cue_gap` (45 s) apart;
 `director: {cues: false}` turns them off. Live: `grep "cue " runs/RUN/stream-service.log`.
 
+### Artillery impacts (2026-10-17, eng/d17-artycam)
+
+Viewer Foobator, 12:48: "if there is only one arty shell in flight and nothing else interesting has happened, can you
+show the impact on screen". A shell leaves at 1 tile a tick (artillery-shell on 2.0.77, no deviation), so it is up at
+most 224 / 60 = 3.7 s, and the main poll (every 3 s) is too slow for it.
+
+- Game side: the operator read `artillery_live` (vendor/factorio-harness/mod/agent-harness_0.1.0/artycam.lua). Our
+  artillery turrets and wagons are found once and kept. A change in the force's count of them finds them again, one
+  surface a read: Nauvis took 14 ms on world n, once. Each read, for each piece loaded with shells:
+  - one find for artillery-projectile within 48 tiles of it (how far a shell flies between reads; 0.11 ms on n);
+  - the shell's target: the enemy spawner or worm on the line from the piece through the shell, from the piece's
+    targets in range, re-read once a minute (2.5 ms on n, 95 nests and worms round Opus's turret at (298.5,-320.5));
+  - when the shell lands, from its distance and speed;
+  - who fired: the agent who last put shells into the piece by hand (hauling.lua's moves), else the piece's
+    `last_user`.
+  A read with no loaded piece costs 0.03 ms. A shell aimed at a spot with no nest or worm (an artillery remote's
+  flare) is left out.
+- Service: serve.py reads `artillery_live` in its own thread. It reads every 0.5 s while a piece is loaded with targets
+  in range, else every 10 s. A new shell wakes the director at once, without waiting for its 1 s tick.
+- Director (onecam.py `maybe_artillery`): the shot is a cut to the target (zoom 0.8) if nothing outranks it and it
+  lands at least `arty_lead` (0.6 s) from now. It is held `arty_after` (4 s) past the impact, then the story it left
+  comes back. More shells landing within `arty_near` (32 tiles) of the target hold it longer, up to `arty_max` (20 s).
+  - Outranked by (the shell is let go): an operator look, platform hold or follow, a key battle, an incoming group, a
+    segment (launches, landings), a replay or the trio, an urgent shot held (a death, a loss), any fight reported
+    within `fight_quiet`, or the agent on air fighting.
+  - At most one artillery shot per `arty_gap` (180 s).
+  - With three clients a standby jumps to the target and the cut waits `ready_s` (1.5 s), shortened to land half a
+    second before the impact (at least 0.2 s); the director steps again then (`next_wake`).
+  - With one client (POG_CAMS=1) the client on air moves at once.
+- Caption (the on-air card's `work` line): "💥 Artillery · Opus's artillery turret (298, -320) → big spitter nest
+  (398, -320), 100 tiles, with 1 medium worm turret".
+- Live: `grep "artillery " runs/RUN/stream-service.log` lists each shell judged: cut, or drop with the reason. Off:
+  `"artillery": false` in the run config's `director`.
+- Tests: tools/stream/test_artycam.py (the cut in time, the label, back to the story, lead and spacing, more shells,
+  outranked, one client, the service) and vendor/factorio-harness/tests/d17_artycam.lua (the read: the loader,
+  target and landing time, one key per shell, the small find, the slow pace when nothing is loaded).
+- Not seen live yet: no piece on world n held shells while this was built (3 turrets on Nauvis, all empty at 13:00).
+  The read needs the harness deploy; until the runtime lists `artillery_live` in `describe`, the service does not ask.
+
 ### Loadout strips: guns, armor, building, what they carry (2026-10-14, eng/loadout)
 
 Nick, 08:55: "Especially when they are in combat, I'd like to see their guns/ammo. This can't be shown all the time,

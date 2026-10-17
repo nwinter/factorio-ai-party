@@ -135,7 +135,7 @@
     const chat = (s.chat || []).filter(Boolean);
     const viewers = (s.viewers || []).filter((v) => v && v.name && v.text).sort((a, b) => (a.t || 0) - (b.t || 0));
     const copies = chat.filter((m) => m.viewer || m.lane === "viewer")
-      .map((m) => ({ ...m, vname: String(m.from || "").replace(/^viewer\s+/i, "") }));
+      .map((m) => ({ ...m, vname: String(m.from || "").replace(/^viewer\s+/i, "").replace(/\s*\(host\)$/, "") }));
     const fresh = (m) => ageOf(s, m) < PIN_S && (m.t || 0) <= now + 5;
     const answers = chat.filter((m) => !m.tell && !m.viewer && m.agent && fresh(m)
       && !["viewer", "log", "notice", "operator"].includes(m.lane));
