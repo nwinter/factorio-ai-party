@@ -1439,8 +1439,8 @@ fh queue cancel --args '{"lane":"remote"}'
 
 The remote lane accepts `wait_ticks`; `wait_until` with `platform_arrived`,
 `platform_left` or `researched`, or `item_count` with an explicit platform hub; `drop`, `platform_schedule`, `configure`,
-`circuit_set`, `circuit`, `wire`, `requests` and `flush` with an explicit `platform`;
-and read actions that need no body. `observe` requires `platform` or a scope other
+`circuit_set`, `circuit`, `wire`, `requests` and `flush` with an explicit `platform`; `min_payload` (it names its
+platforms); and read actions that need no body. `observe` requires `platform` or a scope other
 than `craftable` or `sleep_check`. `inventory`, `craftable`, `sleep_check`,
 `dry_run`, `screenshot`, body conditions and body actions are refused. Validation
 names the step or guard path and checks the entire submitted plan before changing
@@ -1481,12 +1481,12 @@ fh queue repeat --file plan.json
 - `wait_ticks` and `wait_until` are queue steps and also direct timed actions (see Waiting below).
 - A failed step pauses the queue. Use `on_fail` (`abort`, `skip`, `goto:<label>`) and `guards` to handle failures instead.
   `on_fail` is on the step, outside `args`: `{"action":"craft","args":{"recipe":"iron-gear-wheel","count":10},"on_fail":"skip"}`.
-  A stock refusal from `craft` names up to four nearest stocking chests (name, position, count), from its existing
-  64-tile stock check, and states the options: `abort` (default) pauses, `skip` continues, `goto:<label>` continues at
-  that pending label. Skipping acquires no items. `craft {force: true}` permits hand crafting despite factory stock;
-  `transfer {direction: "from_entity", position, item, count}` or `collect` explicitly takes stock. `craft` does not
-  withdraw it from a chest. The existing refusal applies when stock covers the requested product and its hand craft
-  takes at least 3 seconds.
+  `craft` hand-crafts from your inventory whatever stock the factory holds, and names that stock (`stock`). With
+  `check_stock: true` a craft of at least 3 seconds of hand time that stock within 64 tiles covers is refused: the
+  refusal names up to four nearest stocking chests (name, position, count) and states the options: `abort` (default)
+  pauses, `skip` continues, `goto:<label>` continues at that pending label. Skipping acquires no items.
+  `transfer {direction: "from_entity", position, item, count}` or `collect` takes stock; `craft` does not withdraw it
+  from a chest.
 - A step that runs short (outcome `out_of_items`, `nothing_collected` or `inventory_full`, or a transfer's `no ITEM in
   inventory`) is done, not failed, with `"on_short": "skip"` on the step or `"up_to": true` in a `transfer`, `collect`
   or `feed` step's args: its history entry has `ok: true` and `short: true`, and the plan goes on. Other failures
@@ -6637,3 +6637,46 @@ fh watch    # deploy on every change
   storage]}`: each passive provider's 3 reserved plates name their requester (`3 to requester-chest (97.5,41.5)`).
   Reading 1133 robots' queues took 2-3 ms on the copy; the stock read 21-25 ms against 20 ms for the same places with
   nothing reserved. tests/d17_batch18.lua.
+
+## d17 batch20 (operator 15:25: the agents' 15:20 poll)
+- A1 (Haiku): `craft` refused 20 firearm-magazine over 650 in four requester chests (150 within 25 tiles), and a gun
+  with no ammo went without. The rule (runtime.lua craft_stock, d16 batch10 D9) refused a craft of 3 s or more of hand
+  time that stock within 25 tiles covered, unless `force: true`. Now `craft` always hand-crafts from your inventory and
+  says where the stock is (`stock`: the factory's holders, nearest and largest, how much within 25 tiles of you).
+  `check_stock: true` refuses as before over stock within 64 tiles. runtime_test.lua.
+- A2 (Sonnet): a re-run of a 491-tile belt_route after parts of the line were destroyed was refused twice: `via point 1
+  (258.5,-197.5) is taken by our transport-belt`. Two changes:
+  - belt_route remembers each agent's last 4 lines it placed (the planned belts and undergrounds). A call with the
+    same from, via, to, belt and return keeps what stands (a belt or ghost of ours on the tile) and places only the
+    missing tiles as ghosts: `repair` (when it was laid, how many stand, how many are missing), `kept`, `differs` (up
+    to 8 standing belts that face otherwise than the line). A dry run says the same and places nothing.
+    `replan: true` plans a new line.
+  - The planner (route.lua) takes via points on standing belts of ours. One on the from chain is passed already
+    (`via_passed`). One on another standing line: the route feeds that line's head (back along it to the tile nothing
+    feeds: the belt behind, a lone side feed into a curve, an underground exit's entrance) and the next leg starts at
+    its open end; the line stands as it is (`joined`). Later via points on it are passed; `to` on it ends the route at
+    its head. `return` with such a via point is refused (lay the return line in its own call).
+  tests/route.lua, runtime_test.lua.
+- A3 (Opus): fast-replacing underground-belt ends with fast-underground-belt one at a time left pairs of two tiers (a
+  fast-underground-belt does not pair with an underground-belt), and the belt stopped with no word. build replaced one
+  end (replace.lua) and left its partner. Now, as a player's fast replace does, the other end goes too when it is
+  ours, in build reach, and you hold a second item: `consumed: 2`, `replaced.pair` (the other end and its new belt
+  line); an entry for that end later in the same batch says `already`. Otherwise the build is refused before anything
+  changes, naming the other end, why (`you hold 1 ..., the pair takes 2`, or its distance and your build reach), and a
+  tile within reach of both. runtime_test.lua.
+- A4 (Sol): `requests {clear_all}` on a hub, then `set`, dropped every custom minimum payload (small freight then
+  waited for full rockets: plastic 1500, concrete 80, foundry 3, carbon fiber 400), and `min_payload` in a remote lane
+  queue was refused (`action min_payload is not supported in the remote lane`).
+  - A hub keeps the minimum payload of each slot that `clear_all` or `clear` removes, per item and quality. A later
+    `set` of that item without `min_payload` (in the same call or after) takes it again: `stored` says `(min payload N
+    kept from the request cleared before)`. `min_payload: false` in a set entry clears it and forgets it.
+  - The remote lane takes `min_payload` steps (they name their platforms; no body).
+  tests/d17_batch20.lua.
+- A5 (Gemini): `conflicts` said `nothing stands in its way` for steam turbines over Fulgora's shallow oil ocean; build
+  then failed: `placement blocked by tiles: oil-ocean-shallow (needs foundation (not researched) ...)`. conflicts read
+  only entities. It now reads the footprint's tiles with the build refusal's own code (dryrun.tile_fixes: the
+  entity's collision mask against each tile; a tile ghost there that makes it buildable counts as laid): `tiles`
+  [{tile, count, needs, researched}] and `tiles_line`, also at the end of `line`: `nothing stands in its way;
+  steam-turbine cannot stand on 15 tiles of its footprint: oil-ocean-shallow 15 (foundation laid on it makes it
+  buildable; foundation is not researched)`. An entity with tile rules (an asteroid collector) gives the broken rule.
+  tests/d17_batch20.lua.
