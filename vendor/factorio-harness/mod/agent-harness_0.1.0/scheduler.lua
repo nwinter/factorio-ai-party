@@ -666,7 +666,7 @@ return function(api)
       q.pending=items
       q.guards=q.guards or {}
       for _,g in ipairs(new_guards) do q.guards[#q.guards+1]=g end
-      if a.start~=false then q.paused=false end
+      if a.start~=false then q.paused=false; q.held=nil end
       q.submission=string.format('pending replaced: %d dropped, %d queued; the active step goes on',dropped,#items)
       q.revision=q.revision+1
       return with(snapshot(q,RECENT),corrected)
@@ -707,7 +707,7 @@ return function(api)
     q.guards=q.guards or {}
     assert(#q.guards+#new_guards<=MAX_GUARDS,'at most '..MAX_GUARDS..' guards')
     for _,g in ipairs(new_guards) do q.guards[#q.guards+1]=g end
-    if a.start~=false then q.paused=false end
+    if a.start~=false then q.paused=false; q.held=nil end
     q.revision=q.revision+1
     return with(snapshot(q,RECENT),corrected)
   end
@@ -743,7 +743,7 @@ return function(api)
     q.loop=copy_steps(items); q.interval=interval; q.next_cycle_tick=nil; q.cycle=1; q.orders=orders
     q.name=a.name; q.round={counts={},keys={},n=0}; q.round_sig=nil; q.round_news=nil; q.empty_rounds=nil
     q.times=times; q.for_ticks=for_ticks; q.stop_tick=for_ticks and game.tick+for_ticks or nil; q.loop_done=nil; q.condition=a.condition; q.condition_error=nil; q.submission=nil
-    assign(q,items); q.pending=items; q.paused=false; q.revision=q.revision+1
+    assign(q,items); q.pending=items; q.paused=false; q.held=nil; q.revision=q.revision+1
     if met then q.pending={}; q.cycle=0; end_loop(q,"condition met: "..tostring(saw or a.condition["until"])) end
     return with(snapshot(q,RECENT),corrected)
   end
@@ -805,8 +805,23 @@ return function(api)
   end
   function M.handlers.queue_resume(p,a)
     local q=queue(p.index); revision(q,a)
-    q.paused=false; q.revision=q.revision+1
+    q.paused=false; q.held=nil; q.revision=q.revision+1
     return snapshot(q,RECENT)
+  end
+  -- queue_pause (d17 batch16 A4, Sol 2x: a direct transfer requeued the running load_silo, and the queue started it again
+  -- on its own when the transfer ended, inside --wait, in the middle of a maintenance chain): the agent's own pause. The
+  -- running step stops (requeued as any interruption requeues it) and the lane holds until queue_resume, or a submit
+  -- or repeat that starts it; direct calls in between never resume it.
+  function M.handlers.queue_pause(p,a)
+    local q=queue(p.index); revision(q,a)
+    local was=q.current and (q.current.id .. ' ' .. q.current.action)
+    api.stop(p)
+    M.pause(p.index,'paused by you (queue_pause): held until queue_resume; direct calls do not resume it')
+    q.held={tick=game.tick}
+    local out=snapshot(q,RECENT)
+    out.held=string.format('paused by you; %s; queue_resume runs the %d pending step%s', was and was .. ' stopped and requeued at the head' or 'nothing was running',
+      #q.pending, #q.pending==1 and '' or 's')
+    return out
   end
   -- A call timed as its own profile part while the operator profile runs (runtime M.timed; operator 18:12:
   -- scheduler.tick 182 ms in one game second at 17:53); else just the call.
@@ -969,15 +984,16 @@ return function(api)
       id='a pending step\'s job id (queue_status pending, "job-12"): edit, delete or move that step; the active step is never touched',to='with id: move that step to this pending place (1-based)'},
     queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses',expected_revision='optional'},
     queue_resume={expected_revision='optional'},
+    queue_pause={expected_revision='optional',returns='the queue paused by you: the running step stops and goes back to the head of pending; it holds until queue_resume (or a queue_submit or queue_repeat that starts it); direct calls between never resume it (held)'},
     wait_ticks={ticks='1..54000 simulation ticks: a queue step, or a direct timed action (fh call wait_ticks --wait)',pause_queue=PAUSE_QUEUE,
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
-      wake_from='direct call only: 1..16 names (teammates, or operator; fh --wake-from a,b): only a tell or mention from them ends it',wake_on_operator='direct call only: false (fh --no-operator-wake): operator tells and reminder jobs do not end it',wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
+      wake_from='direct call only: 1..16 names (teammates, or operator; fh --wake-from a,b): only a tell or mention from them ends it',wake_local='direct call only: true (fh --wake-local): only tells and mentions to you, urgent news on your surface or in your claims',wake_on_operator='direct call only: false (fh --no-operator-wake): operator tells and reminder jobs do not end it',wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
     wait_until={['until']='no_enemy_structures|no_enemies|units_clear (enemy units only, as no_enemies counts them: worms and spawners stay)|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced|platform_built|platform_ready|all (silo_parts is rocket_parts; all: conditions=[...], met when every one holds; queue_done is a sleep\'s); a queue step, a standing order\'s when, a queue guard\'s when, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw, wait_estimates (ETA/rate basis or no_estimate), idle_s (character idle seconds in this wait), wait_line (one line)',
       position='area predicates: centre (default character); rocket_ready: the rocket silo (any tile of it), met when its rocket is built and ready to launch (saw: rocket state, parts, cargo); rocket_parts: the silo, met when the rocket being built has at_least parts (default all of them; a built rocket, rising or ready, has all of them; while one launches, the next one\'s count; saw: rocket parts N/50 and the silo line)',area='ammo_below/fuel_below: {left_top,right_bottom} up to 256x256, excludes position/radius',radius='1..256 (default 32)',count='ammo_below: per-turret ammo items; fuel_below: fuel items per burner machine (furnaces, drills, boilers, burner inserters, ...)',fraction='health_*: 0..1; damaged: our buildings under this health fraction (default 1: any damage)',
       item='item_count; produced (optional)',platform_built='platform (name): met when no tile ghost (foundation) is left on it; entities: true also no entity ghost; saw: platform NAME: N tile ghosts left (, M entity ghosts); a remote lane wait. With positions (1..512 {x,y}), area and/or tiles (an area or a list), as platform_plan ready takes them: only the entity ghosts at those positions and in area, and the tile ghosts in tiles (platform_ready is the same)',tiles='platform_built/platform_ready: an area or a list: the tile ghosts in them',platform_ready='platform_built for a part of the platform: platform, positions, area, tiles (platform_plan ready\'s subset); met when none of those ghosts is left',entities='platform_built: true also waits for no entity ghost on the platform (default: tile ghosts only)',produced='positions (or position): 1..64 machines of ours; met when they made at_least items of item (crafts times what the recipe makes of it per craft; without item: crafts) since the wait began, by the products-finished counter each machine\'s GUI shows; a wait_until step or a direct wait only (a guard, an order\'s when or a loop condition refuses); saw: made N item (K crafts) in M machines since the wait began',at_least='item_count; produced; rocket_parts: parts 1..required; ghosts_waiting: ghosts (entity and tile) in the area (default 1)',below='item_count',positions='item_count: 1..64 {x,y} of our entities (chests, machines) to count in, summed over all their inventories (a rocket silo\'s rocket cargo too; saw adds each silo\'s rocket state and cargo: the rocket is no item, the item rocket is ammunition); default the character\'s inventory',technology='researched',surface='item_count: a planet (nauvis, ...): with positions, the chests there on that surface (those not in sight of our force now are not counted, said so); alone, what our logistic networks there hold; queues in the remote lane too',platform='item_count: count landed items in the named platform hub main inventory (not incoming cargo or hub trash); no positions or surface; platform_arrived, platform_left: a platform of ours by name; platform_arrived is met while it is stopped at a space location (the platform list shows it there, not on its path or a route); platform_left while it is not (Gemini, 16:50: departure)',location='platform_arrived, platform_left: optional planet name; default any stop',timeout='ticks 1..54000 (default 3600; fh call wait_until --wait takes it from --wait-timeout); timing out fails the step (timed_out)',
       checked='every 10 ticks; enemies count only if known from the chart (units only in visible chunks)',pause_queue=PAUSE_QUEUE,
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
-      wake_from='direct call only: 1..16 names (teammates, or operator; fh --wake-from a,b): only a tell or mention from them ends it',wake_on_operator='direct call only: false (fh --no-operator-wake): operator tells and reminder jobs do not end it',wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
+      wake_from='direct call only: 1..16 names (teammates, or operator; fh --wake-from a,b): only a tell or mention from them ends it',wake_local='direct call only: true (fh --wake-local): only tells and mentions to you, urgent news on your surface or in your claims',wake_on_operator='direct call only: false (fh --no-operator-wake): operator tells and reminder jobs do not end it',wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},
     step_options={min_moved='transfer steps only, integer 1..10000, wait=true: require at least this many reported items moved after completion; otherwise on_fail applies, even with up_to=true or on_short=skip; missing moved count is unknown and fails; no rollback',label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it); a place_ghosts or build step with failed entries (build all=true) fails: reason "place_ghosts: N entries failed (K placed); first: #i NAME (x,y): why", entries_failed N, the entries placed stay',on_short='skip: a step that runs short (out_of_items, nothing_collected, inventory_full, or no item held to give) counts as done (history: short=true) and the plan goes on; up_to=true in a transfer, collect or feed step does the same'},
     guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the plan runs; each fires once, stops the running step',max=MAX_GUARDS}
   }

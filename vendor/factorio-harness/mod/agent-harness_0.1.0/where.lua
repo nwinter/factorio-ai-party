@@ -97,6 +97,37 @@ return function(api)
     return #parts > 0 and table.concat(parts, '; ') or nil
   end
   function M.team(p) return try(function() return line(p) end) end
+  -- Each teammate's character as the map shows it (d17 batch16 B2, Muse: players lists humans only, and a hand-over
+  -- needed a position): name, where (planet, platform or pod), surface, position, and on your surface the distance
+  -- and compass direction; dead and offline marked. Nearest on your surface first, then the rest by name.
+  function M.list(p)
+    local me = place(p.index)
+    local rows = {}
+    for _, a in ipairs(api.agents()) do
+      if a.index ~= p.index and not api.human(a.index) then
+        local w = try(function() return place(a.index) end)
+        if w then
+          local pos = w.position and {x=math.floor(w.position.x * 10 + 0.5) / 10, y=math.floor(w.position.y * 10 + 0.5) / 10}
+          local here = me and w.key == me.key and pos and me.position
+          local d = here and math.sqrt((pos.x - me.position.x) ^ 2 + (pos.y - me.position.y) ^ 2) or nil
+          local tags = {}
+          if w.dead then tags[#tags+1] = 'dead' end
+          if w.offline then tags[#tags+1] = 'offline' end
+          local name = a.display_name or a.name
+          rows[#rows+1] = {name=a.name, display_name=name ~= a.name and name or nil, where=w.text, surface=w.key, position=pos,
+            distance=d and math.floor(d * 10 + 0.5) / 10 or nil, dead=w.dead, offline=w.offline,
+            line=string.format('%s %s%s%s', name, w.text, pos and string.format(' at (%.1f,%.1f)', pos.x, pos.y) or '',
+              (here and ', ' .. bearing(me.position, pos) or '') .. (#tags > 0 and ' (' .. table.concat(tags, ', ') .. ')' or ''))}
+        end
+      end
+    end
+    table.sort(rows, function(x, y)
+      if (x.distance ~= nil) ~= (y.distance ~= nil) then return x.distance ~= nil end
+      if x.distance and y.distance and x.distance ~= y.distance then return x.distance < y.distance end
+      return x.name < y.name
+    end)
+    return rows
+  end
   -- The shift start's teammates line (Nick 12:20: do agents know each other's pronouns? operator 13:05): each other
   -- agent's display name, its pronouns when it set any, and where it is when the team is on more than one planet,
   -- platform or pod: 'teammates: Astra; Gemini (she/her); Grok (they) on Vulcanus'. nil with no teammate.

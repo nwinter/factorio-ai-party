@@ -42,6 +42,8 @@
   hand, by `robot` on their order, `destroyed` by their character or vehicle) with counts and area, their pending
   deconstruction and upgrade orders, and inventory moves of 50 items or more between them and chests or vehicles
   (`took`, `put`). `./fh players NAME` shows one player; `--args '{"minutes":30}'` widens the window (up to 240).
+  Its `teammates` are the other agents' characters as the map shows them: where, position, and on your surface the
+  distance and direction, nearest first.
 - A player's first join puts them in the guest group: no deconstruction or upgrade planners, blueprints (import,
   library or copy), cable cutting, settings paste, fluid flushing, capsules, vehicles, trains, research or rocket
   launches.

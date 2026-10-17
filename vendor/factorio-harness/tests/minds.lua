@@ -207,7 +207,8 @@ r=sol('transfer',{position={x=3.5,y=3.5},from_entity=true,item='copper-plate',co
 eq(r.corrected,'transfer {"count":1,"direction":"to_player","item":"copper-plate","position":{"x":3.5,"y":3.5}} (from_entity=true is direction="to_player")')
 r=sol('transfer',{from_entity={x=3.5,y=3.5},item='copper-plate',count=1})
 eq(r.corrected,'transfer {"count":1,"direction":"to_player","item":"copper-plate","position":{"x":3.5,"y":3.5}} (from_entity={x,y} is direction="to_player" position=...)')
-fails(function() sol('transfer',{position={x=3.5,y=3.5},direction='to_entity',to_player=true,item='copper-plate'}) end,'unknown argument to_player for transfer')
+-- d17 batch16 B2: to_player is a teammate's name now; true is refused, naming direction to_player
+fails(function() sol('transfer',{position={x=3.5,y=3.5},direction='to_entity',to_player=true,item='copper-plate'}) end,'a take into your inventory is direction: "to_player"')
 r=sol('queue_submit',{start=false,steps={{action='transfer',args={to_entity={x=3.5,y=3.5},item='copper-plate'}}}})
 eq(r.corrected[1],'step 1: transfer {"direction":"to_entity","item":"copper-plate","position":{"x":3.5,"y":3.5}} (to_entity={x,y} is direction="to_entity" position=...)')
 sol('queue_cancel',{})

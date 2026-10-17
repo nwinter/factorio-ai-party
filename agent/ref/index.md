@@ -3,7 +3,7 @@
 Each topic, when to read it, and the commands it documents:
 
 - `moving-items`, when you move items by hand or a move comes back `short` or out of reach: `transfer` (give, take,
-  couriers), `collect` (machine outputs), `feed` (ingredients, packs, fuel), `refuel` (burners), `pickup` (belts,
+  couriers, to a teammate by name), `collect` (machine outputs), `feed` (ingredients, packs, fuel), `refuel` (burners), `pickup` (belts,
   ground), `mine` (by hand), `rotate`, `repair`, `inventory`, `craft`, `cancel_craft`.
 - `building`, when you place anything past a few hand builds: `build` (batches, settings, fast replace), `place_ghosts`,
   `construct` (ghosts by hand), `ghosts` (each ghost near you: what it needs, can robots build it), `deconstruct`, `upgrade` (the upgrade planner: ghosts in place), `paste`, `placements` (where it fits), `nearest_water`, `conflicts`, `build_path`,
@@ -11,7 +11,7 @@ Each topic, when to read it, and the commands it documents:
   `outpost` (one tour), `blueprint_save`, `blueprint_capture`, `blueprint_list`, `blueprint_place`, `blueprint_rename`,
   `blueprint_delete` (the team library); landfill, tiles, nuclear.
 - `circuits-settings`, when you wire, set up logistics or configure a machine: `circuit_set` (conditions, combinators),
-  `wire`, `configure` (recipe, modules, filters, priorities, quality), `requests` (logistic and personal).
+  `wire`, `circuit_audit` (networks across entities), `configure` (recipe, modules, filters, priorities, quality), `requests` (logistic and personal).
 - `movement-combat`, when a walk fails, enemies or turrets are involved, you drive or you died: `move_to` (reach, via,
   enemy margins, pockets), `retreat_guard`, `kite`, `recover` (your corpses), `turrets`, `rearm`, `artillery`,
   `shoot`, `use_item` (grenades, capsules), `equip` (gun and ammo slots), `vehicle` (enter, drive, remote),
@@ -22,7 +22,7 @@ Each topic, when to read it, and the commands it documents:
   `danger`, `drill_sites`, `ores`, `stock` (where an item is), `reservations` (a network's robot reservations), `construction_robots`, `shortages` (the factory's
   shortages in one read), `damage_log` (what hit our entities); the factory digest.
 - `waits-queues`, for waits past the sleep and wait basics, or work that repeats: `wait_until` and `sleep --until` conditions,
-  `wait_ticks`, `sleep_check`, `queue_submit` (modes), `queue_status`, `queue_edit`, `queue_cancel`, `queue_repeat`, `plan save`, `plan run`,
+  `wait_ticks`, `sleep_check`, `queue_submit` (modes), `queue_status`, `queue_edit`, `queue_cancel`, `queue_pause`, `queue_repeat`, `plan save`, `plan run`,
   `plan list`, `stop`, `order_set`, `orders`, `order_remove`, `orders_pause`, `orders_resume` (standing orders),
   `reminder_add`, `reminder_ack`, `reminders`; urgent wakes, slow game, harness updates.
 - `team`, when you edit board items or read a `team:` or `team: shift` block or an `OPERATOR:` line: claims, `board projects`, `board_review`, `board_retire`, `lessons`, `lesson_add`, `lesson_edit`, `lesson_verify`, `review`,

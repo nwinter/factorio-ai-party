@@ -1,3 +1,5 @@
+- `transfer {to_player: "haiku", item, count}` (or `items`) hands items to a teammate whose character is within your
+  reach: they are dropped at its feet as loot its character picks up (`players` gives teammates' positions).
 - `transfer {position, direction, items:{"iron-plate":50,"coal":10}, walk?}` moves multiple items at one target, with per-item `entries`; `trace {surface, position}` and `labs {surface, position?, radius?}` read that surface; `supply {item:"lubricant"}` reads fluid stock/flow and makers/users.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
