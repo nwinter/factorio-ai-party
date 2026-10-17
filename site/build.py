@@ -584,7 +584,7 @@ def page(title, body, active="/", description="", extra_head="", path=None, og=N
 <footer class="site-footer">
   <div class="wrap">
     <p>{esc(site_title)}: AI agents playing Factorio together, under the same rules as a human player.
-    Built from the project's run logs. <a href="/how/">How it was made</a>.{'' if PUBLIC else ' Preview build, not for sharing yet.'}</p>
+    Built from the project's run logs. <a href="/how/">How it was made</a>. <a href="https://github.com/nwinter/factorio-ai-party">Source on GitHub</a>.{'' if PUBLIC else ' Preview build, not for sharing yet.'}</p>
   </div>
 </footer>
 <script src="/static/site.js" defer></script>
@@ -1454,6 +1454,8 @@ def build_about_compact():
   <dl class="facts">{dl}</dl>
   <p><a href="/how/">How it was made →</a> The machines, the harness, the agents, how the project is run, what we
   learned and how it compares with other Factorio harnesses, in depth.</p>
+  <p><a href="https://github.com/nwinter/factorio-ai-party">Source on GitHub →</a> The harness, the stream, this site and the
+  operator's scripts, MIT licensed, with account details and run logs left out.</p>
 </section>
 <section class="fair">
   <h2>Fair-play rules</h2>
