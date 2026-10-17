@@ -3147,7 +3147,34 @@ end
 function M.stock_planet_row(p,surface,item)
   return M.supply.reuse('stock_planet|'..p.force.name..'|'..surface.name..'|'..item,function() return M.packaudit.planet_row(p.force,surface,item) end)
 end
-function handlers.platforms(p,a) return space.platforms(p,a) end
+-- eta_to (A2, Sonnet 01:50: waits at the silo for a ship several times a shift): each platform's ETA to that planet
+-- through its schedule (freight.lua before_departure: the leg it flies at its cruise, its stops' waits and what sends
+-- it on, the legs between), or why there is none; a platform there now says so.
+function handlers.platforms(p,a)
+  if a.eta_to==nil then return space.platforms(p,a) end
+  assert(type(a.eta_to)=='string' and prototypes.space_location[a.eta_to],'eta_to is a planet or space location name')
+  local rest={}
+  for k,v in pairs(a) do if k~='eta_to' then rest[k]=v end end
+  local out=space.platforms(p,rest)
+  local lines={}
+  for _,row in ipairs(out.platforms or {}) do
+    local pl
+    for _,each in pairs(p.force.platforms) do if each.valid and each.name==row.name then pl=each end end
+    if pl then
+      local w=M.freight.where(pl)
+      local e
+      if w.stopped and w.at==a.eta_to then e={line='there now ('..w.text..')',eta_s=0}
+      else
+        local ok,est,why=pcall(M.freight.before_departure,pl,a.eta_to)
+        e=ok and est and {line=est.line,eta_s=est.eta_s} or {line='no estimate: '..tostring(ok and why or est)}
+      end
+      row.eta_to={planet=a.eta_to,eta_s=e.eta_s,line=e.line}
+      lines[#lines+1]=string.format('%s (%s): to %s %s',row.name,w.text,a.eta_to,e.line)
+    end
+  end
+  out.eta_to=lines
+  return out
+end
 -- platform {platform | name} as the help's `fh platform NAME` reads (A5, Gemini 21:29: fh call platform was an
 -- unsupported action 14 times in shift25): the platforms read of that one, or of every one.
 function handlers.platform(p,a)
@@ -10574,7 +10601,11 @@ local function place_tile_ghost(p,tile,pos)
     local others={}
     for _,b in ipairs(blockers) do if not b.obstacle then others[#others+1]=b end end
     if #others>0 then error('tile placement blocked by '..table.concat(M.dryrun.blocker_texts({others}),', '),0) end
-    assert(#blockers>0,'tile placement blocked: the game refuses '..tile..' there now')
+    if #blockers==0 then
+      -- in front of an asteroid collector (A5, Astra 01:50): said
+      local why=M.placewhy.collector_ahead(p.surface,p.force,x,y)
+      error('tile placement blocked: the game refuses '..tile..' there now'..(why and ': '..why or ''),0)
+    end
     for _,b in ipairs(blockers) do
       if b.entity.valid and b.entity.order_deconstruction(p.force,real(p)) then marked[#marked+1]=b.entity end
     end
@@ -12387,6 +12418,10 @@ end
 local passive={reminder_add=true,reminder_edit=true,reminder_remove=true,reminder_ack=true,reminder_snooze=true,reminders=true,retreat_guard=true,order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,chronicle=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
 -- circuit_set and wire (circuits.lua) leave the character and its queue alone, as circuit did.
 passive.circuit_set=true; passive.wire=true
+-- Remote platform and hub settings (A0, Sol 01:59: min_payload {platforms, set} paused the body queue's running
+-- wait_until as interrupted, every time): min_payload names its platforms in platforms (M.away reads platform), and
+-- platform_rename; neither touches the character.
+passive.min_payload=true; passive.platform_rename=true
 -- Planners and blueprint tools never drive the character, near or by remote
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.

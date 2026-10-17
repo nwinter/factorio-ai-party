@@ -332,6 +332,47 @@ return function(api)
       end
     end
   end
+  -- A rocket silo (A1, Sonnet 01:50: waits at the silo several times a shift): its rocket parts stalled for SILO_STALL
+  -- ticks short of an ingredient (silo_short.<item>, with what the silo and its feeders hold; silo {position, why: true}
+  -- follows the chain), or a built rocket not launched for SILO_IDLE ticks (silo_ready_idle, with its cargo and the
+  -- platforms above). Per silo in storage (push_silos): when its part count last changed, when it became ready.
+  local SILO_STALL, SILO_IDLE = 7200, 10800
+  local function silo_state(e, s)
+    local st = api.state()
+    st.push_silos = st.push_silos or {}
+    local unit = e.unit_number
+    local m = st.push_silos[unit] or {}
+    st.push_silos[unit] = m
+    local ready = try(function() return e.rocket_silo_status == defines.rocket_silo_status.rocket_ready end)
+    local parts = try(function() return e.rocket_parts end) or 0
+    if m.parts ~= parts then m.parts, m.since = parts, game.tick end
+    if ready then m.ready = m.ready or game.tick else m.ready = nil end
+    if ready and game.tick - m.ready >= SILO_IDLE then
+      local inv = try(function() return e.get_inventory(defines.inventory.rocket_silo_rocket) end)
+      local held = {}
+      for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do if #held < 4 then held[#held+1] = c.name .. '*' .. c.count end end
+      local above = {}
+      local planet = try(function() return s.planet and s.planet.name end) or s.name
+      for _, pl in pairs(e.force.platforms) do
+        if pl.valid and try(function() return pl.space_location and pl.space_location.name end) == planet then above[#above+1] = pl.name end
+      end
+      table.sort(above)
+      return 'silo_ready_idle', string.format('%s %s: rocket ready %d min, not launched; cargo %s; platforms above: %s', e.name, at_text(e.position),
+        math.floor((game.tick - m.ready) / 3600), #held > 0 and table.concat(held, ' ') or 'none', #above > 0 and table.concat(above, ', ') or 'none')
+    end
+    if not ready and e.status == defines.entity_status.item_ingredient_shortage and game.tick - (m.since or game.tick) >= SILO_STALL then
+      local recipe = try(function() return e.get_recipe() end)
+      local input = try(function() return e.get_inventory(defines.inventory.crafter_input or defines.inventory.assembling_machine_input) end)
+      for _, ing in ipairs(recipe and recipe.ingredients or {}) do
+        local have = input and try(function() return input.get_item_count(ing.name) end) or 0
+        if ing.type == 'item' and have < (ing.amount or 1) then
+          local required = try(function() return e.prototype.rocket_parts_required end) or 0
+          return 'silo_short.' .. ing.name, string.format('%s %s: parts %d/%d, no new part for %d min; short of %s (%d in it); silo {position, why: true} follows it',
+            e.name, at_text(e.position), parts, required, math.floor((game.tick - m.since) / 3600), ing.name, have)
+        end
+      end
+    end
+  end
   local function read_list(groups, s, list, from, to, mem, tmem, mining, dmem)
     local st = statuses()
     for i = from or 1, to or #list do
@@ -380,6 +421,9 @@ return function(api)
           if empty and not burning and left <= 0 and temp and temp < HEAT_WARN then
             kind, detail = 'heat_no_fuel', string.format('%s %s: %d C, fuel slot empty', e.name, at_text(e.position), math.floor(temp))
           elseif kind == 'no_fuel' and temp and temp >= HEAT_WARN then kind = nil end
+        elseif e.type == 'rocket-silo' then
+          local sk, sd = silo_state(e, s)
+          if sk then kind, detail = sk, sd end
         elseif e.type == 'fluid-turret' then
           -- all it holds, its own buffer too (flameroil.lua; fluidbox[1] alone reads empty once the pipe drains)
           local amount = try(function() return (flameroil.read(e)) end)
@@ -941,6 +985,12 @@ return function(api)
       return string.format('%s short of ingredients with spoilage in their input near %s%s%s: %s%s', what(g), near_text(g),
         g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '')
+    end
+    -- silo kinds (A1): each silo's line
+    local short_item = g.kind:match('^silo_short%.(.+)$')
+    if short_item or g.kind == 'silo_ready_idle' then
+      return string.format('%s %s%s: %s', short_item and ('rocket silo short of ' .. short_item) or 'rocket ready and not launched',
+        g.surface ~= here and 'on ' .. g.surface or 'here', was and string.format(' (was %d)', was) or '', table.concat(g.lost or {}, '; '))
     end
     if g.kind == 'heat_no_fuel' then
       -- '2 heating-tower out of fuel and under 500 C near (40,12): heating-tower (40.5,12.5): 412 C, fuel slot empty; ...; refuel'

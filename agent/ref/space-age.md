@@ -127,3 +127,6 @@
   `wait_until {until: produced, platform, item, at_least}`. `platform_plan {platform, ready: {positions, area, tiles}}`:
   one subset's missing items, foundation support and settings. A launch to another platform than the cargo was loaded
   for (load_silo `platform`) is refused (`cargo_for: "any"`); `launch {wait_ready, platform}` waits for the platform too.
+- `platforms {eta_to: "vulcanus"}`: each platform's ETA to that planet through its schedule, or why none.
+  `platform_plan {platform, floor: true, page: N}`: the floor entries 256 a page for place_ghosts. Silo alerts:
+  `silo_short.<item>` (parts stalled 2 min) and `silo_ready_idle` (a rocket ready 3 min, not launched).

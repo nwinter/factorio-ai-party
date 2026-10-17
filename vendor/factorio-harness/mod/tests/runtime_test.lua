@@ -5286,4 +5286,8 @@ do
   eq(runtime.reach_ring(p,rt,{}),nil,'nowhere free: none')
   p.position,p.surface=saved,surf
 end
+-- A0 (d17 batch11, Sol 01:59): remote platform and hub settings leave the body queue running.
+eq(runtime.keeps('min_payload',{platforms='Meridian',set={calcite=50}}),true)
+eq(runtime.keeps('platform_rename',{platform='Wren',name='Wren II'}),true)
+eq(runtime.keeps('build',{position={x=1,y=1},item='iron-chest'}),false,'a body action still takes over')
 print('runtime: '..assertions..' assertions passed')
