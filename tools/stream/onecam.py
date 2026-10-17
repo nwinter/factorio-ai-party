@@ -353,6 +353,8 @@ def onair_info(snap, cams):
 class OneCam(Director):
     def __init__(self, slots, sender, log_path, **tuning):
         tuning = dict(ONECAM, **{k: v for k, v in tuning.items() if v is not None})
+        if len(slots) < 3:
+            tuning["trio"] = False  # three tiles need three clients (POG_CAMS=1: one camera, Sunday 2026-10-18)
         super().__init__(slots, sender, log_path, **tuning)
         self.cfg["side_scale"] = self.cfg["main_scale"]  # every client may go on air: framed the same
         self.onair = slots[0]["slot"] if slots else None
@@ -471,6 +473,22 @@ class OneCam(Director):
                                     "target": cur and {k: cur[k] for k in ("agents", "zoom") if k in cur}}) + "\n")
         who = "+".join(cur["agents"]) if cur and cur.get("agents") else (cur or {}).get("subject", "-")
         print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} ON AIR {slot}: {who}  <- {reason}", flush=True)
+
+    def retarget(self, target, reason, scores, now):
+        """One client (POG_CAMS=1, Sunday 2026-10-18): no standby to frame on, so a cut moves the client on air to the
+        new subject at once (a jump, as a standby's framing would) and counts as a program cut."""
+        slot = self.slot(self.onair)
+        self.apply(slot, dict(target, jump=True, since=now, framed=now), reason, scores, now)
+        self.onair_since = self.last_program_cut = now
+        self.cuts.append((now, slot["slot"], reason))
+        if self.log_path:  # the program row a cut between clients writes (simulate.py and the logs read both alike)
+            with open(self.log_path, "a") as f:
+                f.write(json.dumps({"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)),
+                                    "slot": "program", "reason": f"move {slot['slot']}: {reason}",
+                                    "target": {k: target[k] for k in ("agents", "zoom") if k in target}}) + "\n")
+        who = "+".join(target.get("agents") or []) or target.get("subject", "-")
+        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} ON AIR {slot['slot']}: {who}  <- {reason} "
+              f"(one client: moved)", flush=True)
 
     def frame_on(self, slot, target, reason, scores, now):
         """Send a shot to a standby client: off air, so it jumps there (no easing) and the cut can follow at once."""
@@ -2325,11 +2343,19 @@ class OneCam(Director):
             if resumed:
                 self.resume = None
                 self.onair_since = max(resumed["since"], now - self.cfg["onair_dwell"] + self.cfg["resume_min"])
-        elif want and not nxt and need:  # one client only: retarget it on air
-            z = self.zoom_for(by_name[want], self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]
-            self.apply(self.slot(self.onair), {"agents": [want], "follow": want, "zoom": z, "solo_zoom": z,
-                                               "subject": want, "since": now}, "initial", scores, now)
-            self.onair_since = now
+        elif want and not nxt:  # one client only (POG_CAMS=1): the cut is a jump of the client on air to the subject
+            fit = self.plan_zoom(by_name[want])
+            z = fit or self.zoom_for(by_name[want], self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]
+            shot = {"agents": [want], "follow": want, "zoom": z, "solo_zoom": z, "subject": want}
+            if fit:
+                shot.update(exact_zoom=True, plan_fit=fit)
+            why = reason if not need else f"back to {want}" if resumed else floor_reason if floor_reason \
+                and self.balance_surface(by_name.get(want)) == due["surface"] else \
+                (f"{subj} unavailable" if subj else "initial") + self.surface_note(want, by_name)
+            self.retarget(shot, why, scores, now)
+            if resumed:
+                self.resume = None
+                self.onair_since = max(resumed["since"], now - self.cfg["onair_dwell"] + self.cfg["resume_min"])
 
     def keep(self, cur, by_name, now):
         """Zoom follows the on-air subject's activity once it has lasted zoom_settle (no pairs on air); while a big

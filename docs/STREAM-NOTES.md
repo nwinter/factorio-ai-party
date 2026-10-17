@@ -1108,6 +1108,44 @@ with the director service moving cam3 is the fair one. If the saving holds, rest
 config.ini on every start, so nothing on the box needs editing by hand. To go back: `git revert` the
 start-client.ps1 commit and restart the client.
 
+## One camera: POG_CAMS=1 (Sunday 2026-10-18, eng/d16-onecam)
+
+On Sunday Nick plays his own Factorio on the box, so the stream runs on one camera client (cam1) and OBS only.
+
+- `POG_CAMS` is a count (1-3: cam1 .. camN) or names ("cam1 cam3": a subset when the box is short of memory); unset
+  means all three. `tools/cams.py` reads it for:
+  - start-cams.sh, which starts and waits for only those clients;
+  - start-team.sh, which writes the director's slots in stream.json (`POG_CAMS=1`: `[{"slot": "main", "player": 1}]`)
+    and points shot-sync at those clients' folders;
+  - the stream service, which hands cuts.py only those captures.
+- start-team writes `POG_CAMS` and `POG_EXPECT_CAMS` (the number of clients) to runs/RUN/switches.env, and logs
+  "cameras: cam1 (1 client: one camera, no inset or trio)". `POG_EXPECT_CAMS` is the count the operator's watchdog
+  should expect in the game.
+- At a shift change `POG_CAMS` carries over from the previous shift. One set in the operator's environment wins
+  (shift_change.py ENV_FIRST): `POG_CAMS=1 tools/shift-change.sh ...` at the Saturday 21:30 change, and
+  `POG_CAMS=3` at the first change after Sunday.
+- The director with one client (onecam.py `retarget`):
+  - Where three clients would frame a standby and cut, it moves the client on air to the new subject at once (a
+    jump). The log gets a "program" row "move main: REASON", and the move counts as a program cut.
+  - Until this change it moved the client only when nothing was on air: in a 3-hour mock simulation the one camera
+    showed two agents and base attacks. Now it showed all nine; the program cut every 24 s on average (median 15 s
+    on a subject), against 25 s and 16 s with three clients.
+  - No inset (no client is free: alerts elsewhere become toasts, deaths and big losses still cut) and no trio
+    (trio is off below three clients).
+  - Urgent shots, battles, `/follow`, `/platform`, `/look` and segments move the one client the same way.
+  - The vertical scene is restacked as before. The shots and the casters are unchanged.
+- cuts.py keeps "stream cam1" on air in the main hole and turns the other camera captures off, in the stream scene
+  and the vertical one. They match a window by title "Factorio 2.0.77", otherwise by executable (priority 2), and
+  Nick's own Factorio window must not show through one of them. With three cameras again, cuts.py turns them back on:
+  obs.py rehook-cams leaves an item that is off alone.
+- Checked on the box's OBS in a scratch scene: references to the three captures and the overlay, never on program,
+  removed after. In one-camera mode cam1 is on, cam2 and cam3 are off, and cam1 fills the main hole; in three-camera
+  mode all three are on again. The live "stream" scene was not changed. The frame below is the scratch scene with
+  the live overlay. Its empty inset frame is the live three-camera director's; a one-camera director publishes no
+  inset.
+
+![one camera, scratch scene](stream-onecam-scratch.png)
+
 ## Camera client memory, d16 (eng/d16-stream7)
 
 The box (pogwin, 32 GB) at 15:06 on 2026-10-16: 0.4 GB free; nonpaged pool 3.1 GB; about 13 GB held by no process;

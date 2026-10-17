@@ -1,5 +1,7 @@
 """Cuts between the camera clients in OBS for the one-camera layout (onecam.py; docs/STREAM-NOTES.md "One camera").
 
+With POG_CAMS=1 (Sunday 2026-10-18) the director has cam1 alone: "stream cam1" stays on air and the other camera
+captures are turned off (and on again when the director has them back). Otherwise:
 All three captures ("stream cam1..3", factorio-cam1..3.exe, OBS order = the director's slots main, cam2, cam3) sit in
 the on-air hole (layout.json `main`, the whole left column), cropped to its shape. A cut brings the client on air to
 the front of the other two; the inset, while there is one, is moved to layout.json `inset` (uncropped) and put on top.
@@ -11,7 +13,7 @@ Trio (onecam.py, program "layout": "trio"): the three captures move to layout-3c
 the big one ("tiles": hole -> client); back to the on-air hole when it ends. Transforms only, over the websocket, so
 the switch is live (no scene rebuild). The vertical scene stays one camera: the client on air (the big tile) in front.
 """
-import json, os, threading, time, traceback
+import json, os, re, threading, time, traceback
 
 from obsws import OBSError
 
@@ -141,6 +143,13 @@ class Cuts:
         cams = {src: ids[src] for src in self.by_slot.values() if src in ids}
         if not cams:
             raise OBSError(f"no camera captures in scene {target['name']!r}")
+        # The director's captures on, the others off (POG_CAMS=1 on Sunday 2026-10-18: Nick plays his own Factorio on
+        # the box, and an idle "stream cam2" matching by title or executable must not show his window). Back to three
+        # cameras, the director's captures come on again here (obs.py rehook-cams leaves an item that is off alone).
+        for it in items:
+            src = it["sourceName"]
+            if re.fullmatch(r"stream cam\d+", src) and bool(it.get("sceneItemEnabled", True)) != (src in cams):
+                o.call("SetSceneItemEnabled", dict(ref, sceneItemId=it["sceneItemId"], sceneItemEnabled=src in cams))
         onair = self.by_slot.get(want.get("onair"))
         inset = self.by_slot.get(want.get("inset")) if want.get("inset") else None
         hole = {}  # capture -> its trio hole, when this scene shows the trio

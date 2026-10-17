@@ -526,7 +526,10 @@ def main():
         if not a.mock and not a.no_cuts and run.get("cuts", True) is not False:
             from obsws import OBS
             host, _, port = a.obs.partition(":")
-            cuts = cuts_mod.Cuts(OBS(host, int(port or 4455)), lay)
+            # the captures of the director's clients only (POG_CAMS=1: "stream cam1" alone; tools/cams.py)
+            names = [s["slot"] for s in slots]
+            cuts = cuts_mod.Cuts(OBS(host, int(port or 4455)), lay, slots=names,
+                                 sources=["stream cam1" if n == "main" else f"stream {n}" for n in names])
     else:
         director = Director(slots, camera, log_path, **(run.get("director") or {}))
     segments = Segments(**(run.get("segments") or {}))
