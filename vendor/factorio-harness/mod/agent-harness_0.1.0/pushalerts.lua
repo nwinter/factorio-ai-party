@@ -1025,6 +1025,82 @@ return function(api)
     if g.n == 1 and g.at and g.at[1] then return at_text(g.at[1]) end
     return string.format('(%d,%d)', g.center.x, g.center.y)
   end
+  -- The nearest fuel to an out-of-fuel group (d17 batch18 B4, Haiku: furnaces at (96,-14..-38), (56,-33), (95,-171) ran
+  -- dry all shift and Haiku held no coal): our chests within FUEL_R tiles of the group's centre, else our belts within
+  -- FUEL_BELT_R, holding a fuel its most common burner takes; the nearest, with item, count and distance; and the area round the
+  -- burners for refuel {area, from: "nearest"} (at most 256 a side). Read when shown, kept FUEL_KEEP ticks a group.
+  local FUEL_R, FUEL_BELT_R, FUEL_KEEP, FUEL_FIND = 64, 32, 600, 1024
+  local fuel_seen, FUEL_BY = {}, nil
+  local function fuels_for(names)
+    if not FUEL_BY then
+      FUEL_BY = {}
+      for name, it in pairs(prototypes.item) do
+        local cat = try(function() return it.fuel_category end)
+        if cat and (try(function() return it.fuel_value end) or 0) > 0 then FUEL_BY[cat] = FUEL_BY[cat] or {}; FUEL_BY[cat][#FUEL_BY[cat]+1] = name end
+      end
+    end
+    local out, seen = {}, {}
+    for name in pairs(names or {}) do
+      local cats = try(function() return prototypes.entity[name].burner_prototype.fuel_categories end) or {}
+      for cat in pairs(cats) do for _, item in ipairs(FUEL_BY[cat] or {}) do if not seen[item] then seen[item] = true; out[#out+1] = item end end end
+    end
+    table.sort(out)
+    return out
+  end
+  local function fuel_near(g)
+    local f = fuel_seen[g.key or '']
+    if f and game.tick - f.tick < FUEL_KEEP then return f end
+    f = {tick=game.tick}
+    if g.key then fuel_seen[g.key] = f end
+    local surface = game.get_surface(g.surface)
+    -- the fuels the group's most common burner takes (biochambers with a steel furnace: nutrients)
+    local top, tn
+    for name, n in pairs(g.names or {}) do if not tn or n > tn or (n == tn and name < top) then top, tn = name, n end end
+    local items = fuels_for(top and {[top]=true} or {})
+    if not surface or #items == 0 then return f end
+    local c = g.n == 1 and g.at and g.at[1] or g.center
+    local force
+    for _, r in ipairs(g.status_entities or {}) do force = force or try(function() return r.entity.valid and r.entity.force end) end
+    force = force or 'player'
+    local best
+    local function consider(e, item, n)
+      local d = ((e.position.x - c.x) ^ 2 + (e.position.y - c.y) ^ 2) ^ 0.5
+      if n > 0 and (not best or d < best.d) then best = {e=e, item=item, n=n, d=d} end
+    end
+    -- (one contents read an inventory or belt line: a count call a fuel item was 3-4 times the cost on the copy)
+    local set = {}
+    for _, item in ipairs(items) do set[item] = true end
+    local function add(counts, list)
+      for _, st in ipairs(list or {}) do if set[st.name] then counts[st.name] = (counts[st.name] or 0) + st.count end end
+    end
+    for _, e in ipairs(surface.find_entities_filtered{position=c, radius=FUEL_R, force=force, type={'container', 'logistic-container'}, limit=FUEL_FIND}) do
+      local counts = {}
+      add(counts, try(function() return e.get_inventory(defines.inventory.chest).get_contents() end))
+      for item, n in pairs(counts) do consider(e, item, n) end
+    end
+    if not best then
+      for _, e in ipairs(surface.find_entities_filtered{position=c, radius=FUEL_BELT_R, force=force, type={'transport-belt', 'underground-belt', 'splitter'}, limit=FUEL_FIND}) do
+        local counts = {}
+        for i = 1, try(function() return e.get_max_transport_line_index() end) or 0 do add(counts, try(function() return e.get_transport_line(i).get_contents() end)) end
+        for item, n in pairs(counts) do consider(e, item, n) end
+      end
+    end
+    if best then
+      f.text = string.format('nearest fuel: %s %d in %s %s, %d tiles from %s', best.item, best.n, best.e.name, at_text(best.e.position), math.floor(best.d + 0.5), near_text(g))
+      f.item = best.item
+    else
+      f.text = string.format('no chest within %d tiles or belt within %d tiles of %s holds %s', FUEL_R, FUEL_BELT_R, near_text(g), table.concat(items, ', ', 1, math.min(4, #items)))
+    end
+    local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
+    local pts = {}
+    if g.status_entities and not g.status_capped then for _, r in ipairs(g.status_entities) do pts[#pts+1] = r.position end
+    elseif (g.n or 0) <= #(g.at or {}) then pts = g.at end
+    for _, q in ipairs(pts) do x0, y0, x1, y1 = math.min(x0, q.x), math.min(y0, q.y), math.max(x1, q.x), math.max(y1, q.y) end
+    if #pts > 0 and x1 - x0 <= 252 and y1 - y0 <= 252 then
+      f.area = string.format('[[%d,%d],[%d,%d]]', math.floor(x0) - 2, math.floor(y0) - 2, math.ceil(x1) + 2, math.ceil(y1) + 2)
+    end
+    return f
+  end
   function M.text(g, here, was, plain)
     centred(g)
     if not g.line and not g.center then
@@ -1081,6 +1157,10 @@ return function(api)
         g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '',
         not plain and (g.key and string.format('; refuel {alert: "%s"}', g.key) or '; refuel') or '')
+        .. (not plain and (function()
+          local f = try(function() return fuel_near(g) end)
+          return f and f.text and '; ' .. f.text .. (f.item and f.area and string.format('; refuel {area: %s, from: "nearest", fuel: "%s"}', f.area, f.item) or '') or ''
+        end)() or '')
     end
     if g.kind == 'off_by_condition' then
       -- '1 biochamber stopped by its own circuit or logistic condition near (57,61): biochamber (45.5,72.5) (agricultural-science-pack): off by its logistic condition bioflux > 200 (...)'
@@ -1104,6 +1184,11 @@ return function(api)
     local hint = not plain and HINT[g.kind]
     -- (C1) a refuel or rearm takes this alert by its key
     if hint and ALERT_TAKES[g.kind] and g.key and g.n > 1 then hint = string.format('%s {alert: "%s"}', ALERT_TAKES[g.kind], g.key) end
+    -- (B4) out of fuel: the nearest fuel, and refuel over the burners' area taking it from the nearest chest or belt
+    if hint and g.kind == 'no_fuel' then
+      local f = try(function() return fuel_near(g) end)
+      if f and f.text then hint = f.text .. (f.item and f.area and string.format('; refuel {area: %s, from: "nearest", fuel: "%s"}', f.area, f.item) or '; ' .. hint) end
+    end
     -- Spoiling fuel of those burners around it (merge): how many still burn it, how many spoil within ROT_SOON, the first.
     local rot = {}
     local names = {}

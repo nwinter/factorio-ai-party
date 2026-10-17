@@ -123,4 +123,23 @@ local gr=GL.read({surface=surf,position={x=86,y=158},force=rforce,get_main_inven
 has(gr.lines[1],'robot: construction-robot (-2.5,0): energy 0%; holds wood*4; orders: pickup passive-provider-chest at (-34.5,-60.5); then construct medium-electric-pole ghost at (86.5,156.5); no charge (energy 0%) (its order 2 in the queue)')
 has(gr.lines[2],'robot: no robot has an order on it')
 has(gr.summary,'1 whose robot is held up; 2 of the 2 construction robots of network 243 in the air are held up: 1 no charge (energy 0%); 1 nowhere to put wood: no storage chest in network 243 has room for it (0 storage chests in it)')
+-- B4 (Haiku): an out-of-fuel line names the nearest fuel its most common burner takes (chest first, else belt) and
+-- refuel over the burners' area taking it from the nearest.
+do
+  prototypes.item={coal={fuel_category='chemical',fuel_value=4e6},nutrients={fuel_category='nutrients',fuel_value=2e6},['iron-plate']={fuel_value=0}}
+  prototypes.entity={['stone-furnace']={burner_prototype={fuel_categories={chemical=true}}},biochamber={burner_prototype={fuel_categories={nutrients=true}}}}
+  defines.inventory.chest=1
+  local function holder(name,x,y,list) return {valid=true,name=name,position={x=x,y=y},get_inventory=function() return {get_contents=function() return list end} end} end
+  local near,far=holder('iron-chest',100,-20,{{name='coal',count=120,quality='normal'}}),holder('wooden-chest',140,-20,{{name='coal',count=500,quality='normal'}})
+  local fsurf={find_entities_filtered=function(f) if f.type[1]=='container' then return {far,near,holder('iron-chest',97,-22,{{name='iron-plate',count=50}})} end return {} end}
+  game.get_surface=function(n) return n=='nauvis' and fsurf or nil end
+  local PA=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return {board={items={}}} end,agents=function() return {} end,who=function(p) return p.name end}
+  local g={kind='no_fuel',key='no_fuel|nauvis|1,-1',surface='nauvis',n=3,names={['stone-furnace']=2,biochamber=1},by={},center={x=96,y=-26},
+    at={{x=96,y=-14},{x=96,y=-38},{x=95,y=-26}},status_entities={{position={x=96,y=-14}},{position={x=96,y=-38}},{position={x=95,y=-26}}}}
+  local line=PA.text(g,'nauvis')
+  has(line,'nearest fuel: coal 120 in iron-chest (100,-20), 7 tiles from (96,-26); refuel {area: [[93,-40],[98,-12]], from: "nearest", fuel: "coal"}')
+  lacks(line,'refuel {alert')
+  lacks(PA.text(g,'nauvis',nil,true),'nearest fuel')
+  game.get_surface=nil
+end
 print('d17 batch18 ok')

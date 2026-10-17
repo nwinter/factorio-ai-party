@@ -6618,3 +6618,14 @@ fh watch    # deploy on every change
   in it); 22 no charge (energy 0%)`; a pole ghost's robot: `... holds wood*4; orders: pickup ...; then construct
   medium-electric-pole ghost at (86.5,156.5); no charge (energy 0%) (its order 2 in the queue)`. ghosts radius 64
   took 24 ms on the copy, construction_robots 15 ms. tests/d17_batch18.lua.
+- B4 (Haiku): furnaces at (96,-14..-38), (56,-33) and (95,-171) ran dry all shift; Haiku held no coal, and `refuel
+  {alert}` tops up from carried fuel only. An out-of-fuel line (no_fuel, and heat_no_fuel's) now names the nearest
+  fuel the group's most common burner takes (its burner prototype's fuel categories): our chests within 64 tiles of
+  the group, else our belts within 32, nearest first, with item, count and distance (`nearest fuel: coal 100 in
+  requester-chest (-22.5,-49.5), 40 tiles from (11,-71)`), or that none holds it. When the burners' box (from the
+  group's up to 128 status entities) fits in 256 tiles, the no_fuel line ends with `refuel {area: [[x0,y0],[x1,y1]],
+  from: "nearest", fuel: "coal"}` (fuelround.lua: carried fuel first, then walks for more) in place of `refuel
+  {alert}`. Read when the line is made (not in the plain review form), kept 10 s a group; one contents read per chest
+  inventory and belt line (four uncached groups, 2556 chests and belts: 10 ms on the copy; a count call per fuel item
+  took 37 ms). Copy: the nauvis, gleba (biochambers: nutrients, not the steel furnace's yumako-mash) and vulcanus
+  groups name coal, nutrients and carbon. tests/d17_batch18.lua.

@@ -71,7 +71,10 @@
     pickup point; `last.sources` and `fuel_taken` report the takes. `feed_chests: true` fills the chests inserters
     feed boilers from instead.
   - `alert: "KEY"`: an out-of-fuel alert lists each burner's position and ends with `refuel {alert: "KEY"}`, a tour
-    over exactly those (an alert's centre can lie far from them: it joins touching areas).
+    over exactly those with the fuel you carry (an alert's centre can lie far from them: it joins touching areas).
+    The alert names the nearest fuel its most common burner takes (`nearest fuel: coal 120 in iron-chest (100,-20),
+    7 tiles from (96,-26)`: our chests within 64 tiles, else belts within 32) and then ends with `refuel {area:
+    [[93,-40],[98,-12]], from: "nearest", fuel: "coal"}` over the burners' box instead.
   - Nothing to do: `nothing` says why, `nearest_outside` names the nearest dry burner outside the area.
   Example: `./fh call refuel --args '{"radius":40,"from":"nearest","count":20}' --wait`
 - `pickup {area | position, radius?, items?} | {belt: true, item, count, to?}`: picks up items by hand (timed),
