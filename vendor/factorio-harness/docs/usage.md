@@ -56,7 +56,9 @@ fh call status
 - Arguments go in `--args JSON` or `--args-file F`. `fh describe` lists every action's arguments; `fh help ACTION`
   (or `fh call ACTION --help`) prints one action's in about 1 KB, led by calls that work as written (`example: fh call
   launch --args '{"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`; transfer has a give, a take and a pick;
-  describe's `examples`). An argument refusal ends with one: for transfer built from the call itself (`; for this
+  describe's `examples`). fh help keeps that describe per runtime bundle (FH_DESCRIBE_CACHE, default .fh-describe.json
+  next to the journal): it asks `describe {if_bundle}`, which answers `{bundle, unchanged}` while the same bundle runs,
+  and reads the whole describe again after a deploy (bundles carry their content hash as BUNDLE_ID). An argument refusal ends with one: for transfer built from the call itself (`; for this
   call:` and the call), else the action's own (`; e.g. fh call technologies --args '{"prefix":"automation"}'`); a number out of range says its range and the value (`radius out of range: a whole
   number 1..128, got 500`). Refusals no longer start with the runtime's line (`agent-harness/runtime:31061: `). Every example, in describe, this file and the agents' brief (agent/ref/), is checked against the argument
   check by the runtime test.

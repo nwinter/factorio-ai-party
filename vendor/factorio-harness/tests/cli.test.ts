@@ -56,6 +56,38 @@ test('fh help ACTION and fh call ACTION --help print that action from describe (
     }
   });
 });
+test('fh help ACTION keeps describe per runtime bundle: if_bundle gets {unchanged}, a new bundle or an old runtime is read whole',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'fh-describe-'));
+  const cache=join(dir,'.fh-describe.json');
+  const schema=(text:string)=>({actions:{circuit_set:{position:text}}});
+  let bundle:string|undefined='b1', text='{x,y} one', seen:any[]=[];
+  try {
+    await engine(request=>{
+      seen.push(request.args ?? {});
+      if (request.args?.if_bundle !== undefined && bundle === undefined) return {ok:false,error:{code:'action_failed',message:'unknown argument if_bundle for describe'}};
+      if (bundle !== undefined && request.args?.if_bundle === bundle) return {ok:true,result:{bundle,unchanged:true}};
+      return {ok:true,result:{...schema(text),...(bundle ? {bundle} : {})}};
+    },async port=>{
+      const env={...process.env,FACTORIO_RCON_PASSWORD:'test-only',FH_DESCRIBE_CACHE:cache};
+      const help=async()=>(await exec(process.execPath,['dist/host/cli.js','--port',String(port),'help','circuit_set'],{env})).stdout;
+      assert.match(await help(),/position: \{x,y\} one/);
+      assert.deepEqual(seen,[{}]);
+      // the same bundle: the game answers two fields and the help comes from the cache
+      text='{x,y} not read';
+      assert.match(await help(),/position: \{x,y\} one/);
+      assert.deepEqual(seen[1],{if_bundle:'b1'});
+      // a deploy: a new bundle's describe comes whole and replaces the cache
+      bundle='b2'; text='{x,y} two';
+      assert.match(await help(),/position: \{x,y\} two/);
+      assert.match(await help(),/position: \{x,y\} two/);
+      assert.deepEqual(seen.slice(2),[{if_bundle:'b1'},{if_bundle:'b2'}]);
+      // a runtime without bundle ids refuses if_bundle: read whole, nothing cached
+      bundle=undefined; text='{x,y} three';
+      assert.match(await help(),/position: \{x,y\} three/);
+      assert.deepEqual(seen.slice(4),[{if_bundle:'b2'},{}]);
+    });
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
 test('fh help TOPIC prints the workspace reference topic and is journaled; fh help lists the topics; an argument refusal names the topic',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'fh-ref-'));
   try {
