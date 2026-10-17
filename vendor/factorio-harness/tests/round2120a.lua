@@ -168,7 +168,7 @@ eq(r.places,4); eq(r.left_out,nil); eq(r.avoid_enemies,nil)
 -- Every turret there inside a reach: refused, naming it; the tour running goes on.
 local running=active('haiku')
 fails(function() assert(runtime.dispatch{action='rearm',args={area={left_top={x=90,y=-10},right_bottom={x=110,y=10}},below=5},bot='haiku'}) end,
-  'every turret under 5 rounds of firearm-magazine there lies in enemy reach the map shows: gun-turret (100,0) is inside big-worm-turret (120,0) range 38 (20.0 tiles from it): unsafe_goal: true to go anyway, avoid_enemies: false for no check')
+  'every turret under 5 rounds of the ammo each holds there lies in enemy reach the map shows: gun-turret (100,0) is inside big-worm-turret (120,0) range 38 (20.0 tiles from it) [1 held by a worm or spawner (it stays: unsafe_goal: true goes anyway)]: unsafe_goal: true to go anyway, avoid_enemies: false for no check')
 eq(active('haiku'),running,'the refusal stops nothing')
 haiku('stop')
 -- An area under attack now (threat.lua's incident, last hit within 30 s) counts as well.
@@ -189,7 +189,7 @@ eq(r.places,1); eq(r.left_out[1],'stone-furnace (110,4) is inside big-worm-turre
 grok('stop')
 body('grok').position={x=112,y=10}
 fails(function() grok('refuel',{radius=8,fuel='coal',count=10}) end,
-  'every place of this tour lies in enemy reach the map shows: stone-furnace (110,4) is inside big-worm-turret (120,0) range 38 (10.8 tiles from it): unsafe_goal: true to go anyway')
+  'every place of this tour lies in enemy reach the map shows: stone-furnace (110,4) is inside big-worm-turret (120,0) range 38 (10.8 tiles from it) [1 held by a worm or spawner (it stays: unsafe_goal: true goes anyway)]: unsafe_goal: true to go anyway')
 body('grok').position={x=0,y=0}
 
 -- 1c. recover dry_run (Haiku, 03:58: "recover needs a dry_run so I can see the corpse's danger before walking"): each

@@ -4266,10 +4266,12 @@ end)()
   fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}}) end,'no chest or machine of ours with its centre in (0,0)-(64,10) in a chunk our force sees now (1 in chunks it does not')
   list={}
   for i=1,65 do list[i]=chest(i%30+0.5,math.floor(i/30)+0.5,{}) end
-  -- over the 64 rows: counts by name instead (d16 batch10 C3)
+  -- over the 64 rows: one shape, a page of entities with by_name beside them (d17 batch13 A3)
   local over=call('inspect',{area={left_top={x=0,y=0},right_bottom={x=31,y=3}}})
-  eq(over.count,65); eq(over.entities,nil); eq(over.by_name[1].count,65)
-  assert(over.note:find('65 entities in the area, over the 64 listed one by one: counts by name instead',1,true),over.note)
+  eq(over.count,65); eq(#over.entities,64); eq(over.by_name[1].count,65); eq(over.pages,2)
+  assert(over.note:find('65 entities: page 1 of 2 lists 64 of them in reading order',1,true),over.note)
+  local p2=call('inspect',{area={left_top={x=0,y=0},right_bottom={x=31,y=3}},page=2})
+  eq(#p2.entities,1); eq(p2.next,nil)
   p.surface.find_entities_filtered,p.position,p.force.is_chunk_visible=find,at,vis
   for k,v in pairs(inv_defs) do defines.inventory[k]=v end
 end)()

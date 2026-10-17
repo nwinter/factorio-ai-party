@@ -6196,3 +6196,29 @@ fh watch    # deploy on every change
 - B3 (Sol): platform_plan floor and ready use each ghost's tiles less those a tile rule of its prototype keeps empty
   (an asteroid collector's collection area, turned with it): rear support only. On the copy Meridian's west collector
   ghost at (-24.5,-14.5) reads on foundation (its two rear columns are floor; the front column is empty space).
+- A1 (Luna): reminders already reach only their recipients; in the logs Sol's waits were woken by his own reminders
+  (#41, #43) and by Luna's tells to him (16 times), not by her reminder #6. `reminder_add {wake: false}` (and edit)
+  delivers the line with the next reply as an fyi tell, waking no sleep or wait; urgent alerts are apart. `reminder_ack
+  {id, result, next_in_ticks}` puts the next run off with the ack; `every_ticks` there (its owner) sets a new cadence
+  from now. Lua test.
+- A2 (Haiku): a refusal for enemy reach (rearm's three forms, every walking tour) ends with what holds the places:
+  `[N held by a worm or spawner (it stays: unsafe_goal: true goes anyway); M by passing enemies, an attack or units
+  seen now (retry_when_clear: true waits ...)]`. `rearm {..., retry_when_clear: true, retry_ticks}`: refused for
+  passing enemies only, it waits (wait_until `units_clear`, new: enemy units only within the radius) for no enemy
+  unit within 48 tiles of the first place held, then rearms again (then_call; at most 6 tries; last.then_result, and
+  the tour's last.started_by). Own-ammo rearm (batch11 A3) covers Haiku's no_room case: with ammo left out, a turret
+  holding piercing rounds gets piercing rounds, and with none carried it is named (none_held); a mixed carry loads each
+  turret its own. In own mode the refusal says "of the ammo each holds". On the copy: inert biters by Haiku's turrets
+  refused with the passing count; with retry_when_clear the rearm ran once they were gone.
+- A3 (Muse): inspect {area} has one shape at any size: entities (a page of 64 in reading order; page, pages, next past
+  one page) and by_name (every name: count, states, where), with by_name_lines; batch10 C3's summary-only reply is gone.
+- A4 (Gemini): `load_silo {launch: true, platform, wait_platform: true}` with a ready rocket: loads now (recorded for
+  the platform), then launch {wait_platform} launches when the platform is stopped in orbit (`staged`); no rocket
+  ready: the load waits for both and loads and launches together. On the copy: 10 iron plates staged in Gleba's rocket
+  while Wren flew nauvis->gleba; launched to Wren on its arrival.
+- A5 (Sol 05:28, bug): a refused cargo bay said "no hub or cargo bay within 12 tiles" beside the hub: the search took
+  hubs, bays and every ghost together, 32 at most, and Meridian's other ghosts filled it first. Hubs and bays are found
+  apart from the bays' ghosts now. The dry run's ghost check is the game's forced one, which can take a cargo bay the
+  placement refuses; for a cargo bay with no tiles to lay and nothing in the way, the plain ghost check now decides,
+  and a refusal says why. On the copy the dry run and the placement agreed at every spot tried round Meridian's hub
+  (Sol's case was not reproduced there).

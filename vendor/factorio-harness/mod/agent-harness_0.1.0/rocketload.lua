@@ -1379,7 +1379,7 @@ return function(api)
   end
 
   M.schema = {
-    load_silo = {position='the rocket silo {x,y} (any tile of it), within reach',
+    load_silo = {position='the rocket silo {x,y} (any tile of it), within reach', wait_platform='optional true, with launch and platform: a ready rocket gets the cargo now (recorded for the platform) and launches when the platform is stopped in orbit here (launch {wait_platform}: a timed wait; staged says which); no rocket ready: the load waits for both and loads and launches in that tick',
       items='the cargo to load: {"item-name": count} or [{"item", "count", "quality"}], 1..20 items',
       to_total='true: each count is what the rocket should hold in all (only the rest is loaded); default: each count is loaded on top of what it holds',
       from='optional chest {x,y} or 1..16 of them, within reach: take from these (after your inventory); default: your inventory, then our chests within reach, nearest first (at most 16): every chest kind (chests, logistic chests, linked and infinity chests) and a cargo landing pad. With walk: anywhere on the silo\'s surface, in sight or on the map',

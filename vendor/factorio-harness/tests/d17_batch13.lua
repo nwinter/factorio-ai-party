@@ -63,3 +63,26 @@ do
   defines,prototypes=nil,nil
   print('d17_batch13 B1 ammunition feed: ok')
 end
+
+-- A1 (Luna: a routine check woke long waits): a reminder with wake: false is delivered as an fyi line (it wakes no
+-- wait); reminder_ack takes next_in_ticks (the next run later) and, from its owner, a new cadence.
+do
+  game={tick=1000}
+  local st,sent={},{}
+  local R=dofile('mod/agent-harness_0.1.0/reminders.lua'){state=function() return st end,who=function(p) return p.name end,
+    resolve=function(n) return n end,agents=function() return {{name='luna',index=1},{name='sol',index=2}} end,
+    deliver=function(index,t) sent[#sent+1]={index=index,t=t} end}
+  local luna,sol={name='luna'},{name='sol'}
+  local r=R.handlers.reminder_add(luna,{message='Gleba core check',every_ticks=3600,wake=false})
+  has(r.reminder.wake,'false: delivered with the next reply')
+  game.tick=4620; R.tick()
+  eq(#sent,1); eq(sent[1].index,1,'only its recipient'); eq(sent[1].t.fyi,true,'wakes no wait')
+  local a=R.handlers.reminder_ack(luna,{id=r.added,result='no change',next_in_ticks=18000})
+  eq(a.reminder.next_due_tick,4620+18000); has(a.note,'the next run in 5m00s')
+  local ok,err=pcall(R.handlers.reminder_ack,sol,{id=r.added,every_ticks=18000})
+  assert(not ok and tostring(err):find('its owner',1,true),tostring(err))
+  a=R.handlers.reminder_ack(luna,{id=r.added,every_ticks=18000})
+  eq(a.reminder.every_ticks,18000); has(a.note,'the cadence is now every 5m00s')
+  game=nil
+  print('d17_batch13 A1 reminders: ok')
+end

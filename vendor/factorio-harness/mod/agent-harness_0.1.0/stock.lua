@@ -639,11 +639,14 @@ return function(api)
   function M.screen(p,places,mode,unsafe)
     if not mode or unsafe or not api.goal_inside then return places,nil end
     local drop,lines,n={},{},0
+    local passing,staying,first_at=0,0,nil
     for i=1,math.min(SCREEN,#places) do
       local pl=places[i]
       local ok,c=pcall(api.goal_inside,p,pl.position,mode)
       if ok and c then
         drop[i]=true; n=n+1
+        -- (d17 batch13 A2) what holds it: a worm or spawner stays; an attack, units or a group seen now pass
+        if c.m and c.m.attack then passing=passing+1; first_at=first_at or pl.position else staying=staying+1 end
         if #lines<8 then
           local e=pl.entity
           local name=(e and e.valid and e.name) or pl.name or 'place'
@@ -654,7 +657,19 @@ return function(api)
     if n==0 then return places,nil end
     local kept={}
     for i,pl in ipairs(places) do if not drop[i] then kept[#kept+1]=pl end end
-    return kept,{lines=lines,count=n}
+    local left={lines=lines,count=n,passing=passing,staying=staying,at=first_at}
+    M.last_refusal={tick=game.tick,passing=passing,staying=staying,at=first_at}
+    return kept,left
+  end
+  -- What holds the places left out (A2, Haiku: three rearms refused "within 40 tiles of biter-spawner", retried by
+  -- hand): those a worm or spawner holds (it stays) and those passing enemies hold (they go), with the way on.
+  function M.blocker_text(left)
+    if not left then return '' end
+    local parts={}
+    if (left.staying or 0)>0 then parts[#parts+1]=string.format('%d held by a worm or spawner (it stays: unsafe_goal: true goes anyway)',left.staying) end
+    if (left.passing or 0)>0 then parts[#parts+1]=string.format('%d by passing enemies, an attack or units seen now (retry_when_clear: true waits until they are gone near (%g,%g), then runs again)',
+      left.passing,left.at and left.at.x or 0,left.at and left.at.y or 0) end
+    return #parts>0 and ' ['..table.concat(parts,'; ')..']' or ''
   end
   -- An action's targets screened in place; none left: refused, naming them (what: 'every turret under 5 rounds there').
   function M.screen_action(p,action,what)
@@ -662,8 +677,8 @@ return function(api)
     local kept,left=M.screen(p,action.targets,action.avoid_mode,action.unsafe_goal)
     if not left then return nil end
     if #kept==0 and had>0 then
-      error(string.format('%s lies in enemy reach the map shows: %s%s: unsafe_goal: true to go anyway, avoid_enemies: false for no check',
-        what,table.concat(left.lines,'; '),left.count>#left.lines and string.format('; +%d more',left.count-#left.lines) or ''),0)
+      error(string.format('%s lies in enemy reach the map shows: %s%s%s: unsafe_goal: true to go anyway, avoid_enemies: false for no check',
+        what,table.concat(left.lines,'; '),left.count>#left.lines and string.format('; +%d more',left.count-#left.lines) or '',M.blocker_text(left)),0)
     end
     action.targets=kept
     action.left_out=left.lines; action.left_out_count=left.count

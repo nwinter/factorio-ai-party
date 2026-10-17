@@ -103,6 +103,11 @@ return function(api)
     no_enemy_structures=function(p,c)
       local n=enemies(p,c,ENEMY_STRUCTURES); return n==0,n..' enemy structures'
     end,
+    -- Enemy units only (d17 batch13 A2: a rearm waiting for passing enemies to go; worms and spawners stay): units,
+    -- pentapods and demolishers within the radius, as no_enemies counts them.
+    units_clear=function(p,c)
+      local n=enemies(p,c,{'unit','spider-unit','segmented-unit'}); return n==0,n..' enemy units'
+    end,
     no_enemies=function(p,c)
       -- spider-unit: Gleba's strafer and stomper pentapods; segmented-unit: Vulcanus' demolishers.
       local n=enemies(p,c,{'unit-spawner','turret','unit','spider-unit','segmented-unit'}); return n==0,n..' enemies'
@@ -375,7 +380,7 @@ return function(api)
       return n>0,n..' burners below '..c.count..' fuel'..(near and string.format(' (nearest %s at %d,%d)',near.name,math.floor(near.position.x),math.floor(near.position.y)) or '')
     end,
   }
-  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced|platform_built|platform_ready|all'
+  local NAMES='no_enemy_structures|no_enemies|units_clear|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|rocket_parts|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived|platform_left|produced|platform_built|platform_ready|all'
   -- Other names for a condition (A1, Sonnet 22:50: silo_parts refused as an invalid until): the name it goes by.
   M.ALIASES={silo_parts='rocket_parts'}
   -- Every member holds (B2, Grok 22:50: a launch waiting for both its rocket and its platform): {until=all,
