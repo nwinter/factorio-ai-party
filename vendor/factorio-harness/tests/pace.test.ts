@@ -158,7 +158,7 @@ test('the CLI: the clock names a slow game, a rollback is said once with redo, a
   });
   // The game is unreachable: since when, and nothing was sent; the first reply after says how long.
   const closed = await new Promise<number>(resolve => { const s = createServer().listen(0, '127.0.0.1', () => { const a = s.address() as any; s.close(() => resolve(a.port)); }); });
-  const down = JSON.parse((await cli(closed, ['call', 'status', '--journal', journal])).stdout);
+  const down = JSON.parse((await cli(closed, ['call', 'status', '--journal', journal], {FH_RETRY_MS:'0'})).stdout);
   assert.equal(down.error.code, 'game_unreachable');
   assert.match(down.error.message, /^game unreachable since \d\d:\d\d:\d\d \(0s\): .*; the request was not sent \(nothing was done\)$/);
   await engine(() => ({ok:true, tick, result:{clock:'game 27h47m'}}), async port => {

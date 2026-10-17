@@ -264,7 +264,7 @@ local rd=grok('tells',{})
 eq(rd.tells[30].text,'after'); eq(rd.tells[29].text,'team line'); eq(rd.team.tells[1],'astra, 0s ago: after')
 eq(grok('tells',{}).team,nil); eq(grok('tells',{}).tells[30].text,'after')
 -- A wait that ignores messages (Astra, d15 14:48: Sonnet sat in 15-minute waits no tell reached): the sender is told
--- so; tell {wake: true} ends it, once per 10 minutes per sender and recipient.
+-- so; tell {wake: true} ends it, every time (batch8 A4), counting the sender's wake tells over 10 minutes.
 do
   grok('wait_ticks',{ticks=54000,wake_on_messages=false}); advance(1)
   local r=astra('tell',{to='grok',text='freight at the pad'})
@@ -277,12 +277,20 @@ do
   assert(not st.active,'the wait ended'); eq(st.last.outcome,'told'); eq(st.last.why,'told by astra (wake: true)')
   grok('wait_ticks',{ticks=54000,wake_on_messages=false}); advance(1)
   r=astra('tell',{to='grok',text='again',wake=true})
-  eq(r.woken,nil); assert(r.not_woken[1]:find('grok: woken by you 0 min ago; again from tick',1,true),r.not_woken[1])
-  eq(grok('status').active.kind,'wait_ticks')
+  eq(r.woken[1],'grok (your 2 wake tells to them in the last 10 min)'); eq(r.not_woken,nil)
+  assert(not grok('status').active,'woken again')
+  grok('wait_ticks',{ticks=54000,wake_on_messages=false}); advance(1)
   r=sol('tell',{to='grok',text='from sol',wake=true}); eq(r.woken[1],'grok','another sender may wake it')
   grok('wait_ticks',{ticks=54000,wake_on_messages=false}); advance(1)
   jump(10*3600); advance(1)
   r=astra('tell',{to='grok',text='ten minutes on',wake=true}); eq(r.woken[1],'grok')
+  -- a wait that takes tells only from sol: astra's plain tell is said ignored, and --wake ends it
+  grok('wait_ticks',{ticks=54000,wake_from={'sol'}}); advance(1)
+  r=astra('tell',{to='grok',text='not from sol'})
+  assert(r.ignoring and r.ignoring:find('grok is in a wait_ticks that takes tells only from others until tick',1,true),tostring(r.ignoring))
+  advance(60); eq(grok('status').active.kind,'wait_ticks','a plain tell from another does not end it')
+  r=astra('tell',{to='grok',text='wake anyway',wake=true}); eq(r.woken[1],'grok (your 2 wake tells to them in the last 10 min)')
+  assert(not grok('status').active,'the filtered wait ended')
   -- a wait that takes messages: no ignoring line
   grok('wait_ticks',{ticks=600}); advance(1)
   r=astra('tell',{to='grok',text='plain',fyi=true}); eq(r.ignoring,nil)

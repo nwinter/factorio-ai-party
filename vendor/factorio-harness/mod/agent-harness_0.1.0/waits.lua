@@ -157,12 +157,15 @@ return function(api)
     return api.wait_info and api.wait_info(reply,record) or reply
   end
   -- A sleep no message ends (wake_on_messages: false), for tells.lua: {kind, until_tick}, and its wake by a tell.
-  function M.deaf(index)
+  function M.deaf(index, from)
     local r = sleeps()[index]
-    if r and not r.woke and r.wake_messages == false and game.tick < (r.until_tick or 0) then return {until_tick=r.until_tick, kind='sleep'} end
+    if not (r and not r.woke and game.tick < (r.until_tick or 0)) then return nil end
+    if r.wake_messages == false then return {until_tick=r.until_tick, kind='sleep'} end
+    -- takes tells only from others (wake_from, wake_on_operator)
+    if from and r.wake_filter and api.wakes and not api.wakes({from=from}, r.wake_filter) then return {until_tick=r.until_tick, kind='sleep', why='takes tells only from others'} end
   end
   function M.wake_deaf(index, from)
-    if not M.deaf(index) then return false end
+    if not M.deaf(index, from) then return false end
     sleeps()[index].told_wake = from .. ' (a tell with wake: true)'
     return true
   end
@@ -398,9 +401,7 @@ return function(api)
     end
     -- wake_on_messages: false (Grok, Sonnet: woken 6-15 times an hour while waiting for a ship): no tell or mention
     -- wakes it; a tell with wake: true does (tells.lua, at most once per 10 minutes per teammate).
-    if record.wake_messages == false then
-      if record.told_wake then out.tell = record.told_wake; return 'told' end
-    end
+    if record.told_wake then out.tell = record.told_wake; return 'told' end
     local box = record.wake_messages ~= false and api.state().mentions and api.state().mentions[p.index]
     for i = #(box and box.list or {}), 1, -1 do
       local m = box.list[i]

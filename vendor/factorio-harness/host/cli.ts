@@ -8,7 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import { RconClient, RconOutcomeUnknown, RconUnavailable } from './rcon.js';
 import { loadPace, savePace, seeTick, seeDown, slowNote, rolledBack, Pacer, overtime, slowGame, speedText, STALL_MS, type PaceState } from './pace.js';
-import { Harness, type Reply } from './harness.js';
+import { Harness, retryBudgetMs, type Reply } from './harness.js';
 import { renderMap } from './view.js';
 import { parseLook } from './look.js';
 import { writeFileSync, readFileSync, rmSync, appendFileSync, existsSync } from 'node:fs';
@@ -77,7 +77,7 @@ const help = `fh — Factorio agent CLI
   fh operator "text"                        A request to the operator (harness bugs, tools, viewer asks); input as for say
   fh tell NAME[,NAME]|team "text"           A line to teammates outside chat: their next reply's team block, wakes them; input as for say
                                             --fyi: no answer needed; it waits for their next reply and wakes nobody
-                                            --wake: also ends their wait that ignores messages (wake_on_messages: false), once per 10 min per teammate
+                                            --wake: also ends their wait that ignores messages or takes tells only from others, every time
   fh tells [--since SEQ] [--limit N]        The last 30 tells you received (time, sender, fyi), shown before or not;
                                             --since SEQ: the ones you sent or received after SEQ
   fh players [NAME] [--args '{"minutes":10}'] Human players on the map: where, group, what each built, removed, ordered, moved
@@ -95,6 +95,7 @@ Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT),
          --session NAME (default: auto-use default session), --bridge-socket PATH (bridge without a session),
          --socket PATH (an RCON broker's socket instead of RCON: harness requests only, no password; FH_SOCKET),
          --wait, --wait-timeout MS (default: until the action's own end tick, at least 30000), --journal PATH, --args-file PATH
+         --wake-on-tells (fh sleep --until on platform arrivals or departures only: tells end it too; by default such a sleep goes on through them)
          --wait-through-tells (a tell or mention does not end the wait; told_during_wait lists them at the end; fh sleep, fh wait --until
                                and direct waits: wake_on_messages false, so only a tell sent with --wake ends them)
          --wake-on-viewers (fh sleep, fh wait, --wait: a viewer's @mention ends it too; by default it waits for your next reply)
@@ -148,12 +149,19 @@ function parseUntil(text: string): Record<string, unknown> {
   const alternatives = splitAlternatives(trimmed);
   if (alternatives.length > 1) return {until:'any', conditions:alternatives.map(part => parseUntil(part))};
   const [kind = '', ...rest] = trimmed.split(/\s+/);
-  const usage = '--until takes researched [TECH], crafting_done, alert [KIND ...], item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, rocket_parts>=N at X,Y, produced [ITEM]>=N at X,Y [X,Y ...], platform_arrived PLATFORM [PLANET], platform_left PLATFORM [PLANET], or a wait_until condition as JSON; several joined by | (or a JSON list) wake on whichever holds first';
+  const usage = '--until takes researched [TECH], crafting_done, alert [KIND ...], item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, rocket_parts>=N at X,Y, produced [ITEM]>=N at X,Y [X,Y ...], platform_arrived PLATFORM [PLANET], platform_left PLATFORM [PLANET], platform PLATFORM at|left PLANET, or a wait_until condition as JSON; several joined by | (or a JSON list) wake on whichever holds first';
   if (kind === 'researched' || kind === 'research') {
     if (rest.length > 1) throw new Error(usage);
     return rest[0] ? {until:'researched', technology:rest[0]} : {until:'researched'};
   }
   if (kind === 'crafting_done' || kind === 'crafted') return {until:'crafting_done'};
+  // `platform Wren at vulcanus` (Sonnet 18:20): its arrival there; `platform Wren left gleba` (or leaves): its departure.
+  if (kind === 'platform' || kind === 'ship') {
+    const m = trimmed.slice(kind.length).trim().match(/^(?:"([^"]+)"|'([^']+)'|(\S+))\s+(at|in|over|left|leaves|leaving|from)\s+(\S+)$/);
+    if (!m) throw new Error(`--until ${kind} takes a platform name (quoted if it has spaces), at or left, and a planet: ${kind} Wren at vulcanus`);
+    const platform = m[1] ?? m[2] ?? m[3];
+    return {until:['left','leaves','leaving','from'].includes(m[4]!) ? 'platform_left' : 'platform_arrived', platform, location:m[5]};
+  }
   // alert: a new attack, enemy group or enemy base alert; with kinds (Luna, 19:50), a new or grown alert group of
   // those kinds addressed to you (low_power, no_power, no_fuel, ...), or starved: a machine in your claims that
   // lacks ingredients (`alert low_power starved`, commas also separate).
@@ -289,6 +297,11 @@ function normalizeWaitArgs(action: string, args: Record<string, unknown>, path =
   return out;
 }
 /** The parts of an --until joined by | (outside quotes), trimmed, empty ones dropped. */
+// A wait_until condition made of platform arrivals and departures only.
+function platformOnly(c: Record<string, unknown>): boolean {
+  if (c.until === 'any' && Array.isArray(c.conditions)) return c.conditions.length > 0 && c.conditions.every(x => x && typeof x === 'object' && platformOnly(x as Record<string, unknown>));
+  return c.until === 'platform_arrived' || c.until === 'platform_left';
+}
 function splitAlternatives(text: string): string[] {
   const parts: string[] = [];
   let current = '', quote = '';
@@ -458,7 +471,7 @@ function transportError(error: unknown): {code: string, message: string, recover
     const since = paceFile ? seeDown(pace(), Date.now(), text) : undefined;
     savePace(paceFile, pace());
     return {code:'outcome_unknown', message:`${since ? since + ': ' : ''}${text}`,
-      recovery:'Inspect status/state. Retry only the same action, args, player and ID (--id) while the dedup cache retains it: the game answers an ID it applied from its record and runs one it never got.'};
+      recovery:`fh sent it again with the same ID for ${Math.round(retryBudgetMs()/1000)} s without an answer. Inspect status/state. Retry only the same action, args, player and ID (--id) while the dedup cache retains it: the game answers an ID it applied from its record and runs one it never got.`};
   }
   return undefined;
 }
@@ -599,7 +612,7 @@ async function main() {
     format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
     host:{type:'string'}, port:{type:'string'}, timeout:{type:'string'}, id:{type:'string'},
     file:{type:'string'}, out:{type:'string'}, mods:{type:'string'}, journal:{type:'string'},
-    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-from':{type:'string'}, 'no-operator-wake':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'urgent-radius':{type:'string'}, 'wake-on-orders':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
+    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-tells':{type:'boolean'}, 'wake-from':{type:'string'}, 'no-operator-wake':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'urgent-radius':{type:'string'}, 'wake-on-orders':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
@@ -1061,7 +1074,15 @@ async function main() {
   // the full one.
   let peekable = !bridged;
   let briefable = !bridged;
-  async function poll(): Promise<Reply> {
+  // urgentSince: a body action's wait asks the runtime for an urgent alert since that tick (A2).
+  let urgentPollable = true;
+  async function poll(urgentSince?: number): Promise<Reply> {
+    if (urgentSince !== undefined && urgentPollable && briefable) {
+      const radius = urgentRadius();
+      const reply = await harness.request('status',{peek:true,brief:true,urgent_since:urgentSince,...(radius !== undefined ? {urgent_radius:radius} : {})});
+      if (reply.ok || !/argument urgent_(since|radius)\b/.test(String(reply.error?.message ?? ''))) return reply;
+      urgentPollable = false;
+    }
     if (briefable) {
       const reply = await harness.request('status',{peek:true,brief:true});
       const message = String(reply.error?.message ?? '');
@@ -1197,6 +1218,8 @@ async function main() {
     pacer.see(nowTick, started);
     let staleLooks = 0;
     let ending: ReturnType<typeof overtime> = 'go';
+    // Tours that walk or load (A2): only an urgent alert ends their wait, not a tell.
+    const bodyWait = ['collect','feed','load_silo','rearm','refuel','recover','transfer','pickup'].includes(action);
     // The poll after the deadline is judged like the others: an action that ended since the previous poll ends the
     // wait by its outcome (Sol 12:20: collect --wait --wait-timeout 60000 read STILL RUNNING at 62 s over a gather
     // collected 10 of 10 at 54.2 s game time; the timeout's own status read already showed it ended). The overtime
@@ -1204,7 +1227,7 @@ async function main() {
     while (!stopping) {
       ending = overtime(pacer, deadline, cap);
       let lastLook = ending !== 'go';
-      const status = await poll();
+      const status = await poll(bodyWait && values['no-urgent'] !== true ? acceptedTick : undefined);
       pacer.see(status.tick);
       const active = action === 'shoot' ? status.result?.combat : action === 'drop' ? status.result?.drop_pending : status.result?.active;
       // active may report shooting when movement has already finished. A
@@ -1223,8 +1246,20 @@ async function main() {
           ending = overtime(pacer,deadline,cap); lastLook = ending !== 'go';
         }
       }
+      // A walking or loading tour (collect, feed, transfer and load_silo walks, rearm, refuel, recover: gather; a load
+      // waiting for its rocket: feed) goes on through tells (Grok 18:20: a tell cut load_silo twice, and a launch then
+      // left packs in the inventory); an urgent alert ends the wait.
+      if (status.ok && stillRunning && bodyWait && typeof status.result?.urgent === 'string') {
+        return {...status, result:{...status.result, interrupted:{inbox:{tick:status.tick ?? 0, woke:'urgent', from:status.result.urgent}, active}}};
+      }
+      // A tell sent with --wake ends any wait (batch8 A4), one that goes on through tells too.
+      const wakeTell = status.result?.inbox_wake;
+      if (status.ok && stillRunning && (bodyWait || throughTells) && acceptedTick !== undefined && typeof wakeTell?.tick === 'number' && wakeTell.tick >= acceptedTick
+        && action !== 'wait_ticks' && action !== 'wait_until') {
+        return {...status, result:{...status.result, interrupted:{inbox:wakeTell, active}}};
+      }
       if (status.ok && stillRunning && told(status, acceptedTick) && action !== 'wait_ticks' && action !== 'wait_until') {
-        if (!throughTells) return {...status, result:{...status.result, interrupted:{inbox:wakeInbox(status, acceptedTick), active}}};
+        if (!throughTells && !bodyWait) return {...status, result:{...status.result, interrupted:{inbox:wakeInbox(status, acceptedTick), active}}};
         noteTell(wakeInbox(status, acceptedTick));
       }
       if (!status.ok || !stillRunning) {
@@ -1353,7 +1388,10 @@ async function main() {
     // wake_on_urgent must be true or false, and the sleep runs with the default 40 (said on stderr).
     let radius = noUrgent ? undefined : urgentRadius();
     // --wait-through-tells: no tell or mention ends the sleep (wake_on_messages: false; a tell with --wake still does).
-    let deaf = values['wait-through-tells'] === true;
+    // A sleep on platform arrivals or departures alone does so too (Sonnet 18:20: "so I do not wake on every unrelated
+    // tell while waiting for a ship"); --wake-on-tells keeps tells ending it.
+    const shipWait = !!condition && platformOnly(condition);
+    let deaf = values['wait-through-tells'] === true || (shipWait && values['wake-on-tells'] !== true);
     const sleepArgs = (peek: boolean) => ({seconds, ...(condition ? {condition} : {}), ...(peek ? {peek:true} : {}), ...(viewers ? {wake_on_viewers:true} : {}),
       ...(noUrgent ? {wake_on_urgent:false} : radius !== undefined ? {wake_on_urgent:{radius}} : {}), ...(values['wake-on-orders'] === true ? {wake_on_orders:true} : {}),
       ...(deaf ? {wake_on_messages:false} : {}), ...wakeArgs()});
@@ -1578,6 +1616,11 @@ async function main() {
       const failed = transportError(error);
       if (failed) return {id:requestId, ok:false, error:failed};
       throw error;
+    }
+    // Sent again with the same ID across a drop (harness.ts requestRetrying, A1): said once, on this reply.
+    if (reply.retried && reply.result && typeof reply.result === 'object') {
+      const r = reply.retried;
+      reply.result = {...reply.result, retried:`the game did not answer at first (${r.first_error}); sent again with the same ID ${r.attempts - 1} time${r.attempts === 2 ? '' : 's'} over ${r.waited_s} s: this is the game's one answer to it (an ID it had applied is answered from its record, never run twice)`};
     }
     // A direct wait while your queue runs ran as a sleep (as_sleep): --wait follows it as fh sleep does.
     if (wait && reply.ok && typeof reply.result?.as_sleep === 'string' && (action === 'wait_ticks' || action === 'wait_until')) {

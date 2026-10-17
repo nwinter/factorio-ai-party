@@ -218,6 +218,7 @@ return function(api)
       waiting=waiting,
       guards=q.guards and #q.guards>0 and q.guards or nil,last_failure=failure,after_direct=q.after_direct,
       repeating=q.loop~=nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.loop and (q.orders or 'triggers') or nil,
+      paused_why=q.paused and q.paused_why and string.format('%s (tick %d, %ds ago); queue_resume runs the rest',q.paused_why.line,q.paused_why.tick,math.floor((game.tick-q.paused_why.tick)/60)) or nil,
       times=q.loop and q.times or nil,rounds_left=q.loop and q.times and math.max(0,q.times-(q.cycle or 1)) or nil,
       stops_tick=q.loop and q.stop_tick or nil,loop_done=loop_done,repeat_name=q.loop and q.name or nil,condition=q.loop and q.condition or nil,condition_error=q.condition_error,submission=q.submission,
       limits={pending=MAX_PENDING,history=MAX_HISTORY,instant_per_tick=MAX_INSTANT,argument_bytes=MAX_BYTES}}
@@ -411,6 +412,10 @@ return function(api)
     local label=policy:match('^goto:(.+)$')
     if label and jump(q,label) then api.stop(p); return end
     if label then q.history[#q.history].result.goto_error='label not pending: '..label end
+    -- Why it paused, kept for queue_status and the replies (batch8 A5, Opus 2x: a craft step refused for stock nearby
+    -- paused the plan and read as a queue that paused itself).
+    local why=type(result)=='table' and (result.reason or result.outcome or result.error) or result
+    q.paused_why={tick=game.tick,line=string.format('%s %s failed: %s (on_fail abort pauses the plan; on_fail skip goes on)',tostring(step.id or '?'),tostring(step.action),tostring(why))}
     q.paused=true; api.stop(p)
     -- A standing order's run ends here (orders.lua counts the failure); its
     -- remaining steps are dropped, so the queue is free again.
@@ -433,7 +438,7 @@ return function(api)
         if g.steps then
           local items=copy_steps(g.steps); assign(q,items); q.pending=items
           for _,step in ipairs(items) do step.plan=q.plan_seq end
-        elseif not (g['goto'] and jump(q,g['goto'])) then q.paused=true end
+        elseif not (g['goto'] and jump(q,g['goto'])) then q.paused=true; q.paused_why={tick=game.tick,line='a guard fired: '..tostring(g.when['until'])..(saw and ' ('..tostring(saw)..')' or '')} end
         q.revision=q.revision+1
         return
       end
@@ -445,8 +450,10 @@ return function(api)
   -- ticks, wait N ticks) would repeat what already happened, so they are not
   -- requeued.
   local RESTARTABLE={move_to=true,construct=true,build_path=true,mine=true,repair=true,kite=true,wait_until=true,rearm=true,refuel=true,collect=true,recover=true}
-  function M.pause(index)
+  -- why: what paused it (a direct call that drives the character, stop, a retreat, a death, a deploy ...).
+  function M.pause(index,why)
     local q=queue(index)
+    if not q.paused or why then q.paused_why={tick=game.tick,line=why or 'paused (a direct call that drives your character, stop, or a harness update)'} end
     if q.current then
       local step=q.current
       local again=RESTARTABLE[step.action]==true

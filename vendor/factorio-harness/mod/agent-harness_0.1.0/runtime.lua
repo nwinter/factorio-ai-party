@@ -789,7 +789,7 @@ end
 local passive_failed=false
 function M.stop_player(index,outcome)
   if passive_failed==game.tick and not outcome then passive_failed=false; return end
-  if scheduler then scheduler.pause(index) end
+  if scheduler then scheduler.pause(index,outcome and ('your action ended '..tostring(outcome)) or 'a call of yours failed while your queue ran') end
   finish(index,outcome or 'interrupted')
   stop_combat(index,outcome or 'interrupted')
 end
@@ -1526,7 +1526,7 @@ function handlers.describe()
       agriculture={surface='optional surface name (default yours)',returns='towers [{name, position, state (built, ghost, destroyed), status, seeds, lost_tick, cause, line}], as_of (census discovery tick), pending, history; current visible towers and ghosts, plus up to 256 recorded tower deaths since this history was installed; rebuilt positions show the current tower'},
       describe={}, inventory={full='true: the stacks as lists {name, quality, count}, as observe player has them',returns='the character\'s inventories as short lines (name*count, name@quality*count, or empty): inventory (main), free (slots), guns and ammo per slot (1 pistol, 2 empty, 3 empty (selected: 1); 1 empty, 2 piercing-rounds-magazine*75, 3 empty: gun slot N fires only from ammo slot N), ammo_idle (ammo in a slot whose gun slot does not fire it, and the guns it fits), armor, equipment (in the armor\'s grid), trash (trash slots, when any), cursor (the stack or ghost in hand, when any), crafting (hand queue), warnings (nearly full, hoarding); status {inventory=true} gives it in one line'},
       map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true: regions of water (a character cannot cross it), walkable water (shallow water, wetland, oil ocean: a character walks through) and lava',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={platform='optional owned platform: bounded schematic tile_runs [{x,y,count,name}], tile_count, entities with footprints and directions, centred on its hub or position; works aboard',position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)',returns='player, entities, resource_patches, ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the radius by item (rows for them only with entity_types/entity_names)'},
-      status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
+      status={urgent_since='with peek (fh --wait polls): an urgent alert since this tick is given as urgent (one line), as a sleep wakes on it',urgent_radius='with urgent_since: 1..200 tiles',since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
         reports='combat (while a shoot runs: the shoot\'s own record plus target {name, position, distance}: the enemy it aims at now, or a shoot at a position\'s spot; none with nothing in range; fired_tick: the last tick it fired at something; kills_10s: kills by the character or its vehicle in the last 10 s; hurt); hurt (also in brief: the last hit by another force on the character or the vehicle it rides in the last 5 minutes: tick, ago_s, by (the attacker, else the damage type), at, damage (hits under 10 s apart add up), what (the vehicle hit)); teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); storm (on Fulgora: the sky now, as networks has it, with bolts_near: lightning within 64 tiles of you); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name; power_cuts: one line per pole death that split its electric network or left machines with no pole, as team.alerts tells it (powercut.lua); latest: one line per loss incident (a raid: losses within 32 tiles on one surface) with causes; incidents: the same as rows {id, surface, platform, box {x0,y0,x1,y1}, total, names, by, first_tick, last_tick, line}; attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
       build_path={points='2..64 tile-centred axis-aligned waypoints; at most 512 belt tiles',item='transport-belt by default',ticks='1..36000',start_index='resume at this tile index; default 1',end_direction='optional final belt direction',note='walks to a far start (or resume tile) with the pathfinder, then steers along the line placing belts; trees, rocks and wild plants on a tile or across the walk are mined by hand first (walked to with the pathfinder when out of reach; hand-mining time; what they give goes to the inventory; last.cleared counts them, cleared_names by name); it stops for buildings, water and cliffs (the build\'s refusal), and blocked for one no path leads to'},
       kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',retreat='optional {x,y}: below min_health or out of ammunition, walk there (firing at units in reach while ammunition lasts) instead of stopping where you stand; ends retreated on arrival. Or {to: {x,y}, health_below, shield_below} (and the standing retreat_guard): the generic retreat, as move_to\'s (kite\'s own min_health stop then off unless given); false: none',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | retreated | timed_out; last reports why (in words), kills, ammo_used, ammo_left, enemies_left, retreated_from'},
@@ -3236,7 +3236,7 @@ function handlers.observe(p,a)
     active=q.current and {id=q.current.id,action=q.current.action,started_tick=q.current.started_tick} or false} or false
   return out
 end
-function handlers.stop(p) if scheduler then scheduler.pause(p.index) end; finish(p.index,'stopped'); stop_combat(p.index,'stopped'); return {stopped=true} end
+function handlers.stop(p) if scheduler then scheduler.pause(p.index,'stop') end; finish(p.index,'stopped'); stop_combat(p.index,'stopped'); return {stopped=true} end
 function handlers.walk(p,a)
   local direction=directions[a.direction]
   assert(direction,'invalid compass direction')
@@ -9904,7 +9904,7 @@ function M.retreat_go(r)
   if drives then info.going=string.format('driving the %s back to (%g,%g)',v.name,info.to.x,info.to.y)
   elseif on_foot then info.going=string.format(info.idle and 'walking away to (%g,%g)' or 'walking back to (%g,%g)',info.to.x,info.to.y)
   else info.going='seated and not driving: no way back' end
-  if scheduler then pcall(scheduler.pause,index) end
+  if scheduler then pcall(scheduler.pause,index,'a retreat: '..tostring(info.why)) end
   action=s.active[index]
   if action then action.retreated=info; action.why=info.why..'; '..info.going; finish(index,'retreated') end
   combat=s.combat and s.combat[index]
@@ -11507,10 +11507,19 @@ end
 M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,
   where_from=function(me) return M.where.from(me) end,
   -- A direct wait that no tell ends (wake_on_messages: false), and ending one for tell {wake: true} (Astra, d15 14:48).
-  deaf=function(index) local a=state().active[index]; if M.deaf_wait(a) then return {kind=a.kind,until_tick=a.until_tick} end; return M.waits.deaf(index) end,
+  deaf=function(index,from)
+    local a=state().active[index]
+    if M.deaf_wait(a) then return {kind=a.kind,until_tick=a.until_tick} end
+    -- a direct wait that takes tells only from others (wake_from, wake_on_operator)
+    if a and (a.kind=='wait_ticks' or a.kind=='wait_until') and not a.queued and a.wake_filter and not M.board.wakes({from=from},a.wake_filter) then
+      return {kind=a.kind,until_tick=a.until_tick,why='takes tells only from others'}
+    end
+    return M.waits.deaf(index,from)
+  end,
   wake=function(index,from)
     local a=state().active[index]
-    if not M.deaf_wait(a) then return M.waits.wake_deaf(index,from) end
+    local filtered=a and (a.kind=='wait_ticks' or a.kind=='wait_until') and not a.queued and a.wake_filter and not M.board.wakes({from=from},a.wake_filter)
+    if not (M.deaf_wait(a) or filtered) then return M.waits.wake_deaf(index,from) end
     a.told='told by '..from..' (wake: true)'; finish(index,'told'); return true
   end}
 function M.deaf_wait(a) return a~=nil and (a.kind=='wait_ticks' or a.kind=='wait_until') and not a.queued and a.wake_messages==false end
@@ -12309,9 +12318,29 @@ function M.dispatch_inner(request)
       if peek and request.action=='status' then
         local t,woke,from=M.board.inbox_tick(p.index)
         if t then result.inbox={tick=t,woke=woke,from=from} end
+        -- The newest tell sent with wake: true (it ends an fh --wait that goes on through tells; batch8 A4).
+        local box=state().mentions and state().mentions[p.index]
+        for i=#(box and box.list or {}),1,-1 do
+          local m=box.list[i]
+          if m.wake then result.inbox_wake={tick=m.tick,woke='told',from=m.from}; break end
+        end
         -- A viewer's @mention ends it only with --wake-on-viewers (board.lua inbox_tick).
         local vt,vwoke,vfrom=M.board.viewer_tick(p.index)
         if vt then result.inbox_viewer={tick=vt,woke=vwoke,from=vfrom} end
+        -- An urgent alert since a body action's --wait began (batch8 A2: a tell no longer ends that wait; this does).
+        local since=type(request.args)=='table' and request.args.urgent_since
+        if type(since)=='number' then
+          local radius=type(request.args.urgent_radius)=='number' and request.args.urgent_radius or nil
+          -- the wait's base (platform hub damage at its start) kept per agent while that wait's polls come
+          local st=state(); st.wait_urgent=st.wait_urgent or {}
+          local b=st.wait_urgent[p.index]
+          if not (b and b.tick==since and b.radius==radius) then
+            local okb,nb=pcall(M.urgent.base,p,radius)
+            b=okb and nb or {hub={},radius=radius}; b.tick=since; st.wait_urgent[p.index]=b
+          end
+          local oku,line=pcall(M.urgent.check,p,b)
+          if oku and line then result.urgent=line end
+        end
       end
     end
     -- Standing orders: which runs and why, or what they wait for (orders.lua).
