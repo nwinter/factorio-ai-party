@@ -6458,3 +6458,29 @@ fh watch    # deploy on every change
   note's other half: transfer to a fusion-reactor read "no inventory", because the type was missing from the fuel
   inventories. It is in now. Copy: 1 fusion power cell into the Aquilo reactor at (36,22), inspect then read "fuel:
   fusion-power-cell*7".
+- #555 (Astra): placements offered (-10,29) for a cargo bay and the ghost stood at (-10,30). On 2.0.77 (the copy, cargo
+  bay ghosts) the game keeps a cargo bay's footprint corner on even tiles: (-10,29) -> (-10,30), (41,40) -> (42,40),
+  (40.6,40.4) -> (40,40). The prototype does not say so (no build_grid_size at runtime), so shore.lua keeps a table
+  (cargo-bay). placements offers only spots the game keeps (the fewest-to-clear spots too), and the dry run's snap
+  gives the spot it lands on. Copy: the dry run at (-10,29) read position (-10,30); Wren's fewest-to-clear spots
+  (0,0), (2,0), (0,-2).
+- #527 (Sol): a network's capacity summed every generator's rating, dry boilers' engines included. Now each generator
+  is read for what it can make now (a steam engine or turbine with steam in, a burner generator with fuel, a fusion
+  generator with plasma). The power line adds "of that, X from N generators with no steam, fuel or plasma in now
+  (names): Y can supply now", and the science line's headroom is against what can supply now, with the dry
+  generators and the machines on low power. Copy: one dry steam engine placed on Nauvis #2 for the test (removed):
+  "of that, 900 kW from 1 generator with no steam, fuel or plasma in now (1 steam-engine): 171.6 MW can supply now".
+- #283 (Sol): new read `demolishers {surface?, near?}` (demolishers.lua): each demolisher territory with a charted chunk
+  (its border on the map), nearest first, with its charted chunks and the nearest. In it, each demolisher our force
+  sees now (name, head position, health), else where a read last saw it and how long ago. One out of sight is neither
+  named nor told apart from none, as on the map. Territories with no charted chunk are only counted. Copy: 16
+  territories on Vulcanus, 13 on the map; with Sonnet near (205,250) "small-demolisher: head at (203,283), health
+  30000/30000, seen now"; after Sonnet left, "small-demolisher last seen at (203,284) 0m ago, not in sight now".
+  13 ms on the copy (about 3 ms on n).
+- #569 (Astra, shift19 00:18): Kestrel's rocket turret ghosts were placed with configure (big asteroids, ignore
+  unprioritised), and the hub-built turrets read default targeting. On the copy a gun turret built by Wren's hub kept
+  its ghost's targeting in all three ways tried: configure on the ghost, place_ghosts configure, and with an ammo
+  request. A rocket turret did not fit the spot there. Not reproduced, so turretwatch.lua keeps what configure sets
+  on a turret ghost (2 h at most, 64 ghosts). Every 2 s it reads the turret built in its place; one that reads other
+  targeting is set to the ghost's, and the agent who set it is told once (team.alerts). Copy: Wren's gun turret
+  watched, built with its targeting, forgotten, no line. tests/d17_backlog.lua covers an engine that loses it.

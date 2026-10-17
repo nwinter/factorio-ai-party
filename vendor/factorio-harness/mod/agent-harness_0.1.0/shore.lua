@@ -495,6 +495,12 @@ return function(api)
             end
             local ghost = fits and G.ghost_in_way and G.ghost_in_way(x1, y1, x2, y2)
             if fits and seen and not seen(x, y) then fits = false; info.unseen = info.unseen + 1 end
+            -- (backlog #555, Astra: (-10,29) offered for a cargo bay, the ghost stood at (-10,30)) a spot the game would
+            -- move the entity off (a cargo bay keeps to a 2-tile grid) is not a spot: only those it keeps are offered
+            if fits and M.GRID2[proto.type] then
+              local w, h = size(proto, dir)
+              if math.abs(M.grid2(x, w) - x) > 0.01 or math.abs(M.grid2(y, h) - y) > 0.01 then fits = false end
+            end
             if fits then
               checks = checks + 1
               local position = {x=x, y=y}
@@ -723,6 +729,10 @@ return function(api)
   -- Spots for proto (its north footprint, on the tile grid) within radius of pos whose blockers are all ours and
   -- minable, or trees and rocks, with no tile it cannot stand on: the 3 needing the fewest removed, nearest first among
   -- equals. One read of the area's entities and tiles; the spots are tried in Lua.
+  -- Entities the game keeps to a 2-tile build grid (2.0.77 on a copy of world n, cargo-bay ghosts: (-10,29) -> (-10,30),
+  -- (41,40) -> (42,40), (40.6,40.4) -> (40,40)): their footprint's corner on even tiles; the prototype does not tell it.
+  M.GRID2 = {['cargo-bay']=true}
+  function M.grid2(v, w) return math.floor((v - w / 2) / 2 + 0.5) * 2 + w / 2 end
   M.CLEAR_RADIUS = 12
   function M.fewest_to_clear(p, proto, pos, radius, seen)
     local s = p.surface
@@ -769,7 +779,8 @@ return function(api)
     for dx = -radius, radius do
       for dy = -radius, radius do
         local cx, cy = math.floor(pos.x) + dx + ox, math.floor(pos.y) + dy + oy
-        if (dx * dx + dy * dy) <= radius * radius and (not seen or seen(cx, cy)) then
+        local on_grid = not M.GRID2[proto.type] or (math.abs(M.grid2(cx, w) - cx) < 0.01 and math.abs(M.grid2(cy, h) - cy) < 0.01)
+        if on_grid and (dx * dx + dy * dy) <= radius * radius and (not seen or seen(cx, cy)) then
           local l, t, r, b = cx + bx[1], cy + bx[2], cx + bx[3], cy + bx[4]
           local okt = true
           for tx = math.floor(l), math.ceil(r) - 1 do

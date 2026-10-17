@@ -186,3 +186,7 @@
 - `shipment` and `preflight {platform}` give cargo conflict lines: an item the hub holds that the landing pads of two
   or more coming stops ask, per stop in order (ask, hold, what goes down there, what is left aboard).
 - A drop sent to a full landing pad says it landed beside it, where, and what each container holds.
+- `demolishers {surface?, near?}`: each demolisher territory the map draws, nearest first, and each demolisher in sight
+  now (name, head, health), else where a read last saw it.
+- A turret ghost's targeting (configure, place_ghosts configure) is checked once it is built; a turret that reads otherwise
+  is set to the ghost's and you are told.
