@@ -115,7 +115,7 @@ return function(api)
     end
     for index,was in pairs(snap.queues) do
       local q=s.queues and s.queues[index]
-      if q and q.paused then
+      if q and q.paused and not q.held then
         local step=was.current
         -- The pause recorded the step interrupted: it never was.
         local last=q.history[#q.history]

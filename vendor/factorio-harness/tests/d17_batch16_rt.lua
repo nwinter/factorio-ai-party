@@ -96,3 +96,43 @@ do
   surface.find_entities_filtered=was
 end
 print('d17_batch16_rt A1 load_silo without its silo: ok')
+
+-- A4 (Sol d17 16:13, 2x): a direct transfer requeued the running load_silo and the queue started it again on its own when
+-- the transfer ended. queue_pause is the agent's own pause: the running step goes back to the head of pending, and the
+-- lane holds until queue_resume; direct calls in between never resume it, and their replies say so.
+do
+  local index=runtime.bots.index_of('sol')
+  sol('queue_cancel',{})
+  sol('queue_submit',{steps={{action='move_to',args={position={x=30,y=5}},label='to the silo'},{action='wait_ticks',args={ticks=60}}}})
+  advance(2)
+  local q=storage.agent_harness.queues[index]
+  local function dump(t) local o={} for k,v in pairs(t or {}) do o[#o+1]=tostring(k)..'='..tostring(type(v)=='table' and (v.action or v.reason or '{}') or v) end return table.concat(o,' ') end
+  assert(q.current and q.current.action=='move_to','q: '..dump(q)..' last: '..dump(q.history[#q.history])..' result: '..dump(q.history[#q.history] and q.history[#q.history].result))
+  local r=sol('queue_pause',{})
+  assert(r.held and r.held:find('paused by you',1,true) and r.held:find('move_to stopped and requeued at the head',1,true),tostring(r.held))
+  eq(q.paused,true); assert(q.held,'held')
+  eq(q.pending[1].action,'move_to','requeued at the head')
+  -- a direct call that would have resumed a requeued load: it does not, and says the queue is held
+  q.requeued_load={id=q.pending[1].id,tick=game.tick}
+  local out={}
+  runtime.resume_requeued_load(storage and {index=index} or nil,'transfer',out)
+  eq(q.paused,true,'still paused after a direct transfer')
+  assert(out.queue_held and out.queue_held:find('paused by you (queue_pause',1,true) and out.queue_held:find('this call did not resume it',1,true),tostring(out.queue_held))
+  eq(runtime.resume_after(index,q.pending[1].id),false,'a timed action ending does not resume it')
+  advance(120)
+  eq(q.paused,true,'held across ticks')
+  local st=sol('queue_status',{})
+  assert(tostring(st.paused_why):find('paused by you (queue_pause): held until queue_resume',1,true),tostring(st.paused_why))
+  -- queue_resume lifts the hold
+  sol('queue_resume',{})
+  eq(q.paused,false); eq(q.held,nil)
+  -- without queue_pause, a requeued load still resumes after a direct call ends (unchanged)
+  sol('queue_cancel',{})
+  sol('queue_submit',{steps={{action='wait_ticks',args={ticks=600}}},start=false})
+  q.requeued_load={id=q.pending[1].id,tick=game.tick}
+  out={}
+  runtime.resume_requeued_load({index=index},'transfer',out)
+  eq(q.paused,false,'resumed as before'); assert(out.queue_resumed,'said')
+  sol('queue_cancel',{})
+end
+print('d17_batch16_rt A4 queue_pause holds: ok')

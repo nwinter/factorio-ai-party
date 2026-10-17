@@ -666,7 +666,7 @@ return function(api)
       q.pending=items
       q.guards=q.guards or {}
       for _,g in ipairs(new_guards) do q.guards[#q.guards+1]=g end
-      if a.start~=false then q.paused=false end
+      if a.start~=false then q.paused=false; q.held=nil end
       q.submission=string.format('pending replaced: %d dropped, %d queued; the active step goes on',dropped,#items)
       q.revision=q.revision+1
       return with(snapshot(q,RECENT),corrected)
@@ -707,7 +707,7 @@ return function(api)
     q.guards=q.guards or {}
     assert(#q.guards+#new_guards<=MAX_GUARDS,'at most '..MAX_GUARDS..' guards')
     for _,g in ipairs(new_guards) do q.guards[#q.guards+1]=g end
-    if a.start~=false then q.paused=false end
+    if a.start~=false then q.paused=false; q.held=nil end
     q.revision=q.revision+1
     return with(snapshot(q,RECENT),corrected)
   end
@@ -743,7 +743,7 @@ return function(api)
     q.loop=copy_steps(items); q.interval=interval; q.next_cycle_tick=nil; q.cycle=1; q.orders=orders
     q.name=a.name; q.round={counts={},keys={},n=0}; q.round_sig=nil; q.round_news=nil; q.empty_rounds=nil
     q.times=times; q.for_ticks=for_ticks; q.stop_tick=for_ticks and game.tick+for_ticks or nil; q.loop_done=nil; q.condition=a.condition; q.condition_error=nil; q.submission=nil
-    assign(q,items); q.pending=items; q.paused=false; q.revision=q.revision+1
+    assign(q,items); q.pending=items; q.paused=false; q.held=nil; q.revision=q.revision+1
     if met then q.pending={}; q.cycle=0; end_loop(q,"condition met: "..tostring(saw or a.condition["until"])) end
     return with(snapshot(q,RECENT),corrected)
   end
@@ -805,8 +805,23 @@ return function(api)
   end
   function M.handlers.queue_resume(p,a)
     local q=queue(p.index); revision(q,a)
-    q.paused=false; q.revision=q.revision+1
+    q.paused=false; q.held=nil; q.revision=q.revision+1
     return snapshot(q,RECENT)
+  end
+  -- queue_pause (d17 batch16 A4, Sol 2x: a direct transfer requeued the running load_silo, and the queue started it again
+  -- on its own when the transfer ended, inside --wait, in the middle of a maintenance chain): the agent's own pause. The
+  -- running step stops (requeued as any interruption requeues it) and the lane holds until queue_resume, or a submit
+  -- or repeat that starts it; direct calls in between never resume it.
+  function M.handlers.queue_pause(p,a)
+    local q=queue(p.index); revision(q,a)
+    local was=q.current and (q.current.id .. ' ' .. q.current.action)
+    api.stop(p)
+    M.pause(p.index,'paused by you (queue_pause): held until queue_resume; direct calls do not resume it')
+    q.held={tick=game.tick}
+    local out=snapshot(q,RECENT)
+    out.held=string.format('paused by you; %s; queue_resume runs the %d pending step%s', was and was .. ' stopped and requeued at the head' or 'nothing was running',
+      #q.pending, #q.pending==1 and '' or 's')
+    return out
   end
   -- A call timed as its own profile part while the operator profile runs (runtime M.timed; operator 18:12:
   -- scheduler.tick 182 ms in one game second at 17:53); else just the call.
@@ -969,6 +984,7 @@ return function(api)
       id='a pending step\'s job id (queue_status pending, "job-12"): edit, delete or move that step; the active step is never touched',to='with id: move that step to this pending place (1-based)'},
     queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses',expected_revision='optional'},
     queue_resume={expected_revision='optional'},
+    queue_pause={expected_revision='optional',returns='the queue paused by you: the running step stops and goes back to the head of pending; it holds until queue_resume (or a queue_submit or queue_repeat that starts it); direct calls between never resume it (held)'},
     wait_ticks={ticks='1..54000 simulation ticks: a queue step, or a direct timed action (fh call wait_ticks --wait)',pause_queue=PAUSE_QUEUE,
       wake_on_viewers='direct call only, optional true (fh --wake-on-viewers): a viewer\'s @mention ends it too (a tell or teammate\'s mention does by default)',
       wake_from='direct call only: 1..16 names (teammates, or operator; fh --wake-from a,b): only a tell or mention from them ends it',wake_on_operator='direct call only: false (fh --no-operator-wake): operator tells and reminder jobs do not end it',wake_on_messages='direct call only, boolean default true; false keeps waiting through all tells and mentions, including viewers; messages remain in the next reply'},

@@ -22,7 +22,7 @@ Each topic, when to read it, and the commands it documents:
   `danger`, `drill_sites`, `ores`, `stock` (where an item is), `reservations` (a network's robot reservations), `construction_robots`, `shortages` (the factory's
   shortages in one read), `damage_log` (what hit our entities); the factory digest.
 - `waits-queues`, for waits past the sleep and wait basics, or work that repeats: `wait_until` and `sleep --until` conditions,
-  `wait_ticks`, `sleep_check`, `queue_submit` (modes), `queue_status`, `queue_edit`, `queue_cancel`, `queue_repeat`, `plan save`, `plan run`,
+  `wait_ticks`, `sleep_check`, `queue_submit` (modes), `queue_status`, `queue_edit`, `queue_cancel`, `queue_pause`, `queue_repeat`, `plan save`, `plan run`,
   `plan list`, `stop`, `order_set`, `orders`, `order_remove`, `orders_pause`, `orders_resume` (standing orders),
   `reminder_add`, `reminder_ack`, `reminders`; urgent wakes, slow game, harness updates.
 - `team`, when you edit board items or read a `team:` or `team: shift` block or an `OPERATOR:` line: claims, `board projects`, `board_review`, `board_retire`, `lessons`, `lesson_add`, `lesson_edit`, `lesson_verify`, `review`,

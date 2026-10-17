@@ -12856,9 +12856,9 @@ function M.queue_brief(q)
     last_failure=f and (step(f)..(type(f.result)=='table' and f.result.reason and ': '..tostring(f.result.reason) or '')) or nil,
     repeating=q.repeating or nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,orders_between_rounds=q.orders_between_rounds,guards=q.guards and #q.guards or nil,
     times=q.times,rounds_left=q.rounds_left,stops_tick=q.stops_tick,loop_done=q.loop_done,repeat_name=q.repeat_name,condition=q.condition,condition_error=q.condition_error,submission=q.submission,
-    waiting=q.waiting,after_direct=q.after_direct,corrected=q.corrected,note='queue_status: the active step, the next one and the last 3 in full (history, pending: a count or "all")'}
+    waiting=q.waiting,after_direct=q.after_direct,corrected=q.corrected,held=type(q.held)=='string' and q.held or nil,paused_why=q.paused_why,note='queue_status: the active step, the next one and the last 3 in full (history, pending: a count or "all")'}
 end
-for _,name in ipairs{'queue_submit','queue_repeat','queue_edit','queue_cancel','queue_resume'} do
+for _,name in ipairs{'queue_submit','queue_repeat','queue_edit','queue_cancel','queue_resume','queue_pause'} do
   local handler=handlers[name]
   if handler then handlers[name]=function(p,a)
     local key=a and a.lane=='remote' and 'remote_queues' or 'queues'
@@ -13137,18 +13137,25 @@ function handlers.cameras() return M.cameras.list() end
 M.RESUME_AFTER={build=true,transfer=true,collect=true,feed=true,rearm=true,refuel=true,configure=true,rotate=true,pickup=true,mine=true,craft=true,load_silo=false}
 function M.resume_after(index,id)
   local q=(state().queues or {})[index]
+  if q and q.held then return false end  -- the agent's own pause (queue_pause) holds
   if q and q.paused and q.pending[1] and q.pending[1].id==id then q.paused=false; q.revision=q.revision+1; q.requeued_load=nil; return true end
 end
 function M.resume_requeued_load(p,action,result)
   local q=(state().queues or {})[p.index]
   local r=q and q.requeued_load
+  if q and q.held and q.paused and type(result)=='table' and M.RESUME_AFTER[action] then
+    result.queue_held=string.format('your queue is paused by you (queue_pause, %ds ago) with %d pending: it holds until queue_resume; this call did not resume it',
+      math.floor((game.tick-q.held.tick)/60),#q.pending)
+    q.requeued_load=nil
+    return
+  end
   if not (r and r.tick==game.tick and q.paused) then return end
   if not M.RESUME_AFTER[action] then q.requeued_load=nil; return end
   local now=state().active[p.index]
   local text
   if now and now.until_tick then
     now.resume_queue=r.id
-    text=string.format('your queue\'s load_silo step (%s) was requeued: the queue goes on when this %s ends',r.id,tostring(now.kind))
+    text=string.format('your queue\'s load_silo step (%s) was requeued: the queue goes on when this %s ends (queue_pause first holds it until queue_resume)',r.id,tostring(now.kind))
   elseif M.resume_after(p.index,r.id) then
     text=string.format('your queue\'s load_silo step (%s) was requeued and the queue goes on',r.id)
   end
