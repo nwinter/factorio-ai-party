@@ -84,3 +84,6 @@
   go_to}` sends a spidertron by remote view; `auto_target_without_gunner` and `auto_target_with_gunner` set its switches.
 - A move_to that would end `arrived` more than its tolerance + 3 tiles from the goal ends `stopped_short` instead,
   `last.why` saying where it stopped, how far and after how many legs round enemies.
+- A move_to dry run's `enters` names every worm and spawner whose reach the planned route enters, and every attack or
+  enemy group within 24 tiles of it, with where it goes in and out. A walk begun inside a reach goes out the shortest
+  way first (`left_reach_first`). Attack lines say when the area clears (30 s after its last hit).

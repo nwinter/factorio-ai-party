@@ -112,3 +112,7 @@
 - A full `status` gives `robots`: per planet or platform, all its logistic networks' robots by kind (idle, working,
   charging, waiting to charge) and the networks with the most waiting. Its fuel and power warnings name the surface and
   the first places (`fuel on nauvis: boiler 4/42 no_fuel at (-75,21.5) ...`).
+- `./fh call power --args '{"by_cause":true}'` ranks each network's draw by entity name (last 5 s); when roboports draw,
+  it adds the robots flying, charging and waiting, what the flying ones draw, their trip lengths and the requesters
+  with the most on the way.
+- `inspect {area | position+radius}` over 64 entities gives counts by name instead; `name` filters by name there.

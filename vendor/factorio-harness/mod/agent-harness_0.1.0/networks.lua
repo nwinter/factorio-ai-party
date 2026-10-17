@@ -1510,6 +1510,8 @@ return function(api)
     end
     return kw
   end
+  -- The background pole map, one pole a network (C1 power by_cause: powercause.lua reads each network's statistics).
+  function M.pole_map() return store().map end
   function M.read(p, a)
     assert(a.fresh == nil or type(a.fresh) == 'boolean', 'fresh must be true or false')
     local v = view(p.force)

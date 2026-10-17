@@ -286,7 +286,7 @@ astra('stop'); asked={}
 structures={}; storage.agent_harness.enemy_chunks=nil
 storage.agent_harness.damage={['nauvis:1,0']={id=1548,at={x=60,y=0},first=tick-300,last=tick-60,hits=5,damage=180,surface='nauvis',size=3}}
 fails(function() astra('move_to',{position={x=65,y=0}}) end,
-  'goal (65,0) is within 24 tiles of attack #1548 at (60,0), an area under attack now (last hit 1s ago, 3 attackers seen) (5.0 tiles from it): unsafe_goal: true to go anyway; the nearest safe spot toward it:')
+  'goal (65,0) is within 24 tiles of attack #1548 at (60,0), an area under attack now (last hit 1s ago, 3 attackers seen) (5.0 tiles from it); it clears in about 29 s (tick 1809) unless hit again (an area counts as under attack 30 s after its last hit): unsafe_goal: true to go anyway; the nearest safe spot toward it:')
 -- An attack whose last hit was over 30 s ago is over.
 storage.agent_harness.damage['nauvis:1,0'].last=tick-1900
 r=astra('move_to',{position={x=65,y=0}}); eq(r.unsafe_goal,nil); astra('stop')

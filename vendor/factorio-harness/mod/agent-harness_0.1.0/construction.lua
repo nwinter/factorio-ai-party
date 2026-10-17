@@ -170,12 +170,30 @@ return function(api)
   function M.plan_ghosts(p,a,box,ghosts)
     local pending={}
     local action={kind='construct',pending=pending,built=0,mined=0,gone=0,missing={},failed={},seen={}}
+    -- avoid_enemies as move_to's (default on; false: none): the walks go round, and a ghost inside a worm's or
+    -- spawner's own reach is left out unless unsafe_goal (C2: Opus's second death, building next to a big worm).
+    local mode=a.avoid_enemies~=false and api.avoid_mode and api.avoid_mode(a.avoid_enemies) or nil
+    -- By default worms and spawners only: building in an area under attack is what defending it takes (on a copy of
+    -- world n, Opus's construct begun inside attack #4338 found no leg out of it and read every ghost unreachable).
+    if mode and a.avoid_enemies==nil then mode.attacks=nil end
+    action.avoid_mode=mode
+    local inside_n,inside_by,checked=0,{},0
     local function add(e,ghost) add_mine(action,e,ghost) end
     -- Tile ghosts (landfill, paths) are placed like tiles from the cursor;
     -- the trees and rocks a tile collides with go first (M.tile_obstacles).
     local tiles={}
     for _,e in pairs(ghosts or p.surface.find_entities_filtered{area=box,type={'entity-ghost','tile-ghost'},force=p.force}) do
-      if e.valid and api.known(p,e) then
+      local danger
+      if e.valid and mode and not a.unsafe_goal and api.goal_inside and checked<400 then
+        checked=checked+1
+        local ok,c=pcall(api.goal_inside,p,e.position,mode)
+        if ok and c then
+          danger=true; inside_n=inside_n+1
+          local k=string.format('%s (%g,%g) %s %g',c.m.name,math.floor(c.m.x+0.5),math.floor(c.m.y+0.5),c.m.spawner and 'sight' or 'range',c.m.range)
+          inside_by[k]=(inside_by[k] or 0)+1
+        end
+      end
+      if e.valid and not danger and api.known(p,e) then
         local obstacles=e.type=='tile-ghost' and M.tile_obstacles(p,e) or M.mark_obstacles(p,e)
         pending[#pending+1]={ghost=e,tries=0,stand_fails=0,obstacles=#obstacles>0 and obstacles or nil}
         if e.type=='tile-ghost' then tiles[math.floor(e.position.x)..','..math.floor(e.position.y)]=pending[#pending] end
@@ -230,6 +248,13 @@ return function(api)
     end
     assert(#pending<=MAX_GHOSTS,'more than '..MAX_GHOSTS..' ghosts; construct a smaller area')
     action.until_tick=game.tick+api.integer(a.ticks,36000,1,216000,'ticks')
+    if inside_n>0 then
+      local parts={}
+      for k,n in pairs(inside_by) do parts[#parts+1]=n..' in '..k end
+      table.sort(parts)
+      action.left_out=string.format('%d ghost%s left out, inside an enemy\'s reach the map shows: %s (unsafe_goal: true builds them; avoid_enemies: false checks none)',
+        inside_n,inside_n==1 and '' or 's',table.concat(parts,'; ',1,math.min(#parts,6)))
+    end
     return action
   end
   -- Returns the owned item that places this ghost, or nil and the item wanted.
@@ -820,6 +845,8 @@ return function(api)
     end
     if nav then
       local outcome=api.navigate(p,nav)
+      -- legs round the worms and spawners (C2): the next one starts where one ends
+      if outcome and nav.foes and api.leg_done and api.leg_done(p,nav,outcome) then return end
       if not outcome then return end
       local target=nav.target
       action.nav=nil
@@ -884,7 +911,12 @@ return function(api)
         -- Stalls re-path at once and give up after a few, since another
         -- stand point is usually a better answer than pushing on.
         action.nav={position=stand,tolerance=rec.mine and 0.4 or 1,target=rec,max_stalls=6,replan_every=1,replans=0,stalled=0,last_position=here}
-        if api.distance(here,stand)>reach(p) then api.request_path(p,action.nav) end
+        if api.distance(here,stand)>reach(p) then
+          -- move_to's enemy checks on the way (C2, Opus 22:50: a construct over a far area walked him through a big
+          -- worm's range from (-290,-302), and he died at (-282,-190)): legs round the worms, spawners and attacks.
+          if action.avoid_mode and api.avoid_start then api.avoid_start(p,action.nav,action.avoid_mode) end
+          api.request_path(p,action.nav)
+        end
         return
       end
       fail(action,rec,'no free stand point in reach'); gone[rec]=true
