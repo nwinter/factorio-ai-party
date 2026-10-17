@@ -1,5 +1,5 @@
 # name	kind	route	model	effort	label	harness
-astra	codex	codex-b	gpt-6-astra	low	GPT-6 Astra	Codex
+astra	codex	codex	gpt-6-astra	low	GPT-6 Astra	Codex
 sol	codex	codex-b	gpt-6.1-sol	low	GPT-6.1 Sol	Codex
 luna	codex	codex-b	gpt-6-luna	low	GPT-6 Luna	Codex
 opus	claude	claude-c	opus	low	Claude Opus 5.5	Claude Code
