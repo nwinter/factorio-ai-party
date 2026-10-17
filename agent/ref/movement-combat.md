@@ -48,6 +48,8 @@
   corpse keeps what you carried when you died and does not expire. One inside a worm's range is left out (`left_out`).
   `recover {"dry_run": true}` walks nowhere: each corpse's distance, items, whether recover walks to it, and its
   `danger` (worms and spawners whose reach comes near it, attacks near it in the last 10 minutes).
+  `recover {"stop_after": 1}` walks to the nearest corpse only (`not_walked` names the rest); `{"corpse": {"x":..,"y":..}}`
+  to that one. `use_item` gives `ready_tick` (when the next capsule can go); cooling down, the refusal names it.
 - Grenades and capsules: use_item {item, position}.
 - Gun slot N fires only from ammo slot N: `inventory` shows guns and ammo per slot; `equip {slot: "ammo", item, index}` moves ammo between ammo slots.
 - `equip {slot,item,index?}` tries compatible empty gun/ammo slots before slot 1 when index is omitted; an explicit index selects only that slot. A gun already in a slot is selected; an occupied slot swaps when your inventory has room.

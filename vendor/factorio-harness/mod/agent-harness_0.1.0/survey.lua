@@ -244,7 +244,11 @@ return function(api)
           local f=fuel[e.name]
           if not f then f={type=e.type,total=0,empty=0,low=0}; fuel[e.name]=f; fuel_order[#fuel_order+1]=e.name end
           f.total=f.total+1
-          if e.status==status_ids.no_fuel then f.empty=f.empty+1
+          if e.status==status_ids.no_fuel then
+            f.empty=f.empty+1
+            -- where (D1, Gemini 16:51 and 18:24: 'heating-tower 2/2 no_fuel' named no place)
+            f.empty_at=f.empty_at or {}
+            if #f.empty_at<6 then f.empty_at[#f.empty_at+1]=string.format('(%g,%g)',e.position.x,e.position.y) end
           elseif burner.inventory.is_empty() and (burner.remaining_burning_fuel or 0)>0 then
             f.low=f.low+1
             -- Each burner on its last fuel, where and about how long it burns on (Luna 04:51: two biochambers low, one
@@ -271,10 +275,17 @@ return function(api)
           end
         elseif e.electric_buffer_size and e.electric_buffer_size>0 and e.type~='boiler' then
           a.powered=a.powered+1
-          if e.status==status_ids.low_power then a.starved=a.starved+1
+          -- each kind's first places by name (D1, Gemini: 'machines low_power' named none)
+          local kind
+          if e.status==status_ids.low_power then a.starved=a.starved+1; kind='low_power'
           -- no_power without a network id: no pole reaches it.
           elseif e.status==status_ids.no_power then
-            if e.electric_network_id then a.unpowered=a.unpowered+1 else a.unconnected=a.unconnected+1 end
+            if e.electric_network_id then a.unpowered=a.unpowered+1; kind='no_power' else a.unconnected=a.unconnected+1; kind='unconnected' end
+          end
+          if kind then
+            a.power_at=a.power_at or {}
+            local list=a.power_at[kind] or {}; a.power_at[kind]=list
+            if #list<6 then list[#list+1]=string.format('%s (%g,%g)',e.name,e.position.x,e.position.y) end
           end
         end
         if e.type=='ammo-turret' then
@@ -337,14 +348,16 @@ return function(api)
     for _,name in ipairs(fuel_order) do
       local f=fuel[name]
       if f.empty>0 or f.low>0 or (f.rot or 0)>0 or (f.stuck or 0)>0 then
-        fuel_parts[#fuel_parts+1]=string.format('%s %d/%d no_fuel',name,f.empty,f.total)..(f.low>0 and ', '..f.low..' burning their last fuel'
+        fuel_parts[#fuel_parts+1]=string.format('%s %d/%d no_fuel',name,f.empty,f.total)
+          ..(f.empty_at and ' at '..table.concat(f.empty_at,' ')..(f.empty>#f.empty_at and ' ...' or '') or '')..(f.low>0 and ', '..f.low..' burning their last fuel'
           ..(f.last and ' ('..table.concat(f.last,', ')..(f.low>#f.last and ', ...' or '')..')' or '') or '')
           ..((f.stuck or 0)>0 and string.format(', %d stopped by a full burnt-result slot (the first at %s: %s)',f.stuck,f.stuck_at.at,f.stuck_at.burnt) or '')
           ..(f.first and (f.rot or 0)>0 and string.format(', fuel spoils within %ds in %d (the first: %s in %s at %s)',ROT_SOON/60,f.rot,f.first.item,
             duration(math.max(0,f.first.tick-game.tick)),f.first.at) or '')
       end
     end
-    if #fuel_parts>0 then warnings[#warnings+1]='fuel: '..table.concat(fuel_parts,'; ') end
+    local where=surface and surface.valid and ' on '..surface.name or ''
+    if #fuel_parts>0 then warnings[#warnings+1]='fuel'..where..': '..table.concat(fuel_parts,'; ') end
     table.sort(turret_order)
     local ammo_parts={}
     for _,name in ipairs(turret_order) do
@@ -371,9 +384,13 @@ return function(api)
     if starved+unpowered+unconnected>0 then
       local parts={}
       for _,c in ipairs{{starved,'low_power'},{unpowered,'no_power'},{unconnected,'unconnected'}} do
-        if c[1]>0 then parts[#parts+1]=(#parts==0 and c[1]..' of '..powered..' machines ' or c[1]..' ')..c[2] end
+        if c[1]>0 then
+          local at=a.power_at and a.power_at[c[2]]
+          parts[#parts+1]=(#parts==0 and c[1]..' of '..powered..' machines ' or c[1]..' ')..c[2]
+            ..(at and ': '..table.concat(at,', ')..(c[1]>#at and ', ...' or '') or '')
+        end
       end
-      warnings[#warnings+1]='power: '..table.concat(parts,'; ')..' (fh call power lists them)'
+      warnings[#warnings+1]='power'..where..': '..table.concat(parts,'; ')..' (fh call power lists them)'
     end
     local packs={}
     for name,n in pairs(missing) do packs[#packs+1]=name..' ('..n..' labs)' end

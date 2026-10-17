@@ -102,10 +102,10 @@ local at=body.position
 -- A grenade: the game's own projectile from the character, at the target, one used.
 body.items['grenade']=3
 local r=astra('use_item',{item='grenade',position={x=at.x+10,y=at.y}})
-eq(r.kind,'throw'); eq(r.projectile,'grenade'); eq(r.range,15); eq(r.distance,10); eq(r.left,2); eq(r.cooldown_ticks,30)
+eq(r.kind,'throw'); eq(r.projectile,'grenade'); eq(r.range,15); eq(r.distance,10); eq(r.left,2); eq(r.cooldown_ticks,30); eq(r.ready_tick,game.tick+30)
 eq(#thrown,1); eq(thrown[1].source,body); eq(thrown[1].target.x,at.x+10); eq(thrown[1].force,body.force); eq(body.items['grenade'],2)
 -- The capsule cooldown, then free again.
-fails(function() astra('use_item',{item='grenade',position={x=at.x+5,y=at.y}}) end,'cooling down: 30 ticks left')
+fails(function() astra('use_item',{item='grenade',position={x=at.x+5,y=at.y}}) end,'cooling down: 30 ticks left before the next capsule (ready at tick '..(game.tick+30)..')')
 advance(30)
 eq(astra('use_item',{item='grenade',position={x=at.x+5,y=at.y}}).left,1)
 advance(30)

@@ -5725,3 +5725,29 @@ fh watch    # deploy on every change
   48 tiles off walked by default (`from (49,0.4) -> passive-provider-chest (15.7,19.1): 53 tiles walked`), and the
   give back through via (30,5) read `from (15.7,20) -> via 1 (29.9,4.2) -> passive-provider-chest (15.7,19.1): 76
   tiles walked`.
+- Fuel and power warnings (D1, Gemini 16:51 and 18:24: 'heating-tower 2/2 no_fuel', 'machines low_power' named no
+  place): status's survey warnings name the surface and the first 6 places: `fuel on nauvis: boiler 4/42 no_fuel at
+  (-75,21.5) ...`, `power on nauvis: 12 of 2183 machines unconnected: fast-inserter (-126.5,-100.5), ...`.
+- `check_inserters` (D2, Gemini): each row's `line` names both sides (`#1 inserter (6.5,0.5) facing north: picks from
+  iron-chest (6.5,1.5), drops into ...: ok`); a refusal gives each failing inserter's line, so both entities are named.
+- `danger` (D3, Haiku 18:20, 3x: "live mobile biters and spitters near a point with their counts"; the journal shows
+  units were listed, but all together, and `observe {scope: danger}` without a position was refused 3 times): position
+  defaults to where you stand; units more than 24 tiles from every spawner read are grouped into packs (units within 16
+  tiles of a pack's first): `packs` with count, names, where and how far, apart from those by their nests. On the copy
+  at Haiku's (-190,-31): of 33 units, a pack of 2 (big and medium spitter) at (-199,-41), 31 by their nests.
+- `robots` in a full status (D4, Haiku 16:50: "I had to use networks for each planet"): per planet or platform, its
+  logistic networks' robots summed by kind (total, idle, working, charging, waiting to charge) and the networks with
+  the most waiting, from the network view kept for a minute (no new scan). On the copy: 5 lines, e.g. `gleba: 1
+  network; robots logistic 157: 0 idle, 143 working, 14 charging, 0 waiting; ...`.
+- `moved_by` (D5, Opus 3x: a standing order rearm-se took him to (53,112)): a queue step or standing order step that
+  ends with the character 8 or more tiles from where it began (or on another surface) is named in the agent's next
+  reply that is not a poll, once: who (the order, or the queue step and label), the action and whether it was done,
+  from and to, the tiles, the tick; the last 4 kept. On the copy: `your queue step job-2560 (to the jelly line)
+  (move_to, done) moved you from (15.7,20) to (39.6,1.8) (30 tiles)`.
+- `recover {stop_after: N}` (D6, Muse 3x: recover walked on to a second corpse across the map into enemies): the nearest
+  N (1..5) only, `not_walked` naming the rest; `recover {corpse: {x,y} | unit_number}` that one (refused naming yours
+  when none is there). `use_item` gives `ready_tick`, and a refusal while cooling down names the tick it is ready.
+- Queued `launch {wait_ready}` (E13, Astra 20:02: job34513 launched with the right cargo but the plan recorded failed:
+  met and paused): `last.outcome` stayed the wait's `met`, which is no success for a launch step. A met wait and a
+  launch that goes now records `launched`. On the copy, a queue of a ready launch, a waited launch (the rocket built
+  while waiting) and a wait ran through without pausing; the waited one read `launched`.

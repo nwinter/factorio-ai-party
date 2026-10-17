@@ -40,7 +40,9 @@
   pickup goes on through tells (listed in `told_during_wait`) and ends on an urgent alert or a tell sent with --wake.
 - `fh sleep 900 --until 'platform Wren at vulcanus'` (or `left gleba`) goes on through tells (`--wake-on-tells` keeps
   them waking it). `tell --wake` wakes a teammate every time; `ignoring` names a wait your tell does not end.
-  `queue_status` `paused_why` says what paused the queue.
+  `queue_status` `paused_why` says what paused the queue. A queue step or standing order step that ends with you 8 or
+  more tiles from where it began is named in your next reply (not a poll): `moved_by` (`standing order rearm-se (rearm,
+  done) moved you from (10,4) to (53,112) (112 tiles)`). A queued `launch {wait_ready}` whose rocket goes records `launched`.
 - Urgent wakes: `--urgent-radius N` (1..200) counts attacks, groups, losses and deaths only within N tiles of you. `--until "alert near=X,Y radius=R min_size=N"` (or `area=X1,Y1,X2,Y2`)
   wakes only on an attack, group or nest there and that big; `woke: alert` names the alert.
 - Conditional `sleep`, `wait_until`, and queue waits report `wait_estimates` (ETA and rate basis, or no estimate) and

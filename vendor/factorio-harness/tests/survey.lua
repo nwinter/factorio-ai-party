@@ -90,14 +90,14 @@ eq(s.factory.research,'automation 50% (queue ends)')
 eq(s.machines['assembling-machine-1'],'1/3 working, 1 item_ingredient_shortage, 1 low_power')
 eq(s.machines.boiler,'2/3 working, 1 no_fuel')
 eq(s.machine_positions,nil)
-has(s.warnings,'fuel: biochamber 0/2 no_fuel, fuel spoils within 60s in 1 (the first: nutrients in 4s at (30,0)); boiler 1/3 no_fuel, 1 burning their last fuel')
+has(s.warnings,'fuel: biochamber 0/2 no_fuel, fuel spoils within 60s in 1 (the first: nutrients in 4s at (30,0)); boiler 1/3 no_fuel at (4,0), 1 burning their last fuel')
 assert(not has(s.warnings,'fuel:'):find('stone-furnace',1,true),'coal does not spoil: no stone-furnace part')
 -- A burner its full burnt-result slot stopped (burnt.lua; Sol, shift14: two biochambers read working, spoilage*200 in that
 -- slot): counted in the fuel part whatever its status reads.
 local S3=dofile('mod/agent-harness_0.1.0/survey.lua'){state=function() return {} end,status_name=function(e) return status_names[e.status] end,
   burnt_stuck=function(e) return e.name=='biochamber' and e.position.x==30 and {burnt='spoilage*200'} or nil end}
 has(S3.summary(p).warnings,'fuel: biochamber 0/2 no_fuel, 1 stopped by a full burnt-result slot (the first at (30,0): spoilage*200), fuel spoils within 60s in 1')
-has(s.warnings,'power: 1 of 4 machines low_power (fh call power lists them)')
+has(s.warnings,'power: 1 of 4 machines low_power: assembling-machine-1 (3,0) (fh call power lists them)')
 has(s.warnings,'ammo: gun-turret 1/3 empty at (11,0), 1 below 5 at (12,0); rearm radius=R')
 has(s.warnings,'flamer oil: flamethrower-turret 4 of 5 with oil (crude-oil 20 at (22,0), ...); 1/5 dry at (21,0), 1 below 25% at (22,0) 10%; fh call flamers')
 has(s.warnings,'belts: 1 unpaired undergrounds: input (-3.5,-27.5)')

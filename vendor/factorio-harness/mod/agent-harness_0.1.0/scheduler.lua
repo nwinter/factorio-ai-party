@@ -333,6 +333,8 @@ return function(api)
   end
   local function record(q,step,ok,result)
     if step.action=='wait_until' and api.wait_info then api.wait_info(result,step) end
+    -- where the step took the character (D5, Opus 3x: rearm-se took him to (53,112)): said in the agent's next reply
+    if step.from_pos and api.step_moved then pcall(api.step_moved,step,ok) end
     tally(q,step,result)
     -- with its arguments (Muse, Luna, shift19: a finished 40-round loop could not be rebuilt from its history)
     q.history[#q.history+1]={id=step.id,action=step.action,label=step.label,ok=ok,result=result,started_tick=step.started_tick,finished_tick=game.tick,order=step.order,
@@ -914,6 +916,8 @@ return function(api)
             else
               -- What the step moves by hand is the queue's or its standing order's (hauling.lua).
               if api.step_begin then pcall(api.step_begin,index,step) end
+              local c=p.character
+              if c and c.valid and c.position and c.surface then step.from_pos={x=c.position.x,y=c.position.y,surface=c.surface.name}; step.index=index end
               -- A repeating loop's hand steps walk into reach (Muse, d15 twice: a hand haul ended elsewhere and the loop's
               -- collect failed out of reach, past the 32 tiles a call walks by default): a transfer, collect, feed, rearm
               -- or refuel step with a position and no walk runs with walk: true; walk: false keeps it from walking.
