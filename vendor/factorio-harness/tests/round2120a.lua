@@ -277,7 +277,7 @@ advance(340)
 local alerts=haiku('clock',{}).team.alerts
 local line
 for _,a in ipairs(alerts) do if a:find('power cut',1,true) then line=a end end
-eq(line,'power cut #1: small-electric-pole (-193,-200) destroyed by big-biter 5s ago: split electric network #57 in 2: #57 had power at tick 332 (120 kW); #212 had no power at tick 332 (1 pole, around (-186,-200)): 1 electric-mining-drill; no ghost of the pole there')
+eq(line,'power cut #1: small-electric-pole (-193,-200) destroyed by big-biter 5s ago: split electric network #57 in 2: #57 had power at tick 332 (120 kW); #212 had no power at tick 332 (1 pole, around (-186,-200)): 1 electric-mining-drill; no ghost of the pole there; the missing link: small-electric-pole (-193,-200) (nothing there), between small-electric-pole (-200,-200) on #57 now and small-electric-pole (-186,-200) on #212 now')
 -- Once: the next reply has it no more; status alerts lists it.
 local again=haiku('clock',{}).team
 for _,a in ipairs(again and again.alerts or {}) do assert(not a:find('power cut',1,true),'told once') end
