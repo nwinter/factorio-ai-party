@@ -69,13 +69,23 @@ return function(api)
     end
     return moved
   end
-  -- Before anything is placed: shapes and argument names.
+  -- Before anything is placed: shapes and argument names. Each setting's arguments are first read as the action's own
+  -- call reads them (api.fix, aliases.lua: a requests set given as a map {item: min}, configure's mode ...; d17
+  -- batch18 A3, Sol: an entry's {set: {item: count}} was refused while requests itself took it). Returns those notes.
   function M.check(entries, ctx)
+    local notes = {}
     for i, e in ipairs(entries) do
       if has(e) then
         local where = 'entry ' .. i
         for _, k in ipairs(KINDS) do
           local v = e[k[1]]
+          if api.fix and type(v) == 'table' and next(v) ~= nil and #v == 0 then
+            local ok, _, args, fixed = pcall(api.fix, k[2], v)
+            if ok and type(args) == 'table' and fixed then
+              e[k[1]], v = args, args
+              for _, n in ipairs(fixed.notes or {}) do notes[#notes+1] = where .. ' ' .. k[1] .. ': ' .. n end
+            end
+          end
           if v ~= nil then
             assert(type(v) == 'table' and next(v) ~= nil and #v == 0, where .. ': ' .. k[1] .. ' is an object of ' .. k[2] .. ' arguments')
             assert(v.position == nil and v.positions == nil and v.platform == nil and v.surface == nil,
@@ -97,11 +107,16 @@ return function(api)
         end
       end
     end
+    return notes
   end
-  local function with_ctx(args, pos, ctx)
+  -- The entry's name goes with its position (d17 batch18 A3, Sol: circuit settings on a ghost over a tree or a Vulcanus
+  -- chimney went to the tree or chimney, "out of reach, and remote view works only on our own entities"); the
+  -- target is then the ghost or building of that name (a ghost by what it builds).
+  local function with_ctx(args, pos, ctx, name)
     local out = {}
     for k, v in pairs(args) do out[k] = v end
     out.position = pos
+    if out.name == nil and out.unit_number == nil and type(name) == 'string' then out.name = name end
     out.platform, out.surface = ctx.platform, ctx.surface
     return out
   end
@@ -125,6 +140,32 @@ return function(api)
     end
     return rows
   end
+  -- A dry run (A3): each entry's settings checked as the real call checks them on the ghost it places (api.dry, the
+  -- runtime's checks on a stand-in of that ghost). Rows [{index, name, position, configure, requests, circuit}] ('ok'
+  -- or the refusal), a line, and how many were refused. Wires are checked by place_ghosts' own dry run.
+  function M.dry(p, entries)
+    local rows, ok_n, failed = {}, 0, {}
+    for i, e in ipairs(entries) do
+      if has(e) then
+        local pos = api.position(e.position)
+        local row = {index=i, name=e.name or e.item, position=pos}
+        for _, k in ipairs(KINDS) do
+          if e[k[1]] then
+            local args = {}
+            for key, v in pairs(e[k[1]]) do args[key] = v end
+            args.position = pos
+            local ok, res = pcall(api.dry, p, e, k[1], args)
+            if ok then row[k[1]] = 'ok'; ok_n = ok_n + 1
+            else row[k[1]] = api.reason(res); failed[#failed+1] = string.format('entry %d %s: %s', i, k[1], row[k[1]]) end
+          end
+        end
+        rows[#rows+1] = row
+      end
+    end
+    local line = string.format('settings (dry run): %d would be set', ok_n) .. (#failed > 0 and string.format(', %d refused: %s', #failed,
+      table.concat(failed, '; ', 1, math.min(4, #failed)) .. (#failed > 4 and '; ...' or '')) or '')
+    return rows, line, #failed
+  end
   -- After placing: the entries not skipped (failed, or still to be built) set in order, then the wires.
   -- Returns rows [{index, name, position, configure, requests, circuit, wires}] ('set' or the refusal) and a line.
   function M.apply(p, entries, ctx, skip, settings_only)
@@ -136,7 +177,7 @@ return function(api)
         local row = {index=i, name=e.name or e.item, position=pos}
         for _, k in ipairs(KINDS) do
           if e[k[1]] then
-            local ok, res = pcall(api.call, k[2], p, with_ctx(e[k[1]], pos, ctx))
+            local ok, res = pcall(api.call, k[2], p, with_ctx(e[k[1]], pos, ctx, e.name or e.item))
             if ok then
               row[k[1]] = 'set'; set_n = set_n + 1
               if k[1] == 'configure' and type(res) == 'table' and res.line then row.configure = 'set: ' .. res.line end

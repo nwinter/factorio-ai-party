@@ -218,4 +218,5 @@
   pack: how many a unit the running research takes, and its units left). Eggs of ours hatching within 5 minutes on
   your surface top `team.alerts` (`eggs hatching: ...`) and wake `fh sleep` (`woke: eggs`). Full `status` rechecks
   nearby recorded egg sites: enemies visible now, the timer (future or elapsed), and gun range coverage with ammo; a
-  timer alone is no live hatch.
+  timer alone is no live hatch. A site whose holder no longer holds the eggs before their time (moved or used) is
+  neither told nor listed.

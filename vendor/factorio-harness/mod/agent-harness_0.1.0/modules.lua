@@ -356,20 +356,25 @@ return function(api)
 
   -- Sets one machine's modules. p: the player, bot or remote proxy; e: the machine or its ghost; want: M.parse's
   -- result; near: the character sees it (configure_target); by: nil, 'hand' or 'robots'.
-  function M.set(p, e, want, near, by)
-    local mc = machine(e)
-    assert(mc.slots > 0, string.format('%s has no module slots', mc.text))
-    local plural = mc.slots == 1 and '' or 's'
-    if want.kind == 'set' and #want.list > mc.slots then
-      error(string.format('%s has %d module slot%s; %d given', mc.text, mc.slots, plural, #want.list), 0)
+  -- The checks set makes before it changes anything: the machine's slots, and each module named against the machine
+  -- and its recipe (a place_ghosts dry run makes them on the prototype: d17 batch18 A3).
+  function M.check(proto, recipe, slots, want, text)
+    assert(slots > 0, string.format('%s has no module slots', text))
+    local plural = slots == 1 and '' or 's'
+    if want.kind == 'set' and #want.list > slots then
+      error(string.format('%s has %d module slot%s; %d given', text, slots, plural, #want.list), 0)
     end
-    if want.kind == 'slots' and want.n > mc.slots then
-      error(string.format('%s has %d module slot%s; slot %d named', mc.text, mc.slots, plural, want.n), 0)
+    if want.kind == 'slots' and want.n > slots then
+      error(string.format('%s has %d module slot%s; slot %d named', text, slots, plural, want.n), 0)
     end
     for _, w in ipairs(M.named(want)) do
-      local why = M.why_not(mc.proto, mc.recipe, w, mc.text)
+      local why = M.why_not(proto, recipe, w, text)
       if why then error(why, 0) end
     end
+  end
+  function M.set(p, e, want, near, by)
+    local mc = machine(e)
+    M.check(mc.proto, mc.recipe, mc.slots, want, mc.text)
     local row = {name=e.type == 'entity-ghost' and e.ghost_name or e.name, position={x=e.position.x, y=e.position.y}, ghost=mc.ghost or nil}
     -- A ghost: its insert plan's module rows, slot by slot.
     if mc.ghost then

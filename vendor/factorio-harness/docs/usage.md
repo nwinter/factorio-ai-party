@@ -6530,3 +6530,56 @@ fh watch    # deploy on every change
   with 200 lines remembered and 20 a reply.
 - platalerts tells a platform's turret line again after 5 minutes. With the same words it now shows after 10
   (tests/platalerts.lua updated); a turret count or round count that changed shows at once.
+
+## d17 batch18 (operator 12:25: the agents' 12:20 poll)
+- A1 (Grok): the heating tower at (46.5,48.5) on Gleba ran dry while its fast inserter read waiting_for_source_items
+  with rocket fuel in the requester chest beside it. On world n (read only) and a copy of it: the arm works. The game's
+  inserters top a burner's fuel up only while it runs low. On the copy they kept the tower at 5-6 rocket fuel, and at
+  1-2 while 10 yumako seeds sat in its second fuel slot. Between top-ups the arm reads waiting_for_source_items. At full
+  power the tower burns 24 rocket fuel a minute (40 MW). Network 98 held 0 rocket fuel outside requester chests, and
+  Gleba made 631 and used 752 in the last hour. So the requester emptied, and Grok's hand loads covered the gap. Both
+  fuel slots taken by other fuels (seeds, spoilage, coal) keep rocket fuel out entirely.
+- inspect of an inserter whose status is waiting_for_source_items adds `pickup_wait` (and the compact line `waits:`):
+  - what its pickup holds of the items its filter lets through, or none;
+  - for a requester or buffer, what its logistic network holds of them outside requester chests;
+  - logistic robots within 4 tiles whose first order is to take from it;
+  - per item (2 at most), whether the drop target takes one now. Fuel: what its fuel slots hold, and how fast it burns
+    the item at full power. Else what it holds of it, or its recipe when it takes none.
+  2 ms for the whole inspect call on the copy (about 0.5 ms on n). tests/d17_batch18.lua.
+- A2 (Luna): the egg watch (spoil.lua) reads holders every 30 s sweep. Between sweeps its places stood, and `recent`
+  kept every old timer 10 minutes past its time, so status listed elapsed timers at a provider whose eggs Grok had
+  moved into a breeder. Now, before each egg alert (team block, sleep wake, the places read) and each status egg
+  site, the holder is read again: the entity of that name at that position (a character by its name).
+  - One that holds none of the eggs before their first stack's time is marked gone: not told, not listed.
+  - The next sweep keeps an old timer only when it found the eggs again, or the time came (they may have hatched;
+    history, as before).
+  - Copy: an egg on a Gleba belt was told and listed; with it taken off the belt, status had neither (6 ms for status).
+  tests/spoil.lua.
+- A3 (Sol): a place_ghosts dry run checked the names of an entry's settings only. The live call checks their values on
+  the ghost it places. Sol's shift had 37 place_ghosts calls with settings: requests written as a `set` map or
+  {name, count} passed the dry run and were refused live, and circuit settings on ghosts over a tree and a Vulcanus
+  chimney went to the tree or chimney ("out of reach, and remote view works only on our own entities").
+  - A dry run (place_ghosts, build, or the dry_run action) adds `settings_check` rows and `settings_line`: each
+    setting checked by the real call's code on a stand-in of the ghost:
+    - requests: space.lua check_requests, on a chest that takes requests;
+    - configure: its recipe (configure_check), modules (modules.lua check: slots, categories, effects under the
+      recipe; split out of modules.set), filters, filter_mode, use_filters and spoil_priority;
+    - circuit: circuit_set's own checks (circuits.lua: plan_set, split out of circuit_set; dry_set runs it with the
+      control behavior kind of that entity type, as read on the copy).
+  - `dry_run_ok` and `verdict` (ok, or fails: N entries blocked, N settings refused, and the refusals). The CLI exits 1
+    on a failing dry run. Entries needing tiles do not fail it: the real call lays those tile ghosts first.
+  - Live: each setting's target is the ghost or entity of the entry's name at its position. Copy: an inserter ghost over
+    Sol's Vulcanus chimney with circuit logistic "gun-turret < 10" is now set. A refusal on a ghost names it ("the
+    ghost of wooden-chest has no logistic requests").
+  - Copy: 11 entries with good and bad settings gave the same 3 set and 8 refused in a dry run and in the live call.
+  tests/d17_batch18.lua, d17batch18.test.ts.
+  - Settings given in another form that the action's own call takes (aliases.lua: requests `set` as a map
+    {item: min}, configure's `mode`, ...) are read the same way in an entry (`settings_corrected` lists the readings).
+    Sol's `requests: {set: {iron-plate: 200, ...}}` is now set.
+- A4 (Sonnet): transfer refused `entity_position` twice and `mode: "take"` once in shift29 (the only transfer argument
+  refusals in shifts 20-29 besides Haiku's retry_when_clear). aliases.lua now reads `entity_position`,
+  `target_position`, `entity_pos` and `pos` as `position` (one position, none given), and `mode` take or give (or
+  to_player, to_entity, and the other direction words) as `direction`; the reply's `[ran as ...]` / corrected says
+  so. An unknown argument that ends or starts with a valid name (chest_position) names it as the closest name. The
+  refusal's example takes its position from it. Copy: Sonnet's call ran as `transfer {position, direction:
+  "to_player", ...}`.

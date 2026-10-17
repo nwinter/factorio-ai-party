@@ -768,7 +768,8 @@ return function(api)
   local function behavior(e)
     local cb = try(function() return e.get_or_create_control_behavior() end)
     if not cb then
-      error(string.format('%s has no circuit connection: the game gives it no circuit wires or circuit settings', e.name), 0)
+      error(string.format('%s has no circuit connection: the game gives it no circuit wires or circuit settings',
+        e.type == 'entity-ghost' and 'the ghost of ' .. e.ghost_name or e.name), 0)
     end
     return cb
   end
@@ -998,9 +999,9 @@ return function(api)
     b.settings = next(st) and st or nil
     return b, #notes > 0 and notes or nil
   end
-  function M.handlers.circuit_set(p, a)
-    local e, by = target(p, a, 'target')
-    local cb = behavior(e)
+  -- circuit_set's checks, and the steps that write what passed them (run by circuit_set; a place_ghosts dry run runs
+  -- the checks alone on a stand-in of the entity: M.dry_set).
+  local function plan_set(e, cb, a, by)
     local kind = kind_of(cb)
     local props = props_of(cb, kind)
     local chest_notes
@@ -1098,6 +1099,32 @@ return function(api)
       local params = selector_params(a.selector)
       step('selector', function() cb.parameters = params end)
     end
+    return steps, out, chest_notes, a
+  end
+  -- The entity types whose control behavior kind is not the type's own name (read on a copy of world n: a ghost of
+  -- each type with circuit wires, get_or_create_control_behavior; a pole has wires and no control behavior).
+  local TYPE_KIND = {['ammo-turret']='turret', ['electric-turret']='turret', ['fluid-turret']='turret', ['infinity-container']='logistic_container',
+    ['linked-container']='container', ['offshore-pump']='generic_on_off', ['power-switch']='generic_on_off', ['electric-pole']=false}
+  -- A place_ghosts dry run (d17 batch18 A3, Sol): circuit_set's checks for an entity of that name, on a stand-in of
+  -- it (no entity is read or written). Errors as circuit_set would.
+  function M.dry_set(name, a)
+    local proto = prototypes.entity[name]
+    if not proto then return end
+    local reach = try(function() return proto.get_max_circuit_wire_distance() end)
+    local kind = TYPE_KIND[proto.type]
+    if kind == nil then kind = proto.type:gsub('-', '_') end
+    local id = kind and PROPS[kind] and try(function() return defines.control_behavior.type[kind] end)
+    if reach == 0 or not id then
+      error(string.format('%s has no circuit connection: the game gives it no circuit wires or circuit settings', name), 0)
+    end
+    local e = {valid=true, name=name, type=proto.type, prototype=proto, position=a.position or {x=0, y=0}}
+    plan_set(e, {type=id, circuit_enable_disable=false}, a, 'dry run')
+  end
+  function M.handlers.circuit_set(p, a)
+    local e, by = target(p, a, 'target')
+    local cb = behavior(e)
+    local steps, out, chest_notes
+    steps, out, chest_notes, a = plan_set(e, cb, a, by)
     local done = {}
     for _, s in ipairs(steps) do
       local ok, err = pcall(s.fn)

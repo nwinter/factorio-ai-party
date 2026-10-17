@@ -34,6 +34,8 @@
   - Spoilage: `fresh_first: true` (`fresh: true` on a courier) takes the least spoiled stacks first on any take or
     give; `spoiled_first: true` and `min_spoil` (alias `min_spoiled`) or `max_fresh` move only the rotten tail. The
     reply gives `freshness` (the moved stacks' spread).
+  - Other names taken: `entity_position`, `target_position`, `pos` are `position`; `mode: "take"` or `"give"` is the
+    direction; `amount`, `quantity` are `count` (the reply's corrected line shows the call as it ran).
   Example: `./fh call transfer --args '{"position":{"x":15.5,"y":59.5},"direction":"to_entity","item":"rocket-fuel","count":50}'`
 - `collect {positions | area | radius, item?, count?, chests?, outputs_only?, wait_ticks?, follow?, min_fresh?}`:
   takes machine outputs; chests only when you name their positions or pass `chests: true`. `radius` without `item`
