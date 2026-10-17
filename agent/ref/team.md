@@ -108,3 +108,6 @@
   failure or not).
 - `ground_rule_add {text, lessons, exceptions?, supersedes?}`, `ground_rule_retire {id}`, `ground_rules`: up to 8 team
   rules, shown once at each shift start in team.shift with their lessons' evidence.
+- `board_focus {id, step, blocker?, verify?}`: your current item and step, blocker and next verification in one line,
+  shown on status and in your team block every 10 game minutes; `board_focus {agent?}` reads teammates' focus lines.
+  A focused project step not done across 2 checks reads so here and in board_progress.

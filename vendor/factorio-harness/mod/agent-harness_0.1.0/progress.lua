@@ -32,6 +32,12 @@ return function(api)
     s.progress = s.progress or {items={}, lines={}, rr=0}
     return s.progress
   end
+  local function focus_store() local st = store(); st.focus = st.focus or {}; return st.focus end
+  local function step_of(i, step)
+    if type(step) == 'number' and i.steps then
+      for _, s in ipairs(i.steps) do if s.n == step then return s end end
+    end
+  end
   local function owned(i) return OWNED[i.kind] and LIVE[i.status] and i.owner and i.owner ~= 'operator' end
   -- The areas the game is read in: the item's own, else its owner's active claims (at most 4).
   local function areas(i)
@@ -143,6 +149,13 @@ return function(api)
     elseif waiting then state = 'waiting (' .. waiting .. ')'
     else r.unchanged = r.unchanged + 1; state = r.unchanged >= M.STALL and string.format('stalled: unchanged across %d checks', r.unchanged) or 'unchanged since the last check' end
     r.state, r.parts, r.owner_facts, r.prev_tick, r.tick, r.ev = state, parts, of, r.tick, game.tick, now
+    -- the owner's focus on this item: a focused step not done counts across checks (board_focus)
+    local f = focus_store()[i.owner]
+    if f and f.id == i.id then
+      local s = step_of(i, f.step)
+      if s and s.done_by then f.unchanged = 0 elseif s or (f.step and #parts == 0) then f.unchanged = (f.unchanged or 0) + 1 else f.unchanged = 0 end
+      if f.unchanged >= M.STALL then r.focus_flag = string.format('the focused %s shows no completion across %d checks', s and 'step ' .. s.n or 'step', f.unchanged) else r.focus_flag = nil end
+    end
     -- the owner's line
     local nt = next_text(i)
     local line = string.format('board #%d %s (%s): %s%s; %s', i.id, i.title, i.status, #parts > 0 and 'progress seen: ' .. table.concat(parts, '; ') or state,
@@ -150,7 +163,7 @@ return function(api)
       nt or string.format('no next action or blocker written on it (board_update {id: %d, note} writes one)', i.id))
     st.lines[i.owner] = st.lines[i.owner] or {}
     local l = st.lines[i.owner]
-    l[#l+1] = line
+    l[#l+1] = line .. (r.focus_flag and '; ' .. r.focus_flag or '')
     while #l > 3 do table.remove(l, 1) end
   end
   -- Every 2 s: one item due for a check (a check read 6-9 ms on the copy of world n).
@@ -164,7 +177,7 @@ return function(api)
       elseif st.items[id] then st.items[id] = nil end
     end
     table.sort(due, function(x, y) return ((st.items[x.id] or {}).tick or 0) < ((st.items[y.id] or {}).tick or 0) or x.id < y.id end)
-    if due[1] then pcall(M.check, due[1]) end
+    if due[1] then local ok, err = pcall(M.check, due[1]); if not ok then M.last_error = err end end
   end
   -- The owner's lines (team.alerts), once.
   function M.lines(p, h)
@@ -208,7 +221,7 @@ return function(api)
         r and r.parts and #r.parts > 0 and ' (' .. table.concat(r.parts, '; ') .. ')' or '',
         #live > 0 and '; since that check: ' .. table.concat(live, '; ') or '',
         #of > 0 and '; the owner since then: ' .. table.concat(of, ', ') or '',
-        stalled and rule(i) or (next_text(i) or 'no next action or blocker written'))
+        (stalled and rule(i) or (next_text(i) or 'no next action or blocker written')) .. (r and r.focus_flag and '; ' .. r.focus_flag or ''))
       if k <= M.MAX_LINES then lines[#lines+1] = text elseif k == M.MAX_LINES + 1 then lines[#lines+1] = string.format('+%d more (rows lists all; owner narrows it)', #list - M.MAX_LINES) end
       rows[#rows+1] = {id=i.id, kind=i.kind, title=i.title, status=i.status, owner=i.owner, state=state, stalled=stalled or nil,
         last_change_s=math.floor((game.tick - (i.updated_tick or i.created_tick or 0)) / 60), unchanged_checks=r and r.unchanged or nil}
@@ -282,7 +295,42 @@ return function(api)
     return {blocked=#lines > 0 and lines or {'no blocked item'}, agents_idle_or_waiting=#agents > 0 and agents or nil,
       note='ranked: named in the team plan (#id in its goals or lines) first, then by the open items waiting on it through blocked_by and parent chains'}
   end
+  -- board_focus (Sol 09:37 for viewer Foobator): an agent's current item and step, its blocker and its next
+  -- verification, in one call; status and its team block show it in one line; teammates read each other's. Nothing is
+  -- assigned. A focused project step with no completion (done) across 2 checks is flagged in board_progress.
+  function M.focus_line(name)
+    local f = focus_store()[name]
+    if not f then return nil end
+    local i = api.items()[f.id]
+    local s = i and step_of(i, f.step)
+    local step = s and string.format('step %d %s%s', s.n, tostring(s.text), s.done_by and ' (done)' or '') or (f.step and 'step ' .. tostring(f.step) or nil)
+    return string.format('%s focus (set %s ago): #%d %s%s%s%s%s', name, ago(game.tick - f.tick), f.id, i and i.title or '(item gone)',
+      step and '; ' .. step or '', f.blocker and '; blocker: ' .. f.blocker or '', f.verify and '; next verification: ' .. f.verify or '',
+      (f.unchanged or 0) >= M.STALL and string.format('; the focused step shows no completion across %d checks', f.unchanged) or '')
+  end
+  function M.focus(p, a)
+    local me = api.who(p)
+    if a.id == nil then
+      -- a read: one agent's, or every agent's
+      local lines = {}
+      for _, ag in ipairs(api.agents()) do
+        if a.agent == nil or ag.name == a.agent then local l = M.focus_line(ag.name); if l then lines[#lines+1] = l end end
+      end
+      return {focus=#lines > 0 and lines or {'no focus set'}}
+    end
+    assert(type(a.id) == 'number' and api.items()[a.id], 'id is a board item number')
+    local i = api.items()[a.id]
+    assert(i.kind ~= 'lesson' and i.kind ~= 'claim' and i.kind ~= 'note', 'focus is on a task, request or project (and its step)')
+    assert(a.step == nil or type(a.step) == 'number' or (type(a.step) == 'string' and #a.step <= 160), 'step is a project step number, or text (160)')
+    if type(a.step) == 'number' then assert(step_of(i, a.step), 'no step ' .. a.step .. ' on #' .. a.id) end
+    for _, f in ipairs({'blocker', 'verify'}) do assert(a[f] == nil or (type(a[f]) == 'string' and #a[f] <= 200), f .. ' is text, at most 200 characters') end
+    focus_store()[me] = {id=a.id, step=a.step, blocker=a.blocker, verify=a.verify, tick=game.tick, unchanged=0}
+    return {focus=M.focus_line(me)}
+  end
   M.schema = {
+    board_focus = {id='a board item number (task, request or project): your current one; without id: a read of the focus lines (agent: only theirs)',
+      step='a project step number, or text', blocker='optional text: what blocks it', verify='optional text: your next verification',
+      agent='with a read: that teammate', returns='focus: the line (status and your team block show it; teammates read it with board_focus {agent}); a focused project step not done across 2 checks reads so here and in board_progress'},
     board_progress = {owner='optional agent name: only their items (and what changed since each one\'s last check, read now)',id='optional item number: only that item, read now as with owner',
       returns='lines: each owned open task, request and project: the age of its last board change; the last check (every 10 game minutes): progress seen (our entities in its area, else in its owner\'s claims; the totals of the items it needs on its owner\'s planet; shipment lines of platforms its title names; its board edits), waiting (its owner in a sleep, wait step or running queue), unchanged, or stalled (unchanged across 2 checks) with the 20-minute rule (anyone may take it once its owner has made no request for 20 min, the owner\'s last request); what changed since that check; the owner\'s repeated failures and no-effect actions since; its next action or blocker as last written. rows'},
     board_critical = {returns='blocked: each blocked item (status blocked, or an open item in its blocked_by), those the team plan names (#id) first, then by how many open items wait on it through blocked_by and parent chains, with what it waits on (status, owner, last change); agents_idle_or_waiting: agents standing a minute or more or in a wait, with what they own'},

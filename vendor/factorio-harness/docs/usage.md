@@ -6431,3 +6431,9 @@ fh watch    # deploy on every change
   `ground_rule_retire {id, reason?}`, `ground_rules`: the team's own rules, at most 8 active, each from lessons it names,
   shown once at each shift start in team.shift with those lessons' evidence ticks and when verified, and the exceptions;
   the harness stores and shows what the agents wrote.
+- board_focus (Sol 09:37 for viewer Foobator): `board_focus {id, step, blocker?, verify?}` sets an agent's current
+  item (task, request or project), its step (a project step number, or text), blocker and next verification; one line
+  on every status reply and in the team block once every 10 game minutes; `board_focus {}` or `{agent}` reads the
+  team's or one teammate's lines. At each 10-minute check of that item, a focused project step not done (or a text
+  step with no progress seen) counts; across 2 checks the focus line and board_progress say "the focused step shows no
+  completion across 2 checks"; done clears it. Nothing is assigned.

@@ -13827,6 +13827,18 @@ function M.dispatch_inner(request)
     end
     -- Standing orders: which runs and why, or what they wait for (orders.lua).
     if p and p.valid and result.orders==nil then result.orders=M.orders.line(p.index) end
+    -- The agent's board focus (progress.lua board_focus): on status, and in the team block once every 10 game minutes.
+    if p and p.valid and M.progress and not M.is_director(p.index) then
+      local okf,fl=pcall(M.progress.focus_line,M.board.who(p))
+      if okf and fl then
+        if request.action=='status' then result.focus=fl end
+        local s=state(); s.focus_told=s.focus_told or {}
+        if not peek and (game.tick-(s.focus_told[p.index] or -36000))>=36000 then
+          s.focus_told[p.index]=game.tick
+          result.team=result.team or {}; result.team.focus=fl
+        end
+      end
+    end
     -- What the agent owes an answer (owed.lua; d17 batch14 B1): the oldest, on every reply.
     if p and p.valid and not M.is_director(p.index) and result.unanswered==nil then
       local oko,ul=pcall(M.owed.line,p.index)
@@ -14393,6 +14405,7 @@ M.progress=require('progress'){state=state,items=function() return M.board.items
   standing=function(index) local t=state().stand and state().stand[index]; return t and game.tick-t or nil end}
 function handlers.board_progress(p,a) return M.progress.read(p,a) end
 function handlers.board_critical(p,a) return M.progress.critical(p,a) end
+function handlers.board_focus(p,a) return M.progress.focus(p,a) end
 -- Lessons scored, checked and reviewed; the team's ground rules (lessonbook.lua; d17 batch15 Group D).
 M.lessonbook=require('lessonbook'){state=state,items=function() return M.board.items() end,validate=function(c) return conditions.validate(c) end,
   condition=function(p,c) return conditions.check(p,c) end,stale=M.board.LESSON_STALE,active=function(i) return M.board.ACTIVE[i.status]==true end,

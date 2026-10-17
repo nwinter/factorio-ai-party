@@ -112,3 +112,26 @@ do
   game=nil
   print('d17_batch15 D lessons scored and followed: ok')
 end
+
+-- board_focus (Sol 09:37 for Foobator): one line; a focused step not done across 2 checks is flagged; done clears it.
+do
+  game={tick=0,get_surface=function() return nil end}
+  _G.prototypes={item={}}
+  local st={}
+  local items={[7]={id=7,kind='project',title='Aquilo heat',status='doing',owner='sol',notes={},created_tick=0,updated_tick=0,
+    steps={{n=1,text='foundation',done_by='sol',done_tick=0},{n=2,text='heat pipes to the chest row'}}}}
+  local P=dofile('mod/agent-harness_0.1.0/progress.lua'){state=function() return st end,items=function() return items end,
+    owner_surface=function() return 'aquilo' end,total=function() return 0 end,since_request=function() return 60,3 end,
+    waiting=function() return nil end,who=function(p) return p.name end,agents=function() return {{name='sol',index=3},{name='astra',index=1}} end,QUIET=72000,PROJECT_QUIET=108000}
+  local r=P.focus({name='sol'},{id=7,step=2,blocker='no heat pipes in the hub',verify='inspect the chest row temperature'})
+  assert(r.focus:find('sol focus (set 0s ago): #7 Aquilo heat; step 2 heat pipes to the chest row; blocker: no heat pipes in the hub; next verification: inspect the chest row temperature',1,true),r.focus)
+  eq(P.focus({name='astra'},{agent='sol'}).focus[1],r.focus,'a teammate reads it')
+  P.tick(); game.tick=36000; P.tick(); game.tick=72000; P.tick()
+  assert(P.focus_line('sol'):find('the focused step shows no completion across 2 checks',1,true),P.focus_line('sol'))
+  assert(P.read({},{}).lines[1]:find('the focused step 2 shows no completion across 2 checks',1,true),P.read({},{}).lines[1])
+  items[7].steps[2].done_by='sol'; items[7].steps[2].done_tick=72000
+  game.tick=108000; P.tick()
+  assert(not P.focus_line('sol'):find('no completion',1,true),P.focus_line('sol'))
+  game=nil; prototypes=nil
+  print('d17_batch15 board_focus: ok')
+end
