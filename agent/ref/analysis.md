@@ -3,7 +3,11 @@
   shifts; `--full` for each shift's technologies and packs, `--format json`.
 - `./fh research` shows the research queue: each technology's progress, who queued it, its packs, and when it should
   finish at the current lab throughput (or which pack it waits for). `./fh research done` lists what finished lately
-  and what each unlocked. `./fh call science` (or `--args '{"pack":"logistic-science-pack"}'`) counts each pack the
+  and what each unlocked. A leveled technology (mining-productivity-3) may stand in the queue several times, each the
+  next level (`research_queue` and `append` keep the repeats; `over_levels` names more than it has levels left).
+  `research {"target_level":{"mining-productivity-3":8}}` keeps adding its next level until 8 is researched (at most
+  16 targets, 100 levels ahead; 0 removes one); `{"targets":true}` and the plain read say per target what is
+  researching or queued and the levels left. `./fh call science` (or `--args '{"pack":"logistic-science-pack"}'`) counts each pack the
   research needs over your whole surface, the same for everyone wherever they stand: made and used in 10 minutes,
   the assemblers set to it and their states, packs in chests, in landing pads and hubs, on belts, in labs and carried,
   and the largest holders (landing pads included); spoilable packs add effective research units from freshness and remaining durability, before lab bonuses.
@@ -38,6 +42,9 @@
   tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
   they end and what blocks them (on a belt tile, a drill or a chest: from there, forward), naming where other items join a lane (`joins
   transport-belt (12,5) carrying iron-plate on the left lane: your iron-ore mixes in`); `{"item":"chemical-science-pack"}` follows every route from its makers to the labs (for an ore, from the drills mining it).
+  `"forward":true,"audit":true` adds `audit`: where the walked lanes lose capacity (a belt side-loading both carried
+  lanes onto one, a curve made a side-load by an empty stub behind the turn, a route ending at missing tiles with the run
+  going on within 4 tiles, what it carries).
   `"upstream":true` goes the other way: from a machine, lab, thruster, hub or belt tile back along what feeds it, naming per ingredient the first place it stops or goes elsewhere (a filter, a circuit condition, an inserter taking it onto another belt, a jammed mixed lane, a splitter filter, where another item joins); `"item"` picks one.
 - `./fh call labs` says which labs lack which packs, which inserters feeding them are idle and why, and the research ETA.
 - `inspect` shows inserter pickup/drop tiles and fluid connection tiles (`fluid_connections[].joins` is where a pipe

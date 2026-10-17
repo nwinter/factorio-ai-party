@@ -399,6 +399,31 @@ return function(api)
     -- Not closed in: one wide request says where it can get to.
     return probe(p, nav, 'near', math.max(4, math.min(48, dist(here, pos) * 0.75)), 0, nil)
   end
+  -- What stands round the character when no path request starts from where it is (C4, Opus 18:20, 4 times in shift25:
+  -- among drills and belts at (-300,-305) every walk ended "nor to anywhere within 48 tiles"; squeeze=true walked out):
+  -- our mining drills, belts and the like within 2.5 tiles, by name, when the area it can reach is not closed in.
+  local BOX_TYPES = {'mining-drill', 'transport-belt', 'underground-belt', 'splitter', 'inserter', 'pipe', 'pipe-to-ground', 'electric-pole', 'container', 'wall', 'furnace', 'assembling-machine'}
+  function M.boxed(p, nav)
+    if nav.region and nav.region.closed then return nil end
+    local here = p.position
+    local list = try(function() return p.surface.find_entities_filtered{area={{here.x - 2.5, here.y - 2.5}, {here.x + 2.5, here.y + 2.5}}, type=BOX_TYPES} end) or {}
+    local by, order, drills_or_belts = {}, {}, false
+    for _, e in ipairs(list) do
+      if e.valid then
+        if not by[e.name] then by[e.name] = 0; order[#order+1] = e.name end
+        by[e.name] = by[e.name] + 1
+        if e.type == 'mining-drill' or e.type == 'transport-belt' or e.type == 'underground-belt' or e.type == 'splitter' then drills_or_belts = true end
+      end
+    end
+    if not drills_or_belts then return nil end
+    table.sort(order, function(x, y) if by[x] ~= by[y] then return by[x] > by[y] end return x < y end)
+    local parts = {}
+    for i = 1, math.min(4, #order) do parts[i] = by[order[i]] .. ' ' .. order[i] end
+    local ways = nav.squeeze_tried and 'pathfind=false steers straight at the goal (belts carry you)'
+      or 'move_to squeeze=true walks your own steps out along the gaps; pathfind=false steers straight at the goal (belts carry you)'
+    return string.format('boxed in at %s by %s within 2.5 tiles: the gaps between them are narrower than a path request starts in, but the area you can reach is not closed in: %s',
+      at(here), table.concat(parts, ', '), ways)
+  end
   function M.probed(p, nav, event)
     nav.probe_id = nil
     local kind = nav.probe_kind or 'near'
@@ -411,6 +436,8 @@ return function(api)
         nav.why = string.format('no path for the character to %s on the tile, half- or quarter-tile grid', at(nav.position))
       else
         nav.why = string.format('no path request found a way for the character to %s, nor to anywhere within %d tiles of it', at(nav.position), math.floor(nav.probe_radius or 0))
+        local boxed = M.boxed(p, nav)
+        if boxed then nav.why = nav.why .. '; ' .. boxed end
         -- Walkable water between (oil ocean, shallow water, wetland) was ground to the requests (friction4: Gemini, shift14
         -- 23:15, took a walk into its packed island for the oil ocean being impassable; on a copy of world n move_to
         -- crossed shallow and deep oil ocean). The box from here to the goal, cut to 64 tiles round the goal.

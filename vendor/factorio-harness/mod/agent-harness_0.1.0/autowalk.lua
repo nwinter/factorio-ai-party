@@ -13,6 +13,11 @@
 return function(api)
   local M={}
   M.RANGE=32
+  -- The calls that walk as their tours do go farther by default (C5, Luna 18:20: transfers at 39 tiles refused, twice,
+  -- for cross-base hauling); mine, build, configure and rotate keep 32.
+  M.TOUR_RANGE=64
+  local TOUR={transfer=true,collect=true,feed=true,rearm=true,refuel=true}
+  function M.range(action) return TOUR[action] and M.TOUR_RANGE or M.RANGE end
   -- Fields a call carries between its own reruns (build: awaited, stepped, ...); never part of the call it names.
   local INTERNAL={awaited=true,stepped=true,built_before=true,index_before=true,failed_before=true,built_ents=true,own_before=true,walked=true,
     walked_entry=true}
@@ -53,8 +58,9 @@ return function(api)
     if #far==0 or M.mode(a)==false or a.walked then return nil end
     local worst
     for _,f in ipairs(far) do if not worst or f.d>worst.d then worst=f end end
-    if a.walk~=true and worst.d>M.RANGE then
-      error(string.format('%s; %.1f tiles is past the %d a call walks by default: %s walks there first',worst.text,worst.d,M.RANGE,M.call_text(action,a)),0)
+    if a.walk~=true and worst.d>M.range(action) then
+      error(string.format('%s; %.1f tiles is past the %d a call walks by default: %s walks there first (any distance; via: [{x,y}, ...] walks those points first)',
+        worst.text,worst.d,M.range(action),M.call_text(action,a)),0)
     end
     return worst
   end

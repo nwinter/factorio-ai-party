@@ -642,9 +642,46 @@ return function(api)
     if action.op then return action.visited>0 and 'topped_up' or 'nothing_to_do' end
     return action.got>0 and 'collected' or 'nothing_collected'
   end
+  -- The walk of a tour (C5, Luna 18:20: a 39-tile transfer was split into a walk and two calls; "report the actual
+  -- route"): where the character stood at each via point and stop, and the tiles it moved, for last.route.
+  local function r1(x) return math.floor(x*10+0.5)/10 end
+  local function walked(p,action,label)
+    action.walked=action.walked or {}
+    if #action.walked<24 then action.walked[#action.walked+1]=string.format('%s (%g,%g)',label,r1(p.position.x),r1(p.position.y)) end
+  end
+  function M.route_text(action)
+    if not action.walk_from or (action.tiles or 0)<1 and not action.via then return nil end
+    return string.format('from (%g,%g)%s: %d tiles walked',r1(action.walk_from.x),r1(action.walk_from.y),
+      action.walked and ' -> '..table.concat(action.walked,' -> ') or '',math.floor((action.tiles or 0)+0.5))
+  end
+  -- via: points walked in order before the first stop, each reached within 1.5 tiles; one not reached ends the tour
+  -- unreached. Returns an outcome, or nil while walking them.
+  local function via_tick(p,action)
+    local i=action.via_i or 1
+    local v=action.via[i]
+    if not action.nav then
+      if api.distance(p.position,v)<=1.5 then walked(p,action,'via '..i); action.via_i=i+1; return nil end
+      action.nav={position=v,tolerance=1,max_stalls=6,replans=0,stalled=0,last_position=p.position}
+      if action.avoid_mode and api.avoid_start then api.avoid_start(p,action.nav,action.avoid_mode) end
+      api.request_path(p,action.nav)
+    end
+    local outcome=api.navigate(p,action.nav)
+    if outcome and action.nav.foes and api.leg_done and api.leg_done(p,action.nav,outcome) then outcome=nil end
+    if not outcome then return nil end
+    local why=action.nav.why
+    action.nav=nil; api.stop_walking(p)
+    if outcome=='arrived' or outcome=='arrived_near' or api.distance(p.position,v)<=1.5 then walked(p,action,'via '..i); action.via_i=i+1; return nil end
+    action.unreached=(action.unreached or 0)+1
+    action.first_unreached=action.first_unreached or string.format('via point %d (%g,%g): %s%s',i,v.x,v.y,outcome,why and ': '..why or '')
+    return 'unreached'
+  end
   -- Returns an outcome when the gathering is over.
   function M.tick(p,action)
     if action.wait then return M.wait_tick(p,action) end
+    local pos=p.position
+    if action.walk_last then action.tiles=(action.tiles or 0)+api.distance(action.walk_last,pos) else action.walk_from={x=pos.x,y=pos.y} end
+    action.walk_last={x=pos.x,y=pos.y}
+    if action.via and (action.via_i or 1)<=#action.via then return via_tick(p,action) end
     while true do
       if action.got>=action.want then return 'collected' end
       -- transfer {walk} filling a count over several chests (from: "nearest"): done once it is taken.
@@ -675,7 +712,7 @@ return function(api)
           action.trash_tally=action.trash_tally or {}
           ok,out=pcall(api.take,p,t.entity,action.item,action.quality,math.min(10000,action.want-action.got),(action.all or action.outputs_only) and OUTPUT[t.entity.type] or nil,action.trash_tally)
         end
-        if not (ok and out.wait) then action.index=action.index+1; action.visited=action.visited+1 end
+        if not (ok and out.wait) then action.index=action.index+1; action.visited=action.visited+1; if action.walk_from and (action.tiles or 0)>=1 then walked(p,action,t.entity.valid and t.entity.name or 'stop') end end
         action.nav=nil
         if ok then
           action.got=action.got+out.transferred

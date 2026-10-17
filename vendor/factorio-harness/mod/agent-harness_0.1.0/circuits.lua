@@ -74,7 +74,7 @@ return function(api)
       settings='{name: value}: any switch, mode, signal or condition by its readback name; inserters and loaders also filters (item names), filter_mode (whitelist|blacklist), use_filters, as configure sets them (reply filters: the line)',
       signals='constant combinator: [{signal, count}] (first section; [] clears)', on='constant combinator: on/off',
       arithmetic='{first, operation (+ - * / % ^ << >> AND OR XOR), second, output}',
-      decider='{first, comparator, constant|second, output, copy_input} or {conditions, outputs}',
+      decider='{first, comparator, constant|second, output, copy_input} or {conditions, outputs}: conditions rows "carbon < 150" (a row after the first begins with and / or: "and sulfur < 100"), {signal, comparator, value|signal2, compare: and|or (compare_type too), first_networks, second_networks: red|green|both}, or the game\'s own rows {first_signal, comparator, constant|second_signal, compare_type}; a row after the first must say and or or; outputs {signal, copy_input: true (the input count) | constant N, networks}; the read shows each row\'s networks and each output as copy or constant',
       selector='{operation (select|count|random|stack-size|...), its fields}',
       returns='entity, by (reach|remote view), circuit: the readback inspect shows'},
     wire = {from='{x,y} (or {position, name, unit_number}): in reach, or by remote view ours in a visible chunk',
@@ -310,15 +310,15 @@ return function(api)
     local conds, outs = {}, {}
     for i, c in ipairs(p.conditions or {}) do
       local text = condition_text(c) or 'blank'
-      local nets = {networks_text(c.first_signal_networks), networks_text(c.second_signal_networks)}
-      if nets[1] or nets[2] then text = text .. ' [' .. (nets[1] or 'both') .. ',' .. (nets[2] or 'both') .. ']' end
-      conds[i] = i > 1 and (c.compare_type or 'or') .. ' ' .. text or text
+      -- networks said for every row (C1: the selectors explicit), red+green when both
+      local nets = {networks_text(c.first_signal_networks) or 'red+green', c.second_signal and (networks_text(c.second_signal_networks) or 'red+green') or nil}
+      text = text .. ' [reads ' .. nets[1] .. (nets[2] and ', ' .. nets[2] or '') .. ']'
+      conds[i] = i > 1 and string.upper(c.compare_type or 'or') .. ' ' .. text or text
     end
     for i, o in ipairs(p.outputs or {}) do
       local name = signal_text(o.signal) or 'blank'
-      local text = name .. ' = ' .. (o.copy_count_from_input ~= false and 'input' or tostring(o.constant or 1))
-      local n = networks_text(o.networks)
-      outs[i] = n and text .. ' [' .. n .. ']' or text
+      local text = name .. ' = ' .. (o.copy_count_from_input ~= false and 'the input count (copy)' or ('constant ' .. tostring(o.constant or 1)))
+      outs[i] = text .. ' [from ' .. (networks_text(o.networks) or 'red+green') .. ']'
     end
     return {conditions=conds, outputs=outs}
   end
@@ -717,19 +717,34 @@ return function(api)
       end
       for i, c in ipairs(x.conditions) do
         local what = 'decider.conditions ' .. i
-        local row = condition(c, what)
+        -- a string row may begin with and / or ("and carbon < 150")
+        local joined
+        if type(c) == 'string' then
+          local j, rest = c:match('^%s*(%a+)%s+(.+)$')
+          if j and (j:lower() == 'and' or j:lower() == 'or') then joined, c = j:lower(), rest end
+        end
         local t = type(c) == 'table' and c or {}
-        if t.compare ~= nil and t.compare ~= 'and' and t.compare ~= 'or' then error(what .. ': compare is and or or', 0) end
-        row.compare_type = t.compare or 'or'
-        row.first_signal_networks = networks(t.first_networks, what .. '.first_networks')
-        row.second_signal_networks = networks(t.second_networks, what .. '.second_networks')
+        -- the game's own row ({first_signal, comparator, constant | second_signal, compare_type, ..._networks}) too
+        -- (Sol, shift24: compare_type and was written OR; raw rows were refused)
+        if type(c) == 'table' and c.first_signal ~= nil and c.signal == nil and c.first == nil then
+          c = {signal=c.first_signal, comparator=c.comparator, value=c.constant, signal2=c.second_signal}
+        end
+        local row = condition(c, what)
+        local cmp = t.compare; if cmp == nil then cmp = t.compare_type end; if cmp == nil then cmp = joined end
+        if cmp ~= nil and (type(cmp) ~= 'string' or (cmp:lower() ~= 'and' and cmp:lower() ~= 'or')) then error(what .. ': compare (or compare_type) is and or or', 0) end
+        if i > 1 and cmp == nil then error(what .. ': say how it joins the row before: compare "and" or "or" (the game\'s compare_type)', 0) end
+        row.compare_type = cmp and cmp:lower() or 'or'
+        row.first_signal_networks = networks(t.first_networks or t.first_signal_networks, what .. '.first_networks')
+        row.second_signal_networks = networks(t.second_networks or t.second_signal_networks, what .. '.second_networks')
         conds[i] = row
       end
       for i, o in ipairs(x.outputs) do
         local what = 'decider.outputs ' .. i
         if type(o) == 'string' then o = {signal=o, copy_input=true} end
-        if type(o) ~= 'table' then error(what .. ' is {signal, copy_input, constant, networks}', 0) end
-        outs[i] = {signal=signal(o.signal, what .. '.signal'), copy_count_from_input=o.copy_input == true,
+        if type(o) ~= 'table' then error(what .. ' is {signal, copy_input (true: the input count) | constant N, networks}', 0) end
+        local copy = o.copy_input; if copy == nil then copy = o.copy_count_from_input end
+        if copy == true and o.constant ~= nil then error(what .. ': copy_input (the input count) or constant, not both', 0) end
+        outs[i] = {signal=signal(o.signal, what .. '.signal'), copy_count_from_input=copy == true,
           constant=o.constant ~= nil and int(o.constant, what .. '.constant') or nil, networks=networks(o.networks, what .. '.networks')}
       end
     else
