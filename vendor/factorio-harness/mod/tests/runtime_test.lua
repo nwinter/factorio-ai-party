@@ -912,8 +912,13 @@ eq(call('transfer',{position={x=3,y=0},item='coal',count=6,direction='to_player'
 eq(main[1].count,12); eq(f1.slots[2][1].valid_for_read,false)
 fails(function() call('transfer',{position={x=3,y=0},direction='to_entity'}) end,'item is required')
 fails(function() call('transfer',{positions={{x=3,y=0}},unit_number=7,direction='to_player'}) end,'unit_number per entry')
--- An omitted direction follows where the item is; held on both sides it must be given.
-fails(function() call('transfer',{position={x=3,y=0},item='iron-ore',count=2}) end,'direction is required (to_entity|to_player): the character holds 6 iron-ore and the target holds 4')
+-- An omitted direction follows where the item is; held on both sides it gives when the target holds it only in a slot
+-- it feeds from (d17 batch17 C3), else it must be given.
+do
+  local given_ore=call('transfer',{position={x=3,y=0},item='iron-ore',count=2})
+  eq(given_ore.direction,'to_entity'); eq(given_ore.inventory,'furnace_source'); eq(f1.slots[3][1].count,6)
+  assert(given_ore.direction_note and given_ore.direction_note:find('feeds from',1,true),tostring(given_ore.direction_note))
+end
 local given_coal=call('transfer',{position={x=3,y=0},item='coal',count=2})
 eq(given_coal.direction,'to_entity'); eq(given_coal.inventory,'fuel'); eq(f1.slots[2][1].count,2); eq(main[1].count,10)
 local kept_main=main

@@ -1,9 +1,11 @@
 - `transfer {position | positions | area, direction?, item | items, count?, inventory?, ...}`: moves items between you
   and any container (chests, logistic chests, car and spider trunks, cargo wagons, landing pads, hubs, machines,
-  turrets, roboports). `direction` (`to_entity` gives, `to_player` takes) is inferred when omitted; `items:
-  {"iron-plate":50,"coal":10}` moves several at one target, each with its row in `entries`. A fusion reactor's fuel
-  cells go in and out as any burner's; a roboport's robots come out with `{position, direction: "to_player", item:
-  "logistic-robot", count}`, as its GUI does. A transfer from a belt is refused naming `pickup {belt: true}`.
+  turrets, roboports). `direction` (`to_entity` gives, `to_player` takes) is inferred when omitted (a give when the
+  target holds the item only where it feeds from, its fuel, ammunition or input, and you hold it too; `direction_note`
+  says so); `items: {"iron-plate":50,"coal":10}` moves several at one target, each with its row in `entries`. A fusion
+  reactor's fuel cells go in and out as any burner's; a roboport's robots come out with `{position, direction:
+  "to_player", item: "logistic-robot", count}`, as its GUI does. A transfer from a belt is refused naming `pickup
+  {belt: true}`.
   - `to_player: "haiku"` hands items to a teammate within your reach: dropped at its feet as loot its character picks
     up (`players` gives teammates' positions).
   - Two places in one call: `{position, to, item, from_inventory, to_inventory}` takes at `position` and gives at

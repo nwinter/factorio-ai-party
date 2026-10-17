@@ -4,11 +4,11 @@
   and packs; `--last N` only the last N shifts. Example: `./fh progress --last 3`
 - `research {technology | research_queue, front?, append?, remove?, move?, to?, target_level?, targets?}` and
   `./fh research`: the research queue: each technology's progress, who queued it, its packs, and when it should finish
-  (`done_in`, at the last minute's lab throughput) (or which pack it waits for). A leveled technology (mining-productivity-3) may stand in
-  the queue several times, each the next level (`research_queue` and `append` keep the repeats; `over_levels` names
-  more than it has levels left). `target_level: {"mining-productivity-3": 8}` keeps adding its next level until 8 is
-  researched (at most 16 targets, 100 levels ahead; 0 removes one); `targets: true` and the plain read say per target
-  what is researching or queued and the levels left. Example: `./fh call research --args '{"target_level":{"mining-productivity-3":8}}'`
+  (`done_in`, at the last minute's lab throughput) (or which pack it waits for). A leveled technology
+  (mining-productivity-3) may stand in the queue several times, each the next level (`research_queue` and `append`
+  keep the repeats; `over_levels` names more than it has levels left). `target_level: {"mining-productivity-3": 8}`
+  keeps adding its next level until 8 is researched (at most 16 targets, 100 levels ahead; 0 removes one); `targets:
+  true` and the plain read say per target what is researching or queued and the levels left. Example: `./fh call research --args '{"target_level":{"mining-productivity-3":8}}'`
 - `research_done` (`./fh research done`): what finished lately, newest first, and what each unlocked.
 - `science {pack?, surface?, compact?, all_surfaces?}`: counts each pack the research needs (or `pack`) over your whole
   surface, the same for everyone wherever they stand: made and used in 10 minutes, the assemblers set to it and their
@@ -144,6 +144,15 @@
   storage chest, each requester short or with deliveries on the way (its request, what it holds, what is coming, no
   room when every slot is taken), the robots' orders by item and target, and `flags` (reservations while robots are
   idle, orders to a chest with no room for the item). Example: `./fh call reservations --args '{"network":96,"item":"iron-plate"}'`
+- `logistics_audit {network? | position?, surface?, limit?, from?}` (read only; default: the network where you stand):
+  every requester of that logistic network, worst first: `full_unrequested` (every slot taken while a short item has
+  no room, by items it does not request, spoilage named), `full` (the same by its own items), `spoiled` (spoilage it
+  does not request, 4 or fewer slots left), `waiting` (deliveries on the way 5+ min while under its count), `not_sent`
+  (short with the item free in providers or storage, nothing on the way), `shortage` (none free in the network). Each
+  item with what it holds, what is on the way and for how long, the network's free count and the provider robots would
+  take it from (position, distance, count). The summary counts each kind and names the chests holding spoilage with
+  room left. `limit`: rows (default 12, up to 48); 256 requesters a call, `next_from` gives `from` for the rest.
+  Characters' requests are left out.
 - `construction_robots {network? | position?, sources?, surface?}`: the construction robots of the network you stand in
   (or `network`): each in the air with its charge, cargo, orders and what holds it up (no storage for what it holds,
   target out of the area, waiting to charge). `sources: true`: per group of waiting ghosts and item requests, the
