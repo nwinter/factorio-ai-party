@@ -6639,3 +6639,10 @@ fh watch    # deploy on every change
   e.g. `biochamber (6.5,4.5): recipe pentapod-egg; in: bioflux*40; spoil: bioflux*40 35% spoiled; first: in
   bioflux*40: the first spoils in 2m00s (...); circuit: enabled when bioflux > 200 (on its wires: item:bioflux 150):
   false now, it is off by its condition`. runtime_test.lua.
+- B2 (Haiku): finding a depleted drill among the 45 on the south copper patch took a guessed position; scan's radius
+  stops at 64. `ores {patch: {x,y}}` (with `resource` to choose among overlapping kinds) keeps only the patch with ore at
+  or within 8 tiles of that position and adds `drill_list`: every mining drill of ours whose mining area meets the
+  patch and that mines its ore or nothing, one line each: `(59,3) electric-mining-drill no_minable_resources: 4,000
+  iron-ore under it (4 tiles)`. Stopped drills first, then the least ore under them, then reading order; up to 200
+  lines (`drill_list_note` gives the count past that). One find over the patch's box and one small resource find per
+  drill. A position with no patch within 8 tiles is refused with the nearest patch. tests/ores.lua.

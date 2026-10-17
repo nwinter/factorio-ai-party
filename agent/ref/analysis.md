@@ -132,9 +132,12 @@
   placements on the same resource, with mining-area amounts and placement checks; `resource` gives the name when no
   earlier mining target was recorded. Spots where a drill or drill ghost already stands are left out and named
   (`occupied_by`). Example: `./fh call drill_sites --args '{"position":{"x":120.5,"y":-44.5}}'`
-- `ores {resource?, surface?, min_amount?, limit?, position?}`: the patches on the charted map (one resource, or every
-  one), nearest first: amount left (oil: yield), distance from you and from our nearest building, enemy spawners and
-  worms within 50 tiles, and how many of our drills are on it.
+- `ores {resource?, surface?, min_amount?, limit?, position?, patch?}`: the patches on the charted map (one resource, or
+  every one), nearest first: amount left (oil: yield), distance from you and from our nearest building, enemy spawners
+  and worms within 50 tiles, and how many of our drills are on it. `patch: {x,y}`: only the patch with ore at or within
+  8 tiles of it, with `drill_list`: every drill of ours on it, one line each (position, name, status, the ore under its
+  mining area), stopped ones first, then the least ore; no scan radius; up to 200 lines.
+  Example: `./fh call ores --args '{"resource":"copper-ore","patch":{"x":40,"y":210}}'`
 - `stock {item?, network?, surface?, position?, radius?, places?, holders?, limit?, page?}`: where an item is. With
   `item` and no radius: the whole surface's total (named or yours; a platform is read whole) and the places within 128
   tiles; `radius` (up to 1024) reads that circle only; `covered` says what was read, `as_of` whether a total is live or

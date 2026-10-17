@@ -131,6 +131,19 @@ eq(b.amount, 4000); eq(b.miners, 1, 'an idle drill over it'); eq(b.spawners, 1);
 eq(b.nearest_nest, 'small-worm-turret 70,-20 22 tiles'); eq(b.chart_edge, nil)
 eq(c.chart_edge, true, 'ore on the edge of the charted map'); eq(c.spawners, nil, 'a spawner on an uncharted chunk is not on the map')
 eq(out.resources, 'copper-ore 1 (300), crude-oil 1 (yield 160%), iron-ore 2 (5787)')
+-- patch (d17 batch20 B2, Haiku): one patch by a position on it, with every drill of ours on it.
+do
+  local d1, d2 = ents[6], ents[7]
+  d1.status, d2.status = 1, 2
+  local one = ores.handlers.ores(me, {patch={x=60, y=1}})
+  eq(#one.patches, 1); eq(one.patches[1].amount, 4000)
+  eq(one.patches[1].drill_list[1], '(59,3) electric-mining-drill no_minable_resources: 4,000 iron-ore under it (4 tiles)')
+  local home = ores.handlers.ores(me, {patch={x=8, y=6}})
+  eq(home.patches[1].tiles, 33); eq(home.patches[1].drill_list[1], '(1.5,1.5) electric-mining-drill working: 1,600 iron-ore under it (16 tiles)')
+  local ok, err = pcall(ores.handlers.ores, me, {patch={x=120, y=40}})
+  assert(not ok and tostring(err):find('no patch with ore within 8 tiles of (120,40) in the 48 charted chunks read so far; the nearest is iron-ore (60,0)-(62,2)', 1, true), err)
+  d1.status, d2.status = nil, nil
+end
 
 -- A dense chunk is read a band of rows at a time over several slices and
 -- comes out the same as read whole.
