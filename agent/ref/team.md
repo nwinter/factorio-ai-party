@@ -65,7 +65,8 @@
   ore` per surface (`./fh call networks` shows them any time;
   `./fh call boilers` lists each boiler by network, the stopped ones first: state, fuel, water, its feeder and what
   the feeder takes from with the fuel there, and a feed chest's fuel use per minute over the last 10 minutes with the
-  minutes left at that rate; the networks line names the lowest boiler (position, minutes, fuel, feeder), the 2 feed
+  minutes left at that rate; its `lines` are one a boiler, read live (`read` gives the tick), not working first, then
+  the fewest minutes of its own fuel at full burn, with its feed (`area` limits it to a box); the networks line names the lowest boiler (position, minutes, fuel, feeder), the 2 feed
   chests with the fewest minutes left (`feed chests: requester-chest (10,39) 50 coal, uses 15.0/min over 10 min, 3 min
   left`) and accumulators' stored MJ of their maximum; a logistic network's line ends with the items it holds most of
   and what its requesters ask (`holds iron-plate 4200, ...; requesters ask iron-plate 400 (300 short), ...`); on

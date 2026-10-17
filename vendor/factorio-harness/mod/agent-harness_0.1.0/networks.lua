@@ -2139,8 +2139,34 @@ return function(api)
     local cap = try(function() return e.fluidbox.get_capacity(i) end)
     return string.format('%s %d%s', box.name, math.floor(box.amount + 0.5), cap and '/' .. math.floor(cap + 0.5) or '')
   end
+  -- Minutes of a boiler's own fuel at full burn (d17 batch16 B1, Haiku ~10x a shift: whether to walk out and refuel):
+  -- the fuel in its burner (each item's fuel value) and what is still burning, at its maximum consumption over its
+  -- burner's effectivity. nil without a burner.
+  function M.own_fuel_minutes(e)
+    local burner = try(function() return e.burner end)
+    if not burner then return nil end
+    local joules = try(function() return burner.remaining_burning_fuel end) or 0
+    local inv = try(function() return burner.inventory end)
+    for _, st in ipairs(inv and (try(function() return inv.get_contents() end) or {}) or {}) do
+      joules = joules + (try(function() return prototypes.item[st.name].fuel_value end) or 0) * st.count
+    end
+    local proto = e.prototype
+    local q = try(function() return e.quality end)
+    local use = try(function() return proto.get_max_energy_usage(q) end) or try(function() return proto.max_energy_usage end) or 0
+    local eff = try(function() return proto.burner_prototype.effectivity end) or 1
+    if use <= 0 then return nil end
+    return math.floor(joules * eff / use / 3600 * 10 + 0.5) / 10
+  end
+  local function boiler_line(r)
+    local fuel = r.fuel or 'no burner'
+    local mins = r.own_fuel_min and string.format('%s min of its own fuel at full burn', r.own_fuel_min) or 'no fuel figure'
+    local feed = r.feed_chest and r.feed_chest.line or r.feeder or 'feeder not read'
+    return string.format('%s %s %s: %s%s, %s; feed: %s', r.name, at(r.position.x, r.position.y), r.state, fuel,
+      r.burning and ' (burning ' .. r.burning .. ')' or '', mins, feed)
+  end
   function M.boilers(p, a)
     assert(a.surface == nil or type(a.surface) == 'string', 'surface must be a surface name')
+    assert(a.area == nil or type(a.area) == 'table', 'area must be {left_top: {x, y}, right_bottom: {x, y}}')
     local surface = p.surface
     if a.surface then
       surface = nil
@@ -2149,7 +2175,15 @@ return function(api)
     end
     local f = p.force
     local ctx = e_begin(store(), f, surface)
-    local found = try(function() return surface.find_entities_filtered{type='boiler', force=f, limit=MAX_SCAN} end) or {}
+    local box
+    if a.area then
+      local lt, rb = a.area.left_top or a.area[1], a.area.right_bottom or a.area[2]
+      local function xy(v) return type(v) == 'table' and tonumber(v.x or v[1]), type(v) == 'table' and tonumber(v.y or v[2]) end
+      local x0, y0 = xy(lt); local x1, y1 = xy(rb)
+      assert(x0 and y0 and x1 and y1 and x1 > x0 and y1 > y0, 'area must be {left_top: {x, y}, right_bottom: {x, y}}')
+      box = {{x0, y0}, {x1, y1}}
+    end
+    local found = try(function() return surface.find_entities_filtered{type='boiler', force=f, area=box, limit=MAX_SCAN} end) or {}
     local rows, walked = {}, {}
     for _, e in ipairs(found) do
       if e.valid then
@@ -2169,7 +2203,7 @@ return function(api)
           state=STATE[status or ''] or (status and status:gsub('_', ' ')) or 'unknown', working=status == 'working',
           fuel=burner and stacks(try(function() return burner.inventory end)) or nil, burning=burning,
           water=fluid_text(e, 1), steam=fluid_text(e, try(function() return #e.fluidbox end) or 2),
-          network=to and to.id or nil, _e=burner and e or nil}
+          network=to and to.id or nil, _e=burner and e or nil, own_fuel_min=M.own_fuel_minutes(e)}
       end
     end
     local groups, by = {}, {}
@@ -2229,16 +2263,30 @@ return function(api)
           end
         end
         r._e = nil
+        r.line = boiler_line(r)
       end
       g.not_working = g.not_working > 0 and g.not_working or nil
     end
+    -- One line a boiler shown, not working first, then the fewest minutes of own fuel.
+    local lines = {}
+    for _, g in ipairs(groups) do for _, r in ipairs(g.boilers) do lines[#lines+1] = r end end
+    table.sort(lines, function(x, y)
+      if x.working ~= y.working then return not x.working end
+      local mx, my = x.own_fuel_min or math.huge, y.own_fuel_min or math.huge
+      if mx ~= my then return mx < my end
+      if x.position.x ~= y.position.x then return x.position.x < y.position.x end
+      return x.position.y < y.position.y
+    end)
+    for i, r in ipairs(lines) do lines[i] = r.line end
     local not_working = 0
     for _, r in ipairs(rows) do
       r._e = nil
       if not r.working then not_working = not_working + 1 end
     end
-    return {surface=surface.name, boilers=#rows, not_working=not_working, networks=groups,
-      note=#rows == 0 and 'no boiler of ours on ' .. surface.name or nil}
+    return {surface=surface.name, boilers=#rows, not_working=not_working, networks=groups, lines=#lines > 0 and lines or nil,
+      read=string.format('live (tick %d): fuel, state and feeders read now; a feed chest\'s rate is over its looks of the last minutes, as it says', game.tick),
+      area=box and string.format('(%g,%g)-(%g,%g)', box[1][1], box[1][2], box[2][1], box[2][2]) or nil,
+      note=#rows == 0 and 'no boiler of ours on ' .. surface.name .. (box and ' in that area' or '') or nil}
   end
   -- One producer's or consumer's power for inspect's `electricity` (Astra, 13:10: inspect on solar panels and machines showed no
   -- maximum): its maximum from the prototype at its quality (a machine's with its modules' consumption bonus, and its
@@ -2298,12 +2346,12 @@ return function(api)
     return out
   end
   M.schema = {
-    boilers = {surface='optional surface name (default yours)',
+    boilers = {surface='optional surface name (default yours)',area='optional {left_top, right_bottom}: only the boilers in it',
       returns='boilers (count), not_working, networks [{network (electric network id its steam feeds, or none found), line, total, not_working, '
         .. 'boilers [{position, name, state (working, no fuel, output full, no water, low water, ...), status (the game\'s name), working, '
         .. 'fuel (its fuel slots, e.g. coal*5), burning, water and steam (amount/capacity), feeder (the inserter dropping into it and '
         .. 'what it takes from, with the fuel there, or no inserter feeds it), feeder_has_fuel}], more}], networks with a boiler not '
-        .. 'working first, and those boilers first in each; at most 64 rows (more: rows left out, all working). Read only'},
+        .. 'working first, and those boilers first in each; at most 64 rows (more: rows left out, all working); lines: one a boiler shown, not working first then the fewest minutes (its name, place, state, fuel and what burns, own_fuel_min: minutes of its own fuel at full burn, and its feed: the inserter and the belt or chest it takes from with the fuel there, or the feed chest with its rate); read: live, with the tick. Read only'},
     networks = {surface='optional planet or surface name, or a platform\'s name',platform='optional platform name or index (its surface\'s networks)',fresh='optional boolean: read each electric network\'s draw now too (draw_now_kw, the last 5 s of its statistics); accumulators are read now always; the rest is the view of as_of (rebuilt every 60 s)',
       returns='surfaces [{surface, platform (on a platform surface), electric [{id, poles, center, draw_kw {avg, now, over_s}, capacity_kw, generators_kw, solar, solar_peak_kw (on a platform: at the solar power where it is), solar_power (percent), solar_power_text, '
         .. 'acc, acc_mj, acc_max_mj, acc_pct (accumulators read now), acc_series (what they held every 15 s over the last 3 min, from the 5 s samples), draw_now_kw (fresh), machines, low, none, boilers, fuel_min, boilers_fed, boilers_under_20_min, boilers_under_10_min, lowest_boiler_min, line (its accumulator part read now)}], logistic [{id, roboports, personal, center, '

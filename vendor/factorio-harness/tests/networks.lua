@@ -550,8 +550,30 @@ lb2.fluidbox[1] = {name='water', amount=200}; lb2.fluidbox.get_capacity = functi
 lb2.fluidbox[2] = {name='steam', amount=12.4}
 lb1.burner.inventory.get_contents = function() return {{name='coal', quality='normal', count=lb1.burner.inventory[1].count}} end
 local you = {force=force, surface=nauvis}
+lb1.prototype.max_energy_usage = 30000  -- 1.8 MW
 local bo = N.boilers(you, {})
 eq(bo.surface, 'nauvis'); eq(bo.boilers, 12); eq(bo.not_working, 4); eq(#bo.networks, 2)
+-- d17 batch16 B1 (Haiku ~10x: whether to walk out and refuel): a line a boiler, not working first then the fewest
+-- minutes of its own fuel (20 coal at 1.8 MW: 0.7 min), its feed with the fuel there; read live with the tick
+eq(bo.lines[1], 'boiler (60,16) no fuel: coal*20 (burning coal), 0.7 min of its own fuel at full burn; feed: wooden-chest (41,13) 400 coal, rate not measured yet')
+assert(bo.read:find('^live %(tick %d+%)'), bo.read)
+eq(#bo.lines, 8, "the 7 rows of network 7 and the far one")
+local find0 = nauvis.find_entities_filtered
+nauvis.find_entities_filtered = function(f)
+  local out = find0(f)
+  if f.area and f.type == 'boiler' then
+    local keep = {}
+    for _, e in ipairs(out) do
+      if e.position.x >= f.area[1][1] and e.position.x <= f.area[2][1] and e.position.y >= f.area[1][2] and e.position.y <= f.area[2][2] then keep[#keep+1] = e end
+    end
+    return keep
+  end
+  return out
+end
+local ba = N.boilers(you, {area={left_top={x=55,y=10},right_bottom={x=70,y=20}}})
+nauvis.find_entities_filtered = find0
+eq(ba.boilers, 2); eq(ba.area, '(55,10)-(70,20)')
+assert(not pcall(N.boilers, you, {area={left_top={x=5,y=5},right_bottom={x=1,y=1}}}))
 local g7, gnone = bo.networks[1], bo.networks[2]
 eq(g7.network, 7); eq(g7.total, 11); eq(g7.not_working, 3)
 eq(g7.line, 'electric #7: 11 boilers: 1 output full, 2 no fuel, 8 working')
