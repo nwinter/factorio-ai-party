@@ -5663,3 +5663,27 @@ fh watch    # deploy on every change
   and an inserter at (-90.5,272.5) refilled it from a requester chest asking for 5. On the copy the remote's flare drew a
   shot within 5 s from the central and the south pieces. `artillery` and the remote's reply now give `shells_used` (the
   production statistics, last minute and 10 minutes) and each piece's `fed_by` inserters.
+- `load_silo {launch: true}` over one rocket's lift or cargo slots (B1, Sonnet 18:20, 3x) is split in list order into
+  rockets by weight and stacks, each a load_silo step appended to your queue (`rocket 1 of N` ...) that loads and
+  launches in turn; `split` says how (not with to_total or up_to; an item heavier than the lift is refused).
+- `platforms` gives each platform `departure` (B2, Grok 6x: Swift's schedule read a 3600 s stop at Gleba while Sol's
+  queue sent it on once cargo landed): every agent's queue step and standing order that sets that platform's schedule
+  (platform_schedule), with the wait before it in the queue or the order's trigger; the compact line adds it.
+- `platform_endurance` (B3, Astra 18:20: Von Braun died on a short reserve; projections mixed flight with drift and stops
+  about 6 times): each ammunition row adds `phases`: used and made a minute while moving (flying, not paused), still in
+  space (paused or at speed 0) and stopped at a location, from each second's change (freight.lua; past 2 hours the sums
+  are halved, so recent flight counts most), and `flight`: at the moving rate, what the route's flight and its last leg
+  (the return) use against what is aboard and made. The per-second tracking: freight.tick about 0.8 ms a second in the
+  container with 5 platforms (about 0.15 ms on n).
+- `platform_plan {platform, floor: true}` (B4, Astra 18:20: Kestrel needed three floor corrections): the foundation every
+  entity ghost needs: its footprint, the tiles under an underground belt or pipe-to-ground pair (built or ghost; a ghost
+  entrance paired with the first exit of its name facing the same way within its reach), enclosed holes (not within 4
+  tiles of an asteroid collector or thruster, whose open space stays open), and the shortest run joining a needed group
+  to the hub's floor. Tiles built or with a tile ghost count as there. `place_ghosts_entries` gives the first 64 as
+  place_ghosts tile entries. On the copy: Peregrine needed 12 tiles under its ghosts.
+- `paste {preserve_existing_settings_and_wires: true}` (B5, Astra 2x): what already stands where the blueprint puts the
+  same entity (built, or its ghost) is left out, keeping its settings and wires; the rest is pasted where the whole
+  blueprint lands, and wires from new ghosts to what stands are joined; `preserved` counts them. Checked on the copy: a
+  captured inserter's filter changed to copper and its chest removed; the preserved paste put back only the chest ghost
+  and kept the copper filter and the red wire. A superforced paste without the option set the filter back to the
+  blueprint's iron plate; a normal paste left it.

@@ -263,9 +263,150 @@ return function(api)
     for i, r in ipairs(rects) do out[i] = {left_top={x=r.x0, y=r.y0}, right_bottom={x=r.x1 + 1, y=r.y1 + 1}} end
     return taken, out, #built >= MAX_TILES
   end
+  -- floor (B4, Astra 18:20: Kestrel needed three floor corrections; footprint-only placement missed tunnels and holes):
+  -- the foundation every entity ghost needs, as a placement plan. Tiles needed: each ghost's footprint; the tiles an
+  -- underground belt or pipe-to-ground pair (built or ghost; a ghost entrance paired with the first exit of its name
+  -- facing the same way within its reach) passes under; the holes no foundation reaches from outside the platform's
+  -- box (enclosed); and, for a needed group not joined to the hub's foundation, the shortest run of tiles that joins
+  -- it. Tiles built or with a tile ghost already count as there. Read only.
+  local DIRV = {[0]={0,-1}, [4]={1,0}, [8]={0,1}, [12]={-1,0}}
+  function M.floor(s, force, hub)
+    local have = {}
+    for _, t in ipairs(try(function() return s.find_tiles_filtered{name='space-platform-foundation', limit=MAX_TILES} end) or {}) do have[k(t.position.x, t.position.y)] = true end
+    for _, g in ipairs(try(function() return s.find_entities_filtered{type='tile-ghost', limit=MAX_TILES} end) or {}) do
+      have[k(math.floor(g.position.x), math.floor(g.position.y))] = true
+    end
+    local need, why = {}, {foot=0, tunnel=0, hole=0, link=0}
+    local function want(x, y, kind) local key = k(x, y); if not have[key] and not need[key] then need[key] = {x=x, y=y, kind=kind}; why[kind] = why[kind] + 1 end end
+    local ghosts = try(function() return s.find_entities_filtered{type='entity-ghost', force=force, limit=8192} end) or {}
+    for _, g in ipairs(ghosts) do
+      local b = g.bounding_box
+      for x = math.floor(b.left_top.x), math.ceil(b.right_bottom.x) - 1 do
+        for y = math.floor(b.left_top.y), math.ceil(b.right_bottom.y) - 1 do want(x, y, 'foot') end
+      end
+    end
+    -- Tunnels: underground belts and pipes-to-ground, built or ghost.
+    local unders = {}
+    for _, e in ipairs(try(function() return s.find_entities_filtered{type={'underground-belt', 'pipe-to-ground'}, force=force} end) or {}) do unders[#unders+1] = e end
+    for _, g in ipairs(ghosts) do
+      local t = try(function() return g.ghost_type end)
+      if t == 'underground-belt' or t == 'pipe-to-ground' then unders[#unders+1] = g end
+    end
+    local at_tile = {}
+    for _, e in ipairs(unders) do at_tile[k(math.floor(e.position.x), math.floor(e.position.y))] = e end
+    for _, e in ipairs(unders) do
+      local ghost = e.type == 'entity-ghost'
+      local t = ghost and e.ghost_type or e.type
+      local name = ghost and e.ghost_name or e.name
+      local proto = prototypes.entity[name]
+      local reach = t == 'underground-belt' and (try(function() return proto.max_underground_distance end) or 5)
+        or (try(function() return proto.fluidbox_prototypes[1].pipe_connections[2].max_underground_distance end) or 10)
+      local input = t == 'underground-belt' and try(function() return e.belt_to_ground_type end) == 'input'
+      local v = DIRV[e.direction or 0]
+      -- the way the span runs: an underground belt entrance faces its travel; a pipe-to-ground's tunnel leaves the way it
+      -- does not face (its open end faces back)
+      local d = v and (t == 'underground-belt' and v or {-v[1], -v[2]})
+      if d and (t == 'pipe-to-ground' or input) then
+        local x0, y0 = math.floor(e.position.x), math.floor(e.position.y)
+        for step = 1, reach + 1 do
+          local o = at_tile[k(x0 + d[1] * step, y0 + d[2] * step)]
+          local oname = o and (o.type == 'entity-ghost' and o.ghost_name or o.name)
+          if o and oname == name and o ~= e then
+            for j = 1, step - 1 do want(x0 + d[1] * j, y0 + d[2] * j, 'tunnel') end
+            break
+          end
+        end
+      end
+    end
+    -- Holes: empty tiles inside the box of foundation and needed tiles that no empty tile on the box's edge reaches.
+    local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
+    local function grow(key)
+      local x, y = math.floor(key / 65536) - 32768, key % 65536 - 32768
+      x0, y0, x1, y1 = math.min(x0, x), math.min(y0, y), math.max(x1, x), math.max(y1, y)
+    end
+    for key in pairs(have) do grow(key) end
+    for key in pairs(need) do grow(key) end
+    if x0 < math.huge and (x1 - x0 + 3) * (y1 - y0 + 3) <= 250000 then
+      local function solid(x, y) local key = k(x, y); return have[key] or need[key] end
+      local outside, stack = {}, {{x0 - 1, y0 - 1}}
+      outside[k(x0 - 1, y0 - 1)] = true
+      while #stack > 0 do
+        local c = table.remove(stack)
+        for _, dd in ipairs({{1,0},{-1,0},{0,1},{0,-1}}) do
+          local x, y = c[1] + dd[1], c[2] + dd[2]
+          if x >= x0 - 1 and x <= x1 + 1 and y >= y0 - 1 and y <= y1 + 1 then
+            local key = k(x, y)
+            if not outside[key] and not solid(x, y) then outside[key] = true; stack[#stack+1] = {x, y} end
+          end
+        end
+      end
+      -- an asteroid collector's or thruster's open space stays open: holes within 4 tiles of one are left out
+      local keep_open = {}
+      for _, e in ipairs(try(function() return s.find_entities_filtered{type={'asteroid-collector', 'thruster'}, force=force} end) or {}) do
+        local b = e.bounding_box
+        for x = math.floor(b.left_top.x) - 4, math.ceil(b.right_bottom.x) + 3 do
+          for y = math.floor(b.left_top.y) - 4, math.ceil(b.right_bottom.y) + 3 do keep_open[k(x, y)] = true end
+        end
+      end
+      for x = x0, x1 do for y = y0, y1 do if not solid(x, y) and not outside[k(x, y)] and not keep_open[k(x, y)] then want(x, y, 'hole') end end end
+    end
+    -- Links: a group of needed tiles not 4-joined to the hub's foundation gets the shortest straight-then-turning run to it.
+    local hx, hy = hub and math.floor(hub.position.x) or 0, hub and math.floor(hub.position.y) or 0
+    local function joined()
+      local seen, stack = {[k(hx, hy)]=true}, {{hx, hy}}
+      while #stack > 0 do
+        local c = table.remove(stack)
+        for _, dd in ipairs({{1,0},{-1,0},{0,1},{0,-1}}) do
+          local x, y = c[1] + dd[1], c[2] + dd[2]
+          local key = k(x, y)
+          if not seen[key] and (have[key] or need[key]) then seen[key] = true; stack[#stack+1] = {x, y} end
+        end
+      end
+      return seen
+    end
+    for _ = 1, 32 do
+      local seen = joined()
+      local far
+      for key, t in pairs(need) do if not seen[key] then far = t; break end end
+      if not far then break end
+      -- the nearest joined tile, then an L of tiles to it
+      local best, bd
+      for key in pairs(seen) do
+        local x, y = math.floor(key / 65536) - 32768, key % 65536 - 32768
+        local dd = math.abs(x - far.x) + math.abs(y - far.y)
+        if not bd or dd < bd then best, bd = {x=x, y=y}, dd end
+      end
+      if not best then break end
+      local x, y = far.x, far.y
+      while x ~= best.x do x = x + (best.x > x and 1 or -1); want(x, y, 'link') end
+      while y ~= best.y do y = y + (best.y > y and 1 or -1); want(x, y, 'link') end
+    end
+    local list = {}
+    for _, t in pairs(need) do list[#list+1] = t end
+    table.sort(list, function(u, v) if u.y ~= v.y then return u.y < v.y end return u.x < v.x end)
+    return list, why
+  end
   function M.read(p, a)
     assert(type(a.platform) == 'string', 'platform is required (a platform name)')
     local pl = api.platform(p, a.platform)
+    if a.floor ~= nil then
+      assert(a.floor == true, 'floor must be true')
+      local list, why = M.floor(pl.surface, pl.force, pl.hub and pl.hub.valid and pl.hub or nil)
+      -- rows of tiles as areas, and the first 64 as place_ghosts tile entries
+      local areas, entries = {}, {}
+      for _, t in ipairs(list) do
+        local last = areas[#areas]
+        if last and last.y == t.y and last.x1 == t.x - 1 then last.x1 = t.x else areas[#areas+1] = {y=t.y, x0=t.x, x1=t.x} end
+        if #entries < 64 then entries[#entries+1] = {name='space-platform-foundation', position={x=t.x + 0.5, y=t.y + 0.5}} end
+      end
+      local rows = {}
+      for i, r in ipairs(areas) do if i <= 32 then rows[#rows+1] = string.format('(%d..%d, %d)', r.x0, r.x1, r.y) end end
+      return {platform=pl.name, floor_needed=#list, by={footprints=why.foot, tunnels=why.tunnel, holes=why.hole, links=why.link},
+        rows=rows, rows_more=#areas > 32 and #areas - 32 or nil, place_ghosts_entries=#entries > 0 and entries or nil,
+        line=#list == 0 and 'every entity ghost stands on foundation, built or planned; no tunnel, hole or link lacks it'
+          or string.format('%d foundation tiles needed: %d under ghosts\' footprints, %d under underground belt and pipe tunnels, %d enclosed holes, %d to join a group to the hub\'s floor; place_ghosts {platform, entities: place_ghosts_entries} plans the first %d',
+            #list, why.foot, why.tunnel, why.hole, why.link, #entries)}
+    end
     if a.salvage ~= nil then
       local n = api.integer and api.integer(a.salvage, nil, 1, 2000, 'salvage') or a.salvage
       local taken, areas, capped = M.salvage(pl.surface, pl.force, pl.hub and pl.hub.valid and pl.hub or nil, n)
@@ -299,7 +440,7 @@ return function(api)
     return {platform=pl.name, foundation_tiles=ntiles, hub_group=main and main.size or nil, islands=islands, belts=nbelts, loops=loops,
       head_on=#head > 0 and head or nil, side_loads=#side > 0 and side or nil, lines=lines}
   end
-  M.schema = {platform_plan = {platform='platform name',salvage='optional 1..2000: a read of up to that many built foundation tiles to take up, from the edge in, farthest from the hub first, each with nothing of ours on it (built or ghost), no tile ghost, no underground span under it, and the foundation left joined round it: salvage (how many), areas (rectangles of neighbouring tiles, each a deconstruct {platform, area, tiles: true}), tiles (the first 64), line',
+  M.schema = {platform_plan = {platform='platform name',floor='true: the foundation every entity ghost needs, as a placement plan: floor_needed and by (footprints, tunnels under underground belt and pipe-to-ground pairs, holes enclosed by floor, links joining a needed group to the hub\'s floor), rows, place_ghosts_entries (the first 64 tiles as place_ghosts entries), line; tiles built or with a tile ghost count as there',salvage='optional 1..2000: a read of up to that many built foundation tiles to take up, from the edge in, farthest from the hub first, each with nothing of ours on it (built or ghost), no tile ghost, no underground span under it, and the foundation left joined round it: salvage (how many), areas (rectangles of neighbouring tiles, each a deconstruct {platform, area, tiles: true}), tiles (the first 64), line',
     returns='a platform as planned, built and ghosts together (read only): foundation_tiles (built and tile ghosts), hub_group (the 4-joined tiles with the hub), islands [{size, ghost_tiles, tile, line}] (groups no foundation joins with the hub), belts (transport belts, undergrounds and splitters, built and ghosts), loops [{belts, ghosts, exits, first, line}] (belts whose items come round again; exits 0: no belt leaves it), head_on (a belt moving its items into one facing it), side_loads (a belt feeding the side of another), lines'}}
   return M
 end

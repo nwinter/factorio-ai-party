@@ -315,6 +315,55 @@ return function(api)
       end
     end
   end
+  -- Ammunition by what the platform was doing (B3, Astra 18:20: Von Braun died on a short reserve; projections mixed
+  -- powered flight with drifting and with production at a stop, about 6 times): each second the change in each
+  -- ammunition's made and used counts goes to the phase of that second: moving (flying, not paused, speed > 0), still
+  -- (in space, paused or at speed 0) or stopped (at a location). Past PHASE_KEEP seconds in all, every sum is halved,
+  -- so recent flight counts most.
+  M.PHASE_KEEP = 7200
+  function M.phase_step(rec, pl, w)
+    local now = ammo_counts(pl)
+    if not now then return end
+    local phase
+    if w.stopped then phase = 'stopped'
+    elseif w.leg then
+      local paused = try(function() return pl.paused end)
+      local v = try(function() return pl.speed end) or 0
+      phase = (paused or v <= 0) and 'still' or 'moving'
+    end
+    local prev = rec.ammo_prev
+    rec.ammo_prev = now
+    if not (prev and phase) then return end
+    rec.phase = rec.phase or {moving={s=0, by={}}, still={s=0, by={}}, stopped={s=0, by={}}}
+    local ph = rec.phase[phase]
+    ph.s = ph.s + 1
+    for name, c in pairs(now) do
+      local p0 = prev[name] or {made=0, used=0}  -- ammo_counts leaves out an ammunition at 0 and 0
+      local d = ph.by[name] or {made=0, used=0}
+      d.made = d.made + math.max(0, c.made - p0.made); d.used = d.used + math.max(0, c.used - p0.used)
+      ph.by[name] = d
+    end
+    local total = rec.phase.moving.s + rec.phase.still.s + rec.phase.stopped.s
+    if total > M.PHASE_KEEP then
+      for _, x in pairs(rec.phase) do
+        x.s = x.s / 2
+        for _, d in pairs(x.by) do d.made = d.made / 2; d.used = d.used / 2 end
+      end
+    end
+  end
+  -- {moving|still|stopped = {minutes, made_per_min, used_per_min}} for an ammunition, or nil.
+  function M.phase_rates(pl, name)
+    local rec = store()[pl.index]
+    if not (rec and rec.phase) then return nil end
+    local out = {}
+    for k, x in pairs(rec.phase) do
+      local d = x.by[name]
+      if x.s >= 30 then
+        out[k] = {minutes=x.s / 60, made=d and d.made / (x.s / 60) or 0, used=d and d.used / (x.s / 60) or 0}
+      end
+    end
+    return next(out) and out or nil
+  end
   -- The platform's segments on record, oldest first (endurance.lua reads the last finished leg's time).
   function M.segments(pl) local rec = store()[pl.index]; return rec and rec.segs or {} end
   function M.track(pl, tick)
@@ -339,6 +388,7 @@ return function(api)
       spoil_step(seg, rec.prev, counts)
     end
     rec.prev, rec.tick = counts, tick
+    M.phase_step(rec, pl, w)
     -- The last flying speed (the arrival estimate before a departure reads it).
     local v = w.leg and try(function() return pl.speed end)
     if type(v) == 'number' and v > 0 then rec.speed, rec.speed_tick = v, tick end
