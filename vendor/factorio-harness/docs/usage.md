@@ -6555,3 +6555,21 @@ fh watch    # deploy on every change
     history, as before).
   - Copy: an egg on a Gleba belt was told and listed; with it taken off the belt, status had neither (6 ms for status).
   tests/spoil.lua.
+- A3 (Sol): a place_ghosts dry run checked the names of an entry's settings only. The live call checks their values on
+  the ghost it places. Sol's shift had 37 place_ghosts calls with settings: requests written as a `set` map or
+  {name, count} passed the dry run and were refused live, and circuit settings on ghosts over a tree and a Vulcanus
+  chimney went to the tree or chimney ("out of reach, and remote view works only on our own entities").
+  - A dry run (place_ghosts, build, or the dry_run action) adds `settings_check` rows and `settings_line`: each
+    setting checked by the real call's code on a stand-in of the ghost:
+    - requests: space.lua check_requests, on a chest that takes requests;
+    - configure: its recipe (configure_check), modules (modules.lua check: slots, categories, effects under the
+      recipe; split out of modules.set), filters, filter_mode, use_filters and spoil_priority;
+    - circuit: circuit_set's own checks (circuits.lua: plan_set, split out of circuit_set; dry_set runs it with the
+      control behavior kind of that entity type, as read on the copy).
+  - `dry_run_ok` and `verdict` (ok, or fails: N entries blocked, N settings refused, and the refusals). The CLI exits 1
+    on a failing dry run. Entries needing tiles do not fail it: the real call lays those tile ghosts first.
+  - Live: each setting's target is the ghost or entity of the entry's name at its position. Copy: an inserter ghost over
+    Sol's Vulcanus chimney with circuit logistic "gun-turret < 10" is now set. A refusal on a ghost names it ("the
+    ghost of wooden-chest has no logistic requests").
+  - Copy: 11 entries with good and bad settings gave the same 3 set and 8 refused in a dry run and in the live call.
+  tests/d17_batch18.lua, d17batch18.test.ts.

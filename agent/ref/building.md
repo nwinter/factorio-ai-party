@@ -1,7 +1,9 @@
 - `place_ghosts` entries, `build` `builds` entries and a single `build` take `configure`, `requests`, `circuit` (the
   arguments of `configure`, `requests`, `circuit_set`, without `position`) and `wires: [{to, color, from_side,
   to_side}]`: set after every entry is placed, then the wires; the reply's `settings` and `settings_line` say what was
-  set or refused (a refused setting leaves the entry placed); `dry_run` gives `settings_planned`. An entry's
+  set or refused (a refused setting leaves the entry placed); `dry_run` gives `settings_planned` and `settings_check`,
+  each setting checked as the real call checks it. A dry run with a setting refused or an entry blocked reads
+  `dry_run_ok: false` and `verdict: fails: ...`, and `fh` exits 1. An entry's
   `settings: {...}` is read as those keys (`settings_alias`); a setting key such as `modules` at the entry's top level is refused with the shape.
   `"check_inserters": true` checks every planned inserter's pickup, drop, power and filters first and places nothing if one would not work;
   each row's `line` (and the refusal) names both sides: `picks from iron-chest (3.5,5.5), drops into stone-furnace (3,2.5)`.

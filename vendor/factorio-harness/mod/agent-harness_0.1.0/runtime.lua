@@ -12744,16 +12744,84 @@ end
 -- configure and wire round trips): hand builds set each placement immediately; wires follow the batch.
 M.pumpcheck=require('pumpcheck'){read=function(e) return M.circuits.read(e) end}
 M.entryset=require('entryset'){check=function(action,args) return check_args(action,args) end,
-  call=function(action,p,args) return handlers[action](p,args) end,position=position,reason=reason}
+  call=function(action,p,args) return handlers[action](p,args) end,position=position,reason=reason,
+  dry=function(p,entry,kind,args) return M.settings_dry(p,entry,kind,args) end}
+-- A place_ghosts dry run's settings (d17 batch18 A3, Sol: requests written with name instead of item passed the dry run
+-- and were refused live), checked by the code the real call runs on the ghost it places, given a stand-in of that ghost:
+-- requests (space.lua check_requests, on a chest that takes requests), configure's recipe (configure_check), modules
+-- (modules.lua check: slots, categories, effects under the recipe), filters (configure_filters' checks), spoil
+-- priority, and circuit_set's arguments (circuits.lua dry_set). Errors with the real call's refusal.
+function M.settings_dry(p,entry,kind,args)
+  local name=entry.name or entry.item
+  local proto=type(name)=='string' and prototypes.entity[name]
+  if not proto then return end
+  local ghost={valid=true,type='entity-ghost',name='entity-ghost',ghost_name=name,ghost_type=proto.type,ghost_prototype=proto,
+    position=position(entry.position),filter_slot_count=proto.filter_count or 0,get_recipe=function() return nil end}
+  if kind=='requests' then
+    local t,mode=proto.type,proto.logistic_mode
+    if not ((t=='logistic-container' and (mode=='requester' or mode=='buffer')) or t=='cargo-landing-pad' or t=='space-platform-hub') then
+      error(name..' has no logistic requests',0)
+    end
+    local secs={sections_count=1,get_section=function(i) return i==1 and {index=1,is_manual=true} or nil end}
+    space.check_requests(p,args,'chest',{valid=true,name=name,type=t},secs)
+  elseif kind=='circuit' then
+    M.circuits.dry_set(name,args)
+  elseif kind=='configure' then
+    local rname=args.recipe or entry.recipe
+    if args.recipe~=nil then configure_check(p,args,ghost,false) end
+    if args.modules~=nil and args.modules~=false then
+      local recipe=type(rname)=='string' and prototypes.recipe[rname] or nil
+      M.modules.check(proto,recipe,proto.module_inventory_size or 0,M.modules.parse(args.modules),
+        string.format('the ghost of %s (%g,%g)%s',name,ghost.position.x,ghost.position.y,recipe and ' making '..recipe.name or ''))
+    end
+    local f=args.filters
+    if f==nil and args.filter~=nil and proto.type~='splitter' then f=args.filter end
+    if f~=nil and proto.type~='asteroid-collector' then
+      local slots=ghost.filter_slot_count
+      assert(slots>0,name..' has no filter slots')
+      local list=type(f)=='string' and {f} or f
+      assert(type(list)=='table' and #list<=slots,'filters requires 0..'..slots..' item names')
+      for _,n in ipairs(list) do assert(prototypes.item[n],'unknown item '..tostring(n)) end
+    end
+    if args.use_filters~=nil then assert(proto.type=='inserter' and type(args.use_filters)=='boolean','use_filters is true or false, on an inserter') end
+    if args.filter_mode~=nil then
+      assert(args.filter_mode=='whitelist' or args.filter_mode=='blacklist','filter_mode is whitelist or blacklist')
+      assert(proto.type=='inserter','filter_mode applies to inserters')
+    end
+    if args.spoil_priority~=nil then
+      assert(proto.type=='inserter','spoil_priority is an inserter setting (the inserter GUI\'s Spoil priority)')
+      assert(type(args.spoil_priority)=='string' and M.SPOIL_PRIORITY[args.spoil_priority],'spoil_priority is none, fresh_first or spoiled_first (the inserter GUI\'s Spoil priority)')
+    end
+  end
+end
+-- A dry run's verdict (A3): fails when an entry is blocked or a setting refused, as the real call would leave them;
+-- the CLI exits 1 on it.
+function M.dry_verdict(out,a)
+  if type(out)~='table' or type(a)~='table' or a.dry_run~=true or out.dry_run~=true then return out end
+  local blocked=#(out.blocked or {})+(out.blocked_more or 0)
+  local refused=out.settings_refused or 0
+  local parts={}
+  if blocked>0 then parts[#parts+1]=blocked..' entr'..(blocked==1 and 'y' or 'ies')..' blocked' end
+  if refused>0 then parts[#parts+1]=refused..' setting'..(refused==1 and '' or 's')..' refused' end
+  out.dry_run_ok=#parts==0
+  out.verdict=#parts==0 and 'ok: every entry places and every setting is taken' or 'fails: '..table.concat(parts,', ')..(out.settings_line and '; '..out.settings_line or '')
+  return out
+end
 do
   local place=handlers.place_ghosts
   handlers.place_ghosts=function(p,a)
     local aliased=type(a)=='table' and M.entryset.normalize(a.entities) or 0
-    if type(a)~='table' or not M.entryset.any(a.entities) then return place(p,a) end
+    if type(a)~='table' or not M.entryset.any(a.entities) then return M.dry_verdict(place(p,a),a) end
     local ctx={platform=a.platform,surface=a.surface}
     M.entryset.check(a.entities,ctx)
     local out=place(p,a)
-    if a.dry_run==true then return out end
+    if a.dry_run==true then
+      if type(out)=='table' then
+        local rows,line,n=M.entryset.dry(p,a.entities)
+        out.settings,out.settings_line,out.settings_refused=rows,line,n>0 and n or nil
+      end
+      return M.dry_verdict(out,a)
+    end
     local skip={}
     for _,f in ipairs(out.failed or {}) do if f.index then skip[f.index]=true end end
     out.settings,out.settings_line=M.entryset.apply(p,a.entities,ctx,skip)
@@ -12833,11 +12901,15 @@ do
     local args=type(a)=='table' and type(a.args)=='table' and a.args or nil
     local entries=args and (a.action=='place_ghosts' and args.entities or a.action=='build' and (args.builds or {args})) or nil
     if entries and (a.action=='place_ghosts' or args.builds) then M.entryset.normalize(entries) end
-    if not entries or not M.entryset.any(entries) then return dry(p,a) end
+    local judged=(a.action=='place_ghosts' or a.action=='build') and {dry_run=true} or nil
+    if not entries or not M.entryset.any(entries) then return M.dry_verdict(dry(p,a),judged) end
     M.entryset.check(entries,a.action=='place_ghosts' and {platform=args.platform,surface=args.surface} or {})
     local out=dry(p,a)
     out.settings_planned=M.entryset.plan(entries)
-    return out
+    -- each checked as the real call checks it (A3)
+    local rows,line,n=M.entryset.dry(p,entries)
+    out.settings_check,out.settings_line,out.settings_refused=rows,line,n>0 and n or nil
+    return M.dry_verdict(out,judged)
   end
 end
 local equipment_handler=handlers.equipment

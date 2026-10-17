@@ -48,4 +48,16 @@ w=D.pickup_wait(ins);has(w,'holds iron-plate 40');has(w,'assembling-machine-2 (4
 asm.can_insert=function() return false end;asm.get_recipe=function() return {name='gear'} end
 w=D.pickup_wait(ins);has(w,'takes no iron-plate now (recipe gear)')
 
+-- A3 (Sol): an entry's settings go to the entity or ghost of the entry's name at its position (a tree or chimney there
+-- took them before); a dry run checks each setting by the runtime's own checks (api.dry) and counts the refusals.
+local calls={}
+local ES=require('entryset'){check=function() end,position=function(p) return p end,reason=function(e) return tostring(e) end,
+  call=function(action,_,args) calls[#calls+1]={action,args.name}; return {} end,
+  dry=function(_,entry,kind,args) if kind=='requests' and args.set and #args.set==0 then error('set requires an array of {item,min,max?,quality?,from?}',0) end end}
+local entries={{name='fast-inserter',position={x=0.5,y=160.5},circuit={logistic='gun-turret < 10'}},
+  {name='requester-chest',position={x=5.5,y=160.5},requests={set={['iron-plate']=200}}}}
+local rows,line=ES.apply({},entries,{},{})
+eq(calls[1][1],'circuit_set');eq(calls[1][2],'fast-inserter');eq(calls[2][2],'requester-chest');has(line,'2 set')
+local drows,dline,n=ES.dry({},entries)
+eq(n,1);eq(drows[1].circuit,'ok');has(drows[2].requests,'set requires an array');has(dline,'1 would be set, 1 refused: entry 2 requests')
 print('d17 batch18 ok')

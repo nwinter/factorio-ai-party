@@ -77,7 +77,8 @@ return function(api)
     return got
   end
   function M.pickup_wait(e)
-    if e.type ~= 'inserter' or try(function() return e.status end) ~= defines.entity_status.waiting_for_source_items then return nil end
+    local waiting = try(function() return defines.entity_status.waiting_for_source_items end)
+    if e.type ~= 'inserter' or not waiting or try(function() return e.status end) ~= waiting then return nil end
     local src, dst = try(function() return e.pickup_target end), try(function() return e.drop_target end)
     if not (src and src.valid) then return 'picks from the ground: no item lies at its pickup point' end
     local names, filtered = {}, false
