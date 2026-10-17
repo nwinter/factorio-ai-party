@@ -198,7 +198,19 @@ def operator_inbox_all():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def host_tag():
+    """d17 13:40: Opus's "@NickWinter ..." answered "viewer NickWinter (host)" and was not matched as a reply."""
+    nick = {"seq": 11073, "from": "viewer NickWinter (host)", "viewer": True, "text": "@opus Opus: doable here?",
+            "logged_at": "2026-10-17T12:56:29"}
+    opus = {"seq": 11075, "from": "opus", "agent": "opus", "text": "@NickWinter Yes, deconstruct takes an area.",
+            "logged_at": "2026-10-17T12:56:41"}
+    assert V.viewer_name(nick) == "NickWinter", V.viewer_name(nick)
+    r = V.classify(opus, [nick])
+    assert r and r["kind"] == "reply" and r["to"] == ["NickWinter"] and r["answers"] is nick, r
+
+
 def main():
+    host_tag()
     rule_tests()
     classify_tests()
     try:

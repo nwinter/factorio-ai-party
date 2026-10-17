@@ -136,6 +136,10 @@ do
   eq(O.told(3,{'luna'}),1,'a tell to the asker answers it')
   O.add(3,{key='m50',seq=50,tick=game.tick,from='astra',text='@sol ready?'})
   eq(O.ack(3,50),1)
+  -- the host's line carries " (host)": "@NickWinter" answers it (d17 13:40, Opus's answer left it open 10 minutes)
+  O.add(3,{key='m60',seq=60,tick=game.tick,from='viewer NickWinter (host)',text='@opus doable here?',viewer=true,source='site'})
+  eq(O.said(3,'@NickWinter Yes, deconstruct takes an area'),1,'the host tag is not part of the name')
+  eq(O.line(3),nil)
   game=nil
   print('d17_batch14 B1 unanswered mentions: ok')
 end
