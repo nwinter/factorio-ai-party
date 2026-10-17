@@ -133,7 +133,8 @@
 - `platform_defense {platform}`: each asteroid collector's front and each hull side against turret ranges: the turrets
   that reach it (ammo, fed by an inserter, robots or by hand), NO turret with the nearest, and edge gaps as runs.
 - `platform_bom {platform, request: true}` keeps a hub request section (`platform_bom: NAME`) at what the ghosts still
-  need, lowered as they are built and removed when none is left (`request: false` removes it; `import_from`, `area`).
+  need, lowered as they are built and removed when none is left (`request: false` removes it; `import_from`, `area`;
+  `min_payload: {item: N}`; a min_payload set on its slots is kept).
 - `silo` rows' `platform_requests` flag each request: matched (the planet's network holds it), below_min_payload,
   split_networks (another network holds it), hub_full, filling. A launch reply leads with `spoiled_percent` by item
   and `went_up` (load_silo's `last` too).

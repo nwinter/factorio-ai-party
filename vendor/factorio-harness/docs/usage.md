@@ -6139,3 +6139,8 @@ fh watch    # deploy on every change
   (130,-131) facing west; the rails into the stop end at straight-rail (127,-131), its end at (128,-131) facing east;
   2 tiles between them; 1 rail ghost waits there to be built: straight-rail (129,-131)`. 51 ms on the copy (the whole
   network read from both sides; at most 30000 rail ends a side).
+- A0 (Sol, a batch11 A6 regression): the managed `platform_bom: NAME` section's rewrite every 10 s erased each slot's
+  custom minimum payload. It now reads each slot first and keeps its min_payload and max, writes a slot only when it
+  changes, and `platform_bom {request: true, min_payload: {item: N}}` sets those items' minimum payload (kept for later
+  rewrites; 0 or false clears). On the copy: min_payload {assembling-machine-3: 2} on Meridian's section read 2 after
+  1437 ticks (two rewrites).
