@@ -498,6 +498,8 @@ class LiveSource:
             self.has_loadout = "loadout" in (res.get("operator_reads") or [])
             self.has_clouds = "clouds" in (res.get("operator_reads") or [])
             self.has_chronicle = "chronicle" in (res.get("operator_reads") or [])
+            # artillery shells in flight: serve.py reads them on their own pace (artillery_poller)
+            self.has_artillery = "artillery_live" in (res.get("operator_reads") or [])
         except Exception as e:
             self.has_board = False
             print(f"[live] board probe failed: {e}", flush=True)

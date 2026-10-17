@@ -19,7 +19,7 @@ import pog  # noqa: E402  (tools/pog.py: Rcon client, ports, SCORE_LUA)
 READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "board", "board_events", "platforms", "reminders"}
 # Operator reads (eng/board audience.lua): every agent's `confess` lines, for viewers only. Gated on `describe`.
 OPERATOR_READS = {"confessions", "tells", "operator_requests", "attack_groups_live", "big_enemies_live", "hauling", "loadout", "clouds",
-                  "efficiency", "chronicle"}
+                  "efficiency", "chronicle", "artillery_live"}
 # Operator drawing for the camera clients only (highlights.lua): rings and labels on what agents act on, seen by the
 # director camera players alone; nothing in the game changes. A runtime without it refuses the operator request,
 # which stops nobody.
