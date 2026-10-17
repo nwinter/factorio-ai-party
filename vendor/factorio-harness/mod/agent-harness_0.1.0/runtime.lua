@@ -446,7 +446,15 @@ local function finish(index, outcome)
         at(action.position),(M.pathing.half(pb and pb.valid and pb.character or {})+M.pathing.PAD)*2,table.concat(pk.by,', '),at(pk.stop),distance(pk.stop,action.position))
     end
     if action.squeezed then
-      last.squeezed=string.format('no path request led into the gaps: walked them from %s to %s',at(action.squeezed.from),at(action.squeezed.to))
+      -- (d17 batch14 B6, Astra twice: "walked them ... to (10,173.3)" while the walk stalled at (-18.2,190)) the trail's
+      -- end is where it headed; where the character is when it ends short of it is said
+      local sq=action.squeezed
+      if here and sq.to and distance(here,sq.to)>1.5 then
+        last.squeezed=string.format('no path request led into the gaps: walked them from %s toward %s and ended at %s, %.1f tiles short of it (%s)',
+          at(sq.from),at(sq.to),at(here),distance(here,sq.to),outcome)
+      else
+        last.squeezed=string.format('no path request led into the gaps: walked them from %s to %s',at(sq.from),at(sq.to))
+      end
     end
     if action.escapes and action.escape_first then
       last.escaped=string.format('no path led out of the gap at %s: walked out to %s first%s',at(action.escape_first),
@@ -1718,7 +1726,7 @@ function handlers.describe()
         reports='combat (while a shoot runs: the shoot\'s own record plus target {name, position, distance}: the enemy it aims at now, or a shoot at a position\'s spot; none with nothing in range; fired_tick: the last tick it fired at something; kills_10s: kills by the character or its vehicle in the last 10 s; hurt); hurt (also in brief: the last hit by another force on the character or the vehicle it rides in the last 5 minutes: tick, ago_s, by (the attacker, else the damage type), at, damage (hits under 10 s apart add up), what (the vehicle hit)); teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); storm (on Fulgora: the sky now, as networks has it, with bolts_near: lightning within 64 tiles of you); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name; power_cuts: one line per pole death that split its electric network or left machines with no pole, as team.alerts tells it (powercut.lua); latest: one line per loss incident (a raid: losses within 32 tiles on one surface) with causes; incidents: the same as rows {id, surface, platform, box {x0,y0,x1,y1}, total, names, by, first_tick, last_tick, line}; attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel and low_power with the first places and the surface, labs missing packs, research idle or ending); robots (a full status: per planet or platform, every logistic network\'s robots summed by kind: total, idle, working, charging, waiting to charge, and the networks with the most waiting; from the network view kept for a minute)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
       build_path={points='2..64 tile-centred axis-aligned waypoints; at most 512 belt tiles',item='transport-belt by default',ticks='1..36000',start_index='resume at this tile index; default 1',end_direction='optional final belt direction',note='walks to a far start (or resume tile) with the pathfinder, then steers along the line placing belts; trees, rocks and wild plants on a tile or across the walk are mined by hand first (walked to with the pathfinder when out of reach; hand-mining time; what they give goes to the inventory; last.cleared counts them, cleared_names by name); it stops for buildings, water and cliffs (the build\'s refusal), and blocked for one no path leads to'},
       kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',retreat='optional {x,y}: below min_health or out of ammunition, walk there (firing at units in reach while ammunition lasts) instead of stopping where you stand; ends retreated on arrival. Or {to: {x,y}, health_below, shield_below} (and the standing retreat_guard): the generic retreat, as move_to\'s (kite\'s own min_health stop then off unless given); false: none',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | retreated | timed_out; last reports why (in words), kills, ammo_used, ammo_left, enemies_left, retreated_from'},
-      belt_route={cliffs='optional true: pass over cliffs (the ghost marks them, one cliff-explosives each); by default the line goes round them (an underground pair still passes under one)',avoid_enemies='optional true or clearance 0..32 tiles: keep every belt tile and underground span outside charted worms (range + clearance), spawners (40 + clearance) and current attack areas (24 + clearance); true is 8; omitted/false disables; endpoints inside are refused; search margin expands, existing budgets stay',from='{x,y} first belt tile, or a tile in an existing chain to follow to its open end (at most 256 existing tiles, listed in existing; already connected returns connected=true and zero new tiles); blocked connections name the tile and reason; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
+      belt_route={avoid_nests='optional true: route round the worms and spawners the map shows (avoid_enemies 4 unless given); false: lay a line through their reach anyway. Without avoid_nests or avoid_enemies a line whose tiles lie inside a worm\'s range or a spawner\'s 40 tiles is refused, naming them (a dry run lists them in nests_on_route)',cliffs='optional true: pass over cliffs (the ghost marks them, one cliff-explosives each); by default the line goes round them (an underground pair still passes under one)',avoid_enemies='optional true or clearance 0..32 tiles: keep every belt tile and underground span outside charted worms (range + clearance), spawners (40 + clearance) and current attack areas (24 + clearance); true is 8; omitted/false disables; endpoints inside are refused; search margin expands, existing budgets stay',from='{x,y} first belt tile, or a tile in an existing chain to follow to its open end (at most 256 existing tiles, listed in existing; already connected returns connected=true and zero new tiles); blocked connections name the tile and reason; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
         belt='transport belt entity (default transport-belt); undergrounds of the same tier hop obstacles',undergrounds='default true',lane='left|right: side-load onto this lane of the belt at to (it needs an input from behind)',
         to_direction='free to: last belt direction (default straight on)',dry_run='plan only, place nothing: each belt checked as a place_ghosts dry run checks it, belt_route holds the plan',details='list every entity',
         via='1..16 {x,y} tiles the line passes in order (each leg from, via points, to is at most 1000 tiles)',
@@ -1871,6 +1879,7 @@ function handlers.describe()
   for name,schema in pairs(M.platbom and M.platbom.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platdefense and M.platdefense.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circaudit and M.circaudit.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.owed and M.owed.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ghostlist and M.ghostlist.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.silo and M.silo.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.rocketload and M.rocketload.schema or {}) do description.actions[name]=schema end
@@ -3293,8 +3302,13 @@ function handlers.stock(p,a)
     assert(type(a.item)=='string' and prototypes.item[a.item],'stock {surface} takes item (an item name); with position it reads around a place there')
     local row=M.stock_planet_row(p,surface,a.item)
     local by_net=M.stock_by_network(p,surface,a.item)
-    return {item=a.item,surface=surface.name,total=row.total,by_network=#by_net>0 and by_net or nil,networks=row.networks,pads=row.pads,pads_in_networks=row.pads_in_networks,chests=row.chests,
-      chests_holding=row.chests_holding,silos=row.silos,labs=row.labs,made_per_min=row.made_per_min,used_per_min=row.used_per_min,line=row.line,
+    -- (d17 batch14 B2) stacks on the ground, in chunks our force sees now: counted apart, not in total
+    local okg,g=pcall(M.stores.on_ground,p.force,surface,a.item)
+    local ground=okg and g.count>0 and g or nil
+    local ground_line=ground and string.format('%d on the ground in %d stack%s (%s), not in total',ground.count,ground.stacks,ground.stacks==1 and '' or 's',
+      table.concat((function() local t={} for i,c in ipairs(ground.cells) do if i<=4 then t[i]=string.format('%d near (%d,%d)',c.count,math.floor(c.position.x),math.floor(c.position.y)) end end return t end)(),', '))
+    return {item=a.item,surface=surface.name,total=row.total,on_ground=ground and ground.count or nil,on_ground_line=ground_line,by_network=#by_net>0 and by_net or nil,networks=row.networks,pads=row.pads,pads_in_networks=row.pads_in_networks,chests=row.chests,
+      chests_holding=row.chests_holding,silos=row.silos,labs=row.labs,made_per_min=row.made_per_min,used_per_min=row.used_per_min,line=row.line..(ground_line and '; '..ground_line or ''),
       covered=string.format('the whole of %s: logistic networks, requester chests, landing pads, plain chests and landed pods, silos\' rockets, labs',surface.name),as_of=row.as_of,requesters=row.requesters,
       note='counted as freight_audit counts a planet; supply {item, surface} gives the belts, machines and inserters too'}
   end
@@ -11636,9 +11650,36 @@ local function place_route(p,a,plan,out)
   out.last_belt=placed.last_belt
   return out
 end
+-- (d17 batch14 B3, Opus: a belt_route chose a path past 3 nests) avoid_nests: true routes round the worms and spawners
+-- the map shows (avoid_enemies 4 unless given); without either, a line through one's own reach is refused (dry run:
+-- said in nests_on_route), avoid_nests: false lays it anyway.
+function M.belt_args(a)
+  assert(a.avoid_nests==nil or type(a.avoid_nests)=='boolean','avoid_nests must be true or false')
+  if a.avoid_nests==true and (a.avoid_enemies==nil or a.avoid_enemies==false) then
+    local b={}; for k,v in pairs(a) do b[k]=v end; b.avoid_enemies=4; return b
+  end
+  return a
+end
+function M.belt_nests(p,a,plan)
+  if not ((a.avoid_enemies==nil or a.avoid_enemies==false) and a.avoid_nests==nil) then return nil end
+  local okg,blocked=pcall(M.avoid.route_guard,p,0)
+  if not (okg and blocked) then return nil end
+  local seen,list={},{}
+  for _,e in ipairs(plan.entities or {}) do
+    local why=e.position and blocked(math.floor(e.position.x),math.floor(e.position.y))
+    if why and not seen[why] and #list<8 then seen[why]=true; list[#list+1]=string.format('%s at %s',why,M.pathing.at(e.position)) end
+  end
+  return #list>0 and list or nil
+end
 function handlers.belt_route(p,a)
+  a=M.belt_args(a)
   local plan=route.plan(p,a)
-  local out=place_route(p,a,plan,{route=plan.route,tiles=plan.tiles,items=plan.items,arrival=plan.arrival,extends=plan.extends,existing=plan.existing,connected=plan.connected,avoid_enemies=plan.avoid_enemies,avoidance_waypoints=plan.avoidance_waypoints,
+  local nests=M.belt_nests(p,a,plan)
+  if nests and not a.dry_run then
+    error(string.format('the line passes inside the reach of worms or spawners the map shows: %s; avoid_nests: true routes round them, avoid_nests: false lays it anyway',
+      table.concat(nests,'; ')),0)
+  end
+  local out=place_route(p,a,plan,{nests_on_route=nests,route=plan.route,tiles=plan.tiles,items=plan.items,arrival=plan.arrival,extends=plan.extends,existing=plan.existing,connected=plan.connected,avoid_enemies=plan.avoid_enemies,avoidance_waypoints=plan.avoidance_waypoints,
     legs=plan.legs,over_trees_or_plants=plan.over_trees_or_plants,landfill=plan.landfill,['return']=plan['return'],cost=plan.cost})
   out.obstacles_marked=out.obstacles_marked or nil
   return out
@@ -12427,7 +12468,9 @@ function handlers.dry_run(p,a)
       for i,e in ipairs(rail_plan.entities) do plan.entities[i]={index=i,name=e.name,position=e.position,direction=directions[e.direction]} end
     elseif action=='belt_route' then
       -- The line (and its return line) as belt_route plans it (route.lua), each belt checked.
+      inner=M.belt_args(inner)
       belt_plan=route.plan(q,inner)
+      belt_plan.nests_on_route=M.belt_nests(q,inner,belt_plan)
       for i,e in ipairs(belt_plan.entities) do plan.entities[i]={index=i,name=e.name,position=e.position,direction=directions[e.direction],type=e.type} end
     elseif kind=='ghosts' then
       assert(inner.entities~=nil or inner.tiles~=nil,'place_ghosts requires entities and/or tiles')
@@ -12852,7 +12895,7 @@ M.waits=require('waits'){state=state,integer=integer,wake_filter=function(a) ret
 for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
-  on_viewer=function(m) M.board.on_viewer(m) end,
+  on_viewer=function(m) M.board.on_viewer(m) end,on_reply=function(index,seq) return M.owed and M.owed.ack(index,seq) end,
   -- say look= checks (chat.lua): a platform by name, a teammate by name
   platform=function(p,name) return space.platform(p,name) end,agents=function() return M.board.agents() end,
   mention_of=function(index,m) return M.board.mention_of(index,m) end,
@@ -12900,7 +12943,12 @@ function handlers.construction_robots(p,a)
   return M.robots.read(M.on_surface(p,a.surface),args)
 end
 -- Tells: lines to named teammates outside the chat (tells.lua).
+-- Unanswered mentions (owed.lua; d17 batch14 B1, Sol for viewer Foobator).
+M.owed=require('owed'){state=state,deliver=function(index,t) return M.board.deliver(index,t) end}
+M.board.owed=M.owed
+for name,handler in pairs(M.owed.handlers) do handlers[name]=handler end
 M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,
+  on_reply=function(index,seq) return M.owed.ack(index,seq) end,
   where_from=function(me) return M.where.from(me) end,
   -- A direct wait that no tell ends (wake_on_messages: false), and ending one for tell {wake: true} (Astra, d15 14:48).
   deaf=function(index,from)
@@ -13750,6 +13798,11 @@ function M.dispatch_inner(request)
     end
     -- Standing orders: which runs and why, or what they wait for (orders.lua).
     if p and p.valid and result.orders==nil then result.orders=M.orders.line(p.index) end
+    -- What the agent owes an answer (owed.lua; d17 batch14 B1): the oldest, on every reply.
+    if p and p.valid and not M.is_director(p.index) and result.unanswered==nil then
+      local oko,ul=pcall(M.owed.line,p.index)
+      if oko and ul then result.unanswered=ul end
+    end
     -- Where queue steps and standing orders walked you since your last reply (D5), once, on a reply that is not a poll.
     if p and p.valid and not peek then
       local mb=state().moved_by
@@ -15162,6 +15215,7 @@ function M.tick_body(event)
   if event.tick%60==0 and space then pcall(space.watch_stops,event.tick) end  -- when each platform stopped (space.lua stops)
   if event.tick%60==0 and M.freight then pcall(M.timed,'freight.tick',M.freight.tick,event.tick) end
   -- platform_bom requests kept to the ghosts' need (A6)
+  if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.owed.tick) end  -- unanswered mentions' reminders
   if event.tick%600==17 and M.platbom then pcall(M.timed,'platbom.tick',M.platbom.tick,event.tick) end  -- each hub's items by stop and leg (freight.lua)
   if M.research_target then pcall(M.timed,'research_target.tick',M.research_target.tick,event.tick) end  -- research target levels (researchtarget.lua)
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
@@ -15421,6 +15475,45 @@ function M.on_event(event)
     record_loss(event.tick,e,cause and cause.name or (friendly and 'unknown source') or nil,friendly,friendly and cause and cause.position or nil)
   end
 end
+-- A placement inside a demolisher territory says so (territory.lua; d17 batch14 B5, Sonnet): each building call's
+-- reply, dry runs too, gets demolisher_territory when its box's chunks lie in one.
+M.territory=require('territory'){}
+;(function()
+  local function points(a,out)
+    local q={}
+    local b=type(out)=='table' and out.bounds
+    if type(b)=='table' and b.left then q[1]={x=b.left,y=b.top}; q[2]={x=b.right,y=b.bottom}; return q end
+    for _,k in ipairs({'position','from','to'}) do
+      local v=a[k]
+      if type(v)=='table' then q[#q+1]={x=v.x or v[1],y=v.y or v[2]} end
+    end
+    for i,e in ipairs(type(a.entities)=='table' and a.entities or {}) do
+      if i>256 then break end
+      local v=type(e)=='table' and e.position
+      if type(v)=='table' then q[#q+1]={x=v.x or v[1],y=v.y or v[2]} end
+    end
+    return q
+  end
+  for _,name in ipairs({'build','place_ghosts','paste','blueprint_place','belt_route','rail_route','dry_run'}) do
+    local h=handlers[name]
+    if h then
+      handlers[name]=function(p,a)
+        local out=h(p,a)
+        if type(out)=='table' and type(a)=='table' and out.demolisher_territory==nil then
+          local inner=name=='dry_run' and type(a.args)=='table' and a.args or a
+          if inner.platform==nil then
+            local ok,line=pcall(function()
+              local surface=type(inner.surface)=='string' and game.get_surface(inner.surface) or p.surface
+              return M.territory.note(surface,p.force,M.territory.box(points(inner,out)))
+            end)
+            if ok and line then out.demolisher_territory=line end
+          end
+        end
+        return out
+      end
+    end
+  end
+end)()
 -- Operator profiler (profile.lua): dispatches, events, the tick and these parts.
 M.profile=require('profile')()
 -- One small constructor per statement: one table of all the parts was "function or expression too complex"

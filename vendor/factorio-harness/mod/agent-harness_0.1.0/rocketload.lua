@@ -850,6 +850,18 @@ return function(api)
       action.taken = action.taken + n
       action.rows[#action.rows+1] = {position=e.position, name=e.name, trip=action.trips, taken=n, full=full or nil,
         note=#notes > 0 and table.concat(notes, '; ') or nil}
+      -- (d17 batch14 B4, Sonnet: a load from far sources) what the rocket still needs held now: this trip's other chests
+      -- are skipped, on to the silo (on the copy a tour walked 108 tiles to a third chest and took 0)
+      local more = false
+      for _, r in ipairs(needs(p, action)) do if r.take > 0 then more = true end end
+      if not more and action.index then
+        local skipped = {}
+        while action.targets[action.index + 1] and action.targets[action.index + 1].entity ~= action.silo do
+          local t = table.remove(action.targets, action.index + 1)
+          skipped[#skipped+1] = t.entity and t.entity.valid and t.entity.name .. ' ' .. at(t.entity.position) or at(t.position)
+        end
+        if #skipped > 0 then action.rows[#action.rows].skipped = 'you hold what the rocket needs: skipped ' .. table.concat(skipped, ', ') end
+      end
       return {transferred=n}
     end
     local inv = M.rocket_inventory(e)

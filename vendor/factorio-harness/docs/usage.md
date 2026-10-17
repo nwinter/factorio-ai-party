@@ -6328,3 +6328,26 @@ fh watch    # deploy on every change
   and inside big-worm (199,-30)'s range; big biters killed him at (156,-8). `avoid.start` keeps the mode on the nav.
   On the copy, from (182,-116.2), the old code walked to 31.9 tiles and was hit; the new one ends no_safe_route at
   (158.9,-66.3).
+- B1 (Sol for viewer Foobator; Astra): owed.lua keeps what an agent owes an answer apart from the mentions inbox a
+  chat read clears: a viewer's @mention, a teammate's @mention, and a teammate's mention by name, @everyone or tell
+  that asks ('?'). It closes on a say or team tell naming the sender (@name or the name), a tell to the asker,
+  `reply_to: SEQ` on say or tell, or `chat_ack {seq}` (an array, or "all"). Every reply carries `unanswered` (how many,
+  the oldest's age, who, the text and the call that closes it); once one is 10 minutes old a single reminder (a wake)
+  goes to the inbox, so a sleep or a remote plan's wait ends on it. At most 50 kept per agent. Copy: Luna's "@grok how
+  many bioflux are left on Swift?" stayed on Grok's replies after a chat read; his "@luna about 400" closed it.
+- B2 (Sol: a cargo pad's spilled hardware read 0): `where_is` adds `on_ground` and a place per 32-tile cell of stacks on
+  the ground in chunks our force sees now; `stock {item, surface}` adds `on_ground` and a line (not in its total).
+  Copy: 190 iron gears on the ground on Vulcanus near (-27,118). The ground read cost 11 ms of where_is's 94 ms on the copy.
+- B3 (Opus): belt_route without avoid_enemies or avoid_nests refuses a line whose tiles lie in a worm's range or a
+  spawner's 40 tiles, naming each (dry run: `nests_on_route`); `avoid_nests: true` plans with avoid_enemies 4, false
+  lays it anyway. Past 32 hazards the clearance guide joins those within 32 tiles into one disc round them (it refused
+  in a big nest field before). Copy: (60.5,210.5)-(100.5,210.5) refused for biter-spawner (117,178) at (94.5,210.5).
+  construct's stand points keep the same margin (Opus 13:46 above).
+- B4 (Sonnet): load_silo `from` already took 1..16 sources (chests, a landing pad; with walk anywhere on the surface).
+  Its walk now skips a trip's remaining sources once you hold what the rocket needs: on the copy a 500-calcite load
+  from three chests had walked 108 tiles to a third chest and taken 0; now 24 tiles, the skip said on the stop's row.
+- B5 (Sonnet): build, place_ghosts, paste, blueprint_place, belt_route, rail_route and dry_run replies add
+  `demolisher_territory` when the placement's charted chunks lie in a demolisher territory (as the map draws it):
+  how many chunks and the territory's demolisher where our force sees it now. 0.01 ms a call.
+- B6 (Astra 2x): a squeeze walk ending short of its gap trail said "walked them from A to B" (B the trail's end, the
+  walk stalled elsewhere); now "from A toward B and ended at C, N tiles short of it (outcome)".

@@ -966,7 +966,27 @@ return function(api)
           end
         end
       end
-      assert(#members<=32,'enemy clearance guide exceeds 32 nearby hazards')
+      -- (d17 batch14 B3) past 32, the members within NEST of each other as one disc round them all (wider, never nearer)
+      if #members>32 then
+        local group,merged={},{}
+        for i,m in ipairs(members) do
+          if not group[i] then
+            local b={m}; group[i]=true
+            local k=1
+            while k<=#b do
+              for j,o in ipairs(members) do if not group[j] and dist(b[k],o)<=M.NEST then group[j]=true; b[#b+1]=o end end
+              k=k+1
+            end
+            local x0,y0,x1,y1=math.huge,math.huge,-math.huge,-math.huge
+            for _,q in ipairs(b) do x0,y0,x1,y1=math.min(x0,q.x),math.min(y0,q.y),math.max(x1,q.x),math.max(y1,q.y) end
+            local c={x=(x0+x1)/2,y=(y0+y1)/2,r=0}
+            for _,q in ipairs(b) do c.r=math.max(c.r,dist(c,q)+q.r) end
+            merged[#merged+1]=c
+          end
+        end
+        members=merged
+      end
+      assert(#members<=32,'enemy clearance guide exceeds 32 nearby nests')
       -- Strict clearance: no move_to margin relaxation. The tile search rechecks snapped corners.
       local vias=M.detour(a,b,{{members=members}},{})
       assert(vias,'no route outside the requested enemy clearance')
