@@ -6895,3 +6895,19 @@ fh watch    # deploy on every change
   `cancel: true, near: {x,y}` cancels the jobs of the group whose killer is within 16 tiles, as a player does by
   hand: ghosts, tile ghosts and item request proxies removed, deconstruction and upgrade marks cancelled; repairs and
   deliveries named, not cancelled. It leaves the body queue running (passive). tests/d17_batch21.lua.
+- Part 4, coverage (Nick 17:33): build and place replies said what lacked power or construction coverage (batch18 C2),
+  but nothing reported standing buildings outside it.
+  - The background read now also walks our logistic chests and ghosts (types logistic-container and entity-ghost),
+    noting only coverage for them.
+  - Per surface and 64-tile cell: each building or ghost no roboport's construction area covers
+    (find_logistic_networks_by_construction_area), by name with ghosts apart. Also each requester or buffer chest
+    with no logistic network (outside every logistic area).
+  - Cost on the copy: about 2 us an entity for the area query and 5 us a logistic chest, in the read's 150-entity
+    slices.
+  - status `alerts.outside_coverage`, per planet: `outside every roboport's construction area on vulcanus (robots do not
+    build, repair or rebuild there): 976 (902 of them ghosts) in 12 areas (64 tiles): 208 ghost of transport-belt, ...
+    near (222,-208); ...; 64 gun-turret, 19 ghost of gun-turret near (-228,72); ...`. A second line per planet lists
+    `7 requester or buffer chests outside every logistic area on nauvis (their requests never fill): requester-chest
+    (-284.5,-313.5), ...`.
+  - The hourly team line carries these after the radar lines. Copy: lines for fulgora, gleba, nauvis and vulcanus.
+    tests/d17_territory.lua.

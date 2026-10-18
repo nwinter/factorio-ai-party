@@ -27,7 +27,9 @@ return function(api)
   local slots = require('slots')()
   local TYPES = {'assembling-machine', 'furnace', 'mining-drill', 'lab', 'inserter', 'beacon', 'radar', 'roboport',
     'pump', 'electric-turret', 'ammo-turret', 'fluid-turret', 'boiler', 'rocket-silo', 'agricultural-tower',
-    'asteroid-collector', 'lamp', 'loader', 'loader-1x1', 'cargo-landing-pad', 'car', 'spider-vehicle', 'reactor'}
+    'asteroid-collector', 'lamp', 'loader', 'loader-1x1', 'cargo-landing-pad', 'car', 'spider-vehicle', 'reactor',
+    -- (d17 territory part 4) read for coverage only: requester and buffer chests, ghosts
+    'logistic-container', 'entity-ghost'}
   -- Kinds and how a line says them; game alert types not listed read as their name.
   local LABEL = {robots_lost='robots lost to enemies on their routes',line_cut='belt or pipe line cut',no_power='no power', unconnected='not connected to power (no pole reaches them)', low_power='low power',
     no_fuel='out of fuel', no_ammo='out of ammo', flamer_dry='out of flamer oil', rebuilt_empty='rebuilt empty',
@@ -441,10 +443,40 @@ return function(api)
   -- (is_chunk_visible took about 0.18 ms a chunk on the copy: at most VIS_STEP a slice of the read; past it, the previous
   -- read's answer for that chunk (storage push_vis), else the entity is counted unread)
   local VIS_STEP = 16
+  -- Coverage (d17 territory part 4, Nick 17:33: nothing reported standing buildings outside coverage): what lies
+  -- outside every roboport's construction area (robots neither build those ghosts nor repair or rebuild those
+  -- buildings), per surface and 64-tile cell by name, ghosts apart; and requester and buffer chests outside every
+  -- logistic area (their requests never fill). On the copy: 2 us an entity for the area query, 5 us a logistic chest.
+  local COVER_ONLY, COVER_DONE, NOT_BUILDING = {['logistic-container']=true, ['entity-ghost']=true}, {valid=false}, {car=true, ['spider-vehicle']=true}
+  local function cover_note(sight, s, e)
+    if e.type == 'logistic-container' then
+      local mode = try(function() return e.prototype.logistic_mode end)
+      if (mode == 'requester' or mode == 'buffer') and not try(function() return e.logistic_network end) then
+        local list = sight.chests[s.name] or {}; sight.chests[s.name] = list
+        list.n = (list.n or 0) + 1
+        if #list < 16 then list[#list+1] = {name=e.name, x=e.position.x, y=e.position.y} end
+      end
+      return
+    end
+    if NOT_BUILDING[e.type] then return end
+    local nets = try(function() return s.find_logistic_networks_by_construction_area(e.position, e.force) end)
+    if not nets or #nets > 0 then return end
+    local key = s.name .. '|' .. math.floor(e.position.x / CELL) .. ',' .. math.floor(e.position.y / CELL)
+    local c = sight.cover[key]
+    if not c then c = {surface=s.name, n=0, ghosts=0, sx=0, sy=0, names={}}; sight.cover[key] = c end
+    local ghost = e.type == 'entity-ghost'
+    local name = ghost and e.ghost_name or e.name
+    c.n = c.n + 1; c.sx = c.sx + e.position.x; c.sy = c.sy + e.position.y
+    if ghost then c.ghosts = c.ghosts + 1; name = 'ghost of ' .. name end
+    c.names[name] = (c.names[name] or 0) + 1
+  end
   local function sight_note(mining, s, e)
     if not mining then return end
     local sight = mining.__sight
     if not sight then sight = {vis={}, cells={}, radars={}, unread=0, budget=VIS_STEP}; mining.__sight = sight end
+    sight.cover = sight.cover or {}; sight.chests = sight.chests or {}
+    pcall(cover_note, sight, s, e)
+    if COVER_ONLY[e.type] then return end
     if e.type == 'radar' then
       local list = sight.radars[s.name] or {}
       sight.radars[s.name] = list
@@ -478,6 +510,7 @@ return function(api)
     for i = from or 1, to or #list do
       local e = list[i]
       if e.valid then pcall(sight_note, mining, s, e) end
+      if e.valid and COVER_ONLY[e.type] then e = COVER_DONE end
       if e.valid and mem and e.type == 'inserter' then watch_inserter(groups, s, e, mem) end
       if e.valid then pcall(spoiling, e, s, mining) end
       if e.valid then
@@ -746,7 +779,7 @@ return function(api)
     game_alerts(groups, force)
     local sight = mining.__sight
     if sight then local st = api.state(); st.push_vis = st.push_vis or {}; st.push_vis[force.name] = sight.vis end
-    return merge(groups, network_groups(force), mining, force), sight and {cells=sight.cells, radars=sight.radars, unread=sight.unread} or {cells={}, radars={}}
+    return merge(groups, network_groups(force), mining, force), sight and {cells=sight.cells, radars=sight.radars, unread=sight.unread, cover=sight.cover, chests=sight.chests} or {cells={}, radars={}}
   end
   -- The background read, one stage per tick, its state in storage so every
   -- peer runs the same: started when the last read is SCAN_TICKS old.
@@ -837,7 +870,7 @@ return function(api)
     elseif stage.step=='merge' then
       local sight=job.mining.__sight
       if sight then s.push_vis=s.push_vis or {}; s.push_vis[force.name]=sight.vis end
-      job.result={tick=job.start,groups=merge(job.groups,job.extra,job.mining,force),sight=sight and {cells=sight.cells,radars=sight.radars,unread=sight.unread} or {cells={},radars={}}}
+      job.result={tick=job.start,groups=merge(job.groups,job.extra,job.mining,force),sight=sight and {cells=sight.cells,radars=sight.radars,unread=sight.unread,cover=sight.cover,chests=sight.chests} or {cells={},radars={}}}
       job.i=job.i+1;job.site_index=1
       job.stages[job.i]=job.stages[job.i] or {step='drill_sites'}
     else
@@ -1380,11 +1413,56 @@ return function(api)
     end
     return #lines > 0 and lines or nil, c.tick
   end
-  -- The team line: at most once an hour (h.sight_tick), the same lines.
+  -- Outside coverage, per planet (status alerts.outside_coverage; the hourly team line): what lies outside every
+  -- roboport's construction area by 64-tile area (the most first, up to SIGHT_AREAS: count, ghosts, the 3 names most
+  -- there), and the requester and buffer chests outside every logistic area. From the last background read.
+  function M.coverage_lines(force)
+    local c = (api.state().push_alerts or {})[force.name]
+    local sight = c and c.sight
+    if not (sight and (sight.cover or sight.chests)) then return nil end
+    local by = {}
+    for _, cell in pairs(sight.cover or {}) do local list = by[cell.surface] or {}; by[cell.surface] = list; list[#list+1] = cell end
+    local surfaces = {}
+    for name in pairs(by) do surfaces[#surfaces+1] = name end
+    for name in pairs(sight.chests or {}) do if not by[name] then surfaces[#surfaces+1] = name end end
+    table.sort(surfaces)
+    local lines = {}
+    for _, name in ipairs(surfaces) do
+      local cells, chests = by[name] or {}, (sight.chests or {})[name]
+      local parts, total, ghosts = {}, 0, 0
+      table.sort(cells, function(a, b) if a.n ~= b.n then return a.n > b.n end return a.sx < b.sx end)
+      for i, cell in ipairs(cells) do
+        total, ghosts = total + cell.n, ghosts + cell.ghosts
+        if i <= SIGHT_AREAS then
+          local names = {}
+          for k, n in pairs(cell.names) do names[#names+1] = {k=k, n=n} end
+          table.sort(names, function(a, b) if a.n ~= b.n then return a.n > b.n end return a.k < b.k end)
+          local what = {}
+          for j = 1, math.min(3, #names) do what[j] = names[j].n .. ' ' .. names[j].k end
+          parts[#parts+1] = string.format('%s%s near (%d,%d)', table.concat(what, ', '), #names > 3 and ', ...' or '', math.floor(cell.sx / cell.n), math.floor(cell.sy / cell.n))
+        end
+      end
+      local text = {}
+      if #cells > 0 then
+        text[#text+1] = string.format('outside every roboport\'s construction area on %s (robots do not build, repair or rebuild there): %d (%d of them ghosts) in %d area%s (64 tiles): %s%s',
+          name, total, ghosts, #cells, #cells == 1 and '' or 's', table.concat(parts, '; '), #cells > SIGHT_AREAS and string.format('; +%d more areas', #cells - SIGHT_AREAS) or '')
+      end
+      if chests and (chests.n or 0) > 0 then
+        local at = {}
+        for i, x in ipairs(chests) do if i <= 6 then at[i] = string.format('%s (%g,%g)', x.name, x.x, x.y) end end
+        text[#text+1] = string.format('%s%d requester or buffer chest%s outside every logistic area on %s (their requests never fill): %s%s', #text > 0 and '' or '',
+          chests.n, chests.n == 1 and '' or 's', name, table.concat(at, ', '), chests.n > #at and string.format(', +%d more', chests.n - #at) or '')
+      end
+      for _, t in ipairs(text) do lines[#lines+1] = t end
+    end
+    return #lines > 0 and lines or nil
+  end
+  -- The team line: at most once an hour (h.sight_tick), the same lines (sight, then coverage).
   function M.sight_team(p, h)
     if h.sight_tick and game.tick - h.sight_tick < SIGHT_TEAM then return {} end
-    local lines = M.sight_lines(p.force)
-    if not lines then return {} end
+    local lines = M.sight_lines(p.force) or {}
+    for _, l in ipairs(M.coverage_lines(p.force) or {}) do lines[#lines+1] = l end
+    if #lines == 0 then return {} end
     h.sight_tick = game.tick
     return lines
   end

@@ -117,3 +117,23 @@ do
   game.tick=200+216000; eq(#PA.sight_team({force={name='player'}},h),3)
 end
 print('d17_territory part 3 out of radar sight: ok')
+
+-- Part 4 (Nick 17:33): what lies outside every construction area per planet, and requester/buffer chests outside
+-- every logistic area; in status and the hourly team line.
+do
+  local st={push_alerts={player={tick=100,groups={},sight={cells={},radars={},
+    cover={['vulcanus|-4,1']={surface='vulcanus',n=83,ghosts=19,sx=83*-228,sy=83*72,names={['gun-turret']=64,['ghost of gun-turret']=19}},
+      ['vulcanus|3,-4']={surface='vulcanus',n=208,ghosts=208,sx=208*222,sy=208*-208,names={['ghost of transport-belt']=208}}},
+    chests={nauvis={n=7,{name='requester-chest',x=-284.5,y=-313.5},{name='buffer-chest',x=280.5,y=-240.5}}}}}}}
+  game={tick=200}
+  defines={entity_status={working=1}}
+  local PA=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){state=function() return st end,agents=function() return {} end,who=function(p) return p.name end}
+  local lines=PA.coverage_lines({name='player'})
+  eq(#lines,2)
+  eq(lines[1],'7 requester or buffer chests outside every logistic area on nauvis (their requests never fill): requester-chest (-284.5,-313.5), buffer-chest (280.5,-240.5), +5 more')
+  eq(lines[2],"outside every roboport's construction area on vulcanus (robots do not build, repair or rebuild there): 291 (227 of them ghosts) in 2 areas (64 tiles): 208 ghost of transport-belt near (222,-208); 64 gun-turret, 19 ghost of gun-turret near (-228,72)")
+  local h={}
+  local team=PA.sight_team({force={name='player'}},h)
+  eq(#team,2); eq(#PA.sight_team({force={name='player'}},h),0)
+end
+print('d17_territory part 4 coverage: ok')

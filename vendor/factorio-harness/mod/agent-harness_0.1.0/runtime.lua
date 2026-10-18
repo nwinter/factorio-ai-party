@@ -2337,6 +2337,9 @@ function handlers.status(p,a)
   -- Our buildings out of radar sight per planet, with the nearest radar's state (pushalerts.lua; d17 territory, Nick 17:22).
   local oks,sight=pcall(M.pushalerts.sight_lines,p.force)
   if oks and sight then alerts=alerts or {}; alerts.out_of_sight=sight end
+  -- What lies outside every construction area, requester/buffer chests outside every logistic area (part 4).
+  local okc,cover=pcall(M.pushalerts.coverage_lines,p.force)
+  if okc and cover then alerts=alerts or {}; alerts.outside_coverage=cover end
   local ground=alive and M.ground.alerts(p)
   if ground then alerts=alerts or {}; alerts.ground_items=ground end
   if now and now.stuck_s then
