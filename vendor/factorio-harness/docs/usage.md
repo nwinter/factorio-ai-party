@@ -7648,3 +7648,24 @@ fh watch    # deploy on every change
     `cut_spans: true`.
   - Cost on world n: the pairing over Kestrel II's 83 undergrounds (53 pairs) 2.5 ms, Swift's 28 and Cinder's 22
     about 1.3 ms.
+- B5 (Sol 06:22: nominal production rates hid missing feedstock most of a shift): `platform_supply {platform, fuel:
+  true}` (fuelstock.lua), from the thrusters back, one line a link, indented by level:
+  - The thrusters' thruster-fuel and thruster-oxidizer boxes against their capacity (short under half). The fluid
+    segments they join, through pumps: on world n a pump's box carries no segment id and its two connections join
+    two segments, as Cinder's fuel tank (segment 4209) and its thruster (4217) show. What the pipes hold, the tanks
+    on them, and each machine whose recipe makes the fluid with an output joining them.
+  - Per maker, each ingredient against one craft (short below it):
+    - An item comes through the inserters dropping into it. Static GUI filters count; filters the circuit network
+      sets are not judged (Cinder's hub unloader is a whitelist set by circuit). Sources: a machine making it, the
+      hub (holding none: the machines making it that unload into the hub), a collector (chunks only) or a chest.
+    - Or the item comes from a belt walked upstream (256 tiles a walk, 1024 a trace, each belt once an item): what it
+      holds of the item, the inserters dropping onto it (one moving from another belt goes on up that belt), a start
+      nothing feeds, an underground exit with no entrance paired, or an underground span over empty-space tiles.
+    - A fluid comes through the pipes its input joins, to its makers.
+    - And so on down to crushers, ice melters and collectors.
+  - `first_missing`: the first consumer short of an ingredient whose way is broken (no inserter, a belt start, a cut
+    underground, a pump not working, no maker on its pipes, the hub holding none). Else, when its sources are short
+    themselves, the first missing link below them. Else a source not working, else the consumer short while its
+    sources work.
+  - Cost on world n: Cinder 3.9 ms, Swift 2.8 ms, Spindle 2.8 ms, Kestrel II 9.4 ms (98-tile belts, 3 ice melters).
+    None was missing a link at the probe: each maker's output was full and the thrusters' boxes were full.

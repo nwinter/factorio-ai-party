@@ -86,6 +86,12 @@
   oxidizer makers, thrusters, guns), with the first stop named (`first_stop`); `chunks`: each chunk type with its
   collectors, then the crushers whose recipe takes it and the hub; `chunk_flags`: a GUI filter keeping a chunk from
   its crusher, a crusher stopped full over a full hub.
+  `platform_supply {platform, fuel: true}`: the fuel feedstock from the thrusters back, one line a link, indented by
+  level: the thrusters' fill, their pipes (through pumps, each with its state) and the fuel and oxidizer makers there;
+  each maker's ingredients against one craft, through the inserters dropping into it, belts walked upstream (what they
+  hold, the inserters dropping onto them, a start nothing feeds, an underground exit with no entrance or a span over
+  empty space), the hub (with none: the machines that unload it there), crushers, ice melters, collectors.
+  `first_missing`: the first consumer short of a craft whose way is broken, else the first missing link below it.
 - `platform_plan {platform, floor?, page?, ready?, salvage?, support?}`: the platform as planned, built entities and ghosts
   together: foundation islands, belt loops, head-on belts and side-loads. `floor: true`: the foundation the entity
   ghosts need (footprints, tunnels, holes, links) as `place_ghosts_entries`, 256 a page (`page: N`); a tunnel runs to

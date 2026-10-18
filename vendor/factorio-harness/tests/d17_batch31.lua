@@ -259,3 +259,75 @@ do
   has(space.gate({force={platforms={pl}}},{platform='Cinder'}).lines[1],'circuit thruster-fuel >= 22000: the hub has no circuit wire (the condition reads 0)')
 end
 print('d17_batch31 B1 circuit wait value: ok')
+
+-- B5 (Sol 06:22): platform_supply {platform, fuel: true}: from the thrusters back, each consumer's ingredients against
+-- a craft through inserters, belts and pipes, and the first missing link. ---------------------------------------------
+do
+  defines={entity_status={working=1,item_ingredient_shortage=2,full_output=3},inventory={crafter_input=2,crafter_output=3,hub_main=1,asteroid_collector_output=4}}
+  local uid=0
+  local function ent(t) uid=uid+1; t.valid=true; t.unit_number=uid; t.status=t.status or 1; return t end
+  local function box(list)
+    -- list[i] = {fluid, kind, amount, cap, seg (own), conns = {seg ids}}
+    local fb={}
+    for i,b in ipairs(list) do fb[i]=b.amount>0 and {name=b.fluid,amount=b.amount} or nil end
+    setmetatable(fb,{__len=function() return #list end})
+    fb.get_locked_fluid=function(i) return list[i].fluid end
+    fb.get_prototype=function(i) return {object_name='LuaFluidBoxPrototype',production_type=list[i].kind} end
+    fb.get_capacity=function(i) return list[i].cap end
+    fb.get_fluid_segment_id=function(i) return list[i].seg end
+    fb.get_connections=function(i) local o={} for _,id in ipairs(list[i].conns or {}) do o[#o+1]={get_fluid_segment_id=function() return id end,owner={valid=true}} end return o end
+    fb.get_fluid_segment_contents=function(i) return list[i].contents or {} end
+    return fb
+  end
+  local function inv(t) return {get_item_count=function(n) return t[n] or 0 end} end
+  local thruster=ent{type='thruster',name='thruster',position={x=0,y=20},fluidbox=box{{fluid='thruster-fuel',kind='input',amount=100,cap=1000,seg=10},{fluid='thruster-oxidizer',kind='input',amount=1000,cap=1000,seg=11}}}
+  local pipe=ent{type='pipe',name='pipe',position={x=0,y=18},fluidbox=box{{fluid='thruster-fuel',amount=50,cap=100,seg=10,contents={['thruster-fuel']=50}}}}
+  local fuel_recipe={name='thruster-fuel',ingredients={{type='item',name='carbon',amount=2},{type='fluid',name='water',amount=10}},products={{type='fluid',name='thruster-fuel',amount=75}}}
+  local carbon_in={}
+  local maker=ent{type='assembling-machine',name='chemical-plant',position={x=0,y=10},status=2,get_recipe=function() return fuel_recipe end,
+    get_inventory=function(i) return i==2 and inv(carbon_in) or inv({}) end,
+    fluidbox=box{{fluid='water',kind='input',amount=20,cap=100,conns={20}},{fluid='thruster-fuel',kind='output',amount=0,cap=100,conns={10}}}}
+  local hub=ent{type='space-platform-hub',name='space-platform-hub',position={x=0,y=0}}
+  local hubinv={}
+  hub.get_inventory=function() return inv(hubinv) end
+  local crusher=ent{type='assembling-machine',name='crusher',position={x=-6,y=0},status=2,
+    get_recipe=function() return {name='carbonic-asteroid-crushing',ingredients={{type='item',name='carbonic-asteroid-chunk',amount=1}},products={{type='item',name='carbon',amount=10}}} end,
+    get_inventory=function() return inv({}) end,fluidbox=box{}}
+  local b2=ent{type='transport-belt',name='transport-belt',position={x=3.5,y=10.5}}
+  local uo=ent{type='underground-belt',name='underground-belt',belt_to_ground_type='output',position={x=3.5,y=13.5}}
+  local function line(n) return {get_item_count=function() return n end} end
+  for _,b in ipairs({b2,uo}) do b.get_max_transport_line_index=function() return 2 end; b.get_transport_line=function() return line(0) end end
+  b2.belt_neighbours={inputs={uo}}; uo.belt_neighbours={inputs={}}
+  local i1=ent{type='inserter',name='inserter',position={x=1.5,y=10.5},drop_target=maker,pickup_target=b2}
+  local i2=ent{type='inserter',name='inserter',position={x=-3.5,y=0.5},drop_target=hub,pickup_target=crusher}
+  local tiles={}
+  local s={get_tile=function(x,y) return {name=tiles[x..','..y] or 'space-platform-foundation'} end}
+  s.find_entities_filtered=function(f)
+    local t=type(f.type)=='table' and f.type or {f.type}
+    local want={} for _,x in ipairs(t) do want[x]=true end
+    local out={}
+    for _,e in ipairs({thruster,pipe,maker,hub,crusher,b2,uo,i1,i2}) do if want[e.type] then out[#out+1]=e end end
+    return out
+  end
+  local F=dofile('mod/agent-harness_0.1.0/fuelstock.lua'){}
+  local r=F.trace({surface=s,force={},name='Wren'})
+  eq(r.first_missing,'carbon into chemical-plant (0,10) (holds 0, a craft takes 2): underground-belt exit (3.5,13.5) has no entrance paired')
+  has(r.lines[2],'thruster-fuel into 1 thruster: their boxes hold 100 of 1000 (short); the pipes it joins (1 segment) hold 50, 0 tanks on them; 1 maker there')
+  has(r.lines[3],'  chemical-plant (0,10) thruster-fuel: item_ingredient_shortage')
+  has(r.lines[4],'    carbon into chemical-plant (0,10): holds 0, a craft takes 2 (short); 1 inserter drop into it')
+  -- its entrance paired, over empty space
+  local ui=ent{type='underground-belt',name='underground-belt',belt_to_ground_type='input',position={x=3.5,y=17.5},belt_neighbours={inputs={}},
+    get_max_transport_line_index=function() return 2 end,get_transport_line=function() return line(0) end}
+  uo.neighbours=ui; tiles['3,15']='empty-space'
+  r=F.trace({surface=s,force={},name='Wren'})
+  eq(r.first_missing,'carbon into chemical-plant (0,10) (holds 0, a craft takes 2): underground-belt (3.5,17.5) to (3.5,13.5): its span is over empty space at (3,15)')
+  -- from the hub instead: it holds none, the crusher that unloads into it has no chunk and nothing brings one
+  i1.pickup_target=hub
+  r=F.trace({surface=s,force={},name='Wren'})
+  eq(r.first_missing,'no inserter drops carbonic-asteroid-chunk into crusher (-6,0) (it holds 0, a craft takes 1)')
+  -- carbon at the maker and fuel in the thruster: nothing missing
+  carbon_in.carbon=4; maker.status=1; thruster.fluidbox[1].amount=900
+  r=F.trace({surface=s,force={},name='Wren'})
+  eq(r.first_missing,nil); has(r.lines[1],'first missing link: none')
+end
+print('d17_batch31 B5 fuel feedstock: ok')

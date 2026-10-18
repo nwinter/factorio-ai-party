@@ -16420,7 +16420,9 @@ M.platplan=require('platplan'){platform=function(p,name) return space.platform(p
 function handlers.platform_plan(p,a) return M.platplan.read(p,a) end
 -- A platform's supply chain in one read: collectors, crushers, fuel and oxidizer makers, thrusters, guns (platsupply.lua).
 M.platsupply=require('platsupply'){platform=function(p,name) return space.platform(p,name) end,placewhy=M.placewhy,
-  thrust=function(pl) return M.thrust.read(pl) end,turret_feed=function(t) return M.platalerts.turret_feed(t) end}
+  thrust=function(pl) return M.thrust.read(pl) end,turret_feed=function(t) return M.platalerts.turret_feed(t) end,fuelstock=function(pl) return M.fuelstock.trace(pl) end}
+-- The fuel feedstock trace (fuelstock.lua; d17 batch31 B5, Sol).
+M.fuelstock=require('fuelstock'){}
 function handlers.platform_supply(p,a) return M.platsupply.read(p,a) end
 -- platform_digest (platdigest.lua, batch24 B1): one read per platform from the reads above.
 M.platdigest=require('platdigest'){platform=function(p,name) return space.platform(p,name) end,
