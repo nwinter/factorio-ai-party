@@ -135,7 +135,9 @@
   and when), `hatch:`, and `circuit:` (its circuit condition with each signal's value on its wires now, its logistic
   condition with what the network holds, whether it is off by them). Example: `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}},"compact":true}'`
 - `ports {name, position, direction?, recipe?, mirror?, platform?}`: where each fluid port of an unbuilt machine is and
-  the fluid the recipe puts there. Example: `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north","recipe":"electrolyte"}'`
+  the fluid the recipe puts there. More boxes on a side than fluids: the first fluid takes the extra ones (a cryogenic
+  plant on lithium: lithium-brine left and middle, ammonia right); `box` is the fluidbox inspect gives once built.
+  Example: `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north","recipe":"electrolyte"}'`
 - `power {position?, radius?, area?, fragile?, by_cause?, platform?, surface?}`: per network `supply_line`: generators'
   nameplate, what the working ones can give, the stopped ones by status (dry steam engines), and `boilers` by state;
   generators with no steam, fuel or plasma in now are named, and headroom is against what can supply now, with
@@ -157,7 +159,8 @@
   observed gaps in belts that carried items, and a rebuilt gap clears; a depleted-drill alert includes one remembered
   placement on the same resource (`drill_sites` lists more). `kind: "output_full"`: mining drills waiting for space in a
   chest they drop into (each drill, what it mines, the chest's slots used and what fills it); a backed-up belt is not
-  said. `kind: "off_by_condition"`: machines off by their own
+  said. `kind: "speaker"`: programmable speakers alerting now (message, icon, since when, who hears it: who built it
+  and agents on its surface; the team block tells each once while it is up). `kind: "off_by_condition"`: machines off by their own
   circuit or logistic condition, each with the condition and what its signal reads now (`bioflux > 200 (bioflux 150
   now)`); one whose unmet conditions are all on what its recipe makes (a stock cap) is not listed. A new group is one
   team alert line to its builders and claim owners. `captive_starving`: captive spawners not producing, with the same

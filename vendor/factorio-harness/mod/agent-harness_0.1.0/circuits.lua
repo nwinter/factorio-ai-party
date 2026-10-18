@@ -706,6 +706,56 @@ return function(api)
   -- takes (platform_schedule's wait conditions too: d17 batch17 A5), and back as text.
   function M.condition(c, what) return condition(c, what) end
   function M.condition_text(c) return condition_text(c) end
+  -- (d17 batch30 A2, Sol and viewer Foobator 05:47) a programmable speaker's alert settings, as its GUI's alert part:
+  -- show_alert, show_on_map, icon (a signal), message; with its circuit condition and whether it holds now (the speaker
+  -- plays, and alerts, while it holds). nil for anything else.
+  function M.speaker_alert(e)
+    local ap = try(function() return e.alert_parameters end)
+    if type(ap) ~= 'table' then return nil end
+    local icon = signal_text(ap.icon_signal_id)
+    local msg = type(ap.alert_message) == 'string' and ap.alert_message or ''
+    local cb = try(function() return e.get_control_behavior() end)
+    local c = cb and try(function() return cb.circuit_condition end)
+    local cond = type(c) == 'table' and condition_text(c) or nil
+    return {show_alert=ap.show_alert and true or false, show_on_map=ap.show_on_map and true or false, icon=icon, message=msg,
+      condition=cond, condition_met=type(c) == 'table' and c.fulfilled or nil,
+      line=string.format('alert %s%s: %s%s; circuit condition %s', ap.show_alert and 'on' or 'off', ap.show_on_map and ' (on the map)' or '',
+        msg ~= '' and '"' .. msg .. '"' or 'no message', icon and ', icon ' .. icon or '',
+        cond and (cond .. (type(c) == 'table' and (c.fulfilled and ' (holds now)' or ' (does not hold now)') or '')) or 'none')}
+  end
+  local SPEAKER_KEYS = {show_alert=true, show_on_map=true, message=true, icon=true, condition=true}
+  -- configure {speaker_alert: {show_alert?, show_on_map?, message?, icon?, condition?}}: the rest kept; icon false clears
+  -- it; condition is its circuit condition (as circuit_set's enable takes it). Returns the settings after and before.
+  function M.set_speaker_alert(e, spec)
+    local t = e.type == 'entity-ghost' and e.ghost_type or e.type
+    if t ~= 'programmable-speaker' then
+      error(string.format('speaker_alert is a programmable speaker\'s alert settings; %s (%g,%g) is a %s', e.type == 'entity-ghost' and e.ghost_name or e.name, e.position.x, e.position.y, t), 0)
+    end
+    if type(spec) ~= 'table' then error('speaker_alert is {show_alert?, show_on_map?, message?, icon?}', 0) end
+    for k in pairs(spec) do if not SPEAKER_KEYS[k] then error('speaker_alert takes show_alert, show_on_map, message, icon and condition, not ' .. tostring(k), 0) end end
+    local cond = spec.condition ~= nil and condition(spec.condition, 'speaker_alert.condition') or nil
+    local before = M.speaker_alert(e)
+    local ap = try(function() return e.alert_parameters end) or {}
+    local new = {show_alert=ap.show_alert or false, show_on_map=ap.show_on_map or false, icon_signal_id=ap.icon_signal_id, alert_message=ap.alert_message or ''}
+    for _, k in ipairs({'show_alert', 'show_on_map'}) do
+      if spec[k] ~= nil then
+        if type(spec[k]) ~= 'boolean' then error('speaker_alert.' .. k .. ' must be true or false', 0) end
+        new[k] = spec[k]
+      end
+    end
+    if spec.message ~= nil then
+      if type(spec.message) ~= 'string' or #spec.message > 500 then error('speaker_alert.message is text, up to 500 characters', 0) end
+      new.alert_message = spec.message
+    end
+    if spec.icon ~= nil then new.icon_signal_id = spec.icon ~= false and signal(spec.icon, 'speaker_alert.icon') or nil end
+    local ok, err = pcall(function() e.alert_parameters = new end)
+    if not ok then error('the game refused speaker_alert: ' .. tostring(err):gsub('^[^:]*:%d+: ', ''), 0) end
+    if cond then
+      local okc, errc = pcall(function() e.get_or_create_control_behavior().circuit_condition = cond end)
+      if not okc then error('speaker_alert.condition: the game refused it: ' .. tostring(errc):gsub('^[^:]*:%d+: ', '') .. ' (the alert settings were set)', 0) end
+    end
+    return M.speaker_alert(e), before
+  end
   -- One entity's circuit settings in a few words (circaudit.lua's network readback, d17 batch16 B3).
   function M.short(e) local c = try(function() return M.read(e) end); return short_settings(c) end
   -- The enable and logistic conditions as read shows them (enable, enable_met, logistic, logistic_met, disabled);
@@ -763,6 +813,7 @@ return function(api)
     end
     out.settings = next(settings) and settings or nil
     out.off = #off > 0 and off or nil
+    if kind == 'programmable_speaker' then local sa = M.speaker_alert(e); out.speaker_alert = sa and sa.line end
     -- A belt reading its entire belt (Astra, d15: the read missed a segment past an underground): the run of belts the
     -- engine joins into this tile's lines (each way, up to SEG tiles), what ends it each way, and what that run holds
     -- against what the wires read now.
