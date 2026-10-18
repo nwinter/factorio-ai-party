@@ -2060,6 +2060,28 @@ eq(call('transfer',{position=turret.position,item='firearm-magazine',count=5,dir
 local rearmed=call('rearm',{count=10}); eq(rearmed.transferred,5); eq(mag_slot.count,10); eq(main[1].count,20)
 -- batch28 C3 (Haiku): a line per turret, what it got and what it holds now
 eq(rearmed.turret_lines[1],'gun-turret (5,0): +5, holds 10 now')
+-- batch29 C1 (Grok: the provider's dump chests filled every few minutes): to: "nearest_room" fills our chests in reach
+-- with room for the item, nearest first, each before the next
+do
+  local kept_find=p.surface.find_entities_filtered
+  local slot_a,slot_b=stack(nil,0),stack(nil,0)
+  local function chest(x,slot,room)
+    local i=inv(slot); i.get_insertable_count=function() return math.max(0,room-(slot.count or 0)) end
+    local c={valid=true,name='wooden-chest',type='container',position={x=x,y=0},force=p.force}
+    c.get_inventory=function() return i end
+    return c
+  end
+  local near,far=chest(2,slot_a,6),chest(4,slot_b,100)
+  p.surface.find_entities_filtered=function(f) if f.type and type(f.type)=='table' and f.type[1]=='container' then return {far,near} end return {turret} end
+  local r=call('transfer',{item='firearm-magazine',to='nearest_room',count=10})
+  eq(r.transferred,10); eq(slot_a.count,6); eq(slot_b.count,4)
+  eq(r.line,'10 firearm-magazine into 2 chests with room, nearest first: wooden-chest (2,0): 6, wooden-chest (4,0): 4')
+  -- chest: only that kind; none with room says the rest stayed
+  prototypes.entity=prototypes.entity or {}; prototypes.entity['iron-chest']=prototypes.entity['iron-chest'] or {name='iron-chest',type='container'}
+  r=call('transfer',{item='firearm-magazine',to='nearest_room',count=2,chest='iron-chest'})
+  eq(r.transferred,0); assert(r.line:find('2 not placed: no more room in chests of ours within',1,true),r.line)
+  p.surface.find_entities_filtered=kept_find
+end
 fails(function() call('rearm',{ammo='coal'}) end,'ammo must be')
 -- Crafted ammo lands in the gun ammo slots; rearm draws there after the
 -- main inventory, and holding none at all fails instead of reading as unchanged.

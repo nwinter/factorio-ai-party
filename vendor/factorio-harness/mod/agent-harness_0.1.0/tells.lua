@@ -66,7 +66,7 @@ return function(api)
       wake='true (fh tell --wake): also ends a recipient\'s wait that this tell would not end: a direct wait_ticks, wait_until or sleep that ignores messages (wake_on_messages: false, fh --wait-through-tells) or takes them only from others (wake_from), and an fh --wait that goes on through tells; every time (woken counts your wake tells to each in the last 10 minutes)',
       returns='seq and to (cut {length, kept} when the text was cut; away "sol is on Vulcanus" for recipients on another planet, platform or in a cargo pod; ignoring "sonnet is in a wait_until that ignores messages until tick T (about N min)" for a recipient no tell wakes now; woken and not_woken with wake): the line goes to each recipient\'s next reply (team: tells), wakes them if asleep (woke=told), and stays out of the game chat; viewers see it as text on the stream\'s logistics ticker, never spoken'},
     tells = {since='optional sequence number: the tells you sent or received after it (since=0: all of them); without it, the tells you received', limit='1..100, newest kept (default 30)',
-      returns='tells {seq,tick,ago_s,from,away?,to?,team?,fyi?,text} oldest first: without since the last 30 you received, whether or not a team block showed them; with since those you sent or received (to on each). away: "on Vulcanus" when the sender is somewhere other than you now. cursor: the newest seq'},
+      returns='tells {seq,tick,ago_s,from,away?,to?,team?,fyi?,text} oldest first (those listed leave the team block\'s unread tells): without since the last 30 you received, whether or not a team block showed them; with since those you sent or received (to on each). away: "on Vulcanus" when the sender is somewhere other than you now. cursor: the newest seq'},
   }
   function M.handlers.tell(p, a)
     local me = api.who(p)
@@ -151,7 +151,16 @@ return function(api)
     end
     return {tells=out, cursor=s.seq, tick=game.tick}
   end
-  function M.handlers.tells(p, a) return read(a, api.who(p)) end
+  -- The tells a read lists are read: they leave the team block's unread list (board.lua; d17 batch29 C2).
+  function M.handlers.tells(p, a)
+    local r = read(a, api.who(p))
+    if api.read_tells and #r.tells > 0 then
+      local seqs = {}
+      for _, t in ipairs(r.tells) do seqs[#seqs+1] = t.seq end
+      api.read_tells(p.index, seqs)
+    end
+    return r
+  end
   -- Operator (RCON, `operator: true` dispatch): every tell, for the stream.
   function M.operator.tells(a) return read(a, nil) end
   -- Operator: a tell from `operator` (tools/idle_nudge.py: facts for an agent

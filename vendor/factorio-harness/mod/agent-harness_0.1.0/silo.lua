@@ -528,14 +528,25 @@ return function(api)
               -- the flag (A8, Gemini 01:50: silos idle with rockets ready, the stock just under min_payload or split
               -- across networks): matched, below_min_payload, split_networks (the planet's other networks hold the
               -- rest: each named), hub_full, filling
-              local others, other_n = {}, 0
+              -- (d17 batch29 C3, Gemini: a silo waited for an item only another network held) each other network's chest
+              -- robots would take it from (select_pickup_point near the silo), for load_silo's from
+              local others, other_n, chests = {}, 0, {}
+              local function pick(o, n)
+                local pt = n > 0 and #chests < 4 and try(function() return o.select_pickup_point{name=name, position=e.position} end)
+                local c = pt and try(function() return pt.owner end)
+                if not (c and c.valid) then return '' end
+                local has = try(function() return c.get_item_count(name) end) or 0
+                chests[#chests+1] = {x=c.position.x, y=c.position.y}
+                return string.format(', most at hand in %s (%g,%g) holding %d', c.name, c.position.x, c.position.y, has)
+              end
+              if ln and net > 0 then pick(ln, net) end
               for _, o in pairs(try(function() return force.logistic_networks[e.surface.name] end) or {}) do
                 if not (ln and o.network_id == ln.network_id) then
                   local n = math.max(0, try(function() return o.get_item_count(name) end) or 0)
                   if n > 0 then
                     other_n = other_n + n
                     local cell = try(function() return o.cells[1].owner end)
-                    others[#others+1] = string.format('network %d%s holds %d', o.network_id, cell and cell.valid and string.format(' (near %d,%d)', cell.position.x, cell.position.y) or '', n)
+                    others[#others+1] = string.format('network %d%s holds %d%s', o.network_id, cell and cell.valid and string.format(' (near %d,%d)', cell.position.x, cell.position.y) or '', n, pick(o, n))
                   end
                 end
               end
@@ -545,6 +556,14 @@ return function(api)
               elseif payload and net + other_n >= payload then r.flag = 'split_networks'
               else r.flag = 'below_min_payload' end
               if #others > 0 and r.flag ~= 'matched' then words[#words+1] = 'other networks on ' .. e.surface.name .. ': ' .. table.concat(others, '; ', 1, math.min(3, #others)) end
+              -- split_networks: carried over by hand, a walking load_silo from those chests that launches for the platform
+              if r.flag == 'split_networks' and #chests > 0 then
+                local auto = try(function() return e.use_transitional_requests end)
+                local n = math.min(lacks, full or lacks, net + other_n)
+                r.load_silo = {position={x=e.position.x, y=e.position.y}, items={[name]=n}, from=chests, walk=true, launch=true, platform=pl.name, auto_requests=auto and 'pause' or nil}
+                words[#words+1] = string.format('by hand: load_silo {items {%s: %d}, from those chests, walk, launch, platform %s%s} (the row\'s load_silo is its args)',
+                  name, n, pl.name, auto and ', auto_requests "pause"' or '')
+              end
               r.line = r.flag .. ': ' .. table.concat(words, ', ')
               rows[#rows+1] = r
             end
@@ -693,7 +712,7 @@ return function(api)
       .. 'crafting {part_progress, parts_left, part_s, productivity, rocket_eta_s (at this speed, while working)}, ingredients [{name, per_part, in_silo, in_hands '
       .. '(feeding inserters\' hands), at_sources (what their belts and chests hold), needed (for the parts left), short}], lacks (ingredients the silo holds too few '
       .. 'of for the next part), feeders {inserters, idle, sources}, cargo {kg, lift_kg, room_kg (lift left), stacks, slots, items, over_kg}, trash, robots_bringing (what logistic robots carry or have reserved toward the silo now) and requesting_for (the platform its automatic requests fill for), auto_requests and send_to_orbit_automatically (the GUI checkboxes; configure sets them), '
-      .. 'platforms_above (ours in orbit of this planet), parts_made and parts_per_min (rocket parts made, products_finished; the rate over the last 10 min of samples taken at most every 10 s by reads and the alert scan), next_auto_launch (with automatic requests on: the request filled now, else the first the network can give a rocket\'s payload for: platform, item, under min_payload N or full N by weight), platform_requests [{platform, item, network_can_give (provider and storage chests less robots\' reservations), providers, storage, next_launch (min_payload N | full N), flag (matched: the silo\'s network holds the payload a rocket waits for; below_min_payload; split_networks: other networks on the planet hold the rest, named; hub_full: the payload takes more hub slots than are free; filling: the silo fills a rocket for it now), line}] (each request a platform above makes of this planet that its hub lacks), last_launch {ago, tick, to, cargo, by}, line}]; rockets_launched (the force\'s count). '
+      .. 'platforms_above (ours in orbit of this planet), parts_made and parts_per_min (rocket parts made, products_finished; the rate over the last 10 min of samples taken at most every 10 s by reads and the alert scan), next_auto_launch (with automatic requests on: the request filled now, else the first the network can give a rocket\'s payload for: platform, item, under min_payload N or full N by weight), platform_requests [{platform, item, network_can_give (provider and storage chests less robots\' reservations), providers, storage, next_launch (min_payload N | full N), flag (matched: the silo\'s network holds the payload a rocket waits for; below_min_payload; split_networks: other networks on the planet hold the rest, named, each with the chest robots would take it from; hub_full: the payload takes more hub slots than are free; filling: the silo fills a rocket for it now), load_silo (split_networks: the args that carry it over by hand: a walking load from those chests that launches for the platform), line}] (each request a platform above makes of this planet that its hub lacks), last_launch {ago, tick, to, cargo, by}, line}]; rockets_launched (the force\'s count). '
       .. 'Feeders: inserters within 8 tiles dropping into the silo. Launches are seen from when the harness was deployed. Read only'}}
   return M
 end

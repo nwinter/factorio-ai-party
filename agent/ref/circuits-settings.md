@@ -90,7 +90,7 @@
   (the machine would make more with it). The inserters need a logistic network for their logistic condition.
   Example: `./fh call assembler_batch --args '{"position":{"x":107.5,"y":-94.5},"count":8,"dry_run":true}'`
 - `requests {position | platform?, set?, clear?, clear_all?, section?, active?, trash_unrequested?, construction_requests?,
-  force?, surface?}`: a
+  keep?, dry_run?, force?, surface?}`: a
   requester or buffer chest's requests (`position`), a platform hub's (`platform`), or your own (no position; needs
   logistic robotics). `set` takes a list or a map `{item: min}`; an entry without `max` keeps the slot's max (`"max":
   "inf"` sets none). An edit echoes what is stored per item (`stored`) and keeps the import planet when `from` is not
@@ -108,7 +108,12 @@
     request's import planet; `construction_requests: true` switches the hub's Request missing construction materials
     on. A set entry's `min_payload` is the custom minimum payload; an edit that does not name it keeps it, and one
     removed by `clear` or `clear_all` comes back when the item is set again without it (`min payload N kept from the
-    request cleared before`); `min_payload: false` clears it.
+    request cleared before`); `min_payload: false` clears it. What a hub holds over what its requests keep is surplus,
+    and the game sends it down to the landing pads of the planet it stops at: a change (`clear`, `clear_all`, `active:
+    false`, a lower `min`) gives `sends_down`, per item it would then keep less of than it holds, how many go down to
+    which stop's pads (where it waits first, then its schedule's) or stay aboard. `keep: ["firearm-magazine"]` keeps
+    those requested up to the count held (with the dropped request's import planet and min payload). `dry_run: true`
+    changes nothing and replies with the sections, `stored` and `sends_down` the change would make.
   - Your own: `unfilled` lists the personal requests not filled, each with why (no network where you stand, no
     logistic robots, none free, none of the item in the network).
   Example: `./fh call requests --args '{"platform":"Starling","construction_requests":true}'`

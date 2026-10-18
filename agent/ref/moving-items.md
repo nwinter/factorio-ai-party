@@ -23,6 +23,9 @@
     is named. A walking take from chests holding none of it now is refused before the walk, naming the
     nearest holding it. With `to` (and `to_inventory`) it is a courier straight to that machine, freshest stacks
     first, and takes from a chest feeding `to` itself.
+  - `to: "nearest_room"` (with `item`, `count` default all you hold, `radius` up to your reach, `chest` a name or
+    names): into our chests in reach with room for it, the nearest first, each filled before the next; `chests` and
+    `line` say which took how much and what was not placed.
   - `pick: "first_with_stock" | "most_stock"` with `positions` and `item` or `items` (collect too) takes at one listed
     place holding it now (empty ones `skipped`, not short; none: nothing walked); `to` (`{x,y}` or `{item: {x,y}}`)
     carries it on to that destination in the same call. `dry_run: true` on such a courier gives `courier`, a preview:

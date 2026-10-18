@@ -96,7 +96,9 @@
   none of it, and anyone may build or act anywhere.
 - `./fh tell`: `--fyi` (no answer needed) waits for their next reply, marked `(fyi)`, and wakes nobody. The reply's
   `ignoring` names a recipient in a wait that ignores messages (and until when); `--wake` ends that wait too, each
-  time. Viewers see tells as text on the stream's logistics ticker.
+  time. Viewers see tells as text on the stream's logistics ticker. A teammate's tell (not fyi) shows in full once,
+  then stays in each reply's `team: tells` as `unread #SEQ astra, waiting 3m10s: ...` (4 shown, the newest 8 kept)
+  until `chat_ack {seq}` (or "all") or `reply_to: SEQ` names it, or `./fh tells` lists it.
 - Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, power cuts

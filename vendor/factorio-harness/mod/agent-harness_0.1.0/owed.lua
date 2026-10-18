@@ -70,12 +70,14 @@ return function(api)
     for _, n in ipairs(type(names) == 'table' and names or {names}) do set[tostring(n):lower()] = true end
     return close(index, function(it) return not set[sender(it.from):lower()] end)
   end
-  -- reply_to or chat_ack: by seq (a chat line's or a tell's), several, or "all".
+  -- reply_to or chat_ack: by seq (a chat line's or a tell's), several, or "all". Also marks those tells read (board.lua
+  -- unread tells; d17 batch29 C2): the second value is how many.
   function M.ack(index, seqs)
-    if seqs == 'all' then return close(index, function() return false end) end
+    local read = api.read_tells and api.read_tells(index, seqs) or 0
+    if seqs == 'all' then return close(index, function() return false end), read end
     local set = {}
     for _, s in ipairs(type(seqs) == 'table' and seqs or {seqs}) do set[tonumber(s) or -1] = true end
-    return close(index, function(it) return not set[it.seq] end)
+    return close(index, function(it) return not set[it.seq] end), read
   end
   -- The reply's line: nil when nothing is owed.
   function M.line(index)
@@ -102,11 +104,12 @@ return function(api)
     end
   end
   M.schema = {chat_ack = {seq='a chat line\'s or tell\'s seq (as the unanswered line gives it), an array of them, or "all"',
-    returns='closed (how many unanswered mentions it closed), unanswered (the line, or none). A say or tell that names the sender, or reply_to its seq, closes one too; reading chat does not'}}
+    returns='closed (how many unanswered mentions it closed), read (unread tells it marked read), unanswered (the line, or none). A say or tell that names the sender, or reply_to its seq, closes one too; reading chat does not'}}
   M.handlers = {}
   function M.handlers.chat_ack(p, a)
     assert(a.seq == 'all' or type(a.seq) == 'number' or (type(a.seq) == 'table' and #a.seq >= 1), 'seq is a number, an array of them, or "all"')
-    return {closed=M.ack(p.index, a.seq), unanswered=M.line(p.index) or 'none'}
+    local closed, read = M.ack(p.index, a.seq)
+    return {closed=closed, read=read > 0 and read or nil, unanswered=M.line(p.index) or 'none'}
   end
   return M
 end

@@ -1941,10 +1941,38 @@ return function(api)
   end
   -- Every pending mention and tell, oldest first; never cut by the other
   -- parts' caps. Tells (logistics sent to this agent) are listed apart.
+  -- Unread tells (d17 batch29 C2, Sol missed a critical silo blocker for 3 minutes while sleeps and reads overlapped): a
+  -- teammate's tell (not fyi) shown once stays listed in every later team block, with how long it has waited, until
+  -- chat_ack or reply_to names its seq (or "all") or a tells read lists it. UNREAD_MAX kept (the oldest dropped),
+  -- UNREAD_SHOW shown, each cut to 100 characters.
+  M.UNREAD_MAX, M.UNREAD_SHOW = 8, 4
+  function M.tells_read(index, seqs)
+    local box = api.state().mentions and api.state().mentions[index]
+    if not (box and box.unread and #box.unread > 0) then return 0 end
+    local set = {}
+    for _, s in ipairs(type(seqs) == 'table' and seqs or {seqs}) do set[tonumber(s) or -1] = true end
+    local keep = {}
+    for _, t in ipairs(box.unread) do if seqs ~= 'all' and not set[t.seq] then keep[#keep+1] = t end end
+    local n = #box.unread - #keep
+    box.unread = #keep > 0 and keep or nil
+    return n
+  end
+  function M.unread_lines(box, shown)
+    local wait = {}
+    for _, t in ipairs(box.unread or {}) do if not shown[t.seq] then wait[#wait+1] = t end end
+    if #wait == 0 then return nil end
+    local out = {string.format('%d unread tell%s (chat_ack {seq} or "all", or a tells read, marks them read):', #wait, #wait == 1 and '' or 's')}
+    for i = 1, math.min(#wait, M.UNREAD_SHOW) do
+      local t = wait[i]
+      out[#out+1] = string.format('unread #%d %s, waiting %s: %s', t.seq, t.from, ago(game.tick - t.tick), clip(t.text, 100))
+    end
+    if #wait > M.UNREAD_SHOW then out[#out+1] = string.format('%d more unread (fh tells)', #wait - M.UNREAD_SHOW) end
+    return out
+  end
   local function mentions(p)
     local box = api.state().mentions and api.state().mentions[p.index]
-    if not (box and (#box.list > 0 or box.dropped > 0)) then return nil end
-    local lines, tells = {}, {}
+    if not (box and (#box.list > 0 or box.dropped > 0 or box.unread)) then return nil end
+    local lines, tells, shown = {}, {}, {}
     if box.dropped > 0 then
       lines[1] = string.format('%d older mentions did not fit (%d kept); read chat', box.dropped, MAX_PENDING)
     end
@@ -1958,11 +1986,18 @@ return function(api)
     for _, m in ipairs(box.list) do
       if m.tell then
         tells[#tells+1] = string.format('%s%s%s, %s ago: %s', from(m), m.team and ' to team' or '', m.fyi and ' (fyi)' or '', ago(game.tick - m.tick), m.text)
+        if type(m.tell) == 'number' and not m.fyi and m.from ~= 'operator' then
+          box.unread = box.unread or {}
+          box.unread[#box.unread+1] = {seq=m.tell, tick=m.tick, from=from(m), text=m.text}
+          while #box.unread > M.UNREAD_MAX do table.remove(box.unread, 1) end
+          shown[m.tell] = true
+        end
       else
         local tag = m.how == '@' and ' @you' or m.how == '@everyone' and ' @everyone' or ''
         lines[#lines+1] = string.format('%s%s, %s ago: %s', from(m), tag, ago(game.tick - m.tick), m.text)
       end
     end
+    for _, l in ipairs(M.unread_lines(box, shown) or {}) do tells[#tells+1] = l end
     delivered[p.index] = box.list
     box.list, box.dropped = {}, 0
     return #lines > 0 and lines or nil, #tells > 0 and tells or nil
