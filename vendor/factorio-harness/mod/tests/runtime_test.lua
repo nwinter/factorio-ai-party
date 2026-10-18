@@ -977,7 +977,8 @@ end
 -- report each entity and keep going past one that fails.
 local function inv(...)
   local t={...}; t.valid=true
-  t.get_item_count=function(f) local n=0; for _,s in ipairs(t) do if s.valid_for_read and s.name==f.name then n=n+s.count end end; return n end
+  -- (no argument: every item, as the engine counts)
+  t.get_item_count=function(f) local n=0; for _,s in ipairs(t) do if s.valid_for_read and (f==nil or s.name==f.name) then n=n+s.count end end; return n end
   return t
 end
 defines.inventory.fuel,defines.inventory.furnace_source,defines.inventory.furnace_result=2,3,4
@@ -1999,6 +2000,8 @@ p.surface.find_entities_filtered=function() return {turret} end
 main=inv(stack('firearm-magazine',30))
 eq(call('transfer',{position=turret.position,item='firearm-magazine',count=5,direction='to_entity'}).inventory,'turret_ammo'); eq(mag_slot.count,5)
 local rearmed=call('rearm',{count=10}); eq(rearmed.transferred,5); eq(mag_slot.count,10); eq(main[1].count,20)
+-- batch28 C3 (Haiku): a line per turret, what it got and what it holds now
+eq(rearmed.turret_lines[1],'gun-turret (5,0): +5, holds 10 now')
 fails(function() call('rearm',{ammo='coal'}) end,'ammo must be')
 -- Crafted ammo lands in the gun ammo slots; rearm draws there after the
 -- main inventory, and holding none at all fails instead of reading as unchanged.

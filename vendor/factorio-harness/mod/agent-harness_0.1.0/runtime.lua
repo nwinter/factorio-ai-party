@@ -785,6 +785,21 @@ local function finish(index, outcome)
   -- The route memory (batch28 C2): a move_to through via points that arrived keeps them; one with none that ended
   -- unreachable or no_safe_route runs once more through a kept route between the same two areas.
   if action and action.kind=='move_to' and s.last[index] then pcall(M.route_memory,index,action,outcome,s.last[index]) end
+  -- (batch28 C3) a rearm tour: a line per turret, those not reached named
+  if action and action.op=='rearm' and s.last[index] then
+    local lines={}
+    for i,l in ipairs(action.turret_lines or {}) do lines[i]=l end
+    for _,t in ipairs(action.targets or {}) do
+      local e=t.entity
+      local seen=false
+      if e and e.valid then
+        local key=string.format('%s (%g,%g):',e.name,e.position.x,e.position.y)
+        for _,l in ipairs(lines) do if l:sub(1,#key)==key then seen=true; break end end
+        if not seen then lines[#lines+1]=string.format('%s (%g,%g): not reached (the tour ended %s)',e.name,e.position.x,e.position.y,tostring(outcome)) end
+      end
+    end
+    if #lines>0 then s.last[index].turret_lines=lines end
+  end
   -- A call to run once the wait is met (A2: rearm {retry_when_clear}): next tick, outside this finish.
   if action and action.then_call and s.last[index] then
     if outcome=='met' then
@@ -8887,6 +8902,16 @@ function M.rearm_now(p,a)
   if type(out)=='table' then
     out.other_ammo=other_line
     if #order_items>1 then out.ammo_each='each turret its own ammo: '..table.concat(order_items,', ') end
+    -- (batch28 C3, Haiku) a line per turret: what it got and what it holds now
+    local lines={}
+    for _,row in ipairs(out.entities or {}) do
+      local okq,e=pcall(entity,p,{position=row.position},true)
+      if okq and e then
+        local okh,h=pcall(function() return e.get_inventory(defines.inventory[ammo_inventory[e.type]]).get_item_count() end)
+        lines[#lines+1]=string.format('%s (%g,%g): +%d, holds %s now%s',e.name,e.position.x,e.position.y,row.moved or 0,okh and tostring(h) or '?',row.full and ' (full)' or '')
+      end
+    end
+    out.turret_lines=#lines>0 and lines or nil
   end
   if below and type(out)=='table' then out.below=below; out.held_enough=enough end
   return out
@@ -16293,6 +16318,12 @@ stock=stock_module{on_ground=function(force,surface,item) return M.stores.on_gro
     local args={direction='to_entity',item=item,quality=action.quality,count=action.count,up_to=action.count,
       inventory=action.op=='refuel' and 'fuel' or nil}
     local out=transfer_one(p,args,nil,e)
+    -- (batch28 C3, Haiku) a rearm tour's line per turret: what it got and what it holds now (last.turret_lines)
+    if action.op=='rearm' then
+      local okh,h=pcall(function() return e.get_inventory(defines.inventory[ammo_inventory[e.type]]).get_item_count() end)
+      action.turret_lines=action.turret_lines or {}
+      action.turret_lines[#action.turret_lines+1]=string.format('%s (%g,%g): +%d %s, holds %s now',e.name,e.position.x,e.position.y,out.transferred or 0,tostring(item),okh and tostring(h) or '?')
+    end
     if action.item_of then
       action.items=action.items or {}
       if (out.transferred or 0)>0 then action.items[item]=(action.items[item] or 0)+out.transferred end
