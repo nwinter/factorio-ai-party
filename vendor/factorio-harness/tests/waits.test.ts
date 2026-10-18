@@ -347,6 +347,22 @@ test('fh call sleep blocks like fh sleep (with or without --wait)',async()=>{
   }
   await assert.rejects(cli(1,['call','sleep','--args','{"seconds":0}']),(error:any)=>/seconds 1\.\.900: fh sleep SECONDS/.test(error.stdout));
 });
+test('fh call sleep SECONDS is seconds through the same blocking sleep; more words or other JSON seconds are refused',async()=>{
+  for (const args of [['call','sleep','120'],['call','sleep','120','--wait'],['call','sleep','120','--args','{"seconds":120}']]) {
+    const seen:any[]=[];
+    await engine(sleepEngine(seen,'mentioned'),async port=>{
+      const reply=JSON.parse((await cli(port,args)).stdout);
+      assert.equal(reply.result.woke,'mentioned');
+    });
+    assert.equal(seen[0].action,'sleep'); assert.equal(seen[0].args.seconds,120);
+    assert.deepEqual(seen.map(r=>r.args.scope ?? r.action),['sleep','sleep_check','sleep_check','sleep_check']);
+  }
+  await assert.rejects(cli(1,['call','sleep','300','60']),(error:any)=>/seconds 1\.\.900: fh sleep SECONDS or fh call sleep SECONDS/.test(error.stdout));
+  await assert.rejects(cli(1,['call','sleep','5m']),(error:any)=>/seconds 1\.\.900/.test(error.stdout));
+  await assert.rejects(cli(1,['call','sleep','300','--args','{"seconds":60}']),(error:any)=>/sleep seconds given twice \(300 and --args seconds 60\)/.test(error.stdout));
+  await assert.rejects(cli(1,['call','sleep','901']),(error:any)=>/seconds 1\.\.900/.test(error.stdout));
+  await assert.rejects(cli(1,['call','sleep','0']),(error:any)=>/seconds 1\.\.900/.test(error.stdout));
+});
 test('a sleep never runs past the deadline: cut to the time left, or none after it',async()=>{
   const { mkdtemp, writeFile } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');

@@ -56,7 +56,7 @@ Your character stands still while you think, and the clock does not.
   `--until "researched"` (the research running now, or `researched TECH`), `--until crafting_done`,
   `--until "item_count iron-plate>=200"` (your inventory). It does not return when a machine starves, and never runs past your deadline. With no queue running, no
   action running and no `--until` it lasts at most 300 s (`capped at 300 s: no queue, action or condition`); up to 900 s
-  otherwise. `./fh call sleep` is the same wait. A tell or mention wakes it once.
+  otherwise. `./fh call sleep SECONDS` is the same wait. A tell or mention wakes it once.
 - `./fh wait --until "tell|alert|COND" --max 600` is the same wait with one line out (`woke: told after 42 s (astra:
   ...)`): it ends on a tell or mention, a new attack/enemy alert (`alert`), a `--until` condition as for sleep, or
   after `--max` seconds (up to 900; 300 with nothing running and no condition); the team block comes with your next

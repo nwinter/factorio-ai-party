@@ -1686,7 +1686,7 @@ fh sleep 900 --until researched                       # ...or until the research
     statement about its own wait from chat/aloud within five minutes; no reason is inferred from its job or notes.
     The stream uses its existing status polls and journal tail. Brief status includes cached `queues.body.waiting`
     and `queues.remote.waiting` (condition, deadline, estimates, idle); these fields add no condition checks or scans.
-  - `fh call sleep --args '{"seconds":N}'` (with or without `--wait`, also in `fh run` and `fh stream`) is the same blocking wait; the raw action only starts a sleep.
+  - `fh call sleep --args '{"seconds":N}'` and `fh call sleep N` (with or without `--wait`, also in `fh run` and `fh stream`) are the same blocking wait; the raw action only starts a sleep. `fh call sleep N` takes one whole number; more words, or `--args` seconds other than N, are refused.
   - Claude Code agents get a 20-minute Bash timeout (tools/clean-profile.py in the pog repo), above the longest sleep. Codex agents' `yield_time_ms` returns earlier and leaves the sleep running in the background.
 - `build` and `construct` replies include `materials`, read before acting: per item and quality, `need`, `held`,
   `missing`, `queued`, `missing_after_queue` and `hand_craftable` (items, including recipe yield). The hand-craftable
