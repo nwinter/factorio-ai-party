@@ -107,7 +107,9 @@ return function(api)
   function M.touch(i) i.active_tick = game.tick end
   -- An owner's own request: its claims around the character, or holding the
   -- position the request acts on, are active.
-  function M.worked(p, args)
+  -- read: the request is a read (inspect, observe, supply ...): a claim holding its position (or its area's centre)
+  -- records the inspection, by anyone (B2: the last inspection of an area).
+  function M.worked(p, args, action, read)
     local board = api.state().board
     if not board then return end
     local me, c = p.name, p.character
@@ -115,11 +117,143 @@ return function(api)
     local at_surface = at and surface_name(c)
     local pos = type(args) == 'table' and args.position
     if not (type(pos) == 'table' and type(pos.x) == 'number' and type(pos.y) == 'number') then pos = nil end
+    if read and not pos and type(args) == 'table' and type(args.area) == 'table' and type(args.area.left_top) == 'table' and type(args.area.right_bottom) == 'table' then
+      local lt, rb = args.area.left_top, args.area.right_bottom
+      if type(lt.x) == 'number' and type(rb.x) == 'number' then pos = {x=(lt.x + rb.x) / 2, y=(lt.y + rb.y) / 2} end
+    end
     local surface = surface_name(p)
     for _, i in pairs(board.items) do
-      if i.kind == 'claim' and i.owner == me and ACTIVE[i.status] and i.area
-          and ((at and on(i, at_surface, at)) or (pos and on(i, surface, pos))) then i.active_tick = game.tick end
+      if i.kind == 'claim' and ACTIVE[i.status] and i.area then
+        if i.owner == me and ((at and on(i, at_surface, at)) or (pos and on(i, surface, pos))) then i.active_tick = game.tick end
+        if read and pos and on(i, surface, pos) then i.inspected = {tick=game.tick, by=me, action=action} end
+      end
     end
+  end
+  -- board_review {ownership: true, surface?} (d17 batch33 B2, Sol, Astra and viewer Foobator 08:09-08:10: who looks
+  -- after each system): per surface, the systems of ours (each electric network's machines from the census pass, each
+  -- logistic network, each platform) and the open claims that cover them: how many of a system's machines (or
+  -- roboports) lie in each claim's area, overlaps, an open claim with no area on that surface (a planet-wide claim)
+  -- when no area covers it, else none; each claim's owner, their last activity there (requests in the area, board
+  -- updates) and the last inspection of the area (a read there, by whom). Then each owner's blocked board items with
+  -- the latest note. Facts only; read only.
+  local SYSTEMS, SAMPLE = 32, 256
+  function M.ownership(p, a)
+    local board = api.state().board or {items={}}
+    local force = p.force
+    local list = {}
+    if a.surface ~= nil then
+      local s = game.get_surface(a.surface)
+      assert(s, 'no surface ' .. tostring(a.surface))
+      list[1] = s
+    else
+      for _, s in pairs(game.surfaces) do
+        local ok, planet = pcall(function() return s.planet end)
+        if ok and planet then list[#list+1] = s end
+      end
+      for _, pl in pairs(force.platforms or {}) do if pl.valid and pl.surface then list[#list+1] = pl.surface end end
+    end
+    table.sort(list, function(x, y) return x.index < y.index end)
+    local claims, owners = {}, {}
+    for _, i in pairs(board.items) do
+      if i.kind == 'claim' and ACTIVE[i.status] and game.tick - M.activity(i) < M.EXPIRE then claims[#claims+1] = i end
+    end
+    table.sort(claims, function(x, y) return x.id < y.id end)
+    local function claim_text(i)
+      local ins = i.inspected
+      return string.format('#%d %s (active there %s ago%s)', i.id, tostring(i.owner or 'no owner'), ago(game.tick - M.activity(i)),
+        ins and string.format(', inspected %s ago by %s', ago(game.tick - ins.tick), ins.by) or ', no inspection there recorded')
+    end
+    local out_surfaces, lines = {}, {}
+    for _, s in ipairs(list) do
+      local systems = {}
+      local pl = s.platform
+      if pl then
+        systems[1] = {kind='platform', name=pl.name, n=0, positions={}}
+      else
+        local by_net = {}
+        for _, e in ipairs(api.crafters and api.crafters(force, s) or {}) do
+          local id = e.valid and e.electric_network_id
+          if id then
+            local g = by_net[id]
+            if not g then g = {kind='power', id=id, n=0, names={}, positions={}}; by_net[id] = g; systems[#systems+1] = g end
+            g.n = g.n + 1
+            g.names[e.name] = (g.names[e.name] or 0) + 1
+            if #g.positions < SAMPLE then g.positions[#g.positions+1] = e.position end
+          end
+        end
+        for _, ln in ipairs((force.logistic_networks or {})[s.name] or {}) do
+          local g = {kind='logistic', id=ln.network_id, n=0, positions={}}
+          for _, cell in ipairs(ln.cells or {}) do
+            local o = cell.owner
+            if o and o.valid then g.n = g.n + 1; if #g.positions < SAMPLE then g.positions[#g.positions+1] = o.position end end
+          end
+          systems[#systems+1] = g
+        end
+      end
+      table.sort(systems, function(x, y) return x.n > y.n end)
+      local rows = {}
+      for k, g in ipairs(systems) do
+        if k > SYSTEMS then rows[#rows+1] = {line=string.format('+%d more systems', #systems - SYSTEMS)}; break end
+        local cover, fallback = {}, {}
+        for _, i in ipairs(claims) do
+          if M.surface_of(i) == s.name then
+            if not i.area then fallback[#fallback+1] = i
+            elseif g.kind ~= 'platform' then
+              local inn = 0
+              for _, q in ipairs(g.positions) do if inside(i.area, q) then inn = inn + 1 end end
+              if inn > 0 then cover[#cover+1] = {i=i, n=inn} end
+            else cover[#cover+1] = {i=i, n=1} end
+          elseif g.kind == 'platform' and type(i.title) == 'string' and i.title:lower():find(g.name:lower(), 1, true) then
+            cover[#cover+1] = {i=i, n=1, by_title=true}
+          end
+        end
+        table.sort(cover, function(x, y) return x.n > y.n end)
+        local what
+        if g.kind == 'power' then
+          local names = {}
+          for name, c in pairs(g.names) do names[#names+1] = {name, c} end
+          table.sort(names, function(x, y) return x[2] > y[2] or (x[2] == y[2] and x[1] < y[1]) end)
+          local parts = {}
+          for j = 1, math.min(3, #names) do parts[j] = names[j][2] .. ' ' .. names[j][1] end
+          what = string.format('electric network #%d: %d machine%s (%s)', g.id, g.n, g.n == 1 and '' or 's', table.concat(parts, ', '))
+        elseif g.kind == 'logistic' then
+          what = string.format('logistic network #%d: %d roboport cell%s', g.id, g.n, g.n == 1 and '' or 's')
+        else what = 'platform ' .. g.name end
+        local who
+        if #cover > 0 then
+          local parts = {}
+          for _, c in ipairs(cover) do
+            owners[c.i.owner or '?'] = true
+            parts[#parts+1] = claim_text(c.i) .. (g.kind ~= 'platform' and string.format(': %d of %d sampled', c.n, #g.positions) or (c.by_title and ': its title names it' or ''))
+          end
+          who = (#cover > 1 and 'overlap: ' or 'claim ') .. table.concat(parts, '; ')
+        elseif #fallback > 0 then
+          local parts = {}
+          for _, i in ipairs(fallback) do owners[i.owner or '?'] = true; parts[#parts+1] = claim_text(i) end
+          who = 'no area covers it; planet-wide claim ' .. table.concat(parts, '; ')
+        else who = 'no claim covers it' end
+        rows[#rows+1] = {kind=g.kind, id=g.id, name=g.name, size=g.n, claims=#cover, owner_line=who, line=what .. ': ' .. who}
+      end
+      if #rows > 0 then
+        out_surfaces[#out_surfaces+1] = {surface=s.name, systems=rows}
+        lines[#lines+1] = s.name .. ':'
+        for _, r in ipairs(rows) do lines[#lines+1] = '  ' .. r.line end
+      end
+    end
+    -- each owner's blocked board items, with the latest note
+    local blockers = {}
+    for _, i in pairs(board.items) do
+      if i.status == 'blocked' and i.owner and owners[i.owner] then
+        local note = i.notes and i.notes[#i.notes]
+        blockers[#blockers+1] = {id=i.id, line=string.format('%s: #%d %s is blocked%s', i.owner, i.id, tostring(i.title or ''),
+          note and string.format(' (latest note %s ago by %s: %s)', ago(game.tick - (note.tick or game.tick)), tostring(note.by), tostring(note.text):sub(1, 120)) or '')}
+      end
+    end
+    table.sort(blockers, function(x, y) return x.id < y.id end)
+    local bl = {}
+    for j, b in ipairs(blockers) do if j <= 16 then bl[j] = b.line end end
+    return {surfaces=out_surfaces, lines=lines, blocked=#bl > 0 and bl or nil,
+      note='machines from the census pass (assemblers and furnaces), grouped by electric network; coverage counts sampled positions inside each claim area; activity: the owner\'s requests in the area and board updates; inspection: the last read there by anyone. Read only'}
   end
   -- How a claim stands for reader p (or no reader): age, the owner's last
   -- activity on it and their state, and what that means for p.

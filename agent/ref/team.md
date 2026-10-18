@@ -1,7 +1,10 @@
 - `./fh board projects [--args '{"id":N}']`: the open projects, one line each with progress, next step and handoff; an
   `id` shows one in full. A long project list shows one compact line each (`board {projects: "full"}` for more).
 - `board_review {id?}`: flags board items naming gone platforms, stale handoffs, superseded items still active and
-  conflicting needs.
+  conflicting needs. `board_review {ownership: true, surface?}`: per surface, each electric network's machines, each
+  logistic network and each platform with the open claims covering it (how many of its machines or roboports lie in
+  each area; overlaps; an open claim with no area on that surface when no area covers it; else none), each owner's
+  last activity there and the last inspection of the area (a read there, by whom), then the owners' blocked items.
 - `board_retire {ids, reason}`: drops several board items, each with `reason` as a note (its owner or poster, or
   anyone once they have been quiet; `failed` names the rest). Example:
   `./fh call board_retire --args '{"ids":[41,42],"reason":"the platform was rebuilt as Wren"}'`
