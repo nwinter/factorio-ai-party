@@ -103,7 +103,8 @@
   `trash_unrequested` names what the chest holds that goes. A passive provider, active provider or storage chest has no
   such switch: robots take spoilage from it only to a requester or buffer that requests spoilage, and an inserter
   filtered to spoilage moves it into the chest it drops into.
-  - A hub: each section, `off: true` when it requests nothing (`"section":N,"active":true` switches it on), and each
+  - A hub: each section with `active: "on"` or `"off"` (`off: true` too when it requests nothing; `"section":N,"active":true`
+    switches it on), and each
     request's import planet; `construction_requests: true` switches the hub's Request missing construction materials
     on. A set entry's `min_payload` is the custom minimum payload; an edit that does not name it keeps it, and one
     removed by `clear` or `clear_all` comes back when the item is set again without it (`min payload N kept from the

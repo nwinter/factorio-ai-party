@@ -119,6 +119,8 @@ fails(function() space.requests(p,{section=1,platform='alpha',set={{item='coal',
 -- is off says so (off=true and a note: false drops out of the compact reply), and active switches it.
 r=space.requests(p,{platform='alpha',set={{item='coal',min=500,max=500,from='vulcanus'}}})
 eq(r.sections[2].requests[2],'coal=500 from vulcanus'); eq(r.changed_section,2); eq(r.sections[2].off,nil)
+-- batch29 A3 (Luna: sections 5-6 read as unchanged): every section says active on or off
+eq(r.sections[2].active,'on')
 -- What is stored for each item touched is echoed, and an edit without from keeps the import planet (Luna, shift12
 -- 19:30: min/max edits of three requests from vulcanus turned them into from nauvis).
 eq(r.stored[1],'coal=500 from vulcanus')
@@ -140,7 +142,7 @@ eq(space.requests(p,{set={{item='coal',min=5}}}).stored[1],'coal 5..inf')
 space.requests(p,{clear={'coal'}})
 hub_sections.get_section(2).active=false
 r=space.requests(p,{platform='alpha'})
-eq(r.sections[2].off,true); eq(r.note,'section 2 is switched off: its requests are not made (requests {section, active: true} switches one on)')
+eq(r.sections[2].off,true); eq(r.sections[2].active,'off'); eq(r.note,'section 2 is switched off: its requests are not made (requests {section, active: true} switches one on)')
 r=space.requests(p,{platform='alpha',section=2,active=true})
 eq(r.sections[2].off,nil); eq(r.note,nil); eq(hub_sections.get_section(2).active,true)
 fails(function() space.requests(p,{platform='alpha',active='yes'}) end,'active must be true or false')
