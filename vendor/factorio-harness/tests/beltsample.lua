@@ -46,6 +46,24 @@ eq(r.points[2].kind,'side'); eq(r.points[2].left.items,'copper-plate 4')
 eq(r.lines[1],'section (1.5,0.5) to (3.5,0.5) (3 tiles): left lane 112.5/min (iron-plate 4); right lane stopped, full (4 on the tile)')
 eq(r.lines[2],'belt (4.5,-0.5) merging into (4.5,0.5): left lane 112.5/min (copper-plate 4); right lane empty')
 eq(r.merges[1],'merge at (4.5,0.5): line 112.5/min + belt (4.5,-0.5) 112.5/min in (225/min), 112.5/min on after it')
+-- (d17 batch35 B2) the side-load's side and lane, the mix after it, and the limit (the end's right lane backed up)
+eq(r.lane_mix[1],"side-load at (4.5,0.5): belt (4.5,-0.5) facing south comes in from the line's left side (the line faces east): both its lanes go onto the line's left lane; after it the left lane carries iron-plate 4, the right stopped, full (4 on the tile)")
+eq(r.limit,'the end is backed up on its right lane at (6.5,0.5)')
+-- a side-load stopped full while the lane after it runs at its cap: the straight line goes first
+do
+  local function cap(_,k,t) if k==1 then local out={} for i=0,3 do out[#out+1]={5000+math.floor(t/8)*4+i,((t%8)/8+i)/4,'calcite'} end return out end return {} end
+  local L={}
+  for x=1,4 do L[x]=belt(x+0.5,10.5,4,cap) end
+  for x=2,4 do L[x].belt_neighbours.inputs={L[x-1]}; L[x-1].belt_neighbours.outputs={L[x]} end
+  local sd=belt(3.5,9.5,8,function(_,k) return {{7000+k*10,0.1,'carbon'},{7001+k*10,0.35,'carbon'},{7002+k*10,0.6,'carbon'},{7003+k*10,0.85,'carbon'}} end)
+  table.insert(L[3].belt_neighbours.inputs,sd); sd.belt_neighbours.outputs={L[3]}
+  local S2=require('beltsample'){state=function() return storage end,remote_entity=function(_,a) for _,b in ipairs(L) do if b.position.x==a.position.x then return b end end end,on_platform=function(q) return q end}
+  game.tick=200
+  S2.handler({index=3},{position={x=1.5,y=10.5},seconds=2})
+  for t=201,340 do game.tick=t; S2.tick(t) end
+  local r2=S2.handler({index=3},{})
+  eq(r2.limit,"a side-load waits at (3.5,10.5): belt (3.5,9.5) is stopped full while the line after it runs at its cap (450/min a lane): the line's own items go first")
+end
 -- arguments
 fails(function() S.handler(p,{position={x=2.5,y=0.5},seconds=1}) end,'seconds: 2..30')
 storage.belt_flow=nil

@@ -988,6 +988,26 @@ return function(api)
       deconstruct_tiles(p,a,box,cancel,out,dry); return out
     end
     local list=candidates(p,box)
+    -- (d17 batch35 B3, Sol: moving a melter cut a chemical plant's shared water bridge) the fluid segments marking our
+    -- pipes, pipe-to-grounds, tanks and pumps here would split (fluidjoin.lua removal); a part left with machines taking
+    -- the fluid and no source refuses a live call unless cut_fluid: true
+    if not cancel and api.fluid_removal then
+      assert(a.cut_fluid==nil or type(a.cut_fluid)=='boolean','cut_fluid must be true or false')
+      local FLUID={pipe=true,['pipe-to-ground']=true,['storage-tank']=true,pump=true}
+      local fl={}
+      for _,e in ipairs(list) do
+        local ok,t,n=pcall(function() return e.valid and e.type,e.valid and e.name end)
+        if ok and t and FLUID[t] and e.force==p.force and (not filters.entity_types or filters.entity_types[t]) and (not filters.entity_names or filters.entity_names[n])
+          and not e.to_be_deconstructed(p.force) then fl[#fl+1]=e end
+      end
+      if #fl>0 then
+        local okf,lines,starved=pcall(api.fluid_removal,p.force,fl)
+        if okf and lines then out.fluid_split=lines end
+        if okf and starved and not dry and a.cut_fluid~=true then
+          error(string.format('nothing marked: %s%s; cut_fluid: true marks them anyway',starved[1],#starved>1 and string.format(' (+%d more)',#starved-1) or ''),0)
+        end
+      end
+    end
     local changed,by=0,{}
     -- Heat-network parts it marks (Sol, shift19): what their removal does to heat (heating.lua loss).
     local heat_parts,already={},0

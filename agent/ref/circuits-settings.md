@@ -44,6 +44,11 @@
   A logistic condition `item > N` (or `>=`, `=`) above what the network can hold (its count and what its storage and
   provider chests could still take of the item) comes first as `CANNOT BE MET:`, then those not met now. A look at
   the chests stops at 256 a network and item and 512 a call; one cut short gives what it saw and is not flagged.
+  A logistic condition false now adds `the count:` where the network's count sits: storage, passive and active
+  providers and buffers (the network's supply counts); what robots have reserved for pickup at its provider points and
+  what its requester chests hold, neither of which the count includes. On world n the steel count of network 243 was
+  its provider chests' steel less the reserved pickups, plus its buffers. `bottleneck` gives the same for a link held
+  off by a condition (its first gated maker).
   Example: `./fh call gates --args '{"surface":"nauvis"}'`
 - `circuit_audit {area | positions | platform}`: with `area` (up to 128x128) or `positions` (1..64), `platform`
   optional: every red and green network those entities are on, by id, each with its signals now (largest first) and

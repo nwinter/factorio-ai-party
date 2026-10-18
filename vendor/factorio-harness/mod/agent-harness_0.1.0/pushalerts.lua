@@ -2173,13 +2173,54 @@ return function(api)
       for _, k in ipairs(kinds) do if kind == k or kind:sub(1, #k + 1) == k .. '.' then return true end end
       return false
     end
+    -- (d17 batch35 B4, Luna: game_alerts ran 1,300+ lines, 82 KB, over all surfaces each review) claim: a board claim's
+    -- id, or mine: true for the caller's own claims: only groups whose centre (or feed chest) lies in it; since: the
+    -- cursor the last reply gave: only groups not shown then (by kind, surface and 32-tile cell), and how many of those
+    -- shown then are gone. Either gives the compact form.
+    assert(a.mine == nil or type(a.mine) == 'boolean', 'mine must be true or false')
+    assert(a.claim == nil or type(a.claim) == 'number', 'claim is a board claim id (board lists them)')
+    assert(a.since == nil or type(a.since) == 'number', 'since is the cursor the last game_alerts reply gave')
+    local me = api.who and api.who(p)
+    local claim_filter
+    if a.claim ~= nil or a.mine then
+      local board = api.state().board
+      local want = {}
+      for _, i in pairs(board and board.items or {}) do
+        if i.kind == 'claim' and ACTIVE[i.status] and ((a.claim ~= nil and i.id == a.claim) or (a.mine and a.claim == nil and i.owner == me)) then want[i.id] = true end
+      end
+      assert(next(want) or a.mine, string.format('no open claim #%s on the board', tostring(a.claim)))
+      claim_filter = function(g)
+        for _, i in ipairs(claims_over(g, g.center)) do if want[i.id] then return true end end
+        for _, i in ipairs(claims_over(g, g.chest_at)) do if want[i.id] then return true end end
+        return false
+      end
+    end
+    if a.since ~= nil or claim_filter then a = setmetatable({compact=true}, {__index=a}) end
+    local function gkey(g)
+      local cx = g.center and math.floor(g.center.x / 32) or '?'
+      local cy = g.center and math.floor(g.center.y / 32) or '?'
+      return tostring(g.kind) .. '|' .. tostring(g.surface) .. '|' .. cx .. ',' .. cy
+    end
+    local st = api.state()
+    st.alerts_seen = st.alerts_seen or {}
+    local before = me and st.alerts_seen[me]
+    local since_note
+    if a.since ~= nil and not (before and before.cursor == a.since) then
+      since_note = 'since: not the cursor of your last game_alerts reply' .. (before and string.format(' (that was %d)', before.cursor) or '') .. ': every group listed'
+    end
     local c = current(p.force)
     local who = roster()
     local here = try(function() return p.surface.name end)
     local rows = {}
+    local shown_keys, new_n = {}, 0
     for _, g0 in ipairs(c.groups) do
-      local g = (a.surface == nil or g0.surface == a.surface) and wanted(g0.kind)
+      local g = (a.surface == nil or g0.surface == a.surface) and wanted(g0.kind) and (not claim_filter or claim_filter(g0))
         and M.recheck(g0, p.force)
+      if g then
+        local k = gkey(g)
+        shown_keys[k] = true
+        if a.since ~= nil and not since_note and before.keys[k] then g = nil else new_n = new_n + 1 end
+      end
       if g then
         -- One group that fails to read is listed with why; the others still are.
         local ok, row = pcall(function()
@@ -2216,13 +2257,25 @@ return function(api)
     for _, k in ipairs(order) do parts[#parts+1] = k .. ' ' .. by[k] end
     local counts = #rows > 0 and string.format('%d group%s: %s', #rows, #rows == 1 and '' or 's', table.concat(parts, ', ')) or nil
     local scanned = string.format('%ds ago', math.floor((game.tick - c.tick) / 60))
+    -- the cursor: the groups this reply covered, kept per agent (the last one only)
+    local cursor, gone
+    if me and (a.since ~= nil or a.mine or a.claim ~= nil or a.cursor) then
+      if a.since ~= nil and not since_note then
+        gone = 0
+        for k in pairs(before.keys) do if not shown_keys[k] then gone = gone + 1 end end
+      end
+      cursor = (before and before.cursor or 0) + 1
+      st.alerts_seen[me] = {cursor=cursor, keys=shown_keys, tick=game.tick}
+    end
     if a.compact then
       local lines = {}
       for _, r in ipairs(rows) do
         local l = string.format('%s %s: %s', r.kind, r.surface or '?', tostring(r.line or ''):gsub('[%c]+', ' '))
         lines[#lines+1] = #l > 300 and l:sub(1, 297) .. '...' or l
       end
-      return {counts=counts, lines=#lines > 0 and lines or nil, scanned=scanned, note=#rows == 0 and 'no alerts or warnings' .. (kinds and ' of ' .. table.concat(kinds, ', ') or '') .. (a.surface and ' on ' .. a.surface or '') or nil}
+      return {counts=counts, lines=#lines > 0 and lines or nil, scanned=scanned, cursor=cursor, since_note=since_note,
+        new=a.since ~= nil and not since_note and new_n or nil, gone_since=gone,
+        note=#rows == 0 and (a.since ~= nil and not since_note and 'no new alert or warning since the cursor' or 'no alerts or warnings') .. (kinds and ' of ' .. table.concat(kinds, ', ') or '') .. (a.surface and ' on ' .. a.surface or '') .. (claim_filter and ' in the claim' .. (a.mine and 's named' or '') or '') or nil}
     end
     return {counts=counts, groups=rows, scanned=scanned,
       note=#rows == 0 and 'no alerts or warnings' or nil}
@@ -2230,6 +2283,9 @@ return function(api)
   M.schema = {
     game_alerts = {freshness='power/fuel entity groups recheck up to 128 recorded entities; hidden/capped observations are dated; belt_cut names missing formerly carrying tiles, cleared by observed replacements; frozen: on a planet whose entities need heating, our frozen entities per 64-tile area (pipes and machines with what they hold, belts as one run, how long frozen since first seen, the nearest heater with its temperature and distance from the nearest frozen one); line_cut: a long belt or pipe line (8+ tiles) cut where ours died, naming the cut tiles (and what else stands on one), how far the line runs either side and what it carried, what the belt past the cut feeds (the machines inserters take into from it, with their state) and how to rebuild each tile (a ghost there, or what to place facing which way), until a belt or pipe stands there again (at most 6 h); power_cut: a pole loss not joined again (power cut #N: the split, the machines no other pole reaches, the missing link and a ghost there or not, and each machine left alone as it stands now: a pump with its fluid), while it lasts; also a belt line blocked: a build that leaves a belt facing into a tile with no belt but another entity (not an inserter) and a belt within 2 tiles past it facing the same way, naming that entity, after 30 s, until it or either belt is gone or a belt stands there; belt_cut names what stands on a missing tile in sight; out_of_ore includes drill_site, one representative drill placement cached 60 s and computed in background',surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel (its line adds the spoiling fuel of burners of those names around it: how many burn it, how many within 60 s, the first to spoil and when), burnt_full (burners stopped by a full burnt-result slot whatever their status reads, a biochamber whose spoiled nutrients fill it: each with what fills that slot and its fuel slot), output_full (mining drills waiting for space in a chest they drop into, per 64-tile area: each drill, what it mines, the chest and its slots used, what fills it; a backed-up belt is not said), off_by_condition (assemblers, furnaces, labs, drills and silos off by their own circuit or logistic condition, each with the condition and the value it reads; a condition on what its recipe makes, a stock cap, is not said), no_ammo, flamer_dry, speaker (programmable speakers alerting now, read live: message, icon, since_tick, to: who built it and agents on its surface), artillery_empty (artillery turrets with no shell for 5+ min: each with the inserters feeding it, their requester chest\'s shell request and holdings, its network\'s shells); out_of_ore (mining drills whose patch under them is used up, by ore: out_of_ore.iron-ore, ...; each with ore, still_mining (our drills still mining that ore in the area) and untapped (the nearest patch of it no drill of ours is on, from the ores read\'s last survey: x, y, d tiles, amount));rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: no_power.network (machines reporting no_power, grouped by electric network including small isolated networks, with its latest 5 s supply sample); power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), feed_chest_low (a boiler\'s feed chest under 20 of its fuel with nothing put into it for 5 min: boiler, chest, count, feeder); robots_busy (no idle logistic robot for 10 min); accumulators_draining (a network\'s accumulators empty within 10 min at their net flow of the last 30 s, again under 5 and 2 min; kept 10 min after, so a Fulgora storm between lulls is not news; on Fulgora with the time to the next storm or to dawn); construction_wait (ghosts in a network\'s construction area waiting 5+ min since first seen while their items are in the network, with the construction robots and whether busy); deliveries_wait (requests unfilled 5+ min while providers or storage hold the item free, with what the logistic robots are doing); requester_full (requester chests with every slot taken while a request has been short 60+ s: per network, each chest, the item it asks and what fills its slots, spoilage counted); input_spoilage (assemblers and furnaces short of ingredients with spoilage their recipe does not take in their input: each machine, how much in how many slots); seed_spoiling (a machine whose recipe takes pentapod eggs or bacteria, not crafting while that seed in its input hatches or spoils within 3 min: the seed, when, and why it is not crafting); output_chest_full (a full_output maker whose output inserter puts into a chest with no free slot: the maker, the inserter, the chest and what fills its slots); catalyst_gone (a starved machine whose recipe takes an item it also makes, with none of it in its input: the item, what its output holds, and each inserter taking from it with its hand size);science_idle (a pack the research needs whose makers on the science surface all stood still at two science-line builds 5+ min apart, with their states and the chain\'s first short step); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
       compact='optional true: counts (groups per kind, the most first), then lines: one line a group, "KIND SURFACE: its line" (cut at 300 characters), in place of groups',
+      claim='optional board claim id: only the groups whose centre (or feed chest) lies in that open claim\'s area on its surface (compact)', mine='optional true: the same over your own open claims',
+      since='optional: the cursor your last game_alerts reply gave (with claim, mine or cursor: true): only the groups not in that reply (by kind, surface and 32-tile cell), new (how many), gone_since (how many of that reply\'s are gone), compact; every reply with claim, mine, since or cursor gives a new cursor (kept per agent, the last one)',
+      cursor='optional true: give a cursor without filtering',
       returns='counts (N groups: kind n, ... the most first); groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest)}; scanned (the scan is at most 30 s old). kind takes one kind, several in an array or "no_storage,no_power", each with its sub-kinds. What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
   }
   return M

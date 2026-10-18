@@ -161,6 +161,7 @@ return function(api)
             L.states[st] = (L.states[st] or 0) + 1
             local cl = CLASS[st] or 'other'
             L.classes[cl] = (L.classes[cl] or 0) + 1
+            if cl == 'gated' and not L.gated_e then L.gated_e = e end
             if st == 'working' then L.working = L.working + 1 end
             local each, crafts = rate_each(g, e, name, force)
             if each then sum = sum + each; n = n + 1 end
@@ -257,7 +258,11 @@ return function(api)
       for cl, k in pairs(at.classes) do if cl ~= 'other' and (not mk or k > mk or (k == mk and cl ~= 'working')) then main, mk = cl, k end end
       local why
       if at.makers == 0 then why = 'no maker of ours on the surface'
-      elseif main and main ~= 'working' then why = string.format('%d of the %d read %s (%s)', mk, at.read, CLASS_TEXT[main], states_text(at))
+      elseif main and main ~= 'working' then
+        why = string.format('%d of the %d read %s (%s)', mk, at.read, CLASS_TEXT[main], states_text(at))
+        -- (d17 batch35 B1, Opus) a gated link: its first gated maker's condition and where the count it reads sits
+        local gl = main == 'gated' and at.gated_e and api.gate_line and (function() local ok, l = pcall(api.gate_line, at.gated_e); return ok and l or nil end)()
+        if gl then why = why .. '; the first: ' .. gl end
       elseif at.asked and at.full < at.asked then why = string.format('%d of the %d read working; full speed %g/min is below the ask', at.working, at.read, r1(at.full))
       else why = string.format('%d of the %d read working (%s)', at.working, at.read, states_text(at)) end
       limit = {item=at.item, made_per_min=at.now, asked_per_min=r1(at.asked), full_per_min=r1(at.full), makers=at.makers, reason=why,
