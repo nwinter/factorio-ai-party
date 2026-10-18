@@ -101,7 +101,7 @@ Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT),
          --socket PATH (an RCON broker's socket instead of RCON: harness requests only, no password; FH_SOCKET),
          --wait, --wait-timeout MS (default: until the action's own end tick, at least 30000), --journal PATH, --args-file PATH
          --wake-on-tells (fh sleep --until on platform arrivals or departures only: tells end it too; by default such a sleep goes on through them)
-         --wait-through-tells (a tell or mention does not end the wait; told_during_wait lists them at the end; fh sleep, fh wait --until
+         --wait-through-tells (a tell or mention does not end the wait; on an action it implies --wait; told_during_wait lists them at the end; fh sleep, fh wait --until
                                and direct waits: wake_on_messages false, so only a tell sent with --wake ends them)
          --wake-on-viewers (fh sleep, fh wait, --wait: a viewer's @mention ends it too; by default it waits for your next reply)
          --wake-from NAMES (fh sleep, fh wait, --wait: only a tell or mention from these comma-separated teammates, or operator, ends it)
@@ -990,6 +990,12 @@ async function main() {
   const bot = values.bot ?? (values.player ? undefined : process.env.FH_BOT || undefined);
   if (values.bot && values.player) throw new Error('Use --player or --bot, not both');
   if (values.wait && values['no-wait']) throw new Error('Use --wait or --no-wait, not both');
+  // --wait-through-tells on an action waits for it, as --wait does (batch28 A5, Grok: the flag alone returned at once
+  // and the next command in the same shell cancelled a walk); sleep and wait take it as their own.
+  if (values['wait-through-tells'] === true && command !== 'sleep' && command !== 'wait') {
+    if (values['no-wait']) throw new Error('Use --wait-through-tells or --no-wait, not both');
+    values.wait = true;
+  }
   if (bot !== undefined && !/^[a-z][a-z0-9_-]{0,15}$/.test(bot)) throw new Error('--bot must be a bot name ([a-z][a-z0-9_-]{0,15})');
   // An RCON broker (pog tools/fh_broker.py) holds the password and forwards only this bot's harness requests.
   const brokerSocket = values.socket ?? (process.env.FH_SOCKET || undefined);

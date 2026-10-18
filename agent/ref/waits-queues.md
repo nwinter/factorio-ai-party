@@ -124,7 +124,8 @@
 - `reminders`: lists them.
 - What ends a wait (`./fh sleep`, `./fh wait`, `--wait`, direct `wait_ticks`/`wait_until`), besides the core's list:
   `--wait-through-tells` (`wake_on_messages: false`): no tell or mention ends it (`told_during_wait` lists them; on
-  `--wait` and `./fh wait` on an action too), a tell sent with `--wake` still does; `--wake-from sol,astra`
+  `--wait` and `./fh wait` on an action too; on an action alone it waits as `--wait` does), a tell sent with `--wake`
+  still does; `--wake-from sol,astra`
   (`wake_from`): only a tell or mention from those (or `operator`); `--no-operator-wake` (`wake_on_operator: false`):
   operator tells and reminder jobs do not; `--wake-local` (`wake_local: true`): only tells and mentions to you (a tell
   to the whole team waits for your next reply), urgent news on your surface or in your claims (another platform's
