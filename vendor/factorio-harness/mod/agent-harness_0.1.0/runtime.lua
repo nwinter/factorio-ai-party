@@ -14586,10 +14586,10 @@ function handlers.construction_robots(p,a)
 end
 -- Tells: lines to named teammates outside the chat (tells.lua).
 -- Unanswered mentions (owed.lua; d17 batch14 B1, Sol for viewer Foobator).
-M.owed=require('owed'){state=state,deliver=function(index,t) return M.board.deliver(index,t) end}
+M.owed=require('owed'){state=state,deliver=function(index,t) return M.board.deliver(index,t) end,read_tells=function(index,seqs) return M.board.tells_read(index,seqs) end}
 M.board.owed=M.owed
 for name,handler in pairs(M.owed.handlers) do handlers[name]=handler end
-M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,
+M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,read_tells=M.board.tells_read,
   on_reply=function(index,seq) return M.owed.ack(index,seq) end,
   where_from=function(me) return M.where.from(me) end,
   -- A direct wait that no tell ends (wake_on_messages: false), and ending one for tell {wake: true} (Astra, d15 14:48).

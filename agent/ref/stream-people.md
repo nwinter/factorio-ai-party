@@ -22,7 +22,8 @@
 - `chat_ack {seq}`: closes unanswered mentions (`seq`: one, an array, or "all"). A viewer's @mention, a teammate's
   @mention, and a mention or tell that asks stay open until you answer (a say or tell naming them, a tell to the asker,
   or `reply_to: SEQ` on say or tell) or ack them; reading chat does not close them. Every reply's `unanswered` gives
-  the oldest; one reminder wakes you when one is 10 minutes old.
+  the oldest; one reminder wakes you when one is 10 minutes old. It also marks those tells read (`read`: how many), which
+  ends their `unread` lines in the team block.
 - `./fh operator "..."`: a request to the operator, the people running the harness and the stream: a tool that fails
   or is missing, or something viewers asked for that you can't do yourselves. It is not for help with the game. Up to
   2000 bytes, filed whole (longer is refused without using a rate-limit slot); at most one a minute and 10 an hour.
