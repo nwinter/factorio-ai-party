@@ -97,7 +97,9 @@
   asks. Module and other item requests count, on ghosts and on built machines (`requests`). `pack: true` splits the
   rest into rockets for `load_silo`. `request: true` keeps a hub request section (`platform_bom: NAME`) at what the
   ghosts and machines still need less what the construction robots carry (items taken from the hub for a ghost not
-  built yet are asked no second time), lowered as they are built and removed when none is left (`request: false`
+  built yet are asked no second time), lowered as they are built and removed when none is left; each tick a drop in
+  what the hub holds of an item it asks for lowers that request by as much at once (the hub spends its stock on ghosts
+  before they count as built), and the rewrite every 10 s counts all again (`request: false`
   removes it; `import_from`,
   `area`; `min_payload: {item: N}`; a min_payload set on its slots by `min_payload` or `requests` is taken as its own
   and kept (the line says `adopted`); `tail: true`: an item's minimum payload no more than what is still to come, its

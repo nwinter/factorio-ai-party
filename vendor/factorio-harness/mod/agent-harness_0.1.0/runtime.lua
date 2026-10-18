@@ -16881,6 +16881,7 @@ function M.tick_body(event)
   if event.tick%60==0 and M.freight then pcall(M.timed,'freight.tick',M.freight.tick,event.tick) end
   -- platform_bom requests kept to the ghosts' need (A6)
   if event.tick%600==23 and M.owed then pcall(M.timed,'owed.tick',M.owed.tick) end  -- unanswered mentions' reminders
+  if M.platbom and M.platbom.watch then pcall(M.platbom.watch) end  -- the platform_bom request lowered as the hub spends (A3)
   if event.tick%600==17 and M.platbom then pcall(M.timed,'platbom.tick',M.platbom.tick,event.tick) end  -- each hub's items by stop and leg (freight.lua)
   if M.research_target then pcall(M.timed,'research_target.tick',M.research_target.tick,event.tick) end  -- research target levels (researchtarget.lua)
   if event.tick%3600==61 and M.lessonbook then pcall(M.timed,'lessonbook.tick',M.lessonbook.tick) end  -- lesson checks, surfacings (lessonbook.lua)
