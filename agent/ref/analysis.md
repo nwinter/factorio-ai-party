@@ -22,7 +22,7 @@
   they put into. `compact: true`: one line a pack, your surface only, about a fifth of the full reply; its first line
   says so and counts the labs on other planets; `all_surfaces: true` gives the compact read for each planet with labs.
 - `supply {item, near?, radius?, surface?, compact?, all_stopped?, split?, requesters?}`: `requesters: true`: who gets
-  an item: every requester or buffer chest asking for it on the surface, served now (robots bringing N) first, then
+  an item: every requester or buffer chest in a logistic network on the surface asking for it, served now (robots bringing N) first, then
   unmet (and why: no network, none free, no idle robot, none on the way yet), then met, each with its request, what it
   holds and the machines it feeds that use it (working, take a minute); each network's free stock and idle robots;
   then the chests that feed machines using it but ask for none of it (with what they ask). `split: true`: where an item or fluid goes
