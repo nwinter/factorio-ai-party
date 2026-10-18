@@ -15641,7 +15641,7 @@ function handlers.boilers(p,a) return M.networks.boilers(p,a) end
 M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.networks,status_name=function(e) return M.machine_status(e) end}
 -- The game's alerts and key warnings, pushed to the agents they concern (pushalerts.lua).
 -- Lightning attractors on Fulgora whose catches have nowhere to go, and full accumulators beside them (lightning.lua).
-M.lightning=require('lightning'){}
+M.lightning=require('lightning'){state=state}
 -- A long belt or pipe line cut (linecut.lua; d17 batch17 C1, Opus): a team alert naming the cut tiles.
 M.linecut=require('linecut'){state=state}
 M.robotloss=require('robotloss'){state=state,integer=integer,position=position}
@@ -15673,6 +15673,10 @@ M.pushalerts=require('pushalerts'){belt_groups=function(f)
   end,
   -- The same in steps for the background read: max networks a step, then lightning, then science (networks.alert_step).
   network_cursor=function(force) return {nets=M.networks.alert_cursor(force),phase='nets'} end,
+  -- Our buildings outside every lightning attractor's protection, in steps (lightning.lua; d17 territory part 4).
+  strike_cursor=function(surface,force) return M.lightning.exposure_cursor(surface,force) end,
+  strike_step=function(cur,max) return M.lightning.exposure_step(cur,max) end,
+  strike_lines=function(strike,force,areas) return M.lightning.exposure_lines(strike,force,areas) end,
   network_step=function(cur,max)
     local out=cur.nets.out
     if cur.phase=='nets' then
@@ -16991,15 +16995,19 @@ function M.on_event(event)
     local cause=event.cause and event.cause.valid and event.cause or nil
     local own=e.force.name
     local friendly=(cause and cause.force and cause.force.name==own) or (not cause and event.force and event.force.name==own) or false
+    -- A strike (lightning.lua: no cause, the neutral force, electric damage on a lightning planet) is named lightning.
+    local okt,struck=pcall(M.lightning.struck,event)
+    struck=not cause and not friendly and okt and struck or nil
+    if struck then pcall(M.lightning.lost,e) end
     -- A pole of ours: whether its loss split its network or left machines with no pole (powercut.lua); a fault is counted.
     if e.type=='electric-pole' then
-      local ok,err=pcall(M.powercut.on_died,e,cause and cause.name or (friendly and 'friendly fire') or nil)
+      local ok,err=pcall(M.powercut.on_died,e,cause and cause.name or (friendly and 'friendly fire') or struck)
       if not ok then s.powercut_errors={count=((s.powercut_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
     end
-    record_loss(event.tick,e,cause and cause.name or (friendly and 'unknown source') or nil,friendly,friendly and cause and cause.position or nil)
+    record_loss(event.tick,e,cause and cause.name or (friendly and 'unknown source') or struck,friendly,friendly and cause and cause.position or nil)
     -- One row a building (lostlog.lua); seen to die, the fog memory forgets it, else it stays remembered (fogmem.lua).
     local okl,errl=pcall(function()
-      M.lostlog.died(e,cause and cause.name or (friendly and 'unknown source') or nil)
+      M.lostlog.died(e,cause and cause.name or (friendly and 'unknown source') or struck)
       if e.force.is_chunk_visible(e.surface,chunk_of(e.position)) then M.fogmem.forget(e) end
     end)
     if not okl then s.lostlog_errors={count=((s.lostlog_errors or {}).count or 0)+1,last=tostring(errl),tick=game.tick} end
