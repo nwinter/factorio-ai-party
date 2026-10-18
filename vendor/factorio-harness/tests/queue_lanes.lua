@@ -80,6 +80,8 @@ fails(function() h.queue_submit(p,remote{steps={{action='circuit_set'}}}) end,'r
 -- Astra (d15 06:23): platform place_ghosts and deconstruct in the remote lane, and a wait for the foundation.
 fails(function() h.queue_submit(p,remote{steps={{action='place_ghosts',args={entities={}}}}}) end,'remote lane place_ghosts requires platform')
 fails(function() h.queue_submit(p,remote{steps={{action='deconstruct',args={area={}}}}}) end,'remote lane deconstruct requires platform')
+-- batch24 A3 (Sol): platform_rearm is a platform step of the remote lanes, with its platform.
+fails(function() h.queue_submit(p,remote{steps={{action='platform_rearm',args={ammo_below=20,target_count=100}}}}) end,'remote lane platform_rearm requires platform')
 fails(function() h.queue_submit(p,remote{steps={{action='wait_until',args={['until']='ghosts_waiting'}}}}) end,'platform_built')
 fails(function() h.queue_submit(p,remote{steps={},guards={{when={['until']='researched'},steps={{action='walk'}}}}}) end,'guards[1]')
 fails(function() h.queue_submit(p,remote{steps={},guards={{when={['until']='health_below',fraction=.5}}}}) end,'guards[1]')

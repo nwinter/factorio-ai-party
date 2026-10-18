@@ -73,8 +73,18 @@
   `stop_after: 1`: the nearest only (`not_walked` names the rest); `corpse: {x,y}`: that one. `dry_run: true` walks
   nowhere: each corpse's distance, items, whether recover walks to it, its `danger` (worms and spawners whose reach
   comes near it, attacks near it in the last 10 minutes), `killed_by` (what killed you, where), `killer_now` (alive in
-  sight and where, out of sight, or gone) and `units_near`.
+  sight and where, out of sight, or gone) and `units_near`. Each corpse names the enemy groups our force sees within 160
+  tiles of it (size, kinds, where, how far, moving which way, closing on it; dry run: `groups`); one within
+  `group_radius` (default 48) keeps the corpse out unless `ignore_groups: true`. A death of ours that leaves a corpse
+  holding items comes in every agent's team block once: who, where, how many items, what killed it, the groups near.
   Example: `./fh call recover --wait`
+- `turret_feeds {area | positions, ammo?, count?, chest?, inserter?, dry_run?}`: for each ammo turret there that no
+  inserter feeds, a side where an inserter drops into it with a free tile behind (each spot checked as a hand build
+  checks it), and a requester chest there asking `count` (default 50) of its ammunition with the inserter, built from
+  your inventory by `build` (its walk into reach). Each turret: the chest and inserter spots, `skipped` (fed already,
+  no free side, no ammunition named for an empty one), `short` (the chests or inserters you hold ran out) or
+  `not_built` (build refused an entry). `dry_run: true` plans only. Example:
+  `./fh call turret_feeds --args '{"area":{"left_top":{"x":-20,"y":540},"right_bottom":{"x":20,"y":580}},"dry_run":true}'`
 - `turrets {surface? | area?, hand_fed_low?, below?}`: every turret by front: its ammo (a flamer's oil with its
   buffer), health, and what feeds it (an inserter and its belt or chest, robots, a pipe, power, or nothing: hand-fed);
   hand-fed and low ones first. `hand_fed_low: true, below: 10`: turrets no inserter feeds under 10 rounds, nearest

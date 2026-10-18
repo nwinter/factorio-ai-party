@@ -951,13 +951,41 @@ function M.note_char_death(event)
   local cause=event.cause
   local okc=cause and cause.valid
   local h=s.hurt and e.unit_number and s.hurt[e.unit_number]
-  table.insert(s.char_deaths,1,{surface=e.surface.name,position={x=e.position.x,y=e.position.y},tick=event.tick,
+  table.insert(s.char_deaths,1,{surface=e.surface.name,position={x=e.position.x,y=e.position.y},tick=event.tick,who=M.character_owner(e),
     by=okc and cause.name or (h and h.by) or (event.force and event.force.name) or nil,
     at=okc and {x=math.floor(cause.position.x*10+0.5)/10,y=math.floor(cause.position.y*10+0.5)/10} or (h and h.at) or nil,
     cause=okc and cause or nil,cause_type=okc and cause.type or nil,
     damage_type=event.damage_type and event.damage_type.name or nil,
     episode=h and h.first and {damage=math.floor(h.damage+0.5),s=math.floor((event.tick-h.first)/60)} or nil})
   while #s.char_deaths>32 do table.remove(s.char_deaths) end
+end
+-- A team line per death of our characters that left a corpse holding items (batch24 C2, Haiku: a 1,194-item corpse at
+-- (-314,-296) sat near a wave for minutes): who, where, the items, what killed it, the enemy groups our force sees
+-- near it. Each agent sees a death once (its first look: the last 5 minutes); a corpse emptied is not said.
+function M.death_lines(p,h)
+  local since=h.death_tick or game.tick-18000
+  h.death_tick=game.tick
+  local out={}
+  local list=state().char_deaths or {}
+  for i=#list,1,-1 do
+    local d=list[i]
+    if d.tick>since and d.tick<game.tick then
+      local s=game.get_surface(d.surface)
+      local corpse
+      for _,k in ipairs(s and s.find_entities_filtered{type='character-corpse',position=d.position,radius=3,limit=8} or {}) do
+        local okt,t=pcall(function() return k.character_corpse_tick_of_death end)
+        if okt and t and math.abs(t-d.tick)<=1 then corpse=k end
+      end
+      local okn,n=pcall(function() return corpse.get_inventory(defines.inventory.character_corpse).get_item_count() end)
+      if corpse and okn and n>0 then
+        local okg,groups=pcall(threat.groups_near,p.force,s,d.position,160)
+        out[#out+1]=string.format('%s died at (%d,%d) on %s %ds ago: the corpse holds %d item%s%s; %s',tostring(d.who or 'a character'),
+          math.floor(d.position.x+0.5),math.floor(d.position.y+0.5),d.surface,math.floor((game.tick-d.tick)/60),n,n==1 and '' or 's',
+          d.by and '; killed by '..d.by or '',okg and threat.groups_line(groups) or 'enemy groups not read')
+      end
+    end
+  end
+  return #out>0 and out or nil
 end
 -- The death that left a corpse (its surface, position and tick of death), nil when not recorded.
 function M.death_of(surface,pos,tick)
@@ -1845,7 +1873,7 @@ function handlers.describe(_,a)
         returns='moved (alias transferred), inv (the inventory line after), items {name=count}, entities (position, name, gave; with recipe: loaded, short {item=missing}), unchanged, held (what is left of each item given)'},
       rearm={dry_run='true: walk and move nothing (a read); with positions the route through them; with radius, area or surface the stops the tour would take now (turrets: each one\'s rounds and the ammo it would get; left_out, none_held) and the route through them',retry_when_clear='optional true: refused only for passing enemies (an attack, units or a group seen now; a worm or spawner stays), it waits until no enemy unit is within 48 tiles of the first place held (a wait_until units_clear, retry_ticks, default 18000) and rearms again, at most 6 times (last.then_call, last.then_result); a refusal says what holds each place',retry_ticks='with retry_when_clear: 600..54000 ticks to wait each time',retries='(internal) tries so far',alert='optional: an out-of-ammo alert\'s key (its line gives it: rearm {alert: "no_ammo|nauvis|0,-1"}): a walking tour over the box round the turrets it names (those in it with no rounds); refused when the alert is gone',walk=WALK..'; with positions (or position alone): the turrets out of reach are walked to as radius walks its tour (below leaves those holding enough), timed: outcomes as radius',avoid_enemies='walking: as move_to\'s (default: worms, range + 4; spawners, 40 tiles + 4; the areas under attack now, 24 tiles + 4; true: + 8; false: no check): each leg goes round them, and a place inside one is left out: at the call (left_out names the first 8, left_out_more counts the rest, also in last.left_out; every place inside one: refused, naming them), and on the way (last.danger counts them, last.dangers names the first 8, last.first_unreached the first)',unsafe_goal='optional true: walk to such a place anyway',partial='optional true: with radius, area, surface or alert, walk a tour your ammo cannot finish (it stops giving where you run out); without it such a tour is refused before it walks: magazines says per ammo the magazines the stops need to reach count against what you carry (and craft), how many stops it completes in the tour\'s order, the turrets left short (first 8); the reply and dry_run give magazines and completes, partial when walked short',radius='1..256: a walking tour (timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left) through every turret in radius (round you, or round position) that takes the ammo and holds under below rounds (any ammo, counted in items), topping each up to count; turrets within 24 tiles of each other are one cluster (as the turrets read groups fronts), the nearest cluster first from where you stand, then from where the last one ends, nearest first inside one (clusters: one line each); up to 128 turrets a call (skipped: the rest)',area='or {left_top, right_bottom}: the same tour over every such turret in it, any size',surface='or true (or your surface\'s name): the same over your whole surface',below='optional 1..1000 rounds, on every form: only turrets holding fewer (any ammo, counted in items) get topped up to count (at least below); with radius, area or surface default count; in reach or at positions, the ones holding below or more are left as they are (held_enough names them)',position='optional {x,y}: with radius, the centre of the radius (default you); alone, the turret there (as positions with one entry)',ticks='with radius, area or surface: 1..36000 (default: by the tour\'s length: the walk from you through every turret in order at your running speed, half again for turns, 1 s a turret and 10 s; at least 3600, at most 36000; ticks_note says how it came out)',ammo='ammo item; omitted on a radius, area or surface tour (A3): each turret gets the ammo it holds, an empty one the ammo it takes that you carry most of; turrets whose ammo you carry none of are left out (none_held), ammo_each says the split; on positions too (each turret its own); a turret whose slots hold other ammo with no room is left out and named (other_ammo)',count='1..1000 target per turret (default 10)',positions='optional 1..64 positions instead of every turret in reach',types='default {ammo-turret}; artillery-turret allowed; an entity name is taken as a name (types_note)',returns='with radius, area or surface: places, clusters (one line each, nearest first: turrets, around (x,y), tiles from you or from the cluster before, rounds they hold), below, count, ticks and ticks_note (when defaulted), other_ammo (turrets there that take other ammo), no_room (turrets under below whose ammo slots hold other ammo with no room for this one: left out of the walk, each with what it holds); when no turret needs it: nothing, nearest_outside (the nearest such turret outside radius or area, within 512 tiles), also in last.why',note='gives from the main inventory, then the gun ammo slots (crafted ammo lands there); fails when none is held and turrets want more; waits for ammo in the hand-craft queue (awaiting_craft; outcome fed | failed | timed_out)'},
       refuel={alert='optional: an out-of-fuel alert\'s key (its line gives it: refuel {alert: "no_fuel|nauvis|0,-1"}): a walking tour over the burners it names that are still out of fuel, nearest first (alert: how many; those burning another fuel named); refused when the alert is gone',dry_run='true with positions: walk and move nothing (a read); the route through the stops, nearest first from you, read as move_to dry_run reads it (stops, order, route, length, enemies, under_range, reachable, closed_in_goal for the last stop); radius and area tours choose their stops when they run',feed_chests='with area/radius (and from): true tops up the chests inserters take from to feed those burners (boiler feed chests), each to count, instead of the burners themselves; feed_chests in the reply says how many',from_radius='with from: nearest, 1..128 (default 64): how far round each refill stop the nearest chest or belt holding the fuel is looked for',from='with area/radius or positions (the burners by position, 1..128: a standing order\'s step for named burner drills, e.g. order_set {name, interval_ticks, steps: [{action: refuel, args: {positions, from: nearest, fuel: coal, count: 10}}]}; it walks with move_to\'s enemy checks): nearest (observed chests/belts within from_radius tiles of each refill stop, default 64, holding the fuel: up to 2048 chests and 1024 belts read apart, and the logistic network\'s pickup point for it there), or one chest position; use carried fuel, walk for more, then continue topping up burners; last.fuel_taken and sources report collections; up to 64 refill attempts',area='optional {left_top,right_bottom} up to 256x256 instead of radius; at most 128 burners needing fuel; unseen burners excluded and counted',position='optional radius centre (default character)',walk=WALK..'; with positions: the burners out of reach are walked to as radius walks its tour, timed: outcomes as radius',avoid_enemies='walking: as move_to\'s (default: worms, range + 4; spawners, 40 tiles + 4; the areas under attack now, 24 tiles + 4; true: + 8; false: no check): each leg goes round them, and a place inside one is left out: at the call (left_out names the first 8, left_out_more counts the rest, also in last.left_out; every place inside one: refused, naming them), and on the way (last.danger counts them, last.dangers names the first 8, last.first_unreached the first)',unsafe_goal='optional true: walk to such a place anyway',radius='1..256: walk a nearest-first route through every burner in radius below count and top it up (a timed action; outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left); none below count in it: nothing (how many there hold enough) and nearest_outside (the nearest burner below count outside the radius, within 512 tiles), also in last.why',ticks='with radius: 1..36000 (default 3600)',fuel='fuel item (default coal)',count='1..1000 target per entity (default 10)',positions='optional 1..64 positions instead of every burner in reach',types='optional entity types (furnace, boiler, mining-drill, ...); an entity name is taken as a name (types_note)',note='fails when no fuel is held and burners want more; waits for fuel in the hand-craft queue (awaiting_craft)'},
-      recover={stop_after='optional 1..5: the nearest that many corpses only (from where you stand); not_walked names the rest',corpse='optional {x,y} (within 2 tiles) or a unit_number: that corpse only',dry_run='true: walk nowhere (a read: the running action and queue go on): each corpse of yours, its distance, died, items and holds, walk (whether recover walks to it, or leaves it out naming the weapon and the nearest safe spot), danger (the worms whose range comes within 16 tiles of it, the spawners whose units\' reach does, each with its distance and whether the corpse lies inside; the attacks on our entities within 48 tiles of it in the last 10 minutes, with attackers seen and the last hit), nests (the nests those belong to); elsewhere (corpses on other surfaces)',ticks='1..36000 (default 3600)',avoid_enemies='as move_to\'s: default worms the map shows (range + 4), spawners (40 tiles + 4) and the areas under attack now (24 tiles + 4); true: the same + 8; a number 0..32: that margin; false: no check. The walk goes around them as move_to\'s does, and a corpse inside a weapon\'s reach is left out (left_out: the weapon and the nearest safe spot toward it)',unsafe_goal='optional true: walk to such a corpse anyway (unsafe_goal names the weapon)',note='walks to your own character corpses on this surface, nearest first, and takes everything from each (a corpse goes once empty), as collect walk=true takes from a chest: one timed call (--wait waits; outcomes collected | nothing_collected | inventory_full | unreached (last.first_unreached: where and why) | timed_out). A bot\'s corpses are the ones its deaths left (found where it died, by the tick it died; up to 5 kept, newest first); a character corpse does not expire',returns='corpses (each: where, how long ago it died, how many items it holds), left_out, unsafe_goal, avoid_enemies, elsewhere (yours on other surfaces, not walked to), places, legs, until_tick; last: transferred, items, entities (removed: the corpse went), train_waits; no corpse to walk to: refused, naming those left out or elsewhere'},
+      recover={stop_after='optional 1..5: the nearest that many corpses only (from where you stand); not_walked names the rest',corpse='optional {x,y} (within 2 tiles) or a unit_number: that corpse only',dry_run='true: walk nowhere (a read: the running action and queue go on): each corpse of yours, its distance, died, items and holds, walk (whether recover walks to it, or leaves it out naming the weapon and the nearest safe spot), danger (the worms whose range comes within 16 tiles of it, the spawners whose units\' reach does, each with its distance and whether the corpse lies inside; the attacks on our entities within 48 tiles of it in the last 10 minutes, with attackers seen and the last hit), nests (the nests those belong to); elsewhere (corpses on other surfaces)',ticks='1..36000 (default 3600)',avoid_enemies='as move_to\'s: default worms the map shows (range + 4), spawners (40 tiles + 4) and the areas under attack now (24 tiles + 4); true: the same + 8; a number 0..32: that margin; false: no check. The walk goes around them as move_to\'s does, and a corpse inside a weapon\'s reach is left out (left_out: the weapon and the nearest safe spot toward it)',unsafe_goal='optional true: walk to such a corpse anyway (unsafe_goal names the weapon)',group_radius='optional 8..160 (default 48): a corpse with an enemy group our force sees within this many tiles is left out (left_out names the group)',ignore_groups='optional true: walk to it anyway',note='each corpse names the enemy groups our force sees within 160 tiles of it (size, kinds, where, distance, moving which way, closing on it); walks to your own character corpses on this surface, nearest first, and takes everything from each (a corpse goes once empty), as collect walk=true takes from a chest: one timed call (--wait waits; outcomes collected | nothing_collected | inventory_full | unreached (last.first_unreached: where and why) | timed_out). A bot\'s corpses are the ones its deaths left (found where it died, by the tick it died; up to 5 kept, newest first); a character corpse does not expire',returns='corpses (each: where, how long ago it died, how many items it holds), left_out, unsafe_goal, avoid_enemies, elsewhere (yours on other surfaces, not walked to), places, legs, until_tick; last: transferred, items, entities (removed: the corpse went), train_waits; no corpse to walk to: refused, naming those left out or elsewhere'},
       collect={pods='optional true: a walking tour over the landed cargo pods (cargo-pod-containers) on your surface, nearest first (those the sweep found, else within 64 tiles; area: those there), taking what each holds up to your free slots; to: a chest {x,y} that gets what the tour took whenever your inventory is full and at the end; last: items taken, given, pods_left, items_left, pods_line',fresh_first='optional true: a spoilable item\'s least spoiled stacks first (each stack whole), at each place and on a courier (pick with to); default slot order',min_fresh='optional 0..100: take only stacks at least this fresh (100 = unspoiled; a stack\'s spoiled percent at most 100 - min_fresh); the rest stay where they are and left_less_fresh says how many and the most spoiled; the moved batch\'s freshness is in freshness (a timed collect: last.freshness)',follow='true with wait_ticks or keep_taking: when the machine\'s output inserters put the item into chests that hold it, take from those chests instead of waiting (the reply\'s followed says so); none holding it: the wait at the machine, looking again every half second: a chest in reach is taken from (last.followed_took), one out of reach is walked to and the wait goes on there (last.followed_to; a walk that fails ends unreached, why saying where the items are)',dry_run='true with positions (collect: also outputs_taken, the inserters that take each machine\'s output as it is made and the chest each puts it in, with how much of the item it holds; a wait\'s reply gives taken_by_inserters too): walk and move nothing (a read); the route through the stops, nearest first from you, read as move_to dry_run reads it (stops, order, route, length, enemies, under_range, reachable, closed_in_goal for the last stop); radius and area tours choose their stops when they run',outputs_only='true: take only machine output slots, including when empty; never fuel, inputs or burnt-result slots; works with positions, radius, wait_ticks and pick',avoid_enemies='walking: as move_to\'s (default: worms, range + 4; spawners, 40 tiles + 4; the areas under attack now, 24 tiles + 4; true: + 8; false: no check): each leg goes round them, and a place inside one is left out: at the call (left_out names the first 8, left_out_more counts the rest, also in last.left_out; every place inside one: refused, naming them), and on the way (last.danger counts them, last.dangers names the first 8, last.first_unreached the first)',unsafe_goal='optional true: walk to such a place anyway',wait_ticks='1..36000 with position: stand at that assembler or furnace (walking into reach first) and take each product from its output the tick it is there, as a player standing there does, until the ticks run out or count is taken (item: only that one); a timed action: outcomes collected | nothing_collected | inventory_full | unreached; last.took, last.made (counted in its output each tick: what arrived), last.inserters_took (what inserters picking from it took into their hands), last.left_otherwise (spoiled, or another player took it), last.crafts, last.chance (products a craft makes only by chance), last.why (when it took none: none made, with the chance; inserters took them; left otherwise; out of reach), last.waited_s; reach is the engine\'s, as transfer\'s (to its edge)',
         keep_taking='true (3600 ticks) or ticks: the same as wait_ticks',
         up_to='true: an empty source or a full inventory never fails the call or, as a queue step, pauses the plan (nothing_collected and inventory_full count as done); moved, short {asked, moved, reason}; it also stops at your personal request max for an item (left_at_max says what stayed in the source)',keep_max='true: refuse a take that would put you over your personal request max (the game moves what is over it to your trash slots); nothing is taken. Without it, a take over that max (or of an unrequested item while unrequested items go to trash) says so in the reply\'s trash lines: how many the game moves to your trash slots',types='entity types (default furnace, assembling-machine: machine outputs only)',chests='boolean: also empty plain chests (container, logistic-container) in reach or radius; off by default because chests are usually feed stock you placed (result notes chests_skipped / left_in_chests)',item='optional: only this item',positions='optional 1..64 positions instead of everything in reach (named chests are always taken from)',area='or {left_top, right_bottom} up to 128x128: our entities of types (default machines; chests=true adds chests) with their centre inside, as positions (at most 64; area_targets counts them)',
@@ -1924,6 +1952,8 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.reminders and M.reminders.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platplan and M.platplan.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.platsupply and M.platsupply.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.platdigest and M.platdigest.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.tilecheck and M.tilecheck.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.reservations and M.reservations.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
@@ -1959,6 +1989,9 @@ function handlers.describe(_,a)
   for name,schema in pairs(M.lessonbook and M.lessonbook.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.demolishers and M.demolishers.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.deliver and M.deliver.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.platrearm and M.platrearm.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.beltsample and M.beltsample.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.turretfeed and M.turretfeed.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.dependency and M.dependency.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.ghostlist and M.ghostlist.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.lostlog and M.lostlog.schema or {}) do description.actions[name]=schema end
@@ -5894,6 +5927,14 @@ function handlers.build(p,a)
   assert(a.skip_failed==nil or type(a.skip_failed)=='boolean','skip_failed must be true or false')
   assert(a.all==nil or type(a.all)=='boolean','all must be true or false')
   local skip=a.skip_failed==true or a.all==true
+  -- A batch of mining drills tries every entry unless all: false (batch24 C1, Sonnet: a drill batch stopped at a spot a
+  -- ghost or a pole blocked, the rest untried): each spot left is named with what blocked it (left).
+  local drills=a.all==nil and a.skip_failed==nil
+  for _,b in ipairs(a.builds) do
+    local okp,kind=pcall(function() return prototypes.item[(type(b)=='table' and b.item) or a.item or ''].place_result.type end)
+    if not (okp and kind=='mining-drill') then drills=false end
+  end
+  if drills then skip=true end
   local placed,failed,inserters,built={},{},{},{}
   -- What each entry of this batch placed, for a later entry it blocks (M.own_blockers); carried over a rerun.
   local own={}
@@ -6001,8 +6042,17 @@ function handlers.build(p,a)
   -- all: how many of the batch's entries stand and how many were not built.
   local total=#a.builds+(a.index_before or 0)
   local summary=skip and #failed>0 and string.format('%d of %d built; %d not built (failed)',#placed+(a.built_before or 0),total,#failed) or nil
+  local left
+  if drills and #failed>0 then
+    left={}
+    for _,f in ipairs(failed) do
+      local q=f.position
+      left[#left+1]=string.format('#%d%s: %s',f.index,type(q)=='table' and q.x and string.format(' (%g,%g)',q.x,q.y) or '',tostring(f.error))
+    end
+  end
   local entries=#a.builds+(a.index_before or 0)
   return result({built=#placed,placed=placed,built_before=a.built_before,failed=#failed>0 and failed or nil,summary=summary,inserters_without_target=loose,
+    left=left,left_note=left and 'a batch of mining drills tries every entry (all: false stops at the first not built)' or nil,
     batches=entries>64 and string.format('%d entries in %d batches of up to 64, one reply',entries,math.ceil(entries/64)) or nil,
     inserters_without_target_count=nloose and nloose>#loose and nloose or nil,
     closed_in=M.closed_in_note(p,built),outside_logistic_coverage=cover,no_power_coverage=no_power,outside_construction_area=outside,underground_side_feed=side,last_belt=okb and last_belt or nil,
@@ -8671,6 +8721,8 @@ local collect_types={plain={'furnace','assembling-machine'},chests={'furnace','a
 -- shows as move_to's does (avoid_enemies), and a corpse inside a weapon's reach is left out unless unsafe_goal.
 function handlers.recover(p,a)
   assert(a.unsafe_goal==nil or type(a.unsafe_goal)=='boolean','unsafe_goal must be true or false')
+  assert(a.ignore_groups==nil or type(a.ignore_groups)=='boolean','ignore_groups must be true or false')
+  local group_radius=a.group_radius~=nil and integer(a.group_radius,48,8,160,'group_radius (8..160 tiles)') or 48
   assert(a.dry_run==nil or type(a.dry_run)=='boolean','dry_run must be true or false')
   local mode=M.avoid.mode(a.avoid_enemies)
   local ticks=integer(a.ticks,3600,1,36000,'ticks')
@@ -8715,7 +8767,15 @@ function handlers.recover(p,a)
       -- As move_to's goal check (avoid.lua): a corpse inside a worm's range (with avoid_enemies true, a spawner's units' sight too).
       local chk=mode and M.avoid.goal_check(p,p.position,c.position,mode)
       local text=chk and M.avoid.goal_text('the corpse',c.position,chk)
-      if chk and not a.unsafe_goal then left_out[#left_out+1]=line..'; '..text..M.avoid.spot_text(c.position,chk,mode)
+      -- Enemy groups our force sees round it (batch24 C2, Haiku): named before the walk; one within group_radius keeps
+      -- the corpse out unless ignore_groups.
+      local okg,groups=pcall(threat.groups_near,p.force,p.surface,c.position,160)
+      groups=okg and groups or {}
+      if #groups>0 then line=line..'; '..threat.groups_line(groups) end
+      local close=groups[1] and groups[1].distance<=group_radius and groups[1] or nil
+      if close and not a.ignore_groups then
+        left_out[#left_out+1]=line..string.format('; a group of %d is %d tiles from it (group_radius %d): ignore_groups: true goes anyway',close.size,close.distance,group_radius)
+      elseif chk and not a.unsafe_goal then left_out[#left_out+1]=line..'; '..text..M.avoid.spot_text(c.position,chk,mode)
       else
         if chk then unsafe[#unsafe+1]=text..' (unsafe_goal)' end
         here[#here+1]=c.entity; rows[#rows+1]=line
@@ -8779,6 +8839,10 @@ function M.recover_dry(p,a,list,mode)
     -- what killed it and whether it is there now (A4)
     local okk,kf=pcall(M.killer_facts,c.surface,c.position,c.tick)
     if okk then row.killed_by=kf.killed_by; row.killer_now=kf.killer_now; row.units_near=c.surface==p.surface.name and kf.units_near or nil end
+    if c.surface==p.surface.name then
+      local okg,groups=pcall(threat.groups_near,p.force,p.surface,c.position,160)
+      if okg then row.groups=#groups>0 and groups or nil; row.groups_line=threat.groups_line(groups) end
+    end
     if c.surface~=p.surface.name then elsewhere[#elsewhere+1]=row
     else
       row.distance=math.floor(distance(p.position,c.position)+0.5)
@@ -11718,6 +11782,7 @@ function handlers.load_silo_run(p,a)
   -- the silo and every chest in reach: the load at once, as without walk.
   if a.walk==true and not a.awaited then
     local w=M.rocketload.walk_start(p,a)
+    if w and w.done then return w.done end
     if w then
       local action,out=stock.start_tour(p,'load_silo',w.entities,integer(a.ticks,18000,1,36000,'ticks'),w.fields)
       if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
@@ -13283,6 +13348,18 @@ end
 -- The upgrade planner on ghosts and built entities (upgrade.lua; Astra 15:20).
 M.upgrade=require('upgrade'){position=position,read_sight=function(p,q,w) return M.read_sight(p,q,w) end,real=function(p) return real(p) end}
 function handlers.upgrade(p,a) return M.upgrade.run(p,a) end
+-- platform_rearm (platrearm.lua, batch24 A3): a platform's turrets topped up from the hub by item requests.
+M.platrearm=require('platrearm'){state=state,remote_entity=remote_entity,on_platform=on_platform,
+  deliver_one=function(p,e,items) return M.deliver.deliver_one(p,e,items) end}
+function handlers.platform_rearm(p,a) return M.platrearm.handler(p,a) end
+-- belt_flow (beltsample.lua, batch24 B2): a belt line's sections and merges sampled by item over seconds.
+M.beltsample=require('beltsample'){state=state,remote_entity=remote_entity,on_platform=on_platform}
+function handlers.belt_flow(p,a) return M.beltsample.handler(p,a) end
+-- turret_feeds (turretfeed.lua, batch24 C4): a requester chest and an inserter for each hand-fed turret, by build.
+M.turretfeed=require('turretfeed'){points=function(proto,pos,dir) return M.targets.points(proto,pos,dir) end,
+  entity=function(p,a) return entity(p,a,true) end,position=position,compass=function(d) return compass_names[d] end,
+  build=function(p,a) return handlers.build(p,a) end}
+function handlers.turret_feeds(p,a) return M.turretfeed.handler(p,a) end
 -- (the list is bots.lua's, which lets a bot aboard a platform make these calls)
 for _,name in ipairs(M.bots.PLATFORM_ACTIONS) do
   local handler=handlers[name]
@@ -13989,6 +14066,7 @@ M.board=require('board'){state=state,consequential={launch=true,platform_schedul
   platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,sight_lines=function(p,h) return M.pushalerts.sight_team(p,h) end,
   hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,captive_lines=function(p,h) return M.pushalerts.captive_lines(p,h) end,
   pods_lines=function(p,h) return M.landed and M.landed.team_lines(p,h) end,
+  death_lines=function(p,h) return M.death_lines(p,h) end,
   power_lines=function(p,h) return M.powercut.lines(p,h) end,launch_lines=function(p,h) return M.launchwatch.lines(p,h) end,shipment_lines=function(p,h) return M.shipment and M.shipment.lines(p,h) end,progress_lines=function(p,h) return M.progress and M.progress.lines(p,h) end,turret_lines=function(p,h) return M.turretwatch and M.turretwatch.lines(p,h) end,personal_lines=function(p,h) return M.personal.lines(p,h) end,burner_lines=function(p,h) return M.burnerfuel.lines(p,h) end,
   science_line=function(p,h) return M.scienceline.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
@@ -14306,6 +14384,9 @@ reads.heat_budget=true
 reads.platform_bom=true
 reads.platform_production=true
 reads.platform_defense=true
+reads.platform_digest=true
+reads.belt_flow=true
+reads.platform_tiles=true
 reads.circuit_audit=true
 reads.pods=true
 reads.logistics_audit=true
@@ -15234,6 +15315,7 @@ threat=threat_module{state=state,known=known,distance=distance,on_character_hit=
   local ok,err=pcall(M.idle_hit,event)
   if not ok then local st=state(); st.retreat_errors={count=((st.retreat_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
 end}
+M.threat=threat
 survey=survey_module{state=state,timed=M.timed,status_name=function(e) return M.machine_status(e) end,burnt_stuck=function(e) return M.burnt.stuck(e) end,
   research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
@@ -15661,6 +15743,29 @@ function handlers.platform_plan(p,a) return M.platplan.read(p,a) end
 M.platsupply=require('platsupply'){platform=function(p,name) return space.platform(p,name) end,placewhy=M.placewhy,
   thrust=function(pl) return M.thrust.read(pl) end,turret_feed=function(t) return M.platalerts.turret_feed(t) end}
 function handlers.platform_supply(p,a) return M.platsupply.read(p,a) end
+-- platform_digest (platdigest.lua, batch24 B1): one read per platform from the reads above.
+M.platdigest=require('platdigest'){platform=function(p,name) return space.platform(p,name) end,
+  reads={platforms=function(p,a) return handlers.platforms(p,a) end,platform_supply=function(p,a) return handlers.platform_supply(p,a) end,
+    platform_endurance=function(p,a) return handlers.platform_endurance(p,a) end,platform_defense=function(p,a) return handlers.platform_defense(p,a) end}}
+function handlers.platform_digest(p,a) return M.platdigest.read(p,a) end
+-- platform_tiles (tilecheck.lua, batch24 B3): tiles at exact coordinates, and whether the hub removes or builds them now.
+M.tilecheck=require('tilecheck')()
+function handlers.platform_tiles(p,a)
+  local pl=space.platform(p,a.platform)
+  assert(pl.surface,'platform '..pl.name..' has no surface yet')
+  local cells={}
+  if a.positions~=nil then
+    assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=64,'positions: 1..64 tiles {x,y}')
+    for _,q in ipairs(a.positions) do local v=position(q); cells[#cells+1]={v.x,v.y} end
+  else
+    assert(type(a.area)=='table' and a.area.left_top and a.area.right_bottom,'positions (1..64 tiles) or area {left_top, right_bottom}')
+    local lt,rb=position(a.area.left_top),position(a.area.right_bottom)
+    local x0,y0,x1,y1=math.floor(lt.x),math.floor(lt.y),math.ceil(rb.x)-1,math.ceil(rb.y)-1
+    assert((x1-x0+1)*(y1-y0+1)<=64,'area: at most 64 tiles (8x8)')
+    for y=y0,y1 do for x=x0,x1 do cells[#cells+1]={x,y} end end
+  end
+  return M.tilecheck.query(pl,cells)
+end
 -- Each platform's flight over the last 60 and 180 s: speed, thruster fluids, tanks, pumps (engine.lua; Astra, 21:20).
 M.engine=require('engine'){state=state}
 -- The run's chronicle: agents' entries and the events the harness saw (chronicle.lua; viewers Alex and syndesis 22:24).
@@ -16587,6 +16692,7 @@ function M.tick_body(event)
   if event.tick%120==41 and M.shipment then pcall(M.timed,'shipment.tick',M.shipment.tick) end  -- shipment fact lines (shipment.lua)
   if event.tick%60==30 and M.launchwatch then pcall(M.timed,'launchwatch.tick',M.launchwatch.tick) end  -- launches waiting while their platform leaves (launchwatch.lua)
   if event.tick%60==0 and M.pods then pcall(M.pods.tick,event.tick) end  -- cargo pods leaving our platforms (pods.lua)
+  if M.beltsample then pcall(M.beltsample.tick,event.tick) end  -- belt_flow samplers (beltsample.lua): none, nothing read
   if event.tick%60==45 and M.landed then pcall(M.landed.tick,event.tick-45) end  -- landed pods on the ground: a slice of the sweep a second (landed.lua)
   -- (after pods.lua's look: freight takes the new pods from it and counts each on its stop)
   if event.tick%60==0 and M.freight then pcall(M.freight.pod_tick,event.tick) end  -- the cargo pods leaving hubs at stops

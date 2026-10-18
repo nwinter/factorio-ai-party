@@ -127,7 +127,7 @@ fh call status
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
-- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `kite`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given (`rearm` also with `area` or `surface`), with `transfer` or `collect` when they walk (`walk`, `pick`), with `recover`, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
+- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `kite`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given (`rearm` also with `area` or `surface`), with `transfer` or `collect` when they walk (`walk`, `pick`), with `recover`, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`). A timed `collect` (`wait_ticks`, `keep_taking`) and a `load_silo` that runs over time block without `--wait` too, with the same exit status; `--no-wait` returns at acceptance.
 - With `--wait`, the command exits 0 when the action ended successfully, 1 when it failed, and 3 when the wait ended
   while the action still runs: a tell or mention ended it (the reply's `still_running` and `note` say so), or the wait
   timed out (`wait_timeout`). So `fh call ACTION --wait && next` runs `next` only after the action is done.
@@ -1686,7 +1686,7 @@ fh sleep 900 --until researched                       # ...or until the research
     statement about its own wait from chat/aloud within five minutes; no reason is inferred from its job or notes.
     The stream uses its existing status polls and journal tail. Brief status includes cached `queues.body.waiting`
     and `queues.remote.waiting` (condition, deadline, estimates, idle); these fields add no condition checks or scans.
-  - `fh call sleep --args '{"seconds":N}'` (with or without `--wait`, also in `fh run` and `fh stream`) is the same blocking wait; the raw action only starts a sleep.
+  - `fh call sleep --args '{"seconds":N}'` and `fh call sleep N` (with or without `--wait`, also in `fh run` and `fh stream`) are the same blocking wait; the raw action only starts a sleep. `fh call sleep N` takes one whole number; more words, or `--args` seconds other than N, are refused.
   - Claude Code agents get a 20-minute Bash timeout (tools/clean-profile.py in the pog repo), above the longest sleep. Codex agents' `yield_time_ms` returns earlier and leaves the sleep running in the background.
 - `build` and `construct` replies include `materials`, read before acting: per item and quality, `need`, `held`,
   `missing`, `queued`, `missing_after_queue` and `hand_craftable` (items, including recipe yield). The hand-craftable
@@ -7228,3 +7228,66 @@ fh watch    # deploy on every change
   - `last.route`: `walked N tiles against M in a straight line, at most D tiles off it (at (x,y)); it went round: ...`
     (what the straight line crosses, enemies' reach with avoided_enemies, a path off belts), or `on the straight line`.
   mod/tests/runtime_test.lua.
+
+## d17 study1 part 2
+- 4 (Opus s31 4135-4347: `wait --until item_count ...` woke on a tell and the script equipped armor it did not hold):
+  `fh sleep S --until COND --require-met` and `fh wait --until COND --require-met` print `condition met after N s` or
+  `condition not met: woke WHAT after N s` first on the wake reply (JSON: `result.require_met {met, line}`) and exit 0
+  when the condition held, 3 when not, 1 when the wait failed. A tell or urgent news still ends the wait at once; the
+  default (no flag) is unchanged. Refused without `--until` and a game condition, and on other commands.
+  tests/waits.test.ts.
+## d17 batch24 Group A (the agents' 21:20 poll)
+- A1 (Grok): a timed collect or load_silo returned exit 0 at acceptance while the character worked on. In Grok's CLI log,
+  calls with `--wait` blocked and gave their outcome (launched, collected, told); from tick 25.27M Grok called them
+  without `--wait`, and those returned `until_tick` at once. A timed `collect` (`wait_ticks`, `keep_taking`) and a
+  `load_silo` that runs over time (a walking load, a wait for the rocket or the platform) now block without `--wait`
+  too, their outcome the exit status (0, 1, 3 as `--wait`); `--no-wait` returns at acceptance. tests/cli.test.ts.
+- A2 (Grok, Sol): a walking load with `launch` that ends with none made and the list's items aboard (Grok: `ticks`
+  18000 ran out on a tour that kept making trips while the chest refilled; Sol: a paused queue) says
+  `last.loaded_not_launched`: what is aboard, the rocket, why. The same load again with `to_total: true` and `launch`,
+  the list aboard already, walks nowhere and launches as it is when the rocket is ready and the platform here, else is
+  refused saying why. (An additive repeat, without `to_total`, is refused as before, naming `to_total`.) tests/rocketload.lua.
+- A3 (Sol request940): `platform_rearm {platform, positions?, item?, ammo_below, target_count}`: turrets aboard under
+  `ammo_below`, counting an item request on the way, get an item request up to `target_count`, which the hub fills as
+  `deliver`'s; `refills` counts requests and rounds per platform. A platform write of the remote and platform lanes;
+  `queue_repeat` with `interval_ticks` keeps topping up. tests/platrearm.lua, tests/queue_lanes.lua.
+- A4 (Gemini): load_silo `dry_run` already gives each item's weight, the rocket's lift (the game's rocket_lift_weight,
+  1000 kg) and room, whether the list fits and the split; a transfer into rocket cargo moves only what fits
+  (`weight_limited`). The silo read's `cargo` now adds `room_kg` (the lift left) and its line `(N kg free)`. tests/silo.lua.
+
+## d17 batch24 Group B
+- B1 (Luna: about 15 reads to diagnose Kestrel II): `platform_digest {platform}` runs `platforms`, `platform_supply`,
+  `platform_endurance` and `platform_defense` (their own code) and gives one reply: stopped or blocked first, route and
+  arrival, hub slots and chunks, chunks collected and where they go, crushers, makers, thrusters, tanks, ammunition,
+  turrets, power; `errors` for a read that failed. `platform_supply` now also returns `stops` (every entry not
+  working, in the chain's order; `first_stop` is the first). tests/platdigest.lua.
+- B2 (Astra, ~10 times on Kestrel): `belt_flow {position, seconds?, platform?}` (beltsample.lua) walks the belt line
+  (64 tiles back and on, undergrounds followed), cuts it into sections at each merge, and samples each section's last
+  tile and each belt merging in for 2..30 s: each lane's items by `unique_id` (2.0.77's detailed transport line
+  contents), every half of the ticks an item takes to cross a tile. An item gone at a later sample has passed: items a
+  minute per lane; a lane whose items did not move is stopped (full at 4 or more on the tile). `merges`: the line
+  before and each belt in, against the line after. The sampler runs from on_tick (at most 16 tiles, 2 lanes each; 16
+  tiles' lanes read in 0.08 ms on world n); the CLI reads `belt_flow {}` each second until the result is in
+  (`--no-wait`: the start). tests/beltsample.lua, tests/cli.test.ts.
+- B3 (Astra: tiles deconstruct only from exposed edges, learned by trial): `platform_tiles {platform, positions |
+  area}` (tilecheck.lua `query`, batch22 A1's rules as the game showed them on a copy of world n): up to 64 tiles,
+  each with its tile, mark, tile ghost and what stands on it; foundation: `remove {now, why}`; empty space: `build
+  {now, why}`. tests/tilecheck.lua.
+
+## d17 batch24 Group C
+- C1 (Sonnet: a drill batch left untried after one spot refused): a `build` batch whose entries all place mining drills
+  tries every entry unless `all: false` (as `all: true`), and `left` names each spot left: `#3 (233.5,-219.5):
+  placement blocked by ghost gun-turret (232,-220)`. In Sonnet's shift29 a 4-drill batch stopped at entry 2 (a pole
+  and a belt); its shift31 batch with `all: true` already went on past a ghost-blocked spot. runtime_test.
+- C2 (Haiku: a 1,194-item corpse at (-314,-296) sat near a wave for minutes): `threat.groups_near` reads the live enemy
+  groups (gathered with a target) standing in chunks our force sees now within a radius: size, kinds, where, distance,
+  heading (gathered to now), closing (nearer than where it gathered, or its target within 32 tiles). `recover` names
+  them per corpse (160 tiles), leaves out a corpse with one within `group_radius` (8..160, default 48) unless
+  `ignore_groups: true`, and its dry run gives `groups`. A death of ours whose corpse holds items is one team line per
+  agent (`M.death_lines`: who, where, items, killer, groups near). tests/threat.lua, tests/round1520d.lua.
+- C4 (Opus, ~8 times by script that reported success when the chest did not fit): `turret_feeds {area | positions,
+  ammo?, count?, chest?, inserter?, dry_run?}` (turretfeed.lua): per ammo turret no inserter feeds, a side tile where
+  an inserter's drop lands in it (targets.points, as the build reply reads inserters) with its pickup tile free, both
+  checked with can_place_entity (manual) and against the spots planned before it; then one `build` batch with `all`
+  of a requester chest (its request as an entry setting) and the inserter per turret, from the inventory. Rows: the
+  spots, skipped (why), short (items ran out), not_built (build's refusal). tests/turretfeed.lua.

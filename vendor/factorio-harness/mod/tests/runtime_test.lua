@@ -539,6 +539,21 @@ wood.count=5
 fails(function() call('build',{item='wooden-chest',builds={{position={x=4,y=0}},{position={x=6,y=0}},{position={x=8,y=0}},{position={x=9,y=0}}}}) end,
   'build 3/4 failed after 2 built: placement blocked')
 eq(wood.count,3); eq(p.cursor_stack.valid_for_read,false)
+-- batch24 C1 (Sonnet): a batch of mining drills tries every entry and names each spot left with what blocked it; all:
+-- false stops at the first as before.
+;(function()
+  local kept=prototypes
+  prototypes=setmetatable({item={['wooden-chest']={place_result={type='mining-drill'}}}},{__index=kept or {}})
+  wood.count=5
+  local r=call('build',{item='wooden-chest',builds={{position={x=4,y=0}},{position={x=6,y=0}},{position={x=8,y=0}},{position={x=9,y=0}}}})
+  eq(r.built,3); eq(#r.left,1); assert(r.left[1]:find('^#3 %(8,0%): placement blocked'),r.left[1])
+  eq(r.left_note,'a batch of mining drills tries every entry (all: false stops at the first not built)')
+  wood.count=5
+  fails(function() call('build',{item='wooden-chest',all=false,builds={{position={x=8,y=0}},{position={x=9,y=0}}}}) end,
+    'build 1/2 failed after 0 built: placement blocked')
+  prototypes=kept
+  wood.count=3
+end)()
 -- The entries built before a failing one stay: the refusal says what they closed (friction2: Gemini's 19:25 batch failed
 -- after 2 built, and those 2 had closed the last gap out with no word of it; the dry runs had named them).
 ;(function()

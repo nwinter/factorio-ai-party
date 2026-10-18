@@ -347,6 +347,22 @@ test('fh call sleep blocks like fh sleep (with or without --wait)',async()=>{
   }
   await assert.rejects(cli(1,['call','sleep','--args','{"seconds":0}']),(error:any)=>/seconds 1\.\.900: fh sleep SECONDS/.test(error.stdout));
 });
+test('fh call sleep SECONDS is seconds through the same blocking sleep; more words or other JSON seconds are refused',async()=>{
+  for (const args of [['call','sleep','120'],['call','sleep','120','--wait'],['call','sleep','120','--args','{"seconds":120}']]) {
+    const seen:any[]=[];
+    await engine(sleepEngine(seen,'mentioned'),async port=>{
+      const reply=JSON.parse((await cli(port,args)).stdout);
+      assert.equal(reply.result.woke,'mentioned');
+    });
+    assert.equal(seen[0].action,'sleep'); assert.equal(seen[0].args.seconds,120);
+    assert.deepEqual(seen.map(r=>r.args.scope ?? r.action),['sleep','sleep_check','sleep_check','sleep_check']);
+  }
+  await assert.rejects(cli(1,['call','sleep','300','60']),(error:any)=>/seconds 1\.\.900: fh sleep SECONDS or fh call sleep SECONDS/.test(error.stdout));
+  await assert.rejects(cli(1,['call','sleep','5m']),(error:any)=>/seconds 1\.\.900/.test(error.stdout));
+  await assert.rejects(cli(1,['call','sleep','300','--args','{"seconds":60}']),(error:any)=>/sleep seconds given twice \(300 and --args seconds 60\)/.test(error.stdout));
+  await assert.rejects(cli(1,['call','sleep','901']),(error:any)=>/seconds 1\.\.900/.test(error.stdout));
+  await assert.rejects(cli(1,['call','sleep','0']),(error:any)=>/seconds 1\.\.900/.test(error.stdout));
+});
 test('a sleep never runs past the deadline: cut to the time left, or none after it',async()=>{
   const { mkdtemp, writeFile } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
@@ -448,4 +464,31 @@ test('fh sleep --until platform NAME at PLANET waits through tells unless --wake
   assert.deepEqual(sleeps.slice(0,3).map(r=>r.args.condition),[{until:'platform_arrived',platform:'Wren',location:'vulcanus'},
     {until:'platform_left',platform:'Big Ship',location:'gleba'},{until:'platform_left',platform:'Wren',location:'nauvis'}]);
   assert.deepEqual(sleeps.map(r=>r.args.wake_on_messages),[false,false,false,undefined,undefined],'tells end it with --wake-on-tells or another condition');
+});
+test('--require-met: the first line and the exit status say whether the --until condition held; a tell still wakes at once',async()=>{
+  // d17 study P2 (Opus s31): wait --until item_count woke on a tell and the script equipped armor it did not have.
+  const run=(args:string[])=>new Promise<{code:number|null,stdout:string}>(resolve=>{
+    let stdout='';
+    import('node:child_process').then(({execFile})=>{
+      const child=execFile(process.execPath,['dist/host/cli.js',...args],{env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}});
+      child.stdout!.on('data',d=>stdout+=d); child.on('close',code=>resolve({code,stdout}));
+    });
+  });
+  for (const [woke,code,first] of [['condition',0,/(^|\n)condition met after 2 s\n(tick|woke)/],['told',3,/(^|\n)condition not met: woke told after 2 s\n(tick|woke)/]] as const) {
+    for (const cmd of [['sleep','60','--until','item_count power-armor>=1'],['wait','--until','tell|item_count power-armor>=1','--max','60']]) {
+      const seen:any[]=[];
+      await engine(sleepEngine(seen,woke),async port=>{
+        const out=await run(['--port',String(port),...cmd,'--require-met']);
+        assert.equal(out.code,code,out.stdout); assert.match(out.stdout,first);
+        // the default stays: exit 0 whatever woke it, no such line
+        const plain=await run(['--port',String(port),...cmd]);
+        assert.equal(plain.code,0); assert.doesNotMatch(plain.stdout,/condition (not )?met/);
+        const json=JSON.parse((await cli(port,[...cmd,'--require-met']).catch((error:any)=>error)).stdout);
+        assert.equal(json.result.require_met.met,woke==='condition');
+      });
+    }
+  }
+  await assert.rejects(cli(1,['sleep','60','--require-met']),(error:any)=>/--require-met goes with --until and a condition/.test(error.stdout));
+  await assert.rejects(cli(1,['wait','--until','tell','--require-met']),(error:any)=>/--require-met goes with --until and a condition/.test(error.stdout));
+  await assert.rejects(cli(1,['call','status','--require-met']),(error:any)=>/--require-met goes with fh sleep or fh wait/.test(error.stdout));
 });

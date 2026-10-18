@@ -164,8 +164,8 @@ return function(api)
     assert(type(a.platform) == 'string', 'platform is required (a platform name)')
     local pl = api.platform(p, a.platform)
     local s, force = pl.surface, pl.force
-    local lines, first = {}, nil
-    local function stop(text) first = first or text end
+    local lines, first, stops = {}, nil, {}
+    local function stop(text) first = first or text; stops[#stops+1] = text end
     -- Tile ghosts on the platform, for the collectors' open space.
     local tile_ghosts = {}
     for _, g in ipairs(try(function() return s.find_entities_filtered{type='tile-ghost', limit=8192} end) or {}) do
@@ -267,10 +267,10 @@ return function(api)
     lines[#lines+1] = 'ghosts: ' .. (#gl > 0 and table.concat(gl, ', ', 1, math.min(8, #gl)) or 'no entity ghosts') .. (nt > 0 and string.format('; %d tile ghosts', nt) or '')
     table.insert(lines, 1, 'first stop: ' .. (first or 'none: every collector, crusher and maker works, no thruster is short, no gun is empty'))
     local okt, chunks, flags = pcall(M.trace, s, force, pl.hub)
-    return {platform=pl.name, first_stop=first, lines=lines, chunks=okt and #chunks > 0 and chunks or nil,
+    return {platform=pl.name, first_stop=first, stops=#stops > 0 and stops or nil, lines=lines, chunks=okt and #chunks > 0 and chunks or nil,
       chunk_flags=okt and flags and #flags > 0 and flags or nil, trace_error=not okt and tostring(chunks) or nil}
   end
   M.schema = {platform_supply = {platform='platform name',
-    returns='lines, in the chain\'s order: first stop (the first of these not working: a collector (not working, no inserter takes from it, or foundation ghosts in its open space), a crusher, a fuel or oxidizer maker, a thruster under half, an empty gun); collectors (status, chunks held, filters, the inserters taking from them and where they put the chunks); crushers (recipe, status, input and output); thruster-fuel and thruster-oxidizer makers (status, what they hold, fluids); thrusters; guns (an empty one with what feeds it); ghosts by name, apart. first_stop. chunks: each asteroid chunk type its collectors take, where it goes through the inserters (their filters) and belts: the crushers (one whose recipe does not take it says so), the hub. chunk_flags: a static inserter filter (whitelist or blacklist set in its GUI) that keeps a collected type out, and a crusher stopped with its output full while its output inserters drop into a hub with no free slot. Read only'}}
+    returns='lines, in the chain\'s order: first stop (the first of these not working: a collector (not working, no inserter takes from it, or foundation ghosts in its open space), a crusher, a fuel or oxidizer maker, a thruster under half, an empty gun); collectors (status, chunks held, filters, the inserters taking from them and where they put the chunks); crushers (recipe, status, input and output); thruster-fuel and thruster-oxidizer makers (status, what they hold, fluids); thrusters; guns (an empty one with what feeds it); ghosts by name, apart. first_stop; stops (every one not working, in that order). chunks: each asteroid chunk type its collectors take, where it goes through the inserters (their filters) and belts: the crushers (one whose recipe does not take it says so), the hub. chunk_flags: a static inserter filter (whitelist or blacklist set in its GUI) that keeps a collected type out, and a crusher stopped with its output full while its output inserters drop into a hub with no free slot. Read only'}}
   return M
 end

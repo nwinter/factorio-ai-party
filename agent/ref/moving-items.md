@@ -57,7 +57,9 @@
     early): `last.took`, `last.made` and `last.inserters_took` (counted) say who got what, `last.why` why it took
     none, and `taken_by_inserters` which inserters take the output and the chest they fill. `follow: true` takes from
     that chest instead of waiting, following the output into chests and walking to one out of reach.
-  Example: `./fh call collect --args '{"positions":[{"x":10.5,"y":3.5}],"wait_ticks":1800,"count":20}' --wait`
+  - `wait_ticks` or `keep_taking`: the call returns when the collect ends, with or without `--wait`, its outcome the
+    exit status; `--no-wait` returns at the start (`until_tick`).
+  Example: `./fh call collect --args '{"positions":[{"x":10.5,"y":3.5}],"wait_ticks":1800,"count":20}'`
 - `feed {positions | area | radius, item | items?, recipe?, crafts?, fuel?, count?, keep?}`: tops up every machine in
   reach (or in `radius`, a walking tour; `position` its centre) from your inventory: an assembler or furnace its
   recipe's ingredients, a lab its science packs, a burner fuel when its fuel slots are empty or with `fuel` (`true` or

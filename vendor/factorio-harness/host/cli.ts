@@ -376,6 +376,14 @@ function wakeLine(reply: Reply): string {
   // What is open for the agent (open.lua; d15 H3), last.
   return `woke: ${r.woke ?? 'nothing'} after ${r.slept_s ?? 0} s${detail !== undefined ? ` (${said(detail)})` : ''}${r.wait_line ? `; ${said(r.wait_line)}` : ''}${more}${r.open ? `; ${said(r.open)}` : ''}`;
 }
+/** --require-met (d17 study P2, Opus s31: a wait --until item_count woke on a tell and the script went on): whether the
+ * condition held, as the first line and the exit status (0 met, 3 not met, 1 failed). */
+function metLine(reply: Reply): {met: boolean, line: string} {
+  const r = reply.result ?? {};
+  if (!reply.ok) return {met:false, line:`condition not met: the wait failed (${reply.error?.code ?? 'error'}: ${String(reply.error?.message ?? '').replace(/\s*\n\s*/g, ' ')})`};
+  if (r.woke === 'condition') return {met:true, line:`condition met after ${r.slept_s ?? 0} s${r.met ? ` (${r.met})` : ''}`};
+  return {met:false, line:`condition not met: woke ${r.woke ?? 'at the end'} after ${r.slept_s ?? 0} s`};
+}
 function deployingCommand(command: string): boolean { return command === 'deploy' || command === 'watch'; }
 function integer(value: string | undefined, fallback: number): number {
   const result = value === undefined ? fallback : Number(value);
@@ -686,7 +694,7 @@ async function main() {
     format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
     host:{type:'string'}, port:{type:'string'}, timeout:{type:'string'}, id:{type:'string'},
     file:{type:'string'}, out:{type:'string'}, mods:{type:'string'}, journal:{type:'string'},
-    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'wake-on-tells':{type:'boolean'}, 'wake-from':{type:'string'}, 'wake-local':{type:'boolean'}, 'no-operator-wake':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'urgent-radius':{type:'string'}, 'wake-on-orders':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
+    wait:{type:'boolean'}, 'no-wait':{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'}, 'require-met':{type:'boolean'}, 'wake-on-tells':{type:'boolean'}, 'wake-from':{type:'string'}, 'wake-local':{type:'boolean'}, 'no-operator-wake':{type:'boolean'}, 'wake-on-viewers':{type:'boolean'}, 'no-urgent':{type:'boolean'}, 'urgent-radius':{type:'string'}, 'wake-on-orders':{type:'boolean'}, 'operator-repeat':{type:'boolean'},
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
@@ -960,6 +968,17 @@ async function main() {
     if (values.peek) args.peek = true;
     values.args = JSON.stringify(args);
   }
+  // fh call sleep SECONDS (d17 study P2: Luna 21 times, each refused for want of JSON seconds): seconds, through the
+  // same blocking sleep. More words, a word that is not a whole number, or JSON seconds that differ: refused.
+  if (command === 'call' && positionals[1] === 'sleep' && positionals.length > 2) {
+    const args = object(JSON.parse(values.args ?? '{}'),'args');
+    const word = positionals[2]!;
+    if (positionals.length > 3 || !/^\d+$/.test(word)) throw new Error('sleep requires seconds 1..900: fh sleep SECONDS or fh call sleep SECONDS');
+    const seconds = Number(word);
+    if (args.seconds !== undefined && args.seconds !== seconds) throw new Error(`sleep seconds given twice (${word} and --args seconds ${JSON.stringify(args.seconds)})`);
+    values.args = JSON.stringify({...args, seconds});
+    positionals.splice(2);
+  }
   const known = new Set(['doctor','describe','observe','call','view','deploy','watch','stream','run','wait','sleep','help']);
   if (!known.has(command) && /^[a-z][a-z0-9_]*$/.test(command)) {
     cliCorrected = `fh ${command} runs as fh call ${command}`;
@@ -970,6 +989,7 @@ async function main() {
   // A bot is a script-driven character addressed by name (FH_BOT for wrappers).
   const bot = values.bot ?? (values.player ? undefined : process.env.FH_BOT || undefined);
   if (values.bot && values.player) throw new Error('Use --player or --bot, not both');
+  if (values.wait && values['no-wait']) throw new Error('Use --wait or --no-wait, not both');
   if (bot !== undefined && !/^[a-z][a-z0-9_-]{0,15}$/.test(bot)) throw new Error('--bot must be a bot name ([a-z][a-z0-9_-]{0,15})');
   // An RCON broker (pog tools/fh_broker.py) holds the password and forwards only this bot's harness requests.
   const brokerSocket = values.socket ?? (process.env.FH_SOCKET || undefined);
@@ -998,6 +1018,11 @@ async function main() {
   let deployer: Harness | undefined;
   let client: {close(): void};
   const bridged = connection?.kind === 'bridge';
+  // --require-met: with --until and a game condition, on fh sleep and fh wait only.
+  function requireMetOk(until: Record<string, unknown> | undefined) {
+    if (values['require-met'] && until === undefined) throw new Error('--require-met goes with --until and a condition: fh sleep 300 --until "item_count power-armor>=1" --require-met');
+  }
+  if (values['require-met'] && command !== 'sleep' && command !== 'wait') throw new Error('--require-met goes with fh sleep or fh wait and --until');
   if (connection?.kind === 'bridge') {
     if (deploying || command === 'view') throw new Error(`${command} needs the agent-harness mod on the server; bridge sessions act through normal player input only`);
     if (values.player || bot) throw new Error('A bridge controls its own client\'s player; --player/--bot do not apply');
@@ -1768,6 +1793,18 @@ async function main() {
           ...(done || !slept.ok ? {} : {still_running:'hand crafting'}), wait:slept.result}};
       }
     }
+    // belt_flow (batch24 B2): the sampling runs in the game over seconds; the call reads belt_flow {} each second until
+    // the result is in (--no-wait: the start only).
+    if (action === 'belt_flow' && reply.ok && reply.result?.sampling && values['no-wait'] !== true && !bridged) {
+      const seconds = typeof reply.result.seconds === 'number' ? reply.result.seconds : 10;
+      const until = Date.now() + (seconds * 4 + 20) * 1000;
+      while (Date.now() < until) {
+        await delay(1000);
+        const read = await harness.request('belt_flow', {});
+        if (!read.ok || !read.result?.sampling) return read;
+      }
+      return {...reply, ok:false, error:{code:'wait_timeout', message:`belt_flow still sampling after ${seconds * 4 + 20} s (a slow game); belt_flow {} reads it when done`}};
+    }
     // kite runs until no enemy is left in its radius, its health or ammo floor, or its ticks (Sol, shift09: kite --wait
     // returned at once while the fight went on).
     const waits = bridged ? ['walk','mine','build'].includes(action)
@@ -1801,7 +1838,12 @@ async function main() {
     // A call out of reach that walks first by default (autowalk.lua; the reply's walking line): waited for as --wait does,
     // since the same call in reach would have been done at once.
     const walked = reply.ok && reply.result?.walking !== undefined && reply.result?.until_tick !== undefined;
-    if ((wait || walked) && reply.ok && (waits || walked)) {
+    // A timed collect (wait_ticks, keep_taking) or a load_silo tour is waited for without --wait too, its outcome the
+    // exit status (batch24 A1, Grok: every fuel catch and both agricultural launches returned exit 0 at acceptance
+    // while the character worked on); --no-wait returns at acceptance.
+    const timed = reply.ok && values['no-wait'] !== true && reply.result?.until_tick !== undefined
+      && (action === 'load_silo' || (action === 'collect' && (args.wait_ticks !== undefined || args.keep_taking !== undefined)));
+    if ((wait || walked || timed) && reply.ok && (waits || walked)) {
       onAccepted?.(reply);
       const completion = await waitForAction(action, reply.result?.until_tick, reply.tick, before);
       if (completion.error?.code === 'wait_timeout') return {...reply, ok:false, result:{accepted:reply.result, ...completion.result}, error:completion.error};
@@ -1887,9 +1929,15 @@ async function main() {
       const seconds = Number(positionals[1]);
       if (!Number.isSafeInteger(seconds) || seconds < 1 || seconds > 900) throw new Error('sleep requires SECONDS 1..900');
       const then = thenCall(values.then, positionals[2], values.args);
-      const reply = await sleep(seconds, untilEvent(values.until));
-      output(await withThen(reply, then));
+      const until = untilEvent(values.until);
+      requireMetOk(until);
+      const reply = await sleep(seconds, until);
+      const met = values['require-met'] ? metLine(reply) : undefined;
+      if (met && outputFormat === 'compact') process.stdout.write(met.line + '\n');
+      const shown = await withThen(reply, then);
+      output(met && outputFormat !== 'compact' && shown.result ? {...shown, result:{require_met:met, ...shown.result}} : shown);
       if (!reply.ok) process.exitCode=1;
+      else if (met && !met.met) process.exitCode=3;
     } else if (command === 'wait' && (values.until === undefined || /^\s*idle\s*$/.test(values.until)) && values.max !== undefined) {
       // fh wait --max S, fh wait --until idle --max S: the action (and combat) to end, at most S s; at once when idle.
       if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
@@ -1908,7 +1956,13 @@ async function main() {
       const max = integer(values.max, 600);
       if (max > 900) throw new Error('wait --max takes 1..900 seconds');
       const then = thenCall(values.then, positionals[1], values.args);
-      const reply = await sleep(max, untilEvent(values.until), true);
+      const until = untilEvent(values.until);
+      requireMetOk(until);
+      const reply = await sleep(max, until, true);
+      const met = values['require-met'] ? metLine(reply) : undefined;
+      if (met && outputFormat === 'compact') process.stdout.write(met.line + '\n');
+      if (met && outputFormat !== 'compact' && reply.result) reply.result = {require_met:met, ...reply.result};
+      if (met && reply.ok && !met.met) process.exitCode=3;
       // An older runtime delivered the team block with the sleep (full): the line, then the whole reply.
       if (reply.ok && outputFormat === 'compact' && !reply.result?.full) {
         process.stdout.write(operatorHead() + wakeLine(reply) + '\n');
