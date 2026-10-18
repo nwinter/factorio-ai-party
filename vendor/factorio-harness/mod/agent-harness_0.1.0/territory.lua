@@ -39,7 +39,7 @@ return function(api)
       end
     end
     if #order == 0 then return nil end
-    local parts = {}
+    local parts, live = {}, false
     for _, f in ipairs(order) do
       local seen
       for _, u in ipairs(try(function() return f.t.get_segmented_units() end) or {}) do
@@ -48,10 +48,14 @@ return function(api)
           seen = string.format('%s at %s, seen now', u.name, at(q)); break
         end
       end
-      parts[#parts+1] = string.format('%d chunk%s of it in a demolisher territory (%s)', f.chunks, f.chunks == 1 and '' or 's', seen or 'its demolisher not in sight now')
+      -- (d17 territory) its state as the demolishers read gives it: has a demolisher, killed at T by X, none in it now
+      local state, line
+      if not seen and api.state then state, line = api.state(surface, force, f.t) end
+      if seen or state == 'has a demolisher' or state == 'not in sight' or not api.state then live = true end
+      parts[#parts+1] = string.format('%d chunk%s of it in a demolisher territory (%s)', f.chunks, f.chunks == 1 and '' or 's', seen or line or 'its demolisher not in sight now')
     end
-    return string.format('the placement lies inside a demolisher territory on %s, as the map draws its border: %s; a demolisher attacks what is built in its territory',
-      surface.name, table.concat(parts, '; '))
+    return string.format('the placement lies inside a demolisher territory on %s, as the map draws its border: %s%s',
+      surface.name, table.concat(parts, '; '), live and '; a demolisher attacks what is built in its territory' or '')
   end
   return M
 end

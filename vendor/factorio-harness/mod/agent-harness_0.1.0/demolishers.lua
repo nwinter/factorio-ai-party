@@ -14,6 +14,74 @@ return function(api)
     s.demolisher_seen = s.demolisher_seen or {}
     return s.demolisher_seen
   end
+  -- Deaths (d17 territory, Nick 17:08: Vulcanus territory 1 had no demolisher after Sol killed it, and the reads did not
+  -- tell it from one out of sight): each head's death as the team saw it (on_entity_died: its territory, when, what
+  -- killed it), kept per territory by its first chunk (the smallest x, then y; a territory has no id). A territory with
+  -- no segmented unit and no death recorded (one killed before this was kept) is "no demolisher in it now".
+  local function deaths()
+    local s = api.state()
+    s.demolisher_deaths = s.demolisher_deaths or {}
+    return s.demolisher_deaths
+  end
+  function M.key(surface, t)
+    local best
+    for _, ch in ipairs(try(function() return t.get_chunks() end) or {}) do
+      if not best or ch.x < best.x or (ch.x == best.x and ch.y < best.y) then best = ch end
+    end
+    return best and string.format('%s|%d,%d', surface.name, best.x, best.y) or nil
+  end
+  local function by_text(event)
+    local cause = event.cause
+    if cause and cause.valid then
+      local who = cause.type == 'character' and api.character_name and try(function() return api.character_name(cause) end)
+      if not who and (cause.type == 'car' or cause.type == 'spider-vehicle' or cause.type == 'locomotive') then
+        local d = try(function() return cause.get_driver() end)
+        local name = d and api.character_name and try(function() return api.character_name(d.type == 'character' and d or d.character) end)
+        if name then who = name .. ' in a ' .. cause.name end
+      end
+      if not who then
+        local u = try(function() return cause.last_user and cause.last_user.name end)
+        who = cause.name .. (u and ' (built by ' .. u .. ')' or '')
+      end
+      return who
+    end
+    return event.force and ('force ' .. event.force.name) or 'unknown'
+  end
+  function M.died(event)
+    local e = event.entity
+    if not (e and e.valid and e.type == 'segmented-unit') then return end
+    local surface = e.surface
+    local t = try(function() return e.segmented_unit.territory end)
+      or try(function() return surface.get_territory_for_chunk({x=math.floor(e.position.x / 32), y=math.floor(e.position.y / 32)}) end)
+    local key = t and M.key(surface, t)
+    local id = try(function() return e.segmented_unit.unit_number end) or try(function() return e.unit_number end)
+    if id then memory()[id] = nil end
+    if not key then return end
+    deaths()[key] = {tick=event.tick or game.tick, by=by_text(event), name=e.name, position={x=e.position.x, y=e.position.y}}
+  end
+  local function clock(tick)
+    local m = math.floor(tick / 3600)
+    return string.format('tick %d (game %dh%02dm, %s ago)', tick, math.floor(m / 60), m % 60, ago(game.tick - tick))
+  end
+  -- A territory's state: has a demolisher (in sight now, or last seen), its demolisher was killed (recorded), no
+  -- demolisher in it now (none in it, no death recorded), or none in sight (one in it never seen).
+  function M.state(surface, f, t, seen_units)
+    local units = try(function() return t.get_segmented_units() end) or {}
+    if #units > 0 then
+      local mem = memory()
+      for _, u in ipairs(units) do
+        local id = try(function() return u.unit_number end)
+        local q = try(function() return u.segments[1].position end)
+        if q and f.is_chunk_visible(surface, {x=math.floor(q.x / 32), y=math.floor(q.y / 32)}) then return 'has a demolisher', 'it has a demolisher (in sight now)' end
+        if id and mem[id] then return 'has a demolisher', string.format('it has a demolisher (last seen at %s %s ago)', at(mem[id]), ago(game.tick - mem[id].tick)) end
+      end
+      return 'not in sight', 'its demolisher not in sight now'
+    end
+    local key = M.key(surface, t)
+    local d = key and deaths()[key]
+    if d then return 'killed', string.format('its %s was killed at %s by %s; none seen since', d.name, clock(d.tick), d.by) end
+    return 'none', 'no demolisher in it now'
+  end
   function M.read(p, a)
     local surface = type(a.surface) == 'string' and game.get_surface(a.surface) or p.surface
     assert(surface, 'no surface ' .. tostring(a.surface))
@@ -58,8 +126,9 @@ return function(api)
         local dist = math.floor(math.sqrt(bd) + 0.5)
         local ul = {}
         for _, u in ipairs(units) do ul[#ul+1] = u.line end
-        if #ul == 0 then ul[1] = 'no demolisher in sight now' end
-        rows[#rows+1] = {nearest=best, distance=dist, charted_chunks=charted, units=units,
+        local state, state_line = M.state(surface, f, t)
+        if #ul == 0 then ul[1] = state_line end
+        rows[#rows+1] = {nearest=best, distance=dist, charted_chunks=charted, units=units, state=state, state_line=state_line,
           line=string.format('territory with %d charted chunks, nearest at %s (%d tiles): %s', charted, at(best), dist,
             table.concat(ul, '; '))}
       end
@@ -72,6 +141,6 @@ return function(api)
     return {surface=surface.name, lines=lines, territories=rows}
   end
   M.schema = {demolishers = {surface='optional surface name (default yours; Vulcanus has them)', near='optional {x,y}: the distances from there (default you)',
-    returns='lines: each demolisher territory the map draws (a charted chunk), nearest first: its charted chunks and the nearest one, and each demolisher in sight in it: name, head position and health while our force sees its chunk now; one seen before and out of sight now: where a read last saw it and how long ago; else no demolisher in sight now (one out of sight is not told apart from none, as on the map); territories with no charted chunk counted. territories [{nearest, distance, charted_chunks, units [{name, visible, head, health}]}]. Read only'}}
+    returns='lines: each demolisher territory the map draws (a charted chunk), nearest first: its charted chunks and the nearest one, and each demolisher in sight in it: name, head position and health while our force sees its chunk now; one seen before and out of sight now: where a read last saw it and how long ago; else no demolisher in sight now (one out of sight is not told apart from none, as on the map); territories with no charted chunk counted. Each territory\'s state: has a demolisher (in sight now or last seen), killed (its demolisher was killed at T by X; none seen since: deaths the team saw, recorded since d17 territory), none (no demolisher in it now: no segmented unit in it, no death recorded), not in sight (its demolisher not in sight now). territories [{nearest, distance, charted_chunks, state, state_line, units [{name, visible, head, health}]}]. Read only'}}
   return M
 end

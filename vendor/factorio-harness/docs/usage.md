@@ -6680,3 +6680,21 @@ fh watch    # deploy on every change
   steam-turbine cannot stand on 15 tiles of its footprint: oil-ocean-shallow 15 (foundation laid on it makes it
   buildable; foundation is not researched)`. An entity with tile rules (an asteroid collector) gives the broken rule.
   tests/d17_batch20.lua.
+
+## d17 territory (operator 17:10; Nick 17:08)
+- On n (read only), Vulcanus territory 1 (87 chunks, x -320..96, y -192..416, the main base included) has no
+  demolisher: Sol killed it at tick 4,888,121. The demolishers read said `no demolisher in sight now` for it, as for one
+  out of sight, and build replies inside it said `its demolisher not in sight now; a demolisher attacks what is built
+  in its territory`.
+- demolishers.lua records each demolisher's death (runtime on_entity_died, type segmented-unit): its territory (by
+  its smallest chunk, as a territory has no id; the unit's territory, else the one of its chunk), the tick, and what
+  killed it (an agent's character by name; a driven vehicle as `NAME in a car`; another entity with who built it;
+  none: the killing force). Its last-seen memory is dropped.
+- Each territory gets a `state`:
+  - `has a demolisher`: in sight now, or last seen.
+  - `killed`: `its small-demolisher was killed at tick 4888121 (game 22h37m, 3h ago) by sol; none seen since`.
+  - `none`: `no demolisher in it now`: no segmented unit in it and no death recorded, so killed before this was
+    kept, or never had one.
+  - `not in sight`: one is in it and was never seen; this is the old line.
+- territory.lua's build note gives the same state; `a demolisher attacks what is built in its territory` is said only
+  when the territory has one. tests/d17_territory.lua.
