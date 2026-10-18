@@ -1385,6 +1385,22 @@ fails(function() call('collect',{position=am.position,wait_ticks=60,to={x=9,y=0}
 fails(function() call('collect',{position=am.position,wait_ticks=60,item='iron-gear-wheel',to={x=9,y=0}}) end,'to is the machine waited at')
 fails(function() call('collect',{position=am.position,wait_ticks=60,to_inventory='fuel'}) end,'to_inventory goes with to')
 fails(function() call('collect',{position=am.position,to={x=9,y=0}}) end,'items and to go with pick')
+-- d17 batch34 C4 (Grok): give and take_back go with a wait at one machine
+fails(function() call('collect',{position=am.position,wait_ticks=60,give={'nutrients'}}) end,'give is {item: count, ...}')
+fails(function() call('collect',{position=am.position,wait_ticks=60,take_back='nutrients'}) end,'take_back is a list of item names')
+fails(function() call('collect',{position=am.position,wait_ticks=60,take_back={'no-such-item'}}) end,'take_back: unknown item no-such-item')
+-- the wait's end: what is left of the named items in the machine comes back
+local nut=stack('nutrients',12); nut.clear=function() nut.count=0; nut.valid_for_read=false end
+local keep_slots=am_slots[5]; am_slots[5]=inv(nut)
+local reach=p.can_reach_entity; p.can_reach_entity=function() return true end
+local into={}
+local main_now=p.get_main_inventory
+p.get_main_inventory=function() return {insert=function(st) into[#into+1]=st.name..':'..st.count; return st.count end} end
+storage.agent_harness.active[1]={kind='gather',wait=60,want=5,got=0,visited=0,items={},targets={{entity=am,position=am.position}},index=1,until_tick=game.tick+60,take_back={'nutrients'}}
+call('stop',{})
+eq(table.concat(into,','),'nutrients:12'); eq(nut.valid_for_read,false)
+eq(storage.agent_harness.last[1].taken_back.nutrients,12)
+am_slots[5]=keep_slots; p.can_reach_entity=reach; p.get_main_inventory=main_now
 end
 -- Out of reach, remote view changes an empty machine's recipe but not a stocked one's.
 am.fluidbox={}
@@ -5877,6 +5893,20 @@ do
   eq(a.then_call.args.positions[2].x,42); eq(a.then_call.args.walk,true); eq(a.then_call.args.count,20); eq(a.then_after.topped_up,true)
   call('stop',{})
   runtime.transfer_now,runtime.rearm_now=tnow,rnow
+end
+-- inventory spoiling (d17 batch34 C5, Grok): each spoilable stack soonest first; an egg hatches.
+do
+  local function st(name,count,left,pct,hatch)
+    return {valid_for_read=true,name=name,count=count,quality={name='normal'},spoil_tick=game.tick+left,spoil_percent=pct,
+      prototype={get_spoil_ticks=function() return 54000 end,spoil_to_trigger_result=hatch and {} or nil}}
+  end
+  local inv={valid=true,st('nutrients',40,7200,0.6),{valid_for_read=false},st('pentapod-egg',2,3720,0.93,true),
+    {valid_for_read=true,name='iron-plate',count=50,quality={name='normal'},prototype={get_spoil_ticks=function() return 0 end}}}
+  local r=runtime.spoil_stacks(inv,24)
+  eq(#r.lines,2)
+  eq(r.lines[1],'pentapod-egg*2 (slot 3): hatches in 1m02s (93% spoiled)')
+  eq(r.lines[2],'nutrients*40 (slot 1): spoils in 2m00s (60% spoiled)')
+  eq(runtime.spoil_stacks({valid=true,inv[4]},24),nil)
 end
 -- area ammunition with biters on you: the gun switches to one without an area, else fire holds (d17 batch21 C1).
 do

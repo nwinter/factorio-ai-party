@@ -72,6 +72,10 @@
     the item, else its fuel (`to_inventory` names one); it must be in reach from where the wait stands (else
     `unreached`); `last.gave`, `last.gave_short`. E.g. nutrients into a biochamber's fuel before robots take them:
     `./fh call collect --args '{"positions":[{"x":2.5,"y":0.5}],"wait_ticks":3600,"item":"nutrients","to":{"x":6.5,"y":0.5}}'`
+    `give: {item: count}` (one machine in reach) puts those in first by hand (its recipe input, else its fuel; `gave`);
+    with `item` and no `count` the wait ends when one craft's yield of it is taken; `take_back: ["nutrients"]` brings
+    back at the end what is left of those items in the machine (input and fuel, each stack with its spoilage;
+    `last.taken_back`). A breeder cycle in one call: `{"position":{"x":7.5,"y":20.5},"give":{"nutrients":30,"pentapod-egg":1},"item":"pentapod-egg","wait_ticks":1800,"take_back":["nutrients"]}`.
   - `wait_ticks` or `keep_taking`: the call returns when the collect ends, with or without `--wait`, its outcome the
     exit status; `--no-wait` returns at the start (`until_tick`).
   - A haul from several chests into one: a queue plan of a walking collect over the chests, then a walking transfer
@@ -138,7 +142,9 @@
   reports `repaired` and `already_full`. An undamaged entity is ok with `unchanged: "not damaged"`.
   Example: `./fh call repair --args '{"positions":[{"x":12.5,"y":4.5},{"x":15.5,"y":4.5}]}' --wait`
 - `inventory`: main, ammo, armor and equipment, trash and cursor in one small reply, guns and ammo per slot (gun slot
-  N fires only from ammo slot N); `status {"inventory": true}` adds it as one line.
+  N fires only from ammo slot N); `status {"inventory": true}` adds it as one line. `spoiling`: each spoilable stack
+  of your main inventory, soonest first, with its slot, the time left and how spoiled it is; an egg reads `hatches in`
+  (`pentapod-egg*2 (slot 3): hatches in 1m02s (93% spoiled)`).
 - `craft {recipe, count, check_stock?, spoiling?}` (or `recipes: [...]`): queues hand crafts from your inventory, whatever
   stock the factory holds; `stock` names that stock (holders, nearest, largest, how much within 25 tiles of you). A
   spoilable ingredient: only the crafts that finish before the first stack of it you hold spoils are queued (the hand
