@@ -140,6 +140,19 @@ do
     resource_categories={['basic-solid']=true},mining_drill_radius=2.49,tile_width=3,tile_height=3})
   eq(r.free[1].tiles,16); eq(r.free[1].amount,1600)
   for i=2,#r.free do assert(math.abs(r.free[i].position.x-r.free[1].position.x)>=3 or math.abs(r.free[i].position.y-r.free[1].position.y)>=3,'no overlap') end
+  -- batch29 A2 (Opus 3 times: a drill spot held one of our drills; the game's placement check passes there): one of ours
+  -- standing in the best spot blocks it, named
+  local best=r.free[1].position
+  local mine={valid=true,name='electric-mining-drill',type='mining-drill',position={x=best.x,y=best.y}}
+  surface.find_entities_filtered=function(f)
+    if f.type=='resource' then return ore end
+    if f.area and f.area[1][1]<=best.x and f.area[2][1]>=best.x and f.area[1][2]<=best.y and f.area[2][2]>=best.y then return {mine} end
+    return {}
+  end
+  r=D.read({surface=surface,force={},position={x=2,y=2}},{resource='iron-ore',radius=6},{name='electric-mining-drill',type='mining-drill',
+    resource_categories={['basic-solid']=true},mining_drill_radius=2.49,tile_width=3,tile_height=3})
+  assert(r.free[1].position.x~=best.x or r.free[1].position.y~=best.y,'the spot ours holds is not free')
+  has(r.blocked_by,'ours already'); has(r.blocked[1],'taken by our electric-mining-drill')
   defines,prototypes=nil,nil
 end
 print('d17_batch21 B2 drill and well spots: ok')

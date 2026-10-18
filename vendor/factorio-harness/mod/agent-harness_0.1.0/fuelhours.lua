@@ -52,7 +52,10 @@ return function(api)
     if not (time and time > 0) then return 0, res end
     return speed * (1 + (try(function() return d.speed_bonus end) or 0)) / time * (1 + (try(function() return d.productivity_bonus end) or 0)) * 60, res
   end
+  local BELT_TYPES = {['transport-belt']=true, ['underground-belt']=true, splitter=true}
+  local LINE_WALKS = 8
   function M.read(p, a, surface)
+    local lines_seen, walks = {}, 0
     local force = p.force
     local list = surface.find_entities_filtered{type='boiler', force=force, limit=MAX_BOILERS}
     local out, lines = {}, {}
@@ -211,7 +214,23 @@ return function(api)
                 power = (st == 'no_power' or st == 'low_power') and st:gsub('_', ' ') or ((try(function() return i.electric_network_id end) and 'powered') or 'NOT connected to power')
               end
               local src = try(function() local x = i.pickup_target; return x and x.valid and x end)
-              feeds[#feeds+1] = string.format('%s %s (%s) from %s', i.name, at(i.position), power, src and src.name .. ' ' .. at(src.position) or 'nothing')
+              -- (batch29 B1, Haiku, about hourly: a shortage read apart from a broken link) a belt source: its line's head
+              -- and gaps (belt_gaps' line walk), a walk a line, at most LINE_WALKS a read
+              local line_text
+              if src and BELT_TYPES[src.type] and api.belt_line then
+                local key = src.unit_number or (src.position.x .. ',' .. src.position.y)
+                local ln = lines_seen[key]
+                if ln == nil and walks < LINE_WALKS then
+                  walks = walks + 1
+                  ln = try(function() return api.belt_line({surface=b.surface, force=force}, src) end) or false
+                  lines_seen[key] = ln
+                end
+                if ln then
+                  line_text = string.format('; its belt line: %d tiles, head %s%s', ln.tiles or 0, tostring(ln.head),
+                    ln.gaps and string.format(', %d gap%s (%s)', #ln.gaps, #ln.gaps == 1 and '' or 's', ln.gaps[1].line) or ', no gap')
+                end
+              end
+              feeds[#feeds+1] = string.format('%s %s (%s) from %s%s', i.name, at(i.position), power, src and src.name .. ' ' .. at(src.position) or 'nothing', line_text or '')
             end
           end
           low[#low+1] = string.format('%s %s holds %d: %s', b.name, at(b.position), n, #feeds > 0 and table.concat(feeds, '; ') or 'no inserter feeds it')

@@ -94,6 +94,26 @@ do
 end
 print('d16_batch7 A11 a helper call reads train stops: ok')
 
+-- batch29 B3 (Gemini: every train read through its stops first): train {all: true}: every train, its state, current
+-- stop and cargo in one read.
+do
+  defines={train_state={on_the_path=0,wait_station=1,no_path=3}}
+  local t1={id=4,state=0,speed=0.5,manual_mode=false,front_stock={valid=true,position={x=10,y=20}},
+    schedule={current=2,records={{station='Iron load'},{station='Iron drop'}}},
+    get_contents=function() return {{name='iron-ore',count=2000}} end,get_fluid_contents=function() return {} end}
+  local t2={id=2,state=1,speed=0,manual_mode=false,front_stock={valid=true,position={x=-5,y=0}},schedule={current=1,records={{station='Oil'}}},
+    get_contents=function() return {} end,get_fluid_contents=function() return {['crude-oil']=24999.6} end}
+  game={tick=0,train_manager={get_trains=function() return {t1,t2} end},get_surface=function(n) return {name=n} end}
+  local T=dofile('mod/agent-harness_0.1.0/trains.lua'){}
+  local r=T.handlers.train({surface={name='nauvis'},force={}},{all=true})
+  eq(r.count,2); eq(r.trains[1].id,2)
+  eq(r.lines[1],'train 2 (-5,0): wait_station, stop 1 of 1: Oil, 0 km/h; crude-oil 25000')
+  eq(r.lines[2],'train 4 (10,20): on_the_path, stop 2 of 2: Iron drop, 108 km/h; iron-ore*2000')
+  fails(function() T.handlers.train({surface={name='nauvis'},force={}},{all=true,limit=3}) end,'all takes surface only (not limit)')
+  defines=nil
+end
+print('d16_batch7 B3 train all: ok')
+
 -- B3 (Astra on Wren 4+ times): each chunk type from its collectors through inserters and belts to the crushers whose
 -- recipe takes it and the hub; a static filter that keeps a collected type from its crusher; a crusher stopped full
 -- while its output goes to a full hub.

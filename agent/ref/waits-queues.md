@@ -56,6 +56,9 @@
   wake replies refresh them too, and `fh wait --until` puts them on its line.
 - `queue_submit {steps, mode?, guards?, lane?, dry_run?}` (`./fh queue submit --file plan.json`): runs steps
   `{action, args, wait?, label?, on_fail?, min_moved?, on_short?}` inside the game; an error names the step's path.
+  At submit a step naming a platform that is not ours is refused (unless an earlier step creates it), and a requests
+  `section` past the hub's count (unless an earlier requests step works on that hub); positions are not checked. A
+  plan that pauses on a step failing in its first 10 s is a line in your team block at once.
   Into a repeating plan `mode` is required (the refusal names the job): `replace` stops it, `ahead` interrupts and
   restarts an absolute-goal step, `append` waits behind this round, `next` runs the new steps once right after the
   active step (which goes on) and keeps the loop. `mode: "replace"` stops the active step of any plan (a running

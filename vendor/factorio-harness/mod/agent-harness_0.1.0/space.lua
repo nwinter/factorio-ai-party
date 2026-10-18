@@ -106,8 +106,9 @@ return function(api)
       local rows={}
       for _,f in ipairs(sec.filters or {}) do local t=filter_text(f,hub); if t then rows[#rows+1]=t end end
       -- A section switched off requests nothing (the GUI's checkbox). Said
-      -- as off=true: false values drop out of the compact reply.
-      out[#out+1]={index=i,group=sec.group~='' and sec.group or nil,off=sec.active==false or nil,
+      -- as off=true: false values drop out of the compact reply. active says on or off for every section (batch29 A3,
+      -- Luna 04:45 read sections 5-6 as unchanged), a word so it shows there too.
+      out[#out+1]={index=i,group=sec.group~='' and sec.group or nil,active=sec.active==false and 'off' or 'on',off=sec.active==false or nil,
         controlled=not sec.is_manual or nil,requests=rows}
     end
     return out

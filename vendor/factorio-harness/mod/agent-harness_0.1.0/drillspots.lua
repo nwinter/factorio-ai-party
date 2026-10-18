@@ -99,8 +99,22 @@ return function(api)
         for _, t in ipairs(taken) do if math.abs(t.x - q.x) < w and math.abs(t.y - q.y) < h then return true end end
         return false
       end
+      -- (batch29 A2, Opus 3 times: a drill spot at (413.5,-264.5) held one of our drills, and the game's placement
+      -- check passes there) an entity of ours in the spot's footprint, a ghost or a character apart, blocks it
+      local SKIP = {['entity-ghost']=true, ['tile-ghost']=true, character=true, ['item-request-proxy']=true, ['construction-robot']=true, ['logistic-robot']=true}
+      local function ours(q)
+        for _, e in ipairs(try(function() return p.surface.find_entities_filtered{area={{q.x - w / 2 + 0.1, q.y - h / 2 + 0.1}, {q.x + w / 2 - 0.1, q.y + h / 2 - 0.1}}, force=p.force, limit=8} end) or {}) do
+          if e.valid and not SKIP[e.type] then return e end
+        end
+      end
       for _, c in ipairs(cands) do
-        if not overlaps(c.position) then
+        local own = not overlaps(c.position) and ours(c.position)
+        if own then
+          blocked[#blocked+1] = {position=c.position, why=string.format('taken by our %s %s', own.name, at(own.position))}
+          local k = 'ours already'
+          if not groups[k] then groups[k] = {n=0, first=at(c.position)}; gorder[#gorder+1] = k end
+          groups[k].n = groups[k].n + 1
+        elseif not overlaps(c.position) then
           if #free < limit and fits(p, proto, c.position, 0) then
             free[#free+1] = {position=c.position, amount=c.amount, tiles=c.tiles, line=string.format('%s: %d %s tiles, %d under its mining area', at(c.position), c.tiles, name, c.amount)}
             taken[#taken+1] = c.position

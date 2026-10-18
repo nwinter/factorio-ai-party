@@ -150,7 +150,7 @@ return function(api)
       local key = 'boilers|' .. tostring(surface.index) .. '|' .. p.force.name
       local c = cache[key]
       if c and game.tick - c.tick < KEEP and c.out then return c.out end
-      M.hours = M.hours or require('fuelhours'){status_name=api.status_name}
+      M.hours = M.hours or require('fuelhours'){status_name=api.status_name, belt_line=api.belt_line}
       local out = M.hours.read(p, a, surface)
       out.surface_name = surface.name
       cache[key] = {tick=game.tick, out=out}

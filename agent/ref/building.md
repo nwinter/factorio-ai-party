@@ -21,7 +21,8 @@
   and `settings_line` say what was set or refused (a refused setting leaves the entry placed); each setting goes to the
   ghost or entity of the entry's name at its position. A dry run gives `settings_planned` and `settings_check`, each
   setting checked as the real call checks it; a refused setting, a blocked entry, a recipe the real call refuses
-  (`recipes_refused`), a foundation tile the hub never builds (`tiles.unbuilt`) or an inserter with no target reads
+  (`recipes_refused`), a foundation tile the hub never builds (`tiles.unbuilt`), an entry where ours stands already
+  (`exists`) or an inserter with no target reads
   `dry_run_ok: false` and `verdict: fails: ...` naming the first of each, and `fh` exits 1. Settings are read as their own call reads them (`settings_corrected`: a
   requests `set` map, ...). An entry's `settings: {...}` is read as those keys (`settings_alias`); a setting key such as
   `modules` at the entry's top level is refused with the shape. `"check_inserters": true` checks every planned
@@ -37,7 +38,9 @@
   `{item: "rail-ramp", position, direction}` builds a ramp from one held ramp; the centre snaps to the ramp grid, with
   the same collision and reach checks.
   Example: `./fh call build --args '{"item":"transport-belt","direction":"east","builds":[{"position":{"x":10.5,"y":6.5}},{"position":{"x":11.5,"y":6.5}}]}'`
-- `place_ghosts {entities, ammo?, surface? | platform?, check_inserters?, dry_run?}`: places ghosts, no items needed;
+- `place_ghosts {entities, ammo?, surface? | platform?, check_inserters?, dry_run?}`: places ghosts, no items needed
+  (a requester or buffer chest, or a machine on electricity, is watched: once robots build it in no logistic network,
+  or with no pole or no power, your team block says so at once);
   entries `{name, position, direction?, recipe?}` with entry settings as `build`'s. An entry already standing as asked
   (the same ghost or the built entity) is counted apart: `already_placed`, `already`; only real refusals are `failed`.
   A real call says on the `warning:` line when what it placed closes you in. Turret ghosts request ammo, so the robots
@@ -89,7 +92,8 @@
   offered is where it lands. A refused build of an offshore pump, or of anything onto water, lists the nearest valid
   placements. `resource` (a name, or true) with a drill or pumpjack: its spots on that resource within `radius` (1..32,
   default 16): a pumpjack every well, free with the directions it fits, taken by our drill, or blocked; a drill each
-  tile centre whose mining area holds the ore, the most ore first, the free ones none overlapping. Each blocked spot
+  tile centre whose mining area holds the ore, the most ore first, the free ones none overlapping, a spot with an
+  entity of ours in its footprint taken (`ours already`, though the game's placement check passes there). Each blocked spot
   says why (the build refusal's text: what stands there, a tile and the foundation it needs, a cliff), and
   `blocked_by` counts them by kind.
   Example: `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'`
@@ -134,7 +138,9 @@
   Example: `./fh call rail_route --args '{"from":{"x":0,"y":0},"to":{"x":0,"y":-200}}'`
 - `train_stop {position, name}`: puts a stop on the side of a straight rail that serves trains heading one way.
   Example: `./fh call train_stop --args '{"position":{"x":40,"y":-20},"name":"iron-pickup"}'`
-- `train {position | train_id, station?, limit?, schedule?, automatic?, path_to?}` or `{stops: true, surface?}`: on a stop, its
+- `train {position | train_id, station?, limit?, schedule?, automatic?, path_to?}` or `{stops: true, surface?}` or
+  `{all: true, surface?}` (every train of ours there in one read: id, state, the schedule's current stop, front,
+  speed, cargo and fluids summed; at most 100): on a stop, its
   `station` and `limit`; on a locomotive, its `schedule` and `automatic`; `train {position}` reads a train's state and
   why it waits. A train in `no_path` reads `rail_break` (`path_to: "STOP"` for any stop): the rails followed from the
   train, whole, reaching the stop only facing away, or broken: where the rails from each side end, the gap, rail

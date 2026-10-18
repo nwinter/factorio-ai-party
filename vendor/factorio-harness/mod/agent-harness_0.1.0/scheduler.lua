@@ -73,6 +73,9 @@ return function(api)
         assert(args==nil or type(args)=='table','step args must be an object')
         if api.check_args then checked('args',function() api.check_args(action,args) end) end
         if p and api.check_action then api.check_action(p.index,action,args) end
+        -- (batch28->29 A1, Sol: section 8 asked on a hub with 7; the queue paused on its first tick) what a read can check
+        -- against the game now: the platform named, a requests section; earlier steps of the plan counted
+        if p and api.step_read_check then api.step_read_check(p,action,args or {},out) end
         assert(step.wait==nil or type(step.wait)=='boolean','step wait must be boolean')
         assert(step.min_moved==nil or (action=='transfer' and step.wait~=false and type(step.min_moved)=='number' and step.min_moved==math.floor(step.min_moved) and step.min_moved>=1 and step.min_moved<=10000), 'min_moved requires a transfer step with wait=true and an integer 1..10000')
         assert(step.label==nil or (type(step.label)=='string' and #step.label<=64),'label must be a string of at most 64 bytes')

@@ -4269,6 +4269,110 @@ function M.via_report(action)
   end
   return legs
 end
+-- New builds not working (batch29 B2, Opus: about 10 minutes each on a new furnace row): a ghost an agent places of a
+-- requester or buffer chest, or of a machine on electricity, is watched; once robots have built it, a requester or
+-- buffer in no logistic network, or a machine with no power or no pole, is one team line to that agent at once. A
+-- watch ends when it is checked, or after WATCH_TICKS still a ghost. At most WATCH_MAX an agent.
+M.BUILT_WATCH_TICKS,M.BUILT_WATCH_MAX=36000,256
+M.BUILT_POWERED={['assembling-machine']=true,furnace=true,['mining-drill']=true,lab=true,inserter=true,beacon=true,roboport=true,radar=true}
+function M.built_watch(p,name,ghost)
+  local proto=prototypes.entity[name]
+  if not proto then return end
+  local mode=proto.type=='logistic-container' and proto.logistic_mode
+  local kind=(mode=='requester' or mode=='buffer') and 'network' or (M.BUILT_POWERED[proto.type] and proto.electric_energy_source_prototype and 'power') or nil
+  if not kind then return end
+  local st=state()
+  st.built_watch=st.built_watch or {}
+  local list=st.built_watch[p.index] or {}
+  st.built_watch[p.index]=list
+  if #list>=M.BUILT_WATCH_MAX then return end
+  list[#list+1]={name=name,kind=kind,position={x=ghost.position.x,y=ghost.position.y},surface=ghost.surface.name,tick=game.tick}
+end
+function M.built_tick()
+  local st=state()
+  for index,list in pairs(st.built_watch or {}) do
+    local keep={}
+    for _,w in ipairs(list) do
+      local s=game.surfaces[w.surface]
+      local found=s and s.find_entities_filtered{position=w.position,radius=0.3,name=w.name,limit=1}[1]
+      if found and found.valid then
+        local why
+        if w.kind=='network' then
+          if not found.logistic_network then why='is in no logistic network: nothing delivers to it' end
+        else
+          local stn=M.machine_status(found)
+          if found.electric_network_id==nil then why='has no pole reaching it: no power'
+          elseif stn=='no_power' then why='has no power (its network makes none)' end
+        end
+        if why then
+          st.built_news=st.built_news or {}
+          local news=st.built_news[index] or {}
+          st.built_news[index]=news
+          if #news<16 then news[#news+1]=string.format('%s (%g,%g)%s your robots built %s',w.name,w.position.x,w.position.y,w.surface~='nauvis' and ' on '..w.surface or '',why) end
+        end
+      elseif s and game.tick-w.tick<M.BUILT_WATCH_TICKS and s.find_entities_filtered{position=w.position,radius=0.3,ghost_name=w.name,type='entity-ghost',limit=1}[1] then
+        keep[#keep+1]=w
+      end
+    end
+    st.built_watch[index]=#keep>0 and keep or nil
+  end
+end
+function M.built_lines(p,h)
+  local st=state()
+  local news=st.built_news and st.built_news[p.index]
+  if not news then return {} end
+  st.built_news[p.index]=nil
+  return news
+end
+-- A queue step checked against the game at submit (batch29 A1, Sol: Swiftlet's emergency freight asked for section 8
+-- on a hub with 7 sections; the queue paused on its first tick and nobody saw it for 3 minutes): only what a read
+-- shows now and no earlier step of the plan changes: the platform a step names (unless an earlier step creates it),
+-- and a requests section number against the sections its target has (unless an earlier requests step works on that
+-- target). Positions are not checked: a plan often builds what its later steps use.
+function M.step_read_check(p,action,args,prior)
+  if type(args)~='table' then return end
+  local name=args.platform
+  if type(name)=='string' and action~='platform_create' then
+    local made=false
+    for _,st in ipairs(prior or {}) do if st.action=='platform_create' and type(st.args)=='table' and st.args.name==name then made=true end end
+    local found
+    for _,pl in pairs(p.force.platforms or {}) do if pl.valid and pl.name==name then found=pl end end
+    assert(found or made,'no platform of ours named '..name..' (none of the plan\'s earlier steps creates it)')
+    if action=='requests' and found and type(args.section)=='number' then
+      local earlier=false
+      for _,st in ipairs(prior or {}) do if st.action=='requests' and type(st.args)=='table' and st.args.platform==name then earlier=true end end
+      local n=found.hub and found.hub.valid and (pcall(function() return found.hub.get_logistic_sections().sections_count end) and found.hub.get_logistic_sections().sections_count) or nil
+      assert(earlier or not n or args.section<=n,string.format('section %d: the hub of %s has %d section%s (an earlier requests step on it would count; requests without section adds one)',
+        args.section,name,n or 0,n==1 and '' or 's'))
+    end
+  end
+end
+-- A plan that paused on a step failing within its first FRESH ticks: a team line to its owner at once (A1), each
+-- such failure once.
+M.FRESH_FAIL=600
+function M.queue_fresh_lines(p,h)
+  local st=state()
+  local out={}
+  h.fresh_fail=h.fresh_fail or {}
+  local keys={{'queues','queue'},{'remote_queues','remote queue'}}
+  for name in pairs(st.platform_lanes or {}) do keys[#keys+1]={'lane_queues|'..name,'queue of platform lane '..name} end
+  for _,k in ipairs(keys) do
+    local q=(st[k[1]] or {})[p.index]
+    local f
+    for i=#(q and q.paused and q.history or {}),1,-1 do local e=q.history[i]; if e.ok==false and not e.order then f=e; break end end
+    local plan=q and q.plan
+    if f and plan and f.plan==plan.id and (f.finished_tick or 0)-(plan.tick or 0)<=M.FRESH_FAIL then
+      local key=k[1]..'|'..tostring(plan.id)..'|'..tostring(f.id)
+      if not h.fresh_fail[key] then
+        h.fresh_fail[key]=true
+        local why=type(f.result)=='table' and (f.result.reason or f.result.outcome) or '?'
+        out[#out+1]=string.format('your %s paused %ds after plan %s was submitted: step %s %s failed: %s; queue_resume runs the rest',
+          k[2],math.floor(((f.finished_tick or game.tick)-(plan.tick or game.tick))/60),tostring(plan.id),tostring(f.id),tostring(f.action),tostring(why))
+      end
+    end
+  end
+  return out
+end
 -- Route memory (batch28 C2, Opus: base to south copper failed unless given exact via points, 6 times): per agent, per
 -- pair of 64-tile areas (where the walk started, its goal), the via points of the last move_to through them that
 -- arrived (at most ROUTES a agent). A move_to with no via points that ends unreachable or no_safe_route between two
@@ -12620,6 +12724,7 @@ local function place_ghost(p,spec)
     laid[f.item]=(laid[f.item] or 0)+1
   end
   local ghost=p.surface.create_entity{name='entity-ghost',inner_name=spec.name,position=pos,direction=direction,force=p.force,player=real(p),raise_built=true,type=spec.type}
+  if ghost then pcall(M.built_watch,p,spec.name,ghost) end
   if not ghost then
     for _,t in ipairs(tiles) do if t.valid then t.destroy() end end
     for _,e in ipairs(tile_marked) do if e.valid then pcall(e.cancel_deconstruction,p.force,real(p)) end end
@@ -14058,6 +14163,12 @@ function M.dry_verdict(out,a)
   if refused>0 then parts[#parts+1]=refused..' setting'..(refused==1 and '' or 's')..' refused' end
   -- (batch28 A1, Astra ~4 times: ok while an unavailable recipe, floor the hub never builds or inserters with no
   -- target were listed) what the real call refuses or leaves undone fails the verdict too, each named
+  -- (batch29 A2, Opus: a drill spot held one of our drills) an entry where the same entity of ours stands already
+  local exists,first_exists=0,nil
+  for _,e in ipairs(type(out.entities)=='table' and out.entities or {}) do
+    if e.status=='exists' then exists=exists+1; first_exists=first_exists or string.format('#%s %s (%g,%g)',tostring(e.index),tostring(e.name),e.position and e.position.x or 0,e.position and e.position.y or 0) end
+  end
+  if exists>0 then parts[#parts+1]=string.format('%d entr%s where ours stands already (%s)',exists,exists==1 and 'y' or 'ies',first_exists) end
   local recipes=#(out.recipes_refused or {})
   if recipes>0 then parts[#parts+1]=string.format('%d refused for the recipe (%s)',recipes,out.recipes_refused[1]) end
   local tiles=type(out.tiles)=='table' and out.tiles.unbuilt_count or 0
@@ -14215,6 +14326,7 @@ M.waiteta=require('waiteta'){before_departure=function(pl,loc) return M.freight.
 M.scheduler_api={collect_waiting=function(index) return M.waits.collect_waiting(index) end,
   state=state,player=player,handlers=handlers,timed=M.timed,
   check_action=function(index,action,args) return M.bots.check_action(index,action,args) end,
+  step_read_check=function(p,action,args,prior) return M.step_read_check(p,action,args,prior) end,
   condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) check_args(action,args); if M.step_checks[action] and type(args)=='table' then M.step_checks[action](args) end end,validate_condition=function(c) return conditions.validate(c) end,
   wait_check=function(p,c,record) return M.waiteta.check(p,c,record) end,
   extend_wait=function(step,c,started) return M.waiteta.extend(step,c,started) end,
@@ -14399,7 +14511,7 @@ M.board=require('board'){state=state,consequential={launch=true,platform_schedul
   research_lines=function(p,h) return M.research.lines(p,h) end,
   attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,news_lines=function(from,since,reader) return threat.news_lines(from,since,reader) end,
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
-  platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,sight_lines=function(p,h) return M.pushalerts.sight_team(p,h) end,
+  queue_lines=function(p,h) local out=M.queue_fresh_lines(p,h); for _,l in ipairs(M.built_lines(p,h)) do out[#out+1]=l end; return out end,platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end,sight_lines=function(p,h) return M.pushalerts.sight_team(p,h) end,
   hatch_lines=function(p,h) return M.spoil.alert_lines(p,h,M.board.who(p)) end,captive_lines=function(p,h) return M.pushalerts.captive_lines(p,h) end,
   pods_lines=function(p,h) return M.landed and M.landed.team_lines(p,h) end,
   death_lines=function(p,h) return M.death_lines(p,h) end,
@@ -15944,7 +16056,8 @@ M.census=require('census'){state=state,timed=M.timed,observe_entity=function(e) 
 -- fuel_budget: fuel made and used per minute, and each group of fuel users with its burn and minutes left (fuelbudget.lua;
 -- Opus, d15 06:20 and 07:50).
 M.burnerfuel=require('burnerfuel'){state=state,fuel_users=function(s) return M.census.fuel_users(s) end}
-M.fuelbudget=require('fuelbudget'){fuel_users=function(s) return M.census.fuel_users(s) end,status_name=function(e) return M.machine_status(e) end}
+M.fuelbudget=require('fuelbudget'){fuel_users=function(s) return M.census.fuel_users(s) end,status_name=function(e) return M.machine_status(e) end,
+  belt_line=function(p,e) return M.linecut.line(p,e) end}
 function handlers.fuel_budget(p,a) return M.fuelbudget.read(p,a) end
 M.networks=require('networks'){reqchest=function() return M.reqchest end,state=state,timed=M.timed,one_planet=function(f) return M.one_planet(f) end,
   sky=function(surface) return M.lightning and M.lightning.sky(surface) end}
@@ -17113,6 +17226,7 @@ function M.tick_body(event)
   if event.tick%60==45 and M.landed then pcall(M.landed.tick,event.tick-45) end  -- landed pods on the ground: a slice of the sweep a second (landed.lua)
   -- (after pods.lua's look: freight takes the new pods from it and counts each on its stop)
   if event.tick%60==0 and M.freight then pcall(M.freight.pod_tick,event.tick) end  -- the cargo pods leaving hubs at stops
+  if event.tick%120==47 and state().built_watch then pcall(M.built_tick) end  -- new builds not working (B2)
   if event.tick%60==0 and M.engine then pcall(M.engine.tick,event.tick) end  -- each platform's speed, fluids and pumps
   -- The egg watch, a bounded stage a tick (spoil.lua); a fault is counted, never stops the tick.
   do

@@ -331,6 +331,9 @@ do
     inserters={{index=2,name='inserter',position={x=1.5,y=2.5}},{index=3,name='inserter',position={x=4.5,y=2.5},missing='no drop target'}}},{dry_run=true})
   eq(v.dry_run_ok,false)
   eq(v.verdict,'fails: 1 refused for the recipe (entry 1 assembling-machine-2: recipe fill-fluoroketone-hot-barrel is not available), 2 foundation tiles the hub never builds ((3.5,4.5): no foundation among the 8 tiles round it), 1 inserter with no target (#3 inserter (4.5,2.5): no drop target)')
+  -- batch29 A2 (Opus: a drill spot held one of our drills): an entry where ours stands already fails it too
+  local v2=runtime.dry_verdict({dry_run=true,entities={{index=1,name='electric-mining-drill',position={x=413.5,y=-264.5},status='exists'}}},{dry_run=true})
+  eq(v2.verdict,'fails: 1 entry where ours stands already (#1 electric-mining-drill (413.5,-264.5))')
 end
 -- batch28 C2 (Opus: base to south copper failed unless given exact via points, 6 times): a move_to through via points
 -- that arrived is kept per agent and pair of 64-tile areas; one with none ending unreachable there walks again once
@@ -358,6 +361,61 @@ do
   last={}; failed.route_args.route_retry=nil
   runtime.route_memory(8,failed,'unreachable',last); eq(last.route_memory,nil)
   st.routes=nil; st.then_calls=nil
+end
+-- batch29 A1 (Sol: Swiftlet's emergency freight asked for section 8 on a hub with 7; the queue paused on its first tick
+-- and nobody saw it for 3 minutes): a requests section past the hub's is refused at submit; a plan that pauses on a
+-- step failing in its first seconds is a team line to its owner, once.
+do
+  local kept=p.force.platforms
+  local hub={valid=true,get_logistic_sections=function() return {sections_count=7} end}
+  p.force.platforms={{valid=true,name='Swiftlet',hub=hub}}
+  fails(function() call('queue_submit',{dry_run=true,steps={{action='requests',args={platform='Swiftlet',section=8,set={{item='rocket-fuel',min=100}}}}}}) end,
+    'section 8: the hub of Swiftlet has 7 sections')
+  -- an earlier requests step on it: counted, not refused
+  local ok=pcall(call,'queue_submit',{dry_run=true,steps={{action='requests',args={platform='Swiftlet',set={{item='rocket-fuel',min=100}}}},
+    {action='requests',args={platform='Swiftlet',section=8,set={{item='rocket-fuel',min=100}}}}}})
+  assert(ok,'an earlier requests step counts')
+  p.force.platforms=kept
+  local st=storage.agent_harness
+  local q=st.queues[1]
+  local saved={paused=q.paused,plan=q.plan,history=q.history}
+  q.paused=true; q.plan={id=91,tick=game.tick-150}; q.history={{id=301,action='requests',ok=false,result={reason='section 8 does not exist'},finished_tick=game.tick-60,plan=91}}
+  local h={}
+  local lines=runtime.queue_fresh_lines(p,h)
+  eq(lines[1],'your queue paused 1s after plan 91 was submitted: step 301 requests failed: section 8 does not exist; queue_resume runs the rest')
+  eq(#runtime.queue_fresh_lines(p,h),0,'told once')
+  q.paused,q.plan,q.history=saved.paused,saved.plan,saved.history
+end
+-- batch29 B2 (Opus: about 10 minutes each on a new furnace row): a ghost an agent places of a requester chest or a
+-- powered machine is watched; built by robots in no logistic network or with no pole, it is one line to that agent.
+do
+  local kept_protos=prototypes
+  prototypes=prototypes or {}
+  local kept_s,kept_pe=game.surfaces,prototypes.entity
+  prototypes.entity=setmetatable({['requester-chest']={type='logistic-container',logistic_mode='requester'},
+    ['electric-furnace']={type='furnace',electric_energy_source_prototype={}},['iron-chest']={type='container'}},{__index=kept_pe or {}})
+  local built,ghosts={},{}
+  local fs={name='nauvis',find_entities_filtered=function(f)
+    local list=f.type=='entity-ghost' and ghosts or built
+    for _,e in ipairs(list) do if math.abs(e.position.x-f.position.x)<0.5 and math.abs(e.position.y-f.position.y)<0.5 and (e.name==f.name or e.ghost_name==f.ghost_name) then return {e} end end
+    return {}
+  end}
+  game.surfaces={nauvis=fs}
+  local function g(name,x) return {valid=true,name='entity-ghost',ghost_name=name,type='entity-ghost',position={x=x,y=0},surface=fs} end
+  local g1,g2,g3,g4=g('requester-chest',1.5),g('electric-furnace',5),g('iron-chest',9.5),g('electric-furnace',15)
+  for _,x in ipairs({g1,g2,g3,g4}) do runtime.built_watch(p,x.ghost_name,x) end
+  eq(#storage.agent_harness.built_watch[p.index],3,'the plain chest is not watched')
+  ghosts={g4}
+  built={{valid=true,name='requester-chest',position={x=1.5,y=0}},{valid=true,name='electric-furnace',position={x=5,y=0},status=1}}
+  runtime.built_tick()
+  local lines=runtime.built_lines(p,{})
+  eq(lines[1],'requester-chest (1.5,0) your robots built is in no logistic network: nothing delivers to it')
+  eq(lines[2],'electric-furnace (5,0) your robots built has no pole reaching it: no power')
+  eq(#storage.agent_harness.built_watch[p.index],1,'the furnace still a ghost stays watched')
+  eq(#runtime.built_lines(p,{}),0,'told once')
+  storage.agent_harness.built_watch=nil
+  game.surfaces,prototypes.entity=kept_s,kept_pe
+  prototypes=kept_protos
 end
 -- status names a paused plan that still holds steps, and why it stopped.
 call('queue_submit',{steps={{action='rotate',args={position={x=1,y=0}}},{action='walk',args={direction='north',ticks=3},label='after'}}})
@@ -5171,8 +5229,14 @@ end)()
   -- A queue dry run: the cargo before the launch step, queued nothing.
   cargo[1].count=60
   local before=call('queue_status',{}).revision
+  -- (batch29 A1: a step naming a platform is checked at submit) one that is not ours is refused there
+  fails(function() call('queue_submit',{dry_run=true,steps={{action='launch',args={position=silo.position,platform='Nowhere'}}}}) end,
+    'no platform of ours named Nowhere (none of the plan\'s earlier steps creates it)')
+  local kept_platforms=p.force.platforms
+  p.force.platforms={{valid=true,name='Nowhere'}}
   local dr=call('queue_submit',{dry_run=true,steps={{action='wait_until',args={['until']='rocket_ready',position=silo.position}},
     {action='launch',args={position=silo.position,platform='Nowhere',min_cargo={['agricultural-science-pack']=100}}}}})
+  p.force.platforms=kept_platforms
   eq(dr.dry_run,true); eq(dr.queued,false); eq(dr.steps,2)
   eq(dr.launches[1].step,2); eq(dr.launches[1].cargo,'agricultural-science-pack*60')
   eq(dr.launches[1].would_refuse[1],'min_cargo not met: agricultural-science-pack 60 of 100 (40 short)')
