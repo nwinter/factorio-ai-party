@@ -153,15 +153,20 @@ do
   local function asm(x,y,recipe,working)
     n=n+1
     return {valid=true,unit_number=n,name='assembling-machine-2',type='assembling-machine',position={x=x,y=y},crafting_speed=0.75,working=working,
+      bounding_box={left_top={x=x-1.5,y=y-1.5},right_bottom={x=x+1.5,y=y+1.5}},
       get_recipe=function() return prototypes.recipe[recipe] end}
   end
   local ac={asm(0,0,'advanced-circuit',true),asm(3,0,'advanced-circuit',true),asm(6,0,'advanced-circuit',true)}
   local lds={asm(0,20,'low-density-structure',false),asm(3,20,'low-density-structure',false)}
   local net={network_id=5,available_logistic_robots=12,all_logistic_robots=300,get_item_count=function(_,m) return 0 end}
+  net.requester_points={}
   local function chest(u,x,y,filters,held,coming)
-    return {valid=true,unit_number=u,type='logistic-container',name='requester-chest',position={x=x,y=y},prototype={logistic_mode='requester'},logistic_network=net,
-      get_item_count=function(i) return i=='plastic-bar' and held or 0 end,
-      get_logistic_point=function() return {filters=filters,targeted_items_deliver=coming and {{name='plastic-bar',count=coming}} or {}} end}
+    local c={valid=true,unit_number=u,type='logistic-container',name='requester-chest',position={x=x,y=y},prototype={logistic_mode='requester'},logistic_network=net,
+      get_item_count=function(i) return i=='plastic-bar' and held or 0 end}
+    local pt={owner=c,filters=filters,targeted_items_deliver=coming and {{name='plastic-bar',count=coming}} or {}}
+    c.get_logistic_point=function() return pt end
+    net.requester_points[#net.requester_points+1]=pt
+    return c
   end
   local A=chest(101,1.5,2.5,{{name='plastic-bar',count=200}},150,40)
   local B=chest(102,1.5,22.5,{{name='copper-plate',count=100},{name='steel-plate',count=20}},0)
@@ -175,11 +180,23 @@ do
     local out={}
     if type(f.type)=='table' then for _,e in ipairs(ac) do out[#out+1]=e end; for _,e in ipairs(lds) do out[#out+1]=e end; return out end
     if f.type=='inserter' then for _,e in ipairs(inserters) do if inside(e,f.area) then out[#out+1]=e end end return out end
-    if f.type=='logistic-container' then return {D,C,B,A} end
+    if f.type=='logistic-container' then error('no whole-surface chest find') end
     return out
   end}
-  local S=dofile('mod/agent-harness_0.1.0/supply.lua'){status_name=function(e) return e.working and 'working' or 'item_ingredient_shortage' end,position=function(v) return v end,integer=function(v,d) return v or d end}
-  local r=S.supply({surface=surface,force={}},{item='plastic-bar',requesters=true})
+  local force={logistic_networks={nauvis={net}}}
+  -- crafters from the census pass when it has them (no find), else a find
+  local census
+  local S=dofile('mod/agent-harness_0.1.0/supply.lua'){status_name=function(e) return e.working and 'working' or 'item_ingredient_shortage' end,position=function(v) return v end,integer=function(v,d) return v or d end,
+    census_crafters=function() return census, 35000 end}
+  game={tick=36200}
+  local r=S.supply({surface=surface,force=force},{item='plastic-bar',requesters=true})
+  eq(r.crafters_as_of,'found now')
+  census={ac[1],ac[2],ac[3],lds[1],lds[2]}
+  surface.find_entities_filtered=(function(old) return function(f) if type(f.type)=='table' then error('no crafter find with a census pass') end return old(f) end end)(surface.find_entities_filtered)
+  eq(S.supply({surface=surface,force=force},{item='plastic-bar',requesters=true}).as_of:find('is reused',1,true)~=nil,true,'the same read within the window is reused')
+  game.tick=game.tick+3600
+  r=S.supply({surface=surface,force=force},{item='plastic-bar',requesters=true})
+  eq(r.crafters_as_of,'the census pass of 80s ago (a machine built since is not read)')
   eq(r.lines[1],'plastic-bar on nauvis: 3 requester or buffer chests ask for it; network #5: 0 free in providers and storage, 12 of 300 logistic robots idle, 3 chests asking')
   eq(r.lines[2],'requester-chest (1.5,2.5) #5: asks 200, holds 150; served now: robots bringing 40; feeds 3 assembling-machine-2 (advanced-circuit), 3 working, taking 45/min at full speed')
   eq(r.lines[3],'requester-chest (60.5,60.5) #5: asks 100, holds 0; unmet: none free in network #5; feeds none of the machines that use it')
@@ -188,7 +205,7 @@ do
   eq(#r.lines,5)
   eq(r.requesters[1].coming,40); eq(r.requesters[1].use_per_min,45); eq(r.requesters[2].state,'unmet: none free in network #5')
   eq(r.unasked[1].asks,'copper-plate 100, steel-plate 20')
-  fails(function() S.supply({surface=surface,force={}},{item='plastic-bar',requesters=1}) end,'requesters is true')
-  defines,prototypes=nil,nil
+  fails(function() S.supply({surface=surface,force=force},{item='plastic-bar',requesters=1}) end,'requesters is true')
+  defines,prototypes,game=nil,nil,nil
 end
 print('d17_batch30 B2 who gets an item: ok')
