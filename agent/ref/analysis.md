@@ -95,7 +95,10 @@
   drop, and `holds`, `requests`, `recipe`, `status_name` where it has them. It always returns `entities` (64 a page:
   `page`, `pages`, `next`) and `by_name` beside them; robots flying through are only counted (`also`). `types` or
   `name` narrows it. A belt's `holds` is its lanes (`right lane: rocket*4`; an underground's buried part as `... lane
-  underground`), or `empty`. `compact: true` gives a line each. Example: `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}},"compact":true}'`
+  underground`), or `empty`. `compact: true` gives a line each (with `positions`, up to 32 in one reply): status,
+  health, recipe, what it holds, and `spoil:` (each spoilable item's count and spoiled share, the first to spoil or hatch
+  and when), `hatch:`, and `circuit:` (its circuit condition with each signal's value on its wires now, its logistic
+  condition with what the network holds, whether it is off by them). Example: `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}},"compact":true}'`
 - `ports {name, position, direction?, recipe?, mirror?, platform?}`: where each fluid port of an unbuilt machine is and
   the fluid the recipe puts there. Example: `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north","recipe":"electrolyte"}'`
 - `power {position?, radius?, area?, fragile?, by_cause?, platform?, surface?}`: per network `supply_line`: generators'
@@ -120,9 +123,12 @@
   circuit or logistic condition, each with the condition and what its signal reads now (`bioflux > 200 (bioflux 150
   now)`); one whose unmet conditions are all on what its recipe makes (a stock cap) is not listed. A new group is one
   team alert line to its builders and claim owners.
-- `belt_gaps {from, to, via?, surface?}`: remembered belt gaps and ghosts along the line, with observation ticks;
-  unrecorded tiles are unknown. A leg that is not straight follows the remembered belt round its corners (`followed`).
-  A missing tile in sight names what stands on it (`blocked_by`, `line`). Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
+- `belt_gaps {from, to, via?, surface?}` or `{line}`: remembered belt gaps and ghosts along the line, with observation
+  ticks; unrecorded tiles are unknown. A leg that is not straight follows the remembered belt round its corners
+  (`followed`). A missing tile in sight names what stands on it (`blocked_by`, `line`). `line: {x,y}` (one belt of a
+  line) follows the whole line both ways, in chunks our force sees now, up to 4096 tiles each way: at each end a belt of
+  ours facing the same way within 16 tiles on is the line going on, the tiles between a gap, each named empty or with
+  what stands on it (`gaps`); `head` and `end` say where and why it stops. Example: `./fh call belt_gaps --args '{"from":{"x":10,"y":5},"to":{"x":40,"y":5}}'`
 - `pipe_gaps {from, to, via?}`: a pipe line read live: its fluid segments (fluid, amount, extent) and the cuts where
   neighbours do not join or the line stops. Example: `./fh call pipe_gaps --args '{"from":{"x":10,"y":5},"to":{"x":10,"y":40}}'`
 - `danger {position?, radius?, surface?}`: a destination before a trip (no position: where you stand): worms and
@@ -134,9 +140,12 @@
   placements on the same resource, with mining-area amounts and placement checks; `resource` gives the name when no
   earlier mining target was recorded. Spots where a drill or drill ghost already stands are left out and named
   (`occupied_by`). Example: `./fh call drill_sites --args '{"position":{"x":120.5,"y":-44.5}}'`
-- `ores {resource?, surface?, min_amount?, limit?, position?}`: the patches on the charted map (one resource, or every
-  one), nearest first: amount left (oil: yield), distance from you and from our nearest building, enemy spawners and
-  worms within 50 tiles, and how many of our drills are on it.
+- `ores {resource?, surface?, min_amount?, limit?, position?, patch?}`: the patches on the charted map (one resource, or
+  every one), nearest first: amount left (oil: yield), distance from you and from our nearest building, enemy spawners
+  and worms within 50 tiles, and how many of our drills are on it. `patch: {x,y}`: only the patch with ore at or within
+  8 tiles of it, with `drill_list`: every drill of ours on it, one line each (position, name, status, the ore under its
+  mining area), stopped ones first, then the least ore; no scan radius; up to 200 lines.
+  Example: `./fh call ores --args '{"resource":"copper-ore","patch":{"x":40,"y":210}}'`
 - `stock {item?, network?, surface?, position?, radius?, places?, holders?, limit?, page?}`: where an item is. With
   `item` and no radius: the whole surface's total (named or yours; a platform is read whole) and the places within 128
   tiles; `radius` (up to 1024) reads that circle only; `covered` says what was read, `as_of` whether a total is live or
