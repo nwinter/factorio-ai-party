@@ -1793,6 +1793,18 @@ async function main() {
           ...(done || !slept.ok ? {} : {still_running:'hand crafting'}), wait:slept.result}};
       }
     }
+    // belt_flow (batch24 B2): the sampling runs in the game over seconds; the call reads belt_flow {} each second until
+    // the result is in (--no-wait: the start only).
+    if (action === 'belt_flow' && reply.ok && reply.result?.sampling && values['no-wait'] !== true && !bridged) {
+      const seconds = typeof reply.result.seconds === 'number' ? reply.result.seconds : 10;
+      const until = Date.now() + (seconds * 4 + 20) * 1000;
+      while (Date.now() < until) {
+        await delay(1000);
+        const read = await harness.request('belt_flow', {});
+        if (!read.ok || !read.result?.sampling) return read;
+      }
+      return {...reply, ok:false, error:{code:'wait_timeout', message:`belt_flow still sampling after ${seconds * 4 + 20} s (a slow game); belt_flow {} reads it when done`}};
+    }
     // kite runs until no enemy is left in its radius, its health or ammo floor, or its ticks (Sol, shift09: kite --wait
     // returned at once while the fight went on).
     const waits = bridged ? ['walk','mine','build'].includes(action)

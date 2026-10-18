@@ -181,4 +181,24 @@ pl=platform(chan2,ghosts)
 out=tiles.stalled(pl)
 has(out[1],'tile ghost (-7.5,8.5) space-platform-foundation: building it would split the empty space beside it')
 has(out[1],'on one side a hole of 1 empty tile with no ghost: (-1.5,8.5)')
+-- batch24 B3 (Astra: tiles deconstruct only beside empty space, learned by trial): platform_tiles at exact tiles.
+do
+  local q=platform(block(set({{3,3}})),{{12,0}},{marks={{10,0},{0,0}},ents={{5,5,'inserter'}}})
+  q.name='Kestrel II'
+  local r=tiles.query(q,{{0,0},{10,0},{5,5},{3,4},{12,0},{30,30},{11,0}})
+  eq(r.lines[1],'(0.5,0.5): space-platform-foundation; marked for removal; not removable now: none of its four side neighbours (north, east, south, west) is empty space: the hub removes a foundation tile only beside empty space')
+  eq(r.tiles[1].remove.now,false); eq(r.tiles[1].marked,true)
+  eq(r.lines[2],'(10.5,0.5): space-platform-foundation; marked for removal; removable now'); eq(r.tiles[2].remove.now,true)
+  eq(r.lines[3],'(5.5,5.5): space-platform-foundation; under inserter (5.5,5.5); not removable now: inserter (5.5,5.5) stands on it')
+  -- next to the hole at (3,3): its one empty side neighbour
+  eq(r.tiles[4].remove.now,true)
+  eq(r.lines[5],'(12.5,0.5): empty space; ghost of space-platform-foundation; foundation not built here now: no foundation among the 8 tiles round it')
+  eq(r.tiles[6].build.now,false)
+  eq(r.lines[7],'(11.5,0.5): empty space; foundation can be built here now'); eq(r.tiles[7].build.now,true)
+  -- the hole at (3,3): foundation builds there (an enclosed one-tile hole fills)
+  eq(tiles.query(q,{{3,3}}).tiles[1].build.now,true)
+  -- the hub full: not removable
+  local full=platform(block({}),{},{room=0}); full.name='x'
+  eq(tiles.query(full,{{10,0}}).tiles[1].remove.why,'the hub has no room for space-platform-foundation')
+end
 print('tilecheck: ok')
